@@ -1229,6 +1229,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         if (_sessionCache.TryGetValue(sessionId, out var info))
         {
+            if (!HasForegroundStateChanged(info, payload))
+            {
+                OnForegroundChanged?.Invoke(sessionId, payload);
+                return;
+            }
+
             info.ForegroundPid = payload.Pid;
             info.ForegroundName = payload.Name;
             info.ForegroundCommandLine = payload.CommandLine;
@@ -1260,6 +1266,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         OnForegroundChanged?.Invoke(sessionId, payload);
         NotifyStateChange();
+    }
+
+    private static bool HasForegroundStateChanged(SessionInfo info, ForegroundChangePayload payload)
+    {
+        var nextDirectory = string.IsNullOrEmpty(payload.Cwd) ? info.CurrentDirectory : payload.Cwd;
+        return info.ForegroundPid != payload.Pid ||
+               !string.Equals(info.ForegroundName, payload.Name, StringComparison.Ordinal) ||
+               !string.Equals(info.ForegroundCommandLine, payload.CommandLine, StringComparison.Ordinal) ||
+               !string.Equals(info.ForegroundDisplayName, payload.DisplayName, StringComparison.Ordinal) ||
+               !string.Equals(info.ForegroundProcessIdentity, payload.ProcessIdentity, StringComparison.Ordinal) ||
+               info.AgentAttachPoint != payload.AgentAttachPoint ||
+               !string.Equals(info.CurrentDirectory, nextDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task HandleClientStateChangedAsync(string sessionId)

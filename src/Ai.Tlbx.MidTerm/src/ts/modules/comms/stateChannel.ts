@@ -143,8 +143,8 @@ import {
   $isMainBrowser,
   $showMainBrowserButton,
   $webPreviewUrl,
-  $managerBarQueue,
   setSessions,
+  setManagerBarQueue,
   getParentSessionId,
 } from '../../stores';
 import {
@@ -159,6 +159,7 @@ import {
 // Track if we've hydrated layout state yet (server snapshot or fallback restore).
 let layoutHydrated = false;
 let stateWsHasConnected = false;
+let lastUpdateInfoSignature = '';
 
 // Pending dock instructions for sessions that haven't appeared in state yet
 interface PendingDock {
@@ -257,7 +258,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
   const sessionList = data.sessions?.sessions ?? [];
   handleStateUpdate(sessionList, data.layout);
   if (data.managerBarQueue !== undefined) {
-    $managerBarQueue.set(data.managerBarQueue);
+    setManagerBarQueue(data.managerBarQueue);
   }
   handleUpdateInfo(data.update ?? null);
 }
@@ -433,12 +434,16 @@ export function handleStateUpdate(
   const validSessions = newSessions.filter((s): s is Session & { id: string } => !!s.id);
   removeClosedSessions(validSessions);
   validSessions.forEach(syncSessionTerminalState);
-  setSessions(validSessions);
-  updateEmptyState();
+  const sessionsChanged = setSessions(validSessions);
+  if (sessionsChanged) {
+    updateEmptyState();
+  }
   applyPendingDocks();
   hydrateLayoutState(layoutState, newSessions.length);
-  syncActiveSessionSelection();
-  updateMobileTitle();
+  if (sessionsChanged) {
+    syncActiveSessionSelection();
+    updateMobileTitle();
+  }
 }
 
 /**
@@ -446,6 +451,12 @@ export function handleStateUpdate(
  * Updates the stored update info and renders the update panel.
  */
 export function handleUpdateInfo(update: UpdateInfo | null): void {
+  const signature = JSON.stringify(update ?? null);
+  if (signature === lastUpdateInfoSignature) {
+    return;
+  }
+
+  lastUpdateInfoSignature = signature;
   $updateInfo.set(update);
   renderUpdatePanel();
 }
@@ -802,6 +813,7 @@ export function resetStateChannelRuntimeForTests(): void {
   pendingDocks.length = 0;
   layoutHydrated = false;
   stateWsHasConnected = false;
+  lastUpdateInfoSignature = '';
   selectSession = () => {};
   lastReportedBrowserActivity = undefined;
   closeWebSocket(stateWs, setStateWs);

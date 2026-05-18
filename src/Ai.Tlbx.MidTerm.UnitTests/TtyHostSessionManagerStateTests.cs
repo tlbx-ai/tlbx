@@ -631,6 +631,42 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Equal(@"C:\Actual", info.CurrentDirectory);
     }
 
+    [Fact]
+    public async Task HandleClientForegroundChanged_ForwardsUnchangedForegroundPayloadWithoutStateFanout()
+    {
+        await using var manager = CreateManager();
+        var info = AddCachedSession(manager, "s1");
+        info.ForegroundPid = 1234;
+        info.ForegroundName = "customproc";
+        info.ForegroundCommandLine = "customproc";
+        info.ForegroundDisplayName = "customproc";
+        info.ForegroundProcessIdentity = "customproc";
+        info.CurrentDirectory = @"C:\Repo";
+
+        var foregroundEvents = 0;
+        var stateEvents = 0;
+        manager.OnForegroundChanged += (_, _) => foregroundEvents++;
+        var listenerId = manager.AddStateListener(() => stateEvents++);
+
+        try
+        {
+            InvokeHandleClientForegroundChanged(manager, "s1", new ForegroundChangePayload
+            {
+                Pid = 1234,
+                Name = "customproc",
+                CommandLine = "customproc",
+                Cwd = @"C:\Repo"
+            });
+        }
+        finally
+        {
+            manager.RemoveStateListener(listenerId);
+        }
+
+        Assert.Equal(1, foregroundEvents);
+        Assert.Equal(0, stateEvents);
+    }
+
     private static TtyHostSessionManager CreateManager(SessionControlStateService? sessionControlStateService = null)
     {
         return new TtyHostSessionManager(
@@ -676,6 +712,18 @@ public sealed class TtyHostSessionManagerStateTests
             BindingFlags.Instance | BindingFlags.NonPublic)!;
 
         method.Invoke(manager, [sessionId, 0UL, 120, 30, new ReadOnlyMemory<byte>(output)]);
+    }
+
+    private static void InvokeHandleClientForegroundChanged(
+        TtyHostSessionManager manager,
+        string sessionId,
+        ForegroundChangePayload payload)
+    {
+        var method = typeof(TtyHostSessionManager).GetMethod(
+            "HandleClientForegroundChanged",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        method.Invoke(manager, [sessionId, payload]);
     }
 
     private static void InvokeMergeCachedFields(SessionInfo refreshed, SessionInfo existing)

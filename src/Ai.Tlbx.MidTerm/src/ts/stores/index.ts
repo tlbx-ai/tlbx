@@ -289,11 +289,14 @@ export function removeSession(sessionId: string): void {
  * Uses server's order field if present, otherwise array index.
  * Preserves pending rename names until server confirms them.
  */
-export function setSessions(sessionList: Session[]): void {
+export function setSessions(sessionList: Session[]): boolean {
+  const currentSessions = $sessions.get();
   const sessionsMap: Record<string, Session> = {};
   sessionList.forEach((session) => {
     const id = session.id;
-    if (!id) return;
+    if (!id) {
+      return;
+    }
 
     let name: string = session.name ?? '';
 
@@ -312,7 +315,70 @@ export function setSessions(sessionList: Session[]): void {
     const entry: Session = { ...session, name, _order: session.order };
     sessionsMap[id] = entry;
   });
+
+  if (areJsonLikeRecordsEqual(currentSessions, sessionsMap)) {
+    return false;
+  }
+
   $sessions.set(sessionsMap);
+  return true;
+}
+
+export function setManagerBarQueue(entries: ManagerBarQueueEntry[]): boolean {
+  if (areJsonLikeEqual(entries, $managerBarQueue.get())) {
+    return false;
+  }
+
+  $managerBarQueue.set(entries);
+  return true;
+}
+
+function areJsonLikeRecordsEqual(
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  if (leftKeys.length !== rightKeys.length) {
+    return false;
+  }
+
+  for (const key of leftKeys) {
+    if (
+      !Object.prototype.hasOwnProperty.call(right, key) ||
+      !areJsonLikeEqual(left[key], right[key])
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function areJsonLikeEqual(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) {
+    return true;
+  }
+
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') {
+    return false;
+  }
+
+  if (Array.isArray(left) || Array.isArray(right)) {
+    if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) {
+      return false;
+    }
+
+    for (let i = 0; i < left.length; i++) {
+      if (!areJsonLikeEqual(left[i], right[i])) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  return areJsonLikeRecordsEqual(left as Record<string, unknown>, right as Record<string, unknown>);
 }
 
 /**

@@ -425,6 +425,28 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
   });
 
+  it('does not rerender session chrome for identical state snapshots', async () => {
+    await loadHarness();
+    const sessions = [
+      {
+        id: 'appServerControl-1',
+        cols: 120,
+        rows: 30,
+        appServerControlOnly: true,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+    ];
+
+    handleStateUpdate(sessions);
+    handleStateUpdate(sessions);
+
+    expect(mocks.updateEmptyState).toHaveBeenCalledTimes(1);
+    expect(mocks.updateMobileTitle).toHaveBeenCalledTimes(1);
+  });
+
   it('restores the remembered active session when reconnecting after a refresh', async () => {
     const { stores, localStorageData } = await loadHarness();
     localStorageData.set('midterm.activeSessionId', 'session-b');
