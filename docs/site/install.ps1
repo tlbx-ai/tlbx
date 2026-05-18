@@ -12,13 +12,15 @@ param(
     [switch]$ConfigureFirewall,
     [switch]$TrustCert,
     [string]$LogFile,
+    [string]$ReplayFile,
     [switch]$Dev
 )
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$scriptUrl = 'https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.ps1'
+$branch = if ($Dev) { 'dev' } else { 'main' }
+$scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/$branch/install.ps1"
 if ($PSVersionTable.PSVersion.Major -lt 6) {
     $scriptContent = Invoke-RestMethod -Uri $scriptUrl -UseBasicParsing
 } else {
