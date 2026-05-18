@@ -440,6 +440,14 @@ public class Program
         WelcomeScreen.PrintWelcomeBanner(port, bindAddress, settingsService, version);
 
         await sessionManager.DiscoverExistingSessionsAsync(shutdownService.Token);
+        foreach (var session in sessionManager.GetAllSessions())
+        {
+            var persistedRepos = sessionManager.GetPersistedSessionExtraGitRepos(session.Id);
+            if (persistedRepos.Length > 0)
+            {
+                await gitWatcher.RestoreSessionExtraReposAsync(session.Id, persistedRepos);
+            }
+        }
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();

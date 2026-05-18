@@ -73,7 +73,7 @@ internal static class AppServerControlProviderRuntimeConfiguration
     public static string? GetCodexDefaultModel()
     {
         return NormalizeOptionalValue(Environment.GetEnvironmentVariable(CodexDefaultModelEnvironmentVariable))
-               ?? "gpt-5.4";
+               ?? "gpt-5.5";
     }
 
     public static string? GetClaudeDefaultModel()

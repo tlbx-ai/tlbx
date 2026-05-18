@@ -3,6 +3,7 @@ import {
   COLLAPSIBLE_HISTORY_BODY_MIN_CHARS,
   COLLAPSIBLE_HISTORY_BODY_MIN_LINES,
   COLLAPSIBLE_HISTORY_BODY_PREVIEW_CHARS,
+  MAX_TOOL_CALL_OUTPUT_LINES,
   MAX_VISIBLE_DIFF_LINES,
 } from './historyConstants';
 import type {
@@ -112,7 +113,7 @@ export function extractCommandOutputTail(body: string): string[] {
       (line, index, array) =>
         line.length > 0 || array.slice(index + 1).some((next) => next.length > 0),
     );
-  return lines.slice(Math.max(0, lines.length - 12));
+  return lines.slice(Math.max(0, lines.length - MAX_TOOL_CALL_OUTPUT_LINES));
 }
 
 export function parseCommandOutputBody(
@@ -742,7 +743,7 @@ export function estimateHistoryEntryHeight(
   const presentation = resolveHistoryBodyPresentation(entry);
   const bodyHeight =
     presentation.mode === 'command'
-      ? 24 + Math.min(12, entry.commandOutputTail?.length ?? 0) * 15
+      ? 24 + Math.min(MAX_TOOL_CALL_OUTPUT_LINES, entry.commandOutputTail?.length ?? 0) * 15
       : presentation.collapsedByDefault
         ? 40
         : Math.min(420, 18 * textLines);

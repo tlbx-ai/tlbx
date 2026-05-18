@@ -4,7 +4,12 @@ import type {
 } from '../../api/client';
 import type { AppServerControlAttachmentReference } from '../../api/types';
 
-export type AppServerControlDebugScenarioName = 'mixed' | 'tables' | 'long' | 'workflow';
+export type AppServerControlDebugScenarioName =
+  | 'mixed'
+  | 'tables'
+  | 'long'
+  | 'massive'
+  | 'workflow';
 
 type HistoryKind =
   | 'user'
@@ -83,7 +88,7 @@ function buildDebugScenarioHistory(args: {
 
   for (const item of args.items) {
     historyEntries.push({
-      entryId: `${historyKindFromItem(item.itemType)}:${item.turnId || item.itemId}`,
+      entryId: `${historyKindFromItem(item.itemType)}:${item.itemId}`,
       order: order++,
       kind: historyKindFromItem(item.itemType),
       turnId: item.turnId ?? null,
@@ -217,6 +222,47 @@ function buildLongDebugScenario(
         isUser ? 'user_message' : 'assistant_message',
         body,
         at(-240000 + index * 1200),
+      );
+    }),
+    requests: [],
+    assistantText: '',
+    currentTurnState: 'completed',
+    currentTurnStateLabel: 'Completed',
+  };
+}
+
+function buildMassiveDebugScenario(
+  createItem: DebugScenarioItemFactory,
+  at: (offsetMs: number) => string,
+): DebugScenarioContent {
+  return {
+    items: Array.from({ length: 10000 }, (_value, index) => {
+      const ordinal = index + 1;
+      const isUser = index % 4 === 0;
+      const isTable = ordinal % 31 === 0;
+      const detail = isUser
+        ? `Prompt ${ordinal}: audit long-running lane ${Math.floor(index / 4) + 1} without losing scroll position.`
+        : isTable
+          ? [
+              `Reply ${ordinal}: compact table checkpoint for lane ${Math.floor(index / 4) + 1}.`,
+              '',
+              '| Metric | Value | Budget |',
+              '| :--- | ---: | ---: |',
+              `| retained rows | ${64 + (ordinal % 9)} | 120 |`,
+              `| visible rows | ${8 + (ordinal % 5)} | 24 |`,
+              `| canonical index | ${ordinal} | 10000 |`,
+            ].join('\n')
+          : [
+              `Reply ${ordinal}: lane ${Math.floor(index / 4) + 1} remains readable in a 10k item history.`,
+              '',
+              'The visible DOM should stay bounded, the progress rail should stay index-based, and local scrolling should not snap back while nearby rows materialize.',
+            ].join('\n');
+
+      return createItem(
+        `${isUser ? 'user' : 'assistant'}-massive-${ordinal}`,
+        isUser ? 'user_message' : 'assistant_message',
+        detail,
+        at(-3600000 + index * 250),
       );
     }),
     requests: [],
@@ -364,6 +410,7 @@ function buildAppServerControlDebugScenarioContent(
     mixed: () => buildMixedDebugScenario(createItem, at, heroImageUrl),
     tables: () => buildTablesDebugScenario(createItem, at),
     long: () => buildLongDebugScenario(createItem, at),
+    massive: () => buildMassiveDebugScenario(createItem, at),
     workflow: () => buildWorkflowDebugScenario(createItem, at),
   };
 

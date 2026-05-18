@@ -103,6 +103,10 @@ public static class SessionEndpointDefinitions
             await handler.SetSessionNotesAsync(id, request))
             .Produces<SessionInfoDto>(StatusCodes.Status200OK, "application/json");
 
+        app.MapPut("/api/sessions/{id}/topic", async (string id, SetSessionTopicRequest request, ISessionHandler handler) =>
+            await handler.SetSessionTopicAsync(id, request))
+            .Produces<SessionInfoDto>(StatusCodes.Status200OK, "application/json");
+
         app.MapPut("/api/sessions/{id}/control", async (string id, SetSessionControlRequest request, ISessionHandler handler) =>
             await handler.SetSessionControlAsync(id, request))
             .Produces<SessionInfoDto>(StatusCodes.Status200OK, "application/json");

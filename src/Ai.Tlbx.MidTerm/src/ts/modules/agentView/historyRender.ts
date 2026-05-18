@@ -13,6 +13,7 @@ import {
   APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
   setHistoryScrollMode,
 } from './historyViewport';
+import { resolveToolCallOutputLineLimit } from './historyDom';
 import {
   traceAppServerControlHistoryScroll,
   traceRenderedAppServerControlHistoryWindow,
@@ -137,7 +138,7 @@ function resolveContiguousHistoryEntryWindow(entries: readonly AppServerControlH
   };
 }
 
-function resolveHistoryRetainedWindowDescriptor(
+export function resolveHistoryRetainedWindowDescriptor(
   entries: readonly AppServerControlHistoryEntry[],
   state: SessionAppServerControlViewState | undefined,
 ): {
@@ -153,6 +154,15 @@ function resolveHistoryRetainedWindowDescriptor(
   const snapshotTotalCount = Math.max(snapshotWindowEnd, state?.snapshot?.historyCount ?? 0);
   const contiguousWindow = resolveContiguousHistoryEntryWindow(entries);
   if (!contiguousWindow) {
+    return {
+      windowStart: snapshotWindowStart,
+      windowEnd: snapshotWindowEnd,
+      totalCount: snapshotTotalCount,
+    };
+  }
+
+  const snapshotWindowSize = Math.max(0, snapshotWindowEnd - snapshotWindowStart);
+  if (snapshotWindowSize > entries.length) {
     return {
       windowStart: snapshotWindowStart,
       windowEnd: snapshotWindowEnd,
@@ -521,7 +531,7 @@ function readHistoryScrollMetrics(
   };
 }
 
-function resolveHistoryNavigatorVisibleAnchorIndex(
+function resolveHistoryNavigatorEstimatedAnchorIndex(
   state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
   totalCount: number,
@@ -551,7 +561,7 @@ function resolveHistoryNavigatorVisibleAnchorIndex(
   const visibleStart = Math.max(0, firstVisibleEntry.order - 1);
   const visibleEnd = Math.max(visibleStart, lastVisibleEntry.order - 1);
 
-  if (visibleStart <= 0 && metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
+  if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
     return 0;
   }
 
@@ -565,9 +575,47 @@ function resolveHistoryNavigatorVisibleAnchorIndex(
   return (visibleStart + visibleEnd) / 2;
 }
 
+function resolveHistoryNavigatorConcreteAnchorIndex(
+  state: SessionAppServerControlViewState,
+  viewport: HTMLDivElement,
+  totalCount: number,
+): number | null {
+  if (state.historyEntries.length === 0 || typeof viewport.getBoundingClientRect !== 'function') {
+    return null;
+  }
+
+  const metrics = readHistoryScrollMetrics(viewport, state);
+  if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX) {
+    return 0;
+  }
+
+  const distanceFromBottom = metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop;
+  const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
+  if (
+    distanceFromBottom <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+    retainedWindow.windowEnd >= totalCount
+  ) {
+    return Math.max(0, totalCount - 1);
+  }
+
+  const anchor = captureViewportAnchor({
+    viewport,
+    renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+      key: entryId,
+      node: rendered.node,
+      absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+    })),
+  });
+
+  return typeof anchor?.absoluteIndex === 'number' && Number.isFinite(anchor.absoluteIndex)
+    ? anchor.absoluteIndex
+    : null;
+}
+
 function resolveHistoryNavigatorAnchorIndex(
   state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
+  options: { refreshFromViewport?: boolean } = {},
 ): number | null {
   const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
   if (retainedWindow.totalCount <= 0) {
@@ -588,13 +636,27 @@ function resolveHistoryNavigatorAnchorIndex(
     return retainedWindow.totalCount - 1;
   }
 
-  const visibleAnchorIndex = resolveHistoryNavigatorVisibleAnchorIndex(
+  const concreteAnchorIndex = options.refreshFromViewport
+    ? resolveHistoryNavigatorConcreteAnchorIndex(state, viewport, retainedWindow.totalCount)
+    : null;
+  if (concreteAnchorIndex !== null && Number.isFinite(concreteAnchorIndex)) {
+    return clampHistoryAbsoluteIndex(concreteAnchorIndex, retainedWindow.totalCount);
+  }
+
+  if (
+    state.historyNavigatorAnchorIndex !== null &&
+    Number.isFinite(state.historyNavigatorAnchorIndex)
+  ) {
+    return clampHistoryAbsoluteIndex(state.historyNavigatorAnchorIndex, retainedWindow.totalCount);
+  }
+
+  const estimatedAnchorIndex = resolveHistoryNavigatorEstimatedAnchorIndex(
     state,
     viewport,
     retainedWindow.totalCount,
   );
-  if (visibleAnchorIndex !== null && Number.isFinite(visibleAnchorIndex)) {
-    return clampHistoryAbsoluteIndex(visibleAnchorIndex, retainedWindow.totalCount);
+  if (estimatedAnchorIndex !== null && Number.isFinite(estimatedAnchorIndex)) {
+    return clampHistoryAbsoluteIndex(estimatedAnchorIndex, retainedWindow.totalCount);
   }
 
   return clampHistoryAbsoluteIndex(
@@ -666,7 +728,10 @@ function applyHistoryProgressNavigatorPosition(args: {
   thumb.style.top = `${thumbTopPx}px`;
 }
 
-function syncHistoryProgressNavigatorUi(state: SessionAppServerControlViewState | undefined): void {
+function syncHistoryProgressNavigatorUi(
+  state: SessionAppServerControlViewState | undefined,
+  options: { refreshAnchorFromViewport?: boolean } = {},
+): void {
   const host = state?.historyProgressNav;
   const thumb = state?.historyProgressThumb;
   if (!state || !host || !thumb) {
@@ -681,7 +746,11 @@ function syncHistoryProgressNavigatorUi(state: SessionAppServerControlViewState 
 
   const viewport = state.historyViewport;
   const anchorIndex =
-    viewport === null ? historyCount - 1 : resolveHistoryNavigatorAnchorIndex(state, viewport);
+    viewport === null
+      ? historyCount - 1
+      : resolveHistoryNavigatorAnchorIndex(state, viewport, {
+          refreshFromViewport: options.refreshAnchorFromViewport === true,
+        });
   state.historyNavigatorAnchorIndex = anchorIndex;
   applyHistoryProgressNavigatorPosition({
     host,
@@ -695,8 +764,9 @@ function syncHistoryProgressNavigatorUi(state: SessionAppServerControlViewState 
 export function resolveHistoryNavigatorTarget(args: {
   state: SessionAppServerControlViewState | undefined;
   clientY: number;
+  thumbDragOffsetPx?: number | null;
 }): { targetIndex: number; atLiveEdge: boolean } | null {
-  const { state, clientY } = args;
+  const { state, clientY, thumbDragOffsetPx } = args;
   const host = state?.historyProgressNav;
   const snapshot = state?.snapshot;
   const historyCount = Math.max(snapshot?.historyCount ?? 0, state?.historyEntries.length ?? 0);
@@ -707,7 +777,12 @@ export function resolveHistoryNavigatorTarget(args: {
   const rect = host.getBoundingClientRect();
   const trackTopPx = rect.top + HISTORY_PROGRESS_THUMB_INSET_PX;
   const trackHeightPx = Math.max(1, rect.height - HISTORY_PROGRESS_THUMB_INSET_PX * 2);
-  const normalizedProgress = Math.max(0, Math.min(1, (clientY - trackTopPx) / trackHeightPx));
+  const thumbHeightPx = resolveHistoryProgressThumbHeightPx(host);
+  const trackTravelPx = Math.max(0, trackHeightPx - thumbHeightPx);
+  const normalizedProgress =
+    typeof thumbDragOffsetPx === 'number' && Number.isFinite(thumbDragOffsetPx) && trackTravelPx > 0
+      ? Math.max(0, Math.min(1, (clientY - thumbDragOffsetPx - trackTopPx) / trackTravelPx))
+      : Math.max(0, Math.min(1, (clientY - trackTopPx) / trackHeightPx));
   const targetIndex = clampHistoryAbsoluteIndex(
     normalizedProgress * (historyCount - 1),
     historyCount,
@@ -1330,6 +1405,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       entry.sourceItemType ?? '',
       entry.commandText ?? '',
       (entry.commandOutputTail ?? []).join('\n'),
+      entry.kind === 'tool' ? String(resolveToolCallOutputLineLimit()) : '',
       buildHistoryAttachmentToken(entry),
       buildAssistantPreviewToken(entry, state),
       buildHistoryActionToken(entry),
@@ -1805,7 +1881,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    syncHistoryProgressNavigatorUi(state);
+    syncHistoryProgressNavigatorUi(state, { refreshAnchorFromViewport: true });
   }
 
   return {

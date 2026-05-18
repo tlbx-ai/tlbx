@@ -34,6 +34,7 @@ public interface ISessionHandler
     Task<IResult> GetAgentFeedAsync(string id, int tailLines, int activitySeconds, int bellLimit);
     Task<IResult> RenameSessionAsync(string id, RenameSessionRequest request, bool auto);
     Task<IResult> SetSessionNotesAsync(string id, SetSessionNotesRequest request);
+    Task<IResult> SetSessionTopicAsync(string id, SetSessionTopicRequest request);
     Task<IResult> SetSessionControlAsync(string id, SetSessionControlRequest request);
     Task<IResult> UploadFileAsync(string id, IFormFile file);
     Task<IResult> PasteClipboardImageAsync(string id, IFormFile file);

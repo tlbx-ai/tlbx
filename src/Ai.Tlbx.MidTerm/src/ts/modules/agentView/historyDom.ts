@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { getSession } from '../../stores';
+import { $currentSettings, getSession } from '../../stores';
 import { renderMarkdownFragment, wireMarkdownTables } from '../../utils/markdown';
 import {
   buildAssistantEnrichedHtml,
@@ -22,6 +22,7 @@ import {
   resolveHistoryBodyPresentation,
   tokenizeCommandText,
 } from './historyContent';
+import { DEFAULT_TOOL_CALL_OUTPUT_LINES, MAX_TOOL_CALL_OUTPUT_LINES } from './historyConstants';
 import type {
   AssistantMarkdownCacheEntry,
   ArtifactClusterInfo,
@@ -32,8 +33,22 @@ import type {
   SessionAppServerControlViewState,
 } from './types';
 
-const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 3770;
-const BUSY_SPIN_WALLCLOCK_CYCLE_MS = 1150;
+const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;
+const BUSY_SWEEP_WALLCLOCK_LEG_MS = BUSY_SWEEP_WALLCLOCK_CYCLE_MS / 2;
+
+export function resolveToolCallOutputLineLimit(): number {
+  const configured = $currentSettings.get()?.toolCallOutputLines;
+  if (typeof configured !== 'number' || !Number.isFinite(configured)) {
+    return DEFAULT_TOOL_CALL_OUTPUT_LINES;
+  }
+
+  return Math.max(0, Math.min(MAX_TOOL_CALL_OUTPUT_LINES, Math.trunc(configured)));
+}
+
+function clampToolCallOutputLines(lines: readonly string[]): string[] {
+  const lineLimit = resolveToolCallOutputLineLimit();
+  return lineLimit <= 0 ? [] : lines.slice(0, lineLimit);
+}
 
 function appServerControlText(key: string, fallback: string): string {
   const translated = t(key);
@@ -231,21 +246,22 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return;
     }
 
-    const label = (root as Element).querySelector<HTMLElement>('.agent-history-busy-label');
-    if (label) {
-      label.style.setProperty(
+    const glows = (root as Element).querySelectorAll<HTMLElement>('.agent-history-busy-label-glow');
+    glows.forEach((glow) => {
+      if (glow.dataset.busyPhaseLocked === String(BUSY_SWEEP_WALLCLOCK_CYCLE_MS)) {
+        return;
+      }
+
+      glow.style.setProperty(
+        '--agent-busy-animation-duration-ms',
+        `${BUSY_SWEEP_WALLCLOCK_LEG_MS}ms`,
+      );
+      glow.style.setProperty(
         '--agent-busy-animation-delay-ms',
         resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS),
       );
-    }
-
-    const spinner = (root as Element).querySelector<HTMLElement>('.agent-history-busy-spinner');
-    if (spinner) {
-      spinner.style.setProperty(
-        '--agent-busy-spin-delay-ms',
-        resolveWallclockAnimationDelayMs(BUSY_SPIN_WALLCLOCK_CYCLE_MS),
-      );
-    }
+      glow.dataset.busyPhaseLocked = String(BUSY_SWEEP_WALLCLOCK_CYCLE_MS);
+    });
   }
 
   function syncBusyIndicatorEntry(article: HTMLElement, entry: AppServerControlHistoryEntry): void {
@@ -562,7 +578,13 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       case 'monospace': {
         const body = document.createElement('pre');
         body.className = 'agent-history-body';
-        body.textContent = entry.body;
+        const bodyLines =
+          entry.kind === 'tool'
+            ? clampToolCallOutputLines(
+                entry.body.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n'),
+              )
+            : null;
+        body.textContent = bodyLines ? bodyLines.join('\n') : entry.body;
         enrichInteractiveTextContent(body, getEntryFileMentions(entry, 'body'));
         wireAssistantInteractiveContent(body, sessionId);
         appendEntryImagePreviews(body, entry, sessionId);
@@ -594,10 +616,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     wireAssistantInteractiveContent(commandLine, sessionId);
 
     body.appendChild(commandLine);
-    if ((entry.commandOutputTail?.length ?? 0) > 0) {
+    const visibleOutputLines = clampToolCallOutputLines(entry.commandOutputTail ?? []);
+    if (visibleOutputLines.length > 0) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
-      output.textContent = entry.commandOutputTail?.join('\n') ?? '';
+      output.textContent = visibleOutputLines.join('\n');
       // Keep folded command tails as raw terminal text instead of applying
       // FileRadar-style enrichment or thumbnail previews to noisy output.
       body.appendChild(output);
@@ -613,11 +636,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     article.dataset.busyIndicator = 'true';
     const bubble = document.createElement('div');
     bubble.className = 'agent-history-busy-bubble';
-    const glyph = document.createElement('span');
-    glyph.className = 'agent-history-busy-glyph';
-    glyph.innerHTML =
-      '<svg class="agent-history-busy-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><g class="agent-history-busy-spinner"><path class="agent-history-busy-triangle" d="M12 3.75 20 18.25H4L12 3.75Z" /><circle class="agent-history-busy-center" cx="12" cy="13" r="2.3" /></g></svg>';
-    bubble.appendChild(glyph);
 
     const label = document.createElement('span');
     label.className = 'agent-history-busy-label';

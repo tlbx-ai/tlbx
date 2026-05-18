@@ -189,6 +189,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'immediate',
     },
   ),
+  controlEntry('toolCallOutputLines', 'setting-tool-call-output-lines', 'int', 5, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'integer, UI clamps to 0-20',
+    applyMode: 'immediate',
+  }),
   controlEntry('fontSize', 'setting-font-size', 'int', 14, {
     editable: true,
     storage: 'settings.json',

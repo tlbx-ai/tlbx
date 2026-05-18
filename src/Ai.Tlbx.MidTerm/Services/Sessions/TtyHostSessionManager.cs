@@ -9,6 +9,7 @@ using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Models.Auth;
 using Ai.Tlbx.MidTerm.Models.Certificates;
 using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
@@ -261,6 +262,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 SubscribeToClient(connected.Client);
                 connected.Client.StartReadLoop();
                 _registry.SessionCache[sessionId] = connected.Info;
+                ApplyDiscoveredHostMetadata(connected.Info);
                 _transportState.TryAdd(sessionId, new TerminalTransportRuntimeState());
                 _ownershipRegistry.Upsert(sessionId, hostPid, isLegacyEndpoint || string.IsNullOrWhiteSpace(connected.Info.OwnerInstanceId));
 
@@ -628,6 +630,42 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return info;
     }
 
+    private void ApplyDiscoveredHostMetadata(SessionInfo info)
+    {
+        if (!string.IsNullOrWhiteSpace(info.Topic))
+        {
+            _registry.SetSessionTopic(info.Id, info.Topic);
+        }
+    }
+
+    private async Task PersistHostMetadataAsync(string sessionId)
+    {
+        if (!_clients.TryGetValue(sessionId, out var client))
+        {
+            return;
+        }
+
+        if (!_sessionCache.TryGetValue(sessionId, out var info))
+        {
+            return;
+        }
+
+        try
+        {
+            var metadata = new TtyHostSessionMetadata
+            {
+                Topic = _registry.SessionTopics.TryGetValue(sessionId, out var topic) ? topic : null,
+                ExtraGitRepos = info.ExtraGitRepos
+            };
+
+            await client.SetMetadataAsync(metadata).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Verbose(() => $"TtyHostSessionManager: Failed to persist host metadata for {sessionId}: {ex.Message}");
+        }
+    }
+
     public async Task<bool> SetClipboardImageAsync(
         string sessionId,
         string filePath,
@@ -841,6 +879,46 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public bool SetSessionNotes(string sessionId, string? notes)
     {
         return _registry.SetSessionNotes(sessionId, notes);
+    }
+
+    public bool SetSessionTopic(string sessionId, string? topic)
+    {
+        var updated = _registry.SetSessionTopic(sessionId, topic);
+        if (updated)
+        {
+            _ = PersistHostMetadataAsync(sessionId);
+        }
+
+        return updated;
+    }
+
+    public bool SetSessionExtraGitReposMetadata(string sessionId, IEnumerable<GitRepoBinding> repos)
+    {
+        if (!_sessionCache.TryGetValue(sessionId, out var info))
+        {
+            return false;
+        }
+
+        info.ExtraGitRepos = repos
+            .Where(static repo => !repo.IsPrimary && !string.IsNullOrWhiteSpace(repo.RepoRoot))
+            .Select(static repo => new TtyHostGitRepoMetadata
+            {
+                RepoRoot = repo.RepoRoot,
+                Label = repo.Label,
+                Role = repo.Role,
+                Source = repo.Source
+            })
+            .ToArray();
+
+        _ = PersistHostMetadataAsync(sessionId);
+        return true;
+    }
+
+    public TtyHostGitRepoMetadata[] GetPersistedSessionExtraGitRepos(string sessionId)
+    {
+        return _sessionCache.TryGetValue(sessionId, out var info)
+            ? info.ExtraGitRepos
+            : [];
     }
 
     public bool SetAgentControlled(string sessionId, bool agentControlled)
@@ -1151,6 +1229,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         if (_sessionCache.TryGetValue(sessionId, out var info))
         {
+            if (!HasForegroundStateChanged(info, payload))
+            {
+                OnForegroundChanged?.Invoke(sessionId, payload);
+                return;
+            }
+
             info.ForegroundPid = payload.Pid;
             info.ForegroundName = payload.Name;
             info.ForegroundCommandLine = payload.CommandLine;
@@ -1182,6 +1266,18 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         OnForegroundChanged?.Invoke(sessionId, payload);
         NotifyStateChange();
+    }
+
+    private static bool HasForegroundStateChanged(SessionInfo info, ForegroundChangePayload payload)
+    {
+        var nextDirectory = string.IsNullOrEmpty(payload.Cwd) ? info.CurrentDirectory : payload.Cwd;
+        return info.ForegroundPid != payload.Pid ||
+               !string.Equals(info.ForegroundName, payload.Name, StringComparison.Ordinal) ||
+               !string.Equals(info.ForegroundCommandLine, payload.CommandLine, StringComparison.Ordinal) ||
+               !string.Equals(info.ForegroundDisplayName, payload.DisplayName, StringComparison.Ordinal) ||
+               !string.Equals(info.ForegroundProcessIdentity, payload.ProcessIdentity, StringComparison.Ordinal) ||
+               info.AgentAttachPoint != payload.AgentAttachPoint ||
+               !string.Equals(info.CurrentDirectory, nextDirectory, StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task HandleClientStateChangedAsync(string sessionId)

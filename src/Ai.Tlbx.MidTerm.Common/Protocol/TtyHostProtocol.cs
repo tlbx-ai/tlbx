@@ -424,6 +424,22 @@ public static class TtyHostProtocol
     {
         return payload.Length > 0 ? payload[0] : (byte)0;
     }
+
+    public static byte[] CreateSetMetadata(TtyHostSessionMetadata metadata)
+    {
+        var json = JsonSerializer.SerializeToUtf8Bytes(metadata, TtyHostJsonContext.Default.TtyHostSessionMetadata);
+        return CreateFrame(TtyHostMessageType.SetMetadata, json);
+    }
+
+    public static TtyHostSessionMetadata? ParseSetMetadata(ReadOnlySpan<byte> payload)
+    {
+        return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostSessionMetadata);
+    }
+
+    public static byte[] CreateSetMetadataAck()
+    {
+        return CreateFrame(TtyHostMessageType.SetMetadataAck, []);
+    }
 }
 
 /// <summary>
@@ -460,6 +476,8 @@ public enum TtyHostMessageType : byte
     // Display order
     SetOrder = 0x24,
     SetOrderAck = 0x25,
+    SetMetadata = 0x28,
+    SetMetadataAck = 0x29,
 
     // Latency measurement
     Ping = 0x60,
@@ -508,6 +526,8 @@ public sealed class SessionInfo
     private SessionAgentAttachPoint? _agentAttachPoint;
     private byte _order;
     private TtyHostTransportInfo? _transport;
+    private string? _topic;
+    private TtyHostGitRepoMetadata[] _extraGitRepos = [];
 
     public string Id { get; set; } = string.Empty;
     public int Pid { get; set; }
@@ -533,6 +553,8 @@ public sealed class SessionInfo
     public SessionAgentAttachPoint? AgentAttachPoint { get => Lock(() => _agentAttachPoint); set => Lock(() => _agentAttachPoint = value); }
     public byte Order { get => Lock(() => _order); set => Lock(() => _order = value); }
     public TtyHostTransportInfo? Transport { get => Lock(() => _transport); set => Lock(() => _transport = value); }
+    public string? Topic { get => Lock(() => _topic); set => Lock(() => _topic = value); }
+    public TtyHostGitRepoMetadata[] ExtraGitRepos { get => Lock(() => _extraGitRepos); set => Lock(() => _extraGitRepos = value ?? []); }
 
     private T Lock<T>(Func<T> func)
     {
@@ -578,6 +600,20 @@ public sealed class ClipboardImageResponse
 {
     public bool Success { get; set; }
     public string? Error { get; set; }
+}
+
+public sealed class TtyHostSessionMetadata
+{
+    public string? Topic { get; set; }
+    public TtyHostGitRepoMetadata[] ExtraGitRepos { get; set; } = [];
+}
+
+public sealed class TtyHostGitRepoMetadata
+{
+    public string RepoRoot { get; set; } = string.Empty;
+    public string? Label { get; set; }
+    public string? Role { get; set; }
+    public string? Source { get; set; }
 }
 
 public sealed class TtyHostAttachRequest
@@ -640,6 +676,8 @@ public enum TerminalReplayReason
 
 [JsonSerializable(typeof(SessionInfo))]
 [JsonSerializable(typeof(SessionAgentAttachPoint))]
+[JsonSerializable(typeof(TtyHostSessionMetadata))]
+[JsonSerializable(typeof(TtyHostGitRepoMetadata))]
 [JsonSerializable(typeof(StateChangePayload))]
 [JsonSerializable(typeof(ForegroundChangePayload))]
 [JsonSerializable(typeof(ClipboardImageRequest))]

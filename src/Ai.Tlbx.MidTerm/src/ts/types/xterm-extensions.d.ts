@@ -43,10 +43,10 @@ declare global {
         readonly rootVisible: boolean;
       };
       readonly appServerControl: {
-        readonly scenarios: readonly ('mixed' | 'tables' | 'long' | 'workflow')[];
+        readonly scenarios: readonly ('mixed' | 'tables' | 'long' | 'massive' | 'workflow')[];
         showScenario: (
           sessionId: string,
-          scenario?: 'mixed' | 'tables' | 'long' | 'workflow',
+          scenario?: 'mixed' | 'tables' | 'long' | 'massive' | 'workflow',
         ) => Promise<boolean>;
       };
     };

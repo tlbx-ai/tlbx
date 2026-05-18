@@ -20,6 +20,7 @@ public sealed partial class UpdateService : IDisposable
     private const string RepoName = "MidTerm";
     private const string DevEnvironmentName = "THELAIR";
     private const string FallbackMinCompatiblePty = "2.0.0";
+    private const int RecentReleaseTagProbeLimit = 20;
 
     // Dev-only local update path - uses secure ProgramData folder instead of world-writable temp
     private static string LocalReleasePath => OperatingSystem.IsWindows()
@@ -175,7 +176,7 @@ public sealed partial class UpdateService : IDisposable
             var assetName = GetAssetNameForPlatform();
             Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}, asset={assetName}");
 
-            var releases = await FetchReleasesAsync();
+            var releases = await FetchReleasesAsync(updateChannel, _currentVersion);
             var selection = SelectBestRelease(releases, updateChannel, _currentVersion, assetName);
             if (selection is null)
             {
@@ -213,6 +214,7 @@ public sealed partial class UpdateService : IDisposable
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[UpdateCheck] Error: {ex.Message}");
+            Log.Warn(() => $"Update check failed: {ex.Message}");
             // If GitHub check fails but we're in dev mode, still return local update info
             var devEnv = GetDevEnvironment();
             if (devEnv is not null)
@@ -265,11 +267,108 @@ public sealed partial class UpdateService : IDisposable
         return _latestUpdate;
     }
 
-    private async Task<List<GitHubRelease>> FetchReleasesAsync()
+    private async Task<List<GitHubRelease>> FetchReleasesAsync(string updateChannel, string currentVersion)
     {
         var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases?per_page=50";
         var response = await _httpClient.GetStringAsync(apiUrl);
-        return JsonSerializer.Deserialize<List<GitHubRelease>>(response, GitHubReleaseContext.Default.ListGitHubRelease) ?? [];
+        var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(
+            response,
+            GitHubReleaseContext.Default.ListGitHubRelease) ?? [];
+
+        return string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase)
+            ? await IncludeRecentTaggedReleasesAsync(releases, currentVersion)
+            : releases;
+    }
+
+    private async Task<List<GitHubRelease>> IncludeRecentTaggedReleasesAsync(
+        List<GitHubRelease> releases,
+        string currentVersion)
+    {
+        List<GitHubTag> tags;
+        try
+        {
+            var tagsUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/tags?per_page={RecentReleaseTagProbeLimit}";
+            var response = await _httpClient.GetStringAsync(tagsUrl);
+            tags = JsonSerializer.Deserialize<List<GitHubTag>>(
+                response,
+                GitHubReleaseContext.Default.ListGitHubTag) ?? [];
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[UpdateCheck] tag probe skipped: {ex.Message}");
+            Log.Warn(() => $"Update check tag probe skipped: {ex.Message}");
+            return releases;
+        }
+
+        foreach (var tagName in GetMissingNewerReleaseTagNames(releases, tags, currentVersion))
+        {
+            var release = await FetchReleaseByTagAsync(tagName);
+            if (release is null)
+            {
+                continue;
+            }
+
+            releases.Add(release);
+            Console.Error.WriteLine($"[UpdateCheck] release list missing {tagName}; loaded by tag");
+            Log.Info(() => $"Update check loaded release {tagName} by tag because it was missing from the release list");
+        }
+
+        return releases;
+    }
+
+    internal static IReadOnlyList<string> GetMissingNewerReleaseTagNames(
+        IEnumerable<GitHubRelease> releases,
+        IEnumerable<GitHubTag> tags,
+        string currentVersion)
+    {
+        var existingTags = releases
+            .Select(release => release.TagName)
+            .Where(tagName => !string.IsNullOrWhiteSpace(tagName))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missingTags = new List<string>();
+        var seenMissingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var tag in tags.Take(RecentReleaseTagProbeLimit))
+        {
+            var tagName = tag.Name?.Trim();
+            if (string.IsNullOrWhiteSpace(tagName) ||
+                !tagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ||
+                existingTags.Contains(tagName) ||
+                seenMissingTags.Contains(tagName) ||
+                CompareVersions(TrimReleaseTagPrefix(tagName), currentVersion) <= 0)
+            {
+                continue;
+            }
+
+            missingTags.Add(tagName);
+            seenMissingTags.Add(tagName);
+        }
+
+        return missingTags;
+    }
+
+    private async Task<GitHubRelease?> FetchReleaseByTagAsync(string tagName)
+    {
+        try
+        {
+            var tagUrl =
+                $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/tags/{Uri.EscapeDataString(tagName)}";
+            var response = await _httpClient.GetStringAsync(tagUrl);
+            return JsonSerializer.Deserialize<GitHubRelease>(
+                response,
+                GitHubReleaseContext.Default.GitHubRelease);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[UpdateCheck] release tag probe failed for {tagName}: {ex.Message}");
+            Log.Warn(() => $"Update check release tag probe failed for {tagName}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private static string TrimReleaseTagPrefix(string tagName)
+    {
+        return tagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tagName[1..] : tagName;
     }
 
     internal static ReleaseSelection? SelectBestRelease(
@@ -1753,6 +1852,11 @@ internal sealed class GitHubRelease
     public bool Draft { get; set; }
     public bool Prerelease { get; set; }
     public List<GitHubAsset>? Assets { get; set; }
+}
+
+internal sealed class GitHubTag
+{
+    public string? Name { get; set; }
 }
 
 internal readonly record struct UpdateArtifacts(string LogPath, string ResultPath);

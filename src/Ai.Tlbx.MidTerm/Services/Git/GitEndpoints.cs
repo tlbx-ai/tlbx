@@ -139,6 +139,7 @@ public static class GitEndpoints
                 return Results.BadRequest("Path is not in a git repository");
             }
 
+            sessionManager.SetSessionExtraGitReposMetadata(request.SessionId, repos);
             return Results.Json(new GitRepoListResponse { Repos = repos }, GitJsonContext.Default.GitRepoListResponse);
         });
 
@@ -150,6 +151,7 @@ public static class GitEndpoints
             }
 
             gitWatcher.RemoveSessionRepo(sessionId, repoRoot);
+            sessionManager.SetSessionExtraGitReposMetadata(sessionId, gitWatcher.GetRepoBindings(sessionId));
             return Results.Json(
                 new GitRepoListResponse { Repos = gitWatcher.GetRepoBindings(sessionId) },
                 GitJsonContext.Default.GitRepoListResponse);

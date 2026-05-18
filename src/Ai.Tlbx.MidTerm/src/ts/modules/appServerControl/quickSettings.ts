@@ -208,7 +208,7 @@ function resolveRememberedProviderModel(
     return (
       normalizeOptionalValue(currentSettings?.codexDefaultAppServerControlModel) ??
       legacyModel ??
-      'gpt-5.4'
+      'gpt-5.5'
     );
   }
 

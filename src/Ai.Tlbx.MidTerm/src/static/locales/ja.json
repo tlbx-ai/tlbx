@@ -181,6 +181,7 @@
   "settings.agentUi.messageFont": "Message Font",
   "settings.agentUi.showMessageTimestamps": "Show Timestamps On Agent Messages",
   "settings.agentUi.showUnknownAgentMessages": "Show Unknown Agent Messages",
+  "settings.agentUi.toolCallOutputLines": "Tool call output lines",
   "settings.agentUi.codexYoloDefault": "Enable Codex --yolo by default",
   "settings.agentUi.codexEnv": "Codex Environment Variables",
   "settings.agentUi.claudeDangerouslySkipPermissionsDefault": "Enable Claude --dangerously-skip-permissions by default",

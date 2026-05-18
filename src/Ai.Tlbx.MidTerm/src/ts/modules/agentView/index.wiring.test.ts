@@ -23,9 +23,6 @@ const viewShellSource = readFileSync(path.join(__dirname, 'viewShell.ts'), 'utf8
 
 describe('agent view AppServerControl wiring', () => {
   it('keeps Codex AppServerControl user and assistant metadata above the message body', () => {
-    expect(css).toContain(
-      ".agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-header,",
-    );
     expect(css).toMatch(
       /\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-user\s+\.agent-history-header,\s*\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-assistant\s+\.agent-history-header\s*\{[^}]*justify-content:\s*flex-start;[^}]*\}/s,
     );
@@ -45,11 +42,11 @@ describe('agent view AppServerControl wiring', () => {
   });
 
   it('keeps full-width AppServerControl metadata compact while allowing the first assistant row in a turn to show Agent', () => {
-    expect(css).toContain(
-      ".agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-badge-user,",
+    expect(css).toMatch(
+      /\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-badge-user,\s*\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-badge-assistant\s*\{/s,
     );
-    expect(css).toContain(
-      ".agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-meta,",
+    expect(css).toMatch(
+      /\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-user\s+\.agent-history-meta,\s*\.agent-view-panel\[data-appServerControl-layout='full-width-left'\]\s+\.agent-history-assistant\s+\.agent-history-meta\s*\{/s,
     );
     expect(css).toContain('font-size: 9px;');
     expect(css).toContain(
@@ -122,14 +119,15 @@ describe('agent view AppServerControl wiring', () => {
   });
 
   it('binds the AppServerControl pane background to terminal transparency tokens', () => {
-    expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
-    expect(css).toContain('.agent-chat-shell {\n  display: flex;');
-    expect(css).toContain('background: transparent;');
+    expect(css).toMatch(/\.agent-view-panel\s*\{[\s\S]*?background:\s*transparent;/);
+    expect(css).toMatch(
+      /\.agent-chat-shell\s*\{[\s\S]*?background:\s*[\s\S]*?linear-gradient\(\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\),\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\)\s*\),\s*[\s\S]*?linear-gradient\(\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\),\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\)\s*\),\s*[\s\S]*?var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\);/,
+    );
     expect(appServerControlDesign).toContain(
       'Agent Controller Session pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.',
     );
     expect(appServerControlDesign).toContain(
-      'Terminal transparency should be applied once at the outer Agent Controller Session pane surface.',
+      'Agent Controller Session must match the effective stacked xterm background users see behind terminal text, not a single token layer.',
     );
   });
 
@@ -161,6 +159,8 @@ describe('agent view AppServerControl wiring', () => {
     expect(historyRenderSource).not.toContain('host.hidden = historyCount <= 0;');
     expect(viewShellSource).not.toContain('repairAgentViewSkeleton(');
     expect(viewShellSource).not.toContain('history-index-scroll');
+    expect(css).toMatch(/\.agent-history-entry\s*\{[\s\S]*?flex:\s*0 0 auto;/);
+    expect(css).toMatch(/\.agent-history-placeholder\s*\{[\s\S]*?flex:\s*0 0 auto;/);
     expect(css).toContain('flex: 0 0 12px;');
     expect(css).toContain('width: 2px;');
     expect(css).toContain(
@@ -172,6 +172,18 @@ describe('agent view AppServerControl wiring', () => {
       ".agent-history-progress-nav[data-ready='false'] .agent-history-progress-thumb {",
     );
     expect(css).toContain('opacity: 0;');
+    expect(viewShellSource.indexOf('data-agent-field="scroll-to-bottom"')).toBeGreaterThan(
+      viewShellSource.indexOf('class="agent-history-shell"'),
+    );
+    expect(viewShellSource.indexOf('data-agent-field="scroll-to-bottom"')).toBeLessThan(
+      viewShellSource.indexOf('class="agent-composer-shell"'),
+    );
+    expect(css).toMatch(/\.agent-history-shell\s*\{[\s\S]*?position:\s*relative;/);
+    expect(css).toMatch(
+      /\.agent-scroll-to-bottom\s*\{[\s\S]*?min-height:\s*var\(--command-bay-automation-chip-height,\s*30\.6px\);[\s\S]*?border-radius:\s*var\(--command-bay-pill-radius,\s*8px\);[\s\S]*?background:\s*var\(--command-bay-ui-reactive-surface,/s,
+    );
+    expect(css).toMatch(/\.agent-scroll-to-bottom\s*\{[\s\S]*?bottom:\s*12px;/);
+    expect(css).not.toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
     expect(css).toMatch(
       /@media \(max-width: 768px\) \{[\s\S]*?\.agent-history-progress-nav \{[\s\S]*?flex: 0 0 44px;/s,
     );
@@ -198,6 +210,29 @@ describe('agent view AppServerControl wiring', () => {
     );
     expect(appServerControlDesign).toContain(
       'the progress navigator now stays in layout as a stateful Agent Controller Session rail instead of relying on `hidden` attribute toggles for visibility',
+    );
+    expect(historyRenderSource).toContain(
+      'if (metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX)',
+    );
+    expect(historyRenderSource).toContain('resolveHistoryNavigatorConcreteAnchorIndex');
+    expect(historyRenderSource).toContain('refreshAnchorFromViewport');
+    expect(historyRenderSource).toContain('state.historyNavigatorAnchorIndex');
+    expect(appServerControlDesign).toContain(
+      'Passive row-height measurement, image/content reflow, window hydration, and virtualization rerenders must not recompute the dedicated history scrollbar thumb',
+    );
+    expect(appServerControlDesign).toContain(
+      'passive Agent Controller Session row-height remeasurement no longer backpressures the dedicated progress navigator',
+    );
+  });
+
+  it('lets normal history scrolling retake the progress thumb after a completed navigator drag', () => {
+    expect(indexSource).toContain('let activeHistoryNavigatorPointerId: number | null = null;');
+    expect(indexSource).toContain('activeHistoryNavigatorPointerId === null');
+    expect(indexSource).toMatch(
+      /current\.historyNavigatorMode !== 'drag-preview' \|\|[\s\S]*?activeHistoryNavigatorPointerId === null[\s\S]*?\{[\s\S]*?current\.historyNavigatorMode = 'browse';[\s\S]*?current\.historyNavigatorDragTargetIndex = null;/,
+    );
+    expect(indexSource).toMatch(
+      /updateNavigatorTarget\(event\.clientY, true\);[\s\S]*?activeHistoryNavigatorPointerId = null;[\s\S]*?activeHistoryNavigatorThumbOffsetPx = null;/,
     );
   });
 
@@ -363,7 +398,7 @@ describe('agent view AppServerControl wiring', () => {
     );
   });
 
-  it('renders the busy indicator as Working with a KITT mask sweep animation', () => {
+  it('renders the busy indicator as Working with a slower KITT mask sweep animation', () => {
     expect(historyProcessingSource).toContain(
       "appServerControlText('appServerControl.status.working', 'Working')",
     );
@@ -374,15 +409,18 @@ describe('agent view AppServerControl wiring', () => {
     expect(historyDomSource).toContain("labelBase.className = 'agent-history-busy-label-base'");
     expect(historyDomSource).toContain("labelGlow.className = 'agent-history-busy-label-glow'");
     expect(historyDomSource).toContain('BUSY_SWEEP_WALLCLOCK_CYCLE_MS');
-    expect(historyDomSource).toContain('BUSY_SPIN_WALLCLOCK_CYCLE_MS');
+    expect(historyDomSource).toContain(
+      'const BUSY_SWEEP_WALLCLOCK_LEG_MS = BUSY_SWEEP_WALLCLOCK_CYCLE_MS / 2;',
+    );
     expect(historyDomSource).toContain('--agent-busy-animation-delay-ms');
-    expect(historyDomSource).toContain('--agent-busy-spin-delay-ms');
+    expect(historyDomSource).toContain('--agent-busy-animation-duration-ms');
     expect(historyDomSource).toContain(
       'resolveWallclockAnimationDelayMs(BUSY_SWEEP_WALLCLOCK_CYCLE_MS)',
     );
-    expect(historyDomSource).toContain(
-      'resolveWallclockAnimationDelayMs(BUSY_SPIN_WALLCLOCK_CYCLE_MS)',
-    );
+    expect(historyDomSource).toContain('const BUSY_SWEEP_WALLCLOCK_CYCLE_MS = 4901;');
+    expect(historyDomSource).toContain('glow.dataset.busyPhaseLocked');
+    expect(historyDomSource).not.toContain('agent-history-busy-triangle');
+    expect(historyDomSource).not.toContain('agent-history-busy-spinner');
     expect(historyDomSource).toContain('performance.timeOrigin + performance.now()');
     expect(historyDomSource).toContain('agent-history-busy-elapsed');
     expect(historyDomSource).toContain('(Press Esc to cancel)');
@@ -396,10 +434,10 @@ describe('agent view AppServerControl wiring', () => {
     expect(css).toContain('.agent-history-busy-status {');
     expect(css).toContain('mask-size: 300% 100%;');
     expect(css).toContain('-webkit-mask-size: 300% 100%;');
-    expect(css).toContain('animation: agent-history-busy-spin 1.15s linear infinite;');
-    expect(css).toContain('animation-delay: var(--agent-busy-spin-delay-ms, 0ms);');
+    expect(css).not.toContain('agent-history-busy-spin');
+    expect(css).not.toContain('.agent-history-busy-triangle');
     expect(css).toContain(
-      'animation: agent-history-busy-sweep 1.885s ease-in-out infinite alternate;',
+      'animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out infinite alternate;',
     );
     expect(css).toContain('animation-delay: var(--agent-busy-animation-delay-ms, 0ms);');
     expect(css).toMatch(/mask-position:\s*66%\s*0;/);

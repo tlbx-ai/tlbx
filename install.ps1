@@ -18,11 +18,14 @@ param(
     [switch]$ConfigureFirewall,
     [switch]$TrustCert,
     [string]$LogFile,
+    [string]$ReplayFile,
     [switch]$Dev
 )
 
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
+$script:InstallerScriptPath = $PSCommandPath
+$script:InstallerScriptDefinition = $MyInvocation.MyCommand.Definition
 
 # Ensure TLS 1.2 for GitHub API/downloads (PS 5.1 defaults to TLS 1.0)
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -253,6 +256,108 @@ function Get-CurrentUserInfo
         Name = $userName
         Sid = $userSid
     }
+}
+
+function Get-CurrentInstallerScriptContent
+{
+    if ($script:InstallerScriptPath -and (Test-Path $script:InstallerScriptPath))
+    {
+        return Get-Content -Path $script:InstallerScriptPath -Raw
+    }
+
+    if (-not [string]::IsNullOrWhiteSpace($script:InstallerScriptDefinition) -and
+        $script:InstallerScriptDefinition.Contains("# MidTerm Windows Installer"))
+    {
+        return $script:InstallerScriptDefinition
+    }
+
+    $branch = if ($Dev) { "dev" } else { "main" }
+    $scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/$branch/install.ps1"
+    return Invoke-CompatibleRestMethod -Uri $scriptUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
+}
+
+function New-ElevationHandoffDirectory
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$UserSid
+    )
+
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("MidTerm-Install-" + [Guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $root -Force | Out-Null
+
+    $grants = @()
+    $grants += "*$UserSid`:(OI)(CI)F"
+    $grants += "*S-1-5-32-544:(OI)(CI)F"
+    $grants += "*S-1-5-18:(OI)(CI)F"
+
+    $output = & icacls.exe $root /inheritance:r 2>&1
+    if ($LASTEXITCODE -ne 0)
+    {
+        Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+        throw "Could not disable inherited ACLs on elevated installer handoff directory: $output"
+    }
+
+    foreach ($grant in $grants)
+    {
+        $output = & icacls.exe $root /grant:r $grant 2>&1
+        if ($LASTEXITCODE -ne 0)
+        {
+            Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+            throw "Could not grant elevated installer handoff directory ACL '$grant': $output"
+        }
+    }
+
+    return $root
+}
+
+function Join-ProcessArguments
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $quoted = foreach ($argument in $Arguments)
+    {
+        if ($null -eq $argument)
+        {
+            '""'
+        }
+        elseif ($argument -notmatch '[\s"]')
+        {
+            $argument
+        }
+        else
+        {
+            '"' + ($argument -replace '"', '\"') + '"'
+        }
+    }
+
+    return ($quoted -join " ")
+}
+
+function Import-ElevatedReplayFile
+{
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path))
+    {
+        throw "Elevated installer replay file not found: $Path"
+    }
+
+    $replay = Get-Content -Path $Path -Raw | ConvertFrom-Json
+    $script:RunAsUser = [string]$replay.runAsUser
+    $script:RunAsUserSid = [string]$replay.runAsUserSid
+    $script:PasswordHash = if ($null -ne $replay.passwordHash) { [string]$replay.passwordHash } else { $null }
+    $script:Port = [int]$replay.port
+    $script:BindAddress = [string]$replay.bindAddress
+    $script:ConfigureFirewall = [bool]$replay.configureFirewall
+    $script:TrustCert = [bool]$replay.trustCert
+    $script:Dev = [bool]$replay.dev
 }
 
 function Test-ExistingPassword
@@ -1579,6 +1684,11 @@ else
 # If we're being called with ServiceMode flag, we're the elevated process (runs hidden)
 if ($ServiceMode)
 {
+    if ($ReplayFile)
+    {
+        Import-ElevatedReplayFile -Path $ReplayFile
+    }
+
     # If log file specified, redirect all output there for streaming to original terminal
     if ($LogFile)
     {
@@ -1735,40 +1845,44 @@ if ($asService)
         Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
         Write-Host ""
 
-        # Download script to temp file and run elevated with parameters
-        $tempScript = Join-Path $env:TEMP "mt-install-elevated.ps1"
-        $scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.ps1"
-        Invoke-CompatibleWebRequest -Uri $scriptUrl -OutFile $tempScript
-
-        # Build common arguments (without -LogFile; that's only for RunAs path)
-        $baseArguments = @(
-            "-NoProfile"
-            "-ExecutionPolicy", "Bypass"
-            "-File", $tempScript
-            "-ServiceMode"
-            "-RunAsUser", $currentUser.Name
-            "-RunAsUserSid", $currentUser.Sid
-            "-PasswordHash", $passwordHash
-            "-Port", $port
-            "-BindAddress", $bindAddress
-        )
-        if ($configureFirewall) { $baseArguments += "-ConfigureFirewall" }
-        if ($trustCert) { $baseArguments += "-TrustCert" }
-        if ($Dev) { $baseArguments += "-Dev" }
-
+        # Write a replayable elevated leg into an ACL-controlled handoff directory.
         $psExe = Get-WindowsPowerShellPath
         # Elevate with UAC and stream output via a temp log file.
         # Use Windows PowerShell for the elevated leg because it is present on
         # supported Windows systems. Per-user or Store pwsh aliases can fail
         # after UAC when the elevated account cannot resolve the user's alias.
-        $tempLogFile = Join-Path $env:TEMP "mt-install-log.txt"
-        if (Test-Path $tempLogFile) { Remove-Item $tempLogFile -Force }
+        $handoffDir = New-ElevationHandoffDirectory -UserSid $currentUser.Sid
+        $tempScript = Join-Path $handoffDir "mt-install-elevated.ps1"
+        $tempLogFile = Join-Path $handoffDir "mt-install-log.txt"
+        $replayFile = Join-Path $handoffDir "mt-install-replay.json"
 
-        $runAsArguments = $baseArguments + @("-LogFile", $tempLogFile)
+        Set-Content -Path $tempScript -Value (Get-CurrentInstallerScriptContent) -Encoding UTF8 -Force
+        "" | Set-Content -Path $tempLogFile -Encoding UTF8 -Force
+
+        $replay = @{
+            runAsUser = $currentUser.Name
+            runAsUserSid = $currentUser.Sid
+            passwordHash = $passwordHash
+            port = $port
+            bindAddress = $bindAddress
+            configureFirewall = [bool]$configureFirewall
+            trustCert = [bool]$trustCert
+            dev = [bool]$Dev
+        }
+        $replay | ConvertTo-Json -Depth 5 | Set-Content -Path $replayFile -Encoding UTF8 -Force
+
+        $runAsArguments = @(
+            "-NoProfile"
+            "-ExecutionPolicy", "Bypass"
+            "-File", $tempScript
+            "-ServiceMode"
+            "-ReplayFile", $replayFile
+            "-LogFile", $tempLogFile
+        )
 
         try
         {
-            $elevatedProcess = Start-Process $psExe -ArgumentList $runAsArguments -Verb RunAs -WindowStyle Minimized -PassThru
+            $elevatedProcess = Start-Process $psExe -ArgumentList (Join-ProcessArguments -Arguments $runAsArguments) -Verb RunAs -WindowStyle Minimized -PassThru
             $elevated = $true
 
             # Stream output from log file to original terminal
@@ -1804,12 +1918,11 @@ if ($asService)
             {
                 Write-Host ""
                 Write-Host "  Elevated installer exited with code $($elevatedProcess.ExitCode)." -ForegroundColor Red
-                Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
-                Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+                Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
                 exit $elevatedProcess.ExitCode
             }
 
-            Remove-Item $tempLogFile -Force -ErrorAction SilentlyContinue
+            Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
         }
         catch
         {
@@ -1825,12 +1938,15 @@ if ($asService)
             Write-Host "    1. Run this script from an elevated (Admin) terminal" -ForegroundColor White
             Write-Host "    2. Re-run the installer and choose [2] (user install, no admin needed)" -ForegroundColor White
             Write-Host ""
-            Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+            if ($handoffDir)
+            {
+                Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
+            }
             exit 1
         }
 
         # Cleanup
-        Remove-Item $tempScript -Force -ErrorAction SilentlyContinue
+        Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
         return
     }
 

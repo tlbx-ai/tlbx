@@ -92,6 +92,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(AppServerControlWsCommandAcceptedMessage))]
 [JsonSerializable(typeof(RenameSessionRequest))]
 [JsonSerializable(typeof(SetSessionNotesRequest))]
+[JsonSerializable(typeof(SetSessionTopicRequest))]
 [JsonSerializable(typeof(SetSessionControlRequest))]
 [JsonSerializable(typeof(ResizeRequest))]
 [JsonSerializable(typeof(ResizeResponse))]
@@ -322,7 +323,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

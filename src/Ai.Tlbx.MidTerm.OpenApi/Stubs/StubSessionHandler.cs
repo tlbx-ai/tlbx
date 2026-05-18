@@ -91,6 +91,13 @@ public class StubSessionHandler : ISessionHandler
             Notes = request.Notes
         }));
 
+    public Task<IResult> SetSessionTopicAsync(string id, SetSessionTopicRequest request) =>
+        Task.FromResult<IResult>(Results.Json(new SessionInfoDto
+        {
+            Id = id,
+            Topic = request.Topic
+        }));
+
     public Task<IResult> SetSessionControlAsync(string id, SetSessionControlRequest request) =>
         Task.FromResult<IResult>(Results.Json(new SessionInfoDto
         {

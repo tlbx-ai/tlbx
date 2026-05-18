@@ -1149,6 +1149,47 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/sessions/{id}/topic': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          id: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['SetSessionTopicRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['SessionInfoDto'];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/sessions/{id}/control': {
     parameters: {
       query?: never;
@@ -4139,6 +4180,8 @@ export interface components {
       showAgentMessageTimestamps: boolean;
       showUnknownAgentMessages: boolean;
       /** Format: int32 */
+      toolCallOutputLines: number;
+      /** Format: int32 */
       fontSize: number;
       fontFamily: string;
       terminalLigaturesEnabled: boolean;
@@ -4205,7 +4248,7 @@ export interface components {
       devMode: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
-      updateChannel: string;
+      updateChannel: null | string;
       language: components['schemas']['LanguageSetting'];
       managerBarButtons: components['schemas']['ManagerBarButton'][];
       runAsUser: null | string;
@@ -4332,6 +4375,7 @@ export interface components {
       shellType: string;
       name: null | string;
       terminalTitle: null | string;
+      topic: null | string;
       notes: null | string;
       manuallyNamed: boolean;
       currentDirectory: null | string;
@@ -4432,6 +4476,9 @@ export interface components {
     };
     SetSessionNotesRequest: {
       notes?: null | string;
+    };
+    SetSessionTopicRequest: {
+      topic?: null | string;
     };
     /** @enum {unknown} */
     ShareAccessMode: 'ViewOnly' | 'FullControl';

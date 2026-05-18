@@ -403,6 +403,22 @@ public sealed class TtyHostClient : IAsyncDisposable
         }
     }
 
+    public async Task<bool> SetMetadataAsync(TtyHostSessionMetadata metadata, CancellationToken ct = default)
+    {
+        if (!IsConnected) return false;
+
+        try
+        {
+            var msg = TtyHostProtocol.CreateSetMetadata(metadata);
+            var response = await SendRequestAsync(msg, TtyHostMessageType.SetMetadataAck, ct).ConfigureAwait(false);
+            return response is not null;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<bool> SetClipboardImageAsync(
         string filePath,
         string? mimeType,
@@ -760,6 +776,7 @@ public sealed class TtyHostClient : IAsyncDisposable
             case TtyHostMessageType.ResizeAck:
             case TtyHostMessageType.SetNameAck:
             case TtyHostMessageType.SetOrderAck:
+            case TtyHostMessageType.SetMetadataAck:
             case TtyHostMessageType.SetClipboardImageAck:
             case TtyHostMessageType.CloseAck:
             case TtyHostMessageType.Info:

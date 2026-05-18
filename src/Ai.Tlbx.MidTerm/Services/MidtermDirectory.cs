@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "23";
+    private const string GuidanceVersion = "24";
 
     private static int _port;
     private static AuthService? _authService;
@@ -179,6 +179,7 @@ public static class MidtermDirectory
         | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
         | `mt_session` | Print the current MidTerm terminal session id |
         | `mt_context [format]` | Print reusable session-context exports (`text`, `bash`, `pwsh`, or `json`) |
+        | `mt_topic <text>` | Set the current ad-hoc session topic shown in the sidebar (`mt_topic --clear` clears it) |
         | `mt_preview [name]` | Print or switch the current named preview (`default`, `user1`, `user2`, ...) |
         | `mt_previews` | List named previews for the current terminal session |
         | `mt_navigate <url>` | Set the current named web preview target |
@@ -222,9 +223,14 @@ public static class MidtermDirectory
         2. **Act**: `mt_fill`, `mt_submit`, `mt_click`, `mt_exec`
         3. **Verify**: `mt_wait` → `mt_text`
 
+        ## Session Topic Hygiene
+
+        Coding agents should keep the session topic aligned with the user's current high-level work area. Use `mt_topic` with a concise 3-6 word topic such as `DAI teacher demo cleanup` or `MidTerm sidebar Git context`. Update it when the user shifts to a different work area, but not for every small subplot.
+
         ## Multi-Repo Git Tracking
 
         MidTerm can track more than one Git repository for the current terminal session. The session cwd repo is automatic; extra repos are ad hoc session bindings and appear as additional Git blocks in the IDE bar.
+        Coding agents should add every additional repo they use, inspect, or edit with `mt_repo add <path> target` when that repo is not the session working directory, then run `mt_repo refresh`.
 
         | Command | What it does |
         |---------|-------------|
@@ -293,7 +299,9 @@ public static class MidtermDirectory
 
         mt_repo list → mt_repo add "Q:/repos/Jpa" target → mt_repo refresh → check the IDE bar Git blocks
 
-        `mt_repo` bindings are session-scoped and ad hoc. Use them when a worker edits or observes a second repo so MidTerm shows both repo states side by side in the IDE bar. The cwd repo remains automatic; `mt_repo remove REPO_ROOT` only removes extra bindings.
+        `mt_topic` gives repeated ad-hoc sessions a visible purpose in the sidebar. Set a concise 3-6 word high-level topic, and update it when the user's work area changes. Do not churn it for every small subplot.
+
+        `mt_repo` bindings are session-scoped and ad hoc. Coding agents should add every additional repo they use, inspect, or edit when that repo is not the session working directory. This keeps MidTerm showing both repo states side by side in the IDE bar and a compact extra repo line under the sidebar cwd. The cwd repo remains automatic; `mt_repo remove REPO_ROOT` only removes extra bindings.
 
         ## Debug proxy issues
 
@@ -322,6 +330,7 @@ public static class MidtermDirectory
         - Every C# change in the local source loop restarts the source `mt`; wait for the source URL to answer again before trusting browser results from that iteration
         - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
         - mt_context --bash / mt_context --pwsh print export commands for nested shells so child bash/pwsh processes keep the same MidTerm session scope
+        - mt_topic labels the current ad-hoc session in the sidebar; keep it at 3-6 words and update it when the user's high-level topic shifts
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
         - When one MidTerm instance is previewing another, the outer MidTerm browser tab owns `/ws/state`; the nested preview target alone cannot satisfy browser-control commands
         - mt_tail strips ANSI escape sequences and compresses noisy blank-line runs so supervisor sessions can read clean terminal output
@@ -330,7 +339,7 @@ public static class MidtermDirectory
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended
         - mt_slash routes slash commands like `/status` or `/compact` through the same prompt path instead of pasting them manually
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
-        - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; use it before falling back to ad hoc shell git checks when MidTerm should show multiple repo states
+        - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; add every additional repo you use that is not the cwd before falling back to ad hoc shell git checks
         - mt_bootstrap creates a fresh agent-controlled worker session, injects `.midterm`, launches the chosen AI CLI profile, and can immediately send slash commands
         - mt_preview_reset [url] is the fast recovery move when a named preview has the wrong logged-in user or stale browser state
         - After a MidTerm web update, the browser frontend can close while your terminal keeps running in mthost; reopen MidTerm from the terminal and run mt_open again for the current preview instead of recreating the session

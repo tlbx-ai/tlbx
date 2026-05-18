@@ -4,7 +4,6 @@
  * REST wrappers for session-scoped, named web preview contexts.
  */
 
-import { isEmbeddedWebPreviewContext } from './webContext';
 import { getOrCreateTabId } from '../../utils/cookies';
 
 export interface WebPreviewSessionInfo {
@@ -85,6 +84,16 @@ function buildPreviewQuery(sessionId: string, previewName?: string): string {
   return query.toString();
 }
 
+function getEmbeddedWebPreviewPrefix(): string {
+  const match = location.pathname.match(/^\/webpreview\/[^/]+/);
+  return match ? match[0] : '';
+}
+
+function apiUrl(path: string): string {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  return `${getEmbeddedWebPreviewPrefix()}${normalizedPath}`;
+}
+
 /** List all named preview sessions for a terminal session. */
 export async function listWebPreviewSessions(
   sessionId: string,
@@ -94,7 +103,7 @@ export async function listWebPreviewSessions(
   }
 
   try {
-    const res = await fetch(`/api/webpreview/previews?${buildPreviewQuery(sessionId)}`);
+    const res = await fetch(apiUrl(`/api/webpreview/previews?${buildPreviewQuery(sessionId)}`));
     if (!res.ok) {
       return null;
     }
@@ -110,12 +119,12 @@ export async function ensureWebPreviewSession(
   sessionId: string,
   previewName: string,
 ): Promise<WebPreviewSessionInfo | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
   try {
-    const res = await fetch('/api/webpreview/previews', {
+    const res = await fetch(apiUrl('/api/webpreview/previews'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, previewName }),
@@ -134,13 +143,13 @@ export async function deleteWebPreviewSession(
   sessionId: string,
   previewName: string,
 ): Promise<boolean> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return false;
   }
 
   try {
     const res = await fetch(
-      `/api/webpreview/previews?${buildPreviewQuery(sessionId, previewName)}`,
+      apiUrl(`/api/webpreview/previews?${buildPreviewQuery(sessionId, previewName)}`),
       {
         method: 'DELETE',
       },
@@ -157,12 +166,8 @@ export async function setWebPreviewTarget(
   previewName: string,
   url: string,
 ): Promise<WebPreviewTargetResponse | null> {
-  if (isEmbeddedWebPreviewContext()) {
-    return null;
-  }
-
   try {
-    const res = await fetch('/api/webpreview/target', {
+    const res = await fetch(apiUrl('/api/webpreview/target'), {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, previewName, url }),
@@ -186,7 +191,9 @@ export async function getWebPreviewTarget(
   }
 
   try {
-    const res = await fetch(`/api/webpreview/target?${buildPreviewQuery(sessionId, previewName)}`);
+    const res = await fetch(
+      apiUrl(`/api/webpreview/target?${buildPreviewQuery(sessionId, previewName)}`),
+    );
     if (!res.ok) {
       return null;
     }
@@ -198,12 +205,12 @@ export async function getWebPreviewTarget(
 
 /** Clear the reverse proxy target for a named web preview. */
 export async function clearWebPreviewTarget(sessionId: string, previewName: string): Promise<void> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return;
   }
 
   try {
-    await fetch(`/api/webpreview/target?${buildPreviewQuery(sessionId, previewName)}`, {
+    await fetch(apiUrl(`/api/webpreview/target?${buildPreviewQuery(sessionId, previewName)}`), {
       method: 'DELETE',
     });
   } catch {
@@ -216,13 +223,13 @@ export async function clearWebPreviewCookies(
   sessionId: string,
   previewName: string,
 ): Promise<boolean> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return false;
   }
 
   try {
     const res = await fetch(
-      `/api/webpreview/cookies/clear?${buildPreviewQuery(sessionId, previewName)}`,
+      apiUrl(`/api/webpreview/cookies/clear?${buildPreviewQuery(sessionId, previewName)}`),
       {
         method: 'POST',
       },
@@ -238,13 +245,13 @@ export async function clearWebPreviewState(
   sessionId: string,
   previewName: string,
 ): Promise<WebPreviewTargetResponse | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
   try {
     const res = await fetch(
-      `/api/webpreview/state/clear?${buildPreviewQuery(sessionId, previewName)}`,
+      apiUrl(`/api/webpreview/state/clear?${buildPreviewQuery(sessionId, previewName)}`),
       {
         method: 'POST',
       },
@@ -264,12 +271,12 @@ export async function reloadWebPreview(
   previewName: string,
   mode: 'soft' | 'force' | 'hard',
 ): Promise<boolean> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return false;
   }
 
   try {
-    const res = await fetch('/api/webpreview/reload', {
+    const res = await fetch(apiUrl('/api/webpreview/reload'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, previewName, mode }),
@@ -285,12 +292,12 @@ export async function createBrowserPreviewClient(
   sessionId: string,
   previewName: string,
 ): Promise<BrowserPreviewClientResponse | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
   try {
-    const res = await fetch('/api/browser/preview-client', {
+    const res = await fetch(apiUrl('/api/browser/preview-client'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId, previewName, tabId: getOrCreateTabId() }),
@@ -324,7 +331,7 @@ export async function getBrowserPreviewStatus(
   }
 
   try {
-    const res = await fetch(`/api/browser/status?${query.toString()}`);
+    const res = await fetch(apiUrl(`/api/browser/status?${query.toString()}`));
     if (!res.ok) {
       return null;
     }
@@ -341,12 +348,12 @@ export async function runBrowserCommand(
   previewName: string,
   previewId?: string,
 ): Promise<BrowserCommandResponse | null> {
-  if (isEmbeddedWebPreviewContext() || !sessionId) {
+  if (!sessionId) {
     return null;
   }
 
   try {
-    const res = await fetch('/api/browser/command', {
+    const res = await fetch(apiUrl('/api/browser/command'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -369,7 +376,7 @@ export async function captureBrowserScreenshotRaw(
   previewName?: string,
 ): Promise<string | null> {
   try {
-    const res = await fetch('/api/browser/screenshot-raw', {
+    const res = await fetch(apiUrl('/api/browser/screenshot-raw'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

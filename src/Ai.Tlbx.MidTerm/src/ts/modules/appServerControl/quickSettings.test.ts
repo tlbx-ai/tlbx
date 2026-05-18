@@ -67,7 +67,7 @@ describe('appServerControl quick settings', () => {
     vi.unstubAllGlobals();
   });
 
-  it('defaults new codex drafts to gpt-5.4 when no stored model exists', () => {
+  it('defaults new codex drafts to gpt-5.5 when no stored model exists', () => {
     $sessions.set({
       'codex-default': {
         id: 'codex-default',
@@ -75,11 +75,11 @@ describe('appServerControl quick settings', () => {
       } as never,
     });
 
-    expect(getAppServerControlQuickSettingsDraft('codex-default').model).toBe('gpt-5.4');
+    expect(getAppServerControlQuickSettingsDraft('codex-default').model).toBe('gpt-5.5');
   });
 
   it('resolves the concrete provider model for default codex AppServerControl sessions', () => {
-    expect(getAppServerControlResolvedProviderModel('codex')).toBe('gpt-5.4');
+    expect(getAppServerControlResolvedProviderModel('codex')).toBe('gpt-5.5');
   });
 
   it('persists the selected provider model into MidTerm settings', () => {

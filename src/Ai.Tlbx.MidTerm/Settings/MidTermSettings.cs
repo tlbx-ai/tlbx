@@ -33,6 +33,7 @@ public sealed class MidTermSettings
     public string AgentMessageFontFamily { get; set; } = "default";
     public bool ShowAgentMessageTimestamps { get; set; } = false;
     public bool ShowUnknownAgentMessages { get; set; } = true;
+    public int ToolCallOutputLines { get; set; } = 5;
 
     private static ShellType GetPlatformDefaultShell()
     {

@@ -35,6 +35,7 @@ import {
   updateLocalSpace,
   updateLocalWorkspace,
 } from '../spaces/spacesApi';
+import { addGitRepoCacheListener } from '../git';
 import { showCreateWorktreeDialog } from '../spaces/spacesDialogs';
 import { launchSpaceWorkspace, type SpaceSurface } from '../spaces/runtime';
 import { showAlert, showConfirm, showTextPrompt } from '../../utils/dialog';
@@ -186,6 +187,7 @@ const sessionFilterController = createSessionFilterController({
 export function initializeSessionList(): void {
   ensurePopovers();
   addProcessStateListener(queueSidebarSessionProcessInfoUpdate);
+  addGitRepoCacheListener(queueSidebarSessionProcessInfoUpdate);
   sessionFilterController.initialize();
   syncSearchControls();
   document.addEventListener('click', handleGlobalPopoverClick);
@@ -910,6 +912,10 @@ function createSidebarSessionNode(
   }
 
   info.appendChild(titleRow);
+  const topic = createSessionTopicElement(entry.session);
+  if (topic) {
+    info.appendChild(topic);
+  }
 
   const processInfo = document.createElement('div');
   processInfo.className = 'session-process-info';
@@ -1024,7 +1030,60 @@ function syncSidebarSessionItemDisplayText(item: HTMLElement, session: Session):
     subtitle?.remove();
   }
 
+  syncSidebarSessionTopic(item, session.topic);
+
   return true;
+}
+
+function createSessionTopicElement(session: Session): HTMLDivElement | null {
+  const topic = normalizeSessionTopic(session.topic);
+  if (!topic) {
+    return null;
+  }
+
+  const element = document.createElement('div');
+  element.className = 'session-topic';
+  element.textContent = topic;
+  element.title = topic;
+  return element;
+}
+
+function syncSidebarSessionTopic(item: HTMLElement, value: string | null | undefined): void {
+  const topic = normalizeSessionTopic(value);
+  let element = item.querySelector<HTMLDivElement>('.session-topic');
+  const info = item.querySelector<HTMLElement>('.session-info');
+
+  if (!topic) {
+    element?.remove();
+    return;
+  }
+
+  if (!element && info) {
+    element = document.createElement('div');
+    element.className = 'session-topic';
+    const processInfo = info.querySelector<HTMLElement>('.session-process-info');
+    if (processInfo) {
+      info.insertBefore(element, processInfo);
+    } else {
+      info.appendChild(element);
+    }
+  }
+
+  if (!element) {
+    return;
+  }
+
+  if (element.textContent !== topic) {
+    element.textContent = topic;
+  }
+  if (element.title !== topic) {
+    element.title = topic;
+  }
+}
+
+function normalizeSessionTopic(value: string | null | undefined): string | null {
+  const normalized = value?.trim();
+  return normalized ? normalized : null;
 }
 
 function configureSidebarSessionNode(
@@ -1529,6 +1588,7 @@ function matchesSidebarSessionSearch(entry: SidebarSessionRef): boolean {
   return matchesSearchTokens([
     getSessionDisplayName(entry.session),
     entry.session.name,
+    entry.session.topic,
     entry.session.terminalTitle,
     entry.session.currentDirectory,
     entry.session.workspacePath,

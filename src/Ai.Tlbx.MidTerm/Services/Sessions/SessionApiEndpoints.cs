@@ -602,6 +602,15 @@ public static partial class SessionApiEndpoints
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id), AppJsonContext.Default.SessionInfoDto);
         });
 
+        app.MapPut("/api/sessions/{id}/topic", (string id, SetSessionTopicRequest request) =>
+        {
+            if (!sessionManager.SetSessionTopic(id, request.Topic))
+            {
+                return Results.NotFound();
+            }
+            return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id), AppJsonContext.Default.SessionInfoDto);
+        });
+
         app.MapPut("/api/sessions/{id}/control", (string id, SetSessionControlRequest request) =>
         {
             if (!sessionManager.SetAgentControlled(id, request.AgentControlled))

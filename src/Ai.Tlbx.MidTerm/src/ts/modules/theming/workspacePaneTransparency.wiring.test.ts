@@ -43,7 +43,8 @@ describe('workspace pane transparency wiring', () => {
     expect(css).toContain('background-color: transparent;');
     expect(css).toContain('background: transparent;');
     expect(css).toContain('background-color: transparent;');
-    expect(css).toContain('background: var(--terminal-canvas-background, var(--terminal-bg));');
+    expect(css).toContain('linear-gradient(');
+    expect(css).toContain('var(--terminal-canvas-background, var(--terminal-bg));');
   });
 
   it('binds the sidebar header and terminal header to the same app chrome background style', () => {

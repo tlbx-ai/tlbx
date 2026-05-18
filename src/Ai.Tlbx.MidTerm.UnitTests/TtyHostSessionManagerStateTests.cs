@@ -3,6 +3,7 @@ using System.IO;
 using System.Reflection;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -76,6 +77,81 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.True(ok);
         var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
         Assert.Equal("investigate resize\nfollow-up", dto.Notes);
+    }
+
+    [Fact]
+    public async Task SetSessionTopic_ExistingSession_PopulatesSessionListTopic()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = manager.SetSessionTopic("s1", "DAI test worker");
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Equal("DAI test worker", dto.Topic);
+    }
+
+    [Fact]
+    public async Task SetSessionTopic_NormalizesWhitespaceAndLength()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        manager.SetSessionTopic("s1", string.Concat("one", Environment.NewLine, new string('x', 140)));
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.NotNull(dto.Topic);
+        Assert.Equal(120, dto.Topic.Length);
+        Assert.StartsWith("one x", dto.Topic, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SetSessionTopic_BlankClearsTopic()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+        manager.SetSessionTopic("s1", "keep this");
+
+        var ok = manager.SetSessionTopic("s1", " ");
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Null(dto.Topic);
+    }
+
+    [Fact]
+    public async Task ApplyDiscoveredHostMetadata_PopulatesSessionListTopic()
+    {
+        await using var manager = CreateManager();
+        var info = AddCachedSession(manager, "s1");
+        info.Topic = "MidTerm metadata persistence";
+
+        InvokeApplyDiscoveredHostMetadata(manager, info);
+
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Equal("MidTerm metadata persistence", dto.Topic);
+    }
+
+    [Fact]
+    public async Task SetSessionExtraGitReposMetadata_StoresOnlyExtraRepos()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = manager.SetSessionExtraGitReposMetadata("s1",
+        [
+            new GitRepoBinding { RepoRoot = @"Q:\repos\Jpa", Label = "Jpa", Role = "cwd", Source = "auto", IsPrimary = true },
+            new GitRepoBinding { RepoRoot = @"Q:\repos\MidTerm", Label = "MidTerm", Role = "target", Source = "manual", IsPrimary = false }
+        ]);
+
+        Assert.True(ok);
+        var repos = manager.GetPersistedSessionExtraGitRepos("s1");
+        var repo = Assert.Single(repos);
+        Assert.Equal(@"Q:\repos\MidTerm", repo.RepoRoot);
+        Assert.Equal("MidTerm", repo.Label);
+        Assert.Equal("target", repo.Role);
+        Assert.Equal("manual", repo.Source);
     }
 
     [Fact]
@@ -555,6 +631,42 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Equal(@"C:\Actual", info.CurrentDirectory);
     }
 
+    [Fact]
+    public async Task HandleClientForegroundChanged_ForwardsUnchangedForegroundPayloadWithoutStateFanout()
+    {
+        await using var manager = CreateManager();
+        var info = AddCachedSession(manager, "s1");
+        info.ForegroundPid = 1234;
+        info.ForegroundName = "customproc";
+        info.ForegroundCommandLine = "customproc";
+        info.ForegroundDisplayName = "customproc";
+        info.ForegroundProcessIdentity = "customproc";
+        info.CurrentDirectory = @"C:\Repo";
+
+        var foregroundEvents = 0;
+        var stateEvents = 0;
+        manager.OnForegroundChanged += (_, _) => foregroundEvents++;
+        var listenerId = manager.AddStateListener(() => stateEvents++);
+
+        try
+        {
+            InvokeHandleClientForegroundChanged(manager, "s1", new ForegroundChangePayload
+            {
+                Pid = 1234,
+                Name = "customproc",
+                CommandLine = "customproc",
+                Cwd = @"C:\Repo"
+            });
+        }
+        finally
+        {
+            manager.RemoveStateListener(listenerId);
+        }
+
+        Assert.Equal(1, foregroundEvents);
+        Assert.Equal(0, stateEvents);
+    }
+
     private static TtyHostSessionManager CreateManager(SessionControlStateService? sessionControlStateService = null)
     {
         return new TtyHostSessionManager(
@@ -602,6 +714,18 @@ public sealed class TtyHostSessionManagerStateTests
         method.Invoke(manager, [sessionId, 0UL, 120, 30, new ReadOnlyMemory<byte>(output)]);
     }
 
+    private static void InvokeHandleClientForegroundChanged(
+        TtyHostSessionManager manager,
+        string sessionId,
+        ForegroundChangePayload payload)
+    {
+        var method = typeof(TtyHostSessionManager).GetMethod(
+            "HandleClientForegroundChanged",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        method.Invoke(manager, [sessionId, payload]);
+    }
+
     private static void InvokeMergeCachedFields(SessionInfo refreshed, SessionInfo existing)
     {
         var method = typeof(TtyHostSessionManager).GetMethod(
@@ -618,6 +742,15 @@ public sealed class TtyHostSessionManagerStateTests
             BindingFlags.Static | BindingFlags.NonPublic)!;
 
         method.Invoke(null, [info, workingDirectory]);
+    }
+
+    private static void InvokeApplyDiscoveredHostMetadata(TtyHostSessionManager manager, SessionInfo info)
+    {
+        var method = typeof(TtyHostSessionManager).GetMethod(
+            "ApplyDiscoveredHostMetadata",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        method.Invoke(manager, [info]);
     }
 
     private static T GetField<T>(TtyHostSessionManager manager, string name)

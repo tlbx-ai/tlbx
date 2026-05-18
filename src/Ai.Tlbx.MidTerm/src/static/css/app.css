@@ -1542,6 +1542,18 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
     calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
 }
 
+.session-topic {
+  font-size: var(--fs-sm);
+  color: var(--text-on-accent);
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  padding: 0 var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin: 1px calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1) 0;
+}
+
 .session-details {
   font-size: var(--fs-sm);
   color: var(--text-secondary);
@@ -1609,6 +1621,84 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   padding: var(--sidebar-readable-ellipsis-pad-y, 4px) var(--sidebar-readable-ellipsis-pad-x, 3px);
   margin: calc(var(--sidebar-readable-ellipsis-pad-y, 4px) * -1)
     calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
+}
+
+.session-extra-git {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-xs);
+  padding: var(--sidebar-readable-ellipsis-pad-y, 4px) var(--sidebar-readable-ellipsis-pad-x, 3px);
+  margin: calc(var(--sidebar-readable-ellipsis-pad-y, 4px) * -1)
+    calc(var(--sidebar-readable-ellipsis-pad-x, 3px) * -1);
+}
+
+.session-extra-git-details {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 4px;
+  min-width: 0;
+}
+
+.session-extra-git-repo,
+.session-extra-git-branch {
+  min-width: 0;
+}
+
+.session-extra-git-repo {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+
+.session-extra-git-path-root,
+.session-extra-git-path-tail {
+  flex: 0 0 auto;
+}
+
+.session-extra-git-path-middle {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-extra-git-branch {
+  flex: 0 2 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-extra-git-separator {
+  flex: 0 0 auto;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+.session-extra-git-stats {
+  display: inline-flex;
+  gap: 5px;
+  margin-left: auto;
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.session-extra-git-stat-additions {
+  color: var(--accent-green);
+}
+
+.session-extra-git-stat-deletions {
+  color: var(--accent-red);
 }
 
 /* Unnamed sessions: process indicator promoted to title row */
@@ -9005,13 +9095,14 @@ body.shared-session-mode .session-tab-bar {
   background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   min-height: var(--smart-input-textarea-min-height);
-  padding: var(--smart-input-textarea-padding-y) 12px;
+  padding: var(--smart-input-textarea-padding-top) 9px
+    var(--smart-input-textarea-padding-bottom) 9px;
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
   font-weight: var(--terminal-font-weight, normal);
   letter-spacing: var(--terminal-letter-spacing, 0px);
   font-kerning: none;
-  line-height: var(--terminal-line-height, 1);
+  line-height: var(--smart-input-textarea-line-height);
   max-height: calc(
     var(--smart-input-textarea-line-height) * var(--smart-input-textarea-max-visible-lines) +
       var(--smart-input-textarea-multiline-padding-y) * 2 + 2px
@@ -9157,7 +9248,9 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
-.adaptive-footer-dock .smart-input-appServerControl-field + .smart-input-appServerControl-field::before {
+.adaptive-footer-dock
+  .smart-input-appServerControl-field
+  + .smart-input-appServerControl-field::before {
   content: '';
   position: absolute;
   left: 0;
@@ -9244,7 +9337,8 @@ body.shared-session-mode .session-tab-bar {
   z-index: 1;
 }
 
-.smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up .smart-input-appServerControl-dropdown-menu {
+.smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up
+  .smart-input-appServerControl-dropdown-menu {
   top: auto;
   bottom: calc(100% + 8px);
 }
@@ -11887,15 +11981,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-appServerControl-content-width: 100%;
   --agent-appServerControl-user-width: 100%;
   --agent-appServerControl-rail: color-mix(in srgb, var(--border-color) 82%, transparent);
-  --agent-appServerControl-rail-strong: color-mix(in srgb, var(--accent-blue) 46%, var(--border-color));
+  --agent-appServerControl-rail-strong: color-mix(
+    in srgb,
+    var(--accent-blue) 46%,
+    var(--border-color)
+  );
   --agent-appServerControl-surface: transparent;
   --agent-appServerControl-surface-strong: transparent;
   --agent-appServerControl-user-surface: transparent;
   --agent-appServerControl-machine-surface: transparent;
   --agent-appServerControl-machine-surface-strong: transparent;
   --agent-appServerControl-machine-border: color-mix(in srgb, var(--border-color) 72%, transparent);
-  --agent-appServerControl-user-text: color-mix(in srgb, var(--accent-blue) 20%, var(--text-primary) 80%);
-  --agent-appServerControl-user-label: color-mix(in srgb, var(--accent-blue) 54%, var(--text-muted) 46%);
+  --agent-appServerControl-user-text: color-mix(
+    in srgb,
+    var(--accent-blue) 20%,
+    var(--text-primary) 80%
+  );
+  --agent-appServerControl-user-label: color-mix(
+    in srgb,
+    var(--accent-blue) 54%,
+    var(--text-muted) 46%
+  );
   --agent-appServerControl-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
   --agent-history-message-font-family: var(
     --terminal-font-family,
@@ -11908,7 +12014,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --agent-appServerControl-warning: color-mix(in srgb, var(--accent-gold) 84%, white 8%);
   --agent-appServerControl-attention: color-mix(in srgb, var(--accent-red) 82%, white 6%);
   --agent-history-mono-font-family: var(--terminal-font-family, var(--font-mono));
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: transparent;
 }
 
 .agent-view-panel[data-appServerControl-layout='full-width-left'] {
@@ -11932,7 +12038,16 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background: transparent;
+  background:
+    linear-gradient(
+      var(--terminal-canvas-background, var(--terminal-bg)),
+      var(--terminal-canvas-background, var(--terminal-bg))
+    ),
+    linear-gradient(
+      var(--terminal-canvas-background, var(--terminal-bg)),
+      var(--terminal-canvas-background, var(--terminal-bg))
+    ),
+    var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 .agent-runtime-stats {
@@ -11989,6 +12104,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex: 1;
   min-height: 0;
   gap: 8px;
+  position: relative;
 }
 
 .agent-history {
@@ -11999,8 +12115,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   position: relative;
   overflow: hidden auto;
-  padding: 18px 18px 32px;
-  scroll-padding-bottom: 28px;
+  padding: 18px 18px 64px;
+  scroll-padding-bottom: 60px;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
@@ -12178,26 +12294,39 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-scroll-to-bottom {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   position: absolute;
-  right: 20px;
-  bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));
+  right: 18px;
+  bottom: 12px;
   z-index: 2;
-  min-height: 34px;
-  padding: 0 12px;
-  border: 1px solid color-mix(in srgb, var(--agent-appServerControl-live) 26%, transparent);
-  border-radius: 0;
-  background: var(--terminal-ui-background, var(--terminal-bg));
-  color: color-mix(in srgb, var(--text-secondary) 90%, transparent);
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  min-height: var(--command-bay-automation-chip-height, 30.6px);
+  padding: 0 11px;
+  border: 1px solid var(--command-bay-ui-reactive-border, color-mix(in srgb, var(--bg-surface) 84%, transparent));
+  border-radius: var(--command-bay-pill-radius, 8px);
+  background: var(--command-bay-ui-reactive-surface, color-mix(in srgb, var(--bg-elevated) 94%, transparent));
+  color: var(--command-bay-action-ink, color-mix(in srgb, var(--text-secondary) 93%, transparent));
+  box-shadow: var(--command-bay-shadow, none);
+  font-family: var(--font-ui);
+  font-size: var(--command-bay-automation-chip-font-size, 0.729rem);
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.2;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease,
+    transform 120ms ease;
 }
 
 .agent-scroll-to-bottom:hover {
-  border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-color));
-  color: var(--text-primary);
+  border-color: var(--command-bay-border-strong, color-mix(in srgb, var(--border-color) 72%, var(--accent-blue)));
+  background: var(--command-bay-surface-hover, color-mix(in srgb, var(--bg-surface) 94%, transparent));
+  color: var(--command-bay-text, var(--text-primary));
 }
 
 .agent-scroll-to-bottom[hidden] {
@@ -12206,6 +12335,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-entry {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   gap: 4px;
   position: relative;
@@ -12475,7 +12605,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   color: var(--agent-appServerControl-assistant-label);
 }
 
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-header,
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-user
+  .agent-history-header,
 .agent-view-panel[data-appServerControl-layout='full-width-left']
   .agent-history-assistant
   .agent-history-header {
@@ -12483,8 +12615,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   gap: 10px;
 }
 
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-meta,
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-assistant .agent-history-meta {
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-user
+  .agent-history-meta,
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-assistant
+  .agent-history-meta {
   margin-left: 0;
   font-size: 9px;
 }
@@ -12581,7 +12717,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   line-height: var(--terminal-line-height, 1);
 }
 
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user .agent-history-body {
+.agent-view-panel[data-appServerControl-layout='full-width-left']
+  .agent-history-user
+  .agent-history-body {
   color: color-mix(in srgb, var(--agent-appServerControl-user-text) 92%, var(--text-secondary) 8%);
   font-size: var(--terminal-font-size, 16px);
   line-height: var(--terminal-line-height, 1);
@@ -12615,41 +12753,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border: 0;
   background: transparent;
   color: color-mix(in srgb, var(--agent-appServerControl-live) 82%, var(--text-primary));
-}
-
-.agent-history-busy-glyph {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 15px;
-  height: 15px;
-  flex: 0 0 15px;
-}
-
-.agent-history-busy-svg {
-  display: block;
-  width: 15px;
-  height: 15px;
-}
-
-.agent-history-busy-spinner {
-  transform-origin: 12px 12px;
-  animation: agent-history-busy-spin 1.15s linear infinite;
-  animation-delay: var(--agent-busy-spin-delay-ms, 0ms);
-}
-
-.agent-history-busy-triangle {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.75;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  opacity: 0.92;
-}
-
-.agent-history-busy-center {
-  fill: var(--agent-appServerControl-live);
-  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--agent-appServerControl-live) 72%, transparent));
 }
 
 .agent-history-busy-label {
@@ -12689,7 +12792,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   mask-repeat: no-repeat;
   -webkit-mask-size: 300% 100%;
   mask-size: 300% 100%;
-  animation: agent-history-busy-sweep 1.885s ease-in-out infinite alternate;
+  animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out infinite alternate;
   animation-delay: var(--agent-busy-animation-delay-ms, 0ms);
   will-change: mask-position;
 }
@@ -12712,16 +12815,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .agent-history-busy-cancel {
   color: color-mix(in srgb, var(--text-muted) 78%, transparent);
-}
-
-@keyframes agent-history-busy-spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 @keyframes agent-history-busy-sweep {
@@ -13825,6 +13918,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   box-sizing: border-box;
   position: relative;
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   min-height: 0;
@@ -14003,7 +14097,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-direction: column;
   gap: 3px;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--agent-appServerControl-machine-border) 82%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--agent-appServerControl-machine-border) 82%, transparent);
   background: color-mix(in srgb, var(--agent-appServerControl-machine-surface) 78%, transparent);
 }
 
@@ -14094,7 +14189,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   padding: 12px;
   border-radius: 12px;
   background: color-mix(in srgb, var(--agent-appServerControl-machine-surface) 88%, transparent);
-  border: 1px solid color-mix(in srgb, var(--agent-appServerControl-machine-border) 92%, transparent);
+  border: 1px solid
+    color-mix(in srgb, var(--agent-appServerControl-machine-border) 92%, transparent);
 }
 
 .agent-request-field-header {
@@ -14298,10 +14394,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
   .agent-scroll-to-bottom {
     right: 12px;
-    bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));
-    min-height: 28px;
-    padding: 0 12px;
-    font-size: 0.72rem;
+    bottom: 10px;
   }
 
   .agent-request-panel {
@@ -16125,21 +16218,11 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-dock[data-material='solid'] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 0%, transparent),
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 96%, transparent) 22%,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 100%, transparent)
-  );
+  background: var(--bg-sidebar);
 }
 
 .adaptive-footer-dock[data-material='glass'] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 12%, transparent),
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 74%, transparent) 28%,
-    color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 90%, transparent)
-  );
+  background: var(--bg-sidebar);
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] {
@@ -16408,29 +16491,36 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .smart-input-textarea {
-  --smart-input-textarea-collapsed-height: var(--smart-input-control-height);
+  --smart-input-textarea-collapsed-height: var(
+    --command-bay-control-height,
+    var(--smart-input-control-height)
+  );
   --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
   --smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);
   --smart-input-textarea-max-visible-lines: 8;
+  --smart-input-textarea-line-gap-extra: 2px;
   --smart-input-textarea-line-height: calc(
-    var(--terminal-font-size, 16px) * var(--terminal-line-height, 1)
+    var(--terminal-font-size, 16px) * var(--terminal-line-height, 1) +
+      var(--smart-input-textarea-line-gap-extra)
   );
   --smart-input-textarea-multiline-padding-y: max(
     0px,
     calc(
       (
           var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) -
-            2px
+            8px
         ) /
         2
     )
   );
   --smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);
+  --smart-input-textarea-padding-top: var(--smart-input-textarea-padding-y);
+  --smart-input-textarea-padding-bottom: var(--smart-input-textarea-padding-y);
   width: 100%;
   min-height: var(--smart-input-textarea-min-height);
-  padding: var(--smart-input-textarea-padding-y)
-    calc(12px + var(--smart-input-expand-hit-size) - 10px) var(--smart-input-textarea-padding-y)
-    12px;
+  padding: var(--smart-input-textarea-padding-top)
+    calc(9px + var(--smart-input-expand-hit-size) - 10px)
+    var(--smart-input-textarea-padding-bottom) 9px;
   border-radius: 10px;
   border: 1px solid var(--command-bay-border-strong);
   background: var(--command-bay-ui-reactive-surface);
@@ -16440,7 +16530,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   font-weight: var(--terminal-font-weight, normal);
   letter-spacing: var(--terminal-letter-spacing, 0px);
   font-kerning: none;
-  line-height: var(--terminal-line-height, 1);
+  line-height: var(--smart-input-textarea-line-height);
   position: relative;
   z-index: 2;
 }
@@ -17107,15 +17197,18 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-control,
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-dropdown,
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-dropdown-trigger,
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-dropdown,
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-dropdown-trigger,
 .adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-model {
   width: 100%;
   min-width: 0;
   max-width: none;
 }
 
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-control {
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-control {
   min-height: 34px;
   border: 1px solid color-mix(in srgb, var(--border-subtle) 82%, transparent);
   background: color-mix(in srgb, var(--text-input-background, var(--bg-input)) 76%, transparent);
@@ -17124,7 +17217,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   font-weight: 400;
 }
 
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-actions {
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-actions {
   width: 100%;
   justify-content: stretch;
   padding: 0;
@@ -17136,7 +17230,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   min-height: 34px;
 }
 
-.adaptive-footer-status[data-appServerControl-compact='true'] .smart-input-appServerControl-actions::before {
+.adaptive-footer-status[data-appServerControl-compact='true']
+  .smart-input-appServerControl-actions::before {
   display: none;
 }
 
@@ -17541,7 +17636,9 @@ body.keyboard-visible
   white-space: nowrap;
 }
 
-body.keyboard-visible .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl'] .adaptive-footer-status {
+body.keyboard-visible
+  .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl']
+  .adaptive-footer-status {
   top: 0;
   bottom: auto;
   order: -1;
@@ -17557,7 +17654,9 @@ body.keyboard-visible
   background: none;
 }
 
-body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-appServerControl-settings-sheet {
+body.keyboard-visible
+  .adaptive-footer-dock[data-device='mobile']
+  .smart-input-appServerControl-settings-sheet {
   max-height: min(28vh, 196px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -17602,11 +17701,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     padding-left: calc(4px + env(safe-area-inset-left, 0px));
     padding-right: calc(4px + env(safe-area-inset-right, 0px));
     padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-    background: linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 0%, transparent),
-      color-mix(in srgb, var(--terminal-ui-background, var(--terminal-bg)) 100%, transparent) 18%
-    );
+    background: var(--bg-sidebar);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }
@@ -17645,14 +17740,17 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
   .smart-input-textarea {
     --smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));
-    --smart-input-textarea-collapsed-height: 46px;
+    --smart-input-textarea-collapsed-height: var(--command-bay-control-height);
     --smart-input-textarea-min-height: var(--smart-input-textarea-collapsed-height);
-    --smart-input-textarea-line-height: calc(var(--smart-input-mobile-text-size) * 1.2);
-    --smart-input-textarea-padding-y: 7px;
-    padding: var(--smart-input-textarea-padding-y) 36px var(--smart-input-textarea-padding-y) 10px;
+    --smart-input-textarea-line-height: calc(
+      var(--smart-input-mobile-text-size) * 1.2 + var(--smart-input-textarea-line-gap-extra)
+    );
+    --smart-input-textarea-padding-y: 4px;
+    padding: var(--smart-input-textarea-padding-top) 33px
+      var(--smart-input-textarea-padding-bottom) 7px;
     border-radius: 8px;
     font-size: var(--smart-input-mobile-text-size);
-    line-height: 1.2;
+    line-height: var(--smart-input-textarea-line-height);
   }
 
   .smart-input-textarea-shell {

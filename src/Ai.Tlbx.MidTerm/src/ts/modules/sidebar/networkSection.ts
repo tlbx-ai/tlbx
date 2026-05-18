@@ -9,7 +9,6 @@ import { createLogger } from '../logging';
 import { t } from '../i18n';
 
 const log = createLogger('networkSection');
-const STORAGE_KEY = 'midterm.networkSectionCollapsed';
 
 export function initNetworkSection(): void {
   const section = document.getElementById('network-section');
@@ -21,7 +20,6 @@ export function initNetworkSection(): void {
   }
 
   const isUntrusted = !window.isSecureContext;
-  const isCollapsed = localStorage.getItem(STORAGE_KEY) !== 'false';
 
   if (isUntrusted) {
     section.classList.add('untrusted');
@@ -40,13 +38,10 @@ export function initNetworkSection(): void {
     }
   }
 
-  if (isCollapsed) {
-    section.classList.add('collapsed');
-  }
+  section.classList.add('collapsed');
 
   toggleBtn.addEventListener('click', () => {
     const nowCollapsed = section.classList.toggle('collapsed');
-    localStorage.setItem(STORAGE_KEY, String(nowCollapsed));
     log.info(() => `Network section ${nowCollapsed ? 'collapsed' : 'expanded'}`);
   });
 

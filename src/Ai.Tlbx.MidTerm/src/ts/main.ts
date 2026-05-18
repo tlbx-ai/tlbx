@@ -272,7 +272,7 @@ window.mmDebug = {
     },
     async showScenario(
       sessionId: string,
-      scenario: 'mixed' | 'tables' | 'long' | 'workflow' = 'mixed',
+      scenario: 'mixed' | 'tables' | 'long' | 'massive' | 'workflow' = 'mixed',
     ): Promise<boolean> {
       setSessionAppServerControlAvailability(sessionId, true);
       switchTab(sessionId, 'agent');
@@ -685,6 +685,7 @@ function createPendingSession(cols: number, rows: number): string {
     exitCode: null,
     name: '',
     terminalTitle: '',
+    topic: null,
     currentDirectory: '',
     foregroundPid: null,
     foregroundName: null,

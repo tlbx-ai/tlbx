@@ -106,12 +106,36 @@ public sealed partial class WebPreviewProxyMiddleware
           try{Object.defineProperty(window,"top",{get:function(){return window},configurable:true});}catch(e){}
           try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
           try{Object.defineProperty(window,"frameElement",{get:function(){return null},configurable:true});}catch(e){}
-          var P="/webpreview",E=P+"/_ext?u=";
+          function mtProxyPrefix(){
+            var path=location.pathname||"";
+            if(path===P||path.indexOf(P+"/")===0)return "";
+            var idx=path.indexOf(P+"/");
+            if(idx>0)return path.slice(0,idx);
+            var match=path.match(/^\/webpreview\/[^/]+/);
+            return match?match[0]:"";
+          }
+          var P="/webpreview",BP=mtProxyPrefix(),PP=BP+P,E=PP+"/_ext?u=";
+          function syncProxyBase(){
+            try{
+              BP=mtProxyPrefix();PP=BP+P;E=PP+"/_ext?u=";
+              var baseEl=document.querySelector("base");
+              if(baseEl&&BP)baseEl.setAttribute("href",PP+"/");
+              else if(baseEl){
+                var baseHref=baseEl.getAttribute("href")||"";
+                if(baseHref.indexOf("/webpreview/")===0&&baseHref.indexOf(P+"/")!==0){
+                  baseEl.setAttribute("href",P+baseHref.replace(/\/?$/,"/"));
+                }
+              }
+            }catch(e){}
+          }
+          syncProxyBase();
+          try{queueMicrotask(syncProxyBase);}catch(e){setTimeout(syncProxyBase,0);}
+          document.addEventListener("DOMContentLoaded",syncProxyBase);
           function ar(u){
             if(!mtReloadToken||typeof u!=="string")return u;
             try{
               var parsed=new URL(u,location.href);
-              if(parsed.pathname===P||parsed.pathname.indexOf(P+"/")===0){
+              if(parsed.pathname===PP||parsed.pathname.indexOf(PP+"/")===0){
                 parsed.searchParams.set("__mtReloadToken",mtReloadToken);
                 if(/^(?:https?:|wss?:)/i.test(u))return parsed.toString();
                 return parsed.pathname+parsed.search+parsed.hash;
@@ -214,7 +238,6 @@ public sealed partial class WebPreviewProxyMiddleware
             };
           }
           function ensureServiceWorker(){
-            try{var existing=navigator.serviceWorker;if(existing)return existing;}catch(e){}
             var fallback=mkSwContainer();
             if(!dprop(navigator,"serviceWorker",function(){return fallback;})){
               try{navigator.serviceWorker=fallback;}catch(e){}
@@ -230,10 +253,10 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
               try{return r(new URL(u,document.baseURI).toString());}catch(e){}
             }
-            if(u.startsWith("/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return ar(P+u);
+            if(u.startsWith("/")&&!u.startsWith(PP+"/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return ar(PP+u);
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
-                if(h.host===location.host&&!h.pathname.startsWith(P+"/"))return ar(h.protocol+"//"+ h.host+P+h.pathname+h.search+h.hash);
+                if(h.host===location.host&&!h.pathname.startsWith(PP+"/"))return ar(h.protocol+"//"+ h.host+PP+h.pathname+h.search+h.hash);
                 if(h.host!==location.host){
                   return ar(E+encodeURIComponent(u));
                 }
@@ -956,8 +979,11 @@ public sealed partial class WebPreviewProxyMiddleware
             try{
               if(bws&&(bws.readyState===0||bws.readyState===1))return;
               var proto=location.protocol==="https:"?"wss:":"ws:";
-              var wsUrl=proto+"//"+location.host+"/ws/browser";
-              var routeMatch=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+              var routeMatch=(P||"").match(/^\/webpreview\/([^/]+)/);
+              if(!routeMatch){
+                routeMatch=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+              }
+              var wsUrl=proto+"//"+location.host+BP+"/ws/browser";
               if(routeMatch&&routeMatch[1]){
                 wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"routeKey="+encodeURIComponent(routeMatch[1]);
               }
@@ -985,8 +1011,8 @@ public sealed partial class WebPreviewProxyMiddleware
     private static string GetUrlRewriteScript(string routePrefix)
     {
         return UrlRewriteScript.Replace(
-            "var P=\"/webpreview\",E=P+\"/_ext?u=\";",
-            $"var P=\"{routePrefix}\",E=P+\"/_ext?u=\";",
+            "var P=\"/webpreview\"",
+            $"var P=\"{routePrefix}\"",
             StringComparison.Ordinal);
     }
 
@@ -1584,7 +1610,6 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return html.Contains("<!--Blazor:", StringComparison.Ordinal)
-            || html.Contains("_framework/blazor.", StringComparison.OrdinalIgnoreCase)
             || html.Contains("/_blazor/", StringComparison.OrdinalIgnoreCase);
     }
 

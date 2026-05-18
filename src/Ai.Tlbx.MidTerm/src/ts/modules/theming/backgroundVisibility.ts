@@ -32,7 +32,13 @@ export function isMobilePresentationContext(): boolean {
     return false;
   }
 
-  return (
-    window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches || navigator.maxTouchPoints > 0
-  );
+  const hasTouchScreen = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  const hasCoarsePointer =
+    typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+  const compactTouchViewport =
+    hasTouchScreen &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
+
+  return hasCoarsePointer || compactTouchViewport;
 }

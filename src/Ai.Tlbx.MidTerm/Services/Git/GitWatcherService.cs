@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models.Git;
 
 namespace Ai.Tlbx.MidTerm.Services.Git;
@@ -343,6 +344,24 @@ public sealed class GitWatcherService : IDisposable
 
         await RefreshStatusAsync(repoRoot);
         return GetRepoBindings(sessionId);
+    }
+
+    public async Task RestoreSessionExtraReposAsync(string sessionId, IEnumerable<TtyHostGitRepoMetadata> repos)
+    {
+        foreach (var repo in repos)
+        {
+            if (string.IsNullOrWhiteSpace(repo.RepoRoot))
+            {
+                continue;
+            }
+
+            await AddSessionRepoAsync(
+                sessionId,
+                repo.RepoRoot,
+                repo.Label,
+                repo.Role,
+                string.IsNullOrWhiteSpace(repo.Source) ? "manual" : repo.Source).ConfigureAwait(false);
+        }
     }
 
     public bool RemoveSessionRepo(string sessionId, string repoRoot)

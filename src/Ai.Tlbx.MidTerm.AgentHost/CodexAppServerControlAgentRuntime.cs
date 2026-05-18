@@ -13,6 +13,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
 {
     private const int MaxInlineImageBytes = 10 * 1024 * 1024;
     private const int CodexStderrBlockFlushDelayMs = 175;
+    private const string CodexRemoteCompactionDisabledEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_REMOTE_COMPACTION_V2_DISABLED";
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
     private static readonly HashSet<string> SupportedApprovalDecisions = new(StringComparer.Ordinal)
     {
@@ -1918,7 +1919,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
     {
         var process = new Process
         {
-            StartInfo = CreateProcessStartInfo(binaryPath, "app-server", workingDirectory),
+            StartInfo = CreateProcessStartInfo(binaryPath, BuildCodexAppServerArguments(), workingDirectory),
             EnableRaisingEvents = true
         };
         AppServerControlProviderRuntimeConfiguration.ApplyUserProfileEnvironment(process.StartInfo, userProfileDirectory);
@@ -2024,17 +2025,18 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                     continue;
                 }
 
-                var label = GetString(model, "displayName") ?? GetString(model, "name") ?? value;
+                var canonicalValue = value.Trim().ToLowerInvariant();
+                var label = GetString(model, "displayName") ?? GetString(model, "name") ?? canonicalValue;
                 var description = GetString(model, "description") ?? GetString(model, "shortDescription");
-                if (options.Any(existing => string.Equals(existing.Value, value, StringComparison.Ordinal)))
+                if (options.Any(existing => string.Equals(existing.Value, canonicalValue, StringComparison.OrdinalIgnoreCase)))
                 {
                     continue;
                 }
 
                 options.Add(new AppServerControlQuickSettingsOption
                 {
-                    Value = value.Trim(),
-                    Label = string.IsNullOrWhiteSpace(label) ? value.Trim() : label.Trim(),
+                    Value = canonicalValue,
+                    Label = string.IsNullOrWhiteSpace(label) ? canonicalValue : label.Trim(),
                     Description = AppServerControlQuickSettings.NormalizeOptionalValue(description),
                     Hidden = false,
                     IsDefault = GetBoolean(model, "isDefault") == true
@@ -2042,7 +2044,10 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             }
         }
 
-        return options;
+        return options
+            .OrderBy(static option => GetCodexModelSortKey(option.Value), StringComparer.Ordinal)
+            .ThenBy(static option => option.Value, StringComparer.Ordinal)
+            .ToList();
     }
 
     private static List<AppServerControlQuickSettingsOption> ReadCodexEffortOptions(
@@ -2063,14 +2068,14 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
                 var model = models.Current;
                 var value = GetString(model, "id") ?? GetString(model, "model");
                 if (!string.IsNullOrWhiteSpace(selectedModel) &&
-                    string.Equals(value, selectedModel, StringComparison.Ordinal))
+                    string.Equals(value, selectedModel, StringComparison.OrdinalIgnoreCase))
                 {
                     selected = model;
                     break;
                 }
 
                 if (selected is null && !string.IsNullOrWhiteSpace(defaultModel) &&
-                    string.Equals(value, defaultModel, StringComparison.Ordinal))
+                    string.Equals(value, defaultModel, StringComparison.OrdinalIgnoreCase))
                 {
                     selected = model;
                 }
@@ -2905,6 +2910,27 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
         };
     }
 
+    private static string BuildCodexAppServerArguments()
+    {
+        var arguments = "-c fast_default_opt_out=false";
+        if (!IsEnvironmentFlagEnabled(CodexRemoteCompactionDisabledEnvironmentVariable))
+        {
+            arguments += " --enable remote_compaction_v2";
+        }
+
+        return arguments + " app-server";
+    }
+
+    private static bool IsEnvironmentFlagEnabled(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        return value is not null &&
+               (string.Equals(value, "1", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "true", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(value, "on", StringComparison.OrdinalIgnoreCase));
+    }
+
     private static bool TryResolveCodexApprovalRequestType(string method, out string requestType)
     {
         if (method.Contains("commandExecution", StringComparison.OrdinalIgnoreCase) ||
@@ -3665,6 +3691,22 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             "high" => "High",
             "xhigh" => "Extra high",
             _ => CultureInfo.InvariantCulture.TextInfo.ToTitleCase(effort.Replace('_', ' ').Trim())
+        };
+    }
+
+    private static string GetCodexModelSortKey(string value)
+    {
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "gpt-5.5" => "000",
+            "gpt-5.4" => "010",
+            "gpt-5.4-mini" => "020",
+            "gpt-5.3-codex" => "030",
+            "gpt-5.3-codex-spark" => "040",
+            "gpt-5.2" => "050",
+            "gpt-5" => "060",
+            "gpt-5.4-codex" => "070",
+            _ => "900:" + value.Trim().ToLowerInvariant()
         };
     }
 

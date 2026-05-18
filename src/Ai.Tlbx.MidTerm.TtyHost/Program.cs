@@ -1018,6 +1018,13 @@ public static class Program
                         Log.Verbose(() => $"Order set to {order}");
                         break;
 
+                    case TtyHostMessageType.SetMetadata:
+                        var metadata = TtyHostProtocol.ParseSetMetadata(payload) ?? new TtyHostSessionMetadata();
+                        session.SetMetadata(metadata);
+                        var metadataAck = TtyHostProtocol.CreateSetMetadataAck();
+                        EnqueueFrame(channelWriter, metadataAck);
+                        break;
+
                     case TtyHostMessageType.SetClipboardImage:
                         var clipboardRequest = TtyHostProtocol.ParseSetClipboardImage(payload);
                         if (clipboardRequest is null || string.IsNullOrWhiteSpace(clipboardRequest.FilePath))
@@ -1239,9 +1246,12 @@ internal sealed class TerminalSession : IDisposable
     private readonly object _bufferLock = new();
     private readonly object _transportLock = new();
     private readonly object _inputTraceLock = new();
+    private readonly object _metadataLock = new();
     private readonly int _scrollbackBytes;
     private TtyHostTransportInfo _transportInfo;
     private InputTraceState? _inputTrace;
+    private string? _topic;
+    private TtyHostGitRepoMetadata[] _extraGitRepos = [];
 
     public string Id { get; }
     public string? OwnerInstanceId { get; }
@@ -1488,6 +1498,24 @@ internal sealed class TerminalSession : IDisposable
         Order = order;
     }
 
+    public void SetMetadata(TtyHostSessionMetadata metadata)
+    {
+        lock (_metadataLock)
+        {
+            _topic = string.IsNullOrWhiteSpace(metadata.Topic) ? null : metadata.Topic;
+            _extraGitRepos = metadata.ExtraGitRepos
+                .Where(static repo => !string.IsNullOrWhiteSpace(repo.RepoRoot))
+                .Select(static repo => new TtyHostGitRepoMetadata
+                {
+                    RepoRoot = repo.RepoRoot,
+                    Label = repo.Label,
+                    Role = repo.Role,
+                    Source = repo.Source
+                })
+                .ToArray();
+        }
+    }
+
     public int GetBufferLength(int? maxBytes = null)
     {
         lock (_bufferLock)
@@ -1687,6 +1715,20 @@ internal sealed class TerminalSession : IDisposable
             OwnerInstanceId = OwnerInstanceId,
             Transport = GetTransportInfo()
         };
+
+        lock (_metadataLock)
+        {
+            info.Topic = _topic;
+            info.ExtraGitRepos = _extraGitRepos
+                .Select(static repo => new TtyHostGitRepoMetadata
+                {
+                    RepoRoot = repo.RepoRoot,
+                    Label = repo.Label,
+                    Role = repo.Role,
+                    Source = repo.Source
+                })
+                .ToArray();
+        }
 
         if (_processMonitor is not null)
         {

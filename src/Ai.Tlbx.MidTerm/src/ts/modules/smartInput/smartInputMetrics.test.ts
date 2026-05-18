@@ -10,6 +10,7 @@ interface FakeTextarea {
   dataset: Record<string, string | undefined>;
   scrollHeight: number;
   scrollTop: number;
+  value: string;
   style: {
     cssText?: string;
     fontSize: string;
@@ -18,6 +19,7 @@ interface FakeTextarea {
     minHeight: string;
     overflowY: string;
     setPropertyValue?: Record<string, string>;
+    getPropertyValue: (name: string) => string;
     removeProperty: (name: string) => void;
     setProperty: (name: string, value: string) => void;
   };
@@ -31,13 +33,19 @@ function createTextarea(scrollHeight: number): HTMLTextAreaElement {
     minHeight: '44px',
     overflowY: '',
     setPropertyValue: {},
+    getPropertyValue(name: string) {
+      return this.setPropertyValue?.[name] ?? '';
+    },
     removeProperty(name: string) {
       if (name === 'min-height') {
         this.minHeight = '';
+        return;
       }
       if (name === 'height') {
         this.height = '';
+        return;
       }
+      delete this.setPropertyValue![name];
     },
     setProperty(name: string, value: string) {
       if (name === 'min-height') {
@@ -57,6 +65,7 @@ function createTextarea(scrollHeight: number): HTMLTextAreaElement {
     dataset: {},
     scrollHeight,
     scrollTop: 0,
+    value: '',
     style,
   } as HTMLTextAreaElement;
 }
@@ -147,6 +156,7 @@ describe('smartInputMetrics', () => {
 
   it('keeps collapsed prompts pinned to the control height without overflow', () => {
     const textarea = createTextarea(26);
+    textarea.value = 'test 123';
     vi.stubGlobal(
       'getComputedStyle',
       (target: HTMLTextAreaElement) =>
@@ -170,5 +180,81 @@ describe('smartInputMetrics', () => {
         '--smart-input-textarea-rendered-height'
       ],
     ).toBe('44px');
+    expect(
+      (textarea.style as FakeTextarea['style']).setPropertyValue?.[
+        '--smart-input-textarea-padding-top'
+      ],
+    ).toBe('13px');
+    expect(
+      (textarea.style as FakeTextarea['style']).setPropertyValue?.[
+        '--smart-input-textarea-padding-bottom'
+      ],
+    ).toBe('7px');
+  });
+
+  it('keeps multiline prompts vertically symmetric', () => {
+    const textarea = createTextarea(44);
+    textarea.value = 'test 123\n5654897';
+    vi.stubGlobal(
+      'getComputedStyle',
+      (target: HTMLTextAreaElement) =>
+        ({
+          borderBottomWidth: '1px',
+          borderTopWidth: '1px',
+          fontSize: target.style.fontSize || '16px',
+          lineHeight: target.style.lineHeight || '18px',
+          minHeight: target.style.minHeight || '44px',
+          paddingBottom: '10px',
+          paddingTop: '10px',
+        }) as CSSStyleDeclaration,
+    );
+
+    resizeSmartInputTextarea(textarea);
+
+    expect(
+      (textarea.style as FakeTextarea['style']).setPropertyValue?.[
+        '--smart-input-textarea-padding-top'
+      ],
+    ).toBe('10px');
+    expect(
+      (textarea.style as FakeTextarea['style']).setPropertyValue?.[
+        '--smart-input-textarea-padding-bottom'
+      ],
+    ).toBe('10px');
+  });
+
+  it('recomputes optical padding from stylesheet values instead of stale inline values', () => {
+    const textarea = createTextarea(26);
+    textarea.value = 'test 123';
+    textarea.style.setProperty('--smart-input-textarea-padding-top', '0px');
+    textarea.style.setProperty('--smart-input-textarea-padding-bottom', '0px');
+
+    vi.stubGlobal(
+      'getComputedStyle',
+      (target: HTMLTextAreaElement) =>
+        ({
+          borderBottomWidth: '1px',
+          borderTopWidth: '1px',
+          fontSize: target.style.fontSize || '16px',
+          lineHeight: target.style.lineHeight || '18px',
+          minHeight: target.style.minHeight || '44px',
+          paddingBottom:
+            target.style.getPropertyValue('--smart-input-textarea-padding-bottom') || '10px',
+          paddingTop: target.style.getPropertyValue('--smart-input-textarea-padding-top') || '10px',
+        }) as CSSStyleDeclaration,
+    );
+
+    resizeSmartInputTextarea(textarea);
+
+    expect(
+      (textarea.style as FakeTextarea['style']).setPropertyValue?.[
+        '--smart-input-textarea-padding-top'
+      ],
+    ).toBe('13px');
+    expect(
+      (textarea.style as FakeTextarea['style']).setPropertyValue?.[
+        '--smart-input-textarea-padding-bottom'
+      ],
+    ).toBe('7px');
   });
 });

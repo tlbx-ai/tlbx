@@ -81,8 +81,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-appServerControl-actions[hidden] {');
     expect(css).toContain('display: none !important;');
     expect(css).toContain('.adaptive-footer-dock .smart-input-appServerControl-dropdown-menu {');
-    expect(css).toContain(
-      '.smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up .smart-input-appServerControl-dropdown-menu {',
+    expect(css).toMatch(
+      /\.smart-input-appServerControl-dropdown\.smart-input-appServerControl-dropdown-open-up\s+\.smart-input-appServerControl-dropdown-menu\s*\{/,
     );
     expect(css).toContain('position: absolute;');
     expect(css).toContain('z-index: 5;');
@@ -123,7 +123,9 @@ describe('smart input tab wiring', () => {
       'const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);',
     );
     expect(footerSupportSource).toContain('appServerControlModelSelect,\n    quickSettingsLocked,');
-    expect(footerSupportSource).toContain('appServerControlEffortSelect,\n    quickSettingsLocked,');
+    expect(footerSupportSource).toContain(
+      'appServerControlEffortSelect,\n    quickSettingsLocked,',
+    );
     expect(footerSupportSource).toContain(
       'setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, quickSettingsLocked);',
     );
@@ -201,9 +203,15 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--smart-input-control-height: 42px;');
     expect(css).toContain('--command-bay-control-height: 36px;');
     expect(css).toContain('--command-bay-surface: color-mix(');
-    expect(css).toContain('--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));');
+    expect(css).toContain(
+      '--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));',
+    );
     expect(css).toContain('font-size: var(--smart-input-mobile-text-size);');
-    expect(css).toContain('padding: var(--smart-input-textarea-padding-y) 36px var(--smart-input-textarea-padding-y) 10px;');
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'padding: var(--smart-input-textarea-padding-top) 33px var(--smart-input-textarea-padding-bottom) 7px;',
+      ),
+    );
     expect(css).toContain('align-items: center;');
     expect(css).toContain('.smart-input-tools-toggle::before,');
     expect(viewSource).toContain(
@@ -238,7 +246,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-attachments {');
     expect(css).toContain('.smart-input-attachment-chip {');
     expect(css).toContain('.smart-input-attachment-open {');
-    expect(viewSource).toContain("textarea.addEventListener('pointerdown', () => {");
+    expect(viewSource).not.toContain("textarea.addEventListener('pointerdown', () => {");
+    expect(viewSource).not.toContain('document.activeElement !== textarea');
   });
 
   it('keeps command-bay panels in reserved flow while only textarea growth may overlay the pane', () => {
@@ -288,24 +297,73 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       '--smart-input-textarea-rendered-height: var(--smart-input-textarea-min-height);',
     );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        '--smart-input-textarea-collapsed-height: var( --command-bay-control-height, var(--smart-input-control-height) );',
+      ),
+    );
     expect(css).toContain(
-      '--smart-input-textarea-collapsed-height: var(--smart-input-control-height);',
+      '--smart-input-textarea-collapsed-height: var(--command-bay-control-height);',
     );
     expect(css).toContain(
       '--smart-input-textarea-padding-y: var(--smart-input-textarea-multiline-padding-y);',
     );
+    expect(css).toContain(
+      '--smart-input-textarea-padding-top: var(--smart-input-textarea-padding-y);',
+    );
+    expect(css).toContain(
+      '--smart-input-textarea-padding-bottom: var(--smart-input-textarea-padding-y);',
+    );
     expect(compactWhitespace(css)).toContain(
       compactWhitespace(
-        'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 2px',
+        '.adaptive-footer-dock .smart-input-textarea { flex: 1; resize: none; box-sizing: border-box;',
+      ),
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'padding: var(--smart-input-textarea-padding-top) 9px var(--smart-input-textarea-padding-bottom) 9px;',
+      ),
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'padding: var(--smart-input-textarea-padding-top) calc(9px + var(--smart-input-expand-hit-size) - 10px) var(--smart-input-textarea-padding-bottom) 9px;',
+      ),
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        'var(--smart-input-textarea-collapsed-height) - var(--smart-input-textarea-line-height) - 8px',
       ),
     );
     expect(css).toContain('--smart-input-textarea-line-height: calc(');
     expect(css).toContain('var(--terminal-line-height, 1)');
+    expect(css).toContain('--smart-input-textarea-line-gap-extra: 2px;');
+    expect(css).toContain('var(--smart-input-textarea-line-gap-extra)');
+    expect(css).toContain('line-height: var(--smart-input-textarea-line-height);');
     expect(css).toContain('font-kerning: none;');
     expect(css).toContain('@supports (leading-trim: both) and (text-edge: cap alphabetic) {');
     expect(css).toContain('overflow: visible;');
     expect(css).toContain('.manager-btn-overflow-hidden {');
-    expect(metricsSource).not.toContain("const SINGLE_LINE_DATASET_KEY = 'midtermSingleLine';");
+    expect(metricsSource).toContain('const SINGLE_LINE_VERTICAL_OPTICAL_OFFSET_PX = 3;');
+    expect(metricsSource).toContain('--smart-input-textarea-padding-top');
+    expect(metricsSource).toContain('--smart-input-textarea-padding-bottom');
+  });
+
+  it('matches the Command Bay dock background to the sidebar background', () => {
+    const solidRule = getCssRule(".adaptive-footer-dock[data-material='solid']");
+    const glassRule = getCssRule(".adaptive-footer-dock[data-material='glass']");
+
+    expect(solidRule).toContain('background: var(--bg-sidebar);');
+    expect(glassRule).toContain('background: var(--bg-sidebar);');
+    expect(solidRule).not.toContain('linear-gradient');
+    expect(glassRule).not.toContain('linear-gradient');
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace(
+        '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px;',
+      ),
+    );
+    expect(compactWhitespace(css)).toContain(
+      compactWhitespace('background: var(--bg-sidebar); -webkit-backdrop-filter: none;'),
+    );
   });
 
   it('keeps attachment and token rerenders from snapping the composer viewport back to the top', () => {
@@ -489,6 +547,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('toggleAppServerControlPlanMode(sessionId);');
     expect(source).toContain("createAppServerControlActionButton(\n        'Goal'");
     expect(source).toContain('void prepareAppServerControlGoal(sessionId);');
+    expect(source).toContain('if (appServerControlGoalComposeSessionId === sessionId) {');
+    expect(source).toContain("appServerControlGoalComposeSessionId = null;");
     expect(source).toContain('await setAppServerControlGoal(sessionId, { objective });');
     expect(viewSource).toContain("['xhigh', 'XHigh']");
   });
@@ -536,14 +596,16 @@ describe('smart input tab wiring', () => {
   });
 
   it('keeps mobile AppServerControl status awareness and bottom-jump chrome out of the keyboard overlap zone', () => {
-    expect(css).toContain(
-      "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl'] .adaptive-footer-status {",
+    expect(css).toMatch(
+      /body\.keyboard-visible\s+\.adaptive-footer-dock\[data-device='mobile'\]\[data-surface='appServerControl'\]\s+\.adaptive-footer-status\s*\{/,
     );
-    expect(css).toContain(
-      "body.keyboard-visible\n  .adaptive-footer-dock[data-device='mobile'][data-surface='appServerControl']\n  .adaptive-footer-primary {",
+    expect(css).toMatch(
+      /body\.keyboard-visible\s+\.adaptive-footer-dock\[data-device='mobile'\]\[data-surface='appServerControl'\]\s+\.adaptive-footer-primary\s*\{/,
     );
-    expect(css).toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
-    expect(css).toContain('bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(css).toContain('bottom: 12px;');
+    expect(css).toContain('bottom: 10px;');
+    expect(css).not.toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
+    expect(css).not.toContain('bottom: calc(12px + var(--adaptive-footer-reserved-height, 0px));');
     expect(source).toContain(
       'function shouldKeepFocusedComposerVisibleOnMobileAppServerControl(): boolean {',
     );

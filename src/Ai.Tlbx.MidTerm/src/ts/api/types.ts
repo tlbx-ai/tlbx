@@ -31,10 +31,11 @@ export type BootstrapResponse = Schemas['BootstrapResponse'];
 export type BootstrapLoginResponse = Schemas['BootstrapLoginResponse'];
 
 // Sessions
-export type SessionInfoDto = Omit<Schemas['SessionInfoDto'], 'notes'> & {
+export type SessionInfoDto = Omit<Schemas['SessionInfoDto'], 'notes' | 'topic'> & {
   appServerControlOnly?: boolean;
   profileHint?: string | null;
   appServerControlResumeThreadId?: string | null;
+  topic?: string | null;
   notes?: string | null;
   spaceId?: string | null;
   workspacePath?: string | null;

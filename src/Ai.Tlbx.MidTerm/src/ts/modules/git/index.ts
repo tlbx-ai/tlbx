@@ -34,6 +34,7 @@ const log = createLogger('git');
 const cachedStatuses = new Map<string, GitStatusResponse>();
 const cachedRepos = new Map<string, GitRepoBinding[]>();
 const sessionCwds = new Map<string, string>();
+const repoCacheListeners = new Set<(sessionId: string) => void>();
 let previousSessionId: string | null = null;
 
 export type { GitDiagEvent };
@@ -148,6 +149,23 @@ export function destroyGitSession(sessionId: string): void {
   }
 }
 
+export function getCachedGitReposForSession(sessionId: string): GitRepoBinding[] {
+  return cachedRepos.get(sessionId) ?? [];
+}
+
+export function addGitRepoCacheListener(listener: (sessionId: string) => void): () => void {
+  repoCacheListeners.add(listener);
+  return () => {
+    repoCacheListeners.delete(listener);
+  };
+}
+
+function notifyGitRepoCacheChanged(sessionId: string): void {
+  for (const listener of repoCacheListeners) {
+    listener(sessionId);
+  }
+}
+
 function cacheRepos(sessionId: string, repos: GitRepoBinding[]): void {
   cachedRepos.set(sessionId, repos);
   for (const repo of repos) {
@@ -155,6 +173,7 @@ function cacheRepos(sessionId: string, repos: GitRepoBinding[]): void {
       cachedStatuses.set(makeRepoStatusKey(sessionId, repo.repoRoot), repo.status);
     }
   }
+  notifyGitRepoCacheChanged(sessionId);
 }
 
 function syncCachedRepoStatus(sessionId: string, status: GitStatusResponse): void {
@@ -173,6 +192,7 @@ function syncCachedRepoStatus(sessionId: string, status: GitStatusResponse): voi
   } else {
     repos.push(statusToRepoBinding(status));
   }
+  notifyGitRepoCacheChanged(sessionId);
 }
 
 function statusToRepoBinding(status: GitStatusResponse): GitRepoBinding {
@@ -202,6 +222,7 @@ function clearSessionGitCache(sessionId: string): void {
       cachedStatuses.delete(key);
     }
   }
+  notifyGitRepoCacheChanged(sessionId);
 }
 
 async function promptAndAddRepo(sessionId: string): Promise<void> {

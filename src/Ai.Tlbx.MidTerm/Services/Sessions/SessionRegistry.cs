@@ -39,6 +39,7 @@ internal sealed class SessionRegistry
     public ConcurrentDictionary<string, string> TmuxParentSessions { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, string> BookmarkLinks { get; } = new(StringComparer.Ordinal);
+    public ConcurrentDictionary<string, string> SessionTopics { get; } = new(StringComparer.Ordinal);
     public ConcurrentDictionary<string, string> SessionNotes { get; } = new(StringComparer.Ordinal);
 
     public ConcurrentDictionary<string, byte> AgentControlledSessions { get; } = new(StringComparer.Ordinal);
@@ -163,6 +164,7 @@ internal sealed class SessionRegistry
                         ShellType = s.ShellType,
                         Name = s.Name,
                         TerminalTitle = s.TerminalTitle,
+                        Topic = SessionTopics.TryGetValue(s.Id, out var topic) ? topic : null,
                         Notes = SessionNotes.TryGetValue(s.Id, out var notes) ? notes : null,
                         ManuallyNamed = s.ManuallyNamed,
                         CurrentDirectory = s.CurrentDirectory,
@@ -199,6 +201,7 @@ internal sealed class SessionRegistry
         HiddenSessions.TryRemove(sessionId, out _);
         TmuxParentSessions.TryRemove(sessionId, out _);
         BookmarkLinks.TryRemove(sessionId, out _);
+        SessionTopics.TryRemove(sessionId, out _);
         SessionNotes.TryRemove(sessionId, out _);
         AgentControlledSessions.TryRemove(sessionId, out _);
         AppServerControlOnlySessions.TryRemove(sessionId, out _);
@@ -253,6 +256,43 @@ internal sealed class SessionRegistry
 
         NotifyStateChange();
         return true;
+    }
+
+    public bool SetSessionTopic(string sessionId, string? topic)
+    {
+        if (!SessionCache.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        var normalized = NormalizeSessionTopic(topic);
+        if (normalized is null)
+        {
+            SessionTopics.TryRemove(sessionId, out _);
+        }
+        else
+        {
+            SessionTopics[sessionId] = normalized;
+        }
+
+        NotifyStateChange();
+        return true;
+    }
+
+    internal static string? NormalizeSessionTopic(string? topic)
+    {
+        if (string.IsNullOrWhiteSpace(topic))
+        {
+            return null;
+        }
+
+        var normalized = topic.ReplaceLineEndings(" ").Trim();
+        while (normalized.Contains("  ", StringComparison.Ordinal))
+        {
+            normalized = normalized.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        return normalized.Length <= 120 ? normalized : normalized[..120];
     }
 
     internal static string? NormalizeSessionNotes(string? notes)

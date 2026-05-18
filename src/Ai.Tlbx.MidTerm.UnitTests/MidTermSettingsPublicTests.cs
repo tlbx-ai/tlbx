@@ -46,6 +46,24 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void ApplyTo_MissingUpdateChannel_PreservesExistingChannel()
+    {
+        var settings = new MidTermSettings
+        {
+            UpdateChannel = "dev"
+        };
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            UpdateChannel = null
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal("dev", settings.UpdateChannel);
+    }
+
+    [Fact]
     public void ApplyTo_AllowsTransparencySettingsUpToOneHundredPercent()
     {
         var settings = new MidTermSettings();
@@ -311,6 +329,27 @@ public sealed class MidTermSettingsPublicTests
         publicSettings.ApplyTo(settings);
 
         Assert.False(settings.ShowUnknownAgentMessages);
+    }
+
+    [Fact]
+    public void FromSettings_AndApplyTo_ClampsToolCallOutputLines()
+    {
+        var settings = new MidTermSettings
+        {
+            ToolCallOutputLines = 12
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.Equal(12, publicSettings.ToolCallOutputLines);
+
+        publicSettings.ToolCallOutputLines = 42;
+        publicSettings.ApplyTo(settings);
+        Assert.Equal(20, settings.ToolCallOutputLines);
+
+        publicSettings.ToolCallOutputLines = -3;
+        publicSettings.ApplyTo(settings);
+        Assert.Equal(0, settings.ToolCallOutputLines);
     }
 
     [Fact]

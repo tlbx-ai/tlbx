@@ -17,6 +17,7 @@ public sealed class SessionInfoDto
     public string ShellType { get; set; } = string.Empty;
     public string? Name { get; set; }
     public string? TerminalTitle { get; set; }
+    public string? Topic { get; set; }
     public string? Notes { get; set; }
     public bool ManuallyNamed { get; set; }
     public string? CurrentDirectory { get; set; }

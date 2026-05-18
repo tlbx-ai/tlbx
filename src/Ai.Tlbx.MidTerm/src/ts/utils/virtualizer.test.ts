@@ -28,6 +28,24 @@ describe('virtualizer', () => {
     });
   });
 
+  it('keeps a 10k item history render window bounded and spacer-backed', () => {
+    const items = Array.from({ length: 10000 }, (_, index) => index);
+
+    const window = computeVirtualWindow({
+      items,
+      scrollTop: 420000,
+      clientHeight: 900,
+      overscanItems: 12,
+      resolveItemSize: (_item, index) => 72 + (index % 7) * 18,
+    });
+
+    expect(window.start).toBeGreaterThan(0);
+    expect(window.end).toBeLessThan(items.length);
+    expect(window.end - window.start).toBeLessThanOrEqual(40);
+    expect(window.topSpacerPx).toBeGreaterThan(350000);
+    expect(window.bottomSpacerPx).toBeGreaterThan(400000);
+  });
+
   it('sizes a retained window from visible rows plus configured fetch-ahead items', () => {
     const count = resolveViewportDrivenWindowCount({
       viewport: { clientHeight: 600 } as HTMLDivElement,
@@ -133,6 +151,31 @@ describe('virtualizer', () => {
       startIndex: 0,
       count: 12,
     });
+  });
+
+  it('targets a bounded centered fetch window inside a 10k retained history', () => {
+    const request = resolveViewportCenteredWindowRequest({
+      items: Array.from({ length: 80 }, (_, index) => ({ id: `row-${index}` })),
+      viewportMetrics: {
+        scrollTop: 460000,
+        clientHeight: 780,
+        clientWidth: 390,
+      },
+      retainedWindow: {
+        windowStart: 4950,
+        windowEnd: 5030,
+        totalCount: 10000,
+      },
+      fetchAheadItems: 30,
+      observedSizes: [132, 148, 156, 144, 168, 152],
+      resolveItemSize: (_item, index) => 120 + (index % 5) * 12,
+      resolveEstimatedItemSize: () => 148,
+    });
+
+    expect(request).not.toBeNull();
+    expect(request?.count).toBeLessThanOrEqual(68);
+    expect(request?.startIndex).toBeGreaterThanOrEqual(3000);
+    expect(request?.startIndex).toBeLessThan(7000);
   });
 
   it('computes scroll compensation from size changes above the current browse anchor', () => {

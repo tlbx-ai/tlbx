@@ -192,11 +192,6 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   textarea.addEventListener('input', () => {
     args.onTextareaInput(textarea);
   });
-  textarea.addEventListener('pointerdown', () => {
-    if (document.activeElement !== textarea) {
-      textarea.focus({ preventScroll: true });
-    }
-  });
   textarea.addEventListener('focus', args.onTextareaFocus);
   textarea.addEventListener('paste', args.onTextareaPaste);
   textarea.addEventListener('select', () => {

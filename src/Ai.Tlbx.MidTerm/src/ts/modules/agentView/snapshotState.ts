@@ -22,7 +22,10 @@ export function applyAppServerControlHistoryWindowState(
     typeof snapshot.historyWindowEnd === 'number'
       ? snapshot.historyWindowEnd
       : windowStart + snapshot.history.length;
-  const windowSize = Math.max(0, windowEnd - windowStart);
+  let windowSize = Math.max(0, windowEnd - windowStart);
+  if (windowSize === 0 && snapshot.historyCount > 0 && snapshot.history.length === 0) {
+    windowSize = Math.max(1, state.historyWindowTargetCount, state.historyWindowCount);
+  }
   state.historyWindowStart = windowStart;
   state.historyWindowCount = windowSize;
   state.historyWindowTargetCount = Math.max(1, state.historyWindowTargetCount || 0, windowSize);

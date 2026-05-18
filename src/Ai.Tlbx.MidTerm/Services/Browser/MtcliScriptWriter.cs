@@ -292,6 +292,13 @@ public static class MtcliScriptWriter
         mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
         # mt_capabilities [--json]  — compact command/capability discovery for agents
         mt_capabilities() { _MREQUIRECTX "mt_capabilities" || return $?; _MBB capabilities "$@"; }
+        # mt_topic TEXT...  — set the current session topic shown in the sidebar; use --clear to remove
+        mt_topic() {
+          _MREQUIRECTX "mt_topic" || return $?
+          local topic="$*"
+          if [ "${1:-}" = "--clear" ]; then topic=""; fi
+          _MJ -X PUT -d "{\"topic\":\"$(_ME "$topic")\"}" "$_MT/api/sessions/$(_MURLENC "$(_MSID)")/topic"
+        }
         # mt_repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
         mt_repo() {
           local action="${1:-list}"
@@ -891,6 +898,13 @@ public static class MtcliScriptWriter
         function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
         # Mt-Capabilities [-Json]  — compact command/capability discovery for agents
         function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
+        # Mt-Topic TEXT...  — set the current session topic shown in the sidebar; use -Clear to remove
+        function Mt-Topic {
+            param([Parameter(ValueFromRemainingArguments=$true)][string[]]$InputArgs, [switch]$Clear)
+            _MRequireSessionContext "mt_topic"
+            $topic = if ($Clear) { $null } else { ($InputArgs -join " ") }
+            _MJ -X PUT -d (_MH @{topic=$topic}) "$script:_MT/api/sessions/$([Uri]::EscapeDataString((_MSID)))/topic"
+        }
         # Mt-Repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
         function Mt-Repo {
             param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label)
@@ -1217,6 +1231,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_previews -Value Mt-Previews
         Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview
         Set-Alias -Name mt_capabilities -Value Mt-Capabilities
+        Set-Alias -Name mt_topic -Value Mt-Topic
         Set-Alias -Name mt_repo -Value Mt-Repo
         Set-Alias -Name mt_inspect -Value Mt-Inspect
         Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies

@@ -288,7 +288,7 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void BuildInjectedBaseHref_BlazorDocument_PreservesUpstreamBaseHref()
+    public void BuildInjectedBaseHref_BlazorServerDocument_PreservesUpstreamBaseHref()
     {
         const string html = """
             <html><head><base href="/"></head><body>
@@ -304,6 +304,24 @@ public class WebPreviewProxyMiddlewareTests
             html);
 
         Assert.Equal("/", baseHref);
+    }
+
+    [Fact]
+    public void BuildInjectedBaseHref_BlazorWebAssemblyDocument_UsesProxyBaseHref()
+    {
+        const string html = """
+            <html><head><base href="/"></head><body>
+            <script src="_framework/blazor.webassembly.js"></script>
+            </body></html>
+            """;
+
+        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
+            "/webpreview/route-1",
+            "https://demo.kilv.de/login?ReturnUrl=%2F",
+            "/",
+            html);
+
+        Assert.Equal("/webpreview/route-1/", baseHref);
     }
 
     [Fact]

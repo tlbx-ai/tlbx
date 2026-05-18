@@ -42,14 +42,42 @@ export function syncSidebarSessionDisplayText(session: Session): boolean {
       subtitle?.remove();
     }
 
+    syncSidebarSessionTopic(item, session.topic);
     syncSidebarSessionNotes(item, session.notes);
   }
 
   return true;
 }
 
+function syncSidebarSessionTopic(item: HTMLElement, value: string | null | undefined): void {
+  const topic = normalizeSessionText(value);
+  let topicEl = item.querySelector<HTMLDivElement>('.session-topic');
+  const info = item.querySelector<HTMLElement>('.session-info');
+
+  if (!topic) {
+    topicEl?.remove();
+    return;
+  }
+
+  if (!topicEl && info) {
+    topicEl = document.createElement('div');
+    topicEl.className = 'session-topic';
+    const processInfo = info.querySelector<HTMLElement>('.session-process-info');
+    if (processInfo) {
+      info.insertBefore(topicEl, processInfo);
+    } else {
+      info.appendChild(topicEl);
+    }
+  }
+
+  if (topicEl && topicEl.textContent !== topic) {
+    topicEl.textContent = topic;
+    topicEl.title = topic;
+  }
+}
+
 function syncSidebarSessionNotes(item: HTMLElement, value: string | null | undefined): void {
-  const notes = normalizeSessionNotes(value);
+  const notes = normalizeSessionText(value);
   const notesInput = item.querySelector<HTMLTextAreaElement>('.session-notes-input');
   if (notesInput && document.activeElement !== notesInput && notesInput.value !== (notes ?? '')) {
     notesInput.value = notes ?? '';
@@ -59,7 +87,7 @@ function syncSidebarSessionNotes(item: HTMLElement, value: string | null | undef
     ?.classList.toggle('has-notes', notes !== null);
 }
 
-function normalizeSessionNotes(value: string | null | undefined): string | null {
+function normalizeSessionText(value: string | null | undefined): string | null {
   const normalized = value?.trim();
   return normalized ? normalized : null;
 }

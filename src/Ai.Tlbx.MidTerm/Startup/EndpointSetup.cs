@@ -657,7 +657,13 @@ Start-Service -Name $serviceName -ErrorAction Stop
             try
             {
                 var currentSettings = settingsService.Load();
+                var previousUpdateChannel = currentSettings.UpdateChannel;
                 publicSettings.ApplyTo(currentSettings);
+                if (!string.Equals(previousUpdateChannel, currentSettings.UpdateChannel, StringComparison.Ordinal))
+                {
+                    Log.Warn(() =>
+                        $"UpdateChannel changing via PUT /api/settings: {previousUpdateChannel} -> {currentSettings.UpdateChannel}");
+                }
                 settingsService.Save(currentSettings);
                 return Results.Ok();
             }

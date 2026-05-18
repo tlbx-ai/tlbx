@@ -41,8 +41,14 @@ function createClassList() {
 }
 
 function createButton() {
+  const listeners = new Map<string, () => void>();
   return {
-    addEventListener: vi.fn(),
+    addEventListener: vi.fn((eventName: string, listener: () => void) => {
+      listeners.set(eventName, listener);
+    }),
+    click: () => {
+      listeners.get('click')?.();
+    },
   };
 }
 
@@ -134,11 +140,9 @@ describe('sidebar section default collapse', () => {
     expect(section.classList.contains('collapsed')).toBe(true);
   });
 
-  it('keeps the network section expanded when the saved preference is expanded', async () => {
-    vi.stubGlobal(
-      'localStorage',
-      createLocalStorage(() => 'false'),
-    );
+  it('does not restore the network section expanded state from localStorage', async () => {
+    const storage = createLocalStorage(() => 'false');
+    vi.stubGlobal('localStorage', storage);
     vi.stubGlobal('window', { isSecureContext: true });
     const section = { classList: createClassList() };
     const toggleBtn = createButton();
@@ -154,6 +158,30 @@ describe('sidebar section default collapse', () => {
 
     initNetworkSection();
 
+    expect(section.classList.contains('collapsed')).toBe(true);
+    expect(storage.getItem).not.toHaveBeenCalled();
+  });
+
+  it('does not persist network section toggles', async () => {
+    const storage = createLocalStorage(() => null);
+    vi.stubGlobal('localStorage', storage);
+    vi.stubGlobal('window', { isSecureContext: true });
+    const section = { classList: createClassList() };
+    const toggleBtn = createButton();
+    vi.stubGlobal(
+      'document',
+      createDocument({
+        'network-section': section,
+        'btn-toggle-network': toggleBtn,
+      }),
+    );
+
+    const { initNetworkSection } = await import('./networkSection');
+
+    initNetworkSection();
+    toggleBtn.click();
+
     expect(section.classList.contains('collapsed')).toBe(false);
+    expect(storage.setItem).not.toHaveBeenCalled();
   });
 });

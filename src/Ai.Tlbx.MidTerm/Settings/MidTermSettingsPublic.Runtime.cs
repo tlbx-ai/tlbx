@@ -9,6 +9,9 @@ public sealed partial class MidTermSettingsPublic
     private const string NormalFontWeight = "normal";
     private const string BoldFontWeight = "bold";
     private const string DefaultAgentMessageFontFamily = "default";
+    private const int DefaultToolCallOutputLines = 5;
+    private const int MinToolCallOutputLines = 0;
+    private const int MaxToolCallOutputLines = 20;
     private static readonly string[] AllowedAgentMessageFontFamilies =
     [
         DefaultAgentMessageFontFamily,
@@ -59,6 +62,7 @@ public sealed partial class MidTermSettingsPublic
             AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
             ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
             ShowUnknownAgentMessages = settings.ShowUnknownAgentMessages,
+            ToolCallOutputLines = NormalizeToolCallOutputLines(settings.ToolCallOutputLines),
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
             TerminalLigaturesEnabled = settings.TerminalLigaturesEnabled,
@@ -156,6 +160,7 @@ public sealed partial class MidTermSettingsPublic
             DefaultAgentMessageFontFamily);
         settings.ShowAgentMessageTimestamps = ShowAgentMessageTimestamps;
         settings.ShowUnknownAgentMessages = ShowUnknownAgentMessages;
+        settings.ToolCallOutputLines = NormalizeToolCallOutputLines(ToolCallOutputLines);
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;
         settings.TerminalLigaturesEnabled = TerminalLigaturesEnabled;
@@ -392,5 +397,10 @@ public sealed partial class MidTermSettingsPublic
         }
 
         return fallback;
+    }
+
+    private static int NormalizeToolCallOutputLines(int value)
+    {
+        return Math.Clamp(value, MinToolCallOutputLines, MaxToolCallOutputLines);
     }
 }

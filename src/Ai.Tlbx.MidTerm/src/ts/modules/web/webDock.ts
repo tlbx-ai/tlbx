@@ -19,7 +19,6 @@ import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
 import { getActiveMode, getActivePreviewName, setActiveMode } from './webSessionState';
-import { isEmbeddedWebPreviewContext } from './webContext';
 
 const log = createLogger('webDock');
 
@@ -143,7 +142,7 @@ export function closeWebPreviewDock(): void {
 
   // Unload iframe to stop all network activity
   unloadIframe(activeId, activePreviewName);
-  if (!detachedActive && !isEmbeddedWebPreviewContext() && activeId) {
+  if (!detachedActive && activeId) {
     void clearWebPreviewTarget(activeId, activePreviewName);
   }
   const dockPanel = document.getElementById('web-preview-dock');
@@ -204,7 +203,7 @@ export function applyWebPreviewHiddenState(): void {
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
   hideIframe();
-  if (!isEmbeddedWebPreviewContext() && activeId) {
+  if (activeId) {
     void clearWebPreviewTarget(activeId, activePreviewName);
   }
 

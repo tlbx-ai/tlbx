@@ -1819,6 +1819,16 @@ async function prepareAppServerControlGoal(sessionId: string): Promise<void> {
     return;
   }
 
+  if (appServerControlGoalComposeSessionId === sessionId) {
+    appServerControlGoalComposeSessionId = null;
+    activeTextarea.placeholder = t(
+      isMobileViewport() ? 'smartInput.placeholderMobile' : 'smartInput.placeholder',
+    );
+    activeTextarea.focus({ preventScroll: true });
+    syncAppServerControlQuickSettingsActions(sessionId);
+    return;
+  }
+
   const currentText = activeTextarea.value.trim();
   if (currentText.length === 0) {
     appServerControlGoalComposeSessionId = sessionId;

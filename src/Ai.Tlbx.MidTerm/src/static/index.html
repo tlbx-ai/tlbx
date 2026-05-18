@@ -1751,6 +1751,29 @@
                       >
                       <input type="checkbox" id="setting-show-unknown-agent-messages" />
                     </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-tool-call-output-lines"
+                        data-i18n="settings.agentUi.toolCallOutputLines"
+                        >Tool call output lines</label
+                      >
+                      <div
+                        class="text-input-wrapper"
+                        data-setting="toolCallOutputLines"
+                        data-type="number"
+                      >
+                        <input
+                          type="number"
+                          id="setting-tool-call-output-lines"
+                          min="0"
+                          max="20"
+                          value="5"
+                        />
+                        <button type="button" class="inline-save-btn" title="Save">
+                          <span class="icon">&#xe90f;</span>
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div class="settings-section">

@@ -68,4 +68,36 @@ describe('historyWindowState', () => {
     expect(state.snapshot.history[0]?.entryId).toBe('assistant:kept');
     expect(updateAppServerControlHistoryStreamWindow).not.toHaveBeenCalled();
   });
+
+  it('keeps a nonzero stream window when a metadata-only snapshot reports retained history', async () => {
+    const { applyFetchedAppServerControlHistoryWindow } = await import('./historyWindowState');
+
+    const state = {
+      snapshot: null,
+      historyWindowStart: 0,
+      historyWindowCount: 80,
+      historyWindowTargetCount: 120,
+      historyWindowRevision: null,
+      historyWindowViewportWidth: 1200,
+      disconnectStream: vi.fn(),
+    } as any;
+
+    const applied = applyFetchedAppServerControlHistoryWindow('session-1', state, {
+      latestSequence: 40,
+      historyCount: 240,
+      historyWindowStart: 240,
+      historyWindowEnd: 240,
+      history: [],
+    } as any);
+
+    expect(applied).toBe(true);
+    expect(state.historyWindowCount).toBe(120);
+    expect(updateAppServerControlHistoryStreamWindow).toHaveBeenCalledWith(
+      'session-1',
+      240,
+      120,
+      undefined,
+      1200,
+    );
+  });
 });

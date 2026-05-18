@@ -333,9 +333,35 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--app-background-animation')).toBe('none');
   });
 
-  it('suppresses the background image on mobile when the mobile wallpaper toggle is enabled', () => {
+  it('keeps background image on narrow desktop frames with fine pointer', () => {
     Object.assign(globalThis.window, {
-      matchMedia: () => ({ matches: true }),
+      matchMedia: (query: string) => ({
+        matches: query.includes('max-width'),
+      }),
+    });
+
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        hideBackgroundImageOnMobile: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--app-background-image')).toBe(
+      'url("/api/settings/background-image?v=12")',
+    );
+    expect(bodyClassList.contains('has-app-background')).toBe(true);
+    expect(bodyClassList.contains('hide-app-background-on-mobile')).toBe(false);
+  });
+
+  it('suppresses the background image on coarse pointer mobile when the mobile wallpaper toggle is enabled', () => {
+    Object.assign(globalThis.window, {
+      matchMedia: (query: string) => ({
+        matches: query.includes('pointer: coarse') || query.includes('max-width'),
+      }),
     });
 
     applyBackgroundAppearance(

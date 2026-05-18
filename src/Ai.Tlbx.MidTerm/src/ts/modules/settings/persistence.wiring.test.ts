@@ -157,6 +157,11 @@ describe('settings persistence wiring', () => {
     expect(
       SETTINGS_REGISTRY.find((entry) => entry.key === 'showUnknownAgentMessages')?.validation,
     ).toBe('boolean');
+    expect(html).toMatch(/id="setting-tool-call-output-lines"[\s\S]*?min="0"/);
+    expect(html).toMatch(/id="setting-tool-call-output-lines"[\s\S]*?max="20"/);
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'toolCallOutputLines')?.validation,
+    ).toBe('integer, UI clamps to 0-20');
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'customGlyphs')?.validation).toBe(
       'boolean, rendered as custom or font box drawing',
     );
@@ -244,7 +249,7 @@ describe('settings persistence wiring', () => {
     const inlineSaveButtons = [
       ...html.matchAll(/<button\s+type="button"\s+class="inline-save-btn"/g),
     ];
-    expect(inlineSaveButtons).toHaveLength(8);
+    expect(inlineSaveButtons).toHaveLength(9);
   });
 
   it('keeps the background upload preview clean when an image exists', () => {

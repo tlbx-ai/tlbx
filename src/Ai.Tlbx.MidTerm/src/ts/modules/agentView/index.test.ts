@@ -369,6 +369,67 @@ describe('agentView dev errors', () => {
     );
   });
 
+  it('activates an already-selected Agent tab after init registers callbacks', async () => {
+    const panel = createPanel();
+    activeSessionId = 's1';
+    getActiveTab.mockReturnValue('agent');
+    getTabPanel.mockReturnValue(panel);
+    getAppServerControlHistoryWindow.mockResolvedValue(
+      createSnapshot({
+        historyCount: 1,
+        historyWindowEnd: 1,
+        history: [
+          {
+            entryId: 'system:1',
+            order: 1,
+            kind: 'system',
+            turnId: null,
+            itemId: null,
+            requestId: null,
+            status: 'completed',
+            itemType: 'system',
+            title: 'System',
+            body: 'Recovered from selected Agent tab.',
+            attachments: [],
+            streaming: false,
+            createdAt: '2026-05-12T22:00:00Z',
+            updatedAt: '2026-05-12T22:00:00Z',
+          },
+        ],
+      }),
+    );
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    await vi.waitFor(() => {
+      expect(getTabPanel).toHaveBeenCalledWith('s1', 'agent');
+      expect(attachSessionAppServerControl).toHaveBeenCalledWith('s1');
+    });
+    await vi.waitFor(() => {
+      const history = panel.querySelector('[data-agent-field="history"]') as any;
+      expect(history.childNodes.length).toBeGreaterThan(0);
+    });
+    expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
+  });
+
+  it('activates Agent-primary sessions when they become the active session', async () => {
+    const panel = createPanel();
+    getActiveTab.mockReturnValue('agent');
+    getTabPanel.mockReturnValue(panel);
+    getAppServerControlHistoryWindow.mockResolvedValue(createSnapshot());
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+    setActiveAppServerControlSession('s1');
+
+    await vi.waitFor(() => {
+      expect(getTabPanel).toHaveBeenCalledWith('s1', 'agent');
+      expect(attachSessionAppServerControl).toHaveBeenCalledWith('s1');
+    });
+    expect(panel.classList.add).toHaveBeenCalledWith('agent-view-panel');
+  });
+
   it('can mount and render a debug scenario without requiring a pre-activated AppServerControl tab', async () => {
     const panel = createPanel();
     getTabPanel.mockReturnValue(panel);
@@ -2020,7 +2081,7 @@ describe('agentView dev errors', () => {
       expect(getAppServerControlHistoryWindow.mock.calls).toContainEqual([
         's1',
         undefined,
-        80,
+        240,
         expect.any(String),
       ]);
     });
@@ -2262,7 +2323,7 @@ describe('agentView dev errors', () => {
         2,
         's1',
         undefined,
-        80,
+        240,
         expect.any(String),
       );
     });
@@ -2491,6 +2552,38 @@ describe('agentView dev errors', () => {
     });
 
     expect(request).toBeNull();
+  });
+
+  it('preserves the snapshot retained window when runtime history entries are filtered from rendering', async () => {
+    const { resolveHistoryRetainedWindowDescriptor } = await import('./historyRender');
+
+    const descriptor = resolveHistoryRetainedWindowDescriptor(
+      [
+        {
+          id: 'system:runtime-ready',
+          order: 1,
+          kind: 'system',
+          tone: 'info',
+          label: 'MidTerm',
+          title: '',
+          body: 'Codex App Server Controller runtime ready.',
+          meta: 'Connecting',
+        },
+      ],
+      {
+        snapshot: {
+          historyWindowStart: 0,
+          historyWindowEnd: 5,
+          historyCount: 5,
+        },
+      } as any,
+    );
+
+    expect(descriptor).toEqual({
+      windowStart: 0,
+      windowEnd: 5,
+      totalCount: 5,
+    });
   });
 
   it('keeps background AppServerControl streams alive but skips history rerenders while hidden', async () => {
@@ -2812,6 +2905,191 @@ describe('agentView dev errors', () => {
     await Promise.resolve();
 
     expect(requestAnimationFrameMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('routes off-window live history changes through browse viewport sync', async () => {
+    const disconnectStream = vi.fn();
+    openAppServerControlHistoryStream.mockReturnValue(disconnectStream);
+    attachSessionAppServerControl.mockResolvedValue(undefined);
+
+    const createRows = (startOrder: number, count: number) =>
+      Array.from({ length: count }, (_value, index) => {
+        const order = startOrder + index;
+        return {
+          entryId: `assistant:${order}`,
+          turnId: 'turn-scroll',
+          itemId: `assistant-${order}`,
+          requestId: null,
+          order,
+          estimatedHeightPx: 100,
+          kind: 'assistant',
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: `Historical row ${order}`,
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T11:00:00Z',
+          updatedAt: '2026-03-28T11:00:00Z',
+        };
+      });
+
+    getAppServerControlHistoryWindow.mockImplementation(
+      async (_sessionId: string, startIndex?: number, count?: number) => {
+        const windowStart = startIndex ?? 40;
+        const windowCount = count ?? 40;
+        return createSnapshot({
+          latestSequence: startIndex === undefined ? 1 : 3,
+          historyCount: startIndex === undefined ? 120 : 121,
+          estimatedTotalHistoryHeightPx: startIndex === undefined ? 12000 : 12100,
+          estimatedHistoryBeforeWindowPx: windowStart * 100,
+          estimatedHistoryAfterWindowPx: Math.max(0, 121 - windowStart - windowCount) * 100,
+          historyWindowStart: windowStart,
+          historyWindowEnd: windowStart + windowCount,
+          hasOlderHistory: windowStart > 0,
+          hasNewerHistory: windowStart + windowCount < 121,
+          currentTurn: {
+            turnId: 'turn-scroll',
+            state: 'running',
+            stateLabel: 'Running',
+            model: 'gpt-5.4',
+            effort: 'medium',
+            startedAt: '2026-03-28T11:00:00Z',
+            completedAt: null,
+          },
+          session: {
+            state: 'running',
+            stateLabel: 'Running',
+            reason: null,
+            lastError: null,
+            lastEventAt: '2026-03-28T11:00:00Z',
+          },
+          history: createRows(windowStart + 1, windowCount),
+        });
+      },
+    );
+    getAppServerControlEvents.mockResolvedValue({
+      sessionId: 's1',
+      latestSequence: 1,
+      events: [],
+    });
+
+    setActiveAppServerControlSession('s1');
+
+    const { initAgentView } = await import('./index');
+    initAgentView();
+
+    const activate = onTabActivated.mock.calls[0]?.[1] as
+      | ((sessionId: string, panel: HTMLDivElement) => void)
+      | undefined;
+    expect(activate).toBeTypeOf('function');
+
+    const panel = createPanel();
+    const historyHost = panel.querySelector('[data-agent-field="history"]') as any;
+    historyHost.clientHeight = 600;
+    historyHost.clientWidth = 900;
+    historyHost.scrollHeight = 12100;
+    historyHost.scrollTop = 7600;
+    historyHost.getBoundingClientRect = vi.fn(() => ({ top: 0, bottom: 600, height: 600 }));
+
+    activate?.('s1', panel);
+
+    await vi.waitFor(() => {
+      expect(openAppServerControlHistoryStream).toHaveBeenCalledTimes(1);
+    });
+
+    historyHost.scrollTop = 7600;
+    for (const child of historyHost.childNodes as any[]) {
+      const entryId = child.dataset?.appServerControlEntryId as string | undefined;
+      const order = Number(entryId?.split(':')[1] ?? 0);
+      child.getBoundingClientRect = vi.fn(() => ({
+        top: (order - 76) * 100,
+        bottom: (order - 75) * 100,
+        height: 100,
+      }));
+    }
+
+    const wheelHandler = historyHost.addEventListener.mock.calls.find(
+      ([eventName]: [string]) => eventName === 'wheel',
+    )?.[1] as ((event: { deltaY: number }) => void) | undefined;
+    expect(wheelHandler).toBeTypeOf('function');
+    wheelHandler?.({ deltaY: -24 });
+
+    getAppServerControlHistoryWindow.mockClear();
+
+    const streamCallbacks = openAppServerControlHistoryStream.mock.calls[0]?.[5] as
+      | { onPatch(delta: unknown): void }
+      | undefined;
+    expect(streamCallbacks).toBeTruthy();
+
+    streamCallbacks?.onPatch({
+      sessionId: 's1',
+      provider: 'codex',
+      generatedAt: '2026-03-28T11:00:02Z',
+      latestSequence: 2,
+      historyCount: 121,
+      estimatedTotalHistoryHeightPx: 12100,
+      session: {
+        state: 'running',
+        stateLabel: 'Running',
+        reason: null,
+        lastError: null,
+        lastEventAt: '2026-03-28T11:00:02Z',
+      },
+      thread: {
+        threadId: 'thread-scroll',
+        state: 'active',
+        stateLabel: 'Active',
+      },
+      currentTurn: {
+        turnId: 'turn-scroll',
+        state: 'running',
+        stateLabel: 'Running',
+        model: 'gpt-5.4',
+        effort: 'medium',
+        startedAt: '2026-03-28T11:00:00Z',
+        completedAt: null,
+      },
+      streams: {
+        assistantText: '',
+        reasoningText: '',
+        reasoningSummaryText: '',
+        planText: '',
+        commandOutput: '',
+        fileChangeOutput: '',
+        unifiedDiff: '',
+      },
+      historyUpserts: [
+        {
+          entryId: 'assistant:121',
+          order: 121,
+          estimatedHeightPx: 100,
+          kind: 'assistant',
+          turnId: 'turn-scroll',
+          itemId: 'assistant-121',
+          requestId: null,
+          status: 'completed',
+          itemType: 'assistant_text',
+          title: null,
+          body: 'New tail row',
+          attachments: [],
+          streaming: false,
+          createdAt: '2026-03-28T11:00:02Z',
+          updatedAt: '2026-03-28T11:00:02Z',
+        },
+      ],
+      historyRemovals: [],
+      itemUpserts: [],
+      itemRemovals: [],
+      requestUpserts: [],
+      requestRemovals: [],
+      noticeUpserts: [],
+    });
+
+    await vi.waitFor(() => {
+      expect(getAppServerControlHistoryWindow).toHaveBeenCalled();
+    });
+    expect(getAppServerControlHistoryWindow.mock.calls[0]?.[1]).not.toBe(40);
   });
 
   it('classifies a busy terminal attach failure into a readonly handoff issue', async () => {
@@ -4554,6 +4832,7 @@ describe('agentView dev errors', () => {
     const { getAppServerControlDebugScenarioNames } = await import('./index');
 
     expect(getAppServerControlDebugScenarioNames()).toContain('workflow');
+    expect(getAppServerControlDebugScenarioNames()).toContain('massive');
   });
 
   it.skip('renders a rich real-Codex event mix into visible history rows', async () => {
@@ -4814,7 +5093,7 @@ describe('agentView dev errors', () => {
     expect(assistantEntry?.body).toContain('| alpha | 3 | Ada |');
   });
 
-  it('keeps up to 12 tail lines when folding command output into a command row', async () => {
+  it('keeps enough tail lines to honor the configurable tool output cap', async () => {
     const { buildAppServerControlHistoryEntries } = await import('./index');
 
     const snapshot = {
@@ -4851,7 +5130,7 @@ describe('agentView dev errors', () => {
     const history = buildAppServerControlHistoryEntries(snapshot);
     expect(history).toHaveLength(1);
     expect(history[0]?.commandOutputTail).toEqual(
-      Array.from({ length: 12 }, (_, index) => `line ${index + 4}`),
+      Array.from({ length: 14 }, (_, index) => `line ${index + 2}`),
     );
   });
 
@@ -6250,6 +6529,56 @@ describe('agentView dev errors', () => {
     expect(windowed.bottomSpacerPx).toBeGreaterThan(0);
   });
 
+  it('keeps Agent Controller Session DOM work bounded for 10k item histories', async () => {
+    const { computeHistoryVirtualWindow } = await import('./index');
+
+    const entries = Array.from({ length: 10000 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: index % 4 === 0 ? 'user' : 'assistant',
+      tone: 'info',
+      label: index % 4 === 0 ? 'User' : 'Assistant',
+      title: '',
+      body:
+        index % 29 === 0
+          ? `Row ${index}\n\n| Metric | Value |\n| :--- | ---: |\n| retained | ${index % 100} |`
+          : `Row ${index} `.repeat(18),
+      meta: 'now',
+    })) as any;
+
+    const desktopWindow = computeHistoryVirtualWindow(entries, 480000, 900, 1200);
+    const mobileWindow = computeHistoryVirtualWindow(entries, 620000, 640, 390);
+
+    expect(desktopWindow.start).toBeGreaterThan(0);
+    expect(desktopWindow.end).toBeLessThan(entries.length);
+    expect(desktopWindow.end - desktopWindow.start).toBeLessThanOrEqual(40);
+    expect(desktopWindow.topSpacerPx).toBeGreaterThan(0);
+    expect(desktopWindow.bottomSpacerPx).toBeGreaterThan(0);
+
+    expect(mobileWindow.start).toBeGreaterThan(0);
+    expect(mobileWindow.end).toBeLessThan(entries.length);
+    expect(mobileWindow.end - mobileWindow.start).toBeLessThanOrEqual(32);
+    expect(mobileWindow.topSpacerPx).toBeGreaterThan(0);
+    expect(mobileWindow.bottomSpacerPx).toBeGreaterThan(0);
+  });
+
+  it('keeps the 10k AppServerControl debug history keyed per retained item', async () => {
+    const { buildAppServerControlDebugScenario } = await import('./debugScenario');
+
+    const { snapshot } = buildAppServerControlDebugScenario(
+      's1',
+      'massive',
+      'https://example.test',
+    );
+    const entryIds = snapshot.history.map((entry) => entry.entryId);
+
+    expect(snapshot.history).toHaveLength(10000);
+    expect(new Set(entryIds).size).toBe(entryIds.length);
+    expect(entryIds[0]).toBe('user:user-massive-1');
+    expect(entryIds[1]).toBe('assistant:assistant-massive-2');
+    expect(entryIds.at(-1)).toBe('assistant:assistant-massive-10000');
+  });
+
   it('subtracts older-history top spacer height before resolving the visible window', async () => {
     const { computeHistoryVisibleRange } = await import('./historyViewport');
     const { resolveHistoryWindowViewportMetrics } = await import('./historyRender');
@@ -6608,6 +6937,157 @@ describe('agentView dev errors', () => {
     render.syncViewportOffset('s1');
 
     expect(String(progressThumb.style.top)).not.toBe('6px');
+  });
+
+  it('does not backpressure the progress navigator from passive row-height remeasurement', async () => {
+    const { createAgentHistoryRender } = await import('./historyRender');
+
+    const historyViewport = createMockDomNode({
+      childNodes: [],
+      children: [],
+      clientHeight: 606,
+      clientWidth: 900,
+      scrollTop: 2800,
+      scrollHeight: 12000,
+      querySelector: vi.fn(() => null),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, bottom: 606, height: 606 })),
+    });
+    const progressNav = createMockDomNode({
+      clientHeight: 606,
+      clientWidth: 14,
+      hidden: false,
+      dataset: {},
+      setAttribute: vi.fn(),
+      getBoundingClientRect: vi.fn(() => ({ top: 0, height: 606 })),
+    });
+    const progressThumb = createMockDomNode({
+      style: {} as CSSStyleDeclaration,
+    });
+    const scrollButton = createMockDomNode();
+    const composerShell = createMockDomNode();
+    const composerInterruption = createMockDomNode();
+    const panel = createMockDomNode({
+      querySelector: vi.fn((selector: string) => {
+        switch (selector) {
+          case '[data-agent-field="history"]':
+            return historyViewport;
+          case '[data-agent-field="history-progress-nav"]':
+            return progressNav;
+          case '[data-agent-field="history-progress-thumb"]':
+            return progressThumb;
+          case '[data-agent-field="scroll-to-bottom"]':
+            return scrollButton;
+          case '[data-agent-field="composer-shell"]':
+            return composerShell;
+          case '[data-agent-field="composer-interruption"]':
+            return composerInterruption;
+          default:
+            return null;
+        }
+      }),
+    });
+    const state = {
+      panel,
+      snapshot: {
+        historyWindowStart: 0,
+        historyWindowEnd: 120,
+        historyCount: 120,
+        provider: 'codex',
+        requests: [],
+      },
+      historyViewport,
+      historyProgressNav: progressNav,
+      historyProgressThumb: progressThumb,
+      historyEntries: [],
+      historyRenderedNodes: new Map(),
+      historyMeasuredHeights: new Map(),
+      historyObservedHeights: new Map(),
+      historyMeasuredHeightsByBucket: new Map(),
+      historyObservedHeightsByBucket: new Map(),
+      historyObservedHeightSamplesByBucket: new Map(),
+      historyMeasuredWidthBucket: 0,
+      historyLeadingPlaceholders: [],
+      historyTrailingPlaceholders: [],
+      historyEmptyState: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
+      historyPendingJumpTargetIndex: null,
+      historyPendingJumpAlign: null,
+      historyLastVirtualWindowKey: null,
+      historyAutoScrollPinned: false,
+      historyNavigatorMode: 'browse',
+      historyNavigatorAnchorIndex: 47,
+      historyNavigatorDragTargetIndex: null,
+      historyLastScrollMetrics: null,
+      activationState: 'ready',
+      assistantMarkdownCache: new Map(),
+      runtimeStats: null,
+      historyMeasurementObserver: null,
+      requestBusyIds: new Set(),
+      activationActionBusy: false,
+      requestDraftAnswersById: {},
+      requestQuestionIndexById: {},
+    } as any;
+
+    const render = createAgentHistoryRender({
+      getState: () => state,
+      scheduleHistoryRender: vi.fn(),
+      syncAgentViewPresentation: vi.fn(),
+      createHistoryEntry: vi.fn((entry: any) =>
+        createMockDomNode({
+          textContent: entry.body,
+          getBoundingClientRect: vi.fn(() => ({
+            top: 0,
+            bottom: entry.estimatedHeightPx,
+            height: entry.estimatedHeightPx,
+          })),
+        }),
+      ),
+      createHistorySpacer: vi.fn((heightPx: number) =>
+        createMockDomNode({
+          className: 'agent-history-spacer',
+          style: { height: `${heightPx}px` },
+        }),
+      ),
+      createRequestActionBlock: vi.fn(() => createMockDomNode()),
+      pruneAssistantMarkdownCache: vi.fn(),
+      renderRuntimeStats: vi.fn(),
+    });
+
+    const entries = Array.from({ length: 120 }, (_, index) => ({
+      id: `row-${index}`,
+      order: index + 1,
+      kind: 'assistant',
+      tone: 'info',
+      label: 'Assistant',
+      title: '',
+      body: `Row ${index + 1}`,
+      meta: 'now',
+      estimatedHeightPx: index % 6 === 0 ? 420 : 64,
+    })) as any;
+
+    render.renderActivationView('s1', panel, state, entries);
+    const initialThumbTop = String(progressThumb.style.top);
+    const initialValueNowCalls = progressNav.setAttribute.mock.calls.filter(
+      ([name]: [string]) => name === 'aria-valuenow',
+    );
+    const initialValueNow = initialValueNowCalls[initialValueNowCalls.length - 1]?.[1];
+
+    for (const entry of entries) {
+      state.historyMeasuredHeights.set(entry.id, entry.estimatedHeightPx > 100 ? 72 : 520);
+    }
+
+    render.renderActivationView('s1', panel, state, entries);
+    const afterRemeasureValueNowCalls = progressNav.setAttribute.mock.calls.filter(
+      ([name]: [string]) => name === 'aria-valuenow',
+    );
+    const afterRemeasureValueNow =
+      afterRemeasureValueNowCalls[afterRemeasureValueNowCalls.length - 1]?.[1];
+
+    expect(state.historyNavigatorAnchorIndex).toBe(47);
+    expect(initialValueNow).toBe('48');
+    expect(afterRemeasureValueNow).toBe('48');
+    expect(String(progressThumb.style.top)).toBe(initialThumbTop);
   });
 
   it('realigns browse-mode history when every rendered row drifts outside the viewport', async () => {
@@ -7631,6 +8111,84 @@ describe('agentView dev errors', () => {
     expect(presentation.mode).toBe('command');
     expect(presentation.collapsedByDefault).toBe(false);
     expect(presentation.lineCount).toBe(2);
+  });
+
+  it('caps visible command output tails from the AI Agents setting', async () => {
+    const { createAgentHistoryDom, resolveToolCallOutputLineLimit } = await import('./index');
+    currentSettings = { showUnknownAgentMessages: true, toolCallOutputLines: 5 };
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshAppServerControlSnapshot: vi.fn(),
+      renderCurrentAgentView: vi.fn(),
+      retryAppServerControlActivation: vi.fn(),
+      logWarn: vi.fn(),
+    });
+
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'tool-command-cap',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: 'Tool completed',
+        body: 'pwsh -Command Get-Content out.log',
+        meta: '20:00:00',
+        sourceItemType: 'command_execution',
+        commandText: 'pwsh -Command Get-Content out.log',
+        commandOutputTail: Array.from({ length: 12 }, (_, index) => `line ${index + 1}`),
+      },
+      's1',
+    ) as any;
+
+    const commandBody = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-body'),
+    );
+    const output = commandBody.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-output-tail'),
+    );
+
+    expect(resolveToolCallOutputLineLimit()).toBe(5);
+    expect(output.textContent).toBe('line 1\nline 2\nline 3\nline 4\nline 5');
+  });
+
+  it('allows hiding command output tails with a zero line limit', async () => {
+    const { createAgentHistoryDom, resolveToolCallOutputLineLimit } = await import('./index');
+    currentSettings = { showUnknownAgentMessages: true, toolCallOutputLines: 0 };
+    const historyDom = createAgentHistoryDom({
+      getState: () => undefined,
+      refreshAppServerControlSnapshot: vi.fn(),
+      renderCurrentAgentView: vi.fn(),
+      retryAppServerControlActivation: vi.fn(),
+      logWarn: vi.fn(),
+    });
+
+    const article = historyDom.createHistoryEntry(
+      {
+        id: 'tool-command-hidden',
+        order: 1,
+        kind: 'tool',
+        tone: 'positive',
+        label: 'Tool',
+        title: 'Tool completed',
+        body: 'pwsh -Command Get-Content out.log',
+        meta: '20:00:00',
+        sourceItemType: 'command_execution',
+        commandText: 'pwsh -Command Get-Content out.log',
+        commandOutputTail: ['line 1', 'line 2'],
+      },
+      's1',
+    ) as any;
+
+    const commandBody = article.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-body'),
+    );
+    const output = commandBody.children.find((child: any) =>
+      String(child.className).includes('agent-history-command-output-tail'),
+    );
+
+    expect(resolveToolCallOutputLineLimit()).toBe(0);
+    expect(output).toBeUndefined();
   });
 
   it('tokenizes command text into command, parameter, string, operator, and text parts', async () => {

@@ -107,6 +107,42 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void SelectBestRelease_DevChannelOffersDevPatchOverStableCurrent()
+    {
+        var releases = new[]
+        {
+            CreateRelease("v9.7.0", prerelease: false, WindowsAssetName),
+            CreateRelease("v9.7.1-dev", prerelease: true, WindowsAssetName)
+        };
+
+        var selection = UpdateService.SelectBestRelease(releases, "dev", "9.7.0", WindowsAssetName);
+
+        Assert.NotNull(selection);
+        Assert.Equal("v9.7.1-dev", selection!.Release.TagName);
+    }
+
+    [Fact]
+    public void GetMissingNewerReleaseTagNames_ReturnsRecentNewerTagsMissingFromReleaseList()
+    {
+        var releases = new[]
+        {
+            CreateRelease("v9.7.0", prerelease: false, WindowsAssetName),
+            CreateRelease("v9.7.0-dev", prerelease: true, WindowsAssetName)
+        };
+        var tags = new[]
+        {
+            CreateTag("v9.7.1-dev"),
+            CreateTag("v9.7.0"),
+            CreateTag("not-a-release"),
+            CreateTag("v9.6.41-dev")
+        };
+
+        var missingTags = UpdateService.GetMissingNewerReleaseTagNames(releases, tags, "9.7.0");
+
+        Assert.Equal(["v9.7.1-dev"], missingTags);
+    }
+
+    [Fact]
     public void GetReleaseManifestUrls_PrefersSourceVersionJsonBeforeLegacyRootPath()
     {
         var urls = UpdateService.GetReleaseManifestUrls("v8.6.4-dev");
@@ -506,6 +542,14 @@ public sealed class UpdateServiceTests : IDisposable
                 Name = name,
                 BrowserDownloadUrl = $"https://example.com/{name}"
             }).ToList()
+        };
+    }
+
+    private static GitHubTag CreateTag(string name)
+    {
+        return new GitHubTag
+        {
+            Name = name
         };
     }
 }
