@@ -9,7 +9,11 @@ vi.mock('../comms/muxChannel', () => ({
   sendInput: vi.fn(),
 }));
 
-import { panMobileStableTerminalShellScroll, scrollViewport } from './touchScrolling';
+import {
+  computeKineticScrollStep,
+  panMobileStableTerminalShellScroll,
+  scrollViewport,
+} from './touchScrolling';
 
 function createShell(scrollTop: number, scrollHeight: number, clientHeight: number) {
   const classes = new Set(['mobile-terminal-vertical-stable']);
@@ -65,5 +69,24 @@ describe('mobile terminal touch scrolling', () => {
 
     expect(container.scrollTop).toBe(70);
     expect(terminal.scrollLines).toHaveBeenCalledWith(5);
+  });
+
+  it('continues a fast touch drag with a decaying kinetic scroll step', () => {
+    const first = computeKineticScrollStep(1, 16);
+    const second = computeKineticScrollStep(first.nextVelocityY, 16);
+
+    expect(first.active).toBe(true);
+    expect(first.deltaY).toBeGreaterThan(0);
+    expect(first.nextVelocityY).toBeLessThan(1);
+    expect(second.deltaY).toBeGreaterThan(0);
+    expect(second.nextVelocityY).toBeLessThan(first.nextVelocityY);
+  });
+
+  it('stops kinetic scrolling below the velocity threshold', () => {
+    const step = computeKineticScrollStep(0.01, 16);
+
+    expect(step.active).toBe(false);
+    expect(step.deltaY).toBe(0);
+    expect(step.nextVelocityY).toBe(0);
   });
 });

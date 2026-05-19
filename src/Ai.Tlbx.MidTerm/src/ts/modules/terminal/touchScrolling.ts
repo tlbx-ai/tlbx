@@ -22,6 +22,11 @@ const TAP_MAX_DURATION = 300;
 const SWIPE_THRESHOLD = 80;
 const SWIPE_MAX_VERTICAL = 40;
 const SWIPE_MAX_TIME = 300;
+const KINETIC_MIN_VELOCITY_PX_PER_MS = 0.08;
+const KINETIC_MAX_VELOCITY_PX_PER_MS = 3;
+const KINETIC_FRICTION_PX_PER_MS2 = 0.0045;
+const KINETIC_MAX_FRAME_MS = 32;
+const VELOCITY_SAMPLE_SMOOTHING = 0.35;
 
 type TouchMode = 'idle' | 'pending' | 'scrolling' | 'selecting' | 'horizontal';
 
@@ -37,6 +42,9 @@ interface TouchScrollState {
   lastY: number;
   startTime: number;
   lastMoveTime: number;
+  kineticFrame: number | null;
+  kineticLastFrameTime: number;
+  velocityY: number;
   scrollAccumulator: number;
   cellHeight: number;
   handlers: {
@@ -83,6 +91,9 @@ export function initTouchScrolling(
     lastY: 0,
     startTime: 0,
     lastMoveTime: 0,
+    kineticFrame: null,
+    kineticLastFrameTime: 0,
+    velocityY: 0,
     scrollAccumulator: 0,
     cellHeight: 0,
     handlers: {
@@ -115,6 +126,7 @@ export function teardownTouchScrolling(sessionId: string): void {
   if (!s) return;
 
   cancelLongPress(s);
+  cancelKineticScroll(s);
   removeDocumentListener(s);
 
   s.overlay.removeEventListener('touchstart', s.handlers.touchstart);
@@ -146,11 +158,13 @@ function handleTouchStart(sessionId: string, e: TouchEvent): void {
   if (!touch) return;
 
   s.mode = 'pending';
+  cancelKineticScroll(s);
   s.startX = touch.clientX;
   s.startY = touch.clientY;
   s.lastY = touch.clientY;
   s.startTime = Date.now();
   s.lastMoveTime = Date.now();
+  s.velocityY = 0;
   s.scrollAccumulator = 0;
 
   // Account for CSS transform scaling (terminal may be scaled down to fit viewport)
@@ -198,6 +212,13 @@ function handleTouchMove(sessionId: string, e: TouchEvent): void {
     e.preventDefault();
     const deltaY = s.lastY - touch.clientY;
     const now = Date.now();
+    const dt = Math.max(1, now - s.lastMoveTime);
+    const instantVelocity = deltaY / dt;
+    s.velocityY =
+      s.velocityY === 0
+        ? instantVelocity
+        : s.velocityY * (1 - VELOCITY_SAMPLE_SMOOTHING) +
+          instantVelocity * VELOCITY_SAMPLE_SMOOTHING;
     s.lastY = touch.clientY;
     s.lastMoveTime = now;
     scrollViewport(s, deltaY);
@@ -227,6 +248,7 @@ function handleTouchEnd(sessionId: string, e: TouchEvent): void {
     s.mode = 'idle';
   } else if (mode === 'scrolling') {
     e.preventDefault();
+    startKineticScroll(s);
     s.mode = 'idle';
   } else if (mode === 'horizontal') {
     // Check for horizontal swipe (Ctrl+A / Ctrl+E)
@@ -254,6 +276,7 @@ function handleTouchCancel(sessionId: string, e: TouchEvent): void {
   if (!s) return;
   e.stopPropagation();
   cancelLongPress(s);
+  cancelKineticScroll(s);
   s.mode = 'idle';
 }
 
@@ -302,6 +325,58 @@ export function scrollViewport(s: TouchScrollState, deltaY: number): void {
   }
 }
 
+export function computeKineticScrollStep(
+  velocityY: number,
+  elapsedMs: number,
+): { deltaY: number; nextVelocityY: number; active: boolean } {
+  const frameMs = Math.max(0, Math.min(KINETIC_MAX_FRAME_MS, elapsedMs));
+  if (frameMs <= 0 || Math.abs(velocityY) < KINETIC_MIN_VELOCITY_PX_PER_MS) {
+    return { deltaY: 0, nextVelocityY: 0, active: false };
+  }
+
+  const direction = velocityY > 0 ? 1 : -1;
+  const deceleration = KINETIC_FRICTION_PX_PER_MS2 * frameMs;
+  const nextSpeed = Math.max(0, Math.abs(velocityY) - deceleration);
+  const averageVelocity = direction * (Math.abs(velocityY) + nextSpeed) * 0.5;
+  return {
+    deltaY: averageVelocity * frameMs,
+    nextVelocityY: nextSpeed * direction,
+    active: nextSpeed >= KINETIC_MIN_VELOCITY_PX_PER_MS,
+  };
+}
+
+function startKineticScroll(s: TouchScrollState): void {
+  cancelKineticScroll(s);
+
+  const clampedVelocity =
+    Math.sign(s.velocityY) * Math.min(Math.abs(s.velocityY), KINETIC_MAX_VELOCITY_PX_PER_MS);
+  if (Math.abs(clampedVelocity) < KINETIC_MIN_VELOCITY_PX_PER_MS) {
+    s.velocityY = 0;
+    return;
+  }
+
+  s.velocityY = clampedVelocity;
+  s.kineticLastFrameTime = performance.now();
+
+  const step = (timestamp: number): void => {
+    const elapsedMs = timestamp - s.kineticLastFrameTime;
+    s.kineticLastFrameTime = timestamp;
+    const next = computeKineticScrollStep(s.velocityY, elapsedMs);
+    if (next.deltaY !== 0) {
+      scrollViewport(s, next.deltaY);
+    }
+    s.velocityY = next.nextVelocityY;
+    if (next.active) {
+      s.kineticFrame = requestAnimationFrame(step);
+    } else {
+      s.kineticFrame = null;
+      s.velocityY = 0;
+    }
+  };
+
+  s.kineticFrame = requestAnimationFrame(step);
+}
+
 export function panMobileStableTerminalShellScroll(
   s: Pick<TouchScrollState, 'overlay'>,
   deltaY: number,
@@ -327,6 +402,14 @@ function cancelLongPress(s: TouchScrollState): void {
     window.clearTimeout(s.longPressTimer);
     s.longPressTimer = null;
   }
+}
+
+function cancelKineticScroll(s: TouchScrollState): void {
+  if (s.kineticFrame !== null) {
+    cancelAnimationFrame(s.kineticFrame);
+    s.kineticFrame = null;
+  }
+  s.velocityY = 0;
 }
 
 function removeDocumentListener(s: TouchScrollState): void {
