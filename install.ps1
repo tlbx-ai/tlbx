@@ -78,6 +78,51 @@ function Invoke-CompatibleWebRequest
     return Invoke-WebRequest @params
 }
 
+function Unblock-DownloadedPath
+{
+    param(
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path))
+    {
+        return
+    }
+
+    try
+    {
+        Get-Item -LiteralPath $Path -Force -ErrorAction Stop | Unblock-File -ErrorAction Stop
+        Write-Log "Unblocked downloaded path: $Path"
+    }
+    catch
+    {
+        Write-Log "Could not unblock downloaded path '$Path': $_" "WARN"
+    }
+}
+
+function Unblock-DownloadedTree
+{
+    param(
+        [string]$Path
+    )
+
+    if (-not (Test-Path $Path))
+    {
+        return
+    }
+
+    try
+    {
+        Get-ChildItem -LiteralPath $Path -Recurse -Force -File -ErrorAction Stop |
+            Unblock-File -ErrorAction Stop
+        Write-Log "Unblocked downloaded tree: $Path"
+    }
+    catch
+    {
+        Write-Log "Could not unblock downloaded tree '$Path': $_" "WARN"
+    }
+}
+
 # Logging
 $script:UpdateLogFile = $null
 $script:LogInitialized = $false
@@ -1172,12 +1217,14 @@ function Install-MidTerm
     $assetUrl = Get-AssetUrl -Release $script:release
     Write-Log "Downloading from: $assetUrl"
     Invoke-CompatibleWebRequest -Uri $assetUrl -OutFile $tempZip
+    Unblock-DownloadedPath -Path $tempZip
     Write-Log "Download complete"
 
     Write-Host "Extracting..." -ForegroundColor Gray
     Write-Log "Extracting to: $tempExtract"
     if (Test-Path $tempExtract) { Remove-Item $tempExtract -Recurse -Force }
     Expand-Archive -Path $tempZip -DestinationPath $tempExtract
+    Unblock-DownloadedTree -Path $tempExtract
     Write-Log "Extraction complete"
 
     Write-Log "=== PHASE 2: Installing binaries ==="
@@ -1518,6 +1565,92 @@ function Install-AsService
 
     $webBinaryPath = Join-Path $InstallDir $WebBinaryName
 
+    function Wait-ServiceDeleted
+    {
+        param(
+            [string]$Name,
+            [int]$TimeoutSeconds = 20
+        )
+
+        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+        do
+        {
+            $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
+            if (-not $service)
+            {
+                return
+            }
+
+            Start-Sleep -Milliseconds 250
+        } while ((Get-Date) -lt $deadline)
+
+        $status = (Get-Service -Name $Name -ErrorAction SilentlyContinue).Status
+        $statusText = if ($status) { " (status: $status)" } else { "" }
+        throw "Service '$Name' is still present after delete request$statusText."
+    }
+
+    function Get-MidTermServiceDiagnostics
+    {
+        $details = New-Object System.Collections.Generic.List[string]
+
+        try
+        {
+            if (Test-Path $webBinaryPath)
+            {
+                $exe = Get-Item $webBinaryPath -ErrorAction Stop
+                $details.Add("Executable: $webBinaryPath ($($exe.Length) bytes, last write $($exe.LastWriteTime))")
+            }
+            else
+            {
+                $details.Add("Executable missing: $webBinaryPath")
+            }
+        }
+        catch
+        {
+            $details.Add("Executable inaccessible: $webBinaryPath ($_)")
+        }
+
+        try
+        {
+            $svc = Get-CimInstance Win32_Service -Filter "Name='$ServiceName'" -ErrorAction SilentlyContinue
+            if ($svc)
+            {
+                $details.Add("Service state: $($svc.State), exit code: $($svc.ExitCode), service-specific exit code: $($svc.ServiceSpecificExitCode)")
+                $details.Add("Service path: $($svc.PathName)")
+            }
+        }
+        catch { }
+
+        try
+        {
+            $recentSystem = Get-WinEvent -FilterHashtable @{ LogName = 'System'; ProviderName = 'Service Control Manager'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue |
+                Where-Object { $_.Message -match $ServiceName } |
+                Select-Object -First 3
+            foreach ($event in $recentSystem)
+            {
+                $details.Add("SCM $($event.Id): $($event.Message)")
+            }
+        }
+        catch { }
+
+        try
+        {
+            $recentApp = Get-WinEvent -FilterHashtable @{ LogName = 'Application'; ProviderName = 'MidTerm'; StartTime = (Get-Date).AddMinutes(-5) } -ErrorAction SilentlyContinue |
+                Select-Object -First 5
+            foreach ($event in $recentApp)
+            {
+                $message = ([string]$event.Message).Trim()
+                if ($message)
+                {
+                    $details.Add("MidTerm event: $message")
+                }
+            }
+        }
+        catch { }
+
+        return $details
+    }
+
     # Remove existing service if present
     $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($existingService)
@@ -1536,7 +1669,7 @@ function Install-AsService
         }
 
         sc.exe delete $ServiceName | Out-Null
-        Start-Sleep -Milliseconds 500
+        Wait-ServiceDeleted -Name $ServiceName
     }
 
     # Convert bind address for command line
@@ -1549,6 +1682,13 @@ function Install-AsService
     Write-Log "Service binPath: $binPath"
     $scCreateOutput = sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "$DisplayName" 2>&1
     Write-Log "sc.exe create output: $scCreateOutput"
+    if ($LASTEXITCODE -ne 0)
+    {
+        $message = "Failed to create Windows service (sc.exe exit code $LASTEXITCODE): $scCreateOutput"
+        Write-Log $message "ERROR"
+        Write-Host "  $message" -ForegroundColor Red
+        throw $message
+    }
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
     sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
 
@@ -1563,6 +1703,15 @@ function Install-AsService
     catch
     {
         Write-Log "Failed to start service: $_" "ERROR"
+        Write-Host "  Failed to start service: $_" -ForegroundColor Red
+
+        $diagnostics = Get-MidTermServiceDiagnostics
+        foreach ($line in $diagnostics)
+        {
+            Write-Log $line "ERROR"
+            Write-Host "  $line" -ForegroundColor DarkGray
+        }
+
         throw
     }
 
