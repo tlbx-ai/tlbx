@@ -62,6 +62,39 @@ public sealed class MainBrowserServiceTests
     }
 
     [Fact]
+    public void GetBrowserStatuses_IncludesLeadingBrowserAndActiveSession()
+    {
+        var service = new MainBrowserService();
+        var mainConnection = new object();
+        var followerConnection = new object();
+
+        service.Register("browser-a:tab-1", mainConnection);
+        service.Register("browser-b:tab-2", followerConnection);
+        service.UpdateActivity("browser-b:tab-2", followerConnection, true, "session-2", "agent:codex");
+
+        var statuses = service.GetBrowserStatuses();
+
+        Assert.Collection(
+            statuses,
+            leading =>
+            {
+                Assert.Equal("browser-a:tab-1", leading.BrowserId);
+                Assert.True(leading.IsMain);
+                Assert.False(leading.IsActive);
+            },
+            follower =>
+            {
+                Assert.Equal("browser-b:tab-2", follower.BrowserId);
+                Assert.False(follower.IsMain);
+                Assert.True(follower.IsActive);
+                Assert.Equal("session-2", follower.ActiveSessionId);
+                Assert.Equal("agent:codex", follower.ActiveSurface);
+                Assert.Equal(1, follower.ConnectionCount);
+                Assert.Equal(1, follower.ActiveConnectionCount);
+            });
+    }
+
+    [Fact]
     public void Register_DoesNotImplicitlyReassignMainBrowserAfterRelease()
     {
         var service = new MainBrowserService();

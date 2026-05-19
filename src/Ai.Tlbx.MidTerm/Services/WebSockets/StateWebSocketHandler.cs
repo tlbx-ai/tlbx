@@ -277,7 +277,8 @@ public sealed class StateWebSocketHandler
             var status = new MainBrowserStatusMessage
             {
                 IsMain = _mainBrowserService.IsMain(browserId),
-                ShowButton = _mainBrowserService.ShouldShowButton(browserId)
+                ShowButton = _mainBrowserService.ShouldShowButton(browserId),
+                Browsers = _mainBrowserService.GetBrowserStatuses()
             };
             await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
         }
@@ -601,7 +602,12 @@ public sealed class StateWebSocketHandler
                     break;
 
                 case "browser.setActivity":
-                    _mainBrowserService.UpdateActivity(browserId, connectionToken, cmd.Payload?.IsActive == true);
+                    _mainBrowserService.UpdateActivity(
+                        browserId,
+                        connectionToken,
+                        cmd.Payload?.IsActive == true,
+                        cmd.Payload?.ActiveSessionId,
+                        cmd.Payload?.ActiveSurface);
                     await sendResponse(cmd.Id, true, null, null);
                     break;
 

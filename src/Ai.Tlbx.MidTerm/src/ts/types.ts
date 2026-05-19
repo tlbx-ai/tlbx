@@ -85,6 +85,16 @@ export interface ProcessState {
   foregroundProcessIdentity: string | null;
 }
 
+export interface BrowserSessionStatus {
+  browserId: string;
+  isMain: boolean;
+  isActive: boolean;
+  connectionCount: number;
+  activeConnectionCount: number;
+  activeSessionId: string | null;
+  activeSurface: string | null;
+}
+
 /** Terminal state for a session */
 export interface TerminalState {
   terminal: Terminal;
@@ -158,6 +168,8 @@ export type WsCommand =
       action: 'browser.setActivity';
       payload: {
         isActive: boolean;
+        activeSessionId?: string | null;
+        activeSurface?: string | null;
       };
     };
 
@@ -175,6 +187,8 @@ interface WsCommandPayloadMap {
   'browser.releaseMain': undefined;
   'browser.setActivity': {
     isActive: boolean;
+    activeSessionId?: string | null;
+    activeSurface?: string | null;
   };
 }
 

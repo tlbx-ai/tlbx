@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Models;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -96,8 +97,14 @@ public sealed class MainBrowserService
         if (changed) OnMainBrowserChanged?.Invoke();
     }
 
-    public void UpdateActivity(string browserId, object connectionToken, bool isActive)
+    public void UpdateActivity(
+        string browserId,
+        object connectionToken,
+        bool isActive,
+        string? activeSessionId = null,
+        string? activeSurface = null)
     {
+        bool changed = false;
         lock (_lock)
         {
             if (!_browserConnections.TryGetValue(browserId, out var registration))
@@ -117,7 +124,18 @@ public sealed class MainBrowserService
             {
                 registration.ActiveConnectionTokens.Remove(connectionToken);
             }
+
+            var normalizedSessionId = string.IsNullOrWhiteSpace(activeSessionId) ? null : activeSessionId;
+            var normalizedSurface = string.IsNullOrWhiteSpace(activeSurface) ? null : activeSurface;
+            var isActiveNow = registration.ActiveConnectionTokens.Count > 0;
+            changed = registration.IsActive != isActiveNow
+                || !string.Equals(registration.ActiveSessionId, normalizedSessionId, StringComparison.Ordinal)
+                || !string.Equals(registration.ActiveSurface, normalizedSurface, StringComparison.Ordinal);
+            registration.IsActive = isActiveNow;
+            registration.ActiveSessionId = normalizedSessionId;
+            registration.ActiveSurface = normalizedSurface;
         }
+        if (changed) OnMainBrowserChanged?.Invoke();
     }
 
     public void Claim(string browserId)
@@ -157,6 +175,27 @@ public sealed class MainBrowserService
         }
     }
 
+    public List<BrowserSessionStatus> GetBrowserStatuses()
+    {
+        lock (_lock)
+        {
+            return _browserConnections
+                .OrderByDescending(pair => string.Equals(pair.Key, _mainBrowserId, StringComparison.Ordinal))
+                .ThenBy(pair => pair.Key, StringComparer.Ordinal)
+                .Select(pair => new BrowserSessionStatus
+                {
+                    BrowserId = pair.Key,
+                    IsMain = string.Equals(pair.Key, _mainBrowserId, StringComparison.Ordinal),
+                    IsActive = pair.Value.IsActive,
+                    ConnectionCount = pair.Value.ConnectionTokens.Count,
+                    ActiveConnectionCount = pair.Value.ActiveConnectionTokens.Count,
+                    ActiveSessionId = pair.Value.ActiveSessionId,
+                    ActiveSurface = pair.Value.ActiveSurface
+                })
+                .ToList();
+        }
+    }
+
     /// <summary>
     /// Whether the main browser button should be visible for this browser.
     /// True when 2+ browsers are connected, or when main is set to a different
@@ -175,5 +214,8 @@ public sealed class MainBrowserService
     {
         public HashSet<object> ConnectionTokens { get; } = new(ReferenceEqualityComparer.Instance);
         public HashSet<object> ActiveConnectionTokens { get; } = new(ReferenceEqualityComparer.Instance);
+        public bool IsActive { get; set; }
+        public string? ActiveSessionId { get; set; }
+        public string? ActiveSurface { get; set; }
     }
 }

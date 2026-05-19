@@ -7877,6 +7877,87 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-muted);
 }
 
+.diag-browser-tree {
+  display: grid;
+  gap: 8px;
+}
+
+.diag-browser-empty {
+  padding: 10px 12px;
+  border: 1px dashed var(--border-color);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: var(--fs-base);
+}
+
+.diag-browser-node {
+  padding: 10px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.diag-browser-node.is-leading {
+  border-color: var(--accent-green);
+}
+
+.diag-browser-node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diag-browser-node-header code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--font-mono);
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+}
+
+.diag-browser-role,
+.diag-browser-activity {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+.diag-browser-node.is-leading .diag-browser-role {
+  color: var(--accent-green);
+}
+
+.diag-browser-children {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border-color);
+}
+
+.diag-browser-children div {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: var(--fs-base);
+}
+
+.diag-browser-children span {
+  color: var(--text-muted);
+}
+
+.diag-browser-children strong,
+.diag-browser-children code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
 .diag-log-actions {
   display: flex;
   justify-content: flex-end;

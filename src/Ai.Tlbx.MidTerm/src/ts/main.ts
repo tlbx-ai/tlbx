@@ -545,6 +545,7 @@ function bindTerminalVisibilitySync(): void {
 
   $activeSessionId.subscribe(() => {
     syncMuxTerminalVisibility();
+    reportBrowserActivity(undefined, true);
   });
 
   $layout.subscribe(() => {

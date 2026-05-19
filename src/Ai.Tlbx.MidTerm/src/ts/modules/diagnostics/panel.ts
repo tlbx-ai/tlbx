@@ -7,7 +7,8 @@
 import { getPaths, getSessionState, reloadSettings, restartServer } from '../../api/client';
 import type { SessionStateResponse } from '../../api/types';
 import { getBrowserTransportSnapshot, measureLatency, onOutputRtt } from '../comms';
-import { $activeSessionId, getSession } from '../../stores';
+import { $activeSessionId, $browserSessions, getSession } from '../../stores';
+import type { BrowserSessionStatus } from '../../types';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
 import { enableGitStatusOverlay, disableGitStatusOverlay } from './gitStatusOverlay';
@@ -37,6 +38,7 @@ export function initDiagnosticsPanel(): void {
   bindGitOverlayToggle();
   bindTerminalBufferDumpButton();
   bindTerminalKeyLogControls();
+  bindBrowserSessionTree();
 }
 
 export function startLatencyMeasurement(): void {
@@ -225,6 +227,86 @@ function setDiagValue(id: string, value: string): void {
   if (element) {
     element.textContent = value;
   }
+}
+
+function bindBrowserSessionTree(): void {
+  const root = document.getElementById('diag-browser-session-tree');
+  if (!root) {
+    return;
+  }
+
+  const render = (): void => {
+    renderBrowserSessionTree(root, $browserSessions.get());
+  };
+
+  render();
+  $browserSessions.subscribe(render);
+}
+
+function renderBrowserSessionTree(root: HTMLElement, browsers: BrowserSessionStatus[]): void {
+  if (browsers.length === 0) {
+    root.innerHTML = `<div class="diag-browser-empty">${escapeHtml(
+      t('settings.diagnostics.browserSessionTreeEmpty'),
+    )}</div>`;
+    return;
+  }
+
+  root.innerHTML = browsers.map(renderBrowserSessionNode).join('');
+}
+
+function renderBrowserSessionNode(browser: BrowserSessionStatus): string {
+  const sessionId = browser.activeSessionId;
+  const session = sessionId ? getSession(sessionId) : undefined;
+  const display = session ? getSessionDisplayInfo(session) : null;
+  const sessionLabel = display
+    ? display.secondary
+      ? `${display.primary} — ${display.secondary}`
+      : display.primary
+    : (sessionId ?? t('settings.diagnostics.browserSessionNone'));
+  const surface = browser.activeSurface ?? session?.surface ?? 'unknown';
+  const browserLabel =
+    browser.browserId.length > 18 ? browser.browserId.slice(0, 18) : browser.browserId;
+  const role = browser.isMain
+    ? t('settings.diagnostics.browserSessionLeading')
+    : t('settings.diagnostics.browserSessionFollowing');
+  const activity = browser.isActive
+    ? t('settings.diagnostics.browserSessionActive')
+    : t('settings.diagnostics.browserSessionIdle');
+
+  return `
+    <article class="diag-browser-node ${browser.isMain ? 'is-leading' : 'is-following'}">
+      <div class="diag-browser-node-header">
+        <span class="diag-browser-role">${escapeHtml(role)}</span>
+        <code>${escapeHtml(browserLabel)}</code>
+        <span class="diag-browser-activity">${escapeHtml(activity)}</span>
+      </div>
+      <div class="diag-browser-children">
+        <div><span>${escapeHtml(t('settings.diagnostics.browserSessionActiveSession'))}</span><strong>${escapeHtml(
+          sessionLabel,
+        )}</strong></div>
+        <div><span>${escapeHtml(t('settings.diagnostics.browserSessionSurface'))}</span><code>${escapeHtml(
+          surface,
+        )}</code></div>
+        <div><span>${escapeHtml(t('settings.diagnostics.browserSessionConnections'))}</span><code>${browser.activeConnectionCount}/${browser.connectionCount}</code></div>
+      </div>
+    </article>`;
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      default:
+        return '&#39;';
+    }
+  });
 }
 
 function formatSequence(value: bigint | null): string {
