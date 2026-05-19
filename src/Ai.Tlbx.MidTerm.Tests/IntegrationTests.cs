@@ -140,7 +140,7 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
-    public async Task WebSocket_State_CoalescesBurstUpdates()
+    public async Task WebSocket_State_CoalescesInFlightBurstUpdates()
     {
         using var scope = _factory.Services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<TtyHostSessionManager>();
@@ -164,14 +164,24 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
             notifyStateChange.Invoke(registry, null);
         }
 
-        var coalescedJson = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
-        var coalescedState = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(
-            coalescedJson,
-            AppJsonContext.Default.StateUpdate);
-        Assert.NotNull(coalescedState?.Sessions);
+        var messages = new List<string>
+        {
+            await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5))
+        };
 
-        var extraMessage = await TryReceiveTextMessageAsync(ws, TimeSpan.FromMilliseconds(150));
-        Assert.Null(extraMessage);
+        while (await TryReceiveTextMessageAsync(ws, TimeSpan.FromMilliseconds(150)) is { } message)
+        {
+            messages.Add(message);
+        }
+
+        Assert.InRange(messages.Count, 1, 3);
+        foreach (var message in messages)
+        {
+            var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(
+                message,
+                AppJsonContext.Default.StateUpdate);
+            Assert.NotNull(state?.Sessions);
+        }
     }
 
     [Fact]

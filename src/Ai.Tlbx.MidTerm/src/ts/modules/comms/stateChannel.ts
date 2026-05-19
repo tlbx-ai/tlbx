@@ -348,6 +348,10 @@ function syncSessionTerminalState(session: Session & { id: string }): void {
     const dimensionsChanged =
       state.serverCols !== session.cols || state.serverRows !== session.rows;
     if (dimensionsChanged) {
+      if ($isMainBrowser.get() && !state.container.classList.contains('hidden')) {
+        return;
+      }
+
       state.serverCols = session.cols;
       state.serverRows = session.rows;
       state.terminal.resize(session.cols, session.rows);

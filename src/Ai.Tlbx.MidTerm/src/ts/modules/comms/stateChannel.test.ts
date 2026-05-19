@@ -425,6 +425,39 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
   });
 
+  it('does not resize a visible main-browser terminal from a state snapshot', async () => {
+    const { stores } = await loadHarness();
+    stores.$isMainBrowser.set(true);
+    const container = { classList: { contains: vi.fn(() => false) } };
+    const resize = vi.fn();
+    state.sessionTerminals.set('session-a', {
+      opened: true,
+      container: container as any,
+      serverCols: 120,
+      serverRows: 30,
+      terminal: { resize } as any,
+      fitAddon: {} as any,
+    });
+
+    handleStateUpdate([
+      {
+        id: 'session-a',
+        cols: 100,
+        rows: 24,
+        appServerControlOnly: false,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+    ]);
+
+    expect(resize).not.toHaveBeenCalled();
+    expect(mocks.applyTerminalScaling).not.toHaveBeenCalled();
+    expect(state.sessionTerminals.get('session-a')?.serverCols).toBe(120);
+    expect(state.sessionTerminals.get('session-a')?.serverRows).toBe(30);
+  });
+
   it('does not rerender session chrome for identical state snapshots', async () => {
     await loadHarness();
     const sessions = [
