@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Services;
+using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -62,6 +63,39 @@ public sealed class MainBrowserServiceTests
     }
 
     [Fact]
+    public void GetBrowserStatuses_IncludesLeadingBrowserAndActiveSession()
+    {
+        var service = new MainBrowserService();
+        var mainConnection = new object();
+        var followerConnection = new object();
+
+        service.Register("browser-a:tab-1", mainConnection);
+        service.Register("browser-b:tab-2", followerConnection);
+        service.UpdateActivity("browser-b:tab-2", followerConnection, true, "session-2", "agent:codex");
+
+        var statuses = service.GetBrowserStatuses();
+
+        Assert.Collection(
+            statuses,
+            leading =>
+            {
+                Assert.Equal("browser-a:tab-1", leading.BrowserId);
+                Assert.True(leading.IsMain);
+                Assert.False(leading.IsActive);
+            },
+            follower =>
+            {
+                Assert.Equal("browser-b:tab-2", follower.BrowserId);
+                Assert.False(follower.IsMain);
+                Assert.True(follower.IsActive);
+                Assert.Equal("session-2", follower.ActiveSessionId);
+                Assert.Equal("agent:codex", follower.ActiveSurface);
+                Assert.Equal(1, follower.ConnectionCount);
+                Assert.Equal(1, follower.ActiveConnectionCount);
+            });
+    }
+
+    [Fact]
     public void Register_DoesNotImplicitlyReassignMainBrowserAfterRelease()
     {
         var service = new MainBrowserService();
@@ -75,5 +109,72 @@ public sealed class MainBrowserServiceTests
         Assert.Null(service.GetMainBrowserId());
         Assert.False(service.IsMain("browser-b:tab-2"));
         Assert.True(service.ShouldShowButton("browser-b:tab-2"));
+    }
+
+    [Fact]
+    public void Register_RestoresStickyMainBrowserAfterRuntimeRestart()
+    {
+        var settingsDirectory = CreateTempDirectory();
+        try
+        {
+            var firstRun = new MainBrowserService(new SettingsService(settingsDirectory));
+            firstRun.Register("work-client:tab-1", new object());
+            firstRun.Claim("work-client:tab-1");
+
+            var secondRun = new MainBrowserService(new SettingsService(settingsDirectory));
+            secondRun.Register("home-client:tab-1", new object());
+
+            Assert.False(secondRun.IsMain("home-client:tab-1"));
+            Assert.True(secondRun.ShouldShowButton("home-client:tab-1"));
+
+            secondRun.Register("work-client:tab-1", new object());
+
+            Assert.True(secondRun.IsMain("work-client:tab-1"));
+            Assert.False(secondRun.IsMain("home-client:tab-1"));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(settingsDirectory, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    [Fact]
+    public void Register_RestoresStickyMainBrowserWithSameClientFallback()
+    {
+        var settingsDirectory = CreateTempDirectory();
+        try
+        {
+            var firstRun = new MainBrowserService(new SettingsService(settingsDirectory));
+            firstRun.Register("work-client:tab-1", new object());
+            firstRun.Claim("work-client:tab-1");
+
+            var secondRun = new MainBrowserService(new SettingsService(settingsDirectory));
+            secondRun.Register("work-client:tab-2", new object());
+
+            Assert.True(secondRun.IsMain("work-client:tab-2"));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(settingsDirectory, recursive: true);
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static string CreateTempDirectory()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"midterm_main_browser_tests_{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        return directory;
     }
 }

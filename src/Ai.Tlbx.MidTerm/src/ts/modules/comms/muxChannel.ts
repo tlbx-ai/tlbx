@@ -1,16 +1,6 @@
 /**
- * Mux Channel Module
- *
- * Manages the mux WebSocket connection for terminal I/O.
- * Uses a binary protocol with 9-byte header (1 byte type + 8 byte session ID).
- *
- * CRITICAL: Output ordering is strict per session, not globally across all sessions.
- * We intentionally keep only the minimum browser-side sequencing needed to preserve
- * per-session order across async decompression and xterm's async write callback.
- *
- * xterm already has its own WriteBuffer and input-aware scheduling. Adding another
- * global scheduler in front of it hid real terminal latency behind an extra queue
- * and made the "output RTT" metric stop before the user-visible xterm parse step.
+ * Mux WebSocket terminal I/O. Output ordering is strict per session, not global;
+ * xterm's own WriteBuffer remains the user-visible parse boundary.
  */
 
 import type { TerminalState } from '../../types';
@@ -45,6 +35,7 @@ import {
   shouldHideCursorForOutput,
   showBurstCursor,
 } from './cursorVisibility';
+import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
 import {
   armOutputRttMeasurement as armTrackedOutputRttMeasurement,
   consumeCompletedOutputRtt,
@@ -144,9 +135,6 @@ interface BrowserTransportSnapshot {
 
 const replaySuppressedSessions = new Map<string, ReplaySuppressionState>();
 const browserTransportSnapshots = new Map<string, BrowserTransportSnapshot>();
-const SEQUENCE_MODULUS = 1n << 64n;
-const HALF_SEQUENCE_RANGE = 1n << 63n;
-
 function forEachLocalTerminal(callback: (state: TerminalState, sessionId: string) => void): void {
   sessionTerminals.forEach((state, sessionId) => {
     if (isHubSessionId(sessionId)) {
@@ -485,10 +473,12 @@ interface OutputFrameItem {
 interface SessionOutputQueue {
   items: OutputFrameItem[];
   index: number;
+  bytes: number;
   processing: boolean;
 }
 
 const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
+const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
@@ -532,43 +522,6 @@ function yieldToMain(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-function isSequenceNewer(candidate: bigint, current: bigint): boolean {
-  const delta = (candidate - current + SEQUENCE_MODULUS) % SEQUENCE_MODULUS;
-  return delta !== 0n && delta < HALF_SEQUENCE_RANGE;
-}
-
-function maxSequence(current: bigint, candidate: bigint): bigint {
-  return isSequenceNewer(candidate, current) ? candidate : current;
-}
-
-function trimFrameToUnseenSuffix(
-  data: Uint8Array,
-  sequenceEnd: bigint,
-  receivedSeq: bigint,
-): Uint8Array {
-  if (data.length === 0 || receivedSeq === 0n) {
-    return data;
-  }
-
-  if (!isSequenceNewer(sequenceEnd, receivedSeq)) {
-    return new Uint8Array(0);
-  }
-
-  const frameLength = BigInt(data.length);
-  const sequenceStart = (sequenceEnd - frameLength + SEQUENCE_MODULUS) % SEQUENCE_MODULUS;
-  const overlapBytes = (receivedSeq - sequenceStart + SEQUENCE_MODULUS) % SEQUENCE_MODULUS;
-
-  if (
-    isSequenceNewer(receivedSeq, sequenceStart) &&
-    overlapBytes > 0n &&
-    overlapBytes < frameLength
-  ) {
-    return data.subarray(Number(overlapBytes));
-  }
-
-  return data;
-}
-
 function getOrCreateBrowserTransportSnapshot(sessionId: string): BrowserTransportSnapshot {
   let snapshot = browserTransportSnapshots.get(sessionId);
   if (!snapshot) {
@@ -597,7 +550,7 @@ function getPendingFrameCount(queue: SessionOutputQueue): number {
 function getOrCreateSessionQueue(sessionId: string): SessionOutputQueue {
   let queue = sessionOutputQueues.get(sessionId);
   if (!queue) {
-    queue = { items: [], index: 0, processing: false };
+    queue = { items: [], index: 0, bytes: 0, processing: false };
     sessionOutputQueues.set(sessionId, queue);
   }
   return queue;
@@ -627,11 +580,13 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
   if (!item) {
     queue.items.length = 0;
     queue.index = 0;
+    queue.bytes = 0;
     sessionOutputQueues.delete(sessionId);
     return null;
   }
 
   queue.index++;
+  queue.bytes = Math.max(0, queue.bytes - item.payload.byteLength);
 
   if (getPendingFrameCount(queue) === 0) {
     // Do not remove the queue object yet. The current worker may still be
@@ -640,6 +595,7 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
     // per-session ordering.
     queue.items.length = 0;
     queue.index = 0;
+    queue.bytes = 0;
   } else if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
     compactSessionQueue(queue);
   }
@@ -650,15 +606,22 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const queue = getOrCreateSessionQueue(sessionId);
   const pendingCount = getPendingFrameCount(queue);
-  if (pendingCount >= MAX_QUEUED_FRAMES_PER_SESSION) {
-    queue.index++;
+  if (
+    pendingCount >= MAX_QUEUED_FRAMES_PER_SESSION ||
+    queue.bytes + payload.byteLength > MAX_QUEUED_BYTES_PER_SESSION
+  ) {
     noteQueueOverflow(sessionId);
-    if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
-      compactSessionQueue(queue);
-    }
+    queue.items.length = 0;
+    queue.index = 0;
+    queue.bytes = 0;
+    sessionOutputQueues.delete(sessionId);
+    sessionsNeedingResync.add(sessionId);
+    requestBufferRefresh(sessionId);
+    return;
   }
 
   queue.items.push({ sessionId, payload, compressed });
+  queue.bytes += payload.byteLength;
   void processSessionOutputQueue(sessionId, outputQueueGeneration);
 }
 
@@ -884,6 +847,12 @@ function applyTerminalResizeIfNeeded(
   const currentCols = state.terminal.cols;
   const currentRows = state.terminal.rows;
   if (currentCols === cols && currentRows === rows) {
+    return;
+  }
+
+  if ($isMainBrowser.get() && !state.container.classList.contains('hidden')) {
+    state.serverCols = cols;
+    state.serverRows = rows;
     return;
   }
 
@@ -1440,15 +1409,13 @@ export function updateTerminalVisibility(
     normalizedVisibleSessionIds,
   );
   const quickResumeEnabled = isQuickResumeEnabled();
-  const sessionsNeedingQuickResume: string[] = [];
+  const sessionsNeedingReplay: string[] = [];
 
-  if (quickResumeEnabled) {
-    nextStreamableSessionIds.forEach((sessionId) => {
-      if (!currentStreamableSessionIds.has(sessionId)) {
-        sessionsNeedingQuickResume.push(sessionId);
-      }
-    });
-  }
+  nextStreamableSessionIds.forEach((sessionId) => {
+    if (!currentStreamableSessionIds.has(sessionId)) {
+      sessionsNeedingReplay.push(sessionId);
+    }
+  });
 
   currentVisibleSessionIds = normalizedVisibleSessionIds;
   currentStreamableSessionIds = nextStreamableSessionIds;
@@ -1457,12 +1424,8 @@ export function updateTerminalVisibility(
     sendVisibleSessionsHint(normalizedVisibleSessionIds);
   }
 
-  if (!quickResumeEnabled) {
-    return;
-  }
-
-  sessionsNeedingQuickResume.forEach((sessionId) => {
-    requestBufferRefresh(sessionId, 'quickResume');
+  sessionsNeedingReplay.forEach((sessionId) => {
+    requestBufferRefresh(sessionId, quickResumeEnabled ? 'quickResume' : 'fullReplay');
   });
 }
 

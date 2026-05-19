@@ -74,6 +74,10 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain('overflow: hidden auto;');
   });
 
+  it('does not run a periodic main-browser resize interval', () => {
+    expect(scalingSource).not.toContain('setInterval(periodicResizeCheck');
+  });
+
   it('wires custom box-drawing glyph rendering to persisted terminal settings', () => {
     expect(terminalOptionsSource).toContain("| 'customGlyphs'");
     expect(terminalOptionsSource).toContain('customGlyphs: currentSettings?.customGlyphs ?? true,');

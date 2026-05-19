@@ -211,6 +211,7 @@ async function loadHarness() {
   stores.$webPreviewUrl.set(null);
   stores.$stateWsConnected.set(false);
   stores.$sessions.set({});
+  stores.$browserSessions.set([]);
 
   state.setStateWs(null);
   state.sessionTerminals.clear();
@@ -370,6 +371,43 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
   });
 
+  it('stores browser session tree from main browser status messages', async () => {
+    const { stores, ws } = await loadHarness();
+
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'main-browser-status',
+        isMain: false,
+        showButton: true,
+        browsers: [
+          {
+            browserId: 'browser-a:tab-1',
+            isMain: true,
+            isActive: true,
+            connectionCount: 1,
+            activeConnectionCount: 1,
+            activeSessionId: 'session-a',
+            activeSurface: 'terminal',
+          },
+        ],
+      }),
+    } as MessageEvent<string>);
+
+    expect(stores.$isMainBrowser.get()).toBe(false);
+    expect(stores.$showMainBrowserButton.get()).toBe(true);
+    expect(stores.$browserSessions.get()).toEqual([
+      {
+        browserId: 'browser-a:tab-1',
+        isMain: true,
+        isActive: true,
+        connectionCount: 1,
+        activeConnectionCount: 1,
+        activeSessionId: 'session-a',
+        activeSurface: 'terminal',
+      },
+    ]);
+  });
+
   it('activates the target session when browser open explicitly requests it', async () => {
     const { stores, ws } = await loadHarness();
     mocks.setWebPreviewTarget.mockResolvedValue({
@@ -423,6 +461,39 @@ describe('stateChannel browser-ui handling', () => {
     ]);
 
     expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
+  });
+
+  it('does not resize a visible main-browser terminal from a state snapshot', async () => {
+    const { stores } = await loadHarness();
+    stores.$isMainBrowser.set(true);
+    const container = { classList: { contains: vi.fn(() => false) } };
+    const resize = vi.fn();
+    state.sessionTerminals.set('session-a', {
+      opened: true,
+      container: container as any,
+      serverCols: 120,
+      serverRows: 30,
+      terminal: { resize } as any,
+      fitAddon: {} as any,
+    });
+
+    handleStateUpdate([
+      {
+        id: 'session-a',
+        cols: 100,
+        rows: 24,
+        appServerControlOnly: false,
+        foregroundPid: null,
+        foregroundName: null,
+        foregroundCommandLine: null,
+        currentDirectory: 'Q:/repos/MidTerm',
+      } as any,
+    ]);
+
+    expect(resize).not.toHaveBeenCalled();
+    expect(mocks.applyTerminalScaling).not.toHaveBeenCalled();
+    expect(state.sessionTerminals.get('session-a')?.serverCols).toBe(120);
+    expect(state.sessionTerminals.get('session-a')?.serverRows).toBe(30);
   });
 
   it('does not rerender session chrome for identical state snapshots', async () => {

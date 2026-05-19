@@ -70,4 +70,38 @@ describe('fileLinks hot-path throttling', () => {
       'Q:\\repos\\MidTermWorkspace3\\src\\main.ts',
     ]);
   });
+
+  it('defers regex scanning work to idle time after the debounce window', async () => {
+    const idleCallbacks: IdleRequestCallback[] = [];
+    vi.stubGlobal('requestIdleCallback', vi.fn((callback: IdleRequestCallback) => {
+      idleCallbacks.push(callback);
+      return idleCallbacks.length;
+    }));
+    vi.stubGlobal('cancelIdleCallback', vi.fn());
+
+    sessionTerminals.set('sess1', {
+      terminal: {
+        modes: { synchronizedOutputMode: false },
+      },
+    } as never);
+
+    scanOutputForPaths(
+      'sess1',
+      new TextEncoder().encode('Q:\\repos\\MidTermWorkspace3\\src\\main.ts'),
+    );
+
+    await vi.advanceTimersByTimeAsync(50);
+    await Promise.resolve();
+
+    expect(mocks.registerFilePaths).not.toHaveBeenCalled();
+    expect(idleCallbacks).toHaveLength(1);
+
+    idleCallbacks[0]?.({
+      didTimeout: false,
+      timeRemaining: () => 10,
+    });
+    await Promise.resolve();
+
+    expect(mocks.registerFilePaths).toHaveBeenCalledTimes(1);
+  });
 });

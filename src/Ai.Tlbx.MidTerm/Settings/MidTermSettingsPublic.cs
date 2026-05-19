@@ -69,9 +69,11 @@ public sealed partial class MidTermSettingsPublic
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
+    public bool MobileKineticTerminalScroll { get; set; } = true;
     public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
+    public bool PreserveTerminalCursorControl { get; set; } = true;
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
     public bool ShowBookmarks { get; set; } = true;

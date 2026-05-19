@@ -7,6 +7,7 @@
  */
 
 import type {
+  BrowserSessionStatus,
   DockPosition,
   LayoutNode,
   ManagerBarQueueEntry,
@@ -71,6 +72,7 @@ interface MainBrowserStatusMessage {
   type: 'main-browser-status';
   isMain: boolean;
   showButton: boolean;
+  browsers?: BrowserSessionStatus[];
 }
 
 interface BrowserUiMessage {
@@ -138,11 +140,13 @@ import {
   $settingsOpen,
   $stateWsConnected,
   $activeSessionId,
+  $browserSessions,
   $sessionList,
   $updateInfo,
   $isMainBrowser,
   $showMainBrowserButton,
   $webPreviewUrl,
+  getSession,
   setSessions,
   setManagerBarQueue,
   getParentSessionId,
@@ -247,6 +251,7 @@ function handleStateSocketMessage(data: StateWsMessage): void {
   if (data.type === 'main-browser-status') {
     $isMainBrowser.set(data.isMain);
     $showMainBrowserButton.set(data.showButton);
+    $browserSessions.set(data.browsers ?? []);
     return;
   }
 
@@ -348,6 +353,10 @@ function syncSessionTerminalState(session: Session & { id: string }): void {
     const dimensionsChanged =
       state.serverCols !== session.cols || state.serverRows !== session.rows;
     if (dimensionsChanged) {
+      if ($isMainBrowser.get() && !state.container.classList.contains('hidden')) {
+        return;
+      }
+
       state.serverCols = session.cols;
       state.serverRows = session.rows;
       state.terminal.resize(session.cols, session.rows);
@@ -776,6 +785,24 @@ function getCurrentBrowserActivity(): boolean {
   return visible && focused;
 }
 
+function getCurrentActiveSurface(): string | null {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) {
+    return null;
+  }
+
+  const session = getSession(sessionId);
+  if (!session) {
+    return null;
+  }
+
+  if (session.appServerControlOnly || session.surface === 'codex' || session.surface === 'claude') {
+    return session.profileHint ? `agent:${session.profileHint}` : 'agent';
+  }
+
+  return session.surface ?? 'terminal';
+}
+
 let lastReportedBrowserActivity: boolean | undefined;
 
 export function reportBrowserActivity(
@@ -785,7 +812,11 @@ export function reportBrowserActivity(
   if (isSharedSessionRoute() || !isStateConnected()) return;
   if (!force && lastReportedBrowserActivity === isActive) return;
 
-  sendCommand('browser.setActivity', { isActive })
+  sendCommand('browser.setActivity', {
+    isActive,
+    activeSessionId: $activeSessionId.get(),
+    activeSurface: getCurrentActiveSurface(),
+  })
     .then(() => {
       lastReportedBrowserActivity = isActive;
     })

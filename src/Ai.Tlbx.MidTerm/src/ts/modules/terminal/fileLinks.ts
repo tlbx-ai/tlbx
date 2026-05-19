@@ -120,6 +120,7 @@ type ScanBufferState = {
   chunks: string[];
   bytes: number;
   timer: number | null;
+  idleHandle: number | null;
 };
 
 type PendingResolve = {
@@ -228,7 +229,7 @@ function cancelPendingResolve(sessionId: string): void {
 function getOrCreateScanBuffer(sessionId: string): ScanBufferState {
   let state = scanBuffers.get(sessionId);
   if (!state) {
-    state = { chunks: [], bytes: 0, timer: null };
+    state = { chunks: [], bytes: 0, timer: null, idleHandle: null };
     scanBuffers.set(sessionId, state);
   }
   return state;
@@ -265,22 +266,52 @@ function shouldSkipSessionOutputScan(sessionId: string): boolean {
 
 function queueScanFlush(sessionId: string): void {
   const state = getOrCreateScanBuffer(sessionId);
-  if (state.timer !== null) return;
+  if (state.timer !== null || state.idleHandle !== null) return;
 
   state.timer = window.setTimeout(() => {
     const current = scanBuffers.get(sessionId);
     if (!current) return;
     current.timer = null;
+    scheduleScanIdleFlush(sessionId);
+  }, SCAN_DEBOUNCE_MS);
+}
 
-    if (current.chunks.length === 0) return;
-    const pendingText = current.chunks.join('');
-    current.chunks = [];
-    current.bytes = 0;
+function scheduleScanIdleFlush(sessionId: string): void {
+  const current = scanBuffers.get(sessionId);
+  if (!current || current.idleHandle !== null) return;
+
+  const flush = (): void => {
+    const latest = scanBuffers.get(sessionId);
+    if (!latest) return;
+    latest.idleHandle = null;
+
+    if (latest.chunks.length === 0) return;
+    const pendingText = latest.chunks.join('');
+    latest.chunks = [];
+    latest.bytes = 0;
 
     if (pendingText.length > 0) {
       performScan(sessionId, pendingText);
     }
-  }, SCAN_DEBOUNCE_MS);
+  };
+
+  const idleScheduler = (
+    window as typeof window & {
+      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
+    }
+  ).requestIdleCallback;
+
+  if (typeof idleScheduler === 'function') {
+    current.idleHandle = idleScheduler(
+      () => {
+        flush();
+      },
+      { timeout: 250 },
+    );
+    return;
+  }
+
+  current.idleHandle = window.setTimeout(flush, 0);
 }
 
 function appendScanText(sessionId: string, text: string): void {
@@ -367,6 +398,16 @@ export function clearPathAllowlist(sessionId: string): void {
   const scanState = scanBuffers.get(sessionId);
   if (scanState && scanState.timer !== null) {
     window.clearTimeout(scanState.timer);
+  }
+  if (scanState && scanState.idleHandle !== null) {
+    const idleCanceller = (
+      window as typeof window & { cancelIdleCallback?: (handle: number) => void }
+    ).cancelIdleCallback;
+    if (typeof idleCanceller === 'function') {
+      idleCanceller(scanState.idleHandle);
+    } else {
+      window.clearTimeout(scanState.idleHandle);
+    }
   }
   scanBuffers.delete(sessionId);
 

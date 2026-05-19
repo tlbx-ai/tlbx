@@ -90,6 +90,7 @@ import {
   toggleHistoryDropdown,
   type LaunchEntry,
 } from './modules/history';
+import { linkAndReplayRemoteBookmark } from './modules/history/remoteBookmarkLaunch';
 import {
   isAppServerControlHistoryEntry,
   normalizeHistoryAppServerControlProfile,
@@ -545,6 +546,7 @@ function bindTerminalVisibilitySync(): void {
 
   $activeSessionId.subscribe(() => {
     syncMuxTerminalVisibility();
+    reportBrowserActivity(undefined, true);
   });
 
   $layout.subscribe(() => {
@@ -909,6 +911,7 @@ async function spawnFromHistory(
         const compositeId = toHubCompositeId(machineId, session.id);
         newlyCreatedSessions.add(compositeId);
         selectSession(compositeId);
+        linkAndReplayRemoteBookmark(machineId, session.id, compositeId, entry);
       })
       .catch((e: unknown) => {
         log.error(() => `Failed to spawn remote recent: ${String(e)}`);

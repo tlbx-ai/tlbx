@@ -316,6 +316,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(StateUpdate))]
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(MainBrowserStatusMessage))]
+[JsonSerializable(typeof(BrowserSessionStatus))]
+[JsonSerializable(typeof(List<BrowserSessionStatus>))]
 [JsonSerializable(typeof(LayoutNode))]
 [JsonSerializable(typeof(List<LayoutNode>))]
 
@@ -323,7 +325,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

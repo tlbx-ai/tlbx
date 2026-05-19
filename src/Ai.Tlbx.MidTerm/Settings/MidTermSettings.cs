@@ -90,9 +90,12 @@ public sealed class MidTermSettings
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
+    public bool MobileKineticTerminalScroll { get; set; } = true;
     public bool DisableAutoMainBrowserPromotion { get; set; } = true;
+    public string StickyMainBrowserId { get; set; } = "";
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
+    public bool PreserveTerminalCursorControl { get; set; } = true;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)
     public string InputMode { get; set; } = "keyboard";

@@ -7,6 +7,9 @@ import {
 
 const KEYBOARD_RATIO_THRESHOLD = 0.88;
 const KEYBOARD_PIXEL_THRESHOLD = 120;
+const KEYBOARD_BOTTOM_GUARD_MIN_PX = 10;
+const KEYBOARD_BOTTOM_GUARD_MAX_PX = 24;
+const KEYBOARD_BOTTOM_GUARD_RATIO = 0.035;
 
 function hasEditableElementFocus(): boolean {
   const activeElement = document.activeElement as {
@@ -59,18 +62,38 @@ function applyVisualViewportShellGeometry(
   }
 }
 
-function syncSoftKeyboardState(viewportHeight: number, baselineHeight: number): void {
+function isSoftKeyboardVisible(viewportHeight: number, baselineHeight: number): boolean {
+  const heightDrop = baselineHeight - viewportHeight;
+  return (
+    viewportHeight < baselineHeight * KEYBOARD_RATIO_THRESHOLD &&
+    heightDrop >= KEYBOARD_PIXEL_THRESHOLD
+  );
+}
+
+function getSoftKeyboardBottomGuard(viewportHeight: number, baselineHeight: number): number {
+  if (!isSoftKeyboardVisible(viewportHeight, baselineHeight)) {
+    return 0;
+  }
+
+  return Math.round(
+    Math.min(
+      KEYBOARD_BOTTOM_GUARD_MAX_PX,
+      Math.max(KEYBOARD_BOTTOM_GUARD_MIN_PX, viewportHeight * KEYBOARD_BOTTOM_GUARD_RATIO),
+    ),
+  );
+}
+
+function syncSoftKeyboardState(viewportHeight: number, baselineHeight: number): boolean {
   const heightDrop = baselineHeight - viewportHeight;
   document.documentElement.style.setProperty(
     '--midterm-soft-keyboard-height',
     `${Math.max(0, heightDrop)}px`,
   );
-  const kbVisible =
-    viewportHeight < baselineHeight * KEYBOARD_RATIO_THRESHOLD &&
-    heightDrop >= KEYBOARD_PIXEL_THRESHOLD;
+  const kbVisible = isSoftKeyboardVisible(viewportHeight, baselineHeight);
   if (kbVisible !== document.body.classList.contains('keyboard-visible')) {
     document.body.classList.toggle('keyboard-visible', kbVisible);
   }
+  return kbVisible;
 }
 
 /**
@@ -88,15 +111,21 @@ export function setupVisualViewport(): void {
   const appEl = document.querySelector<HTMLElement>('.terminal-page');
 
   const update = () => {
-    const vh = vv.height;
-    if (vh > baselineHeight) {
-      baselineHeight = vh;
+    const rawViewportHeight = vv.height;
+    if (rawViewportHeight > baselineHeight) {
+      baselineHeight = rawViewportHeight;
     }
+    const bottomGuard = getSoftKeyboardBottomGuard(rawViewportHeight, baselineHeight);
+    const vh = Math.max(1, rawViewportHeight - bottomGuard);
     if (Math.abs(vh - lastHeight) < 1) return;
     lastHeight = vh;
 
     applyVisualViewportShellGeometry(vv, vh, appEl);
-    syncSoftKeyboardState(vh, baselineHeight);
+    syncSoftKeyboardState(rawViewportHeight, baselineHeight);
+    document.documentElement.style.setProperty(
+      '--midterm-soft-keyboard-bottom-guard',
+      `${bottomGuard}px`,
+    );
 
     if (typeof Reflect.get(window, 'dispatchEvent') === 'function')
       window.dispatchEvent(new Event('midterm:visual-viewport-changed'));

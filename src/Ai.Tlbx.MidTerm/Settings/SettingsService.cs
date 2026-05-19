@@ -576,6 +576,8 @@ public sealed class SettingsService
         current.ClipboardShortcuts = old.ClipboardShortcuts;
         current.TerminalEnterMode = old.TerminalEnterMode;
         current.ScrollbackProtection = old.ScrollbackProtection;
+        current.MobileKineticTerminalScroll = old.MobileKineticTerminalScroll;
+        current.PreserveTerminalCursorControl = old.PreserveTerminalCursorControl;
         current.InputMode = old.InputMode;
         current.FileRadar = old.FileRadar;
         current.ShowSidebarSessionFilter = old.ShowSidebarSessionFilter;

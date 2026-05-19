@@ -1,4 +1,9 @@
-import type { CreateSessionRequest, RenameSessionRequest, SessionInfoDto } from '../../api/types';
+import type {
+  CreateHistoryRequest,
+  CreateSessionRequest,
+  RenameSessionRequest,
+  SessionInfoDto,
+} from '../../api/types';
 import type {
   HubMachineState,
   HubMachineUpsertRequest,
@@ -7,6 +12,10 @@ import type {
   HubUpdateRolloutRequest,
   HubUpdateRolloutResponse,
 } from './types';
+
+interface CreateHistoryResponse {
+  id: string;
+}
 
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -115,6 +124,36 @@ export async function renameRemoteSession(
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(request),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
+export async function createRemoteHistoryEntry(
+  machineId: string,
+  request: CreateHistoryRequest,
+): Promise<CreateHistoryResponse> {
+  const response = await fetch(`/api/hub/machines/${encodeURIComponent(machineId)}/history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  });
+  return parseJson<CreateHistoryResponse>(response);
+}
+
+export async function setRemoteSessionBookmark(
+  machineId: string,
+  sessionId: string,
+  bookmarkId: string,
+): Promise<void> {
+  const response = await fetch(
+    `/api/hub/machines/${encodeURIComponent(machineId)}/sessions/${encodeURIComponent(sessionId)}/bookmark`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookmarkId }),
     },
   );
   if (!response.ok) {

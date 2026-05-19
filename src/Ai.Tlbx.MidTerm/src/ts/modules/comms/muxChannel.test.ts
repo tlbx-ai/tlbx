@@ -359,16 +359,99 @@ describe('muxChannel', () => {
     expect(terminal.writeMock).toHaveBeenCalledTimes(1);
   });
 
-  it('sends visible-session hints without quick-resume refreshes in full replay mode', async () => {
+  it('does not trim replay frames through terminal control sequences', async () => {
+    const harness = await loadHarness([0, 0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5n,
+        'abcde',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        10n,
+        '\x1b[31mXYZ',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+
+    expect(terminal.writeMock).toHaveBeenCalledTimes(2);
+    const replayData = terminal.writeMock.mock.calls[1]?.[0] as Uint8Array;
+    expect(new TextDecoder().decode(replayData)).toBe('\x1b[31mXYZ');
+  });
+
+  it('requests full replay when sessions become streamable in full replay mode', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     harness.stores.$currentSettings.set({ resumeMode: 'fullReplay' } as never);
 
     harness.ws.send.mockClear();
     harness.updateTerminalVisibility('sess1234', ['sess5678']);
 
-    expect(harness.ws.send).toHaveBeenCalledTimes(1);
-    const frame = harness.ws.send.mock.calls[0]?.[0] as Uint8Array;
-    expect(frame[0]).toBe(harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT);
+    expect(harness.ws.send).toHaveBeenCalledTimes(3);
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT);
+    expect(frames[1]?.[0]).toBe(harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(frames[1]?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+    expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(frames[2]?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+  });
+
+  it('requests resync instead of dropping partial terminal frames when browser output queue exceeds byte budget', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('MessageChannel', undefined);
+
+    const harness = await loadHarness([0, 9, 9, 9, 9]);
+    const sessionId = 'sess1234';
+    attachFakeTerminal(harness.sessionTerminals, sessionId);
+
+    const chunk = 'x'.repeat(32 * 1024);
+    harness.ws.onmessage?.({
+      data: buildOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        'first',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+    harness.ws.send.mockClear();
+
+    for (let i = 0; i < 140; i += 1) {
+      harness.ws.onmessage?.({
+        data: buildSequencedOutputMessage(
+          harness.encodeSessionId,
+          harness.constants.MUX_TYPE_OUTPUT,
+          harness.constants.MUX_HEADER_SIZE,
+          sessionId,
+          BigInt((i + 2) * chunk.length),
+          chunk,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+    }
+
+    expect(harness.stores.$dataLossDetected.get()?.sessionId).toBe(sessionId);
+    const bufferRequest = harness.ws.send.mock.calls
+      .map((call) => call[0] as Uint8Array)
+      .find((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(bufferRequest).toBeDefined();
   });
 
   it('requests quick-resume bursts for sessions that become streamable', async () => {

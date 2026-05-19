@@ -43,7 +43,14 @@ public class MuxProtocolTests
         var originalData = Encoding.UTF8.GetBytes(new string('A', 10000));
         const ulong sequenceEnd = 8192;
 
-        var frame = MuxProtocol.CreateCompressedOutputFrame(sessionId, sequenceEnd, cols, rows, originalData);
+        var frame = new byte[MuxProtocol.CompressedOutputHeaderSize + originalData.Length + 100];
+        var frameLength = MuxProtocol.WriteCompressedOutputFrameInto(
+            sessionId,
+            sequenceEnd,
+            cols,
+            rows,
+            originalData,
+            frame);
 
         Assert.Equal(MuxProtocol.TypeCompressedOutput, frame[0]);
         Assert.Equal(sessionId, Encoding.ASCII.GetString(frame, 1, 8));
@@ -58,7 +65,7 @@ public class MuxProtocolTests
         var uncompressedLen = BitConverter.ToInt32(frame, 21);
         Assert.Equal(originalData.Length, uncompressedLen);
 
-        using var compressedStream = new MemoryStream(frame, MuxProtocol.CompressedOutputHeaderSize, frame.Length - MuxProtocol.CompressedOutputHeaderSize);
+        using var compressedStream = new MemoryStream(frame, MuxProtocol.CompressedOutputHeaderSize, frameLength - MuxProtocol.CompressedOutputHeaderSize);
         using var gzip = new GZipStream(compressedStream, CompressionMode.Decompress);
         using var resultStream = new MemoryStream();
         gzip.CopyTo(resultStream);

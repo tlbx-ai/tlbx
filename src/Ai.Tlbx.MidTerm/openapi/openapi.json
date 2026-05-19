@@ -5197,9 +5197,11 @@
           "clipboardShortcuts",
           "terminalEnterMode",
           "scrollbackProtection",
+          "mobileKineticTerminalScroll",
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "resumeMode",
+          "preserveTerminalCursorControl",
           "inputMode",
           "fileRadar",
           "showBookmarks",
@@ -5420,6 +5422,9 @@
           "scrollbackProtection": {
             "type": "boolean"
           },
+          "mobileKineticTerminalScroll": {
+            "type": "boolean"
+          },
           "disableAutoMainBrowserPromotion": {
             "type": "boolean"
           },
@@ -5428,6 +5433,9 @@
           },
           "resumeMode": {
             "$ref": "#/components/schemas/TerminalResumeModeSetting"
+          },
+          "preserveTerminalCursorControl": {
+            "type": "boolean"
           },
           "inputMode": {
             "type": "string"

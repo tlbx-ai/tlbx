@@ -97,6 +97,12 @@ public sealed class StateWebSocketHandler
         Action<string>? revokeHandler = null;
         UpdateInfo? lastUpdate = null;
         var shutdownToken = _shutdownService.Token;
+        using var stateSendCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+        var stateSendToken = stateSendCts.Token;
+        var stateSendGate = new object();
+        var stateSendPending = false;
+        var stateSendInFlight = false;
+        Task? stateSendTask = null;
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
@@ -190,25 +196,77 @@ public sealed class StateWebSocketHandler
             }
         }
 
+        async Task RunCoalescedStateSendAsync()
+        {
+            try
+            {
+                while (!stateSendToken.IsCancellationRequested)
+                {
+                    await SendStateWithRetryAsync().ConfigureAwait(false);
+
+                    lock (stateSendGate)
+                    {
+                        if (!stateSendPending)
+                        {
+                            stateSendInFlight = false;
+                            stateSendTask = null;
+                            return;
+                        }
+
+                        stateSendPending = false;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Log.Verbose(() => $"[StateWS] Coalesced state send failed: {ex.GetType().Name}: {ex.Message}");
+            }
+
+            lock (stateSendGate)
+            {
+                stateSendInFlight = false;
+                stateSendTask = null;
+            }
+        }
+
+        void RequestCoalescedStateSend()
+        {
+            lock (stateSendGate)
+            {
+                if (stateSendInFlight)
+                {
+                    stateSendPending = true;
+                    return;
+                }
+
+                stateSendPending = false;
+                stateSendInFlight = true;
+                stateSendTask = Task.Run(RunCoalescedStateSendAsync, CancellationToken.None);
+            }
+        }
+
         void OnStateChange()
         {
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         void OnUpdateAvailable(UpdateInfo update)
         {
             lastUpdate = update;
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         void OnLayoutChanged()
         {
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         void OnManagerBarQueueChanged()
         {
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         var connectionToken = new object();
@@ -219,7 +277,8 @@ public sealed class StateWebSocketHandler
             var status = new MainBrowserStatusMessage
             {
                 IsMain = _mainBrowserService.IsMain(browserId),
-                ShowButton = _mainBrowserService.ShouldShowButton(browserId)
+                ShowButton = _mainBrowserService.ShouldShowButton(browserId),
+                Browsers = _mainBrowserService.GetBrowserStatuses()
             };
             await SendJsonAsync(status, AppJsonContext.Default.MainBrowserStatusMessage);
         }
@@ -412,6 +471,24 @@ public sealed class StateWebSocketHandler
         }
         finally
         {
+            stateSendCts.Cancel();
+            Task? pendingStateSendTask;
+            lock (stateSendGate)
+            {
+                pendingStateSendTask = stateSendTask;
+            }
+
+            if (pendingStateSendTask is not null)
+            {
+                try
+                {
+                    await pendingStateSendTask.WaitAsync(TimeSpan.FromSeconds(2), shutdownToken);
+                }
+                catch
+                {
+                }
+            }
+
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
             _sessionLayoutStateService.OnChanged -= OnLayoutChanged;
@@ -525,7 +602,12 @@ public sealed class StateWebSocketHandler
                     break;
 
                 case "browser.setActivity":
-                    _mainBrowserService.UpdateActivity(browserId, connectionToken, cmd.Payload?.IsActive == true);
+                    _mainBrowserService.UpdateActivity(
+                        browserId,
+                        connectionToken,
+                        cmd.Payload?.IsActive == true,
+                        cmd.Payload?.ActiveSessionId,
+                        cmd.Payload?.ActiveSurface);
                     await sendResponse(cmd.Id, true, null, null);
                     break;
 

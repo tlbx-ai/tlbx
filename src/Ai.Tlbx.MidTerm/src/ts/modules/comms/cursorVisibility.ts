@@ -5,6 +5,7 @@
  */
 
 import type { TerminalState } from '../../types';
+import { $currentSettings } from '../../stores';
 
 export interface CursorVisibilityControlResult {
   data: Uint8Array;
@@ -18,6 +19,10 @@ const CURSOR_IDLE_SHOW_MS = 650;
 const CURSOR_LOCAL_INPUT_GRACE_MS = 250;
 const SHOW_CURSOR_SEQ = '\x1b[?25h';
 const HIDE_CURSOR_SEQ = '\x1b[?25l';
+
+type CursorControlSettings = {
+  preserveTerminalCursorControl?: boolean;
+};
 
 interface CursorVisibilityMatch {
   visible: boolean;
@@ -73,6 +78,11 @@ function tryMatchCursorVisibilityControl(
   }
 
   return null;
+}
+
+export function shouldPreserveTerminalCursorControl(): boolean {
+  const settings = $currentSettings.get() as CursorControlSettings | null;
+  return settings?.preserveTerminalCursorControl !== false;
 }
 
 export function processCursorVisibilityControls(
@@ -180,6 +190,12 @@ function armBurstCursorRestoreTimer(state: TerminalState): void {
 }
 
 export function hideBurstCursor(state: TerminalState): void {
+  if (shouldPreserveTerminalCursorControl()) {
+    state.burstCursorHidden = false;
+    clearBurstCursorRestoreSchedule(state);
+    return;
+  }
+
   if (!state.burstCursorHidden) {
     if (!state.syncOutputCursorHidden) {
       state.terminal.write(HIDE_CURSOR_SEQ);
@@ -191,6 +207,12 @@ export function hideBurstCursor(state: TerminalState): void {
 }
 
 export function showBurstCursor(state: TerminalState): void {
+  if (shouldPreserveTerminalCursorControl()) {
+    state.burstCursorHidden = false;
+    clearBurstCursorRestoreSchedule(state);
+    return;
+  }
+
   if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
     return;
   }
@@ -204,6 +226,12 @@ export function showBurstCursor(state: TerminalState): void {
 }
 
 export function scheduleBurstCursorShow(state: TerminalState): void {
+  if (shouldPreserveTerminalCursorControl()) {
+    state.burstCursorHidden = false;
+    clearBurstCursorRestoreSchedule(state);
+    return;
+  }
+
   if (state.remoteCursorVisible === false || state.syncOutputCursorHidden === true) {
     return;
   }
@@ -215,6 +243,11 @@ export function scheduleBurstCursorShow(state: TerminalState): void {
 }
 
 export function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array): boolean {
+  if (shouldPreserveTerminalCursorControl()) {
+    state.lastBurstOutputAtMs = performance.now();
+    return false;
+  }
+
   if (data.length <= 0) {
     return false;
   }
@@ -238,6 +271,11 @@ export function shouldHideCursorForOutput(state: TerminalState, data: Uint8Array
 }
 
 export function hideSynchronizedOutputCursor(state: TerminalState): void {
+  if (shouldPreserveTerminalCursorControl()) {
+    state.syncOutputCursorHidden = false;
+    return;
+  }
+
   if (state.syncOutputCursorHidden) {
     return;
   }
@@ -247,6 +285,11 @@ export function hideSynchronizedOutputCursor(state: TerminalState): void {
 }
 
 export function showSynchronizedOutputCursor(state: TerminalState): void {
+  if (shouldPreserveTerminalCursorControl()) {
+    state.syncOutputCursorHidden = false;
+    return;
+  }
+
   if (!state.syncOutputCursorHidden) {
     return;
   }
@@ -258,6 +301,11 @@ export function showSynchronizedOutputCursor(state: TerminalState): void {
 }
 
 export function reconcileSynchronizedOutputCursorState(state: TerminalState): void {
+  if (shouldPreserveTerminalCursorControl()) {
+    state.syncOutputCursorHidden = false;
+    return;
+  }
+
   if (state.terminal.modes.synchronizedOutputMode) {
     hideSynchronizedOutputCursor(state);
   } else {

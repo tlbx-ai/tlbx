@@ -36,7 +36,9 @@ import {
   getHubSessionRecord,
   isHubSessionId,
   refreshHubState,
+  createRemoteHistoryEntry,
   renameRemoteSession,
+  setRemoteSessionBookmark,
 } from './modules/hub';
 import {
   fetchHistory,
@@ -113,6 +115,12 @@ interface ResolvedPinnedHistoryTarget {
   historyMode: ReturnType<typeof resolveSessionHistoryMode>;
   surfaceType: 'trm' | 'cdx' | 'cld';
   workingDirectory: string;
+}
+
+interface BookmarkSessionRef {
+  machineId: string | null;
+  remoteSessionId: string | null;
+  session: Session;
 }
 
 export function createSessionActionHandlers({
@@ -535,12 +543,54 @@ export function createSessionActionHandlers({
     }
   }
 
+  function resolveBookmarkSessionRef(sessionId: string): BookmarkSessionRef | null {
+    if (isHubSessionId(sessionId)) {
+      const record = getHubSessionRecord(sessionId);
+      if (!record) {
+        return null;
+      }
+
+      return {
+        machineId: record.machineId,
+        remoteSessionId: record.remoteSessionId,
+        session: {
+          ...record.session,
+          id: sessionId,
+          _order: record.session.order,
+        },
+      };
+    }
+
+    const session = getSession(sessionId);
+    return session
+      ? {
+          machineId: null,
+          remoteSessionId: null,
+          session,
+        }
+      : null;
+  }
+
+  function getBookmarkForegroundInfo(
+    sessionId: string,
+    session: Session,
+  ): ReturnType<typeof getForegroundInfo> {
+    const foreground = getForegroundInfo(sessionId);
+    return {
+      name: foreground.name ?? session.foregroundName ?? null,
+      commandLine: foreground.commandLine ?? session.foregroundCommandLine ?? null,
+      cwd: foreground.cwd ?? session.currentDirectory ?? null,
+      displayName: foreground.displayName ?? session.foregroundDisplayName ?? null,
+      processIdentity: foreground.processIdentity ?? session.foregroundProcessIdentity ?? null,
+    };
+  }
+
   function resolvePinnedHistoryTarget(
     sessionId: string,
     session: Session,
   ): ResolvedPinnedHistoryTarget | null {
     const historyMode = resolveSessionHistoryMode(session);
-    const fgInfo = getForegroundInfo(sessionId);
+    const fgInfo = getBookmarkForegroundInfo(sessionId, session);
     const surfaceType = getBookmarkSurfaceType(session, historyMode.profile);
 
     if (historyMode.launchMode === 'appServerControl' && historyMode.profile) {
@@ -639,10 +689,21 @@ export function createSessionActionHandlers({
   }
 
   async function ensurePinnedSessionBookmark(
-    sessionId: string,
-    session: Session,
+    sessionRef: BookmarkSessionRef,
     bookmarkId: string,
   ): Promise<void> {
+    const { machineId, remoteSessionId, session } = sessionRef;
+    if (machineId && remoteSessionId) {
+      if (session.bookmarkId === bookmarkId) {
+        return;
+      }
+
+      await setRemoteSessionBookmark(machineId, remoteSessionId, bookmarkId);
+      await refreshHubState();
+      return;
+    }
+
+    const sessionId = session.id;
     const current = getSession(sessionId) ?? session;
     if (current.bookmarkId === bookmarkId) {
       return;
@@ -676,12 +737,13 @@ export function createSessionActionHandlers({
   }
 
   async function pinSessionToHistory(sessionId: string): Promise<void> {
-    const session = getSession(sessionId);
-    if (!session) {
+    const sessionRef = resolveBookmarkSessionRef(sessionId);
+    if (!sessionRef) {
       log.warn(() => `pinSessionToHistory: session ${sessionId} not found`);
       return;
     }
 
+    const { machineId, session } = sessionRef;
     if (!canManageAdHocBookmarks(session)) {
       log.info(() => `pinSessionToHistory: skipping ineligible session ${sessionId}`);
       return;
@@ -695,14 +757,21 @@ export function createSessionActionHandlers({
     }
 
     try {
-      const id = await createHistoryEntry(buildPinnedHistoryEntryInput(session, label, target));
+      const input = buildPinnedHistoryEntryInput(session, label, target);
+      const id = machineId
+        ? (await createRemoteHistoryEntry(machineId, input)).id
+        : await createHistoryEntry(input);
 
       if (!id) {
         throw new Error('The bookmark service did not return an id.');
       }
 
-      await ensurePinnedSessionBookmark(sessionId, session, id);
-      refreshHistory();
+      await ensurePinnedSessionBookmark(sessionRef, id);
+      if (machineId) {
+        await refreshHubState();
+      } else {
+        refreshHistory();
+      }
       animateBookmarkSaveSuccess(sessionId);
       logPinnedHistoryOutcome(previousBookmarkId, id, target);
     } catch (error) {

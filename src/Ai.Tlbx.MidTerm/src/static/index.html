@@ -1627,6 +1627,21 @@
                       <input type="checkbox" id="setting-smooth-scrolling" />
                     </div>
                     <div class="setting-row">
+                      <label
+                        for="setting-mobile-kinetic-terminal-scroll"
+                        data-i18n="settings.behavior.mobileKineticTerminalScroll"
+                        >Mobile kinetic scroll</label
+                      >
+                      <input type="checkbox" id="setting-mobile-kinetic-terminal-scroll" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.mobileKineticTerminalScrollHint"
+                    >
+                      Lets quick finger flings continue through terminal history on touch devices.
+                      Disable if touch scrolling feels too aggressive.
+                    </p>
+                    <div class="setting-row">
                       <label for="setting-bell-style" data-i18n="settings.behavior.bellStyle"
                         >Bell Style</label
                       >
@@ -1699,6 +1714,21 @@
                       >
                       <input type="checkbox" id="setting-scrollback-protection" />
                     </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-preserve-terminal-cursor-control"
+                        data-i18n="settings.behavior.preserveTerminalCursorControl"
+                        >Preserve app cursor control</label
+                      >
+                      <input type="checkbox" id="setting-preserve-terminal-cursor-control" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.preserveTerminalCursorControlHint"
+                    >
+                      Keeps fullscreen terminal apps in charge of cursor show/hide sequences.
+                      Disable only if simple shells visibly flicker during heavy output.
+                    </p>
                   </div>
                 </section>
 
@@ -2693,6 +2723,27 @@
                     <div class="setting-row">
                       <label data-i18n="settings.diagnostics.dataLoss">Data Loss</label>
                       <code class="path-value" id="diag-data-loss">-</code>
+                    </div>
+                  </div>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="settings.diagnostics.browserSessionTree">
+                      Browser Session Tree
+                    </h3>
+                    <p
+                      class="diag-help-text"
+                      data-i18n="settings.diagnostics.browserSessionTreeHint"
+                    >
+                      Shows connected browser tabs, the leading resize owner, and each browser's
+                      currently active terminal or agent session.
+                    </p>
+                    <div id="diag-browser-session-tree" class="diag-browser-tree">
+                      <div
+                        class="diag-browser-empty"
+                        data-i18n="settings.diagnostics.browserSessionTreeEmpty"
+                      >
+                        No browser sessions reported yet.
+                      </div>
                     </div>
                   </div>
 

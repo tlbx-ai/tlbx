@@ -4233,9 +4233,11 @@ export interface components {
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
+      mobileKineticTerminalScroll: boolean;
       disableAutoMainBrowserPromotion: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
       resumeMode: components['schemas']['TerminalResumeModeSetting'];
+      preserveTerminalCursorControl: boolean;
       inputMode: string;
       fileRadar: boolean;
       showBookmarks: boolean;

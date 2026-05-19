@@ -34,6 +34,8 @@ public sealed class WsCommandPayload
 
     // browser.setActivity
     public bool? IsActive { get; init; }
+    public string? ActiveSessionId { get; init; }
+    public string? ActiveSurface { get; init; }
 
     // settings.save - full settings object
     public Settings.MidTermSettingsPublic? Settings { get; init; }

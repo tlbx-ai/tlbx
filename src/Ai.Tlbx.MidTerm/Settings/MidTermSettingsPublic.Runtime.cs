@@ -104,9 +104,11 @@ public sealed partial class MidTermSettingsPublic
             ClipboardShortcuts = settings.ClipboardShortcuts,
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
+            MobileKineticTerminalScroll = settings.MobileKineticTerminalScroll,
             DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             ResumeMode = settings.ResumeMode,
+            PreserveTerminalCursorControl = settings.PreserveTerminalCursorControl,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             ShowBookmarks = settings.ShowBookmarks,
@@ -220,9 +222,11 @@ public sealed partial class MidTermSettingsPublic
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
+        settings.MobileKineticTerminalScroll = MobileKineticTerminalScroll;
         settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         settings.ResumeMode = ResumeMode;
+        settings.PreserveTerminalCursorControl = PreserveTerminalCursorControl;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;

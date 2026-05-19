@@ -14,6 +14,7 @@
 
 import { atom, map, computed } from 'nanostores';
 import type {
+  BrowserSessionStatus,
   Session,
   MidTermSettingsPublic,
   UpdateInfo,
@@ -449,3 +450,6 @@ export const $isMainBrowser = atom<boolean>(false);
 
 /** Whether the main browser button should be visible (server has seen 2+ unique clients) */
 export const $showMainBrowserButton = atom<boolean>(false);
+
+/** Connected browser sessions and their server-observed active MidTerm session */
+export const $browserSessions = atom<BrowserSessionStatus[]>([]);

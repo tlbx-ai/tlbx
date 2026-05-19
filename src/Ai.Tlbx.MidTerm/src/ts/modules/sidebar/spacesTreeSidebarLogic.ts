@@ -16,14 +16,10 @@ export function resolveSessionLaunchOrigin(
 
 export function shouldShowAdHocBookmarkAction(
   session: Pick<Session, 'isAdHoc' | 'spaceId' | 'bookmarkId'>,
-  machineId: string | null,
+  _machineId: string | null,
   showBookmarks: boolean,
   allowAdHocSessionBookmarks: boolean,
 ): boolean {
-  if (machineId) {
-    return false;
-  }
-
   if (!showBookmarks) {
     return false;
   }
