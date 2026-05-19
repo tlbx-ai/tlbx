@@ -1,5 +1,6 @@
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Models.Files;
+using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Services.Hub;
@@ -77,6 +78,18 @@ public static class HubEndpoints
         app.MapPut("/api/hub/machines/{id}/sessions/{sessionId}/name", async (string id, string sessionId, RenameSessionRequest request, CancellationToken ct) =>
         {
             await hubService.RenameSessionAsync(id, sessionId, request, ct);
+            return Results.Ok();
+        });
+
+        app.MapPost("/api/hub/machines/{id}/history", async (string id, CreateHistoryRequest request, CancellationToken ct) =>
+        {
+            var response = await hubService.CreateHistoryEntryAsync(id, request, ct);
+            return Results.Json(response, AppJsonContext.Default.CreateHistoryResponse);
+        });
+
+        app.MapPut("/api/hub/machines/{id}/sessions/{sessionId}/bookmark", async (string id, string sessionId, SetBookmarkRequest request, CancellationToken ct) =>
+        {
+            await hubService.SetSessionBookmarkAsync(id, sessionId, request, ct);
             return Results.Ok();
         });
 

@@ -47,7 +47,7 @@ describe('spacesTreeSidebar session classification', () => {
     ).toBe('space');
   });
 
-  it('only shows bookmark actions for local ad hoc sessions when enabled or already linked', () => {
+  it('shows bookmark actions for local and remote ad hoc sessions when enabled or already linked', () => {
     expect(
       shouldShowAdHocBookmarkAction(
         {
@@ -105,13 +105,39 @@ describe('spacesTreeSidebar session classification', () => {
         {
           isAdHoc: true,
           spaceId: null,
-          bookmarkId: 'bookmark-1',
+          bookmarkId: null,
+        } as any,
+        'remote-1',
+        true,
+        true,
+      ),
+    ).toBe(true);
+
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: false,
+          spaceId: 'space-1',
+          bookmarkId: null,
         } as any,
         'remote-1',
         true,
         true,
       ),
     ).toBe(false);
+
+    expect(
+      shouldShowAdHocBookmarkAction(
+        {
+          isAdHoc: true,
+          spaceId: null,
+          bookmarkId: 'bookmark-1',
+        } as any,
+        'remote-1',
+        true,
+        true,
+      ),
+    ).toBe(true);
 
     expect(
       shouldShowAdHocBookmarkAction(

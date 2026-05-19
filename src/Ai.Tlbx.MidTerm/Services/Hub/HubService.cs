@@ -278,6 +278,39 @@ public sealed class HubService
         await EnsureSuccessAsync(response, ct);
     }
 
+    public async Task<CreateHistoryResponse> CreateHistoryEntryAsync(
+        string machineId,
+        CreateHistoryRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PostAsJsonAsync(
+            "/api/history",
+            request,
+            AppJsonContext.Default.CreateHistoryRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+        return await response.Content.ReadFromJsonAsync(AppJsonContext.Default.CreateHistoryResponse, ct)
+            ?? throw new InvalidOperationException("Remote history response was empty.");
+    }
+
+    public async Task SetSessionBookmarkAsync(
+        string machineId,
+        string sessionId,
+        SetBookmarkRequest request,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        using var response = await remote.Client.PutAsJsonAsync(
+            $"/api/sessions/{Uri.EscapeDataString(sessionId)}/bookmark",
+            request,
+            AppJsonContext.Default.SetBookmarkRequest,
+            ct);
+        await EnsureSuccessAsync(response, ct);
+    }
+
     public async Task<LauncherPathResponse> GetLauncherHomeAsync(string machineId, CancellationToken ct = default)
     {
         var machine = GetRequiredMachine(machineId);
