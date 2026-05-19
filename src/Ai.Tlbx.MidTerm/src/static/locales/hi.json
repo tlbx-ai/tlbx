@@ -153,6 +153,8 @@
   "settings.behavior.clipboardShortcuts": "कॉपी/पेस्ट शॉर्टकट",
   "settings.behavior.terminalEnterMode": "Shift+Enter = बिना भेजे नई पंक्ति",
   "settings.behavior.smoothScrolling": "स्मूथ स्क्रॉलिंग",
+  "settings.behavior.mobileKineticTerminalScroll": "Mobile kinetic scroll",
+  "settings.behavior.mobileKineticTerminalScrollHint": "Lets quick finger flings continue through terminal history on touch devices. Disable if touch scrolling feels too aggressive.",
   "settings.behavior.gpuRendering": "GPU रेंडरिंग (WebGL)",
   "settings.behavior.inputMode": "इनपुट मोड",
   "settings.behavior.inputModeHint": "स्मार्ट इनपुट सीधे कीबोर्ड इनपुट के बजाय टेक्स्ट बॉक्स का उपयोग करता है। दोनों मोड इनपुट बार को टर्मिनल के नीचे डॉक करता है।",

@@ -153,6 +153,8 @@
   "settings.behavior.clipboardShortcuts": "Kopieren/Einfügen-Tastenkombinationen",
   "settings.behavior.terminalEnterMode": "Shift+Enter = Neue Zeile ohne Senden",
   "settings.behavior.smoothScrolling": "Sanftes Scrollen",
+  "settings.behavior.mobileKineticTerminalScroll": "Kinetisches Scrollen auf Mobilgeräten",
+  "settings.behavior.mobileKineticTerminalScrollHint": "Lässt schnelle Finger-Flings auf Touch-Geräten weiter durch die Terminal-Historie laufen. Deaktivieren, wenn sich Touch-Scrolling zu aggressiv anfühlt.",
   "settings.behavior.gpuRendering": "GPU-Rendering (WebGL)",
   "settings.behavior.inputMode": "Eingabemodus",
   "settings.behavior.inputModeHint": "Smart Input verwendet ein Textfeld anstelle der direkten Tastatureingabe. Der Beides-Modus dockt die Eingabeleiste unter dem Terminal an.",

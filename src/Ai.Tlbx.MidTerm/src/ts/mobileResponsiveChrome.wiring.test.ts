@@ -57,8 +57,16 @@ describe('mobile responsive chrome wiring', () => {
     expect(css).toContain('bottom: calc(100% + var(--command-bay-gap));');
     expect(css).toContain("body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {");
     expect(css).toContain(
+      "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-primary {",
+    );
+    expect(css).toContain('order: 0;');
+    expect(css).toContain(
+      "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-context {",
+    );
+    expect(css).toContain('order: 2;');
+    expect(css).toContain(
       "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {",
     );
-    expect(css).toContain('position: sticky;');
+    expect(css).toContain('order: 4;');
   });
 });

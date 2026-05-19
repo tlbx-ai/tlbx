@@ -82,6 +82,31 @@ describe('mobile terminal touch scrolling', () => {
     expect(second.nextVelocityY).toBeLessThan(first.nextVelocityY);
   });
 
+  it('carries a fling far enough to make terminal history reachable', () => {
+    let velocity = 1;
+    let distance = 0;
+    let active = true;
+    let frames = 0;
+
+    while (active && frames < 500) {
+      const step = computeKineticScrollStep(velocity, 16);
+      distance += step.deltaY;
+      velocity = step.nextVelocityY;
+      active = step.active;
+      frames++;
+    }
+
+    expect(distance).toBeGreaterThan(360);
+    expect(frames).toBeGreaterThan(40);
+  });
+
+  it('clamps very fast flings to a bounded but long travel distance', () => {
+    const step = computeKineticScrollStep(40, 16);
+
+    expect(step.deltaY).toBeLessThan(130);
+    expect(step.nextVelocityY).toBeLessThan(8);
+  });
+
   it('stops kinetic scrolling below the velocity threshold', () => {
     const step = computeKineticScrollStep(0.01, 16);
 

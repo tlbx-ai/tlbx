@@ -156,6 +156,8 @@
   "settings.behavior.clipboardShortcuts": "复制/粘贴快捷键",
   "settings.behavior.terminalEnterMode": "Shift+Enter = 不发送，仅换行",
   "settings.behavior.smoothScrolling": "平滑滚动",
+  "settings.behavior.mobileKineticTerminalScroll": "Mobile kinetic scroll",
+  "settings.behavior.mobileKineticTerminalScrollHint": "Lets quick finger flings continue through terminal history on touch devices. Disable if touch scrolling feels too aggressive.",
   "settings.behavior.gpuRendering": "GPU 渲染（WebGL）",
   "settings.behavior.inputMode": "输入模式",
   "settings.behavior.inputModeHint": "智能输入使用文本框代替直接键盘输入。两者模式将输入栏固定在终端下方。",

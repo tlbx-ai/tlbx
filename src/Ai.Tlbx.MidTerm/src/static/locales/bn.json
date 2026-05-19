@@ -153,6 +153,8 @@
   "settings.behavior.clipboardShortcuts": "কপি/পেস্ট শর্টকাট",
   "settings.behavior.terminalEnterMode": "Shift+Enter = পাঠানো ছাড়াই নতুন লাইন",
   "settings.behavior.smoothScrolling": "স্মুথ স্ক্রলিং",
+  "settings.behavior.mobileKineticTerminalScroll": "Mobile kinetic scroll",
+  "settings.behavior.mobileKineticTerminalScrollHint": "Lets quick finger flings continue through terminal history on touch devices. Disable if touch scrolling feels too aggressive.",
   "settings.behavior.gpuRendering": "GPU রেন্ডারিং (WebGL)",
   "settings.behavior.inputMode": "ইনপুট মোড",
   "settings.behavior.inputModeHint": "স্মার্ট ইনপুট সরাসরি কীবোর্ড ইনপুটের পরিবর্তে একটি টেক্সট বক্স ব্যবহার করে। উভয় মোড টার্মিনালের নিচে ইনপুট বার ডক করে।",

@@ -5197,6 +5197,7 @@
           "clipboardShortcuts",
           "terminalEnterMode",
           "scrollbackProtection",
+          "mobileKineticTerminalScroll",
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "resumeMode",
@@ -5419,6 +5420,9 @@
             "$ref": "#/components/schemas/TerminalEnterModeSetting"
           },
           "scrollbackProtection": {
+            "type": "boolean"
+          },
+          "mobileKineticTerminalScroll": {
             "type": "boolean"
           },
           "disableAutoMainBrowserPromotion": {

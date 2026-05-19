@@ -17543,7 +17543,7 @@ body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] {
 body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-primary {
   position: relative;
   z-index: 2;
-  order: 2;
+  order: 0;
   padding-top: 0;
   padding-bottom: 2px;
   background: linear-gradient(
@@ -17562,6 +17562,14 @@ body.keyboard-visible
   gap: 6px;
   overflow: visible;
   max-height: none;
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-context {
+  order: 2;
+}
+
+body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .manager-bar {
+  order: 3;
 }
 
 body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .smart-input-tools-surface {
@@ -17591,7 +17599,7 @@ body.keyboard-visible
 body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {
   position: relative;
   z-index: 3;
-  order: 1;
+  order: 4;
   padding-bottom: 0;
   background: linear-gradient(
     180deg,
@@ -17641,7 +17649,7 @@ body.keyboard-visible
   .adaptive-footer-status {
   top: 0;
   bottom: auto;
-  order: -1;
+  order: 4;
 }
 
 body.keyboard-visible

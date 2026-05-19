@@ -82,6 +82,27 @@ describe('settings persistence wiring', () => {
     expect(registeredIds).toEqual(getPersistedSettingIds());
   });
 
+  it('keeps mobile terminal touch and cursor controls in the terminal behavior panel', () => {
+    const terminalPanel = html.match(
+      /<section class="settings-panel hidden" data-panel="terminal">[\s\S]*?(?=<section class="settings-panel hidden" data-panel="ai-agents">)/,
+    )?.[0];
+    const sessionPanel = html.match(
+      /<section class="settings-panel hidden" data-panel="sessions">[\s\S]*?(?=<section class="settings-panel hidden" data-panel="security")/,
+    )?.[0];
+
+    expect(terminalPanel).toBeTruthy();
+    expect(sessionPanel).toBeTruthy();
+    expect(terminalPanel).toContain('id="setting-mobile-kinetic-terminal-scroll"');
+    expect(terminalPanel).toContain('id="setting-preserve-terminal-cursor-control"');
+    expect(sessionPanel).not.toContain('id="setting-preserve-terminal-cursor-control"');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'mobileKineticTerminalScroll')?.validation,
+    ).toBe('boolean');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'preserveTerminalCursorControl')?.applyMode,
+    ).toBe('immediate');
+  });
+
   it('marks non-form writers explicitly in the registry', () => {
     const specialWriters = new Map(
       SETTINGS_REGISTRY.filter((entry) => entry.specialWriter).map((entry) => [
@@ -112,31 +133,39 @@ describe('settings persistence wiring', () => {
 
   it('limits bundled terminal font controls to distinct supported values', () => {
     expect(html).toContain('id="setting-agent-message-font-family"');
-    expect(html).toContain(
-      '<option value="default" data-i18n="settings.options.agentMessageFontDefault">',
+    expect(html).toMatch(
+      /<option\s+value="default"\s+data-i18n="settings\.options\.agentMessageFontDefault"\s*>/,
     );
-    expect(html).toContain(
-      '<option value="sans" data-i18n="settings.options.agentMessageFontSans">',
+    expect(html).toMatch(
+      /<option\s+value="sans"\s+data-i18n="settings\.options\.agentMessageFontSans"\s*>/,
     );
-    expect(html).toContain(
-      '<option value="serif" data-i18n="settings.options.agentMessageFontSerif">',
+    expect(html).toMatch(
+      /<option\s+value="serif"\s+data-i18n="settings\.options\.agentMessageFontSerif"\s*>/,
     );
     expect(html).toContain('<option value="Helvetica Neue">Helvetica Neue</option>');
     expect(html).toContain('<option value="Trebuchet MS">Trebuchet MS</option>');
-    expect(html).toContain(
-      '<option value="classic" data-i18n="settings.options.boxDrawingStyleClassic">',
+    expect(html).toMatch(
+      /<option\s+value="classic"\s+data-i18n="settings\.options\.boxDrawingStyleClassic"\s*>/,
     );
-    expect(html).toContain(
-      '<option value="rounded" data-i18n="settings.options.boxDrawingStyleRounded">',
+    expect(html).toMatch(
+      /<option\s+value="rounded"\s+data-i18n="settings\.options\.boxDrawingStyleRounded"\s*>/,
     );
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?min="0.5"/);
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?max="2"/);
     expect(html).toMatch(/id="setting-box-drawing-scale"[\s\S]*?step="0.05"/);
     expect(html).toMatch(/id="setting-letter-spacing"[\s\S]*?step="0.05"/);
-    expect(html).toContain('<option value="custom" data-i18n="settings.options.boxDrawingCustom">');
-    expect(html).toContain('<option value="font" data-i18n="settings.options.boxDrawingFont">');
-    expect(html).toContain('<option value="normal" data-i18n="settings.options.fontWeightNormal">');
-    expect(html).toContain('<option value="bold" data-i18n="settings.options.fontWeightBold">');
+    expect(html).toMatch(
+      /<option\s+value="custom"\s+data-i18n="settings\.options\.boxDrawingCustom"\s*>/,
+    );
+    expect(html).toMatch(
+      /<option\s+value="font"\s+data-i18n="settings\.options\.boxDrawingFont"\s*>/,
+    );
+    expect(html).toMatch(
+      /<option\s+value="normal"\s+data-i18n="settings\.options\.fontWeightNormal"\s*>/,
+    );
+    expect(html).toMatch(
+      /<option\s+value="bold"\s+data-i18n="settings\.options\.fontWeightBold"\s*>/,
+    );
     expect(html).not.toContain('<option value="100">100</option>');
     expect(html).not.toContain('<option value="900">900</option>');
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'letterSpacing')?.validation).toBe(
@@ -159,9 +188,9 @@ describe('settings persistence wiring', () => {
     ).toBe('boolean');
     expect(html).toMatch(/id="setting-tool-call-output-lines"[\s\S]*?min="0"/);
     expect(html).toMatch(/id="setting-tool-call-output-lines"[\s\S]*?max="20"/);
-    expect(
-      SETTINGS_REGISTRY.find((entry) => entry.key === 'toolCallOutputLines')?.validation,
-    ).toBe('integer, UI clamps to 0-20');
+    expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'toolCallOutputLines')?.validation).toBe(
+      'integer, UI clamps to 0-20',
+    );
     expect(SETTINGS_REGISTRY.find((entry) => entry.key === 'customGlyphs')?.validation).toBe(
       'boolean, rendered as custom or font box drawing',
     );

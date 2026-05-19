@@ -15,6 +15,7 @@
 import type { Terminal } from '@xterm/xterm';
 import { isTouchDevice, hasPrecisePointer } from '../touchController/detection';
 import { sendInput } from '../comms/muxChannel';
+import { $currentSettings } from '../../stores';
 
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD = 10;
@@ -22,11 +23,11 @@ const TAP_MAX_DURATION = 300;
 const SWIPE_THRESHOLD = 80;
 const SWIPE_MAX_VERTICAL = 40;
 const SWIPE_MAX_TIME = 300;
-const KINETIC_MIN_VELOCITY_PX_PER_MS = 0.08;
-const KINETIC_MAX_VELOCITY_PX_PER_MS = 3;
-const KINETIC_FRICTION_PX_PER_MS2 = 0.0045;
+const KINETIC_MIN_VELOCITY_PX_PER_MS = 0.02;
+const KINETIC_MAX_VELOCITY_PX_PER_MS = 8;
+const KINETIC_FRICTION_PX_PER_MS2 = 0.0012;
 const KINETIC_MAX_FRAME_MS = 32;
-const VELOCITY_SAMPLE_SMOOTHING = 0.35;
+const VELOCITY_SAMPLE_SMOOTHING = 0.7;
 
 type TouchMode = 'idle' | 'pending' | 'scrolling' | 'selecting' | 'horizontal';
 
@@ -248,7 +249,11 @@ function handleTouchEnd(sessionId: string, e: TouchEvent): void {
     s.mode = 'idle';
   } else if (mode === 'scrolling') {
     e.preventDefault();
-    startKineticScroll(s);
+    if (isMobileKineticTerminalScrollEnabled()) {
+      startKineticScroll(s);
+    } else {
+      cancelKineticScroll(s);
+    }
     s.mode = 'idle';
   } else if (mode === 'horizontal') {
     // Check for horizontal swipe (Ctrl+A / Ctrl+E)
@@ -278,6 +283,10 @@ function handleTouchCancel(sessionId: string, e: TouchEvent): void {
   cancelLongPress(s);
   cancelKineticScroll(s);
   s.mode = 'idle';
+}
+
+function isMobileKineticTerminalScrollEnabled(): boolean {
+  return $currentSettings.get()?.mobileKineticTerminalScroll !== false;
 }
 
 function enterSelectionMode(s: TouchScrollState, clientX: number, clientY: number): void {
@@ -330,14 +339,16 @@ export function computeKineticScrollStep(
   elapsedMs: number,
 ): { deltaY: number; nextVelocityY: number; active: boolean } {
   const frameMs = Math.max(0, Math.min(KINETIC_MAX_FRAME_MS, elapsedMs));
-  if (frameMs <= 0 || Math.abs(velocityY) < KINETIC_MIN_VELOCITY_PX_PER_MS) {
+  const clampedVelocity =
+    Math.sign(velocityY) * Math.min(Math.abs(velocityY), KINETIC_MAX_VELOCITY_PX_PER_MS);
+  if (frameMs <= 0 || Math.abs(clampedVelocity) < KINETIC_MIN_VELOCITY_PX_PER_MS) {
     return { deltaY: 0, nextVelocityY: 0, active: false };
   }
 
-  const direction = velocityY > 0 ? 1 : -1;
+  const direction = clampedVelocity > 0 ? 1 : -1;
   const deceleration = KINETIC_FRICTION_PX_PER_MS2 * frameMs;
-  const nextSpeed = Math.max(0, Math.abs(velocityY) - deceleration);
-  const averageVelocity = direction * (Math.abs(velocityY) + nextSpeed) * 0.5;
+  const nextSpeed = Math.max(0, Math.abs(clampedVelocity) - deceleration);
+  const averageVelocity = direction * (Math.abs(clampedVelocity) + nextSpeed) * 0.5;
   return {
     deltaY: averageVelocity * frameMs,
     nextVelocityY: nextSpeed * direction,

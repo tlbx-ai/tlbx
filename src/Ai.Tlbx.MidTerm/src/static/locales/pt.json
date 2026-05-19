@@ -153,6 +153,8 @@
   "settings.behavior.clipboardShortcuts": "Atalhos Copiar/Colar",
   "settings.behavior.terminalEnterMode": "Shift+Enter = nova linha sem enviar",
   "settings.behavior.smoothScrolling": "Rolagem Suave",
+  "settings.behavior.mobileKineticTerminalScroll": "Mobile kinetic scroll",
+  "settings.behavior.mobileKineticTerminalScrollHint": "Lets quick finger flings continue through terminal history on touch devices. Disable if touch scrolling feels too aggressive.",
   "settings.behavior.gpuRendering": "Renderização GPU (WebGL)",
   "settings.behavior.inputMode": "Modo de entrada",
   "settings.behavior.inputModeHint": "Entrada inteligente usa uma caixa de texto em vez de entrada direta pelo teclado. O modo Ambos fixa a barra de entrada abaixo do terminal.",

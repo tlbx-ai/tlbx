@@ -1627,6 +1627,21 @@
                       <input type="checkbox" id="setting-smooth-scrolling" />
                     </div>
                     <div class="setting-row">
+                      <label
+                        for="setting-mobile-kinetic-terminal-scroll"
+                        data-i18n="settings.behavior.mobileKineticTerminalScroll"
+                        >Mobile kinetic scroll</label
+                      >
+                      <input type="checkbox" id="setting-mobile-kinetic-terminal-scroll" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.mobileKineticTerminalScrollHint"
+                    >
+                      Lets quick finger flings continue through terminal history on touch devices.
+                      Disable if touch scrolling feels too aggressive.
+                    </p>
+                    <div class="setting-row">
                       <label for="setting-bell-style" data-i18n="settings.behavior.bellStyle"
                         >Bell Style</label
                       >
@@ -1699,6 +1714,21 @@
                       >
                       <input type="checkbox" id="setting-scrollback-protection" />
                     </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-preserve-terminal-cursor-control"
+                        data-i18n="settings.behavior.preserveTerminalCursorControl"
+                        >Preserve app cursor control</label
+                      >
+                      <input type="checkbox" id="setting-preserve-terminal-cursor-control" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.preserveTerminalCursorControlHint"
+                    >
+                      Keeps fullscreen terminal apps in charge of cursor show/hide sequences.
+                      Disable only if simple shells visibly flicker during heavy output.
+                    </p>
                   </div>
                 </section>
 
@@ -2223,21 +2253,6 @@
                       Quick Resume keeps hidden sessions lighter by catching them up with a smaller
                       replay burst when you revisit them. Visible sessions remain live, and the heat
                       indicator still reflects real terminal activity.
-                    </p>
-                    <div class="setting-row">
-                      <label
-                        for="setting-preserve-terminal-cursor-control"
-                        data-i18n="settings.behavior.preserveTerminalCursorControl"
-                        >Preserve app cursor control</label
-                      >
-                      <input type="checkbox" id="setting-preserve-terminal-cursor-control" />
-                    </div>
-                    <p
-                      class="setting-hint"
-                      data-i18n="settings.behavior.preserveTerminalCursorControlHint"
-                    >
-                      Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable
-                      only if simple shells visibly flicker during heavy output.
                     </p>
                     <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
