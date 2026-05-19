@@ -3,7 +3,9 @@ import {
   processCursorVisibilityControls,
   scheduleBurstCursorShow,
   showBurstCursor,
+  shouldHideCursorForOutput,
 } from './cursorVisibility';
+import { $currentSettings } from '../../stores';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -18,6 +20,7 @@ describe('processCursorVisibilityControls', () => {
     vi.setSystemTime(0);
     vi.stubGlobal('window', globalThis);
     vi.spyOn(performance, 'now').mockImplementation(() => Date.now());
+    $currentSettings.set(null);
   });
 
   afterEach(() => {
@@ -85,6 +88,7 @@ describe('processCursorVisibilityControls', () => {
   });
 
   it('extends burst cursor restore deadlines without resetting the timeout on every frame', () => {
+    $currentSettings.set({ preserveTerminalCursorControl: false } as never);
     const state = {
       terminal: {
         write: vi.fn(),
@@ -115,5 +119,35 @@ describe('processCursorVisibilityControls', () => {
 
     vi.advanceTimersByTime(500);
     expect(state.terminal.write).toHaveBeenCalledWith('\x1b[?25h');
+  });
+
+  it('does not synthesize cursor writes when app cursor control is preserved', () => {
+    const state = {
+      terminal: {
+        write: vi.fn(),
+      },
+      burstCursorHidden: true,
+      remoteCursorVisible: true,
+      syncOutputCursorHidden: false,
+      burstCursorRestoreTimer: null,
+      burstCursorRestoreDueAtMs: null,
+    } as never;
+
+    scheduleBurstCursorShow(state);
+    showBurstCursor(state);
+
+    expect(state.terminal.write).not.toHaveBeenCalled();
+    expect(state.burstCursorHidden).toBe(false);
+    expect(state.burstCursorRestoreTimer).toBeNull();
+  });
+
+  it('does not request cursor suppression by default', () => {
+    const state = {
+      lastBurstOutputAtMs: null,
+      lastLocalInputAtMs: null,
+      burstCursorHidden: false,
+    } as never;
+
+    expect(shouldHideCursorForOutput(state, Uint8Array.from(text('heavy output')))).toBe(false);
   });
 });

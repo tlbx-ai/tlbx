@@ -490,6 +490,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'fullReplay or quickResume',
     applyMode: 'server-only',
   }),
+  controlEntry(
+    'preserveTerminalCursorControl',
+    'setting-preserve-terminal-cursor-control',
+    'checkbox',
+    true,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   controlEntry('inputMode', 'setting-input-mode', 'select', 'keyboard', {
     editable: true,
     storage: 'settings.json',

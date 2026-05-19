@@ -5200,6 +5200,7 @@
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "resumeMode",
+          "preserveTerminalCursorControl",
           "inputMode",
           "fileRadar",
           "showBookmarks",
@@ -5428,6 +5429,9 @@
           },
           "resumeMode": {
             "$ref": "#/components/schemas/TerminalResumeModeSetting"
+          },
+          "preserveTerminalCursorControl": {
+            "type": "boolean"
           },
           "inputMode": {
             "type": "string"

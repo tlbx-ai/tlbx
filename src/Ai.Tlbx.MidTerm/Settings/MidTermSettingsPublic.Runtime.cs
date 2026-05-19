@@ -107,6 +107,7 @@ public sealed partial class MidTermSettingsPublic
             DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             ResumeMode = settings.ResumeMode,
+            PreserveTerminalCursorControl = settings.PreserveTerminalCursorControl,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             ShowBookmarks = settings.ShowBookmarks,
@@ -223,6 +224,7 @@ public sealed partial class MidTermSettingsPublic
         settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         settings.ResumeMode = ResumeMode;
+        settings.PreserveTerminalCursorControl = PreserveTerminalCursorControl;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;

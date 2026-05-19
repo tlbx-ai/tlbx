@@ -2225,6 +2225,21 @@
                       indicator still reflects real terminal activity.
                     </p>
                     <div class="setting-row">
+                      <label
+                        for="setting-preserve-terminal-cursor-control"
+                        data-i18n="settings.behavior.preserveTerminalCursorControl"
+                        >Preserve app cursor control</label
+                      >
+                      <input type="checkbox" id="setting-preserve-terminal-cursor-control" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.preserveTerminalCursorControlHint"
+                    >
+                      Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable
+                      only if simple shells visibly flicker during heavy output.
+                    </p>
+                    <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
                         >Keep computer awake while sessions exist</label
                       >

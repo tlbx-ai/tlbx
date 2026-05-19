@@ -747,6 +747,8 @@
   "settings.appearance.backgroundHideOnMobile": "Mobile-এ background লুকান",
   "settings.behavior.resumeMode": "Session Resume Mode",
   "settings.behavior.resumeModeHint": "Quick Resume hidden sessions-কে হালকা রাখে, কারণ আপনি ফিরে এলে সেগুলো ছোট replay burst দিয়ে catch up করে। Visible sessions live থাকে, আর heat indicator-ও বাস্তব terminal activity দেখাতে থাকে।",
+  "settings.behavior.preserveTerminalCursorControl": "Preserve app cursor control",
+  "settings.behavior.preserveTerminalCursorControlHint": "Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable only if simple shells visibly flicker during heavy output.",
   "settings.diagnostics.terminalTransport": "Terminal Transport",
   "settings.diagnostics.sourceSeq": "Source Seq",
   "settings.diagnostics.muxReceivedSeq": "Mux Received Seq",

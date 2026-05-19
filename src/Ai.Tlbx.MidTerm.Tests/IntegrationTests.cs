@@ -140,6 +140,41 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
     }
 
     [Fact]
+    public async Task WebSocket_State_CoalescesBurstUpdates()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var manager = scope.ServiceProvider.GetRequiredService<TtyHostSessionManager>();
+        using var ws = await ConnectWebSocketAsync("/ws/state");
+
+        var initialJson = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+        var initialState = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(
+            initialJson,
+            AppJsonContext.Default.StateUpdate);
+        Assert.NotNull(initialState?.Sessions);
+
+        await DrainAvailableTextMessagesAsync(ws, TimeSpan.FromMilliseconds(100));
+
+        var registry = GetField<object>(manager, "_registry");
+        var notifyStateChange = registry.GetType().GetMethod(
+            "NotifyStateChange",
+            BindingFlags.Instance | BindingFlags.Public)!;
+
+        for (var i = 0; i < 20; i++)
+        {
+            notifyStateChange.Invoke(registry, null);
+        }
+
+        var coalescedJson = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
+        var coalescedState = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(
+            coalescedJson,
+            AppJsonContext.Default.StateUpdate);
+        Assert.NotNull(coalescedState?.Sessions);
+
+        var extraMessage = await TryReceiveTextMessageAsync(ws, TimeSpan.FromMilliseconds(150));
+        Assert.Null(extraMessage);
+    }
+
+    [Fact]
     public async Task WebPreview_CookieBridge_SetGetDelete_Works()
     {
         const string sessionId = "session-a";
@@ -271,6 +306,40 @@ public sealed class IntegrationTests : IClassFixture<WebApplicationFactory<Progr
         var wsUri = new UriBuilder(uri) { Scheme = uri.Scheme == "https" ? "wss" : "ws" }.Uri;
 
         return await wsClient.ConnectAsync(wsUri, CancellationToken.None);
+    }
+
+    private static async Task<string> ReceiveTextMessageAsync(WebSocket ws, TimeSpan timeout)
+    {
+        var message = await TryReceiveTextMessageAsync(ws, timeout);
+        Assert.NotNull(message);
+        return message;
+    }
+
+    private static async Task DrainAvailableTextMessagesAsync(WebSocket ws, TimeSpan timeout)
+    {
+        while (await TryReceiveTextMessageAsync(ws, timeout) is not null)
+        {
+        }
+    }
+
+    private static async Task<string?> TryReceiveTextMessageAsync(WebSocket ws, TimeSpan timeout)
+    {
+        var buffer = new byte[8192];
+        using var cts = new CancellationTokenSource(timeout);
+        try
+        {
+            var result = await ws.ReceiveAsync(buffer, cts.Token);
+            if (result.MessageType != WebSocketMessageType.Text)
+            {
+                return null;
+            }
+
+            return Encoding.UTF8.GetString(buffer, 0, result.Count);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
     }
 
     private static void SeedSession(TtyHostSessionManager manager, SessionInfo session, int order)

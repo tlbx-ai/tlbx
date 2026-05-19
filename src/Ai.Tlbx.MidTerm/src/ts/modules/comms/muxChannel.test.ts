@@ -359,6 +359,43 @@ describe('muxChannel', () => {
     expect(terminal.writeMock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not trim replay frames through terminal control sequences', async () => {
+    const harness = await loadHarness([0, 0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5n,
+        'abcde',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        10n,
+        '\x1b[31mXYZ',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+
+    expect(terminal.writeMock).toHaveBeenCalledTimes(2);
+    const replayData = terminal.writeMock.mock.calls[1]?.[0] as Uint8Array;
+    expect(new TextDecoder().decode(replayData)).toBe('\x1b[31mXYZ');
+  });
+
   it('sends visible-session hints without quick-resume refreshes in full replay mode', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     harness.stores.$currentSettings.set({ resumeMode: 'fullReplay' } as never);

@@ -758,6 +758,8 @@
   "settings.appearance.backgroundHideOnMobile": "Hintergrund auf Mobilgeräten ausblenden",
   "settings.behavior.resumeMode": "Session-Fortsetzungsmodus",
   "settings.behavior.resumeModeHint": "Quick Resume hält ausgeblendete Sessions leichter, indem beim Zurückkehren nur ein kleinerer Replay-Burst nachgeladen wird. Sichtbare Sessions bleiben live, und der Heat-Indikator zeigt weiterhin echte Terminalaktivität.",
+  "settings.behavior.preserveTerminalCursorControl": "App-Cursorsteuerung erhalten",
+  "settings.behavior.preserveTerminalCursorControlHint": "Überlässt Vollbild-Terminal-Apps ihre Cursor-Ein-/Ausblendsequenzen. Nur deaktivieren, wenn einfache Shells bei viel Ausgabe sichtbar flackern.",
   "settings.options.boxDrawingCustom": "Eigene Glyphen",
   "settings.options.boxDrawingFont": "Schriftart verwenden",
   "settings.options.boxDrawingStyleClassic": "Klassisch",

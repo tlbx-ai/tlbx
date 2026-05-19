@@ -747,6 +747,8 @@
   "settings.appearance.backgroundHideOnMobile": "Ocultar fundo no celular",
   "settings.behavior.resumeMode": "Modo de retomada da sessão",
   "settings.behavior.resumeModeHint": "Quick Resume mantém sessões ocultas mais leves ao atualizá-las com um replay menor quando você volta para elas. As sessões visíveis continuam ao vivo, e o indicador de atividade ainda reflete atividade real do terminal.",
+  "settings.behavior.preserveTerminalCursorControl": "Preserve app cursor control",
+  "settings.behavior.preserveTerminalCursorControlHint": "Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable only if simple shells visibly flicker during heavy output.",
   "settings.diagnostics.terminalTransport": "Transporte do terminal",
   "settings.diagnostics.sourceSeq": "Seq de origem",
   "settings.diagnostics.muxReceivedSeq": "Seq recebida pelo mux",

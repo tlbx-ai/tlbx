@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -24,6 +25,10 @@ namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 
 public sealed class StateWebSocketHandler
 {
+    private const int MaxCoalescedStateUpdatesPerSecond = 30;
+    private static readonly TimeSpan MinCoalescedStateUpdateInterval =
+        TimeSpan.FromSeconds(1.0 / MaxCoalescedStateUpdatesPerSecond);
+
     private readonly TtyHostSessionManager _sessionManager;
     private readonly SessionSupervisorService _sessionSupervisor;
     private readonly SessionAppServerControlRuntimeService _appServerControlRuntime;
@@ -97,6 +102,13 @@ public sealed class StateWebSocketHandler
         Action<string>? revokeHandler = null;
         UpdateInfo? lastUpdate = null;
         var shutdownToken = _shutdownService.Token;
+        using var stateSendCts = CancellationTokenSource.CreateLinkedTokenSource(shutdownToken);
+        var stateSendToken = stateSendCts.Token;
+        var stateSendGate = new object();
+        var stateSendPending = false;
+        var stateSendInFlight = false;
+        Task? stateSendTask = null;
+        var lastStateSendTimestamp = 0L;
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
@@ -190,25 +202,111 @@ public sealed class StateWebSocketHandler
             }
         }
 
+        void MarkStateSent()
+        {
+            lastStateSendTimestamp = Stopwatch.GetTimestamp();
+        }
+
+        TimeSpan GetCoalescedStateSendDelay()
+        {
+            if (lastStateSendTimestamp == 0)
+            {
+                return TimeSpan.Zero;
+            }
+
+            var elapsed = Stopwatch.GetElapsedTime(lastStateSendTimestamp);
+            return elapsed >= MinCoalescedStateUpdateInterval
+                ? TimeSpan.Zero
+                : MinCoalescedStateUpdateInterval - elapsed;
+        }
+
+        void ScheduleCoalescedStateSendLocked()
+        {
+            if (stateSendTask is not null || stateSendInFlight || !stateSendPending)
+            {
+                return;
+            }
+
+            var delay = GetCoalescedStateSendDelay();
+            stateSendTask = Task.Run(async () =>
+            {
+                var acquiredStateSendSlot = false;
+                try
+                {
+                    if (delay > TimeSpan.Zero)
+                    {
+                        await Task.Delay(delay, stateSendToken).ConfigureAwait(false);
+                    }
+
+                    lock (stateSendGate)
+                    {
+                        stateSendTask = null;
+                        if (!stateSendPending || stateSendInFlight)
+                        {
+                            return;
+                        }
+
+                        stateSendPending = false;
+                        stateSendInFlight = true;
+                        acquiredStateSendSlot = true;
+                    }
+
+                    await SendStateWithRetryAsync().ConfigureAwait(false);
+                    MarkStateSent();
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                finally
+                {
+                    lock (stateSendGate)
+                    {
+                        if (!acquiredStateSendSlot)
+                        {
+                            stateSendTask = null;
+                        }
+                        else
+                        {
+                            stateSendInFlight = false;
+                        }
+
+                        if (!stateSendToken.IsCancellationRequested)
+                        {
+                            ScheduleCoalescedStateSendLocked();
+                        }
+                    }
+                }
+            }, CancellationToken.None);
+        }
+
+        void RequestCoalescedStateSend()
+        {
+            lock (stateSendGate)
+            {
+                stateSendPending = true;
+                ScheduleCoalescedStateSendLocked();
+            }
+        }
+
         void OnStateChange()
         {
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         void OnUpdateAvailable(UpdateInfo update)
         {
             lastUpdate = update;
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         void OnLayoutChanged()
         {
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         void OnManagerBarQueueChanged()
         {
-            _ = SendStateWithRetryAsync();
+            RequestCoalescedStateSend();
         }
 
         var connectionToken = new object();
@@ -364,6 +462,7 @@ public sealed class StateWebSocketHandler
 
             lastUpdate = shareAccess is null ? _updateService.LatestUpdate : null;
             await SendStateAsync();
+            MarkStateSent();
             if (shareAccess is null)
             {
                 _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
@@ -412,6 +511,24 @@ public sealed class StateWebSocketHandler
         }
         finally
         {
+            stateSendCts.Cancel();
+            Task? pendingStateSendTask;
+            lock (stateSendGate)
+            {
+                pendingStateSendTask = stateSendTask;
+            }
+
+            if (pendingStateSendTask is not null)
+            {
+                try
+                {
+                    await pendingStateSendTask.WaitAsync(TimeSpan.FromSeconds(2), shutdownToken);
+                }
+                catch
+                {
+                }
+            }
+
             _sessionManager.RemoveStateListener(sessionListenerId);
             _updateService.RemoveUpdateListener(updateListenerId);
             _sessionLayoutStateService.OnChanged -= OnLayoutChanged;

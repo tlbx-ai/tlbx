@@ -4236,6 +4236,7 @@ export interface components {
       disableAutoMainBrowserPromotion: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
       resumeMode: components['schemas']['TerminalResumeModeSetting'];
+      preserveTerminalCursorControl: boolean;
       inputMode: string;
       fileRadar: boolean;
       showBookmarks: boolean;
