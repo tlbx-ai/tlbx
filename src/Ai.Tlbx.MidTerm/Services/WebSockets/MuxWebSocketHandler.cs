@@ -290,7 +290,7 @@ public sealed class MuxWebSocketHandler
     {
         foreach (var sessionInfo in GetInitialReplaySessions(allowedSessionId, prioritySessionId, replayMode))
         {
-            if (client.ShouldUseQuickResume() && !client.ShouldDeliverSession(sessionInfo.Id))
+            if (!client.ShouldDeliverSession(sessionInfo.Id))
             {
                 continue;
             }

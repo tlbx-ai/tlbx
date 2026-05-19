@@ -67,7 +67,6 @@ public sealed class MuxClient : IAsyncDisposable
     private const int MaxQueuedItems = 1000;
     private const int MaxFrameChunkBytes = 32 * 1024;
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
-    private static readonly TimeSpan LoopCheckInterval = TimeSpan.FromMilliseconds(2);
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
@@ -394,22 +393,30 @@ public sealed class MuxClient : IAsyncDisposable
                 var now = Stopwatch.GetTimestamp();
                 await FlushDueBuffersAsync(now).ConfigureAwait(false);
 
-                // 4. Wait for more data OR timeout (to check time-based flushes)
+                // 4. Wait for more data OR the next due background flush.
                 try
                 {
-                    if (_loopTimeoutCts is null || !_loopTimeoutCts.TryReset())
+                    var waitDelay = CalculateNextFlushDelay(now);
+                    if (waitDelay is null)
                     {
-                        _loopCtReg.Dispose();
-                        _loopTimeoutCts?.Dispose();
-                        _loopTimeoutCts = new CancellationTokenSource();
-                        _loopCtReg = ct.UnsafeRegister(s_cancelCallback, _loopTimeoutCts);
+                        await reader.WaitToReadAsync(ct).ConfigureAwait(false);
                     }
-                    _loopTimeoutCts.CancelAfter(LoopCheckInterval);
-                    await reader.WaitToReadAsync(_loopTimeoutCts.Token).ConfigureAwait(false);
+                    else
+                    {
+                        if (_loopTimeoutCts is null || !_loopTimeoutCts.TryReset())
+                        {
+                            _loopCtReg.Dispose();
+                            _loopTimeoutCts?.Dispose();
+                            _loopTimeoutCts = new CancellationTokenSource();
+                            _loopCtReg = ct.UnsafeRegister(s_cancelCallback, _loopTimeoutCts);
+                        }
+                        _loopTimeoutCts.CancelAfter(waitDelay.Value);
+                        await reader.WaitToReadAsync(_loopTimeoutCts.Token).ConfigureAwait(false);
+                    }
                 }
                 catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    // Timeout - continue to check time-based flushes
+                    // Due background flush - loop around and flush.
                 }
             }
         }
@@ -506,6 +513,39 @@ public sealed class MuxClient : IAsyncDisposable
                 buffer.LastFlushTicks = nowTicks;
             }
         }
+    }
+
+    internal TimeSpan? CalculateNextFlushDelay(long nowTicks)
+    {
+        if (_flushSuspended)
+        {
+            return null;
+        }
+
+        var activeId = _activeSessionId;
+        TimeSpan? nextDelay = null;
+
+        foreach (var (sessionId, buffer) in _sessionBuffers)
+        {
+            if (buffer.TotalBytes == 0 || sessionId == activeId)
+            {
+                continue;
+            }
+
+            var elapsed = Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
+            var remaining = FlushInterval - elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                return TimeSpan.Zero;
+            }
+
+            if (nextDelay is null || remaining < nextDelay.Value)
+            {
+                nextDelay = remaining;
+            }
+        }
+
+        return nextDelay;
     }
 
     private async Task FlushBufferAsync(
@@ -675,13 +715,13 @@ public sealed class MuxClient : IAsyncDisposable
             return false;
         }
 
-        if (_getResumeMode() != TerminalResumeModeSetting.QuickResume)
+        if (string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal)
+            || _visibleSessionIds.Contains(sessionId))
         {
             return true;
         }
 
-        return string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal)
-            || _visibleSessionIds.Contains(sessionId);
+        return false;
     }
 
     public bool ShouldUseQuickResume()
@@ -701,8 +741,8 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (WebSocket.State == WebSocketState.Open)
             {
-                using var cts = new CancellationTokenSource(SendTimeout);
-                await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, cts.Token).ConfigureAwait(false);
+                var token = GetSendTimeoutToken();
+                await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
                 return true;
             }
             return false;
@@ -736,8 +776,8 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (WebSocket.State == WebSocketState.Open)
             {
-                using var cts = new CancellationTokenSource(SendTimeout);
-                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, cts.Token).ConfigureAwait(false);
+                var token = GetSendTimeoutToken();
+                await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
                 return true;
             }
             return false;

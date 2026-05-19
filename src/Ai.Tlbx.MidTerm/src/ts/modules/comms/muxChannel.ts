@@ -473,10 +473,12 @@ interface OutputFrameItem {
 interface SessionOutputQueue {
   items: OutputFrameItem[];
   index: number;
+  bytes: number;
   processing: boolean;
 }
 
 const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
+const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
@@ -548,7 +550,7 @@ function getPendingFrameCount(queue: SessionOutputQueue): number {
 function getOrCreateSessionQueue(sessionId: string): SessionOutputQueue {
   let queue = sessionOutputQueues.get(sessionId);
   if (!queue) {
-    queue = { items: [], index: 0, processing: false };
+    queue = { items: [], index: 0, bytes: 0, processing: false };
     sessionOutputQueues.set(sessionId, queue);
   }
   return queue;
@@ -578,11 +580,13 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
   if (!item) {
     queue.items.length = 0;
     queue.index = 0;
+    queue.bytes = 0;
     sessionOutputQueues.delete(sessionId);
     return null;
   }
 
   queue.index++;
+  queue.bytes = Math.max(0, queue.bytes - item.payload.byteLength);
 
   if (getPendingFrameCount(queue) === 0) {
     // Do not remove the queue object yet. The current worker may still be
@@ -591,6 +595,7 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
     // per-session ordering.
     queue.items.length = 0;
     queue.index = 0;
+    queue.bytes = 0;
   } else if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
     compactSessionQueue(queue);
   }
@@ -601,15 +606,22 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const queue = getOrCreateSessionQueue(sessionId);
   const pendingCount = getPendingFrameCount(queue);
-  if (pendingCount >= MAX_QUEUED_FRAMES_PER_SESSION) {
-    queue.index++;
+  if (
+    pendingCount >= MAX_QUEUED_FRAMES_PER_SESSION ||
+    queue.bytes + payload.byteLength > MAX_QUEUED_BYTES_PER_SESSION
+  ) {
     noteQueueOverflow(sessionId);
-    if (queue.index >= QUEUE_COMPACT_THRESHOLD) {
-      compactSessionQueue(queue);
-    }
+    queue.items.length = 0;
+    queue.index = 0;
+    queue.bytes = 0;
+    sessionOutputQueues.delete(sessionId);
+    sessionsNeedingResync.add(sessionId);
+    requestBufferRefresh(sessionId);
+    return;
   }
 
   queue.items.push({ sessionId, payload, compressed });
+  queue.bytes += payload.byteLength;
   void processSessionOutputQueue(sessionId, outputQueueGeneration);
 }
 
@@ -1397,15 +1409,13 @@ export function updateTerminalVisibility(
     normalizedVisibleSessionIds,
   );
   const quickResumeEnabled = isQuickResumeEnabled();
-  const sessionsNeedingQuickResume: string[] = [];
+  const sessionsNeedingReplay: string[] = [];
 
-  if (quickResumeEnabled) {
-    nextStreamableSessionIds.forEach((sessionId) => {
-      if (!currentStreamableSessionIds.has(sessionId)) {
-        sessionsNeedingQuickResume.push(sessionId);
-      }
-    });
-  }
+  nextStreamableSessionIds.forEach((sessionId) => {
+    if (!currentStreamableSessionIds.has(sessionId)) {
+      sessionsNeedingReplay.push(sessionId);
+    }
+  });
 
   currentVisibleSessionIds = normalizedVisibleSessionIds;
   currentStreamableSessionIds = nextStreamableSessionIds;
@@ -1414,12 +1424,8 @@ export function updateTerminalVisibility(
     sendVisibleSessionsHint(normalizedVisibleSessionIds);
   }
 
-  if (!quickResumeEnabled) {
-    return;
-  }
-
-  sessionsNeedingQuickResume.forEach((sessionId) => {
-    requestBufferRefresh(sessionId, 'quickResume');
+  sessionsNeedingReplay.forEach((sessionId) => {
+    requestBufferRefresh(sessionId, quickResumeEnabled ? 'quickResume' : 'fullReplay');
   });
 }
 

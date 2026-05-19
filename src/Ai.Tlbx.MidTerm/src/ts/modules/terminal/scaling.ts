@@ -1273,7 +1273,7 @@ let foregroundResizeRecoveryScheduled = false;
 
 /**
  * Recover main-browser sizing after the page returns to the foreground.
- * Uses the lightweight periodic mismatch check so correctly sized terminals
+ * Uses the lightweight mismatch check so correctly sized terminals
  * remain untouched and do not trigger unnecessary renderer/layout work.
  */
 export function scheduleForegroundResizeRecovery(): void {
@@ -1323,7 +1323,7 @@ export function getLastPeriodicCheckResult(): string {
 }
 
 /**
- * Periodic check: compare current terminal dimensions against what they should be.
+ * Mismatch check: compare current terminal dimensions against what they should be.
  * Only resizes when a real mismatch is found. Does NOT touch focus, transforms,
  * overlays, or any other DOM state — just terminal.resize() + sendResize().
  */
@@ -1415,8 +1415,6 @@ function applyPeriodicTerminalResizeDiff(
 /**
  * Set up resize observer to recalculate scaling when window resizes.
  * Main browser: auto-resize terminals. Follower: CSS scale only.
- * Also starts a 1-second periodic check for the main browser to catch
- * resize scenarios that don't fire standard events.
  */
 export function setupResizeObserver(): void {
   window.addEventListener('resize', () => {
@@ -1450,19 +1448,14 @@ export function setupResizeObserver(): void {
   window.addEventListener('focus', handleForegroundRecovery);
   window.addEventListener('pageshow', handleForegroundRecovery);
 
-  let periodicResizeInterval: number | undefined;
-
   $isMainBrowser.subscribe((isMain) => {
-    if (isMain && periodicResizeInterval === undefined) {
+    if (isMain) {
       requestAnimationFrame(() => {
         rememberCurrentMobileViewportSnapshot();
         ensureMainBrowserContainerResizeObserver();
         autoResizeAllTerminalsImmediate();
       });
-      periodicResizeInterval = window.setInterval(periodicResizeCheck, 1000);
-    } else if (!isMain && periodicResizeInterval !== undefined) {
-      clearInterval(periodicResizeInterval);
-      periodicResizeInterval = undefined;
+    } else {
       disconnectMainBrowserContainerResizeObserver();
       requestAnimationFrame(rescaleAllTerminalsImmediate);
     }
