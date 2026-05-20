@@ -64,6 +64,10 @@ public sealed partial class TmuxFormatter
             "pane_active" => isActive ? "1" : "0",
             "pane_dead" => session.IsRunning ? "0" : "1",
             "pane_tty" => "",
+            "extended-keys-format" => "csi-u",
+            "client_termname" => "xterm-256color",
+            "client_termtype" => "xterm-256color",
+            "client_termfeatures" => "RGB,clipboard,extkeys,focus,title",
 
             "session_id" => "$0",
             "session_name" => "MidTerm",

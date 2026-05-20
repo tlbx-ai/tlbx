@@ -28,6 +28,11 @@ $projects = @(
         Name = "mtagenthost"
         Path = "src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj"
         ExtraArgs = @("-p:IsPublishing=true", "-p:ContinuousIntegrationBuild=true")
+    },
+    @{
+        Name = "mttmux"
+        Path = "src/Ai.Tlbx.MidTerm.TmuxShim/Ai.Tlbx.MidTerm.TmuxShim.csproj"
+        ExtraArgs = @("-p:IsPublishing=true", "-p:ContinuousIntegrationBuild=true")
     }
 )
 

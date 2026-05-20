@@ -214,7 +214,7 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost
+      - name: Build mt + mthost + mtagenthost + mttmux
         shell: pwsh
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
@@ -246,6 +246,9 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
+          if [[ "${{ matrix.rid }}" == "win-x64" ]]; then
+            cp src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/${{ matrix.rid }}/publish/mttmux.exe staging/${{ matrix.rid }}/
+          fi
           if [[ -f src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} ]]; then
             cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
           else
@@ -282,6 +285,9 @@ jobs:
         run: |
           cd staging/${{ matrix.rid }}
           files=(mt${{ matrix.ext }} mtagenthost${{ matrix.ext }})
+          if [[ "${{ matrix.rid }}" == "win-x64" ]]; then
+            files+=(mttmux.exe)
+          fi
           if [[ -f mthost${{ matrix.ext }} ]]; then
             files+=(mthost${{ matrix.ext }})
           fi
@@ -371,7 +377,7 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost
+      - name: Build mt + mthost + mtagenthost + mttmux
         shell: pwsh
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
@@ -512,7 +518,7 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost
+      - name: Build mt + mthost + mtagenthost + mttmux
         shell: pwsh
         run: ./scripts/publish-runtime-set.ps1 -Rid 'win-x64' -Configuration Release
 
@@ -521,6 +527,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
+          Copy-Item src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/win-x64/publish/mttmux.exe staging/win-x64/
           Copy-Item src/version.json staging/win-x64/
           $mthostPath = 'src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe'
           if (Test-Path $mthostPath) {
@@ -533,7 +540,7 @@ jobs:
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe')
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe', 'staging/win-x64/mttmux.exe')
           if (Test-Path 'staging/win-x64/mthost.exe') {
             $files += 'staging/win-x64/mthost.exe'
           }
@@ -589,7 +596,7 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost
+      - name: Build mt + mthost + mtagenthost + mttmux
         shell: pwsh
         run: ./scripts/publish-runtime-set.ps1 -Rid 'win-x64' -Configuration Release
 
@@ -598,6 +605,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
           Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
+          Copy-Item src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/win-x64/publish/mttmux.exe staging/win-x64/
           Copy-Item src/version.json staging/win-x64/
           $mthostPath = 'src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe'
           if (Test-Path $mthostPath) {
@@ -616,15 +624,18 @@ jobs:
           if (-not (Test-Path 'staging/win-x64/mtagenthost.exe')) {
             throw 'mtagenthost.exe must be present before stable Windows signing.'
           }
+          if (-not (Test-Path 'staging/win-x64/mttmux.exe')) {
+            throw 'mttmux.exe must be present before stable Windows signing.'
+          }
 
-      - name: Sign Windows binaries (mt.exe, mthost.exe, mtagenthost.exe)
+      - name: Sign Windows binaries (mt.exe, mthost.exe, mtagenthost.exe, mttmux.exe)
         shell: pwsh
         run: ./scripts/sign-windows-binaries.ps1 -StagingPath staging/win-x64
 
       - name: Verify stable Windows Authenticode signatures
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe')
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe', 'staging/win-x64/mttmux.exe')
           if (Test-Path 'staging/win-x64/mthost.exe') {
             $files += 'staging/win-x64/mthost.exe'
           }
@@ -639,7 +650,7 @@ jobs:
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe')
+          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe', 'staging/win-x64/mttmux.exe')
           if (Test-Path 'staging/win-x64/mthost.exe') {
             $files += 'staging/win-x64/mthost.exe'
           }

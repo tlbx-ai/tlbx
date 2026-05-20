@@ -79,22 +79,7 @@ public static class TmuxScriptWriter
             Directory.CreateDirectory(dir);
 
             var ps1Path = Path.Combine(dir, "tmux.ps1");
-            var ps1Script = $$"""
-                $body = [System.IO.MemoryStream]::new()
-                foreach ($a in $args) {
-                    $b = [System.Text.Encoding]::UTF8.GetBytes($a)
-                    $body.Write($b, 0, $b.Length)
-                    $body.WriteByte(0)
-                }
-                $tmp = Join-Path $env:TEMP "mt-tmux-$PID.bin"
-                [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
-                try {
-                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "{endpointUrl}" 2>$null
-                } finally {
-                    Remove-Item $tmp -ErrorAction SilentlyContinue
-                }
-                exit $LASTEXITCODE
-                """;
+            var ps1Script = BuildWindowsPowerShellScript(endpointUrl);
             File.WriteAllText(ps1Path, ps1Script);
 
             var cmdPath = Path.Combine(dir, "tmux.cmd");
@@ -103,6 +88,8 @@ public static class TmuxScriptWriter
                 pwsh -NoProfile -NoLogo -File "%~dp0tmux.ps1" %*
                 """;
             File.WriteAllText(cmdPath, cmdScript);
+
+            WriteWindowsExecutableShim(dir, endpointUrl);
 
             // Bash-compatible script (no extension) for Git Bash / MSYS2 / WSL
             var bashPath = Path.Combine(dir, "tmux");
@@ -121,6 +108,63 @@ public static class TmuxScriptWriter
         {
             Log.Warn(() => $"TmuxScriptWriter: Failed to write Windows script: {ex.Message}");
         }
+    }
+
+    internal static string BuildWindowsPowerShellScript(string endpointUrl)
+    {
+        return $$"""
+                $body = [System.IO.MemoryStream]::new()
+                foreach ($a in $args) {
+                    $b = [System.Text.Encoding]::UTF8.GetBytes($a)
+                    $body.Write($b, 0, $b.Length)
+                    $body.WriteByte(0)
+                }
+                $tmp = Join-Path $env:TEMP "mt-tmux-$PID.bin"
+                [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
+                try {
+                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "{{endpointUrl}}" 2>$null
+                } finally {
+                    Remove-Item $tmp -ErrorAction SilentlyContinue
+                }
+                exit $LASTEXITCODE
+                """;
+    }
+
+    private static void WriteWindowsExecutableShim(string dir, string endpointUrl)
+    {
+        var shimPath = ResolveWindowsExecutableShimPath();
+        if (shimPath is null)
+        {
+            Log.Warn(() => "TmuxScriptWriter: mttmux.exe not found; non-shell process launches may not resolve tmux");
+            return;
+        }
+
+        File.Copy(shimPath, Path.Combine(dir, "tmux.exe"), overwrite: true);
+        var shimDirectory = Path.GetDirectoryName(shimPath);
+        if (shimDirectory is not null)
+        {
+            foreach (var supportFile in Directory.EnumerateFiles(shimDirectory, "mttmux.*"))
+            {
+                File.Copy(supportFile, Path.Combine(dir, Path.GetFileName(supportFile)), overwrite: true);
+            }
+        }
+        File.WriteAllText(Path.Combine(dir, "tmux.endpoint"), endpointUrl);
+    }
+
+    private static string? ResolveWindowsExecutableShimPath()
+    {
+        var fileName = OperatingSystem.IsWindows() ? "mttmux.exe" : "mttmux";
+        var candidates = new[]
+        {
+            Path.Combine(AppContext.BaseDirectory, fileName),
+            Path.GetFullPath(Path.Combine(
+                AppContext.BaseDirectory,
+                "..", "..", "..", "..",
+                "Ai.Tlbx.MidTerm.TmuxShim", "bin", "Debug", "net10.0",
+                fileName))
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     /// <summary>

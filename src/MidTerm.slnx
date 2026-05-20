@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj" />
   <Project Path="Ai.Tlbx.MidTerm.Common/Ai.Tlbx.MidTerm.Common.csproj" />
+  <Project Path="Ai.Tlbx.MidTerm.TmuxShim/Ai.Tlbx.MidTerm.TmuxShim.csproj" />
   <Project Path="Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj" />
   <Project Path="Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj" />
   <Project Path="Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj" />

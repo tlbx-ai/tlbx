@@ -87,6 +87,9 @@ try {
         # installed runtime on web-only updates.
         $checksums = @{}
         $binaries = if ($isWebOnly) { @("mt", "mtagenthost") } else { @("mt", "mthost", "mtagenthost") }
+        if ($platform -eq "win-x64") {
+            $binaries += "mttmux"
+        }
         $ext = if ($platform -eq "win-x64") { ".exe" } else { "" }
         $expectedFiles = $binaries | ForEach-Object { "$_$ext" }
         $checksumManifestPath = Join-Path $platformDir "SHA256SUMS.txt"
