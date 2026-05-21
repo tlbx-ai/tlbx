@@ -336,6 +336,7 @@
       var(--terminal-canvas-background, var(--terminal-bg))
     ),
     var(--terminal-canvas-background, var(--terminal-bg));
+  --command-bay-control-background: var(--terminal-bg);
   --terminal-ui-background: var(--terminal-bg);
   --app-chrome-background: var(--bg-terminal);
   --app-header-background:
@@ -16231,20 +16232,24 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-meta-size: 11px;
   --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
   --command-bay-background: var(--terminal-canvas-background-stack);
-  --command-bay-surface-color: var(--command-bay-background-color);
-  --command-bay-surface: var(--command-bay-background);
-  --command-bay-surface-strong-color: var(--command-bay-background-color);
-  --command-bay-surface-strong: var(--command-bay-background);
+  --command-bay-control-background-color: var(
+    --command-bay-control-background,
+    var(--terminal-bg)
+  );
+  --command-bay-surface-color: var(--command-bay-control-background-color);
+  --command-bay-surface: var(--command-bay-control-background);
+  --command-bay-surface-strong-color: var(--command-bay-control-background-color);
+  --command-bay-surface-strong: var(--command-bay-control-background);
   --command-bay-surface-hover-color: color-mix(
     in srgb,
-    var(--command-bay-background-color) 90%,
+    var(--command-bay-control-background-color) 90%,
     var(--text-primary) 10%
   );
   --command-bay-surface-hover: linear-gradient(
       var(--command-bay-surface-hover-color),
       var(--command-bay-surface-hover-color)
     ),
-    var(--command-bay-background);
+    var(--command-bay-control-background);
   --command-bay-border: transparent;
   --command-bay-border-strong: transparent;
   --command-bay-textbox-border: color-mix(in srgb, var(--text-primary) 18%, transparent);
@@ -16256,8 +16261,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     var(--command-bay-muted) 70%,
     var(--command-bay-text) 30%
   );
-  --command-bay-floating-button-surface: var(--command-bay-background);
-  --command-bay-ui-reactive-surface: var(--command-bay-background);
+  --command-bay-floating-button-surface: var(--command-bay-control-background);
+  --command-bay-ui-reactive-surface: var(--command-bay-control-background);
   --command-bay-ui-reactive-border: transparent;
   --command-bay-ui-reactive-floating-button-surface: var(--command-bay-ui-reactive-surface);
   --command-bay-floating-button-border: transparent;
@@ -16277,17 +16282,6 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
   background: var(--command-bay-background);
   pointer-events: auto;
-}
-
-.adaptive-footer-dock:not([data-composer-expanded='true'])::before {
-  content: '';
-  position: absolute;
-  top: -1px;
-  right: 0;
-  left: 0;
-  height: 1px;
-  background: var(--command-bay-background);
-  pointer-events: none;
 }
 
 .adaptive-footer-dock[data-device='desktop'] {

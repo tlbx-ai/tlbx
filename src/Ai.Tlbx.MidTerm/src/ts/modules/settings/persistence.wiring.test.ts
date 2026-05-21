@@ -356,11 +356,16 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('--workspace-pane-chrome-background: var(--bg-elevated);');
     expect(cssSource).toContain('background-color: transparent;');
     expect(cssSource).toContain('--terminal-canvas-background-stack:');
+    expect(cssSource).toContain('--command-bay-control-background: var(--terminal-bg);');
     expect(cssSource).toContain(
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
     expect(cssSource).toContain(
       '--command-bay-background: var(--terminal-canvas-background-stack);',
+    );
+    expect(cssSource).toContain('--command-bay-surface: var(--command-bay-control-background);');
+    expect(cssSource).toContain(
+      '--command-bay-ui-reactive-surface: var(--command-bay-control-background);',
     );
     expect(cssSource).toContain('background: var(--command-bay-background);');
     expect(xtermCssSource).toContain(

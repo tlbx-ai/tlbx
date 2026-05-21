@@ -77,23 +77,30 @@ describe('smart input tab wiring', () => {
 
   it('uses the stacked terminal canvas as the Command Bay backing surface', () => {
     const dockRule = getCssRule('.adaptive-footer-dock');
-    const seamRule = getCssRule(
-      ".adaptive-footer-dock:not([data-composer-expanded='true'])::before",
-    );
     const expandedDockRule = getCssRule(".adaptive-footer-dock[data-composer-expanded='true']");
     const textareaRule = getCssRule('.adaptive-footer-dock .smart-input-textarea');
     const reserveRule = getCssRule('.adaptive-footer-reserve');
 
     expect(css).toContain('--terminal-canvas-background-stack:');
+    expect(css).toContain('--command-bay-control-background: var(--terminal-bg);');
     expect(css).toContain(
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
     expect(css).toContain('--command-bay-background: var(--terminal-canvas-background-stack);');
-    expect(css).toContain('--command-bay-surface: var(--command-bay-background);');
-    expect(css).toContain('--command-bay-surface-strong: var(--command-bay-background);');
-    expect(css).toContain('--command-bay-floating-button-surface: var(--command-bay-background);');
-    expect(css).toContain('--command-bay-ui-reactive-surface: var(--command-bay-background);');
-    expect(css).toContain('--command-bay-surface-color: var(--command-bay-background-color);');
+    expect(css).toContain(
+      '--command-bay-control-background-color: var(\n    --command-bay-control-background,',
+    );
+    expect(css).toContain('--command-bay-surface: var(--command-bay-control-background);');
+    expect(css).toContain('--command-bay-surface-strong: var(--command-bay-control-background);');
+    expect(css).toContain(
+      '--command-bay-floating-button-surface: var(--command-bay-control-background);',
+    );
+    expect(css).toContain(
+      '--command-bay-ui-reactive-surface: var(--command-bay-control-background);',
+    );
+    expect(css).toContain(
+      '--command-bay-surface-color: var(--command-bay-control-background-color);',
+    );
     expect(css).toContain('--command-bay-surface-hover-color: color-mix(');
     expect(css).toContain('--command-bay-border: transparent;');
     expect(css).toContain('--command-bay-border-strong: transparent;');
@@ -103,9 +110,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-floating-button-border: transparent;');
     expect(reserveRule).toContain('background: transparent;');
     expect(dockRule).toContain('background: var(--command-bay-background);');
-    expect(seamRule).toContain('top: -1px;');
-    expect(seamRule).toContain('height: 1px;');
-    expect(seamRule).toContain('background: var(--command-bay-background);');
+    expect(css).not.toContain(".adaptive-footer-dock:not([data-composer-expanded='true'])::before");
+    expect(css).not.toContain('top: -1px;');
     expect(expandedDockRule).toContain('background: var(--command-bay-background);');
     expect(textareaRule).toContain(
       'border: 1px solid var(--command-bay-textbox-border, var(--border-subtle));',
@@ -247,9 +253,13 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('z-index: 3;');
     expect(css).toContain('--smart-input-control-height: 42px;');
     expect(css).toContain('--command-bay-control-height: 36px;');
-    expect(css).toContain('--command-bay-surface: var(--command-bay-background);');
-    expect(css).toContain('--command-bay-ui-reactive-surface: var(--command-bay-background);');
-    expect(css).toContain('--command-bay-surface-color: var(--command-bay-background-color);');
+    expect(css).toContain('--command-bay-surface: var(--command-bay-control-background);');
+    expect(css).toContain(
+      '--command-bay-ui-reactive-surface: var(--command-bay-control-background);',
+    );
+    expect(css).toContain(
+      '--command-bay-surface-color: var(--command-bay-control-background-color);',
+    );
     expect(css).toContain(
       '--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));',
     );
@@ -400,10 +410,15 @@ describe('smart input tab wiring', () => {
     const glassRule = getCssRule(".adaptive-footer-dock[data-material='glass']");
 
     expect(css).toContain('--terminal-canvas-background-stack:');
+    expect(css).toContain('--command-bay-control-background: var(--terminal-bg);');
     expect(css).toContain(
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
     expect(css).toContain('--command-bay-background: var(--terminal-canvas-background-stack);');
+    expect(css).toContain('--command-bay-surface: var(--command-bay-control-background);');
+    expect(css).toContain(
+      '--command-bay-ui-reactive-surface: var(--command-bay-control-background);',
+    );
     expect(solidRule).toContain('background: var(--command-bay-background);');
     expect(glassRule).toContain('background: var(--command-bay-background);');
     expect(compactWhitespace(css)).toContain(
