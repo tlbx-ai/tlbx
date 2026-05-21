@@ -9171,7 +9171,7 @@ body.shared-session-mode .session-tab-bar {
   flex: 1;
   resize: none;
   box-sizing: border-box;
-  border: 1px solid var(--command-bay-border-strong, var(--border-subtle));
+  border: 1px solid var(--command-bay-textbox-border, var(--border-subtle));
   border-radius: 8px;
   background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));
   color: var(--command-bay-text, var(--text-primary));
@@ -9195,7 +9195,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .adaptive-footer-dock .smart-input-textarea:focus {
-  border-color: transparent;
+  border-color: var(--command-bay-textbox-border-focus, var(--accent-blue));
 }
 
 .adaptive-footer-dock .smart-input-textarea::placeholder {
@@ -16256,6 +16256,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     var(--command-bay-background);
   --command-bay-border: transparent;
   --command-bay-border-strong: transparent;
+  --command-bay-textbox-border: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  --command-bay-textbox-border-focus: color-mix(in srgb, var(--accent-blue) 52%, transparent);
   --command-bay-text: color-mix(in srgb, var(--text-primary) 94%, white 6%);
   --command-bay-muted: color-mix(in srgb, var(--text-secondary) 90%, transparent);
   --command-bay-action-ink: color-mix(
@@ -16599,7 +16601,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     calc(9px + var(--smart-input-expand-hit-size) - 10px)
     var(--smart-input-textarea-padding-bottom) 9px;
   border-radius: 10px;
-  border: 1px solid var(--command-bay-border-strong);
+  border: 1px solid var(--command-bay-textbox-border);
   background: var(--command-bay-ui-reactive-surface);
   color: var(--command-bay-text);
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
@@ -16613,7 +16615,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .smart-input-textarea:focus {
-  border-color: transparent;
+  border-color: var(--command-bay-textbox-border-focus);
   outline: none;
   box-shadow: none;
 }

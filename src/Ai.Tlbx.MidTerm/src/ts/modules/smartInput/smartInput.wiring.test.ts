@@ -93,17 +93,22 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-surface-hover-color: color-mix(');
     expect(css).toContain('--command-bay-border: transparent;');
     expect(css).toContain('--command-bay-border-strong: transparent;');
+    expect(css).toContain('--command-bay-textbox-border: color-mix(');
+    expect(css).toContain('--command-bay-textbox-border-focus: color-mix(');
     expect(css).toContain('--command-bay-ui-reactive-border: transparent;');
     expect(css).toContain('--command-bay-floating-button-border: transparent;');
     expect(reserveRule).toContain('var(--terminal-canvas-background, var(--terminal-bg))');
     expect(textareaRule).toContain(
+      'border: 1px solid var(--command-bay-textbox-border, var(--border-subtle));',
+    );
+    expect(textareaRule).toContain(
       'background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));',
     );
     expect(css).toMatch(
-      /\.adaptive-footer-dock\s+\.smart-input-textarea:focus\s*\{[\s\S]*?border-color:\s*transparent;/,
+      /\.adaptive-footer-dock\s+\.smart-input-textarea:focus\s*\{[\s\S]*?border-color:\s*var\(--command-bay-textbox-border-focus\);/,
     );
     expect(css).toMatch(
-      /\.smart-input-textarea:focus\s*\{[\s\S]*?border-color:\s*transparent;[\s\S]*?box-shadow:\s*none;/,
+      /\.smart-input-textarea:focus\s*\{[\s\S]*?border-color:\s*var\(--command-bay-textbox-border-focus\);[\s\S]*?box-shadow:\s*none;/,
     );
   });
 
