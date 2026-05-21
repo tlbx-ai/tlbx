@@ -77,6 +77,7 @@ describe('smart input tab wiring', () => {
 
   it('uses the stacked terminal canvas as the Command Bay backing surface', () => {
     const textareaRule = getCssRule('.adaptive-footer-dock .smart-input-textarea');
+    const reserveRule = getCssRule('.adaptive-footer-reserve');
 
     expect(css).toContain(
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
@@ -94,6 +95,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-border-strong: transparent;');
     expect(css).toContain('--command-bay-ui-reactive-border: transparent;');
     expect(css).toContain('--command-bay-floating-button-border: transparent;');
+    expect(reserveRule).toContain('var(--terminal-canvas-background, var(--terminal-bg))');
     expect(textareaRule).toContain(
       'background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));',
     );
