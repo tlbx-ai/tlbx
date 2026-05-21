@@ -97,6 +97,12 @@ describe('smart input tab wiring', () => {
     expect(textareaRule).toContain(
       'background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));',
     );
+    expect(css).toMatch(
+      /\.adaptive-footer-dock\s+\.smart-input-textarea:focus\s*\{[\s\S]*?border-color:\s*transparent;/,
+    );
+    expect(css).toMatch(
+      /\.smart-input-textarea:focus\s*\{[\s\S]*?border-color:\s*transparent;[\s\S]*?box-shadow:\s*none;/,
+    );
   });
 
   it('keeps AppServerControl quick settings hidden when the hidden attribute is set', () => {

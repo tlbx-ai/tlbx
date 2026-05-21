@@ -9195,7 +9195,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .adaptive-footer-dock .smart-input-textarea:focus {
-  border-color: color-mix(in srgb, var(--accent-blue) 40%, var(--command-bay-border-strong));
+  border-color: transparent;
 }
 
 .adaptive-footer-dock .smart-input-textarea::placeholder {
@@ -16603,9 +16603,9 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .smart-input-textarea:focus {
-  border-color: color-mix(in srgb, var(--accent-blue) 40%, var(--command-bay-border-strong));
+  border-color: transparent;
   outline: none;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  box-shadow: none;
 }
 
 .smart-input-textarea::placeholder {
