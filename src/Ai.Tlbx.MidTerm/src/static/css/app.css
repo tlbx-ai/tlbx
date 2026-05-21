@@ -16210,6 +16210,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   flex: 0 0 auto;
   height: var(--adaptive-footer-reserved-height);
   min-height: 0;
+  /* The absolute dock paints the terminal material; the reserve must not add another alpha layer. */
   background: transparent;
   pointer-events: none;
 }
@@ -16225,7 +16226,12 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
   --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
-  --command-bay-background: var(--command-bay-background-color);
+  /* Match xterm's two-step light transport: viewport CSS background + renderer theme background. */
+  --command-bay-background: linear-gradient(
+      var(--command-bay-background-color),
+      var(--command-bay-background-color)
+    ),
+    var(--command-bay-background-color);
   --command-bay-surface-color: var(--command-bay-background-color);
   --command-bay-surface: var(--command-bay-background);
   --command-bay-surface-strong-color: var(--command-bay-background-color);

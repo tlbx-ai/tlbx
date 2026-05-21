@@ -83,7 +83,13 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
-    expect(css).toContain('--command-bay-background: var(--command-bay-background-color);');
+    expect(css).toContain(
+      '--command-bay-background: linear-gradient(\n' +
+        '      var(--command-bay-background-color),\n' +
+        '      var(--command-bay-background-color)\n' +
+        '    ),\n' +
+        '    var(--command-bay-background-color);',
+    );
     expect(css).toContain('--command-bay-surface: var(--command-bay-background);');
     expect(css).toContain('--command-bay-surface-strong: var(--command-bay-background);');
     expect(css).toContain('--command-bay-floating-button-surface: var(--command-bay-background);');
@@ -91,7 +97,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-surface-color: var(--command-bay-background-color);');
     expect(css).toContain('--command-bay-surface-hover-color: color-mix(');
     expect(css).not.toContain(
-      '--command-bay-background: linear-gradient(\n      var(--command-bay-background-color),',
+      'linear-gradient(var(--command-bay-background-color), var(--command-bay-background-color)),',
     );
     expect(css).toContain('--command-bay-border: transparent;');
     expect(css).toContain('--command-bay-border-strong: transparent;');
