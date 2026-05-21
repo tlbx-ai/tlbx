@@ -1,9 +1,11 @@
 import { $isMainBrowser } from '../../stores';
 import { autoResizeAllTerminalsImmediate, rescaleAllTerminals } from './scaling';
 import {
+  isMobileTerminalViewport,
   observeMobileVerticalViewportChange,
   syncMobileVerticalStableTerminals,
 } from './mobileVerticalStability';
+import { isMobilePresentationContext } from '../theming/backgroundVisibility';
 
 const KEYBOARD_RATIO_THRESHOLD = 0.88;
 const KEYBOARD_PIXEL_THRESHOLD = 120;
@@ -62,6 +64,32 @@ function applyVisualViewportShellGeometry(
   }
 }
 
+function clearVisualViewportShellGeometry(appEl: HTMLElement | null): void {
+  if (appEl) {
+    appEl.style.removeProperty('top');
+    appEl.style.removeProperty('bottom');
+    appEl.style.removeProperty('height');
+    appEl.style.removeProperty('max-height');
+  }
+
+  document.documentElement.style.removeProperty('height');
+  document.documentElement.style.removeProperty('max-height');
+  document.documentElement.style.removeProperty('--midterm-visual-viewport-height');
+  document.documentElement.style.removeProperty('--midterm-visual-viewport-offset-top');
+  document.documentElement.style.removeProperty('--midterm-soft-keyboard-height');
+  document.documentElement.style.removeProperty('--midterm-soft-keyboard-bottom-guard');
+  document.body.style.removeProperty('height');
+  document.body.style.removeProperty('max-height');
+  document.body.classList.toggle('keyboard-visible', false);
+}
+
+function shouldConstrainShellToVisualViewport(visualViewport: VisualViewport): boolean {
+  return (
+    isMobilePresentationContext() ||
+    isMobileTerminalViewport(Math.round(visualViewport.width || window.innerWidth))
+  );
+}
+
 function isSoftKeyboardVisible(viewportHeight: number, baselineHeight: number): boolean {
   const heightDrop = baselineHeight - viewportHeight;
   return (
@@ -115,17 +143,24 @@ export function setupVisualViewport(): void {
     if (rawViewportHeight > baselineHeight) {
       baselineHeight = rawViewportHeight;
     }
-    const bottomGuard = getSoftKeyboardBottomGuard(rawViewportHeight, baselineHeight);
+    const constrainShell = shouldConstrainShellToVisualViewport(vv);
+    const bottomGuard = constrainShell
+      ? getSoftKeyboardBottomGuard(rawViewportHeight, baselineHeight)
+      : 0;
     const vh = Math.max(1, rawViewportHeight - bottomGuard);
     if (Math.abs(vh - lastHeight) < 1) return;
     lastHeight = vh;
 
-    applyVisualViewportShellGeometry(vv, vh, appEl);
-    syncSoftKeyboardState(rawViewportHeight, baselineHeight);
-    document.documentElement.style.setProperty(
-      '--midterm-soft-keyboard-bottom-guard',
-      `${bottomGuard}px`,
-    );
+    if (constrainShell) {
+      applyVisualViewportShellGeometry(vv, vh, appEl);
+      syncSoftKeyboardState(rawViewportHeight, baselineHeight);
+      document.documentElement.style.setProperty(
+        '--midterm-soft-keyboard-bottom-guard',
+        `${bottomGuard}px`,
+      );
+    } else {
+      clearVisualViewportShellGeometry(appEl);
+    }
 
     if (typeof Reflect.get(window, 'dispatchEvent') === 'function')
       window.dispatchEvent(new Event('midterm:visual-viewport-changed'));

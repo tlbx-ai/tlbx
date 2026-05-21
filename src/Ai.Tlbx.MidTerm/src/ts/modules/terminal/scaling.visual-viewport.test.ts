@@ -141,6 +141,11 @@ function createStyleObject(): CSSStyleDeclaration {
   style.setProperty = ((name: string, value: string) => {
     (style as Record<string, string>)[name] = value;
   }) as CSSStyleDeclaration['setProperty'];
+  style.removeProperty = ((name: string) => {
+    const previous = (style as Record<string, string>)[name] ?? '';
+    delete (style as Record<string, string>)[name];
+    return previous;
+  }) as CSSStyleDeclaration['removeProperty'];
   return style;
 }
 
@@ -386,6 +391,66 @@ describe('setupVisualViewport', () => {
     expect(body.style.maxHeight).toBe('482px');
     expect(bodyClasses.has('keyboard-visible')).toBe(true);
     expect(host.scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
+  it('does not clamp the desktop app shell when the visual viewport shrinks with the window', () => {
+    const bodyClasses = new Set<string>();
+    const appEl = { style: createStyleObject() };
+    const documentElement = { style: createStyleObject() };
+    const body = {
+      style: createStyleObject(),
+      classList: {
+        contains: (name: string) => bodyClasses.has(name),
+        toggle: vi.fn((name: string, force?: boolean) => {
+          const next = force ?? !bodyClasses.has(name);
+          if (next) {
+            bodyClasses.add(name);
+          } else {
+            bodyClasses.delete(name);
+          }
+          return next;
+        }),
+      },
+    };
+
+    globalThis.document = {
+      querySelector: (selector: string) =>
+        selector === '.terminal-page' ? (appEl as unknown as Element) : null,
+      documentElement: documentElement as unknown as Document['documentElement'],
+      body: body as unknown as Document['body'],
+      getElementById: () => null,
+    } as unknown as Document;
+
+    Object.defineProperty(host, 'innerWidth', {
+      configurable: true,
+      value: 1400,
+    });
+    Object.defineProperty(host, 'innerHeight', {
+      configurable: true,
+      value: 700,
+    });
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: {
+        width: 1400,
+        height: 500,
+        offsetTop: 0,
+        addEventListener: vi.fn(),
+      },
+    });
+
+    setupVisualViewport();
+
+    expect(appEl.style.height).toBeUndefined();
+    expect(appEl.style.maxHeight).toBeUndefined();
+    expect(documentElement.style.height).toBeUndefined();
+    expect(documentElement.style.maxHeight).toBeUndefined();
+    expect(documentElement.style['--midterm-visual-viewport-height']).toBeUndefined();
+    expect(documentElement.style['--midterm-soft-keyboard-height']).toBeUndefined();
+    expect(body.style.height).toBeUndefined();
+    expect(body.style.maxHeight).toBeUndefined();
+    expect(bodyClasses.has('keyboard-visible')).toBe(false);
+    expect(host.scrollTo).not.toHaveBeenCalled();
   });
 
   it('does not force a page scroll while an editable composer already has focus', () => {
