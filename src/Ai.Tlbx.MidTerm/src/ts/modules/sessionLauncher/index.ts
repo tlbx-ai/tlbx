@@ -664,7 +664,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     function renderProviders(): void {
       const target = getSelectedTarget();
-      safeProvidersEl.innerHTML = getProviders()
+      safeProvidersEl.innerHTML = getSessionLauncherProviderDefinitions()
         .map((definition) => {
           const supported = isProviderSupportedOnTarget(definition.provider, target);
           const badge = definition.beta
@@ -1107,7 +1107,7 @@ async function fetchHomePath(target: SessionLauncherTarget): Promise<LauncherPat
   return (await response.json()) as LauncherPathResponse;
 }
 
-function getProviders(): ReadonlyArray<{
+export function getSessionLauncherProviderDefinitions(): ReadonlyArray<{
   provider: LauncherProvider;
   title: string;
   description: string;
@@ -1130,17 +1130,10 @@ function getProviders(): ReadonlyArray<{
       beta: true,
     },
     {
-      provider: 'claude',
-      title: t('sessionLauncher.claudeTitle'),
-      description: t('sessionLauncher.claudeDescription'),
-      launchLabel: t('sessionLauncher.startClaude'),
-      beta: true,
-    },
-    {
       provider: 'grok',
-      title: 'Grok',
+      title: 'Grok Build',
       description: 'Start an Agent Controller Session for Grok Build in a chosen folder.',
-      launchLabel: 'Start Grok',
+      launchLabel: 'Start Grok Build',
       beta: true,
       supportsResume: false,
     },
