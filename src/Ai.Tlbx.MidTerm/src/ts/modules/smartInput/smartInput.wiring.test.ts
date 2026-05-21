@@ -99,7 +99,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-textbox-border-focus: color-mix(');
     expect(css).toContain('--command-bay-ui-reactive-border: transparent;');
     expect(css).toContain('--command-bay-floating-button-border: transparent;');
-    expect(reserveRule).toContain('var(--terminal-canvas-background, var(--terminal-bg))');
+    expect(reserveRule).toContain('background: transparent;');
     expect(dockRule).toContain('background: var(--command-bay-background);');
     expect(textareaRule).toContain(
       'border: 1px solid var(--command-bay-textbox-border, var(--border-subtle));',

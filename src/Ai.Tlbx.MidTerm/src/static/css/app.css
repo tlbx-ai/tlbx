@@ -16210,7 +16210,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   flex: 0 0 auto;
   height: var(--adaptive-footer-reserved-height);
   min-height: 0;
-  background: var(--terminal-canvas-background, var(--terminal-bg));
+  background: transparent;
   pointer-events: none;
 }
 
