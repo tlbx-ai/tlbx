@@ -346,7 +346,7 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('background: var(--bg-active-opaque, var(--bg-active));');
   });
 
-  it('keeps terminal transparency out of non-xterm chrome', () => {
+  it('keeps terminal transparency out of generic non-terminal chrome', () => {
     expect(cssSource).not.toContain('--bg-terminal-pane');
     expect(cssSource).not.toContain('--terminal-pane-bg');
     expect(cssSource).toContain('background: var(--bg-terminal);');
@@ -355,6 +355,9 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('--workspace-pane-background: var(--bg-primary);');
     expect(cssSource).toContain('--workspace-pane-chrome-background: var(--bg-elevated);');
     expect(cssSource).toContain('background-color: transparent;');
+    expect(cssSource).toContain(
+      '--command-bay-background: var(--terminal-canvas-background, var(--terminal-bg));',
+    );
     expect(xtermCssSource).toContain(
       'background-color: var(--terminal-canvas-background, var(--bg-terminal));',
     );

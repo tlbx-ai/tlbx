@@ -61,9 +61,8 @@ describe('smart input tab wiring', () => {
     expect(source).not.toContain("onTabDeactivated('agent'");
   });
 
-  it('keys footer glass material off UI transparency, not terminal pane transparency', () => {
-    expect(source).toContain('const transparency = settings?.uiTransparency ?? 0;');
-    expect(source).not.toContain(
+  it('keys footer glass material off terminal pane transparency', () => {
+    expect(source).toContain(
       'const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;',
     );
   });
@@ -74,6 +73,19 @@ describe('smart input tab wiring', () => {
     expect(glassRule).toContain("adaptive-footer-dock[data-material='glass']");
     expect(glassRule).not.toContain('backdrop-filter');
     expect(glassRule).not.toContain('-webkit-backdrop-filter');
+  });
+
+  it('uses the terminal canvas as the Command Bay backing surface', () => {
+    expect(css).toContain(
+      '--command-bay-background: var(--terminal-canvas-background, var(--terminal-bg));',
+    );
+    expect(css).toContain('--command-bay-surface: var(--command-bay-background);');
+    expect(css).toContain('--command-bay-surface-strong: var(--command-bay-background);');
+    expect(css).toContain('--command-bay-floating-button-surface: var(--command-bay-background);');
+    expect(css).toContain('--command-bay-ui-reactive-surface: var(--command-bay-background);');
+    expect(css).toContain(
+      'linear-gradient(var(--command-bay-background), var(--command-bay-background)),',
+    );
   });
 
   it('keeps AppServerControl quick settings hidden when the hidden attribute is set', () => {
@@ -202,7 +214,8 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('z-index: 3;');
     expect(css).toContain('--smart-input-control-height: 42px;');
     expect(css).toContain('--command-bay-control-height: 36px;');
-    expect(css).toContain('--command-bay-surface: color-mix(');
+    expect(css).toContain('--command-bay-surface: var(--command-bay-background);');
+    expect(css).toContain('--command-bay-ui-reactive-surface: var(--command-bay-background);');
     expect(css).toContain(
       '--smart-input-mobile-text-size: max(15px, var(--terminal-font-size, 16px));',
     );
@@ -348,21 +361,22 @@ describe('smart input tab wiring', () => {
     expect(metricsSource).toContain('--smart-input-textarea-padding-bottom');
   });
 
-  it('matches the Command Bay dock background to the sidebar background', () => {
+  it('matches the Command Bay dock background to the terminal canvas background', () => {
     const solidRule = getCssRule(".adaptive-footer-dock[data-material='solid']");
     const glassRule = getCssRule(".adaptive-footer-dock[data-material='glass']");
 
-    expect(solidRule).toContain('background: var(--bg-sidebar);');
-    expect(glassRule).toContain('background: var(--bg-sidebar);');
-    expect(solidRule).not.toContain('linear-gradient');
-    expect(glassRule).not.toContain('linear-gradient');
+    expect(solidRule).toContain(
+      'linear-gradient(var(--command-bay-background), var(--command-bay-background)),',
+    );
+    expect(glassRule).toContain(
+      'linear-gradient(var(--command-bay-background), var(--command-bay-background)),',
+    );
+    expect(solidRule).toContain('var(--terminal-canvas-background, var(--terminal-bg));');
+    expect(glassRule).toContain('var(--terminal-canvas-background, var(--terminal-bg));');
     expect(compactWhitespace(css)).toContain(
       compactWhitespace(
         '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px;',
       ),
-    );
-    expect(compactWhitespace(css)).toContain(
-      compactWhitespace('background: var(--bg-sidebar); -webkit-backdrop-filter: none;'),
     );
   });
 

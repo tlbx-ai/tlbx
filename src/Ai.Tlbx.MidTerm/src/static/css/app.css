@@ -16223,20 +16223,13 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-pill-radius: 8px;
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
-  --command-bay-surface: color-mix(
-    in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 92%,
-    transparent 8%
-  );
-  --command-bay-surface-strong: color-mix(
-    in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 96%,
-    transparent 4%
-  );
+  --command-bay-background: var(--terminal-canvas-background, var(--terminal-bg));
+  --command-bay-surface: var(--command-bay-background);
+  --command-bay-surface-strong: var(--command-bay-background);
   --command-bay-surface-hover: color-mix(
     in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 80%,
-    var(--bg-hover) 20%
+    var(--command-bay-background) 90%,
+    var(--text-primary) 10%
   );
   --command-bay-border: color-mix(in srgb, var(--border-color) 80%, transparent);
   --command-bay-border-strong: color-mix(in srgb, var(--text-secondary) 40%, var(--border-color));
@@ -16247,16 +16240,8 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     var(--command-bay-muted) 70%,
     var(--command-bay-text) 30%
   );
-  --command-bay-floating-button-surface: color-mix(
-    in srgb,
-    var(--command-bay-surface) 86%,
-    transparent
-  );
-  --command-bay-ui-reactive-surface: color-mix(
-    in srgb,
-    var(--command-bay-surface) 80%,
-    var(--terminal-ui-background, var(--terminal-bg)) 20%
-  );
+  --command-bay-floating-button-surface: var(--command-bay-background);
+  --command-bay-ui-reactive-surface: var(--command-bay-background);
   --command-bay-ui-reactive-border: color-mix(
     in srgb,
     var(--command-bay-border) 80%,
@@ -16299,11 +16284,15 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-dock[data-material='solid'] {
-  background: var(--bg-sidebar);
+  background:
+    linear-gradient(var(--command-bay-background), var(--command-bay-background)),
+    var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 .adaptive-footer-dock[data-material='glass'] {
-  background: var(--bg-sidebar);
+  background:
+    linear-gradient(var(--command-bay-background), var(--command-bay-background)),
+    var(--terminal-canvas-background, var(--terminal-bg));
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] {
