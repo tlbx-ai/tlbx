@@ -16210,16 +16210,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   flex: 0 0 auto;
   height: var(--adaptive-footer-reserved-height);
   min-height: 0;
-  background:
-    linear-gradient(
-      var(--terminal-canvas-background, var(--terminal-bg)),
-      var(--terminal-canvas-background, var(--terminal-bg))
-    ),
-    linear-gradient(
-      var(--terminal-canvas-background, var(--terminal-bg)),
-      var(--terminal-canvas-background, var(--terminal-bg))
-    ),
-    var(--terminal-canvas-background, var(--terminal-bg));
+  background: var(--terminal-canvas-background, var(--terminal-bg));
   pointer-events: none;
 }
 
@@ -16234,12 +16225,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
   --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
-  --command-bay-background: linear-gradient(
-      var(--command-bay-background-color),
-      var(--command-bay-background-color)
-    ),
-    linear-gradient(var(--command-bay-background-color), var(--command-bay-background-color)),
-    var(--command-bay-background-color);
+  --command-bay-background: var(--command-bay-background-color);
   --command-bay-surface-color: var(--command-bay-background-color);
   --command-bay-surface: var(--command-bay-background);
   --command-bay-surface-strong-color: var(--command-bay-background-color);
@@ -16284,6 +16270,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   padding-left: calc(6px + env(safe-area-inset-left, 0px));
   padding-right: calc(6px + env(safe-area-inset-right, 0px));
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--command-bay-background);
   pointer-events: auto;
 }
 
