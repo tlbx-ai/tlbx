@@ -428,7 +428,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     {
         var startInfo = CreateProcessStartInfo(
             _binaryPath!,
-            BuildArguments(_quickSettings.Model, _quickSettings.PermissionMode),
+            BuildArguments(_quickSettings.PermissionMode),
             _workingDirectory!);
 
         Process? process = new Process
@@ -1388,19 +1388,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }));
     }
 
-    private static string BuildArguments(string? model, string permissionMode)
+    private static string BuildArguments(string permissionMode)
     {
         var args = new List<string>
         {
             "agent",
             "stdio"
         };
-
-        if (!string.IsNullOrWhiteSpace(model))
-        {
-            args.Add("-m");
-            args.Add(model);
-        }
 
         if (string.Equals(permissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal))
         {

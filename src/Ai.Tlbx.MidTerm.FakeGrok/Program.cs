@@ -2,6 +2,8 @@ using System.Text.Json;
 
 var sessionId = "grok-session-" + Guid.NewGuid().ToString("N");
 var activePromptId = string.Empty;
+var capturePath = Environment.GetEnvironmentVariable("MIDTERM_FAKE_GROK_CAPTURE_PATH");
+PersistLaunchCapture(capturePath, CreateLaunchCapture());
 
 while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 {
@@ -246,6 +248,39 @@ static async Task WriteJsonAsync<T>(T payload)
     await Console.Out.FlushAsync().ConfigureAwait(false);
 }
 
+static FakeGrokLaunchCapture CreateLaunchCapture()
+{
+    var args = Environment.GetCommandLineArgs();
+    return new FakeGrokLaunchCapture
+    {
+        ExecutablePath = args.Length > 0 ? args[0] : null,
+        Arguments = args.Skip(1).ToArray(),
+        ProcessWorkingDirectory = Environment.CurrentDirectory
+    };
+}
+
+static void PersistLaunchCapture(string? capturePath, FakeGrokLaunchCapture capture)
+{
+    if (string.IsNullOrWhiteSpace(capturePath))
+    {
+        return;
+    }
+
+    try
+    {
+        var directory = Path.GetDirectoryName(capturePath);
+        if (!string.IsNullOrWhiteSpace(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(capturePath, JsonSerializer.Serialize(capture));
+    }
+    catch
+    {
+    }
+}
+
 static string? GetString(JsonElement element, params string[] path)
 {
     var current = element;
@@ -258,4 +293,13 @@ static string? GetString(JsonElement element, params string[] path)
     }
 
     return current.ValueKind == JsonValueKind.String ? current.GetString() : null;
+}
+
+internal sealed class FakeGrokLaunchCapture
+{
+    public string? ExecutablePath { get; set; }
+
+    public string[] Arguments { get; set; } = [];
+
+    public string? ProcessWorkingDirectory { get; set; }
 }

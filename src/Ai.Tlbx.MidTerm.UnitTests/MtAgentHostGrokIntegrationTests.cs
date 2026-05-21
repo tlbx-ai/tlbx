@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Xunit;
 
@@ -55,6 +56,10 @@ public sealed class MtAgentHostGrokIntegrationTests
             Assert.Equal("grok", attachWindow.Provider);
             Assert.Equal("grok-build-0.1", attachWindow.QuickSettings.Model);
             Assert.Contains(attachWindow.QuickSettings.ModelOptions, option => option.Value == "grok-4.3");
+            var capture = await WaitForFakeGrokLaunchCaptureAsync(
+                fakeGrok.CapturePath,
+                static launch => launch.Arguments.Length > 0);
+            Assert.Equal(["agent", "stdio"], capture.Arguments);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -106,6 +111,40 @@ public sealed class MtAgentHostGrokIntegrationTests
         return MtAgentHostTestPathResolver.ResolveAgentHostDll(AppContext.BaseDirectory);
     }
 
+    private static async Task<FakeGrokLaunchCapture> WaitForFakeGrokLaunchCaptureAsync(
+        string capturePath,
+        Func<FakeGrokLaunchCapture, bool> predicate)
+    {
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            if (File.Exists(capturePath))
+            {
+                try
+                {
+                    var json = await File.ReadAllTextAsync(capturePath);
+                    if (!string.IsNullOrWhiteSpace(json))
+                    {
+                        var capture = JsonSerializer.Deserialize<FakeGrokLaunchCapture>(json);
+                        if (capture is not null && predicate(capture))
+                        {
+                            return capture;
+                        }
+                    }
+                }
+                catch (JsonException)
+                {
+                }
+                catch (IOException)
+                {
+                }
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException($"Timed out waiting for fake Grok launch capture at '{capturePath}'.");
+    }
+
     private static Process StartAgentHost(string hostDll)
     {
         var dotnetHost = ResolveDotNetHostPath();
@@ -141,5 +180,10 @@ public sealed class MtAgentHostGrokIntegrationTests
         }
 
         return "dotnet";
+    }
+
+    private sealed class FakeGrokLaunchCapture
+    {
+        public string[] Arguments { get; set; } = [];
     }
 }
