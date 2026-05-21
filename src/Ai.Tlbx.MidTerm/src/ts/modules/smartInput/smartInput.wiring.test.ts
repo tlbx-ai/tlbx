@@ -108,8 +108,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-textbox-border-focus: color-mix(');
     expect(css).toContain('--command-bay-ui-reactive-border: transparent;');
     expect(css).toContain('--command-bay-floating-button-border: transparent;');
-    expect(reserveRule).toContain('background: transparent;');
-    expect(dockRule).toContain('background: var(--command-bay-background);');
+    expect(reserveRule).toContain('margin-right: var(--adaptive-footer-right-offset, 0px);');
+    expect(reserveRule).toContain('background: var(--command-bay-background);');
+    expect(dockRule).toContain('background: transparent;');
     expect(css).not.toContain(".adaptive-footer-dock:not([data-composer-expanded='true'])::before");
     expect(css).not.toContain('top: -1px;');
     expect(expandedDockRule).toContain('background: var(--command-bay-background);');
@@ -218,6 +219,9 @@ describe('smart input tab wiring', () => {
 
   it('reserves only collapsed footer height and uses send gestures for auto-send toggling', () => {
     expect(footerSupportSource).toContain('calculateAdaptiveFooterReservedHeight');
+    expect(footerSupportSource).toContain('measureFooterDockHeight(args.footerDock)');
+    expect(footerSupportSource).toContain('footerDock.getBoundingClientRect()');
+    expect(footerSupportSource).toContain('formatCssPixelValue(normalizedReserveHeight)');
     expect(layoutSource).toContain('ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT');
     expect(source).toContain('ResizeObserver');
     expect(footerSupportSource).toContain('setAdaptiveFooterReservedHeight(');
@@ -405,7 +409,7 @@ describe('smart input tab wiring', () => {
     expect(metricsSource).toContain('--smart-input-textarea-padding-bottom');
   });
 
-  it('matches the Command Bay dock background to the effective stacked terminal canvas background', () => {
+  it('matches the Command Bay reserved pane background to the effective stacked terminal canvas background', () => {
     const solidRule = getCssRule(".adaptive-footer-dock[data-material='solid']");
     const glassRule = getCssRule(".adaptive-footer-dock[data-material='glass']");
 
@@ -419,11 +423,11 @@ describe('smart input tab wiring', () => {
     expect(css).toContain(
       '--command-bay-ui-reactive-surface: var(--command-bay-control-background);',
     );
-    expect(solidRule).toContain('background: var(--command-bay-background);');
-    expect(glassRule).toContain('background: var(--command-bay-background);');
+    expect(solidRule).toContain('background: transparent;');
+    expect(glassRule).toContain('background: transparent;');
     expect(compactWhitespace(css)).toContain(
       compactWhitespace(
-        '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px; padding-left: calc(4px + env(safe-area-inset-left, 0px)); padding-right: calc(4px + env(safe-area-inset-right, 0px)); padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); background: var(--command-bay-background);',
+        '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px; padding-left: calc(4px + env(safe-area-inset-left, 0px)); padding-right: calc(4px + env(safe-area-inset-right, 0px)); padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); background: transparent;',
       ),
     );
   });

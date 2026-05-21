@@ -13,6 +13,10 @@ describe('web dock footer spacing wiring', () => {
   it('pushes the adaptive footer dock left when right-side docks are visible', () => {
     expect(source).toContain("const footerDock = document.getElementById('adaptive-footer-dock');");
     expect(source).toContain("footerDock.style.right = total > 0 ? `${total}px` : '';");
+    expect(source).toContain(
+      "mainContent.style.setProperty('--adaptive-footer-right-offset', `${total}px`);",
+    );
+    expect(css).toContain('margin-right: var(--adaptive-footer-right-offset, 0px);');
     expect(source).toContain("const managerQueue = document.getElementById('manager-bar-queue');");
     expect(source).toContain("managerQueue.style.marginRight = total > 0 ? `${total}px` : '';");
   });

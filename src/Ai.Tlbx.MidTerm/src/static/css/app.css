@@ -2569,6 +2569,8 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 /* Main content */
 .main-content {
   --adaptive-footer-right-offset: 0px;
+  --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  --command-bay-background: var(--terminal-canvas-background-stack);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -16215,8 +16217,10 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   flex: 0 0 auto;
   height: var(--adaptive-footer-reserved-height);
   min-height: 0;
-  /* The absolute dock paints the terminal material; the reserve must not add another alpha layer. */
-  background: transparent;
+  margin-right: var(--adaptive-footer-right-offset, 0px);
+  /* Paint the reserved footer slot once. The absolute dock stays transparent so growth above this
+     slot does not double-apply terminal transparency over the terminal pane. */
+  background: var(--command-bay-background);
   pointer-events: none;
 }
 
@@ -16230,8 +16234,6 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-pill-radius: 8px;
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
-  --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
-  --command-bay-background: var(--terminal-canvas-background-stack);
   --command-bay-control-background-color: var(
     --command-bay-control-background,
     var(--terminal-bg)
@@ -16280,7 +16282,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   padding-left: calc(6px + env(safe-area-inset-left, 0px));
   padding-right: calc(6px + env(safe-area-inset-right, 0px));
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
-  background: var(--command-bay-background);
+  background: transparent;
   pointer-events: auto;
 }
 
@@ -16294,11 +16296,11 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-dock[data-material='solid'] {
-  background: var(--command-bay-background);
+  background: transparent;
 }
 
 .adaptive-footer-dock[data-material='glass'] {
-  background: var(--command-bay-background);
+  background: transparent;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] {
@@ -17780,7 +17782,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     padding-left: calc(4px + env(safe-area-inset-left, 0px));
     padding-right: calc(4px + env(safe-area-inset-right, 0px));
     padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-    background: var(--command-bay-background);
+    background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

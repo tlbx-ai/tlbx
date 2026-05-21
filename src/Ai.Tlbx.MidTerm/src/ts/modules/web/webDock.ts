@@ -81,6 +81,14 @@ export function updateAllDockMargins(): void {
   if (footerDock) {
     footerDock.style.right = total > 0 ? `${total}px` : '';
   }
+  const mainContent = document.querySelector<HTMLElement>('.main-content');
+  if (mainContent) {
+    if (total > 0) {
+      mainContent.style.setProperty('--adaptive-footer-right-offset', `${total}px`);
+    } else {
+      mainContent.style.removeProperty('--adaptive-footer-right-offset');
+    }
+  }
 
   const managerQueue = document.getElementById('manager-bar-queue');
   if (managerQueue) {
