@@ -366,7 +366,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
-                Providers = _syntheticProvider is null ? ["codex", "claude"] : [_syntheticProvider],
+                Providers = _syntheticProvider is null ? ["codex", "claude", "grok"] : [_syntheticProvider],
                 Capabilities =
                 [
                     "attach",
@@ -413,8 +413,10 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         {
             "codex" when _syntheticProvider is null => new CodexAppServerControlAgentRuntime(EmitRuntimeEvent),
             "claude" when _syntheticProvider is null => new ClaudeAppServerControlAgentRuntime(EmitRuntimeEvent),
+            "grok" when _syntheticProvider is null => new GrokAcpAppServerControlAgentRuntime(EmitRuntimeEvent),
             "codex" => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
             "claude" when _syntheticProvider is not null => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
+            "grok" when _syntheticProvider is not null => new SyntheticAppServerControlAgentRuntime(provider, EmitRuntimeEvent),
             _ => throw new InvalidOperationException($"mtagenthost does not support provider '{provider ?? "(null)"}'.")
         };
 
@@ -728,8 +730,6 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
     }
 }
-
-
 
 
 

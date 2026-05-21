@@ -60,10 +60,12 @@ describe('session launcher target selection', () => {
     expect(isProviderSupportedOnTarget('terminal', { id: 'local', kind: 'local' })).toBe(true);
     expect(isProviderSupportedOnTarget('codex', { id: 'local', kind: 'local' })).toBe(true);
     expect(isProviderSupportedOnTarget('claude', { id: 'local', kind: 'local' })).toBe(true);
+    expect(isProviderSupportedOnTarget('grok', { id: 'local', kind: 'local' })).toBe(true);
 
     expect(isProviderSupportedOnTarget('terminal', remoteTarget)).toBe(true);
     expect(isProviderSupportedOnTarget('codex', remoteTarget)).toBe(false);
     expect(isProviderSupportedOnTarget('claude', remoteTarget)).toBe(false);
+    expect(isProviderSupportedOnTarget('grok', remoteTarget)).toBe(false);
   });
 
   it('only warns when the remote target differs on major and minor version', async () => {

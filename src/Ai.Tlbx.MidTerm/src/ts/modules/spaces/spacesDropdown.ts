@@ -10,7 +10,7 @@ import { getLaunchableHubMachines } from '../hub/runtime';
 import { invalidateSidebarSpacesTree } from '../sidebar/spacesTreeSidebar';
 import { showAlert } from '../../utils/dialog';
 import { showImportSpaceDialog } from './spacesDialogs';
-import { launchSpaceWorkspace } from './runtime';
+import { launchSpaceWorkspace, type SpaceSurface } from './runtime';
 import {
   fetchHubSpaces,
   fetchLocalSpaces,
@@ -30,14 +30,11 @@ interface SpaceTargetSection {
 interface SpacesDropdownOptions {
   resolveLaunchDimensions: () => Promise<{ cols: number; rows: number }>;
   resolveShell: () => ShellType | null;
-  onOpenLocalSession: (
-    session: Session,
-    surface: 'terminal' | 'codex' | 'claude',
-  ) => void | Promise<void>;
+  onOpenLocalSession: (session: Session, surface: SpaceSurface) => void | Promise<void>;
   onOpenRemoteSession: (
     machineId: string,
     sessionId: string,
-    surface: 'terminal' | 'codex' | 'claude',
+    surface: SpaceSurface,
   ) => void | Promise<void>;
   onSelectLocalSession: (sessionId: string) => void;
   onSelectRemoteSession: (machineId: string, sessionId: string) => void;

@@ -7,7 +7,7 @@ import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '..
 import type { HubMachineState } from '../hub/types';
 import { openProviderResumePicker, type ResumeProvider } from '../providerResume';
 
-export type LauncherProvider = 'terminal' | 'codex' | 'claude';
+export type LauncherProvider = 'terminal' | 'codex' | 'claude' | 'grok';
 export type LauncherLaunchMode = 'new' | 'resume';
 
 const LOCAL_TARGET_ID = 'local';
@@ -672,7 +672,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
             : '';
           const disabled = !supported || state.loading || !state.currentPath;
           const actions =
-            definition.provider === 'terminal'
+            definition.provider === 'terminal' || definition.supportsResume === false
               ? `
                 <button
                   type="button"
@@ -680,10 +680,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
                   data-provider="${definition.provider}"
                   data-launch-mode="new"
                   ${disabled ? 'disabled' : ''}
-                >
-                  ${escapeHtml(definition.launchLabel)}
-                </button>
-              `
+                  >
+                    ${escapeHtml(definition.provider === 'terminal' ? definition.launchLabel : 'New Conversation')}
+                  </button>
+                `
               : `
                 <div class="session-launcher-provider-actions">
                   <button
@@ -1113,6 +1113,7 @@ function getProviders(): ReadonlyArray<{
   description: string;
   launchLabel: string;
   beta?: boolean;
+  supportsResume?: boolean;
 }> {
   return [
     {
@@ -1134,6 +1135,14 @@ function getProviders(): ReadonlyArray<{
       description: t('sessionLauncher.claudeDescription'),
       launchLabel: t('sessionLauncher.startClaude'),
       beta: true,
+    },
+    {
+      provider: 'grok',
+      title: 'Grok',
+      description: 'Start an Agent Controller Session for Grok Build in a chosen folder.',
+      launchLabel: 'Start Grok',
+      beta: true,
+      supportsResume: false,
     },
   ];
 }

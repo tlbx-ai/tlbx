@@ -3,7 +3,7 @@ import { t } from '../i18n';
 import { showAlert, showConfirm } from '../../utils/dialog';
 import { launchHubSpaceWorkspace, launchLocalSpaceWorkspace } from './spacesApi';
 
-export type SpaceSurface = 'terminal' | 'codex' | 'claude';
+export type SpaceSurface = 'terminal' | 'codex' | 'claude' | 'grok';
 
 export interface SpacesRuntimeOptions {
   resolveLaunchDimensions: () => Promise<{ cols: number; rows: number }>;

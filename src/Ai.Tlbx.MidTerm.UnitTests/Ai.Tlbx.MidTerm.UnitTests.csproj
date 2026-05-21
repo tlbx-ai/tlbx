@@ -31,6 +31,7 @@
     <Compile Remove="AppServerControlHostTestClient.cs" />
     <Compile Remove="MtAgentHostClaudeIntegrationTests.cs" />
     <Compile Remove="MtAgentHostCodexIntegrationTests.cs" />
+    <Compile Remove="MtAgentHostGrokIntegrationTests.cs" />
     <Compile Remove="MtAgentHostIntegrationTests.cs" />
     <Compile Remove="MtAgentHostRealClaudeSmokeTests.cs" />
     <Compile Remove="MtAgentHostRealCodexSmokeTests.cs" />

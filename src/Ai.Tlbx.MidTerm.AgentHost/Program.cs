@@ -80,7 +80,7 @@ public static class Program
             Current scope:
               - stdio JSON transport
               - owned IPC transport for persistent MidTerm reconnect
-              - real Codex and Claude runtimes
+              - real Codex, Claude, and Grok runtimes
               - synthetic provider mode for protocol/integration testing
             """);
     }

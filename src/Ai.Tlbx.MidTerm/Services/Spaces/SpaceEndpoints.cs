@@ -211,6 +211,7 @@ public static class SpaceEndpoints
             SpaceSurfaceKinds.Terminal => SpaceSurfaceKinds.Terminal,
             SpaceSurfaceKinds.Codex => SpaceSurfaceKinds.Codex,
             SpaceSurfaceKinds.Claude => SpaceSurfaceKinds.Claude,
+            SpaceSurfaceKinds.Grok => SpaceSurfaceKinds.Grok,
             _ => null
         };
     }

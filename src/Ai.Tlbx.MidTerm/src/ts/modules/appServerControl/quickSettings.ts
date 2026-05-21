@@ -218,6 +218,10 @@ function resolveRememberedProviderModel(
     );
   }
 
+  if (provider === 'grok') {
+    return legacyModel ?? 'grok-build-0.1';
+  }
+
   return legacyModel;
 }
 
@@ -310,7 +314,9 @@ function resolveSessionProvider(sessionId: string | null | undefined): string | 
   }
 
   const normalized = hinted.trim().toLowerCase();
-  return normalized === 'codex' || normalized === 'claude' ? normalized : null;
+  return normalized === 'codex' || normalized === 'claude' || normalized === 'grok'
+    ? normalized
+    : null;
 }
 
 function resolveDefaultPermissionMode(provider: string | null): AppServerControlPermissionMode {

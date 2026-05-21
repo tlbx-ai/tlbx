@@ -19,6 +19,8 @@ internal static partial class AiCliCommandLocator
             AiCliProfileService.CodexProfile => ResolveCodexExecutablePath(session, userProfileDirectory),
             AiCliProfileService.ClaudeProfile => ResolveExecutablePathFromForegroundCommand(session.ForegroundCommandLine, "claude")
                                                ?? FindExecutableInPath("claude", userProfileDirectory),
+            AiCliProfileService.GrokProfile => ResolveExecutablePathFromForegroundCommand(session.ForegroundCommandLine, "grok")
+                                             ?? FindExecutableInPath("grok", userProfileDirectory),
             _ => null
         };
     }
@@ -142,6 +144,7 @@ internal static partial class AiCliCommandLocator
         }
 
         AddDirectory(directories, seen, Path.Combine(profileDirectory, ".local", "bin"));
+        AddDirectory(directories, seen, Path.Combine(profileDirectory, ".grok", "bin"));
 
         if (!OperatingSystem.IsWindows())
         {
@@ -220,11 +223,13 @@ internal static partial class AiCliCommandLocator
 
         AddDirectory(directories, seen, TryCombine(appData, "npm"));
         AddDirectory(directories, seen, TryCombine(localAppData, "Programs", "nodejs"));
+        AddDirectory(directories, seen, TryCombine(userProfile, ".grok", "bin"));
 
         if (!string.IsNullOrWhiteSpace(userProfile))
         {
             AddDirectory(directories, seen, Path.Combine(userProfile, "AppData", "Roaming", "npm"));
             AddDirectory(directories, seen, Path.Combine(userProfile, "AppData", "Local", "Programs", "nodejs"));
+            AddDirectory(directories, seen, Path.Combine(userProfile, ".grok", "bin"));
         }
 
         return directories;

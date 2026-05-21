@@ -406,7 +406,7 @@ export type CreateHistoryRequest = Schemas['CreateHistoryRequest'] & {
   notes?: string | null;
   dedupeKey?: string | null;
   launchOrigin?: string | null;
-  surfaceType?: 'trm' | 'cdx' | 'cld';
+  surfaceType?: 'trm' | 'cdx' | 'cld' | 'grk';
   foregroundProcessName?: string | null;
   foregroundProcessCommandLine?: string | null;
   foregroundProcessDisplayName?: string | null;
@@ -418,7 +418,7 @@ export type HistoryPatchRequest = Schemas['HistoryPatchRequest'];
 export interface SpaceWorkspaceSessionDto {
   sessionId: string;
   title: string;
-  surface: 'terminal' | 'codex' | 'claude';
+  surface: 'terminal' | 'codex' | 'claude' | 'grok';
   appServerControlOnly: boolean;
   profileHint?: string | null;
 }
@@ -482,7 +482,7 @@ export interface SpaceDeleteWorktreeRequest {
 }
 
 export interface SpaceLaunchRequest {
-  surface: 'terminal' | 'codex' | 'claude';
+  surface: 'terminal' | 'codex' | 'claude' | 'grok';
   cols?: number;
   rows?: number;
   shell?: string | null;

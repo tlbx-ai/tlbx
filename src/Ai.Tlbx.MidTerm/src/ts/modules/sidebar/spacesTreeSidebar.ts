@@ -1912,17 +1912,20 @@ function openSurfaceChooser(
   actionPopoverEl?.classList.add('hidden');
   chooserPopoverEl.replaceChildren();
 
-  for (const surface of ['terminal', 'codex', 'claude'] as const) {
+  for (const surface of ['terminal', 'codex', 'claude', 'grok'] as const) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'manager-bar-action-popover-btn manager-bar-action-popover-edit';
-    button.textContent = t(
-      surface === 'terminal'
-        ? 'sessionLauncher.startTerminal'
-        : surface === 'codex'
-          ? 'sessionLauncher.startCodex'
-          : 'sessionLauncher.startClaude',
-    );
+    button.textContent =
+      surface === 'grok'
+        ? 'Start Grok'
+        : t(
+            surface === 'terminal'
+              ? 'sessionLauncher.startTerminal'
+              : surface === 'codex'
+                ? 'sessionLauncher.startCodex'
+                : 'sessionLauncher.startClaude',
+          );
     button.addEventListener('click', () => {
       void openWorkspace(machineId, space.id, workspace, surface);
     });

@@ -8,6 +8,7 @@ public sealed class AiCliProfileService
     public const string UnknownProfile = "unknown";
     public const string CodexProfile = "codex";
     public const string ClaudeProfile = "claude";
+    public const string GrokProfile = "grok";
     public const string OpenCodeProfile = "open-code";
     public const string GenericAiProfile = "generic-ai";
 
@@ -50,6 +51,11 @@ public sealed class AiCliProfileService
             return ClaudeProfile;
         }
 
+        if (haystack.Contains("grok", StringComparison.Ordinal))
+        {
+            return GrokProfile;
+        }
+
         if (haystack.Contains("opencode", StringComparison.Ordinal) ||
             haystack.Contains("open code", StringComparison.Ordinal))
         {
@@ -80,6 +86,7 @@ public sealed class AiCliProfileService
             "" => UnknownProfile,
             "codex" => CodexProfile,
             "claude" => ClaudeProfile,
+            "grok" or "grok-build" => GrokProfile,
             "open-code" or "opencode" => OpenCodeProfile,
             "generic-ai" or "generic" or "ai" => GenericAiProfile,
             "shell" => ShellProfile,
@@ -90,7 +97,7 @@ public sealed class AiCliProfileService
     public bool IsInteractiveAi(string? profile)
     {
         var normalized = NormalizeProfile(profile);
-        return normalized is CodexProfile or ClaudeProfile or OpenCodeProfile or GenericAiProfile;
+        return normalized is CodexProfile or ClaudeProfile or GrokProfile or OpenCodeProfile or GenericAiProfile;
     }
 
     public string? GetDefaultLaunchCommand(string? profile)
@@ -99,6 +106,7 @@ public sealed class AiCliProfileService
         {
             CodexProfile => "codex --yolo",
             ClaudeProfile => "claude --dangerously-skip-permissions",
+            GrokProfile => "grok",
             _ => null
         };
     }

@@ -21,17 +21,20 @@
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.AgentHost\Ai.Tlbx.MidTerm.AgentHost.csproj" />
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.FakeCodex\Ai.Tlbx.MidTerm.FakeCodex.csproj" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.FakeClaude\Ai.Tlbx.MidTerm.FakeClaude.csproj" ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Ai.Tlbx.MidTerm.FakeGrok\Ai.Tlbx.MidTerm.FakeGrok.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\FakeClaudePathScope.cs" Link="FakeClaudePathScope.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\FakeCodexPathScope.cs" Link="FakeCodexPathScope.cs" />
+    <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\FakeGrokPathScope.cs" Link="FakeGrokPathScope.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\FakeCodexWebSocketServer.cs" Link="FakeCodexWebSocketServer.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\AppServerControlHostProtocolTests.cs" Link="AppServerControlHostProtocolTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\AppServerControlHostTestClient.cs" Link="AppServerControlHostTestClient.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostTestPathResolver.cs" Link="MtAgentHostTestPathResolver.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostClaudeIntegrationTests.cs" Link="MtAgentHostClaudeIntegrationTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostCodexIntegrationTests.cs" Link="MtAgentHostCodexIntegrationTests.cs" />
+    <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostGrokIntegrationTests.cs" Link="MtAgentHostGrokIntegrationTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostIntegrationTests.cs" Link="MtAgentHostIntegrationTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostRealClaudeSmokeTests.cs" Link="MtAgentHostRealClaudeSmokeTests.cs" />
     <Compile Include="..\Ai.Tlbx.MidTerm.UnitTests\MtAgentHostRealCodexSmokeTests.cs" Link="MtAgentHostRealCodexSmokeTests.cs" />

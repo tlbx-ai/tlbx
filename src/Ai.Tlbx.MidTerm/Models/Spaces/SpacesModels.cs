@@ -19,6 +19,7 @@ public static class SpaceSurfaceKinds
     public const string Terminal = "terminal";
     public const string Codex = "codex";
     public const string Claude = "claude";
+    public const string Grok = "grok";
 }
 
 public sealed class SpaceRecord

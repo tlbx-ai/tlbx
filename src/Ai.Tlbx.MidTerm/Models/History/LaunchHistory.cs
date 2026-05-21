@@ -13,6 +13,7 @@ public static class HistorySurfaceTypes
     public const string Terminal = "trm";
     public const string Codex = "cdx";
     public const string Claude = "cld";
+    public const string Grok = "grk";
 }
 
 public sealed class LaunchEntry

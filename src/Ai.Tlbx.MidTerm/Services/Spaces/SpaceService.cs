@@ -677,7 +677,8 @@ public sealed class SpaceService
     {
         return session.AppServerControlOnly ||
                string.Equals(session.Surface, SpaceSurfaceKinds.Codex, StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(session.Surface, SpaceSurfaceKinds.Claude, StringComparison.OrdinalIgnoreCase);
+               string.Equals(session.Surface, SpaceSurfaceKinds.Claude, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(session.Surface, SpaceSurfaceKinds.Grok, StringComparison.OrdinalIgnoreCase);
     }
 
     private static SpaceWorkspaceDto BuildPlainWorkspace(SpaceRecord record, TtyHostSessionManager sessionManager)

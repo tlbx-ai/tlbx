@@ -4,14 +4,18 @@ const PIN_SUCCESS_ANIMATION_MS = 560;
 
 export function getBookmarkSurfaceType(
   session: Session,
-  profile: 'codex' | 'claude' | null,
-): 'trm' | 'cdx' | 'cld' {
+  profile: 'codex' | 'claude' | 'grok' | null,
+): 'trm' | 'cdx' | 'cld' | 'grk' {
   if (session.appServerControlOnly && profile === 'claude') {
     return 'cld';
   }
 
   if (session.appServerControlOnly && profile === 'codex') {
     return 'cdx';
+  }
+
+  if (session.appServerControlOnly && profile === 'grok') {
+    return 'grk';
   }
 
   return 'trm';
