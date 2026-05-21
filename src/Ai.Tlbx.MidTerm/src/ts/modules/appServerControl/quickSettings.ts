@@ -219,7 +219,7 @@ function resolveRememberedProviderModel(
   }
 
   if (provider === 'grok') {
-    return legacyModel ?? 'grok-build-0.1';
+    return legacyModel ?? 'grok-4.20-0309-non-reasoning';
   }
 
   return legacyModel;

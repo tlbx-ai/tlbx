@@ -59,7 +59,7 @@ public sealed class MtAgentHostGrokIntegrationTests
             var capture = await WaitForFakeGrokLaunchCaptureAsync(
                 fakeGrok.CapturePath,
                 static launch => launch.Arguments.Length > 0);
-            Assert.Equal(["agent", "stdio"], capture.Arguments);
+            Assert.Equal(["agent", "-m", "grok-build-0.1", "stdio"], capture.Arguments);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {

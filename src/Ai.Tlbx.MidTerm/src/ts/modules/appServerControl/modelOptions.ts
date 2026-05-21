@@ -17,10 +17,11 @@ const CODEX_MODEL_PRESETS = [
 
 const CLAUDE_MODEL_PRESETS = ['sonnet', 'opus', 'claude-sonnet-4-6', 'claude-opus-4-6'] as const;
 const GROK_MODEL_PRESETS = [
-  'grok-build-0.1',
-  'grok-4.3',
   'grok-4.20-0309-non-reasoning',
   'grok-4.20-0309-reasoning',
+  'grok-4.20-multi-agent-0309',
+  'grok-4.3',
+  'grok-build-0.1',
 ] as const;
 
 export function getAppServerControlDefaultModelLabel(provider: string | null | undefined): string {

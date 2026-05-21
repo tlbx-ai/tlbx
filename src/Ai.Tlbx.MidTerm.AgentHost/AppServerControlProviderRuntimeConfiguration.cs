@@ -4,6 +4,8 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 
 internal static class AppServerControlProviderRuntimeConfiguration
 {
+    public const string DefaultGrokModel = "grok-4.20-0309-non-reasoning";
+
     private const string CodexYoloDefaultEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT";
     private const string CodexDefaultModelEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL";
     private const string CodexEnvironmentVariablesEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_ENVIRONMENT_VARIABLES";
@@ -94,7 +96,8 @@ internal static class AppServerControlProviderRuntimeConfiguration
 
     public static string? GetGrokDefaultModel()
     {
-        return NormalizeOptionalValue(Environment.GetEnvironmentVariable(GrokDefaultModelEnvironmentVariable));
+        return NormalizeOptionalValue(Environment.GetEnvironmentVariable(GrokDefaultModelEnvironmentVariable))
+               ?? DefaultGrokModel;
     }
 
     private static IReadOnlyDictionary<string, string> ReadEnvironmentVariables(string provider)

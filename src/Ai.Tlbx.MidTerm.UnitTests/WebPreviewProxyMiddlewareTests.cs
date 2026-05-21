@@ -206,6 +206,23 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("refreshBwsState(d.force===true);", script, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void UrlRewriteScript_FillCommand_UsesMatchingFormControlValueSetter()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("function setFormControlValue(el,value)", script, StringComparison.Ordinal);
+        Assert.Contains("el instanceof HTMLTextAreaElement", script, StringComparison.Ordinal);
+        Assert.Contains("el instanceof HTMLSelectElement", script, StringComparison.Ordinal);
+        Assert.Contains("el instanceof HTMLInputElement", script, StringComparison.Ordinal);
+        Assert.Contains("setFormControlValue(el,msg.value||\"\");", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,\"value\");", script, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
     [InlineData("?__mtTargetRevision=1", "")]

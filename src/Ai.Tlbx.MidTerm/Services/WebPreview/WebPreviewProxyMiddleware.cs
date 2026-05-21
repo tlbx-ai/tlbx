@@ -642,6 +642,15 @@ public sealed partial class WebPreviewProxyMiddleware
             }).catch(function(err){h2cLoad=null;throw err;});
             return h2cLoad;
           }
+          function setFormControlValue(el,value){
+            var proto=null;
+            if(typeof HTMLTextAreaElement!=="undefined"&&el instanceof HTMLTextAreaElement)proto=HTMLTextAreaElement.prototype;
+            else if(typeof HTMLSelectElement!=="undefined"&&el instanceof HTMLSelectElement)proto=HTMLSelectElement.prototype;
+            else if(typeof HTMLInputElement!=="undefined"&&el instanceof HTMLInputElement)proto=HTMLInputElement.prototype;
+            var nv=proto?Object.getOwnPropertyDescriptor(proto,"value"):null;
+            if(nv&&nv.set)nv.set.call(el,value);
+            else el.value=value;
+          }
           function handleBCmd(msg){
             var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null};
             try{
@@ -699,9 +708,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   var el=document.querySelector(msg.selector);
                   if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
-                  var nv=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value");
-                  if(nv&&nv.set)nv.set.call(el,msg.value||"");
-                  else el.value=msg.value||"";
+                  setFormControlValue(el,msg.value||"");
                   el.dispatchEvent(new Event("input",{bubbles:true}));
                   el.dispatchEvent(new Event("change",{bubbles:true}));
                   res.result="filled";

@@ -428,7 +428,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     {
         var startInfo = CreateProcessStartInfo(
             _binaryPath!,
-            BuildArguments(_quickSettings.PermissionMode),
+            BuildArguments(_quickSettings.PermissionMode, _quickSettings.Model),
             _workingDirectory!);
 
         Process? process = new Process
@@ -1083,7 +1083,9 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     private AppServerControlQuickSettingsSummary CreateQuickSettingsFromState(JsonElement initializeResult, JsonElement sessionResult)
     {
         var modelState = Traverse(sessionResult, "models") ?? Traverse(initializeResult, "_meta", "modelState");
-        var model = GetString(modelState, "currentModelId") ?? _quickSettings.Model ?? "grok-build-0.1";
+        var model = GetString(modelState, "currentModelId")
+                    ?? _quickSettings.Model
+                    ?? AppServerControlProviderRuntimeConfiguration.GetGrokDefaultModel();
         var summary = AppServerControlQuickSettings.CreateSummary(
             model,
             null,
@@ -1388,18 +1390,25 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }));
     }
 
-    private static string BuildArguments(string permissionMode)
+    private static string BuildArguments(string permissionMode, string? model)
     {
         var args = new List<string>
         {
-            "agent",
-            "stdio"
+            "agent"
         };
+
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            args.Add("-m");
+            args.Add(model.Trim());
+        }
 
         if (string.Equals(permissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal))
         {
             args.Add("--always-approve");
         }
+
+        args.Add("stdio");
 
         return string.Join(" ", args.Select(QuoteArgument));
     }

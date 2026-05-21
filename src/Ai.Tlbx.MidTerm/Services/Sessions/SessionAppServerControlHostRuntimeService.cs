@@ -1671,7 +1671,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_ENVIRONMENT_VARIABLES"] = settings.ClaudeEnvironmentVariables ?? string.Empty;
         environment["MIDTERM_APP_SERVER_CONTROL_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS"] =
             settings.ClaudeDangerouslySkipPermissionsDefault ? "true" : "false";
-        environment["MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL"] = "grok-build-0.1";
+        environment["MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL"] = "grok-4.20-0309-non-reasoning";
         environment["MIDTERM_APP_SERVER_CONTROL_GROK_ENVIRONMENT_VARIABLES"] = string.Empty;
         environment["MIDTERM_APP_SERVER_CONTROL_GROK_ALWAYS_APPROVE_DEFAULT"] = "false";
     }
@@ -2165,6 +2165,5 @@ internal sealed class SubscriptionState
         }
     }
 }
-
 
 
