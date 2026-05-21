@@ -356,8 +356,9 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('--workspace-pane-chrome-background: var(--bg-elevated);');
     expect(cssSource).toContain('background-color: transparent;');
     expect(cssSource).toContain(
-      '--command-bay-background: var(--terminal-canvas-background, var(--terminal-bg));',
+      '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
+    expect(cssSource).toContain('background: var(--command-bay-background);');
     expect(xtermCssSource).toContain(
       'background-color: var(--terminal-canvas-background, var(--bg-terminal));',
     );
