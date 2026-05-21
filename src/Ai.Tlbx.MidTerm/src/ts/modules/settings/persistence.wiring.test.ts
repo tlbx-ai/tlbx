@@ -67,6 +67,20 @@ function getPublicSettingKeys(): string[] {
   return [...keys].sort();
 }
 
+function getSettingsPanel(panel: string): string {
+  const start = html.indexOf(`data-panel="${panel}"`);
+  if (start === -1) {
+    return '';
+  }
+
+  const nextPanel = html.indexOf('<section class="settings-panel hidden" data-panel=', start + 1);
+  if (nextPanel === -1) {
+    return html.slice(start);
+  }
+
+  return html.slice(start, nextPanel);
+}
+
 describe('settings persistence wiring', () => {
   it('covers every public setting in the registry', () => {
     const registeredKeys = SETTINGS_REGISTRY.map((entry) => entry.key).sort();
@@ -101,6 +115,28 @@ describe('settings persistence wiring', () => {
     expect(
       SETTINGS_REGISTRY.find((entry) => entry.key === 'preserveTerminalCursorControl')?.applyMode,
     ).toBe('immediate');
+  });
+
+  it('keeps visible controls in their audited settings categories', () => {
+    const sessionsPanel = getSettingsPanel('sessions');
+    const aiAgentsPanel = getSettingsPanel('ai-agents');
+    const workflowPanel = getSettingsPanel('workflow');
+    const securityPanel = getSettingsPanel('security');
+    const connectedHostsPanel = getSettingsPanel('connected-hosts');
+    const sidebarMarkup = html.split('<div class="sidebar-overlay"')[0] ?? '';
+
+    expect(sessionsPanel).toContain('id="setting-tmux-compatibility"');
+    expect(connectedHostsPanel).not.toContain('id="setting-tmux-compatibility"');
+    expect(aiAgentsPanel).toContain('id="voice-section"');
+    expect(aiAgentsPanel).toContain('id="voice-select"');
+    expect(aiAgentsPanel).toContain('id="mic-select"');
+    expect(securityPanel).toContain('id="network-section"');
+    expect(securityPanel).toContain('id="trust-link"');
+    expect(securityPanel).toContain('id="btn-share-access"');
+    expect(workflowPanel).toContain('Command Bay &amp; Automation');
+    expect(workflowPanel).toContain('id="setting-command-bay-ligatures-enabled"');
+    expect(sidebarMarkup).not.toContain('id="voice-section"');
+    expect(sidebarMarkup).not.toContain('id="network-section"');
   });
 
   it('marks non-form writers explicitly in the registry', () => {

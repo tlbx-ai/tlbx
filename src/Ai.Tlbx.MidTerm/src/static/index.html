@@ -282,109 +282,6 @@
               Sessions will be closed
             </div>
           </div>
-          <div id="voice-section" class="voice-section hidden">
-            <button class="voice-section-header" id="btn-toggle-voice">
-              <span class="voice-section-title" data-i18n="sidebar.voiceAssistant"
-                >Voice Assistant</span
-              >
-              <span class="voice-section-chevron icon">&#xe910;</span>
-            </button>
-            <div class="voice-section-content" id="voice-section-content">
-              <div class="voice-controls">
-                <button
-                  id="btn-voice-toggle"
-                  class="voice-btn"
-                  data-i18n-title="sidebar.voiceStartStop"
-                  title="Start/Stop"
-                >
-                  <span class="icon">&#xea15;</span>
-                </button>
-                <button
-                  id="btn-voice-sync"
-                  class="voice-btn hidden"
-                  data-i18n-title="sidebar.voiceTestConnection"
-                  title="Test Voice Server Connection"
-                >
-                  <span class="icon">&#xea2e;</span>
-                </button>
-                <button
-                  id="btn-voice-chat"
-                  class="voice-btn"
-                  data-i18n-title="sidebar.voiceToggleChat"
-                  title="Toggle Chat Panel"
-                >
-                  <span class="icon">&#xe96b;</span>
-                </button>
-              </div>
-              <div class="voice-settings" id="voice-settings">
-                <div class="voice-setting-row">
-                  <label data-i18n="sidebar.voiceLabel">Voice</label>
-                  <select id="voice-select" class="voice-select">
-                    <option value="" data-i18n="sidebar.voiceLoading">Loading...</option>
-                  </select>
-                </div>
-                <div class="voice-setting-row">
-                  <label data-i18n="sidebar.voiceMicrophone">Microphone</label>
-                  <select id="mic-select" class="voice-select">
-                    <option value="" data-i18n="sidebar.voiceDefault">Default</option>
-                  </select>
-                </div>
-                <div class="voice-setting-row">
-                  <label data-i18n="sidebar.voiceSpeed">Speed</label>
-                  <div class="voice-speed-control">
-                    <input
-                      type="range"
-                      id="voice-speed"
-                      min="0.25"
-                      max="1.5"
-                      step="0.25"
-                      value="1.0"
-                    />
-                    <span id="voice-speed-value">1.0x</span>
-                  </div>
-                </div>
-              </div>
-              <div class="voice-status" id="voice-status" data-i18n="sidebar.voiceNotConnected">
-                Not connected
-              </div>
-            </div>
-          </div>
-          <div class="network-section" id="network-section">
-            <button
-              class="network-section-header"
-              id="btn-toggle-network"
-              title="Toggle Network & Remote Access"
-            >
-              <span class="network-section-title" data-i18n="sidebar.networkRemoteAccess"
-                >Network & Remote Access</span
-              >
-              <span class="network-section-chevron icon">&#xe910;</span>
-            </button>
-            <div class="network-section-content" id="network-section-content">
-              <div class="network-list" id="network-list"></div>
-              <div class="network-actions">
-                <a
-                  id="trust-link"
-                  href="/trust"
-                  class="network-action-link"
-                  data-i18n-title="sidebar.trustCertificateHint"
-                  title="Trust certificate on this or other devices"
-                >
-                  <span class="icon">&#xe908;</span>
-                  <span data-i18n="sidebar.trustCertificate">Trust Certificate</span>
-                </a>
-                <button
-                  id="btn-share-access"
-                  class="share-access-link"
-                  data-i18n-title="sidebar.shareAccessHint"
-                  title="Share connection info via email"
-                >
-                  <span class="icon">&#xe925;</span>
-                  <span data-i18n="sidebar.shareAccess">Share Access...</span>
-                </button>
-              </div>
-            </div>
-          </div>
           <div class="footer-row">
             <span class="footer-traffic" id="ws-traffic" title="WebSocket throughput">0 B/s</span>
             <span class="footer-separator">&mdash;</span>
@@ -743,10 +640,12 @@
                   role="tab"
                   aria-selected="false"
                   data-i18n-title="settings.workflowGit.tooltip"
-                  title="Navigation, Automation Bar, file linking, bookmarks, tab naming, and Git/worktree workflow."
+                  title="Command Bay input, Automation Bar, file linking, bookmarks, tab naming, and Git/worktree workflow."
                 >
                   <span class="icon">&#xe993;</span>
-                  <span class="tab-label" data-i18n="settings.workflowGit">Workflow &amp; Git</span>
+                  <span class="tab-label" data-i18n="settings.workflowGit"
+                    >Command Bay &amp; Workflow</span
+                  >
                 </button>
                 <button
                   class="settings-tab"
@@ -1735,6 +1634,78 @@
                 <section class="settings-panel hidden" data-panel="ai-agents">
                   <h2 data-i18n="settings.aiAgents.title">AI Agents</h2>
 
+                  <div id="voice-section" class="settings-section voice-section hidden">
+                    <button class="voice-section-header" id="btn-toggle-voice">
+                      <span class="voice-section-title" data-i18n="sidebar.voiceAssistant"
+                        >Voice Assistant</span
+                      >
+                      <span class="voice-section-chevron icon">&#xe910;</span>
+                    </button>
+                    <div class="voice-section-content" id="voice-section-content">
+                      <div class="voice-controls">
+                        <button
+                          id="btn-voice-toggle"
+                          class="voice-btn"
+                          data-i18n-title="sidebar.voiceStartStop"
+                          title="Start/Stop"
+                        >
+                          <span class="icon">&#xea15;</span>
+                        </button>
+                        <button
+                          id="btn-voice-sync"
+                          class="voice-btn hidden"
+                          data-i18n-title="sidebar.voiceTestConnection"
+                          title="Test Voice Server Connection"
+                        >
+                          <span class="icon">&#xea2e;</span>
+                        </button>
+                        <button
+                          id="btn-voice-chat"
+                          class="voice-btn"
+                          data-i18n-title="sidebar.voiceToggleChat"
+                          title="Toggle Chat Panel"
+                        >
+                          <span class="icon">&#xe96b;</span>
+                        </button>
+                      </div>
+                      <div class="voice-settings" id="voice-settings">
+                        <div class="voice-setting-row">
+                          <label data-i18n="sidebar.voiceLabel">Voice</label>
+                          <select id="voice-select" class="voice-select">
+                            <option value="" data-i18n="sidebar.voiceLoading">Loading...</option>
+                          </select>
+                        </div>
+                        <div class="voice-setting-row">
+                          <label data-i18n="sidebar.voiceMicrophone">Microphone</label>
+                          <select id="mic-select" class="voice-select">
+                            <option value="" data-i18n="sidebar.voiceDefault">Default</option>
+                          </select>
+                        </div>
+                        <div class="voice-setting-row">
+                          <label data-i18n="sidebar.voiceSpeed">Speed</label>
+                          <div class="voice-speed-control">
+                            <input
+                              type="range"
+                              id="voice-speed"
+                              min="0.25"
+                              max="1.5"
+                              step="0.25"
+                              value="1.0"
+                            />
+                            <span id="voice-speed-value">1.0x</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div
+                        class="voice-status"
+                        id="voice-status"
+                        data-i18n="sidebar.voiceNotConnected"
+                      >
+                        Not connected
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="settings-section">
                     <h3 data-i18n="settings.aiAgents.conversationView">Conversation View</h3>
                     <div class="setting-row">
@@ -1861,10 +1832,12 @@
                 </section>
 
                 <section class="settings-panel hidden" data-panel="workflow">
-                  <h2 data-i18n="settings.workflowGit.title">Workflow &amp; Git</h2>
+                  <h2 data-i18n="settings.workflowGit.title">Command Bay &amp; Workflow</h2>
 
                   <div class="settings-section">
-                    <h3 data-i18n="settings.workflowGit.workflowControls">Workflow Controls</h3>
+                    <h3 data-i18n="settings.workflowGit.workflowControls">
+                      Command Bay &amp; Automation
+                    </h3>
                     <div class="setting-row">
                       <label for="setting-input-mode" data-i18n="settings.behavior.inputMode"
                         >Input Mode</label
@@ -1893,7 +1866,7 @@
                       <label
                         for="setting-command-bay-ligatures-enabled"
                         data-i18n="settings.commandBay.enableLigatures"
-                        >Enable Ligatures</label
+                        >Command Bay Ligatures</label
                       >
                       <input type="checkbox" id="setting-command-bay-ligatures-enabled" />
                     </div>
@@ -2268,6 +2241,23 @@
                   </div>
 
                   <div class="settings-section">
+                    <h3 data-i18n="settings.behavior.integrations">CLI Compatibility</h3>
+                    <div class="setting-row">
+                      <label
+                        for="setting-tmux-compatibility"
+                        title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH)."
+                        data-i18n="settings.behavior.tmuxCompatibility"
+                        >Tmux Compatibility</label
+                      >
+                      <input type="checkbox" id="setting-tmux-compatibility" />
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">
+                      Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
+                      into remote hosts that run real tmux. Requires restart.
+                    </p>
+                  </div>
+
+                  <div class="settings-section">
                     <h3 data-i18n="settings.sessionsStartup.browserOwnership">
                       Browser Ownership
                     </h3>
@@ -2432,6 +2422,43 @@
                     </p>
                   </div>
 
+                  <div class="settings-section network-section" id="network-section">
+                    <button
+                      class="network-section-header"
+                      id="btn-toggle-network"
+                      title="Toggle Network & Remote Access"
+                    >
+                      <span class="network-section-title" data-i18n="sidebar.networkRemoteAccess"
+                        >Network &amp; Remote Access</span
+                      >
+                      <span class="network-section-chevron icon">&#xe910;</span>
+                    </button>
+                    <div class="network-section-content" id="network-section-content">
+                      <div class="network-list" id="network-list"></div>
+                      <div class="network-actions">
+                        <a
+                          id="trust-link"
+                          href="/trust"
+                          class="network-action-link"
+                          data-i18n-title="sidebar.trustCertificateHint"
+                          title="Trust certificate on this or other devices"
+                        >
+                          <span class="icon">&#xe908;</span>
+                          <span data-i18n="sidebar.trustCertificate">Trust Certificate</span>
+                        </a>
+                        <button
+                          id="btn-share-access"
+                          class="share-access-link"
+                          data-i18n-title="sidebar.shareAccessHint"
+                          title="Share connection info via email"
+                        >
+                          <span class="icon">&#xe925;</span>
+                          <span data-i18n="sidebar.shareAccess">Share Access...</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="settings-section hidden" id="windows-firewall-section">
                     <h3 data-i18n="settings.security.firewallTitle">Windows Firewall</h3>
                     <div class="setting-row">
@@ -2514,23 +2541,6 @@
                       </div>
                     </div>
                     <div id="hub-machine-list" class="hub-machine-list"></div>
-                  </div>
-
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.behavior.integrations">Integrations</h3>
-                    <div class="setting-row">
-                      <label
-                        for="setting-tmux-compatibility"
-                        title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH)."
-                        data-i18n="settings.behavior.tmuxCompatibility"
-                        >Tmux Compatibility</label
-                      >
-                      <input type="checkbox" id="setting-tmux-compatibility" />
-                    </div>
-                    <p class="setting-hint" data-i18n="settings.behavior.tmuxHint">
-                      Enables AI coding tools to manage panes via tmux commands. Disable if you SSH
-                      into remote hosts that run real tmux. Requires restart.
-                    </p>
                   </div>
 
                   <div id="hub-machine-modal" class="modal hidden">
