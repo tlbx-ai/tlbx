@@ -326,6 +326,16 @@
   --bg-settings: #161821; /* Same as bg-elevated */
   --bg-tertiary: #05050a; /* Alias for bg-sidebar */
   --terminal-canvas-background: var(--bg-terminal);
+  --terminal-canvas-background-stack:
+    linear-gradient(
+      var(--terminal-canvas-background, var(--terminal-bg)),
+      var(--terminal-canvas-background, var(--terminal-bg))
+    ),
+    linear-gradient(
+      var(--terminal-canvas-background, var(--terminal-bg)),
+      var(--terminal-canvas-background, var(--terminal-bg))
+    ),
+    var(--terminal-canvas-background, var(--terminal-bg));
   --terminal-ui-background: var(--terminal-bg);
   --app-chrome-background: var(--bg-terminal);
   --app-header-background:
@@ -3030,8 +3040,11 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 /* Focus indicator for active pane - subtle grey */
 .layout-leaf.focused {
-  outline: 2px solid var(--border-subtle);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow:
+    inset 2px 0 0 var(--border-subtle),
+    inset -2px 0 0 var(--border-subtle),
+    inset 0 2px 0 var(--border-subtle);
 }
 
 .layout-leaf.focused .session-tab-bar {
@@ -12119,16 +12132,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background:
-    linear-gradient(
-      var(--terminal-canvas-background, var(--terminal-bg)),
-      var(--terminal-canvas-background, var(--terminal-bg))
-    ),
-    linear-gradient(
-      var(--terminal-canvas-background, var(--terminal-bg)),
-      var(--terminal-canvas-background, var(--terminal-bg))
-    ),
-    var(--terminal-canvas-background, var(--terminal-bg));
+  background: var(--terminal-canvas-background-stack);
 }
 
 .agent-runtime-stats {
@@ -16226,16 +16230,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
   --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
-  /* Match the visible xterm pane: viewport CSS background plus rendered canvas background passes. */
-  --command-bay-background: linear-gradient(
-      var(--command-bay-background-color),
-      var(--command-bay-background-color)
-    ),
-    linear-gradient(
-      var(--command-bay-background-color),
-      var(--command-bay-background-color)
-    ),
-    var(--command-bay-background-color);
+  --command-bay-background: var(--terminal-canvas-background-stack);
   --command-bay-surface-color: var(--command-bay-background-color);
   --command-bay-surface: var(--command-bay-background);
   --command-bay-surface-strong-color: var(--command-bay-background-color);
@@ -16284,6 +16279,17 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   pointer-events: auto;
 }
 
+.adaptive-footer-dock:not([data-composer-expanded='true'])::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--command-bay-background);
+  pointer-events: none;
+}
+
 .adaptive-footer-dock[data-device='desktop'] {
   padding-top: 6px;
   padding-bottom: 6px;
@@ -16311,12 +16317,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   overflow: hidden;
   padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
     calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--overlay-bg-dark) 0%, transparent),
-    color-mix(in srgb, var(--overlay-bg-dark) 14%, transparent) 64%,
-    color-mix(in srgb, var(--overlay-bg-dark) 20%, transparent)
-  );
+  background: var(--command-bay-background);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -17785,7 +17786,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     padding-left: calc(4px + env(safe-area-inset-left, 0px));
     padding-right: calc(4px + env(safe-area-inset-right, 0px));
     padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-    background: var(--bg-sidebar);
+    background: var(--command-bay-background);
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

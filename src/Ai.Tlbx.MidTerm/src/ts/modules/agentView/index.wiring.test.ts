@@ -120,8 +120,9 @@ describe('agent view AppServerControl wiring', () => {
 
   it('binds the AppServerControl pane background to terminal transparency tokens', () => {
     expect(css).toMatch(/\.agent-view-panel\s*\{[\s\S]*?background:\s*transparent;/);
+    expect(css).toContain('--terminal-canvas-background-stack:');
     expect(css).toMatch(
-      /\.agent-chat-shell\s*\{[\s\S]*?background:\s*[\s\S]*?linear-gradient\(\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\),\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\)\s*\),\s*[\s\S]*?linear-gradient\(\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\),\s*var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\)\s*\),\s*[\s\S]*?var\(--terminal-canvas-background,\s*var\(--terminal-bg\)\);/,
+      /\.agent-chat-shell\s*\{[\s\S]*?background:\s*var\(--terminal-canvas-background-stack\);/,
     );
     expect(appServerControlDesign).toContain(
       'Agent Controller Session pane background/transparency should follow the terminal transparency model, not the surrounding generic UI shell transparency model.',

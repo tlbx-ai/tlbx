@@ -79,4 +79,15 @@ describe('workspace pane transparency wiring', () => {
     );
     expect(css).not.toContain('color-mix(in srgb, var(--bg-dialog-chrome) 94%, transparent)');
   });
+
+  it('keeps the focused pane ring from painting a bottom line above the Command Bay', () => {
+    const focusedLayoutLeafRule = getCssRule('.layout-leaf.focused');
+
+    expect(focusedLayoutLeafRule).toContain('outline: none;');
+    expect(focusedLayoutLeafRule).toContain('inset 2px 0 0 var(--border-subtle)');
+    expect(focusedLayoutLeafRule).toContain('inset -2px 0 0 var(--border-subtle)');
+    expect(focusedLayoutLeafRule).toContain('inset 0 2px 0 var(--border-subtle)');
+    expect(focusedLayoutLeafRule).not.toContain('inset 0 -');
+    expect(focusedLayoutLeafRule).not.toContain('outline-offset');
+  });
 });

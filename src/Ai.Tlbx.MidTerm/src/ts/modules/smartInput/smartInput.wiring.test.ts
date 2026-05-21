@@ -77,23 +77,18 @@ describe('smart input tab wiring', () => {
 
   it('uses the stacked terminal canvas as the Command Bay backing surface', () => {
     const dockRule = getCssRule('.adaptive-footer-dock');
+    const seamRule = getCssRule(
+      ".adaptive-footer-dock:not([data-composer-expanded='true'])::before",
+    );
+    const expandedDockRule = getCssRule(".adaptive-footer-dock[data-composer-expanded='true']");
     const textareaRule = getCssRule('.adaptive-footer-dock .smart-input-textarea');
     const reserveRule = getCssRule('.adaptive-footer-reserve');
 
+    expect(css).toContain('--terminal-canvas-background-stack:');
     expect(css).toContain(
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
-    expect(css).toContain(
-      '--command-bay-background: linear-gradient(\n' +
-        '      var(--command-bay-background-color),\n' +
-        '      var(--command-bay-background-color)\n' +
-        '    ),\n' +
-        '    linear-gradient(\n' +
-        '      var(--command-bay-background-color),\n' +
-        '      var(--command-bay-background-color)\n' +
-        '    ),\n' +
-        '    var(--command-bay-background-color);',
-    );
+    expect(css).toContain('--command-bay-background: var(--terminal-canvas-background-stack);');
     expect(css).toContain('--command-bay-surface: var(--command-bay-background);');
     expect(css).toContain('--command-bay-surface-strong: var(--command-bay-background);');
     expect(css).toContain('--command-bay-floating-button-surface: var(--command-bay-background);');
@@ -108,6 +103,10 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-floating-button-border: transparent;');
     expect(reserveRule).toContain('background: transparent;');
     expect(dockRule).toContain('background: var(--command-bay-background);');
+    expect(seamRule).toContain('top: -1px;');
+    expect(seamRule).toContain('height: 1px;');
+    expect(seamRule).toContain('background: var(--command-bay-background);');
+    expect(expandedDockRule).toContain('background: var(--command-bay-background);');
     expect(textareaRule).toContain(
       'border: 1px solid var(--command-bay-textbox-border, var(--border-subtle));',
     );
@@ -400,15 +399,16 @@ describe('smart input tab wiring', () => {
     const solidRule = getCssRule(".adaptive-footer-dock[data-material='solid']");
     const glassRule = getCssRule(".adaptive-footer-dock[data-material='glass']");
 
+    expect(css).toContain('--terminal-canvas-background-stack:');
     expect(css).toContain(
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
-    expect(css).toContain('var(--command-bay-background-color);');
+    expect(css).toContain('--command-bay-background: var(--terminal-canvas-background-stack);');
     expect(solidRule).toContain('background: var(--command-bay-background);');
     expect(glassRule).toContain('background: var(--command-bay-background);');
     expect(compactWhitespace(css)).toContain(
       compactWhitespace(
-        '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px;',
+        '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px; padding-left: calc(4px + env(safe-area-inset-left, 0px)); padding-right: calc(4px + env(safe-area-inset-right, 0px)); padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); background: var(--command-bay-background);',
       ),
     );
   });
@@ -448,6 +448,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-expand-toggle {');
     expect(css).toContain(".adaptive-footer-dock[data-composer-expanded='true'] {");
     expect(css).toContain(".adaptive-footer-dock[data-composer-expanded='true'] {\n  top: 0;");
+    expect(css).toMatch(
+      /\.adaptive-footer-dock\[data-composer-expanded='true'\]\s*\{[\s\S]*?background:\s*var\(--command-bay-background\);/,
+    );
     expect(css).toContain('justify-content: flex-end;');
     expect(css).toContain(
       ".adaptive-footer-dock[data-composer-expanded='true'] .adaptive-footer-primary {\n  flex: 1 1 auto;",
