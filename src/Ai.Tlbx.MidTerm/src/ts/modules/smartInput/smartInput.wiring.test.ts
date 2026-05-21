@@ -88,6 +88,10 @@ describe('smart input tab wiring', () => {
         '      var(--command-bay-background-color),\n' +
         '      var(--command-bay-background-color)\n' +
         '    ),\n' +
+        '    linear-gradient(\n' +
+        '      var(--command-bay-background-color),\n' +
+        '      var(--command-bay-background-color)\n' +
+        '    ),\n' +
         '    var(--command-bay-background-color);',
     );
     expect(css).toContain('--command-bay-surface: var(--command-bay-background);');
@@ -96,9 +100,6 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-ui-reactive-surface: var(--command-bay-background);');
     expect(css).toContain('--command-bay-surface-color: var(--command-bay-background-color);');
     expect(css).toContain('--command-bay-surface-hover-color: color-mix(');
-    expect(css).not.toContain(
-      'linear-gradient(var(--command-bay-background-color), var(--command-bay-background-color)),',
-    );
     expect(css).toContain('--command-bay-border: transparent;');
     expect(css).toContain('--command-bay-border-strong: transparent;');
     expect(css).toContain('--command-bay-textbox-border: color-mix(');

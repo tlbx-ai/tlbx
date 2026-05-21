@@ -16226,8 +16226,12 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
   --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
-  /* Match xterm's two-step light transport: viewport CSS background + renderer theme background. */
+  /* Match the visible xterm pane: viewport CSS background plus rendered canvas background passes. */
   --command-bay-background: linear-gradient(
+      var(--command-bay-background-color),
+      var(--command-bay-background-color)
+    ),
+    linear-gradient(
       var(--command-bay-background-color),
       var(--command-bay-background-color)
     ),
