@@ -121,6 +121,26 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return CloneEntry(entry);
     }
 
+    public ManagerBarQueueEntryDto? EnqueuePromptAt(
+        string sessionId,
+        AppServerControlTurnRequest turn,
+        DateTimeOffset runAt)
+    {
+        if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
+        {
+            return null;
+        }
+
+        ManagerBarQueueEntryDto entry;
+        lock (_lock)
+        {
+            entry = EnqueuePromptLocked(trimmedSessionId, normalizedTurn, QueuePhase.PendingInterval, runAt);
+        }
+
+        OnChanged?.Invoke();
+        return CloneEntry(entry);
+    }
+
     public async Task<(bool Accepted, ManagerBarQueueEntryDto? Entry)> SubmitPromptAsync(
         string sessionId,
         AppServerControlTurnRequest turn,
@@ -1187,7 +1207,11 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return true;
     }
 
-    private ManagerBarQueueEntryDto EnqueuePromptLocked(string sessionId, AppServerControlTurnRequest normalizedTurn)
+    private ManagerBarQueueEntryDto EnqueuePromptLocked(
+        string sessionId,
+        AppServerControlTurnRequest normalizedTurn,
+        string phase = QueuePhase.PendingCooldown,
+        DateTimeOffset? nextRunAt = null)
     {
         var entry = new ManagerBarQueueEntryDto
         {
@@ -1196,10 +1220,10 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             Kind = PromptQueueKind,
             Action = null,
             Turn = normalizedTurn,
-            Phase = QueuePhase.PendingCooldown,
+            Phase = phase,
             NextPromptIndex = 0,
             CompletedCycles = 0,
-            NextRunAt = null,
+            NextRunAt = nextRunAt,
             IgnoreHeatUntil = null,
             AwaitingHeatRise = false
         };

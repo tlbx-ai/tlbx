@@ -557,6 +557,7 @@ public static class BrowserEndpoints
                 "mt_query <selector> --text",
                 "mt_exec <js>",
                 "mt_topic <text>",
+                "mt_wake [id] <delay> <prompt>",
                 "mt_repo list|add|remove|refresh"
             ],
             DiagnosticCommands =
@@ -581,6 +582,7 @@ public static class BrowserEndpoints
                 "Browser commands require a configured preview target, an attached MidTerm UI on /ws/state, and an injected /ws/browser bridge from the preview frame.",
                 "mt_inspect is the lowest-token first diagnostic command; mt_proxylog_summary is the lowest-token proxy diagnostic command.",
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
+                "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so MidTerm shows it in the IDE bar and sidebar.",
                 "Screenshots use in-page html2canvas and can differ from native browser screenshots for canvas, video, and cross-origin frame content."
             ]

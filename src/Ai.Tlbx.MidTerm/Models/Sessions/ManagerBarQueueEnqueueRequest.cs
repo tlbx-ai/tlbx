@@ -8,4 +8,6 @@ public sealed class ManagerBarQueueEnqueueRequest
     public string SessionId { get; set; } = string.Empty;
     public ManagerBarButton? Action { get; set; }
     public AppServerControlTurnRequest? Turn { get; set; }
+    public int? DelayMs { get; set; }
+    public DateTimeOffset? RunAt { get; set; }
 }

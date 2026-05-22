@@ -91,9 +91,19 @@ public static partial class SessionApiEndpoints
                 return Results.NotFound();
             }
 
+            if (!TryResolveQueueRunAt(request, DateTimeOffset.UtcNow, out var runAt, out var runAtError))
+            {
+                return Results.BadRequest(runAtError);
+            }
+
             ManagerBarQueueEntryDto? entry;
             if (request.Action is not null)
             {
+                if (runAt is not null)
+                {
+                    return Results.BadRequest("Delayed queue items are supported for prompt turns only.");
+                }
+
                 var (accepted, queuedEntry) = await managerBarQueueService
                     .SubmitActionAsync(request.SessionId, request.Action, ct)
                     .ConfigureAwait(false);
@@ -111,20 +121,33 @@ public static partial class SessionApiEndpoints
             }
             else if (request.Turn is not null)
             {
-                var (accepted, queuedEntry) = await managerBarQueueService
-                    .SubmitPromptAsync(request.SessionId, request.Turn, ct)
-                    .ConfigureAwait(false);
-                if (!accepted)
+                if (runAt is not null)
                 {
-                    return Results.BadRequest("Only queued command-bay items can be enqueued.");
-                }
+                    entry = managerBarQueueService.EnqueuePromptAt(request.SessionId, request.Turn, runAt.Value);
+                    if (entry is null)
+                    {
+                        return Results.BadRequest("Only queued command-bay items can be enqueued.");
+                    }
 
-                if (queuedEntry is null)
+                    return Results.Json(entry, AppJsonContext.Default.ManagerBarQueueEntryDto);
+                }
+                else
                 {
-                    return Results.Ok();
-                }
+                    var (accepted, queuedEntry) = await managerBarQueueService
+                        .SubmitPromptAsync(request.SessionId, request.Turn, ct)
+                        .ConfigureAwait(false);
+                    if (!accepted)
+                    {
+                        return Results.BadRequest("Only queued command-bay items can be enqueued.");
+                    }
 
-                entry = queuedEntry;
+                    if (queuedEntry is null)
+                    {
+                        return Results.Ok();
+                    }
+
+                    entry = queuedEntry;
+                }
             }
             else
             {
@@ -940,6 +963,61 @@ public static partial class SessionApiEndpoints
             "interrupt-first" or "interruptfirst" => "interrupt-first",
             _ => null
         };
+    }
+
+    private static bool TryResolveQueueRunAt(
+        ManagerBarQueueEnqueueRequest request,
+        DateTimeOffset now,
+        out DateTimeOffset? runAt,
+        out string error)
+    {
+        runAt = null;
+        error = "";
+
+        var hasDelay = request.DelayMs is not null;
+        var hasRunAt = request.RunAt is not null;
+        if (!hasDelay && !hasRunAt)
+        {
+            return true;
+        }
+
+        if (hasDelay && hasRunAt)
+        {
+            error = "Provide either delayMs or runAt, not both.";
+            return false;
+        }
+
+        if (hasDelay)
+        {
+            var delayMs = request.DelayMs.GetValueOrDefault();
+            if (delayMs <= 0)
+            {
+                error = "delayMs must be positive.";
+                return false;
+            }
+
+            try
+            {
+                runAt = now.AddMilliseconds(delayMs);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                error = "delayMs is too large.";
+                return false;
+            }
+
+            return true;
+        }
+
+        var requestedRunAt = request.RunAt.GetValueOrDefault().ToUniversalTime();
+        if (requestedRunAt <= now.ToUniversalTime())
+        {
+            error = "runAt must be in the future.";
+            return false;
+        }
+
+        runAt = requestedRunAt;
+        return true;
     }
 
     private static async Task ExecutePromptPlanAsync(

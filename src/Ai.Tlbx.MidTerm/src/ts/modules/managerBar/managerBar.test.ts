@@ -154,6 +154,8 @@ describe('manager bar visibility', () => {
     expect(managerBarSource).toContain(
       'function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {',
     );
+    expect(managerBarSource).toContain("if (entry.kind === 'prompt' && entry.nextRunAt) {");
+    expect(managerBarSource).toContain('function formatQueuedPromptRunAt(value: string): string {');
     expect(managerBarSource).toContain("return t('managerBar.modal.singlePrompt');");
     expect(managerBarSource).toContain(
       'function usesTurnQueueForSession(sessionId: string): boolean {',

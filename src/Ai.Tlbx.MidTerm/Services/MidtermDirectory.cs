@@ -203,6 +203,8 @@ public static class MidtermDirectory
         | `mt_prompt [id] <text...>` | State-aware prompt delivery: bootstrapped workers auto-resume from shell, idle prompts append, busy turns interrupt when needed |
         | `mt_prompt_now [id] <text...>` | Force interrupt-first prompt delivery |
         | `mt_slash [id] <command...>` | Send slash commands through the prompt path |
+        | `mt_wake [id] <delay> <text...>` | Queue a prompt to run later (`30s`, `5m`, `2h`, `1d`; visible and cancelable in the Command Bay queue) |
+        | `mt_wake_cancel <queueId>` | Cancel a queued wake/prompt/action item by queue id |
         | `mt_sendkeys [id] <keys...>` | Send named keys like `Enter`, `C-c`, `Escape`, `Up` |
         | `mt_enter` / `mt_ctrlc` / `mt_escape` | Convenience key sends for the current or target session |
         | `mt_up` / `mt_down` / `mt_left` / `mt_right` | Convenience cursor-key sends |
@@ -338,6 +340,7 @@ public static class MidtermDirectory
         - mt_prompt is state-aware: bootstrapped workers auto-resume from shell, and shell vs idle prompt vs busy turn should be decided by MidTerm, not guessed ad hoc by the supervisor
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended
         - mt_slash routes slash commands like `/status` or `/compact` through the same prompt path instead of pasting them manually
+        - mt_wake queues a future prompt through the Command Bay queue, so delayed work survives helper reloads and can be canceled from the queue
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
         - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; add every additional repo you use that is not the cwd before falling back to ad hoc shell git checks
         - mt_bootstrap creates a fresh agent-controlled worker session, injects `.midterm`, launches the chosen AI CLI profile, and can immediately send slash commands

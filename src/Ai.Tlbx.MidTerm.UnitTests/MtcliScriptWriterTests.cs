@@ -159,6 +159,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_prompt()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_prompt_now()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_slash()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_wake()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_wake_cancel()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_sendkeys()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_inject()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_activity()", shell, StringComparison.Ordinal);
@@ -170,6 +172,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Prompt", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-PromptNow", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Slash", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Wake", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-WakeCancel", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-SendKeys", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Inject", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Activity", powershell, StringComparison.Ordinal);
@@ -178,12 +182,14 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_open -Value Mt-Open", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_prompt -Value Mt-Prompt", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_wake -Value Mt-Wake", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_status -Value Mt-Status", powershell, StringComparison.Ordinal);
         Assert.Contains("ValueFromRemainingArguments", powershell, StringComparison.Ordinal);
         Assert.Contains("/buffer/tail?lines=", shell, StringComparison.Ordinal);
         Assert.Contains("/input/keys", powershell, StringComparison.Ordinal);
         Assert.Contains("/input/text", shell, StringComparison.Ordinal);
         Assert.Contains("/input/prompt", shell, StringComparison.Ordinal);
+        Assert.Contains("/api/command-bay/queue", shell, StringComparison.Ordinal);
         Assert.Contains("/inject-guidance", shell, StringComparison.Ordinal);
         Assert.Contains("/api/sessions/attention", shell, StringComparison.Ordinal);
         Assert.Contains("/api/workers/bootstrap", powershell, StringComparison.Ordinal);
@@ -266,6 +272,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_prompt", agents, StringComparison.Ordinal);
         Assert.Contains("mt_prompt_now", agents, StringComparison.Ordinal);
         Assert.Contains("mt_slash", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_wake", agents, StringComparison.Ordinal);
         Assert.Contains("mt_sendkeys", agents, StringComparison.Ordinal);
         Assert.Contains("mt_activity", agents, StringComparison.Ordinal);
         Assert.Contains("mt_attention", agents, StringComparison.Ordinal);
