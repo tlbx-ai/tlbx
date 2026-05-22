@@ -57,6 +57,8 @@ public static class MuxProtocol
     public const byte BufferRequestModeFullReplay = 0x00;
     public const byte BufferRequestModeQuickResume = 0x01;
 
+    public readonly record struct BufferRequestOptions(bool QuickResume, int? ReplayRows);
+
     public static byte[] CreateOutputFrame(string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data)
     {
         var frame = new byte[OutputHeaderSize + data.Length];
@@ -289,18 +291,42 @@ public static class MuxProtocol
         return frame;
     }
 
-    public static byte[] CreateBufferRequestFrame(string sessionId, bool quickResume)
+    public static byte[] CreateBufferRequestFrame(string sessionId, bool quickResume, int? replayRows = null)
     {
-        var frame = new byte[HeaderSize + 1];
+        var includeReplayRows = replayRows is > 0;
+        var frame = new byte[HeaderSize + (includeReplayRows ? 3 : 1)];
         frame[0] = TypeBufferRequest;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
         frame[HeaderSize] = quickResume ? BufferRequestModeQuickResume : BufferRequestModeFullReplay;
+        if (includeReplayRows)
+        {
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                frame.AsSpan(HeaderSize + 1, 2),
+                (ushort)Math.Clamp(replayRows!.Value, 1, ushort.MaxValue));
+        }
         return frame;
     }
 
     public static bool ParseBufferRequestQuickResume(ReadOnlySpan<byte> payload)
     {
         return payload.Length > 0 && payload[0] == BufferRequestModeQuickResume;
+    }
+
+    public static BufferRequestOptions ParseBufferRequestOptions(ReadOnlySpan<byte> payload)
+    {
+        var quickResume = ParseBufferRequestQuickResume(payload);
+        int? replayRows = null;
+
+        if (payload.Length >= 3)
+        {
+            var rows = BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(1, 2));
+            if (rows > 0)
+            {
+                replayRows = rows;
+            }
+        }
+
+        return new BufferRequestOptions(quickResume, replayRows);
     }
 
     public static byte[] CreateVisibleSessionsHintFrame(IReadOnlyCollection<string> sessionIds)

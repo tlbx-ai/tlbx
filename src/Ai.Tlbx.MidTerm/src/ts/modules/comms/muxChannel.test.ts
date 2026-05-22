@@ -50,7 +50,7 @@ vi.mock('../../utils', async (importOriginal) => {
     ...actual,
     checkVersionAndReload: vi.fn().mockResolvedValue(undefined),
     closeWebSocket: vi.fn(),
-    createWsUrl: () => 'ws://midterm.test/ws/mux',
+    createWsUrl: (path: string) => `ws://midterm.test${path}`,
   };
 });
 
@@ -142,6 +142,7 @@ function buildSequencedOutputMessage(
 function attachFakeTerminal(
   sessionTerminals: (typeof import('../../state'))['sessionTerminals'],
   sessionId: string,
+  rows = 24,
 ): FakeTerminalHarness {
   const pendingCallbacks: Array<() => void> = [];
   const writeMock = vi.fn((_data: Uint8Array | string, callback?: () => void) => {
@@ -162,7 +163,7 @@ function attachFakeTerminal(
   sessionTerminals.set(sessionId, {
     terminal: {
       cols: 80,
-      rows: 24,
+      rows,
       modes: { synchronizedOutputMode: false },
       write: writeMock,
       resize: vi.fn(),
@@ -171,7 +172,7 @@ function attachFakeTerminal(
     fitAddon: {} as never,
     container,
     serverCols: 80,
-    serverRows: 24,
+    serverRows: rows,
     opened: true,
   } as never);
 
@@ -396,6 +397,19 @@ describe('muxChannel', () => {
     expect(new TextDecoder().decode(replayData)).toBe('\x1b[31mXYZ');
   });
 
+  it('sends local replay rows on mux reconnect', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234', 37);
+
+    connectMuxWebSocket();
+
+    const ws = MockWebSocket.instances.at(-1);
+    expect(ws).toBeDefined();
+    const url = new URL(ws!.url);
+    expect(url.searchParams.get('activeSessionId')).toBe('sess1234');
+    expect(url.searchParams.get('replayRows')).toBe('37');
+  });
+
   it('requests full replay when sessions become streamable in full replay mode', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     harness.stores.$currentSettings.set({ resumeMode: 'fullReplay' } as never);
@@ -410,6 +424,27 @@ describe('muxChannel', () => {
     expect(frames[1]?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
     expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_BUFFER_REQUEST);
     expect(frames[2]?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+  });
+
+  it('includes local replay rows in buffer refresh requests', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234', 41);
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess1234', []);
+
+    const frame = harness.ws.send.mock.calls
+      .map((call) => call[0] as Uint8Array)
+      .find((candidate) => candidate[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(frame).toBeDefined();
+    expect(frame?.byteLength).toBe(harness.constants.MUX_HEADER_SIZE + 3);
+    expect(frame?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+    expect(
+      new DataView(frame!.buffer, frame!.byteOffset, frame!.byteLength).getUint16(
+        harness.constants.MUX_HEADER_SIZE + 1,
+        true,
+      ),
+    ).toBe(41);
   });
 
   it('requests resync instead of dropping partial terminal frames when browser output queue exceeds byte budget', async () => {

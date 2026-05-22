@@ -481,8 +481,6 @@ public sealed class MuxClient : IAsyncDisposable
         if (WebSocket.State != WebSocketState.Open) return;
         if (_flushSuspended) return;
 
-        DiscardHiddenSessionBuffers();
-
         // Active session first — ensures it gets WebSocket priority ahead of background flushes
         var activeId = _activeSessionId;
         if (activeId is not null
@@ -615,26 +613,6 @@ public sealed class MuxClient : IAsyncDisposable
         }
     }
 
-    private void DiscardHiddenSessionBuffers()
-    {
-        if (_getResumeMode() != TerminalResumeModeSetting.QuickResume)
-        {
-            return;
-        }
-
-        foreach (var (sessionId, buffer) in _sessionBuffers)
-        {
-            if (ShouldDeliverSession(sessionId) || buffer.TotalBytes == 0)
-            {
-                continue;
-            }
-
-            buffer.Reset();
-            buffer.DroppedBytes = 0;
-            buffer.QueuedAtTicks = 0;
-        }
-    }
-
     private async Task SendFrameAsync(byte[] data)
     {
         await _sendLock.WaitAsync(_cts.Token).ConfigureAwait(false);
@@ -710,18 +688,7 @@ public sealed class MuxClient : IAsyncDisposable
 
     public bool ShouldDeliverSession(string sessionId)
     {
-        if (!CanAccessSession(sessionId))
-        {
-            return false;
-        }
-
-        if (string.Equals(_activeSessionId, sessionId, StringComparison.Ordinal)
-            || _visibleSessionIds.Contains(sessionId))
-        {
-            return true;
-        }
-
-        return false;
+        return CanAccessSession(sessionId);
     }
 
     public bool ShouldUseQuickResume()

@@ -15,6 +15,13 @@ public sealed class MuxWebSocketHandler
     private const int ReplayFrameChunkBytes = 32 * 1024;
     private const int QuickResumeShellBurstBytes = 192 * 1024;
     private const int QuickResumeInteractiveBurstBytes = 64 * 1024;
+    private const int ReplayRowsMinimum = 10;
+    private const int ReplayRowsMaximum = 500;
+    private const int ReplayRowsOverscan = 12;
+    private const int ReplayBytesPerCell = 24;
+    private const int ReplayBytesPadding = 32 * 1024;
+    private const int ReplayBytesMinimum = 32 * 1024;
+    private const int ReplayBytesMaximum = 256 * 1024;
     private readonly TtyHostSessionManager _sessionManager;
     private readonly TtyHostMuxConnectionManager _muxManager;
     private readonly SettingsService _settingsService;
@@ -69,6 +76,7 @@ public sealed class MuxWebSocketHandler
         var client = _muxManager.AddClient(clientId, ws, shareAccess?.SessionId);
         var initialPrioritySessionId = ResolveInitialPrioritySessionId(context, shareAccess);
         var initialVisibleSessionIds = ResolveInitialVisibleSessionIds(context, shareAccess);
+        var initialReplayRows = ResolveInitialReplayRows(context);
         Task? deferredReplayTask = null;
         using var deferredReplayCts = CancellationTokenSource.CreateLinkedTokenSource(_shutdownService.Token);
 
@@ -126,6 +134,8 @@ public sealed class MuxWebSocketHandler
                     shareAccess?.SessionId,
                     prioritySessionId: initialPrioritySessionId,
                     replayMode: InitialReplayMode.All,
+                    quickResumeEnabled,
+                    initialReplayRows,
                     deferredReplayCts.Token);
             }
             else
@@ -135,6 +145,8 @@ public sealed class MuxWebSocketHandler
                     shareAccess?.SessionId,
                     initialPrioritySessionId,
                     InitialReplayMode.PriorityOnly,
+                    quickResumeEnabled,
+                    initialReplayRows,
                     deferredReplayCts.Token);
             }
             await client.TrySendAsync(MuxProtocol.CreateSyncCompleteFrame());
@@ -146,6 +158,8 @@ public sealed class MuxWebSocketHandler
                     shareAccess?.SessionId,
                     initialPrioritySessionId,
                     InitialReplayMode.NonPriorityOnly,
+                    quickResumeEnabled,
+                    initialReplayRows,
                     deferredReplayCts.Token);
             }
             await ProcessMessagesAsync(ws, clientId, client, shareAccess);
@@ -240,6 +254,19 @@ public sealed class MuxWebSocketHandler
         return visibleSessionIds;
     }
 
+    private static int? ResolveInitialReplayRows(HttpContext context)
+    {
+        var raw = context.Request.Query["replayRows"].ToString();
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        return int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var rows) && rows > 0
+            ? rows
+            : null;
+    }
+
     private IEnumerable<SessionInfo> GetInitialReplaySessions(
         string? allowedSessionId,
         string? prioritySessionId,
@@ -286,6 +313,8 @@ public sealed class MuxWebSocketHandler
         string? allowedSessionId,
         string? prioritySessionId,
         InitialReplayMode replayMode,
+        bool quickResumeEnabled,
+        int? replayRows,
         CancellationToken ct)
     {
         foreach (var sessionInfo in GetInitialReplaySessions(allowedSessionId, prioritySessionId, replayMode))
@@ -300,7 +329,7 @@ public sealed class MuxWebSocketHandler
             {
                 var snapshot = await _sessionManager.GetBufferAsync(
                     sessionInfo.Id,
-                    maxBytes: null,
+                    maxBytes: ResolveReplayMaxBytes(sessionInfo, replayRows, quickResumeEnabled),
                     TerminalReplayReason.ReconnectTailReplay,
                     ct);
                 if (snapshot is null || snapshot.Data.Length == 0) continue;
@@ -460,10 +489,12 @@ public sealed class MuxWebSocketHandler
                 break;
 
             case MuxProtocol.TypeBufferRequest:
+                var bufferRequest = MuxProtocol.ParseBufferRequestOptions(payload);
                 await SendBufferForSessionAsync(
                     client,
                     sessionId,
-                    MuxProtocol.ParseBufferRequestQuickResume(payload));
+                    bufferRequest.QuickResume,
+                    bufferRequest.ReplayRows);
                 break;
 
             case MuxProtocol.TypeActiveSessionHint:
@@ -527,7 +558,11 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private async Task SendBufferForSessionAsync(MuxClient client, string sessionId, bool quickResumeRequested)
+    private async Task SendBufferForSessionAsync(
+        MuxClient client,
+        string sessionId,
+        bool quickResumeRequested,
+        int? replayRows)
     {
         try
         {
@@ -541,7 +576,7 @@ public sealed class MuxWebSocketHandler
             var quickResume = quickResumeRequested && client.ShouldUseQuickResume();
             var snapshot = await _sessionManager.GetBufferAsync(
                 sessionId,
-                maxBytes: quickResume ? ResolveQuickResumeBurstBytes(session) : null,
+                maxBytes: ResolveReplayMaxBytes(session, replayRows, quickResume),
                 quickResume ? TerminalReplayReason.QuickResumeTailReplay : TerminalReplayReason.BufferRefreshTailReplay,
                 _shutdownService.Token);
             if (snapshot is null)
@@ -563,18 +598,36 @@ public sealed class MuxWebSocketHandler
         }
     }
 
-    private int ResolveQuickResumeBurstBytes(SessionInfo session)
+    private int? ResolveReplayMaxBytes(SessionInfo session, int? replayRows, bool quickResume)
     {
         var configuredScrollbackBytes = Math.Clamp(
             _settingsService.Load().ScrollbackBytes,
             MidTermSettings.MinScrollbackBytes,
             MidTermSettings.MaxScrollbackBytes);
 
+        if (replayRows is > 0)
+        {
+            return Math.Min(configuredScrollbackBytes, ResolveViewportReplayBytes(session, replayRows.Value));
+        }
+
+        return quickResume ? ResolveQuickResumeBurstBytes(session, configuredScrollbackBytes) : null;
+    }
+
+    private static int ResolveQuickResumeBurstBytes(SessionInfo session, int configuredScrollbackBytes)
+    {
         var burstBytes = IsLikelyLineBasedShell(session)
             ? QuickResumeShellBurstBytes
             : QuickResumeInteractiveBurstBytes;
 
         return Math.Min(configuredScrollbackBytes, burstBytes);
+    }
+
+    internal static int ResolveViewportReplayBytes(SessionInfo session, int replayRows)
+    {
+        var cols = Math.Clamp(session.Cols > 0 ? session.Cols : 80, 40, 300);
+        var rows = Math.Clamp(replayRows, ReplayRowsMinimum, ReplayRowsMaximum) + ReplayRowsOverscan;
+        var estimatedBytes = ((long)cols * rows * ReplayBytesPerCell) + ReplayBytesPadding;
+        return (int)Math.Clamp(estimatedBytes, ReplayBytesMinimum, ReplayBytesMaximum);
     }
 
     private static bool IsLikelyLineBasedShell(SessionInfo session)

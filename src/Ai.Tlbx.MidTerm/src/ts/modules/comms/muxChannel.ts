@@ -36,6 +36,7 @@ import {
   showBurstCursor,
 } from './cursorVisibility';
 import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
+import { resolveReplayRowsFromTerminals } from './muxReplayRows';
 import {
   armOutputRttMeasurement as armTrackedOutputRttMeasurement,
   consumeCompletedOutputRtt,
@@ -450,6 +451,15 @@ function getStreamableSessionIds(
     streamable.add(activeSessionId);
   }
   return streamable;
+}
+
+function getReplayRows(sessionId?: string | null): number | null {
+  return resolveReplayRowsFromTerminals(
+    sessionId,
+    $activeSessionId.get(),
+    sessionTerminals,
+    isHubSessionId,
+  );
 }
 
 // =============================================================================
@@ -1101,6 +1111,10 @@ export function connectMuxWebSocket(): void {
   if (currentVisibleSessionIds.length > 0) {
     query.set('visibleSessionIds', currentVisibleSessionIds.join(','));
   }
+  const replayRows = getReplayRows(activeId);
+  if (replayRows !== null) {
+    query.set('replayRows', String(replayRows));
+  }
   const wsPathBase = isSharedSessionRoute() ? '/ws/share/mux' : '/ws/mux';
   const wsPath = query.size > 0 ? `${wsPathBase}?${query.toString()}` : wsPathBase;
   const ws = new WebSocket(createWsUrl(wsPath));
@@ -1356,10 +1370,15 @@ export function requestBufferRefresh(
     mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
-  const frame = new Uint8Array(MUX_HEADER_SIZE + 1);
+  const replayRows = getReplayRows(sessionId);
+  const frame = new Uint8Array(MUX_HEADER_SIZE + (replayRows === null ? 1 : 3));
   frame[0] = MUX_TYPE_BUFFER_REQUEST;
   encodeSessionId(frame, 1, sessionId);
   frame[MUX_HEADER_SIZE] = mode === 'quickResume' ? 1 : 0;
+  if (replayRows !== null) {
+    frame[MUX_HEADER_SIZE + 1] = replayRows & 0xff;
+    frame[MUX_HEADER_SIZE + 2] = (replayRows >> 8) & 0xff;
+  }
   sendFrame(frame);
 }
 

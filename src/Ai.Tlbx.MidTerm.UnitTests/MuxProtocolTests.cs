@@ -225,12 +225,27 @@ public class MuxProtocolTests
     [Fact]
     public void CreateBufferRequestFrame_RoundTrips_QuickResumeMode()
     {
-        var frame = MuxProtocol.CreateBufferRequestFrame("session1", quickResume: true);
+        var frame = MuxProtocol.CreateBufferRequestFrame("session1", quickResume: true, replayRows: 42);
 
         Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
         Assert.Equal(MuxProtocol.TypeBufferRequest, type);
         Assert.Equal("session1", sessionId);
         Assert.True(MuxProtocol.ParseBufferRequestQuickResume(payload));
+
+        var options = MuxProtocol.ParseBufferRequestOptions(payload);
+        Assert.True(options.QuickResume);
+        Assert.Equal(42, options.ReplayRows);
+    }
+
+    [Fact]
+    public void ParseBufferRequestOptions_AcceptsLegacyOneBytePayload()
+    {
+        Span<byte> payload = [MuxProtocol.BufferRequestModeFullReplay];
+
+        var options = MuxProtocol.ParseBufferRequestOptions(payload);
+
+        Assert.False(options.QuickResume);
+        Assert.Null(options.ReplayRows);
     }
 
     [Fact]
