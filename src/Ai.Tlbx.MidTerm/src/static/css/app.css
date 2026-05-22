@@ -2442,17 +2442,13 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
   padding: 6px 12px;
   font-size: var(--fs-xs);
   color: var(--text-muted);
-  background-color: var(--bg-sidebar);
+  background-color: transparent;
   overflow: visible;
 }
 
 .sidebar-footer:has(> .voice-section:not(.hidden):not(.collapsed)),
 .sidebar-footer:has(> .network-section:not(.collapsed)) {
-  background-color: color-mix(
-    in srgb,
-    var(--bg-sidebar) 50%,
-    var(--bg-sidebar-opaque, var(--bg-sidebar)) 50%
-  );
+  background-color: transparent;
 }
 
 .sidebar-footer .footer-row {
