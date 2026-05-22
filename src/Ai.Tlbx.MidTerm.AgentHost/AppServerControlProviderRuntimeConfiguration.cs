@@ -96,8 +96,16 @@ internal static class AppServerControlProviderRuntimeConfiguration
 
     public static string? GetGrokDefaultModel()
     {
-        return NormalizeOptionalValue(Environment.GetEnvironmentVariable(GrokDefaultModelEnvironmentVariable))
+        return NormalizeGrokModel(Environment.GetEnvironmentVariable(GrokDefaultModelEnvironmentVariable))
                ?? DefaultGrokModel;
+    }
+
+    public static string? NormalizeGrokModel(string? value)
+    {
+        var normalized = NormalizeOptionalValue(value);
+        return string.Equals(normalized, "grok-build", StringComparison.OrdinalIgnoreCase)
+            ? DefaultGrokModel
+            : normalized;
     }
 
     private static IReadOnlyDictionary<string, string> ReadEnvironmentVariables(string provider)

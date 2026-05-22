@@ -93,6 +93,17 @@ public sealed class MtAgentHostGrokIntegrationTests
             Assert.Contains("Fake Grok reply.", turnWindow.Streams.AssistantText, StringComparison.Ordinal);
             Assert.Contains("Fake Grok is thinking.", turnWindow.Streams.ReasoningText, StringComparison.Ordinal);
             Assert.Contains(turnWindow.Items, item => item.ItemType == "dynamic_tool_call" && item.Status == "completed");
+            Assert.Contains(
+                turnWindow.Notices,
+                notice => notice.Type == "agent.state" &&
+                          notice.Message.Contains("Grok commands available: compact, always-approve.", StringComparison.Ordinal));
+            Assert.Contains(
+                turnWindow.Notices,
+                notice => notice.Type == "agent.state" &&
+                          notice.Message.Contains("Fake Grok notification: Session notification handled.", StringComparison.Ordinal));
+            Assert.DoesNotContain(
+                turnWindow.Notices,
+                notice => notice.Message.Contains("ignored", StringComparison.OrdinalIgnoreCase));
         }
         finally
         {

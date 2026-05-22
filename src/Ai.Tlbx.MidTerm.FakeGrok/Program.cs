@@ -52,10 +52,21 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                 sessionId,
                 models = BuildModelState()
             }).ConfigureAwait(false);
+            await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
             break;
         case "session/prompt":
             activePromptId = id.ToString();
             var text = ReadPromptText(root);
+            await WriteAvailableCommandsUpdateAsync(sessionId).ConfigureAwait(false);
+            await WriteNotificationAsync("_x.ai/session_notification", new
+            {
+                sessionId,
+                notification = new
+                {
+                    title = "Fake Grok notification",
+                    message = "Session notification handled."
+                }
+            }).ConfigureAwait(false);
             await WriteNotificationAsync("session/update", new
             {
                 sessionId,
@@ -188,6 +199,41 @@ static object BuildModelState()
             new { modelId = "grok-4.3", name = "grok-4.3" }
         }
     };
+}
+
+static async Task WriteAvailableCommandsUpdateAsync(string sessionId)
+{
+    await WriteNotificationAsync("session/update", new
+    {
+        sessionId,
+        update = new
+        {
+            sessionUpdate = "available_commands_update",
+            availableCommands = new object[]
+            {
+                new
+                {
+                    name = "compact",
+                    description = "Compress conversation history to save context window",
+                    input = new { hint = "optional context about what to preserve" }
+                },
+                new
+                {
+                    name = "always-approve",
+                    description = "Toggle always-approve mode",
+                    input = new { hint = "on|off" }
+                }
+            },
+            _meta = new
+            {
+                tools = new[]
+                {
+                    "run_terminal_command",
+                    "read_file"
+                }
+            }
+        }
+    }).ConfigureAwait(false);
 }
 
 static string ReadPromptText(JsonElement root)

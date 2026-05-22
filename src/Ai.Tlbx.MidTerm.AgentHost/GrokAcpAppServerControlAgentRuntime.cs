@@ -34,6 +34,8 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     private string? _activeTurnId;
     private string? _activeTurnModel;
     private string? _activeTurnEffort;
+    private string? _availableCommandsSignature;
+    private string? _lastSessionNotificationSignature;
     private AppServerControlQuickSettingsSummary _quickSettings = new();
     private int _nextRequestId;
     private long _sequence;
@@ -535,7 +537,13 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         switch (method)
         {
             case "session/update":
+            case "x.ai/session/update":
+            case "_x.ai/session/update":
                 HandleSessionUpdate(root, line);
+                break;
+            case "x.ai/session_notification":
+            case "_x.ai/session_notification":
+                HandleSessionNotification(root, line, method);
                 break;
             case "session/request_permission":
                 await HandlePermissionRequestAsync(root, line, ct).ConfigureAwait(false);
@@ -592,6 +600,16 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
         }
 
         var updateType = GetString(updateElement, "sessionUpdate");
+        switch (updateType)
+        {
+            case "available_commands_update":
+                HandleAvailableCommandsUpdate(updateElement, root, rawLine);
+                return;
+            case "config_option_update":
+                HandleConfigOptionUpdate(updateElement, root, rawLine);
+                return;
+        }
+
         var turnId = _activeTurnId;
         if (string.IsNullOrWhiteSpace(turnId))
         {
@@ -615,9 +633,6 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             case "tool_call_update":
                 HandleToolCallUpdate(turnId, updateElement, root, rawLine);
                 break;
-            case "config_option_update":
-                HandleConfigOptionUpdate(updateElement, root, rawLine);
-                break;
             default:
                 if (!string.IsNullOrWhiteSpace(updateType))
                 {
@@ -626,6 +641,47 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
                 break;
         }
+    }
+
+    private void HandleAvailableCommandsUpdate(JsonElement update, JsonElement root, string rawLine)
+    {
+        var commands = ReadAvailableCommandNames(update);
+        var tools = ReadMetaTools(update);
+        if (commands.Count == 0 && tools.Count == 0)
+        {
+            return;
+        }
+
+        var signature = string.Join('\n', commands) + "\u001f" + string.Join('\n', tools);
+        if (string.Equals(signature, _availableCommandsSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _availableCommandsSignature = signature;
+        var message = commands.Count == 0
+            ? "Grok ACP tools updated."
+            : $"Grok commands available: {FormatNamePreview(commands)}.";
+        var detail = BuildAvailableCommandsDetail(commands, tools);
+        EmitRuntimeMessage("agent.state", message, detail, "grok.acp", "available_commands_update", root, rawLine);
+    }
+
+    private void HandleSessionNotification(JsonElement root, string rawLine, string? method)
+    {
+        var message = BuildSessionNotificationMessage(root);
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        var signature = method + "\u001f" + message + "\u001f" + rawLine;
+        if (string.Equals(signature, _lastSessionNotificationSignature, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _lastSessionNotificationSignature = signature;
+        EmitRuntimeMessage("agent.state", message, rawLine, "grok.acp", method, root, rawLine);
     }
 
     private async Task HandlePermissionRequestAsync(JsonElement root, string rawLine, CancellationToken ct)
@@ -1059,8 +1115,9 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private AppServerControlQuickSettingsSummary ResolveRequestedQuickSettings(AppServerControlTurnRequest request)
     {
+        var requestedModel = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(request.Model);
         return AppServerControlQuickSettings.CreateSummary(
-            request.Model ?? _quickSettings.Model,
+            requestedModel ?? _quickSettings.Model,
             request.Effort ?? _quickSettings.Effort,
             request.PlanMode ?? _quickSettings.PlanMode,
             request.PermissionMode ?? _quickSettings.PermissionMode,
@@ -1083,7 +1140,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     private AppServerControlQuickSettingsSummary CreateQuickSettingsFromState(JsonElement initializeResult, JsonElement sessionResult)
     {
         var modelState = Traverse(sessionResult, "models") ?? Traverse(initializeResult, "_meta", "modelState");
-        var model = GetString(modelState, "currentModelId")
+        var model = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(GetString(modelState, "currentModelId"))
                     ?? _quickSettings.Model
                     ?? AppServerControlProviderRuntimeConfiguration.GetGrokDefaultModel();
         var summary = AppServerControlQuickSettings.CreateSummary(
@@ -1131,7 +1188,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             if (string.Equals(category, "model", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(id, "model", StringComparison.OrdinalIgnoreCase))
             {
-                next.Model = currentValue;
+                next.Model = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(currentValue);
                 next.ModelOptions = ReadConfigValueOptions(option);
             }
             else if (string.Equals(category, "thought_level", StringComparison.OrdinalIgnoreCase) ||
@@ -1375,19 +1432,31 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
 
     private void EmitRuntimeMessage(string type, string message, string? detail)
     {
+        EmitRuntimeMessage(type, message, detail, "grok.acp", type, new { message, detail }, null);
+    }
+
+    private void EmitRuntimeMessage(
+        string type,
+        string message,
+        string? detail,
+        string source,
+        string? method,
+        object? payload,
+        string? rawLine)
+    {
         if (string.IsNullOrWhiteSpace(_sessionId))
         {
             return;
         }
 
-        _emit(CreateEvent(type, _activeTurnId, null, null, "grok.acp", type, new { message, detail }, appServerControlEvent =>
+        _emit(CreateEvent(type, _activeTurnId, null, null, source, method, payload, appServerControlEvent =>
         {
             appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
             {
                 Message = message,
                 Detail = detail
             };
-        }));
+        }, rawLine));
     }
 
     private static string BuildArguments(string permissionMode, string? model)
@@ -1397,10 +1466,11 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
             "agent"
         };
 
-        if (!string.IsNullOrWhiteSpace(model))
+        var normalizedModel = AppServerControlProviderRuntimeConfiguration.NormalizeGrokModel(model);
+        if (!string.IsNullOrWhiteSpace(normalizedModel))
         {
             args.Add("-m");
-            args.Add(model.Trim());
+            args.Add(normalizedModel);
         }
 
         if (string.Equals(permissionMode, AppServerControlQuickSettings.PermissionModeAuto, StringComparison.Ordinal))
@@ -1553,6 +1623,114 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
     {
         var content = Traverse(update, "content");
         return ExtractText(content);
+    }
+
+    private static List<string> ReadAvailableCommandNames(JsonElement update)
+    {
+        var commands = Traverse(update, "availableCommands");
+        if (commands is not { ValueKind: JsonValueKind.Array } array)
+        {
+            return [];
+        }
+
+        var result = new List<string>();
+        using var commandEnumerator = array.EnumerateArray();
+        while (commandEnumerator.MoveNext())
+        {
+            var name = GetString(commandEnumerator.Current, "name");
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                result.Add(name);
+            }
+        }
+
+        return result.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private static List<string> ReadMetaTools(JsonElement update)
+    {
+        var tools = Traverse(update, "_meta", "tools");
+        if (tools is not { ValueKind: JsonValueKind.Array } array)
+        {
+            return [];
+        }
+
+        var result = new List<string>();
+        using var toolEnumerator = array.EnumerateArray();
+        while (toolEnumerator.MoveNext())
+        {
+            var tool = toolEnumerator.Current;
+            if (tool.ValueKind == JsonValueKind.String)
+            {
+                var name = tool.GetString();
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    result.Add(name);
+                }
+            }
+        }
+
+        return result.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private static string FormatNamePreview(IReadOnlyList<string> names)
+    {
+        const int previewLimit = 8;
+        var preview = string.Join(", ", names.Take(previewLimit));
+        return names.Count <= previewLimit
+            ? preview
+            : $"{preview}, +{(names.Count - previewLimit).ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    private static string BuildAvailableCommandsDetail(IReadOnlyList<string> commands, IReadOnlyList<string> tools)
+    {
+        var builder = new StringBuilder();
+        if (commands.Count > 0)
+        {
+            builder.AppendLine($"Commands ({commands.Count.ToString(CultureInfo.InvariantCulture)}): {string.Join(", ", commands)}");
+        }
+
+        if (tools.Count > 0)
+        {
+            if (builder.Length > 0)
+            {
+                builder.AppendLine();
+            }
+
+            builder.AppendLine($"Tools ({tools.Count.ToString(CultureInfo.InvariantCulture)}): {string.Join(", ", tools)}");
+        }
+
+        return builder.ToString().Trim();
+    }
+
+    private static string? BuildSessionNotificationMessage(JsonElement root)
+    {
+        var parameters = Traverse(root, "params");
+        if (parameters is not { ValueKind: JsonValueKind.Object } parameterElement)
+        {
+            return null;
+        }
+
+        var notification = Traverse(parameterElement, "notification");
+        var source = notification is { ValueKind: JsonValueKind.Object } notificationElement
+            ? notificationElement
+            : parameterElement;
+        var title = GetString(source, "title");
+        var message = GetString(source, "message") ??
+                      GetString(source, "description") ??
+                      GetString(source, "status") ??
+                      GetString(source, "state") ??
+                      GetString(source, "type") ??
+                      GetString(source, "event");
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            return string.IsNullOrWhiteSpace(message) ? null : message;
+        }
+
+        return string.IsNullOrWhiteSpace(message) ||
+               string.Equals(title, message, StringComparison.Ordinal)
+            ? title
+            : $"{title}: {message}";
     }
 
     private static string ExtractText(JsonElement? element)
