@@ -36,7 +36,8 @@ import {
   showBurstCursor,
 } from './cursorVisibility';
 import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
-import { resolveReplayRowsFromTerminals } from './muxReplayRows';
+import * as bgOutput from './backgroundOutputDeferral';
+import * as muxSessionRouting from './muxSessionRouting';
 import {
   armOutputRttMeasurement as armTrackedOutputRttMeasurement,
   consumeCompletedOutputRtt,
@@ -88,7 +89,6 @@ import {
   $muxWsConnected,
   $muxHasConnected,
   $activeSessionId,
-  $currentSettings,
   $stateWsConnected,
   $dataLossDetected,
 } from '../../stores';
@@ -434,34 +434,6 @@ let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
 let currentStreamableSessionIds = new Set<string>();
 
-function isQuickResumeEnabled(): boolean {
-  return $currentSettings.get()?.resumeMode === 'quickResume';
-}
-
-function normalizeSessionIds(sessionIds: readonly string[]): string[] {
-  return [...new Set(sessionIds.filter((sessionId) => !isHubSessionId(sessionId)))].sort();
-}
-
-function getStreamableSessionIds(
-  activeSessionId: string | null,
-  visibleSessionIds: readonly string[],
-): Set<string> {
-  const streamable = new Set<string>(visibleSessionIds);
-  if (activeSessionId && !isHubSessionId(activeSessionId)) {
-    streamable.add(activeSessionId);
-  }
-  return streamable;
-}
-
-function getReplayRows(sessionId?: string | null): number | null {
-  return resolveReplayRowsFromTerminals(
-    sessionId,
-    $activeSessionId.get(),
-    sessionTerminals,
-    isHubSessionId,
-  );
-}
-
 // =============================================================================
 // Per-Session Output Delivery
 // =============================================================================
@@ -723,6 +695,17 @@ function bufferPendingFrame(
 
 async function processOneFrame(item: OutputFrameItem, generation: number): Promise<void> {
   try {
+    const clearReplayGateAfterFrame = bgOutput.prepareBackgroundOutputDelivery(
+      item.sessionId,
+      item.payload,
+      item.compressed,
+      currentStreamableSessionIds,
+      currentVisibleSessionIds,
+    );
+    if (clearReplayGateAfterFrame === null) {
+      return;
+    }
+
     let cols: number;
     let rows: number;
     let data: Uint8Array;
@@ -754,6 +737,8 @@ async function processOneFrame(item: OutputFrameItem, generation: number): Promi
     } else if (trimmedData.length > 0) {
       bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, trimmedData);
     }
+
+    bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
   }
@@ -989,6 +974,7 @@ function handleMuxResyncFrame(type: number): boolean {
   });
   pendingOutputFrames.clear();
   sessionsNeedingResync.clear();
+  bgOutput.clearAllBackgroundReplayState();
   clearQueuedOutput();
   return true;
 }
@@ -1111,7 +1097,7 @@ export function connectMuxWebSocket(): void {
   if (currentVisibleSessionIds.length > 0) {
     query.set('visibleSessionIds', currentVisibleSessionIds.join(','));
   }
-  const replayRows = getReplayRows(activeId);
+  const replayRows = muxSessionRouting.getReplayRows(activeId);
   if (replayRows !== null) {
     query.set('replayRows', String(replayRows));
   }
@@ -1150,6 +1136,7 @@ export function connectMuxWebSocket(): void {
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
+      bgOutput.clearAllBackgroundReplayState();
       clearQueuedOutput();
       forEachLocalTerminal((_, sessionId) => {
         const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
@@ -1220,6 +1207,7 @@ export function connectMuxWebSocket(): void {
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
     replaySuppressedSessions.clear();
+    bgOutput.clearAllBackgroundReplayState();
     clearInputLatencyTraceInFlight();
     thawReconnectFreeze();
 
@@ -1370,7 +1358,7 @@ export function requestBufferRefresh(
     mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
-  const replayRows = getReplayRows(sessionId);
+  const replayRows = muxSessionRouting.getReplayRows(sessionId);
   const frame = new Uint8Array(MUX_HEADER_SIZE + (replayRows === null ? 1 : 3));
   frame[0] = MUX_TYPE_BUFFER_REQUEST;
   encodeSessionId(frame, 1, sessionId);
@@ -1379,6 +1367,7 @@ export function requestBufferRefresh(
     frame[MUX_HEADER_SIZE + 1] = replayRows & 0xff;
     frame[MUX_HEADER_SIZE + 2] = (replayRows >> 8) & 0xff;
   }
+  bgOutput.armBackgroundReplayGate(sessionId);
   sendFrame(frame);
 }
 
@@ -1407,7 +1396,7 @@ export function sendActiveSessionHint(sessionId: string | null): void {
 export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
-  const normalizedSessionIds = normalizeSessionIds(sessionIds);
+  const normalizedSessionIds = muxSessionRouting.normalizeSessionIds(sessionIds);
   const frame = new Uint8Array(MUX_HEADER_SIZE + normalizedSessionIds.length * 8);
   frame[0] = MUX_TYPE_VISIBLE_SESSIONS_HINT;
   let offset = MUX_HEADER_SIZE;
@@ -1422,12 +1411,12 @@ export function updateTerminalVisibility(
   activeSessionId: string | null,
   visibleSessionIds: readonly string[],
 ): void {
-  const normalizedVisibleSessionIds = normalizeSessionIds(visibleSessionIds);
-  const nextStreamableSessionIds = getStreamableSessionIds(
+  const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
+  const nextStreamableSessionIds = muxSessionRouting.getStreamableSessionIds(
     activeSessionId,
     normalizedVisibleSessionIds,
   );
-  const quickResumeEnabled = isQuickResumeEnabled();
+  const quickResumeEnabled = muxSessionRouting.isQuickResumeEnabled();
   const sessionsNeedingReplay: string[] = [];
 
   nextStreamableSessionIds.forEach((sessionId) => {
@@ -1515,6 +1504,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   currentStreamableSessionIds = new Set<string>();
 
   replaySuppressedSessions.clear();
+  bgOutput.clearAllBackgroundReplayState();
   browserTransportSnapshots.clear();
   bracketedPasteState.clear();
   outputRttListeners.clear();
