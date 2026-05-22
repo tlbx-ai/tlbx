@@ -336,7 +336,7 @@ function getAdaptiveFooterLayoutState(): AdaptiveFooterLayoutState {
         showInput,
         showStatus,
       });
-  const transparency = settings?.uiTransparency ?? 0;
+  const transparency = settings?.terminalTransparency ?? settings?.uiTransparency ?? 0;
 
   return {
     activeSessionId,

@@ -42,6 +42,7 @@ type AppServerControlPlanMode = AppServerControlQuickSettingsSummary['planMode']
 type AppServerControlPermissionMode = AppServerControlQuickSettingsSummary['permissionMode'];
 
 const QUICK_SETTINGS_PROVIDER_STORAGE_PREFIX = 'midterm:appServerControl-quick-settings:provider:';
+const DEFAULT_GROK_MODEL = 'grok-4.20-0309-non-reasoning';
 const DEFAULT_PLAN_MODE: AppServerControlPlanMode = 'off';
 const DEFAULT_PERMISSION_MODE: AppServerControlPermissionMode = 'manual';
 const sessionStates = new Map<string, AppServerControlQuickSettingsSessionState>();
@@ -61,6 +62,18 @@ function normalizeOptionalValue(value: string | null | undefined): string | null
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function normalizeProviderModel(
+  provider: string | null,
+  value: string | null | undefined,
+): string | null {
+  const normalized = normalizeOptionalValue(value);
+  if (provider === 'grok' && normalized === 'grok-build') {
+    return DEFAULT_GROK_MODEL;
+  }
+
+  return normalized;
 }
 
 function normalizePlanMode(value: string | null | undefined): AppServerControlPlanMode {
@@ -218,6 +231,10 @@ function resolveRememberedProviderModel(
     );
   }
 
+  if (provider === 'grok') {
+    return normalizeProviderModel(provider, legacyModel) ?? DEFAULT_GROK_MODEL;
+  }
+
   return legacyModel;
 }
 
@@ -310,7 +327,9 @@ function resolveSessionProvider(sessionId: string | null | undefined): string | 
   }
 
   const normalized = hinted.trim().toLowerCase();
-  return normalized === 'codex' || normalized === 'claude' ? normalized : null;
+  return normalized === 'codex' || normalized === 'claude' || normalized === 'grok'
+    ? normalized
+    : null;
 }
 
 function resolveDefaultPermissionMode(provider: string | null): AppServerControlPermissionMode {
@@ -341,7 +360,7 @@ function normalizeQuickSettings(
   provider: string | null,
 ): AppServerControlQuickSettingsSummary {
   return {
-    model: normalizeOptionalValue(settings?.model),
+    model: normalizeProviderModel(provider, settings?.model),
     effort: normalizeOptionalValue(settings?.effort),
     planMode: normalizePlanMode(settings?.planMode ?? DEFAULT_PLAN_MODE),
     permissionMode: normalizePermissionMode(

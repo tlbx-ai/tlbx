@@ -506,6 +506,7 @@ public sealed class HistoryService : IDisposable
         {
             "codex" => "codex",
             "claude" => "claude",
+            "grok" => "grok",
             _ => null
         };
     }
@@ -523,10 +524,14 @@ public sealed class HistoryService : IDisposable
             HistorySurfaceTypes.Terminal => HistorySurfaceTypes.Terminal,
             HistorySurfaceTypes.Codex => HistorySurfaceTypes.Codex,
             HistorySurfaceTypes.Claude => HistorySurfaceTypes.Claude,
+            HistorySurfaceTypes.Grok => HistorySurfaceTypes.Grok,
             _ => NormalizeLaunchMode(launchMode) == LaunchEntryLaunchModes.AppServerControl
-                ? NormalizeProfile(profile) == "claude"
-                    ? HistorySurfaceTypes.Claude
-                    : HistorySurfaceTypes.Codex
+                ? NormalizeProfile(profile) switch
+                {
+                    "claude" => HistorySurfaceTypes.Claude,
+                    "grok" => HistorySurfaceTypes.Grok,
+                    _ => HistorySurfaceTypes.Codex
+                }
                 : HistorySurfaceTypes.Terminal
         };
     }

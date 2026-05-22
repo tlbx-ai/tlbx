@@ -1,7 +1,7 @@
 import { t } from './i18n';
 
 export type SessionSurfaceMode = 'terminal' | 'agent';
-export type SessionAgentProfile = 'codex' | 'claude' | null;
+export type SessionAgentProfile = 'codex' | 'claude' | 'grok' | null;
 
 export interface SessionSurfaceLike {
   appServerControlOnly?: boolean | null;
@@ -12,7 +12,7 @@ export interface SessionSurfaceLike {
 }
 
 export function normalizeAgentProfile(profile: string | null | undefined): SessionAgentProfile {
-  return profile === 'codex' || profile === 'claude' ? profile : null;
+  return profile === 'codex' || profile === 'claude' || profile === 'grok' ? profile : null;
 }
 
 export function resolveSessionAgentProfile(
@@ -39,6 +39,10 @@ export function getAgentSurfaceLabel(session: SessionSurfaceLike | null | undefi
 
   if (profile === 'claude') {
     return t('sessionLauncher.claudeTitle');
+  }
+
+  if (profile === 'grok') {
+    return 'Grok';
   }
 
   return t('sessionTabs.agent');

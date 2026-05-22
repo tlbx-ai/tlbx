@@ -62,6 +62,7 @@ describe('appServerControl quick settings', () => {
   afterEach(() => {
     removeAppServerControlQuickSettingsSessionState('codex-default');
     removeAppServerControlQuickSettingsSessionState('codex-save');
+    removeAppServerControlQuickSettingsSessionState('grok-stale');
     $sessions.set({});
     globalThis.localStorage.clear();
     vi.unstubAllGlobals();
@@ -80,6 +81,23 @@ describe('appServerControl quick settings', () => {
 
   it('resolves the concrete provider model for default codex AppServerControl sessions', () => {
     expect(getAppServerControlResolvedProviderModel('codex')).toBe('gpt-5.5');
+  });
+
+  it('maps obsolete Grok Build sticky model aliases to the current Grok default', () => {
+    globalThis.localStorage.setItem(
+      'midterm:appServerControl-quick-settings:provider:grok',
+      JSON.stringify({ model: 'grok-build' }),
+    );
+    $sessions.set({
+      'grok-stale': {
+        id: 'grok-stale',
+        profileHint: 'grok',
+      } as never,
+    });
+
+    expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe(
+      'grok-4.20-0309-non-reasoning',
+    );
   });
 
   it('persists the selected provider model into MidTerm settings', () => {

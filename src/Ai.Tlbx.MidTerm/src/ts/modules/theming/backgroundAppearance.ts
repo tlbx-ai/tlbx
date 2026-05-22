@@ -47,6 +47,12 @@ const DERIVED_BACKGROUND_VARIABLES: Array<{
   response?: number;
 }> = [
   { name: '--terminal-canvas-background', source: '--bg-terminal', mode: 'terminal' },
+  {
+    name: '--command-bay-control-background',
+    source: '--bg-terminal',
+    mode: 'terminal',
+    response: 0.2,
+  },
   { name: '--terminal-ui-background', source: '--bg-terminal', mode: 'ui' },
   { name: '--app-chrome-background', source: '--bg-terminal', mode: 'ui', response: 0.25 },
   { name: '--web-preview-pane-background', source: '--bg-primary', mode: 'ui', response: 0.15 },
@@ -76,6 +82,11 @@ const DERIVED_BACKGROUND_VARIABLES: Array<{
     response: 0.6,
   },
 ];
+
+const TERMINAL_SCHEME_BACKGROUND_VARIABLES = new Set([
+  '--terminal-canvas-background',
+  '--command-bay-control-background',
+]);
 const BACKGROUND_KEN_BURNS_MIN_SCALE = 1.5;
 const BACKGROUND_KEN_BURNS_MAX_SCALE = 3;
 const BACKGROUND_KEN_BURNS_MAX_SPEED_PX_PER_SECOND = 120;
@@ -126,10 +137,9 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
   }
 
   for (const variable of DERIVED_BACKGROUND_VARIABLES) {
-    const value =
-      variable.name === '--terminal-canvas-background'
-        ? terminalBackgroundColor
-        : palette[variable.source];
+    const value = TERMINAL_SCHEME_BACKGROUND_VARIABLES.has(variable.name)
+      ? terminalBackgroundColor
+      : palette[variable.source];
     const rgb = parseColor(value);
     if (!rgb) {
       continue;

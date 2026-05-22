@@ -288,6 +288,7 @@ public sealed class SessionAgentFeedService
         {
             AiCliProfileService.CodexProfile => "Codex",
             AiCliProfileService.ClaudeProfile => "Claude",
+            AiCliProfileService.GrokProfile => "Grok",
             AiCliProfileService.OpenCodeProfile => "OpenCode",
             AiCliProfileService.GenericAiProfile => "Generic Agent",
             AiCliProfileService.ShellProfile => "Shell",

@@ -1,7 +1,7 @@
 import { t } from '../i18n';
 
 export type HistoryLaunchMode = 'terminal' | 'appServerControl';
-export type HistoryAppServerControlProfile = 'codex' | 'claude';
+export type HistoryAppServerControlProfile = 'codex' | 'claude' | 'grok';
 
 export interface HistoryModeEntry {
   launchMode?: string | null;
@@ -24,7 +24,7 @@ export function normalizeHistoryLaunchMode(mode: string | null | undefined): His
 export function normalizeHistoryAppServerControlProfile(
   profile: string | null | undefined,
 ): HistoryAppServerControlProfile | null {
-  return profile === 'codex' || profile === 'claude' ? profile : null;
+  return profile === 'codex' || profile === 'claude' || profile === 'grok' ? profile : null;
 }
 
 export function isAppServerControlHistoryEntry(entry: HistoryModeEntry): boolean {
@@ -65,13 +65,21 @@ export function getHistoryModeDisplayText(entry: HistoryModeEntry): string {
     return `${t('sessionTabs.agent')} · ${t('sessionLauncher.codexTitle')}`;
   }
 
+  if ((entry.surfaceType ?? '').toLowerCase() === 'grk') {
+    return `${t('sessionTabs.agent')} · Grok`;
+  }
+
   if (!isAppServerControlHistoryEntry(entry)) {
     return t('session.terminal');
   }
 
   const profile = normalizeHistoryAppServerControlProfile(entry.profile);
   const providerText =
-    profile === 'claude' ? t('sessionLauncher.claudeTitle') : t('sessionLauncher.codexTitle');
+    profile === 'claude'
+      ? t('sessionLauncher.claudeTitle')
+      : profile === 'grok'
+        ? 'Grok'
+        : t('sessionLauncher.codexTitle');
   return `${t('sessionTabs.agent')} · ${providerText}`;
 }
 
@@ -85,10 +93,14 @@ export function getHistoryModeBadgeText(entry: HistoryModeEntry): string {
     return 'CDX';
   }
 
+  if (normalizedSurfaceType === 'grk') {
+    return 'GRK';
+  }
+
   if (!isAppServerControlHistoryEntry(entry)) {
     return 'TRM';
   }
 
   const profile = normalizeHistoryAppServerControlProfile(entry.profile);
-  return profile === 'claude' ? 'CLD' : 'CDX';
+  return profile === 'claude' ? 'CLD' : profile === 'grok' ? 'GRK' : 'CDX';
 }

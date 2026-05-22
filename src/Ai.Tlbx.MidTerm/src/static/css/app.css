@@ -326,6 +326,17 @@
   --bg-settings: #161821; /* Same as bg-elevated */
   --bg-tertiary: #05050a; /* Alias for bg-sidebar */
   --terminal-canvas-background: var(--bg-terminal);
+  --terminal-canvas-background-stack:
+    linear-gradient(
+      var(--terminal-canvas-background, var(--terminal-bg)),
+      var(--terminal-canvas-background, var(--terminal-bg))
+    ),
+    linear-gradient(
+      var(--terminal-canvas-background, var(--terminal-bg)),
+      var(--terminal-canvas-background, var(--terminal-bg))
+    ),
+    var(--terminal-canvas-background, var(--terminal-bg));
+  --command-bay-control-background: var(--terminal-bg);
   --terminal-ui-background: var(--terminal-bg);
   --app-chrome-background: var(--bg-terminal);
   --app-header-background:
@@ -2558,6 +2569,8 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 /* Main content */
 .main-content {
   --adaptive-footer-right-offset: 0px;
+  --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  --command-bay-background: var(--terminal-canvas-background-stack);
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -3030,8 +3043,11 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
 
 /* Focus indicator for active pane - subtle grey */
 .layout-leaf.focused {
-  outline: 2px solid var(--border-subtle);
-  outline-offset: -2px;
+  outline: none;
+  box-shadow:
+    inset 2px 0 0 var(--border-subtle),
+    inset -2px 0 0 var(--border-subtle),
+    inset 0 2px 0 var(--border-subtle);
 }
 
 .layout-leaf.focused .session-tab-bar {
@@ -9171,10 +9187,10 @@ body.shared-session-mode .session-tab-bar {
   flex: 1;
   resize: none;
   box-sizing: border-box;
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--command-bay-textbox-border, var(--border-subtle));
   border-radius: 8px;
-  background: var(--text-input-background, var(--bg-input));
-  color: var(--text-primary);
+  background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));
+  color: var(--command-bay-text, var(--text-primary));
   min-height: var(--smart-input-textarea-min-height);
   padding: var(--smart-input-textarea-padding-top) 9px
     var(--smart-input-textarea-padding-bottom) 9px;
@@ -9195,11 +9211,11 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .adaptive-footer-dock .smart-input-textarea:focus {
-  border-color: var(--accent-blue);
+  border-color: var(--command-bay-textbox-border-focus, var(--accent-blue));
 }
 
 .adaptive-footer-dock .smart-input-textarea::placeholder {
-  color: var(--text-muted);
+  color: var(--command-bay-muted, var(--text-muted));
 }
 
 .smart-input-textarea::-webkit-scrollbar {
@@ -12119,16 +12135,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   min-height: 0;
   flex-direction: column;
   position: relative;
-  background:
-    linear-gradient(
-      var(--terminal-canvas-background, var(--terminal-bg)),
-      var(--terminal-canvas-background, var(--terminal-bg))
-    ),
-    linear-gradient(
-      var(--terminal-canvas-background, var(--terminal-bg)),
-      var(--terminal-canvas-background, var(--terminal-bg))
-    ),
-    var(--terminal-canvas-background, var(--terminal-bg));
+  background: var(--terminal-canvas-background-stack);
 }
 
 .agent-runtime-stats {
@@ -16210,6 +16217,10 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   flex: 0 0 auto;
   height: var(--adaptive-footer-reserved-height);
   min-height: 0;
+  margin-right: var(--adaptive-footer-right-offset, 0px);
+  /* Paint the reserved footer slot once. The absolute dock stays transparent so growth above this
+     slot does not double-apply terminal transparency over the terminal pane. */
+  background: var(--command-bay-background);
   pointer-events: none;
 }
 
@@ -16223,23 +16234,28 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   --command-bay-pill-radius: 8px;
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
-  --command-bay-surface: color-mix(
-    in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 92%,
-    transparent 8%
+  --command-bay-control-background-color: var(
+    --command-bay-control-background,
+    var(--terminal-bg)
   );
-  --command-bay-surface-strong: color-mix(
+  --command-bay-surface-color: var(--command-bay-control-background-color);
+  --command-bay-surface: var(--command-bay-control-background);
+  --command-bay-surface-strong-color: var(--command-bay-control-background-color);
+  --command-bay-surface-strong: var(--command-bay-control-background);
+  --command-bay-surface-hover-color: color-mix(
     in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 96%,
-    transparent 4%
+    var(--command-bay-control-background-color) 90%,
+    var(--text-primary) 10%
   );
-  --command-bay-surface-hover: color-mix(
-    in srgb,
-    var(--bg-elevated-opaque, var(--terminal-ui-background, var(--terminal-bg))) 80%,
-    var(--bg-hover) 20%
-  );
-  --command-bay-border: color-mix(in srgb, var(--border-color) 80%, transparent);
-  --command-bay-border-strong: color-mix(in srgb, var(--text-secondary) 40%, var(--border-color));
+  --command-bay-surface-hover: linear-gradient(
+      var(--command-bay-surface-hover-color),
+      var(--command-bay-surface-hover-color)
+    ),
+    var(--command-bay-control-background);
+  --command-bay-border: transparent;
+  --command-bay-border-strong: transparent;
+  --command-bay-textbox-border: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  --command-bay-textbox-border-focus: color-mix(in srgb, var(--accent-blue) 52%, transparent);
   --command-bay-text: color-mix(in srgb, var(--text-primary) 94%, white 6%);
   --command-bay-muted: color-mix(in srgb, var(--text-secondary) 90%, transparent);
   --command-bay-action-ink: color-mix(
@@ -16247,32 +16263,12 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     var(--command-bay-muted) 70%,
     var(--command-bay-text) 30%
   );
-  --command-bay-floating-button-surface: color-mix(
-    in srgb,
-    var(--command-bay-surface) 86%,
-    transparent
-  );
-  --command-bay-ui-reactive-surface: color-mix(
-    in srgb,
-    var(--command-bay-surface) 80%,
-    var(--terminal-ui-background, var(--terminal-bg)) 20%
-  );
-  --command-bay-ui-reactive-border: color-mix(
-    in srgb,
-    var(--command-bay-border) 80%,
-    var(--terminal-ui-background, var(--terminal-bg)) 20%
-  );
+  --command-bay-floating-button-surface: var(--command-bay-control-background);
+  --command-bay-ui-reactive-surface: var(--command-bay-control-background);
+  --command-bay-ui-reactive-border: transparent;
   --command-bay-ui-reactive-floating-button-surface: var(--command-bay-ui-reactive-surface);
-  --command-bay-floating-button-border: color-mix(
-    in srgb,
-    var(--command-bay-border) 40%,
-    transparent
-  );
-  --command-bay-ui-reactive-floating-button-border: color-mix(
-    in srgb,
-    var(--command-bay-floating-button-border) 80%,
-    var(--terminal-ui-background, var(--terminal-bg)) 20%
-  );
+  --command-bay-floating-button-border: transparent;
+  --command-bay-ui-reactive-floating-button-border: transparent;
   --command-bay-shadow: 0 2px 8px color-mix(in srgb, black 8%, transparent);
   position: absolute;
   left: 0;
@@ -16286,6 +16282,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   padding-left: calc(6px + env(safe-area-inset-left, 0px));
   padding-right: calc(6px + env(safe-area-inset-right, 0px));
   padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+  background: transparent;
   pointer-events: auto;
 }
 
@@ -16299,11 +16296,11 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-dock[data-material='solid'] {
-  background: var(--bg-sidebar);
+  background: transparent;
 }
 
 .adaptive-footer-dock[data-material='glass'] {
-  background: var(--bg-sidebar);
+  background: transparent;
 }
 
 .adaptive-footer-dock[data-composer-expanded='true'] {
@@ -16316,12 +16313,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   overflow: hidden;
   padding: calc(12px + env(safe-area-inset-top, 0px)) calc(12px + env(safe-area-inset-right, 0px))
     calc(12px + env(safe-area-inset-bottom, 0px)) calc(12px + env(safe-area-inset-left, 0px));
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--overlay-bg-dark) 0%, transparent),
-    color-mix(in srgb, var(--overlay-bg-dark) 14%, transparent) 64%,
-    color-mix(in srgb, var(--overlay-bg-dark) 20%, transparent)
-  );
+  background: var(--command-bay-background);
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
@@ -16358,7 +16350,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--command-bay-border-strong) 86%, transparent);
   border-radius: 18px;
-  background: color-mix(in srgb, var(--command-bay-surface-strong) 84%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-strong-color) 84%, transparent);
   box-shadow:
     0 12px 32px color-mix(in srgb, black 18%, transparent),
     0 0 0 1px color-mix(in srgb, white 3%, transparent);
@@ -16603,7 +16595,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     calc(9px + var(--smart-input-expand-hit-size) - 10px)
     var(--smart-input-textarea-padding-bottom) 9px;
   border-radius: 10px;
-  border: 1px solid var(--command-bay-border-strong);
+  border: 1px solid var(--command-bay-textbox-border);
   background: var(--command-bay-ui-reactive-surface);
   color: var(--command-bay-text);
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
@@ -16617,9 +16609,9 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .smart-input-textarea:focus {
-  border-color: color-mix(in srgb, var(--accent-blue) 40%, var(--command-bay-border-strong));
+  border-color: var(--command-bay-textbox-border-focus);
   outline: none;
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent-blue) 16%, transparent);
+  box-shadow: none;
 }
 
 .smart-input-textarea::placeholder {
@@ -16857,7 +16849,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 .smart-input-send-btn:hover,
 .smart-input-send-btn:focus-visible,
 .smart-input-send-btn:active {
-  background: color-mix(in srgb, var(--command-bay-surface-hover) 88%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-hover-color) 88%, transparent);
   border-color: var(--command-bay-floating-button-border);
   box-shadow: none;
 }
@@ -16904,7 +16896,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .smart-input-send-btn.autosend-latched {
-  background: color-mix(in srgb, var(--accent-blue) 12%, var(--command-bay-surface));
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--command-bay-surface-color));
   color: var(--command-bay-text);
   border-color: color-mix(in srgb, var(--accent-blue) 32%, var(--command-bay-border));
 }
@@ -16914,7 +16906,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-dock .smart-input-mic-btn.recording {
-  background: color-mix(in srgb, var(--accent-red) 12%, var(--command-bay-surface));
+  background: color-mix(in srgb, var(--accent-red) 12%, var(--command-bay-surface-color));
   color: var(--command-bay-text);
   border-color: color-mix(in srgb, var(--accent-red) 34%, var(--command-bay-border));
   animation: none;
@@ -17103,7 +17095,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 .adaptive-footer-status-summary-appServerControl[data-plan-mode='on'] {
   color: color-mix(in srgb, var(--command-bay-text) 82%, var(--accent-gold) 18%);
   border-color: color-mix(in srgb, var(--accent-gold) 28%, var(--command-bay-border));
-  background: color-mix(in srgb, var(--accent-gold) 5%, var(--command-bay-surface));
+  background: color-mix(in srgb, var(--accent-gold) 5%, var(--command-bay-surface-color));
 }
 
 .adaptive-footer-status-pill {
@@ -17185,7 +17177,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   justify-content: center;
   border: 1px solid color-mix(in srgb, var(--command-bay-border) 70%, transparent);
   border-radius: 999px;
-  background: color-mix(in srgb, var(--command-bay-surface) 82%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-color) 82%, transparent);
   padding: 0 8px;
   min-width: 44px;
   min-height: 22px;
@@ -17207,13 +17199,13 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 .smart-input-appServerControl-action:focus-visible {
   color: var(--command-bay-text);
   border-color: color-mix(in srgb, var(--accent-blue) 28%, var(--command-bay-border));
-  background: color-mix(in srgb, var(--command-bay-surface-hover) 76%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-hover-color) 76%, transparent);
 }
 
 .smart-input-appServerControl-action[aria-pressed='true'] {
   color: color-mix(in srgb, var(--command-bay-text) 86%, var(--accent-blue) 14%);
   border-color: color-mix(in srgb, var(--accent-blue) 30%, var(--command-bay-border));
-  background: color-mix(in srgb, var(--accent-blue) 7%, var(--command-bay-surface));
+  background: color-mix(in srgb, var(--accent-blue) 7%, var(--command-bay-surface-color));
 }
 
 .smart-input-appServerControl-action:active {
@@ -17380,7 +17372,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     padding: 0 10px;
     border: 1px solid color-mix(in srgb, var(--command-bay-border) 82%, transparent);
     border-radius: 8px;
-    background: color-mix(in srgb, var(--command-bay-surface) 88%, transparent);
+    background: color-mix(in srgb, var(--command-bay-surface-color) 88%, transparent);
     box-shadow:
       inset 0 1px 0 color-mix(in srgb, white 5%, transparent),
       0 2px 8px color-mix(in srgb, black 12%, transparent);
@@ -17505,7 +17497,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 .adaptive-footer-dock .manager-bar-add:focus-visible,
 .adaptive-footer-dock .manager-bar-overflow:hover,
 .adaptive-footer-dock .manager-bar-overflow:focus-visible {
-  background: color-mix(in srgb, var(--command-bay-surface-hover) 88%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-hover-color) 88%, transparent);
   border-color: var(--command-bay-floating-button-border);
   -webkit-box-shadow: none;
   box-shadow: none;
@@ -17525,7 +17517,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   width: 22px;
   height: 22px;
   border-radius: var(--command-bay-pill-radius);
-  background: color-mix(in srgb, var(--command-bay-surface-hover) 90%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-hover-color) 90%, transparent);
   z-index: 2;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -17538,7 +17530,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
 }
 
 .adaptive-footer-dock .manager-bar-add:hover {
-  background: color-mix(in srgb, var(--command-bay-surface-hover) 88%, transparent);
+  background: color-mix(in srgb, var(--command-bay-surface-hover-color) 88%, transparent);
   color: var(--command-bay-text);
   border-color: var(--command-bay-floating-button-border);
   box-shadow: none;
@@ -17790,7 +17782,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     padding-left: calc(4px + env(safe-area-inset-left, 0px));
     padding-right: calc(4px + env(safe-area-inset-right, 0px));
     padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
-    background: var(--bg-sidebar);
+    background: transparent;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
   }

@@ -45,6 +45,7 @@ public sealed class AiCliCapabilityService
         {
             AiCliProfileService.CodexProfile => await BuildCodexSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
             AiCliProfileService.ClaudeProfile => await BuildClaudeSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
+            AiCliProfileService.GrokProfile => await BuildGrokSnapshotAsync(userProfileDirectory, appServerControlOnly, ct).ConfigureAwait(false),
             AiCliProfileService.OpenCodeProfile => BuildOpenCodeSnapshot(),
             AiCliProfileService.GenericAiProfile => BuildGenericSnapshot(),
             AiCliProfileService.ShellProfile => BuildShellSnapshot(),
@@ -227,6 +228,94 @@ public sealed class AiCliCapabilityService
                 CreateCapability("native", "Claude SDK lane", "gated", "Gated", advertisesSdk
                     ? "The CLI mentions SDK support, but the probe did not complete cleanly."
                     : "This CLI build does not clearly advertise `--sdk-mode` yet."),
+                CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "The terminal lane remains active and unaffected.")
+            ]);
+    }
+
+    private static async Task<AiCliCapabilitySnapshot> BuildGrokSnapshotAsync(string? userProfileDirectory, bool appServerControlOnly, CancellationToken ct)
+    {
+        var binaryPath = AiCliCommandLocator.FindExecutableInPath("grok", userProfileDirectory);
+        if (binaryPath is null)
+        {
+            if (appServerControlOnly)
+            {
+                return BuildSnapshot(
+                    "native-required",
+                    "attention",
+                    "App Server Controller runtime unavailable",
+                    "Explicit Grok App Server Controller sessions require the Grok Build CLI plus its ACP runtime on this machine.",
+                    [
+                        CreateCapability("cli", "Grok CLI", "missing", "Missing", "MidTerm could not find `grok` on PATH."),
+                        CreateCapability("native", "Grok ACP", "missing", "Missing", "Without `grok agent stdio`, this explicit App Server Controller session cannot become live."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
+                    ]);
+            }
+
+            return BuildSnapshot(
+                "fallback-only",
+                "fallback",
+                "Fallback only",
+                "MidTerm can render Grok terminal sessions from supervisor state, but the Grok CLI is not available for a structured ACP lane on this machine.",
+                [
+                    CreateCapability("cli", "Grok CLI", "missing", "Missing", "MidTerm could not find `grok` on PATH."),
+                    CreateCapability("native", "Grok ACP", "missing", "Missing", "Without the Grok CLI, there is no ACP lane to attach."),
+                    CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm stays fully available and remains the source of truth.")
+                ]);
+        }
+
+        var probe = await ProbeAsync(binaryPath, "agent stdio --help", ct).ConfigureAwait(false);
+        var advertisesStdio = probe.Output.Contains("Run the agent over stdio", StringComparison.OrdinalIgnoreCase) ||
+                              probe.Output.Contains("agent stdio", StringComparison.OrdinalIgnoreCase);
+        if (probe.Success && advertisesStdio)
+        {
+            if (appServerControlOnly)
+            {
+                return BuildSnapshot(
+                    "native-ready",
+                    "positive",
+                    "App Server Controller runtime ready",
+                    "This explicit Grok App Server Controller session can attach through `mtagenthost` to Grok Build's ACP stdio runtime.",
+                    [
+                        CreateCapability("cli", "Grok CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                        CreateCapability("native", "Grok ACP", "ready", "Ready", "`grok agent stdio` is available for explicit App Server Controller sessions."),
+                        CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
+                    ]);
+            }
+
+            return BuildSnapshot(
+                "fallback-ready",
+                "positive",
+                "Fallback now, native-ready",
+                "MidTerm is rendering this Grok lane from terminal signals, but `grok agent stdio` is available here so a native ACP feed can be attached later.",
+                [
+                    CreateCapability("cli", "Grok CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                    CreateCapability("native", "Grok ACP", "ready", "Ready", "The Grok ACP lane can be wired in on this machine."),
+                    CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm remains available beside the Agent view.")
+                ]);
+        }
+
+        if (appServerControlOnly)
+        {
+            return BuildSnapshot(
+                "native-gated",
+                "warning",
+                "App Server Controller runtime blocked",
+                "Grok CLI exists, but `grok agent stdio` did not answer cleanly, so this explicit App Server Controller session cannot become live yet.",
+                [
+                    CreateCapability("cli", "Grok CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                    CreateCapability("native", "Grok ACP", "gated", "Gated", BuildProbeDetail(probe, "The Grok ACP runtime is not reliably available yet.")),
+                    CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
+                ]);
+        }
+
+        return BuildSnapshot(
+            "fallback-gated",
+            "warning",
+            "Fallback with upgrade gap",
+            "MidTerm is rendering this Grok lane from terminal signals. The Grok CLI exists, but `grok agent stdio` did not answer cleanly, so native events stay gated for now.",
+            [
+                CreateCapability("cli", "Grok CLI", "ready", "Ready", $"Using `{binaryPath}`."),
+                CreateCapability("native", "Grok ACP", "gated", "Gated", BuildProbeDetail(probe, "The Grok ACP lane is not reliably available yet.")),
                 CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "The terminal lane remains active and unaffected.")
             ]);
     }

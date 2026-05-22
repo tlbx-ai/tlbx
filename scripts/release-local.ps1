@@ -199,7 +199,7 @@ Pop-Location
 # ===========================================
 # PHASE 5: AOT publish (parallel)
 # ===========================================
-Write-Host "Publishing mt.exe, mthost.exe, and mtagenthost.exe..." -ForegroundColor Gray
+Write-Host "Publishing mt.exe, mthost.exe, mtagenthost.exe, and mttmux.exe..." -ForegroundColor Gray
 
 $repoRoot = "$PSScriptRoot\.."
 $mtJob = Start-Job -ScriptBlock {
@@ -228,19 +228,30 @@ $mtagenthostJob = Start-Job -ScriptBlock {
     $LASTEXITCODE
 } -ArgumentList $RID, $repoRoot, $env:PATH
 
+$mttmuxJob = Start-Job -ScriptBlock {
+    param($rid, $path, $envPath)
+    $env:PATH = $envPath
+    Set-Location $path
+    dotnet publish src/Ai.Tlbx.MidTerm.TmuxShim/Ai.Tlbx.MidTerm.TmuxShim.csproj -c Release -r $rid "-p:IsPublishing=true" --verbosity quiet 2>&1
+    $LASTEXITCODE
+} -ArgumentList $RID, $repoRoot, $env:PATH
+
 $mtResult = Receive-Job -Job $mtJob -Wait
 $mthostResult = Receive-Job -Job $mthostJob -Wait
 $mtagenthostResult = Receive-Job -Job $mtagenthostJob -Wait
-Remove-Job -Job $mtJob, $mthostJob, $mtagenthostJob
+$mttmuxResult = Receive-Job -Job $mttmuxJob -Wait
+Remove-Job -Job $mtJob, $mthostJob, $mtagenthostJob, $mttmuxJob
 
 # Check if publish succeeded by verifying output file exists
 # (MSBuild uses _REINVOKE_SUCCESS_ error to stop outer build after nested build completes, so exit code is unreliable)
 $mtExe = "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe"
 $mthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe"
 $mtagenthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$RID/publish/mtagenthost.exe"
+$mttmuxExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$RID/publish/mttmux.exe"
 if (-not (Test-Path $mtExe)) { throw "mt publish failed - output not found: $mtExe" }
 if (-not (Test-Path $mthostExe)) { throw "mthost publish failed - output not found: $mthostExe" }
 if (-not (Test-Path $mtagenthostExe)) { throw "mtagenthost publish failed - output not found: $mtagenthostExe" }
+if (-not (Test-Path $mttmuxExe)) { throw "mttmux publish failed - output not found: $mttmuxExe" }
 
 # ===========================================
 # PHASE 6: Copy to output
@@ -250,6 +261,7 @@ New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe" $OutputDir -Force
 Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$RID/publish/mthost.exe" $OutputDir -Force
 Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$RID/publish/mtagenthost.exe" $OutputDir -Force
+Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$RID/publish/mttmux.exe" $OutputDir -Force
 
 # Write version.json to output (for update detection)
 @{

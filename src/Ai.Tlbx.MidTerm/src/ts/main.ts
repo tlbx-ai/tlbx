@@ -1034,7 +1034,7 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
 }
 
 function buildAppServerControlHistoryDedupeKey(
-  profile: 'codex' | 'claude',
+  profile: 'codex' | 'claude' | 'grok',
   workingDirectory: string,
 ): string {
   const normalizedPath = workingDirectory

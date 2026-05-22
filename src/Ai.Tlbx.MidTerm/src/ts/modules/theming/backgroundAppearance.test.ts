@@ -160,6 +160,9 @@ describe('backgroundAppearance', () => {
     const elevatedAlpha = alphaOf(rootStyle.getPropertyValue('--bg-elevated'));
     const dropdownAlpha = alphaOf(rootStyle.getPropertyValue('--bg-dropdown'));
     const terminalCanvasAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-canvas-background'));
+    const commandBayControlAlpha = alphaOf(
+      rootStyle.getPropertyValue('--command-bay-control-background'),
+    );
     const sidebarAlpha = alphaOf(rootStyle.getPropertyValue('--bg-sidebar'));
     const terminalUiAlpha = alphaOf(rootStyle.getPropertyValue('--terminal-ui-background'));
     const appChromeAlpha = alphaOf(rootStyle.getPropertyValue('--app-chrome-background'));
@@ -174,6 +177,7 @@ describe('backgroundAppearance', () => {
     expect(elevatedAlpha).toBeGreaterThan(primaryAlpha);
     expect(dropdownAlpha).toBeGreaterThan(elevatedAlpha);
     expect(terminalCanvasAlpha).toBeCloseTo(0.4, 5);
+    expect(commandBayControlAlpha).toBeCloseTo(0.88, 5);
     expect(sidebarAlpha).toBeCloseTo(0.854, 5);
     expect(sidebarAlpha).not.toBeCloseTo(terminalCanvasAlpha, 5);
     expect(terminalUiAlpha).toBeCloseTo(0.7, 5);
@@ -182,6 +186,9 @@ describe('backgroundAppearance', () => {
     expect(sidebarHoverAlpha).toBeCloseTo(0.82, 5);
     expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
       'rgba(12, 12, 12, 0.400)',
+    );
+    expect(rootStyle.getPropertyValue('--command-bay-control-background')).toBe(
+      'rgba(12, 12, 12, 0.880)',
     );
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#0D0E14');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#161821');
@@ -213,15 +220,17 @@ describe('backgroundAppearance', () => {
       }),
     );
 
-    expect(alphaOf(rootStyle.getPropertyValue('--web-preview-pane-background'))).toBeCloseTo(0.85, 5);
+    expect(alphaOf(rootStyle.getPropertyValue('--web-preview-pane-background'))).toBeCloseTo(
+      0.85,
+      5,
+    );
     expect(alphaOf(rootStyle.getPropertyValue('--web-preview-pane-chrome-background'))).toBeCloseTo(
       0.85,
       5,
     );
-    expect(alphaOf(rootStyle.getPropertyValue('--web-preview-pane-surface-background'))).toBeCloseTo(
-      0.85,
-      5,
-    );
+    expect(
+      alphaOf(rootStyle.getPropertyValue('--web-preview-pane-surface-background')),
+    ).toBeCloseTo(0.85, 5);
   });
 
   it('uses the selected terminal color scheme for the terminal canvas background', () => {
@@ -233,7 +242,27 @@ describe('backgroundAppearance', () => {
     );
 
     expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe('rgba(0, 0, 0, 1.000)');
+    expect(rootStyle.getPropertyValue('--command-bay-control-background')).toBe(
+      'rgba(0, 0, 0, 1.000)',
+    );
     expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
+  });
+
+  it('keeps Command Bay controls mostly opaque under high terminal transparency', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        uiTransparency: 70,
+        terminalTransparency: 100,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
+      'rgba(12, 12, 12, 0.000)',
+    );
+    expect(rootStyle.getPropertyValue('--command-bay-control-background')).toBe(
+      'rgba(12, 12, 12, 0.800)',
+    );
   });
 
   it('publishes wallpaper metadata and keeps popup shells opaque for the selected theme', () => {
@@ -309,6 +338,9 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 0.000)');
     expect(rootStyle.getPropertyValue('--bg-elevated')).toBe('rgba(22, 24, 33, 0.000)');
     expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 0.000)');
+    expect(rootStyle.getPropertyValue('--command-bay-control-background')).toBe(
+      'rgba(12, 12, 12, 1.000)',
+    );
     expect(rootStyle.getPropertyValue('--text-input-background')).toBe('rgba(36, 39, 53, 0.800)');
     expect(rootStyle.getPropertyValue('--sidebar-item-active-background')).toBe(
       'rgba(28, 30, 42, 0.400)',
@@ -395,6 +427,9 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 1.000)');
     expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 1.000)');
     expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
+      'rgba(12, 12, 12, 1.000)',
+    );
+    expect(rootStyle.getPropertyValue('--command-bay-control-background')).toBe(
       'rgba(12, 12, 12, 1.000)',
     );
     expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);

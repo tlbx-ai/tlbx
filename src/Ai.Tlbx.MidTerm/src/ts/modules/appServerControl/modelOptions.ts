@@ -16,13 +16,22 @@ const CODEX_MODEL_PRESETS = [
 ] as const;
 
 const CLAUDE_MODEL_PRESETS = ['sonnet', 'opus', 'claude-sonnet-4-6', 'claude-opus-4-6'] as const;
+const GROK_MODEL_PRESETS = [
+  'grok-4.20-0309-non-reasoning',
+  'grok-4.20-0309-reasoning',
+  'grok-4.20-multi-agent-0309',
+  'grok-4.3',
+  'grok-build-0.1',
+] as const;
 
 export function getAppServerControlDefaultModelLabel(provider: string | null | undefined): string {
   return provider === 'claude'
     ? 'Default Claude model'
-    : provider === 'codex'
-      ? 'Default Codex model'
-      : 'Default model';
+    : provider === 'grok'
+      ? 'Default Grok model'
+      : provider === 'codex'
+        ? 'Default Codex model'
+        : 'Default model';
 }
 
 export function getAppServerControlModelOptions(args: {
@@ -216,6 +225,10 @@ function getProviderModelPresets(provider: string | null | undefined): readonly 
 
   if (provider === 'codex') {
     return CODEX_MODEL_PRESETS;
+  }
+
+  if (provider === 'grok') {
+    return GROK_MODEL_PRESETS;
   }
 
   return [];

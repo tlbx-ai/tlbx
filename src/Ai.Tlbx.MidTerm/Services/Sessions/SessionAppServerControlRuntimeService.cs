@@ -302,7 +302,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
 
     private static bool IsAttachableProfile(string? profile)
     {
-        return profile is AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile;
+        return profile is AiCliProfileService.CodexProfile or AiCliProfileService.ClaudeProfile or AiCliProfileService.GrokProfile;
     }
 
     private static bool IsWorkingTurnState(string? state)

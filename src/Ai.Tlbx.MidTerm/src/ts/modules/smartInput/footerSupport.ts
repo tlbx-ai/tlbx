@@ -247,7 +247,7 @@ export function updateFooterReservedHeight(args: {
     ? getCollapsedSmartInputTextareaHeight(args.activeTextarea)
     : null;
   const reserveHeight = calculateAdaptiveFooterReservedHeight({
-    dockHeight: args.footerDock.offsetHeight,
+    dockHeight: measureFooterDockHeight(args.footerDock),
     textareaHeight,
     collapsedTextareaHeight,
   });
@@ -266,13 +266,13 @@ function setAdaptiveFooterReservedHeight(
   lastReservedFooterHeightPx: number,
   setLastReservedFooterHeightPx: (value: number) => void,
 ): void {
-  const normalizedReserveHeight = Math.max(0, Math.round(reserveHeight));
+  const normalizedReserveHeight = normalizeCssPixelNumber(reserveHeight);
   root.style.setProperty(
     '--adaptive-footer-reserved-height',
-    `${String(normalizedReserveHeight)}px`,
+    formatCssPixelValue(normalizedReserveHeight),
   );
 
-  if (lastReservedFooterHeightPx === normalizedReserveHeight) {
+  if (Math.abs(lastReservedFooterHeightPx - normalizedReserveHeight) < 0.001) {
     return;
   }
 
@@ -282,4 +282,29 @@ function setAdaptiveFooterReservedHeight(
       detail: { reservedHeightPx: normalizedReserveHeight },
     }),
   );
+}
+
+function measureFooterDockHeight(footerDock: HTMLElement): number {
+  if (typeof footerDock.getBoundingClientRect === 'function') {
+    const rect = footerDock.getBoundingClientRect();
+    if (Number.isFinite(rect.height) && rect.height > 0) {
+      return rect.height;
+    }
+  }
+
+  return footerDock.offsetHeight;
+}
+
+function normalizeCssPixelNumber(value: number): number {
+  const normalized = Math.max(0, value);
+  const rounded = Math.round(normalized);
+  if (Math.abs(normalized - rounded) < 0.001) {
+    return rounded;
+  }
+
+  return Math.round(normalized * 1000) / 1000;
+}
+
+function formatCssPixelValue(value: number): string {
+  return `${String(normalizeCssPixelNumber(value))}px`;
 }

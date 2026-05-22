@@ -21,6 +21,7 @@ namespace Ai.Tlbx.MidTerm.Services.Updates;
 public static class UpdateScriptGenerator
 {
     private const string AgentHostBinaryName = "mtagenthost";
+    private const string TmuxShimBinaryName = "mttmux";
     private const string ServiceName = "MidTerm";
     private const string LaunchdLabel = "ai.tlbx.midterm";
     private const string SystemdService = "MidTerm";
@@ -57,9 +58,11 @@ public static class UpdateScriptGenerator
         var newMtPath = Path.Combine(extractedDir, "mt.exe");
         var newMthostPath = Path.Combine(extractedDir, "mthost.exe");
         var newAgentHostPath = Path.Combine(extractedDir, $"{AgentHostBinaryName}.exe");
+        var newTmuxShimPath = Path.Combine(extractedDir, $"{TmuxShimBinaryName}.exe");
         var newVersionJsonPath = Path.Combine(extractedDir, "version.json");
         var currentMthostPath = Path.Combine(installDir, "mthost.exe");
         var currentAgentHostPath = Path.Combine(installDir, $"{AgentHostBinaryName}.exe");
+        var currentTmuxShimPath = Path.Combine(installDir, $"{TmuxShimBinaryName}.exe");
         var currentVersionJsonPath = Path.Combine(installDir, "version.json");
         // Log and result files go in settings directory so they're accessible after update
         var resultFilePath = Path.Combine(settingsDir, "update-result.json");
@@ -86,10 +89,12 @@ $SettingsDir = '{EscapeForPowerShell(settingsDir)}'         # Settings, secrets,
 $CurrentMt = '{EscapeForPowerShell(currentBinaryPath)}'
 $CurrentMthost = '{EscapeForPowerShell(currentMthostPath)}'
 $CurrentAgentHost = '{EscapeForPowerShell(currentAgentHostPath)}'
+$CurrentTmuxShim = '{EscapeForPowerShell(currentTmuxShimPath)}'
 $CurrentVersionJson = '{EscapeForPowerShell(currentVersionJsonPath)}'
 $NewMt = '{EscapeForPowerShell(newMtPath)}'
 $NewMthost = '{EscapeForPowerShell(newMthostPath)}'
 $NewAgentHost = '{EscapeForPowerShell(newAgentHostPath)}'
+$NewTmuxShim = '{EscapeForPowerShell(newTmuxShimPath)}'
 $NewVersionJson = '{EscapeForPowerShell(newVersionJsonPath)}'
 $ExtractedDir = '{EscapeForPowerShell(extractedDir)}'
 $LogFile = '{EscapeForPowerShell(logFilePath)}'
@@ -318,6 +323,12 @@ try {{
         Log 'mt.exe backed up'
     }}
 
+    if (Test-Path $CurrentTmuxShim) {{
+        Log 'Backing up {TmuxShimBinaryName}.exe...'
+        Copy-Item $CurrentTmuxShim ""$CurrentTmuxShim.bak"" -Force -ErrorAction Stop
+        Log '{TmuxShimBinaryName}.exe backed up'
+    }}
+
     if ((-not $IsWebOnly) -and (Test-Path $CurrentMthost)) {{
         Log 'Backing up mthost.exe...'
         Copy-Item $CurrentMthost ""$CurrentMthost.bak"" -Force -ErrorAction Stop
@@ -440,6 +451,10 @@ try {{
     Log '=== PHASE 4: Installing new files ==='
 
     SafeCopy $NewMt $CurrentMt 'mt.exe'
+
+    if (Test-Path $NewTmuxShim) {{
+        SafeCopy $NewTmuxShim $CurrentTmuxShim '{TmuxShimBinaryName}.exe'
+    }}
 
     if ((-not $IsWebOnly) -and (Test-Path $NewMthost)) {{
         SafeCopy $NewMthost $CurrentMthost 'mthost.exe'
@@ -591,6 +606,16 @@ try {{
                 Log 'mt.exe restored'
             }} catch {{
                 Log ""Failed to restore mt.exe: $_"" 'ERROR'
+            }}
+        }}
+
+        if (Test-Path ""$CurrentTmuxShim.bak"") {{
+            Log 'Restoring {TmuxShimBinaryName}.exe from backup...'
+            try {{
+                Copy-Item ""$CurrentTmuxShim.bak"" $CurrentTmuxShim -Force -ErrorAction Stop
+                Log '{TmuxShimBinaryName}.exe restored'
+            }} catch {{
+                Log ""Failed to restore {TmuxShimBinaryName}.exe: $_"" 'ERROR'
             }}
         }}
 

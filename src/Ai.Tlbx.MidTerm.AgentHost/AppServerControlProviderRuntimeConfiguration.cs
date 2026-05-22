@@ -4,12 +4,17 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 
 internal static class AppServerControlProviderRuntimeConfiguration
 {
+    public const string DefaultGrokModel = "grok-4.20-0309-non-reasoning";
+
     private const string CodexYoloDefaultEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_YOLO_DEFAULT";
     private const string CodexDefaultModelEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_DEFAULT_MODEL";
     private const string CodexEnvironmentVariablesEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CODEX_ENVIRONMENT_VARIABLES";
     private const string ClaudeDefaultModelEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CLAUDE_DEFAULT_MODEL";
     private const string ClaudeEnvironmentVariablesEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CLAUDE_ENVIRONMENT_VARIABLES";
     private const string ClaudeDangerouslySkipPermissionsEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS";
+    private const string GrokDefaultModelEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_GROK_DEFAULT_MODEL";
+    private const string GrokEnvironmentVariablesEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_GROK_ENVIRONMENT_VARIABLES";
+    private const string GrokAlwaysApproveEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_GROK_ALWAYS_APPROVE_DEFAULT";
 
     public static void ApplyUserProfileEnvironment(ProcessStartInfo startInfo, string? profileDirectory)
     {
@@ -81,12 +86,35 @@ internal static class AppServerControlProviderRuntimeConfiguration
         return NormalizeOptionalValue(Environment.GetEnvironmentVariable(ClaudeDefaultModelEnvironmentVariable));
     }
 
+    public static bool GetGrokAlwaysApproveDefault()
+    {
+        return bool.TryParse(
+                   Environment.GetEnvironmentVariable(GrokAlwaysApproveEnvironmentVariable),
+                   out var enabled) &&
+               enabled;
+    }
+
+    public static string? GetGrokDefaultModel()
+    {
+        return NormalizeGrokModel(Environment.GetEnvironmentVariable(GrokDefaultModelEnvironmentVariable))
+               ?? DefaultGrokModel;
+    }
+
+    public static string? NormalizeGrokModel(string? value)
+    {
+        var normalized = NormalizeOptionalValue(value);
+        return string.Equals(normalized, "grok-build", StringComparison.OrdinalIgnoreCase)
+            ? DefaultGrokModel
+            : normalized;
+    }
+
     private static IReadOnlyDictionary<string, string> ReadEnvironmentVariables(string provider)
     {
         var raw = provider switch
         {
             "codex" => Environment.GetEnvironmentVariable(CodexEnvironmentVariablesEnvironmentVariable),
             "claude" => Environment.GetEnvironmentVariable(ClaudeEnvironmentVariablesEnvironmentVariable),
+            "grok" => Environment.GetEnvironmentVariable(GrokEnvironmentVariablesEnvironmentVariable),
             _ => null
         };
 
@@ -154,6 +182,7 @@ internal static class AppServerControlProviderRuntimeConfiguration
     {
         yield return Path.Combine(profileDirectory, "AppData", "Roaming", "npm");
         yield return Path.Combine(profileDirectory, "AppData", "Local", "Programs", "nodejs");
+        yield return Path.Combine(profileDirectory, ".grok", "bin");
         yield return Path.Combine(profileDirectory, ".local", "bin");
     }
 

@@ -60,10 +60,25 @@ describe('session launcher target selection', () => {
     expect(isProviderSupportedOnTarget('terminal', { id: 'local', kind: 'local' })).toBe(true);
     expect(isProviderSupportedOnTarget('codex', { id: 'local', kind: 'local' })).toBe(true);
     expect(isProviderSupportedOnTarget('claude', { id: 'local', kind: 'local' })).toBe(true);
+    expect(isProviderSupportedOnTarget('grok', { id: 'local', kind: 'local' })).toBe(true);
 
     expect(isProviderSupportedOnTarget('terminal', remoteTarget)).toBe(true);
     expect(isProviderSupportedOnTarget('codex', remoteTarget)).toBe(false);
     expect(isProviderSupportedOnTarget('claude', remoteTarget)).toBe(false);
+    expect(isProviderSupportedOnTarget('grok', remoteTarget)).toBe(false);
+  });
+
+  it('offers Grok Build instead of obsolete Claude in the new-session provider list', async () => {
+    const { getSessionLauncherProviderDefinitions } = await import('./index');
+
+    const providers = getSessionLauncherProviderDefinitions();
+    expect(providers.map((provider) => provider.provider)).toEqual(['terminal', 'codex', 'grok']);
+    expect(providers.some((provider) => provider.provider === 'claude')).toBe(false);
+    expect(providers.find((provider) => provider.provider === 'grok')).toMatchObject({
+      title: 'Grok Build',
+      launchLabel: 'Start Grok Build',
+      supportsResume: false,
+    });
   });
 
   it('only warns when the remote target differs on major and minor version', async () => {

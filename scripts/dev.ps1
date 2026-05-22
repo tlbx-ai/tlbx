@@ -34,6 +34,7 @@ $WebProjectDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm"
 $WebProjectFile = Join-Path $WebProjectDir "Ai.Tlbx.MidTerm.csproj"
 $WebRootDir = Join-Path $WebProjectDir "wwwroot"
 $AgentHostProjectFile = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj"
+$TmuxShimProjectFile = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.TmuxShim/Ai.Tlbx.MidTerm.TmuxShim.csproj"
 $DefaultSettingsDir = Join-Path $RepoRoot ".dev\midterm-local"
 $SettingsDir = if ([string]::IsNullOrWhiteSpace($SettingsDir)) { $DefaultSettingsDir } else { $SettingsDir }
 $SettingsDir = [System.IO.Path]::GetFullPath($SettingsDir)
@@ -103,6 +104,14 @@ function Build-AgentHost {
     & dotnet build $AgentHostProjectFile -c Debug --nologo
     if ($LASTEXITCODE -ne 0) {
         throw "mtagenthost build failed"
+    }
+}
+
+function Build-TmuxShim {
+    Write-Host "  Building local mttmux..." -ForegroundColor DarkGray
+    & dotnet build $TmuxShimProjectFile -c Debug --nologo
+    if ($LASTEXITCODE -ne 0) {
+        throw "mttmux build failed"
     }
 }
 
@@ -269,6 +278,7 @@ function Stop-DevProcess($state, [string]$reason) {
 
 function Start-DevServer([string]$resolvedTtyHostPath) {
     Build-AgentHost
+    Build-TmuxShim
     Build-WebServer
 
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
