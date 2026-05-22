@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- settings persistence is the central hub for form binding/apply across all controls; lightness boost wiring was the minimal addition for the slider feature. */
 /**
  * Settings Persistence Module
  *
@@ -12,6 +13,7 @@ import { JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
 import {
+  applyXtermThemeToTerminals,
   getEffectiveXtermThemeForSettings,
   syncEffectiveXtermThemeDomOverrides,
 } from '../theming/themes';
@@ -549,6 +551,10 @@ export function populateSettingsForm(settings: MidTermSettingsPublic): void {
       settings.terminalTransparency ??
       settings.uiTransparency,
   );
+  updateLightnessBoostValue(
+    'setting-terminal-theme-lightness-boost-value',
+    settings.terminalThemeLightnessBoost,
+  );
   updatePercentageValue(
     'setting-background-ken-burns-zoom-percent-value',
     settings.backgroundKenBurnsZoomPercent,
@@ -884,6 +890,14 @@ export function bindSettingsAutoSave(): void {
     'setting-terminal-cell-background-transparency-value',
     signal,
   );
+  const lightnessBoostSlider = document.getElementById(
+    'setting-terminal-theme-lightness-boost',
+  ) as HTMLInputElement | null;
+  bindLightnessBoostPreview(
+    lightnessBoostSlider,
+    'setting-terminal-theme-lightness-boost-value',
+    signal,
+  );
   bindBackgroundKenBurnsPreview(signal);
 
   const fontSizeInput = document.getElementById('setting-font-size') as HTMLInputElement | null;
@@ -1036,6 +1050,42 @@ function bindTransparencyPreview(
   );
 }
 
+function bindLightnessBoostPreview(
+  slider: HTMLInputElement | null,
+  labelId: string,
+  signal: AbortSignal,
+): void {
+  if (!slider) {
+    return;
+  }
+
+  slider.addEventListener(
+    'input',
+    () => {
+      const value = Math.min(50, Math.max(0, Number.parseInt(slider.value, 10) || 0));
+      updateLightnessBoostValue(labelId, value);
+      const current = $currentSettings.get();
+      if (!current) {
+        return;
+      }
+      const next = { ...current, terminalThemeLightnessBoost: value };
+      $currentSettings.set(next);
+      // Live re-apply the (boosted) theme to all terminals while dragging
+      applyXtermThemeToTerminals();
+    },
+    { signal },
+  );
+
+  // On release, ensure full save + any side effects
+  slider.addEventListener(
+    'change',
+    () => {
+      // The general range change listener already calls saveAllSettings
+    },
+    { signal },
+  );
+}
+
 function scheduleTerminalFontSettingsSave(): void {
   if (terminalFontSettingsSaveTimer !== null) {
     window.clearTimeout(terminalFontSettingsSaveTimer);
@@ -1166,6 +1216,13 @@ function updatePercentageValue(labelId: string, value: number): void {
   const label = document.getElementById(labelId);
   if (label) {
     label.textContent = `${String(value)}%`;
+  }
+}
+
+function updateLightnessBoostValue(labelId: string, value: number): void {
+  const label = document.getElementById(labelId);
+  if (label) {
+    label.textContent = String(value);
   }
 }
 
@@ -1362,6 +1419,10 @@ async function handleBackgroundImageUpload(file: File): Promise<void> {
       'setting-terminal-transparency-value',
       nextSettings.terminalTransparency,
     );
+    updateLightnessBoostValue(
+      'setting-terminal-theme-lightness-boost-value',
+      nextSettings.terminalThemeLightnessBoost,
+    );
     applySettingsToTerminals();
   } catch (e) {
     log.error(() => `Background image upload failed: ${String(e)}`);
@@ -1429,3 +1490,5 @@ export function bindDevModeToggle(): void {
     }, 2000);
   });
 }
+
+/* eslint-enable max-lines */

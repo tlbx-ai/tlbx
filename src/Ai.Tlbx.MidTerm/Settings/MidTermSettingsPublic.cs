@@ -59,6 +59,7 @@ public sealed partial class MidTermSettingsPublic
     public bool SmoothScrolling { get; set; } = false;
     public ScrollbarStyleSetting ScrollbarStyle { get; set; } = ScrollbarStyleSetting.Off;
     public bool UseWebGL { get; set; } = true;
+    public int TerminalThemeLightnessBoost { get; set; } = 0;
 
     // Terminal Behavior
     public int ScrollbackLines { get; set; } = DefaultScrollbackLines;

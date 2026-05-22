@@ -31,6 +31,7 @@ const NON_PERSISTED_SETTING_IDS = new Set([
   'setting-ui-transparency-value',
   'setting-terminal-transparency-value',
   'setting-terminal-cell-background-transparency-value',
+  'setting-terminal-theme-lightness-boost-value',
 ]);
 
 function getPersistedSettingIds(): string[] {

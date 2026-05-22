@@ -5189,6 +5189,7 @@
           "smoothScrolling",
           "scrollbarStyle",
           "useWebGL",
+          "terminalThemeLightnessBoost",
           "scrollbackLines",
           "scrollbackBytes",
           "bellStyle",
@@ -5395,6 +5396,10 @@
           },
           "useWebGL": {
             "type": "boolean"
+          },
+          "terminalThemeLightnessBoost": {
+            "type": "integer",
+            "format": "int32"
           },
           "scrollbackLines": {
             "type": "integer",

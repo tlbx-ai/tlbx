@@ -96,6 +96,7 @@ public sealed partial class MidTermSettingsPublic
             SmoothScrolling = settings.SmoothScrolling,
             ScrollbarStyle = settings.ScrollbarStyle,
             UseWebGL = settings.UseWebGL,
+            TerminalThemeLightnessBoost = settings.TerminalThemeLightnessBoost,
             ScrollbackLines = settings.ScrollbackLines,
             ScrollbackBytes = settings.ScrollbackBytes,
             BellStyle = settings.BellStyle,
@@ -211,6 +212,7 @@ public sealed partial class MidTermSettingsPublic
         settings.SmoothScrolling = SmoothScrolling;
         settings.ScrollbarStyle = ScrollbarStyle;
         settings.UseWebGL = UseWebGL;
+        settings.TerminalThemeLightnessBoost = Math.Clamp(TerminalThemeLightnessBoost, 0, 50);
         settings.ScrollbackLines = Math.Clamp(ScrollbackLines, 0, MidTermSettings.MaxScrollbackLines);
         settings.ScrollbackBytes = Math.Clamp(
             ScrollbackBytes,

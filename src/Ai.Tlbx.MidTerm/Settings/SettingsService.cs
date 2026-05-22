@@ -428,6 +428,11 @@ public sealed class SettingsService
         {
             settings.TerminalCellBackgroundTransparency = settings.TerminalTransparency;
         }
+
+        if (!json.Contains("\"terminalThemeLightnessBoost\"", StringComparison.OrdinalIgnoreCase))
+        {
+            settings.TerminalThemeLightnessBoost = 0;
+        }
     }
 
     private void MigrateServiceInstallFlag(MidTermSettings settings, string json)
@@ -568,6 +573,7 @@ public sealed class SettingsService
         current.SmoothScrolling = old.SmoothScrolling;
         current.ScrollbarStyle = old.ScrollbarStyle;
         current.UseWebGL = old.UseWebGL;
+        current.TerminalThemeLightnessBoost = old.TerminalThemeLightnessBoost;
         current.ScrollbackLines = old.ScrollbackLines;
         current.ScrollbackBytes = old.ScrollbackBytes;
         current.BellStyle = old.BellStyle;

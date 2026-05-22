@@ -4224,6 +4224,8 @@ export interface components {
       scrollbarStyle: components['schemas']['ScrollbarStyleSetting'];
       useWebGL: boolean;
       /** Format: int32 */
+      terminalThemeLightnessBoost: number;
+      /** Format: int32 */
       scrollbackLines: number;
       /** Format: int32 */
       scrollbackBytes: number;
