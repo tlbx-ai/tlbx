@@ -37,7 +37,7 @@ jobs:
 
       - name: Create release
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           TITLE=$(git tag -l --format='%(contents:subject)' ${{ github.ref_name }})
           NOTES=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
@@ -326,7 +326,7 @@ jobs:
       - name: Package and upload to release
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $rid = "${{ matrix.rid }}"
           $archive = "staging/mt-$rid.tar.gz"
@@ -483,7 +483,7 @@ jobs:
       - name: Package and upload to release
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $rid = "${{ matrix.rid }}"
           $archive = "staging/mt-$rid.tar.gz"
@@ -561,7 +561,7 @@ jobs:
       - name: Package and upload to release
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $archive = "staging/mt-win-x64.zip"
           if (Get-Command 7z -ErrorAction SilentlyContinue) {
@@ -671,7 +671,7 @@ jobs:
       - name: Package and upload to release
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           $archive = "staging/mt-win-x64.zip"
           if (Get-Command 7z -ErrorAction SilentlyContinue) {
@@ -729,7 +729,7 @@ jobs:
       - name: Prune old workflow artifacts outside retained release lines
         shell: pwsh
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           ./scripts/prune-release-artifacts.ps1 `
             -Repository "${{ github.repository }}" `
