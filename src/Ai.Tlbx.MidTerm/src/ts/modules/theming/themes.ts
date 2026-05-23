@@ -200,7 +200,8 @@ function applyAnsiTransparency(theme: TerminalTheme, alpha: number): void {
 }
 
 function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: TerminalTheme): string {
-  return ANSI_COLOR_KEYS.map((key, index) => {
+  const defaultForegroundCss = buildDefaultForegroundOverrideCss(baseTheme);
+  const ansiCss = ANSI_COLOR_KEYS.map((key, index) => {
     const opaque = baseTheme[key];
     const transparent = effectiveTheme[key];
     if (typeof opaque !== 'string' || typeof transparent !== 'string') {
@@ -213,6 +214,22 @@ function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: Termi
       `.xterm .xterm-bg-${String(index)} { background-color: ${transparent}; }`,
     ].join('\n');
   }).join('\n');
+
+  return [defaultForegroundCss, ansiCss].filter(Boolean).join('\n');
+}
+
+function buildDefaultForegroundOverrideCss(theme: TerminalTheme): string {
+  const foreground = theme.foreground;
+  if (typeof foreground !== 'string' || foreground.length <= 0) {
+    return '';
+  }
+
+  return [
+    `.xterm .xterm-fg-256 { color: ${foreground}; }`,
+    `.xterm .xterm-fg-256.xterm-dim { color: ${withAlpha(foreground, 0.5)}; }`,
+    `.xterm .xterm-fg-257 { color: ${foreground}; }`,
+    `.xterm .xterm-fg-257.xterm-dim { color: ${withAlpha(foreground, 0.5)}; }`,
+  ].join('\n');
 }
 
 function withAlpha(color: string, alpha: number): string {
@@ -357,7 +374,8 @@ function boostColorLightness(color: string, boost: number): string {
   const parsed = parseHexColor(color);
   if (!parsed) return color;
   const hsl = rgbToHsl(parsed.r, parsed.g, parsed.b);
-  hsl.l = clamp(hsl.l + boost, 0, 100);
+  const boostRatio = clamp(boost, 0, 50) / 50;
+  hsl.l = clamp(hsl.l + (100 - hsl.l) * boostRatio, 0, 100);
   const rgb = hslToRgb(hsl.h, hsl.s, hsl.l);
   let hex = rgbToHex(rgb.r, rgb.g, rgb.b);
   if (parsed.a !== undefined) {

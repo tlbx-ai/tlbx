@@ -186,8 +186,23 @@ describe('themes', () => {
     expect(theme.cursorAccent).toBe('#0C0C0C');
     expect(theme.selectionBackground).toBe('#2D3044');
     expect(theme.scrollbarSliderBackground).toBe('rgba(58, 62, 82, 0.5)');
+    expect(theme.foreground).toBe('#f7f7f7');
+    expect(theme.black).toBe('#6d6d6d');
+    expect(theme.brightBlack).toBe('#adadad');
+    expect(theme.red).toBe('#ff8c99');
+  });
+
+  it('lets maximum terminal text lightness boost visibly brighten dark greys', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalThemeLightnessBoost: 50,
+      }),
+    );
+
+    expect(theme.background).toBe('#0C0C0C');
+    expect(theme.black).toBe('#ffffff');
+    expect(theme.brightBlack).toBe('#ffffff');
     expect(theme.foreground).toBe('#ffffff');
-    expect(theme.red).toBe('#ffa6b0');
   });
 
   it('resolves the mac terminal light palette', () => {

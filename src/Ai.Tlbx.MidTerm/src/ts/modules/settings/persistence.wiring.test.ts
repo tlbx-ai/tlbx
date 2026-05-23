@@ -459,6 +459,16 @@ describe('settings persistence wiring', () => {
     ).toBe('integer, clamped to 0-100');
   });
 
+  it('refreshes terminal renderers during terminal brightness preview', () => {
+    expect(persistenceSource).toContain('function previewTerminalThemeSettings');
+    expect(persistenceSource).toMatch(
+      /terminalThemeLightnessBoost: value[\s\S]*previewTerminalThemeSettings\(next\)/,
+    );
+    expect(persistenceSource).toMatch(
+      /function previewTerminalThemeSettings[\s\S]*refreshTerminalPresentation\(sessionId, state\)/,
+    );
+  });
+
   it('wires Ken Burns controls with the requested zoom and speed ranges', () => {
     expect(html).toMatch(/id="setting-background-ken-burns-zoom-percent"[\s\S]*?min="150"/);
     expect(html).toMatch(/id="setting-background-ken-burns-zoom-percent"[\s\S]*?max="300"/);

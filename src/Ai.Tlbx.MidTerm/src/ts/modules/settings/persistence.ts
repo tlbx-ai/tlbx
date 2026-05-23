@@ -13,7 +13,6 @@ import { JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
 import {
-  applyXtermThemeToTerminals,
   getEffectiveXtermThemeForSettings,
   syncEffectiveXtermThemeDomOverrides,
 } from '../theming/themes';
@@ -1070,8 +1069,7 @@ function bindLightnessBoostPreview(
       }
       const next = { ...current, terminalThemeLightnessBoost: value };
       $currentSettings.set(next);
-      // Live re-apply the (boosted) theme to all terminals while dragging
-      applyXtermThemeToTerminals();
+      previewTerminalThemeSettings(next);
     },
     { signal },
   );
@@ -1187,6 +1185,16 @@ function resolvePreviewBackgroundKenBurnsSettings(
 
 function previewTransparencySettings(settings: MidTermSettingsPublic): void {
   applyBackgroundAppearance(settings);
+  syncEffectiveXtermThemeDomOverrides(settings);
+  const theme = getEffectiveXtermThemeForSettings(settings);
+
+  for (const [sessionId, state] of sessionTerminals.entries()) {
+    state.terminal.options.theme = theme;
+    refreshTerminalPresentation(sessionId, state);
+  }
+}
+
+function previewTerminalThemeSettings(settings: MidTermSettingsPublic): void {
   syncEffectiveXtermThemeDomOverrides(settings);
   const theme = getEffectiveXtermThemeForSettings(settings);
 
