@@ -81,6 +81,21 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void ApplyTo_AllowsTerminalBrightnessBoostUpToOneHundred()
+    {
+        var settings = new MidTermSettings();
+
+        var publicSettings = new MidTermSettingsPublic
+        {
+            TerminalThemeLightnessBoost = 100
+        };
+
+        publicSettings.ApplyTo(settings);
+
+        Assert.Equal(100, settings.TerminalThemeLightnessBoost);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripBackgroundKenBurnsSettings()
     {
         var settings = new MidTermSettings

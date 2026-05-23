@@ -385,7 +385,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
   controlEntry('terminalThemeLightnessBoost', 'setting-terminal-theme-lightness-boost', 'int', 0, {
     editable: true,
     storage: 'settings.json',
-    validation: 'integer, clamped to 0-50',
+    validation: 'integer, clamped to 0-100',
     applyMode: 'immediate',
   }),
   preserveEntry('minimumContrastRatio', 1, {

@@ -460,6 +460,11 @@ describe('settings persistence wiring', () => {
   });
 
   it('refreshes terminal renderers during terminal brightness preview', () => {
+    expect(html).toMatch(/id="setting-terminal-theme-lightness-boost"[\s\S]*?max="100"/);
+    expect(persistenceSource).toContain('Math.min(100');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalThemeLightnessBoost')?.validation,
+    ).toBe('integer, clamped to 0-100');
     expect(persistenceSource).toContain('function previewTerminalThemeSettings');
     expect(persistenceSource).toMatch(
       /terminalThemeLightnessBoost: value[\s\S]*previewTerminalThemeSettings\(next\)/,

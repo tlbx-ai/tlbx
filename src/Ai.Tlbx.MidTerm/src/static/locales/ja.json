@@ -116,7 +116,7 @@
   "settings.appearance.cursorUnfocused": "カーソル（非フォーカス時）",
   "settings.appearance.theme": "テーマ",
   "settings.appearance.terminalColorScheme": "ターミナルの配色",
-  "settings.appearance.terminalThemeLightnessBoost": "テキストの明るさ",
+  "settings.appearance.terminalThemeLightnessBoost": "明るさブースト",
   "settings.appearance.backgroundTitle": "背景と透明度",
   "settings.appearance.backgroundImage": "背景画像",
   "settings.appearance.backgroundUpload": "画像をアップロード",

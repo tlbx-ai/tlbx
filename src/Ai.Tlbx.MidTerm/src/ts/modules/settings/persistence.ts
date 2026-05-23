@@ -1,4 +1,4 @@
-/* eslint-disable max-lines -- settings persistence is the central hub for form binding/apply across all controls; lightness boost wiring was the minimal addition for the slider feature. */
+/* eslint-disable max-lines -- settings persistence is the central hub for form binding/apply across all controls; brightness boost wiring was the minimal addition for the slider feature. */
 /**
  * Settings Persistence Module
  *
@@ -1061,7 +1061,7 @@ function bindLightnessBoostPreview(
   slider.addEventListener(
     'input',
     () => {
-      const value = Math.min(50, Math.max(0, Number.parseInt(slider.value, 10) || 0));
+      const value = Math.min(100, Math.max(0, Number.parseInt(slider.value, 10) || 0));
       updateLightnessBoostValue(labelId, value);
       const current = $currentSettings.get();
       if (!current) {

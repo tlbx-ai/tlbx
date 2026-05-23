@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { MidTermSettingsPublic } from '../../api/types';
 import {
+  boostTerminalTextColor,
   getEffectiveTerminalBackgroundAlpha,
   getEffectiveTerminalCellBackgroundAlpha,
   getEffectiveXtermThemeForSettings,
@@ -174,7 +175,7 @@ describe('themes', () => {
     expect(theme.brightCyan).toBe('#61D6D6');
   });
 
-  it('boosts terminal text lightness without brightening terminal background surfaces', () => {
+  it('boosts terminal text brightness without brightening terminal background surfaces', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
         terminalThemeLightnessBoost: 20,
@@ -186,13 +187,13 @@ describe('themes', () => {
     expect(theme.cursorAccent).toBe('#0C0C0C');
     expect(theme.selectionBackground).toBe('#2D3044');
     expect(theme.scrollbarSliderBackground).toBe('rgba(58, 62, 82, 0.5)');
-    expect(theme.foreground).toBe('#f7f7f7');
+    expect(theme.foreground).toBe('#ffffff');
     expect(theme.black).toBe('#0C0C0C');
     expect(theme.brightBlack).toBe('#767676');
     expect(theme.red).toBe('#FF4055');
   });
 
-  it('lets maximum terminal text lightness boost visibly brighten dark greys', () => {
+  it('lets terminal text brightness boost visibly brighten ANSI foreground colors', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
         terminalThemeLightnessBoost: 50,
@@ -203,6 +204,10 @@ describe('themes', () => {
     expect(theme.black).toBe('#0C0C0C');
     expect(theme.brightBlack).toBe('#767676');
     expect(theme.foreground).toBe('#ffffff');
+
+    expect(boostTerminalTextColor('#f0f0f0', 50)).toBe('#ffffff');
+    expect(boostTerminalTextColor('#2B65FF', 50)).toBe('#5d97ff');
+    expect(boostTerminalTextColor('#767676', 50)).toBe('#a8a8a8');
   });
 
   it('resolves the mac terminal light palette', () => {

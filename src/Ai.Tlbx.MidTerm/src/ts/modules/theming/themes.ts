@@ -125,7 +125,7 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
     throw new Error("Theme 'dark' not found");
   }
   const baseTheme = getTerminalThemeByName(settings, key) ?? fallbackTheme;
-  const textLightnessBoost = clamp(settings?.terminalThemeLightnessBoost ?? 0, 0, 50);
+  const textLightnessBoost = clamp(settings?.terminalThemeLightnessBoost ?? 0, 0, 100);
   const foregroundTheme =
     textLightnessBoost > 0
       ? applyTextLightnessBoostToTheme(baseTheme, textLightnessBoost)
@@ -319,7 +319,7 @@ function transparencyToAlpha(transparency: number): number {
   return Math.max(0, 1 - clampedTransparency / 100);
 }
 
-// --- Text lightness boost translation layer (HSL) ---
+// --- Text brightness boost translation layer ---
 // Pure, no external deps. Applied only to foreground/text colors, never pane backgrounds.
 
 function clamp(n: number, min: number, max: number): number {
@@ -348,65 +348,6 @@ function parseHexColor(hex: string): { r: number; g: number; b: number; a?: numb
   return null;
 }
 
-function rgbToHsl(r: number, g: number, b: number): { h: number; s: number; l: number } {
-  r = clamp(r, 0, 255) / 255;
-  g = clamp(g, 0, 255) / 255;
-  b = clamp(b, 0, 255) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  let h = 0;
-  let s = 0;
-  const l = (max + min) / 2;
-  if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    switch (max) {
-      case r:
-        h = (g - b) / d + (g < b ? 6 : 0);
-        break;
-      case g:
-        h = (b - r) / d + 2;
-        break;
-      case b:
-        h = (r - g) / d + 4;
-        break;
-    }
-    h /= 6;
-  }
-  return { h: h * 360, s: s * 100, l: l * 100 };
-}
-
-function hslToRgb(h: number, s: number, l: number): { r: number; g: number; b: number } {
-  h = (((h % 360) + 360) % 360) / 360;
-  s = clamp(s, 0, 100) / 100;
-  l = clamp(l, 0, 100) / 100;
-  let r: number;
-  let g: number;
-  let b: number;
-  if (s === 0) {
-    r = g = b = l;
-  } else {
-    const hue2rgb = (p: number, q: number, t: number) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    r = hue2rgb(p, q, h + 1 / 3);
-    g = hue2rgb(p, q, h);
-    b = hue2rgb(p, q, h - 1 / 3);
-  }
-  return {
-    r: Math.round(clamp(r * 255, 0, 255)),
-    g: Math.round(clamp(g * 255, 0, 255)),
-    b: Math.round(clamp(b * 255, 0, 255)),
-  };
-}
-
 function rgbToHex(r: number, g: number, b: number): string {
   return (
     '#' +
@@ -420,15 +361,12 @@ function rgbToHex(r: number, g: number, b: number): string {
   );
 }
 
-function boostColorLightness(color: string, boost: number): string {
+export function boostTerminalTextColor(color: string, boost: number): string {
   if (boost <= 0 || !color) return color;
   const parsed = parseHexColor(color);
   if (!parsed) return color;
-  const hsl = rgbToHsl(parsed.r, parsed.g, parsed.b);
-  const boostRatio = clamp(boost, 0, 50) / 50;
-  hsl.l = clamp(hsl.l + (100 - hsl.l) * boostRatio, 0, 100);
-  const rgb = hslToRgb(hsl.h, hsl.s, hsl.l);
-  let hex = rgbToHex(rgb.r, rgb.g, rgb.b);
+  const lift = clamp(boost, 0, 100);
+  let hex = rgbToHex(parsed.r + lift, parsed.g + lift, parsed.b + lift);
   if (parsed.a !== undefined) {
     const aHex = Math.round(clamp(parsed.a * 255, 0, 255))
       .toString(16)
@@ -444,7 +382,7 @@ function applyTextLightnessBoostToTheme(theme: TerminalTheme, boost: number): Te
   for (const key of TEXT_LIGHTNESS_KEYS) {
     const val = out[key];
     if (typeof val === 'string' && val.trim().length > 0) {
-      (out as unknown as Record<string, string>)[key] = boostColorLightness(val, boost);
+      (out as unknown as Record<string, string>)[key] = boostTerminalTextColor(val, boost);
     }
   }
   return out;
