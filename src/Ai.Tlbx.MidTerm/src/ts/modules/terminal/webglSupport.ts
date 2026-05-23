@@ -7,5 +7,9 @@ export function shouldUseWebglRenderer(
     return false;
   }
 
+  if ((settings?.terminalThemeLightnessBoost ?? 0) > 0) {
+    return false;
+  }
+
   return true;
 }
