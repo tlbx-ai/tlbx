@@ -187,7 +187,7 @@ describe('themes', () => {
     expect(theme.cursorAccent).toBe('#0C0C0C');
     expect(theme.selectionBackground).toBe('#2D3044');
     expect(theme.scrollbarSliderBackground).toBe('rgba(58, 62, 82, 0.5)');
-    expect(theme.foreground).toBe('#ffffff');
+    expect(theme.foreground).toBe('#f5f5f5');
     expect(theme.black).toBe('#0C0C0C');
     expect(theme.brightBlack).toBe('#767676');
     expect(theme.red).toBe('#FF4055');
@@ -203,11 +203,18 @@ describe('themes', () => {
     expect(theme.background).toBe('#0C0C0C');
     expect(theme.black).toBe('#0C0C0C');
     expect(theme.brightBlack).toBe('#767676');
-    expect(theme.foreground).toBe('#ffffff');
+    expect(theme.foreground).toBe('#f9f9f9');
 
-    expect(boostTerminalTextColor('#f0f0f0', 50)).toBe('#ffffff');
-    expect(boostTerminalTextColor('#2B65FF', 50)).toBe('#5d97ff');
-    expect(boostTerminalTextColor('#767676', 50)).toBe('#a8a8a8');
+    expect(boostTerminalTextColor('#f0f0f0', 50)).toBe('#f8f8f8');
+    expect(boostTerminalTextColor('#2B65FF', 50)).toBe('#95b2ff');
+    expect(boostTerminalTextColor('#767676', 50)).toBe('#bbbbbb');
+  });
+
+  it('maps maximum terminal text brightness boost to white', () => {
+    expect(boostTerminalTextColor('#f0f0f0', 100)).toBe('#ffffff');
+    expect(boostTerminalTextColor('#2B65FF', 100)).toBe('#ffffff');
+    expect(boostTerminalTextColor('#767676', 100)).toBe('#ffffff');
+    expect(boostTerminalTextColor('#000000', 100)).toBe('#ffffff');
   });
 
   it('resolves the mac terminal light palette', () => {

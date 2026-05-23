@@ -365,8 +365,12 @@ export function boostTerminalTextColor(color: string, boost: number): string {
   if (boost <= 0 || !color) return color;
   const parsed = parseHexColor(color);
   if (!parsed) return color;
-  const lift = clamp(boost, 0, 100);
-  let hex = rgbToHex(parsed.r + lift, parsed.g + lift, parsed.b + lift);
+  const amount = clamp(boost, 0, 100) / 100;
+  let hex = rgbToHex(
+    parsed.r + (255 - parsed.r) * amount,
+    parsed.g + (255 - parsed.g) * amount,
+    parsed.b + (255 - parsed.b) * amount,
+  );
   if (parsed.a !== undefined) {
     const aHex = Math.round(clamp(parsed.a * 255, 0, 255))
       .toString(16)
