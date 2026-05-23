@@ -116,6 +116,7 @@
   "settings.appearance.cursorUnfocused": "Cursor (nicht fokussiert)",
   "settings.appearance.theme": "Thema",
   "settings.appearance.terminalColorScheme": "Terminalfarben",
+  "settings.appearance.terminalThemeLightnessBoost": "Texthelligkeit",
   "settings.appearance.backgroundTitle": "Hintergrund & Transparenz",
   "settings.appearance.backgroundImage": "Hintergrundbild",
   "settings.appearance.backgroundUpload": "Bild hochladen",

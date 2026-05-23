@@ -32,13 +32,20 @@ const ANSI_COLOR_KEYS = [
   'brightWhite',
 ] as const satisfies readonly (keyof TerminalTheme)[];
 
+const TEXT_LIGHTNESS_KEYS = [
+  'foreground',
+  ...ANSI_COLOR_KEYS,
+] as const satisfies readonly (keyof TerminalTheme)[];
+
 const DOM_ANSI_OVERRIDE_STYLE_ID = 'midterm-xterm-ansi-overrides';
 
 type ResolvedTerminalTheme = {
-  baseTheme: TerminalTheme;
+  foregroundTheme: TerminalTheme;
+  ansiBackgroundTheme: TerminalTheme;
   theme: TerminalTheme;
   terminalBackgroundAlpha: number;
   cellBackgroundAlpha: number;
+  textLightnessBoost: number;
 };
 
 export function getEffectiveTerminalBackgroundAlpha(
@@ -88,15 +95,16 @@ export function syncEffectiveXtermThemeDomOverrides(settings: MidTermSettingsPub
   }
 
   const existing = document.getElementById(DOM_ANSI_OVERRIDE_STYLE_ID);
-  const { baseTheme, theme, cellBackgroundAlpha } = resolveEffectiveXtermTheme(settings);
-  if (cellBackgroundAlpha >= 1) {
+  const { foregroundTheme, ansiBackgroundTheme, cellBackgroundAlpha, textLightnessBoost } =
+    resolveEffectiveXtermTheme(settings);
+  if (cellBackgroundAlpha >= 1 && textLightnessBoost <= 0) {
     existing?.remove();
     return;
   }
 
   const style = existing instanceof HTMLStyleElement ? existing : document.createElement('style');
   style.id = DOM_ANSI_OVERRIDE_STYLE_ID;
-  style.textContent = buildDomAnsiOverrideCss(baseTheme, theme);
+  style.textContent = buildDomAnsiOverrideCss(foregroundTheme, ansiBackgroundTheme);
 
   const parent = document.body;
   if (style.parentElement !== parent) {
@@ -116,22 +124,34 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
     throw new Error("Theme 'dark' not found");
   }
   const baseTheme = getTerminalThemeByName(settings, key) ?? fallbackTheme;
-  const boost = clamp(settings?.terminalThemeLightnessBoost ?? 0, 0, 50);
-  const boostedBase = boost > 0 ? applyLightnessBoostToTheme(baseTheme, boost) : baseTheme;
-  const theme: TerminalTheme = Object.assign({}, boostedBase);
+  const textLightnessBoost = clamp(settings?.terminalThemeLightnessBoost ?? 0, 0, 50);
+  const foregroundTheme =
+    textLightnessBoost > 0
+      ? applyTextLightnessBoostToTheme(baseTheme, textLightnessBoost)
+      : baseTheme;
+  const theme: TerminalTheme = Object.assign({}, foregroundTheme);
+  const ansiBackgroundTheme: TerminalTheme = Object.assign({}, baseTheme);
   const terminalBackgroundAlpha = getEffectiveTerminalBackgroundAlpha(settings);
   const cellBackgroundAlpha = getEffectiveTerminalCellBackgroundAlpha(settings);
   const hasWallpaper = shouldRenderBackgroundImage(settings);
 
   if (hasWallpaper || terminalBackgroundAlpha < 1) {
-    theme.background = withAlpha(theme.background, terminalBackgroundAlpha);
+    theme.background = withAlpha(baseTheme.background, terminalBackgroundAlpha);
   }
 
   if (hasWallpaper || cellBackgroundAlpha < 1) {
     applyAnsiTransparency(theme, cellBackgroundAlpha);
+    applyAnsiTransparency(ansiBackgroundTheme, cellBackgroundAlpha);
   }
 
-  return { baseTheme: boostedBase, theme, terminalBackgroundAlpha, cellBackgroundAlpha };
+  return {
+    foregroundTheme,
+    ansiBackgroundTheme,
+    theme,
+    terminalBackgroundAlpha,
+    cellBackgroundAlpha,
+    textLightnessBoost,
+  };
 }
 
 /**
@@ -231,8 +251,8 @@ function transparencyToAlpha(transparency: number): number {
   return Math.max(0, 1 - clampedTransparency / 100);
 }
 
-// --- Lightness boost translation layer (HSL) ---
-// Pure, no external deps. Applied as post-process to all colors in a TerminalTheme.
+// --- Text lightness boost translation layer (HSL) ---
+// Pure, no external deps. Applied only to foreground/text colors, never pane backgrounds.
 
 function clamp(n: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, n));
@@ -349,10 +369,10 @@ function boostColorLightness(color: string, boost: number): string {
   return hex;
 }
 
-function applyLightnessBoostToTheme(theme: TerminalTheme, boost: number): TerminalTheme {
+function applyTextLightnessBoostToTheme(theme: TerminalTheme, boost: number): TerminalTheme {
   if (boost <= 0) return theme;
   const out = { ...theme } as TerminalTheme;
-  for (const key of Object.keys(out) as (keyof TerminalTheme)[]) {
+  for (const key of TEXT_LIGHTNESS_KEYS) {
     const val = out[key];
     if (typeof val === 'string' && val.trim().length > 0) {
       (out as unknown as Record<string, string>)[key] = boostColorLightness(val, boost);

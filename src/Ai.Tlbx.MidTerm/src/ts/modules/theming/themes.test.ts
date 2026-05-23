@@ -19,6 +19,7 @@ function createSettings(
       | 'uiTransparency'
       | 'terminalTransparency'
       | 'terminalCellBackgroundTransparency'
+      | 'terminalThemeLightnessBoost'
       | 'backgroundImageEnabled'
       | 'hideBackgroundImageOnMobile'
       | 'backgroundImageFileName'
@@ -32,6 +33,7 @@ function createSettings(
     uiTransparency: 0,
     terminalTransparency: 0,
     terminalCellBackgroundTransparency: 0,
+    terminalThemeLightnessBoost: 0,
     backgroundImageEnabled: false,
     hideBackgroundImageOnMobile: true,
     backgroundImageFileName: null,
@@ -170,6 +172,22 @@ describe('themes', () => {
     expect(theme.foreground).toBe('#CCCCCC');
     expect(theme.blue).toBe('#0037DA');
     expect(theme.brightCyan).toBe('#61D6D6');
+  });
+
+  it('boosts terminal text lightness without brightening terminal background surfaces', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalThemeLightnessBoost: 20,
+      }),
+    );
+
+    expect(theme.background).toBe('#0C0C0C');
+    expect(theme.cursor).toBe('#F2F2F2');
+    expect(theme.cursorAccent).toBe('#0C0C0C');
+    expect(theme.selectionBackground).toBe('#2D3044');
+    expect(theme.scrollbarSliderBackground).toBe('rgba(58, 62, 82, 0.5)');
+    expect(theme.foreground).toBe('#ffffff');
+    expect(theme.red).toBe('#ffa6b0');
   });
 
   it('resolves the mac terminal light palette', () => {

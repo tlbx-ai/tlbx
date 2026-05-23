@@ -116,6 +116,7 @@
   "settings.appearance.cursorUnfocused": "কার্সর (আনফোকাসড)",
   "settings.appearance.theme": "থিম",
   "settings.appearance.terminalColorScheme": "টার্মিনাল রং",
+  "settings.appearance.terminalThemeLightnessBoost": "টেক্সটের উজ্জ্বলতা",
   "settings.appearance.backgroundTitle": "পটভূমি ও স্বচ্ছতা",
   "settings.appearance.backgroundImage": "পটভূমির ছবি",
   "settings.appearance.backgroundUpload": "ছবি আপলোড করুন",
