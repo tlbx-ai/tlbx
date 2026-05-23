@@ -187,9 +187,9 @@ describe('themes', () => {
     expect(theme.selectionBackground).toBe('#2D3044');
     expect(theme.scrollbarSliderBackground).toBe('rgba(58, 62, 82, 0.5)');
     expect(theme.foreground).toBe('#f7f7f7');
-    expect(theme.black).toBe('#6d6d6d');
-    expect(theme.brightBlack).toBe('#adadad');
-    expect(theme.red).toBe('#ff8c99');
+    expect(theme.black).toBe('#0C0C0C');
+    expect(theme.brightBlack).toBe('#767676');
+    expect(theme.red).toBe('#FF4055');
   });
 
   it('lets maximum terminal text lightness boost visibly brighten dark greys', () => {
@@ -200,8 +200,8 @@ describe('themes', () => {
     );
 
     expect(theme.background).toBe('#0C0C0C');
-    expect(theme.black).toBe('#ffffff');
-    expect(theme.brightBlack).toBe('#ffffff');
+    expect(theme.black).toBe('#0C0C0C');
+    expect(theme.brightBlack).toBe('#767676');
     expect(theme.foreground).toBe('#ffffff');
   });
 

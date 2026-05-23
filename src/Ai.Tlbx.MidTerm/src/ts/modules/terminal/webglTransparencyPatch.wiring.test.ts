@@ -63,4 +63,21 @@ describe('WebGL transparency vendor patch', () => {
     expect(customGlyphSourcePatch).toContain('function remapBoxDrawingChar');
     expect(customGlyphSourcePatch).toContain('Number.parseInt(fontWeight) * strokeScale');
   });
+
+  it('keeps terminal text brightness boost foreground-only in WebGL', () => {
+    const cellColorPatch = getPatchSection(
+      'node_modules/@xterm/addon-webgl/src/CellColorResolver.ts',
+    );
+    const webglCommonJsPatch = getPatchSection(
+      'node_modules/@xterm/addon-webgl/lib/addon-webgl.js',
+    );
+    const webglModulePatch = getPatchSection('node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs');
+
+    expect(cellColorPatch).toContain('__MIDTERM_XTERM_WEBGL_FG_ANSI__');
+    expect(cellColorPatch).toContain('getTerminalForegroundAnsiRgba');
+    expect(cellColorPatch).toContain('!treatGlyphAsBackgroundColor(cell.getCode())');
+    expect(cellColorPatch).toContain('!(this.result.fg & FgFlags.INVERSE)');
+    expect(webglCommonJsPatch).toContain('__MIDTERM_XTERM_WEBGL_FG_ANSI__');
+    expect(webglModulePatch).toContain('__MIDTERM_XTERM_WEBGL_FG_ANSI__');
+  });
 });

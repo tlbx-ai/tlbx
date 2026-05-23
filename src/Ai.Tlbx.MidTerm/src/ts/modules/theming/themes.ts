@@ -97,6 +97,7 @@ export function syncEffectiveXtermThemeDomOverrides(settings: MidTermSettingsPub
   const existing = document.getElementById(DOM_ANSI_OVERRIDE_STYLE_ID);
   const { foregroundTheme, ansiBackgroundTheme, cellBackgroundAlpha, textLightnessBoost } =
     resolveEffectiveXtermTheme(settings);
+  syncWebglForegroundAnsiOverrides(foregroundTheme, textLightnessBoost);
   if (cellBackgroundAlpha >= 1 && textLightnessBoost <= 0) {
     existing?.remove();
     return;
@@ -129,7 +130,7 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
     textLightnessBoost > 0
       ? applyTextLightnessBoostToTheme(baseTheme, textLightnessBoost)
       : baseTheme;
-  const theme: TerminalTheme = Object.assign({}, foregroundTheme);
+  const theme = buildEffectiveXtermTheme(baseTheme, foregroundTheme, textLightnessBoost);
   const ansiBackgroundTheme: TerminalTheme = Object.assign({}, baseTheme);
   const terminalBackgroundAlpha = getEffectiveTerminalBackgroundAlpha(settings);
   const cellBackgroundAlpha = getEffectiveTerminalCellBackgroundAlpha(settings);
@@ -152,6 +153,18 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
     cellBackgroundAlpha,
     textLightnessBoost,
   };
+}
+
+function buildEffectiveXtermTheme(
+  baseTheme: TerminalTheme,
+  foregroundTheme: TerminalTheme,
+  textLightnessBoost: number,
+): TerminalTheme {
+  const theme: TerminalTheme = Object.assign({}, baseTheme);
+  if (textLightnessBoost > 0 && typeof foregroundTheme.foreground === 'string') {
+    theme.foreground = foregroundTheme.foreground;
+  }
+  return theme;
 }
 
 /**
@@ -232,6 +245,29 @@ function buildDefaultForegroundOverrideCss(theme: TerminalTheme): string {
   ].join('\n');
 }
 
+function syncWebglForegroundAnsiOverrides(theme: TerminalTheme, textLightnessBoost: number): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (textLightnessBoost <= 0) {
+    delete window.__MIDTERM_XTERM_WEBGL_FG_ANSI__;
+    return;
+  }
+
+  const packed = ANSI_COLOR_KEYS.map((key) => {
+    const color = theme[key];
+    return typeof color === 'string' ? colorToRgbaNumber(color) : null;
+  });
+
+  if (packed.some((color) => color === null)) {
+    delete window.__MIDTERM_XTERM_WEBGL_FG_ANSI__;
+    return;
+  }
+
+  window.__MIDTERM_XTERM_WEBGL_FG_ANSI__ = packed as number[];
+}
+
 function withAlpha(color: string, alpha: number): string {
   const trimmed = color.trim();
   if (trimmed.startsWith('#')) {
@@ -261,6 +297,21 @@ function withAlpha(color: string, alpha: number): string {
   }
 
   return color;
+}
+
+function colorToRgbaNumber(color: string): number | null {
+  const parsed = parseHexColor(color);
+  if (!parsed) {
+    return null;
+  }
+
+  const alpha = parsed.a ?? 1;
+  return (
+    ((Math.round(clamp(parsed.r, 0, 255)) & 0xff) << 24) |
+    ((Math.round(clamp(parsed.g, 0, 255)) & 0xff) << 16) |
+    ((Math.round(clamp(parsed.b, 0, 255)) & 0xff) << 8) |
+    (Math.round(clamp(alpha * 255, 0, 255)) & 0xff)
+  );
 }
 
 function transparencyToAlpha(transparency: number): number {

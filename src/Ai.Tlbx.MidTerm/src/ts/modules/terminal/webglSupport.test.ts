@@ -11,7 +11,6 @@ function createSettings(
       | 'terminalCellBackgroundTransparency'
       | 'uiTransparency'
       | 'useWebGL'
-      | 'terminalThemeLightnessBoost'
     >
   >,
 ): MidTermSettingsPublic {
@@ -20,7 +19,6 @@ function createSettings(
     terminalCellBackgroundTransparency: 0,
     uiTransparency: 0,
     useWebGL: true,
-    terminalThemeLightnessBoost: 0,
     ...partial,
   } as MidTermSettingsPublic;
 }
@@ -34,8 +32,13 @@ describe('webglSupport', () => {
     expect(shouldUseWebglRenderer(createSettings({ useWebGL: false }))).toBe(false);
   });
 
-  it('disables WebGL while terminal text brightness boost is active', () => {
-    expect(shouldUseWebglRenderer(createSettings({ terminalThemeLightnessBoost: 1 }))).toBe(false);
+  it('keeps WebGL enabled while terminal text brightness boost is active', () => {
+    expect(
+      shouldUseWebglRenderer({
+        ...createSettings({}),
+        terminalThemeLightnessBoost: 50,
+      } as MidTermSettingsPublic),
+    ).toBe(true);
   });
 
   it('keeps WebGL enabled when only terminal-controlled cell backgrounds are transparent', () => {
