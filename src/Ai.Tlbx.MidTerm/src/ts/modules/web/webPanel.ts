@@ -98,6 +98,7 @@ let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
 let statusIndicator: HTMLElement | null = null;
 let actionMessage: HTMLElement | null = null;
+let screenshotButton: HTMLButtonElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let previewTabCloseHandler: ((previewName: string) => void) | null = null;
@@ -182,23 +183,6 @@ export function renderPreviewTabs(): void {
     });
     tab.appendChild(button);
 
-    const screenshotButton = document.createElement('button');
-    screenshotButton.type = 'button';
-    screenshotButton.className = 'web-preview-tab-screenshot';
-    screenshotButton.innerHTML = '&#x1f4f7;';
-    screenshotButton.title = `Screenshot ${label} to terminal`;
-    screenshotButton.setAttribute('aria-label', `Screenshot preview tab ${label} to terminal`);
-    screenshotButton.dataset.previewName = preview.previewName;
-    if (!preview.url) {
-      screenshotButton.disabled = true;
-    }
-    screenshotButton.addEventListener('click', (event: MouseEvent) => {
-      event.preventDefault();
-      event.stopPropagation();
-      void handleScreenshot(event.ctrlKey, preview.previewName);
-    });
-    tab.appendChild(screenshotButton);
-
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.className = 'web-preview-tab-close';
@@ -214,6 +198,8 @@ export function renderPreviewTabs(): void {
 
     previewTabs.appendChild(tab);
   }
+
+  updateScreenshotButtonState();
 }
 
 /** Initialize the web preview panel. */
@@ -223,6 +209,7 @@ export function initWebPanel(): void {
   previewTabs = document.getElementById('web-preview-tabs');
   statusIndicator = document.getElementById('web-preview-status-indicator');
   actionMessage = document.getElementById('web-preview-action-message');
+  screenshotButton = document.getElementById('web-preview-screenshot') as HTMLButtonElement | null;
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
@@ -243,12 +230,18 @@ export function initWebPanel(): void {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
     void handleRefresh(hard ? 'hard' : 'force');
   });
+  screenshotButton?.addEventListener('click', (event: MouseEvent) => {
+    void handleScreenshot(event.ctrlKey);
+  });
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
+    closeWebPreviewOverflowMenu();
     void handleClearCookies();
   });
   document.getElementById('web-preview-clear-state')?.addEventListener('click', () => {
+    closeWebPreviewOverflowMenu();
     void handleClearState();
   });
+  initWebPreviewOverflowMenu();
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
   document.addEventListener('visibilitychange', () => {
     void refreshBrowserPreviewStatus();
@@ -305,6 +298,45 @@ export function restoreLastUrl(): void {
     return;
   }
   urlInput.value = saved ?? '';
+  updateScreenshotButtonState();
+}
+
+function initWebPreviewOverflowMenu(): void {
+  const trigger = document.getElementById('web-preview-more') as HTMLButtonElement | null;
+  const menu = document.getElementById('web-preview-overflow-menu');
+  if (!trigger || !menu) {
+    return;
+  }
+
+  trigger.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const open = menu.hidden;
+    menu.hidden = !open;
+    trigger.setAttribute('aria-expanded', String(open));
+  });
+
+  menu.addEventListener('click', (event) => {
+    event.stopPropagation();
+  });
+
+  document.addEventListener('click', closeWebPreviewOverflowMenu);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeWebPreviewOverflowMenu();
+    }
+  });
+}
+
+function closeWebPreviewOverflowMenu(): void {
+  const trigger = document.getElementById('web-preview-more') as HTMLButtonElement | null;
+  const menu = document.getElementById('web-preview-overflow-menu');
+  if (!trigger || !menu || menu.hidden) {
+    return;
+  }
+
+  menu.hidden = true;
+  trigger.setAttribute('aria-expanded', 'false');
 }
 
 function normalizeUrl(raw: string): string {
@@ -469,6 +501,7 @@ function setCurrentPreviewUrl(url: string | null, updateInput = true): void {
   if (updateInput && urlInput) {
     urlInput.value = nextInputValue;
   }
+  updateScreenshotButtonState();
 }
 
 async function ensureDockedPreviewClient(
@@ -736,6 +769,7 @@ function clearActivePreviewFrame(): void {
   setVisiblePreviewFrame(null);
   loadedUrl = null;
   hideStatusIndicator();
+  updateScreenshotButtonState();
 }
 
 function isStillActivePreviewSession(sessionId: string, previewName: string): boolean {
@@ -1029,35 +1063,40 @@ function setActionMessage(severity: 'info' | 'error', message: string | null): v
   actionMessage.classList.remove('hidden');
 }
 
-function setScreenshotButtonsBusy(active: boolean, previewName?: string): void {
-  const buttons = document.querySelectorAll<HTMLButtonElement>('.web-preview-tab-screenshot');
-
-  for (const button of buttons) {
-    const idleGlyph = button.dataset.idleGlyph ?? button.innerHTML;
-    button.dataset.idleGlyph = idleGlyph;
-    const idleTitle = button.dataset.idleTitle ?? button.title;
-    button.dataset.idleTitle = idleTitle;
-    const isTarget = !previewName || button.dataset.previewName === previewName;
-
-    if (active) {
-      button.disabled = true;
-      button.setAttribute('aria-busy', isTarget ? 'true' : 'false');
-      button.classList.toggle('web-preview-action-working', isTarget);
-      if (isTarget) {
-        button.innerHTML = '&#x21bb;';
-        button.title = 'Capturing screenshot...';
-      }
-      continue;
-    }
-
-    const sessionId = $activeSessionId.get();
-    const buttonPreview = getSessionPreview(sessionId, button.dataset.previewName);
-    button.disabled = !buttonPreview?.url;
-    button.setAttribute('aria-busy', 'false');
-    button.classList.remove('web-preview-action-working');
-    button.innerHTML = idleGlyph;
-    button.title = idleTitle;
+function updateScreenshotButtonState(): void {
+  if (!screenshotButton) {
+    return;
   }
+
+  const sessionId = $activeSessionId.get();
+  const preview = getSessionPreview(sessionId, getActivePreviewName());
+  screenshotButton.disabled = screenshotInFlight || !preview?.url;
+}
+
+function setScreenshotButtonBusy(active: boolean): void {
+  if (!screenshotButton) {
+    return;
+  }
+
+  const idleGlyph = screenshotButton.dataset.idleGlyph ?? screenshotButton.innerHTML;
+  screenshotButton.dataset.idleGlyph = idleGlyph;
+  const idleTitle = screenshotButton.dataset.idleTitle ?? screenshotButton.title;
+  screenshotButton.dataset.idleTitle = idleTitle;
+
+  if (active) {
+    screenshotButton.disabled = true;
+    screenshotButton.setAttribute('aria-busy', 'true');
+    screenshotButton.classList.add('web-preview-action-working');
+    screenshotButton.innerHTML = '&#x21bb;';
+    screenshotButton.title = 'Capturing screenshot...';
+    return;
+  }
+
+  screenshotButton.setAttribute('aria-busy', 'false');
+  screenshotButton.classList.remove('web-preview-action-working');
+  screenshotButton.innerHTML = idleGlyph;
+  screenshotButton.title = idleTitle;
+  updateScreenshotButtonState();
 }
 
 /**
@@ -1078,7 +1117,7 @@ async function handleScreenshot(download = false, requestedPreviewName?: string)
 
   screenshotInFlight = true;
   setActionMessage('info', null);
-  setScreenshotButtonsBusy(true, previewName);
+  setScreenshotButtonBusy(true);
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screenshot_${ts}.png`;
@@ -1145,7 +1184,7 @@ async function handleScreenshot(download = false, requestedPreviewName?: string)
     log.warn(() => `Screenshot upload error: ${String(err)}`);
   } finally {
     screenshotInFlight = false;
-    setScreenshotButtonsBusy(false, previewName);
+    setScreenshotButtonBusy(false);
   }
 }
 

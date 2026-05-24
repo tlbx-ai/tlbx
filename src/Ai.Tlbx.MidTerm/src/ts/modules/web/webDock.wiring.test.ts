@@ -15,10 +15,11 @@ describe('web dock footer spacing wiring', () => {
     expect(css).toContain('min-height: 40px;');
     expect(css).toContain('border-radius: 8px 8px 0 0;');
     expect(css).toContain('border-bottom-color: transparent;');
-    expect(css).toContain('.web-preview-tab-screenshot,');
     expect(css).toContain('.web-preview-dock-actions .btn-icon,');
     expect(css).toContain('background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));');
     expect(css).toContain('background: var(--command-bay-surface-hover, var(--bg-hover));');
+    expect(css).toContain('.web-preview-overflow-menu {');
+    expect(css).toContain('.web-preview-menu-item {');
   });
 
   it('pushes the adaptive footer dock left when right-side docks are visible', () => {

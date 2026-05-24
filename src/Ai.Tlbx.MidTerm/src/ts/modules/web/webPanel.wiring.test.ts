@@ -14,7 +14,7 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('<div class="web-preview-tab-strip">');
     expect(html).toContain('<div class="web-preview-tabs" id="web-preview-tabs"></div>');
     expect(html).toContain('<div class="web-preview-dock-actions">');
-    expect(html).not.toContain('id="web-preview-screenshot"');
+    expect(html).toContain('id="web-preview-screenshot"');
     expect(html).not.toContain('class="web-preview-dock-title"');
     expect(html).not.toContain('>Dev Browser</span>');
   });
@@ -24,12 +24,22 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('aria-live="polite"');
   });
 
-  it('keeps per-tab screenshot buttons busy while capture is in progress and surfaces failures', () => {
+  it('keeps the active-tab screenshot button busy while capture is in progress and surfaces failures', () => {
     expect(source).toContain('let screenshotInFlight = false;');
-    expect(source).toContain("screenshotButton.className = 'web-preview-tab-screenshot';");
-    expect(source).toContain("button.classList.toggle('web-preview-action-working', isTarget);");
-    expect(source).toContain('void handleScreenshot(event.ctrlKey, preview.previewName);');
+    expect(source).toContain("screenshotButton = document.getElementById('web-preview-screenshot')");
+    expect(source).toContain("screenshotButton.classList.add('web-preview-action-working');");
+    expect(source).toContain('void handleScreenshot(event.ctrlKey);');
     expect(source).toContain("setActionMessage('error', 'Screenshot failed:");
     expect(source).toContain("setActionMessage('info', null);");
+  });
+
+  it('keeps rare preview utilities in the overflow menu', () => {
+    expect(html).toContain('id="web-preview-more"');
+    expect(html).toContain('id="web-preview-overflow-menu"');
+    expect(html).toContain('id="dev-soft-keyboard-toggle"');
+    expect(html).toContain('id="web-preview-clear-cookies"');
+    expect(html).toContain('id="web-preview-clear-state"');
+    expect(source).toContain('function initWebPreviewOverflowMenu(): void');
+    expect(source).toContain('function closeWebPreviewOverflowMenu(): void');
   });
 });

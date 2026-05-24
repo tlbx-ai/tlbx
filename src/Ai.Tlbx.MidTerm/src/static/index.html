@@ -3054,14 +3054,12 @@ Enable terminal key log to capture Enter and modifier events.</pre
               spellcheck="false"
             />
             <button
-              class="btn-icon dev-soft-keyboard-toggle"
-              id="dev-soft-keyboard-toggle"
-              type="button"
-              title="Toggle simulated soft keyboard"
-              aria-pressed="false"
-              aria-label="Toggle simulated soft keyboard"
+              class="btn-icon"
+              id="web-preview-screenshot"
+              title="Screenshot to terminal"
+              aria-label="Screenshot current preview tab to terminal"
             >
-              &#x2328;
+              &#x1f4f7;
             </button>
             <button
               class="btn-icon"
@@ -3071,17 +3069,59 @@ Enable terminal key log to capture Enter and modifier events.</pre
             >
               &#x21bb;
             </button>
-            <button
-              class="btn-icon"
-              id="web-preview-clear-cookies"
-              data-i18n-title="webPreview.clearCookies"
-              title="Clear cookies"
-            >
-              &#x1f36a;
-            </button>
-            <button class="btn-icon" id="web-preview-clear-state" title="Clear state">
-              &#x1f5d1;
-            </button>
+            <div class="web-preview-overflow">
+              <button
+                class="btn-icon"
+                id="web-preview-more"
+                type="button"
+                title="More preview actions"
+                aria-label="More preview actions"
+                aria-haspopup="menu"
+                aria-expanded="false"
+              >
+                &#x22ef;
+              </button>
+              <div
+                class="web-preview-overflow-menu"
+                id="web-preview-overflow-menu"
+                role="menu"
+                hidden
+              >
+                <button
+                  class="web-preview-menu-item dev-soft-keyboard-toggle"
+                  id="dev-soft-keyboard-toggle"
+                  type="button"
+                  title="Toggle simulated soft keyboard"
+                  aria-pressed="false"
+                  aria-label="Toggle simulated soft keyboard"
+                  role="menuitemcheckbox"
+                >
+                  <span class="web-preview-menu-icon">&#x2328;</span>
+                  <span>Keyboard</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-clear-cookies"
+                  type="button"
+                  data-i18n-title="webPreview.clearCookies"
+                  title="Clear cookies"
+                  role="menuitem"
+                >
+                  <span class="web-preview-menu-icon">&#x1f36a;</span>
+                  <span>Clear cookies</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-clear-state"
+                  type="button"
+                  title="Clear state"
+                  role="menuitem"
+                >
+                  <span class="web-preview-menu-icon">&#x1f5d1;</span>
+                  <span>Clear state</span>
+                </button>
+              </div>
+            </div>
             <button class="btn-icon" id="web-preview-go" title="Go" aria-label="Go">
               <svg
                 viewBox="0 0 24 24"
