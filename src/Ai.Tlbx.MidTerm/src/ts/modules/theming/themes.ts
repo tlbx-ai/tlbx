@@ -105,7 +105,11 @@ export function syncEffectiveXtermThemeDomOverrides(settings: MidTermSettingsPub
 
   const style = existing instanceof HTMLStyleElement ? existing : document.createElement('style');
   style.id = DOM_ANSI_OVERRIDE_STYLE_ID;
-  style.textContent = buildDomAnsiOverrideCss(foregroundTheme, ansiBackgroundTheme);
+  style.textContent = buildDomAnsiOverrideCss(
+    foregroundTheme,
+    ansiBackgroundTheme,
+    textLightnessBoost,
+  );
 
   const parent = document.body;
   if (style.parentElement !== parent) {
@@ -212,8 +216,12 @@ function applyAnsiTransparency(theme: TerminalTheme, alpha: number): void {
   }
 }
 
-function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: TerminalTheme): string {
-  const defaultForegroundCss = buildDefaultForegroundOverrideCss(baseTheme);
+function buildDomAnsiOverrideCss(
+  baseTheme: TerminalTheme,
+  effectiveTheme: TerminalTheme,
+  textLightnessBoost: number,
+): string {
+  const defaultForegroundCss = buildDefaultForegroundOverrideCss(baseTheme, textLightnessBoost);
   const ansiCss = ANSI_COLOR_KEYS.map((key, index) => {
     const opaque = baseTheme[key];
     const transparent = effectiveTheme[key];
@@ -223,7 +231,7 @@ function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: Termi
 
     return [
       `.xterm .xterm-fg-${String(index)} { color: ${opaque}; }`,
-      `.xterm .xterm-fg-${String(index)}.xterm-dim { color: ${withAlpha(opaque, 0.5)}; }`,
+      `.xterm .xterm-fg-${String(index)}.xterm-dim { color: ${textLightnessBoost > 0 ? opaque : withAlpha(opaque, 0.5)}; }`,
       `.xterm .xterm-bg-${String(index)} { background-color: ${transparent}; }`,
     ].join('\n');
   }).join('\n');
@@ -231,7 +239,10 @@ function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: Termi
   return [defaultForegroundCss, ansiCss].filter(Boolean).join('\n');
 }
 
-function buildDefaultForegroundOverrideCss(theme: TerminalTheme): string {
+function buildDefaultForegroundOverrideCss(
+  theme: TerminalTheme,
+  textLightnessBoost: number,
+): string {
   const foreground = theme.foreground;
   if (typeof foreground !== 'string' || foreground.length <= 0) {
     return '';
@@ -239,9 +250,9 @@ function buildDefaultForegroundOverrideCss(theme: TerminalTheme): string {
 
   return [
     `.xterm .xterm-fg-256 { color: ${foreground}; }`,
-    `.xterm .xterm-fg-256.xterm-dim { color: ${withAlpha(foreground, 0.5)}; }`,
+    `.xterm .xterm-fg-256.xterm-dim { color: ${textLightnessBoost > 0 ? foreground : withAlpha(foreground, 0.5)}; }`,
     `.xterm .xterm-fg-257 { color: ${foreground}; }`,
-    `.xterm .xterm-fg-257.xterm-dim { color: ${withAlpha(foreground, 0.5)}; }`,
+    `.xterm .xterm-fg-257.xterm-dim { color: ${textLightnessBoost > 0 ? foreground : withAlpha(foreground, 0.5)}; }`,
   ].join('\n');
 }
 
@@ -252,8 +263,11 @@ function syncWebglForegroundAnsiOverrides(theme: TerminalTheme, textLightnessBoo
 
   if (textLightnessBoost <= 0) {
     delete window.__MIDTERM_XTERM_WEBGL_FG_ANSI__;
+    delete window.__MIDTERM_XTERM_FG_BOOST__;
     return;
   }
+
+  window.__MIDTERM_XTERM_FG_BOOST__ = textLightnessBoost;
 
   const packed = ANSI_COLOR_KEYS.map((key) => {
     const color = theme[key];
