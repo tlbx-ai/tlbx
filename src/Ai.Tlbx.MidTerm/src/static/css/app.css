@@ -10649,10 +10649,10 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-tab-strip {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 8px;
   min-height: 40px;
-  padding: 5px 8px;
+  padding: 6px 8px 0;
   border-bottom: 1px solid var(--border-color);
   background: linear-gradient(
     180deg,
@@ -10663,8 +10663,8 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-tabs {
   display: flex;
-  align-items: center;
-  gap: 6px;
+  align-items: flex-end;
+  gap: 2px;
   min-width: 0;
   flex: 1 1 auto;
   overflow-x: auto;
@@ -10676,15 +10676,20 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab-shell {
-  border: 1px solid var(--command-bay-border, transparent);
-  background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));
+  border: 1px solid var(--border-color);
+  border-bottom-color: transparent;
+  background: color-mix(
+    in srgb,
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 92%,
+    var(--command-bay-ui-reactive-surface, var(--btn-secondary))
+  );
   color: var(--command-bay-muted, var(--text-secondary));
-  border-radius: var(--command-bay-pill-radius, 8px);
+  border-radius: 8px 8px 0 0;
   display: inline-flex;
   align-items: stretch;
   min-width: 0;
   position: relative;
-  top: 0;
+  top: 1px;
   transition:
     background-color 0.12s ease,
     border-color 0.12s ease,
@@ -10695,22 +10700,20 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-tab-shell:hover {
   background: var(--command-bay-surface-hover, var(--bg-hover));
   color: var(--command-bay-text, var(--text-primary));
-  border-color: var(--command-bay-border-strong, transparent);
+  border-color: var(--border-color);
+  border-bottom-color: transparent;
 }
 
 .web-preview-tab-shell.active {
   border-color: var(--accent-gold);
-  background: linear-gradient(
-    180deg,
-    var(--command-bay-ui-reactive-surface, var(--btn-secondary)),
-    color-mix(
-      in srgb,
-      var(--accent-gold-10) 58%,
-      var(--command-bay-ui-reactive-surface, var(--btn-secondary))
-    )
+  border-bottom-color: var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background));
+  background: color-mix(
+    in srgb,
+    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 78%,
+    var(--accent-gold-10)
   );
   color: var(--command-bay-text, var(--text-primary));
-  box-shadow: inset 0 0 0 1px var(--accent-gold-25);
+  box-shadow: inset 0 1px 0 var(--accent-gold-25);
 }
 
 .web-preview-tab-shell.detached {
@@ -10725,7 +10728,7 @@ body.shared-session-mode .session-tab-bar {
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 6px 10px 6px 12px;
+  padding: 7px 10px 8px 12px;
   font-size: var(--command-bay-font-size, var(--fs-sm));
   line-height: 1.3;
   cursor: pointer;
@@ -10735,22 +10738,39 @@ body.shared-session-mode .session-tab-bar {
   text-overflow: ellipsis;
 }
 
+.web-preview-tab-screenshot,
 .web-preview-tab-close {
   border: 0;
   background: transparent;
   color: inherit;
   cursor: pointer;
-  font-size: var(--fs-base);
+  font-size: 17px;
   line-height: 1;
-  padding: 0 10px 0 4px;
-  opacity: 0.78;
-  border-radius: 999px;
-  align-self: center;
+  width: 28px;
+  min-width: 28px;
+  padding: 0;
+  opacity: 0.82;
+  border-radius: 6px 6px 0 0;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.web-preview-tab-screenshot:hover,
 .web-preview-tab-close:hover {
   opacity: 1;
   color: var(--text-primary);
+  background: var(--command-bay-surface-hover, var(--bg-hover));
+}
+
+.web-preview-tab-screenshot:disabled {
+  cursor: default;
+  opacity: 0.42;
+  background: transparent;
+}
+
+.web-preview-tab-close:hover {
   background: color-mix(in srgb, var(--accent-red-25) 60%, transparent);
 }
 
@@ -10777,7 +10797,7 @@ body.shared-session-mode .session-tab-bar {
   color: var(--command-bay-action-ink, var(--text-secondary));
   cursor: pointer;
   font-family: var(--font-ui);
-  font-size: var(--command-bay-font-size, var(--fs-sm));
+  font-size: 17px;
   line-height: 1;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -10786,6 +10806,14 @@ body.shared-session-mode .session-tab-bar {
     border-color 0.12s ease,
     color 0.12s ease,
     transform 0.12s ease;
+}
+
+.web-preview-dock-actions .btn-icon > svg,
+.web-preview-dock-url-bar .btn-icon > svg,
+.web-preview-detached-placeholder .btn-icon > svg {
+  display: block;
+  width: 21px;
+  height: 21px;
 }
 
 .web-preview-dock-actions .btn-icon:hover,
@@ -10803,6 +10831,7 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab:focus-visible,
+.web-preview-tab-screenshot:focus-visible,
 .web-preview-tab-close:focus-visible,
 .web-preview-dock-actions .btn-icon:focus-visible,
 .web-preview-dock-url-bar .btn-icon:focus-visible,
@@ -10837,8 +10866,9 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-dock-url-bar .btn-icon {
-  height: 28px;
-  font-size: var(--fs-md);
+  width: 30px;
+  height: 30px;
+  font-size: 17px;
 }
 
 .web-preview-action-message {

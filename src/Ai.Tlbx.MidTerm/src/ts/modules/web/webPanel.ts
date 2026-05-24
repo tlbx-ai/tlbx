@@ -40,6 +40,7 @@ import {
   getActivePreviewName,
   getActiveUrl,
   getSessionDockedClient,
+  getSessionPreview,
   listSessionPreviews,
   setActiveMode,
   setActiveUrl,
@@ -97,7 +98,6 @@ let iframeHost: HTMLElement | null = null;
 let previewTabs: HTMLElement | null = null;
 let statusIndicator: HTMLElement | null = null;
 let actionMessage: HTMLElement | null = null;
-let screenshotButton: HTMLButtonElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let previewTabCloseHandler: ((previewName: string) => void) | null = null;
@@ -182,6 +182,23 @@ export function renderPreviewTabs(): void {
     });
     tab.appendChild(button);
 
+    const screenshotButton = document.createElement('button');
+    screenshotButton.type = 'button';
+    screenshotButton.className = 'web-preview-tab-screenshot';
+    screenshotButton.innerHTML = '&#x1f4f7;';
+    screenshotButton.title = `Screenshot ${label} to terminal`;
+    screenshotButton.setAttribute('aria-label', `Screenshot preview tab ${label} to terminal`);
+    screenshotButton.dataset.previewName = preview.previewName;
+    if (!preview.url) {
+      screenshotButton.disabled = true;
+    }
+    screenshotButton.addEventListener('click', (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void handleScreenshot(event.ctrlKey, preview.previewName);
+    });
+    tab.appendChild(screenshotButton);
+
     const closeButton = document.createElement('button');
     closeButton.type = 'button';
     closeButton.className = 'web-preview-tab-close';
@@ -209,7 +226,6 @@ export function initWebPanel(): void {
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
-  screenshotButton = document.getElementById('web-preview-screenshot') as HTMLButtonElement | null;
 
   applyIframeSandbox();
   renderPreviewTabs();
@@ -227,7 +243,6 @@ export function initWebPanel(): void {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
     void handleRefresh(hard ? 'hard' : 'force');
   });
-  screenshotButton?.addEventListener('click', (e: MouseEvent) => void handleScreenshot(e.ctrlKey));
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     void handleClearCookies();
   });
@@ -1014,51 +1029,56 @@ function setActionMessage(severity: 'info' | 'error', message: string | null): v
   actionMessage.classList.remove('hidden');
 }
 
-function setScreenshotButtonBusy(active: boolean): void {
-  if (!screenshotButton) {
-    return;
+function setScreenshotButtonsBusy(active: boolean, previewName?: string): void {
+  const buttons = document.querySelectorAll<HTMLButtonElement>('.web-preview-tab-screenshot');
+
+  for (const button of buttons) {
+    const idleGlyph = button.dataset.idleGlyph ?? button.innerHTML;
+    button.dataset.idleGlyph = idleGlyph;
+    const idleTitle = button.dataset.idleTitle ?? button.title;
+    button.dataset.idleTitle = idleTitle;
+    const isTarget = !previewName || button.dataset.previewName === previewName;
+
+    if (active) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', isTarget ? 'true' : 'false');
+      button.classList.toggle('web-preview-action-working', isTarget);
+      if (isTarget) {
+        button.innerHTML = '&#x21bb;';
+        button.title = 'Capturing screenshot...';
+      }
+      continue;
+    }
+
+    const sessionId = $activeSessionId.get();
+    const buttonPreview = getSessionPreview(sessionId, button.dataset.previewName);
+    button.disabled = !buttonPreview?.url;
+    button.setAttribute('aria-busy', 'false');
+    button.classList.remove('web-preview-action-working');
+    button.innerHTML = idleGlyph;
+    button.title = idleTitle;
   }
-
-  const idleGlyph = screenshotButton.dataset.idleGlyph ?? screenshotButton.innerHTML;
-  screenshotButton.dataset.idleGlyph = idleGlyph;
-  const idleTitle = screenshotButton.dataset.idleTitle ?? screenshotButton.title;
-  screenshotButton.dataset.idleTitle = idleTitle;
-
-  if (active) {
-    screenshotButton.disabled = true;
-    screenshotButton.setAttribute('aria-busy', 'true');
-    screenshotButton.classList.add('web-preview-action-working');
-    screenshotButton.innerHTML = '&#x21bb;';
-    screenshotButton.title = 'Capturing screenshot...';
-    return;
-  }
-
-  screenshotButton.disabled = false;
-  screenshotButton.setAttribute('aria-busy', 'false');
-  screenshotButton.classList.remove('web-preview-action-working');
-  screenshotButton.innerHTML = idleGlyph;
-  screenshotButton.title = idleTitle;
 }
 
 /**
- * Capture a screenshot of the active named web preview.
+ * Capture a screenshot of a named web preview.
  */
-async function handleScreenshot(download = false): Promise<void> {
+async function handleScreenshot(download = false, requestedPreviewName?: string): Promise<void> {
   if (screenshotInFlight) {
     return;
   }
 
   const sessionId = $activeSessionId.get();
-  const previewName = getActivePreviewName();
-  const iframe = getActiveIframe();
-  if (!sessionId || !iframe || iframe.src === 'about:blank') {
+  const previewName = requestedPreviewName ?? getActivePreviewName();
+  const preview = getSessionPreview(sessionId, previewName);
+  if (!sessionId || !preview?.url) {
     setActionMessage('error', 'Screenshot failed: there is no active browser preview to capture.');
     return;
   }
 
   screenshotInFlight = true;
   setActionMessage('info', null);
-  setScreenshotButtonBusy(true);
+  setScreenshotButtonsBusy(true, previewName);
 
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const filename = `screenshot_${ts}.png`;
@@ -1125,7 +1145,7 @@ async function handleScreenshot(download = false): Promise<void> {
     log.warn(() => `Screenshot upload error: ${String(err)}`);
   } finally {
     screenshotInFlight = false;
-    setScreenshotButtonBusy(false);
+    setScreenshotButtonsBusy(false, previewName);
   }
 }
 

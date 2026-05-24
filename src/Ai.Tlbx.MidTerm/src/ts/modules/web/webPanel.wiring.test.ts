@@ -14,6 +14,7 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('<div class="web-preview-tab-strip">');
     expect(html).toContain('<div class="web-preview-tabs" id="web-preview-tabs"></div>');
     expect(html).toContain('<div class="web-preview-dock-actions">');
+    expect(html).not.toContain('id="web-preview-screenshot"');
     expect(html).not.toContain('class="web-preview-dock-title"');
     expect(html).not.toContain('>Dev Browser</span>');
   });
@@ -23,9 +24,11 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('aria-live="polite"');
   });
 
-  it('keeps the screenshot button busy while capture is in progress and surfaces explicit failures', () => {
+  it('keeps per-tab screenshot buttons busy while capture is in progress and surfaces failures', () => {
     expect(source).toContain('let screenshotInFlight = false;');
-    expect(source).toContain("screenshotButton.classList.add('web-preview-action-working');");
+    expect(source).toContain("screenshotButton.className = 'web-preview-tab-screenshot';");
+    expect(source).toContain("button.classList.toggle('web-preview-action-working', isTarget);");
+    expect(source).toContain('void handleScreenshot(event.ctrlKey, preview.previewName);');
     expect(source).toContain("setActionMessage('error', 'Screenshot failed:");
     expect(source).toContain("setActionMessage('info', null);");
   });

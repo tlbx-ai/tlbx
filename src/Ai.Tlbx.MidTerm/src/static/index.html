@@ -3036,14 +3036,6 @@ Enable terminal key log to capture Enter and modifier events.</pre
               </button>
               <button
                 class="btn-icon"
-                id="web-preview-screenshot"
-                data-i18n-title="webPreview.screenshot"
-                title="Screenshot to terminal"
-              >
-                &#x1f4f7;
-              </button>
-              <button
-                class="btn-icon"
                 id="web-preview-detach"
                 data-i18n-title="webPreview.detach"
                 title="Pop out"
@@ -3090,7 +3082,18 @@ Enable terminal key log to capture Enter and modifier events.</pre
             <button class="btn-icon" id="web-preview-clear-state" title="Clear state">
               &#x1f5d1;
             </button>
-            <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
+            <button class="btn-icon" id="web-preview-go" title="Go" aria-label="Go">
+              <svg
+                viewBox="0 0 24 24"
+                width="21"
+                height="21"
+                fill="currentColor"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+              </svg>
+            </button>
           </div>
           <div
             class="web-preview-action-message hidden"
