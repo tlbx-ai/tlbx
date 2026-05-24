@@ -305,7 +305,7 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void BuildInjectedBaseHref_BlazorServerDocument_PreservesUpstreamBaseHref()
+    public void BuildInjectedBaseHref_BlazorServerDocument_UsesProxyBaseHref()
     {
         const string html = """
             <html><head><base href="/"></head><body>
@@ -320,7 +320,7 @@ public class WebPreviewProxyMiddlewareTests
             "/",
             html);
 
-        Assert.Equal("/", baseHref);
+        Assert.Equal("/webpreview/route-1/", baseHref);
     }
 
     [Fact]

@@ -1512,9 +1512,8 @@ public sealed partial class WebPreviewProxyMiddleware
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
         // Capture this before URL rewriting removes or changes the upstream base tag.
-        // Blazor's navigation manager compares location.href against document.baseURI;
-        // forcing the base into /webpreview/... breaks apps that legitimately move the
-        // browser URL back to their own root path, e.g. /login.
+        // We still inject a proxy-prefixed base below so browser routers and relative
+        // assets resolve against the visible /webpreview/{routeKey}/ document URL.
         string? originalBaseHref = null;
         var baseMatch = BaseHrefValueRegex().Match(html);
         if (baseMatch.Success)
@@ -1592,11 +1591,6 @@ public sealed partial class WebPreviewProxyMiddleware
 
     internal static string BuildInjectedBaseHref(string routePrefix, string? finalUrl, string? originalBaseHref, string html)
     {
-        if (ShouldPreserveUpstreamBaseHref(html, originalBaseHref))
-        {
-            return NormalizeBaseHref(originalBaseHref!);
-        }
-
         if (originalBaseHref is not null)
         {
             var basePath = originalBaseHref.TrimEnd('/');
@@ -1607,35 +1601,6 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return ComputeBaseHref(routePrefix, finalUrl);
-    }
-
-    internal static bool ShouldPreserveUpstreamBaseHref(string html, string? originalBaseHref)
-    {
-        if (string.IsNullOrWhiteSpace(originalBaseHref))
-        {
-            return false;
-        }
-
-        return html.Contains("<!--Blazor:", StringComparison.Ordinal)
-            || html.Contains("/_blazor/", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeBaseHref(string baseHref)
-    {
-        var trimmed = baseHref.Trim();
-        if (trimmed.Length == 0)
-        {
-            return "/";
-        }
-
-        if (trimmed.EndsWith("/", StringComparison.Ordinal)
-            || trimmed.AsSpan().Contains('#')
-            || trimmed.AsSpan().Contains('?'))
-        {
-            return trimmed;
-        }
-
-        return trimmed + "/";
     }
 
     private static Uri BuildRequestedFileUri(Uri targetUri, string requestPath)
