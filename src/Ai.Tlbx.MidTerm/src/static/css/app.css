@@ -10647,37 +10647,26 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-primary);
 }
 
-.web-preview-dock-actions {
+.web-preview-tab-strip {
   display: flex;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.web-preview-dock-actions .btn-icon {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 3px;
-  font-size: var(--fs-lg);
-}
-
-.web-preview-dock-actions .btn-icon:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
-}
-
-.web-preview-tabs {
-  display: flex;
-  gap: 6px;
-  padding: 6px 8px;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 5px 8px;
   border-bottom: 1px solid var(--border-color);
   background: linear-gradient(
     180deg,
     var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)),
     var(--web-preview-pane-background, var(--workspace-pane-background))
   );
+}
+
+.web-preview-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -10687,20 +10676,15 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab-shell {
-  border: 1px solid var(--border-color);
-  border-bottom-color: transparent;
-  background: color-mix(
-    in srgb,
-    var(--web-preview-pane-surface-background, var(--bg-surface)) 86%,
-    transparent
-  );
-  color: var(--text-secondary);
-  border-radius: 8px 8px 0 0;
+  border: 1px solid var(--command-bay-border, transparent);
+  background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));
+  color: var(--command-bay-muted, var(--text-secondary));
+  border-radius: var(--command-bay-pill-radius, 8px);
   display: inline-flex;
   align-items: stretch;
   min-width: 0;
   position: relative;
-  top: 1px;
+  top: 0;
   transition:
     background-color 0.12s ease,
     border-color 0.12s ease,
@@ -10709,24 +10693,23 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab-shell:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-  border-color: color-mix(in srgb, var(--border-color) 70%, var(--accent-blue-25));
+  background: var(--command-bay-surface-hover, var(--bg-hover));
+  color: var(--command-bay-text, var(--text-primary));
+  border-color: var(--command-bay-border-strong, transparent);
 }
 
 .web-preview-tab-shell.active {
   border-color: var(--accent-gold);
-  border-bottom-color: var(--web-preview-pane-background, var(--workspace-pane-background));
   background: linear-gradient(
     180deg,
-    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)),
+    var(--command-bay-ui-reactive-surface, var(--btn-secondary)),
     color-mix(
       in srgb,
-      var(--accent-gold-10) 55%,
-      var(--web-preview-pane-background, var(--workspace-pane-background))
+      var(--accent-gold-10) 58%,
+      var(--command-bay-ui-reactive-surface, var(--btn-secondary))
     )
   );
-  color: var(--text-primary);
+  color: var(--command-bay-text, var(--text-primary));
   box-shadow: inset 0 0 0 1px var(--accent-gold-25);
 }
 
@@ -10742,8 +10725,8 @@ body.shared-session-mode .session-tab-bar {
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 7px 10px 8px 14px;
-  font-size: var(--fs-sm);
+  padding: 6px 10px 6px 12px;
+  font-size: var(--command-bay-font-size, var(--fs-sm));
   line-height: 1.3;
   cursor: pointer;
   white-space: nowrap;
@@ -10771,8 +10754,59 @@ body.shared-session-mode .session-tab-bar {
   background: color-mix(in srgb, var(--accent-red-25) 60%, transparent);
 }
 
+.web-preview-dock-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.web-preview-dock-actions .btn-icon,
+.web-preview-dock-url-bar .btn-icon,
+.web-preview-detached-placeholder .btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--command-bay-border, transparent);
+  border-radius: var(--command-bay-pill-radius, 8px);
+  background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));
+  color: var(--command-bay-action-ink, var(--text-secondary));
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--command-bay-font-size, var(--fs-sm));
+  line-height: 1;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.web-preview-dock-actions .btn-icon:hover,
+.web-preview-dock-url-bar .btn-icon:hover,
+.web-preview-detached-placeholder .btn-icon:hover {
+  color: var(--command-bay-text, var(--text-primary));
+  background: var(--command-bay-surface-hover, var(--bg-hover));
+  border-color: var(--command-bay-border-strong, transparent);
+}
+
+.web-preview-dock-actions .btn-icon:active,
+.web-preview-dock-url-bar .btn-icon:active,
+.web-preview-detached-placeholder .btn-icon:active {
+  transform: translateY(1px);
+}
+
 .web-preview-tab:focus-visible,
-.web-preview-tab-close:focus-visible {
+.web-preview-tab-close:focus-visible,
+.web-preview-dock-actions .btn-icon:focus-visible,
+.web-preview-dock-url-bar .btn-icon:focus-visible,
+.web-preview-detached-placeholder .btn-icon:focus-visible {
   outline: 1px solid var(--accent-blue);
   outline-offset: -1px;
 }
@@ -10803,21 +10837,8 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-dock-url-bar .btn-icon {
-  flex: 0 0 auto;
-  min-width: 30px;
   height: 28px;
-  background: none;
-  border: 1px solid var(--border-color);
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 3px 7px;
-  border-radius: 4px;
   font-size: var(--fs-md);
-}
-
-.web-preview-dock-url-bar .btn-icon:hover {
-  color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .web-preview-action-message {

@@ -10,6 +10,14 @@ const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8
 const source = readFileSync(path.join(projectRoot, 'src/ts/modules/web/webPanel.ts'), 'utf8');
 
 describe('web preview screenshot wiring', () => {
+  it('keeps dev browser actions in the tab strip instead of a separate title header', () => {
+    expect(html).toContain('<div class="web-preview-tab-strip">');
+    expect(html).toContain('<div class="web-preview-tabs" id="web-preview-tabs"></div>');
+    expect(html).toContain('<div class="web-preview-dock-actions">');
+    expect(html).not.toContain('class="web-preview-dock-title"');
+    expect(html).not.toContain('>Dev Browser</span>');
+  });
+
   it('renders a dedicated action message region for screenshot failures', () => {
     expect(html).toContain('id="web-preview-action-message"');
     expect(html).toContain('aria-live="polite"');

@@ -10,6 +10,15 @@ const source = readFileSync(path.join(__dirname, 'webDock.ts'), 'utf8');
 const css = readFileSync(path.join(projectRoot, 'src/static/css/app.css'), 'utf8');
 
 describe('web dock footer spacing wiring', () => {
+  it('uses a single tab-strip chrome row with command-bay styled actions', () => {
+    expect(css).toContain('.web-preview-tab-strip {');
+    expect(css).toContain('min-height: 40px;');
+    expect(css).toContain('.web-preview-dock-actions .btn-icon,');
+    expect(css).toContain('background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));');
+    expect(css).toContain('border-radius: var(--command-bay-pill-radius, 8px);');
+    expect(css).toContain('background: var(--command-bay-surface-hover, var(--bg-hover));');
+  });
+
   it('pushes the adaptive footer dock left when right-side docks are visible', () => {
     expect(source).toContain("const footerDock = document.getElementById('adaptive-footer-dock');");
     expect(source).toContain("footerDock.style.right = total > 0 ? `${total}px` : '';");
