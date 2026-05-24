@@ -28,9 +28,19 @@ describe('web preview screenshot wiring', () => {
     expect(source).toContain('let screenshotInFlight = false;');
     expect(source).toContain("screenshotButton = document.getElementById('web-preview-screenshot')");
     expect(source).toContain("screenshotButton.classList.add('web-preview-action-working');");
+    expect(source).toContain(
+      'screenshotButton.innerHTML = \'<span class="web-preview-button-glyph">&#x21bb;</span>\';',
+    );
     expect(source).toContain('void handleScreenshot(event.ctrlKey);');
     expect(source).toContain("setActionMessage('error', 'Screenshot failed:");
     expect(source).toContain("setActionMessage('info', null);");
+  });
+
+  it('wraps text glyph toolbar icons for optical centering', () => {
+    expect(html).toContain('<span class="web-preview-button-glyph">&#x1f4f7;</span>');
+    expect(html).toContain('<span class="web-preview-button-glyph">&#x21bb;</span>');
+    expect(html).toContain('<span class="web-preview-button-glyph">&#x22ef;</span>');
+    expect(html).toContain('<span class="web-preview-button-glyph">&times;</span>');
   });
 
   it('keeps rare preview utilities in the overflow menu', () => {

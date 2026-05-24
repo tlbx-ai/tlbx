@@ -10859,6 +10859,26 @@ body.shared-session-mode .session-tab-bar {
   font-size: 17px;
 }
 
+.web-preview-button-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  height: 1em;
+  line-height: 1;
+  transform: translateY(-0.04em);
+}
+
+.web-preview-dock-actions .btn-icon,
+.web-preview-dock-url-bar .btn-icon {
+  text-align: center;
+}
+
+.web-preview-dock-actions .btn-icon > .web-preview-button-glyph,
+.web-preview-dock-url-bar .btn-icon > .web-preview-button-glyph {
+  margin: auto;
+}
+
 .web-preview-dock-url-bar .btn-icon:disabled {
   cursor: default;
   opacity: 0.45;

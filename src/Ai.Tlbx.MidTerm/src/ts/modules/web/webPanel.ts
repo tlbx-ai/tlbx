@@ -1087,7 +1087,7 @@ function setScreenshotButtonBusy(active: boolean): void {
     screenshotButton.disabled = true;
     screenshotButton.setAttribute('aria-busy', 'true');
     screenshotButton.classList.add('web-preview-action-working');
-    screenshotButton.innerHTML = '&#x21bb;';
+    screenshotButton.innerHTML = '<span class="web-preview-button-glyph">&#x21bb;</span>';
     screenshotButton.title = 'Capturing screenshot...';
     return;
   }
