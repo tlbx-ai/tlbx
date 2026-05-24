@@ -75,8 +75,8 @@ describe('WebGL transparency vendor patch', () => {
 
     expect(cellColorPatch).toContain('__MIDTERM_XTERM_WEBGL_FG_ANSI__');
     expect(cellColorPatch).toContain('getTerminalForegroundAnsiRgba');
-    expect(cellColorPatch).toContain('!treatGlyphAsBackgroundColor(cell.getCode())');
     expect(cellColorPatch).toContain('!(this.result.fg & FgFlags.INVERSE)');
+    expect(cellColorPatch).toContain('$hasMidTermBoostedFg = true;');
     expect(webglCommonJsPatch).toContain('__MIDTERM_XTERM_WEBGL_FG_ANSI__');
     expect(webglModulePatch).toContain('__MIDTERM_XTERM_WEBGL_FG_ANSI__');
   });
