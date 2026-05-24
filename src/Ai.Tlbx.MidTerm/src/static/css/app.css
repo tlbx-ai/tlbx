@@ -775,13 +775,12 @@ body::before {
     calc(var(--sidebar-readable-ellipsis-pad-x, 0px) * -1);
 }
 
-body.has-app-background .sidebar-brand,
-body.has-app-background .sidebar-title {
+.sidebar-brand,
+.sidebar-title {
   overflow: visible;
 }
 
-body.has-app-background
-  .sidebar
+.sidebar
   :is(
     .sidebar-title,
     .sidebar-nav-btn > .icon,
@@ -807,8 +806,7 @@ body.has-app-background
   text-shadow: var(--sidebar-readable-text-shadow);
 }
 
-body.has-app-background
-  .sidebar
+.sidebar
   :is(
     .session-subtitle,
     .session-details,
@@ -823,7 +821,7 @@ body.has-app-background
   color: var(--sidebar-readable-muted-text-color);
 }
 
-body.has-app-background .sidebar .sidebar-nav-btn > .icon {
+.sidebar .sidebar-nav-btn > .icon {
   filter: var(--sidebar-readable-icon-shadow);
 }
 
@@ -878,27 +876,22 @@ body.has-app-background .sidebar .sidebar-nav-btn > .icon {
 
 .spaces-tree-adhoc {
   gap: 0;
-}
-
-body.has-app-background .spaces-tree-adhoc {
   isolation: isolate;
   position: relative;
 }
 
 .spaces-tree-adhoc .spaces-tree-target-header {
-  padding: 10px 12px 6px;
+  padding: calc(10px + var(--sidebar-readable-ellipsis-pad-y, 8px))
+    calc(12px + var(--sidebar-readable-ellipsis-pad-x, 24px))
+    calc(6px + var(--sidebar-readable-ellipsis-pad-y, 8px));
 }
 
 .spaces-tree-target-header {
-  padding: 0 4px;
   color: var(--text-muted);
   font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-}
-
-body.has-app-background .spaces-tree-target-header {
   align-self: flex-start;
   display: inline-block;
   overflow: visible;
@@ -910,21 +903,15 @@ body.has-app-background .spaces-tree-target-header {
   z-index: 2;
 }
 
-body.has-app-background
-  .spaces-tree-adhoc
-  .spaces-tree-target-header {
-  padding: calc(10px + var(--sidebar-readable-ellipsis-pad-y, 8px))
-    calc(12px + var(--sidebar-readable-ellipsis-pad-x, 24px))
-    calc(6px + var(--sidebar-readable-ellipsis-pad-y, 8px));
-}
-
-body.has-app-background .spaces-tree-adhoc-list {
+.spaces-tree-adhoc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   position: relative;
   z-index: 1;
 }
 
 .spaces-tree-space-list,
-.spaces-tree-adhoc-list,
 .spaces-tree-space-session-list,
 .spaces-tree-workspace-list,
 .spaces-tree-workspace-session-list {
@@ -1115,10 +1102,6 @@ body.has-app-background .spaces-tree-adhoc-list {
 .spaces-tree-workspace-branch {
   color: color-mix(in srgb, var(--accent-blue) 88%, var(--text-primary));
   background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
-}
-
-.spaces-tree-adhoc-list {
-  gap: 0;
 }
 
 .spaces-tree-session-item {
@@ -16160,30 +16143,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   }
 }
 
-/* Sidebar experiment: limit the primary text override to session rows only. */
 .sidebar .session-item {
-  color: var(--text-primary);
-  --sidebar-session-secondary-text: color-mix(in srgb, var(--text-primary) 62%, var(--text-muted));
-}
-
-body.has-app-background .sidebar .session-item {
   color: var(--sidebar-readable-text-color);
   --sidebar-session-secondary-text: var(--sidebar-readable-muted-text-color);
 }
 
 .sidebar
-  .session-item
-  :is(
-    .session-title,
-    .session-role-badge,
-    .session-state-badge,
-    .session-foreground.process-title
-  ) {
-  color: var(--text-primary) !important;
-}
-
-body.has-app-background
-  .sidebar
   .session-item
   :is(
     .session-title,
