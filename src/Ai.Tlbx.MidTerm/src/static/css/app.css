@@ -775,12 +775,12 @@ body::before {
     calc(var(--sidebar-readable-ellipsis-pad-x, 0px) * -1);
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces) .sidebar-brand,
-body.has-app-background:not(.opaque-terminal-surfaces) .sidebar-title {
+body.has-app-background .sidebar-brand,
+body.has-app-background .sidebar-title {
   overflow: visible;
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces)
+body.has-app-background
   .sidebar
   :is(
     .sidebar-title,
@@ -807,7 +807,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   text-shadow: var(--sidebar-readable-text-shadow);
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces)
+body.has-app-background
   .sidebar
   :is(
     .session-subtitle,
@@ -823,7 +823,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
   color: var(--sidebar-readable-muted-text-color);
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn > .icon {
+body.has-app-background .sidebar .sidebar-nav-btn > .icon {
   filter: var(--sidebar-readable-icon-shadow);
 }
 
@@ -880,7 +880,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .sidebar-nav-btn
   gap: 0;
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc {
+body.has-app-background .spaces-tree-adhoc {
   isolation: isolate;
   position: relative;
 }
@@ -898,7 +898,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc {
   text-transform: uppercase;
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-target-header {
+body.has-app-background .spaces-tree-target-header {
   align-self: flex-start;
   display: inline-block;
   overflow: visible;
@@ -910,7 +910,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-target-heade
   z-index: 2;
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces)
+body.has-app-background
   .spaces-tree-adhoc
   .spaces-tree-target-header {
   padding: calc(10px + var(--sidebar-readable-ellipsis-pad-y, 8px))
@@ -918,7 +918,7 @@ body.has-app-background:not(.opaque-terminal-surfaces)
     calc(6px + var(--sidebar-readable-ellipsis-pad-y, 8px));
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces) .spaces-tree-adhoc-list {
+body.has-app-background .spaces-tree-adhoc-list {
   position: relative;
   z-index: 1;
 }
@@ -16166,7 +16166,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --sidebar-session-secondary-text: color-mix(in srgb, var(--text-primary) 62%, var(--text-muted));
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .session-item {
+body.has-app-background .sidebar .session-item {
   color: var(--sidebar-readable-text-color);
   --sidebar-session-secondary-text: var(--sidebar-readable-muted-text-color);
 }
@@ -16182,7 +16182,7 @@ body.has-app-background:not(.opaque-terminal-surfaces) .sidebar .session-item {
   color: var(--text-primary) !important;
 }
 
-body.has-app-background:not(.opaque-terminal-surfaces)
+body.has-app-background
   .sidebar
   .session-item
   :is(
