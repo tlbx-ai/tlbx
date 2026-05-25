@@ -692,7 +692,18 @@ function applyMobileEmulationChrome(frameKey: string | null = activeFrameKey): v
   const enabled = isMobileEmulationEnabled(frameKey);
   const dockBody = document.querySelector('.web-preview-dock-body');
   dockBody?.classList.toggle('mobile-emulation', enabled);
-  mobileEmulationButton?.setAttribute('aria-pressed', String(enabled));
+  if (!mobileEmulationButton) {
+    return;
+  }
+
+  mobileEmulationButton.setAttribute('aria-pressed', String(enabled));
+  mobileEmulationButton.setAttribute(
+    'aria-label',
+    enabled ? 'Disable mobile browser emulation' : 'Enable mobile browser emulation',
+  );
+  mobileEmulationButton.title = enabled
+    ? 'Mobile browser emulation on'
+    : 'Mobile browser emulation off';
 }
 
 async function handleMobileEmulationToggle(): Promise<void> {

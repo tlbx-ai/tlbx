@@ -48,7 +48,11 @@ describe('web dock footer spacing wiring', () => {
   });
 
   it('reserves layout space for mobile emulation and the preview keyboard fallback', () => {
+    expect(css).toContain('#web-preview-mobile-emulation {');
     expect(css).toContain('#web-preview-mobile-emulation[aria-pressed=\'true\'] {');
+    expect(css).toContain('#web-preview-mobile-emulation[aria-pressed=\'true\']::after {');
+    expect(css).toContain('background: var(--accent-green);');
+    expect(css).toContain('box-shadow:');
     expect(css).toContain('.web-preview-dock-body.mobile-emulation {');
     expect(css).toContain('.web-preview-dock-body.mobile-emulation #web-preview-iframe-host {');
     expect(css).toContain('max-width: 430px;');

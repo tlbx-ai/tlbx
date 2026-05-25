@@ -10885,10 +10885,41 @@ body.shared-session-mode .session-tab-bar {
   transform: none;
 }
 
+#web-preview-mobile-emulation {
+  position: relative;
+}
+
+#web-preview-mobile-emulation svg {
+  transition:
+    color 120ms ease,
+    transform 120ms ease,
+    stroke-width 120ms ease;
+}
+
 #web-preview-mobile-emulation[aria-pressed='true'] {
-  color: var(--text-primary);
-  background: var(--bg-active);
-  border-color: var(--accent-blue-25);
+  color: var(--text-accent);
+  background: color-mix(in srgb, var(--text-accent) 18%, var(--command-bay-ui-reactive-surface, var(--btn-secondary)) 82%);
+  border-color: color-mix(in srgb, var(--text-accent) 76%, var(--border-color) 24%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--text-accent) 46%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--text-accent) 24%, transparent);
+}
+
+#web-preview-mobile-emulation[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent-green);
+  box-shadow: 0 0 0 2px var(--command-bay-ui-reactive-surface, var(--btn-secondary));
+}
+
+#web-preview-mobile-emulation[aria-pressed='true'] svg {
+  transform: translateY(-0.5px);
+  stroke-width: 2.4;
 }
 
 .web-preview-overflow {

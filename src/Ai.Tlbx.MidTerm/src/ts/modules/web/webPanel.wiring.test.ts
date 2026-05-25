@@ -60,6 +60,8 @@ describe('web preview screenshot wiring', () => {
     expect(source).toContain("mobileEmulationButton = document.getElementById(");
     expect(source).toContain('const mobileEmulationByFrame = new Map<string, boolean>();');
     expect(source).toContain('function handleMobileEmulationToggle(): Promise<void>');
+    expect(source).toContain("'Disable mobile browser emulation'");
+    expect(source).toContain("'Mobile browser emulation on'");
     expect(source).toContain('mobileEmulation: isMobileEmulationEnabled(frameKey),');
     expect(source).toContain('...(reloadToken ? { reloadToken } : {}),');
   });
