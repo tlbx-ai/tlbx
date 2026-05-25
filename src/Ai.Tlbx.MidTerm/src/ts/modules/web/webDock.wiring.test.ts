@@ -46,4 +46,21 @@ describe('web dock footer spacing wiring', () => {
     expect(source).toContain('const newWidth = clampDockWidth(startWidth + delta, panel);');
     expect(source).not.toContain('const DOCK_MAX_WIDTH = 800;');
   });
+
+  it('reserves layout space for mobile emulation and the preview keyboard fallback', () => {
+    expect(css).toContain('#web-preview-mobile-emulation[aria-pressed=\'true\'] {');
+    expect(css).toContain('.web-preview-dock-body.mobile-emulation {');
+    expect(css).toContain('.web-preview-dock-body.mobile-emulation #web-preview-iframe-host {');
+    expect(css).toContain('max-width: 430px;');
+    expect(css).toContain('body.dev-soft-keyboard-preview-fallback .web-preview-dock-body {');
+    expect(css).toContain('flex-direction: column;');
+    expect(css).toContain(
+      'body.dev-soft-keyboard-preview-fallback .web-preview-dock-body #web-preview-iframe-host {',
+    );
+    expect(css).toContain('flex: 1 1 auto;');
+    expect(css).toContain(
+      'body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboard {',
+    );
+    expect(css).toContain('position: relative;');
+  });
 });

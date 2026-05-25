@@ -52,4 +52,15 @@ describe('web preview screenshot wiring', () => {
     expect(source).toContain('function initWebPreviewOverflowMenu(): void');
     expect(source).toContain('function closeWebPreviewOverflowMenu(): void');
   });
+
+  it('wires mobile browser emulation as an active-tab URL-bar action', () => {
+    expect(html).toContain('id="web-preview-mobile-emulation"');
+    expect(html).toContain('aria-label="Emulate mobile browser"');
+    expect(html).toContain('aria-pressed="false"');
+    expect(source).toContain("mobileEmulationButton = document.getElementById(");
+    expect(source).toContain('const mobileEmulationByFrame = new Map<string, boolean>();');
+    expect(source).toContain('function handleMobileEmulationToggle(): Promise<void>');
+    expect(source).toContain('mobileEmulation: isMobileEmulationEnabled(frameKey),');
+    expect(source).toContain('...(reloadToken ? { reloadToken } : {}),');
+  });
 });

@@ -10885,6 +10885,12 @@ body.shared-session-mode .session-tab-bar {
   transform: none;
 }
 
+#web-preview-mobile-emulation[aria-pressed='true'] {
+  color: var(--text-primary);
+  background: var(--bg-active);
+  border-color: var(--accent-blue-25);
+}
+
 .web-preview-overflow {
   position: relative;
   flex: 0 0 auto;
@@ -11075,6 +11081,15 @@ body.shared-session-mode .session-tab-bar {
   background: var(--web-preview-pane-background, var(--workspace-pane-background));
 }
 
+.web-preview-dock-body.mobile-emulation {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  padding: 10px;
+  box-sizing: border-box;
+  background: color-mix(in srgb, var(--web-preview-pane-background, var(--workspace-pane-background)) 86%, var(--bg-primary) 14%);
+}
+
 #web-preview-iframe-host {
   position: relative;
   flex: 1;
@@ -11082,6 +11097,17 @@ body.shared-session-mode .session-tab-bar {
   height: 100%;
   min-width: 0;
   min-height: 0;
+}
+
+.web-preview-dock-body.mobile-emulation #web-preview-iframe-host {
+  flex: 0 1 430px;
+  max-width: 430px;
+  height: 100%;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  box-shadow: 0 14px 32px color-mix(in srgb, var(--shadow-color-md) 74%, transparent);
 }
 
 .web-preview-iframe {
@@ -11197,8 +11223,34 @@ body.shared-session-mode .session-tab-bar {
   pointer-events: auto;
 }
 
+body.dev-soft-keyboard-preview-fallback .web-preview-dock-body {
+  display: flex;
+  flex-direction: column;
+}
+
+body.dev-soft-keyboard-preview-fallback .web-preview-dock-body #web-preview-iframe-host {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+body.dev-soft-keyboard-preview-fallback .web-preview-dock-body.mobile-emulation {
+  align-items: center;
+}
+
+body.dev-soft-keyboard-preview-fallback
+  .web-preview-dock-body.mobile-emulation
+  #web-preview-iframe-host {
+  width: min(100%, 430px);
+}
+
 body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboard {
-  position: absolute;
+  position: relative;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  flex: 0 0 var(--midterm-dev-soft-keyboard-height, 300px);
+  width: 100%;
+  z-index: 2;
 }
 
 .dev-soft-keyboard[hidden] {

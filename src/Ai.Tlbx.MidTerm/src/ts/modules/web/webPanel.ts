@@ -99,11 +99,13 @@ let previewTabs: HTMLElement | null = null;
 let statusIndicator: HTMLElement | null = null;
 let actionMessage: HTMLElement | null = null;
 let screenshotButton: HTMLButtonElement | null = null;
+let mobileEmulationButton: HTMLButtonElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
+const mobileEmulationByFrame = new Map<string, boolean>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
 const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;
 const PREVIEW_TAB_CHANGED_EVENT = 'midterm:web-preview-active-tab-changed';
@@ -210,6 +212,9 @@ export function initWebPanel(): void {
   statusIndicator = document.getElementById('web-preview-status-indicator');
   actionMessage = document.getElementById('web-preview-action-message');
   screenshotButton = document.getElementById('web-preview-screenshot') as HTMLButtonElement | null;
+  mobileEmulationButton = document.getElementById(
+    'web-preview-mobile-emulation',
+  ) as HTMLButtonElement | null;
 
   const goBtn = document.getElementById('web-preview-go');
   const refreshBtn = document.getElementById('web-preview-refresh');
@@ -232,6 +237,9 @@ export function initWebPanel(): void {
   });
   screenshotButton?.addEventListener('click', (event: MouseEvent) => {
     void handleScreenshot(event.ctrlKey);
+  });
+  mobileEmulationButton?.addEventListener('click', () => {
+    void handleMobileEmulationToggle();
   });
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     closeWebPreviewOverflowMenu();
@@ -599,6 +607,7 @@ function destroyPreviewFrameByKey(
   frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
   frame.remove();
   previewFrames.delete(frameKey);
+  mobileEmulationByFrame.delete(frameKey);
 
   if (activeFrameKey === frameKey) {
     activeFrameKey = null;
@@ -671,7 +680,37 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.tabIndex = isActive ? 0 : -1;
     refreshPreviewBridgeVisibility(frame, isActive);
   }
+  applyMobileEmulationChrome(frameKey);
   window.dispatchEvent(new CustomEvent(PREVIEW_TAB_CHANGED_EVENT, { detail: { frameKey } }));
+}
+
+function isMobileEmulationEnabled(frameKey: string | null = activeFrameKey): boolean {
+  return frameKey !== null && mobileEmulationByFrame.get(frameKey) === true;
+}
+
+function applyMobileEmulationChrome(frameKey: string | null = activeFrameKey): void {
+  const enabled = isMobileEmulationEnabled(frameKey);
+  const dockBody = document.querySelector('.web-preview-dock-body');
+  dockBody?.classList.toggle('mobile-emulation', enabled);
+  mobileEmulationButton?.setAttribute('aria-pressed', String(enabled));
+}
+
+async function handleMobileEmulationToggle(): Promise<void> {
+  const frameKey = getActivePreviewFrameKey();
+  if (!frameKey) {
+    return;
+  }
+
+  const next = !isMobileEmulationEnabled(frameKey);
+  mobileEmulationByFrame.set(frameKey, next);
+  applyMobileEmulationChrome(frameKey);
+
+  const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
+  if (!currentUrl) {
+    return;
+  }
+
+  await handleRefresh('force');
 }
 
 function postCookieBridgeResponse(
@@ -870,7 +909,10 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
       previewClient,
       currentTargetRevision,
       previewClient.origin ?? window.location.origin,
-      reloadToken,
+      {
+        mobileEmulation: isMobileEmulationEnabled(frameKey),
+        ...(reloadToken ? { reloadToken } : {}),
+      },
     );
     if (shouldReloadPreviewFrame(frame, proxyUrl, currentUrl, currentTargetRevision)) {
       if (frame.src === proxyUrl) {
