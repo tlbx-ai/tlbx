@@ -69,4 +69,19 @@ describe('mobile responsive chrome wiring', () => {
     );
     expect(css).toContain('order: 4;');
   });
+
+  it('keeps the responsive sidebar opaque and exposes touch-sized row actions', () => {
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \{[\s\S]*?background: var\(--bg-sidebar-opaque, var\(--bg-sidebar\)\);/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \.session-actions \{[\s\S]*?opacity: 1;[\s\S]*?visibility: visible;[\s\S]*?pointer-events: auto;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.session-actions \.session-pin,[\s\S]*?\.session-actions \.session-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \.session-menu-btn \{[\s\S]*?display: none;/s,
+    );
+  });
 });
