@@ -81,6 +81,9 @@ describe('mobile responsive chrome wiring', () => {
       /@media \(max-width: 768px\) \{[\s\S]*?\.session-actions \.session-pin,[\s\S]*?\.session-actions \.session-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/s,
     );
     expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.session-item \{[\s\S]*?flex-wrap: wrap;[\s\S]*?min-height: 112px;[\s\S]*?\.session-actions \{[\s\S]*?flex: 0 0 calc\(100% - 18px\);[\s\S]*?margin: 2px 0 0 18px;/s,
+    );
+    expect(css).toMatch(
       /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \.session-menu-btn \{[\s\S]*?display: none;/s,
     );
   });

@@ -3791,8 +3791,10 @@ body::before {
 
   /* Mobile: keep session context actions visible as touch targets inside the sidebar */
   .session-item {
+    flex-wrap: wrap;
+    align-items: flex-start;
     padding: 10px 10px 10px 8px;
-    min-height: 64px;
+    min-height: 112px;
     gap: 6px;
   }
 
@@ -3803,11 +3805,13 @@ body::before {
   .session-actions {
     position: static;
     display: flex;
-    flex: 0 0 auto;
+    flex: 0 0 calc(100% - 18px);
     flex-direction: row;
     align-items: center;
+    justify-content: flex-start;
     width: auto;
-    max-width: 188px;
+    max-width: none;
+    margin: 2px 0 0 18px;
     padding: 0;
     border: none;
     border-radius: 0;
@@ -3836,6 +3840,7 @@ body::before {
   }
 
   .sidebar .session-info {
+    flex: 1 1 calc(100% - 28px);
     padding-left: 4px;
   }
 
