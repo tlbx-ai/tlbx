@@ -92,6 +92,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("local claim=0 url=\"\" open_out status", shell, StringComparison.Ordinal);
         Assert.Contains("--claim) claim=1", shell, StringComparison.Ordinal);
         Assert.Contains("mt_claim_preview >/dev/null", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_claim_main_browser()", shell, StringComparison.Ordinal);
+        Assert.Contains("_MBB claim-main --browser \"$1\"", shell, StringComparison.Ordinal);
         Assert.Contains("status=$(_MWAITCONTROLLABLE 25)", shell, StringComparison.Ordinal);
         Assert.Contains("controllable: yes", shell, StringComparison.Ordinal);
         Assert.Contains("selected visible: yes", shell, StringComparison.Ordinal);
@@ -106,6 +108,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-PreviewReset", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Previews", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-ClaimPreview", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-ClaimMainBrowser", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Capabilities", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Inspect", powershell, StringComparison.Ordinal);
         Assert.Contains("function script:_MContextMissingMessage", powershell, StringComparison.Ordinal);
@@ -133,6 +136,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_capabilities -Value Mt-Capabilities", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_inspect -Value Mt-Inspect", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_SESSION_ID", powershell, StringComparison.Ordinal);

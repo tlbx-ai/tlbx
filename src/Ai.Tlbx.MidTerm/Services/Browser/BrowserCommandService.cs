@@ -329,6 +329,68 @@ public sealed class BrowserCommandService
             connectedUiClientCount).Response;
     }
 
+    public BrowserWsResult ClaimMainBrowser(BrowserCommandRequest request)
+    {
+        if (_mainBrowserService is null)
+        {
+            return new BrowserWsResult
+            {
+                Success = false,
+                Error = "Main browser service is not available."
+            };
+        }
+
+        BrowserClient client;
+        if (!string.IsNullOrWhiteSpace(request.Value))
+        {
+            var browserId = request.Value.Trim();
+            var matches = FilterClients(
+                    _clients.Values.ToArray(),
+                    request.SessionId,
+                    request.PreviewName,
+                    request.PreviewId)
+                .Where(c => BrowserIdentity.AreSameBrowser(c.BrowserId, browserId))
+                .OrderByDescending(c => string.Equals(c.BrowserId, browserId, StringComparison.Ordinal))
+                .ThenByDescending(c => c.ConnectedAtUtc)
+                .ToArray();
+
+            if (matches.Length == 0)
+            {
+                return new BrowserWsResult
+                {
+                    Success = false,
+                    Error = $"No connected browser client matches '{browserId}'."
+                };
+            }
+
+            client = matches[0];
+        }
+        else if (!TryResolveClient(request, out client, out var error))
+        {
+            return new BrowserWsResult
+            {
+                Success = false,
+                Error = error
+            };
+        }
+
+        if (string.IsNullOrWhiteSpace(client.BrowserId))
+        {
+            return new BrowserWsResult
+            {
+                Success = false,
+                Error = "Resolved browser client does not have a browser id."
+            };
+        }
+
+        _mainBrowserService.Claim(client.BrowserId);
+        return new BrowserWsResult
+        {
+            Success = true,
+            Result = $"claimed leading browser {client.BrowserId}"
+        };
+    }
+
     public async Task<BrowserStatusResponse> WaitForControllableAsync(
         string? targetUrl,
         string? sessionId = null,

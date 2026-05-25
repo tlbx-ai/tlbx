@@ -12,5 +12,6 @@ public interface IBrowserHandler
     IResult Dock(WebPreviewSessionRequest request);
     IResult SetViewport(ViewportRequest request);
     IResult Open(WebPreviewTargetRequest request);
+    IResult ClaimMain(BrowserCommandRequest request);
     Task<IResult> ExecuteCommandAsync(BrowserCommandRequest request, HttpContext ctx);
 }

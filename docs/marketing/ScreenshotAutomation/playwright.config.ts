@@ -1,5 +1,7 @@
 import { defineConfig } from '@playwright/test';
 
+const MIDTERM_BASE_URL = process.env.MIDTERM_BASE_URL ?? 'http://localhost:2000';
+
 // 70% of Full HD (1920x1080)
 const VIEWPORT_WIDTH = 1344;
 const VIEWPORT_HEIGHT = 756;
@@ -29,7 +31,8 @@ export default defineConfig({
     },
 
     // Base URL for MidTerm
-    baseURL: 'http://localhost:2000',
+    baseURL: MIDTERM_BASE_URL,
+    ignoreHTTPSErrors: true,
 
     // Action timeouts
     actionTimeout: 10 * 1000,

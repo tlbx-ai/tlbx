@@ -135,7 +135,7 @@ import { openSessionLauncher, type SessionLauncherSelection } from './modules/se
 import { initFileBrowser } from './modules/fileBrowser';
 import { initGitPanel, connectGitWebSocket } from './modules/git';
 import { initCommandsPanel } from './modules/commands';
-import { initWebPreview } from './modules/web';
+import { initWebPreview, syncActiveWebPreview } from './modules/web';
 import { initBackButtonGuard } from './modules/navigation/backButtonGuard';
 import {
   bindHubSettings,
@@ -1208,28 +1208,22 @@ function syncAppModeClasses(): void {
 }
 
 function getActiveSessionTabBar(): HTMLDivElement | null {
+  if (!dom.terminalsArea) return null;
   const activeSessionId = $activeSessionId.get();
-  if (!activeSessionId || !dom.terminalsArea) return null;
-
-  const wrappers = dom.terminalsArea.querySelectorAll<HTMLDivElement>('.session-wrapper');
-  for (const wrapper of wrappers) {
-    if (wrapper.dataset.sessionId === activeSessionId) {
-      return wrapper.querySelector<HTMLDivElement>('.session-tab-bar');
-    }
-  }
-  return null;
+  const activeSelector = activeSessionId
+    ? `.session-wrapper[data-session-id="${CSS.escape(activeSessionId)}"] .session-tab-bar`
+    : '.session-wrapper:not(.hidden) .session-tab-bar';
+  return (
+    dom.terminalsArea.querySelector<HTMLDivElement>(activeSelector) ??
+    dom.terminalsArea.querySelector<HTMLDivElement>(
+      '.session-wrapper:not(.hidden) .session-tab-bar',
+    )
+  );
 }
 
 function clickActiveSessionTabBarControl(selector: string): void {
-  const tabBar = getActiveSessionTabBar();
-  if (!tabBar) return;
-  const control = tabBar.querySelector<HTMLButtonElement>(selector);
-  control?.click();
+  getActiveSessionTabBar()?.querySelector<HTMLButtonElement>(selector)?.click();
 }
-
-// =============================================================================
-// Event Binding
-// =============================================================================
 
 function bindEvents(): void {
   bindClick('btn-new-session', () => {
@@ -1305,6 +1299,7 @@ function bindEvents(): void {
   });
   bindClick('btn-mobile-web', () => {
     clickActiveSessionTabBarControl('[data-action="web"]');
+    void syncActiveWebPreview();
   });
   bindClick('btn-mobile-commands', () => {
     clickActiveSessionTabBarControl('[data-action="commands"]');

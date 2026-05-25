@@ -478,6 +478,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'immediate',
     },
   ),
+  preserveEntry('mobileDenseTerminalMode', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
   controlEntry(
     'preserveTerminalCursorControl',
     'setting-preserve-terminal-cursor-control',

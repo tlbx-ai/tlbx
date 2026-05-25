@@ -92,6 +92,7 @@ public sealed class MidTermSettings
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
     public bool MobileKineticTerminalScroll { get; set; } = true;
+    public bool MobileDenseTerminalMode { get; set; } = false;
     public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public string StickyMainBrowserId { get; set; } = "";
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;

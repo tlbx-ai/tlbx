@@ -23,6 +23,10 @@ describe('mobile responsive chrome wiring', () => {
 
   it('toggles merged mobile topbar state from the active session', () => {
     expect(mainSource).toContain("from './modules/sessionTabs/mobileActions'");
+    expect(mainSource).toContain("initWebPreview, syncActiveWebPreview");
+    expect(mainSource).toContain(
+      "'.session-wrapper:not(.hidden) .session-tab-bar'",
+    );
     expect(mobileActionsSource).toContain(
       "title?.toggleAttribute('hidden', Boolean(activeSessionId));",
     );
@@ -32,6 +36,7 @@ describe('mobile responsive chrome wiring', () => {
     expect(mobileActionsSource).toContain("resolveSessionSurfaceMode(activeSession) === 'agent'");
     expect(mobileActionsSource).toContain('activeSessionId !== null &&');
     expect(mobileActionsSource).toContain("isTabAvailable(activeSessionId, 'agent');");
+    expect(mainSource).toContain('void syncActiveWebPreview();');
   });
 
   it('keeps mobile footer controls in the adaptive dock instead of hiding automation outright', () => {

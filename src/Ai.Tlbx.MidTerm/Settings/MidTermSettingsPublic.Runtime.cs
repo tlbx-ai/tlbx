@@ -106,6 +106,7 @@ public sealed partial class MidTermSettingsPublic
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
             MobileKineticTerminalScroll = settings.MobileKineticTerminalScroll,
+            MobileDenseTerminalMode = settings.MobileDenseTerminalMode,
             DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             ResumeMode = settings.ResumeMode,
@@ -225,6 +226,7 @@ public sealed partial class MidTermSettingsPublic
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
         settings.MobileKineticTerminalScroll = MobileKineticTerminalScroll;
+        settings.MobileDenseTerminalMode = MobileDenseTerminalMode;
         settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         settings.ResumeMode = ResumeMode;

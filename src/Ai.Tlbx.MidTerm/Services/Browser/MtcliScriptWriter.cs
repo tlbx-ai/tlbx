@@ -290,6 +290,15 @@ public static class MtcliScriptWriter
         mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
         # mt_claim_preview  — explicitly assign this named preview to the connected MidTerm browser
         mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
+        # mt_claim_main_browser [browser-id]  — make the selected preview/browser the leading browser for terminal sizing
+        mt_claim_main_browser() {
+          _MREQUIRECTX "mt_claim_main_browser" || return $?
+          if [ $# -gt 0 ] && [ -n "${1:-}" ]; then
+            _MBB claim-main --browser "$1"
+          else
+            _MBB claim-main
+          fi
+        }
         # mt_capabilities [--json]  — compact command/capability discovery for agents
         mt_capabilities() { _MREQUIRECTX "mt_capabilities" || return $?; _MBB capabilities "$@"; }
         # mt_topic TEXT...  — set the current session topic shown in the sidebar; use --clear to remove
@@ -960,6 +969,16 @@ public static class MtcliScriptWriter
         function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClaimPreview  — explicitly assign this named preview to the connected MidTerm browser
         function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
+        # Mt-ClaimMainBrowser [-BrowserId ID]  — make the selected preview/browser the leading browser for terminal sizing
+        function Mt-ClaimMainBrowser {
+            param([string]$BrowserId)
+            _MRequireSessionContext "mt_claim_main_browser"
+            if ([string]::IsNullOrWhiteSpace($BrowserId)) {
+                _MBB claim-main
+            } else {
+                _MBB claim-main --browser $BrowserId
+            }
+        }
         # Mt-Capabilities [-Json]  — compact command/capability discovery for agents
         function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
         # Mt-Topic TEXT...  — set the current session topic shown in the sidebar; use -Clear to remove
@@ -1317,6 +1336,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_cookies -Value Mt-Cookies
         Set-Alias -Name mt_previews -Value Mt-Previews
         Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview
+        Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser
         Set-Alias -Name mt_capabilities -Value Mt-Capabilities
         Set-Alias -Name mt_topic -Value Mt-Topic
         Set-Alias -Name mt_repo -Value Mt-Repo
