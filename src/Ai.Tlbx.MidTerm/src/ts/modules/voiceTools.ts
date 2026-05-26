@@ -15,6 +15,7 @@ import {
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
   getSessionAgentFeed,
+  getSessionAgentVibe,
   getHistory,
   sendSessionPrompt,
 } from '../api/client';
@@ -36,6 +37,7 @@ import type {
   SelectSessionArgs,
   SendPromptArgs,
   SessionActivityArgs,
+  SessionTurnSummaryArgs,
   DevBrowserOpenArgs,
   DevBrowserStatusArgs,
   DevBrowserCommandArgs,
@@ -49,6 +51,7 @@ import type {
   InteractiveOpResult,
   BellNotification,
 } from '../types';
+import type { AgentSessionVibeResponse } from '../api/types';
 import { JS_BUILD_VERSION } from '../constants';
 
 const log = createLogger('voiceTools');
@@ -74,6 +77,7 @@ const BROWSER_COMMANDS = new Set([
   'url',
   'status',
 ]);
+type SessionTurnStatus = 'complete' | 'busy' | 'needs_user' | 'blocked' | 'shell' | 'unknown';
 
 function getSessionLaunchErrorMessage(error: unknown): string {
   if (error instanceof ApiProblemError) {
@@ -475,6 +479,122 @@ async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown
   return { success: true, feeds };
 }
 
+function classifyTurnStatus(vibe: AgentSessionVibeResponse): SessionTurnStatus {
+  const state = vibe.header.state.toLowerCase();
+  const attentionReason = vibe.header.attentionReason?.toLowerCase() ?? '';
+  const stateMeta = vibe.overview.stateMeta.toLowerCase();
+  const chips = vibe.header.chips.map((chip) => chip.text.toLowerCase()).join(' ');
+
+  if (state.includes('error') || state === 'blocked') {
+    return 'blocked';
+  }
+
+  if (
+    vibe.header.needsAttention ||
+    attentionReason.includes('prompt') ||
+    stateMeta.includes('waiting for input') ||
+    chips.includes('waiting for input')
+  ) {
+    return 'needs_user';
+  }
+
+  if (state === 'busy-turn' || state === 'running') {
+    return 'busy';
+  }
+
+  if (state === 'shell') {
+    return 'shell';
+  }
+
+  if (state === 'idle-prompt' || state === 'idle' || state === 'completed') {
+    return 'complete';
+  }
+
+  return 'unknown';
+}
+
+function buildTurnSummaryText(vibe: AgentSessionVibeResponse, status: SessionTurnStatus): string {
+  const latest = vibe.activities[0];
+  const title = vibe.header.title || vibe.header.providerLabel || vibe.sessionId;
+  const state = vibe.header.stateLabel || vibe.header.state;
+  const reason = vibe.header.attentionReason || latest?.summary || state;
+  const latestSignal = latest?.summary || state;
+
+  const templates: Record<SessionTurnStatus, string> = {
+    needs_user: `${title} needs user attention: ${reason}.`,
+    blocked: `${title} is blocked: ${reason}.`,
+    busy: `${title} is still working. Latest signal: ${latest?.summary || vibe.overview.activityMeta}.`,
+    shell: `${title} is at a shell, not inside an active agent turn.`,
+    complete: `${title} appears done or idle. Latest signal: ${latestSignal}.`,
+    unknown: `${title} state is unclear. Latest signal: ${latestSignal}.`,
+  };
+
+  return templates[status];
+}
+
+function buildNextAction(status: SessionTurnStatus): string {
+  if (status === 'busy') {
+    return 'Wait briefly, then call session_turn_summary again before speaking as if the turn finished.';
+  }
+
+  if (status === 'needs_user') {
+    return 'Tell the user what input or approval the session needs, then stop.';
+  }
+
+  if (status === 'blocked') {
+    return 'Report the blocker and propose one concrete recovery step.';
+  }
+
+  if (status === 'shell') {
+    return 'Ask whether to start or resume an agent workflow before sending agent prompts.';
+  }
+
+  if (status === 'complete') {
+    return 'Summarize the observed outcome in one or two short sentences.';
+  }
+
+  return 'Use session_activity for deeper evidence or ask one clarification question.';
+}
+
+/**
+ * Handle session_turn_summary tool - compact turn lifecycle summary for voice flow.
+ */
+async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<unknown> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return { success: false, error: `Session ${args.sessionId} not found` };
+  }
+
+  const tailLines = Math.max(20, Math.min(args.tailLines ?? 80, 200));
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 90, 600));
+  const bellLimit = Math.max(0, Math.min(args.bellLimit ?? 8, 25));
+  const vibe = await getSessionAgentVibe(args.sessionId, tailLines, activitySeconds, bellLimit);
+  const status = classifyTurnStatus(vibe);
+  const latestActivities = vibe.activities.slice(0, 5).map((activity) => ({
+    tone: activity.tone,
+    kind: activity.kind,
+    summary: activity.summary,
+    detail: activity.detail,
+    createdAt: activity.createdAt,
+  }));
+
+  return {
+    success: true,
+    sessionId: args.sessionId,
+    title: session.name || session.terminalTitle || vibe.header.title,
+    status,
+    state: vibe.header.state,
+    stateLabel: vibe.header.stateLabel,
+    needsAttention: vibe.header.needsAttention,
+    attentionReason: vibe.header.attentionReason,
+    summary: buildTurnSummaryText(vibe, status),
+    nextAction: buildNextAction(status),
+    overview: vibe.overview,
+    latestActivities,
+    tailText: vibe.terminal.tailText,
+  };
+}
+
 /**
  * Handle dev_browser_open tool - open a URL in a session-scoped named Dev Browser preview.
  */
@@ -723,6 +843,8 @@ const voiceToolHandlers: Record<
     Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
   send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
   session_activity: (args) => handleSessionActivity(args as unknown as SessionActivityArgs),
+  session_turn_summary: (args) =>
+    handleSessionTurnSummary(args as unknown as SessionTurnSummaryArgs),
   dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
   dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
   dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),

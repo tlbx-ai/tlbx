@@ -321,6 +321,7 @@ export type VoiceToolName =
   | 'select_session'
   | 'send_prompt'
   | 'session_activity'
+  | 'session_turn_summary'
   | 'dev_browser_open'
   | 'dev_browser_status'
   | 'dev_browser_command'
@@ -458,6 +459,14 @@ export interface SendPromptArgs {
 /** Args for session_activity tool */
 export interface SessionActivityArgs {
   sessionId?: string | null;
+  tailLines?: number;
+  activitySeconds?: number;
+  bellLimit?: number;
+}
+
+/** Args for session_turn_summary tool */
+export interface SessionTurnSummaryArgs {
+  sessionId: string;
   tailLines?: number;
   activitySeconds?: number;
   bellLimit?: number;
