@@ -55,6 +55,7 @@ import type {
   CreateSessionArgs,
   SelectSessionArgs,
   SendPromptArgs,
+  SessionOverviewArgs,
   SessionActivityArgs,
   SessionTurnSummaryArgs,
   DevBrowserOpenArgs,
@@ -66,6 +67,8 @@ import type {
   CloseSessionArgs,
   BookmarksArgs,
   StateOfThingsResult,
+  SessionOverviewResult,
+  VoicePreviewOverview,
   VoiceSessionState,
   MakeInputResult,
   ReadScrollbackResult,
@@ -73,6 +76,7 @@ import type {
   InteractiveOpResult,
   BellNotification,
   DockPosition,
+  Session,
 } from '../types';
 import type { AgentSessionVibeResponse } from '../api/types';
 import type { GitRepoBinding } from './git/types';
@@ -309,6 +313,92 @@ function handleStateOfThings(): StateOfThingsResult {
     updateAvailable: updateInfo?.available ?? false,
     recentBells: [...recentBells],
   };
+}
+
+/**
+ * Handle session_overview tool - compact orientation map for switching and multi-session control.
+ */
+async function handleSessionOverview(args: SessionOverviewArgs): Promise<SessionOverviewResult> {
+  const sessions = $sessionList.get();
+  const activeSessionId = $activeSessionId.get();
+  const focusedSessionId = $focusedSessionId.get();
+  const layoutSessionIds = getLayoutSessionIds();
+  const layoutSessionSet = new Set(layoutSessionIds);
+  const includeBrowserStatus = args.includeBrowserStatus ?? true;
+  const includeRepoStatus = args.includeRepoStatus ?? true;
+  const updateInfo = $updateInfo.get();
+
+  const sessionSummaries = await Promise.all(
+    sessions.map((session) =>
+      buildSessionOverview(session, {
+        activeSessionId,
+        focusedSessionId,
+        layoutSessionSet,
+        includeBrowserStatus,
+        includeRepoStatus,
+      }),
+    ),
+  );
+
+  return {
+    success: true,
+    activeSessionId,
+    focusedSessionId,
+    layoutSessionIds,
+    version: JS_BUILD_VERSION,
+    updateAvailable: updateInfo?.available ?? false,
+    sessions: sessionSummaries,
+  };
+}
+
+async function buildDefaultPreviewOverview(
+  sessionId: string,
+): Promise<VoicePreviewOverview | null> {
+  const [target, status] = await Promise.all([
+    getWebPreviewTarget(sessionId, DEFAULT_PREVIEW_NAME).catch(() => null),
+    getBrowserPreviewStatus(sessionId, DEFAULT_PREVIEW_NAME).catch(() => null),
+  ]);
+  return {
+    previewName: DEFAULT_PREVIEW_NAME,
+    url: target?.url ?? null,
+    state: status?.state ?? null,
+    ready: status?.state === 'ready',
+  };
+}
+
+async function buildSessionOverview(
+  session: Session,
+  options: {
+    activeSessionId: string | null;
+    focusedSessionId: string | null;
+    layoutSessionSet: Set<string>;
+    includeBrowserStatus: boolean;
+    includeRepoStatus: boolean;
+  },
+): Promise<SessionOverviewResult['sessions'][number]> {
+  const title = session.name || session.terminalTitle || session.shellType || session.id;
+  const summary: SessionOverviewResult['sessions'][number] = {
+    id: session.id,
+    title,
+    userTitle: session.name || null,
+    terminalTitle: session.terminalTitle || null,
+    foregroundName: session.foregroundName ?? null,
+    currentDirectory: session.currentDirectory || null,
+    shell: session.shellType,
+    isActive: session.id === options.activeSessionId,
+    isFocused: session.id === options.focusedSessionId,
+    isInLayout: options.layoutSessionSet.has(session.id),
+    hasRenderedTerminal: Boolean(sessionTerminals.get(session.id)?.terminal),
+    defaultPreview: options.includeBrowserStatus
+      ? await buildDefaultPreviewOverview(session.id)
+      : null,
+  };
+
+  if (options.includeRepoStatus) {
+    summary.repos = compactGitRepos(getCachedGitReposForSession(session.id));
+  }
+
+  return summary;
 }
 
 /**
@@ -1151,6 +1241,7 @@ const voiceToolHandlers: Record<
   (args: Record<string, unknown>) => Promise<unknown>
 > = {
   state_of_things: () => Promise.resolve(handleStateOfThings()),
+  session_overview: (args) => handleSessionOverview(args as unknown as SessionOverviewArgs),
   make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
   read_scrollback: (args) =>
     Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),

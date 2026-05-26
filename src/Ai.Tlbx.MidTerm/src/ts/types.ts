@@ -314,6 +314,7 @@ export interface VoiceHealthResponse {
 /** Tool names available to voice assistant */
 export type VoiceToolName =
   | 'state_of_things'
+  | 'session_overview'
   | 'make_input'
   | 'read_scrollback'
   | 'interactive_read'
@@ -386,6 +387,48 @@ export interface StateOfThingsResult {
   version: string;
   updateAvailable: boolean;
   recentBells: BellNotification[];
+}
+
+/** Args for session_overview tool */
+export interface SessionOverviewArgs {
+  includeBrowserStatus?: boolean;
+  includeRepoStatus?: boolean;
+}
+
+/** Compact result of session_overview tool */
+export interface SessionOverviewResult {
+  success: boolean;
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  layoutSessionIds: string[];
+  version: string;
+  updateAvailable: boolean;
+  sessions: VoiceSessionOverview[];
+}
+
+/** Compact session state for orientation, switching, and multi-session control */
+export interface VoiceSessionOverview {
+  id: string;
+  title: string;
+  userTitle: string | null;
+  terminalTitle: string | null;
+  foregroundName: string | null;
+  currentDirectory: string | null;
+  shell: string;
+  isActive: boolean;
+  isFocused: boolean;
+  isInLayout: boolean;
+  hasRenderedTerminal: boolean;
+  defaultPreview?: VoicePreviewOverview | null;
+  repos?: unknown[];
+}
+
+/** Compact default Dev Browser preview state for a session */
+export interface VoicePreviewOverview {
+  previewName: string;
+  url: string | null;
+  state: string | null;
+  ready: boolean;
 }
 
 /** Session state for voice assistant */

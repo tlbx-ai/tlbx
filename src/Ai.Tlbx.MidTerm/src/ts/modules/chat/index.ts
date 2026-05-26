@@ -440,6 +440,15 @@ function formatMakeInputToolDisplay(args: Record<string, unknown>): string {
   return `Send to terminal:\n${formatted}`;
 }
 
+function formatSessionOverviewToolDisplay(args: Record<string, unknown>): string {
+  const includeBrowserStatus = args.includeBrowserStatus !== false;
+  const includeRepoStatus = args.includeRepoStatus !== false;
+  const lines = ['Inspect sessions'];
+  lines.push(`Browser: ${includeBrowserStatus ? 'yes' : 'no'}`);
+  lines.push(`Repos: ${includeRepoStatus ? 'yes' : 'no'}`);
+  return lines.join('\n');
+}
+
 function formatInteractiveReadToolDisplay(args: Record<string, unknown>): string {
   const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
   const lines = ops.map((op, i) => {
@@ -457,6 +466,7 @@ const toolDisplayFormatters: Partial<
   Record<VoiceToolName, (args: Record<string, unknown>) => string>
 > = {
   send_prompt: formatSendPromptToolDisplay,
+  session_overview: formatSessionOverviewToolDisplay,
   dev_browser_command: formatDevBrowserToolDisplay,
   dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,
   repo_monitor: formatRepoMonitorToolDisplay,
