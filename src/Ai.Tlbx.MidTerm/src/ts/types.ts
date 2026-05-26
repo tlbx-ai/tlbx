@@ -318,8 +318,12 @@ export type VoiceToolName =
   | 'read_scrollback'
   | 'interactive_read'
   | 'create_session'
+  | 'select_session'
+  | 'send_prompt'
+  | 'session_activity'
   | 'close_session'
-  | 'bookmarks';
+  | 'bookmarks'
+  | 'wait_for_user';
 
 /** Tool request from voice server to browser */
 export interface VoiceToolRequest {
@@ -431,6 +435,29 @@ export interface InteractiveOpResult {
 export interface CreateSessionArgs {
   shellType?: string;
   workingDirectory?: string;
+}
+
+/** Args for select_session tool */
+export interface SelectSessionArgs {
+  sessionId: string;
+  focusTerminal?: boolean;
+}
+
+/** Args for send_prompt tool */
+export interface SendPromptArgs {
+  sessionId: string;
+  text: string;
+  interruptFirst?: boolean;
+  profile?: string | null;
+  justification: string;
+}
+
+/** Args for session_activity tool */
+export interface SessionActivityArgs {
+  sessionId?: string | null;
+  tailLines?: number;
+  activitySeconds?: number;
+  bellLimit?: number;
 }
 
 /** Args for close_session tool */

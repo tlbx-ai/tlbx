@@ -384,32 +384,33 @@ function formatTime(timestamp: string): string {
  * Format a tool request for display
  */
 function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): string {
-  switch (tool) {
-    case 'state_of_things':
-    case 'read_scrollback':
-    case 'create_session':
-    case 'close_session':
-    case 'bookmarks':
-      return `Tool: ${tool}`;
-    case 'make_input': {
-      const text = (args.text as string) || '';
-      const formatted = formatInputText(text);
-      return `Send to terminal:\n${formatted}`;
-    }
-    case 'interactive_read': {
-      const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
-      const lines = ops.map((op, i) => {
-        if (op.type === 'input') {
-          return `${i + 1}. Input: ${formatInputText(op.data || '')}`;
-        } else if (op.type === 'delay') {
-          return `${i + 1}. Wait ${op.delayMs || 100}ms`;
-        } else {
-          return `${i + 1}. Screenshot`;
-        }
-      });
-      return `Interactive sequence:\n${lines.join('\n')}`;
-    }
+  if (tool === 'send_prompt') {
+    const sessionId = (args.sessionId as string) || '';
+    const text = (args.text as string) || '';
+    return `Send prompt to ${sessionId}:\n${text}`;
   }
+
+  if (tool === 'make_input') {
+    const text = (args.text as string) || '';
+    const formatted = formatInputText(text);
+    return `Send to terminal:\n${formatted}`;
+  }
+
+  if (tool === 'interactive_read') {
+    const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
+    const lines = ops.map((op, i) => {
+      if (op.type === 'input') {
+        return `${i + 1}. Input: ${formatInputText(op.data || '')}`;
+      } else if (op.type === 'delay') {
+        return `${i + 1}. Wait ${op.delayMs || 100}ms`;
+      } else {
+        return `${i + 1}. Screenshot`;
+      }
+    });
+    return `Interactive sequence:\n${lines.join('\n')}`;
+  }
+
+  return `Tool: ${tool}`;
 }
 
 /**

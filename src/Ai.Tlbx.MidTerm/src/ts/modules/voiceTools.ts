@@ -7,13 +7,16 @@
 
 import { createLogger } from './logging';
 import { sendInput } from './comms';
+import { requestSelectSession } from './comms/stateChannel';
 import { sessionTerminals } from '../state';
 import { $sessionList, $activeSessionId, $updateInfo, getSession } from '../stores';
 import {
   ApiProblemError,
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
+  getSessionAgentFeed,
   getHistory,
+  sendSessionPrompt,
 } from '../api/client';
 import type {
   VoiceToolRequest,
@@ -22,6 +25,9 @@ import type {
   ReadScrollbackArgs,
   InteractiveReadArgs,
   CreateSessionArgs,
+  SelectSessionArgs,
+  SendPromptArgs,
+  SessionActivityArgs,
   CloseSessionArgs,
   BookmarksArgs,
   StateOfThingsResult,
@@ -334,6 +340,91 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
 }
 
 /**
+ * Handle select_session tool - bring a session into the active MidTerm surface.
+ */
+function handleSelectSession(args: SelectSessionArgs): unknown {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return { success: false, error: `Session ${args.sessionId} not found` };
+  }
+
+  requestSelectSession(args.sessionId, {
+    closeSettingsPanel: false,
+    focusTerminal: args.focusTerminal ?? true,
+  });
+
+  return {
+    success: true,
+    activeSessionId: args.sessionId,
+    title: session.name || session.terminalTitle || null,
+  };
+}
+
+/**
+ * Handle send_prompt tool - send a structured prompt to an agent session.
+ */
+async function handleSendPrompt(args: SendPromptArgs): Promise<unknown> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return { success: false, error: `Session ${args.sessionId} not found` };
+  }
+
+  await sendSessionPrompt(args.sessionId, {
+    text: args.text,
+    base64: null,
+    mode: 'auto',
+    interruptFirst: args.interruptFirst ?? false,
+    interruptKeys: ['C-c'],
+    literalInterruptKeys: false,
+    interruptDelayMs: 150,
+    submitKeys: ['Enter'],
+    literalSubmitKeys: false,
+    submitDelayMs: 300,
+    followupSubmitCount: 0,
+    followupSubmitDelayMs: 250,
+    profile: args.profile ?? null,
+  });
+
+  return {
+    success: true,
+    sessionId: args.sessionId,
+    interruptFirst: args.interruptFirst ?? false,
+  };
+}
+
+/**
+ * Handle session_activity tool - fetch structured agent/feed signals for turn flow.
+ */
+async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown> {
+  const sessions = args.sessionId
+    ? $sessionList.get().filter((session) => session.id === args.sessionId)
+    : $sessionList.get();
+
+  if (args.sessionId && sessions.length === 0) {
+    return { success: false, error: `Session ${args.sessionId} not found` };
+  }
+
+  const tailLines = Math.max(20, Math.min(args.tailLines ?? 80, 200));
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 90, 600));
+  const bellLimit = Math.max(0, Math.min(args.bellLimit ?? 8, 25));
+  const feeds = await Promise.all(
+    sessions.map(async (session) => {
+      const feed = await getSessionAgentFeed(session.id, tailLines, activitySeconds, bellLimit);
+      return {
+        sessionId: session.id,
+        title: session.name || session.terminalTitle || null,
+        isActive: session.id === $activeSessionId.get(),
+        foregroundName: session.foregroundName ?? null,
+        currentDirectory: session.currentDirectory || null,
+        feed,
+      };
+    }),
+  );
+
+  return { success: true, feeds };
+}
+
+/**
  * Handle close_session tool - close a terminal session.
  */
 async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
@@ -461,12 +552,28 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
         result = await handleCreateSession(request.args as unknown as CreateSessionArgs);
         break;
 
+      case 'select_session':
+        result = handleSelectSession(request.args as unknown as SelectSessionArgs);
+        break;
+
+      case 'send_prompt':
+        result = await handleSendPrompt(request.args as unknown as SendPromptArgs);
+        break;
+
+      case 'session_activity':
+        result = await handleSessionActivity(request.args as unknown as SessionActivityArgs);
+        break;
+
       case 'close_session':
         result = await handleCloseSession(request.args as unknown as CloseSessionArgs);
         break;
 
       case 'bookmarks':
         result = await handleBookmarks(request.args as unknown as BookmarksArgs);
+        break;
+
+      case 'wait_for_user':
+        result = { success: true, waiting: true };
         break;
 
       default:

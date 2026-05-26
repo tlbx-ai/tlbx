@@ -175,13 +175,23 @@ const pendingDocks: PendingDock[] = [];
 
 let selectSession: (
   sessionId: string,
-  options?: { closeSettingsPanel?: boolean },
+  options?: { closeSettingsPanel?: boolean; focusTerminal?: boolean },
 ) => void = () => {};
 
 export function setSelectSessionCallback(
-  cb: (sessionId: string, options?: { closeSettingsPanel?: boolean }) => void,
+  cb: (
+    sessionId: string,
+    options?: { closeSettingsPanel?: boolean; focusTerminal?: boolean },
+  ) => void,
 ): void {
   selectSession = cb;
+}
+
+export function requestSelectSession(
+  sessionId: string,
+  options?: { closeSettingsPanel?: boolean; focusTerminal?: boolean },
+): void {
+  selectSession(sessionId, options);
 }
 
 function handleTmuxDockMessage(data: TmuxDockMessage): void {
