@@ -324,6 +324,7 @@ export type VoiceToolName =
   | 'send_prompt'
   | 'session_activity'
   | 'session_turn_summary'
+  | 'wait_for_turn_completion'
   | 'dev_browser_open'
   | 'dev_browser_status'
   | 'dev_browser_command'
@@ -555,6 +556,46 @@ export interface SessionTurnSummaryArgs {
   tailLines?: number;
   activitySeconds?: number;
   bellLimit?: number;
+}
+
+/** Compact lifecycle status for a MidTerm agent turn */
+export type SessionTurnStatus =
+  | 'complete'
+  | 'busy'
+  | 'needs_user'
+  | 'blocked'
+  | 'shell'
+  | 'unknown';
+
+/** Args for wait_for_turn_completion tool */
+export interface WaitForTurnCompletionArgs {
+  sessionId: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+  includeTail?: boolean;
+}
+
+/** Result of wait_for_turn_completion tool */
+export interface WaitForTurnCompletionResult {
+  success: boolean;
+  sessionId: string;
+  title: string;
+  completed: boolean;
+  timedOut: boolean;
+  status: SessionTurnStatus;
+  state: string;
+  stateLabel: string;
+  elapsedMs: number;
+  pollCount: number;
+  settledAt: string;
+  responseText: string;
+  summary: string;
+  nextAction: string;
+  needsAttention: boolean;
+  attentionReason: string | null;
+  latestActivities: unknown[];
+  tailText?: string;
 }
 
 /** Args for dev_browser_open tool */

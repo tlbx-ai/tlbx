@@ -4,6 +4,7 @@
  * Handles tool requests from the voice assistant server.
  * Tools execute locally in the browser using xterm.js buffers and stores.
  */
+/* eslint-disable max-lines -- Voice bridge groups tool handlers until the module is split. */
 
 import { createLogger } from './logging';
 import { sendInput } from './comms';
@@ -59,6 +60,7 @@ import type {
   ConversationContinuityArgs,
   SessionActivityArgs,
   SessionTurnSummaryArgs,
+  WaitForTurnCompletionArgs,
   DevBrowserOpenArgs,
   DevBrowserStatusArgs,
   DevBrowserCommandArgs,
@@ -70,6 +72,7 @@ import type {
   StateOfThingsResult,
   SessionOverviewResult,
   ConversationContinuityResult,
+  WaitForTurnCompletionResult,
   VoicePreviewOverview,
   VoiceSessionState,
   MakeInputResult,
@@ -695,7 +698,7 @@ function buildTurnSummaryText(vibe: AgentSessionVibeResponse, status: SessionTur
 
 function buildNextAction(status: SessionTurnStatus): string {
   if (status === 'busy') {
-    return 'Wait briefly, then call session_turn_summary again before speaking as if the turn finished.';
+    return 'Call wait_for_turn_completion before speaking as if the turn finished.';
   }
 
   if (status === 'needs_user') {
@@ -715,6 +718,12 @@ function buildNextAction(status: SessionTurnStatus): string {
   }
 
   return 'Use session_activity for deeper evidence or ask one clarification question.';
+}
+
+function isSettledTurnStatus(status: SessionTurnStatus): boolean {
+  return (
+    status === 'complete' || status === 'needs_user' || status === 'blocked' || status === 'shell'
+  );
 }
 
 /**
@@ -754,6 +763,140 @@ async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<u
     latestActivities,
     tailText: vibe.terminal.tailText,
   };
+}
+
+function buildWaitResponseText(
+  title: string,
+  status: SessionTurnStatus,
+  summary: string,
+  elapsedMs: number,
+  timedOut: boolean,
+): string {
+  if (!timedOut) {
+    return summary;
+  }
+
+  const seconds = Math.round(elapsedMs / 1000);
+  if (status === 'busy') {
+    return `${title} is still working after ${seconds} seconds.`;
+  }
+
+  return `${title} did not settle clearly within ${seconds} seconds. Latest signal: ${summary}`;
+}
+
+async function getWaitVibe(
+  sessionId: string,
+  includeTail: boolean,
+  activitySeconds: number,
+): Promise<{ vibe: AgentSessionVibeResponse; status: SessionTurnStatus }> {
+  const vibe = await getSessionAgentVibe(sessionId, includeTail ? 80 : 20, activitySeconds, 8);
+  return { vibe, status: classifyTurnStatus(vibe) };
+}
+
+function buildWaitResult(
+  args: WaitForTurnCompletionArgs,
+  session: Session,
+  vibe: AgentSessionVibeResponse,
+  status: SessionTurnStatus,
+  elapsedMs: number,
+  pollCount: number,
+  includeTail: boolean,
+): WaitForTurnCompletionResult {
+  const timedOut = !isSettledTurnStatus(status);
+  const title = session.name || session.terminalTitle || vibe.header.title || args.sessionId;
+  const summary = buildTurnSummaryText(vibe, status);
+  const latestActivities = vibe.activities.slice(0, 5).map((activity) => ({
+    tone: activity.tone,
+    kind: activity.kind,
+    summary: activity.summary,
+    detail: activity.detail,
+    createdAt: activity.createdAt,
+  }));
+
+  const result: WaitForTurnCompletionResult = {
+    success: true,
+    sessionId: args.sessionId,
+    title,
+    completed: status === 'complete',
+    timedOut,
+    status,
+    state: vibe.header.state,
+    stateLabel: vibe.header.stateLabel,
+    elapsedMs,
+    pollCount,
+    settledAt: new Date().toISOString(),
+    responseText: buildWaitResponseText(title, status, summary, elapsedMs, timedOut),
+    summary,
+    nextAction: timedOut
+      ? 'Tell the user the session is still working and offer to keep watching.'
+      : buildNextAction(status),
+    needsAttention: vibe.header.needsAttention,
+    attentionReason: vibe.header.attentionReason,
+    latestActivities,
+  };
+
+  if (includeTail) {
+    result.tailText = vibe.terminal.tailText;
+  }
+
+  return result;
+}
+
+/**
+ * Handle wait_for_turn_completion tool - poll a session until the current turn settles.
+ */
+async function handleWaitForTurnCompletion(
+  args: WaitForTurnCompletionArgs,
+): Promise<WaitForTurnCompletionResult | { success: false; error: string }> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return { success: false, error: `Session ${args.sessionId} not found` };
+  }
+
+  const timeoutMs = Math.max(1000, Math.min(args.timeoutMs ?? 45000, 90000));
+  const pollIntervalMs = Math.max(500, Math.min(args.pollIntervalMs ?? 2000, 10000));
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 120, 600));
+  const includeTail = args.includeTail ?? false;
+  const startedAt = Date.now();
+  let pollCount = 0;
+  let latestVibe: AgentSessionVibeResponse | null = null;
+  let latestStatus: SessionTurnStatus = 'unknown';
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    pollCount += 1;
+    const current = await getWaitVibe(args.sessionId, includeTail, activitySeconds);
+    latestVibe = current.vibe;
+    latestStatus = current.status;
+
+    if (isSettledTurnStatus(latestStatus)) {
+      break;
+    }
+
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) {
+      break;
+    }
+
+    await sleep(Math.min(pollIntervalMs, remainingMs));
+  }
+
+  if (!latestVibe) {
+    const current = await getWaitVibe(args.sessionId, includeTail, activitySeconds);
+    latestVibe = current.vibe;
+    latestStatus = current.status;
+    pollCount += 1;
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+  return buildWaitResult(
+    args,
+    session,
+    latestVibe,
+    latestStatus,
+    elapsedMs,
+    pollCount,
+    includeTail,
+  );
 }
 
 function resolveContinuitySessions(args: ConversationContinuityArgs): {
@@ -1400,6 +1543,8 @@ const voiceToolHandlers: Record<
   session_activity: (args) => handleSessionActivity(args as unknown as SessionActivityArgs),
   session_turn_summary: (args) =>
     handleSessionTurnSummary(args as unknown as SessionTurnSummaryArgs),
+  wait_for_turn_completion: (args) =>
+    handleWaitForTurnCompletion(args as unknown as WaitForTurnCompletionArgs),
   dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
   dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
   dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
@@ -1441,3 +1586,5 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
     };
   }
 }
+
+/* eslint-enable max-lines */

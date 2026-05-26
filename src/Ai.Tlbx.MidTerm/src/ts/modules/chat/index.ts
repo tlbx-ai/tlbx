@@ -459,6 +459,12 @@ function formatConversationContinuityToolDisplay(args: Record<string, unknown>):
   return lines.join('\n');
 }
 
+function formatWaitForTurnCompletionToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string | undefined)?.trim() || 'session';
+  const timeoutMs = Number(args.timeoutMs) || 45000;
+  return `Wait for turn completion\nSession: ${sessionId}\nTimeout: ${Math.round(timeoutMs / 1000)}s`;
+}
+
 function formatInteractiveReadToolDisplay(args: Record<string, unknown>): string {
   const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
   const lines = ops.map((op, i) => {
@@ -478,6 +484,7 @@ const toolDisplayFormatters: Partial<
   send_prompt: formatSendPromptToolDisplay,
   session_overview: formatSessionOverviewToolDisplay,
   conversation_continuity: formatConversationContinuityToolDisplay,
+  wait_for_turn_completion: formatWaitForTurnCompletionToolDisplay,
   dev_browser_command: formatDevBrowserToolDisplay,
   dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,
   repo_monitor: formatRepoMonitorToolDisplay,
