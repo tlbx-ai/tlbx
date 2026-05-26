@@ -2448,6 +2448,13 @@ body::before {
 .sidebar-footer .version {
   font-size: var(--fs-xs);
   color: color-mix(in srgb, var(--text-muted) 90%, transparent);
+  cursor: pointer;
+}
+
+.sidebar-footer .version:hover,
+.sidebar-footer .version:focus-visible {
+  color: var(--accent-cyan);
+  outline: none;
 }
 
 .sidebar-footer .footer-traffic {

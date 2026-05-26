@@ -204,6 +204,11 @@ function renderUpdateFooterHint(): void {
 
 let footerLinkBound = false;
 
+function openUpdateSettings(): void {
+  openSettings();
+  switchSettingsTab('updates');
+}
+
 export function bindFooterUpdateLink(): void {
   if (footerLinkBound) return;
   footerLinkBound = true;
@@ -215,8 +220,20 @@ export function bindFooterUpdateLink(): void {
         requestFrontendRefresh();
         return;
       }
-      openSettings();
-      switchSettingsTab('updates');
+      openUpdateSettings();
+    });
+  }
+
+  const version = document.getElementById('app-version');
+  if (version) {
+    version.addEventListener('click', openUpdateSettings);
+    version.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' && event.key !== ' ') {
+        return;
+      }
+
+      event.preventDefault();
+      openUpdateSettings();
     });
   }
 }
