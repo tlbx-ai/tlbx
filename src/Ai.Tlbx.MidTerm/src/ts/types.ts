@@ -326,6 +326,7 @@ export type VoiceToolName =
   | 'dev_browser_status'
   | 'dev_browser_command'
   | 'repo_monitor'
+  | 'layout_control'
   | 'close_session'
   | 'bookmarks'
   | 'wait_for_user';
@@ -509,6 +510,17 @@ export interface RepoMonitorArgs {
   repoRoot?: string | null;
   role?: string | null;
   label?: string | null;
+  justification?: string;
+}
+
+/** Args for layout_control tool */
+export interface LayoutControlArgs {
+  action: 'status' | 'focus' | 'dock' | 'undock' | 'swap' | 'clear';
+  sessionId?: string | null;
+  targetSessionId?: string | null;
+  otherSessionId?: string | null;
+  position?: DockPosition | null;
+  focusTerminal?: boolean;
   justification?: string;
 }
 

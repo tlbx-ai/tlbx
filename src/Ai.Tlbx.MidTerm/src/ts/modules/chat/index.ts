@@ -413,6 +413,20 @@ function formatRepoMonitorToolDisplay(args: Record<string, unknown>): string {
   return lines.join('\n');
 }
 
+function formatLayoutControlToolDisplay(args: Record<string, unknown>): string {
+  const action = (args.action as string) || 'status';
+  const sessionId = (args.sessionId as string) || '';
+  const targetSessionId = (args.targetSessionId as string) || '';
+  const otherSessionId = (args.otherSessionId as string) || '';
+  const position = (args.position as string) || '';
+  const lines = [`Layout control: ${action}`];
+  if (sessionId) lines.push(`Session: ${sessionId}`);
+  if (targetSessionId) lines.push(`Target: ${targetSessionId}`);
+  if (otherSessionId) lines.push(`Other: ${otherSessionId}`);
+  if (position) lines.push(`Position: ${position}`);
+  return lines.join('\n');
+}
+
 function formatMakeInputToolDisplay(args: Record<string, unknown>): string {
   const text = (args.text as string) || '';
   const formatted = formatInputText(text);
@@ -438,6 +452,7 @@ const toolDisplayFormatters: Partial<
   send_prompt: formatSendPromptToolDisplay,
   dev_browser_command: formatDevBrowserToolDisplay,
   repo_monitor: formatRepoMonitorToolDisplay,
+  layout_control: formatLayoutControlToolDisplay,
   make_input: formatMakeInputToolDisplay,
   interactive_read: formatInteractiveReadToolDisplay,
 };

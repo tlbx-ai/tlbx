@@ -9,7 +9,14 @@ import { createLogger } from './logging';
 import { sendInput } from './comms';
 import { requestSelectSession } from './comms/stateChannel';
 import { sessionTerminals } from '../state';
-import { $sessionList, $activeSessionId, $updateInfo, getSession } from '../stores';
+import {
+  $activeSessionId,
+  $focusedSessionId,
+  $layout,
+  $sessionList,
+  $updateInfo,
+  getSession,
+} from '../stores';
 import {
   ApiProblemError,
   createSession as apiCreateSession,
@@ -28,6 +35,14 @@ import {
 import { selectActivePreview } from './web';
 import { addGitRepo, fetchGitRepos, refreshGitRepo, removeGitRepo } from './git/gitApi';
 import { applyGitReposForSession, getCachedGitReposForSession } from './git';
+import {
+  dockSession,
+  focusLayoutSession,
+  getLayoutSessionIds,
+  isSessionInLayout,
+  swapLayoutSessions,
+  undockSession,
+} from './layout/layoutStore';
 import type {
   VoiceToolRequest,
   VoiceToolResponse,
@@ -44,6 +59,7 @@ import type {
   DevBrowserStatusArgs,
   DevBrowserCommandArgs,
   RepoMonitorArgs,
+  LayoutControlArgs,
   CloseSessionArgs,
   BookmarksArgs,
   StateOfThingsResult,
@@ -53,6 +69,7 @@ import type {
   InteractiveReadResult,
   InteractiveOpResult,
   BellNotification,
+  DockPosition,
 } from '../types';
 import type { AgentSessionVibeResponse } from '../api/types';
 import type { GitRepoBinding } from './git/types';
@@ -62,6 +79,7 @@ const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
 const DEFAULT_PREVIEW_NAME = 'default';
+const LAYOUT_DOCK_POSITIONS = new Set<DockPosition>(['top', 'bottom', 'left', 'right']);
 const BROWSER_COMMANDS = new Set([
   'query',
   'click',
@@ -844,6 +862,87 @@ async function handleRepoMonitor(args: RepoMonitorArgs): Promise<unknown> {
   };
 }
 
+function buildLayoutStatus(action: string): unknown {
+  return {
+    success: true,
+    action,
+    activeSessionId: $activeSessionId.get(),
+    focusedSessionId: $focusedSessionId.get(),
+    layoutSessionIds: getLayoutSessionIds(),
+    root: $layout.get().root,
+  };
+}
+
+function requireLayoutSession(sessionId: string | null | undefined, fieldName: string): string {
+  const resolved = sessionId?.trim();
+  if (!resolved) {
+    throw new Error(`${fieldName} is required`);
+  }
+  if (!getSession(resolved)) {
+    throw new Error(`Session ${resolved} not found`);
+  }
+  return resolved;
+}
+
+function requireDockPosition(position: DockPosition | null | undefined): DockPosition {
+  if (!position || !LAYOUT_DOCK_POSITIONS.has(position)) {
+    throw new Error('position must be top, bottom, left, or right');
+  }
+  return position;
+}
+
+/**
+ * Handle layout_control tool - inspect and arrange MidTerm's multi-session layout.
+ */
+function handleLayoutControl(args: LayoutControlArgs): unknown {
+  const action = args.action.toLowerCase();
+
+  if (action === 'status') {
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'focus') {
+    const sessionId = requireLayoutSession(args.sessionId, 'sessionId');
+    if (isSessionInLayout(sessionId)) {
+      focusLayoutSession(sessionId);
+    } else {
+      handleSelectSession({ sessionId, focusTerminal: args.focusTerminal ?? true });
+    }
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'dock') {
+    const sessionId = requireLayoutSession(args.sessionId, 'sessionId');
+    const targetSessionId = requireLayoutSession(args.targetSessionId, 'targetSessionId');
+    dockSession(targetSessionId, sessionId, requireDockPosition(args.position));
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'undock') {
+    undockSession(requireLayoutSession(args.sessionId, 'sessionId'));
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'swap') {
+    swapLayoutSessions(
+      requireLayoutSession(args.sessionId, 'sessionId'),
+      requireLayoutSession(args.otherSessionId, 'otherSessionId'),
+    );
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'clear') {
+    $layout.set({ root: null });
+    $focusedSessionId.set(null);
+    return buildLayoutStatus(action);
+  }
+
+  return {
+    success: false,
+    error: `Unknown action: ${args.action}. Use status, focus, dock, undock, swap, or clear.`,
+  };
+}
+
 /**
  * Handle close_session tool - close a terminal session.
  */
@@ -961,6 +1060,8 @@ const voiceToolHandlers: Record<
   dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
   dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
   repo_monitor: (args) => handleRepoMonitor(args as unknown as RepoMonitorArgs),
+  layout_control: (args) =>
+    Promise.resolve(handleLayoutControl(args as unknown as LayoutControlArgs)),
   close_session: (args) => handleCloseSession(args as unknown as CloseSessionArgs),
   bookmarks: (args) => handleBookmarks(args as unknown as BookmarksArgs),
   wait_for_user: () => Promise.resolve({ success: true, waiting: true }),

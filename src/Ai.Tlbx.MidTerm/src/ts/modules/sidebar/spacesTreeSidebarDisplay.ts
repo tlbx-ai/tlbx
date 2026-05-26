@@ -42,8 +42,12 @@ export function syncSidebarSessionDisplayText(session: Session): boolean {
       subtitle?.remove();
     }
 
-    syncSidebarSessionTopic(item, session.topic);
-    syncSidebarSessionNotes(item, session.notes);
+    if (session.topic !== undefined) {
+      syncSidebarSessionTopic(item, session.topic);
+    }
+    if (session.notes !== undefined) {
+      syncSidebarSessionNotes(item, session.notes);
+    }
   }
 
   return true;
