@@ -383,47 +383,67 @@ function formatTime(timestamp: string): string {
 /**
  * Format a tool request for display
  */
+function formatSendPromptToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string) || '';
+  const text = (args.text as string) || '';
+  return `Send prompt to ${sessionId}:\n${text}`;
+}
+
+function formatDevBrowserToolDisplay(args: Record<string, unknown>): string {
+  const command = (args.command as string) || '';
+  const selector = (args.selector as string) || '';
+  const value = (args.value as string) || '';
+  const target = [args.sessionId as string | undefined, args.previewName as string | undefined]
+    .filter(Boolean)
+    .join('/');
+  const lines = [`Run Dev Browser command${target ? ` on ${target}` : ''}: ${command}`];
+  if (selector) lines.push(`Selector: ${selector}`);
+  if (value) lines.push(`Value: ${value}`);
+  return lines.join('\n');
+}
+
+function formatRepoMonitorToolDisplay(args: Record<string, unknown>): string {
+  const action = (args.action as string) || 'list';
+  const sessionId = (args.sessionId as string) || 'active session';
+  const path = (args.path as string) || '';
+  const repoRoot = (args.repoRoot as string) || '';
+  const lines = [`Repo monitor ${action} on ${sessionId}`];
+  if (path) lines.push(`Path: ${path}`);
+  if (repoRoot) lines.push(`Repo root: ${repoRoot}`);
+  return lines.join('\n');
+}
+
+function formatMakeInputToolDisplay(args: Record<string, unknown>): string {
+  const text = (args.text as string) || '';
+  const formatted = formatInputText(text);
+  return `Send to terminal:\n${formatted}`;
+}
+
+function formatInteractiveReadToolDisplay(args: Record<string, unknown>): string {
+  const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
+  const lines = ops.map((op, i) => {
+    if (op.type === 'input') {
+      return `${i + 1}. Input: ${formatInputText(op.data || '')}`;
+    } else if (op.type === 'delay') {
+      return `${i + 1}. Wait ${op.delayMs || 100}ms`;
+    }
+    return `${i + 1}. Screenshot`;
+  });
+  return `Interactive sequence:\n${lines.join('\n')}`;
+}
+
+const toolDisplayFormatters: Partial<
+  Record<VoiceToolName, (args: Record<string, unknown>) => string>
+> = {
+  send_prompt: formatSendPromptToolDisplay,
+  dev_browser_command: formatDevBrowserToolDisplay,
+  repo_monitor: formatRepoMonitorToolDisplay,
+  make_input: formatMakeInputToolDisplay,
+  interactive_read: formatInteractiveReadToolDisplay,
+};
+
 function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): string {
-  if (tool === 'send_prompt') {
-    const sessionId = (args.sessionId as string) || '';
-    const text = (args.text as string) || '';
-    return `Send prompt to ${sessionId}:\n${text}`;
-  }
-
-  if (tool === 'dev_browser_command') {
-    const command = (args.command as string) || '';
-    const selector = (args.selector as string) || '';
-    const value = (args.value as string) || '';
-    const target = [args.sessionId as string | undefined, args.previewName as string | undefined]
-      .filter(Boolean)
-      .join('/');
-    const lines = [`Run Dev Browser command${target ? ` on ${target}` : ''}: ${command}`];
-    if (selector) lines.push(`Selector: ${selector}`);
-    if (value) lines.push(`Value: ${value}`);
-    return lines.join('\n');
-  }
-
-  if (tool === 'make_input') {
-    const text = (args.text as string) || '';
-    const formatted = formatInputText(text);
-    return `Send to terminal:\n${formatted}`;
-  }
-
-  if (tool === 'interactive_read') {
-    const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
-    const lines = ops.map((op, i) => {
-      if (op.type === 'input') {
-        return `${i + 1}. Input: ${formatInputText(op.data || '')}`;
-      } else if (op.type === 'delay') {
-        return `${i + 1}. Wait ${op.delayMs || 100}ms`;
-      } else {
-        return `${i + 1}. Screenshot`;
-      }
-    });
-    return `Interactive sequence:\n${lines.join('\n')}`;
-  }
-
-  return `Tool: ${tool}`;
+  return toolDisplayFormatters[tool]?.(args) ?? `Tool: ${tool}`;
 }
 
 /**

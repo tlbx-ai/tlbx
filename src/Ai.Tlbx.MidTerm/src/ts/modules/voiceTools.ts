@@ -26,6 +26,8 @@ import {
   setWebPreviewTarget,
 } from './web/webApi';
 import { selectActivePreview } from './web';
+import { addGitRepo, fetchGitRepos, refreshGitRepo, removeGitRepo } from './git/gitApi';
+import { applyGitReposForSession, getCachedGitReposForSession } from './git';
 import type {
   VoiceToolRequest,
   VoiceToolResponse,
@@ -41,6 +43,7 @@ import type {
   DevBrowserOpenArgs,
   DevBrowserStatusArgs,
   DevBrowserCommandArgs,
+  RepoMonitorArgs,
   CloseSessionArgs,
   BookmarksArgs,
   StateOfThingsResult,
@@ -52,6 +55,7 @@ import type {
   BellNotification,
 } from '../types';
 import type { AgentSessionVibeResponse } from '../api/types';
+import type { GitRepoBinding } from './git/types';
 import { JS_BUILD_VERSION } from '../constants';
 
 const log = createLogger('voiceTools');
@@ -196,6 +200,50 @@ function resolveSessionId(sessionId?: string | null): string | null {
 
 function resolvePreviewName(previewName?: string | null): string {
   return previewName?.trim() || DEFAULT_PREVIEW_NAME;
+}
+
+function compactGitRepo(repo: GitRepoBinding): Record<string, unknown> {
+  const base = {
+    repoRoot: repo.repoRoot,
+    label: repo.label,
+    role: repo.role,
+    source: repo.source,
+    isPrimary: repo.isPrimary,
+  };
+  const status = repo.status;
+  if (!status) {
+    return {
+      ...base,
+      branch: null,
+      ahead: 0,
+      behind: 0,
+      staged: 0,
+      modified: 0,
+      untracked: 0,
+      conflicted: 0,
+      stashCount: 0,
+      totalAdditions: 0,
+      totalDeletions: 0,
+    };
+  }
+
+  return {
+    ...base,
+    branch: status.branch,
+    ahead: status.ahead,
+    behind: status.behind,
+    staged: status.staged.length,
+    modified: status.modified.length,
+    untracked: status.untracked.length,
+    conflicted: status.conflicted.length,
+    stashCount: status.stashCount,
+    totalAdditions: status.totalAdditions,
+    totalDeletions: status.totalDeletions,
+  };
+}
+
+function compactGitRepos(repos: GitRepoBinding[]): unknown[] {
+  return repos.map(compactGitRepo);
 }
 
 async function selectSessionForBrowser(sessionId: string, previewName: string): Promise<void> {
@@ -733,6 +781,70 @@ async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unk
 }
 
 /**
+ * Handle repo_monitor tool - inspect or update session-scoped Git repo bindings.
+ */
+async function runRepoMonitorAction(
+  sessionId: string,
+  args: RepoMonitorArgs,
+): Promise<Awaited<ReturnType<typeof fetchGitRepos>>> {
+  const action = args.action.toLowerCase();
+  switch (action) {
+    case 'list':
+      return fetchGitRepos(sessionId);
+    case 'add': {
+      const path = args.path?.trim();
+      if (!path) {
+        throw new Error('path is required for repo_monitor add');
+      }
+      return addGitRepo(
+        sessionId,
+        path,
+        args.role?.trim() || 'target',
+        args.label?.trim() || undefined,
+      );
+    }
+    case 'remove': {
+      const repoRoot = args.repoRoot?.trim();
+      if (!repoRoot) {
+        throw new Error('repoRoot is required for repo_monitor remove');
+      }
+      return removeGitRepo(sessionId, repoRoot);
+    }
+    case 'refresh':
+      return refreshGitRepo(sessionId, args.repoRoot?.trim() || undefined);
+    default:
+      throw new Error(`Unknown action: ${args.action}. Use list, add, remove, or refresh.`);
+  }
+}
+
+async function handleRepoMonitor(args: RepoMonitorArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return { success: false, error: 'No active session and no sessionId provided' };
+  }
+
+  if (!getSession(sessionId)) {
+    return { success: false, error: `Session ${sessionId} not found` };
+  }
+
+  const action = args.action.toLowerCase();
+  const response = await runRepoMonitorAction(sessionId, args);
+
+  if (response) {
+    applyGitReposForSession(sessionId, response.repos);
+  }
+
+  const repos = response?.repos ?? getCachedGitReposForSession(sessionId);
+  return {
+    success: response !== null || repos.length > 0,
+    sessionId,
+    action,
+    repos: compactGitRepos(repos),
+    repoCount: repos.length,
+  };
+}
+
+/**
  * Handle close_session tool - close a terminal session.
  */
 async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
@@ -848,6 +960,7 @@ const voiceToolHandlers: Record<
   dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
   dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
   dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
+  repo_monitor: (args) => handleRepoMonitor(args as unknown as RepoMonitorArgs),
   close_session: (args) => handleCloseSession(args as unknown as CloseSessionArgs),
   bookmarks: (args) => handleBookmarks(args as unknown as BookmarksArgs),
   wait_for_user: () => Promise.resolve({ success: true, waiting: true }),

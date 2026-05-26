@@ -32,12 +32,13 @@ export async function addGitRepo(
   sessionId: string,
   path: string,
   role = 'target',
+  label?: string,
 ): Promise<GitRepoListResponse | null> {
   try {
     const res = await fetch('/api/git/repos', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sessionId, path, role }),
+      body: JSON.stringify({ sessionId, path, role, label }),
     });
     if (!res.ok) return null;
     return (await res.json()) as GitRepoListResponse;

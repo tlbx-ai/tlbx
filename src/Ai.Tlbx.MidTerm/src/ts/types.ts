@@ -325,6 +325,7 @@ export type VoiceToolName =
   | 'dev_browser_open'
   | 'dev_browser_status'
   | 'dev_browser_command'
+  | 'repo_monitor'
   | 'close_session'
   | 'bookmarks'
   | 'wait_for_user';
@@ -497,6 +498,17 @@ export interface DevBrowserCommandArgs {
   maxDepth?: number;
   textOnly?: boolean;
   timeout?: number;
+  justification?: string;
+}
+
+/** Args for repo_monitor tool */
+export interface RepoMonitorArgs {
+  action: 'list' | 'add' | 'remove' | 'refresh';
+  sessionId?: string | null;
+  path?: string | null;
+  repoRoot?: string | null;
+  role?: string | null;
+  label?: string | null;
   justification?: string;
 }
 
