@@ -449,6 +449,16 @@ function formatSessionOverviewToolDisplay(args: Record<string, unknown>): string
   return lines.join('\n');
 }
 
+function formatConversationContinuityToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string | undefined)?.trim();
+  const scope = (args.scope as string | undefined) || (sessionId ? 'active' : 'active');
+  const includeTail = args.includeTail === true;
+  const lines = ['Summarize continuity'];
+  lines.push(`Scope: ${sessionId || scope}`);
+  lines.push(`Tail: ${includeTail ? 'yes' : 'no'}`);
+  return lines.join('\n');
+}
+
 function formatInteractiveReadToolDisplay(args: Record<string, unknown>): string {
   const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
   const lines = ops.map((op, i) => {
@@ -467,6 +477,7 @@ const toolDisplayFormatters: Partial<
 > = {
   send_prompt: formatSendPromptToolDisplay,
   session_overview: formatSessionOverviewToolDisplay,
+  conversation_continuity: formatConversationContinuityToolDisplay,
   dev_browser_command: formatDevBrowserToolDisplay,
   dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,
   repo_monitor: formatRepoMonitorToolDisplay,

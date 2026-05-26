@@ -315,6 +315,7 @@ export interface VoiceHealthResponse {
 export type VoiceToolName =
   | 'state_of_things'
   | 'session_overview'
+  | 'conversation_continuity'
   | 'make_input'
   | 'read_scrollback'
   | 'interactive_read'
@@ -429,6 +430,44 @@ export interface VoicePreviewOverview {
   url: string | null;
   state: string | null;
   ready: boolean;
+}
+
+/** Args for conversation_continuity tool */
+export interface ConversationContinuityArgs {
+  sessionId?: string | null;
+  scope?: 'active' | 'all';
+  activitySeconds?: number;
+  includeTail?: boolean;
+}
+
+/** Read-only handoff packet for keeping the voice conversation flowing */
+export interface ConversationContinuityResult {
+  success: boolean;
+  scope: 'active' | 'all';
+  activeSessionId: string | null;
+  generatedAt: string;
+  responseText: string;
+  nextAction: string;
+  sessions: ConversationContinuitySession[];
+  attentionSessionIds: string[];
+  busySessionIds: string[];
+  completeSessionIds: string[];
+}
+
+/** Per-session continuity summary */
+export interface ConversationContinuitySession {
+  sessionId: string;
+  title: string;
+  isActive: boolean;
+  status: string;
+  state: string;
+  stateLabel: string;
+  needsAttention: boolean;
+  attentionReason: string | null;
+  summary: string;
+  nextAction: string;
+  latestActivities: unknown[];
+  tailText?: string;
 }
 
 /** Session state for voice assistant */

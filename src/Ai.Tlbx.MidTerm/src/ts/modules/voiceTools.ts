@@ -56,6 +56,7 @@ import type {
   SelectSessionArgs,
   SendPromptArgs,
   SessionOverviewArgs,
+  ConversationContinuityArgs,
   SessionActivityArgs,
   SessionTurnSummaryArgs,
   DevBrowserOpenArgs,
@@ -68,6 +69,7 @@ import type {
   BookmarksArgs,
   StateOfThingsResult,
   SessionOverviewResult,
+  ConversationContinuityResult,
   VoicePreviewOverview,
   VoiceSessionState,
   MakeInputResult,
@@ -754,6 +756,149 @@ async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<u
   };
 }
 
+function resolveContinuitySessions(args: ConversationContinuityArgs): {
+  scope: 'active' | 'all';
+  sessions: Session[];
+  error?: string;
+} {
+  const requestedScope = args.scope === 'all' ? 'all' : 'active';
+  if (args.sessionId?.trim()) {
+    const session = getSession(args.sessionId.trim());
+    return session
+      ? { scope: 'active', sessions: [session] }
+      : { scope: 'active', sessions: [], error: `Session ${args.sessionId} not found` };
+  }
+
+  if (requestedScope === 'all') {
+    return { scope: 'all', sessions: $sessionList.get().slice(0, 10) };
+  }
+
+  const activeSessionId = $activeSessionId.get();
+  const activeSession = activeSessionId ? getSession(activeSessionId) : null;
+  return activeSession
+    ? { scope: 'active', sessions: [activeSession] }
+    : { scope: 'active', sessions: [], error: 'No active session and no sessionId provided' };
+}
+
+async function buildContinuitySession(
+  session: Session,
+  activitySeconds: number,
+  includeTail: boolean,
+): Promise<ConversationContinuityResult['sessions'][number]> {
+  const vibe = await getSessionAgentVibe(session.id, includeTail ? 80 : 20, activitySeconds, 8);
+  const status = classifyTurnStatus(vibe);
+  const latestActivities = vibe.activities.slice(0, 4).map((activity) => ({
+    tone: activity.tone,
+    kind: activity.kind,
+    summary: activity.summary,
+    detail: activity.detail,
+    createdAt: activity.createdAt,
+  }));
+  const result: ConversationContinuityResult['sessions'][number] = {
+    sessionId: session.id,
+    title: session.name || session.terminalTitle || vibe.header.title || session.id,
+    isActive: session.id === $activeSessionId.get(),
+    status,
+    state: vibe.header.state,
+    stateLabel: vibe.header.stateLabel,
+    needsAttention: vibe.header.needsAttention,
+    attentionReason: vibe.header.attentionReason,
+    summary: buildTurnSummaryText(vibe, status),
+    nextAction: buildNextAction(status),
+    latestActivities,
+  };
+
+  if (includeTail) {
+    result.tailText = vibe.terminal.tailText;
+  }
+
+  return result;
+}
+
+function buildContinuityResponseText(sessions: ConversationContinuityResult['sessions']): string {
+  const attention = sessions.find((session) => session.needsAttention);
+  if (attention) {
+    return `${attention.title} needs input: ${attention.attentionReason || attention.summary}`;
+  }
+
+  const blocked = sessions.find((session) => session.status === 'blocked');
+  if (blocked) {
+    return `${blocked.title} is blocked: ${blocked.attentionReason || blocked.summary}`;
+  }
+
+  const busy = sessions.find((session) => session.status === 'busy');
+  if (busy) {
+    return `${busy.title} is still working. ${busy.summary}`;
+  }
+
+  const complete = sessions.find((session) => session.status === 'complete');
+  if (complete) {
+    return complete.summary;
+  }
+
+  return sessions[0]?.summary ?? 'No matching MidTerm session is available.';
+}
+
+/**
+ * Handle conversation_continuity tool - compact handoff packet for voice flow.
+ */
+async function handleConversationContinuity(
+  args: ConversationContinuityArgs,
+): Promise<ConversationContinuityResult> {
+  const resolved = resolveContinuitySessions(args);
+  if (resolved.error) {
+    return {
+      success: false,
+      scope: resolved.scope,
+      activeSessionId: $activeSessionId.get(),
+      generatedAt: new Date().toISOString(),
+      responseText: resolved.error,
+      nextAction:
+        'Ask the user which session to inspect, or call session_overview to list sessions.',
+      sessions: [],
+      attentionSessionIds: [],
+      busySessionIds: [],
+      completeSessionIds: [],
+    };
+  }
+
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 120, 600));
+  const includeTail = args.includeTail ?? false;
+  const sessions = await Promise.all(
+    resolved.sessions.map((session) =>
+      buildContinuitySession(session, activitySeconds, includeTail),
+    ),
+  );
+
+  const attentionSessionIds = sessions
+    .filter((session) => session.needsAttention || session.status === 'blocked')
+    .map((session) => session.sessionId);
+  const busySessionIds = sessions
+    .filter((session) => session.status === 'busy')
+    .map((session) => session.sessionId);
+  const completeSessionIds = sessions
+    .filter((session) => session.status === 'complete')
+    .map((session) => session.sessionId);
+  const responseText = buildContinuityResponseText(sessions);
+
+  return {
+    success: true,
+    scope: resolved.scope,
+    activeSessionId: $activeSessionId.get(),
+    generatedAt: new Date().toISOString(),
+    responseText,
+    nextAction:
+      sessions.find((session) => session.needsAttention || session.status === 'blocked')
+        ?.nextAction ??
+      sessions.find((session) => session.status === 'busy')?.nextAction ??
+      'Speak responseText briefly, then stop.',
+    sessions,
+    attentionSessionIds,
+    busySessionIds,
+    completeSessionIds,
+  };
+}
+
 /**
  * Handle dev_browser_open tool - open a URL in a session-scoped named Dev Browser preview.
  */
@@ -1242,6 +1387,8 @@ const voiceToolHandlers: Record<
 > = {
   state_of_things: () => Promise.resolve(handleStateOfThings()),
   session_overview: (args) => handleSessionOverview(args as unknown as SessionOverviewArgs),
+  conversation_continuity: (args) =>
+    handleConversationContinuity(args as unknown as ConversationContinuityArgs),
   make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
   read_scrollback: (args) =>
     Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
