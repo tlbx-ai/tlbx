@@ -325,6 +325,7 @@ export type VoiceToolName =
   | 'dev_browser_open'
   | 'dev_browser_status'
   | 'dev_browser_command'
+  | 'dev_browser_screenshot'
   | 'repo_monitor'
   | 'layout_control'
   | 'close_session'
@@ -500,6 +501,13 @@ export interface DevBrowserCommandArgs {
   textOnly?: boolean;
   timeout?: number;
   justification?: string;
+}
+
+/** Args for dev_browser_screenshot tool */
+export interface DevBrowserScreenshotArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
 }
 
 /** Args for repo_monitor tool */

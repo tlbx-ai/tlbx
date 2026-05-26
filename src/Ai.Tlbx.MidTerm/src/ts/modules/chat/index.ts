@@ -402,6 +402,13 @@ function formatDevBrowserToolDisplay(args: Record<string, unknown>): string {
   return lines.join('\n');
 }
 
+function formatDevBrowserScreenshotToolDisplay(args: Record<string, unknown>): string {
+  const target = [args.sessionId as string | undefined, args.previewName as string | undefined]
+    .filter(Boolean)
+    .join('/');
+  return `Capture Dev Browser screenshot${target ? ` on ${target}` : ''}`;
+}
+
 function formatRepoMonitorToolDisplay(args: Record<string, unknown>): string {
   const action = (args.action as string) || 'list';
   const sessionId = (args.sessionId as string) || 'active session';
@@ -451,6 +458,7 @@ const toolDisplayFormatters: Partial<
 > = {
   send_prompt: formatSendPromptToolDisplay,
   dev_browser_command: formatDevBrowserToolDisplay,
+  dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,
   repo_monitor: formatRepoMonitorToolDisplay,
   layout_control: formatLayoutControlToolDisplay,
   make_input: formatMakeInputToolDisplay,

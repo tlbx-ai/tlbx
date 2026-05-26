@@ -27,12 +27,14 @@ import {
   sendSessionPrompt,
 } from '../api/client';
 import {
+  captureBrowserScreenshotRaw,
   getBrowserPreviewStatus,
   getWebPreviewTarget,
   runBrowserCommand,
   setWebPreviewTarget,
 } from './web/webApi';
 import { selectActivePreview } from './web';
+import { uploadFile } from './terminal/fileDrop';
 import { addGitRepo, fetchGitRepos, refreshGitRepo, removeGitRepo } from './git/gitApi';
 import { applyGitReposForSession, getCachedGitReposForSession } from './git';
 import {
@@ -58,6 +60,7 @@ import type {
   DevBrowserOpenArgs,
   DevBrowserStatusArgs,
   DevBrowserCommandArgs,
+  DevBrowserScreenshotArgs,
   RepoMonitorArgs,
   LayoutControlArgs,
   CloseSessionArgs,
@@ -798,6 +801,109 @@ async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unk
   };
 }
 
+function decodeDataUrlToFile(dataUrl: string, filename: string): File | null {
+  const match = /^data:([^;,]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    return null;
+  }
+
+  const mimeType = match[1];
+  const base64 = match[2];
+  if (!mimeType || !base64) {
+    return null;
+  }
+
+  try {
+    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+    return new File([bytes], filename, { type: mimeType });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Handle dev_browser_screenshot tool - capture a preview screenshot and upload it to the session.
+ */
+async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return { success: false, error: 'No active session and no sessionId provided' };
+  }
+
+  const previewName = resolvePreviewName(args.previewName);
+  const [target, status] = await Promise.all([
+    getWebPreviewTarget(sessionId, previewName),
+    getBrowserPreviewStatus(sessionId, previewName, args.previewId ?? undefined),
+  ]);
+
+  if (!target?.url) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      target,
+      status,
+      error: 'No URL is open in this Dev Browser preview',
+    };
+  }
+
+  const dataUrl = await captureBrowserScreenshotRaw(
+    sessionId,
+    args.previewId ?? undefined,
+    previewName,
+  );
+  if (!dataUrl) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      target,
+      status,
+      error: 'MidTerm did not receive screenshot image data from the Dev Browser',
+    };
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `dev_browser_${previewName}_${timestamp}.png`;
+  const file = decodeDataUrlToFile(dataUrl, filename);
+  if (!file) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      target,
+      status,
+      error: 'Screenshot image data could not be decoded',
+    };
+  }
+
+  const path = await uploadFile(sessionId, file);
+  if (!path) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      target,
+      status,
+      error: 'Screenshot upload did not return a usable file path',
+    };
+  }
+
+  return {
+    success: true,
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    target,
+    status,
+    path,
+    fileName: filename,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    viewUrl: `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`,
+  };
+}
+
 /**
  * Handle repo_monitor tool - inspect or update session-scoped Git repo bindings.
  */
@@ -1059,6 +1165,8 @@ const voiceToolHandlers: Record<
   dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
   dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
   dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
+  dev_browser_screenshot: (args) =>
+    handleDevBrowserScreenshot(args as unknown as DevBrowserScreenshotArgs),
   repo_monitor: (args) => handleRepoMonitor(args as unknown as RepoMonitorArgs),
   layout_control: (args) =>
     Promise.resolve(handleLayoutControl(args as unknown as LayoutControlArgs)),
