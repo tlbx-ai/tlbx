@@ -390,6 +390,19 @@ function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): 
     return `Send prompt to ${sessionId}:\n${text}`;
   }
 
+  if (tool === 'dev_browser_command') {
+    const command = (args.command as string) || '';
+    const selector = (args.selector as string) || '';
+    const value = (args.value as string) || '';
+    const target = [args.sessionId as string | undefined, args.previewName as string | undefined]
+      .filter(Boolean)
+      .join('/');
+    const lines = [`Run Dev Browser command${target ? ` on ${target}` : ''}: ${command}`];
+    if (selector) lines.push(`Selector: ${selector}`);
+    if (value) lines.push(`Value: ${value}`);
+    return lines.join('\n');
+  }
+
   if (tool === 'make_input') {
     const text = (args.text as string) || '';
     const formatted = formatInputText(text);

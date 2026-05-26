@@ -18,9 +18,17 @@ import {
   getHistory,
   sendSessionPrompt,
 } from '../api/client';
+import {
+  getBrowserPreviewStatus,
+  getWebPreviewTarget,
+  runBrowserCommand,
+  setWebPreviewTarget,
+} from './web/webApi';
+import { selectActivePreview } from './web';
 import type {
   VoiceToolRequest,
   VoiceToolResponse,
+  VoiceToolName,
   MakeInputArgs,
   ReadScrollbackArgs,
   InteractiveReadArgs,
@@ -28,6 +36,9 @@ import type {
   SelectSessionArgs,
   SendPromptArgs,
   SessionActivityArgs,
+  DevBrowserOpenArgs,
+  DevBrowserStatusArgs,
+  DevBrowserCommandArgs,
   CloseSessionArgs,
   BookmarksArgs,
   StateOfThingsResult,
@@ -43,6 +54,26 @@ import { JS_BUILD_VERSION } from '../constants';
 const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
+const DEFAULT_PREVIEW_NAME = 'default';
+const BROWSER_COMMANDS = new Set([
+  'query',
+  'click',
+  'scroll',
+  'fill',
+  'exec',
+  'wait',
+  'navigate',
+  'reload',
+  'outline',
+  'attrs',
+  'css',
+  'log',
+  'links',
+  'submit',
+  'forms',
+  'url',
+  'status',
+]);
 
 function getSessionLaunchErrorMessage(error: unknown): string {
   if (error instanceof ApiProblemError) {
@@ -153,6 +184,26 @@ function parseEscapeSequences(text: string): string {
  */
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function resolveSessionId(sessionId?: string | null): string | null {
+  return sessionId?.trim() || $activeSessionId.get();
+}
+
+function resolvePreviewName(previewName?: string | null): string {
+  return previewName?.trim() || DEFAULT_PREVIEW_NAME;
+}
+
+async function selectSessionForBrowser(sessionId: string, previewName: string): Promise<void> {
+  if ($activeSessionId.get() !== sessionId) {
+    requestSelectSession(sessionId, {
+      closeSettingsPanel: false,
+      focusTerminal: false,
+    });
+    await sleep(50);
+  }
+
+  await selectActivePreview(previewName);
 }
 
 /**
@@ -425,6 +476,143 @@ async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown
 }
 
 /**
+ * Handle dev_browser_open tool - open a URL in a session-scoped named Dev Browser preview.
+ */
+async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return { success: false, error: 'No active session and no sessionId provided' };
+  }
+
+  if (!getSession(sessionId)) {
+    return { success: false, error: `Session ${sessionId} not found` };
+  }
+
+  const previewName = resolvePreviewName(args.previewName);
+  const url = args.url.trim();
+  if (!url) {
+    return { success: false, error: 'url is required' };
+  }
+
+  const target = await setWebPreviewTarget(sessionId, previewName, url);
+  if (!target?.active) {
+    return {
+      success: false,
+      error: `Failed to set Dev Browser target for ${sessionId}/${previewName}`,
+    };
+  }
+
+  await selectSessionForBrowser(sessionId, previewName);
+  await sleep(250);
+  const status = await getBrowserPreviewStatus(sessionId, previewName);
+
+  return {
+    success: true,
+    sessionId,
+    previewName,
+    url: target.url,
+    targetRevision: target.targetRevision,
+    status,
+  };
+}
+
+/**
+ * Handle dev_browser_status tool - report target and browser bridge readiness.
+ */
+async function handleDevBrowserStatus(args: DevBrowserStatusArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return { success: false, error: 'No active session and no sessionId provided' };
+  }
+
+  const previewName = resolvePreviewName(args.previewName);
+  const [target, status] = await Promise.all([
+    getWebPreviewTarget(sessionId, previewName),
+    getBrowserPreviewStatus(sessionId, previewName, args.previewId ?? undefined),
+  ]);
+
+  return {
+    success: true,
+    sessionId,
+    previewName,
+    target,
+    status,
+  };
+}
+
+/**
+ * Handle dev_browser_command tool - run a scoped Dev Browser command.
+ */
+function buildBrowserCommandOptions(args: DevBrowserCommandArgs): {
+  selector?: string | null;
+  value?: string | null;
+  maxDepth?: number;
+  textOnly?: boolean;
+  timeout?: number;
+} {
+  const commandOptions: {
+    selector?: string | null;
+    value?: string | null;
+    maxDepth?: number;
+    textOnly?: boolean;
+    timeout?: number;
+  } = {};
+  if (args.selector !== undefined) commandOptions.selector = args.selector;
+  if (args.value !== undefined) commandOptions.value = args.value;
+  if (args.maxDepth !== undefined) commandOptions.maxDepth = args.maxDepth;
+  if (args.textOnly !== undefined) commandOptions.textOnly = args.textOnly;
+  if (args.timeout !== undefined) commandOptions.timeout = args.timeout;
+  return commandOptions;
+}
+
+function validateBrowserCommand(command: string): Record<string, unknown> | null {
+  if (!command) {
+    return { success: false, error: 'command is required' };
+  }
+
+  if (!BROWSER_COMMANDS.has(command)) {
+    return {
+      success: false,
+      error: `Unsupported Dev Browser command: ${command}`,
+      supportedCommands: [...BROWSER_COMMANDS],
+    };
+  }
+
+  return null;
+}
+
+async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return { success: false, error: 'No active session and no sessionId provided' };
+  }
+
+  const command = args.command.trim();
+  const validationError = validateBrowserCommand(command);
+  if (validationError) return validationError;
+
+  const previewName = resolvePreviewName(args.previewName);
+
+  const result = await runBrowserCommand(
+    command,
+    sessionId,
+    previewName,
+    args.previewId ?? undefined,
+    buildBrowserCommandOptions(args),
+  );
+
+  return {
+    success: result?.success ?? false,
+    sessionId,
+    previewName,
+    command,
+    result: result?.result ?? null,
+    error: result?.error ?? null,
+    matchCount: result?.matchCount ?? null,
+  };
+}
+
+/**
  * Handle close_session tool - close a terminal session.
  */
 async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
@@ -521,6 +709,28 @@ async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
   return { success: false, error: `Unknown action: ${args.action}. Use 'list' or 'launch'.` };
 }
 
+const voiceToolHandlers: Record<
+  VoiceToolName,
+  (args: Record<string, unknown>) => Promise<unknown>
+> = {
+  state_of_things: () => Promise.resolve(handleStateOfThings()),
+  make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
+  read_scrollback: (args) =>
+    Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
+  interactive_read: (args) => handleInteractiveRead(args as unknown as InteractiveReadArgs),
+  create_session: (args) => handleCreateSession(args as unknown as CreateSessionArgs),
+  select_session: (args) =>
+    Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
+  send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
+  session_activity: (args) => handleSessionActivity(args as unknown as SessionActivityArgs),
+  dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
+  dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
+  dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
+  close_session: (args) => handleCloseSession(args as unknown as CloseSessionArgs),
+  bookmarks: (args) => handleBookmarks(args as unknown as BookmarksArgs),
+  wait_for_user: () => Promise.resolve({ success: true, waiting: true }),
+};
+
 /**
  * Process a tool request from the voice server.
  * Returns a tool response to send back.
@@ -529,61 +739,8 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
   log.info(() => `Processing tool request: ${request.tool} (${request.requestId})`);
 
   try {
-    let result: unknown;
-
-    switch (request.tool) {
-      case 'state_of_things':
-        result = handleStateOfThings();
-        break;
-
-      case 'make_input':
-        result = await handleMakeInput(request.args as unknown as MakeInputArgs);
-        break;
-
-      case 'read_scrollback':
-        result = handleReadScrollback(request.args as unknown as ReadScrollbackArgs);
-        break;
-
-      case 'interactive_read':
-        result = await handleInteractiveRead(request.args as unknown as InteractiveReadArgs);
-        break;
-
-      case 'create_session':
-        result = await handleCreateSession(request.args as unknown as CreateSessionArgs);
-        break;
-
-      case 'select_session':
-        result = handleSelectSession(request.args as unknown as SelectSessionArgs);
-        break;
-
-      case 'send_prompt':
-        result = await handleSendPrompt(request.args as unknown as SendPromptArgs);
-        break;
-
-      case 'session_activity':
-        result = await handleSessionActivity(request.args as unknown as SessionActivityArgs);
-        break;
-
-      case 'close_session':
-        result = await handleCloseSession(request.args as unknown as CloseSessionArgs);
-        break;
-
-      case 'bookmarks':
-        result = await handleBookmarks(request.args as unknown as BookmarksArgs);
-        break;
-
-      case 'wait_for_user':
-        result = { success: true, waiting: true };
-        break;
-
-      default:
-        return {
-          type: 'tool_response',
-          requestId: request.requestId,
-          result: null,
-          error: `Unknown tool: ${String(request.tool)}`,
-        };
-    }
+    const handler = voiceToolHandlers[request.tool];
+    const result = await handler(request.args);
 
     log.info(() => `Tool ${request.tool} completed successfully`);
     return {

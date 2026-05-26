@@ -321,6 +321,9 @@ export type VoiceToolName =
   | 'select_session'
   | 'send_prompt'
   | 'session_activity'
+  | 'dev_browser_open'
+  | 'dev_browser_status'
+  | 'dev_browser_command'
   | 'close_session'
   | 'bookmarks'
   | 'wait_for_user';
@@ -458,6 +461,34 @@ export interface SessionActivityArgs {
   tailLines?: number;
   activitySeconds?: number;
   bellLimit?: number;
+}
+
+/** Args for dev_browser_open tool */
+export interface DevBrowserOpenArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  url: string;
+}
+
+/** Args for dev_browser_status tool */
+export interface DevBrowserStatusArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+}
+
+/** Args for dev_browser_command tool */
+export interface DevBrowserCommandArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+  command: string;
+  selector?: string | null;
+  value?: string | null;
+  maxDepth?: number;
+  textOnly?: boolean;
+  timeout?: number;
+  justification?: string;
 }
 
 /** Args for close_session tool */
