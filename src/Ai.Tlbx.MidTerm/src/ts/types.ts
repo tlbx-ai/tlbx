@@ -316,6 +316,7 @@ export type VoiceToolName =
   | 'state_of_things'
   | 'session_overview'
   | 'conversation_continuity'
+  | 'campaign_status'
   | 'make_input'
   | 'read_scrollback'
   | 'interactive_read'
@@ -469,6 +470,50 @@ export interface ConversationContinuitySession {
   nextAction: string;
   latestActivities: unknown[];
   tailText?: string;
+}
+
+/** Args for campaign_status tool */
+export interface CampaignStatusArgs {
+  scope?: 'active' | 'layout' | 'all';
+  sessionIds?: string[];
+  waitForBusy?: boolean;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+  includeBrowserStatus?: boolean;
+  includeRepoStatus?: boolean;
+}
+
+/** Read-only multi-session campaign state for voice orchestration */
+export interface CampaignStatusResult {
+  success: boolean;
+  scope: 'active' | 'layout' | 'all' | 'explicit';
+  campaignState: 'empty' | 'needs_user' | 'blocked' | 'busy' | 'ready' | 'mixed';
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  generatedAt: string;
+  waited: boolean;
+  elapsedMs: number;
+  responseText: string;
+  nextAction: string;
+  recommendedFocusSessionId: string | null;
+  sessions: CampaignStatusSession[];
+  attentionSessionIds: string[];
+  blockedSessionIds: string[];
+  busySessionIds: string[];
+  completeSessionIds: string[];
+  shellSessionIds: string[];
+}
+
+/** Per-session campaign state for voice orchestration */
+export interface CampaignStatusSession extends ConversationContinuitySession {
+  isFocused: boolean;
+  isInLayout: boolean;
+  waited: boolean;
+  timedOut?: boolean;
+  elapsedMs?: number;
+  defaultPreview?: VoicePreviewOverview | null;
+  repos?: unknown[];
 }
 
 /** Session state for voice assistant */

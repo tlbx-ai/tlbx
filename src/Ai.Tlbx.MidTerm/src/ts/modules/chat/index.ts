@@ -459,6 +459,15 @@ function formatConversationContinuityToolDisplay(args: Record<string, unknown>):
   return lines.join('\n');
 }
 
+function formatCampaignStatusToolDisplay(args: Record<string, unknown>): string {
+  const scope = (args.scope as string | undefined) || 'all';
+  const waitForBusy = args.waitForBusy === true;
+  const lines = ['Campaign status'];
+  lines.push(`Scope: ${scope}`);
+  lines.push(`Wait: ${waitForBusy ? 'yes' : 'no'}`);
+  return lines.join('\n');
+}
+
 function formatWaitForTurnCompletionToolDisplay(args: Record<string, unknown>): string {
   const sessionId = (args.sessionId as string | undefined)?.trim() || 'session';
   const timeoutMs = Number(args.timeoutMs) || 45000;
@@ -484,6 +493,7 @@ const toolDisplayFormatters: Partial<
   send_prompt: formatSendPromptToolDisplay,
   session_overview: formatSessionOverviewToolDisplay,
   conversation_continuity: formatConversationContinuityToolDisplay,
+  campaign_status: formatCampaignStatusToolDisplay,
   wait_for_turn_completion: formatWaitForTurnCompletionToolDisplay,
   dev_browser_command: formatDevBrowserToolDisplay,
   dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,

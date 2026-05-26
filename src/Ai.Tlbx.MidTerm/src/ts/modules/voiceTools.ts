@@ -58,6 +58,7 @@ import type {
   SendPromptArgs,
   SessionOverviewArgs,
   ConversationContinuityArgs,
+  CampaignStatusArgs,
   SessionActivityArgs,
   SessionTurnSummaryArgs,
   WaitForTurnCompletionArgs,
@@ -72,6 +73,7 @@ import type {
   StateOfThingsResult,
   SessionOverviewResult,
   ConversationContinuityResult,
+  CampaignStatusResult,
   WaitForTurnCompletionResult,
   VoicePreviewOverview,
   VoiceSessionState,
@@ -1042,6 +1044,229 @@ async function handleConversationContinuity(
   };
 }
 
+function resolveCampaignSessions(args: CampaignStatusArgs): {
+  scope: CampaignStatusResult['scope'];
+  sessions: Session[];
+  errors: string[];
+} {
+  if (args.sessionIds?.length) {
+    const errors: string[] = [];
+    const sessions = args.sessionIds
+      .map((sessionId) => {
+        const session = getSession(sessionId);
+        if (!session) {
+          errors.push(`Session ${sessionId} not found`);
+        }
+        return session;
+      })
+      .filter((session): session is Session => Boolean(session));
+    return { scope: 'explicit', sessions: sessions.slice(0, 12), errors };
+  }
+
+  const requestedScope = args.scope ?? 'all';
+  if (requestedScope === 'active') {
+    const activeSessionId = $activeSessionId.get();
+    const activeSession = activeSessionId ? getSession(activeSessionId) : null;
+    return {
+      scope: 'active',
+      sessions: activeSession ? [activeSession] : [],
+      errors: activeSession ? [] : ['No active session is available'],
+    };
+  }
+
+  if (requestedScope === 'layout') {
+    const layoutSessionIds = getLayoutSessionIds();
+    const sessions = layoutSessionIds
+      .map((sessionId) => getSession(sessionId))
+      .filter((session): session is Session => Boolean(session));
+    return { scope: 'layout', sessions: sessions.slice(0, 12), errors: [] };
+  }
+
+  return { scope: 'all', sessions: $sessionList.get().slice(0, 12), errors: [] };
+}
+
+function buildCampaignState(
+  sessions: CampaignStatusResult['sessions'],
+): CampaignStatusResult['campaignState'] {
+  if (sessions.length === 0) return 'empty';
+  if (sessions.some((session) => session.needsAttention)) return 'needs_user';
+  if (sessions.some((session) => session.status === 'blocked')) return 'blocked';
+  if (sessions.some((session) => session.status === 'busy')) return 'busy';
+  if (sessions.some((session) => session.status === 'complete')) return 'ready';
+  return 'mixed';
+}
+
+function chooseCampaignFocus(sessions: CampaignStatusResult['sessions']): string | null {
+  return (
+    sessions.find((session) => session.needsAttention)?.sessionId ??
+    sessions.find((session) => session.status === 'blocked')?.sessionId ??
+    sessions.find((session) => session.status === 'busy')?.sessionId ??
+    sessions.find((session) => session.status === 'complete' && session.isActive)?.sessionId ??
+    sessions.find((session) => session.status === 'complete')?.sessionId ??
+    sessions[0]?.sessionId ??
+    null
+  );
+}
+
+function buildCampaignResponseText(
+  campaignState: CampaignStatusResult['campaignState'],
+  sessions: CampaignStatusResult['sessions'],
+): string {
+  const target = sessions.find((session) => session.sessionId === chooseCampaignFocus(sessions));
+  if (!target) return 'No MidTerm sessions are available.';
+
+  if (campaignState === 'needs_user') {
+    return `${target.title} needs input: ${target.attentionReason || target.summary}`;
+  }
+
+  if (campaignState === 'blocked') {
+    return `${target.title} is blocked: ${target.attentionReason || target.summary}`;
+  }
+
+  if (campaignState === 'busy') {
+    const busyCount = sessions.filter((session) => session.status === 'busy').length;
+    return `${busyCount} session${busyCount === 1 ? ' is' : 's are'} still working. ${target.summary}`;
+  }
+
+  if (campaignState === 'ready') {
+    const completeCount = sessions.filter((session) => session.status === 'complete').length;
+    return `${completeCount} session${completeCount === 1 ? ' is' : 's are'} ready. ${target.summary}`;
+  }
+
+  return target.summary;
+}
+
+function buildCampaignNextAction(
+  campaignState: CampaignStatusResult['campaignState'],
+  recommendedFocusSessionId: string | null,
+): string {
+  if (!recommendedFocusSessionId) return 'Create or select a MidTerm session before acting.';
+  if (campaignState === 'needs_user') {
+    return `Select ${recommendedFocusSessionId}, tell the user what input is needed, then stop.`;
+  }
+  if (campaignState === 'blocked') {
+    return `Select ${recommendedFocusSessionId}, report the blocker, and propose one concrete recovery step.`;
+  }
+  if (campaignState === 'busy') {
+    return 'Tell the user work is still running; offer to keep watching if they want a later update.';
+  }
+  if (campaignState === 'ready') {
+    return `Select ${recommendedFocusSessionId} if the user should inspect it, then summarize the observed outcome.`;
+  }
+  return 'Ask one concise clarification question before taking action.';
+}
+
+async function buildCampaignSession(
+  session: Session,
+  args: CampaignStatusArgs,
+  layoutSessionSet: Set<string>,
+): Promise<CampaignStatusResult['sessions'][number]> {
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 120, 600));
+  const includeBrowserStatus = args.includeBrowserStatus ?? true;
+  const includeRepoStatus = args.includeRepoStatus ?? true;
+  const initial = await buildContinuitySession(session, activitySeconds, false);
+  let current = initial;
+  let waited = false;
+  let timedOut: boolean | undefined;
+  let elapsedMs: number | undefined;
+
+  if (args.waitForBusy && initial.status === 'busy') {
+    const waitResult = await handleWaitForTurnCompletion({
+      sessionId: session.id,
+      timeoutMs: Math.max(1000, Math.min(args.timeoutMs ?? 30000, 90000)),
+      pollIntervalMs: Math.max(500, Math.min(args.pollIntervalMs ?? 2000, 10000)),
+      activitySeconds,
+      includeTail: false,
+    });
+    if (waitResult.success) {
+      waited = true;
+      timedOut = waitResult.timedOut;
+      elapsedMs = waitResult.elapsedMs;
+      current = {
+        sessionId: session.id,
+        title: waitResult.title,
+        isActive: session.id === $activeSessionId.get(),
+        status: waitResult.status,
+        state: waitResult.state,
+        stateLabel: waitResult.stateLabel,
+        needsAttention: waitResult.needsAttention,
+        attentionReason: waitResult.attentionReason,
+        summary: waitResult.summary,
+        nextAction: waitResult.nextAction,
+        latestActivities: waitResult.latestActivities,
+      };
+    }
+  }
+
+  const result: CampaignStatusResult['sessions'][number] = {
+    ...current,
+    isFocused: session.id === $focusedSessionId.get(),
+    isInLayout: layoutSessionSet.has(session.id),
+    waited,
+    defaultPreview: includeBrowserStatus ? await buildDefaultPreviewOverview(session.id) : null,
+  };
+
+  if (includeRepoStatus) {
+    result.repos = compactGitRepos(getCachedGitReposForSession(session.id));
+  }
+
+  if (timedOut !== undefined) {
+    result.timedOut = timedOut;
+  }
+
+  if (elapsedMs !== undefined) {
+    result.elapsedMs = elapsedMs;
+  }
+
+  return result;
+}
+
+/**
+ * Handle campaign_status tool - read-only multi-session orchestration state.
+ */
+async function handleCampaignStatus(args: CampaignStatusArgs): Promise<CampaignStatusResult> {
+  const startedAt = Date.now();
+  const resolved = resolveCampaignSessions(args);
+  const layoutSessionSet = new Set(getLayoutSessionIds());
+  const sessions = await Promise.all(
+    resolved.sessions.map((session) => buildCampaignSession(session, args, layoutSessionSet)),
+  );
+  const campaignState = buildCampaignState(sessions);
+  const recommendedFocusSessionId = chooseCampaignFocus(sessions);
+
+  return {
+    success: resolved.errors.length === 0,
+    scope: resolved.scope,
+    campaignState,
+    activeSessionId: $activeSessionId.get(),
+    focusedSessionId: $focusedSessionId.get(),
+    generatedAt: new Date().toISOString(),
+    waited: sessions.some((session) => session.waited),
+    elapsedMs: Date.now() - startedAt,
+    responseText: resolved.errors[0] ?? buildCampaignResponseText(campaignState, sessions),
+    nextAction: resolved.errors[0]
+      ? 'Call session_overview to discover valid session IDs, then retry if needed.'
+      : buildCampaignNextAction(campaignState, recommendedFocusSessionId),
+    recommendedFocusSessionId,
+    sessions,
+    attentionSessionIds: sessions
+      .filter((session) => session.needsAttention)
+      .map((session) => session.sessionId),
+    blockedSessionIds: sessions
+      .filter((session) => session.status === 'blocked')
+      .map((session) => session.sessionId),
+    busySessionIds: sessions
+      .filter((session) => session.status === 'busy')
+      .map((session) => session.sessionId),
+    completeSessionIds: sessions
+      .filter((session) => session.status === 'complete')
+      .map((session) => session.sessionId),
+    shellSessionIds: sessions
+      .filter((session) => session.status === 'shell')
+      .map((session) => session.sessionId),
+  };
+}
+
 /**
  * Handle dev_browser_open tool - open a URL in a session-scoped named Dev Browser preview.
  */
@@ -1532,6 +1757,7 @@ const voiceToolHandlers: Record<
   session_overview: (args) => handleSessionOverview(args as unknown as SessionOverviewArgs),
   conversation_continuity: (args) =>
     handleConversationContinuity(args as unknown as ConversationContinuityArgs),
+  campaign_status: (args) => handleCampaignStatus(args as unknown as CampaignStatusArgs),
   make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
   read_scrollback: (args) =>
     Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
