@@ -8724,7 +8724,9 @@ body.shared-session-mode .session-tab-bar {
 .chat-panel {
   width: 280px;
   flex-shrink: 0;
-  background-color: var(--bg-sidebar);
+  --command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));
+  --command-bay-background: var(--terminal-canvas-background-stack);
+  background: var(--terminal-canvas-background-stack);
   border-right: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
@@ -8741,8 +8743,12 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
+  height: var(--bar-height);
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-bottom: 2px solid transparent;
+  border-image: linear-gradient(90deg, transparent, var(--accent-gold-40), transparent) 1;
+  background: var(--app-header-background);
   flex-shrink: 0;
 }
 
@@ -8780,6 +8786,7 @@ body.shared-session-mode .session-tab-bar {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: transparent;
 }
 
 /* Chat Message Styles */
