@@ -128,16 +128,21 @@ describe('settings persistence wiring', () => {
 
     expect(sessionsPanel).toContain('id="setting-tmux-compatibility"');
     expect(connectedHostsPanel).not.toContain('id="setting-tmux-compatibility"');
-    expect(aiAgentsPanel).toContain('id="voice-section"');
-    expect(aiAgentsPanel).toContain('id="voice-select"');
-    expect(aiAgentsPanel).toContain('id="mic-select"');
-    expect(securityPanel).toContain('id="network-section"');
-    expect(securityPanel).toContain('id="trust-link"');
-    expect(securityPanel).toContain('id="btn-share-access"');
+    expect(aiAgentsPanel).toContain('settings.aiAgents.conversationView');
+    expect(aiAgentsPanel).not.toContain('id="voice-section"');
+    expect(aiAgentsPanel).not.toContain('id="voice-select"');
+    expect(aiAgentsPanel).not.toContain('id="mic-select"');
+    expect(securityPanel).not.toContain('id="network-section"');
+    expect(securityPanel).not.toContain('id="trust-link"');
+    expect(securityPanel).not.toContain('id="btn-share-access"');
     expect(workflowPanel).toContain('Command Bay &amp; Automation');
     expect(workflowPanel).toContain('id="setting-command-bay-ligatures-enabled"');
-    expect(sidebarMarkup).not.toContain('id="voice-section"');
-    expect(sidebarMarkup).not.toContain('id="network-section"');
+    expect(sidebarMarkup).toContain('id="voice-section"');
+    expect(sidebarMarkup).toContain('id="voice-select"');
+    expect(sidebarMarkup).toContain('id="mic-select"');
+    expect(sidebarMarkup).toContain('id="network-section"');
+    expect(sidebarMarkup).toContain('id="trust-link"');
+    expect(sidebarMarkup).toContain('id="btn-share-access"');
   });
 
   it('marks non-form writers explicitly in the registry', () => {
