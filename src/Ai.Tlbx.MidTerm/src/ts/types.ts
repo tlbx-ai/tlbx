@@ -528,6 +528,7 @@ export interface CampaignGoalResult {
   success: boolean;
   action: 'status' | 'set' | 'update' | 'clear';
   goal: CampaignGoalState;
+  persisted: boolean;
   targetContext?: VoiceTargetContext;
   responseText: string;
   nextAction: string;

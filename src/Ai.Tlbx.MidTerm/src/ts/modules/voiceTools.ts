@@ -100,6 +100,7 @@ const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
 const DEFAULT_PREVIEW_NAME = 'default';
+const CAMPAIGN_GOAL_STORAGE_KEY = 'midterm.voice.campaignGoal.v1';
 const LAYOUT_DOCK_POSITIONS = new Set<DockPosition>(['top', 'bottom', 'left', 'right']);
 const CAMPAIGN_GOAL_PHASES = new Set<CampaignGoalPhase>([
   'orient',
@@ -145,7 +146,69 @@ function emptyCampaignGoalState(): CampaignGoalState {
   };
 }
 
-let campaignGoalState: CampaignGoalState = emptyCampaignGoalState();
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isCampaignGoalState(value: unknown): value is CampaignGoalState {
+  if (!value || typeof value !== 'object') return false;
+
+  const candidate = value as Partial<CampaignGoalState>;
+  const phase = candidate.phase;
+  return (
+    typeof candidate.active === 'boolean' &&
+    isNullableString(candidate.objective) &&
+    (phase === null || (typeof phase === 'string' && CAMPAIGN_GOAL_PHASES.has(phase))) &&
+    Array.isArray(candidate.targetSessionIds) &&
+    candidate.targetSessionIds.every((sessionId) => typeof sessionId === 'string') &&
+    isNullableString(candidate.currentFocusSessionId) &&
+    isNullableString(candidate.exitCriteria) &&
+    isNullableString(candidate.nextReport) &&
+    isNullableString(candidate.createdAt) &&
+    isNullableString(candidate.updatedAt) &&
+    isNullableString(candidate.reason)
+  );
+}
+
+function loadPersistedCampaignGoalState(): {
+  state: CampaignGoalState;
+  persisted: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { state: emptyCampaignGoalState(), persisted: false };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CAMPAIGN_GOAL_STORAGE_KEY);
+    if (!raw) {
+      return { state: emptyCampaignGoalState(), persisted: true };
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    return isCampaignGoalState(parsed)
+      ? { state: parsed, persisted: true }
+      : { state: emptyCampaignGoalState(), persisted: false };
+  } catch {
+    return { state: emptyCampaignGoalState(), persisted: false };
+  }
+}
+
+function persistCampaignGoalState(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    window.localStorage.setItem(CAMPAIGN_GOAL_STORAGE_KEY, JSON.stringify(campaignGoalState));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const persistedCampaignGoal = loadPersistedCampaignGoalState();
+let campaignGoalState: CampaignGoalState = persistedCampaignGoal.state;
+let campaignGoalPersistenceOk = persistedCampaignGoal.persisted;
 
 function getSessionLaunchErrorMessage(error: unknown): string {
   if (error instanceof ApiProblemError) {
@@ -1294,6 +1357,7 @@ function buildCampaignGoalResponse(
     success,
     action,
     goal: cloneCampaignGoalState(),
+    persisted: campaignGoalPersistenceOk,
     targetContext: buildVoiceTargetContext({
       sessionId: campaignGoalState.currentFocusSessionId,
       action: `campaign_goal:${action}`,
@@ -1323,6 +1387,7 @@ function clearCampaignGoal(reason: string | null | undefined): CampaignGoalResul
     updatedAt: new Date().toISOString(),
     reason: reason?.trim() || 'cleared',
   };
+  campaignGoalPersistenceOk = persistCampaignGoalState();
   return buildCampaignGoalResponse(
     'clear',
     true,
@@ -1386,6 +1451,7 @@ function applyCampaignGoalChange(
     updatedAt: new Date().toISOString(),
     reason: args.reason?.trim() || campaignGoalState.reason,
   };
+  campaignGoalPersistenceOk = persistCampaignGoalState();
 }
 
 function buildCampaignGoalChangeResponse(
