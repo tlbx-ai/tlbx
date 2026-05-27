@@ -390,7 +390,7 @@ function formatSendPromptToolDisplay(args: Record<string, unknown>): string {
 }
 
 function formatAgentTurnToolDisplay(args: Record<string, unknown>): string {
-  const sessionId = (args.sessionId as string) || '';
+  const sessionId = (args.sessionId as string) || 'focused session';
   const text = (args.text as string) || '';
   const timeoutMs = Number(args.timeoutMs) || 45000;
   return `Run agent turn on ${sessionId}\nTimeout: ${Math.round(timeoutMs / 1000)}s\n${text}`;

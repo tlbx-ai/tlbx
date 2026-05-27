@@ -391,6 +391,30 @@ function resolveUiFocusSessionId(): string | null {
   return $focusedSessionId.get() ?? $activeSessionId.get();
 }
 
+function resolveAgentTurnSessionId(requestedSessionId: string | null | undefined): {
+  sessionId: string | null;
+  source: 'explicit' | 'focus_context' | 'ui_focus' | 'none';
+} {
+  const explicitSessionId = normalizeTargetValue(requestedSessionId);
+  if (explicitSessionId) {
+    return { sessionId: explicitSessionId, source: 'explicit' };
+  }
+
+  if (focusContextState.active && focusContextState.sessionExists !== false) {
+    const focusContextSessionId = normalizeTargetValue(focusContextState.sessionId);
+    if (focusContextSessionId && getSession(focusContextSessionId)) {
+      return { sessionId: focusContextSessionId, source: 'focus_context' };
+    }
+  }
+
+  const uiFocusSessionId = resolveUiFocusSessionId();
+  if (uiFocusSessionId && getSession(uiFocusSessionId)) {
+    return { sessionId: uiFocusSessionId, source: 'ui_focus' };
+  }
+
+  return { sessionId: null, source: 'none' };
+}
+
 let lastUiFocusSessionId = resolveUiFocusSessionId();
 
 function syncFocusContextFromUi(reason: string): void {
@@ -1119,22 +1143,42 @@ async function sendPromptToSession(
  * Handle agent_turn tool - send one prompt and return the bounded completion summary.
  */
 async function handleAgentTurn(args: AgentTurnArgs): Promise<unknown> {
-  const session = getSession(args.sessionId);
-  if (!session) {
+  const requestedSessionId = normalizeTargetValue(args.sessionId);
+  const resolvedTarget = resolveAgentTurnSessionId(args.sessionId);
+  const sessionId = resolvedTarget.sessionId;
+  if (!sessionId) {
     return {
       success: false,
-      error: `Session ${args.sessionId} not found`,
-      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
-      responseText: `Session ${args.sessionId} was not found.`,
+      error: 'No target session available',
+      targetContext: buildVoiceTargetContext({ action: 'agent_turn' }),
+      requestedSessionId,
+      resolvedTargetSource: resolvedTarget.source,
+      responseText: 'No focused MidTerm session is available for the agent turn.',
       nextAction:
-        'Call session_overview to get the current session IDs, then retry agent_turn against the correct session.',
+        'Call session_overview or focus_context status, then select a session or provide the exact sessionId before retrying agent_turn.',
     };
   }
 
-  await sendPromptToSession(args.sessionId, args.text, args.interruptFirst ?? false, args.profile);
+  const session = getSession(sessionId);
+  if (!session) {
+    return {
+      success: false,
+      error: `Session ${sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId }),
+      requestedSessionId,
+      resolvedTargetSource: resolvedTarget.source,
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction:
+        resolvedTarget.source === 'explicit'
+          ? 'Call session_overview to get the current session IDs, then retry agent_turn against the correct sessionId or omit sessionId to use the current focus.'
+          : 'Call session_overview or focus_context status, then select a valid session before retrying agent_turn.',
+    };
+  }
+
+  await sendPromptToSession(sessionId, args.text, args.interruptFirst ?? false, args.profile);
 
   const waitResult = await handleWaitForTurnCompletion({
-    sessionId: args.sessionId,
+    sessionId,
     timeoutMs: args.timeoutMs ?? 45000,
     pollIntervalMs: args.pollIntervalMs ?? 2000,
     activitySeconds: args.activitySeconds ?? 120,
@@ -1144,11 +1188,13 @@ async function handleAgentTurn(args: AgentTurnArgs): Promise<unknown> {
   if ('error' in waitResult) {
     return {
       success: false,
-      sessionId: args.sessionId,
+      sessionId,
+      requestedSessionId,
+      resolvedTargetSource: resolvedTarget.source,
       promptSent: true,
       error: waitResult.error,
-      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId, action: 'agent_turn' }),
-      responseText: `Prompt sent to ${getReadableSessionTitle(session, args.sessionId)}, but the turn summary failed.`,
+      targetContext: buildVoiceTargetContext({ sessionId, action: 'agent_turn' }),
+      responseText: `Prompt sent to ${getReadableSessionTitle(session, sessionId)}, but the turn summary failed.`,
       nextAction:
         'Call session_turn_summary for this same session before reporting whether the agent turn completed.',
       wait: waitResult,
@@ -1157,12 +1203,14 @@ async function handleAgentTurn(args: AgentTurnArgs): Promise<unknown> {
 
   return {
     success: true,
-    sessionId: args.sessionId,
-    title: getReadableSessionTitle(session, args.sessionId),
+    sessionId,
+    requestedSessionId,
+    resolvedTargetSource: resolvedTarget.source,
+    title: getReadableSessionTitle(session, sessionId),
     promptSent: true,
     interruptFirst: args.interruptFirst ?? false,
     profile: args.profile ?? null,
-    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId, action: 'agent_turn' }),
+    targetContext: buildVoiceTargetContext({ sessionId, action: 'agent_turn' }),
     responseText: waitResult.responseText,
     nextAction: waitResult.nextAction,
     turn: waitResult,

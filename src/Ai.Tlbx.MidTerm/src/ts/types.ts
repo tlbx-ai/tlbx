@@ -764,7 +764,7 @@ export interface SendPromptArgs {
 
 /** Args for agent_turn tool */
 export interface AgentTurnArgs {
-  sessionId: string;
+  sessionId?: string | null;
   text: string;
   interruptFirst?: boolean;
   profile?: string | null;

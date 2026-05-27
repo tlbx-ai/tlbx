@@ -475,6 +475,55 @@ describe('voice tool response contract', () => {
     });
   });
 
+  it('runs an agent turn against the focused session when no session id is supplied', async () => {
+    $sessions.set({ s1: createSession('s1', 'Worker lane') });
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+    sendSessionPrompt.mockResolvedValue(undefined);
+    getSessionAgentVibe.mockResolvedValue(
+      createAgentVibe('s1', 'idle-prompt', 'Focused turn finished.'),
+    );
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'agent-turn-focused',
+        tool: 'agent_turn',
+        args: {
+          text: 'Continue the focused work.',
+          timeoutMs: 1000,
+          pollIntervalMs: 500,
+          justification: 'continue focused session',
+        },
+      }),
+    );
+
+    expect(sendSessionPrompt).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        text: 'Continue the focused work.',
+        mode: 'auto',
+        submitKeys: ['Enter'],
+      }),
+    );
+    expect(result).toMatchObject({
+      success: true,
+      sessionId: 's1',
+      requestedSessionId: null,
+      resolvedTargetSource: 'focus_context',
+      promptSent: true,
+      responseText: 'Worker lane appears done or idle. Latest signal: Focused turn finished.',
+    });
+    expect(result.targetContext).toMatchObject({
+      targetSessionId: 's1',
+      targetSessionTitle: 'Worker lane',
+      action: 'agent_turn',
+      isTargetActive: true,
+      isTargetFocused: true,
+      isTargetInLayout: true,
+    });
+  });
+
   it('dispatches one campaign prompt to multiple exact sessions', async () => {
     $sessions.set({
       s1: createSession('s1', 'Worker one'),
