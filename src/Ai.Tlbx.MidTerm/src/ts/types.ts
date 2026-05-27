@@ -318,6 +318,7 @@ export type VoiceToolName =
   | 'conversation_continuity'
   | 'campaign_goal'
   | 'campaign_status'
+  | 'campaign_report'
   | 'make_input'
   | 'read_scrollback'
   | 'interactive_read'
@@ -576,6 +577,34 @@ export interface CampaignStatusSession extends ConversationContinuitySession {
   elapsedMs?: number;
   defaultPreview?: VoicePreviewOverview | null;
   repos?: unknown[];
+}
+
+/** Args for campaign_report tool */
+export interface CampaignReportArgs {
+  mode?: 'status' | 'handoff' | 'final' | 'blocked';
+  scope?: 'active' | 'layout' | 'all';
+  sessionIds?: string[];
+  waitForBusy?: boolean;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+}
+
+/** Synthesized user-facing report for voice campaign handoffs */
+export interface CampaignReportResult {
+  success: boolean;
+  mode: 'status' | 'handoff' | 'final' | 'blocked';
+  reportState: 'empty' | 'needs_user' | 'blocked' | 'busy' | 'ready' | 'mixed';
+  campaignGoal: CampaignGoalState;
+  campaignStatus: CampaignStatusResult;
+  targetContext?: VoiceTargetContext;
+  responseText: string;
+  nextAction: string;
+  recommendedFocusSessionId: string | null;
+  attentionSessionIds: string[];
+  blockedSessionIds: string[];
+  busySessionIds: string[];
+  completeSessionIds: string[];
 }
 
 /** Session state for voice assistant */

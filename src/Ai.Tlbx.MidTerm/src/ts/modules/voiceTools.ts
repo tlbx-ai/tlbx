@@ -60,6 +60,7 @@ import type {
   ConversationContinuityArgs,
   CampaignGoalArgs,
   CampaignStatusArgs,
+  CampaignReportArgs,
   SessionActivityArgs,
   SessionTurnSummaryArgs,
   WaitForTurnCompletionArgs,
@@ -78,6 +79,7 @@ import type {
   CampaignGoalState,
   CampaignGoalPhase,
   CampaignStatusResult,
+  CampaignReportResult,
   WaitForTurnCompletionResult,
   VoicePreviewOverview,
   VoiceSessionState,
@@ -1662,6 +1664,124 @@ async function handleCampaignStatus(args: CampaignStatusArgs): Promise<CampaignS
   };
 }
 
+function normalizeCampaignReportMode(
+  mode: CampaignReportArgs['mode'] | undefined,
+): CampaignReportResult['mode'] {
+  return mode ?? 'status';
+}
+
+function buildCampaignReportStatusLine(status: CampaignStatusResult): string {
+  if (status.campaignState === 'busy') {
+    return `${status.busySessionIds.length} session${status.busySessionIds.length === 1 ? ' is' : 's are'} still working.`;
+  }
+
+  if (status.campaignState === 'ready') {
+    return `${status.completeSessionIds.length} session${status.completeSessionIds.length === 1 ? ' is' : 's are'} ready.`;
+  }
+
+  if (status.campaignState === 'blocked') {
+    return `${status.blockedSessionIds.length} session${status.blockedSessionIds.length === 1 ? ' is' : 's are'} blocked.`;
+  }
+
+  if (status.campaignState === 'needs_user') {
+    return `${status.attentionSessionIds.length} session${status.attentionSessionIds.length === 1 ? ' needs' : ' need'} user input.`;
+  }
+
+  return status.responseText;
+}
+
+function buildCampaignReportResponseText(
+  mode: CampaignReportResult['mode'],
+  goal: CampaignGoalState,
+  status: CampaignStatusResult,
+): string {
+  const goalText = goal.active && goal.objective ? `Goal: ${goal.objective}. ` : '';
+  const stateText = buildCampaignReportStatusLine(status);
+
+  if (mode === 'final' && status.campaignState !== 'ready') {
+    return `${goalText}Not ready for a final report yet. ${stateText} ${status.responseText}`;
+  }
+
+  if (mode === 'blocked' || status.campaignState === 'blocked') {
+    return `${goalText}${stateText} ${status.responseText}`;
+  }
+
+  if (mode === 'handoff') {
+    const nextReport = goal.nextReport ? ` Next report: ${goal.nextReport}` : '';
+    return `${goalText}${stateText} ${status.responseText}${nextReport}`;
+  }
+
+  return `${goalText}${stateText} ${status.responseText}`;
+}
+
+function buildCampaignReportNextAction(
+  mode: CampaignReportResult['mode'],
+  goal: CampaignGoalState,
+  status: CampaignStatusResult,
+): string {
+  if (status.campaignState === 'busy') {
+    return 'Tell the user work is still running; offer to keep watching instead of claiming completion.';
+  }
+
+  if (status.campaignState === 'blocked' || mode === 'blocked') {
+    return 'Report the blocker and one concrete recovery step; do not continue acting without user direction if the blocker needs a decision.';
+  }
+
+  if (status.campaignState === 'needs_user') {
+    return 'Tell the user exactly which session needs input and what input is needed, then stop.';
+  }
+
+  if (mode === 'final' && goal.exitCriteria) {
+    return `Check the report against the exit criteria before saying done: ${goal.exitCriteria}`;
+  }
+
+  return status.nextAction;
+}
+
+async function handleCampaignReport(args: CampaignReportArgs): Promise<CampaignReportResult> {
+  const mode = normalizeCampaignReportMode(args.mode);
+  const goal = cloneCampaignGoalState();
+  const sessionIds =
+    args.sessionIds !== undefined
+      ? args.sessionIds
+      : goal.targetSessionIds.length > 0
+        ? goal.targetSessionIds
+        : undefined;
+  const statusArgs: CampaignStatusArgs = {
+    scope: args.scope ?? 'all',
+    waitForBusy: args.waitForBusy ?? false,
+    timeoutMs: args.timeoutMs ?? 30000,
+    pollIntervalMs: args.pollIntervalMs ?? 2000,
+    activitySeconds: args.activitySeconds ?? 120,
+    includeBrowserStatus: true,
+    includeRepoStatus: true,
+  };
+  if (sessionIds !== undefined) {
+    statusArgs.sessionIds = sessionIds;
+  }
+
+  const campaignStatus = await handleCampaignStatus(statusArgs);
+
+  return {
+    success: campaignStatus.success,
+    mode,
+    reportState: campaignStatus.campaignState,
+    campaignGoal: goal,
+    campaignStatus,
+    targetContext: buildVoiceTargetContext({
+      sessionId: campaignStatus.recommendedFocusSessionId,
+      action: `campaign_report:${mode}`,
+    }),
+    responseText: buildCampaignReportResponseText(mode, goal, campaignStatus),
+    nextAction: buildCampaignReportNextAction(mode, goal, campaignStatus),
+    recommendedFocusSessionId: campaignStatus.recommendedFocusSessionId,
+    attentionSessionIds: campaignStatus.attentionSessionIds,
+    blockedSessionIds: campaignStatus.blockedSessionIds,
+    busySessionIds: campaignStatus.busySessionIds,
+    completeSessionIds: campaignStatus.completeSessionIds,
+  };
+}
+
 /**
  * Handle dev_browser_open tool - open a URL in a session-scoped named Dev Browser preview.
  */
@@ -2324,6 +2444,7 @@ const voiceToolHandlers: Record<
     handleConversationContinuity(args as unknown as ConversationContinuityArgs),
   campaign_goal: (args) => Promise.resolve(handleCampaignGoal(args as unknown as CampaignGoalArgs)),
   campaign_status: (args) => handleCampaignStatus(args as unknown as CampaignStatusArgs),
+  campaign_report: (args) => handleCampaignReport(args as unknown as CampaignReportArgs),
   make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
   read_scrollback: (args) =>
     Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
