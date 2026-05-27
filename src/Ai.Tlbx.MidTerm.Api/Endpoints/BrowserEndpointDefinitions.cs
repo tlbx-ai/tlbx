@@ -39,6 +39,10 @@ public static class BrowserEndpointDefinitions
             await handler.ExecuteCommandAsync(request, ctx))
             .Produces<BrowserCommandResponse>(StatusCodes.Status200OK, "application/json");
 
+        app.MapPost("/api/browser/main", (BrowserCommandRequest request, IBrowserHandler handler) =>
+            handler.ClaimMain(request))
+            .Produces<BrowserCommandResponse>(StatusCodes.Status200OK, "application/json");
+
         return app;
     }
 }

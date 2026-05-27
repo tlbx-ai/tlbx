@@ -1023,6 +1023,10 @@ function describeQueueTitle(entry: ManagerBarQueueEntry): string {
 
 function describeQueueCondition(entry: ManagerBarQueueEntry): string {
   const usesTurnQueue = usesTurnQueueForSession(entry.sessionId);
+  if (entry.kind === 'prompt' && entry.nextRunAt) {
+    return formatQueuedPromptRunAt(entry.nextRunAt);
+  }
+
   if (entry.phase === 'chainCooldown') {
     return t(usesTurnQueue ? 'managerBar.queue.turn' : 'managerBar.queue.chainCooldown');
   }
@@ -1078,6 +1082,28 @@ function describeQueuedPromptTitle(entry: ManagerBarQueueEntry): string {
   }
 
   return t('managerBar.modal.singlePrompt');
+}
+
+function formatQueuedPromptRunAt(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return t('managerBar.queue.cooldown');
+  }
+
+  const now = new Date();
+  const sameDay =
+    date.getFullYear() === now.getFullYear() &&
+    date.getMonth() === now.getMonth() &&
+    date.getDate() === now.getDate();
+
+  return sameDay
+    ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    : date.toLocaleString([], {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
 }
 
 function usesTurnQueueForSession(sessionId: string): boolean {

@@ -314,12 +314,33 @@ export interface VoiceHealthResponse {
 /** Tool names available to voice assistant */
 export type VoiceToolName =
   | 'state_of_things'
+  | 'session_overview'
+  | 'conversation_continuity'
+  | 'focus_context'
+  | 'campaign_goal'
+  | 'campaign_status'
+  | 'campaign_report'
+  | 'app_shell'
   | 'make_input'
   | 'read_scrollback'
   | 'interactive_read'
   | 'create_session'
+  | 'select_session'
+  | 'send_prompt'
+  | 'agent_turn'
+  | 'campaign_dispatch'
+  | 'session_activity'
+  | 'session_turn_summary'
+  | 'wait_for_turn_completion'
+  | 'dev_browser_open'
+  | 'dev_browser_status'
+  | 'dev_browser_command'
+  | 'dev_browser_screenshot'
+  | 'repo_monitor'
+  | 'layout_control'
   | 'close_session'
-  | 'bookmarks';
+  | 'bookmarks'
+  | 'wait_for_user';
 
 /** Tool request from voice server to browser */
 export interface VoiceToolRequest {
@@ -337,6 +358,93 @@ export interface VoiceToolResponse {
   result: unknown;
   error?: string;
   declined?: boolean;
+}
+
+/** Stable target context returned by voice tools so Realtime can carry IDs across turns */
+export interface VoiceTargetContext {
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  layoutSessionIds: string[];
+  targetSessionId: string | null;
+  targetSessionTitle: string | null;
+  targetSessionExists: boolean | null;
+  targetPreviewName: string | null;
+  targetPreviewId: string | null;
+  targetRepoRoot: string | null;
+  action: string | null;
+  isTargetActive: boolean | null;
+  isTargetFocused: boolean | null;
+  isTargetInLayout: boolean | null;
+}
+
+/** Args for focus_context tool */
+export interface FocusContextArgs {
+  action?: 'status' | 'set' | 'clear';
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+  repoRoot?: string | null;
+  reason?: string | null;
+}
+
+/** Browser-owned voice focus target that survives reloads and reconnects */
+export interface FocusContextState {
+  active: boolean;
+  sessionId: string | null;
+  sessionTitle: string | null;
+  sessionExists: boolean | null;
+  previewName: string | null;
+  previewId: string | null;
+  repoRoot: string | null;
+  reason: string | null;
+  updatedAt: string | null;
+}
+
+/** Result of focus_context tool */
+export interface FocusContextResult {
+  success: boolean;
+  action: 'status' | 'set' | 'clear';
+  focus: FocusContextState;
+  persisted: boolean;
+  targetContext?: VoiceTargetContext;
+  responseText: string;
+  nextAction: string;
+}
+
+export type VoiceSettingsTab =
+  | 'updates'
+  | 'sessions'
+  | 'appearance'
+  | 'workflow'
+  | 'terminal'
+  | 'ai-agents'
+  | 'security'
+  | 'connected-hosts'
+  | 'advanced';
+
+/** Args for app_shell tool */
+export interface AppShellArgs {
+  action?: 'status' | 'open_settings' | 'close_settings';
+  settingsTab?: VoiceSettingsTab | null;
+  reason?: string | null;
+}
+
+/** Result of app_shell tool */
+export interface AppShellResult {
+  success: boolean;
+  action: 'status' | 'open_settings' | 'close_settings';
+  settingsOpen: boolean;
+  activeSettingsTab: VoiceSettingsTab | null;
+  requestedSettingsTab: VoiceSettingsTab | null;
+  sidebarOpen: boolean;
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  updateCurrentVersion: string | null;
+  updateLatestVersion: string | null;
+  updateAvailable: boolean | null;
+  responseText: string;
+  nextAction: string;
+  targetContext?: VoiceTargetContext;
 }
 
 /** Args for make_input tool */
@@ -372,9 +480,206 @@ export interface InteractiveOp {
 export interface StateOfThingsResult {
   sessions: VoiceSessionState[];
   activeSessionId: string | null;
+  targetContext?: VoiceTargetContext;
   version: string;
   updateAvailable: boolean;
   recentBells: BellNotification[];
+}
+
+/** Args for session_overview tool */
+export interface SessionOverviewArgs {
+  includeBrowserStatus?: boolean;
+  includeRepoStatus?: boolean;
+}
+
+/** Compact result of session_overview tool */
+export interface SessionOverviewResult {
+  success: boolean;
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  layoutSessionIds: string[];
+  targetContext?: VoiceTargetContext;
+  version: string;
+  updateAvailable: boolean;
+  sessions: VoiceSessionOverview[];
+}
+
+/** Compact session state for orientation, switching, and multi-session control */
+export interface VoiceSessionOverview {
+  id: string;
+  title: string;
+  userTitle: string | null;
+  terminalTitle: string | null;
+  foregroundName: string | null;
+  currentDirectory: string | null;
+  shell: string;
+  isActive: boolean;
+  isFocused: boolean;
+  isInLayout: boolean;
+  hasRenderedTerminal: boolean;
+  defaultPreview?: VoicePreviewOverview | null;
+  repos?: unknown[];
+}
+
+/** Compact default Dev Browser preview state for a session */
+export interface VoicePreviewOverview {
+  previewName: string;
+  url: string | null;
+  state: string | null;
+  ready: boolean;
+}
+
+/** Args for conversation_continuity tool */
+export interface ConversationContinuityArgs {
+  sessionId?: string | null;
+  scope?: 'active' | 'all';
+  activitySeconds?: number;
+  includeTail?: boolean;
+}
+
+/** Read-only handoff packet for keeping the voice conversation flowing */
+export interface ConversationContinuityResult {
+  success: boolean;
+  scope: 'active' | 'all';
+  activeSessionId: string | null;
+  targetContext?: VoiceTargetContext;
+  generatedAt: string;
+  responseText: string;
+  nextAction: string;
+  sessions: ConversationContinuitySession[];
+  attentionSessionIds: string[];
+  busySessionIds: string[];
+  completeSessionIds: string[];
+}
+
+/** Per-session continuity summary */
+export interface ConversationContinuitySession {
+  sessionId: string;
+  title: string;
+  isActive: boolean;
+  status: string;
+  state: string;
+  stateLabel: string;
+  needsAttention: boolean;
+  attentionReason: string | null;
+  summary: string;
+  nextAction: string;
+  latestActivities: unknown[];
+  tailText?: string;
+}
+
+/** Current active voice campaign phase */
+export type CampaignGoalPhase = 'orient' | 'execute' | 'verify' | 'report' | 'blocked' | 'done';
+
+/** Args for campaign_goal tool */
+export interface CampaignGoalArgs {
+  action?: 'status' | 'set' | 'update' | 'clear';
+  objective?: string | null;
+  phase?: CampaignGoalPhase | null;
+  targetSessionIds?: string[];
+  currentFocusSessionId?: string | null;
+  exitCriteria?: string | null;
+  nextReport?: string | null;
+  reason?: string | null;
+}
+
+/** Browser-owned campaign goal state for voice conversation flow */
+export interface CampaignGoalState {
+  active: boolean;
+  objective: string | null;
+  phase: CampaignGoalPhase | null;
+  targetSessionIds: string[];
+  currentFocusSessionId: string | null;
+  exitCriteria: string | null;
+  nextReport: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  reason: string | null;
+}
+
+/** Result of campaign_goal tool */
+export interface CampaignGoalResult {
+  success: boolean;
+  action: 'status' | 'set' | 'update' | 'clear';
+  goal: CampaignGoalState;
+  persisted: boolean;
+  targetContext?: VoiceTargetContext;
+  responseText: string;
+  nextAction: string;
+  unknownTargetSessionIds?: string[];
+}
+
+/** Args for campaign_status tool */
+export interface CampaignStatusArgs {
+  scope?: 'active' | 'layout' | 'all';
+  sessionIds?: string[];
+  waitForBusy?: boolean;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+  includeBrowserStatus?: boolean;
+  includeRepoStatus?: boolean;
+}
+
+/** Read-only multi-session campaign state for voice orchestration */
+export interface CampaignStatusResult {
+  success: boolean;
+  scope: 'active' | 'layout' | 'all' | 'explicit';
+  campaignState: 'empty' | 'needs_user' | 'blocked' | 'busy' | 'ready' | 'mixed';
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  targetContext?: VoiceTargetContext;
+  generatedAt: string;
+  waited: boolean;
+  elapsedMs: number;
+  responseText: string;
+  nextAction: string;
+  recommendedFocusSessionId: string | null;
+  sessions: CampaignStatusSession[];
+  attentionSessionIds: string[];
+  blockedSessionIds: string[];
+  busySessionIds: string[];
+  completeSessionIds: string[];
+  shellSessionIds: string[];
+}
+
+/** Per-session campaign state for voice orchestration */
+export interface CampaignStatusSession extends ConversationContinuitySession {
+  isFocused: boolean;
+  isInLayout: boolean;
+  waited: boolean;
+  timedOut?: boolean;
+  elapsedMs?: number;
+  defaultPreview?: VoicePreviewOverview | null;
+  repos?: unknown[];
+}
+
+/** Args for campaign_report tool */
+export interface CampaignReportArgs {
+  mode?: 'status' | 'handoff' | 'final' | 'blocked';
+  scope?: 'active' | 'layout' | 'all';
+  sessionIds?: string[];
+  waitForBusy?: boolean;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+}
+
+/** Synthesized user-facing report for voice campaign handoffs */
+export interface CampaignReportResult {
+  success: boolean;
+  mode: 'status' | 'handoff' | 'final' | 'blocked';
+  reportState: 'empty' | 'needs_user' | 'blocked' | 'busy' | 'ready' | 'mixed';
+  campaignGoal: CampaignGoalState;
+  campaignStatus: CampaignStatusResult;
+  targetContext?: VoiceTargetContext;
+  responseText: string;
+  nextAction: string;
+  recommendedFocusSessionId: string | null;
+  attentionSessionIds: string[];
+  blockedSessionIds: string[];
+  busySessionIds: string[];
+  completeSessionIds: string[];
 }
 
 /** Session state for voice assistant */
@@ -405,6 +710,9 @@ export interface MakeInputResult {
   screenContent: string;
   cols: number;
   rows: number;
+  responseText?: string;
+  nextAction?: string;
+  targetContext?: VoiceTargetContext;
 }
 
 /** Result of read_scrollback tool */
@@ -413,11 +721,17 @@ export interface ReadScrollbackResult {
   totalLines: number;
   returnedLines: number;
   startLine: number;
+  responseText?: string;
+  nextAction?: string;
+  targetContext?: VoiceTargetContext;
 }
 
 /** Result of interactive_read tool */
 export interface InteractiveReadResult {
   results: InteractiveOpResult[];
+  responseText?: string;
+  nextAction?: string;
+  targetContext?: VoiceTargetContext;
 }
 
 /** Single operation result */
@@ -431,6 +745,157 @@ export interface InteractiveOpResult {
 export interface CreateSessionArgs {
   shellType?: string;
   workingDirectory?: string;
+}
+
+/** Args for select_session tool */
+export interface SelectSessionArgs {
+  sessionId: string;
+  focusTerminal?: boolean;
+}
+
+/** Args for send_prompt tool */
+export interface SendPromptArgs {
+  sessionId: string;
+  text: string;
+  interruptFirst?: boolean;
+  profile?: string | null;
+  justification: string;
+}
+
+/** Args for agent_turn tool */
+export interface AgentTurnArgs {
+  sessionId?: string | null;
+  text: string;
+  interruptFirst?: boolean;
+  profile?: string | null;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+  includeTail?: boolean;
+  justification: string;
+}
+
+/** Args for campaign_dispatch tool */
+export interface CampaignDispatchArgs {
+  sessionIds: string[];
+  text: string;
+  interruptFirst?: boolean;
+  profile?: string | null;
+  justification: string;
+}
+
+/** Args for session_activity tool */
+export interface SessionActivityArgs {
+  sessionId?: string | null;
+  tailLines?: number;
+  activitySeconds?: number;
+  bellLimit?: number;
+}
+
+/** Args for session_turn_summary tool */
+export interface SessionTurnSummaryArgs {
+  sessionId: string;
+  tailLines?: number;
+  activitySeconds?: number;
+  bellLimit?: number;
+}
+
+/** Compact lifecycle status for a MidTerm agent turn */
+export type SessionTurnStatus =
+  | 'complete'
+  | 'busy'
+  | 'needs_user'
+  | 'blocked'
+  | 'shell'
+  | 'unknown';
+
+/** Args for wait_for_turn_completion tool */
+export interface WaitForTurnCompletionArgs {
+  sessionId: string;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+  includeTail?: boolean;
+}
+
+/** Result of wait_for_turn_completion tool */
+export interface WaitForTurnCompletionResult {
+  success: boolean;
+  sessionId: string;
+  title: string;
+  targetContext?: VoiceTargetContext;
+  completed: boolean;
+  timedOut: boolean;
+  status: SessionTurnStatus;
+  state: string;
+  stateLabel: string;
+  elapsedMs: number;
+  pollCount: number;
+  settledAt: string;
+  responseText: string;
+  summary: string;
+  nextAction: string;
+  needsAttention: boolean;
+  attentionReason: string | null;
+  latestActivities: unknown[];
+  tailText?: string;
+}
+
+/** Args for dev_browser_open tool */
+export interface DevBrowserOpenArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  url: string;
+}
+
+/** Args for dev_browser_status tool */
+export interface DevBrowserStatusArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+}
+
+/** Args for dev_browser_command tool */
+export interface DevBrowserCommandArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+  command: string;
+  selector?: string | null;
+  value?: string | null;
+  maxDepth?: number;
+  textOnly?: boolean;
+  timeout?: number;
+  justification?: string;
+}
+
+/** Args for dev_browser_screenshot tool */
+export interface DevBrowserScreenshotArgs {
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+}
+
+/** Args for repo_monitor tool */
+export interface RepoMonitorArgs {
+  action: 'list' | 'add' | 'remove' | 'refresh';
+  sessionId?: string | null;
+  path?: string | null;
+  repoRoot?: string | null;
+  role?: string | null;
+  label?: string | null;
+  justification?: string;
+}
+
+/** Args for layout_control tool */
+export interface LayoutControlArgs {
+  action: 'status' | 'focus' | 'dock' | 'undock' | 'swap' | 'clear';
+  sessionId?: string | null;
+  targetSessionId?: string | null;
+  otherSessionId?: string | null;
+  position?: DockPosition | null;
+  focusTerminal?: boolean;
+  justification?: string;
 }
 
 /** Args for close_session tool */

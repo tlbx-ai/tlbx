@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Ai.Tlbx.MidTerm.Settings;
 using Xunit;
@@ -8,7 +9,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MuxClientTests
 {
     [Fact]
-    public async Task FullReplayClient_DeliversOnlyActiveOrVisibleSessions()
+    public async Task FullReplayClient_DeliversAllAccessibleSessions()
     {
         using var socket = new FakeWebSocket();
         await using var client = new MuxClient(
@@ -21,7 +22,44 @@ public sealed class MuxClientTests
 
         Assert.True(client.ShouldDeliverSession("active"));
         Assert.True(client.ShouldDeliverSession("visible"));
-        Assert.False(client.ShouldDeliverSession("hidden"));
+        Assert.True(client.ShouldDeliverSession("hidden"));
+    }
+
+    [Fact]
+    public async Task ShareClient_DeliversOnlyAllowedSession()
+    {
+        using var socket = new FakeWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.QuickResume,
+            allowedSessionId: "allowed");
+
+        client.SetActiveSession("other");
+        client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible" });
+
+        Assert.True(client.ShouldDeliverSession("allowed"));
+        Assert.False(client.ShouldDeliverSession("visible"));
+        Assert.False(client.ShouldDeliverSession("other"));
+    }
+
+    [Fact]
+    public void ResolveViewportReplayBytes_ScalesWithRowsAndClamps()
+    {
+        var session = new SessionInfo
+        {
+            Cols = 120,
+            Rows = 40,
+            ShellType = "pwsh"
+        };
+
+        var small = MuxWebSocketHandler.ResolveViewportReplayBytes(session, replayRows: 20);
+        var large = MuxWebSocketHandler.ResolveViewportReplayBytes(session, replayRows: 80);
+        var huge = MuxWebSocketHandler.ResolveViewportReplayBytes(session, replayRows: 1000);
+
+        Assert.InRange(small, 32 * 1024, 256 * 1024);
+        Assert.True(large > small);
+        Assert.Equal(256 * 1024, huge);
     }
 
     private sealed class FakeWebSocket : WebSocket

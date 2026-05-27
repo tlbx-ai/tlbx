@@ -27,7 +27,7 @@ public sealed partial class UpdateService : IDisposable
         ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "MidTerm", "localrelease")
         : Path.Combine("/var/lib/midterm", "localrelease");
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(30);
-    private static readonly TimeSpan DevCheckInterval = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan DevCheckInterval = TimeSpan.FromMinutes(7);
     private static readonly HttpClient SharedHttpClient = new();
 
     private readonly HttpClient _httpClient;

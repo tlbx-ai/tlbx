@@ -116,6 +116,7 @@
   "settings.appearance.cursorUnfocused": "कर्सर (अनफोकस्ड)",
   "settings.appearance.theme": "थीम",
   "settings.appearance.terminalColorScheme": "टर्मिनल रंग",
+  "settings.appearance.terminalThemeLightnessBoost": "ब्राइटनेस बूस्ट",
   "settings.appearance.backgroundTitle": "पृष्ठभूमि और पारदर्शिता",
   "settings.appearance.backgroundImage": "पृष्ठभूमि छवि",
   "settings.appearance.backgroundUpload": "छवि अपलोड करें",

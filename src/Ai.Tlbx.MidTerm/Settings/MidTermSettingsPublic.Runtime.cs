@@ -96,6 +96,7 @@ public sealed partial class MidTermSettingsPublic
             SmoothScrolling = settings.SmoothScrolling,
             ScrollbarStyle = settings.ScrollbarStyle,
             UseWebGL = settings.UseWebGL,
+            TerminalThemeLightnessBoost = settings.TerminalThemeLightnessBoost,
             ScrollbackLines = settings.ScrollbackLines,
             ScrollbackBytes = settings.ScrollbackBytes,
             BellStyle = settings.BellStyle,
@@ -105,6 +106,7 @@ public sealed partial class MidTermSettingsPublic
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
             MobileKineticTerminalScroll = settings.MobileKineticTerminalScroll,
+            MobileDenseTerminalMode = settings.MobileDenseTerminalMode,
             DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             ResumeMode = settings.ResumeMode,
@@ -211,6 +213,7 @@ public sealed partial class MidTermSettingsPublic
         settings.SmoothScrolling = SmoothScrolling;
         settings.ScrollbarStyle = ScrollbarStyle;
         settings.UseWebGL = UseWebGL;
+        settings.TerminalThemeLightnessBoost = Math.Clamp(TerminalThemeLightnessBoost, 0, 100);
         settings.ScrollbackLines = Math.Clamp(ScrollbackLines, 0, MidTermSettings.MaxScrollbackLines);
         settings.ScrollbackBytes = Math.Clamp(
             ScrollbackBytes,
@@ -223,6 +226,7 @@ public sealed partial class MidTermSettingsPublic
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
         settings.MobileKineticTerminalScroll = MobileKineticTerminalScroll;
+        settings.MobileDenseTerminalMode = MobileDenseTerminalMode;
         settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         settings.ResumeMode = ResumeMode;

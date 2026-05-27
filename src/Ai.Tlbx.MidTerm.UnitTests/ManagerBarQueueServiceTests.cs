@@ -97,6 +97,35 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task EnqueuePromptAt_PersistsScheduledRunTimeAcrossRestart()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        var runAt = _timeProvider.GetUtcNow().AddMinutes(5);
+        await using (var initial = new ManagerBarQueueService(_stateDir, runtime, _timeProvider))
+        {
+            var entry = initial.EnqueuePromptAt(
+                "session-1",
+                new AppServerControlTurnRequest
+                {
+                    Text = "check release status"
+                },
+                runAt);
+
+            Assert.NotNull(entry);
+            Assert.Equal("pendingInterval", entry!.Phase);
+            Assert.Equal(runAt, entry.NextRunAt);
+            Assert.Single(initial.GetSnapshot(["session-1"]));
+        }
+
+        await using var restarted = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        var snapshot = Assert.Single(restarted.GetSnapshot(["session-1"]));
+        Assert.Equal("prompt", snapshot.Kind);
+        Assert.Equal("check release status", snapshot.Turn?.Text);
+        Assert.Equal("pendingInterval", snapshot.Phase);
+        Assert.Equal(runAt, snapshot.NextRunAt);
+    }
+
+    [Fact]
     public async Task SubmitPromptAsync_FastTracksTerminalPromptWhenQueueEmptyAndHeatIsLow()
     {
         var runtime = new FakeRuntime(["session-1"])
@@ -383,6 +412,28 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         await Task.Delay(1200);
 
         Assert.Equal(["status"], runtime.SentPrompts);
+    }
+
+    [Fact]
+    public async Task ProcessLoop_WaitsUntilScheduledPromptRunTime()
+    {
+        var runtime = new FakeRuntime(["session-1"]);
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        service.Start();
+
+        service.EnqueuePromptAt(
+            "session-1",
+            new AppServerControlTurnRequest { Text = "scheduled status" },
+            _timeProvider.GetUtcNow().AddSeconds(5));
+
+        await Task.Delay(1200);
+        Assert.Empty(runtime.SentPrompts);
+
+        _timeProvider.Advance(TimeSpan.FromSeconds(6));
+        await Task.Delay(1200);
+
+        Assert.Equal(["scheduled status"], runtime.SentPrompts);
+        Assert.Empty(service.GetSnapshot(["session-1"]));
     }
 
     [Fact]

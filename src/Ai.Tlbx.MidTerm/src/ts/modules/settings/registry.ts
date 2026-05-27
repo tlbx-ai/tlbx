@@ -382,6 +382,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'immediate',
     },
   ),
+  controlEntry('terminalThemeLightnessBoost', 'setting-terminal-theme-lightness-boost', 'int', 0, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'integer, clamped to 0-100',
+    applyMode: 'immediate',
+  }),
   preserveEntry('minimumContrastRatio', 1, {
     editable: true,
     storage: 'settings.json',
@@ -472,6 +478,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'immediate',
     },
   ),
+  preserveEntry('mobileDenseTerminalMode', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
   controlEntry(
     'preserveTerminalCursorControl',
     'setting-preserve-terminal-cursor-control',

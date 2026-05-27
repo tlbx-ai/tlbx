@@ -23,6 +23,10 @@ describe('mobile responsive chrome wiring', () => {
 
   it('toggles merged mobile topbar state from the active session', () => {
     expect(mainSource).toContain("from './modules/sessionTabs/mobileActions'");
+    expect(mainSource).toContain("initWebPreview, syncActiveWebPreview");
+    expect(mainSource).toContain(
+      "'.session-wrapper:not(.hidden) .session-tab-bar'",
+    );
     expect(mobileActionsSource).toContain(
       "title?.toggleAttribute('hidden', Boolean(activeSessionId));",
     );
@@ -32,6 +36,7 @@ describe('mobile responsive chrome wiring', () => {
     expect(mobileActionsSource).toContain("resolveSessionSurfaceMode(activeSession) === 'agent'");
     expect(mobileActionsSource).toContain('activeSessionId !== null &&');
     expect(mobileActionsSource).toContain("isTabAvailable(activeSessionId, 'agent');");
+    expect(mainSource).toContain('void syncActiveWebPreview();');
   });
 
   it('keeps mobile footer controls in the adaptive dock instead of hiding automation outright', () => {
@@ -68,5 +73,23 @@ describe('mobile responsive chrome wiring', () => {
       "body.keyboard-visible .adaptive-footer-dock[data-device='mobile'] .adaptive-footer-status {",
     );
     expect(css).toContain('order: 4;');
+  });
+
+  it('keeps the responsive sidebar opaque and exposes touch-sized row actions', () => {
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \{[\s\S]*?background: var\(--bg-sidebar-opaque, var\(--bg-sidebar\)\);/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \.session-actions \{[\s\S]*?opacity: 1;[\s\S]*?visibility: visible;[\s\S]*?pointer-events: auto;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.session-actions \.session-pin,[\s\S]*?\.session-actions \.session-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.session-item \{[\s\S]*?flex-wrap: wrap;[\s\S]*?min-height: 112px;[\s\S]*?\.session-actions \{[\s\S]*?flex: 0 0 calc\(100% - 18px\);[\s\S]*?margin: 2px 0 0 18px;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \.session-menu-btn \{[\s\S]*?display: none;/s,
+    );
   });
 });

@@ -150,6 +150,46 @@ public sealed class BrowserUiBridge
         return true;
     }
 
+    public bool RequestClaimMain(string? browserId, out string claimedBrowserId, out string error)
+    {
+        claimedBrowserId = "";
+        error = "";
+
+        ListenerRegistration[] listeners;
+        lock (_lock)
+        {
+            if (_listeners.Count == 0)
+            {
+                error = "No MidTerm browser UI is connected. Open the owning MidTerm browser tab first; the preview target alone cannot drive /ws/state.";
+                return false;
+            }
+
+            listeners = _listeners.Values.ToArray();
+        }
+
+        ListenerRegistration? target;
+        if (string.IsNullOrWhiteSpace(browserId))
+        {
+            target = SelectClaimListener(listeners);
+        }
+        else
+        {
+            target = SelectListenerByBrowserId(listeners, browserId.Trim());
+        }
+
+        if (target is null || string.IsNullOrWhiteSpace(target.BrowserId))
+        {
+            error = string.IsNullOrWhiteSpace(browserId)
+                ? "Multiple MidTerm browser UIs are connected. Pass --browser with the intended browser id to claim the leading browser deterministically."
+                : $"No connected MidTerm browser UI matches '{browserId}'.";
+            return false;
+        }
+
+        _mainBrowserService.Claim(target.BrowserId);
+        claimedBrowserId = target.BrowserId;
+        return true;
+    }
+
     private bool TryGetTargetListener(
         string? sessionId,
         string? previewName,

@@ -80,6 +80,7 @@ public sealed class MidTermSettings
     public bool SmoothScrolling { get; set; } = false;
     public ScrollbarStyleSetting ScrollbarStyle { get; set; } = ScrollbarStyleSetting.Off;
     public bool UseWebGL { get; set; } = true;
+    public int TerminalThemeLightnessBoost { get; set; } = 0;
 
     // Terminal Behavior
     public int ScrollbackLines { get; set; } = DefaultScrollbackLines;
@@ -91,6 +92,7 @@ public sealed class MidTermSettings
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
     public bool MobileKineticTerminalScroll { get; set; } = true;
+    public bool MobileDenseTerminalMode { get; set; } = false;
     public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public string StickyMainBrowserId { get; set; } = "";
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;

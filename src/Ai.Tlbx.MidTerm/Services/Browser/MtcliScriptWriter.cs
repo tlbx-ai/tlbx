@@ -290,6 +290,15 @@ public static class MtcliScriptWriter
         mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
         # mt_claim_preview  — explicitly assign this named preview to the connected MidTerm browser
         mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
+        # mt_claim_main_browser [browser-id]  — make the selected preview/browser the leading browser for terminal sizing
+        mt_claim_main_browser() {
+          _MREQUIRECTX "mt_claim_main_browser" || return $?
+          if [ $# -gt 0 ] && [ -n "${1:-}" ]; then
+            _MBB claim-main --browser "$1"
+          else
+            _MBB claim-main
+          fi
+        }
         # mt_capabilities [--json]  — compact command/capability discovery for agents
         mt_capabilities() { _MREQUIRECTX "mt_capabilities" || return $?; _MBB capabilities "$@"; }
         # mt_topic TEXT...  — set the current session topic shown in the sidebar; use --clear to remove
@@ -463,6 +472,47 @@ public static class MtcliScriptWriter
           local command="$*"
           [[ "$command" == /* ]] || command="/$command"
           MT_AI_PROFILE="${MT_AI_PROFILE:-}" mt_prompt "$sid" "$command"
+        }
+        # mt_wake [SESSION_ID] DELAY TEXT  — queue a prompt after DELAY (30s, 5m, 2h, 1d; bare numbers are minutes)
+        mt_wake() {
+          local sid delay_arg amount unit delay_ms text
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          [ $# -ge 2 ] || { echo "Usage: mt_wake [SESSION_ID] DELAY TEXT" >&2; return 1; }
+          delay_arg="$1"
+          shift
+          if [[ ! "$delay_arg" =~ ^([0-9]+)(ms|s|m|h|d)?$ ]]; then
+            echo "Delay must look like 30s, 5m, 2h, or 1d." >&2
+            return 1
+          fi
+          amount="${BASH_REMATCH[1]}"
+          unit="${BASH_REMATCH[2]:-m}"
+          case "$unit" in
+            ms) delay_ms="$amount" ;;
+            s) delay_ms=$((amount * 1000)) ;;
+            m) delay_ms=$((amount * 60000)) ;;
+            h) delay_ms=$((amount * 3600000)) ;;
+            d) delay_ms=$((amount * 86400000)) ;;
+            *) echo "Unsupported delay unit." >&2; return 1 ;;
+          esac
+          if [ "$delay_ms" -le 0 ] || [ "$delay_ms" -gt 2147483647 ]; then
+            echo "Delay must be between 1 ms and 2147483647 ms." >&2
+            return 1
+          fi
+          text="$*"
+          local body="{\"sessionId\":\"$(_MJE "$sid")\",\"delayMs\":$delay_ms,\"turn\":{\"text\":\"$(_MJE "$text")\"} }"
+          _MJ -d "$body" "$_MT/api/command-bay/queue"
+        }
+        # mt_wake_cancel QUEUE_ID  — cancel a queued wake/prompt/action item
+        mt_wake_cancel() {
+          local queue_id="${1:-}"
+          [ -n "$queue_id" ] || { echo "Usage: mt_wake_cancel QUEUE_ID" >&2; return 1; }
+          _MC -X DELETE "$_MT/api/command-bay/queue/$(_MURLENC "$queue_id")"
         }
         # mt_sendkeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         mt_sendkeys() {
@@ -681,6 +731,29 @@ public static class MtcliScriptWriter
                 default { return $false }
             }
         }
+        function script:_MParseDelayMs {
+            param([string]$Value)
+            if ([string]::IsNullOrWhiteSpace($Value) -or $Value.Trim() -notmatch '^(\d+)(ms|s|m|h|d)?$') {
+                throw "Delay must look like 30s, 5m, 2h, or 1d."
+            }
+
+            $amount = [long]$Matches[1]
+            $unit = if ($Matches[2]) { $Matches[2] } else { "m" }
+            $multiplier = switch ($unit) {
+                "ms" { 1L }
+                "s" { 1000L }
+                "m" { 60000L }
+                "h" { 3600000L }
+                "d" { 86400000L }
+                default { throw "Unsupported delay unit." }
+            }
+            $delayMs = $amount * $multiplier
+            if ($delayMs -le 0 -or $delayMs -gt [int]::MaxValue) {
+                throw "Delay must be between 1 ms and 2147483647 ms."
+            }
+
+            return [int]$delayMs
+        }
         function script:_MSendTextRequest {
             param([string]$SessionId, [string]$Text, [bool]$AppendNewline = $false)
             if (-not $SessionId) { Write-Error "Session id required."; return }
@@ -896,6 +969,16 @@ public static class MtcliScriptWriter
         function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClaimPreview  — explicitly assign this named preview to the connected MidTerm browser
         function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
+        # Mt-ClaimMainBrowser [-BrowserId ID]  — make the selected preview/browser the leading browser for terminal sizing
+        function Mt-ClaimMainBrowser {
+            param([string]$BrowserId)
+            _MRequireSessionContext "mt_claim_main_browser"
+            if ([string]::IsNullOrWhiteSpace($BrowserId)) {
+                _MBB claim-main
+            } else {
+                _MBB claim-main --browser $BrowserId
+            }
+        }
         # Mt-Capabilities [-Json]  — compact command/capability discovery for agents
         function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
         # Mt-Topic TEXT...  — set the current session topic shown in the sidebar; use -Clear to remove
@@ -1079,6 +1162,29 @@ public static class MtcliScriptWriter
 
             Mt-Prompt $sessionId $command -DelayMs $DelayMs
         }
+        # Mt-Wake [SESSION_ID] DELAY TEXT  — queue a prompt after DELAY (30s, 5m, 2h, 1d; bare numbers are minutes)
+        function Mt-Wake {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ($resolved.Remaining.Count -lt 2) { Write-Error "Usage: Mt-Wake [SESSION_ID] DELAY TEXT"; return }
+
+            $delayMs = _MParseDelayMs $resolved.Remaining[0]
+            $text = [string]::Join(' ', @($resolved.Remaining[1..($resolved.Remaining.Count - 1)]))
+            _MJ -d (_MH @{
+                sessionId = $sessionId
+                delayMs = $delayMs
+                turn = @{ text = $text }
+            }) "$script:_MT/api/command-bay/queue"
+        }
+        # Mt-WakeCancel QUEUE_ID  — cancel a queued wake/prompt/action item
+        function Mt-WakeCancel {
+            param([string]$QueueId)
+            if ([string]::IsNullOrWhiteSpace($QueueId)) { Write-Error "Usage: Mt-WakeCancel QUEUE_ID"; return }
+            _MC -X DELETE "$script:_MT/api/command-bay/queue/$([Uri]::EscapeDataString($QueueId))"
+        }
         # Mt-SendKeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
         function Mt-SendKeys {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
@@ -1230,6 +1336,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_cookies -Value Mt-Cookies
         Set-Alias -Name mt_previews -Value Mt-Previews
         Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview
+        Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser
         Set-Alias -Name mt_capabilities -Value Mt-Capabilities
         Set-Alias -Name mt_topic -Value Mt-Topic
         Set-Alias -Name mt_repo -Value Mt-Repo
@@ -1248,6 +1355,8 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_prompt -Value Mt-Prompt
         Set-Alias -Name mt_prompt_now -Value Mt-PromptNow
         Set-Alias -Name mt_slash -Value Mt-Slash
+        Set-Alias -Name mt_wake -Value Mt-Wake
+        Set-Alias -Name mt_wake_cancel -Value Mt-WakeCancel
         Set-Alias -Name mt_sendkeys -Value Mt-SendKeys
         Set-Alias -Name mt_enter -Value Mt-Enter
         Set-Alias -Name mt_ctrlc -Value Mt-Ctrlc

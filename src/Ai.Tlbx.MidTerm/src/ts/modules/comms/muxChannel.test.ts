@@ -4,7 +4,9 @@ import * as state from '../../state';
 import * as stores from '../../stores';
 import {
   connectMuxWebSocket,
+  decodeSessionId,
   encodeSessionId,
+  getBrowserTransportSnapshot,
   resetMuxChannelRuntimeForTests,
   sendInput,
   setInputLatencyTracingEnabled,
@@ -50,7 +52,7 @@ vi.mock('../../utils', async (importOriginal) => {
     ...actual,
     checkVersionAndReload: vi.fn().mockResolvedValue(undefined),
     closeWebSocket: vi.fn(),
-    createWsUrl: () => 'ws://midterm.test/ws/mux',
+    createWsUrl: (path: string) => `ws://midterm.test${path}`,
   };
 });
 
@@ -81,6 +83,7 @@ class MockWebSocket {
 
 interface Harness {
   encodeSessionId: typeof encodeSessionId;
+  decodeSessionId: typeof decodeSessionId;
   updateTerminalVisibility: typeof updateTerminalVisibility;
   sessionTerminals: (typeof import('../../state'))['sessionTerminals'];
   stores: typeof stores;
@@ -142,6 +145,8 @@ function buildSequencedOutputMessage(
 function attachFakeTerminal(
   sessionTerminals: (typeof import('../../state'))['sessionTerminals'],
   sessionId: string,
+  rows = 24,
+  hidden = false,
 ): FakeTerminalHarness {
   const pendingCallbacks: Array<() => void> = [];
   const writeMock = vi.fn((_data: Uint8Array | string, callback?: () => void) => {
@@ -152,7 +157,7 @@ function attachFakeTerminal(
 
   const container = {
     classList: {
-      contains: () => false,
+      contains: (className: string) => hidden && className === 'hidden',
     },
     getBoundingClientRect: () => ({ width: 640, height: 480 }),
     appendChild: vi.fn(),
@@ -162,7 +167,7 @@ function attachFakeTerminal(
   sessionTerminals.set(sessionId, {
     terminal: {
       cols: 80,
-      rows: 24,
+      rows,
       modes: { synchronizedOutputMode: false },
       write: writeMock,
       resize: vi.fn(),
@@ -171,7 +176,7 @@ function attachFakeTerminal(
     fitAddon: {} as never,
     container,
     serverCols: 80,
-    serverRows: 24,
+    serverRows: rows,
     opened: true,
   } as never);
 
@@ -208,6 +213,7 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
   }
 
   return {
+    decodeSessionId,
     encodeSessionId,
     updateTerminalVisibility,
     sessionTerminals: state.sessionTerminals,
@@ -396,6 +402,19 @@ describe('muxChannel', () => {
     expect(new TextDecoder().decode(replayData)).toBe('\x1b[31mXYZ');
   });
 
+  it('sends local replay rows on mux reconnect', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234', 37);
+
+    connectMuxWebSocket();
+
+    const ws = MockWebSocket.instances.at(-1);
+    expect(ws).toBeDefined();
+    const url = new URL(ws!.url);
+    expect(url.searchParams.get('activeSessionId')).toBe('sess1234');
+    expect(url.searchParams.get('replayRows')).toBe('37');
+  });
+
   it('requests full replay when sessions become streamable in full replay mode', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     harness.stores.$currentSettings.set({ resumeMode: 'fullReplay' } as never);
@@ -410,6 +429,126 @@ describe('muxChannel', () => {
     expect(frames[1]?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
     expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_BUFFER_REQUEST);
     expect(frames[2]?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+  });
+
+  it('includes local replay rows in buffer refresh requests', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234', 41);
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess1234', []);
+
+    const frame = harness.ws.send.mock.calls
+      .map((call) => call[0] as Uint8Array)
+      .find((candidate) => candidate[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST);
+    expect(frame).toBeDefined();
+    expect(frame?.byteLength).toBe(harness.constants.MUX_HEADER_SIZE + 3);
+    expect(frame?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+    expect(
+      new DataView(frame!.buffer, frame!.byteOffset, frame!.byteLength).getUint16(
+        harness.constants.MUX_HEADER_SIZE + 1,
+        true,
+      ),
+    ).toBe(41);
+  });
+
+  it('defers hidden background terminal writes and keeps rendered sequence unchanged', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const backgroundSessionId = 'sess5678';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, backgroundSessionId, 24, true);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        backgroundSessionId,
+        5n,
+        'first',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+
+    expect(terminal.writeMock).not.toHaveBeenCalled();
+    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq ?? 0n).toBe(0n);
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess1234', [backgroundSessionId]);
+
+    const backgroundReplayRequest = harness.ws.send.mock.calls
+      .map((call) => call[0] as Uint8Array)
+      .find(
+        (frame) =>
+          frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST &&
+          harness.decodeSessionId(frame, 1) === backgroundSessionId,
+      );
+    expect(backgroundReplayRequest).toBeDefined();
+  });
+
+  it('waits for replay before accepting live output after skipped background frames', async () => {
+    const harness = await loadHarness([0, 0, 0, 0, 0, 0]);
+    const backgroundSessionId = 'sess5678';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, backgroundSessionId, 24, true);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        backgroundSessionId,
+        5n,
+        'first',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility('sess1234', [backgroundSessionId]);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        backgroundSessionId,
+        9n,
+        'live',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+    expect(terminal.writeMock).not.toHaveBeenCalled();
+    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq ?? 0n).toBe(0n);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        backgroundSessionId,
+        0n,
+        '\x1b[0m',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        backgroundSessionId,
+        9n,
+        'firstlive',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+
+    expect(terminal.writeMock).toHaveBeenCalledTimes(2);
+    expect(new TextDecoder().decode(terminal.writeMock.mock.calls[1]?.[0] as Uint8Array)).toBe(
+      'firstlive',
+    );
+    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq).toBe(9n);
   });
 
   it('requests resync instead of dropping partial terminal frames when browser output queue exceeds byte budget', async () => {

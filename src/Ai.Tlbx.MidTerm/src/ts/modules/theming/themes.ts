@@ -32,13 +32,20 @@ const ANSI_COLOR_KEYS = [
   'brightWhite',
 ] as const satisfies readonly (keyof TerminalTheme)[];
 
+const TEXT_LIGHTNESS_KEYS = [
+  'foreground',
+  ...ANSI_COLOR_KEYS,
+] as const satisfies readonly (keyof TerminalTheme)[];
+
 const DOM_ANSI_OVERRIDE_STYLE_ID = 'midterm-xterm-ansi-overrides';
 
 type ResolvedTerminalTheme = {
-  baseTheme: TerminalTheme;
+  foregroundTheme: TerminalTheme;
+  ansiBackgroundTheme: TerminalTheme;
   theme: TerminalTheme;
   terminalBackgroundAlpha: number;
   cellBackgroundAlpha: number;
+  textLightnessBoost: number;
 };
 
 export function getEffectiveTerminalBackgroundAlpha(
@@ -88,15 +95,21 @@ export function syncEffectiveXtermThemeDomOverrides(settings: MidTermSettingsPub
   }
 
   const existing = document.getElementById(DOM_ANSI_OVERRIDE_STYLE_ID);
-  const { baseTheme, theme, cellBackgroundAlpha } = resolveEffectiveXtermTheme(settings);
-  if (cellBackgroundAlpha >= 1) {
+  const { foregroundTheme, ansiBackgroundTheme, cellBackgroundAlpha, textLightnessBoost } =
+    resolveEffectiveXtermTheme(settings);
+  syncWebglForegroundAnsiOverrides(foregroundTheme, textLightnessBoost);
+  if (cellBackgroundAlpha >= 1 && textLightnessBoost <= 0) {
     existing?.remove();
     return;
   }
 
   const style = existing instanceof HTMLStyleElement ? existing : document.createElement('style');
   style.id = DOM_ANSI_OVERRIDE_STYLE_ID;
-  style.textContent = buildDomAnsiOverrideCss(baseTheme, theme);
+  style.textContent = buildDomAnsiOverrideCss(
+    foregroundTheme,
+    ansiBackgroundTheme,
+    textLightnessBoost,
+  );
 
   const parent = document.body;
   if (style.parentElement !== parent) {
@@ -116,20 +129,46 @@ function resolveEffectiveXtermTheme(settings: MidTermSettingsPublic | null): Res
     throw new Error("Theme 'dark' not found");
   }
   const baseTheme = getTerminalThemeByName(settings, key) ?? fallbackTheme;
-  const theme: TerminalTheme = Object.assign({}, baseTheme);
+  const textLightnessBoost = clamp(settings?.terminalThemeLightnessBoost ?? 0, 0, 100);
+  const foregroundTheme =
+    textLightnessBoost > 0
+      ? applyTextLightnessBoostToTheme(baseTheme, textLightnessBoost)
+      : baseTheme;
+  const theme = buildEffectiveXtermTheme(baseTheme, foregroundTheme, textLightnessBoost);
+  const ansiBackgroundTheme: TerminalTheme = Object.assign({}, baseTheme);
   const terminalBackgroundAlpha = getEffectiveTerminalBackgroundAlpha(settings);
   const cellBackgroundAlpha = getEffectiveTerminalCellBackgroundAlpha(settings);
   const hasWallpaper = shouldRenderBackgroundImage(settings);
 
   if (hasWallpaper || terminalBackgroundAlpha < 1) {
-    theme.background = withAlpha(theme.background, terminalBackgroundAlpha);
+    theme.background = withAlpha(baseTheme.background, terminalBackgroundAlpha);
   }
 
   if (hasWallpaper || cellBackgroundAlpha < 1) {
     applyAnsiTransparency(theme, cellBackgroundAlpha);
+    applyAnsiTransparency(ansiBackgroundTheme, cellBackgroundAlpha);
   }
 
-  return { baseTheme, theme, terminalBackgroundAlpha, cellBackgroundAlpha };
+  return {
+    foregroundTheme,
+    ansiBackgroundTheme,
+    theme,
+    terminalBackgroundAlpha,
+    cellBackgroundAlpha,
+    textLightnessBoost,
+  };
+}
+
+function buildEffectiveXtermTheme(
+  baseTheme: TerminalTheme,
+  foregroundTheme: TerminalTheme,
+  textLightnessBoost: number,
+): TerminalTheme {
+  const theme: TerminalTheme = Object.assign({}, baseTheme);
+  if (textLightnessBoost > 0 && typeof foregroundTheme.foreground === 'string') {
+    theme.foreground = foregroundTheme.foreground;
+  }
+  return theme;
 }
 
 /**
@@ -177,8 +216,13 @@ function applyAnsiTransparency(theme: TerminalTheme, alpha: number): void {
   }
 }
 
-function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: TerminalTheme): string {
-  return ANSI_COLOR_KEYS.map((key, index) => {
+function buildDomAnsiOverrideCss(
+  baseTheme: TerminalTheme,
+  effectiveTheme: TerminalTheme,
+  textLightnessBoost: number,
+): string {
+  const defaultForegroundCss = buildDefaultForegroundOverrideCss(baseTheme, textLightnessBoost);
+  const ansiCss = ANSI_COLOR_KEYS.map((key, index) => {
     const opaque = baseTheme[key];
     const transparent = effectiveTheme[key];
     if (typeof opaque !== 'string' || typeof transparent !== 'string') {
@@ -187,10 +231,55 @@ function buildDomAnsiOverrideCss(baseTheme: TerminalTheme, effectiveTheme: Termi
 
     return [
       `.xterm .xterm-fg-${String(index)} { color: ${opaque}; }`,
-      `.xterm .xterm-fg-${String(index)}.xterm-dim { color: ${withAlpha(opaque, 0.5)}; }`,
+      `.xterm .xterm-fg-${String(index)}.xterm-dim { color: ${textLightnessBoost > 0 ? opaque : withAlpha(opaque, 0.5)}; }`,
       `.xterm .xterm-bg-${String(index)} { background-color: ${transparent}; }`,
     ].join('\n');
   }).join('\n');
+
+  return [defaultForegroundCss, ansiCss].filter(Boolean).join('\n');
+}
+
+function buildDefaultForegroundOverrideCss(
+  theme: TerminalTheme,
+  textLightnessBoost: number,
+): string {
+  const foreground = theme.foreground;
+  if (typeof foreground !== 'string' || foreground.length <= 0) {
+    return '';
+  }
+
+  return [
+    `.xterm .xterm-fg-256 { color: ${foreground}; }`,
+    `.xterm .xterm-fg-256.xterm-dim { color: ${textLightnessBoost > 0 ? foreground : withAlpha(foreground, 0.5)}; }`,
+    `.xterm .xterm-fg-257 { color: ${foreground}; }`,
+    `.xterm .xterm-fg-257.xterm-dim { color: ${textLightnessBoost > 0 ? foreground : withAlpha(foreground, 0.5)}; }`,
+  ].join('\n');
+}
+
+function syncWebglForegroundAnsiOverrides(theme: TerminalTheme, textLightnessBoost: number): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  if (textLightnessBoost <= 0) {
+    delete window.__MIDTERM_XTERM_WEBGL_FG_ANSI__;
+    delete window.__MIDTERM_XTERM_FG_BOOST__;
+    return;
+  }
+
+  window.__MIDTERM_XTERM_FG_BOOST__ = textLightnessBoost;
+
+  const packed = ANSI_COLOR_KEYS.map((key) => {
+    const color = theme[key];
+    return typeof color === 'string' ? colorToRgbaNumber(color) : null;
+  });
+
+  if (packed.some((color) => color === null)) {
+    delete window.__MIDTERM_XTERM_WEBGL_FG_ANSI__;
+    return;
+  }
+
+  window.__MIDTERM_XTERM_WEBGL_FG_ANSI__ = packed as number[];
 }
 
 function withAlpha(color: string, alpha: number): string {
@@ -224,7 +313,95 @@ function withAlpha(color: string, alpha: number): string {
   return color;
 }
 
+function colorToRgbaNumber(color: string): number | null {
+  const parsed = parseHexColor(color);
+  if (!parsed) {
+    return null;
+  }
+
+  const alpha = parsed.a ?? 1;
+  return (
+    ((Math.round(clamp(parsed.r, 0, 255)) & 0xff) << 24) |
+    ((Math.round(clamp(parsed.g, 0, 255)) & 0xff) << 16) |
+    ((Math.round(clamp(parsed.b, 0, 255)) & 0xff) << 8) |
+    (Math.round(clamp(alpha * 255, 0, 255)) & 0xff)
+  );
+}
+
 function transparencyToAlpha(transparency: number): number {
   const clampedTransparency = Math.min(Math.max(transparency, 0), 100);
   return Math.max(0, 1 - clampedTransparency / 100);
+}
+
+// --- Text brightness boost translation layer ---
+// Pure, no external deps. Applied only to foreground/text colors, never pane backgrounds.
+
+function clamp(n: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, n));
+}
+
+function parseHexColor(hex: string): { r: number; g: number; b: number; a?: number } | null {
+  if (!hex) return null;
+  let h = hex.replace('#', '').trim().toLowerCase();
+  if (h.length === 3) {
+    h = h
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
+  if (h.length === 6 || h.length === 8) {
+    const r = Number.parseInt(h.slice(0, 2), 16);
+    const g = Number.parseInt(h.slice(2, 4), 16);
+    const b = Number.parseInt(h.slice(4, 6), 16);
+    if (h.length === 8) {
+      const a = Number.parseInt(h.slice(6, 8), 16) / 255;
+      return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? { r, g, b, a } : null;
+    }
+    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? { r, g, b } : null;
+  }
+  return null;
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  return (
+    '#' +
+    [r, g, b]
+      .map((v) =>
+        Math.round(clamp(v, 0, 255))
+          .toString(16)
+          .padStart(2, '0'),
+      )
+      .join('')
+  );
+}
+
+export function boostTerminalTextColor(color: string, boost: number): string {
+  if (boost <= 0 || !color) return color;
+  const parsed = parseHexColor(color);
+  if (!parsed) return color;
+  const amount = clamp(boost, 0, 100) / 100;
+  let hex = rgbToHex(
+    parsed.r + (255 - parsed.r) * amount,
+    parsed.g + (255 - parsed.g) * amount,
+    parsed.b + (255 - parsed.b) * amount,
+  );
+  if (parsed.a !== undefined) {
+    const aHex = Math.round(clamp(parsed.a * 255, 0, 255))
+      .toString(16)
+      .padStart(2, '0');
+    hex += aHex;
+  }
+  return hex;
+}
+
+function applyTextLightnessBoostToTheme(theme: TerminalTheme, boost: number): TerminalTheme {
+  if (boost <= 0) return theme;
+  const out = { ...theme } as TerminalTheme;
+  for (const key of TEXT_LIGHTNESS_KEYS) {
+    const val = out[key];
+    if (typeof val === 'string' && val.trim().length > 0) {
+      (out as unknown as Record<string, string>)[key] = boostTerminalTextColor(val, boost);
+    }
+  }
+  return out;
 }

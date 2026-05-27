@@ -4,39 +4,297 @@
  * Handles tool requests from the voice assistant server.
  * Tools execute locally in the browser using xterm.js buffers and stores.
  */
+/* eslint-disable max-lines -- Voice bridge groups tool handlers until the module is split. */
 
 import { createLogger } from './logging';
 import { sendInput } from './comms';
-import { sessionTerminals } from '../state';
-import { $sessionList, $activeSessionId, $updateInfo, getSession } from '../stores';
+import { requestSelectSession } from './comms/stateChannel';
+import { dom, sessionTerminals } from '../state';
+import {
+  $activeSessionId,
+  $focusedSessionId,
+  $layout,
+  $sessionList,
+  $settingsOpen,
+  $updateInfo,
+  getSession,
+} from '../stores';
 import {
   ApiProblemError,
   createSession as apiCreateSession,
   deleteSession as apiDeleteSession,
+  getSessionAgentFeed,
+  getSessionAgentVibe,
   getHistory,
+  sendSessionPrompt,
 } from '../api/client';
+import {
+  captureBrowserScreenshotRaw,
+  getBrowserPreviewStatus,
+  getWebPreviewTarget,
+  runBrowserCommand,
+  setWebPreviewTarget,
+} from './web/webApi';
+import { selectActivePreview } from './web';
+import { uploadFile } from './terminal/fileDrop';
+import { addGitRepo, fetchGitRepos, refreshGitRepo, removeGitRepo } from './git/gitApi';
+import { applyGitReposForSession, getCachedGitReposForSession } from './git';
+import { closeSettings, openSettings } from './settings/panel';
+import {
+  getActiveSettingsTab,
+  normalizeStoredSettingsTab,
+  switchSettingsTab,
+  type SettingsTab,
+} from './settings/tabs';
+import {
+  dockSession,
+  focusLayoutSession,
+  getLayoutSessionIds,
+  isSessionInLayout,
+  swapLayoutSessions,
+  undockSession,
+} from './layout/layoutStore';
 import type {
   VoiceToolRequest,
   VoiceToolResponse,
+  VoiceToolName,
   MakeInputArgs,
   ReadScrollbackArgs,
   InteractiveReadArgs,
   CreateSessionArgs,
+  SelectSessionArgs,
+  FocusContextArgs,
+  FocusContextResult,
+  FocusContextState,
+  SendPromptArgs,
+  AgentTurnArgs,
+  CampaignDispatchArgs,
+  SessionOverviewArgs,
+  ConversationContinuityArgs,
+  CampaignGoalArgs,
+  CampaignStatusArgs,
+  CampaignReportArgs,
+  AppShellArgs,
+  AppShellResult,
+  SessionActivityArgs,
+  SessionTurnSummaryArgs,
+  WaitForTurnCompletionArgs,
+  DevBrowserOpenArgs,
+  DevBrowserStatusArgs,
+  DevBrowserCommandArgs,
+  DevBrowserScreenshotArgs,
+  RepoMonitorArgs,
+  LayoutControlArgs,
   CloseSessionArgs,
   BookmarksArgs,
   StateOfThingsResult,
+  SessionOverviewResult,
+  ConversationContinuityResult,
+  CampaignGoalResult,
+  CampaignGoalState,
+  CampaignGoalPhase,
+  CampaignStatusResult,
+  CampaignReportResult,
+  WaitForTurnCompletionResult,
+  VoicePreviewOverview,
   VoiceSessionState,
   MakeInputResult,
   ReadScrollbackResult,
   InteractiveReadResult,
   InteractiveOpResult,
   BellNotification,
+  DockPosition,
+  Session,
+  VoiceTargetContext,
 } from '../types';
+import type { AgentSessionVibeResponse } from '../api/types';
+import type { GitRepoBinding } from './git/types';
 import { JS_BUILD_VERSION } from '../constants';
 
 const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
+const DEFAULT_PREVIEW_NAME = 'default';
+const FOCUS_CONTEXT_STORAGE_KEY = 'midterm.voice.focusContext.v1';
+const CAMPAIGN_GOAL_STORAGE_KEY = 'midterm.voice.campaignGoal.v1';
+const LAYOUT_DOCK_POSITIONS = new Set<DockPosition>(['top', 'bottom', 'left', 'right']);
+const CAMPAIGN_GOAL_PHASES = new Set<CampaignGoalPhase>([
+  'orient',
+  'execute',
+  'verify',
+  'report',
+  'blocked',
+  'done',
+]);
+const BROWSER_COMMANDS = new Set([
+  'query',
+  'click',
+  'scroll',
+  'fill',
+  'exec',
+  'wait',
+  'navigate',
+  'reload',
+  'outline',
+  'attrs',
+  'css',
+  'log',
+  'links',
+  'submit',
+  'forms',
+  'url',
+  'status',
+]);
+type SessionTurnStatus = 'complete' | 'busy' | 'needs_user' | 'blocked' | 'shell' | 'unknown';
+
+function emptyFocusContextState(): FocusContextState {
+  return {
+    active: false,
+    sessionId: null,
+    sessionTitle: null,
+    sessionExists: null,
+    previewName: null,
+    previewId: null,
+    repoRoot: null,
+    reason: null,
+    updatedAt: null,
+  };
+}
+
+function emptyCampaignGoalState(): CampaignGoalState {
+  return {
+    active: false,
+    objective: null,
+    phase: null,
+    targetSessionIds: [],
+    currentFocusSessionId: null,
+    exitCriteria: null,
+    nextReport: null,
+    createdAt: null,
+    updatedAt: null,
+    reason: null,
+  };
+}
+
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === 'string';
+}
+
+function isFocusContextState(value: unknown): value is FocusContextState {
+  if (!value || typeof value !== 'object') return false;
+
+  const candidate = value as Partial<FocusContextState>;
+  return (
+    typeof candidate.active === 'boolean' &&
+    isNullableString(candidate.sessionId) &&
+    isNullableString(candidate.sessionTitle) &&
+    (candidate.sessionExists === null || typeof candidate.sessionExists === 'boolean') &&
+    isNullableString(candidate.previewName) &&
+    isNullableString(candidate.previewId) &&
+    isNullableString(candidate.repoRoot) &&
+    isNullableString(candidate.reason) &&
+    isNullableString(candidate.updatedAt)
+  );
+}
+
+function isCampaignGoalState(value: unknown): value is CampaignGoalState {
+  if (!value || typeof value !== 'object') return false;
+
+  const candidate = value as Partial<CampaignGoalState>;
+  const phase = candidate.phase;
+  return (
+    typeof candidate.active === 'boolean' &&
+    isNullableString(candidate.objective) &&
+    (phase === null || (typeof phase === 'string' && CAMPAIGN_GOAL_PHASES.has(phase))) &&
+    Array.isArray(candidate.targetSessionIds) &&
+    candidate.targetSessionIds.every((sessionId) => typeof sessionId === 'string') &&
+    isNullableString(candidate.currentFocusSessionId) &&
+    isNullableString(candidate.exitCriteria) &&
+    isNullableString(candidate.nextReport) &&
+    isNullableString(candidate.createdAt) &&
+    isNullableString(candidate.updatedAt) &&
+    isNullableString(candidate.reason)
+  );
+}
+
+function loadPersistedFocusContextState(): {
+  state: FocusContextState;
+  persisted: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { state: emptyFocusContextState(), persisted: false };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(FOCUS_CONTEXT_STORAGE_KEY);
+    if (!raw) {
+      return { state: emptyFocusContextState(), persisted: true };
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    return isFocusContextState(parsed)
+      ? { state: parsed, persisted: true }
+      : { state: emptyFocusContextState(), persisted: false };
+  } catch {
+    return { state: emptyFocusContextState(), persisted: false };
+  }
+}
+
+function loadPersistedCampaignGoalState(): {
+  state: CampaignGoalState;
+  persisted: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { state: emptyCampaignGoalState(), persisted: false };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(CAMPAIGN_GOAL_STORAGE_KEY);
+    if (!raw) {
+      return { state: emptyCampaignGoalState(), persisted: true };
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    return isCampaignGoalState(parsed)
+      ? { state: parsed, persisted: true }
+      : { state: emptyCampaignGoalState(), persisted: false };
+  } catch {
+    return { state: emptyCampaignGoalState(), persisted: false };
+  }
+}
+
+function persistFocusContextState(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    window.localStorage.setItem(FOCUS_CONTEXT_STORAGE_KEY, JSON.stringify(focusContextState));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function persistCampaignGoalState(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    window.localStorage.setItem(CAMPAIGN_GOAL_STORAGE_KEY, JSON.stringify(campaignGoalState));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const persistedFocusContext = loadPersistedFocusContextState();
+let focusContextState: FocusContextState = persistedFocusContext.state;
+let focusContextPersistenceOk = persistedFocusContext.persisted;
+const persistedCampaignGoal = loadPersistedCampaignGoalState();
+let campaignGoalState: CampaignGoalState = persistedCampaignGoal.state;
+let campaignGoalPersistenceOk = persistedCampaignGoal.persisted;
 
 function getSessionLaunchErrorMessage(error: unknown): string {
   if (error instanceof ApiProblemError) {
@@ -48,6 +306,163 @@ function getSessionLaunchErrorMessage(error: unknown): string {
   }
 
   return error instanceof Error ? error.message : String(error);
+}
+
+function getReadableSessionTitle(session: Session | null | undefined, fallback: string): string {
+  return session?.name || session?.terminalTitle || session?.foregroundName || fallback;
+}
+
+interface VoiceTargetContextArgs {
+  sessionId?: string | null | undefined;
+  previewName?: string | null | undefined;
+  previewId?: string | null | undefined;
+  repoRoot?: string | null | undefined;
+  action?: string | null | undefined;
+}
+
+function normalizeTargetValue(value: string | null | undefined): string | null {
+  return value?.trim() || null;
+}
+
+function buildVoiceTargetContext(args: VoiceTargetContextArgs = {}): VoiceTargetContext {
+  const targetSessionId = normalizeTargetValue(args.sessionId);
+  const targetPreviewName = normalizeTargetValue(args.previewName);
+  const targetPreviewId = normalizeTargetValue(args.previewId);
+  const targetRepoRoot = normalizeTargetValue(args.repoRoot);
+  const action = normalizeTargetValue(args.action);
+  const targetSession = targetSessionId ? getSession(targetSessionId) : null;
+  const activeSessionId = $activeSessionId.get();
+  const focusedSessionId = $focusedSessionId.get();
+  const layoutSessionIds = getLayoutSessionIds();
+  return {
+    activeSessionId,
+    focusedSessionId,
+    layoutSessionIds,
+    targetSessionId,
+    targetSessionTitle: targetSession
+      ? getReadableSessionTitle(targetSession, targetSessionId ?? targetSession.id)
+      : null,
+    targetSessionExists: targetSessionId ? Boolean(targetSession) : null,
+    targetPreviewName,
+    targetPreviewId,
+    targetRepoRoot,
+    action,
+    isTargetActive: targetSessionId ? targetSessionId === activeSessionId : null,
+    isTargetFocused: targetSessionId ? targetSessionId === focusedSessionId : null,
+    isTargetInLayout: targetSessionId ? layoutSessionIds.includes(targetSessionId) : null,
+  };
+}
+
+function buildFocusContextState(args: FocusContextArgs, active: boolean): FocusContextState {
+  const sessionId = normalizeTargetValue(args.sessionId);
+  const previewName = normalizeTargetValue(args.previewName);
+  const previewId = normalizeTargetValue(args.previewId);
+  const repoRoot = normalizeTargetValue(args.repoRoot);
+  const reason = normalizeTargetValue(args.reason);
+  const session = sessionId ? getSession(sessionId) : null;
+
+  return {
+    active,
+    sessionId,
+    sessionTitle: session ? getReadableSessionTitle(session, sessionId ?? session.id) : null,
+    sessionExists: sessionId ? Boolean(session) : null,
+    previewName,
+    previewId,
+    repoRoot,
+    reason,
+    updatedAt: active ? new Date().toISOString() : null,
+  };
+}
+
+function cloneFocusContextState(): FocusContextState {
+  return { ...focusContextState };
+}
+
+function rememberFocusContext(args: FocusContextArgs): void {
+  const next = buildFocusContextState(args, true);
+  if (!next.sessionId && !next.previewName && !next.repoRoot) return;
+  if (next.sessionId && next.sessionExists === false) return;
+
+  focusContextState = next;
+  focusContextPersistenceOk = persistFocusContextState();
+}
+
+function resolveUiFocusSessionId(): string | null {
+  return $focusedSessionId.get() ?? $activeSessionId.get();
+}
+
+function resolveAgentTurnSessionId(requestedSessionId: string | null | undefined): {
+  sessionId: string | null;
+  source: 'explicit' | 'focus_context' | 'ui_focus' | 'none';
+} {
+  const explicitSessionId = normalizeTargetValue(requestedSessionId);
+  if (explicitSessionId) {
+    return { sessionId: explicitSessionId, source: 'explicit' };
+  }
+
+  if (focusContextState.active && focusContextState.sessionExists !== false) {
+    const focusContextSessionId = normalizeTargetValue(focusContextState.sessionId);
+    if (focusContextSessionId && getSession(focusContextSessionId)) {
+      return { sessionId: focusContextSessionId, source: 'focus_context' };
+    }
+  }
+
+  const uiFocusSessionId = resolveUiFocusSessionId();
+  if (uiFocusSessionId && getSession(uiFocusSessionId)) {
+    return { sessionId: uiFocusSessionId, source: 'ui_focus' };
+  }
+
+  return { sessionId: null, source: 'none' };
+}
+
+let lastUiFocusSessionId = resolveUiFocusSessionId();
+
+function syncFocusContextFromUi(reason: string): void {
+  const sessionId = resolveUiFocusSessionId();
+  if (!sessionId || !getSession(sessionId)) return;
+
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    reason,
+  });
+}
+
+function handleUiFocusChange(reason: string): void {
+  const nextSessionId = resolveUiFocusSessionId();
+  if (nextSessionId === lastUiFocusSessionId) return;
+
+  lastUiFocusSessionId = nextSessionId;
+  syncFocusContextFromUi(reason);
+}
+
+$activeSessionId.subscribe(() => {
+  handleUiFocusChange('ui_active_session');
+});
+$focusedSessionId.subscribe(() => {
+  handleUiFocusChange('ui_focused_session');
+});
+
+function buildFocusContextResponse(
+  action: FocusContextResult['action'],
+  responseText: string,
+  nextAction: string,
+): FocusContextResult {
+  return {
+    success: true,
+    action,
+    focus: cloneFocusContextState(),
+    persisted: focusContextPersistenceOk,
+    targetContext: buildVoiceTargetContext({
+      sessionId: focusContextState.sessionId,
+      previewName: focusContextState.previewName,
+      previewId: focusContextState.previewId,
+      repoRoot: focusContextState.repoRoot,
+      action: `focus_context:${action}`,
+    }),
+    responseText,
+    nextAction,
+  };
 }
 
 /**
@@ -149,6 +564,70 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function resolveSessionId(sessionId?: string | null): string | null {
+  return sessionId?.trim() || $activeSessionId.get();
+}
+
+function resolvePreviewName(previewName?: string | null): string {
+  return previewName?.trim() || DEFAULT_PREVIEW_NAME;
+}
+
+function compactGitRepo(repo: GitRepoBinding): Record<string, unknown> {
+  const base = {
+    repoRoot: repo.repoRoot,
+    label: repo.label,
+    role: repo.role,
+    source: repo.source,
+    isPrimary: repo.isPrimary,
+  };
+  const status = repo.status;
+  if (!status) {
+    return {
+      ...base,
+      branch: null,
+      ahead: 0,
+      behind: 0,
+      staged: 0,
+      modified: 0,
+      untracked: 0,
+      conflicted: 0,
+      stashCount: 0,
+      totalAdditions: 0,
+      totalDeletions: 0,
+    };
+  }
+
+  return {
+    ...base,
+    branch: status.branch,
+    ahead: status.ahead,
+    behind: status.behind,
+    staged: status.staged.length,
+    modified: status.modified.length,
+    untracked: status.untracked.length,
+    conflicted: status.conflicted.length,
+    stashCount: status.stashCount,
+    totalAdditions: status.totalAdditions,
+    totalDeletions: status.totalDeletions,
+  };
+}
+
+function compactGitRepos(repos: GitRepoBinding[]): unknown[] {
+  return repos.map(compactGitRepo);
+}
+
+async function selectSessionForBrowser(sessionId: string, previewName: string): Promise<void> {
+  if ($activeSessionId.get() !== sessionId) {
+    requestSelectSession(sessionId, {
+      closeSettingsPanel: false,
+      focusTerminal: false,
+    });
+    await sleep(50);
+  }
+
+  await selectActivePreview(previewName);
+}
+
 /**
  * Handle state_of_things tool - get comprehensive state of all terminals.
  */
@@ -175,10 +654,175 @@ function handleStateOfThings(): StateOfThingsResult {
   return {
     sessions: sessionStates,
     activeSessionId: activeId,
+    targetContext: buildVoiceTargetContext(),
     version: JS_BUILD_VERSION,
     updateAvailable: updateInfo?.available ?? false,
     recentBells: [...recentBells],
   };
+}
+
+/**
+ * Handle session_overview tool - compact orientation map for switching and multi-session control.
+ */
+async function handleSessionOverview(args: SessionOverviewArgs): Promise<SessionOverviewResult> {
+  const sessions = $sessionList.get();
+  const activeSessionId = $activeSessionId.get();
+  const focusedSessionId = $focusedSessionId.get();
+  const layoutSessionIds = getLayoutSessionIds();
+  const layoutSessionSet = new Set(layoutSessionIds);
+  const includeBrowserStatus = args.includeBrowserStatus ?? true;
+  const includeRepoStatus = args.includeRepoStatus ?? true;
+  const updateInfo = $updateInfo.get();
+
+  const sessionSummaries = await Promise.all(
+    sessions.map((session) =>
+      buildSessionOverview(session, {
+        activeSessionId,
+        focusedSessionId,
+        layoutSessionSet,
+        includeBrowserStatus,
+        includeRepoStatus,
+      }),
+    ),
+  );
+
+  return {
+    success: true,
+    activeSessionId,
+    focusedSessionId,
+    layoutSessionIds,
+    targetContext: buildVoiceTargetContext({ sessionId: activeSessionId }),
+    version: JS_BUILD_VERSION,
+    updateAvailable: updateInfo?.available ?? false,
+    sessions: sessionSummaries,
+  };
+}
+
+/**
+ * Handle focus_context tool - persist the voice agent's current operating target.
+ */
+function handleFocusContextStatus(): FocusContextResult {
+  return buildFocusContextResponse(
+    'status',
+    focusContextState.active
+      ? `Voice focus is ${focusContextState.sessionTitle ?? focusContextState.sessionId ?? 'set'}.`
+      : 'No persistent voice focus target is set.',
+    focusContextState.active
+      ? 'Carry targetContext into the next related tool call unless the user changes target.'
+      : 'Call session_overview or select_session, then set focus_context before multi-step work.',
+  );
+}
+
+function handleFocusContextClear(): FocusContextResult {
+  focusContextState = emptyFocusContextState();
+  focusContextPersistenceOk = persistFocusContextState();
+  return buildFocusContextResponse(
+    'clear',
+    'Cleared the persistent voice focus target.',
+    'Call session_overview before the next target-specific action.',
+  );
+}
+
+function handleFocusContextSet(args: FocusContextArgs): FocusContextResult {
+  const nextState = buildFocusContextState(args, true);
+  if (!nextState.sessionId && !nextState.previewName && !nextState.repoRoot) {
+    return {
+      success: false,
+      action: 'set',
+      focus: cloneFocusContextState(),
+      persisted: focusContextPersistenceOk,
+      targetContext: buildVoiceTargetContext({ action: 'focus_context:set' }),
+      responseText: 'focus_context set needs a sessionId, previewName, or repoRoot.',
+      nextAction: 'Call session_overview to choose a target, then retry focus_context set.',
+    };
+  }
+
+  if (nextState.sessionId && nextState.sessionExists === false) {
+    return {
+      success: false,
+      action: 'set',
+      focus: cloneFocusContextState(),
+      persisted: focusContextPersistenceOk,
+      targetContext: buildVoiceTargetContext({
+        sessionId: nextState.sessionId,
+        previewName: nextState.previewName,
+        previewId: nextState.previewId,
+        repoRoot: nextState.repoRoot,
+        action: 'focus_context:set',
+      }),
+      responseText: `Session ${nextState.sessionId} was not found, so the voice focus was not changed.`,
+      nextAction: 'Call session_overview to discover valid session IDs before setting focus.',
+    };
+  }
+
+  focusContextState = nextState;
+  focusContextPersistenceOk = persistFocusContextState();
+  return buildFocusContextResponse(
+    'set',
+    `Voice focus set to ${focusContextState.sessionTitle ?? focusContextState.sessionId ?? focusContextState.previewName ?? focusContextState.repoRoot}.`,
+    'Carry targetContext into the next related terminal, Dev Browser, repo, or turn-summary tool call.',
+  );
+}
+
+function handleFocusContext(args: FocusContextArgs): FocusContextResult {
+  switch (args.action ?? 'status') {
+    case 'set':
+      return handleFocusContextSet(args);
+    case 'clear':
+      return handleFocusContextClear();
+    case 'status':
+      return handleFocusContextStatus();
+  }
+}
+
+async function buildDefaultPreviewOverview(
+  sessionId: string,
+): Promise<VoicePreviewOverview | null> {
+  const [target, status] = await Promise.all([
+    getWebPreviewTarget(sessionId, DEFAULT_PREVIEW_NAME).catch(() => null),
+    getBrowserPreviewStatus(sessionId, DEFAULT_PREVIEW_NAME).catch(() => null),
+  ]);
+  return {
+    previewName: DEFAULT_PREVIEW_NAME,
+    url: target?.url ?? null,
+    state: status?.state ?? null,
+    ready: status?.state === 'ready',
+  };
+}
+
+async function buildSessionOverview(
+  session: Session,
+  options: {
+    activeSessionId: string | null;
+    focusedSessionId: string | null;
+    layoutSessionSet: Set<string>;
+    includeBrowserStatus: boolean;
+    includeRepoStatus: boolean;
+  },
+): Promise<SessionOverviewResult['sessions'][number]> {
+  const title = session.name || session.terminalTitle || session.shellType || session.id;
+  const summary: SessionOverviewResult['sessions'][number] = {
+    id: session.id,
+    title,
+    userTitle: session.name || null,
+    terminalTitle: session.terminalTitle || null,
+    foregroundName: session.foregroundName ?? null,
+    currentDirectory: session.currentDirectory || null,
+    shell: session.shellType,
+    isActive: session.id === options.activeSessionId,
+    isFocused: session.id === options.focusedSessionId,
+    isInLayout: options.layoutSessionSet.has(session.id),
+    hasRenderedTerminal: Boolean(sessionTerminals.get(session.id)?.terminal),
+    defaultPreview: options.includeBrowserStatus
+      ? await buildDefaultPreviewOverview(session.id)
+      : null,
+  };
+
+  if (options.includeRepoStatus) {
+    summary.repos = compactGitRepos(getCachedGitReposForSession(session.id));
+  }
+
+  return summary;
 }
 
 /**
@@ -194,6 +838,9 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
       screenContent: `Session ${sessionId} not found`,
       cols: 0,
       rows: 0,
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction: 'Call session_overview to discover valid session IDs before sending input.',
+      targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
 
@@ -207,6 +854,10 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
     screenContent: getTerminalViewport(sessionId),
     cols: session.cols,
     rows: session.rows,
+    responseText: `Input sent to ${getReadableSessionTitle(session, sessionId)}.`,
+    nextAction:
+      'Call session_turn_summary; if it is busy and the user is waiting, call wait_for_turn_completion once.',
+    targetContext: buildVoiceTargetContext({ sessionId }),
   };
 }
 
@@ -215,14 +866,30 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
  */
 function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
   const { sessionId, start = 'bottom', lines = 40 } = args;
+  const session = getSession(sessionId);
 
-  const termState = sessionTerminals.get(sessionId);
-  if (!termState?.terminal) {
+  if (!session) {
     return {
       content: `Session ${sessionId} not found`,
       totalLines: 0,
       returnedLines: 0,
       startLine: 0,
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction: 'Call session_overview to discover valid session IDs before reading scrollback.',
+      targetContext: buildVoiceTargetContext({ sessionId }),
+    };
+  }
+
+  const termState = sessionTerminals.get(sessionId);
+  if (!termState?.terminal) {
+    return {
+      content: `Terminal for session ${sessionId} is not rendered`,
+      totalLines: 0,
+      returnedLines: 0,
+      startLine: 0,
+      responseText: `Terminal output for ${getReadableSessionTitle(session, sessionId)} is not rendered yet.`,
+      nextAction: `Use select_session with sessionId ${sessionId}, then retry read_scrollback if terminal text is needed.`,
+      targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
 
@@ -252,6 +919,10 @@ function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
     totalLines,
     returnedLines: extractedLines.length,
     startLine,
+    responseText: `Read ${extractedLines.length} terminal lines from ${getReadableSessionTitle(session, sessionId)}.`,
+    nextAction:
+      'Use the returned terminal content for the answer; call session_turn_summary if the user needs turn completion state.',
+    targetContext: buildVoiceTargetContext({ sessionId }),
   };
 }
 
@@ -265,6 +936,10 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
   if (!session) {
     return {
       results: [{ index: 0, success: false, screenshot: `Session ${sessionId} not found` }],
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction:
+        'Call session_overview to discover valid session IDs before running terminal operations.',
+      targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
 
@@ -306,7 +981,22 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
     }
   }
 
-  return { results };
+  const successCount = results.filter((result) => result.success).length;
+  const failureCount = results.length - successCount;
+  const screenshotCount = results.filter((result) => result.screenshot).length;
+
+  return {
+    results,
+    responseText:
+      failureCount > 0
+        ? `Ran ${successCount} of ${results.length} terminal operations in ${getReadableSessionTitle(session, sessionId)}.`
+        : `Ran ${results.length} terminal operations in ${getReadableSessionTitle(session, sessionId)}.`,
+    nextAction:
+      screenshotCount > 0
+        ? 'Use the returned terminal screenshot text before deciding the next action.'
+        : 'Call session_turn_summary; if it is busy and the user is waiting, call wait_for_turn_completion once.',
+    targetContext: buildVoiceTargetContext({ sessionId }),
+  };
 }
 
 /**
@@ -325,12 +1015,1890 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
       shell: args.shellType ?? null,
       workingDirectory: args.workingDirectory ?? null,
     });
-    if (!data) return { success: false, error: 'Failed to create session' };
+    if (!data) {
+      return {
+        success: false,
+        error: 'Failed to create session',
+        targetContext: buildVoiceTargetContext(),
+        responseText: 'Session creation failed.',
+        nextAction:
+          'Inspect the MidTerm session list or retry with a specific shell and working directory.',
+      };
+    }
 
-    return { success: true, sessionId: data.id, shell: data.shellType };
+    const title = getReadableSessionTitle(getSession(data.id), data.id);
+    return {
+      success: true,
+      sessionId: data.id,
+      shell: data.shellType,
+      targetContext: buildVoiceTargetContext({ sessionId: data.id, action: 'create_session' }),
+      responseText: `Created session ${title}.`,
+      nextAction: `Use select_session with sessionId ${data.id} if the user should look at or operate it next.`,
+    };
   } catch (error) {
-    return { success: false, error: getSessionLaunchErrorMessage(error) };
+    const message = getSessionLaunchErrorMessage(error);
+    return {
+      success: false,
+      error: message,
+      targetContext: buildVoiceTargetContext(),
+      responseText: `Session creation failed: ${message}.`,
+      nextAction:
+        'Ask for a different shell or working directory, or inspect the MidTerm session list.',
+    };
   }
+}
+
+/**
+ * Handle select_session tool - bring a session into the active MidTerm surface.
+ */
+function handleSelectSession(args: SelectSessionArgs): unknown {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+      responseText: `Session ${args.sessionId} was not found.`,
+      nextAction: 'Call session_overview to discover valid session IDs before switching again.',
+    };
+  }
+
+  requestSelectSession(args.sessionId, {
+    closeSettingsPanel: false,
+    focusTerminal: args.focusTerminal ?? true,
+  });
+  rememberFocusContext({
+    action: 'set',
+    sessionId: args.sessionId,
+    reason: 'select_session',
+  });
+
+  return {
+    success: true,
+    activeSessionId: args.sessionId,
+    title: getReadableSessionTitle(session, args.sessionId),
+    targetContext: buildVoiceTargetContext({
+      sessionId: args.sessionId,
+      action: 'select_session',
+    }),
+    responseText: `Selected ${getReadableSessionTitle(session, args.sessionId)}.`,
+    nextAction:
+      'Continue operating this session, or summarize its turn state before reporting completion.',
+  };
+}
+
+/**
+ * Handle send_prompt tool - send a structured prompt to an agent session.
+ */
+async function handleSendPrompt(args: SendPromptArgs): Promise<unknown> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+      responseText: `Session ${args.sessionId} was not found.`,
+      nextAction:
+        'Call session_overview to get the current session IDs, then resend the prompt to the correct session.',
+    };
+  }
+
+  await sendPromptToSession(args.sessionId, args.text, args.interruptFirst ?? false, args.profile);
+
+  return {
+    success: true,
+    sessionId: args.sessionId,
+    interruptFirst: args.interruptFirst ?? false,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId, action: 'send_prompt' }),
+    responseText: `Prompt sent to ${getReadableSessionTitle(session, args.sessionId)}.`,
+    nextAction:
+      'Call session_turn_summary; if it is busy and the user is waiting, call wait_for_turn_completion once.',
+  };
+}
+
+async function sendPromptToSession(
+  sessionId: string,
+  text: string,
+  interruptFirst: boolean,
+  profile: string | null | undefined,
+): Promise<void> {
+  await sendSessionPrompt(sessionId, {
+    text,
+    base64: null,
+    mode: 'auto',
+    interruptFirst,
+    interruptKeys: ['C-c'],
+    literalInterruptKeys: false,
+    interruptDelayMs: 150,
+    submitKeys: ['Enter'],
+    literalSubmitKeys: false,
+    submitDelayMs: 300,
+    followupSubmitCount: 0,
+    followupSubmitDelayMs: 250,
+    profile: profile ?? null,
+  });
+}
+
+/**
+ * Handle agent_turn tool - send one prompt and return the bounded completion summary.
+ */
+async function handleAgentTurn(args: AgentTurnArgs): Promise<unknown> {
+  const requestedSessionId = normalizeTargetValue(args.sessionId);
+  const resolvedTarget = resolveAgentTurnSessionId(args.sessionId);
+  const sessionId = resolvedTarget.sessionId;
+  if (!sessionId) {
+    return {
+      success: false,
+      error: 'No target session available',
+      targetContext: buildVoiceTargetContext({ action: 'agent_turn' }),
+      requestedSessionId,
+      resolvedTargetSource: resolvedTarget.source,
+      responseText: 'No focused MidTerm session is available for the agent turn.',
+      nextAction:
+        'Call session_overview or focus_context status, then select a session or provide the exact sessionId before retrying agent_turn.',
+    };
+  }
+
+  const session = getSession(sessionId);
+  if (!session) {
+    return {
+      success: false,
+      error: `Session ${sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId }),
+      requestedSessionId,
+      resolvedTargetSource: resolvedTarget.source,
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction:
+        resolvedTarget.source === 'explicit'
+          ? 'Call session_overview to get the current session IDs, then retry agent_turn against the correct sessionId or omit sessionId to use the current focus.'
+          : 'Call session_overview or focus_context status, then select a valid session before retrying agent_turn.',
+    };
+  }
+
+  await sendPromptToSession(sessionId, args.text, args.interruptFirst ?? false, args.profile);
+
+  const waitResult = await handleWaitForTurnCompletion({
+    sessionId,
+    timeoutMs: args.timeoutMs ?? 45000,
+    pollIntervalMs: args.pollIntervalMs ?? 2000,
+    activitySeconds: args.activitySeconds ?? 120,
+    includeTail: args.includeTail ?? false,
+  });
+
+  if ('error' in waitResult) {
+    return {
+      success: false,
+      sessionId,
+      requestedSessionId,
+      resolvedTargetSource: resolvedTarget.source,
+      promptSent: true,
+      error: waitResult.error,
+      targetContext: buildVoiceTargetContext({ sessionId, action: 'agent_turn' }),
+      responseText: `Prompt sent to ${getReadableSessionTitle(session, sessionId)}, but the turn summary failed.`,
+      nextAction:
+        'Call session_turn_summary for this same session before reporting whether the agent turn completed.',
+      wait: waitResult,
+    };
+  }
+
+  return {
+    success: true,
+    sessionId,
+    requestedSessionId,
+    resolvedTargetSource: resolvedTarget.source,
+    title: getReadableSessionTitle(session, sessionId),
+    promptSent: true,
+    interruptFirst: args.interruptFirst ?? false,
+    profile: args.profile ?? null,
+    targetContext: buildVoiceTargetContext({ sessionId, action: 'agent_turn' }),
+    responseText: waitResult.responseText,
+    nextAction: waitResult.nextAction,
+    turn: waitResult,
+  };
+}
+
+async function handleCampaignDispatch(args: CampaignDispatchArgs): Promise<unknown> {
+  const uniqueSessionIds = [...new Set(args.sessionIds.map((id) => id.trim()).filter(Boolean))];
+  if (uniqueSessionIds.length === 0) {
+    return {
+      success: false,
+      error: 'No session IDs provided',
+      responseText: 'No target sessions were provided for campaign dispatch.',
+      nextAction:
+        'Call campaign_status or session_overview to choose exact session IDs, then retry.',
+    };
+  }
+
+  const knownSessions = new Map($sessionList.get().map((session) => [session.id, session]));
+  const missingSessionIds = uniqueSessionIds.filter((sessionId) => !knownSessions.has(sessionId));
+  const targetSessionIds = uniqueSessionIds.filter((sessionId) => knownSessions.has(sessionId));
+
+  if (targetSessionIds.length === 0) {
+    return {
+      success: false,
+      error: 'No target sessions found',
+      requestedSessionIds: uniqueSessionIds,
+      missingSessionIds,
+      responseText: 'None of the requested campaign dispatch sessions exist.',
+      nextAction:
+        'Call campaign_status or session_overview to get current session IDs before retrying.',
+    };
+  }
+
+  const interruptFirst = args.interruptFirst ?? false;
+  const results = await Promise.all(
+    targetSessionIds.map(async (sessionId) => {
+      await sendPromptToSession(sessionId, args.text, interruptFirst, args.profile);
+      const session = knownSessions.get(sessionId);
+      return {
+        sessionId,
+        title: session ? getReadableSessionTitle(session, sessionId) : sessionId,
+      };
+    }),
+  );
+
+  return {
+    success: true,
+    requestedSessionIds: uniqueSessionIds,
+    dispatchedSessionIds: targetSessionIds,
+    missingSessionIds,
+    dispatchCount: results.length,
+    interruptFirst,
+    profile: args.profile ?? null,
+    sessions: results,
+    targetContext: buildVoiceTargetContext({
+      sessionId: targetSessionIds[0],
+      action: 'campaign_dispatch',
+    }),
+    responseText:
+      missingSessionIds.length > 0
+        ? `Dispatched campaign prompt to ${results.length} sessions; ${missingSessionIds.length} requested sessions were missing.`
+        : `Dispatched campaign prompt to ${results.length} sessions.`,
+    nextAction:
+      'Call campaign_status with these dispatchedSessionIds, optionally waitForBusy if the user is waiting, then use campaign_report for the spoken handoff.',
+  };
+}
+
+/**
+ * Handle session_activity tool - fetch structured agent/feed signals for turn flow.
+ */
+async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown> {
+  const sessions = args.sessionId
+    ? $sessionList.get().filter((session) => session.id === args.sessionId)
+    : $sessionList.get();
+
+  if (args.sessionId && sessions.length === 0) {
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    };
+  }
+
+  const tailLines = Math.max(20, Math.min(args.tailLines ?? 80, 200));
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 90, 600));
+  const bellLimit = Math.max(0, Math.min(args.bellLimit ?? 8, 25));
+  const feeds = await Promise.all(
+    sessions.map(async (session) => {
+      const feed = await getSessionAgentFeed(session.id, tailLines, activitySeconds, bellLimit);
+      return {
+        sessionId: session.id,
+        title: session.name || session.terminalTitle || null,
+        isActive: session.id === $activeSessionId.get(),
+        foregroundName: session.foregroundName ?? null,
+        currentDirectory: session.currentDirectory || null,
+        feed,
+      };
+    }),
+  );
+
+  return {
+    success: true,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    feeds,
+  };
+}
+
+function classifyTurnStatus(vibe: AgentSessionVibeResponse): SessionTurnStatus {
+  const state = vibe.header.state.toLowerCase();
+  const attentionReason = vibe.header.attentionReason?.toLowerCase() ?? '';
+  const stateMeta = vibe.overview.stateMeta.toLowerCase();
+  const chips = vibe.header.chips.map((chip) => chip.text.toLowerCase()).join(' ');
+
+  if (state.includes('error') || state === 'blocked') {
+    return 'blocked';
+  }
+
+  if (
+    vibe.header.needsAttention ||
+    attentionReason.includes('prompt') ||
+    stateMeta.includes('waiting for input') ||
+    chips.includes('waiting for input')
+  ) {
+    return 'needs_user';
+  }
+
+  if (state === 'busy-turn' || state === 'running') {
+    return 'busy';
+  }
+
+  if (state === 'shell') {
+    return 'shell';
+  }
+
+  if (state === 'idle-prompt' || state === 'idle' || state === 'completed') {
+    return 'complete';
+  }
+
+  return 'unknown';
+}
+
+function trimSentenceEnd(value: string): string {
+  return value.trim().replace(/[.!?]+$/u, '');
+}
+
+function buildTurnSummaryText(vibe: AgentSessionVibeResponse, status: SessionTurnStatus): string {
+  const latest = vibe.activities[0];
+  const title = vibe.header.title || vibe.header.providerLabel || vibe.sessionId;
+  const state = vibe.header.stateLabel || vibe.header.state;
+  const reason = trimSentenceEnd(vibe.header.attentionReason || latest?.summary || state);
+  const latestSignal = trimSentenceEnd(latest?.summary || state);
+
+  const templates: Record<SessionTurnStatus, string> = {
+    needs_user: `${title} needs user attention: ${reason}.`,
+    blocked: `${title} is blocked: ${reason}.`,
+    busy: `${title} is still working. Latest signal: ${trimSentenceEnd(latest?.summary || vibe.overview.activityMeta)}.`,
+    shell: `${title} is at a shell, not inside an active agent turn.`,
+    complete: `${title} appears done or idle. Latest signal: ${latestSignal}.`,
+    unknown: `${title} state is unclear. Latest signal: ${latestSignal}.`,
+  };
+
+  return templates[status];
+}
+
+function buildNextAction(status: SessionTurnStatus): string {
+  if (status === 'busy') {
+    return 'Call wait_for_turn_completion before speaking as if the turn finished.';
+  }
+
+  if (status === 'needs_user') {
+    return 'Tell the user what input or approval the session needs, then stop.';
+  }
+
+  if (status === 'blocked') {
+    return 'Report the blocker and propose one concrete recovery step.';
+  }
+
+  if (status === 'shell') {
+    return 'Ask whether to start or resume an agent workflow before sending agent prompts.';
+  }
+
+  if (status === 'complete') {
+    return 'Summarize the observed outcome in one or two short sentences.';
+  }
+
+  return 'Use session_activity for deeper evidence or ask one clarification question.';
+}
+
+function isSettledTurnStatus(status: SessionTurnStatus): boolean {
+  return (
+    status === 'complete' || status === 'needs_user' || status === 'blocked' || status === 'shell'
+  );
+}
+
+/**
+ * Handle session_turn_summary tool - compact turn lifecycle summary for voice flow.
+ */
+async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<unknown> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+      responseText: `Session ${args.sessionId} was not found.`,
+      nextAction: 'Call session_overview to discover valid session IDs before summarizing a turn.',
+    };
+  }
+
+  const tailLines = Math.max(20, Math.min(args.tailLines ?? 80, 200));
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 90, 600));
+  const bellLimit = Math.max(0, Math.min(args.bellLimit ?? 8, 25));
+  const vibe = await getSessionAgentVibe(args.sessionId, tailLines, activitySeconds, bellLimit);
+  const status = classifyTurnStatus(vibe);
+  const latestActivities = vibe.activities.slice(0, 5).map((activity) => ({
+    tone: activity.tone,
+    kind: activity.kind,
+    summary: activity.summary,
+    detail: activity.detail,
+    createdAt: activity.createdAt,
+  }));
+
+  const summary = buildTurnSummaryText(vibe, status);
+  const nextAction = buildNextAction(status);
+
+  return {
+    success: true,
+    sessionId: args.sessionId,
+    title: session.name || session.terminalTitle || vibe.header.title,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    status,
+    state: vibe.header.state,
+    stateLabel: vibe.header.stateLabel,
+    needsAttention: vibe.header.needsAttention,
+    attentionReason: vibe.header.attentionReason,
+    responseText: summary,
+    summary,
+    nextAction,
+    overview: vibe.overview,
+    latestActivities,
+    tailText: vibe.terminal.tailText,
+  };
+}
+
+function buildWaitResponseText(
+  title: string,
+  status: SessionTurnStatus,
+  summary: string,
+  elapsedMs: number,
+  timedOut: boolean,
+): string {
+  if (!timedOut) {
+    return summary;
+  }
+
+  const seconds = Math.round(elapsedMs / 1000);
+  if (status === 'busy') {
+    return `${title} is still working after ${seconds} seconds.`;
+  }
+
+  return `${title} did not settle clearly within ${seconds} seconds. Latest signal: ${summary}`;
+}
+
+async function getWaitVibe(
+  sessionId: string,
+  includeTail: boolean,
+  activitySeconds: number,
+): Promise<{ vibe: AgentSessionVibeResponse; status: SessionTurnStatus }> {
+  const vibe = await getSessionAgentVibe(sessionId, includeTail ? 80 : 20, activitySeconds, 8);
+  return { vibe, status: classifyTurnStatus(vibe) };
+}
+
+function buildWaitResult(
+  args: WaitForTurnCompletionArgs,
+  session: Session,
+  vibe: AgentSessionVibeResponse,
+  status: SessionTurnStatus,
+  elapsedMs: number,
+  pollCount: number,
+  includeTail: boolean,
+): WaitForTurnCompletionResult {
+  const timedOut = !isSettledTurnStatus(status);
+  const title = session.name || session.terminalTitle || vibe.header.title || args.sessionId;
+  const summary = buildTurnSummaryText(vibe, status);
+  const latestActivities = vibe.activities.slice(0, 5).map((activity) => ({
+    tone: activity.tone,
+    kind: activity.kind,
+    summary: activity.summary,
+    detail: activity.detail,
+    createdAt: activity.createdAt,
+  }));
+
+  const result: WaitForTurnCompletionResult = {
+    success: true,
+    sessionId: args.sessionId,
+    title,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    completed: status === 'complete',
+    timedOut,
+    status,
+    state: vibe.header.state,
+    stateLabel: vibe.header.stateLabel,
+    elapsedMs,
+    pollCount,
+    settledAt: new Date().toISOString(),
+    responseText: buildWaitResponseText(title, status, summary, elapsedMs, timedOut),
+    summary,
+    nextAction: timedOut
+      ? 'Tell the user the session is still working and offer to keep watching.'
+      : buildNextAction(status),
+    needsAttention: vibe.header.needsAttention,
+    attentionReason: vibe.header.attentionReason,
+    latestActivities,
+  };
+
+  if (includeTail) {
+    result.tailText = vibe.terminal.tailText;
+  }
+
+  return result;
+}
+
+/**
+ * Handle wait_for_turn_completion tool - poll a session until the current turn settles.
+ */
+async function handleWaitForTurnCompletion(
+  args: WaitForTurnCompletionArgs,
+): Promise<
+  WaitForTurnCompletionResult | { success: false; error: string; targetContext: VoiceTargetContext }
+> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    };
+  }
+
+  const timeoutMs = Math.max(1000, Math.min(args.timeoutMs ?? 45000, 90000));
+  const pollIntervalMs = Math.max(500, Math.min(args.pollIntervalMs ?? 2000, 10000));
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 120, 600));
+  const includeTail = args.includeTail ?? false;
+  const startedAt = Date.now();
+  let pollCount = 0;
+  let latestVibe: AgentSessionVibeResponse | null = null;
+  let latestStatus: SessionTurnStatus = 'unknown';
+
+  while (Date.now() - startedAt <= timeoutMs) {
+    pollCount += 1;
+    const current = await getWaitVibe(args.sessionId, includeTail, activitySeconds);
+    latestVibe = current.vibe;
+    latestStatus = current.status;
+
+    if (isSettledTurnStatus(latestStatus)) {
+      break;
+    }
+
+    const remainingMs = timeoutMs - (Date.now() - startedAt);
+    if (remainingMs <= 0) {
+      break;
+    }
+
+    await sleep(Math.min(pollIntervalMs, remainingMs));
+  }
+
+  if (!latestVibe) {
+    const current = await getWaitVibe(args.sessionId, includeTail, activitySeconds);
+    latestVibe = current.vibe;
+    latestStatus = current.status;
+    pollCount += 1;
+  }
+
+  const elapsedMs = Date.now() - startedAt;
+  return buildWaitResult(
+    args,
+    session,
+    latestVibe,
+    latestStatus,
+    elapsedMs,
+    pollCount,
+    includeTail,
+  );
+}
+
+function resolveContinuitySessions(args: ConversationContinuityArgs): {
+  scope: 'active' | 'all';
+  sessions: Session[];
+  error?: string;
+} {
+  const requestedScope = args.scope === 'all' ? 'all' : 'active';
+  if (args.sessionId?.trim()) {
+    const session = getSession(args.sessionId.trim());
+    return session
+      ? { scope: 'active', sessions: [session] }
+      : { scope: 'active', sessions: [], error: `Session ${args.sessionId} not found` };
+  }
+
+  if (requestedScope === 'all') {
+    return { scope: 'all', sessions: $sessionList.get().slice(0, 10) };
+  }
+
+  const activeSessionId = $activeSessionId.get();
+  const activeSession = activeSessionId ? getSession(activeSessionId) : null;
+  return activeSession
+    ? { scope: 'active', sessions: [activeSession] }
+    : { scope: 'active', sessions: [], error: 'No active session and no sessionId provided' };
+}
+
+async function buildContinuitySession(
+  session: Session,
+  activitySeconds: number,
+  includeTail: boolean,
+): Promise<ConversationContinuityResult['sessions'][number]> {
+  const vibe = await getSessionAgentVibe(session.id, includeTail ? 80 : 20, activitySeconds, 8);
+  const status = classifyTurnStatus(vibe);
+  const latestActivities = vibe.activities.slice(0, 4).map((activity) => ({
+    tone: activity.tone,
+    kind: activity.kind,
+    summary: activity.summary,
+    detail: activity.detail,
+    createdAt: activity.createdAt,
+  }));
+  const result: ConversationContinuityResult['sessions'][number] = {
+    sessionId: session.id,
+    title: session.name || session.terminalTitle || vibe.header.title || session.id,
+    isActive: session.id === $activeSessionId.get(),
+    status,
+    state: vibe.header.state,
+    stateLabel: vibe.header.stateLabel,
+    needsAttention: vibe.header.needsAttention,
+    attentionReason: vibe.header.attentionReason,
+    summary: buildTurnSummaryText(vibe, status),
+    nextAction: buildNextAction(status),
+    latestActivities,
+  };
+
+  if (includeTail) {
+    result.tailText = vibe.terminal.tailText;
+  }
+
+  return result;
+}
+
+function buildContinuityResponseText(sessions: ConversationContinuityResult['sessions']): string {
+  const attention = sessions.find((session) => session.needsAttention);
+  if (attention) {
+    return `${attention.title} needs input: ${attention.attentionReason || attention.summary}`;
+  }
+
+  const blocked = sessions.find((session) => session.status === 'blocked');
+  if (blocked) {
+    return `${blocked.title} is blocked: ${blocked.attentionReason || blocked.summary}`;
+  }
+
+  const busy = sessions.find((session) => session.status === 'busy');
+  if (busy) {
+    return `${busy.title} is still working. ${busy.summary}`;
+  }
+
+  const complete = sessions.find((session) => session.status === 'complete');
+  if (complete) {
+    return complete.summary;
+  }
+
+  return sessions[0]?.summary ?? 'No matching MidTerm session is available.';
+}
+
+/**
+ * Handle conversation_continuity tool - compact handoff packet for voice flow.
+ */
+async function handleConversationContinuity(
+  args: ConversationContinuityArgs,
+): Promise<ConversationContinuityResult> {
+  const resolved = resolveContinuitySessions(args);
+  if (resolved.error) {
+    return {
+      success: false,
+      scope: resolved.scope,
+      activeSessionId: $activeSessionId.get(),
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+      generatedAt: new Date().toISOString(),
+      responseText: resolved.error,
+      nextAction:
+        'Ask the user which session to inspect, or call session_overview to list sessions.',
+      sessions: [],
+      attentionSessionIds: [],
+      busySessionIds: [],
+      completeSessionIds: [],
+    };
+  }
+
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 120, 600));
+  const includeTail = args.includeTail ?? false;
+  const sessions = await Promise.all(
+    resolved.sessions.map((session) =>
+      buildContinuitySession(session, activitySeconds, includeTail),
+    ),
+  );
+
+  const attentionSessionIds = sessions
+    .filter((session) => session.needsAttention || session.status === 'blocked')
+    .map((session) => session.sessionId);
+  const busySessionIds = sessions
+    .filter((session) => session.status === 'busy')
+    .map((session) => session.sessionId);
+  const completeSessionIds = sessions
+    .filter((session) => session.status === 'complete')
+    .map((session) => session.sessionId);
+  const responseText = buildContinuityResponseText(sessions);
+
+  return {
+    success: true,
+    scope: resolved.scope,
+    activeSessionId: $activeSessionId.get(),
+    targetContext: buildVoiceTargetContext({
+      sessionId: resolved.sessions[0]?.id ?? $activeSessionId.get(),
+    }),
+    generatedAt: new Date().toISOString(),
+    responseText,
+    nextAction:
+      sessions.find((session) => session.needsAttention || session.status === 'blocked')
+        ?.nextAction ??
+      sessions.find((session) => session.status === 'busy')?.nextAction ??
+      'Speak responseText briefly, then stop.',
+    sessions,
+    attentionSessionIds,
+    busySessionIds,
+    completeSessionIds,
+  };
+}
+
+function normalizeCampaignGoalAction(
+  action: CampaignGoalArgs['action'] | undefined,
+): CampaignGoalResult['action'] {
+  return action ?? 'status';
+}
+
+function normalizeCampaignGoalPhase(
+  phase: CampaignGoalArgs['phase'] | undefined | null,
+): CampaignGoalPhase | null {
+  if (!phase) return null;
+  return CAMPAIGN_GOAL_PHASES.has(phase) ? phase : null;
+}
+
+function normalizeCampaignGoalSessionIds(targetSessionIds: string[] | undefined): {
+  validIds: string[];
+  unknownIds: string[];
+} {
+  const dedupedIds = [...new Set((targetSessionIds ?? []).map((id) => id.trim()).filter(Boolean))];
+  return {
+    validIds: dedupedIds.filter((id) => Boolean(getSession(id))),
+    unknownIds: dedupedIds.filter((id) => !getSession(id)),
+  };
+}
+
+function cloneCampaignGoalState(): CampaignGoalState {
+  return {
+    ...campaignGoalState,
+    targetSessionIds: [...campaignGoalState.targetSessionIds],
+  };
+}
+
+function buildCampaignGoalResponse(
+  action: CampaignGoalResult['action'],
+  success: boolean,
+  responseText: string,
+  nextAction: string,
+  unknownTargetSessionIds: string[] = [],
+): CampaignGoalResult {
+  return {
+    success,
+    action,
+    goal: cloneCampaignGoalState(),
+    persisted: campaignGoalPersistenceOk,
+    targetContext: buildVoiceTargetContext({
+      sessionId: campaignGoalState.currentFocusSessionId,
+      action: `campaign_goal:${action}`,
+    }),
+    responseText,
+    nextAction,
+    ...(unknownTargetSessionIds.length > 0 ? { unknownTargetSessionIds } : {}),
+  };
+}
+
+function buildCampaignGoalStatusResponse(): CampaignGoalResult {
+  return buildCampaignGoalResponse(
+    'status',
+    true,
+    campaignGoalState.active
+      ? `Active voice goal: ${campaignGoalState.objective}.`
+      : 'No active voice campaign goal is set.',
+    campaignGoalState.active
+      ? 'Use this goal state to target the next tool call or update the phase before reporting.'
+      : 'Set campaign_goal when the user starts broader multi-session work.',
+  );
+}
+
+function clearCampaignGoal(reason: string | null | undefined): CampaignGoalResult {
+  campaignGoalState = {
+    ...emptyCampaignGoalState(),
+    updatedAt: new Date().toISOString(),
+    reason: reason?.trim() || 'cleared',
+  };
+  campaignGoalPersistenceOk = persistCampaignGoalState();
+  return buildCampaignGoalResponse(
+    'clear',
+    true,
+    'Voice campaign goal cleared.',
+    'Continue with the current user request; set a new campaign_goal before broader work.',
+  );
+}
+
+function validateCampaignGoalChange(
+  action: CampaignGoalResult['action'],
+  objective: string | undefined,
+): CampaignGoalResult | null {
+  if (action === 'set' && !objective) {
+    return buildCampaignGoalResponse(
+      action,
+      false,
+      'campaign_goal set needs an objective.',
+      'Ask the user for the objective or call campaign_status/session_overview before setting the goal.',
+    );
+  }
+
+  if (action === 'update' && !objective && !campaignGoalState.objective) {
+    return buildCampaignGoalResponse(
+      action,
+      false,
+      'campaign_goal update needs an existing goal or a new objective.',
+      'Set campaign_goal with an objective before updating phase, targets, exit criteria, or report state.',
+    );
+  }
+
+  return null;
+}
+
+function resolveCampaignGoalFocusSessionId(args: CampaignGoalArgs): string | null {
+  return (
+    args.currentFocusSessionId?.trim() ||
+    campaignGoalState.currentFocusSessionId ||
+    $focusedSessionId.get() ||
+    $activeSessionId.get()
+  );
+}
+
+function applyCampaignGoalChange(
+  args: CampaignGoalArgs,
+  objective: string | undefined,
+  currentFocusSessionId: string | null,
+  targetSessionIds: { validIds: string[]; unknownIds: string[] },
+): void {
+  campaignGoalState = {
+    active: true,
+    objective: objective || campaignGoalState.objective,
+    phase: normalizeCampaignGoalPhase(args.phase) ?? campaignGoalState.phase ?? 'orient',
+    targetSessionIds:
+      args.targetSessionIds !== undefined
+        ? targetSessionIds.validIds
+        : campaignGoalState.targetSessionIds,
+    currentFocusSessionId,
+    exitCriteria: args.exitCriteria?.trim() || campaignGoalState.exitCriteria,
+    nextReport: args.nextReport?.trim() || campaignGoalState.nextReport,
+    createdAt: campaignGoalState.createdAt ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    reason: args.reason?.trim() || campaignGoalState.reason,
+  };
+  campaignGoalPersistenceOk = persistCampaignGoalState();
+}
+
+function buildCampaignGoalChangeResponse(
+  action: CampaignGoalResult['action'],
+  unknownTargetSessionIds: string[],
+): CampaignGoalResult {
+  const hasUnknownTargets = unknownTargetSessionIds.length > 0;
+  const responseText =
+    action === 'set'
+      ? `Voice campaign goal set: ${campaignGoalState.objective}.`
+      : `Voice campaign goal updated: ${campaignGoalState.objective}.`;
+
+  return buildCampaignGoalResponse(
+    action,
+    !hasUnknownTargets,
+    hasUnknownTargets
+      ? `${responseText} Some target sessions were not found: ${unknownTargetSessionIds.join(', ')}.`
+      : responseText,
+    hasUnknownTargets
+      ? 'Call session_overview before using the missing target session IDs.'
+      : 'Use campaign_status, session_turn_summary, wait_for_turn_completion, or Dev Browser tools against the stored targets; update campaign_goal before the final report.',
+    unknownTargetSessionIds,
+  );
+}
+
+function handleCampaignGoal(args: CampaignGoalArgs): CampaignGoalResult {
+  const action = normalizeCampaignGoalAction(args.action);
+  if (action === 'status') return buildCampaignGoalStatusResponse();
+  if (action === 'clear') return clearCampaignGoal(args.reason);
+
+  const objective = args.objective?.trim();
+  const invalidChange = validateCampaignGoalChange(action, objective);
+  if (invalidChange) return invalidChange;
+
+  const targetSessionIds = normalizeCampaignGoalSessionIds(args.targetSessionIds);
+  const currentFocusSessionId = resolveCampaignGoalFocusSessionId(args);
+  const focusSessionExists = currentFocusSessionId
+    ? Boolean(getSession(currentFocusSessionId))
+    : true;
+
+  if (!focusSessionExists) {
+    return buildCampaignGoalResponse(
+      action,
+      false,
+      `Focus session ${currentFocusSessionId} was not found.`,
+      'Call session_overview to discover valid session IDs before updating the campaign goal.',
+      targetSessionIds.unknownIds,
+    );
+  }
+
+  applyCampaignGoalChange(args, objective, currentFocusSessionId, targetSessionIds);
+  return buildCampaignGoalChangeResponse(action, targetSessionIds.unknownIds);
+}
+
+function resolveCampaignSessions(args: CampaignStatusArgs): {
+  scope: CampaignStatusResult['scope'];
+  sessions: Session[];
+  errors: string[];
+} {
+  if (args.sessionIds?.length) {
+    const errors: string[] = [];
+    const sessions = args.sessionIds
+      .map((sessionId) => {
+        const session = getSession(sessionId);
+        if (!session) {
+          errors.push(`Session ${sessionId} not found`);
+        }
+        return session;
+      })
+      .filter((session): session is Session => Boolean(session));
+    return { scope: 'explicit', sessions: sessions.slice(0, 12), errors };
+  }
+
+  const requestedScope = args.scope ?? 'all';
+  if (requestedScope === 'active') {
+    const activeSessionId = $activeSessionId.get();
+    const activeSession = activeSessionId ? getSession(activeSessionId) : null;
+    return {
+      scope: 'active',
+      sessions: activeSession ? [activeSession] : [],
+      errors: activeSession ? [] : ['No active session is available'],
+    };
+  }
+
+  if (requestedScope === 'layout') {
+    const layoutSessionIds = getLayoutSessionIds();
+    const sessions = layoutSessionIds
+      .map((sessionId) => getSession(sessionId))
+      .filter((session): session is Session => Boolean(session));
+    return { scope: 'layout', sessions: sessions.slice(0, 12), errors: [] };
+  }
+
+  return { scope: 'all', sessions: $sessionList.get().slice(0, 12), errors: [] };
+}
+
+function buildCampaignState(
+  sessions: CampaignStatusResult['sessions'],
+): CampaignStatusResult['campaignState'] {
+  if (sessions.length === 0) return 'empty';
+  if (sessions.some((session) => session.needsAttention)) return 'needs_user';
+  if (sessions.some((session) => session.status === 'blocked')) return 'blocked';
+  if (sessions.some((session) => session.status === 'busy')) return 'busy';
+  if (sessions.some((session) => session.status === 'complete')) return 'ready';
+  return 'mixed';
+}
+
+function chooseCampaignFocus(sessions: CampaignStatusResult['sessions']): string | null {
+  return (
+    sessions.find((session) => session.needsAttention)?.sessionId ??
+    sessions.find((session) => session.status === 'blocked')?.sessionId ??
+    sessions.find((session) => session.status === 'busy')?.sessionId ??
+    sessions.find((session) => session.status === 'complete' && session.isActive)?.sessionId ??
+    sessions.find((session) => session.status === 'complete')?.sessionId ??
+    sessions[0]?.sessionId ??
+    null
+  );
+}
+
+function buildCampaignResponseText(
+  campaignState: CampaignStatusResult['campaignState'],
+  sessions: CampaignStatusResult['sessions'],
+): string {
+  const target = sessions.find((session) => session.sessionId === chooseCampaignFocus(sessions));
+  if (!target) return 'No MidTerm sessions are available.';
+
+  if (campaignState === 'needs_user') {
+    return `${target.title} needs input: ${target.attentionReason || target.summary}`;
+  }
+
+  if (campaignState === 'blocked') {
+    return `${target.title} is blocked: ${target.attentionReason || target.summary}`;
+  }
+
+  if (campaignState === 'busy') {
+    const busyCount = sessions.filter((session) => session.status === 'busy').length;
+    return `${busyCount} session${busyCount === 1 ? ' is' : 's are'} still working. ${target.summary}`;
+  }
+
+  if (campaignState === 'ready') {
+    const completeCount = sessions.filter((session) => session.status === 'complete').length;
+    return `${completeCount} session${completeCount === 1 ? ' is' : 's are'} ready. ${target.summary}`;
+  }
+
+  return target.summary;
+}
+
+function buildCampaignNextAction(
+  campaignState: CampaignStatusResult['campaignState'],
+  recommendedFocusSessionId: string | null,
+): string {
+  if (!recommendedFocusSessionId) return 'Create or select a MidTerm session before acting.';
+  if (campaignState === 'needs_user') {
+    return `Select ${recommendedFocusSessionId}, tell the user what input is needed, then stop.`;
+  }
+  if (campaignState === 'blocked') {
+    return `Select ${recommendedFocusSessionId}, report the blocker, and propose one concrete recovery step.`;
+  }
+  if (campaignState === 'busy') {
+    return 'Tell the user work is still running; offer to keep watching if they want a later update.';
+  }
+  if (campaignState === 'ready') {
+    return `Select ${recommendedFocusSessionId} if the user should inspect it, then summarize the observed outcome.`;
+  }
+  return 'Ask one concise clarification question before taking action.';
+}
+
+async function buildCampaignSession(
+  session: Session,
+  args: CampaignStatusArgs,
+  layoutSessionSet: Set<string>,
+): Promise<CampaignStatusResult['sessions'][number]> {
+  const activitySeconds = Math.max(15, Math.min(args.activitySeconds ?? 120, 600));
+  const includeBrowserStatus = args.includeBrowserStatus ?? true;
+  const includeRepoStatus = args.includeRepoStatus ?? true;
+  const initial = await buildContinuitySession(session, activitySeconds, false);
+  let current = initial;
+  let waited = false;
+  let timedOut: boolean | undefined;
+  let elapsedMs: number | undefined;
+
+  if (args.waitForBusy && initial.status === 'busy') {
+    const waitResult = await handleWaitForTurnCompletion({
+      sessionId: session.id,
+      timeoutMs: Math.max(1000, Math.min(args.timeoutMs ?? 30000, 90000)),
+      pollIntervalMs: Math.max(500, Math.min(args.pollIntervalMs ?? 2000, 10000)),
+      activitySeconds,
+      includeTail: false,
+    });
+    if (waitResult.success) {
+      waited = true;
+      timedOut = waitResult.timedOut;
+      elapsedMs = waitResult.elapsedMs;
+      current = {
+        sessionId: session.id,
+        title: waitResult.title,
+        isActive: session.id === $activeSessionId.get(),
+        status: waitResult.status,
+        state: waitResult.state,
+        stateLabel: waitResult.stateLabel,
+        needsAttention: waitResult.needsAttention,
+        attentionReason: waitResult.attentionReason,
+        summary: waitResult.summary,
+        nextAction: waitResult.nextAction,
+        latestActivities: waitResult.latestActivities,
+      };
+    }
+  }
+
+  const result: CampaignStatusResult['sessions'][number] = {
+    ...current,
+    isFocused: session.id === $focusedSessionId.get(),
+    isInLayout: layoutSessionSet.has(session.id),
+    waited,
+    defaultPreview: includeBrowserStatus ? await buildDefaultPreviewOverview(session.id) : null,
+  };
+
+  if (includeRepoStatus) {
+    result.repos = compactGitRepos(getCachedGitReposForSession(session.id));
+  }
+
+  if (timedOut !== undefined) {
+    result.timedOut = timedOut;
+  }
+
+  if (elapsedMs !== undefined) {
+    result.elapsedMs = elapsedMs;
+  }
+
+  return result;
+}
+
+/**
+ * Handle campaign_status tool - read-only multi-session orchestration state.
+ */
+async function handleCampaignStatus(args: CampaignStatusArgs): Promise<CampaignStatusResult> {
+  const startedAt = Date.now();
+  const resolved = resolveCampaignSessions(args);
+  const layoutSessionSet = new Set(getLayoutSessionIds());
+  const sessions = await Promise.all(
+    resolved.sessions.map((session) => buildCampaignSession(session, args, layoutSessionSet)),
+  );
+  const campaignState = buildCampaignState(sessions);
+  const recommendedFocusSessionId = chooseCampaignFocus(sessions);
+
+  return {
+    success: resolved.errors.length === 0,
+    scope: resolved.scope,
+    campaignState,
+    activeSessionId: $activeSessionId.get(),
+    focusedSessionId: $focusedSessionId.get(),
+    targetContext: buildVoiceTargetContext({ sessionId: recommendedFocusSessionId }),
+    generatedAt: new Date().toISOString(),
+    waited: sessions.some((session) => session.waited),
+    elapsedMs: Date.now() - startedAt,
+    responseText: resolved.errors[0] ?? buildCampaignResponseText(campaignState, sessions),
+    nextAction: resolved.errors[0]
+      ? 'Call session_overview to discover valid session IDs, then retry if needed.'
+      : buildCampaignNextAction(campaignState, recommendedFocusSessionId),
+    recommendedFocusSessionId,
+    sessions,
+    attentionSessionIds: sessions
+      .filter((session) => session.needsAttention)
+      .map((session) => session.sessionId),
+    blockedSessionIds: sessions
+      .filter((session) => session.status === 'blocked')
+      .map((session) => session.sessionId),
+    busySessionIds: sessions
+      .filter((session) => session.status === 'busy')
+      .map((session) => session.sessionId),
+    completeSessionIds: sessions
+      .filter((session) => session.status === 'complete')
+      .map((session) => session.sessionId),
+    shellSessionIds: sessions
+      .filter((session) => session.status === 'shell')
+      .map((session) => session.sessionId),
+  };
+}
+
+function normalizeCampaignReportMode(
+  mode: CampaignReportArgs['mode'] | undefined,
+): CampaignReportResult['mode'] {
+  return mode ?? 'status';
+}
+
+function buildCampaignReportStatusLine(status: CampaignStatusResult): string {
+  if (status.campaignState === 'busy') {
+    return `${status.busySessionIds.length} session${status.busySessionIds.length === 1 ? ' is' : 's are'} still working.`;
+  }
+
+  if (status.campaignState === 'ready') {
+    return `${status.completeSessionIds.length} session${status.completeSessionIds.length === 1 ? ' is' : 's are'} ready.`;
+  }
+
+  if (status.campaignState === 'blocked') {
+    return `${status.blockedSessionIds.length} session${status.blockedSessionIds.length === 1 ? ' is' : 's are'} blocked.`;
+  }
+
+  if (status.campaignState === 'needs_user') {
+    return `${status.attentionSessionIds.length} session${status.attentionSessionIds.length === 1 ? ' needs' : ' need'} user input.`;
+  }
+
+  return status.responseText;
+}
+
+function buildCampaignReportResponseText(
+  mode: CampaignReportResult['mode'],
+  goal: CampaignGoalState,
+  status: CampaignStatusResult,
+): string {
+  const goalText = goal.active && goal.objective ? `Goal: ${goal.objective}. ` : '';
+  const stateText = buildCampaignReportStatusLine(status);
+
+  if (mode === 'final' && status.campaignState !== 'ready') {
+    return `${goalText}Not ready for a final report yet. ${stateText} ${status.responseText}`;
+  }
+
+  if (mode === 'blocked' || status.campaignState === 'blocked') {
+    return `${goalText}${stateText} ${status.responseText}`;
+  }
+
+  if (mode === 'handoff') {
+    const nextReport = goal.nextReport ? ` Next report: ${goal.nextReport}` : '';
+    return `${goalText}${stateText} ${status.responseText}${nextReport}`;
+  }
+
+  return `${goalText}${stateText} ${status.responseText}`;
+}
+
+function buildCampaignReportNextAction(
+  mode: CampaignReportResult['mode'],
+  goal: CampaignGoalState,
+  status: CampaignStatusResult,
+): string {
+  if (status.campaignState === 'busy') {
+    return 'Tell the user work is still running; offer to keep watching instead of claiming completion.';
+  }
+
+  if (status.campaignState === 'blocked' || mode === 'blocked') {
+    return 'Report the blocker and one concrete recovery step; do not continue acting without user direction if the blocker needs a decision.';
+  }
+
+  if (status.campaignState === 'needs_user') {
+    return 'Tell the user exactly which session needs input and what input is needed, then stop.';
+  }
+
+  if (mode === 'final' && goal.exitCriteria) {
+    return `Check the report against the exit criteria before saying done: ${goal.exitCriteria}`;
+  }
+
+  return status.nextAction;
+}
+
+async function handleCampaignReport(args: CampaignReportArgs): Promise<CampaignReportResult> {
+  const mode = normalizeCampaignReportMode(args.mode);
+  const goal = cloneCampaignGoalState();
+  const sessionIds =
+    args.sessionIds !== undefined
+      ? args.sessionIds
+      : goal.targetSessionIds.length > 0
+        ? goal.targetSessionIds
+        : undefined;
+  const statusArgs: CampaignStatusArgs = {
+    scope: args.scope ?? 'all',
+    waitForBusy: args.waitForBusy ?? false,
+    timeoutMs: args.timeoutMs ?? 30000,
+    pollIntervalMs: args.pollIntervalMs ?? 2000,
+    activitySeconds: args.activitySeconds ?? 120,
+    includeBrowserStatus: true,
+    includeRepoStatus: true,
+  };
+  if (sessionIds !== undefined) {
+    statusArgs.sessionIds = sessionIds;
+  }
+
+  const campaignStatus = await handleCampaignStatus(statusArgs);
+
+  return {
+    success: campaignStatus.success,
+    mode,
+    reportState: campaignStatus.campaignState,
+    campaignGoal: goal,
+    campaignStatus,
+    targetContext: buildVoiceTargetContext({
+      sessionId: campaignStatus.recommendedFocusSessionId,
+      action: `campaign_report:${mode}`,
+    }),
+    responseText: buildCampaignReportResponseText(mode, goal, campaignStatus),
+    nextAction: buildCampaignReportNextAction(mode, goal, campaignStatus),
+    recommendedFocusSessionId: campaignStatus.recommendedFocusSessionId,
+    attentionSessionIds: campaignStatus.attentionSessionIds,
+    blockedSessionIds: campaignStatus.blockedSessionIds,
+    busySessionIds: campaignStatus.busySessionIds,
+    completeSessionIds: campaignStatus.completeSessionIds,
+  };
+}
+
+/**
+ * Handle dev_browser_open tool - open a URL in a session-scoped named Dev Browser preview.
+ */
+async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return {
+      success: false,
+      error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
+      responseText: 'No active session is available for Dev Browser open.',
+      nextAction: 'Call session_overview, select a target session, then retry dev_browser_open.',
+    };
+  }
+
+  if (!getSession(sessionId)) {
+    return {
+      success: false,
+      error: `Session ${sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId, previewName: args.previewName }),
+      responseText: `Session ${sessionId} was not found for Dev Browser open.`,
+      nextAction: 'Call session_overview to discover valid session IDs before opening the preview.',
+    };
+  }
+
+  const previewName = resolvePreviewName(args.previewName);
+  const url = args.url.trim();
+  if (!url) {
+    return {
+      success: false,
+      error: 'url is required',
+      targetContext: buildVoiceTargetContext({ sessionId, previewName }),
+      responseText: 'Dev Browser open needs a URL.',
+      nextAction: 'Ask the user for the exact URL or derive it from the running app output.',
+    };
+  }
+
+  const target = await setWebPreviewTarget(sessionId, previewName, url);
+  if (!target?.active) {
+    return {
+      success: false,
+      error: `Failed to set Dev Browser target for ${sessionId}/${previewName}`,
+      targetContext: buildVoiceTargetContext({ sessionId, previewName }),
+      responseText: `Failed to open Dev Browser for ${sessionId}/${previewName}.`,
+      nextAction: 'Check the session and preview target, then retry dev_browser_open.',
+    };
+  }
+
+  await selectSessionForBrowser(sessionId, previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    reason: 'dev_browser_open',
+  });
+  await sleep(250);
+  const status = await getBrowserPreviewStatus(sessionId, previewName);
+
+  return {
+    success: true,
+    sessionId,
+    previewName,
+    targetContext: buildVoiceTargetContext({ sessionId, previewName, action: 'dev_browser_open' }),
+    url: target.url,
+    targetRevision: target.targetRevision,
+    status,
+    responseText: `Opened Dev Browser ${previewName} for session ${sessionId}.`,
+    nextAction:
+      'Use dev_browser_status or dev_browser_command outline to inspect the loaded page before making UI claims.',
+  };
+}
+
+/**
+ * Handle dev_browser_status tool - report target and browser bridge readiness.
+ */
+async function handleDevBrowserStatus(args: DevBrowserStatusArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return {
+      success: false,
+      error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
+      responseText: 'No active session is available for Dev Browser status.',
+      nextAction: 'Call session_overview, select a target session, then retry dev_browser_status.',
+    };
+  }
+
+  const previewName = resolvePreviewName(args.previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    reason: 'dev_browser_status',
+  });
+  const [target, status] = await Promise.all([
+    getWebPreviewTarget(sessionId, previewName),
+    getBrowserPreviewStatus(sessionId, previewName, args.previewId ?? undefined),
+  ]);
+
+  return {
+    success: true,
+    sessionId,
+    previewName,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      previewName,
+      previewId: args.previewId,
+      action: 'dev_browser_status',
+    }),
+    target,
+    status,
+    responseText: status?.controllable
+      ? `Dev Browser ${previewName} is ready for session ${sessionId}.`
+      : `Dev Browser ${previewName} is not ready for session ${sessionId}.`,
+    nextAction: status?.controllable
+      ? 'Use dev_browser_command outline or query for page inspection.'
+      : 'Open a URL with dev_browser_open or wait for the preview bridge to become ready.',
+  };
+}
+
+/**
+ * Handle dev_browser_command tool - run a scoped Dev Browser command.
+ */
+function buildBrowserCommandOptions(args: DevBrowserCommandArgs): {
+  selector?: string | null;
+  value?: string | null;
+  maxDepth?: number;
+  textOnly?: boolean;
+  timeout?: number;
+} {
+  const commandOptions: {
+    selector?: string | null;
+    value?: string | null;
+    maxDepth?: number;
+    textOnly?: boolean;
+    timeout?: number;
+  } = {};
+  if (args.selector !== undefined) commandOptions.selector = args.selector;
+  if (args.value !== undefined) commandOptions.value = args.value;
+  if (args.maxDepth !== undefined) commandOptions.maxDepth = args.maxDepth;
+  if (args.textOnly !== undefined) commandOptions.textOnly = args.textOnly;
+  if (args.timeout !== undefined) commandOptions.timeout = args.timeout;
+  return commandOptions;
+}
+
+function validateBrowserCommand(command: string): Record<string, unknown> | null {
+  if (!command) {
+    return {
+      success: false,
+      error: 'command is required',
+      responseText: 'Dev Browser command is missing.',
+      nextAction:
+        'Use one supported command such as outline, query, wait, click, fill, or navigate.',
+    };
+  }
+
+  if (!BROWSER_COMMANDS.has(command)) {
+    return {
+      success: false,
+      error: `Unsupported Dev Browser command: ${command}`,
+      supportedCommands: [...BROWSER_COMMANDS],
+      responseText: `Unsupported Dev Browser command: ${command}.`,
+      nextAction: 'Choose one of the supportedCommands values and retry.',
+    };
+  }
+
+  return null;
+}
+
+function buildDevBrowserCommandResponse(
+  sessionId: string,
+  previewName: string,
+  command: string,
+  result: Awaited<ReturnType<typeof runBrowserCommand>>,
+): Record<string, unknown> {
+  const success = result?.success ?? false;
+  return {
+    success,
+    sessionId,
+    previewName,
+    command,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      previewName,
+      action: `dev_browser_command:${command}`,
+    }),
+    result: result?.result ?? null,
+    error: result?.error ?? null,
+    matchCount: result?.matchCount ?? null,
+    responseText: success
+      ? `Dev Browser ${command} completed for ${sessionId}/${previewName}.`
+      : `Dev Browser ${command} failed for ${sessionId}/${previewName}: ${result?.error ?? 'unknown error'}.`,
+    nextAction: success
+      ? 'Use the command result as evidence; after mutating commands, wait or inspect before reporting final state.'
+      : 'Check supported commands, selector, preview readiness, and session ID before retrying.',
+  };
+}
+
+async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return {
+      success: false,
+      error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
+      responseText: 'No active session is available for the Dev Browser command.',
+      nextAction:
+        'Call session_overview, select a target session, then retry the Dev Browser command.',
+    };
+  }
+
+  const command = args.command.trim();
+  const validationError = validateBrowserCommand(command);
+  if (validationError) return validationError;
+
+  const previewName = resolvePreviewName(args.previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    reason: `dev_browser_command:${command}`,
+  });
+
+  const result = await runBrowserCommand(
+    command,
+    sessionId,
+    previewName,
+    args.previewId ?? undefined,
+    buildBrowserCommandOptions(args),
+  );
+
+  return buildDevBrowserCommandResponse(sessionId, previewName, command, result);
+}
+
+function decodeDataUrlToFile(dataUrl: string, filename: string): File | null {
+  const match = /^data:([^;,]+);base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    return null;
+  }
+
+  const mimeType = match[1];
+  const base64 = match[2];
+  if (!mimeType || !base64) {
+    return null;
+  }
+
+  try {
+    const bytes = Uint8Array.from(atob(base64), (char) => char.charCodeAt(0));
+    return new File([bytes], filename, { type: mimeType });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Handle dev_browser_screenshot tool - capture a preview screenshot and upload it to the session.
+ */
+async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return {
+      success: false,
+      error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
+    };
+  }
+
+  const previewName = resolvePreviewName(args.previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    reason: 'dev_browser_screenshot',
+  });
+  const [target, status] = await Promise.all([
+    getWebPreviewTarget(sessionId, previewName),
+    getBrowserPreviewStatus(sessionId, previewName, args.previewId ?? undefined),
+  ]);
+
+  if (!target?.url) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
+      target,
+      status,
+      error: 'No URL is open in this Dev Browser preview',
+    };
+  }
+
+  const dataUrl = await captureBrowserScreenshotRaw(
+    sessionId,
+    args.previewId ?? undefined,
+    previewName,
+  );
+  if (!dataUrl) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
+      target,
+      status,
+      error: 'MidTerm did not receive screenshot image data from the Dev Browser',
+    };
+  }
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filename = `dev_browser_${previewName}_${timestamp}.png`;
+  const file = decodeDataUrlToFile(dataUrl, filename);
+  if (!file) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
+      target,
+      status,
+      error: 'Screenshot image data could not be decoded',
+    };
+  }
+
+  const path = await uploadFile(sessionId, file);
+  if (!path) {
+    return {
+      success: false,
+      sessionId,
+      previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
+      target,
+      status,
+      error: 'Screenshot upload did not return a usable file path',
+    };
+  }
+
+  return {
+    success: true,
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      previewName,
+      previewId: args.previewId,
+      action: 'dev_browser_screenshot',
+    }),
+    target,
+    status,
+    path,
+    fileName: filename,
+    mimeType: file.type,
+    sizeBytes: file.size,
+    viewUrl: `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`,
+  };
+}
+
+/**
+ * Handle repo_monitor tool - inspect or update session-scoped Git repo bindings.
+ */
+async function runRepoMonitorAction(
+  sessionId: string,
+  args: RepoMonitorArgs,
+): Promise<Awaited<ReturnType<typeof fetchGitRepos>>> {
+  const action = args.action.toLowerCase();
+  switch (action) {
+    case 'list':
+      return fetchGitRepos(sessionId);
+    case 'add': {
+      const path = args.path?.trim();
+      if (!path) {
+        throw new Error('path is required for repo_monitor add');
+      }
+      return addGitRepo(
+        sessionId,
+        path,
+        args.role?.trim() || 'target',
+        args.label?.trim() || undefined,
+      );
+    }
+    case 'remove': {
+      const repoRoot = args.repoRoot?.trim();
+      if (!repoRoot) {
+        throw new Error('repoRoot is required for repo_monitor remove');
+      }
+      return removeGitRepo(sessionId, repoRoot);
+    }
+    case 'refresh':
+      return refreshGitRepo(sessionId, args.repoRoot?.trim() || undefined);
+    default:
+      throw new Error(`Unknown action: ${args.action}. Use list, add, remove, or refresh.`);
+  }
+}
+
+async function handleRepoMonitor(args: RepoMonitorArgs): Promise<unknown> {
+  const sessionId = resolveSessionId(args.sessionId);
+  if (!sessionId) {
+    return {
+      success: false,
+      error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ repoRoot: args.repoRoot ?? args.path }),
+    };
+  }
+
+  if (!getSession(sessionId)) {
+    return {
+      success: false,
+      error: `Session ${sessionId} not found`,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        repoRoot: args.repoRoot ?? args.path,
+      }),
+    };
+  }
+
+  const action = args.action.toLowerCase();
+  const response = await runRepoMonitorAction(sessionId, args);
+
+  if (response) {
+    applyGitReposForSession(sessionId, response.repos);
+  }
+
+  const repos = response?.repos ?? getCachedGitReposForSession(sessionId);
+  return {
+    success: response !== null || repos.length > 0,
+    sessionId,
+    action,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      repoRoot: args.repoRoot ?? args.path,
+      action: `repo_monitor:${action}`,
+    }),
+    repos: compactGitRepos(repos),
+    repoCount: repos.length,
+  };
+}
+
+function buildLayoutStatus(action: string): unknown {
+  return {
+    success: true,
+    action,
+    activeSessionId: $activeSessionId.get(),
+    focusedSessionId: $focusedSessionId.get(),
+    targetContext: buildVoiceTargetContext({ action: `layout_control:${action}` }),
+    layoutSessionIds: getLayoutSessionIds(),
+    root: $layout.get().root,
+  };
+}
+
+function requireLayoutSession(sessionId: string | null | undefined, fieldName: string): string {
+  const resolved = sessionId?.trim();
+  if (!resolved) {
+    throw new Error(`${fieldName} is required`);
+  }
+  if (!getSession(resolved)) {
+    throw new Error(`Session ${resolved} not found`);
+  }
+  return resolved;
+}
+
+function requireDockPosition(position: DockPosition | null | undefined): DockPosition {
+  if (!position || !LAYOUT_DOCK_POSITIONS.has(position)) {
+    throw new Error('position must be top, bottom, left, or right');
+  }
+  return position;
+}
+
+/**
+ * Handle layout_control tool - inspect and arrange MidTerm's multi-session layout.
+ */
+function handleLayoutControl(args: LayoutControlArgs): unknown {
+  const action = args.action.toLowerCase();
+
+  if (action === 'status') {
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'focus') {
+    const sessionId = requireLayoutSession(args.sessionId, 'sessionId');
+    if (isSessionInLayout(sessionId)) {
+      focusLayoutSession(sessionId);
+    } else {
+      handleSelectSession({ sessionId, focusTerminal: args.focusTerminal ?? true });
+    }
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'dock') {
+    const sessionId = requireLayoutSession(args.sessionId, 'sessionId');
+    const targetSessionId = requireLayoutSession(args.targetSessionId, 'targetSessionId');
+    dockSession(targetSessionId, sessionId, requireDockPosition(args.position));
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'undock') {
+    undockSession(requireLayoutSession(args.sessionId, 'sessionId'));
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'swap') {
+    swapLayoutSessions(
+      requireLayoutSession(args.sessionId, 'sessionId'),
+      requireLayoutSession(args.otherSessionId, 'otherSessionId'),
+    );
+    return buildLayoutStatus(action);
+  }
+
+  if (action === 'clear') {
+    $layout.set({ root: null });
+    $focusedSessionId.set(null);
+    return buildLayoutStatus(action);
+  }
+
+  return {
+    success: false,
+    error: `Unknown action: ${args.action}. Use status, focus, dock, undock, swap, or clear.`,
+  };
+}
+
+function normalizeAppShellAction(action: AppShellArgs['action']): AppShellResult['action'] {
+  switch (action) {
+    case 'open_settings':
+    case 'close_settings':
+      return action;
+    case 'status':
+    case undefined:
+      return 'status';
+    default:
+      return 'status';
+  }
+}
+
+function normalizeSettingsTab(tab: AppShellArgs['settingsTab']): SettingsTab | null {
+  return normalizeStoredSettingsTab(tab?.trim() || null);
+}
+
+function buildAppShellResponse(
+  action: AppShellResult['action'],
+  requestedSettingsTab: SettingsTab | null,
+  responseText: string,
+  nextAction: string,
+): AppShellResult {
+  const updateInfo = $updateInfo.get();
+  return {
+    success: true,
+    action,
+    settingsOpen: $settingsOpen.get(),
+    activeSettingsTab: $settingsOpen.get() ? getActiveSettingsTab() : null,
+    requestedSettingsTab,
+    sidebarOpen: dom.app?.classList.contains('sidebar-open') ?? false,
+    activeSessionId: $activeSessionId.get(),
+    focusedSessionId: $focusedSessionId.get(),
+    updateCurrentVersion: updateInfo?.currentVersion ?? null,
+    updateLatestVersion: updateInfo?.latestVersion ?? null,
+    updateAvailable: updateInfo?.available ?? null,
+    responseText,
+    nextAction,
+    targetContext: buildVoiceTargetContext({ action: `app_shell:${action}` }),
+  };
+}
+
+/**
+ * Handle app_shell tool - inspect or navigate MidTerm's global app chrome.
+ */
+function handleAppShell(args: AppShellArgs): AppShellResult {
+  const action = normalizeAppShellAction(args.action);
+  const requestedSettingsTab = normalizeSettingsTab(args.settingsTab);
+
+  if (action === 'open_settings') {
+    openSettings();
+    if (requestedSettingsTab) {
+      switchSettingsTab(requestedSettingsTab);
+    }
+
+    const tab = requestedSettingsTab ?? getActiveSettingsTab();
+    return buildAppShellResponse(
+      action,
+      requestedSettingsTab,
+      `Opened Settings on ${tab}.`,
+      tab === 'updates'
+        ? 'Use app_shell status to read update/version context, or tell the user the Updates & About section is visible.'
+        : 'Continue with the visible settings section, or call app_shell open_settings with settingsTab updates for update controls.',
+    );
+  }
+
+  if (action === 'close_settings') {
+    closeSettings();
+    return buildAppShellResponse(
+      action,
+      requestedSettingsTab,
+      'Closed Settings.',
+      'Continue with the active MidTerm session or call session_overview before the next session-scoped action.',
+    );
+  }
+
+  return buildAppShellResponse(
+    action,
+    requestedSettingsTab,
+    $settingsOpen.get() ? `Settings is open on ${getActiveSettingsTab()}.` : 'Settings is closed.',
+    $settingsOpen.get()
+      ? 'Use app_shell open_settings with a settingsTab to switch sections, or close_settings to return to the session.'
+      : 'Use app_shell open_settings with settingsTab updates to show update controls.',
+  );
 }
 
 /**
@@ -339,22 +2907,38 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
 async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
   const session = getSession(args.sessionId);
   if (!session) {
-    return { success: false, error: `Session ${args.sessionId} not found` };
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    };
   }
 
   await apiDeleteSession(args.sessionId);
-  return { success: true };
+  return {
+    success: true,
+    sessionId: args.sessionId,
+    targetContext: buildVoiceTargetContext({
+      sessionId: args.sessionId,
+      action: 'close_session',
+    }),
+  };
 }
 
 async function listBookmarks(): Promise<unknown> {
   const { data } = await getHistory();
   if (!data) {
-    return { success: false, error: 'Failed to fetch history' };
+    return {
+      success: false,
+      error: 'Failed to fetch history',
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:list' }),
+    };
   }
 
   const starred = data.filter((entry) => entry.isStarred);
   return {
     success: true,
+    targetContext: buildVoiceTargetContext({ action: 'bookmarks:list' }),
     bookmarks: starred.map((entry) => ({
       id: entry.id,
       shellType: entry.shellType,
@@ -368,12 +2952,20 @@ async function listBookmarks(): Promise<unknown> {
 async function launchBookmark(bookmarkId: string): Promise<unknown> {
   const { data: historyData } = await getHistory();
   if (!historyData) {
-    return { success: false, error: 'Failed to fetch history' };
+    return {
+      success: false,
+      error: 'Failed to fetch history',
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   const bookmark = historyData.find((entry) => entry.id === bookmarkId && entry.isStarred);
   if (!bookmark) {
-    return { success: false, error: `Bookmark ${bookmarkId} not found` };
+    return {
+      success: false,
+      error: `Bookmark ${bookmarkId} not found`,
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   const refSession = $sessionList.get()[0];
@@ -389,11 +2981,19 @@ async function launchBookmark(bookmarkId: string): Promise<unknown> {
       workingDirectory: bookmark.workingDirectory || null,
     }));
   } catch (error) {
-    return { success: false, error: getSessionLaunchErrorMessage(error) };
+    return {
+      success: false,
+      error: getSessionLaunchErrorMessage(error),
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   if (!sessionData) {
-    return { success: false, error: 'Failed to create session' };
+    return {
+      success: false,
+      error: 'Failed to create session',
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   if (bookmark.commandLine) {
@@ -404,6 +3004,10 @@ async function launchBookmark(bookmarkId: string): Promise<unknown> {
   return {
     success: true,
     sessionId: sessionData.id,
+    targetContext: buildVoiceTargetContext({
+      sessionId: sessionData.id,
+      action: 'bookmarks:launch',
+    }),
     launched: {
       executable: bookmark.executable,
       commandLine: bookmark.commandLine,
@@ -422,13 +3026,62 @@ async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
 
   if (args.action === 'launch') {
     if (!args.bookmarkId) {
-      return { success: false, error: 'bookmarkId is required for launch action' };
+      return {
+        success: false,
+        error: 'bookmarkId is required for launch action',
+        targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+      };
     }
     return launchBookmark(args.bookmarkId);
   }
 
-  return { success: false, error: `Unknown action: ${args.action}. Use 'list' or 'launch'.` };
+  return {
+    success: false,
+    error: `Unknown action: ${args.action}. Use 'list' or 'launch'.`,
+    targetContext: buildVoiceTargetContext({ action: `bookmarks:${args.action}` }),
+  };
 }
+
+const voiceToolHandlers: Record<
+  VoiceToolName,
+  (args: Record<string, unknown>) => Promise<unknown>
+> = {
+  state_of_things: () => Promise.resolve(handleStateOfThings()),
+  session_overview: (args) => handleSessionOverview(args as unknown as SessionOverviewArgs),
+  conversation_continuity: (args) =>
+    handleConversationContinuity(args as unknown as ConversationContinuityArgs),
+  focus_context: (args) => Promise.resolve(handleFocusContext(args as unknown as FocusContextArgs)),
+  campaign_goal: (args) => Promise.resolve(handleCampaignGoal(args as unknown as CampaignGoalArgs)),
+  campaign_status: (args) => handleCampaignStatus(args as unknown as CampaignStatusArgs),
+  campaign_report: (args) => handleCampaignReport(args as unknown as CampaignReportArgs),
+  app_shell: (args) => Promise.resolve(handleAppShell(args as unknown as AppShellArgs)),
+  make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
+  read_scrollback: (args) =>
+    Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
+  interactive_read: (args) => handleInteractiveRead(args as unknown as InteractiveReadArgs),
+  create_session: (args) => handleCreateSession(args as unknown as CreateSessionArgs),
+  select_session: (args) =>
+    Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
+  send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
+  agent_turn: (args) => handleAgentTurn(args as unknown as AgentTurnArgs),
+  campaign_dispatch: (args) => handleCampaignDispatch(args as unknown as CampaignDispatchArgs),
+  session_activity: (args) => handleSessionActivity(args as unknown as SessionActivityArgs),
+  session_turn_summary: (args) =>
+    handleSessionTurnSummary(args as unknown as SessionTurnSummaryArgs),
+  wait_for_turn_completion: (args) =>
+    handleWaitForTurnCompletion(args as unknown as WaitForTurnCompletionArgs),
+  dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
+  dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
+  dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
+  dev_browser_screenshot: (args) =>
+    handleDevBrowserScreenshot(args as unknown as DevBrowserScreenshotArgs),
+  repo_monitor: (args) => handleRepoMonitor(args as unknown as RepoMonitorArgs),
+  layout_control: (args) =>
+    Promise.resolve(handleLayoutControl(args as unknown as LayoutControlArgs)),
+  close_session: (args) => handleCloseSession(args as unknown as CloseSessionArgs),
+  bookmarks: (args) => handleBookmarks(args as unknown as BookmarksArgs),
+  wait_for_user: () => Promise.resolve({ success: true, waiting: true }),
+};
 
 /**
  * Process a tool request from the voice server.
@@ -438,45 +3091,8 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
   log.info(() => `Processing tool request: ${request.tool} (${request.requestId})`);
 
   try {
-    let result: unknown;
-
-    switch (request.tool) {
-      case 'state_of_things':
-        result = handleStateOfThings();
-        break;
-
-      case 'make_input':
-        result = await handleMakeInput(request.args as unknown as MakeInputArgs);
-        break;
-
-      case 'read_scrollback':
-        result = handleReadScrollback(request.args as unknown as ReadScrollbackArgs);
-        break;
-
-      case 'interactive_read':
-        result = await handleInteractiveRead(request.args as unknown as InteractiveReadArgs);
-        break;
-
-      case 'create_session':
-        result = await handleCreateSession(request.args as unknown as CreateSessionArgs);
-        break;
-
-      case 'close_session':
-        result = await handleCloseSession(request.args as unknown as CloseSessionArgs);
-        break;
-
-      case 'bookmarks':
-        result = await handleBookmarks(request.args as unknown as BookmarksArgs);
-        break;
-
-      default:
-        return {
-          type: 'tool_response',
-          requestId: request.requestId,
-          result: null,
-          error: `Unknown tool: ${String(request.tool)}`,
-        };
-    }
+    const handler = voiceToolHandlers[request.tool];
+    const result = await handler(request.args);
 
     log.info(() => `Tool ${request.tool} completed successfully`);
     return {
@@ -495,3 +3111,5 @@ export async function processToolRequest(request: VoiceToolRequest): Promise<Voi
     };
   }
 }
+
+/* eslint-enable max-lines */

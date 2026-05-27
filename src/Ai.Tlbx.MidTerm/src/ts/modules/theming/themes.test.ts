@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { MidTermSettingsPublic } from '../../api/types';
 import {
+  boostTerminalTextColor,
   getEffectiveTerminalBackgroundAlpha,
   getEffectiveTerminalCellBackgroundAlpha,
   getEffectiveXtermThemeForSettings,
@@ -19,6 +20,7 @@ function createSettings(
       | 'uiTransparency'
       | 'terminalTransparency'
       | 'terminalCellBackgroundTransparency'
+      | 'terminalThemeLightnessBoost'
       | 'backgroundImageEnabled'
       | 'hideBackgroundImageOnMobile'
       | 'backgroundImageFileName'
@@ -32,6 +34,7 @@ function createSettings(
     uiTransparency: 0,
     terminalTransparency: 0,
     terminalCellBackgroundTransparency: 0,
+    terminalThemeLightnessBoost: 0,
     backgroundImageEnabled: false,
     hideBackgroundImageOnMobile: true,
     backgroundImageFileName: null,
@@ -170,6 +173,48 @@ describe('themes', () => {
     expect(theme.foreground).toBe('#CCCCCC');
     expect(theme.blue).toBe('#0037DA');
     expect(theme.brightCyan).toBe('#61D6D6');
+  });
+
+  it('boosts terminal text brightness without brightening terminal background surfaces', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalThemeLightnessBoost: 20,
+      }),
+    );
+
+    expect(theme.background).toBe('#0C0C0C');
+    expect(theme.cursor).toBe('#F2F2F2');
+    expect(theme.cursorAccent).toBe('#0C0C0C');
+    expect(theme.selectionBackground).toBe('#2D3044');
+    expect(theme.scrollbarSliderBackground).toBe('rgba(58, 62, 82, 0.5)');
+    expect(theme.foreground).toBe('#f5f5f5');
+    expect(theme.black).toBe('#0C0C0C');
+    expect(theme.brightBlack).toBe('#767676');
+    expect(theme.red).toBe('#FF4055');
+  });
+
+  it('lets terminal text brightness boost visibly brighten ANSI foreground colors', () => {
+    const theme = getEffectiveXtermThemeForSettings(
+      createSettings({
+        terminalThemeLightnessBoost: 50,
+      }),
+    );
+
+    expect(theme.background).toBe('#0C0C0C');
+    expect(theme.black).toBe('#0C0C0C');
+    expect(theme.brightBlack).toBe('#767676');
+    expect(theme.foreground).toBe('#f9f9f9');
+
+    expect(boostTerminalTextColor('#f0f0f0', 50)).toBe('#f8f8f8');
+    expect(boostTerminalTextColor('#2B65FF', 50)).toBe('#95b2ff');
+    expect(boostTerminalTextColor('#767676', 50)).toBe('#bbbbbb');
+  });
+
+  it('maps maximum terminal text brightness boost to white', () => {
+    expect(boostTerminalTextColor('#f0f0f0', 100)).toBe('#ffffff');
+    expect(boostTerminalTextColor('#2B65FF', 100)).toBe('#ffffff');
+    expect(boostTerminalTextColor('#767676', 100)).toBe('#ffffff');
+    expect(boostTerminalTextColor('#000000', 100)).toBe('#ffffff');
   });
 
   it('resolves the mac terminal light palette', () => {

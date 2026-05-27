@@ -25,6 +25,8 @@ declare global {
 
   interface Window {
     __MIDTERM_XTERM_WEBGL_CELL_BG_ALPHA__?: number;
+    __MIDTERM_XTERM_WEBGL_FG_ANSI__?: number[];
+    __MIDTERM_XTERM_FG_BOOST__?: number;
     __MIDTERM_XTERM_BOX_DRAWING_STROKE_SCALE__?: number;
     __MIDTERM_XTERM_BOX_DRAWING_STYLE__?: string;
     mmDebug?: {

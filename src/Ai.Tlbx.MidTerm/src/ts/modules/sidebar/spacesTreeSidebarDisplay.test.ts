@@ -1,9 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Session } from '../../types';
+import { dom } from '../../state';
+import {
+  syncSidebarActiveSessionState,
+  syncSidebarSessionDisplayText,
+} from './spacesTreeSidebarDisplay';
 
-let domRef: typeof import('../../state').dom | null = null;
-let syncDisplayText: typeof import('./spacesTreeSidebarDisplay').syncSidebarSessionDisplayText;
-let syncActiveState: typeof import('./spacesTreeSidebarDisplay').syncSidebarActiveSessionState;
+vi.mock('./sessionList', () => ({
+  getSessionDisplayInfo: (session: Session) => ({
+    primary: session.name ?? session.terminalTitle ?? session.shellType ?? 'Terminal',
+    secondary: session.name ? (session.terminalTitle ?? session.shellType ?? null) : null,
+  }),
+}));
 
 function makeSession(overrides: Partial<Session>): Session {
   return {
@@ -16,34 +24,9 @@ function makeSession(overrides: Partial<Session>): Session {
   } as Session;
 }
 
-beforeEach(async () => {
-  vi.resetModules();
-  vi.stubGlobal('localStorage', {
-    getItem: () => null,
-    setItem: () => {},
-    removeItem: () => {},
-    clear: () => {},
-  });
-  vi.doMock('./sessionList', () => ({
-    getSessionDisplayInfo: (session: Session) => ({
-      primary: session.name ?? session.terminalTitle ?? session.shellType ?? 'Terminal',
-      secondary: session.name ? (session.terminalTitle ?? session.shellType ?? null) : null,
-    }),
-  }));
-
-  domRef = (await import('../../state')).dom;
-  const displayModule = await import('./spacesTreeSidebarDisplay');
-  syncDisplayText = displayModule.syncSidebarSessionDisplayText;
-  syncActiveState = displayModule.syncSidebarActiveSessionState;
-});
-
 afterEach(() => {
-  if (domRef) {
-    domRef.sessionList = null;
-  }
+  dom.sessionList = null;
   vi.unstubAllGlobals();
-  vi.doUnmock('./sessionList');
-  domRef = null;
 });
 
 describe('spaces tree sidebar display sync', () => {
@@ -63,9 +46,9 @@ describe('spaces tree sidebar display sync', () => {
       querySelectorAll: (selector: string) =>
         selector === '.session-item[data-session-id]' ? [item] : [],
     };
-    domRef!.sessionList = host as unknown as HTMLElement;
+    dom.sessionList = host as unknown as HTMLElement;
 
-    expect(syncDisplayText(makeSession({ terminalTitle: 'Codex ⠋' }))).toBe(true);
+    expect(syncSidebarSessionDisplayText(makeSession({ terminalTitle: 'Codex ⠋' }))).toBe(true);
     expect(title.textContent).toBe('Codex ⠋');
   });
 
@@ -86,9 +69,11 @@ describe('spaces tree sidebar display sync', () => {
       querySelectorAll: (selector: string) =>
         selector === '.session-item[data-session-id]' ? [item] : [],
     };
-    domRef!.sessionList = host as unknown as HTMLElement;
+    dom.sessionList = host as unknown as HTMLElement;
 
-    expect(syncDisplayText(makeSession({ name: 'worker', terminalTitle: 'Codex ⠙' }))).toBe(true);
+    expect(
+      syncSidebarSessionDisplayText(makeSession({ name: 'worker', terminalTitle: 'Codex ⠙' })),
+    ).toBe(true);
     expect(title.textContent).toBe('worker');
     expect(subtitle.textContent).toBe('Codex ⠙');
   });
@@ -122,9 +107,9 @@ describe('spaces tree sidebar display sync', () => {
       querySelectorAll: (selector: string) =>
         selector === '.session-item[data-session-id]' ? [first, second] : [],
     };
-    domRef!.sessionList = host as unknown as HTMLElement;
+    dom.sessionList = host as unknown as HTMLElement;
 
-    expect(syncActiveState('s2')).toBe(true);
+    expect(syncSidebarActiveSessionState('s2')).toBe(true);
     expect(first.hasClass('active')).toBe(false);
     expect(first.getAttributeValue('aria-current')).toBe('false');
     expect(second.hasClass('active')).toBe(true);

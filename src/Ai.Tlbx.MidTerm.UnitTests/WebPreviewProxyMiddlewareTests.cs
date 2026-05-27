@@ -227,9 +227,11 @@ public class WebPreviewProxyMiddlewareTests
     [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
     [InlineData("?__mtTargetRevision=1", "")]
     [InlineData("?__mtReloadToken=force-1", "")]
+    [InlineData("?__mtMobile=1", "")]
     [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtTargetRevision=2&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtReloadToken=force-1&bar=2", "?foo=1&bar=2")]
+    [InlineData("?foo=1&__mtMobile=1&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
     [InlineData("", "")]
     public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
@@ -237,6 +239,20 @@ public class WebPreviewProxyMiddlewareTests
         var sanitized = WebPreviewProxyMiddleware.StripPreviewBootstrapQuery(query);
 
         Assert.Equal(expected, sanitized);
+    }
+
+    [Fact]
+    public void IsMobileEmulationRequest_ReadsBootstrapFlagFromRequestOrReferer()
+    {
+        var request = new DefaultHttpContext().Request;
+        request.QueryString = new QueryString("?__mtMobile=1");
+
+        Assert.True(WebPreviewProxyMiddleware.IsMobileEmulationRequest(request));
+
+        var subresourceRequest = new DefaultHttpContext().Request;
+        subresourceRequest.Headers.Referer = "https://midterm.local/webpreview/route/app?__mtMobile=1";
+
+        Assert.True(WebPreviewProxyMiddleware.IsMobileEmulationRequest(subresourceRequest));
     }
 
     [Fact]
@@ -305,7 +321,7 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void BuildInjectedBaseHref_BlazorServerDocument_PreservesUpstreamBaseHref()
+    public void BuildInjectedBaseHref_BlazorServerDocument_UsesProxyBaseHref()
     {
         const string html = """
             <html><head><base href="/"></head><body>
@@ -320,7 +336,7 @@ public class WebPreviewProxyMiddlewareTests
             "/",
             html);
 
-        Assert.Equal("/", baseHref);
+        Assert.Equal("/webpreview/route-1/", baseHref);
     }
 
     [Fact]

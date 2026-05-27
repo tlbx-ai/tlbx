@@ -119,6 +119,7 @@
   "settings.appearance.cursorUnfocused": "光标（未聚焦）",
   "settings.appearance.theme": "主题",
   "settings.appearance.terminalColorScheme": "终端配色",
+  "settings.appearance.terminalThemeLightnessBoost": "亮度增强",
   "settings.appearance.backgroundTitle": "背景与透明度",
   "settings.appearance.backgroundImage": "背景图片",
   "settings.appearance.backgroundUpload": "上传图片",

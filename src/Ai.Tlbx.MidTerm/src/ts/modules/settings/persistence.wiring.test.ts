@@ -31,6 +31,7 @@ const NON_PERSISTED_SETTING_IDS = new Set([
   'setting-ui-transparency-value',
   'setting-terminal-transparency-value',
   'setting-terminal-cell-background-transparency-value',
+  'setting-terminal-theme-lightness-boost-value',
 ]);
 
 function getPersistedSettingIds(): string[] {
@@ -127,16 +128,21 @@ describe('settings persistence wiring', () => {
 
     expect(sessionsPanel).toContain('id="setting-tmux-compatibility"');
     expect(connectedHostsPanel).not.toContain('id="setting-tmux-compatibility"');
-    expect(aiAgentsPanel).toContain('id="voice-section"');
-    expect(aiAgentsPanel).toContain('id="voice-select"');
-    expect(aiAgentsPanel).toContain('id="mic-select"');
-    expect(securityPanel).toContain('id="network-section"');
-    expect(securityPanel).toContain('id="trust-link"');
-    expect(securityPanel).toContain('id="btn-share-access"');
+    expect(aiAgentsPanel).toContain('settings.aiAgents.conversationView');
+    expect(aiAgentsPanel).not.toContain('id="voice-section"');
+    expect(aiAgentsPanel).not.toContain('id="voice-select"');
+    expect(aiAgentsPanel).not.toContain('id="mic-select"');
+    expect(securityPanel).not.toContain('id="network-section"');
+    expect(securityPanel).not.toContain('id="trust-link"');
+    expect(securityPanel).not.toContain('id="btn-share-access"');
     expect(workflowPanel).toContain('Command Bay &amp; Automation');
     expect(workflowPanel).toContain('id="setting-command-bay-ligatures-enabled"');
-    expect(sidebarMarkup).not.toContain('id="voice-section"');
-    expect(sidebarMarkup).not.toContain('id="network-section"');
+    expect(sidebarMarkup).toContain('id="voice-section"');
+    expect(sidebarMarkup).toContain('id="voice-select"');
+    expect(sidebarMarkup).toContain('id="mic-select"');
+    expect(sidebarMarkup).toContain('id="network-section"');
+    expect(sidebarMarkup).toContain('id="trust-link"');
+    expect(sidebarMarkup).toContain('id="btn-share-access"');
   });
 
   it('marks non-form writers explicitly in the registry', () => {
@@ -391,7 +397,9 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('--sidebar-readable-muted-text-color:');
     expect(cssSource).toContain('--sidebar-readable-shadow-wide:');
     expect(cssSource).toContain('--sidebar-readable-ellipsis-pad-x:');
-    expect(cssSource).toContain('body.has-app-background:not(.opaque-terminal-surfaces)');
+    expect(cssSource).toContain('.sidebar .session-item');
+    expect(cssSource).not.toContain('body.has-app-background .sidebar .session-item');
+    expect(cssSource).not.toContain('body.has-app-background:not(.opaque-terminal-surfaces)');
     expect(cssSource).toContain('.sidebar-nav-btn > .icon');
     expect(cssSource).toContain('.session-group-toggle {');
     expect(cssSource).toContain('.session-group-label {');
@@ -456,6 +464,21 @@ describe('settings persistence wiring', () => {
       SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalCellBackgroundTransparency')
         ?.validation,
     ).toBe('integer, clamped to 0-100');
+  });
+
+  it('refreshes terminal renderers during terminal brightness preview', () => {
+    expect(html).toMatch(/id="setting-terminal-theme-lightness-boost"[\s\S]*?max="100"/);
+    expect(persistenceSource).toContain('Math.min(100');
+    expect(
+      SETTINGS_REGISTRY.find((entry) => entry.key === 'terminalThemeLightnessBoost')?.validation,
+    ).toBe('integer, clamped to 0-100');
+    expect(persistenceSource).toContain('function previewTerminalThemeSettings');
+    expect(persistenceSource).toMatch(
+      /terminalThemeLightnessBoost: value[\s\S]*previewTerminalThemeSettings\(next\)/,
+    );
+    expect(persistenceSource).toMatch(
+      /function previewTerminalThemeSettings[\s\S]*refreshTerminalPresentation\(sessionId, state\)/,
+    );
   });
 
   it('wires Ken Burns controls with the requested zoom and speed ranges', () => {

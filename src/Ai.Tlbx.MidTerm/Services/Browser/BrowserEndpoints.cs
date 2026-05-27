@@ -208,7 +208,7 @@ public static class BrowserEndpoints
             if (args.Count == 0)
             {
                 BrowserLog.Error($"Empty request ({body.Length} bytes)");
-                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  scroll [selector] [deltaY|top|bottom|left|right] [deltaX]\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  claim               Explicitly claim preview ownership for this browser UI\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
+                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  scroll [selector] [deltaY|top|bottom|left|right] [deltaX]\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  claim               Explicitly claim preview ownership for this browser UI\n  claim-main          Make the selected browser preview the leading browser\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
             }
 
             var command = args[0].ToLowerInvariant();
@@ -247,6 +247,27 @@ public static class BrowserEndpoints
                 return uiBridge.RequestClaim(sessionId, previewName, out var error)
                     ? Results.Text($"claimed preview '{previewName ?? WebPreviewService.DefaultPreviewName}' in session '{sessionId}'\n")
                     : Results.Text(error + "\n", statusCode: 409);
+            }
+
+            if (command == "claim-main")
+            {
+                if (uiBridge is not null)
+                {
+                    return uiBridge.RequestClaimMain(GetFlagValue(args, "--browser"), out var claimedBrowserId, out var error)
+                        ? Results.Text($"claimed leading browser {claimedBrowserId}\n")
+                        : Results.Text(error + "\n", statusCode: 409);
+                }
+
+                var claimResult = commandService.ClaimMainBrowser(new BrowserCommandRequest
+                {
+                    SessionId = GetFlagValue(args, "--session"),
+                    PreviewName = GetFlagValue(args, "--preview"),
+                    PreviewId = GetFlagValue(args, "--preview-id"),
+                    Value = GetFlagValue(args, "--browser")
+                });
+                return claimResult.Success
+                    ? Results.Text((claimResult.Result ?? "claimed leading browser") + "\n")
+                    : Results.Text(claimResult.Error ?? "failed to claim leading browser\n", statusCode: 409);
             }
 
             if (command == "capabilities")
@@ -372,6 +393,16 @@ public static class BrowserEndpoints
                 out var error)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
+        });
+
+        app.MapPost("/api/browser/main", (BrowserCommandRequest request) =>
+        {
+            var result = uiBridge is not null
+                ? uiBridge.RequestClaimMain(request.Value, out var claimedBrowserId, out var error)
+                    ? new BrowserWsResult { Success = true, Result = $"claimed leading browser {claimedBrowserId}" }
+                    : new BrowserWsResult { Success = false, Error = error }
+                : commandService.ClaimMainBrowser(request);
+            return ToJsonResult(result);
         });
 
         app.MapPost("/api/browser/command", async (BrowserCommandRequest request, HttpContext ctx) =>
@@ -551,12 +582,14 @@ public static class BrowserEndpoints
             [
                 "mt_status",
                 "mt_inspect",
+                "mt_claim_main_browser",
                 "mt_outline [depth]",
                 "mt_text [selector]",
                 "mt_scroll [selector] [deltaY|top|bottom]",
                 "mt_query <selector> --text",
                 "mt_exec <js>",
                 "mt_topic <text>",
+                "mt_wake [id] <delay> <prompt>",
                 "mt_repo list|add|remove|refresh"
             ],
             DiagnosticCommands =
@@ -571,6 +604,7 @@ public static class BrowserEndpoints
             RecoveryCommands =
             [
                 "mt_claim_preview",
+                "mt_claim_main_browser",
                 "mt_open --claim <url>",
                 "mt_reload",
                 "mt_preview_reset [url]",
@@ -581,6 +615,7 @@ public static class BrowserEndpoints
                 "Browser commands require a configured preview target, an attached MidTerm UI on /ws/state, and an injected /ws/browser bridge from the preview frame.",
                 "mt_inspect is the lowest-token first diagnostic command; mt_proxylog_summary is the lowest-token proxy diagnostic command.",
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
+                "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so MidTerm shows it in the IDE bar and sidebar.",
                 "Screenshots use in-page html2canvas and can differ from native browser screenshots for canvas, video, and cross-origin frame content."
             ]

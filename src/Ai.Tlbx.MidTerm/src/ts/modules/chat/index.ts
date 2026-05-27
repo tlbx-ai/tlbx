@@ -383,33 +383,136 @@ function formatTime(timestamp: string): string {
 /**
  * Format a tool request for display
  */
+function formatSendPromptToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string) || '';
+  const text = (args.text as string) || '';
+  return `Send prompt to ${sessionId}:\n${text}`;
+}
+
+function formatAgentTurnToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string) || 'focused session';
+  const text = (args.text as string) || '';
+  const timeoutMs = Number(args.timeoutMs) || 45000;
+  return `Run agent turn on ${sessionId}\nTimeout: ${Math.round(timeoutMs / 1000)}s\n${text}`;
+}
+
+function formatDevBrowserToolDisplay(args: Record<string, unknown>): string {
+  const command = (args.command as string) || '';
+  const selector = (args.selector as string) || '';
+  const value = (args.value as string) || '';
+  const target = [args.sessionId as string | undefined, args.previewName as string | undefined]
+    .filter(Boolean)
+    .join('/');
+  const lines = [`Run Dev Browser command${target ? ` on ${target}` : ''}: ${command}`];
+  if (selector) lines.push(`Selector: ${selector}`);
+  if (value) lines.push(`Value: ${value}`);
+  return lines.join('\n');
+}
+
+function formatDevBrowserScreenshotToolDisplay(args: Record<string, unknown>): string {
+  const target = [args.sessionId as string | undefined, args.previewName as string | undefined]
+    .filter(Boolean)
+    .join('/');
+  return `Capture Dev Browser screenshot${target ? ` on ${target}` : ''}`;
+}
+
+function formatRepoMonitorToolDisplay(args: Record<string, unknown>): string {
+  const action = (args.action as string) || 'list';
+  const sessionId = (args.sessionId as string) || 'active session';
+  const path = (args.path as string) || '';
+  const repoRoot = (args.repoRoot as string) || '';
+  const lines = [`Repo monitor ${action} on ${sessionId}`];
+  if (path) lines.push(`Path: ${path}`);
+  if (repoRoot) lines.push(`Repo root: ${repoRoot}`);
+  return lines.join('\n');
+}
+
+function formatLayoutControlToolDisplay(args: Record<string, unknown>): string {
+  const action = (args.action as string) || 'status';
+  const sessionId = (args.sessionId as string) || '';
+  const targetSessionId = (args.targetSessionId as string) || '';
+  const otherSessionId = (args.otherSessionId as string) || '';
+  const position = (args.position as string) || '';
+  const lines = [`Layout control: ${action}`];
+  if (sessionId) lines.push(`Session: ${sessionId}`);
+  if (targetSessionId) lines.push(`Target: ${targetSessionId}`);
+  if (otherSessionId) lines.push(`Other: ${otherSessionId}`);
+  if (position) lines.push(`Position: ${position}`);
+  return lines.join('\n');
+}
+
+function formatMakeInputToolDisplay(args: Record<string, unknown>): string {
+  const text = (args.text as string) || '';
+  const formatted = formatInputText(text);
+  return `Send to terminal:\n${formatted}`;
+}
+
+function formatSessionOverviewToolDisplay(args: Record<string, unknown>): string {
+  const includeBrowserStatus = args.includeBrowserStatus !== false;
+  const includeRepoStatus = args.includeRepoStatus !== false;
+  const lines = ['Inspect sessions'];
+  lines.push(`Browser: ${includeBrowserStatus ? 'yes' : 'no'}`);
+  lines.push(`Repos: ${includeRepoStatus ? 'yes' : 'no'}`);
+  return lines.join('\n');
+}
+
+function formatConversationContinuityToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string | undefined)?.trim();
+  const scope = (args.scope as string | undefined) || (sessionId ? 'active' : 'active');
+  const includeTail = args.includeTail === true;
+  const lines = ['Summarize continuity'];
+  lines.push(`Scope: ${sessionId || scope}`);
+  lines.push(`Tail: ${includeTail ? 'yes' : 'no'}`);
+  return lines.join('\n');
+}
+
+function formatCampaignStatusToolDisplay(args: Record<string, unknown>): string {
+  const scope = (args.scope as string | undefined) || 'all';
+  const waitForBusy = args.waitForBusy === true;
+  const lines = ['Campaign status'];
+  lines.push(`Scope: ${scope}`);
+  lines.push(`Wait: ${waitForBusy ? 'yes' : 'no'}`);
+  return lines.join('\n');
+}
+
+function formatWaitForTurnCompletionToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string | undefined)?.trim() || 'session';
+  const timeoutMs = Number(args.timeoutMs) || 45000;
+  return `Wait for turn completion\nSession: ${sessionId}\nTimeout: ${Math.round(timeoutMs / 1000)}s`;
+}
+
+function formatInteractiveReadToolDisplay(args: Record<string, unknown>): string {
+  const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
+  const lines = ops.map((op, i) => {
+    if (op.type === 'input') {
+      return `${i + 1}. Input: ${formatInputText(op.data || '')}`;
+    } else if (op.type === 'delay') {
+      return `${i + 1}. Wait ${op.delayMs || 100}ms`;
+    }
+    return `${i + 1}. Screenshot`;
+  });
+  return `Interactive sequence:\n${lines.join('\n')}`;
+}
+
+const toolDisplayFormatters: Partial<
+  Record<VoiceToolName, (args: Record<string, unknown>) => string>
+> = {
+  send_prompt: formatSendPromptToolDisplay,
+  agent_turn: formatAgentTurnToolDisplay,
+  session_overview: formatSessionOverviewToolDisplay,
+  conversation_continuity: formatConversationContinuityToolDisplay,
+  campaign_status: formatCampaignStatusToolDisplay,
+  wait_for_turn_completion: formatWaitForTurnCompletionToolDisplay,
+  dev_browser_command: formatDevBrowserToolDisplay,
+  dev_browser_screenshot: formatDevBrowserScreenshotToolDisplay,
+  repo_monitor: formatRepoMonitorToolDisplay,
+  layout_control: formatLayoutControlToolDisplay,
+  make_input: formatMakeInputToolDisplay,
+  interactive_read: formatInteractiveReadToolDisplay,
+};
+
 function formatToolDisplay(tool: VoiceToolName, args: Record<string, unknown>): string {
-  switch (tool) {
-    case 'state_of_things':
-    case 'read_scrollback':
-    case 'create_session':
-    case 'close_session':
-    case 'bookmarks':
-      return `Tool: ${tool}`;
-    case 'make_input': {
-      const text = (args.text as string) || '';
-      const formatted = formatInputText(text);
-      return `Send to terminal:\n${formatted}`;
-    }
-    case 'interactive_read': {
-      const ops = (args.operations as InteractiveOp[] | undefined) ?? [];
-      const lines = ops.map((op, i) => {
-        if (op.type === 'input') {
-          return `${i + 1}. Input: ${formatInputText(op.data || '')}`;
-        } else if (op.type === 'delay') {
-          return `${i + 1}. Wait ${op.delayMs || 100}ms`;
-        } else {
-          return `${i + 1}. Screenshot`;
-        }
-      });
-      return `Interactive sequence:\n${lines.join('\n')}`;
-    }
-  }
+  return toolDisplayFormatters[tool]?.(args) ?? `Tool: ${tool}`;
 }
 
 /**

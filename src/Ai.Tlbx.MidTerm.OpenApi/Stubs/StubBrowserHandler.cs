@@ -30,6 +30,9 @@ public sealed class StubBrowserHandler : IBrowserHandler
     public IResult Open(WebPreviewTargetRequest request) =>
         Results.Ok();
 
+    public IResult ClaimMain(BrowserCommandRequest request) =>
+        Results.Json(new BrowserCommandResponse { Success = true });
+
     public Task<IResult> ExecuteCommandAsync(BrowserCommandRequest request, HttpContext ctx) =>
         Task.FromResult<IResult>(Results.Json(new BrowserCommandResponse { Success = true }));
 }

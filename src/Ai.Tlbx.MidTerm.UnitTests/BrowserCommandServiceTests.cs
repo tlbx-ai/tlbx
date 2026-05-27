@@ -521,6 +521,65 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
+    public void ClaimMainBrowser_WithScopedPreview_ClaimsResolvedBrowser()
+    {
+        var mainBrowser = new MainBrowserService();
+        var service = new BrowserCommandService(mainBrowser);
+
+        Assert.True(service.TryRegisterClient(
+            "c1",
+            "session-a",
+            "default",
+            "preview-a",
+            _ => { },
+            browserId: "browser-a:tab-1",
+            isVisible: true));
+
+        var result = service.ClaimMainBrowser(new BrowserCommandRequest
+        {
+            SessionId = "session-a",
+            PreviewName = "default"
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal("browser-a:tab-1", mainBrowser.GetMainBrowserId());
+    }
+
+    [Fact]
+    public void ClaimMainBrowser_WithBrowserId_ClaimsMatchingBrowserInsideScope()
+    {
+        var mainBrowser = new MainBrowserService();
+        var service = new BrowserCommandService(mainBrowser);
+
+        Assert.True(service.TryRegisterClient(
+            "c1",
+            "session-a",
+            "default",
+            "preview-a",
+            _ => { },
+            browserId: "browser-a:tab-1",
+            isVisible: true));
+        Assert.True(service.TryRegisterClient(
+            "c2",
+            "session-a",
+            "default",
+            "preview-b",
+            _ => { },
+            browserId: "browser-b:tab-2",
+            isVisible: true));
+
+        var result = service.ClaimMainBrowser(new BrowserCommandRequest
+        {
+            SessionId = "session-a",
+            PreviewName = "default",
+            Value = "browser-b"
+        });
+
+        Assert.True(result.Success);
+        Assert.Equal("browser-b:tab-2", mainBrowser.GetMainBrowserId());
+    }
+
+    [Fact]
     public async Task ExecuteCommandAsync_WithCookieOwnerAndTabScopedPreviewClient_RoutesByStableClientPart()
     {
         var ownerService = new BrowserPreviewOwnerService();

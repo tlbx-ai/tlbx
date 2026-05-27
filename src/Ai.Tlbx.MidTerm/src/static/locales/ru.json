@@ -116,6 +116,7 @@
   "settings.appearance.cursorUnfocused": "Курсор (вне фокуса)",
   "settings.appearance.theme": "Тема",
   "settings.appearance.terminalColorScheme": "Цвета терминала",
+  "settings.appearance.terminalThemeLightnessBoost": "Усиление яркости",
   "settings.appearance.backgroundTitle": "Фон и прозрачность",
   "settings.appearance.backgroundImage": "Фоновое изображение",
   "settings.appearance.backgroundUpload": "Загрузить изображение",

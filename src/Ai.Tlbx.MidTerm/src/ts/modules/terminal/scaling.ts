@@ -59,8 +59,19 @@ import {
 
 const SCALE_TOLERANCE = 0.97;
 const MAX_TRANSIENT_FIT_RETRIES = 2;
+const MOBILE_DENSE_MIN_COLS = 100;
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
 export { isTerminalViewingScrollback } from './scrollback';
+
+function isMobileDenseTerminalModeEnabled(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    isMobileTerminalViewport() &&
+    (document.body.classList.contains('mobile-dense-terminal-mode') ||
+      ($currentSettings.get() as { mobileDenseTerminalMode?: boolean } | null)
+        ?.mobileDenseTerminalMode === true)
+  );
+}
 
 export function refreshTerminalPresentation(
   _sessionId: string,
@@ -166,7 +177,8 @@ function calculateOptimalDimensionsForViewport(
 
   let cols = Math.floor(availWidth / cellDims.cellWidth);
   let rows = Math.floor(availHeight / cellDims.cellHeight);
-  cols = Math.max(MIN_TERMINAL_COLS, Math.min(cols, MAX_TERMINAL_COLS));
+  const minCols = isMobileDenseTerminalModeEnabled() ? MOBILE_DENSE_MIN_COLS : MIN_TERMINAL_COLS;
+  cols = Math.max(minCols, Math.min(cols, MAX_TERMINAL_COLS));
   rows = Math.max(MIN_TERMINAL_ROWS, Math.min(rows, MAX_TERMINAL_ROWS));
   return { cols, rows };
 }
@@ -792,10 +804,13 @@ function fitTerminalToContainerInternal(
     // Resize may fail if terminal is disposed
   }
 
-  // Clear any scaling since we just resized to fit
-  clearTerminalScaling(state);
-  const overlay = state.container.querySelector<HTMLElement>('.scaled-overlay');
-  if (overlay) overlay.remove();
+  if (isMobileDenseTerminalModeEnabled()) {
+    applyTerminalScalingSync(state);
+  } else {
+    // Clear any scaling since we just resized to fit
+    clearTerminalScaling(state);
+    state.container.querySelector<HTMLElement>('.scaled-overlay')?.remove();
+  }
   syncMobileVerticalStableTerminals();
 }
 
@@ -980,7 +995,8 @@ function applyScaledDownTerminalState(args: {
   resetScaleState: () => void;
 }): void {
   const { container, xterm, state, scale, isMainBrowser, showOverlay, resetScaleState } = args;
-  if (isMainBrowser) {
+  const scaleMainBrowser = isMainBrowser && isMobileDenseTerminalModeEnabled();
+  if (isMainBrowser && !scaleMainBrowser) {
     resetScaleState();
     removeScalingOverlay(container);
     return;
@@ -990,7 +1006,11 @@ function applyScaledDownTerminalState(args: {
   xterm.style.transformOrigin = 'top left';
   container.classList.add('scaled');
   updateTerminalGapFillers(container, xterm, scale);
-  showOverlay(buildScaledOverlayLabel(container, state, scale));
+  if (!scaleMainBrowser) {
+    showOverlay(buildScaledOverlayLabel(container, state, scale));
+  } else {
+    removeScalingOverlay(container);
+  }
 }
 
 function applyUndersizedTerminalState(args: {

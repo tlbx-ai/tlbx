@@ -1,6 +1,6 @@
 # MidTerm Feature Inventory
 
-This is the canonical feature sweep for the current codebase. The coverage order follows the requested path: settings and their rabbit holes, the sidebar and its buttons and drag behavior, the session bar and IDE-adjacent panels, the manager bar, the smart input bar, the protocols, and the installer/update system.
+This is the canonical feature sweep baseline for the current codebase, with a current delta addendum last reconciled against Git history on 2026-05-25 at `v9.15.22-dev` / `476d75a4`. The coverage order follows the requested path: settings and their rabbit holes, the sidebar and its buttons and drag behavior, the session bar and IDE-adjacent panels, the Command Bay / Automation Bar, the smart input bar, the protocols, and the installer/update system.
 
 ## Cluster Map
 
@@ -11,7 +11,7 @@ This is the canonical feature sweep for the current codebase. The coverage order
 | 3. Sidebar, Sessions, History | `F085-F149` | 65 | Session list, update/voice/network sidebars, history, drag/drop |
 | 4. Terminal Runtime and Layout | `F150-F202` | 53 | Terminal lifecycle, resize model, search, clipboard, file radar |
 | 5. Session Bar, Files, Git, Commands | `F203-F254` | 52 | IDE-adjacent workflow surfaces around each terminal |
-| 6. Manager Bar | `F255-F262` | 8 | Quick-action command bar |
+| 6. Command Bay / Automation Bar | `F255-F262` | 8 | Quick-action command bar baseline, now superseded by the shared Command Bay surface |
 | 7. Smart Input, Voice, Touch, Mobile | `F263-F323` | 61 | Alternative input, voice/chat, mobile affordances, PWA |
 | 8. Web Preview and Browser Automation | `F324-F384` | 61 | Reverse-proxied previews, detach/dock, browser control |
 | 9. Sharing, Security, Protocols, Diagnostics, Ops | `F385-F432` | 48 | Auth, certs, share links, WebSockets, diagnostics, operations |
@@ -290,16 +290,16 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F253` Running scripts stream into hidden-session output overlays.
 - `F254` Commands state maps visible scripts to their hidden execution sessions.
 
-### 6. Manager Bar
+### 6. Command Bay / Automation Bar Baseline
 
-- `F255` The manager bar can be enabled or hidden by setting.
-- `F256` The manager bar renders configurable quick-action buttons.
-- `F257` Clicking a manager button sends text to the active terminal.
-- `F258` Manager button execution automatically sends Enter after the text.
-- `F259` Manager buttons can be added inline from the UI.
-- `F260` Manager buttons can be renamed inline from the UI.
-- `F261` Manager buttons can be deleted from the UI.
-- `F262` Manager buttons are mirrored into the mobile actions menu.
+- `F255` The Automation Bar can be enabled or hidden by setting.
+- `F256` The Automation Bar renders configurable quick-action buttons.
+- `F257` Clicking an Automation Bar button sends text to the active terminal.
+- `F258` Automation Bar execution can automatically send Enter after the text.
+- `F259` Automation Bar buttons can be added inline from the UI.
+- `F260` Automation Bar buttons can be renamed inline from the UI.
+- `F261` Automation Bar buttons can be deleted from the UI.
+- `F262` Automation Bar buttons are mirrored into the mobile actions menu.
 
 ### 7. Smart Input, Voice, Touch, Mobile
 
@@ -484,6 +484,29 @@ This is the canonical feature sweep for the current codebase. The coverage order
 - `F432` Power APIs can restart or shut down the server process.
 
 ## Documentation Plan
+
+## Current Delta Since Baseline
+
+The feature inventory above remains the numbered baseline. The following current deltas should be folded into the next full renumbered sweep:
+
+- `D001` Agent Controller Session is now a concrete product surface for explicit provider-backed agent work, not just an experimental tab label.
+- `D002` Agent Controller Session uses a dedicated `/ws/app-server-control` synchronization path for attach, history windows, turn submission, interrupts, approvals, and user-input answers.
+- `D003` MidTerm owns canonical reduced Agent Controller history and transports bounded windows instead of asking browsers to retain full provider event streams.
+- `D004` Codex app-server protocol work and Codex model-selection fixes make Codex Agent Controller operation part of the current product truth.
+- `D005` Grok Build launcher/controller support and Grok ACP protocol updates exist in the current dev line.
+- `D006` The Command Bay queue can schedule delayed prompts with `delayMs` / `runAt` and expose queue visibility/cancellation.
+- `D007` Generated helpers include `mt_wake` and `mt_wake_cancel` for CLI-driven scheduled prompts.
+- `D008` Terminal reconnect hardening keeps background sessions warm and uses viewport-sized replay hints on reconnect/buffer refresh.
+- `D009` Hidden/background terminal output deferral prevents non-visible flood output from being written into xterm until the session becomes streamable.
+- `D010` Windows tmux compatibility includes a `tmux.exe` shim and probe responses for clients that require tmux-like capability checks.
+- `D011` Terminal text brightness boost blends foreground/ANSI colors toward white without boosting backgrounds, selection, cursor, or scrollbar backgrounds.
+- `D012` Dev Browser proxying injects a MidTerm-scoped base href for Blazor Server apps so proxied app routes render correctly.
+- `D013` Dev Browser chrome is now tab/URL-bar centered, with screenshot on the active tab URL bar and utilities in overflow.
+- `D014` Dev Browser mobile emulation can constrain the preview iframe, send mobile User-Agent/client hints, strip internal flags, and show an active toggle state.
+- `D015` Dev Browser soft-keyboard simulation reserves page layout space instead of overlaying the app under test.
+- `D016` Mobile sidebar drawer readability and touch action placement have been hardened for transparent UI settings.
+- `D017` Multi-repo Git monitoring can show session-scoped extra repos in addition to the cwd repo.
+- `D018` Keyed sidebar DOM reconciliation preserves node identity during hot session-list updates.
 
 ### README.md
 

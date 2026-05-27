@@ -1379,6 +1379,35 @@
         }
       }
     },
+    "/api/browser/main": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserCommandRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserCommandResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/webpreview/previews": {
       "get": {
         "tags": [
@@ -5189,6 +5218,7 @@
           "smoothScrolling",
           "scrollbarStyle",
           "useWebGL",
+          "terminalThemeLightnessBoost",
           "scrollbackLines",
           "scrollbackBytes",
           "bellStyle",
@@ -5198,6 +5228,7 @@
           "terminalEnterMode",
           "scrollbackProtection",
           "mobileKineticTerminalScroll",
+          "mobileDenseTerminalMode",
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "resumeMode",
@@ -5396,6 +5427,10 @@
           "useWebGL": {
             "type": "boolean"
           },
+          "terminalThemeLightnessBoost": {
+            "type": "integer",
+            "format": "int32"
+          },
           "scrollbackLines": {
             "type": "integer",
             "format": "int32"
@@ -5423,6 +5458,9 @@
             "type": "boolean"
           },
           "mobileKineticTerminalScroll": {
+            "type": "boolean"
+          },
+          "mobileDenseTerminalMode": {
             "type": "boolean"
           },
           "disableAutoMainBrowserPromotion": {

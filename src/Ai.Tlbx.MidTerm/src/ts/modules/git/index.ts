@@ -153,6 +153,11 @@ export function getCachedGitReposForSession(sessionId: string): GitRepoBinding[]
   return cachedRepos.get(sessionId) ?? [];
 }
 
+export function applyGitReposForSession(sessionId: string, repos: GitRepoBinding[]): void {
+  cacheRepos(sessionId, repos);
+  updateGitIndicatorForSession(sessionId, repos);
+}
+
 export function addGitRepoCacheListener(listener: (sessionId: string) => void): () => void {
   repoCacheListeners.add(listener);
   return () => {

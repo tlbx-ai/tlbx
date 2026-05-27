@@ -116,6 +116,7 @@
   "settings.appearance.cursorUnfocused": "Cursor (Sem Foco)",
   "settings.appearance.theme": "Tema",
   "settings.appearance.terminalColorScheme": "Cores do Terminal",
+  "settings.appearance.terminalThemeLightnessBoost": "Aumento de brilho",
   "settings.appearance.backgroundTitle": "Plano de fundo e transparência",
   "settings.appearance.backgroundImage": "Imagem de fundo",
   "settings.appearance.backgroundUpload": "Enviar imagem",

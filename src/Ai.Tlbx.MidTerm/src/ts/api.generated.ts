@@ -1655,6 +1655,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/browser/main': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['BrowserCommandRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['BrowserCommandResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/webpreview/previews': {
     parameters: {
       query?: never;
@@ -4224,6 +4263,8 @@ export interface components {
       scrollbarStyle: components['schemas']['ScrollbarStyleSetting'];
       useWebGL: boolean;
       /** Format: int32 */
+      terminalThemeLightnessBoost: number;
+      /** Format: int32 */
       scrollbackLines: number;
       /** Format: int32 */
       scrollbackBytes: number;
@@ -4234,6 +4275,7 @@ export interface components {
       terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
       mobileKineticTerminalScroll: boolean;
+      mobileDenseTerminalMode: boolean;
       disableAutoMainBrowserPromotion: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
       resumeMode: components['schemas']['TerminalResumeModeSetting'];

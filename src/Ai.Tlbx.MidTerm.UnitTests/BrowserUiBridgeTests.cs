@@ -102,6 +102,40 @@ public sealed class BrowserUiBridgeTests
     }
 
     [Fact]
+    public void RequestClaimMain_WithBrowserId_ClaimsMatchingConnectedUiBrowser()
+    {
+        var mainBrowser = new MainBrowserService();
+        var bridge = new BrowserUiBridge(mainBrowser);
+
+        bridge.RegisterListener("l1", "browser-a:tab-1", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+        bridge.RegisterListener("l2", "browser-b:tab-2", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+
+        var ok = bridge.RequestClaimMain("browser-b", out var claimedBrowserId, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("browser-b:tab-2", claimedBrowserId);
+        Assert.Equal("browser-b:tab-2", mainBrowser.GetMainBrowserId());
+    }
+
+    [Fact]
+    public void RequestClaimMain_WithoutBrowserIdRejectsAmbiguousBrowsers()
+    {
+        var mainBrowser = new MainBrowserService();
+        var bridge = new BrowserUiBridge(mainBrowser);
+
+        bridge.RegisterListener("l1", "browser-a:tab-1", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+        bridge.RegisterListener("l2", "browser-b:tab-2", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+
+        var ok = bridge.RequestClaimMain(null, out var claimedBrowserId, out var error);
+
+        Assert.False(ok);
+        Assert.Equal("", claimedBrowserId);
+        Assert.Contains("--browser", error, StringComparison.Ordinal);
+        Assert.Null(mainBrowser.GetMainBrowserId());
+    }
+
+    [Fact]
     public void RequestOpen_WithOfflineOwner_ReclaimsConnectedMainBrowser()
     {
         var mainBrowser = new MainBrowserService();

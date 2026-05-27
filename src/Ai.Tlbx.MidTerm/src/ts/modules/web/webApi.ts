@@ -342,11 +342,20 @@ export async function getBrowserPreviewStatus(
 }
 
 /** Run a scoped browser command through the MidTerm browser bridge. */
+export interface BrowserCommandRequestOptions {
+  selector?: string | null;
+  value?: string | null;
+  maxDepth?: number;
+  textOnly?: boolean;
+  timeout?: number;
+}
+
 export async function runBrowserCommand(
   command: string,
   sessionId: string,
   previewName: string,
   previewId?: string,
+  options: BrowserCommandRequestOptions = {},
 ): Promise<BrowserCommandResponse | null> {
   if (!sessionId) {
     return null;
@@ -361,6 +370,13 @@ export async function runBrowserCommand(
         sessionId,
         previewName,
         ...(previewId ? { previewId } : {}),
+        ...(options.selector !== undefined && options.selector !== null
+          ? { selector: options.selector }
+          : {}),
+        ...(options.value !== undefined && options.value !== null ? { value: options.value } : {}),
+        ...(options.maxDepth !== undefined ? { maxDepth: options.maxDepth } : {}),
+        ...(options.textOnly !== undefined ? { textOnly: options.textOnly } : {}),
+        ...(options.timeout !== undefined ? { timeout: options.timeout } : {}),
       }),
     });
     return (await res.json()) as BrowserCommandResponse;
