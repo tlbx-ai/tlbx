@@ -354,6 +354,23 @@ export interface VoiceToolResponse {
   declined?: boolean;
 }
 
+/** Stable target context returned by voice tools so Realtime can carry IDs across turns */
+export interface VoiceTargetContext {
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  layoutSessionIds: string[];
+  targetSessionId: string | null;
+  targetSessionTitle: string | null;
+  targetSessionExists: boolean | null;
+  targetPreviewName: string | null;
+  targetPreviewId: string | null;
+  targetRepoRoot: string | null;
+  action: string | null;
+  isTargetActive: boolean | null;
+  isTargetFocused: boolean | null;
+  isTargetInLayout: boolean | null;
+}
+
 /** Args for make_input tool */
 export interface MakeInputArgs {
   sessionId: string;
@@ -387,6 +404,7 @@ export interface InteractiveOp {
 export interface StateOfThingsResult {
   sessions: VoiceSessionState[];
   activeSessionId: string | null;
+  targetContext?: VoiceTargetContext;
   version: string;
   updateAvailable: boolean;
   recentBells: BellNotification[];
@@ -404,6 +422,7 @@ export interface SessionOverviewResult {
   activeSessionId: string | null;
   focusedSessionId: string | null;
   layoutSessionIds: string[];
+  targetContext?: VoiceTargetContext;
   version: string;
   updateAvailable: boolean;
   sessions: VoiceSessionOverview[];
@@ -447,6 +466,7 @@ export interface ConversationContinuityResult {
   success: boolean;
   scope: 'active' | 'all';
   activeSessionId: string | null;
+  targetContext?: VoiceTargetContext;
   generatedAt: string;
   responseText: string;
   nextAction: string;
@@ -491,6 +511,7 @@ export interface CampaignStatusResult {
   campaignState: 'empty' | 'needs_user' | 'blocked' | 'busy' | 'ready' | 'mixed';
   activeSessionId: string | null;
   focusedSessionId: string | null;
+  targetContext?: VoiceTargetContext;
   generatedAt: string;
   waited: boolean;
   elapsedMs: number;
@@ -544,6 +565,7 @@ export interface MakeInputResult {
   screenContent: string;
   cols: number;
   rows: number;
+  targetContext?: VoiceTargetContext;
 }
 
 /** Result of read_scrollback tool */
@@ -552,11 +574,13 @@ export interface ReadScrollbackResult {
   totalLines: number;
   returnedLines: number;
   startLine: number;
+  targetContext?: VoiceTargetContext;
 }
 
 /** Result of interactive_read tool */
 export interface InteractiveReadResult {
   results: InteractiveOpResult[];
+  targetContext?: VoiceTargetContext;
 }
 
 /** Single operation result */
@@ -626,6 +650,7 @@ export interface WaitForTurnCompletionResult {
   success: boolean;
   sessionId: string;
   title: string;
+  targetContext?: VoiceTargetContext;
   completed: boolean;
   timedOut: boolean;
   status: SessionTurnStatus;

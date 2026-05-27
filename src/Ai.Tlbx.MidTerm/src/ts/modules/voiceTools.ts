@@ -84,6 +84,7 @@ import type {
   BellNotification,
   DockPosition,
   Session,
+  VoiceTargetContext,
 } from '../types';
 import type { AgentSessionVibeResponse } from '../api/types';
 import type { GitRepoBinding } from './git/types';
@@ -129,6 +130,47 @@ function getSessionLaunchErrorMessage(error: unknown): string {
 
 function getReadableSessionTitle(session: Session | null | undefined, fallback: string): string {
   return session?.name || session?.terminalTitle || session?.foregroundName || fallback;
+}
+
+interface VoiceTargetContextArgs {
+  sessionId?: string | null | undefined;
+  previewName?: string | null | undefined;
+  previewId?: string | null | undefined;
+  repoRoot?: string | null | undefined;
+  action?: string | null | undefined;
+}
+
+function normalizeTargetValue(value: string | null | undefined): string | null {
+  return value?.trim() || null;
+}
+
+function buildVoiceTargetContext(args: VoiceTargetContextArgs = {}): VoiceTargetContext {
+  const targetSessionId = normalizeTargetValue(args.sessionId);
+  const targetPreviewName = normalizeTargetValue(args.previewName);
+  const targetPreviewId = normalizeTargetValue(args.previewId);
+  const targetRepoRoot = normalizeTargetValue(args.repoRoot);
+  const action = normalizeTargetValue(args.action);
+  const targetSession = targetSessionId ? getSession(targetSessionId) : null;
+  const activeSessionId = $activeSessionId.get();
+  const focusedSessionId = $focusedSessionId.get();
+  const layoutSessionIds = getLayoutSessionIds();
+  return {
+    activeSessionId,
+    focusedSessionId,
+    layoutSessionIds,
+    targetSessionId,
+    targetSessionTitle: targetSession
+      ? getReadableSessionTitle(targetSession, targetSessionId ?? targetSession.id)
+      : null,
+    targetSessionExists: targetSessionId ? Boolean(targetSession) : null,
+    targetPreviewName,
+    targetPreviewId,
+    targetRepoRoot,
+    action,
+    isTargetActive: targetSessionId ? targetSessionId === activeSessionId : null,
+    isTargetFocused: targetSessionId ? targetSessionId === focusedSessionId : null,
+    isTargetInLayout: targetSessionId ? layoutSessionIds.includes(targetSessionId) : null,
+  };
 }
 
 /**
@@ -320,6 +362,7 @@ function handleStateOfThings(): StateOfThingsResult {
   return {
     sessions: sessionStates,
     activeSessionId: activeId,
+    targetContext: buildVoiceTargetContext(),
     version: JS_BUILD_VERSION,
     updateAvailable: updateInfo?.available ?? false,
     recentBells: [...recentBells],
@@ -356,6 +399,7 @@ async function handleSessionOverview(args: SessionOverviewArgs): Promise<Session
     activeSessionId,
     focusedSessionId,
     layoutSessionIds,
+    targetContext: buildVoiceTargetContext({ sessionId: activeSessionId }),
     version: JS_BUILD_VERSION,
     updateAvailable: updateInfo?.available ?? false,
     sessions: sessionSummaries,
@@ -425,6 +469,7 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
       screenContent: `Session ${sessionId} not found`,
       cols: 0,
       rows: 0,
+      targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
 
@@ -438,6 +483,7 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
     screenContent: getTerminalViewport(sessionId),
     cols: session.cols,
     rows: session.rows,
+    targetContext: buildVoiceTargetContext({ sessionId }),
   };
 }
 
@@ -454,6 +500,7 @@ function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
       totalLines: 0,
       returnedLines: 0,
       startLine: 0,
+      targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
 
@@ -483,6 +530,7 @@ function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
     totalLines,
     returnedLines: extractedLines.length,
     startLine,
+    targetContext: buildVoiceTargetContext({ sessionId }),
   };
 }
 
@@ -496,6 +544,7 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
   if (!session) {
     return {
       results: [{ index: 0, success: false, screenshot: `Session ${sessionId} not found` }],
+      targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
 
@@ -537,7 +586,7 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
     }
   }
 
-  return { results };
+  return { results, targetContext: buildVoiceTargetContext({ sessionId }) };
 }
 
 /**
@@ -560,6 +609,7 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
       return {
         success: false,
         error: 'Failed to create session',
+        targetContext: buildVoiceTargetContext(),
         responseText: 'Session creation failed.',
         nextAction:
           'Inspect the MidTerm session list or retry with a specific shell and working directory.',
@@ -571,6 +621,7 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
       success: true,
       sessionId: data.id,
       shell: data.shellType,
+      targetContext: buildVoiceTargetContext({ sessionId: data.id, action: 'create_session' }),
       responseText: `Created session ${title}.`,
       nextAction: `Use select_session with sessionId ${data.id} if the user should look at or operate it next.`,
     };
@@ -579,6 +630,7 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
     return {
       success: false,
       error: message,
+      targetContext: buildVoiceTargetContext(),
       responseText: `Session creation failed: ${message}.`,
       nextAction:
         'Ask for a different shell or working directory, or inspect the MidTerm session list.',
@@ -595,6 +647,7 @@ function handleSelectSession(args: SelectSessionArgs): unknown {
     return {
       success: false,
       error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
       responseText: `Session ${args.sessionId} was not found.`,
       nextAction: 'Call session_overview to discover valid session IDs before switching again.',
     };
@@ -609,6 +662,10 @@ function handleSelectSession(args: SelectSessionArgs): unknown {
     success: true,
     activeSessionId: args.sessionId,
     title: getReadableSessionTitle(session, args.sessionId),
+    targetContext: buildVoiceTargetContext({
+      sessionId: args.sessionId,
+      action: 'select_session',
+    }),
     responseText: `Selected ${getReadableSessionTitle(session, args.sessionId)}.`,
     nextAction:
       'Continue operating this session, or summarize its turn state before reporting completion.',
@@ -624,6 +681,7 @@ async function handleSendPrompt(args: SendPromptArgs): Promise<unknown> {
     return {
       success: false,
       error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
       responseText: `Session ${args.sessionId} was not found.`,
       nextAction:
         'Call session_overview to get the current session IDs, then resend the prompt to the correct session.',
@@ -650,6 +708,7 @@ async function handleSendPrompt(args: SendPromptArgs): Promise<unknown> {
     success: true,
     sessionId: args.sessionId,
     interruptFirst: args.interruptFirst ?? false,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId, action: 'send_prompt' }),
     responseText: `Prompt sent to ${getReadableSessionTitle(session, args.sessionId)}.`,
     nextAction:
       'Call session_turn_summary; if it is busy and the user is waiting, call wait_for_turn_completion once.',
@@ -665,7 +724,11 @@ async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown
     : $sessionList.get();
 
   if (args.sessionId && sessions.length === 0) {
-    return { success: false, error: `Session ${args.sessionId} not found` };
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    };
   }
 
   const tailLines = Math.max(20, Math.min(args.tailLines ?? 80, 200));
@@ -685,7 +748,11 @@ async function handleSessionActivity(args: SessionActivityArgs): Promise<unknown
     }),
   );
 
-  return { success: true, feeds };
+  return {
+    success: true,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    feeds,
+  };
 }
 
 function classifyTurnStatus(vibe: AgentSessionVibeResponse): SessionTurnStatus {
@@ -777,7 +844,11 @@ function isSettledTurnStatus(status: SessionTurnStatus): boolean {
 async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<unknown> {
   const session = getSession(args.sessionId);
   if (!session) {
-    return { success: false, error: `Session ${args.sessionId} not found` };
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    };
   }
 
   const tailLines = Math.max(20, Math.min(args.tailLines ?? 80, 200));
@@ -797,6 +868,7 @@ async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<u
     success: true,
     sessionId: args.sessionId,
     title: session.name || session.terminalTitle || vibe.header.title,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
     status,
     state: vibe.header.state,
     stateLabel: vibe.header.stateLabel,
@@ -862,6 +934,7 @@ function buildWaitResult(
     success: true,
     sessionId: args.sessionId,
     title,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
     completed: status === 'complete',
     timedOut,
     status,
@@ -892,10 +965,16 @@ function buildWaitResult(
  */
 async function handleWaitForTurnCompletion(
   args: WaitForTurnCompletionArgs,
-): Promise<WaitForTurnCompletionResult | { success: false; error: string }> {
+): Promise<
+  WaitForTurnCompletionResult | { success: false; error: string; targetContext: VoiceTargetContext }
+> {
   const session = getSession(args.sessionId);
   if (!session) {
-    return { success: false, error: `Session ${args.sessionId} not found` };
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    };
   }
 
   const timeoutMs = Math.max(1000, Math.min(args.timeoutMs ?? 45000, 90000));
@@ -1039,6 +1118,7 @@ async function handleConversationContinuity(
       success: false,
       scope: resolved.scope,
       activeSessionId: $activeSessionId.get(),
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
       generatedAt: new Date().toISOString(),
       responseText: resolved.error,
       nextAction:
@@ -1073,6 +1153,9 @@ async function handleConversationContinuity(
     success: true,
     scope: resolved.scope,
     activeSessionId: $activeSessionId.get(),
+    targetContext: buildVoiceTargetContext({
+      sessionId: resolved.sessions[0]?.id ?? $activeSessionId.get(),
+    }),
     generatedAt: new Date().toISOString(),
     responseText,
     nextAction:
@@ -1283,6 +1366,7 @@ async function handleCampaignStatus(args: CampaignStatusArgs): Promise<CampaignS
     campaignState,
     activeSessionId: $activeSessionId.get(),
     focusedSessionId: $focusedSessionId.get(),
+    targetContext: buildVoiceTargetContext({ sessionId: recommendedFocusSessionId }),
     generatedAt: new Date().toISOString(),
     waited: sessions.some((session) => session.waited),
     elapsedMs: Date.now() - startedAt,
@@ -1319,6 +1403,7 @@ async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> 
     return {
       success: false,
       error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
       responseText: 'No active session is available for Dev Browser open.',
       nextAction: 'Call session_overview, select a target session, then retry dev_browser_open.',
     };
@@ -1328,6 +1413,7 @@ async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> 
     return {
       success: false,
       error: `Session ${sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId, previewName: args.previewName }),
       responseText: `Session ${sessionId} was not found for Dev Browser open.`,
       nextAction: 'Call session_overview to discover valid session IDs before opening the preview.',
     };
@@ -1339,6 +1425,7 @@ async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> 
     return {
       success: false,
       error: 'url is required',
+      targetContext: buildVoiceTargetContext({ sessionId, previewName }),
       responseText: 'Dev Browser open needs a URL.',
       nextAction: 'Ask the user for the exact URL or derive it from the running app output.',
     };
@@ -1349,6 +1436,7 @@ async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> 
     return {
       success: false,
       error: `Failed to set Dev Browser target for ${sessionId}/${previewName}`,
+      targetContext: buildVoiceTargetContext({ sessionId, previewName }),
       responseText: `Failed to open Dev Browser for ${sessionId}/${previewName}.`,
       nextAction: 'Check the session and preview target, then retry dev_browser_open.',
     };
@@ -1362,6 +1450,7 @@ async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> 
     success: true,
     sessionId,
     previewName,
+    targetContext: buildVoiceTargetContext({ sessionId, previewName, action: 'dev_browser_open' }),
     url: target.url,
     targetRevision: target.targetRevision,
     status,
@@ -1380,6 +1469,7 @@ async function handleDevBrowserStatus(args: DevBrowserStatusArgs): Promise<unkno
     return {
       success: false,
       error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
       responseText: 'No active session is available for Dev Browser status.',
       nextAction: 'Call session_overview, select a target session, then retry dev_browser_status.',
     };
@@ -1395,6 +1485,12 @@ async function handleDevBrowserStatus(args: DevBrowserStatusArgs): Promise<unkno
     success: true,
     sessionId,
     previewName,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      previewName,
+      previewId: args.previewId,
+      action: 'dev_browser_status',
+    }),
     target,
     status,
     responseText: status?.controllable
@@ -1467,6 +1563,11 @@ function buildDevBrowserCommandResponse(
     sessionId,
     previewName,
     command,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      previewName,
+      action: `dev_browser_command:${command}`,
+    }),
     result: result?.result ?? null,
     error: result?.error ?? null,
     matchCount: result?.matchCount ?? null,
@@ -1485,6 +1586,7 @@ async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unk
     return {
       success: false,
       error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
       responseText: 'No active session is available for the Dev Browser command.',
       nextAction:
         'Call session_overview, select a target session, then retry the Dev Browser command.',
@@ -1534,7 +1636,11 @@ function decodeDataUrlToFile(dataUrl: string, filename: string): File | null {
 async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promise<unknown> {
   const sessionId = resolveSessionId(args.sessionId);
   if (!sessionId) {
-    return { success: false, error: 'No active session and no sessionId provided' };
+    return {
+      success: false,
+      error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ previewName: args.previewName }),
+    };
   }
 
   const previewName = resolvePreviewName(args.previewName);
@@ -1548,6 +1654,11 @@ async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promi
       success: false,
       sessionId,
       previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
       target,
       status,
       error: 'No URL is open in this Dev Browser preview',
@@ -1564,6 +1675,11 @@ async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promi
       success: false,
       sessionId,
       previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
       target,
       status,
       error: 'MidTerm did not receive screenshot image data from the Dev Browser',
@@ -1578,6 +1694,11 @@ async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promi
       success: false,
       sessionId,
       previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
       target,
       status,
       error: 'Screenshot image data could not be decoded',
@@ -1590,6 +1711,11 @@ async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promi
       success: false,
       sessionId,
       previewName,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        previewName,
+        previewId: args.previewId,
+      }),
       target,
       status,
       error: 'Screenshot upload did not return a usable file path',
@@ -1601,6 +1727,12 @@ async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promi
     sessionId,
     previewName,
     previewId: args.previewId ?? null,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      previewName,
+      previewId: args.previewId,
+      action: 'dev_browser_screenshot',
+    }),
     target,
     status,
     path,
@@ -1651,11 +1783,22 @@ async function runRepoMonitorAction(
 async function handleRepoMonitor(args: RepoMonitorArgs): Promise<unknown> {
   const sessionId = resolveSessionId(args.sessionId);
   if (!sessionId) {
-    return { success: false, error: 'No active session and no sessionId provided' };
+    return {
+      success: false,
+      error: 'No active session and no sessionId provided',
+      targetContext: buildVoiceTargetContext({ repoRoot: args.repoRoot ?? args.path }),
+    };
   }
 
   if (!getSession(sessionId)) {
-    return { success: false, error: `Session ${sessionId} not found` };
+    return {
+      success: false,
+      error: `Session ${sessionId} not found`,
+      targetContext: buildVoiceTargetContext({
+        sessionId,
+        repoRoot: args.repoRoot ?? args.path,
+      }),
+    };
   }
 
   const action = args.action.toLowerCase();
@@ -1670,6 +1813,11 @@ async function handleRepoMonitor(args: RepoMonitorArgs): Promise<unknown> {
     success: response !== null || repos.length > 0,
     sessionId,
     action,
+    targetContext: buildVoiceTargetContext({
+      sessionId,
+      repoRoot: args.repoRoot ?? args.path,
+      action: `repo_monitor:${action}`,
+    }),
     repos: compactGitRepos(repos),
     repoCount: repos.length,
   };
@@ -1681,6 +1829,7 @@ function buildLayoutStatus(action: string): unknown {
     action,
     activeSessionId: $activeSessionId.get(),
     focusedSessionId: $focusedSessionId.get(),
+    targetContext: buildVoiceTargetContext({ action: `layout_control:${action}` }),
     layoutSessionIds: getLayoutSessionIds(),
     root: $layout.get().root,
   };
@@ -1762,22 +1911,38 @@ function handleLayoutControl(args: LayoutControlArgs): unknown {
 async function handleCloseSession(args: CloseSessionArgs): Promise<unknown> {
   const session = getSession(args.sessionId);
   if (!session) {
-    return { success: false, error: `Session ${args.sessionId} not found` };
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+    };
   }
 
   await apiDeleteSession(args.sessionId);
-  return { success: true };
+  return {
+    success: true,
+    sessionId: args.sessionId,
+    targetContext: buildVoiceTargetContext({
+      sessionId: args.sessionId,
+      action: 'close_session',
+    }),
+  };
 }
 
 async function listBookmarks(): Promise<unknown> {
   const { data } = await getHistory();
   if (!data) {
-    return { success: false, error: 'Failed to fetch history' };
+    return {
+      success: false,
+      error: 'Failed to fetch history',
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:list' }),
+    };
   }
 
   const starred = data.filter((entry) => entry.isStarred);
   return {
     success: true,
+    targetContext: buildVoiceTargetContext({ action: 'bookmarks:list' }),
     bookmarks: starred.map((entry) => ({
       id: entry.id,
       shellType: entry.shellType,
@@ -1791,12 +1956,20 @@ async function listBookmarks(): Promise<unknown> {
 async function launchBookmark(bookmarkId: string): Promise<unknown> {
   const { data: historyData } = await getHistory();
   if (!historyData) {
-    return { success: false, error: 'Failed to fetch history' };
+    return {
+      success: false,
+      error: 'Failed to fetch history',
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   const bookmark = historyData.find((entry) => entry.id === bookmarkId && entry.isStarred);
   if (!bookmark) {
-    return { success: false, error: `Bookmark ${bookmarkId} not found` };
+    return {
+      success: false,
+      error: `Bookmark ${bookmarkId} not found`,
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   const refSession = $sessionList.get()[0];
@@ -1812,11 +1985,19 @@ async function launchBookmark(bookmarkId: string): Promise<unknown> {
       workingDirectory: bookmark.workingDirectory || null,
     }));
   } catch (error) {
-    return { success: false, error: getSessionLaunchErrorMessage(error) };
+    return {
+      success: false,
+      error: getSessionLaunchErrorMessage(error),
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   if (!sessionData) {
-    return { success: false, error: 'Failed to create session' };
+    return {
+      success: false,
+      error: 'Failed to create session',
+      targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+    };
   }
 
   if (bookmark.commandLine) {
@@ -1827,6 +2008,10 @@ async function launchBookmark(bookmarkId: string): Promise<unknown> {
   return {
     success: true,
     sessionId: sessionData.id,
+    targetContext: buildVoiceTargetContext({
+      sessionId: sessionData.id,
+      action: 'bookmarks:launch',
+    }),
     launched: {
       executable: bookmark.executable,
       commandLine: bookmark.commandLine,
@@ -1845,12 +2030,20 @@ async function handleBookmarks(args: BookmarksArgs): Promise<unknown> {
 
   if (args.action === 'launch') {
     if (!args.bookmarkId) {
-      return { success: false, error: 'bookmarkId is required for launch action' };
+      return {
+        success: false,
+        error: 'bookmarkId is required for launch action',
+        targetContext: buildVoiceTargetContext({ action: 'bookmarks:launch' }),
+      };
     }
     return launchBookmark(args.bookmarkId);
   }
 
-  return { success: false, error: `Unknown action: ${args.action}. Use 'list' or 'launch'.` };
+  return {
+    success: false,
+    error: `Unknown action: ${args.action}. Use 'list' or 'launch'.`,
+    targetContext: buildVoiceTargetContext({ action: `bookmarks:${args.action}` }),
+  };
 }
 
 const voiceToolHandlers: Record<
