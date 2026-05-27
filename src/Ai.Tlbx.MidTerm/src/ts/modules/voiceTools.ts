@@ -375,6 +375,38 @@ function rememberFocusContext(args: FocusContextArgs): void {
   focusContextPersistenceOk = persistFocusContextState();
 }
 
+function resolveUiFocusSessionId(): string | null {
+  return $focusedSessionId.get() ?? $activeSessionId.get();
+}
+
+let lastUiFocusSessionId = resolveUiFocusSessionId();
+
+function syncFocusContextFromUi(reason: string): void {
+  const sessionId = resolveUiFocusSessionId();
+  if (!sessionId || !getSession(sessionId)) return;
+
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    reason,
+  });
+}
+
+function handleUiFocusChange(reason: string): void {
+  const nextSessionId = resolveUiFocusSessionId();
+  if (nextSessionId === lastUiFocusSessionId) return;
+
+  lastUiFocusSessionId = nextSessionId;
+  syncFocusContextFromUi(reason);
+}
+
+$activeSessionId.subscribe(() => {
+  handleUiFocusChange('ui_active_session');
+});
+$focusedSessionId.subscribe(() => {
+  handleUiFocusChange('ui_focused_session');
+});
+
 function buildFocusContextResponse(
   action: FocusContextResult['action'],
   responseText: string,

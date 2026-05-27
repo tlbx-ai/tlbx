@@ -254,6 +254,54 @@ describe('voice tool response contract', () => {
     });
   });
 
+  it('tracks manual MidTerm session focus changes as voice focus context', async () => {
+    $sessions.set({
+      s1: createSession('s1', 'Worker one'),
+      s2: createSession('s2', 'Worker two'),
+    });
+    getLayoutSessionIds.mockReturnValue(['s1', 's2']);
+
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+    $activeSessionId.set('s2');
+    $focusedSessionId.set('s2');
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'manual-focus-status',
+        tool: 'focus_context',
+        args: { action: 'status' },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      action: 'status',
+      responseText: 'Voice focus is Worker two.',
+    });
+    expect(result.focus).toMatchObject({
+      active: true,
+      sessionId: 's2',
+      sessionTitle: 'Worker two',
+      sessionExists: true,
+      previewName: null,
+      previewId: null,
+      repoRoot: null,
+      reason: 'ui_focused_session',
+    });
+    expect(result.targetContext).toMatchObject({
+      activeSessionId: 's2',
+      focusedSessionId: 's2',
+      targetSessionId: 's2',
+      targetSessionTitle: 'Worker two',
+      targetSessionExists: true,
+      isTargetActive: true,
+      isTargetFocused: true,
+      isTargetInLayout: true,
+    });
+  });
+
   it('anchors send_prompt responses to the operated session', async () => {
     $sessions.set({ s1: createSession('s1', 'Worker lane') });
     $activeSessionId.set('s1');
