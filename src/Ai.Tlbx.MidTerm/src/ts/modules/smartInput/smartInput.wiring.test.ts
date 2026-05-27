@@ -80,6 +80,8 @@ describe('smart input tab wiring', () => {
     const expandedDockRule = getCssRule(".adaptive-footer-dock[data-composer-expanded='true']");
     const textareaRule = getCssRule('.adaptive-footer-dock .smart-input-textarea');
     const reserveRule = getCssRule('.adaptive-footer-reserve');
+    const queueRule = getCssRule('.manager-bar-queue');
+    const queueItemRule = getCssRule('.manager-queue-item');
 
     expect(css).toContain('--terminal-canvas-background-stack:');
     expect(css).toContain('--command-bay-control-background: var(--terminal-bg);');
@@ -112,6 +114,12 @@ describe('smart input tab wiring', () => {
     expect(reserveRule).toContain('margin-right: var(--adaptive-footer-right-offset, 0px);');
     expect(reserveRule).toContain('background: var(--command-bay-background);');
     expect(dockRule).toContain('background: transparent;');
+    expect(queueRule).toContain('background: var(');
+    expect(queueRule).toContain('--command-bay-background,');
+    expect(queueRule).toContain('border-top: 0;');
+    expect(queueItemRule).toContain('border-radius: var(--command-bay-control-radius, 8px);');
+    expect(queueItemRule).toContain('--command-bay-ui-reactive-surface,');
+    expect(queueItemRule).toContain('--command-bay-queue-border');
     expect(css).not.toContain(".adaptive-footer-dock:not([data-composer-expanded='true'])::before");
     expect(css).not.toContain('top: -1px;');
     expect(expandedDockRule).toContain('background: var(--command-bay-background);');
