@@ -423,6 +423,7 @@ interface VoiceMessage {
   requestId?: string;
   tool?: VoiceToolName;
   args?: Record<string, unknown>;
+  result?: unknown;
   requiresConfirmation?: boolean;
 }
 
@@ -461,6 +462,18 @@ function handleVoiceToolRequestMessage(msg: VoiceMessage): void {
   }
 }
 
+function handleRealtimeTraceMessage(msg: VoiceMessage): void {
+  addChatMessage({
+    role: 'tool',
+    toolName: 'realtime_trace',
+    content:
+      typeof msg.result === 'undefined'
+        ? msg.message || 'Realtime response completed.'
+        : JSON.stringify(msg.result, null, 2),
+    timestamp: msg.timestamp || new Date().toISOString(),
+  });
+}
+
 /**
  * Handle messages from the voice server
  */
@@ -490,6 +503,9 @@ function handleVoiceMessage(msg: VoiceMessage): void {
       break;
     case 'tool_request':
       handleVoiceToolRequestMessage(msg);
+      break;
+    case 'realtime_trace':
+      handleRealtimeTraceMessage(msg);
       break;
     default:
       log.info(() => `[MSG] Unhandled message type: ${msg.type}`);
