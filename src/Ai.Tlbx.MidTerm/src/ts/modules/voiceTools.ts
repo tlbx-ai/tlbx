@@ -561,7 +561,8 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
         success: false,
         error: 'Failed to create session',
         responseText: 'Session creation failed.',
-        nextAction: 'Inspect the MidTerm session list or retry with a specific shell and working directory.',
+        nextAction:
+          'Inspect the MidTerm session list or retry with a specific shell and working directory.',
       };
     }
 
@@ -579,7 +580,8 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
       success: false,
       error: message,
       responseText: `Session creation failed: ${message}.`,
-      nextAction: 'Ask for a different shell or working directory, or inspect the MidTerm session list.',
+      nextAction:
+        'Ask for a different shell or working directory, or inspect the MidTerm session list.',
     };
   }
 }
@@ -608,7 +610,8 @@ function handleSelectSession(args: SelectSessionArgs): unknown {
     activeSessionId: args.sessionId,
     title: getReadableSessionTitle(session, args.sessionId),
     responseText: `Selected ${getReadableSessionTitle(session, args.sessionId)}.`,
-    nextAction: 'Continue operating this session, or summarize its turn state before reporting completion.',
+    nextAction:
+      'Continue operating this session, or summarize its turn state before reporting completion.',
   };
 }
 
@@ -622,7 +625,8 @@ async function handleSendPrompt(args: SendPromptArgs): Promise<unknown> {
       success: false,
       error: `Session ${args.sessionId} not found`,
       responseText: `Session ${args.sessionId} was not found.`,
-      nextAction: 'Call session_overview to get the current session IDs, then resend the prompt to the correct session.',
+      nextAction:
+        'Call session_overview to get the current session IDs, then resend the prompt to the correct session.',
     };
   }
 
@@ -1362,7 +1366,8 @@ async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> 
     targetRevision: target.targetRevision,
     status,
     responseText: `Opened Dev Browser ${previewName} for session ${sessionId}.`,
-    nextAction: 'Use dev_browser_status or dev_browser_command outline to inspect the loaded page before making UI claims.',
+    nextAction:
+      'Use dev_browser_status or dev_browser_command outline to inspect the loaded page before making UI claims.',
   };
 }
 
@@ -1432,7 +1437,8 @@ function validateBrowserCommand(command: string): Record<string, unknown> | null
       success: false,
       error: 'command is required',
       responseText: 'Dev Browser command is missing.',
-      nextAction: 'Use one supported command such as outline, query, wait, click, fill, or navigate.',
+      nextAction:
+        'Use one supported command such as outline, query, wait, click, fill, or navigate.',
     };
   }
 
@@ -1449,6 +1455,30 @@ function validateBrowserCommand(command: string): Record<string, unknown> | null
   return null;
 }
 
+function buildDevBrowserCommandResponse(
+  sessionId: string,
+  previewName: string,
+  command: string,
+  result: Awaited<ReturnType<typeof runBrowserCommand>>,
+): Record<string, unknown> {
+  const success = result?.success ?? false;
+  return {
+    success,
+    sessionId,
+    previewName,
+    command,
+    result: result?.result ?? null,
+    error: result?.error ?? null,
+    matchCount: result?.matchCount ?? null,
+    responseText: success
+      ? `Dev Browser ${command} completed for ${sessionId}/${previewName}.`
+      : `Dev Browser ${command} failed for ${sessionId}/${previewName}: ${result?.error ?? 'unknown error'}.`,
+    nextAction: success
+      ? 'Use the command result as evidence; after mutating commands, wait or inspect before reporting final state.'
+      : 'Check supported commands, selector, preview readiness, and session ID before retrying.',
+  };
+}
+
 async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unknown> {
   const sessionId = resolveSessionId(args.sessionId);
   if (!sessionId) {
@@ -1456,7 +1486,8 @@ async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unk
       success: false,
       error: 'No active session and no sessionId provided',
       responseText: 'No active session is available for the Dev Browser command.',
-      nextAction: 'Call session_overview, select a target session, then retry the Dev Browser command.',
+      nextAction:
+        'Call session_overview, select a target session, then retry the Dev Browser command.',
     };
   }
 
@@ -1474,21 +1505,7 @@ async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unk
     buildBrowserCommandOptions(args),
   );
 
-  return {
-    success: result?.success ?? false,
-    sessionId,
-    previewName,
-    command,
-    result: result?.result ?? null,
-    error: result?.error ?? null,
-    matchCount: result?.matchCount ?? null,
-    responseText: result?.success
-      ? `Dev Browser ${command} completed for ${sessionId}/${previewName}.`
-      : `Dev Browser ${command} failed for ${sessionId}/${previewName}: ${result?.error ?? 'unknown error'}.`,
-    nextAction: result?.success
-      ? 'Use the command result as evidence; after mutating commands, wait or inspect before reporting final state.'
-      : 'Check supported commands, selector, preview readiness, and session ID before retrying.',
-  };
+  return buildDevBrowserCommandResponse(sessionId, previewName, command, result);
 }
 
 function decodeDataUrlToFile(dataUrl: string, filename: string): File | null {
