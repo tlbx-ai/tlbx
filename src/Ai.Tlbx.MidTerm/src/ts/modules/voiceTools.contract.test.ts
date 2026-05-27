@@ -419,6 +419,64 @@ describe('voice tool response contract', () => {
     });
   });
 
+  it('dispatches one campaign prompt to multiple exact sessions', async () => {
+    $sessions.set({
+      s1: createSession('s1', 'Worker one'),
+      s2: createSession('s2', 'Worker two'),
+    });
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+    getLayoutSessionIds.mockReturnValue(['s1', 's2']);
+    sendSessionPrompt.mockResolvedValue(undefined);
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'campaign-dispatch-1',
+        tool: 'campaign_dispatch',
+        args: {
+          sessionIds: ['s1', 's2', 'missing'],
+          text: 'Run the next verification lane.',
+          justification: 'fan out the test campaign',
+        },
+      }),
+    );
+
+    expect(sendSessionPrompt).toHaveBeenCalledTimes(2);
+    expect(sendSessionPrompt).toHaveBeenNthCalledWith(
+      1,
+      's1',
+      expect.objectContaining({
+        text: 'Run the next verification lane.',
+        mode: 'auto',
+        submitKeys: ['Enter'],
+      }),
+    );
+    expect(sendSessionPrompt).toHaveBeenNthCalledWith(
+      2,
+      's2',
+      expect.objectContaining({
+        text: 'Run the next verification lane.',
+        mode: 'auto',
+        submitKeys: ['Enter'],
+      }),
+    );
+    expect(result).toMatchObject({
+      success: true,
+      requestedSessionIds: ['s1', 's2', 'missing'],
+      dispatchedSessionIds: ['s1', 's2'],
+      missingSessionIds: ['missing'],
+      dispatchCount: 2,
+      responseText: 'Dispatched campaign prompt to 2 sessions; 1 requested sessions were missing.',
+    });
+    expect(result.nextAction).toEqual(expect.stringContaining('campaign_report'));
+    expect(result.targetContext).toMatchObject({
+      targetSessionId: 's1',
+      targetSessionTitle: 'Worker one',
+      action: 'campaign_dispatch',
+    });
+  });
+
   it('gives terminal input tools spoken flow guidance', async () => {
     $sessions.set({ s1: createSession('s1', 'Terminal lane') });
     $activeSessionId.set('s1');

@@ -67,6 +67,7 @@ import type {
   FocusContextResult,
   FocusContextState,
   SendPromptArgs,
+  CampaignDispatchArgs,
   SessionOverviewArgs,
   ConversationContinuityArgs,
   CampaignGoalArgs,
@@ -1077,21 +1078,7 @@ async function handleSendPrompt(args: SendPromptArgs): Promise<unknown> {
     };
   }
 
-  await sendSessionPrompt(args.sessionId, {
-    text: args.text,
-    base64: null,
-    mode: 'auto',
-    interruptFirst: args.interruptFirst ?? false,
-    interruptKeys: ['C-c'],
-    literalInterruptKeys: false,
-    interruptDelayMs: 150,
-    submitKeys: ['Enter'],
-    literalSubmitKeys: false,
-    submitDelayMs: 300,
-    followupSubmitCount: 0,
-    followupSubmitDelayMs: 250,
-    profile: args.profile ?? null,
-  });
+  await sendPromptToSession(args.sessionId, args.text, args.interruptFirst ?? false, args.profile);
 
   return {
     success: true,
@@ -1101,6 +1088,91 @@ async function handleSendPrompt(args: SendPromptArgs): Promise<unknown> {
     responseText: `Prompt sent to ${getReadableSessionTitle(session, args.sessionId)}.`,
     nextAction:
       'Call session_turn_summary; if it is busy and the user is waiting, call wait_for_turn_completion once.',
+  };
+}
+
+async function sendPromptToSession(
+  sessionId: string,
+  text: string,
+  interruptFirst: boolean,
+  profile: string | null | undefined,
+): Promise<void> {
+  await sendSessionPrompt(sessionId, {
+    text,
+    base64: null,
+    mode: 'auto',
+    interruptFirst,
+    interruptKeys: ['C-c'],
+    literalInterruptKeys: false,
+    interruptDelayMs: 150,
+    submitKeys: ['Enter'],
+    literalSubmitKeys: false,
+    submitDelayMs: 300,
+    followupSubmitCount: 0,
+    followupSubmitDelayMs: 250,
+    profile: profile ?? null,
+  });
+}
+
+async function handleCampaignDispatch(args: CampaignDispatchArgs): Promise<unknown> {
+  const uniqueSessionIds = [...new Set(args.sessionIds.map((id) => id.trim()).filter(Boolean))];
+  if (uniqueSessionIds.length === 0) {
+    return {
+      success: false,
+      error: 'No session IDs provided',
+      responseText: 'No target sessions were provided for campaign dispatch.',
+      nextAction:
+        'Call campaign_status or session_overview to choose exact session IDs, then retry.',
+    };
+  }
+
+  const knownSessions = new Map($sessionList.get().map((session) => [session.id, session]));
+  const missingSessionIds = uniqueSessionIds.filter((sessionId) => !knownSessions.has(sessionId));
+  const targetSessionIds = uniqueSessionIds.filter((sessionId) => knownSessions.has(sessionId));
+
+  if (targetSessionIds.length === 0) {
+    return {
+      success: false,
+      error: 'No target sessions found',
+      requestedSessionIds: uniqueSessionIds,
+      missingSessionIds,
+      responseText: 'None of the requested campaign dispatch sessions exist.',
+      nextAction:
+        'Call campaign_status or session_overview to get current session IDs before retrying.',
+    };
+  }
+
+  const interruptFirst = args.interruptFirst ?? false;
+  const results = await Promise.all(
+    targetSessionIds.map(async (sessionId) => {
+      await sendPromptToSession(sessionId, args.text, interruptFirst, args.profile);
+      const session = knownSessions.get(sessionId);
+      return {
+        sessionId,
+        title: session ? getReadableSessionTitle(session, sessionId) : sessionId,
+      };
+    }),
+  );
+
+  return {
+    success: true,
+    requestedSessionIds: uniqueSessionIds,
+    dispatchedSessionIds: targetSessionIds,
+    missingSessionIds,
+    dispatchCount: results.length,
+    interruptFirst,
+    profile: args.profile ?? null,
+    sessions: results,
+    targetContext: buildVoiceTargetContext({
+      sessionId: targetSessionIds[0],
+      action: 'campaign_dispatch',
+    }),
+    responseText:
+      missingSessionIds.length > 0
+        ? `Dispatched campaign prompt to ${results.length} sessions; ${missingSessionIds.length} requested sessions were missing.`
+        : `Dispatched campaign prompt to ${results.length} sessions.`,
+    nextAction:
+      'Call campaign_status with these dispatchedSessionIds, optionally waitForBusy if the user is waiting, then use campaign_report for the spoken handoff.',
   };
 }
 
@@ -2888,6 +2960,7 @@ const voiceToolHandlers: Record<
   select_session: (args) =>
     Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
   send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
+  campaign_dispatch: (args) => handleCampaignDispatch(args as unknown as CampaignDispatchArgs),
   session_activity: (args) => handleSessionActivity(args as unknown as SessionActivityArgs),
   session_turn_summary: (args) =>
     handleSessionTurnSummary(args as unknown as SessionTurnSummaryArgs),

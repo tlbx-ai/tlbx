@@ -327,6 +327,7 @@ export type VoiceToolName =
   | 'create_session'
   | 'select_session'
   | 'send_prompt'
+  | 'campaign_dispatch'
   | 'session_activity'
   | 'session_turn_summary'
   | 'wait_for_turn_completion'
@@ -754,6 +755,15 @@ export interface SelectSessionArgs {
 /** Args for send_prompt tool */
 export interface SendPromptArgs {
   sessionId: string;
+  text: string;
+  interruptFirst?: boolean;
+  profile?: string | null;
+  justification: string;
+}
+
+/** Args for campaign_dispatch tool */
+export interface CampaignDispatchArgs {
+  sessionIds: string[];
   text: string;
   interruptFirst?: boolean;
   profile?: string | null;
