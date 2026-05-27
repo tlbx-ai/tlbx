@@ -16463,7 +16463,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --command-bay-ui-reactive-border: transparent;
   --command-bay-ui-reactive-floating-button-surface: var(--command-bay-ui-reactive-surface);
   --command-bay-floating-button-border: var(--command-bay-textbox-border);
-  --command-bay-ui-reactive-floating-button-border: var(--command-bay-textbox-border);
+  --command-bay-ui-reactive-floating-button-border: transparent;
   --command-bay-shadow: 0 2px 8px color-mix(in srgb, black 8%, transparent);
   position: absolute;
   left: 0;
@@ -17714,7 +17714,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-dock .manager-bar-overflow:hover,
 .adaptive-footer-dock .manager-bar-overflow:focus-visible {
   background: color-mix(in srgb, var(--command-bay-surface-hover-color) 88%, transparent);
-  border-color: var(--command-bay-floating-button-border);
+  border-color: var(--command-bay-ui-reactive-floating-button-border);
   -webkit-box-shadow: none;
   box-shadow: none;
 }
@@ -17748,7 +17748,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .adaptive-footer-dock .manager-bar-add:hover {
   background: color-mix(in srgb, var(--command-bay-surface-hover-color) 88%, transparent);
   color: var(--command-bay-text);
-  border-color: var(--command-bay-floating-button-border);
+  border-color: var(--command-bay-ui-reactive-floating-button-border);
   box-shadow: none;
 }
 

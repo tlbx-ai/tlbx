@@ -108,9 +108,7 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-textbox-border-focus: color-mix(');
     expect(css).toContain('--command-bay-ui-reactive-border: transparent;');
     expect(css).toContain('--command-bay-floating-button-border: var(--command-bay-textbox-border);');
-    expect(css).toContain(
-      '--command-bay-ui-reactive-floating-button-border: var(--command-bay-textbox-border);',
-    );
+    expect(css).toContain('--command-bay-ui-reactive-floating-button-border: transparent;');
     expect(reserveRule).toContain('margin-right: var(--adaptive-footer-right-offset, 0px);');
     expect(reserveRule).toContain('background: var(--command-bay-background);');
     expect(dockRule).toContain('background: transparent;');
