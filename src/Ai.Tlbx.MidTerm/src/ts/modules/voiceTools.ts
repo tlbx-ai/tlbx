@@ -789,17 +789,21 @@ function classifyTurnStatus(vibe: AgentSessionVibeResponse): SessionTurnStatus {
   return 'unknown';
 }
 
+function trimSentenceEnd(value: string): string {
+  return value.trim().replace(/[.!?]+$/u, '');
+}
+
 function buildTurnSummaryText(vibe: AgentSessionVibeResponse, status: SessionTurnStatus): string {
   const latest = vibe.activities[0];
   const title = vibe.header.title || vibe.header.providerLabel || vibe.sessionId;
   const state = vibe.header.stateLabel || vibe.header.state;
-  const reason = vibe.header.attentionReason || latest?.summary || state;
-  const latestSignal = latest?.summary || state;
+  const reason = trimSentenceEnd(vibe.header.attentionReason || latest?.summary || state);
+  const latestSignal = trimSentenceEnd(latest?.summary || state);
 
   const templates: Record<SessionTurnStatus, string> = {
     needs_user: `${title} needs user attention: ${reason}.`,
     blocked: `${title} is blocked: ${reason}.`,
-    busy: `${title} is still working. Latest signal: ${latest?.summary || vibe.overview.activityMeta}.`,
+    busy: `${title} is still working. Latest signal: ${trimSentenceEnd(latest?.summary || vibe.overview.activityMeta)}.`,
     shell: `${title} is at a shell, not inside an active agent turn.`,
     complete: `${title} appears done or idle. Latest signal: ${latestSignal}.`,
     unknown: `${title} state is unclear. Latest signal: ${latestSignal}.`,
@@ -848,6 +852,8 @@ async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<u
       success: false,
       error: `Session ${args.sessionId} not found`,
       targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+      responseText: `Session ${args.sessionId} was not found.`,
+      nextAction: 'Call session_overview to discover valid session IDs before summarizing a turn.',
     };
   }
 
@@ -864,6 +870,9 @@ async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<u
     createdAt: activity.createdAt,
   }));
 
+  const summary = buildTurnSummaryText(vibe, status);
+  const nextAction = buildNextAction(status);
+
   return {
     success: true,
     sessionId: args.sessionId,
@@ -874,8 +883,9 @@ async function handleSessionTurnSummary(args: SessionTurnSummaryArgs): Promise<u
     stateLabel: vibe.header.stateLabel,
     needsAttention: vibe.header.needsAttention,
     attentionReason: vibe.header.attentionReason,
-    summary: buildTurnSummaryText(vibe, status),
-    nextAction: buildNextAction(status),
+    responseText: summary,
+    summary,
+    nextAction,
     overview: vibe.overview,
     latestActivities,
     tailText: vibe.terminal.tailText,

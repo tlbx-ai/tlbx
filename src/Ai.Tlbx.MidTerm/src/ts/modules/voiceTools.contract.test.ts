@@ -3,6 +3,7 @@ import { $activeSessionId, $focusedSessionId, $sessions } from '../stores';
 import type { Session } from '../types';
 
 const sendSessionPrompt = vi.fn();
+const getSessionAgentVibe = vi.fn();
 const getWebPreviewTarget = vi.fn();
 const getBrowserPreviewStatus = vi.fn();
 const requestSelectSession = vi.fn();
@@ -31,7 +32,7 @@ vi.mock('../api/client', () => ({
   deleteSession: vi.fn(),
   getHistory: vi.fn(),
   getSessionAgentFeed: vi.fn(),
-  getSessionAgentVibe: vi.fn(),
+  getSessionAgentVibe,
   sendSessionPrompt,
 }));
 
@@ -94,6 +95,41 @@ function getResult(
   expect(response.error).toBeUndefined();
   expect(response.result).toBeTruthy();
   return response.result as Record<string, unknown>;
+}
+
+function createAgentVibe(
+  sessionId: string,
+  state: string,
+  latestSummary: string,
+): Record<string, unknown> {
+  return {
+    sessionId,
+    header: {
+      state,
+      stateLabel: state,
+      title: 'Worker lane',
+      providerLabel: 'Codex',
+      needsAttention: false,
+      attentionReason: null,
+      chips: [],
+    },
+    overview: {
+      stateMeta: state,
+      activityMeta: latestSummary,
+    },
+    activities: [
+      {
+        tone: 'neutral',
+        kind: 'agent',
+        summary: latestSummary,
+        detail: latestSummary,
+        createdAt: '2026-05-27T00:00:00.000Z',
+      },
+    ],
+    terminal: {
+      tailText: latestSummary,
+    },
+  };
 }
 
 describe('voice tool response contract', () => {
@@ -231,6 +267,43 @@ describe('voice tool response contract', () => {
       targetPreviewName: 'app',
       targetPreviewId: 'preview-1',
       action: 'dev_browser_status',
+      isTargetActive: true,
+      isTargetFocused: true,
+      isTargetInLayout: true,
+    });
+  });
+
+  it('exposes session turn summaries as spoken-ready response text', async () => {
+    $sessions.set({ s1: createSession('s1', 'Worker lane') });
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+    getSessionAgentVibe.mockResolvedValue(
+      createAgentVibe('s1', 'idle-prompt', 'Tests passed and release is ready.'),
+    );
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'turn-summary-1',
+        tool: 'session_turn_summary',
+        args: { sessionId: 's1' },
+      }),
+    );
+
+    expect(getSessionAgentVibe).toHaveBeenCalledWith('s1', 80, 90, 8);
+    expect(result).toMatchObject({
+      success: true,
+      sessionId: 's1',
+      status: 'complete',
+      responseText:
+        'Worker lane appears done or idle. Latest signal: Tests passed and release is ready.',
+      summary:
+        'Worker lane appears done or idle. Latest signal: Tests passed and release is ready.',
+      nextAction: 'Summarize the observed outcome in one or two short sentences.',
+    });
+    expect(result.targetContext).toMatchObject({
+      targetSessionId: 's1',
+      targetSessionTitle: 'Worker lane',
       isTargetActive: true,
       isTargetFocused: true,
       isTargetInLayout: true,
