@@ -316,6 +316,7 @@ export type VoiceToolName =
   | 'state_of_things'
   | 'session_overview'
   | 'conversation_continuity'
+  | 'campaign_goal'
   | 'campaign_status'
   | 'make_input'
   | 'read_scrollback'
@@ -490,6 +491,46 @@ export interface ConversationContinuitySession {
   nextAction: string;
   latestActivities: unknown[];
   tailText?: string;
+}
+
+/** Current active voice campaign phase */
+export type CampaignGoalPhase = 'orient' | 'execute' | 'verify' | 'report' | 'blocked' | 'done';
+
+/** Args for campaign_goal tool */
+export interface CampaignGoalArgs {
+  action?: 'status' | 'set' | 'update' | 'clear';
+  objective?: string | null;
+  phase?: CampaignGoalPhase | null;
+  targetSessionIds?: string[];
+  currentFocusSessionId?: string | null;
+  exitCriteria?: string | null;
+  nextReport?: string | null;
+  reason?: string | null;
+}
+
+/** Browser-owned campaign goal state for voice conversation flow */
+export interface CampaignGoalState {
+  active: boolean;
+  objective: string | null;
+  phase: CampaignGoalPhase | null;
+  targetSessionIds: string[];
+  currentFocusSessionId: string | null;
+  exitCriteria: string | null;
+  nextReport: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  reason: string | null;
+}
+
+/** Result of campaign_goal tool */
+export interface CampaignGoalResult {
+  success: boolean;
+  action: 'status' | 'set' | 'update' | 'clear';
+  goal: CampaignGoalState;
+  targetContext?: VoiceTargetContext;
+  responseText: string;
+  nextAction: string;
+  unknownTargetSessionIds?: string[];
 }
 
 /** Args for campaign_status tool */
