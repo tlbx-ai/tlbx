@@ -3,6 +3,7 @@ import { $activeSessionId, $focusedSessionId, $sessions } from '../stores';
 import type { Session } from '../types';
 
 const sendSessionPrompt = vi.fn();
+const sendInput = vi.fn();
 const getSessionAgentVibe = vi.fn();
 const getWebPreviewTarget = vi.fn();
 const getBrowserPreviewStatus = vi.fn();
@@ -19,7 +20,7 @@ vi.mock('./logging', () => ({
 }));
 
 vi.mock('./comms', () => ({
-  sendInput: vi.fn(),
+  sendInput,
 }));
 
 vi.mock('./comms/stateChannel', () => ({
@@ -212,6 +213,36 @@ describe('voice tool response contract', () => {
       targetSessionId: 's1',
       targetSessionTitle: 'Worker lane',
       action: 'send_prompt',
+      isTargetActive: true,
+      isTargetFocused: true,
+      isTargetInLayout: true,
+    });
+  });
+
+  it('gives terminal input tools spoken flow guidance', async () => {
+    $sessions.set({ s1: createSession('s1', 'Terminal lane') });
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'input-1',
+        tool: 'make_input',
+        args: { sessionId: 's1', text: '{Enter}', delayMs: 0 },
+      }),
+    );
+
+    expect(sendInput).toHaveBeenCalledWith('s1', '\r');
+    expect(result).toMatchObject({
+      success: true,
+      responseText: 'Input sent to Terminal lane.',
+      screenContent: '[terminal not in view - ask user to switch to this session to see content]',
+    });
+    expect(result.nextAction).toEqual(expect.stringContaining('wait_for_turn_completion'));
+    expect(result.targetContext).toMatchObject({
+      targetSessionId: 's1',
+      targetSessionTitle: 'Terminal lane',
       isTargetActive: true,
       isTargetFocused: true,
       isTargetInLayout: true,

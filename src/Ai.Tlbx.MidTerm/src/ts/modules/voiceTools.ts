@@ -469,6 +469,8 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
       screenContent: `Session ${sessionId} not found`,
       cols: 0,
       rows: 0,
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction: 'Call session_overview to discover valid session IDs before sending input.',
       targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
@@ -483,6 +485,9 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
     screenContent: getTerminalViewport(sessionId),
     cols: session.cols,
     rows: session.rows,
+    responseText: `Input sent to ${getReadableSessionTitle(session, sessionId)}.`,
+    nextAction:
+      'Call session_turn_summary; if it is busy and the user is waiting, call wait_for_turn_completion once.',
     targetContext: buildVoiceTargetContext({ sessionId }),
   };
 }
@@ -492,14 +497,29 @@ async function handleMakeInput(args: MakeInputArgs): Promise<MakeInputResult> {
  */
 function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
   const { sessionId, start = 'bottom', lines = 40 } = args;
+  const session = getSession(sessionId);
 
-  const termState = sessionTerminals.get(sessionId);
-  if (!termState?.terminal) {
+  if (!session) {
     return {
       content: `Session ${sessionId} not found`,
       totalLines: 0,
       returnedLines: 0,
       startLine: 0,
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction: 'Call session_overview to discover valid session IDs before reading scrollback.',
+      targetContext: buildVoiceTargetContext({ sessionId }),
+    };
+  }
+
+  const termState = sessionTerminals.get(sessionId);
+  if (!termState?.terminal) {
+    return {
+      content: `Terminal for session ${sessionId} is not rendered`,
+      totalLines: 0,
+      returnedLines: 0,
+      startLine: 0,
+      responseText: `Terminal output for ${getReadableSessionTitle(session, sessionId)} is not rendered yet.`,
+      nextAction: `Use select_session with sessionId ${sessionId}, then retry read_scrollback if terminal text is needed.`,
       targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
@@ -530,6 +550,9 @@ function handleReadScrollback(args: ReadScrollbackArgs): ReadScrollbackResult {
     totalLines,
     returnedLines: extractedLines.length,
     startLine,
+    responseText: `Read ${extractedLines.length} terminal lines from ${getReadableSessionTitle(session, sessionId)}.`,
+    nextAction:
+      'Use the returned terminal content for the answer; call session_turn_summary if the user needs turn completion state.',
     targetContext: buildVoiceTargetContext({ sessionId }),
   };
 }
@@ -544,6 +567,9 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
   if (!session) {
     return {
       results: [{ index: 0, success: false, screenshot: `Session ${sessionId} not found` }],
+      responseText: `Session ${sessionId} was not found.`,
+      nextAction:
+        'Call session_overview to discover valid session IDs before running terminal operations.',
       targetContext: buildVoiceTargetContext({ sessionId }),
     };
   }
@@ -586,7 +612,22 @@ async function handleInteractiveRead(args: InteractiveReadArgs): Promise<Interac
     }
   }
 
-  return { results, targetContext: buildVoiceTargetContext({ sessionId }) };
+  const successCount = results.filter((result) => result.success).length;
+  const failureCount = results.length - successCount;
+  const screenshotCount = results.filter((result) => result.screenshot).length;
+
+  return {
+    results,
+    responseText:
+      failureCount > 0
+        ? `Ran ${successCount} of ${results.length} terminal operations in ${getReadableSessionTitle(session, sessionId)}.`
+        : `Ran ${results.length} terminal operations in ${getReadableSessionTitle(session, sessionId)}.`,
+    nextAction:
+      screenshotCount > 0
+        ? 'Use the returned terminal screenshot text before deciding the next action.'
+        : 'Call session_turn_summary; if it is busy and the user is waiting, call wait_for_turn_completion once.',
+    targetContext: buildVoiceTargetContext({ sessionId }),
+  };
 }
 
 /**

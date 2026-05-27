@@ -565,6 +565,8 @@ export interface MakeInputResult {
   screenContent: string;
   cols: number;
   rows: number;
+  responseText?: string;
+  nextAction?: string;
   targetContext?: VoiceTargetContext;
 }
 
@@ -574,12 +576,16 @@ export interface ReadScrollbackResult {
   totalLines: number;
   returnedLines: number;
   startLine: number;
+  responseText?: string;
+  nextAction?: string;
   targetContext?: VoiceTargetContext;
 }
 
 /** Result of interactive_read tool */
 export interface InteractiveReadResult {
   results: InteractiveOpResult[];
+  responseText?: string;
+  nextAction?: string;
   targetContext?: VoiceTargetContext;
 }
 
