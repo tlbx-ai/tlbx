@@ -16462,8 +16462,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --command-bay-ui-reactive-surface: var(--command-bay-control-background);
   --command-bay-ui-reactive-border: transparent;
   --command-bay-ui-reactive-floating-button-surface: var(--command-bay-ui-reactive-surface);
-  --command-bay-floating-button-border: transparent;
-  --command-bay-ui-reactive-floating-button-border: transparent;
+  --command-bay-floating-button-border: var(--command-bay-textbox-border);
+  --command-bay-ui-reactive-floating-button-border: var(--command-bay-textbox-border);
   --command-bay-shadow: 0 2px 8px color-mix(in srgb, black 8%, transparent);
   position: absolute;
   left: 0;
@@ -16593,8 +16593,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   top: 4px;
   right: 4px;
   bottom: auto;
+  transform: none;
   background: transparent;
   box-shadow: none;
+}
+
+.adaptive-footer-dock[data-composer-expanded='true'] .smart-input-expand-toggle:active {
+  transform: scale(0.96);
 }
 
 .adaptive-footer-rail {
@@ -16829,8 +16834,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   background: transparent;
   color: color-mix(in srgb, var(--command-bay-muted) 84%, var(--command-bay-text));
   position: absolute;
-  top: 4px;
+  top: 50%;
   right: 4px;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -16874,7 +16880,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .smart-input-expand-toggle:active {
-  transform: scale(0.96);
+  transform: translateY(-50%) scale(0.96);
 }
 
 .smart-input-inline-tools {
@@ -16915,9 +16921,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-mic-btn,
 .smart-input-photo-btn,
 .smart-input-attach-btn {
+  box-sizing: border-box;
   min-width: var(--command-bay-control-height);
   min-height: var(--command-bay-control-height);
-  border: 1px solid var(--command-bay-border);
+  border: 1px solid var(--command-bay-textbox-border);
   border-radius: var(--command-bay-control-radius);
   background: var(--command-bay-surface);
   color: var(--command-bay-action-ink);
@@ -17028,6 +17035,19 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   border-color: var(--command-bay-border-strong);
 }
 
+.smart-input-tools-toggle:hover,
+.smart-input-tools-toggle:focus-visible,
+.smart-input-send-btn:hover,
+.smart-input-send-btn:focus-visible,
+.smart-input-mic-btn:hover,
+.smart-input-mic-btn:focus-visible,
+.smart-input-photo-btn:hover,
+.smart-input-photo-btn:focus-visible,
+.smart-input-attach-btn:hover,
+.smart-input-attach-btn:focus-visible {
+  border-color: var(--command-bay-textbox-border);
+}
+
 .smart-input-tools-toggle:active,
 .smart-input-send-btn:active,
 .smart-input-mic-btn:active,
@@ -17035,7 +17055,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-attach-btn:active {
   background: var(--command-bay-surface-hover);
   color: var(--command-bay-text);
-  border-color: var(--command-bay-border-strong);
+  border-color: var(--command-bay-textbox-border);
 }
 
 .smart-input-tools-toggle:hover,
@@ -17212,6 +17232,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .smart-input-mic-btn,
 .smart-input-photo-btn,
 .smart-input-attach-btn {
+  box-sizing: border-box;
   width: var(--command-bay-control-height);
   height: var(--command-bay-control-height);
   border-radius: var(--command-bay-control-radius);

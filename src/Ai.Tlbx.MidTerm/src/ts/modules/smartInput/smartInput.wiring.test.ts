@@ -107,7 +107,10 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-textbox-border: color-mix(');
     expect(css).toContain('--command-bay-textbox-border-focus: color-mix(');
     expect(css).toContain('--command-bay-ui-reactive-border: transparent;');
-    expect(css).toContain('--command-bay-floating-button-border: transparent;');
+    expect(css).toContain('--command-bay-floating-button-border: var(--command-bay-textbox-border);');
+    expect(css).toContain(
+      '--command-bay-ui-reactive-floating-button-border: var(--command-bay-textbox-border);',
+    );
     expect(reserveRule).toContain('margin-right: var(--adaptive-footer-right-offset, 0px);');
     expect(reserveRule).toContain('background: var(--command-bay-background);');
     expect(dockRule).toContain('background: transparent;');
@@ -260,6 +263,12 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-surface: var(--command-bay-control-background);');
     expect(css).toContain(
       '--command-bay-ui-reactive-surface: var(--command-bay-control-background);',
+    );
+    expect(css).toMatch(
+      /\.smart-input-tools-toggle,\s*\.smart-input-send-btn,\s*\.smart-input-mic-btn,\s*\.smart-input-photo-btn,\s*\.smart-input-attach-btn\s*\{[\s\S]*?box-sizing:\s*border-box;[\s\S]*?min-width:\s*var\(--command-bay-control-height\);[\s\S]*?min-height:\s*var\(--command-bay-control-height\);[\s\S]*?border:\s*1px solid var\(--command-bay-textbox-border\);/,
+    );
+    expect(css).toMatch(
+      /\.smart-input-mic-btn,\s*\.smart-input-photo-btn,\s*\.smart-input-attach-btn\s*\{[\s\S]*?width:\s*var\(--command-bay-control-height\);[\s\S]*?height:\s*var\(--command-bay-control-height\);/,
     );
     expect(css).toContain(
       '--command-bay-surface-color: var(--command-bay-control-background-color);',
@@ -465,6 +474,9 @@ describe('smart input tab wiring', () => {
     expect(footerSupportSource).toContain('args.composerExpanded');
     expect(css).toContain('.smart-input-textarea-shell {');
     expect(css).toContain('.smart-input-expand-toggle {');
+    expect(css).toMatch(
+      /\.smart-input-expand-toggle\s*\{[\s\S]*?top:\s*50%;[\s\S]*?transform:\s*translateY\(-50%\);/,
+    );
     expect(css).toContain(".adaptive-footer-dock[data-composer-expanded='true'] {");
     expect(css).toContain(".adaptive-footer-dock[data-composer-expanded='true'] {\n  top: 0;");
     expect(css).toMatch(
