@@ -419,6 +419,62 @@ describe('voice tool response contract', () => {
     });
   });
 
+  it('runs an agent turn with a spoken-ready completion summary', async () => {
+    $sessions.set({ s1: createSession('s1', 'Worker lane') });
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+    sendSessionPrompt.mockResolvedValue(undefined);
+    getSessionAgentVibe.mockResolvedValue(
+      createAgentVibe('s1', 'idle-prompt', 'Patch release finished.'),
+    );
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'agent-turn-1',
+        tool: 'agent_turn',
+        args: {
+          sessionId: 's1',
+          text: 'Ship the next patch release.',
+          timeoutMs: 1000,
+          pollIntervalMs: 500,
+          justification: 'complete the feature run',
+        },
+      }),
+    );
+
+    expect(sendSessionPrompt).toHaveBeenCalledWith(
+      's1',
+      expect.objectContaining({
+        text: 'Ship the next patch release.',
+        mode: 'auto',
+        submitKeys: ['Enter'],
+      }),
+    );
+    expect(getSessionAgentVibe).toHaveBeenCalledWith('s1', 20, 120, 8);
+    expect(result).toMatchObject({
+      success: true,
+      sessionId: 's1',
+      promptSent: true,
+      responseText: 'Worker lane appears done or idle. Latest signal: Patch release finished.',
+      nextAction: 'Summarize the observed outcome in one or two short sentences.',
+    });
+    expect(result.turn).toMatchObject({
+      success: true,
+      status: 'complete',
+      completed: true,
+      timedOut: false,
+    });
+    expect(result.targetContext).toMatchObject({
+      targetSessionId: 's1',
+      targetSessionTitle: 'Worker lane',
+      action: 'agent_turn',
+      isTargetActive: true,
+      isTargetFocused: true,
+      isTargetInLayout: true,
+    });
+  });
+
   it('dispatches one campaign prompt to multiple exact sessions', async () => {
     $sessions.set({
       s1: createSession('s1', 'Worker one'),

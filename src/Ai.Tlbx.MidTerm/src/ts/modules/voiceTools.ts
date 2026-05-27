@@ -67,6 +67,7 @@ import type {
   FocusContextResult,
   FocusContextState,
   SendPromptArgs,
+  AgentTurnArgs,
   CampaignDispatchArgs,
   SessionOverviewArgs,
   ConversationContinuityArgs,
@@ -1112,6 +1113,60 @@ async function sendPromptToSession(
     followupSubmitDelayMs: 250,
     profile: profile ?? null,
   });
+}
+
+/**
+ * Handle agent_turn tool - send one prompt and return the bounded completion summary.
+ */
+async function handleAgentTurn(args: AgentTurnArgs): Promise<unknown> {
+  const session = getSession(args.sessionId);
+  if (!session) {
+    return {
+      success: false,
+      error: `Session ${args.sessionId} not found`,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId }),
+      responseText: `Session ${args.sessionId} was not found.`,
+      nextAction:
+        'Call session_overview to get the current session IDs, then retry agent_turn against the correct session.',
+    };
+  }
+
+  await sendPromptToSession(args.sessionId, args.text, args.interruptFirst ?? false, args.profile);
+
+  const waitResult = await handleWaitForTurnCompletion({
+    sessionId: args.sessionId,
+    timeoutMs: args.timeoutMs ?? 45000,
+    pollIntervalMs: args.pollIntervalMs ?? 2000,
+    activitySeconds: args.activitySeconds ?? 120,
+    includeTail: args.includeTail ?? false,
+  });
+
+  if ('error' in waitResult) {
+    return {
+      success: false,
+      sessionId: args.sessionId,
+      promptSent: true,
+      error: waitResult.error,
+      targetContext: buildVoiceTargetContext({ sessionId: args.sessionId, action: 'agent_turn' }),
+      responseText: `Prompt sent to ${getReadableSessionTitle(session, args.sessionId)}, but the turn summary failed.`,
+      nextAction:
+        'Call session_turn_summary for this same session before reporting whether the agent turn completed.',
+      wait: waitResult,
+    };
+  }
+
+  return {
+    success: true,
+    sessionId: args.sessionId,
+    title: getReadableSessionTitle(session, args.sessionId),
+    promptSent: true,
+    interruptFirst: args.interruptFirst ?? false,
+    profile: args.profile ?? null,
+    targetContext: buildVoiceTargetContext({ sessionId: args.sessionId, action: 'agent_turn' }),
+    responseText: waitResult.responseText,
+    nextAction: waitResult.nextAction,
+    turn: waitResult,
+  };
 }
 
 async function handleCampaignDispatch(args: CampaignDispatchArgs): Promise<unknown> {
@@ -2960,6 +3015,7 @@ const voiceToolHandlers: Record<
   select_session: (args) =>
     Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
   send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
+  agent_turn: (args) => handleAgentTurn(args as unknown as AgentTurnArgs),
   campaign_dispatch: (args) => handleCampaignDispatch(args as unknown as CampaignDispatchArgs),
   session_activity: (args) => handleSessionActivity(args as unknown as SessionActivityArgs),
   session_turn_summary: (args) =>

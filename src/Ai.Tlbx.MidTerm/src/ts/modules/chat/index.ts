@@ -389,6 +389,13 @@ function formatSendPromptToolDisplay(args: Record<string, unknown>): string {
   return `Send prompt to ${sessionId}:\n${text}`;
 }
 
+function formatAgentTurnToolDisplay(args: Record<string, unknown>): string {
+  const sessionId = (args.sessionId as string) || '';
+  const text = (args.text as string) || '';
+  const timeoutMs = Number(args.timeoutMs) || 45000;
+  return `Run agent turn on ${sessionId}\nTimeout: ${Math.round(timeoutMs / 1000)}s\n${text}`;
+}
+
 function formatDevBrowserToolDisplay(args: Record<string, unknown>): string {
   const command = (args.command as string) || '';
   const selector = (args.selector as string) || '';
@@ -491,6 +498,7 @@ const toolDisplayFormatters: Partial<
   Record<VoiceToolName, (args: Record<string, unknown>) => string>
 > = {
   send_prompt: formatSendPromptToolDisplay,
+  agent_turn: formatAgentTurnToolDisplay,
   session_overview: formatSessionOverviewToolDisplay,
   conversation_continuity: formatConversationContinuityToolDisplay,
   campaign_status: formatCampaignStatusToolDisplay,

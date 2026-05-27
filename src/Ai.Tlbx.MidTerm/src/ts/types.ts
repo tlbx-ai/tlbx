@@ -327,6 +327,7 @@ export type VoiceToolName =
   | 'create_session'
   | 'select_session'
   | 'send_prompt'
+  | 'agent_turn'
   | 'campaign_dispatch'
   | 'session_activity'
   | 'session_turn_summary'
@@ -758,6 +759,19 @@ export interface SendPromptArgs {
   text: string;
   interruptFirst?: boolean;
   profile?: string | null;
+  justification: string;
+}
+
+/** Args for agent_turn tool */
+export interface AgentTurnArgs {
+  sessionId: string;
+  text: string;
+  interruptFirst?: boolean;
+  profile?: string | null;
+  timeoutMs?: number;
+  pollIntervalMs?: number;
+  activitySeconds?: number;
+  includeTail?: boolean;
   justification: string;
 }
 
