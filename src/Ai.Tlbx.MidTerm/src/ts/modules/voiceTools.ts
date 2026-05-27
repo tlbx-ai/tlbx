@@ -1302,39 +1302,37 @@ function buildCampaignGoalResponse(
   };
 }
 
-function handleCampaignGoal(args: CampaignGoalArgs): CampaignGoalResult {
-  const action = normalizeCampaignGoalAction(args.action);
-  const now = new Date().toISOString();
+function buildCampaignGoalStatusResponse(): CampaignGoalResult {
+  return buildCampaignGoalResponse(
+    'status',
+    true,
+    campaignGoalState.active
+      ? `Active voice goal: ${campaignGoalState.objective}.`
+      : 'No active voice campaign goal is set.',
+    campaignGoalState.active
+      ? 'Use this goal state to target the next tool call or update the phase before reporting.'
+      : 'Set campaign_goal when the user starts broader multi-session work.',
+  );
+}
 
-  if (action === 'status') {
-    return buildCampaignGoalResponse(
-      action,
-      true,
-      campaignGoalState.active
-        ? `Active voice goal: ${campaignGoalState.objective}.`
-        : 'No active voice campaign goal is set.',
-      campaignGoalState.active
-        ? 'Use this goal state to target the next tool call or update the phase before reporting.'
-        : 'Set campaign_goal when the user starts broader multi-session work.',
-    );
-  }
+function clearCampaignGoal(reason: string | null | undefined): CampaignGoalResult {
+  campaignGoalState = {
+    ...emptyCampaignGoalState(),
+    updatedAt: new Date().toISOString(),
+    reason: reason?.trim() || 'cleared',
+  };
+  return buildCampaignGoalResponse(
+    'clear',
+    true,
+    'Voice campaign goal cleared.',
+    'Continue with the current user request; set a new campaign_goal before broader work.',
+  );
+}
 
-  if (action === 'clear') {
-    const reason = args.reason?.trim() || 'cleared';
-    campaignGoalState = {
-      ...emptyCampaignGoalState(),
-      updatedAt: now,
-      reason,
-    };
-    return buildCampaignGoalResponse(
-      action,
-      true,
-      'Voice campaign goal cleared.',
-      'Continue with the current user request; set a new campaign_goal before broader work.',
-    );
-  }
-
-  const objective = args.objective?.trim();
+function validateCampaignGoalChange(
+  action: CampaignGoalResult['action'],
+  objective: string | undefined,
+): CampaignGoalResult | null {
   if (action === 'set' && !objective) {
     return buildCampaignGoalResponse(
       action,
@@ -1353,16 +1351,78 @@ function handleCampaignGoal(args: CampaignGoalArgs): CampaignGoalResult {
     );
   }
 
-  const targetSessionIds = normalizeCampaignGoalSessionIds(args.targetSessionIds);
-  const currentFocusSessionId =
+  return null;
+}
+
+function resolveCampaignGoalFocusSessionId(args: CampaignGoalArgs): string | null {
+  return (
     args.currentFocusSessionId?.trim() ||
     campaignGoalState.currentFocusSessionId ||
     $focusedSessionId.get() ||
-    $activeSessionId.get();
+    $activeSessionId.get()
+  );
+}
+
+function applyCampaignGoalChange(
+  args: CampaignGoalArgs,
+  objective: string | undefined,
+  currentFocusSessionId: string | null,
+  targetSessionIds: { validIds: string[]; unknownIds: string[] },
+): void {
+  campaignGoalState = {
+    active: true,
+    objective: objective || campaignGoalState.objective,
+    phase: normalizeCampaignGoalPhase(args.phase) ?? campaignGoalState.phase ?? 'orient',
+    targetSessionIds:
+      args.targetSessionIds !== undefined
+        ? targetSessionIds.validIds
+        : campaignGoalState.targetSessionIds,
+    currentFocusSessionId,
+    exitCriteria: args.exitCriteria?.trim() || campaignGoalState.exitCriteria,
+    nextReport: args.nextReport?.trim() || campaignGoalState.nextReport,
+    createdAt: campaignGoalState.createdAt ?? new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    reason: args.reason?.trim() || campaignGoalState.reason,
+  };
+}
+
+function buildCampaignGoalChangeResponse(
+  action: CampaignGoalResult['action'],
+  unknownTargetSessionIds: string[],
+): CampaignGoalResult {
+  const hasUnknownTargets = unknownTargetSessionIds.length > 0;
+  const responseText =
+    action === 'set'
+      ? `Voice campaign goal set: ${campaignGoalState.objective}.`
+      : `Voice campaign goal updated: ${campaignGoalState.objective}.`;
+
+  return buildCampaignGoalResponse(
+    action,
+    !hasUnknownTargets,
+    hasUnknownTargets
+      ? `${responseText} Some target sessions were not found: ${unknownTargetSessionIds.join(', ')}.`
+      : responseText,
+    hasUnknownTargets
+      ? 'Call session_overview before using the missing target session IDs.'
+      : 'Use campaign_status, session_turn_summary, wait_for_turn_completion, or Dev Browser tools against the stored targets; update campaign_goal before the final report.',
+    unknownTargetSessionIds,
+  );
+}
+
+function handleCampaignGoal(args: CampaignGoalArgs): CampaignGoalResult {
+  const action = normalizeCampaignGoalAction(args.action);
+  if (action === 'status') return buildCampaignGoalStatusResponse();
+  if (action === 'clear') return clearCampaignGoal(args.reason);
+
+  const objective = args.objective?.trim();
+  const invalidChange = validateCampaignGoalChange(action, objective);
+  if (invalidChange) return invalidChange;
+
+  const targetSessionIds = normalizeCampaignGoalSessionIds(args.targetSessionIds);
+  const currentFocusSessionId = resolveCampaignGoalFocusSessionId(args);
   const focusSessionExists = currentFocusSessionId
     ? Boolean(getSession(currentFocusSessionId))
     : true;
-  const phase = normalizeCampaignGoalPhase(args.phase) ?? campaignGoalState.phase ?? 'orient';
 
   if (!focusSessionExists) {
     return buildCampaignGoalResponse(
@@ -1374,38 +1434,8 @@ function handleCampaignGoal(args: CampaignGoalArgs): CampaignGoalResult {
     );
   }
 
-  campaignGoalState = {
-    active: true,
-    objective: objective || campaignGoalState.objective,
-    phase,
-    targetSessionIds:
-      args.targetSessionIds !== undefined
-        ? targetSessionIds.validIds
-        : campaignGoalState.targetSessionIds,
-    currentFocusSessionId,
-    exitCriteria: args.exitCriteria?.trim() || campaignGoalState.exitCriteria,
-    nextReport: args.nextReport?.trim() || campaignGoalState.nextReport,
-    createdAt: campaignGoalState.createdAt ?? now,
-    updatedAt: now,
-    reason: args.reason?.trim() || campaignGoalState.reason,
-  };
-
-  const hasUnknownTargets = targetSessionIds.unknownIds.length > 0;
-  const responseText =
-    action === 'set'
-      ? `Voice campaign goal set: ${campaignGoalState.objective}.`
-      : `Voice campaign goal updated: ${campaignGoalState.objective}.`;
-  return buildCampaignGoalResponse(
-    action,
-    !hasUnknownTargets,
-    hasUnknownTargets
-      ? `${responseText} Some target sessions were not found: ${targetSessionIds.unknownIds.join(', ')}.`
-      : responseText,
-    hasUnknownTargets
-      ? 'Call session_overview before using the missing target session IDs.'
-      : 'Use campaign_status, session_turn_summary, wait_for_turn_completion, or Dev Browser tools against the stored targets; update campaign_goal before the final report.',
-    targetSessionIds.unknownIds,
-  );
+  applyCampaignGoalChange(args, objective, currentFocusSessionId, targetSessionIds);
+  return buildCampaignGoalChangeResponse(action, targetSessionIds.unknownIds);
 }
 
 function resolveCampaignSessions(args: CampaignStatusArgs): {
