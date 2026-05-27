@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { $activeSessionId, $focusedSessionId, $sessions } from '../stores';
+import { $activeSessionId, $focusedSessionId, $settingsOpen, $sessions } from '../stores';
 import type { Session } from '../types';
 
 const sendSessionPrompt = vi.fn();
@@ -9,6 +9,12 @@ const getWebPreviewTarget = vi.fn();
 const getBrowserPreviewStatus = vi.fn();
 const requestSelectSession = vi.fn();
 const getLayoutSessionIds = vi.fn(() => ['s1']);
+const openSettings = vi.fn();
+const closeSettings = vi.fn();
+const switchSettingsTab = vi.fn((tab: string) => {
+  activeSettingsTab = tab;
+});
+let activeSettingsTab = 'updates';
 
 vi.mock('./logging', () => ({
   createLogger: () => ({
@@ -74,6 +80,36 @@ vi.mock('./layout/layoutStore', () => ({
   undockSession: vi.fn(),
 }));
 
+vi.mock('./settings/panel', () => ({
+  closeSettings,
+  openSettings,
+}));
+
+vi.mock('./settings/tabs', () => ({
+  getActiveSettingsTab: vi.fn(() => activeSettingsTab),
+  normalizeStoredSettingsTab: vi.fn((tab: string | null) => {
+    switch (tab) {
+      case 'updates':
+      case 'sessions':
+      case 'appearance':
+      case 'workflow':
+      case 'terminal':
+      case 'ai-agents':
+      case 'security':
+      case 'connected-hosts':
+      case 'advanced':
+        return tab;
+      case 'general':
+        return 'updates';
+      case 'hub':
+        return 'connected-hosts';
+      default:
+        return null;
+    }
+  }),
+  switchSettingsTab,
+}));
+
 const { processToolRequest } = await import('./voiceTools');
 
 function createSession(id: string, title: string): Session {
@@ -136,10 +172,18 @@ function createAgentVibe(
 describe('voice tool response contract', () => {
   beforeEach(async () => {
     vi.clearAllMocks();
+    activeSettingsTab = 'updates';
     $sessions.set({});
     $activeSessionId.set(null);
     $focusedSessionId.set(null);
+    $settingsOpen.set(false);
     getLayoutSessionIds.mockReturnValue(['s1']);
+    openSettings.mockImplementation(() => {
+      $settingsOpen.set(true);
+    });
+    closeSettings.mockImplementation(() => {
+      $settingsOpen.set(false);
+    });
     await processToolRequest({
       type: 'tool_request',
       requestId: 'focus-clear',
@@ -299,6 +343,40 @@ describe('voice tool response contract', () => {
       isTargetActive: true,
       isTargetFocused: true,
       isTargetInLayout: true,
+    });
+  });
+
+  it('opens the global update settings surface through app_shell', async () => {
+    $sessions.set({ s1: createSession('s1', 'Worker lane') });
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'app-shell-open-updates',
+        tool: 'app_shell',
+        args: { action: 'open_settings', settingsTab: 'updates', reason: 'user asked for updates' },
+      }),
+    );
+
+    expect(openSettings).toHaveBeenCalledOnce();
+    expect(switchSettingsTab).toHaveBeenCalledWith('updates');
+    expect(result).toMatchObject({
+      success: true,
+      action: 'open_settings',
+      settingsOpen: true,
+      activeSettingsTab: 'updates',
+      requestedSettingsTab: 'updates',
+      activeSessionId: 's1',
+      focusedSessionId: 's1',
+      responseText: 'Opened Settings on updates.',
+    });
+    expect(result.nextAction).toEqual(expect.stringContaining('Updates & About'));
+    expect(result.targetContext).toMatchObject({
+      action: 'app_shell:open_settings',
+      activeSessionId: 's1',
+      focusedSessionId: 's1',
     });
   });
 

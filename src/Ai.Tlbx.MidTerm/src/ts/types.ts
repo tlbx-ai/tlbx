@@ -320,6 +320,7 @@ export type VoiceToolName =
   | 'campaign_goal'
   | 'campaign_status'
   | 'campaign_report'
+  | 'app_shell'
   | 'make_input'
   | 'read_scrollback'
   | 'interactive_read'
@@ -406,6 +407,42 @@ export interface FocusContextResult {
   targetContext?: VoiceTargetContext;
   responseText: string;
   nextAction: string;
+}
+
+export type VoiceSettingsTab =
+  | 'updates'
+  | 'sessions'
+  | 'appearance'
+  | 'workflow'
+  | 'terminal'
+  | 'ai-agents'
+  | 'security'
+  | 'connected-hosts'
+  | 'advanced';
+
+/** Args for app_shell tool */
+export interface AppShellArgs {
+  action?: 'status' | 'open_settings' | 'close_settings';
+  settingsTab?: VoiceSettingsTab | null;
+  reason?: string | null;
+}
+
+/** Result of app_shell tool */
+export interface AppShellResult {
+  success: boolean;
+  action: 'status' | 'open_settings' | 'close_settings';
+  settingsOpen: boolean;
+  activeSettingsTab: VoiceSettingsTab | null;
+  requestedSettingsTab: VoiceSettingsTab | null;
+  sidebarOpen: boolean;
+  activeSessionId: string | null;
+  focusedSessionId: string | null;
+  updateCurrentVersion: string | null;
+  updateLatestVersion: string | null;
+  updateAvailable: boolean | null;
+  responseText: string;
+  nextAction: string;
+  targetContext?: VoiceTargetContext;
 }
 
 /** Args for make_input tool */

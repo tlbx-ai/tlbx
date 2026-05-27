@@ -9,12 +9,13 @@
 import { createLogger } from './logging';
 import { sendInput } from './comms';
 import { requestSelectSession } from './comms/stateChannel';
-import { sessionTerminals } from '../state';
+import { dom, sessionTerminals } from '../state';
 import {
   $activeSessionId,
   $focusedSessionId,
   $layout,
   $sessionList,
+  $settingsOpen,
   $updateInfo,
   getSession,
 } from '../stores';
@@ -38,6 +39,13 @@ import { selectActivePreview } from './web';
 import { uploadFile } from './terminal/fileDrop';
 import { addGitRepo, fetchGitRepos, refreshGitRepo, removeGitRepo } from './git/gitApi';
 import { applyGitReposForSession, getCachedGitReposForSession } from './git';
+import { closeSettings, openSettings } from './settings/panel';
+import {
+  getActiveSettingsTab,
+  normalizeStoredSettingsTab,
+  switchSettingsTab,
+  type SettingsTab,
+} from './settings/tabs';
 import {
   dockSession,
   focusLayoutSession,
@@ -64,6 +72,8 @@ import type {
   CampaignGoalArgs,
   CampaignStatusArgs,
   CampaignReportArgs,
+  AppShellArgs,
+  AppShellResult,
   SessionActivityArgs,
   SessionTurnSummaryArgs,
   WaitForTurnCompletionArgs,
@@ -2630,6 +2640,92 @@ function handleLayoutControl(args: LayoutControlArgs): unknown {
   };
 }
 
+function normalizeAppShellAction(action: AppShellArgs['action']): AppShellResult['action'] {
+  switch (action) {
+    case 'open_settings':
+    case 'close_settings':
+      return action;
+    case 'status':
+    case undefined:
+      return 'status';
+    default:
+      return 'status';
+  }
+}
+
+function normalizeSettingsTab(tab: AppShellArgs['settingsTab']): SettingsTab | null {
+  return normalizeStoredSettingsTab(tab?.trim() || null);
+}
+
+function buildAppShellResponse(
+  action: AppShellResult['action'],
+  requestedSettingsTab: SettingsTab | null,
+  responseText: string,
+  nextAction: string,
+): AppShellResult {
+  const updateInfo = $updateInfo.get();
+  return {
+    success: true,
+    action,
+    settingsOpen: $settingsOpen.get(),
+    activeSettingsTab: $settingsOpen.get() ? getActiveSettingsTab() : null,
+    requestedSettingsTab,
+    sidebarOpen: dom.app?.classList.contains('sidebar-open') ?? false,
+    activeSessionId: $activeSessionId.get(),
+    focusedSessionId: $focusedSessionId.get(),
+    updateCurrentVersion: updateInfo?.currentVersion ?? null,
+    updateLatestVersion: updateInfo?.latestVersion ?? null,
+    updateAvailable: updateInfo?.available ?? null,
+    responseText,
+    nextAction,
+    targetContext: buildVoiceTargetContext({ action: `app_shell:${action}` }),
+  };
+}
+
+/**
+ * Handle app_shell tool - inspect or navigate MidTerm's global app chrome.
+ */
+function handleAppShell(args: AppShellArgs): AppShellResult {
+  const action = normalizeAppShellAction(args.action);
+  const requestedSettingsTab = normalizeSettingsTab(args.settingsTab);
+
+  if (action === 'open_settings') {
+    openSettings();
+    if (requestedSettingsTab) {
+      switchSettingsTab(requestedSettingsTab);
+    }
+
+    const tab = requestedSettingsTab ?? getActiveSettingsTab();
+    return buildAppShellResponse(
+      action,
+      requestedSettingsTab,
+      `Opened Settings on ${tab}.`,
+      tab === 'updates'
+        ? 'Use app_shell status to read update/version context, or tell the user the Updates & About section is visible.'
+        : 'Continue with the visible settings section, or call app_shell open_settings with settingsTab updates for update controls.',
+    );
+  }
+
+  if (action === 'close_settings') {
+    closeSettings();
+    return buildAppShellResponse(
+      action,
+      requestedSettingsTab,
+      'Closed Settings.',
+      'Continue with the active MidTerm session or call session_overview before the next session-scoped action.',
+    );
+  }
+
+  return buildAppShellResponse(
+    action,
+    requestedSettingsTab,
+    $settingsOpen.get() ? `Settings is open on ${getActiveSettingsTab()}.` : 'Settings is closed.',
+    $settingsOpen.get()
+      ? 'Use app_shell open_settings with a settingsTab to switch sections, or close_settings to return to the session.'
+      : 'Use app_shell open_settings with settingsTab updates to show update controls.',
+  );
+}
+
 /**
  * Handle close_session tool - close a terminal session.
  */
@@ -2783,6 +2879,7 @@ const voiceToolHandlers: Record<
   campaign_goal: (args) => Promise.resolve(handleCampaignGoal(args as unknown as CampaignGoalArgs)),
   campaign_status: (args) => handleCampaignStatus(args as unknown as CampaignStatusArgs),
   campaign_report: (args) => handleCampaignReport(args as unknown as CampaignReportArgs),
+  app_shell: (args) => Promise.resolve(handleAppShell(args as unknown as AppShellArgs)),
   make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
   read_scrollback: (args) =>
     Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
