@@ -316,6 +316,7 @@ export type VoiceToolName =
   | 'state_of_things'
   | 'session_overview'
   | 'conversation_continuity'
+  | 'focus_context'
   | 'campaign_goal'
   | 'campaign_status'
   | 'campaign_report'
@@ -371,6 +372,40 @@ export interface VoiceTargetContext {
   isTargetActive: boolean | null;
   isTargetFocused: boolean | null;
   isTargetInLayout: boolean | null;
+}
+
+/** Args for focus_context tool */
+export interface FocusContextArgs {
+  action?: 'status' | 'set' | 'clear';
+  sessionId?: string | null;
+  previewName?: string | null;
+  previewId?: string | null;
+  repoRoot?: string | null;
+  reason?: string | null;
+}
+
+/** Browser-owned voice focus target that survives reloads and reconnects */
+export interface FocusContextState {
+  active: boolean;
+  sessionId: string | null;
+  sessionTitle: string | null;
+  sessionExists: boolean | null;
+  previewName: string | null;
+  previewId: string | null;
+  repoRoot: string | null;
+  reason: string | null;
+  updatedAt: string | null;
+}
+
+/** Result of focus_context tool */
+export interface FocusContextResult {
+  success: boolean;
+  action: 'status' | 'set' | 'clear';
+  focus: FocusContextState;
+  persisted: boolean;
+  targetContext?: VoiceTargetContext;
+  responseText: string;
+  nextAction: string;
 }
 
 /** Args for make_input tool */

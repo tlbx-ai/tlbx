@@ -55,6 +55,9 @@ import type {
   InteractiveReadArgs,
   CreateSessionArgs,
   SelectSessionArgs,
+  FocusContextArgs,
+  FocusContextResult,
+  FocusContextState,
   SendPromptArgs,
   SessionOverviewArgs,
   ConversationContinuityArgs,
@@ -100,6 +103,7 @@ const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
 const DEFAULT_PREVIEW_NAME = 'default';
+const FOCUS_CONTEXT_STORAGE_KEY = 'midterm.voice.focusContext.v1';
 const CAMPAIGN_GOAL_STORAGE_KEY = 'midterm.voice.campaignGoal.v1';
 const LAYOUT_DOCK_POSITIONS = new Set<DockPosition>(['top', 'bottom', 'left', 'right']);
 const CAMPAIGN_GOAL_PHASES = new Set<CampaignGoalPhase>([
@@ -131,6 +135,20 @@ const BROWSER_COMMANDS = new Set([
 ]);
 type SessionTurnStatus = 'complete' | 'busy' | 'needs_user' | 'blocked' | 'shell' | 'unknown';
 
+function emptyFocusContextState(): FocusContextState {
+  return {
+    active: false,
+    sessionId: null,
+    sessionTitle: null,
+    sessionExists: null,
+    previewName: null,
+    previewId: null,
+    repoRoot: null,
+    reason: null,
+    updatedAt: null,
+  };
+}
+
 function emptyCampaignGoalState(): CampaignGoalState {
   return {
     active: false,
@@ -148,6 +166,23 @@ function emptyCampaignGoalState(): CampaignGoalState {
 
 function isNullableString(value: unknown): value is string | null {
   return value === null || typeof value === 'string';
+}
+
+function isFocusContextState(value: unknown): value is FocusContextState {
+  if (!value || typeof value !== 'object') return false;
+
+  const candidate = value as Partial<FocusContextState>;
+  return (
+    typeof candidate.active === 'boolean' &&
+    isNullableString(candidate.sessionId) &&
+    isNullableString(candidate.sessionTitle) &&
+    (candidate.sessionExists === null || typeof candidate.sessionExists === 'boolean') &&
+    isNullableString(candidate.previewName) &&
+    isNullableString(candidate.previewId) &&
+    isNullableString(candidate.repoRoot) &&
+    isNullableString(candidate.reason) &&
+    isNullableString(candidate.updatedAt)
+  );
 }
 
 function isCampaignGoalState(value: unknown): value is CampaignGoalState {
@@ -168,6 +203,29 @@ function isCampaignGoalState(value: unknown): value is CampaignGoalState {
     isNullableString(candidate.updatedAt) &&
     isNullableString(candidate.reason)
   );
+}
+
+function loadPersistedFocusContextState(): {
+  state: FocusContextState;
+  persisted: boolean;
+} {
+  if (typeof window === 'undefined') {
+    return { state: emptyFocusContextState(), persisted: false };
+  }
+
+  try {
+    const raw = window.localStorage.getItem(FOCUS_CONTEXT_STORAGE_KEY);
+    if (!raw) {
+      return { state: emptyFocusContextState(), persisted: true };
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    return isFocusContextState(parsed)
+      ? { state: parsed, persisted: true }
+      : { state: emptyFocusContextState(), persisted: false };
+  } catch {
+    return { state: emptyFocusContextState(), persisted: false };
+  }
 }
 
 function loadPersistedCampaignGoalState(): {
@@ -193,6 +251,19 @@ function loadPersistedCampaignGoalState(): {
   }
 }
 
+function persistFocusContextState(): boolean {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    window.localStorage.setItem(FOCUS_CONTEXT_STORAGE_KEY, JSON.stringify(focusContextState));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function persistCampaignGoalState(): boolean {
   if (typeof window === 'undefined') {
     return false;
@@ -206,6 +277,9 @@ function persistCampaignGoalState(): boolean {
   }
 }
 
+const persistedFocusContext = loadPersistedFocusContextState();
+let focusContextState: FocusContextState = persistedFocusContext.state;
+let focusContextPersistenceOk = persistedFocusContext.persisted;
 const persistedCampaignGoal = loadPersistedCampaignGoalState();
 let campaignGoalState: CampaignGoalState = persistedCampaignGoal.state;
 let campaignGoalPersistenceOk = persistedCampaignGoal.persisted;
@@ -264,6 +338,62 @@ function buildVoiceTargetContext(args: VoiceTargetContextArgs = {}): VoiceTarget
     isTargetActive: targetSessionId ? targetSessionId === activeSessionId : null,
     isTargetFocused: targetSessionId ? targetSessionId === focusedSessionId : null,
     isTargetInLayout: targetSessionId ? layoutSessionIds.includes(targetSessionId) : null,
+  };
+}
+
+function buildFocusContextState(args: FocusContextArgs, active: boolean): FocusContextState {
+  const sessionId = normalizeTargetValue(args.sessionId);
+  const previewName = normalizeTargetValue(args.previewName);
+  const previewId = normalizeTargetValue(args.previewId);
+  const repoRoot = normalizeTargetValue(args.repoRoot);
+  const reason = normalizeTargetValue(args.reason);
+  const session = sessionId ? getSession(sessionId) : null;
+
+  return {
+    active,
+    sessionId,
+    sessionTitle: session ? getReadableSessionTitle(session, sessionId ?? session.id) : null,
+    sessionExists: sessionId ? Boolean(session) : null,
+    previewName,
+    previewId,
+    repoRoot,
+    reason,
+    updatedAt: active ? new Date().toISOString() : null,
+  };
+}
+
+function cloneFocusContextState(): FocusContextState {
+  return { ...focusContextState };
+}
+
+function rememberFocusContext(args: FocusContextArgs): void {
+  const next = buildFocusContextState(args, true);
+  if (!next.sessionId && !next.previewName && !next.repoRoot) return;
+  if (next.sessionId && next.sessionExists === false) return;
+
+  focusContextState = next;
+  focusContextPersistenceOk = persistFocusContextState();
+}
+
+function buildFocusContextResponse(
+  action: FocusContextResult['action'],
+  responseText: string,
+  nextAction: string,
+): FocusContextResult {
+  return {
+    success: true,
+    action,
+    focus: cloneFocusContextState(),
+    persisted: focusContextPersistenceOk,
+    targetContext: buildVoiceTargetContext({
+      sessionId: focusContextState.sessionId,
+      previewName: focusContextState.previewName,
+      previewId: focusContextState.previewId,
+      repoRoot: focusContextState.repoRoot,
+      action: `focus_context:${action}`,
+    }),
+    responseText,
+    nextAction,
   };
 }
 
@@ -498,6 +628,83 @@ async function handleSessionOverview(args: SessionOverviewArgs): Promise<Session
     updateAvailable: updateInfo?.available ?? false,
     sessions: sessionSummaries,
   };
+}
+
+/**
+ * Handle focus_context tool - persist the voice agent's current operating target.
+ */
+function handleFocusContextStatus(): FocusContextResult {
+  return buildFocusContextResponse(
+    'status',
+    focusContextState.active
+      ? `Voice focus is ${focusContextState.sessionTitle ?? focusContextState.sessionId ?? 'set'}.`
+      : 'No persistent voice focus target is set.',
+    focusContextState.active
+      ? 'Carry targetContext into the next related tool call unless the user changes target.'
+      : 'Call session_overview or select_session, then set focus_context before multi-step work.',
+  );
+}
+
+function handleFocusContextClear(): FocusContextResult {
+  focusContextState = emptyFocusContextState();
+  focusContextPersistenceOk = persistFocusContextState();
+  return buildFocusContextResponse(
+    'clear',
+    'Cleared the persistent voice focus target.',
+    'Call session_overview before the next target-specific action.',
+  );
+}
+
+function handleFocusContextSet(args: FocusContextArgs): FocusContextResult {
+  const nextState = buildFocusContextState(args, true);
+  if (!nextState.sessionId && !nextState.previewName && !nextState.repoRoot) {
+    return {
+      success: false,
+      action: 'set',
+      focus: cloneFocusContextState(),
+      persisted: focusContextPersistenceOk,
+      targetContext: buildVoiceTargetContext({ action: 'focus_context:set' }),
+      responseText: 'focus_context set needs a sessionId, previewName, or repoRoot.',
+      nextAction: 'Call session_overview to choose a target, then retry focus_context set.',
+    };
+  }
+
+  if (nextState.sessionId && nextState.sessionExists === false) {
+    return {
+      success: false,
+      action: 'set',
+      focus: cloneFocusContextState(),
+      persisted: focusContextPersistenceOk,
+      targetContext: buildVoiceTargetContext({
+        sessionId: nextState.sessionId,
+        previewName: nextState.previewName,
+        previewId: nextState.previewId,
+        repoRoot: nextState.repoRoot,
+        action: 'focus_context:set',
+      }),
+      responseText: `Session ${nextState.sessionId} was not found, so the voice focus was not changed.`,
+      nextAction: 'Call session_overview to discover valid session IDs before setting focus.',
+    };
+  }
+
+  focusContextState = nextState;
+  focusContextPersistenceOk = persistFocusContextState();
+  return buildFocusContextResponse(
+    'set',
+    `Voice focus set to ${focusContextState.sessionTitle ?? focusContextState.sessionId ?? focusContextState.previewName ?? focusContextState.repoRoot}.`,
+    'Carry targetContext into the next related terminal, Dev Browser, repo, or turn-summary tool call.',
+  );
+}
+
+function handleFocusContext(args: FocusContextArgs): FocusContextResult {
+  switch (args.action ?? 'status') {
+    case 'set':
+      return handleFocusContextSet(args);
+    case 'clear':
+      return handleFocusContextClear();
+    case 'status':
+      return handleFocusContextStatus();
+  }
 }
 
 async function buildDefaultPreviewOverview(
@@ -791,6 +998,11 @@ function handleSelectSession(args: SelectSessionArgs): unknown {
   requestSelectSession(args.sessionId, {
     closeSettingsPanel: false,
     focusTerminal: args.focusTerminal ?? true,
+  });
+  rememberFocusContext({
+    action: 'set',
+    sessionId: args.sessionId,
+    reason: 'select_session',
   });
 
   return {
@@ -1897,6 +2109,12 @@ async function handleDevBrowserOpen(args: DevBrowserOpenArgs): Promise<unknown> 
   }
 
   await selectSessionForBrowser(sessionId, previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    reason: 'dev_browser_open',
+  });
   await sleep(250);
   const status = await getBrowserPreviewStatus(sessionId, previewName);
 
@@ -1930,6 +2148,13 @@ async function handleDevBrowserStatus(args: DevBrowserStatusArgs): Promise<unkno
   }
 
   const previewName = resolvePreviewName(args.previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    reason: 'dev_browser_status',
+  });
   const [target, status] = await Promise.all([
     getWebPreviewTarget(sessionId, previewName),
     getBrowserPreviewStatus(sessionId, previewName, args.previewId ?? undefined),
@@ -2052,6 +2277,13 @@ async function handleDevBrowserCommand(args: DevBrowserCommandArgs): Promise<unk
   if (validationError) return validationError;
 
   const previewName = resolvePreviewName(args.previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    reason: `dev_browser_command:${command}`,
+  });
 
   const result = await runBrowserCommand(
     command,
@@ -2098,6 +2330,13 @@ async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promi
   }
 
   const previewName = resolvePreviewName(args.previewName);
+  rememberFocusContext({
+    action: 'set',
+    sessionId,
+    previewName,
+    previewId: args.previewId ?? null,
+    reason: 'dev_browser_screenshot',
+  });
   const [target, status] = await Promise.all([
     getWebPreviewTarget(sessionId, previewName),
     getBrowserPreviewStatus(sessionId, previewName, args.previewId ?? undefined),
@@ -2508,6 +2747,7 @@ const voiceToolHandlers: Record<
   session_overview: (args) => handleSessionOverview(args as unknown as SessionOverviewArgs),
   conversation_continuity: (args) =>
     handleConversationContinuity(args as unknown as ConversationContinuityArgs),
+  focus_context: (args) => Promise.resolve(handleFocusContext(args as unknown as FocusContextArgs)),
   campaign_goal: (args) => Promise.resolve(handleCampaignGoal(args as unknown as CampaignGoalArgs)),
   campaign_status: (args) => handleCampaignStatus(args as unknown as CampaignStatusArgs),
   campaign_report: (args) => handleCampaignReport(args as unknown as CampaignReportArgs),

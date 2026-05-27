@@ -134,12 +134,18 @@ function createAgentVibe(
 }
 
 describe('voice tool response contract', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     $sessions.set({});
     $activeSessionId.set(null);
     $focusedSessionId.set(null);
     getLayoutSessionIds.mockReturnValue(['s1']);
+    await processToolRequest({
+      type: 'tool_request',
+      requestId: 'focus-clear',
+      tool: 'focus_context',
+      args: { action: 'clear' },
+    });
   });
 
   it('returns target context and flow guidance when selecting a session', async () => {
@@ -174,6 +180,74 @@ describe('voice tool response contract', () => {
       targetSessionTitle: 'MidTerm source',
       targetSessionExists: true,
       action: 'select_session',
+      isTargetActive: true,
+      isTargetFocused: true,
+      isTargetInLayout: true,
+    });
+  });
+
+  it('persists voice focus context across session and browser targeting', async () => {
+    $sessions.set({ s1: createSession('s1', 'Browser lane') });
+    $activeSessionId.set('s1');
+    $focusedSessionId.set('s1');
+    getWebPreviewTarget.mockResolvedValue({
+      sessionId: 's1',
+      previewName: 'app',
+      url: 'https://localhost:2100',
+      active: true,
+      targetRevision: 7,
+    });
+    getBrowserPreviewStatus.mockResolvedValue({
+      connected: true,
+      controllable: true,
+      hasTarget: true,
+      hasUiClient: true,
+      isScoped: true,
+      state: 'ready',
+      connectedClientCount: 1,
+      totalConnectedClientCount: 1,
+      connectedUiClientCount: 1,
+      ownerConnected: true,
+      clients: [],
+    });
+
+    await processToolRequest({
+      type: 'tool_request',
+      requestId: 'browser-status-focus',
+      tool: 'dev_browser_status',
+      args: { sessionId: 's1', previewName: 'app', previewId: 'preview-1' },
+    });
+
+    const result = getResult(
+      await processToolRequest({
+        type: 'tool_request',
+        requestId: 'focus-status',
+        tool: 'focus_context',
+        args: { action: 'status' },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      success: true,
+      action: 'status',
+      responseText: 'Voice focus is Browser lane.',
+    });
+    expect(typeof result.persisted).toBe('boolean');
+    expect(result.focus).toMatchObject({
+      active: true,
+      sessionId: 's1',
+      sessionTitle: 'Browser lane',
+      sessionExists: true,
+      previewName: 'app',
+      previewId: 'preview-1',
+      reason: 'dev_browser_status',
+    });
+    expect(result.nextAction).toEqual(expect.stringContaining('Carry targetContext'));
+    expect(result.targetContext).toMatchObject({
+      targetSessionId: 's1',
+      targetPreviewName: 'app',
+      targetPreviewId: 'preview-1',
+      action: 'focus_context:status',
       isTargetActive: true,
       isTargetFocused: true,
       isTargetInLayout: true,
