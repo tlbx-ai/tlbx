@@ -44,6 +44,7 @@ public static class Program
     private const int MinScrollbackBytes = 64 * 1024;
     private const int MaxScrollbackBytes = 10 * 1024 * 1024;
     private const int MaxIpcQueuedFramesPerClient = 256;
+    internal const BoundedChannelFullMode ClientWriteChannelFullMode = BoundedChannelFullMode.Wait;
 
     private static CancellationTokenSource? _shutdownCts;
 
@@ -356,11 +357,13 @@ public static class Program
         }
         finally
         {
+            ClearCurrentClientIfCurrent(clientCts);
         }
     }
 
-    private static void PromoteCurrentClient(CancellationTokenSource nextClientCts)
+    internal static void PromoteCurrentClient(CancellationTokenSource nextClientCts)
     {
+        CancellationTokenSource? previousClientCts = null;
         lock (_clientLock)
         {
             if (ReferenceEquals(_currentClientCts, nextClientCts))
@@ -368,27 +371,39 @@ public static class Program
                 return;
             }
 
-            if (_currentClientCts is not null)
+            previousClientCts = _currentClientCts;
+            _currentClientCts = nextClientCts;
+        }
+
+        TryCancelClient(previousClientCts);
+    }
+
+    internal static void ClearCurrentClientIfCurrent(CancellationTokenSource clientCts)
+    {
+        lock (_clientLock)
+        {
+            if (ReferenceEquals(_currentClientCts, clientCts))
             {
-                _currentClientCts.Cancel();
-                _currentClientCts.Dispose();
                 _currentClientCts = null;
             }
-
-            _currentClientCts = nextClientCts;
         }
     }
 
-    private static void DisposeCurrentClientCts_NoLock()
+    private static void TryCancelClient(CancellationTokenSource? clientCts)
     {
-        if (_currentClientCts is null)
+        if (clientCts is null)
         {
             return;
         }
 
-        _currentClientCts.Cancel();
-        _currentClientCts.Dispose();
-        _currentClientCts = null;
+        try
+        {
+            clientCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The owning client task disposes its CTS; reconnect cancellation is best-effort.
+        }
     }
 
     private readonly record struct PooledFrame(
@@ -517,7 +532,7 @@ public static class Program
         {
             SingleReader = true,
             SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropWrite
+            FullMode = ClientWriteChannelFullMode
         });
         var channelWriter = writeChannel.Writer;
         session.ResetIpcTransportState();
@@ -1248,6 +1263,7 @@ internal sealed class TerminalSession : IDisposable
     private readonly object _inputTraceLock = new();
     private readonly object _metadataLock = new();
     private readonly int _scrollbackBytes;
+    private readonly Action<ForegroundProcessInfo>? _foregroundChangedHandler;
     private TtyHostTransportInfo _transportInfo;
     private InputTraceState? _inputTrace;
     private string? _topic;
@@ -1300,7 +1316,8 @@ internal sealed class TerminalSession : IDisposable
 
         if (_processMonitor is not null)
         {
-            _processMonitor.OnForegroundChanged += info => OnForegroundChanged?.Invoke(info);
+            _foregroundChangedHandler = info => OnForegroundChanged?.Invoke(info);
+            _processMonitor.OnForegroundChanged += _foregroundChangedHandler;
         }
     }
 
@@ -1693,6 +1710,11 @@ internal sealed class TerminalSession : IDisposable
 
     public void Dispose()
     {
+        if (_processMonitor is not null && _foregroundChangedHandler is not null)
+        {
+            _processMonitor.OnForegroundChanged -= _foregroundChangedHandler;
+        }
+
         _outputBuffer.Dispose();
     }
 
