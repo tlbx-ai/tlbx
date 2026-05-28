@@ -66,7 +66,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private const int MaxQueuedOutputs = 1000;
     private readonly Channel<PooledOutputItem> _outputQueue =
         Channel.CreateBounded<PooledOutputItem>(
-            new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.DropWrite });
+            new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.Wait });
     private Task? _outputProcessor;
     private CancellationTokenSource? _cts;
     private readonly SettingsService _settingsService;
@@ -559,6 +559,10 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         if (_outputProcessor is not null)
         {
             try { await _outputProcessor.ConfigureAwait(false); } catch { }
+        }
+        while (_outputQueue.Reader.TryRead(out var item))
+        {
+            item.Buffer.Release();
         }
         cts?.Dispose();
 

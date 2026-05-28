@@ -32,6 +32,7 @@ internal sealed class SharedOutputBuffer
     public ReadOnlySpan<byte> Span => _buffer.AsSpan(0, _length);
     public Memory<byte> Memory => _buffer.AsMemory(0, _length);
     public Span<byte> WriteSpan => _buffer.AsSpan(0, _length);
+    internal bool IsReleased => _buffer.Length == 0;
 
     public static SharedOutputBuffer Rent(int length)
     {
@@ -254,7 +255,7 @@ public sealed class MuxClient : IAsyncDisposable
         {
             SingleReader = true,
             SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropWrite
+            FullMode = BoundedChannelFullMode.Wait
         });
         _processor = ProcessLoopAsync(_cts.Token);
     }
@@ -778,6 +779,12 @@ public sealed class MuxClient : IAsyncDisposable
         catch
         {
             // Ignore shutdown errors
+        }
+
+        var reader = _inputChannel.Reader;
+        while (reader.TryRead(out var item))
+        {
+            item.Buffer.Release();
         }
 
         // Return all pooled buffers

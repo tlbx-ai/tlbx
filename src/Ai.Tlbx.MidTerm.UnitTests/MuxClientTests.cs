@@ -44,6 +44,37 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public async Task QueueOutput_WhenInputQueueIsFull_ReturnsFalseAndReleasesBuffer()
+    {
+        using var socket = new BlockingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+
+        client.SetActiveSession("session-1");
+
+        var first = SharedOutputBuffer.Rent(32 * 1024);
+        Assert.True(client.QueueOutput("session-1", 32 * 1024, 120, 30, first));
+        await socket.SendStarted.WaitAsync(TimeSpan.FromSeconds(2));
+
+        SharedOutputBuffer? rejected = null;
+        for (var i = 0; i < 2_000; i++)
+        {
+            var buffer = SharedOutputBuffer.Rent(128);
+            if (!client.QueueOutput("session-1", (ulong)(32 * 1024 + ((i + 1) * 128)), 120, 30, buffer))
+            {
+                rejected = buffer;
+                break;
+            }
+        }
+
+        Assert.NotNull(rejected);
+        Assert.True(rejected.IsReleased);
+        socket.ReleaseSends();
+    }
+
+    [Fact]
     public void ResolveViewportReplayBytes_ScalesWithRowsAndClamps()
     {
         var session = new SessionInfo
@@ -62,7 +93,7 @@ public sealed class MuxClientTests
         Assert.Equal(256 * 1024, huge);
     }
 
-    private sealed class FakeWebSocket : WebSocket
+    private class FakeWebSocket : WebSocket
     {
         public override WebSocketCloseStatus? CloseStatus => null;
         public override string? CloseStatusDescription => null;
@@ -107,6 +138,26 @@ public sealed class MuxClientTests
             CancellationToken cancellationToken)
         {
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class BlockingWebSocket : FakeWebSocket
+    {
+        private readonly TaskCompletionSource _sendStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _releaseSends = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task SendStarted => _sendStarted.Task;
+
+        public void ReleaseSends() => _releaseSends.TrySetResult();
+
+        public override Task SendAsync(
+            ArraySegment<byte> buffer,
+            WebSocketMessageType messageType,
+            bool endOfMessage,
+            CancellationToken cancellationToken)
+        {
+            _sendStarted.TrySetResult();
+            return _releaseSends.Task.WaitAsync(cancellationToken);
         }
     }
 }
