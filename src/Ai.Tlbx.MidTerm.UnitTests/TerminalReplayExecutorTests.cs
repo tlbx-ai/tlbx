@@ -126,6 +126,92 @@ public sealed class TerminalReplayExecutorTests
             File.Delete(tempFile);
         }
 
-        Assert.Equal(["\u001b[200~alpha\nbeta\u001b[201~", "\r"], sentInputs);
+        Assert.Equal(["\u001b[200~alpha\rbeta\u001b[201~", "\r"], sentInputs);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BatchesAdjacentTextPathAndFileStepsWithTerminalNewlines()
+    {
+        var tempFile = Path.GetTempFileName();
+        var sentInputs = new List<string>();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, "delta\nomega");
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "text",
+                        Text = "alpha\nbeta "
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "filePath",
+                        Path = "Q:/repo/a b.txt"
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "text",
+                        Text = " gamma\r\ndone "
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = tempFile
+                    }
+                ],
+                (data, _) =>
+                {
+                    sentInputs.Add(Encoding.UTF8.GetString(data));
+                    return Task.CompletedTask;
+                },
+                (_, _, _) => Task.FromResult(false),
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+
+        Assert.Equal(["alpha\rbeta \"Q:/repo/a b.txt\" gamma\rdone delta\romega", "\r"], sentInputs);
+        Assert.Equal([TerminalReplayExecutor.SubmitDelayMs], delays);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BatchesMixedBracketedAndPlainTextWithoutDroppingMarkers()
+    {
+        var sentInputs = new List<string>();
+
+        await TerminalReplayExecutor.ExecuteAsync(
+            [
+                new AppServerControlTerminalReplayStep
+                {
+                    Kind = "text",
+                    Text = "a\nb"
+                },
+                new AppServerControlTerminalReplayStep
+                {
+                    Kind = "text",
+                    Text = "c\nd",
+                    UseBracketedPaste = true
+                }
+            ],
+            (data, _) =>
+            {
+                sentInputs.Add(Encoding.UTF8.GetString(data));
+                return Task.CompletedTask;
+            },
+            (_, _, _) => Task.FromResult(false),
+            static (_, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal(["a\rb\u001b[200~c\rd\u001b[201~", "\r"], sentInputs);
     }
 }
