@@ -6,6 +6,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 internal static class TerminalReplayExecutor
 {
     internal const int ImageSettleDelayMs = 200;
+    internal const int TextBeforeImageSettleDelayMs = 75;
     internal const int SubmitDelayMs = 200;
 
     public static async Task ExecuteAsync(
@@ -76,9 +77,15 @@ internal static class TerminalReplayExecutor
                         continue;
                     }
 
+                    var flushedTextBeforeImage = await pendingInput.FlushAsync(sendInputAsync, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (flushedTextBeforeImage)
+                    {
+                        await delayAsync(TextBeforeImageSettleDelayMs, cancellationToken).ConfigureAwait(false);
+                    }
+
                     if (await pasteImageAsync(step.Path, step.MimeType, cancellationToken).ConfigureAwait(false))
                     {
-                        await pendingInput.FlushAsync(sendInputAsync, cancellationToken).ConfigureAwait(false);
                         sentAnyContent = true;
                         await delayAsync(ImageSettleDelayMs, cancellationToken).ConfigureAwait(false);
                     }
@@ -131,18 +138,19 @@ internal static class TerminalReplayExecutor
             buffer.AddRange(bytes);
         }
 
-        public async Task FlushAsync(
+        public async Task<bool> FlushAsync(
             Func<byte[], CancellationToken, Task> sendInputAsync,
             CancellationToken cancellationToken)
         {
             if (buffer.Count == 0)
             {
-                return;
+                return false;
             }
 
             var bytes = buffer.ToArray();
             buffer.Clear();
             await sendInputAsync(bytes, cancellationToken).ConfigureAwait(false);
+            return true;
         }
     }
 }

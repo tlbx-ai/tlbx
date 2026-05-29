@@ -64,7 +64,13 @@ public sealed class TerminalReplayExecutorTests
             ],
             imagePastes);
         Assert.Equal(
-            [TerminalReplayExecutor.ImageSettleDelayMs, TerminalReplayExecutor.ImageSettleDelayMs, TerminalReplayExecutor.SubmitDelayMs],
+            [
+                TerminalReplayExecutor.TextBeforeImageSettleDelayMs,
+                TerminalReplayExecutor.ImageSettleDelayMs,
+                TerminalReplayExecutor.TextBeforeImageSettleDelayMs,
+                TerminalReplayExecutor.ImageSettleDelayMs,
+                TerminalReplayExecutor.SubmitDelayMs
+            ],
             delays);
     }
 
@@ -213,5 +219,71 @@ public sealed class TerminalReplayExecutorTests
             CancellationToken.None);
 
         Assert.Equal(["a\rb\u001b[200~c\rd\u001b[201~", "\r"], sentInputs);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PreservesTextFileImageTextFileReplayOrderWithBoundarySettle()
+    {
+        var firstTextFile = Path.GetTempFileName();
+        var secondTextFile = Path.GetTempFileName();
+        var sentInputs = new List<string>();
+        var imagePastes = new List<string>();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(firstTextFile, "first\nblock");
+            await File.WriteAllTextAsync(secondTextFile, "second\nblock");
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = firstTextFile
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "image",
+                        Path = "Q:/repo/.midterm/uploads/screen.png",
+                        MimeType = "image/png"
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = secondTextFile
+                    }
+                ],
+                (data, _) =>
+                {
+                    sentInputs.Add(Encoding.UTF8.GetString(data));
+                    return Task.CompletedTask;
+                },
+                (path, _, _) =>
+                {
+                    imagePastes.Add(path);
+                    return Task.FromResult(true);
+                },
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(firstTextFile);
+            File.Delete(secondTextFile);
+        }
+
+        Assert.Equal(["first\rblock", "second\rblock", "\r"], sentInputs);
+        Assert.Equal(["Q:/repo/.midterm/uploads/screen.png"], imagePastes);
+        Assert.Equal(
+            [
+                TerminalReplayExecutor.TextBeforeImageSettleDelayMs,
+                TerminalReplayExecutor.ImageSettleDelayMs,
+                TerminalReplayExecutor.SubmitDelayMs
+            ],
+            delays);
     }
 }
