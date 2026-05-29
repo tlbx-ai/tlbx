@@ -2671,6 +2671,30 @@
                       >
                     </div>
                     <div class="setting-row">
+                      <label
+                        for="setting-terminal-latency-diagnostics-enabled"
+                        data-i18n="settings.diagnostics.enableInputLatencyTracing"
+                        >Enable input latency tracing</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-terminal-latency-diagnostics-enabled"
+                      />
+                    </div>
+                    <div class="diag-latency-graph-row">
+                      <div class="diag-latency-graph-header">
+                        <span data-i18n="settings.diagnostics.inputLatencyGraph"
+                          >Input latency, last 15s</span
+                        >
+                        <code id="diag-input-latency-graph-max">-</code>
+                      </div>
+                      <div
+                        id="diag-input-latency-graph"
+                        class="diag-latency-graph"
+                        aria-hidden="true"
+                      ></div>
+                    </div>
+                    <div class="setting-row">
                       <label for="diag-overlay-toggle" data-i18n="settings.diagnostics.showOverlay"
                         >Show overlay on terminal</label
                       >

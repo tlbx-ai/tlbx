@@ -39,6 +39,9 @@ import { clearBracketedPasteScanState, scanBracketedPasteMode } from './brackete
 import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
 import * as bgOutput from './backgroundOutputDeferral';
 import * as muxSessionRouting from './muxSessionRouting';
+import { resolveMuxDataLossReason } from './muxDataLoss';
+import { createMuxInputFrame } from './muxInputFrame';
+import { createPrintableInputBurstCoalescer } from './printableInputBurst';
 import {
   buildResumeCursorQueryValue,
   countLocalTerminals,
@@ -63,6 +66,7 @@ import {
 export {
   offInputLatencyTrace,
   onInputLatencyTrace,
+  setInputLatencyTraceConsumerEnabled,
   setInputLatencyTracingEnabled,
 } from './inputLatencyTrace';
 export type { InputLatencyTraceSnapshot } from './inputLatencyTrace';
@@ -108,10 +112,6 @@ const textEncoder = new TextEncoder();
 type SessionBytesCallback = (sessionId: string, bytes: number) => void;
 let _sessionBytesCallback: SessionBytesCallback | null = null;
 
-/**
- * Register a callback to be notified whenever output bytes arrive for a session.
- * Used by the sidebar heat indicator to track per-session activity.
- */
 export function setSessionBytesCallback(cb: SessionBytesCallback): void {
   _sessionBytesCallback = cb;
 }
@@ -254,10 +254,6 @@ function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
 
 const pendingInputQueue: Array<{ sessionId: string; data: string }> = [];
 
-/**
- * Fetch fresh session list from server via REST API.
- * Used to ensure state consistency after mux reconnect.
- */
 async function refreshSessionList(): Promise<void> {
   try {
     const { data, response } = await getSessions();
@@ -272,11 +268,6 @@ async function refreshSessionList(): Promise<void> {
 
 let pongCallback: ((mode: number, rtt: number) => void) | null = null;
 
-/**
- * Send a ping to measure roundtrip latency.
- * Mode 0 = server echo only, mode 1 = full mthost roundtrip.
- * Returns promise with RTT in milliseconds.
- */
 export function sendPing(sessionId: string, mode: 0 | 1): Promise<number> {
   return new Promise((resolve, reject) => {
     if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
@@ -429,11 +420,16 @@ const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
+const PRINTABLE_INPUT_BURST_WINDOW_MS = 60;
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
 let outputQueueGeneration = 0;
 let yieldToMainChannel: MessageChannel | null = null;
 const pendingYieldToMainResolves: Array<() => void> = [];
+const printableInputCoalescer = createPrintableInputBurstCoalescer(
+  PRINTABLE_INPUT_BURST_WINDOW_MS,
+  sendInputNow,
+);
 
 function compactSessionQueue(queue: SessionOutputQueue): void {
   if (queue.index > 0) {
@@ -838,7 +834,7 @@ function writeOutputDataWithPathScan(
 
   writeTerminalData(sessionId, state, sequenceEnd, data, generation, () => {
     if (sessionId === $activeSessionId.get()) {
-      queueMicrotask(() => {
+      void yieldToMain().then(() => {
         if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
           scanOutputForPaths(sessionId, data);
         }
@@ -1017,27 +1013,6 @@ function handleMuxPongFrame(type: number, payload: Uint8Array): boolean {
   return true;
 }
 
-function resolveMuxDataLossReason(reasonCode: number): string {
-  switch (reasonCode) {
-    case 1:
-      return 'mthost_ipc_overflow';
-    case 2:
-      return 'mux_overflow';
-    case 3:
-      return 'browser_pending_overflow';
-    case 4:
-      return 'ipc_timeout_reconnect';
-    case 5:
-      return 'buffer_refresh_tail_replay';
-    case 6:
-      return 'reconnect_tail_replay';
-    case 7:
-      return 'quick_resume_tail_replay';
-    default:
-      return 'manual';
-  }
-}
-
 function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8Array): boolean {
   if (type !== MUX_TYPE_DATA_LOSS) {
     return false;
@@ -1213,10 +1188,6 @@ function sendFrame(frame: Uint8Array): void {
   muxWs.send(frame);
 }
 
-/**
- * Send terminal input to server.
- * Buffers input when WebSocket is disconnected for replay on reconnect.
- */
 export function sendInput(sessionId: string, data: string): void {
   if (isHubSessionId(sessionId)) {
     sendHubInput(sessionId, data);
@@ -1231,6 +1202,14 @@ export function sendInput(sessionId: string, data: string): void {
     scheduleBurstCursorShow(state);
   }
 
+  if (printableInputCoalescer.enqueue(sessionId, data, inputAtMs)) {
+    return;
+  }
+
+  sendInputNow(sessionId, data, inputAtMs);
+}
+
+function sendInputNow(sessionId: string, data: string, inputAtMs: number): void {
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
     // Buffer input during disconnection (prevents lost keystrokes during reconnect)
     if (pendingInputQueue.length < 100) {
@@ -1248,37 +1227,20 @@ export function sendInput(sessionId: string, data: string): void {
   maybeSendInputTraceMarker(sessionId, inputAtMs, sendFrame, encodeSessionId);
   recordInputTimestamp(sessionId);
 
-  let asciiOnly = true;
-  for (let i = 0; i < data.length; i++) {
-    if (data.charCodeAt(i) > 0x7f) {
-      asciiOnly = false;
-      break;
-    }
-  }
-
-  if (asciiOnly) {
-    const frame = new Uint8Array(MUX_HEADER_SIZE + data.length);
-    frame[0] = MUX_TYPE_INPUT;
-    encodeSessionId(frame, 1, sessionId);
-    for (let i = 0; i < data.length; i++) {
-      frame[MUX_HEADER_SIZE + i] = data.charCodeAt(i);
-    }
-    sendFrame(frame);
-    return;
-  }
-
-  const payload = textEncoder.encode(data);
-  const frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
-  frame[0] = MUX_TYPE_INPUT;
-  encodeSessionId(frame, 1, sessionId);
-  frame.set(payload, MUX_HEADER_SIZE);
-  sendFrame(frame);
+  sendFrame(
+    createMuxInputFrame(
+      MUX_HEADER_SIZE,
+      MUX_TYPE_INPUT,
+      sessionId,
+      data,
+      encodeSessionId,
+      textEncoder,
+    ),
+  );
 }
 
-/**
- * Flush any input buffered during WebSocket disconnection.
- */
 function flushPendingInput(): void {
+  printableInputCoalescer.flushAll();
   while (pendingInputQueue.length > 0) {
     const item = pendingInputQueue.shift();
     if (!item) break;
@@ -1286,9 +1248,6 @@ function flushPendingInput(): void {
   }
 }
 
-/**
- * Send terminal resize to server.
- */
 export function sendResize(sessionId: string, cols: number, rows: number): void {
   if (!$isMainBrowser.get()) {
     return;
@@ -1298,6 +1257,8 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
     sendHubResize(sessionId, cols, rows);
     return;
   }
+
+  printableInputCoalescer.flush(sessionId);
 
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
@@ -1360,6 +1321,10 @@ export function sendActiveSessionHint(sessionId: string | null): void {
   }
 
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+
+  if (sessionId) {
+    printableInputCoalescer.flush(sessionId);
+  }
 
   if (sessionId) {
     beginReplayHeatSuppression(sessionId, ACTIVE_HINT_REPLAY_MAX_MS);

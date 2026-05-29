@@ -548,6 +548,8 @@
   "settings.diagnostics.activeSession": "Active Session",
   "settings.diagnostics.outputRtt": "Output RTT",
   "settings.diagnostics.typeToMeasure": "type to measure",
+  "settings.diagnostics.enableInputLatencyTracing": "Enable input latency tracing",
+  "settings.diagnostics.inputLatencyGraph": "Input latency, last 15s",
   "settings.diagnostics.showOverlay": "Show overlay on terminal",
   "settings.diagnostics.terminalBufferDump": "Terminal buffer dump",
   "settings.diagnostics.downloadTerminalBufferDump": "Download dump",

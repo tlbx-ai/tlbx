@@ -7878,6 +7878,50 @@ body.shared-session-mode .session-tab-bar {
   font-family: inherit;
 }
 
+.diag-latency-graph-row {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.diag-latency-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+}
+
+.diag-latency-graph {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 52px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.diag-latency-bar {
+  flex: 1 1 3px;
+  min-width: 3px;
+  max-width: 10px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent-green);
+  opacity: 0.85;
+}
+
+.diag-latency-bar.is-warn {
+  background: var(--accent-yellow);
+}
+
+.diag-latency-bar.is-bad {
+  background: var(--accent-red);
+}
+
 .diag-help-commands {
   display: grid;
   grid-template-columns: auto 1fr;

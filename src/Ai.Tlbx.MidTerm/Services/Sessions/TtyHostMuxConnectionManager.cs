@@ -64,6 +64,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private const int MaxInputLatencyTraces = 256;
     private const long InputLatencyTraceTimeoutMs = 10_000;
     private const int MaxQueuedOutputs = 1000;
+    private const int OutputQueuePriorityBatchSize = 256;
     private readonly Channel<PooledOutputItem> _outputQueue =
         Channel.CreateBounded<PooledOutputItem>(
             new BoundedChannelOptions(MaxQueuedOutputs) { FullMode = BoundedChannelFullMode.Wait });
@@ -165,32 +166,77 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
     private async Task ProcessOutputQueueAsync(CancellationToken ct)
     {
-        await foreach (var item in _outputQueue.Reader.ReadAllAsync(ct))
+        var batch = new List<PooledOutputItem>(OutputQueuePriorityBatchSize);
+        while (await _outputQueue.Reader.WaitToReadAsync(ct).ConfigureAwait(false))
         {
-            try
+            batch.Clear();
+            while (batch.Count < OutputQueuePriorityBatchSize && _outputQueue.Reader.TryRead(out var item))
             {
-                if (item.Buffer.Length < 50)
-                {
-                    Log.Verbose(() => $"[WS-OUTPUT] {item.SessionId}: {BitConverter.ToString(item.Buffer.Memory[..item.Buffer.Length].Span.ToArray())}");
-                }
+                batch.Add(item);
+            }
 
-                // Queue raw data to each client - clients handle buffering and framing
-                foreach (var client in _clients.Values)
+            var activeInterest = new bool[batch.Count];
+            for (var i = 0; i < batch.Count; i++)
+            {
+                activeInterest[i] = HasActiveClientInterest(batch[i].SessionId);
+            }
+
+            for (var i = 0; i < batch.Count; i++)
+            {
+                if (activeInterest[i])
                 {
-                    if (client.WebSocket.State == WebSocketState.Open)
+                    QueueOutputToClients(batch[i]);
+                }
+            }
+
+            for (var i = 0; i < batch.Count; i++)
+            {
+                if (!activeInterest[i])
+                {
+                    QueueOutputToClients(batch[i]);
+                }
+            }
+        }
+    }
+
+    private bool HasActiveClientInterest(string sessionId)
+    {
+        foreach (var client in _clients.Values)
+        {
+            if (client.WebSocket.State == WebSocketState.Open && client.IsActiveSession(sessionId))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void QueueOutputToClients(PooledOutputItem item)
+    {
+        try
+        {
+            if (item.Buffer.Length < 50)
+            {
+                Log.Verbose(() => $"[WS-OUTPUT] {item.SessionId}: {BitConverter.ToString(item.Buffer.Memory[..item.Buffer.Length].Span.ToArray())}");
+            }
+
+            // Queue raw data to each client - clients handle buffering and framing
+            foreach (var client in _clients.Values)
+            {
+                if (client.WebSocket.State == WebSocketState.Open)
+                {
+                    item.Buffer.AddRef();
+                    if (client.QueueOutput(item.SessionId, item.SequenceEndExclusive, item.Cols, item.Rows, item.Buffer))
                     {
-                        item.Buffer.AddRef();
-                        if (client.QueueOutput(item.SessionId, item.SequenceEndExclusive, item.Cols, item.Rows, item.Buffer))
-                        {
-                            MarkInputTraceClientQueued(client.Id, item.SessionId, item.SequenceEndExclusive);
-                        }
+                        MarkInputTraceClientQueued(client.Id, item.SessionId, item.SequenceEndExclusive);
                     }
                 }
             }
-            finally
-            {
-                item.Buffer.Release();
-            }
+        }
+        finally
+        {
+            item.Buffer.Release();
         }
     }
 

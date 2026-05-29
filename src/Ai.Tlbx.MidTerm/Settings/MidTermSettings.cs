@@ -139,6 +139,9 @@ public sealed class MidTermSettings
     // Developer mode - enables dev features (voice sync, faster update checks, etc.)
     public bool DevMode { get; set; } = false;
 
+    // Terminal input latency tracing - dev mode enables this automatically; in normal mode it is opt-in.
+    public bool TerminalLatencyDiagnosticsEnabled { get; set; } = false;
+
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;
 

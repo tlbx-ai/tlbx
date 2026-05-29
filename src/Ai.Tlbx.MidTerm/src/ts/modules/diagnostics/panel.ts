@@ -6,8 +6,15 @@
 
 import { getPaths, getSessionState, reloadSettings, restartServer } from '../../api/client';
 import type { SessionStateResponse } from '../../api/types';
-import { getBrowserTransportSnapshot, measureLatency, onOutputRtt } from '../comms';
-import { $activeSessionId, $browserSessions, getSession } from '../../stores';
+import {
+  getBrowserTransportSnapshot,
+  measureLatency,
+  onInputLatencyTrace,
+  onOutputRtt,
+  setInputLatencyTraceConsumerEnabled,
+} from '../comms';
+import type { InputLatencyTraceSnapshot } from '../comms';
+import { $activeSessionId, $browserSessions, $currentSettings, getSession } from '../../stores';
 import type { BrowserSessionStatus } from '../../types';
 import { getSessionDisplayInfo } from '../sidebar/sessionList';
 import { enableLatencyOverlay, disableLatencyOverlay } from './latencyOverlay';
@@ -29,6 +36,9 @@ const log = createLogger('diagnostics');
 type TerminalTransportDiagnostics = NonNullable<SessionStateResponse['terminalTransport']>;
 
 let latencyInterval: ReturnType<typeof setInterval> | null = null;
+const INPUT_LATENCY_GRAPH_WINDOW_MS = 15_000;
+const INPUT_LATENCY_GRAPH_MAX_BARS = 60;
+const inputLatencyGraphSamples: Array<{ at: number; value: number }> = [];
 
 export function initDiagnosticsPanel(): void {
   void loadPaths();
@@ -39,6 +49,8 @@ export function initDiagnosticsPanel(): void {
   bindTerminalBufferDumpButton();
   bindTerminalKeyLogControls();
   bindBrowserSessionTree();
+  bindInputLatencyGraph();
+  syncInputLatencyTracingConsumer();
 }
 
 export function startLatencyMeasurement(): void {
@@ -97,6 +109,90 @@ async function runLatencyPing(): Promise<void> {
   }
 
   updateTerminalTransportDiagnostics(sessionId, stateResponse?.terminalTransport ?? null);
+}
+
+function bindInputLatencyGraph(): void {
+  onInputLatencyTrace(handleInputLatencyGraphTrace);
+  $activeSessionId.subscribe(() => {
+    pruneInputLatencyGraphSamples(performance.now());
+    renderInputLatencyGraph();
+  });
+  $currentSettings.subscribe(syncInputLatencyTracingConsumer);
+}
+
+function syncInputLatencyTracingConsumer(): void {
+  const settings = $currentSettings.get();
+  const enabled =
+    settings?.devMode === true || settings?.terminalLatencyDiagnosticsEnabled === true;
+  setInputLatencyTraceConsumerEnabled('diagnostics-panel', enabled);
+}
+
+function handleInputLatencyGraphTrace(sessionId: string, trace: InputLatencyTraceSnapshot): void {
+  if (sessionId !== $activeSessionId.get()) {
+    return;
+  }
+
+  const value = trace.totalToXtermParsedMs ?? trace.browserToOutputReceiveMs;
+  if (value === null || value < 0 || !Number.isFinite(value)) {
+    return;
+  }
+
+  const now = performance.now();
+  inputLatencyGraphSamples.push({ at: now, value });
+  pruneInputLatencyGraphSamples(now);
+  renderInputLatencyGraph();
+}
+
+function pruneInputLatencyGraphSamples(now: number): void {
+  const cutoff = now - INPUT_LATENCY_GRAPH_WINDOW_MS;
+  while (inputLatencyGraphSamples.length > 0) {
+    const first = inputLatencyGraphSamples[0];
+    if (!first || first.at >= cutoff) {
+      break;
+    }
+    inputLatencyGraphSamples.shift();
+  }
+  if (inputLatencyGraphSamples.length > INPUT_LATENCY_GRAPH_MAX_BARS) {
+    inputLatencyGraphSamples.splice(
+      0,
+      inputLatencyGraphSamples.length - INPUT_LATENCY_GRAPH_MAX_BARS,
+    );
+  }
+}
+
+function renderInputLatencyGraph(): void {
+  const graph = document.getElementById('diag-input-latency-graph');
+  const maxEl = document.getElementById('diag-input-latency-graph-max');
+  if (!graph) {
+    return;
+  }
+
+  if (inputLatencyGraphSamples.length === 0) {
+    graph.replaceChildren();
+    if (maxEl) {
+      maxEl.textContent = '-';
+    }
+    return;
+  }
+
+  const max = Math.max(...inputLatencyGraphSamples.map((sample) => sample.value), 1);
+  if (maxEl) {
+    maxEl.textContent = `${max >= 100 ? max.toFixed(0) : max.toFixed(1)} ms peak`;
+  }
+
+  const bars = inputLatencyGraphSamples.map((sample) => {
+    const bar = document.createElement('div');
+    bar.className = 'diag-latency-bar';
+    if (sample.value >= 100) {
+      bar.classList.add('is-bad');
+    } else if (sample.value >= 30) {
+      bar.classList.add('is-warn');
+    }
+    bar.style.height = `${Math.max(4, Math.round((sample.value / max) * 100))}%`;
+    bar.title = `${sample.value >= 100 ? sample.value.toFixed(0) : sample.value.toFixed(1)} ms`;
+    return bar;
+  });
+  graph.replaceChildren(...bars);
 }
 
 async function loadPaths(): Promise<void> {

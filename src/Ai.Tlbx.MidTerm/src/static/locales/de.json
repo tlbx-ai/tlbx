@@ -262,6 +262,8 @@
   "settings.diagnostics.activeSession": "Aktive Sitzung",
   "settings.diagnostics.outputRtt": "Ausgabe RTT",
   "settings.diagnostics.typeToMeasure": "tippen zum messen",
+  "settings.diagnostics.enableInputLatencyTracing": "Eingabe-Latenz-Tracing aktivieren",
+  "settings.diagnostics.inputLatencyGraph": "Eingabelatenz, letzte 15s",
   "settings.diagnostics.showGitDebugOverlay": "Git-Debug-Overlay anzeigen",
   "settings.diagnostics.showOverlay": "Overlay auf Terminal anzeigen",
   "settings.diagnostics.terminalBufferDump": "Terminal-Puffer-Dump",

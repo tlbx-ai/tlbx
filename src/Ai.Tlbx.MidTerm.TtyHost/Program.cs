@@ -46,6 +46,16 @@ public static class Program
     private const int MaxIpcQueuedFramesPerClient = 256;
     internal const BoundedChannelFullMode ClientWriteChannelFullMode = BoundedChannelFullMode.Wait;
 
+    private enum IpcOutputFlushPolicy
+    {
+        Auto,
+        Always,
+        TraceOnly,
+        Never,
+    }
+
+    private static readonly IpcOutputFlushPolicy OutputFlushPolicy = ResolveIpcOutputFlushPolicy();
+
     private static CancellationTokenSource? _shutdownCts;
 
     public static async Task<int> Main(string[] args)
@@ -477,12 +487,16 @@ public static class Program
                         ArrayPool<byte>.Shared.Return(frame.Buffer);
                     }
                 }
-                await stream.FlushAsync(ct).ConfigureAwait(false);
+                var hasTraceFlushes = traceFlushes is { Count: > 0 };
+                if (ShouldFlushIpcOutput(stream, hasTraceFlushes))
+                {
+                    await stream.FlushAsync(ct).ConfigureAwait(false);
+                }
 
-                if (traceFlushes is { Count: > 0 })
+                if (hasTraceFlushes)
                 {
                     var flushDoneAtMs = Environment.TickCount64;
-                    foreach (var traceFlush in traceFlushes)
+                    foreach (var traceFlush in traceFlushes!)
                     {
                         if (session.TryCreateInputTraceOutputReport(
                             traceFlush.TraceId,
@@ -496,7 +510,10 @@ public static class Program
                         }
                     }
 
-                    await stream.FlushAsync(ct).ConfigureAwait(false);
+                    if (ShouldFlushIpcOutput(stream, hasInputTraceReport: true))
+                    {
+                        await stream.FlushAsync(ct).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -514,6 +531,33 @@ public static class Program
                 ArrayPool<byte>.Shared.Return(remaining.Buffer);
             }
         }
+    }
+
+    private static IpcOutputFlushPolicy ResolveIpcOutputFlushPolicy()
+    {
+        var value = Environment.GetEnvironmentVariable("MIDTERM_TTYHOST_IPC_OUTPUT_FLUSH_POLICY");
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "always" => IpcOutputFlushPolicy.Always,
+            "traceonly" or "trace-only" or "trace_only" => IpcOutputFlushPolicy.TraceOnly,
+            "never" => IpcOutputFlushPolicy.Never,
+            _ => IpcOutputFlushPolicy.Auto,
+        };
+    }
+
+    private static bool ShouldFlushIpcOutput(Stream stream, bool hasInputTraceReport)
+    {
+        return OutputFlushPolicy switch
+        {
+            IpcOutputFlushPolicy.Always => true,
+            IpcOutputFlushPolicy.TraceOnly => hasInputTraceReport,
+            IpcOutputFlushPolicy.Never => false,
+#if WINDOWS
+            _ => hasInputTraceReport || stream is not NamedPipeServerStream,
+#else
+            _ => true,
+#endif
+        };
     }
 
     private static async Task HandleClientAsync(

@@ -122,6 +122,7 @@ public sealed partial class MidTermSettingsPublic
             CommandBayLigaturesEnabled = settings.CommandBayLigaturesEnabled,
             ManagerBarButtons = ManagerBarButton.NormalizeList(settings.ManagerBarButtons),
             DevMode = settings.DevMode,
+            TerminalLatencyDiagnosticsEnabled = settings.TerminalLatencyDiagnosticsEnabled,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             ShowUpdateNotification = settings.ShowUpdateNotification,
             UpdateChannel = settings.UpdateChannel,
@@ -243,6 +244,7 @@ public sealed partial class MidTermSettingsPublic
         settings.CommandBayLigaturesEnabled = CommandBayLigaturesEnabled;
         settings.ManagerBarButtons = ManagerBarButton.NormalizeList(ManagerBarButtons);
         settings.DevMode = DevMode;
+        settings.TerminalLatencyDiagnosticsEnabled = TerminalLatencyDiagnosticsEnabled;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
         settings.ShowUpdateNotification = ShowUpdateNotification;
         if (UpdateChannel is "stable" or "dev")

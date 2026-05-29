@@ -15,7 +15,7 @@ import {
   measureLatency,
   getLastFlushDelay,
   getLastServerIoRtt,
-  setInputLatencyTracingEnabled,
+  setInputLatencyTraceConsumerEnabled,
 } from '../comms/muxChannel';
 import type { InputLatencyTraceSnapshot } from '../comms/muxChannel';
 import { $activeSessionId, $isMainBrowser } from '../../stores';
@@ -61,7 +61,7 @@ export function enableLatencyOverlay(): void {
   enabled = true;
   onOutputRtt(handleOutputRtt);
   onInputLatencyTrace(handleInputLatencyTrace);
-  setInputLatencyTracingEnabled(true);
+  setInputLatencyTraceConsumerEnabled('overlay', true);
   ensureOverlay();
   attachToActiveSession();
   startPingLoop();
@@ -76,7 +76,7 @@ export function disableLatencyOverlay(): void {
   enabled = false;
   offOutputRtt(handleOutputRtt);
   offInputLatencyTrace(handleInputLatencyTrace);
-  setInputLatencyTracingEnabled(false);
+  setInputLatencyTraceConsumerEnabled('overlay', false);
   stopPingLoop();
   removeOverlay();
   if (unsubscribeSession) {

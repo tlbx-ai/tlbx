@@ -599,6 +599,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     applyMode: 'server-only',
     specialWriter: 'hidden version-click toggle',
   }),
+  controlEntry(
+    'terminalLatencyDiagnosticsEnabled',
+    'setting-terminal-latency-diagnostics-enabled',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
   controlEntry('showChangelogAfterUpdate', 'setting-changelog-after-update', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

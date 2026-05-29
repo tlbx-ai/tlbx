@@ -4290,6 +4290,7 @@ export interface components {
       managerBarEnabled: boolean;
       commandBayLigaturesEnabled: boolean;
       devMode: boolean;
+      terminalLatencyDiagnosticsEnabled: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
       updateChannel: null | string;

@@ -5243,6 +5243,7 @@
           "managerBarEnabled",
           "commandBayLigaturesEnabled",
           "devMode",
+          "terminalLatencyDiagnosticsEnabled",
           "showChangelogAfterUpdate",
           "showUpdateNotification",
           "updateChannel",
@@ -5503,6 +5504,9 @@
             "type": "boolean"
           },
           "devMode": {
+            "type": "boolean"
+          },
+          "terminalLatencyDiagnosticsEnabled": {
             "type": "boolean"
           },
           "showChangelogAfterUpdate": {
