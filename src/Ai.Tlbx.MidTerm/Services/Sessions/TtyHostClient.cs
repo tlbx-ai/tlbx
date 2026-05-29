@@ -348,6 +348,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     public async Task<TtyHostBufferSnapshot?> GetBufferAsync(
         int? maxBytes = null,
         TerminalReplayReason reason = TerminalReplayReason.Manual,
+        ulong? sinceSequence = null,
         CancellationToken ct = default)
     {
         for (var attempt = 0; attempt < 2; attempt++)
@@ -359,7 +360,7 @@ public sealed class TtyHostClient : IAsyncDisposable
 
             try
             {
-                var msg = TtyHostProtocol.CreateGetBuffer(maxBytes, reason);
+                var msg = TtyHostProtocol.CreateGetBuffer(maxBytes, reason, sinceSequence);
                 var response = await SendRequestAsync(msg, TtyHostMessageType.Buffer, ct).ConfigureAwait(false);
                 return response is null ? null : TtyHostProtocol.ParseBuffer(response);
             }

@@ -40,6 +40,12 @@ import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
 import * as bgOutput from './backgroundOutputDeferral';
 import * as muxSessionRouting from './muxSessionRouting';
 import {
+  buildResumeCursorQueryValue,
+  countLocalTerminals,
+  createBufferRequestFrame,
+  getResumeSequence,
+} from './muxResumeCursor';
+import {
   armOutputRttMeasurement as armTrackedOutputRttMeasurement,
   consumeCompletedOutputRtt,
   createOutputRttTracker,
@@ -124,8 +130,6 @@ const RESYNC_HEAT_SUPPRESS_MS = 3000;
 const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
 const BUFFER_REPLAY_MAX_MS = 12000;
 
-type ReplaySuppressionState = { quietUntilMs: number; hardUntilMs: number };
-
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
   renderedSeq: bigint;
@@ -135,7 +139,7 @@ interface BrowserTransportSnapshot {
   lastReplayBytes: number;
 }
 
-const replaySuppressedSessions = new Map<string, ReplaySuppressionState>();
+const replaySuppressedSessions = new Map<string, { quietUntilMs: number; hardUntilMs: number }>();
 const browserTransportSnapshots = new Map<string, BrowserTransportSnapshot>();
 function forEachLocalTerminal(callback: (state: TerminalState, sessionId: string) => void): void {
   sessionTerminals.forEach((state, sessionId) => {
@@ -147,25 +151,11 @@ function forEachLocalTerminal(callback: (state: TerminalState, sessionId: string
   });
 }
 
-function getLocalTerminalCount(): number {
-  let count = 0;
-  forEachLocalTerminal(() => {
-    count += 1;
-  });
-  return count;
-}
-
 function beginReplayHeatSuppression(sessionId: string, maxDurationMs = BUFFER_REPLAY_MAX_MS): void {
   const now = Date.now();
   replaySuppressedSessions.set(sessionId, {
     quietUntilMs: now + REPLAY_HEAT_QUIET_MS,
     hardUntilMs: now + maxDurationMs,
-  });
-}
-
-function beginReplayHeatSuppressionForAllSessions(): void {
-  forEachLocalTerminal((_, sessionId) => {
-    beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
   });
 }
 
@@ -262,14 +252,7 @@ function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
   if (mode !== null) bracketedPasteState.set(sessionId, mode);
 }
 
-// =============================================================================
-// Input Buffering (Issue #2: Lost keystrokes during reconnection)
-// =============================================================================
-
-type PendingInput = { sessionId: string; data: string };
-
-const pendingInputQueue: PendingInput[] = [];
-const MAX_PENDING_INPUT = 100;
+const pendingInputQueue: Array<{ sessionId: string; data: string }> = [];
 
 /**
  * Fetch fresh session list from server via REST API.
@@ -287,14 +270,7 @@ async function refreshSessionList(): Promise<void> {
   }
 }
 
-// =============================================================================
-// Latency Measurement (Ping/Pong)
-// =============================================================================
-
-export type LatencyResult = { serverRtt: number | null; mthostRtt: number | null };
-
-type PongCallback = (mode: number, rtt: number) => void;
-let pongCallback: PongCallback | null = null;
+let pongCallback: ((mode: number, rtt: number) => void) | null = null;
 
 /**
  * Send a ping to measure roundtrip latency.
@@ -338,8 +314,10 @@ export function sendPing(sessionId: string, mode: 0 | 1): Promise<number> {
 /**
  * Measure both server and mthost RTT for a session.
  */
-export async function measureLatency(sessionId: string): Promise<LatencyResult> {
-  const result: LatencyResult = { serverRtt: null, mthostRtt: null };
+export async function measureLatency(
+  sessionId: string,
+): Promise<{ serverRtt: number | null; mthostRtt: number | null }> {
+  const result = { serverRtt: null as number | null, mthostRtt: null as number | null };
 
   try {
     result.serverRtt = await sendPing(sessionId, 0);
@@ -882,11 +860,6 @@ function writeToTerminal(
   const cursorVisibility = processTerminalOutputCursorState(state, sessionId, data);
   applyTerminalResizeIfNeeded(sessionId, state, cols, rows);
   writeOutputDataWithPathScan(sessionId, state, sequenceEnd, cursorVisibility.data, generation);
-
-  // DISABLED: Was causing cursor to disappear in some cases
-  // if (didResize) {
-  //   state.terminal.write('\x1b[?25h');
-  // }
 }
 
 export function applyOutputFrameToTerminal(
@@ -943,22 +916,43 @@ function handleMuxSyncCompleteFrame(type: number): boolean {
   return true;
 }
 
-function handleMuxResyncFrame(type: number): boolean {
+function handleMuxResyncFrame(type: number, sessionId: string): boolean {
   if (type !== MUX_TYPE_RESYNC) {
     return false;
   }
 
-  log.info(() => 'Resync: clearing terminals for buffer refresh');
+  log.info(() =>
+    sessionId
+      ? `Resync: clearing terminal ${sessionId}`
+      : 'Resync: clearing terminals for buffer refresh',
+  );
   _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
-  beginReplayHeatSuppressionForAllSessions();
-  forEachLocalTerminal((state) => {
+  if (sessionId) {
+    beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
+  } else {
+    forEachLocalTerminal((_, localSessionId) => {
+      beginReplayHeatSuppression(localSessionId, BUFFER_REPLAY_MAX_MS);
+    });
+  }
+  forEachLocalTerminal((state, localSessionId) => {
+    if (sessionId && localSessionId !== sessionId) {
+      return;
+    }
+
     if (state.opened) {
       state.terminal.clear();
       state.terminal.write('\x1b[0m');
     }
   });
-  pendingOutputFrames.clear();
-  sessionsNeedingResync.clear();
+  if (sessionId) {
+    pendingOutputFrames.delete(sessionId);
+    sessionsNeedingResync.delete(sessionId);
+    browserTransportSnapshots.delete(sessionId);
+  } else {
+    pendingOutputFrames.clear();
+    sessionsNeedingResync.clear();
+    browserTransportSnapshots.clear();
+  }
   bgOutput.clearAllBackgroundReplayState();
   clearQueuedOutput();
   return true;
@@ -1063,10 +1057,6 @@ function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8A
   return true;
 }
 
-// =============================================================================
-// WebSocket Connection
-// =============================================================================
-
 /**
  * Connect to the mux WebSocket for terminal I/O.
  * Uses a binary protocol with 9-byte header.
@@ -1082,7 +1072,17 @@ export function connectMuxWebSocket(): void {
   if (currentVisibleSessionIds.length > 0) {
     query.set('visibleSessionIds', currentVisibleSessionIds.join(','));
   }
-  const replayRows = muxSessionRouting.getReplayRows(activeId);
+  const resumeCursors = buildResumeCursorQueryValue(
+    sessionTerminals,
+    (sessionId) => browserTransportSnapshots.get(sessionId),
+    isHubSessionId,
+  );
+  if (resumeCursors !== null) {
+    query.set('resumeCursors', resumeCursors);
+  }
+  const replayRows = muxSessionRouting.isQuickResumeEnabled()
+    ? muxSessionRouting.getReplayRows(activeId)
+    : null;
   if (replayRows !== null) {
     query.set('replayRows', String(replayRows));
   }
@@ -1107,7 +1107,7 @@ export function connectMuxWebSocket(): void {
     }, 10000);
 
     // Detect reconnect: we've connected before AND have terminals to refresh
-    const localTerminalCount = getLocalTerminalCount();
+    const localTerminalCount = countLocalTerminals(sessionTerminals, isHubSessionId);
     const isReconnect = $muxHasConnected.get() && localTerminalCount > 0;
 
     $muxWsConnected.set(true);
@@ -1147,13 +1147,6 @@ export function connectMuxWebSocket(): void {
 
     // Flush any input buffered during disconnection
     flushPendingInput();
-
-    // DISABLED: Was causing cursor to disappear in some cases
-    // sessionTerminals.forEach((state) => {
-    //   if (state.opened) {
-    //     state.terminal.write('\x1b[?25h');
-    //   }
-    // });
   };
 
   ws.onmessage = (event) => {
@@ -1177,7 +1170,7 @@ export function connectMuxWebSocket(): void {
     const sessionId = decodeSessionId(data, 1);
     const payload = data.subarray(MUX_HEADER_SIZE); // zero-copy view
 
-    if (handleMuxResyncFrame(type)) {
+    if (handleMuxResyncFrame(type, sessionId)) {
       return;
     }
 
@@ -1240,7 +1233,7 @@ export function sendInput(sessionId: string, data: string): void {
 
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
     // Buffer input during disconnection (prevents lost keystrokes during reconnect)
-    if (pendingInputQueue.length < MAX_PENDING_INPUT) {
+    if (pendingInputQueue.length < 100) {
       pendingInputQueue.push({ sessionId, data });
     }
     return;
@@ -1343,15 +1336,17 @@ export function requestBufferRefresh(
     mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
-  const replayRows = muxSessionRouting.getReplayRows(sessionId);
-  const frame = new Uint8Array(MUX_HEADER_SIZE + (replayRows === null ? 1 : 3));
-  frame[0] = MUX_TYPE_BUFFER_REQUEST;
-  encodeSessionId(frame, 1, sessionId);
-  frame[MUX_HEADER_SIZE] = mode === 'quickResume' ? 1 : 0;
-  if (replayRows !== null) {
-    frame[MUX_HEADER_SIZE + 1] = replayRows & 0xff;
-    frame[MUX_HEADER_SIZE + 2] = (replayRows >> 8) & 0xff;
-  }
+  const replayRows = mode === 'quickResume' ? muxSessionRouting.getReplayRows(sessionId) : null;
+  const resumeSequence = getResumeSequence(browserTransportSnapshots.get(sessionId));
+  const frame = createBufferRequestFrame(
+    MUX_HEADER_SIZE,
+    MUX_TYPE_BUFFER_REQUEST,
+    encodeSessionId,
+    sessionId,
+    mode === 'quickResume',
+    replayRows,
+    resumeSequence,
+  );
   bgOutput.armBackgroundReplayGate(sessionId);
   sendFrame(frame);
 }

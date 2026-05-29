@@ -57,7 +57,7 @@ public static class MuxProtocol
     public const byte BufferRequestModeFullReplay = 0x00;
     public const byte BufferRequestModeQuickResume = 0x01;
 
-    public readonly record struct BufferRequestOptions(bool QuickResume, int? ReplayRows);
+    public readonly record struct BufferRequestOptions(bool QuickResume, int? ReplayRows, ulong? SinceSequence);
 
     public static byte[] CreateOutputFrame(string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data)
     {
@@ -160,6 +160,14 @@ public static class MuxProtocol
         var frame = new byte[HeaderSize];
         frame[0] = TypeResync;
         // Session ID is all zeros (applies to all sessions)
+        return frame;
+    }
+
+    public static byte[] CreateSessionResyncFrame(string sessionId)
+    {
+        var frame = new byte[HeaderSize];
+        frame[0] = TypeResync;
+        WriteSessionId(frame.AsSpan(1, 8), sessionId);
         return frame;
     }
 
@@ -291,18 +299,27 @@ public static class MuxProtocol
         return frame;
     }
 
-    public static byte[] CreateBufferRequestFrame(string sessionId, bool quickResume, int? replayRows = null)
+    public static byte[] CreateBufferRequestFrame(
+        string sessionId,
+        bool quickResume,
+        int? replayRows = null,
+        ulong? sinceSequence = null)
     {
         var includeReplayRows = replayRows is > 0;
-        var frame = new byte[HeaderSize + (includeReplayRows ? 3 : 1)];
+        var includeSinceSequence = sinceSequence is not null;
+        var frame = new byte[HeaderSize + (includeSinceSequence ? 11 : includeReplayRows ? 3 : 1)];
         frame[0] = TypeBufferRequest;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
         frame[HeaderSize] = quickResume ? BufferRequestModeQuickResume : BufferRequestModeFullReplay;
-        if (includeReplayRows)
+        if (includeReplayRows || includeSinceSequence)
         {
             BinaryPrimitives.WriteUInt16LittleEndian(
                 frame.AsSpan(HeaderSize + 1, 2),
-                (ushort)Math.Clamp(replayRows!.Value, 1, ushort.MaxValue));
+                (ushort)Math.Clamp(replayRows ?? 0, 0, ushort.MaxValue));
+        }
+        if (includeSinceSequence)
+        {
+            BinaryPrimitives.WriteUInt64LittleEndian(frame.AsSpan(HeaderSize + 3, 8), sinceSequence!.Value);
         }
         return frame;
     }
@@ -326,7 +343,13 @@ public static class MuxProtocol
             }
         }
 
-        return new BufferRequestOptions(quickResume, replayRows);
+        ulong? sinceSequence = null;
+        if (payload.Length >= 11)
+        {
+            sinceSequence = BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(3, 8));
+        }
+
+        return new BufferRequestOptions(quickResume, replayRows, sinceSequence);
     }
 
     public static byte[] CreateVisibleSessionsHintFrame(IReadOnlyCollection<string> sessionIds)

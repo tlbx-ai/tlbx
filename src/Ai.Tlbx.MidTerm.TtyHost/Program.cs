@@ -980,10 +980,14 @@ public static class Program
                         try
                         {
                             var request = TtyHostProtocol.ParseGetBuffer(payload) ?? new TtyHostGetBufferRequest();
-                            var guess = session.GetBufferLength(request.MaxBytes);
+                            var guess = session.GetBufferLength(request.MaxBytes, request.SinceSequence);
                             if (guess <= 0)
                             {
-                                TtyHostProtocol.WriteBufferResponse(0, ReadOnlySpan<byte>.Empty, frame =>
+                                var outputCursor = session.GetOutputCursor();
+                                var emptySequenceStart = request.SinceSequence == outputCursor
+                                    ? request.SinceSequence.Value
+                                    : outputCursor;
+                                TtyHostProtocol.WriteBufferResponse(emptySequenceStart, ReadOnlySpan<byte>.Empty, frame =>
                                 {
                                     EnqueueFrame(channelWriter, frame);
                                 });
@@ -993,7 +997,12 @@ public static class Program
                             while (true)
                             {
                                 snapshot = ArrayPool<byte>.Shared.Rent(Math.Max(guess, 1));
-                                var written = session.CopyBufferSnapshot(snapshot, request.MaxBytes, request.Reason, out var sequenceStart);
+                                var written = session.CopyBufferSnapshot(
+                                    snapshot,
+                                    request.MaxBytes,
+                                    request.Reason,
+                                    out var sequenceStart,
+                                    request.SinceSequence);
                                 if (written >= 0)
                                 {
                                     var payloadSlice = snapshot.AsSpan(0, written);
@@ -1533,11 +1542,16 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public int GetBufferLength(int? maxBytes = null)
+    public int GetBufferLength(int? maxBytes = null, ulong? sinceSequence = null)
     {
         lock (_bufferLock)
         {
-            var length = _outputBuffer.Count;
+            var length = ResolveBufferSnapshotLength(maxBytes, sinceSequence);
+            if (length < 0)
+            {
+                length = _outputBuffer.Count;
+            }
+
             if (maxBytes is int cap && cap > 0)
             {
                 length = Math.Min(length, cap);
@@ -1547,19 +1561,29 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public int CopyBufferSnapshot(Span<byte> destination, int? maxBytes, TerminalReplayReason reason, out ulong sequenceStart)
+    public int CopyBufferSnapshot(
+        Span<byte> destination,
+        int? maxBytes,
+        TerminalReplayReason reason,
+        out ulong sequenceStart,
+        ulong? sinceSequence = null)
     {
         lock (_bufferLock)
         {
-            var length = _outputBuffer.Count;
-            if (maxBytes is int cap && cap > 0)
+            var length = ResolveBufferSnapshotLength(maxBytes, sinceSequence);
+            var copySince = sinceSequence is ulong cursor && length >= 0;
+            if (length < 0)
             {
-                length = Math.Min(length, cap);
+                length = _outputBuffer.Count;
+                if (maxBytes is int cap && cap > 0)
+                {
+                    length = Math.Min(length, cap);
+                }
             }
 
             if (length == 0)
             {
-                sequenceStart = 0;
+                sequenceStart = sinceSequence ?? _outputBuffer.TotalBytesWritten;
                 RecordReplay(0, reason);
                 return 0;
             }
@@ -1570,7 +1594,34 @@ internal sealed class TerminalSession : IDisposable
                 return -length;
             }
 
-            if (length == _outputBuffer.Count)
+            if (copySince)
+            {
+                var position = sinceSequence!.Value;
+                var copiedTotal = 0;
+                while (copiedTotal < length)
+                {
+                    if (!_outputBuffer.TryCopySince(
+                            position,
+                            destination.Slice(copiedTotal, length - copiedTotal),
+                            out var written))
+                    {
+                        sequenceStart = 0;
+                        return -_outputBuffer.Count;
+                    }
+
+                    if (written == 0)
+                    {
+                        break;
+                    }
+
+                    copiedTotal += written;
+                    position += (ulong)written;
+                }
+
+                sequenceStart = sinceSequence.Value;
+                length = copiedTotal;
+            }
+            else if (length == _outputBuffer.Count)
             {
                 _outputBuffer.CopyTo(destination.Slice(0, length));
                 sequenceStart = _outputBuffer.TailPosition;
@@ -1584,6 +1635,29 @@ internal sealed class TerminalSession : IDisposable
             RecordReplay(length, reason);
             return length;
         }
+    }
+
+    private int ResolveBufferSnapshotLength(int? maxBytes, ulong? sinceSequence)
+    {
+        if (sinceSequence is not ulong cursor)
+        {
+            return -1;
+        }
+
+        var availableStart = _outputBuffer.TailPosition;
+        var availableEnd = _outputBuffer.TotalBytesWritten;
+        if (cursor < availableStart || cursor > availableEnd)
+        {
+            return -1;
+        }
+
+        var delta = checked((int)(availableEnd - cursor));
+        if (maxBytes is int cap && cap > 0 && delta > cap)
+        {
+            return -1;
+        }
+
+        return delta;
     }
 
     public ulong GetOutputCursor()

@@ -800,6 +800,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string sessionId,
         int? maxBytes = null,
         TerminalReplayReason reason = TerminalReplayReason.Manual,
+        ulong? sinceSequence = null,
         CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
@@ -807,7 +808,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
-        var snapshot = await client.GetBufferAsync(maxBytes, reason, ct).ConfigureAwait(false);
+        var snapshot = await client.GetBufferAsync(maxBytes, reason, sinceSequence, ct).ConfigureAwait(false);
         if (snapshot is not null)
         {
             var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());

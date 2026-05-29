@@ -93,6 +93,44 @@ public sealed class MuxClientTests
         Assert.Equal(256 * 1024, huge);
     }
 
+    [Fact]
+    public void ResolveReplayMaxBytes_IgnoresReplayRowsForFullReplay()
+    {
+        var session = new SessionInfo
+        {
+            Cols = 120,
+            Rows = 40,
+            ShellType = "pwsh"
+        };
+
+        var maxBytes = MuxWebSocketHandler.ResolveReplayMaxBytes(
+            session,
+            replayRows: 40,
+            quickResume: false,
+            configuredScrollbackBytes: 2 * 1024 * 1024);
+
+        Assert.Null(maxBytes);
+    }
+
+    [Fact]
+    public void ResolveReplayMaxBytes_UsesReplayRowsForQuickResume()
+    {
+        var session = new SessionInfo
+        {
+            Cols = 120,
+            Rows = 40,
+            ShellType = "pwsh"
+        };
+
+        var maxBytes = MuxWebSocketHandler.ResolveReplayMaxBytes(
+            session,
+            replayRows: 40,
+            quickResume: true,
+            configuredScrollbackBytes: 2 * 1024 * 1024);
+
+        Assert.Equal(MuxWebSocketHandler.ResolveViewportReplayBytes(session, replayRows: 40), maxBytes);
+    }
+
     private class FakeWebSocket : WebSocket
     {
         public override WebSocketCloseStatus? CloseStatus => null;

@@ -225,7 +225,11 @@ public class MuxProtocolTests
     [Fact]
     public void CreateBufferRequestFrame_RoundTrips_QuickResumeMode()
     {
-        var frame = MuxProtocol.CreateBufferRequestFrame("session1", quickResume: true, replayRows: 42);
+        var frame = MuxProtocol.CreateBufferRequestFrame(
+            "session1",
+            quickResume: true,
+            replayRows: 42,
+            sinceSequence: 123456789UL);
 
         Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
         Assert.Equal(MuxProtocol.TypeBufferRequest, type);
@@ -235,6 +239,7 @@ public class MuxProtocolTests
         var options = MuxProtocol.ParseBufferRequestOptions(payload);
         Assert.True(options.QuickResume);
         Assert.Equal(42, options.ReplayRows);
+        Assert.Equal(123456789UL, options.SinceSequence);
     }
 
     [Fact]
@@ -246,6 +251,18 @@ public class MuxProtocolTests
 
         Assert.False(options.QuickResume);
         Assert.Null(options.ReplayRows);
+        Assert.Null(options.SinceSequence);
+    }
+
+    [Fact]
+    public void CreateSessionResyncFrame_RoundTrips_SessionId()
+    {
+        var frame = MuxProtocol.CreateSessionResyncFrame("session1");
+
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
+        Assert.Equal(MuxProtocol.TypeResync, type);
+        Assert.Equal("session1", sessionId);
+        Assert.True(payload.IsEmpty);
     }
 
     [Fact]

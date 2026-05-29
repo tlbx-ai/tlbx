@@ -115,7 +115,10 @@ public class TtyHostProtocolTests
     [Fact]
     public void GetBuffer_RoundTrips_TailRequestAndSnapshot()
     {
-        var requestFrame = TtyHostProtocol.CreateGetBuffer(4096, TerminalReplayReason.BufferRefreshTailReplay);
+        var requestFrame = TtyHostProtocol.CreateGetBuffer(
+            4096,
+            TerminalReplayReason.BufferRefreshTailReplay,
+            sinceSequence: 98765UL);
 
         Assert.True(TtyHostProtocol.TryReadHeader(requestFrame, out var requestType, out var requestPayloadLength));
         Assert.Equal(TtyHostMessageType.GetBuffer, requestType);
@@ -124,6 +127,7 @@ public class TtyHostProtocolTests
         Assert.NotNull(request);
         Assert.Equal(4096, request!.MaxBytes);
         Assert.Equal(TerminalReplayReason.BufferRefreshTailReplay, request.Reason);
+        Assert.Equal(98765UL, request.SinceSequence);
 
         byte[]? bufferFrame = null;
         var snapshotData = Encoding.UTF8.GetBytes("tail");
