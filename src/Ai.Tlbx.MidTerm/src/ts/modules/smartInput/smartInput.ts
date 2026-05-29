@@ -183,6 +183,7 @@ const sessionPromptHistories = new Map<string, SmartInputPromptHistoryEntry[]>()
 const sessionPromptHistoryNavigation = new Map<string, SmartInputPromptHistoryNavigationState>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
 const sessionComposerExpanded = new Map<string, boolean>();
+const sessionComposerPendingOperations = new Map<string, Promise<void>>();
 let appServerControlResumeConversationHandler:
   | ((args: {
       sessionId: string;
@@ -588,12 +589,53 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
     getAppServerControlDraftAttachments(sessionId).map((attachment) => attachment.id),
   );
   const normalizedDraft = pruneSmartInputComposerReferences(draft, validReferenceIds);
-  if (normalizedDraft.parts.length === 0) {
+  if (
+    normalizedDraft.parts.length === 0 &&
+    Object.keys(normalizedDraft.nextOrdinalByKind).length === 0
+  ) {
     sessionDrafts.delete(sessionId);
     return;
   }
 
   sessionDrafts.set(sessionId, normalizedDraft);
+}
+
+function enqueueComposerPendingOperation(
+  sessionId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const previousOperation = sessionComposerPendingOperations.get(sessionId) ?? Promise.resolve();
+  const nextOperation = previousOperation
+    .catch(() => {
+      // Keep later paste/upload operations moving after an earlier operation reports its own error.
+    })
+    .then(operation);
+  const trackedOperation = nextOperation
+    .catch(() => {
+      // The caller reports the failure; the session queue must still become awaitable.
+    })
+    .finally(() => {
+      if (sessionComposerPendingOperations.get(sessionId) === trackedOperation) {
+        sessionComposerPendingOperations.delete(sessionId);
+      }
+    });
+  sessionComposerPendingOperations.set(sessionId, trackedOperation);
+  return nextOperation;
+}
+
+async function waitForComposerPendingOperations(sessionId: string): Promise<void> {
+  for (;;) {
+    const pendingOperation = sessionComposerPendingOperations.get(sessionId);
+    if (!pendingOperation) {
+      return;
+    }
+
+    try {
+      await pendingOperation;
+    } catch {
+      return;
+    }
+  }
 }
 
 function setSessionDraftText(sessionId: string, text: string): void {
@@ -1332,23 +1374,33 @@ function createDockedDOM(): void {
 
       if (clipboardDataMayContainAppServerControlComposerImage(event.clipboardData)) {
         event.preventDefault();
-        const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-        void (async () => {
+        void enqueueComposerPendingOperation(sessionId, async () => {
           const files = await extractAppServerControlComposerPasteImageFiles(event.clipboardData);
           if (files.length === 0) {
             return;
           }
 
+          const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
           await addAppServerControlComposerFiles(sessionId, files, selection);
-        })();
+        }).catch((error: unknown) => {
+          showDropToast(
+            error instanceof Error && error.message.trim() ? error.message : String(error),
+          );
+        });
         return;
       }
 
       const text = event.clipboardData?.getData('text/plain') ?? '';
       if (text && shouldConvertPastedTextToSmartInputReference(text)) {
         event.preventDefault();
-        const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-        void addAppServerControlComposerTextReference(sessionId, text, selection);
+        void enqueueComposerPendingOperation(sessionId, async () => {
+          const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
+          await addAppServerControlComposerTextReference(sessionId, text, selection);
+        }).catch((error: unknown) => {
+          showDropToast(
+            error instanceof Error && error.message.trim() ? error.message : String(error),
+          );
+        });
         return;
       }
 
@@ -2322,6 +2374,8 @@ async function sendTerminalComposerTurn(
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
+  await waitForComposerPendingOperations(sessionId);
+
   const draft = getSessionDraft(sessionId);
   const renderedText = getSmartInputComposerText(draft, (referenceId) =>
     resolveComposerReference(sessionId, referenceId),
@@ -2428,6 +2482,7 @@ function syncDraftForActiveSession(): void {
 
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
+  sessionComposerPendingOperations.delete(sessionId);
   clearAppServerControlDraftAttachments(sessionId);
   sessionPromptHistories.delete(sessionId);
   resetPromptHistoryNavigation(sessionId);
