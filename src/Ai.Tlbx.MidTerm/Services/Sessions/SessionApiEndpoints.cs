@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Models;
@@ -22,6 +23,9 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public static partial class SessionApiEndpoints
 {
+    private const int NonBracketedPasteChunkSize = 512;
+    private const int NonBracketedPasteChunkDelayMs = 30;
+
     private static readonly HashSet<string> ClipboardImageExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".png",
@@ -452,6 +456,22 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
+        app.MapPost("/api/sessions/{id}/input/paste", async (string id, SessionPasteRequest request, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!TryGetPasteInputBytes(request, out var data, out var error))
+            {
+                return Results.BadRequest(error);
+            }
+
+            await SendPasteInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, request.BracketedPaste, ct);
+            return Results.Ok();
+        });
+
         app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
@@ -777,6 +797,83 @@ public static partial class SessionApiEndpoints
         }
     }
 
+    internal static bool TryGetPasteInputBytes(
+        SessionPasteRequest request,
+        out byte[] data,
+        out string error)
+    {
+        data = [];
+        error = "";
+
+        if (!TryGetPasteText(request, out var text, out error))
+        {
+            return false;
+        }
+
+        text = SanitizeTerminalPasteContent(text);
+        if (request.IsFilePath)
+        {
+            text = "\"" + text + "\"";
+        }
+
+        text = NormalizeTerminalPasteLineEndings(text);
+        if (request.BracketedPaste)
+        {
+            text = "\u001b[200~" + text + "\u001b[201~";
+        }
+
+        data = Encoding.UTF8.GetBytes(text);
+        return true;
+    }
+
+    private static bool TryGetPasteText(SessionPasteRequest request, out string text, out string error)
+    {
+        text = "";
+        error = "";
+
+        var hasText = request.Text is not null;
+        var hasBase64 = !string.IsNullOrEmpty(request.Base64);
+
+        if (hasText == hasBase64)
+        {
+            error = "Provide exactly one of text or base64.";
+            return false;
+        }
+
+        if (hasText)
+        {
+            text = request.Text!;
+            return true;
+        }
+
+        try
+        {
+            text = Encoding.UTF8.GetString(Convert.FromBase64String(request.Base64!));
+            return true;
+        }
+        catch (FormatException)
+        {
+            error = "base64 is invalid.";
+            return false;
+        }
+    }
+
+    internal static string NormalizeTerminalPasteLineEndings(string text)
+    {
+        return text.Replace("\r\n", "\r", StringComparison.Ordinal)
+            .Replace('\n', '\r');
+    }
+
+    internal static string SanitizeTerminalPasteContent(string text)
+    {
+        text = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace('\r', '\n');
+        text = CsiEscapeSequenceRegex().Replace(text, "");
+        text = OscEscapeSequenceRegex().Replace(text, "");
+        text = StringTerminatedEscapeSequenceRegex().Replace(text, "");
+        return SimpleEscapeSequenceRegex().Replace(text, "");
+    }
+
     internal static bool TryGetKeyInputBytes(
         SessionKeyInputRequest request,
         out byte[] data,
@@ -828,11 +925,11 @@ public static partial class SessionApiEndpoints
         submitDelayMs = request.SubmitDelayMs;
 
         if (!TryGetInputBytes(new SessionInputRequest
-            {
-                Text = request.Text,
-                Base64 = request.Base64,
-                AppendNewline = false
-            },
+        {
+            Text = request.Text,
+            Base64 = request.Base64,
+            AppendNewline = false
+        },
             out promptData,
             out error))
         {
@@ -840,10 +937,10 @@ public static partial class SessionApiEndpoints
         }
 
         if (!TryGetKeyInputBytes(new SessionKeyInputRequest
-            {
-                Keys = request.SubmitKeys,
-                Literal = request.LiteralSubmitKeys
-            },
+        {
+            Keys = request.SubmitKeys,
+            Literal = request.LiteralSubmitKeys
+        },
             out submitData,
             out error))
         {
@@ -859,10 +956,10 @@ public static partial class SessionApiEndpoints
         }
 
         if (!TryGetKeyInputBytes(new SessionKeyInputRequest
-            {
-                Keys = request.InterruptKeys,
-                Literal = request.LiteralInterruptKeys
-            },
+        {
+            Keys = request.InterruptKeys,
+            Literal = request.LiteralInterruptKeys
+        },
             out var translatedInterruptData,
             out error))
         {
@@ -1151,6 +1248,45 @@ public static partial class SessionApiEndpoints
         sessionTelemetry.RecordInput(sessionId, data.Length);
         await sessionManager.SendInputAsync(sessionId, data, ct);
     }
+
+    private static async Task SendPasteInputAndRecordAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        string sessionId,
+        byte[] data,
+        bool bracketedPaste,
+        CancellationToken ct = default)
+    {
+        if (bracketedPaste || data.Length <= NonBracketedPasteChunkSize)
+        {
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, data, ct);
+            return;
+        }
+
+        for (var offset = 0; offset < data.Length; offset += NonBracketedPasteChunkSize)
+        {
+            var length = Math.Min(NonBracketedPasteChunkSize, data.Length - offset);
+            var chunk = new byte[length];
+            Buffer.BlockCopy(data, offset, chunk, 0, length);
+            await SendInputAndRecordAsync(sessionManager, sessionTelemetry, sessionId, chunk, ct);
+            if (offset + length < data.Length)
+            {
+                await Task.Delay(NonBracketedPasteChunkDelayMs, ct);
+            }
+        }
+    }
+
+    [GeneratedRegex(@"\x1b\[[0-?]*[ -/]*[@-~]", RegexOptions.None, 100)]
+    private static partial Regex CsiEscapeSequenceRegex();
+
+    [GeneratedRegex(@"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", RegexOptions.None, 100)]
+    private static partial Regex OscEscapeSequenceRegex();
+
+    [GeneratedRegex(@"\x1b[PX^_][^\x1b]*\x1b\\", RegexOptions.None, 100)]
+    private static partial Regex StringTerminatedEscapeSequenceRegex();
+
+    [GeneratedRegex(@"\x1b[\x20-\x2F]*[\x30-\x7E]", RegexOptions.None, 100)]
+    private static partial Regex SimpleEscapeSequenceRegex();
 
     internal readonly record struct WorkerAutoResumePlan(
         string LaunchCommand,

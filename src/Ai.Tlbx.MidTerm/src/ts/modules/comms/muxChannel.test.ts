@@ -7,6 +7,7 @@ import {
   decodeSessionId,
   encodeSessionId,
   getBrowserTransportSnapshot,
+  isBracketedPasteEnabled,
   resetMuxChannelRuntimeForTests,
   sendInput,
   setInputLatencyTracingEnabled,
@@ -630,5 +631,61 @@ describe('muxChannel', () => {
       frames[1]!.byteLength,
     );
     expect(markerView.getUint32(harness.constants.MUX_HEADER_SIZE, true)).not.toBe(0);
+  });
+
+  it('tracks bracketed paste mode when control sequences are split across output frames', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    attachFakeTerminal(harness.sessionTerminals, sessionId);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        5n,
+        '\x1b[?20',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        8n,
+        '04h',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+
+    expect(isBracketedPasteEnabled(sessionId)).toBe(true);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        14n,
+        '\x1b[?200',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        16n,
+        '4l',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+
+    expect(isBracketedPasteEnabled(sessionId)).toBe(false);
   });
 });

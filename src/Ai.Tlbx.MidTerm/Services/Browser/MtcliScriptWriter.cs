@@ -423,6 +423,35 @@ public static class MtcliScriptWriter
           local body="{\"text\":\"$(_MJE "$text")\",\"appendNewline\":false}"
           _MJ -d "$body" "$_MT/api/sessions/$sid/input/text"
         }
+        # mt_paste [--bracketed] [--file] [SESSION_ID] [TEXT...]  — paste clipboard-style text via the same server path as UI paste
+        mt_paste() {
+          local sid bracketed=false is_file=false text
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              --bracketed|-b) bracketed=true; shift ;;
+              --file|-f) is_file=true; shift ;;
+              --) shift; break ;;
+              *) break ;;
+            esac
+          done
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            shift
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          if [ $# -gt 0 ]; then
+            text="$*"
+          elif [ ! -t 0 ]; then
+            IFS= read -r -d '' text || true
+          else
+            echo "Text required." >&2
+            return 1
+          fi
+          local body="{\"text\":\"$(_MJE "$text")\",\"bracketedPaste\":$bracketed,\"isFilePath\":$is_file}"
+          _MJ -d "$body" "$_MT/api/sessions/$sid/input/paste"
+        }
         # mt_prompt [SESSION_ID] TEXT  — state-aware send + submit via the server prompt API
         mt_prompt() {
           local sid submit_delay_ms interrupt_delay_ms interrupt_first
@@ -759,6 +788,11 @@ public static class MtcliScriptWriter
             if (-not $SessionId) { Write-Error "Session id required."; return }
             _MJ -d (_MH @{ text = $Text; appendNewline = $AppendNewline }) "$script:_MT/api/sessions/$SessionId/input/text"
         }
+        function script:_MSendPasteRequest {
+            param([string]$SessionId, [string]$Text, [bool]$BracketedPaste = $false, [bool]$IsFilePath = $false)
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MJ -d (_MH @{ text = $Text; bracketedPaste = $BracketedPaste; isFilePath = $IsFilePath }) "$script:_MT/api/sessions/$SessionId/input/paste"
+        }
         # Send null-delimited args to text CLI endpoint (browser commands)
         function script:_MB {
             $bytes = [System.Collections.Generic.List[byte]]::new()
@@ -1088,6 +1122,28 @@ public static class MtcliScriptWriter
 
             _MSendTextRequest -SessionId $sessionId -Text $text -AppendNewline:$false
         }
+        # Mt-Paste [-Bracketed] [-File] [SESSION_ID] [TEXT]  — paste clipboard-style text via the same server path as UI paste
+        function Mt-Paste {
+            param(
+                [switch]$Bracketed,
+                [switch]$File,
+                [Parameter(ValueFromRemainingArguments)][string[]]$InputArgs
+            )
+            $resolved = _MResolveSessionArgs $InputArgs
+            $sessionId = $resolved.SessionId
+            $text = if ($resolved.Remaining.Count -gt 0) {
+                [string]::Join(' ', $resolved.Remaining)
+            } elseif ([Console]::IsInputRedirected) {
+                [Console]::In.ReadToEnd()
+            } else {
+                ""
+            }
+
+            if (-not $sessionId) { Write-Error "Session id required."; return }
+            if ($text.Length -eq 0) { Write-Error "Text required."; return }
+
+            _MSendPasteRequest -SessionId $sessionId -Text $text -BracketedPaste:$Bracketed -IsFilePath:$File
+        }
         function script:_MSendPromptRequest {
             param(
                 [string]$SessionId,
@@ -1352,6 +1408,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_buffer -Value Mt-Buffer
         Set-Alias -Name mt_tail -Value Mt-Tail
         Set-Alias -Name mt_sendtext -Value Mt-SendText
+        Set-Alias -Name mt_paste -Value Mt-Paste
         Set-Alias -Name mt_prompt -Value Mt-Prompt
         Set-Alias -Name mt_prompt_now -Value Mt-PromptNow
         Set-Alias -Name mt_slash -Value Mt-Slash

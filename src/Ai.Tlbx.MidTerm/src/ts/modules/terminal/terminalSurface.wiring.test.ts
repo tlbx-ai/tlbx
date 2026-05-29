@@ -121,4 +121,14 @@ describe('terminal surface wiring', () => {
     expect(managerSource).toContain('sendInput(sessionId, bytes);');
     expect(managerSource).toContain('describeTerminalEnterOverrideDelivery(');
   });
+
+  it('keeps terminal paste on the MidTerm paste path instead of native browser newline insertion', () => {
+    expect(interactionBindingsSource).toContain('if (event.clipboardData) {');
+    expect(interactionBindingsSource).toContain(
+      'void pasteToTerminal(sessionId, sanitizePasteContent(text));',
+    );
+    expect(managerSource).toContain("from '../../api/client';");
+    expect(managerSource).toContain('sendSessionPasteInput(sessionId, {');
+    expect(managerSource).toContain('bracketedPaste: bpmEnabled,');
+  });
 });

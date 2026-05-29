@@ -14,6 +14,7 @@ import {
 } from '../appServerControl/input';
 import { isSessionDragActive } from '../sidebar/sessionDrag';
 import { pasteToTerminal } from './manager';
+import { sanitizeTerminalPasteContent } from './terminalPaste';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 
@@ -310,19 +311,7 @@ export function sanitizeCopyContent(text: string): string {
 }
 
 export function sanitizePasteContent(text: string): string {
-  return (
-    text
-      .replace(/\r\n/g, '\n') // Normalize CRLF → LF first
-      .replace(/\r(?!\n)/g, '\n') // Normalize CR → LF (Mac Classic)
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\[[0-9;]*[A-Za-z]/g, '') // Remove CSI sequences (colors, cursor, clear)
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b\][^\x07]*\x07/g, '') // Remove OSC sequences (titles, hyperlinks)
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b[PX^_][^\x1b]*\x1b\\/g, '') // Remove DCS/SOS/PM/APC sequences
-      // eslint-disable-next-line no-control-regex
-      .replace(/\x1b[\x20-\x2F]*[\x30-\x7E]/g, '')
-  ); // Remove other escape sequences
+  return sanitizeTerminalPasteContent(text);
 }
 
 /**

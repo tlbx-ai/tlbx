@@ -42,6 +42,53 @@ public sealed class SessionApiEndpointsTests
     }
 
     [Fact]
+    public void TryGetPasteInputBytes_NormalizesClipboardNewlinesForRawShellPaste()
+    {
+        var request = new SessionPasteRequest
+        {
+            Text = "Write-Output 'A'\nWrite-Output 'B'\n"
+        };
+
+        var ok = SessionApiEndpoints.TryGetPasteInputBytes(request, out var data, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("Write-Output 'A'\rWrite-Output 'B'\r", Encoding.UTF8.GetString(data));
+    }
+
+    [Fact]
+    public void TryGetPasteInputBytes_WrapsBracketedPasteAfterSanitizingControls()
+    {
+        var request = new SessionPasteRequest
+        {
+            Text = "\u001b[200~codex\nclaude\u001b[201~",
+            BracketedPaste = true
+        };
+
+        var ok = SessionApiEndpoints.TryGetPasteInputBytes(request, out var data, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("\u001b[200~codex\rclaude\u001b[201~", Encoding.UTF8.GetString(data));
+    }
+
+    [Fact]
+    public void TryGetPasteInputBytes_QuotesFilePathBeforePasteNormalization()
+    {
+        var request = new SessionPasteRequest
+        {
+            Text = "Q:\\repo\\file name.txt",
+            IsFilePath = true
+        };
+
+        var ok = SessionApiEndpoints.TryGetPasteInputBytes(request, out var data, out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("\"Q:\\repo\\file name.txt\"", Encoding.UTF8.GetString(data));
+    }
+
+    [Fact]
     public void TryGetKeyInputBytes_TranslatesNamedKeys()
     {
         var request = new SessionKeyInputRequest

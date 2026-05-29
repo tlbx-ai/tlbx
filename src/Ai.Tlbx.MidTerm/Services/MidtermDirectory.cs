@@ -200,6 +200,7 @@ public static class MidtermDirectory
         | `mt_buffer <id>` | Terminal buffer content |
         | `mt_tail [id] [lines]` | Cleaned terminal tail with ANSI stripped |
         | `mt_sendtext [id] <text...>` | Send literal text without auto-submit |
+        | `mt_paste [--bracketed] [--file] [id] <text...>` | Paste clipboard-style text through the same server path as UI paste; reads stdin when text is omitted |
         | `mt_prompt [id] <text...>` | State-aware prompt delivery: bootstrapped workers auto-resume from shell, idle prompts append, busy turns interrupt when needed |
         | `mt_prompt_now [id] <text...>` | Force interrupt-first prompt delivery |
         | `mt_slash [id] <command...>` | Send slash commands through the prompt path |

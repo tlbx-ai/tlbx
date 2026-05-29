@@ -35,6 +35,7 @@ import {
   shouldHideCursorForOutput,
   showBurstCursor,
 } from './cursorVisibility';
+import { clearBracketedPasteScanState, scanBracketedPasteMode } from './bracketedPasteScan';
 import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
 import * as bgOutput from './backgroundOutputDeferral';
 import * as muxSessionRouting from './muxSessionRouting';
@@ -255,24 +256,10 @@ function shouldRecordHeat(
 }
 
 // \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
-// Followed by 0x68 ('h') = enable, 0x6c ('l') = disable
+// Followed by 0x68 ('h') = enable, 0x6c ('l') = disable.
 function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
-  for (let i = 0, end = data.length - 7; i <= end; i++) {
-    if (
-      data[i] === 0x1b &&
-      data[i + 1] === 0x5b &&
-      data[i + 2] === 0x3f &&
-      data[i + 3] === 0x32 &&
-      data[i + 4] === 0x30 &&
-      data[i + 5] === 0x30 &&
-      data[i + 6] === 0x34
-    ) {
-      const mode = data[i + 7];
-      if (mode === 0x68) bracketedPasteState.set(sessionId, true);
-      else if (mode === 0x6c) bracketedPasteState.set(sessionId, false);
-      i += 7;
-    }
-  }
+  const mode = scanBracketedPasteMode(data, sessionId);
+  if (mode !== null) bracketedPasteState.set(sessionId, mode);
 }
 
 // =============================================================================
@@ -808,9 +795,7 @@ function processTerminalOutputCursorState(
 ): {
   data: Uint8Array;
 } & ReturnType<typeof processCursorVisibilityControls> {
-  if (data.length >= 8) {
-    scanBracketedPaste(data, sessionId);
-  }
+  scanBracketedPaste(data, sessionId);
 
   const shouldHideCursor = shouldHideCursorForOutput(state, data);
   const cursorVisibility = processCursorVisibilityControls(
@@ -1507,6 +1492,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   bgOutput.clearAllBackgroundReplayState();
   browserTransportSnapshots.clear();
   bracketedPasteState.clear();
+  clearBracketedPasteScanState();
   outputRttListeners.clear();
   resetInputLatencyTraceRuntime(true);
   pendingInputQueue.length = 0;

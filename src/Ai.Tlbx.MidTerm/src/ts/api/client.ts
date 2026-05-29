@@ -506,6 +506,31 @@ export async function sendSessionPrompt(id: string, request: SessionPromptReques
   }
 }
 
+export async function sendSessionPasteInput(
+  id: string,
+  request: {
+    text: string;
+    bracketedPaste: boolean;
+    isFilePath?: boolean;
+  },
+): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/input/paste`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      text: request.text,
+      bracketedPaste: request.bracketedPaste,
+      isFilePath: request.isFilePath ?? false,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await response.text());
+  }
+}
+
 export async function getSessionState(
   id: string,
   includeBuffer = true,
