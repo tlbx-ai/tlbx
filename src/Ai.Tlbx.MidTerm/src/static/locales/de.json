@@ -264,6 +264,7 @@
   "settings.diagnostics.typeToMeasure": "tippen zum messen",
   "settings.diagnostics.enableInputLatencyTracing": "Eingabe-Latenz-Tracing aktivieren",
   "settings.diagnostics.inputLatencyGraph": "Eingabelatenz, letzte 15s",
+  "settings.diagnostics.inputCoalescingMs": "Eingabe-Coalescing-Fenster (ms, 0 aus)",
   "settings.diagnostics.showGitDebugOverlay": "Git-Debug-Overlay anzeigen",
   "settings.diagnostics.showOverlay": "Overlay auf Terminal anzeigen",
   "settings.diagnostics.terminalBufferDump": "Terminal-Puffer-Dump",

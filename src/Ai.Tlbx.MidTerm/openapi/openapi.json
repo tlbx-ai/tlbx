@@ -5244,6 +5244,7 @@
           "commandBayLigaturesEnabled",
           "devMode",
           "terminalLatencyDiagnosticsEnabled",
+          "terminalInputCoalescingMs",
           "showChangelogAfterUpdate",
           "showUpdateNotification",
           "updateChannel",
@@ -5508,6 +5509,10 @@
           },
           "terminalLatencyDiagnosticsEnabled": {
             "type": "boolean"
+          },
+          "terminalInputCoalescingMs": {
+            "type": "integer",
+            "format": "int32"
           },
           "showChangelogAfterUpdate": {
             "type": "boolean"

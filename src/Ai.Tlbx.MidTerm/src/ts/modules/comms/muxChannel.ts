@@ -84,7 +84,7 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput, sendHubResize } from '../hub/channel';
-import { $isMainBrowser } from '../../stores';
+import { $currentSettings, $isMainBrowser } from '../../stores';
 import {
   muxWs,
   sessionTerminals,
@@ -420,16 +420,23 @@ const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
-const PRINTABLE_INPUT_BURST_WINDOW_MS = 60;
+const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
 let outputQueueGeneration = 0;
 let yieldToMainChannel: MessageChannel | null = null;
 const pendingYieldToMainResolves: Array<() => void> = [];
 const printableInputCoalescer = createPrintableInputBurstCoalescer(
-  PRINTABLE_INPUT_BURST_WINDOW_MS,
+  getPrintableInputCoalescingMs,
   sendInputNow,
 );
+
+function getPrintableInputCoalescingMs(): number {
+  const value = $currentSettings.get()?.terminalInputCoalescingMs;
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.min(MAX_PRINTABLE_INPUT_COALESCING_MS, value))
+    : 0;
+}
 
 function compactSessionQueue(queue: SessionOutputQueue): void {
   if (queue.index > 0) {

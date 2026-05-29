@@ -611,6 +611,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'immediate',
     },
   ),
+  controlEntry('terminalInputCoalescingMs', 'setting-terminal-input-coalescing-ms', 'int', 0, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'integer milliseconds, 0-200',
+    applyMode: 'immediate',
+  }),
   controlEntry('showChangelogAfterUpdate', 'setting-changelog-after-update', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

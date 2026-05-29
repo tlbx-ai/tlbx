@@ -1,4 +1,5 @@
 type SendInputNow = (sessionId: string, data: string, inputAtMs: number) => void;
+type GetWindowMs = () => number;
 
 interface PrintableInputBurst {
   data: string;
@@ -13,7 +14,7 @@ export interface PrintableInputBurstCoalescer {
 }
 
 export function createPrintableInputBurstCoalescer(
-  windowMs: number,
+  getWindowMs: GetWindowMs,
   sendNow: SendInputNow,
 ): PrintableInputBurstCoalescer {
   const bursts = new Map<string, PrintableInputBurst>();
@@ -41,6 +42,12 @@ export function createPrintableInputBurstCoalescer(
   return {
     enqueue(sessionId: string, data: string, inputAtMs: number): boolean {
       if (!isPrintableBurstInput(data)) {
+        flush(sessionId);
+        return false;
+      }
+
+      const windowMs = Math.max(0, Math.min(200, Math.round(getWindowMs())));
+      if (windowMs <= 0) {
         flush(sessionId);
         return false;
       }

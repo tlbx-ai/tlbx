@@ -4291,6 +4291,8 @@ export interface components {
       commandBayLigaturesEnabled: boolean;
       devMode: boolean;
       terminalLatencyDiagnosticsEnabled: boolean;
+      /** Format: int32 */
+      terminalInputCoalescingMs: number;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
       updateChannel: null | string;

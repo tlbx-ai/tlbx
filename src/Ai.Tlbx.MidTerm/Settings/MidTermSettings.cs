@@ -142,6 +142,9 @@ public sealed class MidTermSettings
     // Terminal input latency tracing - dev mode enables this automatically; in normal mode it is opt-in.
     public bool TerminalLatencyDiagnosticsEnabled { get; set; } = false;
 
+    // Printable input coalescing window in milliseconds. 0 disables coalescing.
+    public int TerminalInputCoalescingMs { get; set; } = 0;
+
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;
 
