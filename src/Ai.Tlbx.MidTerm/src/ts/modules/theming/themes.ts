@@ -38,6 +38,8 @@ const TEXT_LIGHTNESS_KEYS = [
 ] as const satisfies readonly (keyof TerminalTheme)[];
 
 const DOM_ANSI_OVERRIDE_STYLE_ID = 'midterm-xterm-ansi-overrides';
+const LIGHT_TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
+const LIGHT_TERMINAL_BACKGROUND_LUMINANCE = 0.55;
 
 type ResolvedTerminalTheme = {
   foregroundTheme: TerminalTheme;
@@ -87,6 +89,24 @@ export function getEffectiveXtermThemeForSettings(
   settings: MidTermSettingsPublic | null,
 ): TerminalTheme {
   return resolveEffectiveXtermTheme(settings).theme;
+}
+
+export function resolveEffectiveTerminalMinimumContrastRatio(
+  settings: MidTermSettingsPublic | null,
+): number {
+  const configured = clamp(settings?.minimumContrastRatio ?? 1, 1, 21);
+  const theme = resolveEffectiveXtermTheme(settings).theme;
+  const background = parseCssColor(theme.background);
+  if (!background) {
+    return configured;
+  }
+
+  const luminance = relativeLuminance(background);
+  if (luminance < LIGHT_TERMINAL_BACKGROUND_LUMINANCE) {
+    return configured;
+  }
+
+  return Math.max(configured, LIGHT_TERMINAL_MINIMUM_CONTRAST_RATIO);
 }
 
 export function syncEffectiveXtermThemeDomOverrides(settings: MidTermSettingsPublic | null): void {
@@ -360,6 +380,50 @@ function parseHexColor(hex: string): { r: number; g: number; b: number; a?: numb
     return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b) ? { r, g, b } : null;
   }
   return null;
+}
+
+function parseCssColor(color: string | undefined): { r: number; g: number; b: number } | null {
+  if (!color) return null;
+  const parsedHex = parseHexColor(color);
+  if (parsedHex) {
+    return parsedHex;
+  }
+
+  const rgbMatch = color.trim().match(/rgba?\(([^)]+)\)/i);
+  if (!rgbMatch) {
+    return null;
+  }
+
+  const parts = rgbMatch[1]?.split(',').map((part) => Number.parseFloat(part.trim()));
+  if (!parts || parts.length < 3) {
+    return null;
+  }
+
+  const r = parts[0];
+  const g = parts[1];
+  const b = parts[2];
+  if (r === undefined || g === undefined || b === undefined) {
+    return null;
+  }
+
+  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
+    return null;
+  }
+
+  return {
+    r: clamp(r, 0, 255),
+    g: clamp(g, 0, 255),
+    b: clamp(b, 0, 255),
+  };
+}
+
+function relativeLuminance(color: { r: number; g: number; b: number }): number {
+  const [r, g, b] = [color.r, color.g, color.b].map((channel) => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+
+  return 0.2126 * (r ?? 0) + 0.7152 * (g ?? 0) + 0.0722 * (b ?? 0);
 }
 
 function rgbToHex(r: number, g: number, b: number): string {

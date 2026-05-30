@@ -14,6 +14,7 @@ import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
 import {
   getEffectiveXtermThemeForSettings,
+  resolveEffectiveTerminalMinimumContrastRatio,
   syncEffectiveXtermThemeDomOverrides,
 } from '../theming/themes';
 import { dom, sessionTerminals } from '../../state';
@@ -648,7 +649,7 @@ export function applySettingsToTerminals(settingsOverride?: MidTermSettingsPubli
     DEFAULT_TERMINAL_FONT_WEIGHT_BOLD,
   ) as TerminalFontWeight;
   const customGlyphs = settings.customGlyphs;
-  const contrastRatio = settings.minimumContrastRatio;
+  const contrastRatio = resolveEffectiveTerminalMinimumContrastRatio(settings);
   const fontLoadPromise = ensureTerminalFontLoaded(settings.fontFamily, fontSize);
   document.documentElement.style.setProperty('--terminal-font-size', `${fontSize}px`);
   document.documentElement.style.setProperty('--terminal-font-family', fontFamily);

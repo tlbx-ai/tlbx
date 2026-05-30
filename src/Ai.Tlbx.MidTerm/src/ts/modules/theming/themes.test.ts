@@ -6,6 +6,7 @@ import {
   getEffectiveTerminalBackgroundAlpha,
   getEffectiveTerminalCellBackgroundAlpha,
   getEffectiveXtermThemeForSettings,
+  resolveEffectiveTerminalMinimumContrastRatio,
 } from './themes';
 
 const originalWindow = globalThis.window;
@@ -21,6 +22,7 @@ function createSettings(
       | 'terminalTransparency'
       | 'terminalCellBackgroundTransparency'
       | 'terminalThemeLightnessBoost'
+      | 'minimumContrastRatio'
       | 'backgroundImageEnabled'
       | 'hideBackgroundImageOnMobile'
       | 'backgroundImageFileName'
@@ -35,6 +37,7 @@ function createSettings(
     terminalTransparency: 0,
     terminalCellBackgroundTransparency: 0,
     terminalThemeLightnessBoost: 0,
+    minimumContrastRatio: 1,
     backgroundImageEnabled: false,
     hideBackgroundImageOnMobile: true,
     backgroundImageFileName: null,
@@ -228,6 +231,59 @@ describe('themes', () => {
     expect(theme.foreground).toBe('#000000');
     expect(theme.blue).toBe('#0000B2');
     expect(theme.brightBlue).toBe('#0000FF');
+  });
+
+  it('raises terminal contrast automatically on light terminal backgrounds', () => {
+    expect(
+      resolveEffectiveTerminalMinimumContrastRatio(
+        createSettings({
+          theme: 'light',
+          terminalColorScheme: 'auto',
+          minimumContrastRatio: 1,
+        }),
+      ),
+    ).toBe(4.5);
+
+    expect(
+      resolveEffectiveTerminalMinimumContrastRatio(
+        createSettings({
+          terminalColorScheme: 'macTerminalLight',
+          minimumContrastRatio: 1,
+        }),
+      ),
+    ).toBe(4.5);
+  });
+
+  it('preserves dark terminal color fidelity unless a higher contrast ratio is configured', () => {
+    expect(
+      resolveEffectiveTerminalMinimumContrastRatio(
+        createSettings({
+          theme: 'light',
+          terminalColorScheme: 'dark',
+          minimumContrastRatio: 1,
+        }),
+      ),
+    ).toBe(1);
+
+    expect(
+      resolveEffectiveTerminalMinimumContrastRatio(
+        createSettings({
+          terminalColorScheme: 'dark',
+          minimumContrastRatio: 7,
+        }),
+      ),
+    ).toBe(7);
+  });
+
+  it('keeps explicit high contrast settings above the light terminal floor', () => {
+    expect(
+      resolveEffectiveTerminalMinimumContrastRatio(
+        createSettings({
+          terminalColorScheme: 'solarizedLight',
+          minimumContrastRatio: 7,
+        }),
+      ),
+    ).toBe(7);
   });
 
   it('resolves a saved custom palette by name', () => {
