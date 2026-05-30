@@ -4674,7 +4674,7 @@ body::before {
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
-  color: var(--text-secondary);
+  color: var(--sidebar-readable-muted-text-color, var(--text-secondary));
   cursor: pointer;
   text-align: left;
   transition:
@@ -4686,7 +4686,7 @@ body::before {
 
 .settings-tab:hover {
   background: var(--bg-hover-opaque, var(--bg-hover));
-  color: var(--text-primary);
+  color: var(--sidebar-readable-text-color, var(--text-primary));
 }
 
 .settings-tab.active {

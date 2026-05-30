@@ -117,6 +117,21 @@ describe('CSS_THEMES CTA tokens', () => {
     expect(CSS_THEMES.solarizedLight['--sidebar-readable-text-shadow']).toBe('none');
   });
 
+  it('keeps solarized dark sidebars brighter than its muted app chrome', () => {
+    expect(CSS_THEMES.solarizedDark['--sidebar-readable-text-color']).toBe('#D6E6E3');
+    expect(CSS_THEMES.solarizedDark['--sidebar-readable-muted-text-color']).toBe('#B7CAC7');
+    expect(CSS_THEMES.solarizedDark['--sidebar-readable-text-color']).not.toBe(
+      CSS_THEMES.solarizedDark['--text-primary'],
+    );
+    expect(CSS_THEMES.solarizedDark['--sidebar-readable-muted-text-color']).not.toBe(
+      CSS_THEMES.solarizedDark['--text-secondary'],
+    );
+    expect(CSS_THEMES.solarizedDark['--sidebar-readable-text-shadow']).toContain(
+      '--sidebar-readable-shadow-core',
+    );
+    expect(CSS_THEMES.solarizedDark['--sidebar-readable-icon-shadow']).toContain('drop-shadow');
+  });
+
   it('publishes the active native color scheme for browser-rendered controls', () => {
     applyCssTheme('solarizedDark');
     expect(rootStyle.colorScheme).toBe('dark');
