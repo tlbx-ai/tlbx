@@ -821,13 +821,11 @@ function createImageDraftAttachmentWithReference(
   file: File,
   uploadedPath: string,
 ): AppServerControlComposerDraftAttachment {
-  const draft = getSessionDraft(sessionId);
   const attachment = createAppServerControlComposerDraftAttachment(sessionId, file, uploadedPath);
-  const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'image');
+  const referenceOrdinal = allocateSessionReferenceOrdinal(sessionId, 'image');
   attachment.referenceKind = 'image';
   attachment.referenceOrdinal = referenceOrdinal;
   attachment.referenceLabel = formatSmartInputReferenceLabel('image', referenceOrdinal);
-  setSessionDraft(sessionId, draft);
   return attachment;
 }
 
@@ -837,7 +835,6 @@ function createTextDraftAttachmentWithReference(
   uploadedPath: string,
   text: string,
 ): AppServerControlComposerDraftAttachment {
-  const draft = getSessionDraft(sessionId);
   const attachment = createAppServerControlComposerDraftAttachment(
     sessionId,
     file,
@@ -845,14 +842,28 @@ function createTextDraftAttachmentWithReference(
     file,
   );
   const stats = getSmartInputTextReferenceStats(text);
-  const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'text');
+  const referenceOrdinal = allocateSessionReferenceOrdinal(sessionId, 'text');
   attachment.referenceKind = 'text';
   attachment.referenceOrdinal = referenceOrdinal;
   attachment.referenceLabel = formatSmartInputReferenceLabel('text', referenceOrdinal);
   attachment.referenceLineCount = stats.lineCount;
   attachment.referenceCharCount = stats.charCount;
-  setSessionDraft(sessionId, draft);
   return attachment;
+}
+
+function allocateSessionReferenceOrdinal(
+  sessionId: string,
+  kind: SmartInputComposerReferenceKind,
+): number {
+  const draft = getSessionDraft(sessionId);
+  const allocatedOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, kind);
+  const existingMaxOrdinal = getAppServerControlDraftAttachments(sessionId)
+    .filter((attachment) => attachment.referenceKind === kind)
+    .reduce((max, attachment) => Math.max(max, attachment.referenceOrdinal ?? 0), 0);
+  const ordinal = Math.max(allocatedOrdinal, existingMaxOrdinal + 1);
+  draft.nextOrdinalByKind[kind] = ordinal + 1;
+  setSessionDraft(sessionId, draft);
+  return ordinal;
 }
 
 function removeAttachmentsByIds(sessionId: string, attachmentIds: readonly string[]): void {

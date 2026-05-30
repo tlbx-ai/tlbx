@@ -227,4 +227,69 @@ describe('smartInputOutboundReferences', () => {
       ],
     });
   });
+
+  it('always uses bracketed paste for terminal text references so multiline content stays one paste payload', async () => {
+    const { prepareSmartInputTerminalTurn } = await import('./smartInputOutboundReferences');
+
+    const result = await prepareSmartInputTerminalTurn({
+      sessionId: 's1',
+      draft: {
+        nextOrdinalByKind: { text: 3 },
+        parts: [
+          { kind: 'reference', referenceId: 'txt-1' },
+          { kind: 'text', text: ' ' },
+          { kind: 'reference', referenceId: 'txt-2' },
+        ],
+      },
+      attachments: [
+        {
+          id: 'txt-1',
+          kind: 'file',
+          file: new File(['one\ntwo'], 'one.txt', { type: 'text/plain' }),
+          uploadedPath: 'Q:/repo/.midterm/uploads/one.txt',
+          displayName: 'one.txt',
+          mimeType: 'text/plain',
+          referenceCharCount: 7,
+          referenceKind: 'text',
+          referenceLabel: 'Text 1',
+          referenceLineCount: 2,
+          referenceOrdinal: 1,
+          sizeBytes: 7,
+          previewUrl: null,
+        },
+        {
+          id: 'txt-2',
+          kind: 'file',
+          file: new File(['three\nfour'], 'two.txt', { type: 'text/plain' }),
+          uploadedPath: 'Q:/repo/.midterm/uploads/two.txt',
+          displayName: 'two.txt',
+          mimeType: 'text/plain',
+          referenceCharCount: 10,
+          referenceKind: 'text',
+          referenceLabel: 'Text 2',
+          referenceLineCount: 2,
+          referenceOrdinal: 2,
+          sizeBytes: 10,
+          previewUrl: null,
+        },
+      ],
+      bracketedPasteModeEnabled: false,
+      uploadFailureMessage: 'upload failed',
+      uploadFile: vi.fn(),
+    });
+
+    expect(result.terminalReplay).toEqual([
+      {
+        kind: 'textFile',
+        path: 'Q:/repo/.midterm/uploads/one.txt',
+        useBracketedPaste: true,
+      },
+      { kind: 'text', text: ' ' },
+      {
+        kind: 'textFile',
+        path: 'Q:/repo/.midterm/uploads/two.txt',
+        useBracketedPaste: true,
+      },
+    ]);
+  });
 });

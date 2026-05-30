@@ -286,4 +286,50 @@ public sealed class TerminalReplayExecutorTests
             ],
             delays);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WaitsLongerBeforeSubmitAfterLargeFinalPaste()
+    {
+        var tempFile = Path.GetTempFileName();
+        var sentInputs = new List<string>();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, new string('x', 5_000));
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = tempFile,
+                        UseBracketedPaste = true
+                    }
+                ],
+                (data, _) =>
+                {
+                    sentInputs.Add(Encoding.UTF8.GetString(data));
+                    return Task.CompletedTask;
+                },
+                (_, _, _) => Task.FromResult(false),
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+
+        Assert.Equal(2, sentInputs.Count);
+        Assert.Equal("\r", sentInputs[1]);
+        Assert.Single(delays);
+        Assert.InRange(
+            delays[0],
+            TerminalReplayExecutor.SubmitDelayMs + 1,
+            TerminalReplayExecutor.MaxLargePasteSubmitDelayMs);
+    }
 }
