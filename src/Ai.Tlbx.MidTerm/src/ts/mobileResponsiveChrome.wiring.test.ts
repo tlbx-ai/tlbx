@@ -9,10 +9,22 @@ const projectRoot = path.resolve(__dirname, '../..');
 const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
 const css = readFileSync(path.join(projectRoot, 'src/static/css/app.css'), 'utf8');
 const mainSource = readFileSync(path.join(projectRoot, 'src/ts/main.ts'), 'utf8');
+const constantsSource = readFileSync(path.join(projectRoot, 'src/ts/constants.ts'), 'utf8');
 const mobileActionsSource = readFileSync(
   path.join(projectRoot, 'src/ts/modules/sessionTabs/mobileActions.ts'),
   'utf8',
 );
+const sessionListSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/sidebar/sessionList.ts'),
+  'utf8',
+);
+const smartInputMetricsSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/smartInput/smartInputMetrics.ts'),
+  'utf8',
+);
+
+const mobileChromeMedia =
+  '@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {';
 
 describe('mobile responsive chrome wiring', () => {
   it('nests the mobile tab strip inside the mobile topbar', () => {
@@ -46,7 +58,7 @@ describe('mobile responsive chrome wiring', () => {
     expect(css).toContain('.mobile-topbar.has-mobile-tabs .topbar-actions {');
     expect(css).toContain('background: var(--bg-terminal);');
     expect(css).toContain('border-image: linear-gradient(');
-    expect(css).toContain('@media (max-width: 768px) {');
+    expect(css).toContain(mobileChromeMedia);
     expect(html).toContain('id="adaptive-footer-dock"');
     expect(css).toContain('.adaptive-footer-dock .manager-bar:not(.hidden) {');
     expect(css).toContain('.adaptive-footer-context .touch-controller.embedded {');
@@ -77,19 +89,29 @@ describe('mobile responsive chrome wiring', () => {
 
   it('keeps the responsive sidebar opaque and exposes touch-sized row actions', () => {
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \{[\s\S]*?background: var\(--bg-sidebar-opaque, var\(--bg-sidebar\)\);/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.sidebar \{[\s\S]*?background: var\(--bg-sidebar-opaque, var\(--bg-sidebar\)\);/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \.session-actions \{[\s\S]*?opacity: 1;[\s\S]*?visibility: visible;[\s\S]*?pointer-events: auto;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.sidebar \.session-actions \{[\s\S]*?opacity: 1;[\s\S]*?visibility: visible;[\s\S]*?pointer-events: auto;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.session-actions \.session-pin,[\s\S]*?\.session-actions \.session-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-actions \.session-pin,[\s\S]*?\.session-actions \.session-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.session-item \{[\s\S]*?flex-wrap: wrap;[\s\S]*?min-height: 112px;[\s\S]*?\.session-actions \{[\s\S]*?flex: 0 0 calc\(100% - 18px\);[\s\S]*?margin: 2px 0 0 18px;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-item \{[\s\S]*?flex-wrap: wrap;[\s\S]*?min-height: 112px;[\s\S]*?\.session-actions \{[\s\S]*?flex: 0 0 calc\(100% - 18px\);[\s\S]*?margin: 2px 0 0 18px;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.sidebar \.session-menu-btn \{[\s\S]*?display: none;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.sidebar \.session-menu-btn \{[\s\S]*?display: none;/s,
     );
+  });
+
+  it('treats coarse touch phones with a wide CSS viewport as mobile chrome', () => {
+    expect(constantsSource).toContain('export const MOBILE_TOUCH_BREAKPOINT = 1024;');
+    expect(css).toContain(mobileChromeMedia);
+    expect(smartInputMetricsSource).toContain(
+      'return isTouchPrimaryDevice() && window.innerWidth <= MOBILE_TOUCH_BREAKPOINT;',
+    );
+    expect(sessionListSource).toContain("window.matchMedia('(hover: none) and (pointer: coarse)').matches");
+    expect(sessionListSource).toContain('window.innerWidth <= MOBILE_TOUCH_BREAKPOINT');
   });
 });

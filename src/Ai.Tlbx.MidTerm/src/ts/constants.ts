@@ -366,6 +366,9 @@ export const MAX_FRAME_DIMENSION = 500;
 /** Mobile breakpoint in pixels */
 export const MOBILE_BREAKPOINT = 768;
 
+/** Max viewport width where coarse primary touch should still use mobile chrome */
+export const MOBILE_TOUCH_BREAKPOINT = 1024;
+
 // =============================================================================
 // Icon Font (midFont) - Unicode characters
 // =============================================================================

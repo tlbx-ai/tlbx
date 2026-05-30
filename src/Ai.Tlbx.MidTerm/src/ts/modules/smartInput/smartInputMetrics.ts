@@ -1,7 +1,8 @@
+import { MOBILE_BREAKPOINT, MOBILE_TOUCH_BREAKPOINT } from '../../constants';
+
 const COLLAPSED_TEXTAREA_LINES = 1;
 const MAX_TEXTAREA_OVERLAY_LINES = 7;
 const MAX_VISIBLE_TEXTAREA_LINES = COLLAPSED_TEXTAREA_LINES + MAX_TEXTAREA_OVERLAY_LINES;
-const MOBILE_BREAKPOINT_PX = 768;
 const COLLAPSED_HEIGHT_DATASET_KEY = 'midtermCollapsedHeightPx';
 const SINGLE_LINE_VERTICAL_OPTICAL_OFFSET_PX = 3;
 
@@ -123,7 +124,11 @@ export function getCollapsedSmartInputTextareaHeight(textarea: HTMLTextAreaEleme
 }
 
 export function isMobileViewport(): boolean {
-  return window.matchMedia(`(max-width: ${String(MOBILE_BREAKPOINT_PX)}px)`).matches;
+  if (window.matchMedia(`(max-width: ${String(MOBILE_BREAKPOINT)}px)`).matches) {
+    return true;
+  }
+
+  return isTouchPrimaryDevice() && window.innerWidth <= MOBILE_TOUCH_BREAKPOINT;
 }
 
 export function isTouchPrimaryDevice(): boolean {

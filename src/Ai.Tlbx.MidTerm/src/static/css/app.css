@@ -680,7 +680,7 @@ body::before {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   body.hide-app-background-on-mobile::before {
     content: none;
   }
@@ -1117,7 +1117,7 @@ body::before {
   cursor: grabbing;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .spaces-tree-space-actions,
   .spaces-tree-workspace-actions {
     opacity: 1;
@@ -3336,7 +3336,7 @@ body::before {
 /* ============================================================================
    Mobile Responsive Styles
    ============================================================================ */
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   html,
   body {
     overflow: hidden;
@@ -7851,7 +7851,7 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-primary);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .terminal-search {
     top: 52px;
     right: 8px;
@@ -9815,7 +9815,7 @@ body.shared-session-mode .session-tab-bar {
    Keyboard Visible Mode (mobile on-screen keyboard active)
    ========================================================================== */
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   /* Keep critical controls reachable while keyboard is open, but compact them. */
   body.keyboard-visible .mobile-topbar {
     display: flex;
@@ -12581,7 +12581,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     0 6px 14px color-mix(in srgb, var(--agent-history-progress-accent) 14%, transparent);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .agent-history-shell {
     gap: 12px;
   }
@@ -14813,7 +14813,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 /* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .mobile-tab-pill {
     min-height: 34px;
     padding: 7px 12px;
@@ -14837,7 +14837,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .smart-input-appServerControl-settings {
     flex-wrap: wrap;
     gap: 8px;
@@ -17577,7 +17577,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .adaptive-footer-status.adaptive-footer-status-sheet-open
     .adaptive-footer-status-summary-appServerControl,
   .adaptive-footer-status.adaptive-footer-status-sheet-open
@@ -18044,7 +18044,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   display: flex !important;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .adaptive-footer-dock {
     --command-bay-control-height: var(--command-bay-control-height-mobile);
     padding: 4px;
