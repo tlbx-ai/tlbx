@@ -110,7 +110,6 @@ import {
 } from './enterBehavior';
 import { resolveSmartInputShiftTabAction } from './smartInputTextareaShortcuts';
 import {
-  allocateSmartInputComposerReferenceOrdinal,
   cloneSmartInputComposerDraft,
   createSmartInputComposerDraft,
   deleteSmartInputComposerBackward,
@@ -822,9 +821,9 @@ function createImageDraftAttachmentWithReference(
   sessionId: string,
   file: File,
   uploadedPath: string,
+  referenceOrdinal: number = allocateSessionReferenceOrdinal(sessionId, 'image'),
 ): AppServerControlComposerDraftAttachment {
   const attachment = createAppServerControlComposerDraftAttachment(sessionId, file, uploadedPath);
-  const referenceOrdinal = allocateSessionReferenceOrdinal(sessionId, 'image');
   attachment.referenceKind = 'image';
   attachment.referenceOrdinal = referenceOrdinal;
   attachment.referenceLabel = formatSmartInputReferenceLabel('image', referenceOrdinal);
@@ -836,6 +835,7 @@ function createTextDraftAttachmentWithReference(
   file: File,
   uploadedPath: string,
   text: string,
+  referenceOrdinal: number = allocateSessionReferenceOrdinal(sessionId, 'text'),
 ): AppServerControlComposerDraftAttachment {
   const attachment = createAppServerControlComposerDraftAttachment(
     sessionId,
@@ -844,7 +844,6 @@ function createTextDraftAttachmentWithReference(
     file,
   );
   const stats = getSmartInputTextReferenceStats(text);
-  const referenceOrdinal = allocateSessionReferenceOrdinal(sessionId, 'text');
   attachment.referenceKind = 'text';
   attachment.referenceOrdinal = referenceOrdinal;
   attachment.referenceLabel = formatSmartInputReferenceLabel('text', referenceOrdinal);
@@ -858,14 +857,25 @@ function allocateSessionReferenceOrdinal(
   kind: SmartInputComposerReferenceKind,
 ): number {
   const draft = getSessionDraft(sessionId);
-  const allocatedOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, kind);
-  const existingMaxOrdinal = getAppServerControlDraftAttachments(sessionId)
-    .filter((attachment) => attachment.referenceKind === kind)
-    .reduce((max, attachment) => Math.max(max, attachment.referenceOrdinal ?? 0), 0);
-  const ordinal = Math.max(allocatedOrdinal, existingMaxOrdinal + 1);
+  const ordinal = allocateReferenceOrdinalFromDraftAndAttachments(
+    draft,
+    getAppServerControlDraftAttachments(sessionId),
+    kind,
+  );
   draft.nextOrdinalByKind[kind] = ordinal + 1;
   setSessionDraft(sessionId, draft);
   return ordinal;
+}
+
+function allocateReferenceOrdinalFromDraftAndAttachments(
+  draft: SmartInputComposerDraft,
+  attachments: readonly AppServerControlComposerDraftAttachment[],
+  kind: SmartInputComposerReferenceKind,
+): number {
+  const existingMaxOrdinal = attachments
+    .filter((attachment) => attachment.referenceKind === kind)
+    .reduce((max, attachment) => Math.max(max, attachment.referenceOrdinal ?? 0), 0);
+  return Math.max(draft.nextOrdinalByKind[kind] ?? 1, existingMaxOrdinal + 1);
 }
 
 function removeAttachmentsByIds(sessionId: string, attachmentIds: readonly string[]): void {
@@ -2219,6 +2229,7 @@ async function addAppServerControlComposerPasteParts(
         textFile,
         uploadedPath,
         part.text,
+        allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'text'),
       );
       nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'text', attachment.referenceOrdinal);
       nextAttachments.push(attachment);
@@ -2246,7 +2257,12 @@ async function addAppServerControlComposerPasteParts(
       continue;
     }
 
-    const attachment = createImageDraftAttachmentWithReference(sessionId, file, uploadedPath);
+    const attachment = createImageDraftAttachmentWithReference(
+      sessionId,
+      file,
+      uploadedPath,
+      allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'image'),
+    );
     nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'image', attachment.referenceOrdinal);
     nextAttachments.push(attachment);
     setAppServerControlDraftAttachments(sessionId, nextAttachments);

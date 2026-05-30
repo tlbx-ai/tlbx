@@ -652,6 +652,16 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('inlineToolHost.hidden = true;');
   });
 
+  it('allocates mixed paste reference ordinals from the staged draft and attachments', () => {
+    expect(source).toContain('function allocateReferenceOrdinalFromDraftAndAttachments(');
+    expect(source).toContain(
+      "allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'text')",
+    );
+    expect(source).toContain(
+      "allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'image')",
+    );
+  });
+
   it('merges context and automation controls into the mobile status row', () => {
     expect(source).toContain('function renderMobileTerminalStatusRow(');
     expect(source).toContain("leftCluster.className = 'adaptive-footer-status-left';");

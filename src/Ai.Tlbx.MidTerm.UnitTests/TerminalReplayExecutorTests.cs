@@ -332,4 +332,49 @@ public sealed class TerminalReplayExecutorTests
             TerminalReplayExecutor.SubmitDelayMs + 1,
             TerminalReplayExecutor.MaxLargePasteSubmitDelayMs);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_WaitsLongerBeforeSubmitWhenLargeFinalPasteFollowsImage()
+    {
+        var tempFile = Path.GetTempFileName();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, new string('x', 5_000));
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "image",
+                        Path = "Q:/repo/.midterm/uploads/screen.png",
+                        MimeType = "image/png"
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = tempFile,
+                        UseBracketedPaste = true
+                    }
+                ],
+                static (_, _) => Task.CompletedTask,
+                static (_, _, _) => Task.FromResult(true),
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+
+        Assert.Equal(TerminalReplayExecutor.ImageSettleDelayMs, delays[0]);
+        Assert.InRange(
+            delays[1],
+            TerminalReplayExecutor.MaxLargePasteSubmitDelayMs + 1,
+            TerminalReplayExecutor.MaxLargePasteAfterImageSubmitDelayMs);
+    }
 }

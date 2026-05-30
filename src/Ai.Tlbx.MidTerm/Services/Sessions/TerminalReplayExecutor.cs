@@ -9,6 +9,7 @@ internal static class TerminalReplayExecutor
     internal const int TextBeforeImageSettleDelayMs = 75;
     internal const int SubmitDelayMs = 200;
     internal const int MaxLargePasteSubmitDelayMs = 1200;
+    internal const int MaxLargePasteAfterImageSubmitDelayMs = 4000;
 
     public static async Task ExecuteAsync(
         IReadOnlyList<AppServerControlTerminalReplayStep> steps,
@@ -24,7 +25,9 @@ internal static class TerminalReplayExecutor
 
         var pendingInput = new PendingReplayInput();
         var sentAnyContent = false;
+        var pastedAnyImage = false;
         var lastFlushByteCount = 0;
+        var lastFlushFollowedImage = false;
         foreach (var step in steps)
         {
             if (step is null)
@@ -90,6 +93,7 @@ internal static class TerminalReplayExecutor
                     if (await pasteImageAsync(step.Path, step.MimeType, cancellationToken).ConfigureAwait(false))
                     {
                         sentAnyContent = true;
+                        pastedAnyImage = true;
                         await delayAsync(ImageSettleDelayMs, cancellationToken).ConfigureAwait(false);
                     }
                     else
@@ -111,9 +115,10 @@ internal static class TerminalReplayExecutor
         if (finalFlushByteCount > 0)
         {
             lastFlushByteCount = finalFlushByteCount;
+            lastFlushFollowedImage = pastedAnyImage;
         }
 
-        await delayAsync(ResolveSubmitDelayMs(lastFlushByteCount), cancellationToken).ConfigureAwait(false);
+        await delayAsync(ResolveSubmitDelayMs(lastFlushByteCount, lastFlushFollowedImage), cancellationToken).ConfigureAwait(false);
         await sendInputAsync([(byte)'\r'], cancellationToken).ConfigureAwait(false);
     }
 
@@ -133,7 +138,7 @@ internal static class TerminalReplayExecutor
         return Encoding.UTF8.GetBytes($"\u001b[200~{normalizedText}\u001b[201~");
     }
 
-    private static int ResolveSubmitDelayMs(int lastFlushByteCount)
+    private static int ResolveSubmitDelayMs(int lastFlushByteCount, bool followsImagePaste)
     {
         if (lastFlushByteCount <= 0)
         {
@@ -145,8 +150,13 @@ internal static class TerminalReplayExecutor
             return SubmitDelayMs;
         }
 
-        var scaledDelay = SubmitDelayMs + ((lastFlushByteCount - 1024) / 8);
-        return Math.Clamp(scaledDelay, SubmitDelayMs, MaxLargePasteSubmitDelayMs);
+        var scaledDelay = followsImagePaste
+            ? SubmitDelayMs + ((lastFlushByteCount - 1024) / 3)
+            : SubmitDelayMs + ((lastFlushByteCount - 1024) / 8);
+        var maxDelay = followsImagePaste
+            ? MaxLargePasteAfterImageSubmitDelayMs
+            : MaxLargePasteSubmitDelayMs;
+        return Math.Clamp(scaledDelay, SubmitDelayMs, maxDelay);
     }
 
     private static string NormalizeTerminalPasteLineEndings(string text)
