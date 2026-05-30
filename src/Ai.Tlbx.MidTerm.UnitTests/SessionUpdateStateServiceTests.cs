@@ -168,6 +168,66 @@ public sealed class SessionUpdateStateServiceTests
         Assert.False(File.Exists(statePath));
     }
 
+    [Fact]
+    public void BuildFullUpdateRestoreDecorations_IncludesSavedSessionsWithoutResumeIntent()
+    {
+        var state = new SessionUpdateState
+        {
+            Kind = "full",
+            SavedAt = DateTimeOffset.UtcNow,
+            Sessions =
+            [
+                new SessionDecorationState
+                {
+                    SessionId = "shell-only",
+                    ShellType = "Pwsh",
+                    Cols = 161,
+                    Rows = 42,
+                    CurrentDirectory = "Q:\\repos\\MidTerm",
+                    Topic = "must come back"
+                }
+            ]
+        };
+
+        var decorations = SessionUpdateStateService.BuildFullUpdateRestoreDecorations(
+            state,
+            new Dictionary<string, SessionResumeIntent>(StringComparer.Ordinal));
+
+        var decoration = Assert.Single(decorations);
+        Assert.Equal("shell-only", decoration.SessionId);
+        Assert.Equal("Pwsh", decoration.ShellType);
+        Assert.Equal(161, decoration.Cols);
+        Assert.Equal(42, decoration.Rows);
+        Assert.Equal("Q:\\repos\\MidTerm", decoration.CurrentDirectory);
+        Assert.Equal("must come back", decoration.Topic);
+    }
+
+    [Fact]
+    public void BuildFullUpdateRestoreDecorations_KeepsPendingIntentWithoutDecoration()
+    {
+        var pending = new SessionResumeIntent
+        {
+            OriginalSessionId = "pending-only",
+            ShellType = "Pwsh",
+            WorkingDirectory = "Q:\\repos\\Jpa",
+            Cols = 120,
+            Rows = 30,
+            Command = "codex resume thread-123"
+        };
+
+        var decorations = SessionUpdateStateService.BuildFullUpdateRestoreDecorations(
+            new SessionUpdateState { Kind = "full", SavedAt = DateTimeOffset.UtcNow },
+            new Dictionary<string, SessionResumeIntent>(StringComparer.Ordinal)
+            {
+                ["pending-only"] = pending
+            });
+
+        var decoration = Assert.Single(decorations);
+        Assert.Equal("pending-only", decoration.SessionId);
+        Assert.Equal("Pwsh", decoration.ShellType);
+        Assert.Equal("Q:\\repos\\Jpa", decoration.CurrentDirectory);
+    }
+
     private static void AddCachedSession(TtyHostSessionManager manager, string sessionId)
     {
         var cache = typeof(TtyHostSessionManager)

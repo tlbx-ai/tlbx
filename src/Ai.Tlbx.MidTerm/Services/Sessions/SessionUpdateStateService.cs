@@ -105,8 +105,16 @@ public sealed partial class SessionUpdateStateService
 
         await RestoreDecorationsAsync(sessionManager, gitWatcher, state.Sessions, ct)
             .ConfigureAwait(false);
-        await RestoreResumeIntentsAsync(sessionManager, gitWatcher, state, ct)
-            .ConfigureAwait(false);
+        var result = IsFullUpdateState(state)
+            ? await RestoreFullUpdateSessionsAsync(sessionManager, gitWatcher, state, ct).ConfigureAwait(false)
+            : RestoreUpdateStateResult.Success;
+        if (result.FailedOriginalSessionIds.Count > 0)
+        {
+            PreserveFailedRestoreState(state, result.FailedOriginalSessionIds);
+            await PersistAsync(state, ct).ConfigureAwait(false);
+            return;
+        }
+
         DeleteStateFile();
     }
 
@@ -238,52 +246,64 @@ public sealed partial class SessionUpdateStateService
         }
     }
 
-    private async Task RestoreResumeIntentsAsync(
+    private async Task<RestoreUpdateStateResult> RestoreFullUpdateSessionsAsync(
         TtyHostSessionManager sessionManager,
         GitWatcherService gitWatcher,
         SessionUpdateState state,
         CancellationToken ct)
     {
-        if (state.PendingResumeSessions.Count == 0)
-        {
-            return;
-        }
-
         var liveSessionIds = sessionManager.GetAllSessions()
             .Select(static session => session.Id)
             .ToHashSet(StringComparer.Ordinal);
+        var pendingByOriginalId = state.PendingResumeSessions
+            .Where(static item => !string.IsNullOrWhiteSpace(item.OriginalSessionId))
+            .GroupBy(static item => item.OriginalSessionId, StringComparer.Ordinal)
+            .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
+        var decorations = BuildFullUpdateRestoreDecorations(state, pendingByOriginalId);
         var recreatedOrderBySessionId = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var intent in state.PendingResumeSessions.OrderBy(static item => item.Decoration?.Order ?? int.MaxValue))
+        var failedOriginalSessionIds = new List<string>();
+
+        foreach (var decoration in decorations.OrderBy(static item => item.Order))
         {
-            if (liveSessionIds.Contains(intent.OriginalSessionId))
+            if (liveSessionIds.Contains(decoration.SessionId))
             {
                 continue;
             }
 
+            pendingByOriginalId.TryGetValue(decoration.SessionId, out var intent);
             var created = await sessionManager.CreateSessionDetailedAsync(
-                intent.ShellType,
-                intent.Cols <= 0 ? 120 : intent.Cols,
-                intent.Rows <= 0 ? 30 : intent.Rows,
-                intent.WorkingDirectory,
+                intent?.ShellType ?? decoration.ShellType,
+                ResolveCols(intent, decoration),
+                ResolveRows(intent, decoration),
+                intent?.WorkingDirectory ?? decoration.CurrentDirectory,
                 ct).ConfigureAwait(false);
 
             if (created.Session is null)
             {
-                Log.Warn(() => $"Failed to recreate session {intent.OriginalSessionId} after full update: {created.Failure?.Message}");
+                failedOriginalSessionIds.Add(decoration.SessionId);
+                Log.Warn(() => $"Failed to recreate session {decoration.SessionId} after full update: {created.Failure?.Message}");
                 continue;
             }
 
-            if (intent.Decoration is not null)
-            {
-                await ApplyDecorationAsync(sessionManager, gitWatcher, created.Session.Id, intent.Decoration, ct)
-                    .ConfigureAwait(false);
-            }
-            recreatedOrderBySessionId[created.Session.Id] = intent.Decoration?.Order ?? int.MaxValue;
+            await ApplyDecorationAsync(sessionManager, gitWatcher, created.Session.Id, decoration, ct)
+                .ConfigureAwait(false);
 
-            await sessionManager.SendInputAsync(
-                created.Session.Id,
-                Encoding.UTF8.GetBytes(intent.Command + "\r"),
-                ct).ConfigureAwait(false);
+            recreatedOrderBySessionId[created.Session.Id] = decoration.Order;
+
+            if (!string.IsNullOrWhiteSpace(intent?.Command))
+            {
+                try
+                {
+                    await sessionManager.SendInputAsync(
+                        created.Session.Id,
+                        Encoding.UTF8.GetBytes(intent.Command + "\r"),
+                        ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Log.Warn(() => $"Failed to send resume command for restored session {decoration.SessionId}: {ex.Message}");
+                }
+            }
         }
 
         if (recreatedOrderBySessionId.Count > 0)
@@ -295,9 +315,85 @@ public sealed partial class SessionUpdateStateService
                     .ToList());
         }
 
-        state.PendingResumeSessions.Clear();
         state.RestoredAt = DateTimeOffset.UtcNow;
-        await PersistAsync(state, ct).ConfigureAwait(false);
+        Log.Info(() => $"Restored full-update session state: recreated={recreatedOrderBySessionId.Count}, failed={failedOriginalSessionIds.Count}");
+        return new RestoreUpdateStateResult(failedOriginalSessionIds);
+    }
+
+    private static bool IsFullUpdateState(SessionUpdateState state)
+    {
+        return string.Equals(state.Kind, "full", StringComparison.OrdinalIgnoreCase)
+            || state.PendingResumeSessions.Count > 0;
+    }
+
+    internal static List<SessionDecorationState> BuildFullUpdateRestoreDecorations(
+        SessionUpdateState state,
+        IReadOnlyDictionary<string, SessionResumeIntent> pendingByOriginalId)
+    {
+        var result = state.Sessions
+            .Where(static item => !string.IsNullOrWhiteSpace(item.SessionId))
+            .GroupBy(static item => item.SessionId, StringComparer.Ordinal)
+            .Select(static group => group.First())
+            .ToList();
+        var seen = result.Select(static item => item.SessionId).ToHashSet(StringComparer.Ordinal);
+
+        foreach (var intent in pendingByOriginalId.Values)
+        {
+            if (seen.Contains(intent.OriginalSessionId))
+            {
+                continue;
+            }
+
+            result.Add(intent.Decoration ?? new SessionDecorationState
+            {
+                SessionId = intent.OriginalSessionId,
+                ShellType = intent.ShellType ?? "",
+                Cols = intent.Cols,
+                Rows = intent.Rows,
+                CurrentDirectory = intent.WorkingDirectory
+            });
+            seen.Add(intent.OriginalSessionId);
+        }
+
+        return result;
+    }
+
+    private static int ResolveCols(SessionResumeIntent? intent, SessionDecorationState decoration)
+    {
+        return FirstPositive(intent?.Cols, decoration.Cols, 120);
+    }
+
+    private static int ResolveRows(SessionResumeIntent? intent, SessionDecorationState decoration)
+    {
+        return FirstPositive(intent?.Rows, decoration.Rows, 30);
+    }
+
+    private static int FirstPositive(params int?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (value.GetValueOrDefault() > 0)
+            {
+                return value.GetValueOrDefault();
+            }
+        }
+
+        return 1;
+    }
+
+    private static void PreserveFailedRestoreState(
+        SessionUpdateState state,
+        IReadOnlyCollection<string> failedOriginalSessionIds)
+    {
+        var failed = failedOriginalSessionIds.ToHashSet(StringComparer.Ordinal);
+        state.Sessions = state.Sessions
+            .Where(session => failed.Contains(session.SessionId))
+            .ToList();
+        state.PendingResumeSessions = state.PendingResumeSessions
+            .Where(intent => failed.Contains(intent.OriginalSessionId))
+            .ToList();
+        state.RestoredAt = DateTimeOffset.UtcNow;
+        Log.Warn(() => $"Keeping update session state for retry; failedRestoreSessions={failed.Count}");
     }
 
     private static async Task ApplyDecorationAsync(
@@ -631,6 +727,11 @@ public sealed partial class SessionUpdateStateService
     private static partial Regex AiResumeHintRegex();
 
     private sealed record AiResumeHint(string Provider, string ResumeArgument, string ThreadId);
+
+    private sealed record RestoreUpdateStateResult(IReadOnlyList<string> FailedOriginalSessionIds)
+    {
+        public static RestoreUpdateStateResult Success { get; } = new([]);
+    }
 }
 
 public sealed class SessionUpdateState
