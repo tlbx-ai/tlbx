@@ -185,6 +185,7 @@ const sessionPromptHistoryNavigation = new Map<string, SmartInputPromptHistoryNa
 const sessionPinnedTools = new Map<string, ToolKind[]>();
 const sessionComposerExpanded = new Map<string, boolean>();
 const sessionComposerPendingOperations = new Map<string, Promise<void>>();
+const sessionComposerLastPasteEventAtMs = new Map<string, number>();
 let appServerControlResumeConversationHandler:
   | ((args: {
       sessionId: string;
@@ -624,6 +625,14 @@ function enqueueComposerPendingOperation(
   return nextOperation;
 }
 
+function markComposerPasteEvent(sessionId: string): void {
+  sessionComposerLastPasteEventAtMs.set(sessionId, performance.now());
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 async function waitForComposerPendingOperations(sessionId: string): Promise<void> {
   for (;;) {
     const pendingOperation = sessionComposerPendingOperations.get(sessionId);
@@ -636,6 +645,24 @@ async function waitForComposerPendingOperations(sessionId: string): Promise<void
     } catch {
       return;
     }
+  }
+}
+
+async function waitForComposerPasteStagingToSettle(sessionId: string): Promise<void> {
+  await sleep(0);
+  for (;;) {
+    await waitForComposerPendingOperations(sessionId);
+    const lastPasteAtMs = sessionComposerLastPasteEventAtMs.get(sessionId);
+    if (lastPasteAtMs === undefined) {
+      return;
+    }
+
+    const remainingSettleMs = Math.ceil(120 - (performance.now() - lastPasteAtMs));
+    if (remainingSettleMs <= 0) {
+      return;
+    }
+
+    await sleep(remainingSettleMs);
   }
 }
 
@@ -1402,6 +1429,7 @@ function createDockedDOM(): void {
         hasLargeTextReference
       ) {
         event.preventDefault();
+        markComposerPasteEvent(sessionId);
         const clipboardData = event.clipboardData;
         void enqueueComposerPendingOperation(sessionId, async () => {
           const parts = await extractAppServerControlComposerPasteParts(clipboardData);
@@ -2198,6 +2226,10 @@ async function addAppServerControlComposerPasteParts(
     (referenceId) => resolveComposerReference(sessionId, referenceId),
   );
   let errorMessage: string | null = null;
+  const nextReferenceOrdinalByKind: Partial<Record<SmartInputComposerReferenceKind, number>> = {
+    image: allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'image'),
+    text: allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'text'),
+  };
 
   for (const part of parts) {
     if (part.kind === 'text') {
@@ -2229,8 +2261,9 @@ async function addAppServerControlComposerPasteParts(
         textFile,
         uploadedPath,
         part.text,
-        allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'text'),
+        nextReferenceOrdinalByKind.text ?? 1,
       );
+      nextReferenceOrdinalByKind.text = (attachment.referenceOrdinal ?? 0) + 1;
       nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'text', attachment.referenceOrdinal);
       nextAttachments.push(attachment);
       setAppServerControlDraftAttachments(sessionId, nextAttachments);
@@ -2261,8 +2294,9 @@ async function addAppServerControlComposerPasteParts(
       sessionId,
       file,
       uploadedPath,
-      allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'image'),
+      nextReferenceOrdinalByKind.image ?? 1,
     );
+    nextReferenceOrdinalByKind.image = (attachment.referenceOrdinal ?? 0) + 1;
     nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'image', attachment.referenceOrdinal);
     nextAttachments.push(attachment);
     setAppServerControlDraftAttachments(sessionId, nextAttachments);
@@ -2489,7 +2523,7 @@ async function sendTerminalComposerTurn(
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
-  await waitForComposerPendingOperations(sessionId);
+  await waitForComposerPasteStagingToSettle(sessionId);
 
   const draft = getSessionDraft(sessionId);
   const renderedText = getSmartInputComposerText(draft, (referenceId) =>

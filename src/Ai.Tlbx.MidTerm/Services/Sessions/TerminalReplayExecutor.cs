@@ -26,6 +26,7 @@ internal static class TerminalReplayExecutor
         var pendingInput = new PendingReplayInput();
         var sentAnyContent = false;
         var pastedAnyImage = false;
+        var pendingInputFollowsImage = false;
         var lastFlushByteCount = 0;
         var lastFlushFollowedImage = false;
         foreach (var step in steps)
@@ -44,6 +45,7 @@ internal static class TerminalReplayExecutor
                     }
 
                     pendingInput.Append(EncodeText(step.Text, step.UseBracketedPaste));
+                    pendingInputFollowsImage |= pastedAnyImage;
                     sentAnyContent = true;
                     break;
                 case "filePath":
@@ -53,6 +55,7 @@ internal static class TerminalReplayExecutor
                     }
 
                     pendingInput.Append(Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)));
+                    pendingInputFollowsImage |= pastedAnyImage;
                     sentAnyContent = true;
                     break;
                 case "textFile":
@@ -67,12 +70,14 @@ internal static class TerminalReplayExecutor
                         if (!string.IsNullOrEmpty(content))
                         {
                             pendingInput.Append(EncodeText(content, step.UseBracketedPaste));
+                            pendingInputFollowsImage |= pastedAnyImage;
                             sentAnyContent = true;
                         }
                     }
                     else
                     {
                         pendingInput.Append(Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)));
+                        pendingInputFollowsImage |= pastedAnyImage;
                         sentAnyContent = true;
                     }
                     break;
@@ -87,6 +92,8 @@ internal static class TerminalReplayExecutor
                     if (flushedTextBeforeImageBytes > 0)
                     {
                         lastFlushByteCount = flushedTextBeforeImageBytes;
+                        lastFlushFollowedImage = pendingInputFollowsImage;
+                        pendingInputFollowsImage = false;
                         await delayAsync(TextBeforeImageSettleDelayMs, cancellationToken).ConfigureAwait(false);
                     }
 
@@ -115,7 +122,7 @@ internal static class TerminalReplayExecutor
         if (finalFlushByteCount > 0)
         {
             lastFlushByteCount = finalFlushByteCount;
-            lastFlushFollowedImage = pastedAnyImage;
+            lastFlushFollowedImage = pendingInputFollowsImage;
         }
 
         await delayAsync(ResolveSubmitDelayMs(lastFlushByteCount, lastFlushFollowedImage), cancellationToken).ConfigureAwait(false);
@@ -151,7 +158,7 @@ internal static class TerminalReplayExecutor
         }
 
         var scaledDelay = followsImagePaste
-            ? SubmitDelayMs + ((lastFlushByteCount - 1024) / 3)
+            ? SubmitDelayMs + ((lastFlushByteCount - 1024) / 2)
             : SubmitDelayMs + ((lastFlushByteCount - 1024) / 8);
         var maxDelay = followsImagePaste
             ? MaxLargePasteAfterImageSubmitDelayMs

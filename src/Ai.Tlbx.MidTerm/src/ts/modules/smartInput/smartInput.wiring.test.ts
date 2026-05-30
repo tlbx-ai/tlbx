@@ -309,7 +309,9 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('addAppServerControlComposerPasteParts');
     expect(source).toContain('const sessionComposerPendingOperations = new Map<string, Promise<void>>();');
     expect(source).toContain('function enqueueComposerPendingOperation(');
-    expect(source).toContain('await waitForComposerPendingOperations(sessionId);');
+    expect(source).toContain('await waitForComposerPasteStagingToSettle(sessionId);');
+    expect(source).toContain('markComposerPasteEvent(sessionId);');
+    expect(source).toContain('nextReferenceOrdinalByKind');
     expect(source).toContain('Object.keys(normalizedDraft.nextOrdinalByKind).length === 0');
     expect(source).toContain('prepareSmartInputTerminalTurn');
     expect(source).toContain(
