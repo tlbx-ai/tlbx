@@ -46,7 +46,8 @@ import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { getAdaptiveFooterRailSequence } from './layout';
 import {
   clipboardDataMayContainAppServerControlComposerImage,
-  extractAppServerControlComposerPasteImageFiles,
+  extractAppServerControlComposerPasteParts,
+  type AppServerControlComposerPastePart,
   type AppServerControlComposerDraftAttachment,
   MAX_APP_SERVER_CONTROL_IMAGE_BYTES,
   cloneAppServerControlComposerDraftAttachments,
@@ -117,6 +118,7 @@ import {
   getSmartInputComposerReferenceIdsInSelection,
   getSmartInputComposerText,
   hasSmartInputComposerReferences,
+  insertSmartInputComposerReference,
   insertSmartInputComposerReferences,
   insertSmartInputComposerText,
   normalizeSmartInputComposerSelection,
@@ -1383,30 +1385,22 @@ function createDockedDOM(): void {
         return;
       }
 
-      if (clipboardDataMayContainAppServerControlComposerImage(event.clipboardData)) {
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      const hasLargeTextReference = text && shouldConvertPastedTextToSmartInputReference(text);
+      if (
+        clipboardDataMayContainAppServerControlComposerImage(event.clipboardData) ||
+        hasLargeTextReference
+      ) {
         event.preventDefault();
+        const clipboardData = event.clipboardData;
         void enqueueComposerPendingOperation(sessionId, async () => {
-          const files = await extractAppServerControlComposerPasteImageFiles(event.clipboardData);
-          if (files.length === 0) {
+          const parts = await extractAppServerControlComposerPasteParts(clipboardData);
+          if (parts.length === 0) {
             return;
           }
 
           const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-          await addAppServerControlComposerFiles(sessionId, files, selection);
-        }).catch((error: unknown) => {
-          showDropToast(
-            error instanceof Error && error.message.trim() ? error.message : String(error),
-          );
-        });
-        return;
-      }
-
-      const text = event.clipboardData?.getData('text/plain') ?? '';
-      if (text && shouldConvertPastedTextToSmartInputReference(text)) {
-        event.preventDefault();
-        void enqueueComposerPendingOperation(sessionId, async () => {
-          const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-          await addAppServerControlComposerTextReference(sessionId, text, selection);
+          await addAppServerControlComposerPasteParts(sessionId, parts, selection);
         }).catch((error: unknown) => {
           showDropToast(
             error instanceof Error && error.message.trim() ? error.message : String(error),
@@ -2173,40 +2167,134 @@ async function addAppServerControlComposerFiles(
   }
 }
 
-async function addAppServerControlComposerTextReference(
+// eslint-disable-next-line complexity -- ordered mixed paste staging has to branch by part kind and upload failures.
+async function addAppServerControlComposerPasteParts(
   sessionId: string,
-  text: string,
+  parts: readonly AppServerControlComposerPastePart[],
   selection: SmartInputComposerSelection | null = null,
 ): Promise<void> {
-  const nextSelection =
+  resetPromptHistoryNavigation(sessionId);
+  let nextSelection =
     selection ??
     (() => {
       const draftTextLength = getSessionDraftText(sessionId).length;
       return { start: draftTextLength, end: draftTextLength };
     })();
-  const textFile = buildSmartInputTextReferenceFile(text);
-  const uploadedPath = await uploadFile(sessionId, textFile);
-  if (!uploadedPath) {
-    showDropToast(`${t('smartInput.attachmentUploadFailed')}: ${textFile.name}`);
-    return;
+  const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
+  let nextDraft = getSessionDraft(sessionId);
+  const removedReferenceIds = getSmartInputComposerReferenceIdsInSelection(
+    nextDraft,
+    nextSelection,
+    (referenceId) => resolveComposerReference(sessionId, referenceId),
+  );
+  let errorMessage: string | null = null;
+
+  for (const part of parts) {
+    if (part.kind === 'text') {
+      if (!part.text) {
+        continue;
+      }
+
+      if (!shouldConvertPastedTextToSmartInputReference(part.text)) {
+        const insertResult = insertSmartInputComposerText(
+          nextDraft,
+          nextSelection,
+          part.text,
+          (referenceId) => resolveComposerReference(sessionId, referenceId),
+        );
+        nextDraft = insertResult.draft;
+        nextSelection = insertResult.selection;
+        continue;
+      }
+
+      const textFile = buildSmartInputTextReferenceFile(part.text);
+      const uploadedPath = await uploadFile(sessionId, textFile);
+      if (!uploadedPath) {
+        errorMessage ??= `${t('smartInput.attachmentUploadFailed')}: ${textFile.name}`;
+        continue;
+      }
+
+      const attachment = createTextDraftAttachmentWithReference(
+        sessionId,
+        textFile,
+        uploadedPath,
+        part.text,
+      );
+      nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'text', attachment.referenceOrdinal);
+      nextAttachments.push(attachment);
+      setAppServerControlDraftAttachments(sessionId, nextAttachments);
+      const insertResult = insertSmartInputComposerReference(
+        nextDraft,
+        nextSelection,
+        attachment.id,
+        (referenceId) => resolveComposerReference(sessionId, referenceId),
+      );
+      nextDraft = insertResult.draft;
+      nextSelection = insertResult.selection;
+      continue;
+    }
+
+    const file = part.file;
+    if (file.size > MAX_APP_SERVER_CONTROL_IMAGE_BYTES) {
+      errorMessage = `${t('smartInput.imageTooLarge')}: ${file.name}`;
+      continue;
+    }
+
+    const uploadedPath = await uploadFile(sessionId, file);
+    if (!uploadedPath) {
+      errorMessage ??= `${t('smartInput.attachmentUploadFailed')}: ${file.name}`;
+      continue;
+    }
+
+    const attachment = createImageDraftAttachmentWithReference(sessionId, file, uploadedPath);
+    nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'image', attachment.referenceOrdinal);
+    nextAttachments.push(attachment);
+    setAppServerControlDraftAttachments(sessionId, nextAttachments);
+    const insertResult = insertSmartInputComposerReference(
+      nextDraft,
+      nextSelection,
+      attachment.id,
+      (referenceId) => resolveComposerReference(sessionId, referenceId),
+    );
+    nextDraft = insertResult.draft;
+    nextSelection = insertResult.selection;
   }
 
-  const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
-  const attachment = createTextDraftAttachmentWithReference(
-    sessionId,
-    textFile,
-    uploadedPath,
-    text,
-  );
-  nextAttachments.push(attachment);
-
   setAppServerControlDraftAttachments(sessionId, nextAttachments);
-  finalizeInsertedComposerReferences(sessionId, nextSelection, [attachment.id]);
+  updateSessionDraftAndTextarea(
+    sessionId,
+    nextDraft,
+    activeTextarea,
+    $activeSessionId.get() === sessionId ? nextSelection : null,
+  );
+  removeAttachmentsByIds(sessionId, removedReferenceIds);
   renderAppServerControlAttachmentDrafts($activeSessionId.get());
+
+  if (errorMessage) {
+    showDropToast(errorMessage);
+  }
 
   if ($activeSessionId.get() === sessionId) {
     activeTextarea?.focus({ preventScroll: true });
   }
+}
+
+function carryAllocatedReferenceOrdinal(
+  draft: SmartInputComposerDraft,
+  kind: SmartInputComposerReferenceKind,
+  ordinal: number | null,
+): SmartInputComposerDraft {
+  if (!ordinal) {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    nextOrdinalByKind: {
+      ...draft.nextOrdinalByKind,
+      [kind]: Math.max(draft.nextOrdinalByKind[kind] ?? 1, ordinal + 1),
+    },
+  };
 }
 
 function insertComposerTextAtSelection(

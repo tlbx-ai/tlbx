@@ -120,6 +120,59 @@ describe('appServerControlAttachments', () => {
     expect(files[0]?.name).toMatch(/\.avif$/);
   });
 
+  it('interleaves plain text object placeholders with clipboard images in paste order', async () => {
+    const { extractAppServerControlComposerPasteParts } =
+      await import('./appServerControlAttachments');
+    const firstImage = new File(['one'], 'one.png', { type: 'image/png' });
+    const secondImage = new File(['two'], 'two.png', { type: 'image/png' });
+    const clipboardData = {
+      files: [firstImage, secondImage],
+      items: [],
+      getData: (type: string) => (type === 'text/plain' ? `alpha\ufffcbeta\ufffcgamma` : ''),
+    };
+
+    await expect(
+      extractAppServerControlComposerPasteParts(
+        clipboardData as unknown as DataTransfer,
+        null,
+      ),
+    ).resolves.toEqual([
+      { kind: 'text', text: 'alpha' },
+      { kind: 'image', file: firstImage },
+      { kind: 'text', text: 'beta' },
+      { kind: 'image', file: secondImage },
+      { kind: 'text', text: 'gamma' },
+    ]);
+  });
+
+  it('preserves copied html image ordering with surrounding text', async () => {
+    const { extractAppServerControlComposerPasteParts } =
+      await import('./appServerControlAttachments');
+    const firstImage = new File(['one'], 'one.png', { type: 'image/png' });
+    const secondImage = new File(['two'], 'two.png', { type: 'image/png' });
+    const clipboardData = {
+      files: [firstImage, secondImage],
+      items: [],
+      getData: (type: string) =>
+        type === 'text/html'
+          ? '<div>before</div><img src="cid:one"><div>middle</div><img src="cid:two"><div>after</div>'
+          : '',
+    };
+
+    await expect(
+      extractAppServerControlComposerPasteParts(
+        clipboardData as unknown as DataTransfer,
+        null,
+      ),
+    ).resolves.toEqual([
+      { kind: 'text', text: 'before\n' },
+      { kind: 'image', file: firstImage },
+      { kind: 'text', text: 'middle\n' },
+      { kind: 'image', file: secondImage },
+      { kind: 'text', text: 'after\n' },
+    ]);
+  });
+
   it('maps uploaded attachments into AppServerControl attachment references', async () => {
     const { toAppServerControlAttachmentReference } = await import('./appServerControlAttachments');
 

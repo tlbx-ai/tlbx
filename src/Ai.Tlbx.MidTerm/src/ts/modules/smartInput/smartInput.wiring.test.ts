@@ -305,7 +305,8 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('handleSmartInputSelectedFiles');
     expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
     expect(source).toContain('shouldConvertPastedTextToSmartInputReference');
-    expect(source).toContain('addAppServerControlComposerTextReference');
+    expect(source).toContain('extractAppServerControlComposerPasteParts');
+    expect(source).toContain('addAppServerControlComposerPasteParts');
     expect(source).toContain('const sessionComposerPendingOperations = new Map<string, Promise<void>>();');
     expect(source).toContain('function enqueueComposerPendingOperation(');
     expect(source).toContain('await waitForComposerPendingOperations(sessionId);');

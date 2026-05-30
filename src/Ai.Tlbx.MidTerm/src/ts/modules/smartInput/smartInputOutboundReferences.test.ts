@@ -292,4 +292,108 @@ describe('smartInputOutboundReferences', () => {
       },
     ]);
   });
+
+  it('keeps multiple text and image references ordered with distinct labels for terminal replay', async () => {
+    const { prepareSmartInputTerminalTurn } = await import('./smartInputOutboundReferences');
+
+    const result = await prepareSmartInputTerminalTurn({
+      sessionId: 's1',
+      draft: {
+        nextOrdinalByKind: { image: 3, text: 3 },
+        parts: [
+          { kind: 'reference', referenceId: 'txt-1' },
+          { kind: 'text', text: '\n' },
+          { kind: 'reference', referenceId: 'img-1' },
+          { kind: 'text', text: '\n' },
+          { kind: 'reference', referenceId: 'txt-2' },
+          { kind: 'text', text: '\n' },
+          { kind: 'reference', referenceId: 'img-2' },
+        ],
+      },
+      attachments: [
+        {
+          id: 'txt-1',
+          kind: 'file',
+          file: null,
+          uploadedPath: 'Q:/repo/.midterm/uploads/one.txt',
+          displayName: 'one.txt',
+          mimeType: 'text/plain',
+          referenceCharCount: 1000,
+          referenceKind: 'text',
+          referenceLabel: 'Text 1',
+          referenceLineCount: 20,
+          referenceOrdinal: 1,
+          sizeBytes: 1000,
+          previewUrl: null,
+        },
+        {
+          id: 'img-1',
+          kind: 'image',
+          file: null,
+          uploadedPath: 'Q:/repo/.midterm/uploads/one.png',
+          displayName: 'one.png',
+          mimeType: 'image/png',
+          referenceCharCount: null,
+          referenceKind: 'image',
+          referenceLabel: 'Image 1',
+          referenceLineCount: null,
+          referenceOrdinal: 1,
+          sizeBytes: 3,
+          previewUrl: null,
+        },
+        {
+          id: 'txt-2',
+          kind: 'file',
+          file: null,
+          uploadedPath: 'Q:/repo/.midterm/uploads/two.txt',
+          displayName: 'two.txt',
+          mimeType: 'text/plain',
+          referenceCharCount: 1000,
+          referenceKind: 'text',
+          referenceLabel: 'Text 2',
+          referenceLineCount: 20,
+          referenceOrdinal: 2,
+          sizeBytes: 1000,
+          previewUrl: null,
+        },
+        {
+          id: 'img-2',
+          kind: 'image',
+          file: null,
+          uploadedPath: 'Q:/repo/.midterm/uploads/two.png',
+          displayName: 'two.png',
+          mimeType: 'image/png',
+          referenceCharCount: null,
+          referenceKind: 'image',
+          referenceLabel: 'Image 2',
+          referenceLineCount: null,
+          referenceOrdinal: 2,
+          sizeBytes: 3,
+          previewUrl: null,
+        },
+      ],
+      bracketedPasteModeEnabled: false,
+      uploadFailureMessage: 'upload failed',
+      uploadFile: vi.fn(),
+    });
+
+    expect(result.text).toBe('[Text 1]\n[Image 1]\n[Text 2]\n[Image 2]');
+    expect(result.terminalReplay).toEqual([
+      {
+        kind: 'textFile',
+        path: 'Q:/repo/.midterm/uploads/one.txt',
+        useBracketedPaste: true,
+      },
+      { kind: 'text', text: '\n' },
+      { kind: 'image', path: 'Q:/repo/.midterm/uploads/one.png', mimeType: 'image/png' },
+      { kind: 'text', text: '\n' },
+      {
+        kind: 'textFile',
+        path: 'Q:/repo/.midterm/uploads/two.txt',
+        useBracketedPaste: true,
+      },
+      { kind: 'text', text: '\n' },
+      { kind: 'image', path: 'Q:/repo/.midterm/uploads/two.png', mimeType: 'image/png' },
+    ]);
+  });
 });

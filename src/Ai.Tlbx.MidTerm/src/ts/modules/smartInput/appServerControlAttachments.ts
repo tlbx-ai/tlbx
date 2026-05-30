@@ -38,6 +38,10 @@ export interface ClipboardReadImageItem {
   getType(type: string): Promise<Blob>;
 }
 
+export type AppServerControlComposerPastePart =
+  | { kind: 'image'; file: File }
+  | { kind: 'text'; text: string };
+
 type ClipboardReadImageProvider = () => Promise<readonly ClipboardReadImageItem[]>;
 
 type ClipboardTransferItem = Pick<DataTransferItem, 'kind' | 'type' | 'getAsFile'>;
@@ -45,6 +49,42 @@ type ClipboardTransferData = Pick<DataTransfer, 'files' | 'items' | 'getData'>;
 
 const HTML_IMAGE_SRC_PATTERN = /<img\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))/gi;
 const IMAGE_URL_PATH_PATTERN = /\.(png|jpe?g|gif|bmp|webp|svg|tiff?|heic|heif|avif|ico)(?:$|[?#])/i;
+const CLIPBOARD_OBJECT_REPLACEMENT = '\ufffc';
+const HTML_BLOCK_ELEMENTS = new Set([
+  'ADDRESS',
+  'ARTICLE',
+  'ASIDE',
+  'BLOCKQUOTE',
+  'DD',
+  'DIV',
+  'DL',
+  'DT',
+  'FIGCAPTION',
+  'FIGURE',
+  'FOOTER',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'HEADER',
+  'LI',
+  'MAIN',
+  'NAV',
+  'OL',
+  'P',
+  'PRE',
+  'SECTION',
+  'TABLE',
+  'TBODY',
+  'TD',
+  'TFOOT',
+  'TH',
+  'THEAD',
+  'TR',
+  'UL',
+]);
 
 const IMAGE_EXTENSION_BY_MIME_TYPE: Record<string, string> = {
   'image/png': '.png',
@@ -341,6 +381,42 @@ export async function extractAppServerControlComposerPasteImageFiles(
   return dedupeClipboardFiles(await getClipboardReadImageFiles(readClipboardItems));
 }
 
+export async function extractAppServerControlComposerPasteParts(
+  clipboardData: ClipboardTransferData | null | undefined,
+  readClipboardItems: ClipboardReadImageProvider | null = getDefaultClipboardReadImageProvider(),
+): Promise<AppServerControlComposerPastePart[]> {
+  const plainText = clipboardData?.getData('text/plain') ?? '';
+  const transferFiles = dedupeClipboardFiles(getClipboardTransferImageFiles(clipboardData));
+  const html = clipboardData?.getData('text/html') ?? '';
+
+  if (plainText.includes(CLIPBOARD_OBJECT_REPLACEMENT)) {
+    const imageFiles =
+      transferFiles.length > 0
+        ? transferFiles
+        : await extractAppServerControlComposerPasteImageFiles(clipboardData, readClipboardItems);
+    const parts = interleavePlainTextObjectPlaceholders(plainText, imageFiles);
+    if (parts.some((part) => part.kind === 'image')) {
+      return parts;
+    }
+  }
+
+  if (html && extractClipboardImageUrlsFromHtml(html).length > 0) {
+    const htmlParts = await extractOrderedPastePartsFromHtml(html, transferFiles);
+    if (htmlParts.some((part) => part.kind === 'image')) {
+      return htmlParts;
+    }
+  }
+
+  const imageFiles = await extractAppServerControlComposerPasteImageFiles(
+    clipboardData,
+    readClipboardItems,
+  );
+  return [
+    ...(plainText ? [{ kind: 'text' as const, text: plainText }] : []),
+    ...imageFiles.map((file) => ({ kind: 'image' as const, file })),
+  ];
+}
+
 export function buildAppServerControlComposerAttachmentFileUrl(
   sessionId: string,
   path: string,
@@ -353,6 +429,203 @@ export function buildAppServerControlComposerAttachmentPreviewUrl(
   path: string,
 ): string {
   return buildAppServerControlComposerAttachmentFileUrl(sessionId, path);
+}
+
+function interleavePlainTextObjectPlaceholders(
+  text: string,
+  imageFiles: readonly File[],
+): AppServerControlComposerPastePart[] {
+  const parts: AppServerControlComposerPastePart[] = [];
+  const textParts = text.split(CLIPBOARD_OBJECT_REPLACEMENT);
+  let imageIndex = 0;
+  textParts.forEach((textPart, index) => {
+    appendPasteTextPart(parts, textPart);
+    if (index < textParts.length - 1 && imageIndex < imageFiles.length) {
+      parts.push({ kind: 'image', file: imageFiles[imageIndex] as File });
+      imageIndex += 1;
+    }
+  });
+
+  for (; imageIndex < imageFiles.length; imageIndex++) {
+    parts.push({ kind: 'image', file: imageFiles[imageIndex] as File });
+  }
+
+  return parts;
+}
+
+async function extractOrderedPastePartsFromHtml(
+  html: string,
+  transferFiles: readonly File[],
+): Promise<AppServerControlComposerPastePart[]> {
+  if (typeof DOMParser === 'undefined') {
+    return extractOrderedPastePartsFromHtmlMarkup(html, transferFiles);
+  }
+
+  const document = new DOMParser().parseFromString(html, 'text/html');
+  const parts: AppServerControlComposerPastePart[] = [];
+  let bufferedText = '';
+  let transferFileIndex = 0;
+  let sourceUrlIndex = 0;
+
+  const flushText = () => {
+    appendPasteTextPart(parts, normalizeHtmlPasteText(bufferedText));
+    bufferedText = '';
+  };
+
+  const appendBlockBoundary = () => {
+    if (bufferedText && !bufferedText.endsWith('\n')) {
+      bufferedText += '\n';
+    }
+  };
+
+  const visit = async (node: Node): Promise<void> => {
+    if (node.nodeType === 3) {
+      bufferedText += node.textContent ?? '';
+      return;
+    }
+
+    if (node.nodeType !== 1) {
+      for (const child of Array.from(node.childNodes)) {
+        await visit(child);
+      }
+      return;
+    }
+
+    const element = node as Element;
+    if (element.tagName === 'BR') {
+      bufferedText += '\n';
+      return;
+    }
+
+    if (element.tagName === 'IMG') {
+      flushText();
+      const file =
+        transferFiles[transferFileIndex] ??
+        (await buildImageFileFromHtmlElement(element, ++sourceUrlIndex));
+      transferFileIndex += transferFiles[transferFileIndex] ? 1 : 0;
+      if (file) {
+        parts.push({ kind: 'image', file });
+      }
+      return;
+    }
+
+    const block = HTML_BLOCK_ELEMENTS.has(element.tagName);
+    if (block) {
+      appendBlockBoundary();
+    }
+
+    for (const child of Array.from(node.childNodes)) {
+      await visit(child);
+    }
+
+    if (block) {
+      appendBlockBoundary();
+    }
+  };
+
+  for (const child of Array.from(document.body.childNodes)) {
+    await visit(child);
+  }
+  flushText();
+
+  for (; transferFileIndex < transferFiles.length; transferFileIndex++) {
+    parts.push({ kind: 'image', file: transferFiles[transferFileIndex] as File });
+  }
+
+  return coalescePasteTextParts(parts);
+}
+
+async function extractOrderedPastePartsFromHtmlMarkup(
+  html: string,
+  transferFiles: readonly File[],
+): Promise<AppServerControlComposerPastePart[]> {
+  const parts: AppServerControlComposerPastePart[] = [];
+  const imagePattern = /<img\b[^>]*\bsrc\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>/gi;
+  let cursor = 0;
+  let transferFileIndex = 0;
+  let sourceUrlIndex = 0;
+
+  for (const match of html.matchAll(imagePattern)) {
+    appendPasteTextPart(
+      parts,
+      normalizeHtmlPasteText(stripClipboardHtmlTags(html.slice(cursor, match.index))),
+    );
+    const source = trimClipboardUrl(match[1] ?? match[2] ?? match[3] ?? '');
+    const file =
+      transferFiles[transferFileIndex] ??
+      (source ? await buildClipboardImageFileFromUrl(source, ++sourceUrlIndex) : null);
+    transferFileIndex += transferFiles[transferFileIndex] ? 1 : 0;
+    if (file) {
+      parts.push({ kind: 'image', file });
+    }
+    cursor = match.index + match[0].length;
+  }
+
+  appendPasteTextPart(parts, normalizeHtmlPasteText(stripClipboardHtmlTags(html.slice(cursor))));
+  for (; transferFileIndex < transferFiles.length; transferFileIndex++) {
+    parts.push({ kind: 'image', file: transferFiles[transferFileIndex] as File });
+  }
+
+  return coalescePasteTextParts(parts);
+}
+
+function stripClipboardHtmlTags(html: string): string {
+  return decodeClipboardHtmlEntity(
+    html
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(div|p|li|tr|h[1-6]|blockquote|section|article|pre)>/gi, '\n')
+      .replace(/<[^>]+>/g, ''),
+  );
+}
+
+async function buildImageFileFromHtmlElement(
+  image: Element,
+  fallbackIndex: number,
+): Promise<File | null> {
+  const source = trimClipboardUrl(image.getAttribute('src') ?? '');
+  if (!source || (!looksLikeClipboardImageUrl(source) && !/^https?:\/\//i.test(source))) {
+    return null;
+  }
+
+  return buildClipboardImageFileFromUrl(source, fallbackIndex);
+}
+
+function appendPasteTextPart(parts: AppServerControlComposerPastePart[], text: string): void {
+  if (!text) {
+    return;
+  }
+
+  const last = parts[parts.length - 1];
+  if (last?.kind === 'text') {
+    last.text += text;
+    return;
+  }
+
+  parts.push({ kind: 'text', text });
+}
+
+function coalescePasteTextParts(
+  parts: readonly AppServerControlComposerPastePart[],
+): AppServerControlComposerPastePart[] {
+  const coalesced: AppServerControlComposerPastePart[] = [];
+  for (const part of parts) {
+    if (part.kind === 'text') {
+      appendPasteTextPart(coalesced, part.text);
+    } else {
+      coalesced.push(part);
+    }
+  }
+  return coalesced;
+}
+
+function normalizeHtmlPasteText(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n[ \t]+/g, '\n')
+    .replace(/\n{3,}/g, '\n\n');
 }
 
 export function createAppServerControlComposerDraftAttachment(
