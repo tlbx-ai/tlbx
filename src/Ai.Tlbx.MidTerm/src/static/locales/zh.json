@@ -750,6 +750,8 @@
   "settings.appearance.backgroundHideOnMobile": "在移动端隐藏背景",
   "settings.behavior.resumeMode": "会话恢复模式",
   "settings.behavior.resumeModeHint": "Quick Resume 会在你重新查看隐藏会话时，用更小的 replay burst 让它们追上进度，从而保持更轻量。可见会话依然保持 live，热度指示器也仍然反映真实的 terminal activity。",
+  "settings.behavior.tryResumeNonAiAgentProcesses": "尝试恢复非 AI agent 进程",
+  "settings.behavior.tryResumeNonAiAgentProcessesHint": "完整更新可能会重新启动普通终端之前的前台进程。带有 resume 提示的 AI agent 会单独处理。",
   "settings.behavior.preserveTerminalCursorControl": "Preserve app cursor control",
   "settings.behavior.preserveTerminalCursorControlHint": "Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable only if simple shells visibly flicker during heavy output.",
   "settings.diagnostics.terminalTransport": "Terminal 传输",

@@ -5232,6 +5232,7 @@
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "resumeMode",
+          "tryResumeNonAiAgentProcesses",
           "preserveTerminalCursorControl",
           "inputMode",
           "fileRadar",
@@ -5473,6 +5474,9 @@
           },
           "resumeMode": {
             "$ref": "#/components/schemas/TerminalResumeModeSetting"
+          },
+          "tryResumeNonAiAgentProcesses": {
+            "type": "boolean"
           },
           "preserveTerminalCursorControl": {
             "type": "boolean"

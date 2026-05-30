@@ -2285,6 +2285,21 @@
                       indicator still reflects real terminal activity.
                     </p>
                     <div class="setting-row">
+                      <label
+                        for="setting-try-resume-non-ai-agent-processes"
+                        data-i18n="settings.behavior.tryResumeNonAiAgentProcesses"
+                        >Try to resume non AI agent processes</label
+                      >
+                      <input type="checkbox" id="setting-try-resume-non-ai-agent-processes" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.tryResumeNonAiAgentProcessesHint"
+                    >
+                      Full updates may relaunch the previous foreground process for ordinary
+                      terminals. AI agents with resume hints are handled separately.
+                    </p>
+                    <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
                         >Keep computer awake while sessions exist</label
                       >

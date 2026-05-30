@@ -134,6 +134,19 @@ public sealed class TtyHostSessionManagerStateTests
     }
 
     [Fact]
+    public async Task SetSessionNameAsync_TerminalTitle_DoesNotRequireLiveClient()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+
+        var ok = await manager.SetSessionNameAsync("s1", "Codex worker", isManual: false);
+
+        Assert.True(ok);
+        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
+        Assert.Equal("Codex worker", dto.TerminalTitle);
+    }
+
+    [Fact]
     public async Task SetSessionExtraGitReposMetadata_StoresOnlyExtraRepos()
     {
         await using var manager = CreateManager();

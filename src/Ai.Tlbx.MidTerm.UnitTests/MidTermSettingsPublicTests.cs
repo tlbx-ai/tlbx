@@ -195,6 +195,24 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
+    public void FromSettings_AndApplyTo_RoundTripTryResumeNonAiAgentProcesses()
+    {
+        var settings = new MidTermSettings
+        {
+            TryResumeNonAiAgentProcesses = true
+        };
+
+        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
+
+        Assert.True(publicSettings.TryResumeNonAiAgentProcesses);
+
+        settings.TryResumeNonAiAgentProcesses = false;
+        publicSettings.ApplyTo(settings);
+
+        Assert.True(settings.TryResumeNonAiAgentProcesses);
+    }
+
+    [Fact]
     public void FromSettings_AndApplyTo_RoundTripTerminalEnvironmentVariables()
     {
         var settings = new MidTermSettings

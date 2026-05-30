@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Tmux;
@@ -206,6 +207,7 @@ public class Program
         var spaceService = app.Services.GetRequiredService<SpaceService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
+        var sessionUpdateStateService = app.Services.GetRequiredService<SessionUpdateStateService>();
         GitCommandRunner.Configure(settings.RunAsUser, settingsService.IsRunningAsService);
         var commandService = app.Services.GetRequiredService<CommandService>();
         var sleepInhibitorService = app.Services.GetRequiredService<SystemSleepInhibitorService>();
@@ -322,6 +324,16 @@ public class Program
 
             sleepInhibitorService.UpdateEnabled(newSettings.KeepSystemAwakeWithActiveSessions);
         });
+
+#pragma warning disable IDISP013 // Update capture intentionally runs during the app lifetime before restart.
+        updateService.BeforeApplyUpdateAsync = (updateType, ct) =>
+            sessionUpdateStateService.CaptureAsync(
+                sessionManager,
+                gitWatcher,
+                updateType == UpdateType.Full,
+                settingsService.Load().TryResumeNonAiAgentProcesses,
+                ct);
+#pragma warning restore IDISP013
 
         var shutdownService = app.Services.GetRequiredService<ShutdownService>();
         var lifetime = app.Services.GetRequiredService<IHostApplicationLifetime>();
@@ -448,6 +460,7 @@ public class Program
                 await gitWatcher.RestoreSessionExtraReposAsync(session.Id, persistedRepos);
             }
         }
+        await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, shutdownService.Token);
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();

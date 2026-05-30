@@ -97,6 +97,7 @@ public sealed class MidTermSettings
     public string StickyMainBrowserId { get; set; } = "";
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
+    public bool TryResumeNonAiAgentProcesses { get; set; } = false;
     public bool PreserveTerminalCursorControl { get; set; } = true;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)

@@ -526,6 +526,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'fullReplay or quickResume',
     applyMode: 'server-only',
   }),
+  controlEntry(
+    'tryResumeNonAiAgentProcesses',
+    'setting-try-resume-non-ai-agent-processes',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'server-only',
+    },
+  ),
   controlEntry('inputMode', 'setting-input-mode', 'select', 'keyboard', {
     editable: true,
     storage: 'settings.json',

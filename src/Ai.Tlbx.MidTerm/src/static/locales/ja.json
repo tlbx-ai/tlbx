@@ -750,6 +750,8 @@
   "settings.appearance.backgroundHideOnMobile": "モバイルでは背景を非表示",
   "settings.behavior.resumeMode": "Session Resume Mode",
   "settings.behavior.resumeModeHint": "Quick Resume を使うと、非表示の session は戻ってきたときにより小さな replay burst で追いつくため軽く保たれます。表示中の session は live のままで、activity indicator も実際の terminal activity を反映し続けます。",
+  "settings.behavior.tryResumeNonAiAgentProcesses": "AI agent 以外の process の resume を試す",
+  "settings.behavior.tryResumeNonAiAgentProcessesHint": "Full update では通常の terminal の直前の foreground process を再起動することがあります。Resume hint を持つ AI agent は別に処理されます。",
   "settings.behavior.preserveTerminalCursorControl": "Preserve app cursor control",
   "settings.behavior.preserveTerminalCursorControlHint": "Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable only if simple shells visibly flicker during heavy output.",
   "settings.diagnostics.terminalTransport": "Terminal Transport",

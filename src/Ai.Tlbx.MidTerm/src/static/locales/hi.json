@@ -750,6 +750,8 @@
   "settings.appearance.backgroundHideOnMobile": "Mobile पर background छिपाएँ",
   "settings.behavior.resumeMode": "Session Resume Mode",
   "settings.behavior.resumeModeHint": "Quick Resume hidden sessions को हल्का रखता है, क्योंकि जब आप वापस आते हैं तब उन्हें छोटे replay burst से catch up कराया जाता है। Visible sessions live रहती हैं, और heat indicator भी वास्तविक terminal activity दिखाता है।",
+  "settings.behavior.tryResumeNonAiAgentProcesses": "Try to resume non AI agent processes",
+  "settings.behavior.tryResumeNonAiAgentProcessesHint": "Full updates may relaunch the previous foreground process for ordinary terminals. AI agents with resume hints are handled separately.",
   "settings.behavior.preserveTerminalCursorControl": "Preserve app cursor control",
   "settings.behavior.preserveTerminalCursorControlHint": "Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable only if simple shells visibly flicker during heavy output.",
   "settings.diagnostics.terminalTransport": "Terminal Transport",

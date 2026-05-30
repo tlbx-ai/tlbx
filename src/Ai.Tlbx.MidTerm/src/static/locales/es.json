@@ -750,6 +750,8 @@
   "settings.appearance.backgroundHideOnMobile": "Ocultar fondo en móvil",
   "settings.behavior.resumeMode": "Modo de reanudación de sesión",
   "settings.behavior.resumeModeHint": "Quick Resume mantiene más ligeras las sesiones ocultas al ponerlas al día con un replay más pequeño cuando vuelves a ellas. Las sesiones visibles siguen en vivo y el indicador de actividad continúa reflejando actividad real del terminal.",
+  "settings.behavior.tryResumeNonAiAgentProcesses": "Intentar reanudar procesos que no son agentes de IA",
+  "settings.behavior.tryResumeNonAiAgentProcessesHint": "Las actualizaciones completas pueden relanzar el proceso en primer plano anterior para terminales normales. Los agentes de IA con pistas de reanudación se gestionan por separado.",
   "settings.behavior.preserveTerminalCursorControl": "Preserve app cursor control",
   "settings.behavior.preserveTerminalCursorControlHint": "Keeps fullscreen terminal apps in charge of cursor show/hide sequences. Disable only if simple shells visibly flicker during heavy output.",
   "settings.diagnostics.terminalTransport": "Transporte del terminal",
