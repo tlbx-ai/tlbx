@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Git;
@@ -69,6 +70,29 @@ public sealed class SessionUpdateStateServiceTests
             tryResumeNonAiAgentProcesses: false);
 
         Assert.Equal("codex --model gpt-5.5-codex resume new-thread", command);
+    }
+
+    [Fact]
+    public void TryBuildResumeCommand_PrefersClosureResumeHintAtTail()
+    {
+        var earlierNoise = string.Join(
+            Environment.NewLine,
+            Enumerable.Range(0, 200).Select(static index => string.Create(
+                CultureInfo.InvariantCulture,
+                $"old line {index}: codex resume stale-{index}")));
+        var command = SessionUpdateStateService.TryBuildResumeCommand(
+            $"""
+            {earlierNoise}
+            Token usage: total=3,869,408 input=3,663,094 (+ 153,286,400 cached) output=206,314 (reasoning 47,275)
+            To continue this session, run codex resume 019e74e5-d492-7253-a21c-eacc7d24e10f
+            """,
+            "codex --model gpt-5.5-codex",
+            "codex",
+            tryResumeNonAiAgentProcesses: false);
+
+        Assert.Equal(
+            "codex --model gpt-5.5-codex resume 019e74e5-d492-7253-a21c-eacc7d24e10f",
+            command);
     }
 
     [Fact]

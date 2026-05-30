@@ -14,6 +14,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 public sealed partial class SessionUpdateStateService
 {
     private const int ResumeHintScrollbackBytes = 256 * 1024;
+    private const int ResumeHintTailLineCount = 8;
     private readonly string _statePath;
 
     public SessionUpdateStateService(SettingsService settingsService)
@@ -530,6 +531,22 @@ public sealed partial class SessionUpdateStateService
             return null;
         }
 
+        var tailHint = TryFindAiResumeHintInText(GetTailLines(text, ResumeHintTailLineCount));
+        if (tailHint is not null)
+        {
+            return tailHint;
+        }
+
+        return TryFindAiResumeHintInText(text);
+    }
+
+    private static AiResumeHint? TryFindAiResumeHintInText(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
         var matches = AiResumeHintRegex().Matches(text);
         for (var i = matches.Count - 1; i >= 0; i--)
         {
@@ -544,6 +561,31 @@ public sealed partial class SessionUpdateStateService
         }
 
         return null;
+    }
+
+    private static string GetTailLines(string text, int lineCount)
+    {
+        if (lineCount <= 0 || string.IsNullOrEmpty(text))
+        {
+            return string.Empty;
+        }
+
+        var remaining = lineCount;
+        for (var i = text.Length - 1; i >= 0; i--)
+        {
+            if (text[i] != '\n')
+            {
+                continue;
+            }
+
+            remaining--;
+            if (remaining <= 0)
+            {
+                return text[(i + 1)..];
+            }
+        }
+
+        return text;
     }
 
     private static string[] PreserveResumeFlags(string? commandLine)

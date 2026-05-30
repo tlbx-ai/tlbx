@@ -279,7 +279,7 @@
               Update & Restart
             </button>
             <div class="update-note" data-i18n="sidebar.sessionsClosed">
-              Sessions will be closed
+              Sessions restart; restore is best effort
             </div>
           </div>
           <div id="voice-section" class="voice-section hidden">
@@ -2296,8 +2296,8 @@
                       class="setting-hint"
                       data-i18n="settings.behavior.tryResumeNonAiAgentProcessesHint"
                     >
-                      Full updates may relaunch the previous foreground process for ordinary
-                      terminals. AI agents with resume hints are handled separately.
+                      Full updates try to restore sessions. Some may still need manual resume;
+                      this option may relaunch ordinary foreground processes.
                     </p>
                     <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
