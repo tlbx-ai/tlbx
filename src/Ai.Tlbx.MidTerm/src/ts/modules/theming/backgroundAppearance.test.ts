@@ -349,6 +349,32 @@ describe('backgroundAppearance', () => {
     expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(true);
   });
 
+  it('keeps a theme-colored readability veil when wallpaper is visible at full transparency', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        theme: 'dark',
+        uiTransparency: 100,
+        terminalTransparency: 100,
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+      }),
+    );
+
+    expect(rootStyle.getPropertyValue('--bg-primary')).toBe('rgba(13, 14, 20, 0.720)');
+    expect(rootStyle.getPropertyValue('--bg-elevated')).toBe('rgba(22, 24, 33, 0.720)');
+    expect(rootStyle.getPropertyValue('--terminal-ui-background')).toBe('rgba(5, 5, 10, 0.720)');
+    expect(rootStyle.getPropertyValue('--terminal-canvas-background')).toBe(
+      'rgba(12, 12, 12, 0.880)',
+    );
+    expect(rootStyle.getPropertyValue('--command-bay-control-background')).toBe(
+      'rgba(12, 12, 12, 0.880)',
+    );
+    expect(rootStyle.getPropertyValue('--text-input-background')).toBe('rgba(36, 39, 53, 0.800)');
+    expect(bodyClassList.contains('has-app-background')).toBe(true);
+    expect(bodyClassList.contains('opaque-terminal-surfaces')).toBe(false);
+  });
+
   it('resets Ken Burns transform tokens when the effect is disabled', () => {
     applyBackgroundAppearance(
       createSettings({

@@ -1026,12 +1026,13 @@ body::before {
   border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
-  color: var(--text-muted);
+  color: var(--sidebar-readable-muted-text-color, var(--text-muted));
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 15px;
+  text-shadow: var(--sidebar-readable-text-shadow);
 }
 
 .spaces-tree-forget .icon {
@@ -4228,6 +4229,7 @@ body::before {
   align-items: center;
   justify-content: center;
   height: 100%;
+  background: var(--terminal-ui-background, var(--bg-primary));
   color: var(--text-secondary);
 }
 

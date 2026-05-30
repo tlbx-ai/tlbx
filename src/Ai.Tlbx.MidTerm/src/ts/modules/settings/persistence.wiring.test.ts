@@ -430,6 +430,7 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color);');
     expect(cssSource).toContain('text-shadow: var(--sidebar-readable-text-shadow);');
     expect(cssSource).toContain('filter: var(--sidebar-readable-icon-shadow);');
+    expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color, var(--text-muted));');
     expect(cssSource).not.toContain('--sidebar-readable-filter-shadow:');
     expect(cssSource).not.toContain('filter: var(--sidebar-readable-filter-shadow);');
     expect(cssSource).toContain('.footer-update-hint:not(.hidden)');

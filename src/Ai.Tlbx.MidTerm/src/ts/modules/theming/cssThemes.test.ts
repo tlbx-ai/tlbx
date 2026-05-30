@@ -99,6 +99,24 @@ describe('CSS_THEMES CTA tokens', () => {
     expect(getNativeColorScheme('solarizedLight')).toBe('light');
   });
 
+  it('keeps sidebar readability colors aligned with light theme surfaces', () => {
+    expect(CSS_THEMES.light['--sidebar-readable-text-color']).toBe(
+      CSS_THEMES.light['--text-primary'],
+    );
+    expect(CSS_THEMES.light['--sidebar-readable-muted-text-color']).toBe(
+      CSS_THEMES.light['--text-secondary'],
+    );
+    expect(CSS_THEMES.light['--sidebar-readable-text-shadow']).toBe('none');
+
+    expect(CSS_THEMES.solarizedLight['--sidebar-readable-text-color']).toBe(
+      CSS_THEMES.solarizedLight['--text-primary'],
+    );
+    expect(CSS_THEMES.solarizedLight['--sidebar-readable-muted-text-color']).toBe(
+      CSS_THEMES.solarizedLight['--text-secondary'],
+    );
+    expect(CSS_THEMES.solarizedLight['--sidebar-readable-text-shadow']).toBe('none');
+  });
+
   it('publishes the active native color scheme for browser-rendered controls', () => {
     applyCssTheme('solarizedDark');
     expect(rootStyle.colorScheme).toBe('dark');

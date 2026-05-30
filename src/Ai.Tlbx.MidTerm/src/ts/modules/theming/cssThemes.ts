@@ -144,6 +144,10 @@ const light: CssThemePalette = {
   '--text-terminal': '#2E2720',
   '--text-secondary': '#5C5044',
   '--text-muted': '#978B7E',
+  '--sidebar-readable-text-color': '#2E2720',
+  '--sidebar-readable-muted-text-color': '#5C5044',
+  '--sidebar-readable-text-shadow': 'none',
+  '--sidebar-readable-icon-shadow': 'none',
 
   '--accent-blue': '#A7694D',
   '--accent-blue-hover': '#935B40',
@@ -362,6 +366,10 @@ const solarizedLight: CssThemePalette = {
   '--text-terminal': '#657B83',
   '--text-secondary': '#657B83',
   '--text-muted': '#93A1A1',
+  '--sidebar-readable-text-color': '#586E75',
+  '--sidebar-readable-muted-text-color': '#657B83',
+  '--sidebar-readable-text-shadow': 'none',
+  '--sidebar-readable-icon-shadow': 'none',
 
   '--accent-blue': '#268BD2',
   '--accent-blue-hover': '#1A7ABD',
