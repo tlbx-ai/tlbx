@@ -41,12 +41,19 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain('z-index: 2;');
   });
 
-  it('colors scaled terminal gaps with terminal canvas background without backing the xterm', () => {
+  it('colors scaled terminal gaps with one non-overlapping terminal background plane', () => {
+    expect(appCss).toContain('.terminal-container.scaled {');
+    expect(appCss).toContain('background: var(\n    --terminal-gap-background,');
     expect(appCss).toContain('.terminal-gap-fill {');
     expect(appCss).toContain('background: var(--terminal-gap-background');
+    expect(appCss).toContain('.terminal-container.scaled .terminal-gap-fill {');
+    expect(appCss).toContain('background-color: transparent;');
+    expect(appCss).toContain('background-image: none;');
     expect(appCss).toContain('.terminal-gap-fill-right {');
     expect(appCss).toContain('.terminal-gap-fill-bottom {');
     expect(appCss).toContain('.terminal-gap-fill-corner {');
+    expect(appCss).not.toContain('calc(var(--terminal-gap-content-width, 0px) - 1px)');
+    expect(appCss).not.toContain('calc(var(--terminal-gap-content-height, 0px) - 1px)');
     expect(scalingSource).toContain(
       "import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';",
     );
