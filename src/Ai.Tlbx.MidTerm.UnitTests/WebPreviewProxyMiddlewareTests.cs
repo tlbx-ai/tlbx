@@ -134,6 +134,10 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("XMLHttpRequest.prototype.send=function()", script, StringComparison.Ordinal);
         Assert.Contains("addEventListener(\"loadend\",onDone)", script, StringComparison.Ordinal);
         Assert.Contains("cookieRefreshTimer", script, StringComparison.Ordinal);
+        Assert.Contains("if(_realParent===window)", script, StringComparison.Ordinal);
+        Assert.Contains("fetch(cu,fo)", script, StringComparison.Ordinal);
+        Assert.Contains("dprop(navigator,\"cookieEnabled\",function(){return true;});", script, StringComparison.Ordinal);
+        Assert.Contains("if(ncs)ncs(v)", script, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -33,6 +33,7 @@ import {
   sanitizePreviewDisplayUrl,
   stripInternalPreviewQueryParams,
 } from './previewProxyUrl';
+import { openTopLevelPreview, resolveTopLevelProxyUrl } from './webTopLevelHandoff';
 import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
   getActiveDockedClient,
@@ -247,6 +248,14 @@ export function initWebPanel(): void {
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     closeWebPreviewOverflowMenu();
     void handleClearCookies();
+  });
+  document.getElementById('web-preview-open-top-level')?.addEventListener('click', () => {
+    closeWebPreviewOverflowMenu();
+    openTopLevelPreview({
+      getProxyUrl: getActiveTopLevelProxyUrl,
+      reload: () => void handleRefresh('force'),
+      setMessage: setActionMessage,
+    });
   });
   document.getElementById('web-preview-clear-state')?.addEventListener('click', () => {
     closeWebPreviewOverflowMenu();
@@ -783,6 +792,20 @@ async function fetchCookieBridge(
   }
 
   return fetch(url.toString(), { method: 'GET' });
+}
+
+function getActiveTopLevelProxyUrl(): string | null {
+  const activePreview = getActivePreview();
+  const activeClient = getActiveDockedClient();
+  return resolveTopLevelProxyUrl({
+    frameSrc: getActiveIframe()?.src,
+    activeClient,
+    currentUrl: activePreview?.url ?? getActiveUrl() ?? $webPreviewUrl.get(),
+    targetRevision: activePreview?.targetRevision ?? 0,
+    origin: activeClient?.origin ?? window.location.origin,
+    mobileEmulation: isMobileEmulationEnabled(),
+    buildProxyUrl,
+  });
 }
 
 async function handleCookieBridgeRequest(

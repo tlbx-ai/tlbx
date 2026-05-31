@@ -8,6 +8,10 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '../../../..');
 const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
 const source = readFileSync(path.join(projectRoot, 'src/ts/modules/web/webPanel.ts'), 'utf8');
+const handoffSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/web/webTopLevelHandoff.ts'),
+  'utf8',
+);
 
 describe('web preview screenshot wiring', () => {
   it('keeps dev browser actions in the tab strip instead of a separate title header', () => {
@@ -49,10 +53,21 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('id="web-preview-more"');
     expect(html).toContain('id="web-preview-overflow-menu"');
     expect(html).toContain('id="dev-soft-keyboard-toggle"');
+    expect(html).toContain('id="web-preview-open-top-level"');
     expect(html).toContain('id="web-preview-clear-cookies"');
     expect(html).toContain('id="web-preview-clear-state"');
     expect(source).toContain('function initWebPreviewOverflowMenu(): void');
     expect(source).toContain('function closeWebPreviewOverflowMenu(): void');
+  });
+
+  it('offers a top-level handoff for consent flows blocked inside iframes', () => {
+    expect(html).toContain('Open top-level');
+    expect(source).toContain('function getActiveTopLevelProxyUrl(): string | null');
+    expect(source).toContain('openTopLevelPreview({');
+    expect(handoffSource).toContain('export function openTopLevelPreview');
+    expect(handoffSource).toContain("window.open(proxyUrl, 'midterm-web-preview-top-level'");
+    expect(handoffSource).toContain('popup.location.reload();');
+    expect(source).toContain("reload: () => void handleRefresh('force'),");
   });
 
   it('wires mobile browser emulation as an active-tab URL-bar action', () => {

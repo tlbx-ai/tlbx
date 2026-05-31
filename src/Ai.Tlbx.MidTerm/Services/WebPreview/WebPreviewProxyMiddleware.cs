@@ -248,6 +248,7 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           ensureStore("localStorage");
           ensureStore("sessionStorage");
+          dprop(navigator,"cookieEnabled",function(){return true;});
           // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
           function r(u){
             if(typeof u!=="string")return u;
@@ -442,6 +443,18 @@ public sealed partial class WebPreviewProxyMiddleware
             return new Promise(function(resolve){
               var msg=mtMsg("mt-cookie-request",{requestId:"c"+(++cookieSeq),action:action,raw:raw||"",upstreamUrl:curU()});
               if(!msg){resolve(null);return;}
+              if(_realParent===window){
+                try{
+                  var cu=PP+"/_cookies?u="+encodeURIComponent(curU());
+                  var fo={method:action==="set"?"POST":"GET"};
+                  if(action==="set"){
+                    fo.headers={"Content-Type":"application/json"};
+                    fo.body=JSON.stringify({raw:raw||""});
+                  }
+                  fetch(cu,fo).then(function(r){return r.ok?r.json():null;}).then(resolve).catch(function(){resolve(null);});
+                  return;
+                }catch(e){}
+              }
               cookiePending[msg.requestId]=resolve;
               try{_realParent.postMessage(msg,"*");}catch(e){delete cookiePending[msg.requestId];resolve(null);return;}
               setTimeout(function(){
@@ -464,11 +477,14 @@ public sealed partial class WebPreviewProxyMiddleware
           try{
             var d=Object.getOwnPropertyDescriptor(Document.prototype,"cookie")||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,"cookie");
             if(d&&d.configurable){
+              var ncg=typeof d.get==="function"?d.get.bind(document):null,ncs=typeof d.set==="function"?d.set.bind(document):null;
               Object.defineProperty(document,"cookie",{configurable:true,get:function(){return cc;},set:function(v){
                 if(typeof v!=="string")return;
+                try{if(ncs)ncs(v);}catch(e){}
                 var n=v.split(";")[0]||"";if(n){var i=n.indexOf("="),k=i>0?n.slice(0,i).trim():"";if(k){var p=cc?cc.split(/;\s*/):[];var nx=[];for(var z=0;z<p.length;z++){if(!p[z].startsWith(k+"="))nx.push(p[z]);}nx.push(n.trim());cc=nx.join("; ");}}
                 reqCookie("set",v).then(function(j){if(j&&typeof j.header==="string")cc=j.header;}).catch(function(){});
               }});
+              setTimeout(function(){try{var nc=ncg?ncg():"";if(nc&&!cc)cc=nc;}catch(e){}},0);
             }
           }catch(e){}
           // === MutationObserver: catch dynamically added elements ===
