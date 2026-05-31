@@ -113,6 +113,9 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("imageSrcset", script, StringComparison.Ordinal);
         Assert.DoesNotContain("srcdoc", script, StringComparison.Ordinal);
         Assert.DoesNotContain("function rsd(v)", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object.defineProperty(window,\"top\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object.defineProperty(window,\"parent\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object.defineProperty(window,\"frameElement\"", script, StringComparison.Ordinal);
         Assert.Contains("if(/^integrity$/i.test(n))return;", script, StringComparison.Ordinal);
         Assert.Contains("removeAttribute(\"integrity\")", script, StringComparison.Ordinal);
         Assert.DoesNotContain("integrity:q.integrity", script, StringComparison.Ordinal);

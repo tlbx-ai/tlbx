@@ -33,7 +33,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string UrlRewriteScript = """
         <script>(function(){
           if(window.__mtProxy)return;window.__mtProxy=1;
-          // Save real parent before cloaking (used for navigation notifications)
+          // Save the real parent for navigation and cookie bridge notifications.
           var _realParent=window.parent;
           var mtCtx=null;
           function mtReadCookie(name){
@@ -105,10 +105,9 @@ public sealed partial class WebPreviewProxyMiddleware
             if(mtCtx.previewToken)msg.previewToken=mtCtx.previewToken;
             return msg;
           }
-          // Iframe cloaking: make the page think it's top-level
-          try{Object.defineProperty(window,"top",{get:function(){return window},configurable:true});}catch(e){}
-          try{Object.defineProperty(window,"parent",{get:function(){return window},configurable:true});}catch(e){}
-          try{Object.defineProperty(window,"frameElement",{get:function(){return null},configurable:true});}catch(e){}
+          // Do not cloak parent/top/frameElement. Sites with consent/ad frame
+          // coordination can enter postMessage loops when an embedded frame
+          // pretends to be top-level.
           function mtProxyPrefix(){
             var path=location.pathname||"";
             if(path===P||path.indexOf(P+"/")===0)return "";
