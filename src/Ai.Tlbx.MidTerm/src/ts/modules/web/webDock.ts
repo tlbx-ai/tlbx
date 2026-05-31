@@ -74,9 +74,13 @@ export function updateAllDockMargins(): void {
     const el = document.getElementById(id);
     if (el && !el.classList.contains('hidden')) total += el.offsetWidth;
   }
-  document
-    .querySelectorAll<HTMLElement>('.session-tab-panels')
-    .forEach((p) => (p.style.marginRight = total > 0 ? `${total}px` : ''));
+  document.querySelectorAll<HTMLElement>('.session-tab-panels').forEach((p) => {
+    p.style.marginRight = total > 0 ? `${total}px` : '';
+    p.closest<HTMLElement>('.session-wrapper')?.classList.toggle(
+      'has-right-dock-reservation',
+      total > 0,
+    );
+  });
   const footerDock = document.getElementById('adaptive-footer-dock');
   if (footerDock) {
     footerDock.style.right = total > 0 ? `${total}px` : '';
@@ -258,6 +262,8 @@ export function setupWebPreviewDockResize(): void {
     const delta = startX - clientX;
     const newWidth = clampDockWidth(startWidth + delta, panel);
     panel.style.width = `${newWidth}px`;
+    adjustInnerDockPositions();
+    updateAllDockMargins();
   }
 
   function endResize(): void {

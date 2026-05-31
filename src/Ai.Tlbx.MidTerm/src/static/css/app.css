@@ -11967,6 +11967,11 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
   overflow: hidden;
 }
 
+.session-wrapper.has-right-dock-reservation[data-active-tab='terminal'],
+.session-wrapper.has-right-dock-reservation[data-active-tab='agent'] {
+  background: var(--terminal-canvas-background-stack);
+}
+
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='terminal'],
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   background: transparent;
