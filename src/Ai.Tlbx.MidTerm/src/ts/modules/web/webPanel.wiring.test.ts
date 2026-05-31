@@ -26,7 +26,9 @@ describe('web preview screenshot wiring', () => {
 
   it('keeps the active-tab screenshot button busy while capture is in progress and surfaces failures', () => {
     expect(source).toContain('let screenshotInFlight = false;');
-    expect(source).toContain("screenshotButton = document.getElementById('web-preview-screenshot')");
+    expect(source).toContain(
+      "screenshotButton = document.getElementById('web-preview-screenshot')",
+    );
     expect(source).toContain("screenshotButton.classList.add('web-preview-action-working');");
     expect(source).toContain(
       'screenshotButton.innerHTML = \'<span class="web-preview-button-glyph">&#x21bb;</span>\';',
@@ -57,12 +59,18 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('id="web-preview-mobile-emulation"');
     expect(html).toContain('aria-label="Emulate mobile browser"');
     expect(html).toContain('aria-pressed="false"');
-    expect(source).toContain("mobileEmulationButton = document.getElementById(");
+    expect(source).toContain('mobileEmulationButton = document.getElementById(');
     expect(source).toContain('const mobileEmulationByFrame = new Map<string, boolean>();');
     expect(source).toContain('function handleMobileEmulationToggle(): Promise<void>');
     expect(source).toContain("'Disable mobile browser emulation'");
     expect(source).toContain("'Mobile browser emulation on'");
     expect(source).toContain('mobileEmulation: isMobileEmulationEnabled(frameKey),');
     expect(source).toContain('...(reloadToken ? { reloadToken } : {}),');
+  });
+
+  it('allows modern popup and top-navigation flows inside sandboxed external previews', () => {
+    expect(source).toContain("'allow-popups-to-escape-sandbox'");
+    expect(source).toContain("'allow-top-navigation-by-user-activation'");
+    expect(source).toContain("'allow-storage-access-by-user-activation'");
   });
 });

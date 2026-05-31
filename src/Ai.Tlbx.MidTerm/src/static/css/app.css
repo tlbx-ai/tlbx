@@ -11967,8 +11967,7 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
   overflow: hidden;
 }
 
-.session-wrapper.has-right-dock-reservation[data-active-tab='terminal'],
-.session-wrapper.has-right-dock-reservation[data-active-tab='agent'] {
+.session-wrapper.has-right-dock-reservation {
   background: var(--terminal-canvas-background-stack);
 }
 
