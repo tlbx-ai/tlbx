@@ -82,6 +82,12 @@ function syncTerminalGapBackground(container: HTMLElement, xterm: HTMLElement): 
     return;
   }
 
+  const terminalCanvasStack = getTerminalCanvasBackgroundStack(container);
+  if (terminalCanvasStack) {
+    setTerminalGapBackgroundValue(container, terminalCanvasStack);
+    return;
+  }
+
   const xtermBackground = getElementBackgroundColor(xterm);
   const viewportBackground =
     getElementBackgroundColor(getFirstElementByClassName(xterm, 'xterm-viewport')) ??
@@ -101,6 +107,12 @@ function syncTerminalGapBackground(container: HTMLElement, xterm: HTMLElement): 
   }
 
   setTerminalGapBackground(container, layers);
+}
+
+function getTerminalCanvasBackgroundStack(container: HTMLElement): string | null {
+  const value = getComputedStyle(container).getPropertyValue('--terminal-canvas-background-stack');
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function getFirstElementByClassName(host: HTMLElement, className: string): HTMLElement | null {
@@ -145,7 +157,7 @@ function isTransparentBackgroundColor(value: string): boolean {
     return false;
   }
 
-  return channels.slice(0, 3).every((channel) => channel === 0) && channels[3] === 0;
+  return channels[3] === 0;
 }
 
 function setTerminalGapBackground(container: HTMLElement, layers: string[]): void {
@@ -154,6 +166,10 @@ function setTerminalGapBackground(container: HTMLElement, layers: string[]): voi
       index < layers.length - 1 ? `linear-gradient(${layer}, ${layer})` : layer,
     )
     .join(', ');
+  setTerminalGapBackgroundValue(container, background);
+}
+
+function setTerminalGapBackgroundValue(container: HTMLElement, background: string): void {
   if (typeof container.style.setProperty === 'function') {
     container.style.setProperty('--terminal-gap-background', background);
     return;

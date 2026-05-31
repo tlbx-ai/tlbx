@@ -41,14 +41,14 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain('z-index: 2;');
   });
 
-  it('colors scaled terminal gaps with one non-overlapping terminal background plane', () => {
+  it('colors scaled terminal gaps without adding a backing pane under xterm', () => {
     expect(appCss).toContain('.terminal-container.scaled {');
-    expect(appCss).toContain('background: var(\n    --terminal-gap-background,');
     expect(appCss).toContain('.terminal-gap-fill {');
-    expect(appCss).toContain('background: var(--terminal-gap-background');
-    expect(appCss).toContain('.terminal-container.scaled .terminal-gap-fill {');
-    expect(appCss).toContain('background-color: transparent;');
-    expect(appCss).toContain('background-image: none;');
+    expect(appCss).toContain('background: var(\n    --terminal-gap-background,');
+    expect(appCss).toContain(
+      'var(--terminal-canvas-background-stack, var(--terminal-canvas-background, var(--terminal-bg)))',
+    );
+    expect(appCss).not.toContain('.terminal-container.scaled .terminal-gap-fill {');
     expect(appCss).toContain('.terminal-gap-fill-right {');
     expect(appCss).toContain('.terminal-gap-fill-bottom {');
     expect(appCss).toContain('.terminal-gap-fill-corner {');
@@ -61,6 +61,10 @@ describe('terminal surface wiring', () => {
     expect(terminalGapFillersSource).toContain("'xterm-screen'");
     expect(terminalGapFillersSource).toContain("'xterm-scrollable-element'");
     expect(terminalGapFillersSource).toContain("'--terminal-gap-background'");
+    expect(terminalGapFillersSource).toContain("'--terminal-canvas-background-stack'");
+    expect(terminalGapFillersSource).toContain('getTerminalCanvasBackgroundStack');
+    expect(terminalGapFillersSource).toContain('setTerminalGapBackgroundValue');
+    expect(terminalGapFillersSource).toContain('return channels[3] === 0;');
     expect(terminalGapFillersSource).toContain('getBoundingClientRect');
     expect(terminalGapFillersSource).toContain('formatCssPixelValue');
     expect(terminalGapFillersSource).toContain("document.createElement('div')");

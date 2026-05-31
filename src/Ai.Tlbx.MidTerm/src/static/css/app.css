@@ -4407,22 +4407,16 @@ body::before {
   overflow: hidden;
   align-items: flex-start;
   justify-content: flex-start;
-  background: var(
-    --terminal-gap-background,
-    var(--terminal-canvas-background-stack, var(--terminal-canvas-background, var(--terminal-bg)))
-  );
 }
 
 .terminal-gap-fill {
   position: absolute;
   z-index: 1;
   pointer-events: none;
-  background: var(--terminal-gap-background, var(--terminal-canvas-background, var(--terminal-bg)));
-}
-
-.terminal-container.scaled .terminal-gap-fill {
-  background-color: transparent;
-  background-image: none;
+  background: var(
+    --terminal-gap-background,
+    var(--terminal-canvas-background-stack, var(--terminal-canvas-background, var(--terminal-bg)))
+  );
 }
 
 .terminal-gap-fill-right {
