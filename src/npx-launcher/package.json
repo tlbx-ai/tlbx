@@ -1,6 +1,6 @@
 {
   "name": "@tlbx-ai/midterm",
-  "version": "9.17.16-dev",
+  "version": "9.17.16",
   "description": "Launch MidTerm via npx by downloading the native binary for your platform",
   "license": "AGPL-3.0-only",
   "repository": {
