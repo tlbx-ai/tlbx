@@ -94,8 +94,6 @@ const BACKGROUND_KEN_BURNS_REFERENCE_SIZE_PX = 720;
 const BACKGROUND_KEN_BURNS_PATH_MULTIPLIER = Math.PI * 2 * 0.46;
 const BACKGROUND_KEN_BURNS_PAN_X_FACTOR = 0.24;
 const BACKGROUND_KEN_BURNS_PAN_Y_FACTOR = 0.16;
-const WALLPAPER_UI_READABILITY_ALPHA_FLOOR = 0.72;
-const WALLPAPER_TERMINAL_READABILITY_ALPHA_FLOOR = 0.88;
 
 interface RgbColor {
   r: number;
@@ -117,8 +115,6 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     ? 0
     : clamp(settings.terminalTransparency ?? settings.uiTransparency, 0, 100);
   const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
-  const hasImage = shouldRenderBackgroundImage(settings);
-
   for (const variable of OPAQUE_SURFACE_VARIABLES) {
     const value = palette[variable.source];
     if (!value) {
@@ -135,11 +131,7 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
       continue;
     }
 
-    const alpha = withWallpaperReadabilityFloor(
-      clamp(uiBaseAlpha * (1 + (variable.boost ?? 0)), 0, 1),
-      'ui',
-      hasImage,
-    );
+    const alpha = clamp(uiBaseAlpha * (1 + (variable.boost ?? 0)), 0, 1);
     root.style.setProperty(variable.name, toRgba(rgb, alpha));
   }
 
@@ -155,16 +147,11 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     const transparency = variable.mode === 'terminal' ? terminalTransparency : uiTransparency;
     root.style.setProperty(
       variable.name,
-      toRgba(
-        rgb,
-        withWallpaperReadabilityFloor(
-          transparencyToAlpha(transparency, variable.response ?? 1),
-          variable.mode,
-          hasImage,
-        ),
-      ),
+      toRgba(rgb, transparencyToAlpha(transparency, variable.response ?? 1)),
     );
   }
+
+  const hasImage = shouldRenderBackgroundImage(settings);
 
   root.style.setProperty(
     '--app-background-image',
@@ -259,22 +246,6 @@ function toRgba(color: RgbColor, alpha: number): string {
 
 function transparencyToAlpha(transparency: number, response: number): number {
   return clamp(1 - (clamp(transparency, 0, 100) / 100) * response, 0, 1);
-}
-
-function withWallpaperReadabilityFloor(
-  alpha: number,
-  mode: 'ui' | 'terminal',
-  hasWallpaper: boolean,
-): number {
-  if (!hasWallpaper) {
-    return alpha;
-  }
-
-  const floor =
-    mode === 'terminal'
-      ? WALLPAPER_TERMINAL_READABILITY_ALPHA_FLOOR
-      : WALLPAPER_UI_READABILITY_ALPHA_FLOOR;
-  return Math.max(alpha, floor);
 }
 
 function clamp(value: number, min: number, max: number): number {
