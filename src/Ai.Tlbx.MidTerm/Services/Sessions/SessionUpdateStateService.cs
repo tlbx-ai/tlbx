@@ -153,16 +153,9 @@ public sealed partial class SessionUpdateStateService
         foreach (var session in sessionManager.GetAllSessions())
         {
             visibleById.TryGetValue(session.Id, out var dto);
-            var bindings = gitWatcher.GetRepoBindings(session.Id)
-                .Where(static repo => !repo.IsPrimary && !string.IsNullOrWhiteSpace(repo.RepoRoot))
-                .Select(static repo => new TtyHostGitRepoMetadata
-                {
-                    RepoRoot = repo.RepoRoot,
-                    Label = repo.Label,
-                    Role = repo.Role,
-                    Source = repo.Source
-                })
-                .ToList();
+            var bindings = MergeExtraGitRepos(
+                gitWatcher.GetRepoBindings(session.Id),
+                sessionManager.GetPersistedSessionExtraGitRepos(session.Id));
 
             result.Add(new SessionDecorationState
             {
@@ -195,6 +188,70 @@ public sealed partial class SessionUpdateStateService
         }
 
         return result;
+    }
+
+    internal static List<TtyHostGitRepoMetadata> MergeExtraGitRepos(
+        IEnumerable<GitRepoBinding> liveBindings,
+        IEnumerable<TtyHostGitRepoMetadata> persistedRepos)
+    {
+        var result = new List<TtyHostGitRepoMetadata>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var repo in liveBindings)
+        {
+            if (repo.IsPrimary || string.IsNullOrWhiteSpace(repo.RepoRoot))
+            {
+                continue;
+            }
+
+            Add(repo.RepoRoot, repo.Label, repo.Role, repo.Source);
+        }
+
+        foreach (var repo in persistedRepos)
+        {
+            if (string.IsNullOrWhiteSpace(repo.RepoRoot))
+            {
+                continue;
+            }
+
+            Add(repo.RepoRoot, repo.Label, repo.Role, repo.Source);
+        }
+
+        return result;
+
+        void Add(string repoRoot, string? label, string? role, string? source)
+        {
+            var normalizedRoot = NormalizeRepoRoot(repoRoot);
+            if (normalizedRoot is null || !seen.Add(normalizedRoot))
+            {
+                return;
+            }
+
+            result.Add(new TtyHostGitRepoMetadata
+            {
+                RepoRoot = normalizedRoot,
+                Label = label,
+                Role = role,
+                Source = source
+            });
+        }
+    }
+
+    private static string? NormalizeRepoRoot(string repoRoot)
+    {
+        if (string.IsNullOrWhiteSpace(repoRoot))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Path.GetFullPath(repoRoot.Trim()).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        }
+        catch
+        {
+            return repoRoot.Trim();
+        }
     }
 
     private static async Task<string?> TryBuildResumeCommandAsync(

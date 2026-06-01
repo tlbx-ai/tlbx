@@ -185,6 +185,7 @@ function syncCachedRepoStatus(sessionId: string, status: GitStatusResponse): voi
   const repos = cachedRepos.get(sessionId);
   if (!repos) {
     cachedRepos.set(sessionId, [statusToRepoBinding(status)]);
+    notifyGitRepoCacheChanged(sessionId);
     return;
   }
 

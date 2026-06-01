@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -250,6 +251,72 @@ public sealed class SessionUpdateStateServiceTests
         Assert.Equal("pending-only", decoration.SessionId);
         Assert.Equal("Pwsh", decoration.ShellType);
         Assert.Equal("Q:\\repos\\Jpa", decoration.CurrentDirectory);
+    }
+
+    [Fact]
+    public void MergeExtraGitRepos_KeepsPersistedRepoWhenLiveWatcherMissesIt()
+    {
+        var repos = SessionUpdateStateService.MergeExtraGitRepos(
+            liveBindings:
+            [
+                new GitRepoBinding
+                {
+                    RepoRoot = @"Q:\repos\Jpa",
+                    Label = "Jpa",
+                    Role = "cwd",
+                    Source = "auto",
+                    IsPrimary = true
+                }
+            ],
+            persistedRepos:
+            [
+                new TtyHostGitRepoMetadata
+                {
+                    RepoRoot = @"Q:\repos\MidTerm\",
+                    Label = "MidTerm",
+                    Role = "target",
+                    Source = "manual"
+                }
+            ]);
+
+        var repo = Assert.Single(repos);
+        Assert.Equal(@"Q:\repos\MidTerm", repo.RepoRoot);
+        Assert.Equal("MidTerm", repo.Label);
+        Assert.Equal("target", repo.Role);
+        Assert.Equal("manual", repo.Source);
+    }
+
+    [Fact]
+    public void MergeExtraGitRepos_PrefersLiveBindingForDuplicateExtraRepo()
+    {
+        var repos = SessionUpdateStateService.MergeExtraGitRepos(
+            liveBindings:
+            [
+                new GitRepoBinding
+                {
+                    RepoRoot = @"Q:\repos\MidTerm",
+                    Label = "Live MidTerm",
+                    Role = "target",
+                    Source = "manual",
+                    IsPrimary = false
+                }
+            ],
+            persistedRepos:
+            [
+                new TtyHostGitRepoMetadata
+                {
+                    RepoRoot = @"Q:\repos\MidTerm\",
+                    Label = "Old MidTerm",
+                    Role = "old",
+                    Source = "host"
+                }
+            ]);
+
+        var repo = Assert.Single(repos);
+        Assert.Equal(@"Q:\repos\MidTerm", repo.RepoRoot);
+        Assert.Equal("Live MidTerm", repo.Label);
+        Assert.Equal("target", repo.Role);
+        Assert.Equal("manual", repo.Source);
     }
 
     private static void AddCachedSession(TtyHostSessionManager manager, string sessionId)

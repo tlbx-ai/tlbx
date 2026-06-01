@@ -116,7 +116,7 @@ describe('spaces tree sidebar process info', () => {
     });
   });
 
-  it('shows extra monitored repositories by full directory path', () => {
+  it('shows monitored repositories by full directory path', () => {
     mocks.repos.push({
       repoRoot: 'Q:\\repos\\MidTermWorkspace4',
       label: 'MidTerm',
@@ -140,7 +140,7 @@ describe('spaces tree sidebar process info', () => {
     expect(repo?.textContent).toBe('Q:\\repos\\MidTermWorkspace4');
   });
 
-  it('renders each extra monitored repository as workdir branch and changes on one row', () => {
+  it('renders each monitored repository as workdir branch and changes on one row', () => {
     mocks.repos.push({
       repoRoot: 'C:\\repos\\messengerSpecific',
       label: 'messengerSpecific',
@@ -196,5 +196,56 @@ describe('spaces tree sidebar process info', () => {
     ).toBe('-24');
     expect(details?.textContent).toBe('C:\\repos\\messengerSpecific-main');
     expect(separators.map((separator) => separator.textContent)).toEqual(['-']);
+  });
+
+  it('keeps the sidebar repo list synchronized with primary and extra top-bar repos', () => {
+    mocks.repos.push(
+      {
+        repoRoot: 'Q:\\repos\\Jpa',
+        label: 'Jpa',
+        role: 'cwd',
+        source: 'auto',
+        isPrimary: true,
+        status: makeStatus({
+          repoRoot: 'Q:\\repos\\Jpa',
+          branch: 'main',
+          totalAdditions: 0,
+          totalDeletions: 0,
+        }),
+      },
+      {
+        repoRoot: 'Q:\\repos\\MidTerm',
+        label: 'MidTerm',
+        role: 'target',
+        source: 'manual',
+        isPrimary: false,
+        status: makeStatus({
+          repoRoot: 'Q:\\repos\\MidTerm',
+          branch: 'dev',
+          totalAdditions: 5,
+          totalDeletions: 2,
+        }),
+      },
+    );
+
+    const processInfo = document.createElement('div') as unknown as HTMLElement;
+    syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, {
+      id: 's1',
+      session: {
+        currentDirectory: 'Q:/repos/Jpa',
+        workspacePath: 'Q:/repos/Jpa',
+        shellType: 'pwsh',
+      },
+    });
+
+    const repos = Array.from(
+      processInfo.querySelectorAll<HTMLElement>('.session-extra-git-repo'),
+    ).map((repo) => repo.textContent);
+    const branches = Array.from(
+      processInfo.querySelectorAll<HTMLElement>('.session-extra-git-branch'),
+    ).map((branch) => branch.textContent);
+
+    expect(repos).toEqual(['Q:\\repos\\Jpa', 'Q:\\repos\\MidTerm']);
+    expect(branches).toEqual(['main', 'dev']);
   });
 });
