@@ -11992,11 +11992,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-shrink: 0;
   padding: 0 8px;
   min-height: var(--bar-height);
-  height: auto;
-  max-height: calc(var(--bar-height) * 2);
-  flex-wrap: wrap;
+  height: var(--bar-height);
+  max-height: var(--bar-height);
+  flex-wrap: nowrap;
   user-select: none;
-  overflow: clip visible;
+  overflow: visible;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -12064,8 +12064,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: var(--bar-height);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   place-content: center flex-end;
   position: relative;
 }
@@ -12157,20 +12159,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
   position: relative;
   min-width: 0;
+  overflow: visible;
 }
 
 .git-indicator-strip {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-wrap: wrap;
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
   min-width: 0;
+  overflow: hidden;
 }
 
 .git-indicator-overflow {
+  flex: 0 0 auto;
   min-width: 28px;
   padding-inline: 7px;
   font-family: var(--font-mono);
