@@ -60,6 +60,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(CreateSessionRequest))]
 [JsonSerializable(typeof(SessionReorderRequest))]
 [JsonSerializable(typeof(SessionInputRequest))]
+[JsonSerializable(typeof(SessionPasteRequest))]
 [JsonSerializable(typeof(SessionKeyInputRequest))]
 [JsonSerializable(typeof(SessionPromptRequest))]
 [JsonSerializable(typeof(SessionSupervisorInfoDto))]
@@ -325,7 +326,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

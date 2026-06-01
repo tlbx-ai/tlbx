@@ -40,19 +40,18 @@ function getForegroundSignature(entry: SpacesTreeSidebarSessionProcessEntry): st
 }
 
 function getExtraGitRepoSignature(sessionId: string): string {
-  return getCachedGitReposForSession(sessionId)
-    .filter(isExtraRepo)
-    .map(getExtraGitRepoSignaturePart)
-    .join('\u001e');
-}
-
-function isExtraRepo(repo: GitRepoBinding): boolean {
-  return !repo.isPrimary;
+  return getCachedGitReposForSession(sessionId).map(getExtraGitRepoSignaturePart).join('\u001e');
 }
 
 function getExtraGitRepoSignaturePart(repo: GitRepoBinding): string {
   const statusParts = getExtraGitRepoStatusSignatureParts(repo.status ?? null);
-  return [repo.repoRoot, repo.label, repo.role, ...statusParts].join(':');
+  return [
+    repo.repoRoot,
+    repo.label,
+    repo.role,
+    repo.isPrimary ? 'primary' : 'extra',
+    ...statusParts,
+  ].join(':');
 }
 
 function getExtraGitRepoStatusSignatureParts(
@@ -99,7 +98,7 @@ export function syncSpacesTreeSidebarSessionProcessInfoElement(
 }
 
 function createExtraGitRepoLines(sessionId: string): HTMLElement[] {
-  return getCachedGitReposForSession(sessionId).filter(isExtraRepo).map(createExtraGitRepoLine);
+  return getCachedGitReposForSession(sessionId).map(createExtraGitRepoLine);
 }
 
 function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {

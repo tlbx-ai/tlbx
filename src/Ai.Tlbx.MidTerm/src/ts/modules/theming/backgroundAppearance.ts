@@ -115,7 +115,6 @@ export function applyBackgroundAppearance(settings: MidTermSettingsPublic): void
     ? 0
     : clamp(settings.terminalTransparency ?? settings.uiTransparency, 0, 100);
   const uiBaseAlpha = Math.max(0, 1 - uiTransparency / 100);
-
   for (const variable of OPAQUE_SURFACE_VARIABLES) {
     const value = palette[variable.source];
     if (!value) {

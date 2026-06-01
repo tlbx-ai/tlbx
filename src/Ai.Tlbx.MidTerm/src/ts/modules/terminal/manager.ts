@@ -6,6 +6,7 @@
  * and event binding for terminal sessions.
  */
 import type { Session, TerminalState } from '../../types';
+import { sendSessionPasteInput } from '../../api/client';
 import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
 import {
   sessionTerminals,
@@ -1317,38 +1318,8 @@ export function destroyTerminalForSession(sessionId: string): void {
 }
 
 // WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin
-const WS_MAX_PAYLOAD = 32 * 1024;
-// Chunking for non-BPM shells - conservative to prevent PTY/readline overwhelm
-// PSReadLine does syntax highlighting, history, etc. on each character
-const NON_BPM_CHUNK_SIZE = 512;
-const NON_BPM_CHUNK_DELAY = 30;
 const PASTE_INDICATOR_THRESHOLD = 1024;
 const MIN_BADGE_DISPLAY_MS = 300;
-
-/**
- * Send data in WebSocket-safe chunks without delays.
- * Used for BPM pastes where the shell buffers internally.
- */
-function sendChunkedImmediate(sessionId: string, data: string): void {
-  for (let i = 0; i < data.length; i += WS_MAX_PAYLOAD) {
-    const chunk = data.slice(i, i + WS_MAX_PAYLOAD);
-    sendInput(sessionId, chunk);
-  }
-}
-
-/**
- * Send data in chunks with delays to prevent PTY buffer overflow.
- * Used for non-BPM shells that process input character-by-character.
- */
-async function sendChunkedWithDelay(sessionId: string, data: string): Promise<void> {
-  for (let i = 0; i < data.length; i += NON_BPM_CHUNK_SIZE) {
-    const chunk = data.slice(i, i + NON_BPM_CHUNK_SIZE);
-    sendInput(sessionId, chunk);
-    if (i + NON_BPM_CHUNK_SIZE < data.length) {
-      await new Promise((resolve) => setTimeout(resolve, NON_BPM_CHUNK_DELAY));
-    }
-  }
-}
 
 /**
  * Hide paste indicator after minimum display time.
@@ -1364,11 +1335,11 @@ function hidePasteIndicatorDelayed(startTime: number): void {
 }
 
 /**
- * Paste text to a terminal, wrapping with bracketed paste markers if enabled.
+ * Paste text to a terminal through the same server-side paste path used by mt_paste.
  * BPM state is tracked in muxChannel from live WebSocket data.
  *
- * Large pastes are chunked to stay within WebSocket frame limits (64KB backend).
- * BPM pastes chunk without delays (shell buffers); non-BPM chunk with delays.
+ * The server normalizes clipboard line endings, applies bracketed paste markers,
+ * and chunks non-BPM paste input with the same conservative delay.
  *
  * @param isFilePath - If true, wrap content in quotes for file path handling.
  */
@@ -1384,41 +1355,21 @@ export async function pasteToTerminal(
   const xtermBpm = state.terminal.modes.bracketedPasteMode;
   const bpmEnabled = muxBpm || xtermBpm;
 
-  const content = isFilePath ? '"' + data + '"' : data;
-
-  const showIndicator = content.length > PASTE_INDICATOR_THRESHOLD;
+  const showIndicator = data.length > PASTE_INDICATOR_THRESHOLD;
   const startTime = Date.now();
   if (showIndicator) {
     showPasteIndicator();
   }
 
-  if (bpmEnabled) {
-    // BPM: wrap with markers, chunk for WebSocket but no delays (shell buffers)
-    const wrapped = '\x1b[200~' + content + '\x1b[201~';
-    if (wrapped.length > WS_MAX_PAYLOAD) {
-      // Large paste: send start marker, chunked content, end marker
-      sendInput(sessionId, '\x1b[200~');
-      sendChunkedImmediate(sessionId, content);
-      sendInput(sessionId, '\x1b[201~');
-    } else {
-      sendInput(sessionId, wrapped);
-    }
+  try {
+    await sendSessionPasteInput(sessionId, {
+      text: data,
+      bracketedPaste: bpmEnabled,
+      isFilePath,
+    });
+  } finally {
     if (showIndicator) {
       hidePasteIndicatorDelayed(startTime);
-    }
-    return;
-  } else {
-    // Non-BPM: chunk with delays to prevent PTY overflow
-    if (content.length > NON_BPM_CHUNK_SIZE) {
-      await sendChunkedWithDelay(sessionId, content);
-      if (showIndicator) {
-        hidePasteIndicatorDelayed(startTime);
-      }
-    } else {
-      sendInput(sessionId, content);
-      if (showIndicator) {
-        hidePasteIndicatorDelayed(startTime);
-      }
     }
   }
 }

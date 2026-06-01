@@ -97,6 +97,7 @@ public sealed class MidTermSettings
     public string StickyMainBrowserId { get; set; } = "";
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
+    public bool TryResumeNonAiAgentProcesses { get; set; } = false;
     public bool PreserveTerminalCursorControl { get; set; } = true;
 
     // Input mode: "keyboard" (default) or "smartinput" (floating text box, no keyboard focus on terminal)
@@ -138,6 +139,16 @@ public sealed class MidTermSettings
 
     // Developer mode - enables dev features (voice sync, faster update checks, etc.)
     public bool DevMode { get; set; } = false;
+
+    // Keeps MidTerm's UI/PTY/agent host scheduler priority above build/compiler work.
+    public bool RuntimePriorityBoostEnabled { get; set; } = true;
+    public string RuntimePriorityClass { get; set; } = "aboveNormal";
+
+    // Terminal input latency tracing - dev mode enables this automatically; in normal mode it is opt-in.
+    public bool TerminalLatencyDiagnosticsEnabled { get; set; } = false;
+
+    // Printable input coalescing window in milliseconds. 0 disables coalescing.
+    public int TerminalInputCoalescingMs { get; set; } = 0;
 
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;

@@ -64,7 +64,13 @@ public sealed class TerminalReplayExecutorTests
             ],
             imagePastes);
         Assert.Equal(
-            [TerminalReplayExecutor.ImageSettleDelayMs, TerminalReplayExecutor.ImageSettleDelayMs, TerminalReplayExecutor.SubmitDelayMs],
+            [
+                TerminalReplayExecutor.TextBeforeImageSettleDelayMs,
+                TerminalReplayExecutor.ImageSettleDelayMs,
+                TerminalReplayExecutor.TextBeforeImageSettleDelayMs,
+                TerminalReplayExecutor.ImageSettleDelayMs,
+                TerminalReplayExecutor.SubmitDelayMs
+            ],
             delays);
     }
 
@@ -126,6 +132,249 @@ public sealed class TerminalReplayExecutorTests
             File.Delete(tempFile);
         }
 
-        Assert.Equal(["\u001b[200~alpha\nbeta\u001b[201~", "\r"], sentInputs);
+        Assert.Equal(["\u001b[200~alpha\rbeta\u001b[201~", "\r"], sentInputs);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BatchesAdjacentTextPathAndFileStepsWithTerminalNewlines()
+    {
+        var tempFile = Path.GetTempFileName();
+        var sentInputs = new List<string>();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, "delta\nomega");
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "text",
+                        Text = "alpha\nbeta "
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "filePath",
+                        Path = "Q:/repo/a b.txt"
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "text",
+                        Text = " gamma\r\ndone "
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = tempFile
+                    }
+                ],
+                (data, _) =>
+                {
+                    sentInputs.Add(Encoding.UTF8.GetString(data));
+                    return Task.CompletedTask;
+                },
+                (_, _, _) => Task.FromResult(false),
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+
+        Assert.Equal(["alpha\rbeta \"Q:/repo/a b.txt\" gamma\rdone delta\romega", "\r"], sentInputs);
+        Assert.Equal([TerminalReplayExecutor.SubmitDelayMs], delays);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BatchesMixedBracketedAndPlainTextWithoutDroppingMarkers()
+    {
+        var sentInputs = new List<string>();
+
+        await TerminalReplayExecutor.ExecuteAsync(
+            [
+                new AppServerControlTerminalReplayStep
+                {
+                    Kind = "text",
+                    Text = "a\nb"
+                },
+                new AppServerControlTerminalReplayStep
+                {
+                    Kind = "text",
+                    Text = "c\nd",
+                    UseBracketedPaste = true
+                }
+            ],
+            (data, _) =>
+            {
+                sentInputs.Add(Encoding.UTF8.GetString(data));
+                return Task.CompletedTask;
+            },
+            (_, _, _) => Task.FromResult(false),
+            static (_, _) => Task.CompletedTask,
+            CancellationToken.None);
+
+        Assert.Equal(["a\rb\u001b[200~c\rd\u001b[201~", "\r"], sentInputs);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PreservesTextFileImageTextFileReplayOrderWithBoundarySettle()
+    {
+        var firstTextFile = Path.GetTempFileName();
+        var secondTextFile = Path.GetTempFileName();
+        var sentInputs = new List<string>();
+        var imagePastes = new List<string>();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(firstTextFile, "first\nblock");
+            await File.WriteAllTextAsync(secondTextFile, "second\nblock");
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = firstTextFile
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "image",
+                        Path = "Q:/repo/.midterm/uploads/screen.png",
+                        MimeType = "image/png"
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = secondTextFile
+                    }
+                ],
+                (data, _) =>
+                {
+                    sentInputs.Add(Encoding.UTF8.GetString(data));
+                    return Task.CompletedTask;
+                },
+                (path, _, _) =>
+                {
+                    imagePastes.Add(path);
+                    return Task.FromResult(true);
+                },
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(firstTextFile);
+            File.Delete(secondTextFile);
+        }
+
+        Assert.Equal(["first\rblock", "second\rblock", "\r"], sentInputs);
+        Assert.Equal(["Q:/repo/.midterm/uploads/screen.png"], imagePastes);
+        Assert.Equal(
+            [
+                TerminalReplayExecutor.TextBeforeImageSettleDelayMs,
+                TerminalReplayExecutor.ImageSettleDelayMs,
+                TerminalReplayExecutor.SubmitDelayMs
+            ],
+            delays);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WaitsLongerBeforeSubmitAfterLargeFinalPaste()
+    {
+        var tempFile = Path.GetTempFileName();
+        var sentInputs = new List<string>();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, new string('x', 5_000));
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = tempFile,
+                        UseBracketedPaste = true
+                    }
+                ],
+                (data, _) =>
+                {
+                    sentInputs.Add(Encoding.UTF8.GetString(data));
+                    return Task.CompletedTask;
+                },
+                (_, _, _) => Task.FromResult(false),
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+
+        Assert.Equal(2, sentInputs.Count);
+        Assert.Equal("\r", sentInputs[1]);
+        Assert.Single(delays);
+        Assert.InRange(
+            delays[0],
+            TerminalReplayExecutor.SubmitDelayMs + 1,
+            TerminalReplayExecutor.MaxLargePasteSubmitDelayMs);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_WaitsLongerBeforeSubmitWhenLargeFinalPasteFollowsImage()
+    {
+        var tempFile = Path.GetTempFileName();
+        var delays = new List<int>();
+
+        try
+        {
+            await File.WriteAllTextAsync(tempFile, new string('x', 5_000));
+            await TerminalReplayExecutor.ExecuteAsync(
+                [
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "image",
+                        Path = "Q:/repo/.midterm/uploads/screen.png",
+                        MimeType = "image/png"
+                    },
+                    new AppServerControlTerminalReplayStep
+                    {
+                        Kind = "textFile",
+                        Path = tempFile,
+                        UseBracketedPaste = true
+                    }
+                ],
+                static (_, _) => Task.CompletedTask,
+                static (_, _, _) => Task.FromResult(true),
+                (delayMs, _) =>
+                {
+                    delays.Add(delayMs);
+                    return Task.CompletedTask;
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            File.Delete(tempFile);
+        }
+
+        Assert.Equal(TerminalReplayExecutor.ImageSettleDelayMs, delays[0]);
+        Assert.InRange(
+            delays[1],
+            TerminalReplayExecutor.MaxLargePasteSubmitDelayMs + 1,
+            TerminalReplayExecutor.MaxLargePasteAfterImageSubmitDelayMs);
     }
 }

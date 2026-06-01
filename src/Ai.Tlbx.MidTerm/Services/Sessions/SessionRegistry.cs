@@ -142,12 +142,12 @@ internal sealed class SessionRegistry
         return SessionCache.Values.ToList();
     }
 
-    public SessionListDto GetSessionList()
+    public SessionListDto GetSessionList(bool includeHidden = false)
     {
         return new SessionListDto
         {
             Sessions = SessionCache.Values
-                .Where(s => !HiddenSessions.ContainsKey(s.Id))
+                .Where(s => includeHidden || !HiddenSessions.ContainsKey(s.Id))
                 .Select(s =>
                 {
                     var spaceId = GetSpaceId(s.Id);

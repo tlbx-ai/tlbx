@@ -111,7 +111,7 @@ export async function prepareSmartInputTerminalTurn(
 
     referencedAttachmentIds.add(attachment.id);
     previewParts.push(getAttachmentReferenceToken(attachment));
-    appendTerminalReplayAttachment(replay, attachment, path, args.bracketedPasteModeEnabled);
+    appendTerminalReplayAttachment(replay, attachment, path);
   }
 
   let needsExtraSeparator = replay.length > 0;
@@ -131,7 +131,7 @@ export async function prepareSmartInputTerminalTurn(
     }
 
     previewParts.push(getAttachmentReferenceToken(attachment));
-    appendTerminalReplayAttachment(replay, attachment, path, args.bracketedPasteModeEnabled);
+    appendTerminalReplayAttachment(replay, attachment, path);
     needsExtraSeparator = true;
   }
 
@@ -228,13 +228,12 @@ function appendTerminalReplayAttachment(
   replay: AppServerControlTerminalReplayStep[],
   attachment: AppServerControlComposerDraftAttachment,
   path: string,
-  bracketedPasteModeEnabled: boolean,
 ): void {
   if (attachment.referenceKind === 'text') {
     replay.push({
       kind: 'textFile',
       path,
-      useBracketedPaste: bracketedPasteModeEnabled,
+      useBracketedPaste: true,
     });
     return;
   }

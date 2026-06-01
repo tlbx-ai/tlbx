@@ -44,6 +44,17 @@ public static class Program
     private const int MinScrollbackBytes = 64 * 1024;
     private const int MaxScrollbackBytes = 10 * 1024 * 1024;
     private const int MaxIpcQueuedFramesPerClient = 256;
+    internal const BoundedChannelFullMode ClientWriteChannelFullMode = BoundedChannelFullMode.Wait;
+
+    private enum IpcOutputFlushPolicy
+    {
+        Auto,
+        Always,
+        TraceOnly,
+        Never,
+    }
+
+    private static readonly IpcOutputFlushPolicy OutputFlushPolicy = ResolveIpcOutputFlushPolicy();
 
     private static CancellationTokenSource? _shutdownCts;
 
@@ -356,11 +367,13 @@ public static class Program
         }
         finally
         {
+            ClearCurrentClientIfCurrent(clientCts);
         }
     }
 
-    private static void PromoteCurrentClient(CancellationTokenSource nextClientCts)
+    internal static void PromoteCurrentClient(CancellationTokenSource nextClientCts)
     {
+        CancellationTokenSource? previousClientCts = null;
         lock (_clientLock)
         {
             if (ReferenceEquals(_currentClientCts, nextClientCts))
@@ -368,27 +381,39 @@ public static class Program
                 return;
             }
 
-            if (_currentClientCts is not null)
+            previousClientCts = _currentClientCts;
+            _currentClientCts = nextClientCts;
+        }
+
+        TryCancelClient(previousClientCts);
+    }
+
+    internal static void ClearCurrentClientIfCurrent(CancellationTokenSource clientCts)
+    {
+        lock (_clientLock)
+        {
+            if (ReferenceEquals(_currentClientCts, clientCts))
             {
-                _currentClientCts.Cancel();
-                _currentClientCts.Dispose();
                 _currentClientCts = null;
             }
-
-            _currentClientCts = nextClientCts;
         }
     }
 
-    private static void DisposeCurrentClientCts_NoLock()
+    private static void TryCancelClient(CancellationTokenSource? clientCts)
     {
-        if (_currentClientCts is null)
+        if (clientCts is null)
         {
             return;
         }
 
-        _currentClientCts.Cancel();
-        _currentClientCts.Dispose();
-        _currentClientCts = null;
+        try
+        {
+            clientCts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // The owning client task disposes its CTS; reconnect cancellation is best-effort.
+        }
     }
 
     private readonly record struct PooledFrame(
@@ -462,12 +487,16 @@ public static class Program
                         ArrayPool<byte>.Shared.Return(frame.Buffer);
                     }
                 }
-                await stream.FlushAsync(ct).ConfigureAwait(false);
+                var hasTraceFlushes = traceFlushes is { Count: > 0 };
+                if (ShouldFlushIpcOutput(stream, hasTraceFlushes))
+                {
+                    await stream.FlushAsync(ct).ConfigureAwait(false);
+                }
 
-                if (traceFlushes is { Count: > 0 })
+                if (hasTraceFlushes)
                 {
                     var flushDoneAtMs = Environment.TickCount64;
-                    foreach (var traceFlush in traceFlushes)
+                    foreach (var traceFlush in traceFlushes!)
                     {
                         if (session.TryCreateInputTraceOutputReport(
                             traceFlush.TraceId,
@@ -481,7 +510,10 @@ public static class Program
                         }
                     }
 
-                    await stream.FlushAsync(ct).ConfigureAwait(false);
+                    if (ShouldFlushIpcOutput(stream, hasInputTraceReport: true))
+                    {
+                        await stream.FlushAsync(ct).ConfigureAwait(false);
+                    }
                 }
             }
         }
@@ -501,6 +533,33 @@ public static class Program
         }
     }
 
+    private static IpcOutputFlushPolicy ResolveIpcOutputFlushPolicy()
+    {
+        var value = Environment.GetEnvironmentVariable("MIDTERM_TTYHOST_IPC_OUTPUT_FLUSH_POLICY");
+        return value?.Trim().ToLowerInvariant() switch
+        {
+            "always" => IpcOutputFlushPolicy.Always,
+            "traceonly" or "trace-only" or "trace_only" => IpcOutputFlushPolicy.TraceOnly,
+            "never" => IpcOutputFlushPolicy.Never,
+            _ => IpcOutputFlushPolicy.Auto,
+        };
+    }
+
+    private static bool ShouldFlushIpcOutput(Stream stream, bool hasInputTraceReport)
+    {
+        return OutputFlushPolicy switch
+        {
+            IpcOutputFlushPolicy.Always => true,
+            IpcOutputFlushPolicy.TraceOnly => hasInputTraceReport,
+            IpcOutputFlushPolicy.Never => false,
+#if WINDOWS
+            _ => hasInputTraceReport || stream is not NamedPipeServerStream,
+#else
+            _ => true,
+#endif
+        };
+    }
+
     private static async Task HandleClientAsync(
         TerminalSession session,
         IIpcClientConnection client,
@@ -517,7 +576,7 @@ public static class Program
         {
             SingleReader = true,
             SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropWrite
+            FullMode = ClientWriteChannelFullMode
         });
         var channelWriter = writeChannel.Writer;
         session.ResetIpcTransportState();
@@ -965,10 +1024,14 @@ public static class Program
                         try
                         {
                             var request = TtyHostProtocol.ParseGetBuffer(payload) ?? new TtyHostGetBufferRequest();
-                            var guess = session.GetBufferLength(request.MaxBytes);
+                            var guess = session.GetBufferLength(request.MaxBytes, request.SinceSequence);
                             if (guess <= 0)
                             {
-                                TtyHostProtocol.WriteBufferResponse(0, ReadOnlySpan<byte>.Empty, frame =>
+                                var outputCursor = session.GetOutputCursor();
+                                var emptySequenceStart = request.SinceSequence == outputCursor
+                                    ? request.SinceSequence.Value
+                                    : outputCursor;
+                                TtyHostProtocol.WriteBufferResponse(emptySequenceStart, ReadOnlySpan<byte>.Empty, frame =>
                                 {
                                     EnqueueFrame(channelWriter, frame);
                                 });
@@ -978,7 +1041,12 @@ public static class Program
                             while (true)
                             {
                                 snapshot = ArrayPool<byte>.Shared.Rent(Math.Max(guess, 1));
-                                var written = session.CopyBufferSnapshot(snapshot, request.MaxBytes, request.Reason, out var sequenceStart);
+                                var written = session.CopyBufferSnapshot(
+                                    snapshot,
+                                    request.MaxBytes,
+                                    request.Reason,
+                                    out var sequenceStart,
+                                    request.SinceSequence);
                                 if (written >= 0)
                                 {
                                     var payloadSlice = snapshot.AsSpan(0, written);
@@ -1248,6 +1316,7 @@ internal sealed class TerminalSession : IDisposable
     private readonly object _inputTraceLock = new();
     private readonly object _metadataLock = new();
     private readonly int _scrollbackBytes;
+    private readonly Action<ForegroundProcessInfo>? _foregroundChangedHandler;
     private TtyHostTransportInfo _transportInfo;
     private InputTraceState? _inputTrace;
     private string? _topic;
@@ -1300,7 +1369,8 @@ internal sealed class TerminalSession : IDisposable
 
         if (_processMonitor is not null)
         {
-            _processMonitor.OnForegroundChanged += info => OnForegroundChanged?.Invoke(info);
+            _foregroundChangedHandler = info => OnForegroundChanged?.Invoke(info);
+            _processMonitor.OnForegroundChanged += _foregroundChangedHandler;
         }
     }
 
@@ -1516,11 +1586,16 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public int GetBufferLength(int? maxBytes = null)
+    public int GetBufferLength(int? maxBytes = null, ulong? sinceSequence = null)
     {
         lock (_bufferLock)
         {
-            var length = _outputBuffer.Count;
+            var length = ResolveBufferSnapshotLength(maxBytes, sinceSequence);
+            if (length < 0)
+            {
+                length = _outputBuffer.Count;
+            }
+
             if (maxBytes is int cap && cap > 0)
             {
                 length = Math.Min(length, cap);
@@ -1530,19 +1605,29 @@ internal sealed class TerminalSession : IDisposable
         }
     }
 
-    public int CopyBufferSnapshot(Span<byte> destination, int? maxBytes, TerminalReplayReason reason, out ulong sequenceStart)
+    public int CopyBufferSnapshot(
+        Span<byte> destination,
+        int? maxBytes,
+        TerminalReplayReason reason,
+        out ulong sequenceStart,
+        ulong? sinceSequence = null)
     {
         lock (_bufferLock)
         {
-            var length = _outputBuffer.Count;
-            if (maxBytes is int cap && cap > 0)
+            var length = ResolveBufferSnapshotLength(maxBytes, sinceSequence);
+            var copySince = sinceSequence is ulong cursor && length >= 0;
+            if (length < 0)
             {
-                length = Math.Min(length, cap);
+                length = _outputBuffer.Count;
+                if (maxBytes is int cap && cap > 0)
+                {
+                    length = Math.Min(length, cap);
+                }
             }
 
             if (length == 0)
             {
-                sequenceStart = 0;
+                sequenceStart = sinceSequence ?? _outputBuffer.TotalBytesWritten;
                 RecordReplay(0, reason);
                 return 0;
             }
@@ -1553,7 +1638,34 @@ internal sealed class TerminalSession : IDisposable
                 return -length;
             }
 
-            if (length == _outputBuffer.Count)
+            if (copySince)
+            {
+                var position = sinceSequence!.Value;
+                var copiedTotal = 0;
+                while (copiedTotal < length)
+                {
+                    if (!_outputBuffer.TryCopySince(
+                            position,
+                            destination.Slice(copiedTotal, length - copiedTotal),
+                            out var written))
+                    {
+                        sequenceStart = 0;
+                        return -_outputBuffer.Count;
+                    }
+
+                    if (written == 0)
+                    {
+                        break;
+                    }
+
+                    copiedTotal += written;
+                    position += (ulong)written;
+                }
+
+                sequenceStart = sinceSequence.Value;
+                length = copiedTotal;
+            }
+            else if (length == _outputBuffer.Count)
             {
                 _outputBuffer.CopyTo(destination.Slice(0, length));
                 sequenceStart = _outputBuffer.TailPosition;
@@ -1567,6 +1679,29 @@ internal sealed class TerminalSession : IDisposable
             RecordReplay(length, reason);
             return length;
         }
+    }
+
+    private int ResolveBufferSnapshotLength(int? maxBytes, ulong? sinceSequence)
+    {
+        if (sinceSequence is not ulong cursor)
+        {
+            return -1;
+        }
+
+        var availableStart = _outputBuffer.TailPosition;
+        var availableEnd = _outputBuffer.TotalBytesWritten;
+        if (cursor < availableStart || cursor > availableEnd)
+        {
+            return -1;
+        }
+
+        var delta = checked((int)(availableEnd - cursor));
+        if (maxBytes is int cap && cap > 0 && delta > cap)
+        {
+            return -1;
+        }
+
+        return delta;
     }
 
     public ulong GetOutputCursor()
@@ -1693,6 +1828,11 @@ internal sealed class TerminalSession : IDisposable
 
     public void Dispose()
     {
+        if (_processMonitor is not null && _foregroundChangedHandler is not null)
+        {
+            _processMonitor.OnForegroundChanged -= _foregroundChangedHandler;
+        }
+
         _outputBuffer.Dispose();
     }
 

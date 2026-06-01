@@ -110,6 +110,7 @@ public sealed partial class MidTermSettingsPublic
             DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             ResumeMode = settings.ResumeMode,
+            TryResumeNonAiAgentProcesses = settings.TryResumeNonAiAgentProcesses,
             PreserveTerminalCursorControl = settings.PreserveTerminalCursorControl,
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
@@ -122,6 +123,8 @@ public sealed partial class MidTermSettingsPublic
             CommandBayLigaturesEnabled = settings.CommandBayLigaturesEnabled,
             ManagerBarButtons = ManagerBarButton.NormalizeList(settings.ManagerBarButtons),
             DevMode = settings.DevMode,
+            TerminalLatencyDiagnosticsEnabled = settings.TerminalLatencyDiagnosticsEnabled,
+            TerminalInputCoalescingMs = settings.TerminalInputCoalescingMs,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             ShowUpdateNotification = settings.ShowUpdateNotification,
             UpdateChannel = settings.UpdateChannel,
@@ -230,6 +233,7 @@ public sealed partial class MidTermSettingsPublic
         settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         settings.ResumeMode = ResumeMode;
+        settings.TryResumeNonAiAgentProcesses = TryResumeNonAiAgentProcesses;
         settings.PreserveTerminalCursorControl = PreserveTerminalCursorControl;
         if (InputMode is "keyboard" or "smartinput" or "both")
             settings.InputMode = InputMode;
@@ -243,6 +247,8 @@ public sealed partial class MidTermSettingsPublic
         settings.CommandBayLigaturesEnabled = CommandBayLigaturesEnabled;
         settings.ManagerBarButtons = ManagerBarButton.NormalizeList(ManagerBarButtons);
         settings.DevMode = DevMode;
+        settings.TerminalLatencyDiagnosticsEnabled = TerminalLatencyDiagnosticsEnabled;
+        settings.TerminalInputCoalescingMs = TerminalInputCoalescingMs;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
         settings.ShowUpdateNotification = ShowUpdateNotification;
         if (UpdateChannel is "stable" or "dev")

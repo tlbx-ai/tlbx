@@ -295,6 +295,47 @@ describe('tabBar', () => {
     expect(repoChips?.[1]?.querySelector('.git-indicator-label')?.textContent).toBe('dev');
   });
 
+  it('renders every tracked repository before layout measurement decides overflow', async () => {
+    const { createTabBar, updateGitIndicator } = await import('./tabBar');
+
+    const bar = createTabBar('session-1', vi.fn()) as unknown as FakeElement;
+    const repos = Array.from({ length: 6 }, (_, index) => ({
+      repoRoot: `/repo/${index}`,
+      label: `repo-${index}`,
+      role: index === 0 ? 'cwd' : 'target',
+      source: index === 0 ? 'auto' : 'manual',
+      isPrimary: index === 0,
+      status: {
+        branch: `branch-${index}`,
+        ahead: 0,
+        behind: 0,
+        staged: [],
+        modified: [],
+        untracked: [],
+        conflicted: [],
+        recentCommits: [],
+        stashCount: 0,
+        repoRoot: `/repo/${index}`,
+        label: `repo-${index}`,
+        role: index === 0 ? 'cwd' : 'target',
+        source: index === 0 ? 'auto' : 'manual',
+        isPrimary: index === 0,
+        totalAdditions: 0,
+        totalDeletions: 0,
+      },
+    }));
+
+    updateGitIndicator(bar as unknown as HTMLDivElement, repos as any);
+
+    const repoChips = bar
+      .querySelector('.git-indicator-strip')
+      ?.children.filter((child) => child.className.split(/\s+/).includes('git-repo-chip'));
+
+    expect(repoChips).toHaveLength(6);
+    expect(repoChips?.[5]?.querySelector('.git-indicator-branch')?.textContent).toBe('repo-5');
+    expect(repoChips?.[5]?.querySelector('.git-indicator-label')?.textContent).toBe('branch-5');
+  });
+
   it('forces hidden tabs out of layout even when tab CSS uses display flex', async () => {
     const { createTabBar, setTabVisible } = await import('./tabBar');
 

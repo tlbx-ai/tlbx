@@ -41,12 +41,19 @@ describe('terminal surface wiring', () => {
     expect(appCss).toContain('z-index: 2;');
   });
 
-  it('colors scaled terminal gaps with terminal canvas background without backing the xterm', () => {
+  it('colors scaled terminal gaps without adding a backing pane under xterm', () => {
+    expect(appCss).toContain('.terminal-container.scaled {');
     expect(appCss).toContain('.terminal-gap-fill {');
-    expect(appCss).toContain('background: var(--terminal-gap-background');
+    expect(appCss).toContain('background: var(\n    --terminal-gap-background,');
+    expect(appCss).toContain(
+      'var(--terminal-canvas-background-stack, var(--terminal-canvas-background, var(--terminal-bg)))',
+    );
+    expect(appCss).not.toContain('.terminal-container.scaled .terminal-gap-fill {');
     expect(appCss).toContain('.terminal-gap-fill-right {');
     expect(appCss).toContain('.terminal-gap-fill-bottom {');
     expect(appCss).toContain('.terminal-gap-fill-corner {');
+    expect(appCss).not.toContain('calc(var(--terminal-gap-content-width, 0px) - 1px)');
+    expect(appCss).not.toContain('calc(var(--terminal-gap-content-height, 0px) - 1px)');
     expect(scalingSource).toContain(
       "import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';",
     );
@@ -54,6 +61,10 @@ describe('terminal surface wiring', () => {
     expect(terminalGapFillersSource).toContain("'xterm-screen'");
     expect(terminalGapFillersSource).toContain("'xterm-scrollable-element'");
     expect(terminalGapFillersSource).toContain("'--terminal-gap-background'");
+    expect(terminalGapFillersSource).toContain("'--terminal-canvas-background-stack'");
+    expect(terminalGapFillersSource).toContain('getTerminalCanvasBackgroundStack');
+    expect(terminalGapFillersSource).toContain('setTerminalGapBackgroundValue');
+    expect(terminalGapFillersSource).toContain('return channels[3] === 0;');
     expect(terminalGapFillersSource).toContain('getBoundingClientRect');
     expect(terminalGapFillersSource).toContain('formatCssPixelValue');
     expect(terminalGapFillersSource).toContain("document.createElement('div')");
@@ -120,5 +131,15 @@ describe('terminal surface wiring', () => {
     expect(managerSource).toContain('shouldRouteTerminalEnterOverrideThroughXtermInput(');
     expect(managerSource).toContain('sendInput(sessionId, bytes);');
     expect(managerSource).toContain('describeTerminalEnterOverrideDelivery(');
+  });
+
+  it('keeps terminal paste on the MidTerm paste path instead of native browser newline insertion', () => {
+    expect(interactionBindingsSource).toContain('if (event.clipboardData) {');
+    expect(interactionBindingsSource).toContain(
+      'void pasteToTerminal(sessionId, sanitizePasteContent(text));',
+    );
+    expect(managerSource).toContain("from '../../api/client';");
+    expect(managerSource).toContain('sendSessionPasteInput(sessionId, {');
+    expect(managerSource).toContain('bracketedPaste: bpmEnabled,');
   });
 });

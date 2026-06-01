@@ -178,12 +178,16 @@ public static class TtyHostProtocol
         return CreateFrame(TtyHostMessageType.StateChange, json);
     }
 
-    public static byte[] CreateGetBuffer(int? maxBytes = null, TerminalReplayReason reason = TerminalReplayReason.Manual)
+    public static byte[] CreateGetBuffer(
+        int? maxBytes = null,
+        TerminalReplayReason reason = TerminalReplayReason.Manual,
+        ulong? sinceSequence = null)
     {
         var payload = new TtyHostGetBufferRequest
         {
             MaxBytes = maxBytes,
-            Reason = reason
+            Reason = reason,
+            SinceSequence = sinceSequence
         };
         var json = JsonSerializer.SerializeToUtf8Bytes(payload, TtyHostJsonContext.Default.TtyHostGetBufferRequest);
         return CreateFrame(TtyHostMessageType.GetBuffer, json);
@@ -632,6 +636,7 @@ public sealed class TtyHostGetBufferRequest
 {
     public int? MaxBytes { get; set; }
     public TerminalReplayReason Reason { get; set; } = TerminalReplayReason.Manual;
+    public ulong? SinceSequence { get; set; }
 }
 
 public sealed class TtyHostBufferSnapshot

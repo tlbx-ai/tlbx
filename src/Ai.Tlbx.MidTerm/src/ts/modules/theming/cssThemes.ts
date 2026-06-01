@@ -144,6 +144,10 @@ const light: CssThemePalette = {
   '--text-terminal': '#2E2720',
   '--text-secondary': '#5C5044',
   '--text-muted': '#978B7E',
+  '--sidebar-readable-text-color': '#2E2720',
+  '--sidebar-readable-muted-text-color': '#5C5044',
+  '--sidebar-readable-text-shadow': 'none',
+  '--sidebar-readable-icon-shadow': 'none',
 
   '--accent-blue': '#A7694D',
   '--accent-blue-hover': '#935B40',
@@ -253,6 +257,15 @@ const solarizedDark: CssThemePalette = {
   '--text-terminal': '#839496',
   '--text-secondary': '#657B83',
   '--text-muted': '#586E75',
+  '--sidebar-readable-text-color': '#D6E6E3',
+  '--sidebar-readable-muted-text-color': '#B7CAC7',
+  '--sidebar-readable-shadow-core': 'rgba(0, 25, 31, 0.92)',
+  '--sidebar-readable-shadow-soft': 'rgba(0, 43, 54, 0.78)',
+  '--sidebar-readable-shadow-wide': 'rgba(0, 43, 54, 0.58)',
+  '--sidebar-readable-text-shadow':
+    '0 0 2px var(--sidebar-readable-shadow-core), 0 1px 12px var(--sidebar-readable-shadow-soft), 0 2px 26px var(--sidebar-readable-shadow-wide)',
+  '--sidebar-readable-icon-shadow':
+    'drop-shadow(0 0 2px var(--sidebar-readable-shadow-core)) drop-shadow(0 1px 16px var(--sidebar-readable-shadow-soft)) drop-shadow(0 2px 34px var(--sidebar-readable-shadow-wide))',
 
   '--accent-blue': '#268BD2',
   '--accent-blue-hover': '#3A9BE0',
@@ -362,6 +375,10 @@ const solarizedLight: CssThemePalette = {
   '--text-terminal': '#657B83',
   '--text-secondary': '#657B83',
   '--text-muted': '#93A1A1',
+  '--sidebar-readable-text-color': '#586E75',
+  '--sidebar-readable-muted-text-color': '#657B83',
+  '--sidebar-readable-text-shadow': 'none',
+  '--sidebar-readable-icon-shadow': 'none',
 
   '--accent-blue': '#268BD2',
   '--accent-blue-hover': '#1A7ABD',

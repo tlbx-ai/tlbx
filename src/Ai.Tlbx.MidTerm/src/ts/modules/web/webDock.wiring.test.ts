@@ -16,7 +16,9 @@ describe('web dock footer spacing wiring', () => {
     expect(css).toContain('border-radius: 8px 8px 0 0;');
     expect(css).toContain('border-bottom-color: transparent;');
     expect(css).toContain('.web-preview-dock-actions .btn-icon,');
-    expect(css).toContain('background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));');
+    expect(css).toContain(
+      'background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));',
+    );
     expect(css).toContain('background: var(--command-bay-surface-hover, var(--bg-hover));');
     expect(css).toContain('.web-preview-button-glyph {');
     expect(css).toContain('transform: translateY(-0.04em);');
@@ -27,12 +29,24 @@ describe('web dock footer spacing wiring', () => {
   it('pushes the adaptive footer dock left when right-side docks are visible', () => {
     expect(source).toContain("const footerDock = document.getElementById('adaptive-footer-dock');");
     expect(source).toContain("footerDock.style.right = total > 0 ? `${total}px` : '';");
+    expect(source).toContain("p.closest<HTMLElement>('.session-wrapper')?.classList.toggle(");
+    expect(source).toContain("'has-right-dock-reservation'");
+    expect(css).toContain('.session-wrapper.has-right-dock-reservation {');
     expect(source).toContain(
       "mainContent.style.setProperty('--adaptive-footer-right-offset', `${total}px`);",
     );
     expect(css).toContain('margin-right: var(--adaptive-footer-right-offset, 0px);');
     expect(source).toContain("const managerQueue = document.getElementById('manager-bar-queue');");
     expect(source).toContain("managerQueue.style.marginRight = total > 0 ? `${total}px` : '';");
+  });
+
+  it('keeps the reserved terminal area aligned while resizing the dock', () => {
+    expect(source).toContain('panel.style.width = `${newWidth}px`;');
+    expect(source).toContain('function refreshDockReservations(): void {');
+    expect(source).toContain(
+      'const observer = new ResizeObserver(refreshAfterDockGeometryChange);',
+    );
+    expect(source).toContain("window.addEventListener('resize', refreshAfterDockGeometryChange);");
   });
 
   it('limits the docked dev browser to 80 percent of the available horizontal space', () => {
@@ -49,8 +63,8 @@ describe('web dock footer spacing wiring', () => {
 
   it('reserves layout space for mobile emulation and the preview keyboard fallback', () => {
     expect(css).toContain('#web-preview-mobile-emulation {');
-    expect(css).toContain('#web-preview-mobile-emulation[aria-pressed=\'true\'] {');
-    expect(css).toContain('#web-preview-mobile-emulation[aria-pressed=\'true\']::after {');
+    expect(css).toContain("#web-preview-mobile-emulation[aria-pressed='true'] {");
+    expect(css).toContain("#web-preview-mobile-emulation[aria-pressed='true']::after {");
     expect(css).toContain('background: var(--accent-green);');
     expect(css).toContain('box-shadow:');
     expect(css).toContain('.web-preview-dock-body.mobile-emulation {');

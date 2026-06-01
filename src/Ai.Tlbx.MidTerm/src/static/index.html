@@ -279,7 +279,7 @@
               Update & Restart
             </button>
             <div class="update-note" data-i18n="sidebar.sessionsClosed">
-              Sessions will be closed
+              Sessions restart; restore is best effort
             </div>
           </div>
           <div id="voice-section" class="voice-section hidden">
@@ -2285,6 +2285,21 @@
                       indicator still reflects real terminal activity.
                     </p>
                     <div class="setting-row">
+                      <label
+                        for="setting-try-resume-non-ai-agent-processes"
+                        data-i18n="settings.behavior.tryResumeNonAiAgentProcesses"
+                        >Try to resume non AI agent processes</label
+                      >
+                      <input type="checkbox" id="setting-try-resume-non-ai-agent-processes" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.tryResumeNonAiAgentProcessesHint"
+                    >
+                      Full updates try to restore sessions. Some may still need manual resume;
+                      this option may relaunch ordinary foreground processes.
+                    </p>
+                    <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
                         >Keep computer awake while sessions exist</label
                       >
@@ -2669,6 +2684,44 @@
                         data-i18n="settings.diagnostics.typeToMeasure"
                         >type to measure</code
                       >
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-terminal-latency-diagnostics-enabled"
+                        data-i18n="settings.diagnostics.enableInputLatencyTracing"
+                        >Enable input latency tracing</label
+                      >
+                      <input
+                        type="checkbox"
+                        id="setting-terminal-latency-diagnostics-enabled"
+                      />
+                    </div>
+                    <div class="diag-latency-graph-row">
+                      <div class="diag-latency-graph-header">
+                        <span data-i18n="settings.diagnostics.inputLatencyGraph"
+                          >Input latency, last 15s</span
+                        >
+                        <code id="diag-input-latency-graph-max">-</code>
+                      </div>
+                      <div
+                        id="diag-input-latency-graph"
+                        class="diag-latency-graph"
+                        aria-hidden="true"
+                      ></div>
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-terminal-input-coalescing-ms"
+                        data-i18n="settings.diagnostics.inputCoalescingMs"
+                        >Input coalescing window</label
+                      >
+                      <input
+                        type="number"
+                        id="setting-terminal-input-coalescing-ms"
+                        min="0"
+                        max="200"
+                        step="10"
+                      />
                     </div>
                     <div class="setting-row">
                       <label for="diag-overlay-toggle" data-i18n="settings.diagnostics.showOverlay"
@@ -3124,6 +3177,16 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 >
                   <span class="web-preview-menu-icon">&#x2328;</span>
                   <span>Keyboard</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-open-top-level"
+                  type="button"
+                  title="Open current page outside the iframe"
+                  role="menuitem"
+                >
+                  <span class="web-preview-menu-icon">&#x2197;</span>
+                  <span>Open top-level</span>
                 </button>
                 <button
                   class="web-preview-menu-item"

@@ -526,6 +526,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'fullReplay or quickResume',
     applyMode: 'server-only',
   }),
+  controlEntry(
+    'tryResumeNonAiAgentProcesses',
+    'setting-try-resume-non-ai-agent-processes',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'server-only',
+    },
+  ),
   controlEntry('inputMode', 'setting-input-mode', 'select', 'keyboard', {
     editable: true,
     storage: 'settings.json',
@@ -598,6 +610,24 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'server-only',
     specialWriter: 'hidden version-click toggle',
+  }),
+  controlEntry(
+    'terminalLatencyDiagnosticsEnabled',
+    'setting-terminal-latency-diagnostics-enabled',
+    'checkbox',
+    false,
+    {
+      editable: true,
+      storage: 'settings.json',
+      validation: 'boolean',
+      applyMode: 'immediate',
+    },
+  ),
+  controlEntry('terminalInputCoalescingMs', 'setting-terminal-input-coalescing-ms', 'int', 0, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'integer milliseconds, 0-200',
+    applyMode: 'immediate',
   }),
   controlEntry('showChangelogAfterUpdate', 'setting-changelog-after-update', 'checkbox', true, {
     editable: true,

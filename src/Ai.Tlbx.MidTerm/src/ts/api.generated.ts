@@ -4279,6 +4279,7 @@ export interface components {
       disableAutoMainBrowserPromotion: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
       resumeMode: components['schemas']['TerminalResumeModeSetting'];
+      tryResumeNonAiAgentProcesses: boolean;
       preserveTerminalCursorControl: boolean;
       inputMode: string;
       fileRadar: boolean;
@@ -4290,6 +4291,9 @@ export interface components {
       managerBarEnabled: boolean;
       commandBayLigaturesEnabled: boolean;
       devMode: boolean;
+      terminalLatencyDiagnosticsEnabled: boolean;
+      /** Format: int32 */
+      terminalInputCoalescingMs: number;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
       updateChannel: null | string;

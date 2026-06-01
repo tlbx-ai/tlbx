@@ -57,6 +57,7 @@ const INPUT_TRACE_TIMEOUT_MS = 5000;
 const SEQUENCE_MODULUS = 1n << 64n;
 const HALF_SEQUENCE_RANGE = 1n << 63n;
 
+const inputLatencyTraceConsumers = new Set<string>();
 let inputLatencyTracingEnabled = false;
 let nextInputTraceId = (Math.random() * 0xffffffff) >>> 0 || 1;
 const inputTraceListeners = new Set<InputLatencyTraceListener>();
@@ -68,12 +69,30 @@ const inputTraceSessionState = new Map<
 const lastOutputReceivedBySession = new Map<string, { sequenceEnd: bigint; atMs: number }>();
 const lastOutputParsedBySession = new Map<string, { sequenceEnd: bigint; atMs: number }>();
 
-export function setInputLatencyTracingEnabled(enabledValue: boolean): void {
+function syncInputLatencyTracingEnabled(): void {
+  const enabledValue = inputLatencyTraceConsumers.size > 0;
+  if (inputLatencyTracingEnabled === enabledValue) {
+    return;
+  }
+
   inputLatencyTracingEnabled = enabledValue;
-  if (!enabledValue) {
+  if (!inputLatencyTracingEnabled) {
     pendingInputTraces.clear();
     inputTraceSessionState.clear();
   }
+}
+
+export function setInputLatencyTraceConsumerEnabled(consumer: string, enabledValue: boolean): void {
+  if (enabledValue) {
+    inputLatencyTraceConsumers.add(consumer);
+  } else {
+    inputLatencyTraceConsumers.delete(consumer);
+  }
+  syncInputLatencyTracingEnabled();
+}
+
+export function setInputLatencyTracingEnabled(enabledValue: boolean): void {
+  setInputLatencyTraceConsumerEnabled('legacy', enabledValue);
 }
 
 export function onInputLatencyTrace(cb: InputLatencyTraceListener): void {
@@ -85,6 +104,7 @@ export function offInputLatencyTrace(cb: InputLatencyTraceListener): void {
 }
 
 export function resetInputLatencyTraceRuntime(clearListeners = false): void {
+  inputLatencyTraceConsumers.clear();
   inputLatencyTracingEnabled = false;
   pendingInputTraces.clear();
   inputTraceSessionState.clear();

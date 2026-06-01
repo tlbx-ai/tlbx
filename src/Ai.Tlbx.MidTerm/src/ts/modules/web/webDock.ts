@@ -43,6 +43,11 @@ function handleDockLayoutChange(): void {
   }
 }
 
+function refreshDockReservations(): void {
+  adjustInnerDockPositions();
+  updateAllDockMargins();
+}
+
 /**
  * Get the current web preview dock width (0 if hidden).
  */
@@ -74,9 +79,13 @@ export function updateAllDockMargins(): void {
     const el = document.getElementById(id);
     if (el && !el.classList.contains('hidden')) total += el.offsetWidth;
   }
-  document
-    .querySelectorAll<HTMLElement>('.session-tab-panels')
-    .forEach((p) => (p.style.marginRight = total > 0 ? `${total}px` : ''));
+  document.querySelectorAll<HTMLElement>('.session-tab-panels').forEach((p) => {
+    p.style.marginRight = total > 0 ? `${total}px` : '';
+    p.closest<HTMLElement>('.session-wrapper')?.classList.toggle(
+      'has-right-dock-reservation',
+      total > 0,
+    );
+  });
   const footerDock = document.getElementById('adaptive-footer-dock');
   if (footerDock) {
     footerDock.style.right = total > 0 ? `${total}px` : '';
@@ -130,8 +139,7 @@ export function openWebPreviewDock(): void {
   restoreLastUrl();
 
   // Adjust inner docks and margins for coexistence
-  adjustInnerDockPositions();
-  updateAllDockMargins();
+  refreshDockReservations();
   handleDockLayoutChange();
 
   log.info(() => 'Web preview dock opened');
@@ -160,8 +168,7 @@ export function closeWebPreviewDock(): void {
   }
 
   // Reset inner dock positions and margins
-  adjustInnerDockPositions();
-  updateAllDockMargins();
+  refreshDockReservations();
   handleDockLayoutChange();
 
   log.info(() => 'Web preview dock closed');
@@ -178,8 +185,7 @@ export function suspendWebPreviewDock(): void {
     dockPanel.style.width = '';
   }
 
-  adjustInnerDockPositions();
-  updateAllDockMargins();
+  refreshDockReservations();
   handleDockLayoutChange();
 
   log.info(() => 'Web preview dock suspended (iframe kept alive)');
@@ -199,8 +205,7 @@ export function hideWebPreviewDockForDetach(): void {
     dockPanel.style.width = '';
   }
 
-  adjustInnerDockPositions();
-  updateAllDockMargins();
+  refreshDockReservations();
   handleDockLayoutChange();
 }
 
@@ -221,8 +226,7 @@ export function applyWebPreviewHiddenState(): void {
     dockPanel.style.width = '';
   }
 
-  adjustInnerDockPositions();
-  updateAllDockMargins();
+  refreshDockReservations();
   handleDockLayoutChange();
 }
 
@@ -258,6 +262,7 @@ export function setupWebPreviewDockResize(): void {
     const delta = startX - clientX;
     const newWidth = clampDockWidth(startWidth + delta, panel);
     panel.style.width = `${newWidth}px`;
+    refreshDockReservations();
   }
 
   function endResize(): void {
@@ -269,11 +274,21 @@ export function setupWebPreviewDockResize(): void {
     for (const iframe of getIframes()) {
       iframe.style.pointerEvents = '';
     }
-    adjustInnerDockPositions();
-    updateAllDockMargins();
+    refreshDockReservations();
     localStorage.setItem(DOCK_WIDTH_KEY, String(panel.offsetWidth));
     handleDockLayoutChange();
   }
+
+  const refreshAfterDockGeometryChange = (): void => {
+    if (panel.classList.contains('hidden')) return;
+    refreshDockReservations();
+  };
+
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(refreshAfterDockGeometryChange);
+    observer.observe(panel);
+  }
+  window.addEventListener('resize', refreshAfterDockGeometryChange);
 
   grip.addEventListener('mousedown', (e: MouseEvent) => {
     beginResize(e.clientX);

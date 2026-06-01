@@ -22,6 +22,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     private string? _currentChildCwd;
     private ForegroundProcessInfo? _cachedForeground;
     private Timer? _timer;
+    private int _polling;
     private bool _disposed;
 
     // Reusable buffers for ReadProcessMemory (thread-safe via ThreadStatic)
@@ -100,6 +101,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
     private void Poll()
     {
         if (_disposed) return;
+        if (Interlocked.Exchange(ref _polling, 1) == 1) return;
 
         try
         {
@@ -154,6 +156,10 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
         catch (Exception ex)
         {
             Log.Warn(() => $"Process poll error: {ex.Message}");
+        }
+        finally
+        {
+            Volatile.Write(ref _polling, 0);
         }
     }
 

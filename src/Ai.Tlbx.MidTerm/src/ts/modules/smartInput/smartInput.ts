@@ -46,7 +46,8 @@ import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { getAdaptiveFooterRailSequence } from './layout';
 import {
   clipboardDataMayContainAppServerControlComposerImage,
-  extractAppServerControlComposerPasteImageFiles,
+  extractAppServerControlComposerPasteParts,
+  type AppServerControlComposerPastePart,
   type AppServerControlComposerDraftAttachment,
   MAX_APP_SERVER_CONTROL_IMAGE_BYTES,
   cloneAppServerControlComposerDraftAttachments,
@@ -109,7 +110,6 @@ import {
 } from './enterBehavior';
 import { resolveSmartInputShiftTabAction } from './smartInputTextareaShortcuts';
 import {
-  allocateSmartInputComposerReferenceOrdinal,
   cloneSmartInputComposerDraft,
   createSmartInputComposerDraft,
   deleteSmartInputComposerBackward,
@@ -117,6 +117,7 @@ import {
   getSmartInputComposerReferenceIdsInSelection,
   getSmartInputComposerText,
   hasSmartInputComposerReferences,
+  insertSmartInputComposerReference,
   insertSmartInputComposerReferences,
   insertSmartInputComposerText,
   normalizeSmartInputComposerSelection,
@@ -183,6 +184,8 @@ const sessionPromptHistories = new Map<string, SmartInputPromptHistoryEntry[]>()
 const sessionPromptHistoryNavigation = new Map<string, SmartInputPromptHistoryNavigationState>();
 const sessionPinnedTools = new Map<string, ToolKind[]>();
 const sessionComposerExpanded = new Map<string, boolean>();
+const sessionComposerPendingOperations = new Map<string, Promise<void>>();
+const sessionComposerLastPasteEventAtMs = new Map<string, number>();
 let appServerControlResumeConversationHandler:
   | ((args: {
       sessionId: string;
@@ -588,12 +591,79 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
     getAppServerControlDraftAttachments(sessionId).map((attachment) => attachment.id),
   );
   const normalizedDraft = pruneSmartInputComposerReferences(draft, validReferenceIds);
-  if (normalizedDraft.parts.length === 0) {
+  if (
+    normalizedDraft.parts.length === 0 &&
+    Object.keys(normalizedDraft.nextOrdinalByKind).length === 0
+  ) {
     sessionDrafts.delete(sessionId);
     return;
   }
 
   sessionDrafts.set(sessionId, normalizedDraft);
+}
+
+function enqueueComposerPendingOperation(
+  sessionId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const previousOperation = sessionComposerPendingOperations.get(sessionId) ?? Promise.resolve();
+  const nextOperation = previousOperation
+    .catch(() => {
+      // Keep later paste/upload operations moving after an earlier operation reports its own error.
+    })
+    .then(operation);
+  const trackedOperation = nextOperation
+    .catch(() => {
+      // The caller reports the failure; the session queue must still become awaitable.
+    })
+    .finally(() => {
+      if (sessionComposerPendingOperations.get(sessionId) === trackedOperation) {
+        sessionComposerPendingOperations.delete(sessionId);
+      }
+    });
+  sessionComposerPendingOperations.set(sessionId, trackedOperation);
+  return nextOperation;
+}
+
+function markComposerPasteEvent(sessionId: string): void {
+  sessionComposerLastPasteEventAtMs.set(sessionId, performance.now());
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+async function waitForComposerPendingOperations(sessionId: string): Promise<void> {
+  for (;;) {
+    const pendingOperation = sessionComposerPendingOperations.get(sessionId);
+    if (!pendingOperation) {
+      return;
+    }
+
+    try {
+      await pendingOperation;
+    } catch {
+      return;
+    }
+  }
+}
+
+async function waitForComposerPasteStagingToSettle(sessionId: string): Promise<void> {
+  await sleep(0);
+  for (;;) {
+    await waitForComposerPendingOperations(sessionId);
+    const lastPasteAtMs = sessionComposerLastPasteEventAtMs.get(sessionId);
+    if (lastPasteAtMs === undefined) {
+      return;
+    }
+
+    const remainingSettleMs = Math.ceil(120 - (performance.now() - lastPasteAtMs));
+    if (remainingSettleMs <= 0) {
+      return;
+    }
+
+    await sleep(remainingSettleMs);
+  }
 }
 
 function setSessionDraftText(sessionId: string, text: string): void {
@@ -778,14 +848,12 @@ function createImageDraftAttachmentWithReference(
   sessionId: string,
   file: File,
   uploadedPath: string,
+  referenceOrdinal: number = allocateSessionReferenceOrdinal(sessionId, 'image'),
 ): AppServerControlComposerDraftAttachment {
-  const draft = getSessionDraft(sessionId);
   const attachment = createAppServerControlComposerDraftAttachment(sessionId, file, uploadedPath);
-  const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'image');
   attachment.referenceKind = 'image';
   attachment.referenceOrdinal = referenceOrdinal;
   attachment.referenceLabel = formatSmartInputReferenceLabel('image', referenceOrdinal);
-  setSessionDraft(sessionId, draft);
   return attachment;
 }
 
@@ -794,8 +862,8 @@ function createTextDraftAttachmentWithReference(
   file: File,
   uploadedPath: string,
   text: string,
+  referenceOrdinal: number = allocateSessionReferenceOrdinal(sessionId, 'text'),
 ): AppServerControlComposerDraftAttachment {
-  const draft = getSessionDraft(sessionId);
   const attachment = createAppServerControlComposerDraftAttachment(
     sessionId,
     file,
@@ -803,14 +871,38 @@ function createTextDraftAttachmentWithReference(
     file,
   );
   const stats = getSmartInputTextReferenceStats(text);
-  const referenceOrdinal = allocateSmartInputComposerReferenceOrdinal(draft, 'text');
   attachment.referenceKind = 'text';
   attachment.referenceOrdinal = referenceOrdinal;
   attachment.referenceLabel = formatSmartInputReferenceLabel('text', referenceOrdinal);
   attachment.referenceLineCount = stats.lineCount;
   attachment.referenceCharCount = stats.charCount;
-  setSessionDraft(sessionId, draft);
   return attachment;
+}
+
+function allocateSessionReferenceOrdinal(
+  sessionId: string,
+  kind: SmartInputComposerReferenceKind,
+): number {
+  const draft = getSessionDraft(sessionId);
+  const ordinal = allocateReferenceOrdinalFromDraftAndAttachments(
+    draft,
+    getAppServerControlDraftAttachments(sessionId),
+    kind,
+  );
+  draft.nextOrdinalByKind[kind] = ordinal + 1;
+  setSessionDraft(sessionId, draft);
+  return ordinal;
+}
+
+function allocateReferenceOrdinalFromDraftAndAttachments(
+  draft: SmartInputComposerDraft,
+  attachments: readonly AppServerControlComposerDraftAttachment[],
+  kind: SmartInputComposerReferenceKind,
+): number {
+  const existingMaxOrdinal = attachments
+    .filter((attachment) => attachment.referenceKind === kind)
+    .reduce((max, attachment) => Math.max(max, attachment.referenceOrdinal ?? 0), 0);
+  return Math.max(draft.nextOrdinalByKind[kind] ?? 1, existingMaxOrdinal + 1);
 }
 
 function removeAttachmentsByIds(sessionId: string, attachmentIds: readonly string[]): void {
@@ -1330,25 +1422,28 @@ function createDockedDOM(): void {
         return;
       }
 
-      if (clipboardDataMayContainAppServerControlComposerImage(event.clipboardData)) {
+      const text = event.clipboardData?.getData('text/plain') ?? '';
+      const hasLargeTextReference = text && shouldConvertPastedTextToSmartInputReference(text);
+      if (
+        clipboardDataMayContainAppServerControlComposerImage(event.clipboardData) ||
+        hasLargeTextReference
+      ) {
         event.preventDefault();
-        const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-        void (async () => {
-          const files = await extractAppServerControlComposerPasteImageFiles(event.clipboardData);
-          if (files.length === 0) {
+        markComposerPasteEvent(sessionId);
+        const clipboardData = event.clipboardData;
+        void enqueueComposerPendingOperation(sessionId, async () => {
+          const parts = await extractAppServerControlComposerPasteParts(clipboardData);
+          if (parts.length === 0) {
             return;
           }
 
-          await addAppServerControlComposerFiles(sessionId, files, selection);
-        })();
-        return;
-      }
-
-      const text = event.clipboardData?.getData('text/plain') ?? '';
-      if (text && shouldConvertPastedTextToSmartInputReference(text)) {
-        event.preventDefault();
-        const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
-        void addAppServerControlComposerTextReference(sessionId, text, selection);
+          const selection = activeTextarea ? getSmartInputComposerSelection(activeTextarea) : null;
+          await addAppServerControlComposerPasteParts(sessionId, parts, selection);
+        }).catch((error: unknown) => {
+          showDropToast(
+            error instanceof Error && error.message.trim() ? error.message : String(error),
+          );
+        });
         return;
       }
 
@@ -2110,40 +2205,146 @@ async function addAppServerControlComposerFiles(
   }
 }
 
-async function addAppServerControlComposerTextReference(
+// eslint-disable-next-line complexity -- ordered mixed paste staging has to branch by part kind and upload failures.
+async function addAppServerControlComposerPasteParts(
   sessionId: string,
-  text: string,
+  parts: readonly AppServerControlComposerPastePart[],
   selection: SmartInputComposerSelection | null = null,
 ): Promise<void> {
-  const nextSelection =
+  resetPromptHistoryNavigation(sessionId);
+  let nextSelection =
     selection ??
     (() => {
       const draftTextLength = getSessionDraftText(sessionId).length;
       return { start: draftTextLength, end: draftTextLength };
     })();
-  const textFile = buildSmartInputTextReferenceFile(text);
-  const uploadedPath = await uploadFile(sessionId, textFile);
-  if (!uploadedPath) {
-    showDropToast(`${t('smartInput.attachmentUploadFailed')}: ${textFile.name}`);
-    return;
+  const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
+  let nextDraft = getSessionDraft(sessionId);
+  const removedReferenceIds = getSmartInputComposerReferenceIdsInSelection(
+    nextDraft,
+    nextSelection,
+    (referenceId) => resolveComposerReference(sessionId, referenceId),
+  );
+  let errorMessage: string | null = null;
+  const nextReferenceOrdinalByKind: Partial<Record<SmartInputComposerReferenceKind, number>> = {
+    image: allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'image'),
+    text: allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'text'),
+  };
+
+  for (const part of parts) {
+    if (part.kind === 'text') {
+      if (!part.text) {
+        continue;
+      }
+
+      if (!shouldConvertPastedTextToSmartInputReference(part.text)) {
+        const insertResult = insertSmartInputComposerText(
+          nextDraft,
+          nextSelection,
+          part.text,
+          (referenceId) => resolveComposerReference(sessionId, referenceId),
+        );
+        nextDraft = insertResult.draft;
+        nextSelection = insertResult.selection;
+        continue;
+      }
+
+      const textFile = buildSmartInputTextReferenceFile(part.text);
+      const uploadedPath = await uploadFile(sessionId, textFile);
+      if (!uploadedPath) {
+        errorMessage ??= `${t('smartInput.attachmentUploadFailed')}: ${textFile.name}`;
+        continue;
+      }
+
+      const attachment = createTextDraftAttachmentWithReference(
+        sessionId,
+        textFile,
+        uploadedPath,
+        part.text,
+        nextReferenceOrdinalByKind.text ?? 1,
+      );
+      nextReferenceOrdinalByKind.text = (attachment.referenceOrdinal ?? 0) + 1;
+      nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'text', attachment.referenceOrdinal);
+      nextAttachments.push(attachment);
+      setAppServerControlDraftAttachments(sessionId, nextAttachments);
+      const insertResult = insertSmartInputComposerReference(
+        nextDraft,
+        nextSelection,
+        attachment.id,
+        (referenceId) => resolveComposerReference(sessionId, referenceId),
+      );
+      nextDraft = insertResult.draft;
+      nextSelection = insertResult.selection;
+      continue;
+    }
+
+    const file = part.file;
+    if (file.size > MAX_APP_SERVER_CONTROL_IMAGE_BYTES) {
+      errorMessage = `${t('smartInput.imageTooLarge')}: ${file.name}`;
+      continue;
+    }
+
+    const uploadedPath = await uploadFile(sessionId, file);
+    if (!uploadedPath) {
+      errorMessage ??= `${t('smartInput.attachmentUploadFailed')}: ${file.name}`;
+      continue;
+    }
+
+    const attachment = createImageDraftAttachmentWithReference(
+      sessionId,
+      file,
+      uploadedPath,
+      nextReferenceOrdinalByKind.image ?? 1,
+    );
+    nextReferenceOrdinalByKind.image = (attachment.referenceOrdinal ?? 0) + 1;
+    nextDraft = carryAllocatedReferenceOrdinal(nextDraft, 'image', attachment.referenceOrdinal);
+    nextAttachments.push(attachment);
+    setAppServerControlDraftAttachments(sessionId, nextAttachments);
+    const insertResult = insertSmartInputComposerReference(
+      nextDraft,
+      nextSelection,
+      attachment.id,
+      (referenceId) => resolveComposerReference(sessionId, referenceId),
+    );
+    nextDraft = insertResult.draft;
+    nextSelection = insertResult.selection;
   }
 
-  const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
-  const attachment = createTextDraftAttachmentWithReference(
-    sessionId,
-    textFile,
-    uploadedPath,
-    text,
-  );
-  nextAttachments.push(attachment);
-
   setAppServerControlDraftAttachments(sessionId, nextAttachments);
-  finalizeInsertedComposerReferences(sessionId, nextSelection, [attachment.id]);
+  updateSessionDraftAndTextarea(
+    sessionId,
+    nextDraft,
+    activeTextarea,
+    $activeSessionId.get() === sessionId ? nextSelection : null,
+  );
+  removeAttachmentsByIds(sessionId, removedReferenceIds);
   renderAppServerControlAttachmentDrafts($activeSessionId.get());
+
+  if (errorMessage) {
+    showDropToast(errorMessage);
+  }
 
   if ($activeSessionId.get() === sessionId) {
     activeTextarea?.focus({ preventScroll: true });
   }
+}
+
+function carryAllocatedReferenceOrdinal(
+  draft: SmartInputComposerDraft,
+  kind: SmartInputComposerReferenceKind,
+  ordinal: number | null,
+): SmartInputComposerDraft {
+  if (!ordinal) {
+    return draft;
+  }
+
+  return {
+    ...draft,
+    nextOrdinalByKind: {
+      ...draft.nextOrdinalByKind,
+      [kind]: Math.max(draft.nextOrdinalByKind[kind] ?? 1, ordinal + 1),
+    },
+  };
 }
 
 function insertComposerTextAtSelection(
@@ -2322,6 +2523,8 @@ async function sendTerminalComposerTurn(
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
+  await waitForComposerPasteStagingToSettle(sessionId);
+
   const draft = getSessionDraft(sessionId);
   const renderedText = getSmartInputComposerText(draft, (referenceId) =>
     resolveComposerReference(sessionId, referenceId),
@@ -2428,6 +2631,7 @@ function syncDraftForActiveSession(): void {
 
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
+  sessionComposerPendingOperations.delete(sessionId);
   clearAppServerControlDraftAttachments(sessionId);
   sessionPromptHistories.delete(sessionId);
   resetPromptHistoryNavigation(sessionId);

@@ -153,6 +153,22 @@ describe('webPanel browser status indicator', () => {
 });
 
 describe('webPanel preview tabs', () => {
+  it('keeps Go navigation aligned with the backend target revision', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
+
+    expect(source).toContain('upsertSessionPreview(result);');
+    expect(source).toContain('setCurrentPreviewUrl(result.url ?? url);');
+  });
+
+  it('keeps URL bar shortcuts browser-like', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
+
+    expect(source).toContain("if (e.key === 'Escape')");
+    expect(source).toContain('restoreCurrentUrlToInput();');
+    expect(source).toContain("e.key.toLowerCase() === 'l'");
+    expect(source).toContain('urlInput.select();');
+  });
+
   it('asks the embedded bridge to refresh browser state when a frame is shown', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
 

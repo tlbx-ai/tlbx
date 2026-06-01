@@ -305,7 +305,14 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('handleSmartInputSelectedFiles');
     expect(source).toContain('const uploadedPath = await uploadFile(sessionId, file);');
     expect(source).toContain('shouldConvertPastedTextToSmartInputReference');
-    expect(source).toContain('addAppServerControlComposerTextReference');
+    expect(source).toContain('extractAppServerControlComposerPasteParts');
+    expect(source).toContain('addAppServerControlComposerPasteParts');
+    expect(source).toContain('const sessionComposerPendingOperations = new Map<string, Promise<void>>();');
+    expect(source).toContain('function enqueueComposerPendingOperation(');
+    expect(source).toContain('await waitForComposerPasteStagingToSettle(sessionId);');
+    expect(source).toContain('markComposerPasteEvent(sessionId);');
+    expect(source).toContain('nextReferenceOrdinalByKind');
+    expect(source).toContain('Object.keys(normalizedDraft.nextOrdinalByKind).length === 0');
     expect(source).toContain('prepareSmartInputTerminalTurn');
     expect(source).toContain(
       'void openAppServerControlDraftAttachment(currentSessionId, attachment);',
@@ -442,7 +449,7 @@ describe('smart input tab wiring', () => {
     expect(glassRule).toContain('background: transparent;');
     expect(compactWhitespace(css)).toContain(
       compactWhitespace(
-        '@media (max-width: 768px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px; padding-left: calc(4px + env(safe-area-inset-left, 0px)); padding-right: calc(4px + env(safe-area-inset-right, 0px)); padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); background: transparent;',
+        '@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) { .adaptive-footer-dock { --command-bay-control-height: var(--command-bay-control-height-mobile); padding: 4px; padding-left: calc(4px + env(safe-area-inset-left, 0px)); padding-right: calc(4px + env(safe-area-inset-right, 0px)); padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px)); background: transparent;',
       ),
     );
   });
@@ -606,22 +613,22 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('.smart-input-appServerControl-actions {');
     expect(css).toContain('.smart-input-appServerControl-action {');
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-field:nth-of-type\(4\),[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-actions \{[\s\S]*?display: none;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-field:nth-of-type\(4\),[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-actions \{[\s\S]*?display: none;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-settings \{[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-settings \{[\s\S]*?background: transparent;[\s\S]*?box-shadow: none;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-settings \{[\s\S]*?width: fit-content;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-settings \{[\s\S]*?width: fit-content;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock[\s\S]*?\.smart-input-appServerControl-field[\s\S]*?\+ \.smart-input-appServerControl-field::before \{[\s\S]*?display: none;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.adaptive-footer-dock[\s\S]*?\.smart-input-appServerControl-field[\s\S]*?\+ \.smart-input-appServerControl-field::before \{[\s\S]*?display: none;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-dropdown-trigger \{[\s\S]*?width: clamp\(84px, 28vw, 118px\);[\s\S]*?min-height: 32px;[\s\S]*?border-radius: 8px;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.adaptive-footer-dock \.smart-input-appServerControl-dropdown-trigger \{[\s\S]*?width: clamp\(84px, 28vw, 118px\);[\s\S]*?min-height: 32px;[\s\S]*?border-radius: 8px;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.adaptive-footer-status\.adaptive-footer-status-sheet-open[\s\S]*?\.adaptive-footer-status-summary-appServerControl,[\s\S]*?\.adaptive-footer-status\.adaptive-footer-status-sheet-open[\s\S]*?\.adaptive-footer-status-automation-proxy \{[\s\S]*?display: none;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.adaptive-footer-status\.adaptive-footer-status-sheet-open[\s\S]*?\.adaptive-footer-status-summary-appServerControl,[\s\S]*?\.adaptive-footer-status\.adaptive-footer-status-sheet-open[\s\S]*?\.adaptive-footer-status-automation-proxy \{[\s\S]*?display: none;/s,
     );
   });
 
@@ -645,6 +652,16 @@ describe('smart input tab wiring', () => {
       'if (layoutState.appServerControlActive && layoutState.isMobile && inlineToolHost) {',
     );
     expect(source).toContain('inlineToolHost.hidden = true;');
+  });
+
+  it('allocates mixed paste reference ordinals from the staged draft and attachments', () => {
+    expect(source).toContain('function allocateReferenceOrdinalFromDraftAndAttachments(');
+    expect(source).toContain(
+      "allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'text')",
+    );
+    expect(source).toContain(
+      "allocateReferenceOrdinalFromDraftAndAttachments(nextDraft, nextAttachments, 'image')",
+    );
   });
 
   it('merges context and automation controls into the mobile status row', () => {

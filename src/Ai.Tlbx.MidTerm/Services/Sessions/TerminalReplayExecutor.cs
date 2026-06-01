@@ -6,7 +6,10 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 internal static class TerminalReplayExecutor
 {
     internal const int ImageSettleDelayMs = 200;
+    internal const int TextBeforeImageSettleDelayMs = 75;
     internal const int SubmitDelayMs = 200;
+    internal const int MaxLargePasteSubmitDelayMs = 1200;
+    internal const int MaxLargePasteAfterImageSubmitDelayMs = 4000;
 
     public static async Task ExecuteAsync(
         IReadOnlyList<AppServerControlTerminalReplayStep> steps,
@@ -20,7 +23,12 @@ internal static class TerminalReplayExecutor
         ArgumentNullException.ThrowIfNull(pasteImageAsync);
         ArgumentNullException.ThrowIfNull(delayAsync);
 
+        var pendingInput = new PendingReplayInput();
         var sentAnyContent = false;
+        var pastedAnyImage = false;
+        var pendingInputFollowsImage = false;
+        var lastFlushByteCount = 0;
+        var lastFlushFollowedImage = false;
         foreach (var step in steps)
         {
             if (step is null)
@@ -36,9 +44,8 @@ internal static class TerminalReplayExecutor
                         continue;
                     }
 
-                    await sendInputAsync(
-                        EncodeText(step.Text, step.UseBracketedPaste),
-                        cancellationToken).ConfigureAwait(false);
+                    pendingInput.Append(EncodeText(step.Text, step.UseBracketedPaste));
+                    pendingInputFollowsImage |= pastedAnyImage;
                     sentAnyContent = true;
                     break;
                 case "filePath":
@@ -47,9 +54,8 @@ internal static class TerminalReplayExecutor
                         continue;
                     }
 
-                    await sendInputAsync(
-                        Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)),
-                        cancellationToken).ConfigureAwait(false);
+                    pendingInput.Append(Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)));
+                    pendingInputFollowsImage |= pastedAnyImage;
                     sentAnyContent = true;
                     break;
                 case "textFile":
@@ -63,17 +69,15 @@ internal static class TerminalReplayExecutor
                         var content = await File.ReadAllTextAsync(step.Path, cancellationToken).ConfigureAwait(false);
                         if (!string.IsNullOrEmpty(content))
                         {
-                            await sendInputAsync(
-                                EncodeText(content, step.UseBracketedPaste),
-                                cancellationToken).ConfigureAwait(false);
+                            pendingInput.Append(EncodeText(content, step.UseBracketedPaste));
+                            pendingInputFollowsImage |= pastedAnyImage;
                             sentAnyContent = true;
                         }
                     }
                     else
                     {
-                        await sendInputAsync(
-                            Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)),
-                            cancellationToken).ConfigureAwait(false);
+                        pendingInput.Append(Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)));
+                        pendingInputFollowsImage |= pastedAnyImage;
                         sentAnyContent = true;
                     }
                     break;
@@ -83,16 +87,25 @@ internal static class TerminalReplayExecutor
                         continue;
                     }
 
+                    var flushedTextBeforeImageBytes = await pendingInput.FlushAsync(sendInputAsync, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (flushedTextBeforeImageBytes > 0)
+                    {
+                        lastFlushByteCount = flushedTextBeforeImageBytes;
+                        lastFlushFollowedImage = pendingInputFollowsImage;
+                        pendingInputFollowsImage = false;
+                        await delayAsync(TextBeforeImageSettleDelayMs, cancellationToken).ConfigureAwait(false);
+                    }
+
                     if (await pasteImageAsync(step.Path, step.MimeType, cancellationToken).ConfigureAwait(false))
                     {
                         sentAnyContent = true;
+                        pastedAnyImage = true;
                         await delayAsync(ImageSettleDelayMs, cancellationToken).ConfigureAwait(false);
                     }
                     else
                     {
-                        await sendInputAsync(
-                            Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)),
-                            cancellationToken).ConfigureAwait(false);
+                        pendingInput.Append(Encoding.UTF8.GetBytes(QuoteFilePath(step.Path)));
                         sentAnyContent = true;
                     }
                     break;
@@ -104,7 +117,15 @@ internal static class TerminalReplayExecutor
             return;
         }
 
-        await delayAsync(SubmitDelayMs, cancellationToken).ConfigureAwait(false);
+        var finalFlushByteCount = await pendingInput.FlushAsync(sendInputAsync, cancellationToken)
+            .ConfigureAwait(false);
+        if (finalFlushByteCount > 0)
+        {
+            lastFlushByteCount = finalFlushByteCount;
+            lastFlushFollowedImage = pendingInputFollowsImage;
+        }
+
+        await delayAsync(ResolveSubmitDelayMs(lastFlushByteCount, lastFlushFollowedImage), cancellationToken).ConfigureAwait(false);
         await sendInputAsync([(byte)'\r'], cancellationToken).ConfigureAwait(false);
     }
 
@@ -115,11 +136,63 @@ internal static class TerminalReplayExecutor
 
     private static byte[] EncodeText(string text, bool useBracketedPaste)
     {
+        var normalizedText = NormalizeTerminalPasteLineEndings(text);
         if (!useBracketedPaste)
         {
-            return Encoding.UTF8.GetBytes(text);
+            return Encoding.UTF8.GetBytes(normalizedText);
         }
 
-        return Encoding.UTF8.GetBytes($"\u001b[200~{text}\u001b[201~");
+        return Encoding.UTF8.GetBytes($"\u001b[200~{normalizedText}\u001b[201~");
+    }
+
+    private static int ResolveSubmitDelayMs(int lastFlushByteCount, bool followsImagePaste)
+    {
+        if (lastFlushByteCount <= 0)
+        {
+            return SubmitDelayMs;
+        }
+
+        if (lastFlushByteCount <= 1024)
+        {
+            return SubmitDelayMs;
+        }
+
+        var scaledDelay = followsImagePaste
+            ? SubmitDelayMs + ((lastFlushByteCount - 1024) / 2)
+            : SubmitDelayMs + ((lastFlushByteCount - 1024) / 8);
+        var maxDelay = followsImagePaste
+            ? MaxLargePasteAfterImageSubmitDelayMs
+            : MaxLargePasteSubmitDelayMs;
+        return Math.Clamp(scaledDelay, SubmitDelayMs, maxDelay);
+    }
+
+    private static string NormalizeTerminalPasteLineEndings(string text)
+    {
+        return text.Replace("\r\n", "\r", StringComparison.Ordinal).Replace('\n', '\r');
+    }
+
+    private sealed class PendingReplayInput
+    {
+        private readonly List<byte> buffer = [];
+
+        public void Append(byte[] bytes)
+        {
+            buffer.AddRange(bytes);
+        }
+
+        public async Task<int> FlushAsync(
+            Func<byte[], CancellationToken, Task> sendInputAsync,
+            CancellationToken cancellationToken)
+        {
+            if (buffer.Count == 0)
+            {
+                return 0;
+            }
+
+            var bytes = buffer.ToArray();
+            buffer.Clear();
+            await sendInputAsync(bytes, cancellationToken).ConfigureAwait(false);
+            return bytes.Length;
+        }
     }
 }

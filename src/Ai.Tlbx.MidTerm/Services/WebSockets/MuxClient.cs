@@ -32,6 +32,7 @@ internal sealed class SharedOutputBuffer
     public ReadOnlySpan<byte> Span => _buffer.AsSpan(0, _length);
     public Memory<byte> Memory => _buffer.AsMemory(0, _length);
     public Span<byte> WriteSpan => _buffer.AsSpan(0, _length);
+    internal bool IsReleased => _buffer.Length == 0;
 
     public static SharedOutputBuffer Rent(int length)
     {
@@ -66,6 +67,7 @@ public sealed class MuxClient : IAsyncDisposable
     private const int MaxBufferBytesPerSession = 256 * 1024; // 256KB per session
     private const int MaxQueuedItems = 1000;
     private const int MaxFrameChunkBytes = 32 * 1024;
+    private const int ActiveFlushMaxChunksPerPass = 8;
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
 
@@ -254,7 +256,7 @@ public sealed class MuxClient : IAsyncDisposable
         {
             SingleReader = true,
             SingleWriter = false,
-            FullMode = BoundedChannelFullMode.DropWrite
+            FullMode = BoundedChannelFullMode.Wait
         });
         _processor = ProcessLoopAsync(_cts.Token);
     }
@@ -493,7 +495,7 @@ public sealed class MuxClient : IAsyncDisposable
             {
                 Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
             }
-            await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true).ConfigureAwait(false);
+            await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
             activeBuffer.LastFlushTicks = nowTicks;
         }
 
@@ -550,9 +552,11 @@ public sealed class MuxClient : IAsyncDisposable
         string sessionId,
         SessionBuffer buffer,
         bool compress,
-        bool flushAllAvailable)
+        bool flushAllAvailable,
+        int maxChunks = int.MaxValue)
     {
-        while (buffer.TotalBytes > 0)
+        var chunksFlushed = 0;
+        while (buffer.TotalBytes > 0 && chunksFlushed < maxChunks)
         {
             // If data was dropped, notify client before sending (so client can request resync)
             if (buffer.DroppedBytes > 0)
@@ -605,6 +609,7 @@ public sealed class MuxClient : IAsyncDisposable
             }
 
             buffer.Consume(length);
+            chunksFlushed++;
 
             if (!flushAllAvailable)
             {
@@ -689,6 +694,12 @@ public sealed class MuxClient : IAsyncDisposable
     public bool ShouldDeliverSession(string sessionId)
     {
         return CanAccessSession(sessionId);
+    }
+
+    public bool IsActiveSession(string sessionId)
+    {
+        var activeId = _activeSessionId;
+        return activeId is not null && string.Equals(activeId, sessionId, StringComparison.Ordinal);
     }
 
     public bool ShouldUseQuickResume()
@@ -778,6 +789,12 @@ public sealed class MuxClient : IAsyncDisposable
         catch
         {
             // Ignore shutdown errors
+        }
+
+        var reader = _inputChannel.Reader;
+        while (reader.TryRead(out var item))
+        {
+            item.Buffer.Release();
         }
 
         // Return all pooled buffers

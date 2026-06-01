@@ -72,6 +72,10 @@
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.UnitTests" />
+  </ItemGroup>
+
   <!-- Windows application manifest -->
   <PropertyGroup Condition="$([MSBuild]::IsOSPlatform('Windows')) AND '$(RuntimeIdentifier)' == ''">
     <ApplicationIcon>..\Ai.Tlbx.MidTerm\src\static\favicon\favicon.ico</ApplicationIcon>

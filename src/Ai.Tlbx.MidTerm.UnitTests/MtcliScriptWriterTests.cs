@@ -160,6 +160,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
 
         Assert.Contains("mt_tail()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_sendtext()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_paste()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_prompt()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_prompt_now()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_slash()", shell, StringComparison.Ordinal);
@@ -173,6 +174,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Tail", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-SendText", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Paste", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Prompt", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-PromptNow", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Slash", powershell, StringComparison.Ordinal);
@@ -185,6 +187,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_open -Value Mt-Open", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_paste -Value Mt-Paste", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_prompt -Value Mt-Prompt", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_wake -Value Mt-Wake", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_status -Value Mt-Status", powershell, StringComparison.Ordinal);
@@ -192,6 +195,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("/buffer/tail?lines=", shell, StringComparison.Ordinal);
         Assert.Contains("/input/keys", powershell, StringComparison.Ordinal);
         Assert.Contains("/input/text", shell, StringComparison.Ordinal);
+        Assert.Contains("/input/paste", shell, StringComparison.Ordinal);
         Assert.Contains("/input/prompt", shell, StringComparison.Ordinal);
         Assert.Contains("/api/command-bay/queue", shell, StringComparison.Ordinal);
         Assert.Contains("/inject-guidance", shell, StringComparison.Ordinal);

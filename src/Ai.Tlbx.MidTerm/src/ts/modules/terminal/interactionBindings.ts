@@ -488,7 +488,7 @@ export function bindTerminalInteractionHandlers({
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    if (!window.isSecureContext && event.clipboardData) {
+    if (event.clipboardData) {
       const text = event.clipboardData.getData('text/plain');
       if (text) {
         void pasteToTerminal(sessionId, sanitizePasteContent(text));

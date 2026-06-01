@@ -127,6 +127,7 @@ describe('settings persistence wiring', () => {
     const sidebarMarkup = html.split('<div class="sidebar-overlay"')[0] ?? '';
 
     expect(sessionsPanel).toContain('id="setting-tmux-compatibility"');
+    expect(sessionsPanel).toContain('id="setting-try-resume-non-ai-agent-processes"');
     expect(connectedHostsPanel).not.toContain('id="setting-tmux-compatibility"');
     expect(aiAgentsPanel).toContain('settings.aiAgents.conversationView');
     expect(aiAgentsPanel).not.toContain('id="voice-section"');
@@ -143,6 +144,17 @@ describe('settings persistence wiring', () => {
     expect(sidebarMarkup).toContain('id="network-section"');
     expect(sidebarMarkup).toContain('id="trust-link"');
     expect(sidebarMarkup).toContain('id="btn-share-access"');
+  });
+
+  it('places non-AI process resume behind an explicit behavior checkbox', () => {
+    const sessionsPanel = getSettingsPanel('sessions');
+    const entry = SETTINGS_REGISTRY.find((item) => item.key === 'tryResumeNonAiAgentProcesses');
+
+    expect(sessionsPanel).toContain('settings.behavior.tryResumeNonAiAgentProcesses');
+    expect(sessionsPanel).toContain('settings.behavior.tryResumeNonAiAgentProcessesHint');
+    expect(entry?.controlId).toBe('setting-try-resume-non-ai-agent-processes');
+    expect(entry?.validation).toBe('boolean');
+    expect(entry?.fallbackValue).toBe(false);
   });
 
   it('marks non-form writers explicitly in the registry', () => {
@@ -418,6 +430,7 @@ describe('settings persistence wiring', () => {
     expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color);');
     expect(cssSource).toContain('text-shadow: var(--sidebar-readable-text-shadow);');
     expect(cssSource).toContain('filter: var(--sidebar-readable-icon-shadow);');
+    expect(cssSource).toContain('color: var(--sidebar-readable-muted-text-color, var(--text-muted));');
     expect(cssSource).not.toContain('--sidebar-readable-filter-shadow:');
     expect(cssSource).not.toContain('filter: var(--sidebar-readable-filter-shadow);');
     expect(cssSource).toContain('.footer-update-hint:not(.hidden)');

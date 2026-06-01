@@ -16,7 +16,7 @@ import {
   getSession,
   isChildSession,
 } from '../../stores';
-import { MOBILE_BREAKPOINT, icon } from '../../constants';
+import { MOBILE_BREAKPOINT, MOBILE_TOUCH_BREAKPOINT, icon } from '../../constants';
 import { addProcessStateListener, getForegroundInfo } from '../process';
 import {
   getLayoutSessionIds,
@@ -240,7 +240,14 @@ function handleMobileMenuKeydown(event: KeyboardEvent): void {
  * Session action dropdowns are only used on mobile layouts.
  */
 function isMobileSessionMenuEnabled(): boolean {
-  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches;
+  if (window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches) {
+    return true;
+  }
+
+  return (
+    window.matchMedia('(hover: none) and (pointer: coarse)').matches &&
+    window.innerWidth <= MOBILE_TOUCH_BREAKPOINT
+  );
 }
 
 /**

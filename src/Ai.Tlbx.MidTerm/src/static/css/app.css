@@ -680,7 +680,7 @@ body::before {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   body.hide-app-background-on-mobile::before {
     content: none;
   }
@@ -1026,12 +1026,13 @@ body::before {
   border: 1px solid color-mix(in srgb, var(--border-color) 82%, transparent);
   border-radius: 999px;
   background: color-mix(in srgb, var(--bg-panel) 80%, transparent);
-  color: var(--text-muted);
+  color: var(--sidebar-readable-muted-text-color, var(--text-muted));
   cursor: pointer;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 15px;
+  text-shadow: var(--sidebar-readable-text-shadow);
 }
 
 .spaces-tree-forget .icon {
@@ -1116,7 +1117,7 @@ body::before {
   cursor: grabbing;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .spaces-tree-space-actions,
   .spaces-tree-workspace-actions {
     opacity: 1;
@@ -3335,7 +3336,7 @@ body::before {
 /* ============================================================================
    Mobile Responsive Styles
    ============================================================================ */
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   html,
   body {
     overflow: hidden;
@@ -4228,6 +4229,7 @@ body::before {
   align-items: center;
   justify-content: center;
   height: 100%;
+  background: var(--terminal-ui-background, var(--bg-primary));
   color: var(--text-secondary);
 }
 
@@ -4411,7 +4413,10 @@ body::before {
   position: absolute;
   z-index: 1;
   pointer-events: none;
-  background: var(--terminal-gap-background, var(--terminal-canvas-background, var(--terminal-bg)));
+  background: var(
+    --terminal-gap-background,
+    var(--terminal-canvas-background-stack, var(--terminal-canvas-background, var(--terminal-bg)))
+  );
 }
 
 .terminal-gap-fill-right {
@@ -4672,7 +4677,7 @@ body::before {
   background: transparent;
   border: none;
   border-left: 3px solid transparent;
-  color: var(--text-secondary);
+  color: var(--sidebar-readable-muted-text-color, var(--text-secondary));
   cursor: pointer;
   text-align: left;
   transition:
@@ -4684,7 +4689,7 @@ body::before {
 
 .settings-tab:hover {
   background: var(--bg-hover-opaque, var(--bg-hover));
-  color: var(--text-primary);
+  color: var(--sidebar-readable-text-color, var(--text-primary));
 }
 
 .settings-tab.active {
@@ -7849,7 +7854,7 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-primary);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .terminal-search {
     top: 52px;
     right: 8px;
@@ -7876,6 +7881,50 @@ body.shared-session-mode .session-tab-bar {
   border-radius: 3px;
   font-size: var(--fs-md);
   font-family: inherit;
+}
+
+.diag-latency-graph-row {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 12px;
+}
+
+.diag-latency-graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+}
+
+.diag-latency-graph {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 52px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+
+.diag-latency-bar {
+  flex: 1 1 3px;
+  min-width: 3px;
+  max-width: 10px;
+  border-radius: 2px 2px 0 0;
+  background: var(--accent-green);
+  opacity: 0.85;
+}
+
+.diag-latency-bar.is-warn {
+  background: var(--accent-yellow);
+}
+
+.diag-latency-bar.is-bad {
+  background: var(--accent-red);
 }
 
 .diag-help-commands {
@@ -9769,7 +9818,7 @@ body.shared-session-mode .session-tab-bar {
    Keyboard Visible Mode (mobile on-screen keyboard active)
    ========================================================================== */
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   /* Keep critical controls reachable while keyboard is open, but compact them. */
   body.keyboard-visible .mobile-topbar {
     display: flex;
@@ -11921,6 +11970,10 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
   overflow: hidden;
 }
 
+.session-wrapper.has-right-dock-reservation {
+  background: var(--terminal-canvas-background-stack);
+}
+
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='terminal'],
 body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   background: transparent;
@@ -11939,11 +11992,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   flex-shrink: 0;
   padding: 0 8px;
   min-height: var(--bar-height);
-  height: auto;
-  max-height: calc(var(--bar-height) * 2);
-  flex-wrap: wrap;
+  height: var(--bar-height);
+  max-height: var(--bar-height);
+  flex-wrap: nowrap;
   user-select: none;
-  overflow: clip visible;
+  overflow: visible;
   -webkit-overflow-scrolling: touch;
 }
 
@@ -12011,8 +12064,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: var(--bar-height);
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   place-content: center flex-end;
   position: relative;
 }
@@ -12104,20 +12159,27 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-wrap: wrap;
+  flex: 1 1 auto;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
   position: relative;
   min-width: 0;
+  overflow: visible;
 }
 
 .git-indicator-strip {
   display: flex;
   align-items: center;
   gap: 2px;
-  flex-wrap: wrap;
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
   min-width: 0;
+  overflow: hidden;
 }
 
 .git-indicator-overflow {
+  flex: 0 0 auto;
   min-width: 28px;
   padding-inline: 7px;
   font-family: var(--font-mono);
@@ -12535,7 +12597,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     0 6px 14px color-mix(in srgb, var(--agent-history-progress-accent) 14%, transparent);
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .agent-history-shell {
     gap: 12px;
   }
@@ -14767,7 +14829,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 /* Mobile: maximize terminal viewport and move IDE controls to topbar dropdown */
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .mobile-tab-pill {
     min-height: 34px;
     padding: 7px 12px;
@@ -14791,7 +14853,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   }
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .smart-input-appServerControl-settings {
     flex-wrap: wrap;
     gap: 8px;
@@ -17531,7 +17593,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   display: none;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .adaptive-footer-status.adaptive-footer-status-sheet-open
     .adaptive-footer-status-summary-appServerControl,
   .adaptive-footer-status.adaptive-footer-status-sheet-open
@@ -17998,7 +18060,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   display: flex !important;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .adaptive-footer-dock {
     --command-bay-control-height: var(--command-bay-control-height-mobile);
     padding: 4px;

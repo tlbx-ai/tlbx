@@ -186,13 +186,13 @@ describe('agent view AppServerControl wiring', () => {
     expect(css).toMatch(/\.agent-scroll-to-bottom\s*\{[\s\S]*?bottom:\s*12px;/);
     expect(css).not.toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.agent-history-progress-nav \{[\s\S]*?flex: 0 0 44px;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.agent-history-progress-nav \{[\s\S]*?flex: 0 0 44px;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.agent-history-progress-nav \{[\s\S]*?background: transparent;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.agent-history-progress-nav \{[\s\S]*?background: transparent;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\) \{[\s\S]*?\.agent-history-progress-thumb \{[\s\S]*?min-height: 48px;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.agent-history-progress-thumb \{[\s\S]*?min-height: 48px;/s,
     );
     expect(appServerControlDesign).toContain(
       'The progress navigator should remain a persistent Agent Controller Session-owned rail in layout.',

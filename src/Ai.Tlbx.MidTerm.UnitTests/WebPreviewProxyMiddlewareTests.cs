@@ -98,6 +98,30 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
+    public void UrlRewriteScript_MajorSiteCompatibility_RewritesProtocolRelativeAndRemovesStaleIntegrity()
+    {
+        var field = typeof(WebPreviewProxyMiddleware).GetField(
+            "UrlRewriteScript",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        var script = Assert.IsType<string>(field?.GetRawConstantValue());
+
+        Assert.Contains("if(u.startsWith(\"//\"))return r(location.protocol+u);", script, StringComparison.Ordinal);
+        Assert.Contains("imagesrcset", script, StringComparison.Ordinal);
+        Assert.Contains("HTMLInputElement", script, StringComparison.Ordinal);
+        Assert.Contains("HTMLTrackElement", script, StringComparison.Ordinal);
+        Assert.Contains("imageSrcset", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("srcdoc", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("function rsd(v)", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object.defineProperty(window,\"top\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object.defineProperty(window,\"parent\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("Object.defineProperty(window,\"frameElement\"", script, StringComparison.Ordinal);
+        Assert.Contains("if(/^integrity$/i.test(n))return;", script, StringComparison.Ordinal);
+        Assert.Contains("removeAttribute(\"integrity\")", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("integrity:q.integrity", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UrlRewriteScript_CookieBridge_RefreshesAfterFetchAndXhr()
     {
         var field = typeof(WebPreviewProxyMiddleware).GetField(
@@ -110,6 +134,10 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("XMLHttpRequest.prototype.send=function()", script, StringComparison.Ordinal);
         Assert.Contains("addEventListener(\"loadend\",onDone)", script, StringComparison.Ordinal);
         Assert.Contains("cookieRefreshTimer", script, StringComparison.Ordinal);
+        Assert.Contains("if(_realParent===window)", script, StringComparison.Ordinal);
+        Assert.Contains("fetch(cu,fo)", script, StringComparison.Ordinal);
+        Assert.Contains("dprop(navigator,\"cookieEnabled\",function(){return true;});", script, StringComparison.Ordinal);
+        Assert.Contains("if(ncs)ncs(v)", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -444,6 +472,90 @@ public class WebPreviewProxyMiddlewareTests
             "export * from \"/webpreview/route-1/router/router-lib.js?__mtReloadToken=force-123\"",
             rewritten,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RewriteLinkHeaderValue_ProxiesProtocolRelativeAndRootRelativePreloads()
+    {
+        const string routePrefix = "/webpreview/route-1";
+        const string header = """
+            <//abs.twimg.com>; rel=preconnect, </assets/app.js>; rel=preload, <https://cdn.example.com/font.woff2>; rel=preload
+            """;
+
+        var rewritten = WebPreviewProxyMiddleware.RewriteLinkHeaderValue(
+            header,
+            routePrefix,
+            new Uri("https://x.com/"),
+            "reload-1");
+
+        Assert.Contains("</webpreview/route-1/_ext?u=https", rewritten, StringComparison.Ordinal);
+        Assert.Contains("abs.twimg.com", rewritten, StringComparison.Ordinal);
+        Assert.Contains(
+            "</webpreview/route-1/assets/app.js?__mtReloadToken=reload-1>",
+            rewritten,
+            StringComparison.Ordinal);
+        Assert.Contains("cdn.example.com", rewritten, StringComparison.Ordinal);
+        Assert.Contains("__mtReloadToken=reload-1", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RewriteSrcsetAttributes_ProxiesEveryCandidateUrl()
+    {
+        const string html = """
+            <img srcset="/small.jpg 1x, //cdn.example.com/large.jpg 2x, https://x.com/same.jpg 3x, data:image/png;base64,abc 4x">
+            <link rel="preload" as="image" imagesrcset="/hero.webp 640w, https://img.example.net/hero.webp 1280w">
+            """;
+
+        var rewritten = WebPreviewProxyMiddleware.RewriteSrcsetAttributes(
+            html,
+            "/webpreview/route-1",
+            "https",
+            "x.com",
+            "reload-1");
+
+        Assert.Contains("/webpreview/route-1/small.jpg?__mtReloadToken=reload-1 1x", rewritten, StringComparison.Ordinal);
+        Assert.Contains("/webpreview/route-1/_ext?u=https%3A%2F%2Fcdn.example.com%2Flarge.jpg", rewritten, StringComparison.Ordinal);
+        Assert.Contains("/webpreview/route-1/same.jpg?__mtReloadToken=reload-1 3x", rewritten, StringComparison.Ordinal);
+        Assert.Contains("data:image/png;base64,abc 4x", rewritten, StringComparison.Ordinal);
+        Assert.Contains("/webpreview/route-1/hero.webp?__mtReloadToken=reload-1 640w", rewritten, StringComparison.Ordinal);
+        Assert.Contains("/webpreview/route-1/_ext?u=https%3A%2F%2Fimg.example.net%2Fhero.webp", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RewriteCssImports_ProxiesRootProtocolRelativeAndExternalImports()
+    {
+        const string css = """
+            @import "/css/base.css";
+            @import url(//fonts.example.com/site.css);
+            @import url("https://cdn.example.com/theme.css");
+            .hero { background: url(/img/hero.png); }
+            """;
+
+        var rewritten = WebPreviewProxyMiddleware.RewriteCssImports(
+            css,
+            "/webpreview/route-1",
+            "https",
+            "example.com",
+            "reload-1");
+
+        Assert.Contains("@import \"/webpreview/route-1/css/base.css?__mtReloadToken=reload-1\";", rewritten, StringComparison.Ordinal);
+        Assert.Contains("@import url(/webpreview/route-1/_ext?u=https%3A%2F%2Ffonts.example.com%2Fsite.css", rewritten, StringComparison.Ordinal);
+        Assert.Contains("@import url(\"/webpreview/route-1/_ext?u=https%3A%2F%2Fcdn.example.com%2Ftheme.css", rewritten, StringComparison.Ordinal);
+        Assert.Contains("background: url(/img/hero.png)", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RewriteRefreshHeaderValue_ProxiesProtocolRelativeRedirects()
+    {
+        var rewritten = WebPreviewProxyMiddleware.RewriteRefreshHeaderValue(
+            "0;url=//accounts.google.com/Login",
+            "/webpreview/route-1",
+            new Uri("https://www.google.com/search?q=midterm"),
+            null);
+
+        Assert.Equal(
+            "0;url=/webpreview/route-1/_ext?u=https%3A%2F%2Faccounts.google.com%2FLogin",
+            rewritten);
     }
 
     [Fact]

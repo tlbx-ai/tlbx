@@ -708,9 +708,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.GetAllSessions();
     }
 
-    public SessionListDto GetSessionList()
+    public SessionListDto GetSessionList(bool includeHidden = false)
     {
-        var response = _registry.GetSessionList();
+        var response = _registry.GetSessionList(includeHidden);
         foreach (var session in response.Sessions)
         {
             var descriptor = _foregroundProcessService.Describe(
@@ -800,6 +800,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string sessionId,
         int? maxBytes = null,
         TerminalReplayReason reason = TerminalReplayReason.Manual,
+        ulong? sinceSequence = null,
         CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
@@ -807,7 +808,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
-        var snapshot = await client.GetBufferAsync(maxBytes, reason, ct).ConfigureAwait(false);
+        var snapshot = await client.GetBufferAsync(maxBytes, reason, sinceSequence, ct).ConfigureAwait(false);
         if (snapshot is not null)
         {
             var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
@@ -832,11 +833,6 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public async Task<bool> SetSessionNameAsync(string sessionId, string? name, bool isManual = true, CancellationToken ct = default)
     {
-        if (!_clients.TryGetValue(sessionId, out var client))
-        {
-            return false;
-        }
-
         if (!_sessionCache.TryGetValue(sessionId, out var info))
         {
             return false;
@@ -844,6 +840,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
         if (isManual)
         {
+            if (!_clients.TryGetValue(sessionId, out var client))
+            {
+                return false;
+            }
+
             // User-set name: store in Name field and send to mthost
             info.ManuallyNamed = !string.IsNullOrWhiteSpace(name);
             var success = await client.SetNameAsync(name, ct).ConfigureAwait(false);

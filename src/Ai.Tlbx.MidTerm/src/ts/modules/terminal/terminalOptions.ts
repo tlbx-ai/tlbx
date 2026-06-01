@@ -1,6 +1,9 @@
 import type { ITerminalOptions } from '@xterm/xterm';
 import { $currentSettings, $windowsBuildNumber } from '../../stores';
-import { getEffectiveXtermTheme } from '../theming/themes';
+import {
+  getEffectiveXtermTheme,
+  resolveEffectiveTerminalMinimumContrastRatio,
+} from '../theming/themes';
 import {
   buildTerminalFontStack,
   DEFAULT_TERMINAL_FONT_WEIGHT,
@@ -77,6 +80,7 @@ function resolveGeneralTerminalOptions(
   | 'cursorInactiveStyle'
   | 'cursorStyle'
   | 'customGlyphs'
+  | 'minimumContrastRatio'
   | 'rescaleOverlappingGlyphs'
   | 'scrollback'
   | 'smoothScrollDuration'
@@ -91,6 +95,7 @@ function resolveGeneralTerminalOptions(
     | 'cursorInactiveStyle'
     | 'cursorStyle'
     | 'customGlyphs'
+    | 'minimumContrastRatio'
     | 'rescaleOverlappingGlyphs'
     | 'scrollback'
     | 'smoothScrollDuration'
@@ -105,6 +110,7 @@ function resolveGeneralTerminalOptions(
     allowProposedApi: true,
     allowTransparency: true,
     customGlyphs: currentSettings?.customGlyphs ?? true,
+    minimumContrastRatio: resolveEffectiveTerminalMinimumContrastRatio(currentSettings),
     rescaleOverlappingGlyphs: true,
     theme: getEffectiveXtermTheme(),
   };

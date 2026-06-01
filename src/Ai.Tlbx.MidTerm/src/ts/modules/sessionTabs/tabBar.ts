@@ -110,6 +110,8 @@ interface GitRepoActionHandlers {
 }
 
 const gitChipModels = new WeakMap<HTMLElement, Pick<GitIndicatorViewModel, 'repoRoot'> | null>();
+const gitIndicatorResizeObservers = new WeakMap<HTMLElement, ResizeObserver>();
+const pendingGitIndicatorOverflowSyncs = new WeakSet<HTMLElement>();
 let gitRepoActionHandlers: GitRepoActionHandlers = {};
 
 function createGitIndicatorButton(sessionId: string): HTMLButtonElement {
@@ -177,6 +179,7 @@ function createGitIndicatorGroup(sessionId: string): HTMLDivElement {
     toggleGitRepoPopover(group, sessionId);
   });
   group.appendChild(overflow);
+  bindGitIndicatorOverflowSync(group);
 
   return group;
 }
@@ -350,6 +353,116 @@ function renderGitRepoChips(strip: HTMLElement, sessionId: string, repos: GitRep
       patchGitChip(element, repo);
     },
   });
+}
+
+function bindGitIndicatorOverflowSync(group: HTMLElement): void {
+  if (typeof ResizeObserver !== 'undefined') {
+    const observer = new ResizeObserver(() => {
+      queueGitIndicatorOverflowSync(group);
+    });
+    observer.observe(group);
+    gitIndicatorResizeObservers.set(group, observer);
+  }
+}
+
+function queueGitIndicatorOverflowSync(group: HTMLElement): void {
+  if (pendingGitIndicatorOverflowSyncs.has(group)) {
+    return;
+  }
+
+  pendingGitIndicatorOverflowSyncs.add(group);
+  const callback = () => {
+    pendingGitIndicatorOverflowSyncs.delete(group);
+    syncGitIndicatorOverflow(group);
+  };
+
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(callback);
+    return;
+  }
+
+  setTimeout(callback, 0);
+}
+
+function syncGitIndicatorOverflow(group: HTMLElement): void {
+  const strip = group.querySelector<HTMLElement>('.git-indicator-strip');
+  const overflow = group.querySelector<HTMLButtonElement>('.git-indicator-overflow');
+  if (!strip || !overflow) {
+    return;
+  }
+  const repos = normalizeGitIndicatorRepos(readGitIndicatorData(group));
+  const chips = getGitRepoChipElements(strip);
+  for (const chip of chips) {
+    chip.hidden = false;
+    chip.style.display = '';
+  }
+
+  const visibleCount = resolveVisibleGitChipCount(strip, chips);
+  for (let index = 0; index < chips.length; index += 1) {
+    const chip = chips[index];
+    if (!chip) {
+      continue;
+    }
+
+    const visible = index < visibleCount;
+    chip.hidden = !visible;
+    chip.style.display = visible ? '' : 'none';
+  }
+
+  const hiddenCount = Math.max(0, repos.length - visibleCount);
+  overflow.hidden = false;
+  overflow.textContent = hiddenCount > 0 ? `+${hiddenCount}` : '+';
+  overflow.title = hiddenCount > 0 ? `${hiddenCount} more repositories` : 'Git repositories';
+}
+
+function getGitRepoChipElements(strip: HTMLElement): HTMLElement[] {
+  return Array.from(strip.children).filter(
+    (child): child is HTMLElement =>
+      'className' in child &&
+      typeof child.className === 'string' &&
+      child.className.split(/\s+/).includes('git-repo-chip'),
+  );
+}
+
+function resolveVisibleGitChipCount(strip: HTMLElement, chips: HTMLElement[]): number {
+  if (chips.length <= 1) {
+    return chips.length;
+  }
+
+  const availableWidth = strip.clientWidth;
+  if (!Number.isFinite(availableWidth) || availableWidth <= 0) {
+    return chips.length;
+  }
+
+  const gap = getGitIndicatorStripGap(strip);
+  let usedWidth = 0;
+  let visibleCount = 0;
+  for (const chip of chips) {
+    const width = chip.offsetWidth;
+    if (!Number.isFinite(width) || width <= 0) {
+      return chips.length;
+    }
+
+    const nextWidth = usedWidth + (visibleCount > 0 ? gap : 0) + width;
+    if (nextWidth > availableWidth) {
+      break;
+    }
+
+    usedWidth = nextWidth;
+    visibleCount += 1;
+  }
+
+  return Math.max(1, visibleCount);
+}
+
+function getGitIndicatorStripGap(strip: HTMLElement): number {
+  if (typeof getComputedStyle !== 'function') {
+    return 0;
+  }
+
+  const style = getComputedStyle(strip);
+  const gap = Number.parseFloat(style.columnGap || style.gap || '0');
+  return Number.isFinite(gap) ? gap : 0;
 }
 
 function toggleGitRepoPopover(group: HTMLElement, sessionId: string): void {
@@ -642,13 +755,13 @@ export function updateGitIndicator(bar: HTMLDivElement, input: GitIndicatorInput
   if (!group || !strip || !overflow) return;
 
   const repos = normalizeGitIndicatorRepos(input);
-  const visibleRepos = repos.slice(0, 3);
-  renderGitRepoChips(strip, group.dataset.sessionId ?? '', visibleRepos);
+  renderGitRepoChips(strip, group.dataset.sessionId ?? '', repos);
   group.dataset.gitRepos = JSON.stringify(repos);
   group.classList.toggle('git-indicator-group-empty', repos.length === 0);
   overflow.hidden = false;
-  overflow.textContent = repos.length > 3 ? `+${repos.length - 3}` : '+';
-  overflow.title = repos.length > 3 ? `${repos.length - 3} more repositories` : 'Git repositories';
+  overflow.textContent = '+';
+  overflow.title = 'Git repositories';
+  queueGitIndicatorOverflowSync(group);
 
   const openPopover = group.querySelector<HTMLElement>('.git-repo-popover');
   if (openPopover) {

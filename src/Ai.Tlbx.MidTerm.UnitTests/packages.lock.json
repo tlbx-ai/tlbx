@@ -139,6 +139,12 @@
           "Microsoft.Extensions.Hosting.WindowsServices": "[10.0.5, )",
           "System.Security.Cryptography.ProtectedData": "[10.0.5, )"
         }
+      },
+      "mthost": {
+        "type": "Project",
+        "dependencies": {
+          "Ai.Tlbx.MidTerm.Common": "[4.0.1, )"
+        }
       }
     }
   }

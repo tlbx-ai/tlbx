@@ -43,6 +43,7 @@ public sealed partial class UpdateService : IDisposable
     public UpdateInfo? LatestUpdate => _latestUpdate;
     public string CurrentVersion => _currentVersion;
     public VersionManifest InstalledManifest => _installedManifest;
+    public Func<UpdateType, CancellationToken, Task>? BeforeApplyUpdateAsync { get; set; }
 
     public UpdateService() : this(new SettingsService(), null)
     {
@@ -886,6 +887,19 @@ public sealed partial class UpdateService : IDisposable
 
         AppendUpdateLog(artifacts.LogPath, $"Downloaded update payload to {extractedDir}");
         AppendUpdateLog(artifacts.LogPath, $"Update type: {updateType}");
+
+        if (BeforeApplyUpdateAsync is not null)
+        {
+            try
+            {
+                await BeforeApplyUpdateAsync(updateType, CancellationToken.None).ConfigureAwait(false);
+                AppendUpdateLog(artifacts.LogPath, "Captured session update state.");
+            }
+            catch (Exception ex)
+            {
+                AppendUpdateLog(artifacts.LogPath, $"Failed to capture session update state: {ex.Message}", "WARN");
+            }
+        }
 
         if (updateType == UpdateType.Full)
         {

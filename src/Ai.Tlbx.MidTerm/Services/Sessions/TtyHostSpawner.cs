@@ -13,6 +13,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Common.Process;
 using Ai.Tlbx.MidTerm.Common.Shells;
 using Ai.Tlbx.MidTerm.Models.Update;
 
@@ -503,6 +504,8 @@ public static class TtyHostSpawner
                 throw new InvalidOperationException("Process.Start returned false.");
             }
 
+            ApplyRuntimePriority(_process.Id, "mtagenthost");
+
 #if !WINDOWS
             // Detached redirected helpers are also used for persistent sidecars such as
             // mtagenthost, so they need their own process group to survive mt restarts.
@@ -529,6 +532,7 @@ public static class TtyHostSpawner
         {
             _process = Process.GetProcessById(processId);
             _process.EnableRaisingEvents = true;
+            ApplyRuntimePriority(processId, "mtagenthost");
             _input = new StreamWriter(new FileStream(stdinSafe, FileAccess.Write), new UTF8Encoding(false)) { AutoFlush = true };
             _output = new StreamReader(new FileStream(stdoutSafe, FileAccess.Read), Encoding.UTF8);
             _error = new StreamReader(new FileStream(stderrSafe, FileAccess.Read), Encoding.UTF8);
@@ -691,6 +695,7 @@ public static class TtyHostSpawner
             if (OperatingSystem.IsMacOS() &&
                 TrySpawnMacOsViaLaunchAgent(sessionId, args, environmentOverrides, out processId))
             {
+                ApplyRuntimePriority(processId, "mthost");
                 return TtyHostSpawnResult.Success(processId);
             }
 
@@ -779,6 +784,7 @@ public static class TtyHostSpawner
 
             var startedProcessId = process.Id;
             processId = startedProcessId;
+            ApplyRuntimePriority(processId, "mthost");
 
             // Move mthost into its own process group so it survives mt restarts.
             // When launchd kills mt, it sends SIGTERM to mt's process group.
@@ -1117,6 +1123,15 @@ public static class TtyHostSpawner
     }
 #endif
 
+    private static void ApplyRuntimePriority(int processId, string role)
+    {
+        _ = MidTermProcessPriority.TryApplyToProcessId(
+            processId,
+            role,
+            message => Log.Info(() => message),
+            message => Log.Warn(() => message));
+    }
+
 #if WINDOWS
     [SupportedOSPlatform("windows")]
     private static TtyHostSpawnResult SpawnWindows(
@@ -1182,6 +1197,7 @@ public static class TtyHostSpawner
             CloseHandle(pi.hProcess);
 
             var pid = processId;
+            ApplyRuntimePriority(pid, "mthost");
             Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned mthost (PID: {pid})"));
             return TtyHostSpawnResult.Success(processId);
         }
@@ -1266,6 +1282,7 @@ public static class TtyHostSpawner
 
                     var pid = processId;
                     var sess = sessionId;
+                    ApplyRuntimePriority(pid, "mthost");
                     Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"TtyHostSpawner: Spawned mthost as user (PID: {pid}, Session: {sess})"));
                     return TtyHostSpawnResult.Success(processId);
                 }

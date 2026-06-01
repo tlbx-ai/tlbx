@@ -5232,6 +5232,7 @@
           "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "resumeMode",
+          "tryResumeNonAiAgentProcesses",
           "preserveTerminalCursorControl",
           "inputMode",
           "fileRadar",
@@ -5243,6 +5244,8 @@
           "managerBarEnabled",
           "commandBayLigaturesEnabled",
           "devMode",
+          "terminalLatencyDiagnosticsEnabled",
+          "terminalInputCoalescingMs",
           "showChangelogAfterUpdate",
           "showUpdateNotification",
           "updateChannel",
@@ -5472,6 +5475,9 @@
           "resumeMode": {
             "$ref": "#/components/schemas/TerminalResumeModeSetting"
           },
+          "tryResumeNonAiAgentProcesses": {
+            "type": "boolean"
+          },
           "preserveTerminalCursorControl": {
             "type": "boolean"
           },
@@ -5504,6 +5510,13 @@
           },
           "devMode": {
             "type": "boolean"
+          },
+          "terminalLatencyDiagnosticsEnabled": {
+            "type": "boolean"
+          },
+          "terminalInputCoalescingMs": {
+            "type": "integer",
+            "format": "int32"
           },
           "showChangelogAfterUpdate": {
             "type": "boolean"

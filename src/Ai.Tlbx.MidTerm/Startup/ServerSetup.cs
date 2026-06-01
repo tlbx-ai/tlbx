@@ -138,6 +138,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
         builder.Services.AddSingleton<SessionControlStateService>();
+        builder.Services.AddSingleton<SessionUpdateStateService>();
         builder.Services.AddSingleton<SessionLayoutStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
         builder.Services.AddSingleton<SessionHeatService>();

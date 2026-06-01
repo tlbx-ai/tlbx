@@ -33,6 +33,7 @@ import {
   sanitizePreviewDisplayUrl,
   stripInternalPreviewQueryParams,
 } from './previewProxyUrl';
+import { openTopLevelPreview, resolveTopLevelProxyUrl } from './webTopLevelHandoff';
 import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
   getActiveDockedClient,
@@ -49,6 +50,7 @@ import {
 } from './webSessionState';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
 import { buildBrowserPreviewStatusIndicatorState } from './webPreviewStatus';
+import { decodeScreenshotDataUrl, normalizeUrl } from './webPanelUtils';
 
 interface UploadResponse {
   path?: string;
@@ -87,8 +89,11 @@ const SANDBOX_BASE_FLAGS = [
   'allow-scripts',
   'allow-forms',
   'allow-popups',
+  'allow-popups-to-escape-sandbox',
+  'allow-top-navigation-by-user-activation',
   'allow-modals',
   'allow-downloads',
+  'allow-storage-access-by-user-activation',
 ];
 
 const log = createLogger('webPanel');
@@ -229,6 +234,18 @@ export function initWebPanel(): void {
     if (e.key === 'Enter') {
       e.preventDefault();
       void handleGo();
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      restoreCurrentUrlToInput();
+    }
+  });
+  window.addEventListener('keydown', (e: KeyboardEvent) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l' && urlInput) {
+      e.preventDefault();
+      urlInput.focus();
+      urlInput.select();
     }
   });
   refreshBtn?.addEventListener('click', (e: MouseEvent) => {
@@ -244,6 +261,14 @@ export function initWebPanel(): void {
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     closeWebPreviewOverflowMenu();
     void handleClearCookies();
+  });
+  document.getElementById('web-preview-open-top-level')?.addEventListener('click', () => {
+    closeWebPreviewOverflowMenu();
+    openTopLevelPreview({
+      getProxyUrl: getActiveTopLevelProxyUrl,
+      reload: () => void handleRefresh('force'),
+      setMessage: setActionMessage,
+    });
   });
   document.getElementById('web-preview-clear-state')?.addEventListener('click', () => {
     closeWebPreviewOverflowMenu();
@@ -347,15 +372,6 @@ function closeWebPreviewOverflowMenu(): void {
   trigger.setAttribute('aria-expanded', 'false');
 }
 
-function normalizeUrl(raw: string): string {
-  if (!raw.includes('://')) {
-    const isLocal =
-      raw.startsWith('localhost') || raw.startsWith('127.0.0.1') || raw.startsWith('[::1]');
-    return `${isLocal ? 'http://' : 'https://'}${raw}`;
-  }
-  return raw;
-}
-
 function getProxyPrefix(routeKey: string): string {
   return `/webpreview/${encodeURIComponent(routeKey)}`;
 }
@@ -440,15 +456,19 @@ async function handleGo(): Promise<void> {
 
   urlInput.value = url;
 
+  setActionMessage('info', null);
+
   log.info(() => `Setting web preview target: ${sessionId}/${previewName} -> ${url}`);
   const result = await setWebPreviewTarget(sessionId, previewName, url);
   if (!result?.active) {
+    setActionMessage('error', 'Navigation failed: MidTerm could not set the preview target.');
     log.warn(() => 'Failed to set web preview target');
     return;
   }
 
   setActiveMode('docked');
-  setCurrentPreviewUrl(url);
+  upsertSessionPreview(result);
+  setCurrentPreviewUrl(result.url ?? url);
   await loadPreview();
 }
 
@@ -510,6 +530,15 @@ function setCurrentPreviewUrl(url: string | null, updateInput = true): void {
     urlInput.value = nextInputValue;
   }
   updateScreenshotButtonState();
+}
+
+function restoreCurrentUrlToInput(): void {
+  if (!urlInput) {
+    return;
+  }
+
+  urlInput.value = getActiveUrl() ?? $webPreviewUrl.get() ?? '';
+  urlInput.select();
 }
 
 async function ensureDockedPreviewClient(
@@ -782,6 +811,20 @@ async function fetchCookieBridge(
   return fetch(url.toString(), { method: 'GET' });
 }
 
+function getActiveTopLevelProxyUrl(): string | null {
+  const activePreview = getActivePreview();
+  const activeClient = getActiveDockedClient();
+  return resolveTopLevelProxyUrl({
+    frameSrc: getActiveIframe()?.src,
+    activeClient,
+    currentUrl: activePreview?.url ?? getActiveUrl() ?? $webPreviewUrl.get(),
+    targetRevision: activePreview?.targetRevision ?? 0,
+    origin: activeClient?.origin ?? window.location.origin,
+    mobileEmulation: isMobileEmulationEnabled(),
+    buildProxyUrl,
+  });
+}
+
 async function handleCookieBridgeRequest(
   event: MessageEvent<unknown>,
   request: PreviewCookieRequestMessage,
@@ -959,11 +1002,12 @@ async function handleRefresh(mode: PreviewReloadMode = 'force'): Promise<void> {
   if (currentUrl) {
     const result = await setWebPreviewTarget(sessionId, previewName, currentUrl);
     if (!result?.active) {
+      setActionMessage('error', 'Reload failed: MidTerm could not refresh the preview target.');
       log.warn(() => 'Failed to refresh web preview target');
       return;
     }
     upsertSessionPreview(result);
-    setCurrentPreviewUrl(currentUrl, false);
+    setCurrentPreviewUrl(result.url ?? currentUrl, false);
   }
 
   if (mode === 'soft') {
@@ -1077,26 +1121,6 @@ function handleAgentHint(): void {
   const message = `Read the file ${guidanceFile} for instructions on how to interact with this browser preview.\n`;
 
   sendInput(sessionId, message);
-}
-
-function decodeScreenshotDataUrl(dataUrl: string): Blob | null {
-  const commaIndex = dataUrl.indexOf(',');
-  if (commaIndex < 0) {
-    return null;
-  }
-
-  const meta = dataUrl.slice(0, commaIndex);
-  const mime = /^data:([^;]+)/.exec(meta)?.[1] ?? 'image/png';
-  try {
-    const binary = atob(dataUrl.slice(commaIndex + 1));
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    return new Blob([bytes], { type: mime });
-  } catch {
-    return null;
-  }
 }
 
 function setActionMessage(severity: 'info' | 'error', message: string | null): void {

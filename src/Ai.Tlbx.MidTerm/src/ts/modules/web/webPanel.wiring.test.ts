@@ -8,6 +8,10 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '../../../..');
 const html = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
 const source = readFileSync(path.join(projectRoot, 'src/ts/modules/web/webPanel.ts'), 'utf8');
+const handoffSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/web/webTopLevelHandoff.ts'),
+  'utf8',
+);
 
 describe('web preview screenshot wiring', () => {
   it('keeps dev browser actions in the tab strip instead of a separate title header', () => {
@@ -26,7 +30,9 @@ describe('web preview screenshot wiring', () => {
 
   it('keeps the active-tab screenshot button busy while capture is in progress and surfaces failures', () => {
     expect(source).toContain('let screenshotInFlight = false;');
-    expect(source).toContain("screenshotButton = document.getElementById('web-preview-screenshot')");
+    expect(source).toContain(
+      "screenshotButton = document.getElementById('web-preview-screenshot')",
+    );
     expect(source).toContain("screenshotButton.classList.add('web-preview-action-working');");
     expect(source).toContain(
       'screenshotButton.innerHTML = \'<span class="web-preview-button-glyph">&#x21bb;</span>\';',
@@ -47,22 +53,39 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('id="web-preview-more"');
     expect(html).toContain('id="web-preview-overflow-menu"');
     expect(html).toContain('id="dev-soft-keyboard-toggle"');
+    expect(html).toContain('id="web-preview-open-top-level"');
     expect(html).toContain('id="web-preview-clear-cookies"');
     expect(html).toContain('id="web-preview-clear-state"');
     expect(source).toContain('function initWebPreviewOverflowMenu(): void');
     expect(source).toContain('function closeWebPreviewOverflowMenu(): void');
   });
 
+  it('offers a top-level handoff for consent flows blocked inside iframes', () => {
+    expect(html).toContain('Open top-level');
+    expect(source).toContain('function getActiveTopLevelProxyUrl(): string | null');
+    expect(source).toContain('openTopLevelPreview({');
+    expect(handoffSource).toContain('export function openTopLevelPreview');
+    expect(handoffSource).toContain("window.open(proxyUrl, 'midterm-web-preview-top-level'");
+    expect(handoffSource).toContain('popup.location.reload();');
+    expect(source).toContain("reload: () => void handleRefresh('force'),");
+  });
+
   it('wires mobile browser emulation as an active-tab URL-bar action', () => {
     expect(html).toContain('id="web-preview-mobile-emulation"');
     expect(html).toContain('aria-label="Emulate mobile browser"');
     expect(html).toContain('aria-pressed="false"');
-    expect(source).toContain("mobileEmulationButton = document.getElementById(");
+    expect(source).toContain('mobileEmulationButton = document.getElementById(');
     expect(source).toContain('const mobileEmulationByFrame = new Map<string, boolean>();');
     expect(source).toContain('function handleMobileEmulationToggle(): Promise<void>');
     expect(source).toContain("'Disable mobile browser emulation'");
     expect(source).toContain("'Mobile browser emulation on'");
     expect(source).toContain('mobileEmulation: isMobileEmulationEnabled(frameKey),');
     expect(source).toContain('...(reloadToken ? { reloadToken } : {}),');
+  });
+
+  it('allows modern popup and top-navigation flows inside sandboxed external previews', () => {
+    expect(source).toContain("'allow-popups-to-escape-sandbox'");
+    expect(source).toContain("'allow-top-navigation-by-user-activation'");
+    expect(source).toContain("'allow-storage-access-by-user-activation'");
   });
 });
