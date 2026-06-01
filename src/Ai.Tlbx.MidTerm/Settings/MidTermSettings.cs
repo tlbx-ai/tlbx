@@ -140,6 +140,10 @@ public sealed class MidTermSettings
     // Developer mode - enables dev features (voice sync, faster update checks, etc.)
     public bool DevMode { get; set; } = false;
 
+    // Keeps MidTerm's UI/PTY/agent host scheduler priority above build/compiler work.
+    public bool RuntimePriorityBoostEnabled { get; set; } = true;
+    public string RuntimePriorityClass { get; set; } = "aboveNormal";
+
     // Terminal input latency tracing - dev mode enables this automatically; in normal mode it is opt-in.
     public bool TerminalLatencyDiagnosticsEnabled { get; set; } = false;
 

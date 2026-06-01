@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Common.Process;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Git;
@@ -167,6 +168,11 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
+        ConfigureRuntimePriority(settings);
+        _ = MidTermProcessPriority.TryApplyToCurrentProcess(
+            "mt",
+            message => Log.Info(() => message),
+            message => Log.Warn(() => message));
         Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"MidTerm server starting (instance={resolvedInstanceIdentity.GetShortInstanceId()}, port={port})"));
 
         // Validate security state and log any warnings (informational only - does not block)
@@ -311,6 +317,12 @@ public class Program
 
         settingsService.AddSettingsListener(newSettings =>
         {
+            ConfigureRuntimePriority(newSettings);
+            _ = MidTermProcessPriority.TryApplyToCurrentProcess(
+                "mt",
+                message => Log.Info(() => message),
+                message => Log.Warn(() => message));
+
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);
             if (isValid)
             {
@@ -454,6 +466,15 @@ public class Program
         await sessionManager.DiscoverExistingSessionsAsync(shutdownService.Token);
         foreach (var session in sessionManager.GetAllSessions())
         {
+            if (session.HostPid > 0)
+            {
+                _ = MidTermProcessPriority.TryApplyToProcessId(
+                    session.HostPid,
+                    "mthost",
+                    message => Log.Info(() => message),
+                    message => Log.Warn(() => message));
+            }
+
             var persistedRepos = sessionManager.GetPersistedSessionExtraGitRepos(session.Id);
             if (persistedRepos.Length > 0)
             {
@@ -519,5 +540,12 @@ public class Program
         {
             await CleanupAsync();
         }
+    }
+
+    private static void ConfigureRuntimePriority(MidTermSettings settings)
+    {
+        MidTermProcessPriority.Configure(
+            settings.RuntimePriorityBoostEnabled,
+            settings.RuntimePriorityClass);
     }
 }
