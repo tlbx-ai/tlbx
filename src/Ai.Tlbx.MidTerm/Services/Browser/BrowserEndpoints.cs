@@ -590,7 +590,8 @@ public static class BrowserEndpoints
                 "mt_exec <js>",
                 "mt_topic <text>",
                 "mt_wake [id] <delay> <prompt>",
-                "mt_repo list|add|remove|refresh"
+                "mt_repo list|add|remove|refresh",
+                "mt_supervise [repo...]"
             ],
             DiagnosticCommands =
             [
@@ -617,6 +618,7 @@ public static class BrowserEndpoints
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so MidTerm shows it in the IDE bar and sidebar.",
+                "Use mt_supervise at the start of multi-agent work to bind known repos, refresh repo status, and get one fleet attention snapshot.",
                 "Screenshots use in-page html2canvas and can differ from native browser screenshots for canvas, video, and cross-origin frame content."
             ]
         };
