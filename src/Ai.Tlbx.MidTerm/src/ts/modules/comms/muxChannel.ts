@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Mux transport remains the protocol coordinator; hot-path helpers are split out as they become stable. */
 /**
  * Mux WebSocket terminal I/O. Output ordering is strict per session, not global;
  * xterm's own WriteBuffer remains the user-visible parse boundary.
@@ -42,6 +43,13 @@ import * as muxSessionRouting from './muxSessionRouting';
 import { resolveMuxDataLossReason } from './muxDataLoss';
 import { createMuxInputFrame } from './muxInputFrame';
 import { createPrintableInputBurstCoalescer } from './printableInputBurst';
+import {
+  appendTerminalWriteBatch,
+  canAppendTerminalWriteBatch,
+  combineTerminalWriteChunks,
+  type TerminalOutputDelivery,
+  type TerminalWriteBatch,
+} from './muxOutputBatch';
 import {
   buildResumeCursorQueryValue,
   countLocalTerminals,
@@ -420,9 +428,11 @@ const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
+const MAX_TERMINAL_WRITE_BATCH_BYTES = 64 * 1024;
 const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
+const scheduledOutputQueues = new Set<string>();
 let outputQueueGeneration = 0;
 let yieldToMainChannel: MessageChannel | null = null;
 const pendingYieldToMainResolves: Array<() => void> = [];
@@ -572,7 +582,22 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
 
   queue.items.push({ sessionId, payload, compressed });
   queue.bytes += payload.byteLength;
-  void processSessionOutputQueue(sessionId, outputQueueGeneration);
+  scheduleSessionOutputQueue(sessionId, outputQueueGeneration);
+}
+
+function scheduleSessionOutputQueue(sessionId: string, generation: number): void {
+  if (scheduledOutputQueues.has(sessionId)) {
+    return;
+  }
+
+  scheduledOutputQueues.add(sessionId);
+  void Promise.resolve().then(() => {
+    scheduledOutputQueues.delete(sessionId);
+    if (generation !== outputQueueGeneration) {
+      return;
+    }
+    void processSessionOutputQueue(sessionId, generation);
+  });
 }
 
 async function processSessionOutputQueue(sessionId: string, generation: number): Promise<void> {
@@ -582,6 +607,15 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
   }
 
   queue.processing = true;
+  let writeBatch: TerminalWriteBatch | null = null;
+  const flushWriteBatch = (): void => {
+    if (!writeBatch) {
+      return;
+    }
+
+    deliverTerminalWriteBatch(writeBatch, generation);
+    writeBatch = null;
+  };
 
   try {
     let sliceStartMs = performance.now();
@@ -592,7 +626,17 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
         break;
       }
 
-      await processOneFrame(item, generation);
+      const processedFrame = processOneFrame(item);
+      const delivery = processedFrame instanceof Promise ? await processedFrame : processedFrame;
+      if (delivery) {
+        if (!canAppendTerminalWriteBatch(writeBatch, delivery)) {
+          flushWriteBatch();
+        }
+        writeBatch = appendTerminalWriteBatch(writeBatch, delivery);
+        if (writeBatch.bytes >= MAX_TERMINAL_WRITE_BATCH_BYTES) {
+          flushWriteBatch();
+        }
+      }
 
       if (generation !== outputQueueGeneration) {
         break;
@@ -601,11 +645,13 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
       // Heavy output must periodically yield so keyboard interrupts like Ctrl+C
       // can be processed promptly instead of waiting behind a long browser-side drain.
       if (performance.now() - sliceStartMs >= OUTPUT_DRAIN_BUDGET_MS) {
+        flushWriteBatch();
         await yieldToMain();
         sliceStartMs = performance.now();
       }
     }
   } finally {
+    flushWriteBatch();
     queue.processing = false;
 
     // If new frames landed after the current drain finished, restart the same
@@ -617,6 +663,18 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
       sessionOutputQueues.delete(sessionId);
     }
   }
+}
+
+function deliverTerminalWriteBatch(batch: TerminalWriteBatch, generation: number): void {
+  writeToTerminal(
+    batch.sessionId,
+    batch.state,
+    batch.sequenceEnd,
+    batch.cols,
+    batch.rows,
+    combineTerminalWriteChunks(batch.chunks, batch.bytes),
+    generation,
+  );
 }
 
 /**
@@ -661,7 +719,9 @@ function bufferPendingFrame(
   frames.push(bufferedPayload);
 }
 
-async function processOneFrame(item: OutputFrameItem, generation: number): Promise<void> {
+function processOneFrame(
+  item: OutputFrameItem,
+): TerminalOutputDelivery | null | Promise<TerminalOutputDelivery | null> {
   try {
     const clearReplayGateAfterFrame = bgOutput.prepareBackgroundOutputDelivery(
       item.sessionId,
@@ -671,28 +731,57 @@ async function processOneFrame(item: OutputFrameItem, generation: number): Promi
       currentVisibleSessionIds,
     );
     if (clearReplayGateAfterFrame === null) {
-      return;
+      return null;
     }
-
-    let cols: number;
-    let rows: number;
-    let data: Uint8Array;
-    let sequenceEnd: bigint;
 
     if (item.compressed) {
-      const frame = await parseCompressedOutputFrame(item.payload);
-      sequenceEnd = frame.sequenceEnd;
-      cols = frame.cols;
-      rows = frame.rows;
-      data = frame.data;
-    } else {
-      const frame = parseOutputFrame(item.payload);
-      sequenceEnd = frame.sequenceEnd;
-      cols = frame.cols;
-      rows = frame.rows;
-      data = frame.data;
+      return processCompressedFrame(item, clearReplayGateAfterFrame);
     }
 
+    const frame = parseOutputFrame(item.payload);
+    return processParsedOutputFrame(
+      item,
+      clearReplayGateAfterFrame,
+      frame.sequenceEnd,
+      frame.cols,
+      frame.rows,
+      frame.data,
+    );
+  } catch (e) {
+    log.error(() => `Failed to process frame: ${String(e)}`);
+    return null;
+  }
+}
+
+async function processCompressedFrame(
+  item: OutputFrameItem,
+  clearReplayGateAfterFrame: boolean,
+): Promise<TerminalOutputDelivery | null> {
+  try {
+    const frame = await parseCompressedOutputFrame(item.payload);
+    return processParsedOutputFrame(
+      item,
+      clearReplayGateAfterFrame,
+      frame.sequenceEnd,
+      frame.cols,
+      frame.rows,
+      frame.data,
+    );
+  } catch (e) {
+    log.error(() => `Failed to process frame: ${String(e)}`);
+    return null;
+  }
+}
+
+function processParsedOutputFrame(
+  item: OutputFrameItem,
+  clearReplayGateAfterFrame: boolean,
+  sequenceEnd: bigint,
+  cols: number,
+  rows: number,
+  data: Uint8Array,
+): TerminalOutputDelivery | null {
+  try {
     const snapshot = getOrCreateBrowserTransportSnapshot(item.sessionId);
     const trimmedData = trimFrameToUnseenSuffix(data, sequenceEnd, snapshot.receivedSeq);
     snapshot.receivedSeq = maxSequence(snapshot.receivedSeq, sequenceEnd);
@@ -700,15 +789,25 @@ async function processOneFrame(item: OutputFrameItem, generation: number): Promi
     const state = sessionTerminals.get(item.sessionId);
     if (state && state.opened) {
       if (trimmedData.length > 0) {
-        writeToTerminal(item.sessionId, state, sequenceEnd, cols, rows, trimmedData, generation);
+        bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
+        return {
+          sessionId: item.sessionId,
+          state,
+          sequenceEnd,
+          cols,
+          rows,
+          data: trimmedData,
+        };
       }
     } else if (trimmedData.length > 0) {
       bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, trimmedData);
     }
 
     bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
+    return null;
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
+    return null;
   }
 }
 
@@ -1477,3 +1576,5 @@ export function resetMuxChannelRuntimeForTests(): void {
   sessionsNeedingResync.clear();
   closeWebSocket(muxWs, setMuxWs);
 }
+
+/* eslint-enable max-lines */

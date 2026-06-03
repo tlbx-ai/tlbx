@@ -877,7 +877,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       overlay = null;
     },
   });
-  updateTerminalGapFillers(container, xterm, 1);
+  if (isMainBrowser) updateTerminalGapFillers(container, xterm, 1);
 }
 
 interface TerminalScalingContext {

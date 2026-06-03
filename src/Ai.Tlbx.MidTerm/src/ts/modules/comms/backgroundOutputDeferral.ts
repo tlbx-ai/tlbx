@@ -130,11 +130,7 @@ export function prepareBackgroundOutputDelivery(
   currentVisibleSessionIds: readonly string[],
 ): boolean | null {
   const envelope = parseOutputFrameEnvelope(payload, compressed);
-  const state = sessionTerminals.get(sessionId);
-  if (
-    !isSessionStreamable(sessionId, currentStreamableSessionIds, currentVisibleSessionIds) &&
-    state?.opened !== true
-  ) {
+  if (!isSessionStreamable(sessionId, currentStreamableSessionIds, currentVisibleSessionIds)) {
     noteBackgroundFrameDeferred(sessionId, envelope);
     return null;
   }

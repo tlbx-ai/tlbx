@@ -123,6 +123,11 @@ type ScanBufferState = {
   idleHandle: number | null;
 };
 
+type PathScanWorkerResponse = {
+  id: number;
+  candidates: string[];
+};
+
 type PendingResolve = {
   abort: AbortController;
   timeout: number;
@@ -146,6 +151,9 @@ const pendingResolves = new Map<string, PendingResolve>();
 
 let registerFilePathsFn: RegisterFilePathsFn | null = null;
 let registerFilePathsPromise: Promise<RegisterFilePathsFn> | null = null;
+let pathScanWorker: Worker | null | undefined;
+let pathScanWorkerRequestId = 0;
+const pendingPathScanWorkerSessions = new Map<number, string>();
 
 // ===========================================================================
 // Toast Notification
@@ -233,6 +241,84 @@ function getOrCreateScanBuffer(sessionId: string): ScanBufferState {
     scanBuffers.set(sessionId, state);
   }
   return state;
+}
+
+function getOrCreatePathScanWorker(): Worker | null {
+  if (pathScanWorker !== undefined) {
+    return pathScanWorker;
+  }
+
+  if (
+    typeof Worker === 'undefined' ||
+    typeof Blob === 'undefined' ||
+    typeof URL === 'undefined' ||
+    typeof URL.createObjectURL !== 'function'
+  ) {
+    pathScanWorker = null;
+    return pathScanWorker;
+  }
+
+  try {
+    const source = `
+      const ANSI_CSI_PATTERN = /\\x1b\\[[0-9;?]*[A-Za-z]/g;
+      const ANSI_OSC_PATTERN = /\\x1b\\][^\\x07\\x1b]*(?:\\x07|\\x1b\\\\)/g;
+      const ANSI_INCOMPLETE_OSC_PATTERN = /\\x1b\\][^\\x07]*/g;
+      const CANDIDATE_PATTERNS = [
+        /[A-Za-z]:[\\\\/][^\\s<>"'|*?]+/g,
+        /\\\\\\\\[^\\s<>"']+/g,
+        /(^|[\\s(["'])(\\/[^\\s<>"']+)/g
+      ];
+
+      function stripAnsi(text) {
+        return text
+          .replace(ANSI_CSI_PATTERN, '')
+          .replace(ANSI_OSC_PATTERN, '')
+          .replace(ANSI_INCOMPLETE_OSC_PATTERN, '');
+      }
+
+      function collectCandidates(text) {
+        const cleanText = stripAnsi(text);
+        const candidates = [];
+        for (const pattern of CANDIDATE_PATTERNS) {
+          pattern.lastIndex = 0;
+          let match;
+          while ((match = pattern.exec(cleanText)) !== null) {
+            const candidate = match[2] || match[0];
+            if (candidate) {
+              candidates.push(candidate);
+            }
+          }
+        }
+        return candidates;
+      }
+
+      self.onmessage = (event) => {
+        const { id, text } = event.data || {};
+        self.postMessage({ id, candidates: collectCandidates(String(text || '')) });
+      };
+    `;
+    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
+    pathScanWorker = new Worker(url);
+    URL.revokeObjectURL(url);
+    pathScanWorker.onmessage = (event: MessageEvent<PathScanWorkerResponse>) => {
+      const { id, candidates } = event.data;
+      const sessionId = pendingPathScanWorkerSessions.get(id);
+      pendingPathScanWorkerSessions.delete(id);
+      if (!sessionId) {
+        return;
+      }
+      registerDetectedPathCandidates(sessionId, candidates);
+    };
+    pathScanWorker.onerror = () => {
+      pendingPathScanWorkerSessions.clear();
+      pathScanWorker?.terminate();
+      pathScanWorker = null;
+    };
+  } catch {
+    pathScanWorker = null;
+  }
+
+  return pathScanWorker;
 }
 
 function isAsciiLetter(value: number): boolean {
@@ -411,6 +497,12 @@ export function clearPathAllowlist(sessionId: string): void {
   }
   scanBuffers.delete(sessionId);
 
+  for (const [id, pendingSessionId] of pendingPathScanWorkerSessions) {
+    if (pendingSessionId === sessionId) {
+      pendingPathScanWorkerSessions.delete(id);
+    }
+  }
+
   cancelPendingResolve(sessionId);
   clearSessionCacheEntries(sessionId);
 }
@@ -465,6 +557,18 @@ export function scanOutputForPaths(sessionId: string, data: string | Uint8Array)
  * Registers detected paths with backend for security allowlisting.
  */
 function performScan(sessionId: string, text: string): void {
+  const worker = getOrCreatePathScanWorker();
+  if (worker) {
+    const id = ++pathScanWorkerRequestId;
+    pendingPathScanWorkerSessions.set(id, sessionId);
+    worker.postMessage({ id, text });
+    return;
+  }
+
+  registerDetectedPathCandidates(sessionId, collectPathCandidatesOnMainThread(text));
+}
+
+function collectPathCandidatesOnMainThread(text: string): string[] {
   // Strip ANSI escape sequences before regex matching
   /* eslint-disable no-control-regex -- Control-byte patterns are required to remove ANSI escape sequences before scanning terminal text. */
   const cleanText = text
@@ -473,20 +577,14 @@ function performScan(sessionId: string, text: string): void {
     .replace(/\x1b\][^\x07]*/g, ''); // Incomplete OSC
   /* eslint-enable no-control-regex */
 
-  const allowlist = getPathAllowlist(sessionId);
-  const detectedPaths = new Set<string>();
+  const candidates: string[] = [];
 
   const collectMatches = (pattern: RegExp): void => {
     pattern.lastIndex = 0;
     for (const match of cleanText.matchAll(pattern)) {
       const path = match[1];
-      if (!path) continue;
-
-      const normalized = normalizePathCandidate(path);
-      if (!isValidPath(normalized)) continue;
-
-      if (addToAllowlist(allowlist, normalized)) {
-        detectedPaths.add(normalized);
+      if (path) {
+        candidates.push(path);
       }
     }
   };
@@ -495,6 +593,22 @@ function performScan(sessionId: string, text: string): void {
   collectMatches(WIN_PATH_PATTERN_GLOBAL);
   collectMatches(UNC_PATH_PATTERN_GLOBAL);
   collectMatches(QUOTED_ABSOLUTE_PATH_PATTERN_GLOBAL);
+
+  return candidates;
+}
+
+function registerDetectedPathCandidates(sessionId: string, candidates: string[]): void {
+  const allowlist = getPathAllowlist(sessionId);
+  const detectedPaths = new Set<string>();
+
+  for (const path of candidates) {
+    const normalized = normalizePathCandidate(path);
+    if (!isValidPath(normalized)) continue;
+
+    if (addToAllowlist(allowlist, normalized)) {
+      detectedPaths.add(normalized);
+    }
+  }
 
   // Register detected paths with backend for security allowlisting
   if (detectedPaths.size > 0) {

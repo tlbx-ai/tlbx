@@ -1,6 +1,16 @@
 type TerminalGapFillerPlacement = 'right' | 'bottom' | 'corner';
 
 const TERMINAL_GAP_FILLERS: TerminalGapFillerPlacement[] = ['right', 'bottom', 'corner'];
+const gapFillerState = new WeakMap<
+  HTMLElement,
+  {
+    background: string | null;
+    contentWidth: string;
+    contentHeight: string;
+    rightWidth: string;
+    bottomHeight: string;
+  }
+>();
 
 export function updateTerminalGapFillers(
   container: HTMLElement,
@@ -8,7 +18,6 @@ export function updateTerminalGapFillers(
   scale: number,
 ): void {
   const content = getTerminalGapContentElement(xterm);
-  syncTerminalGapBackground(container, xterm);
   const containerWidth = container.clientWidth;
   const containerHeight = container.clientHeight;
   const { width: measuredContentWidth, height: measuredContentHeight } =
@@ -17,11 +26,24 @@ export function updateTerminalGapFillers(
   const contentHeight = Math.min(containerHeight, measuredContentHeight);
   const rightWidth = Math.max(0, containerWidth - contentWidth);
   const bottomHeight = Math.max(0, containerHeight - contentHeight);
+  const previousState = gapFillerState.get(container);
+  const nextState = {
+    background: resolveTerminalGapBackground(container, xterm),
+    contentWidth: formatCssPixelValue(contentWidth),
+    contentHeight: formatCssPixelValue(contentHeight),
+    rightWidth: formatCssPixelValue(rightWidth),
+    bottomHeight: formatCssPixelValue(bottomHeight),
+  };
 
-  setTerminalGapVariable(container, '--terminal-gap-content-width', contentWidth);
-  setTerminalGapVariable(container, '--terminal-gap-content-height', contentHeight);
-  setTerminalGapVariable(container, '--terminal-gap-right-width', rightWidth);
-  setTerminalGapVariable(container, '--terminal-gap-bottom-height', bottomHeight);
+  if (previousState?.background !== nextState.background && nextState.background) {
+    setTerminalGapBackgroundValue(container, nextState.background);
+  }
+
+  setTerminalGapVariable(container, '--terminal-gap-content-width', nextState.contentWidth);
+  setTerminalGapVariable(container, '--terminal-gap-content-height', nextState.contentHeight);
+  setTerminalGapVariable(container, '--terminal-gap-right-width', nextState.rightWidth);
+  setTerminalGapVariable(container, '--terminal-gap-bottom-height', nextState.bottomHeight);
+  gapFillerState.set(container, nextState);
 
   if (rightWidth > 0 || bottomHeight > 0) {
     ensureTerminalGapFillers(container);
@@ -71,21 +93,21 @@ function measureTerminalGapContentSize(
 }
 
 export function clearTerminalGapFillers(container: HTMLElement): void {
-  setTerminalGapVariable(container, '--terminal-gap-content-width', 0);
-  setTerminalGapVariable(container, '--terminal-gap-content-height', 0);
-  setTerminalGapVariable(container, '--terminal-gap-right-width', 0);
-  setTerminalGapVariable(container, '--terminal-gap-bottom-height', 0);
+  gapFillerState.delete(container);
+  setTerminalGapVariable(container, '--terminal-gap-content-width', '0px');
+  setTerminalGapVariable(container, '--terminal-gap-content-height', '0px');
+  setTerminalGapVariable(container, '--terminal-gap-right-width', '0px');
+  setTerminalGapVariable(container, '--terminal-gap-bottom-height', '0px');
 }
 
-function syncTerminalGapBackground(container: HTMLElement, xterm: HTMLElement): void {
+function resolveTerminalGapBackground(container: HTMLElement, xterm: HTMLElement): string | null {
   if (typeof getComputedStyle !== 'function') {
-    return;
+    return null;
   }
 
   const terminalCanvasStack = getTerminalCanvasBackgroundStack(container);
   if (terminalCanvasStack) {
-    setTerminalGapBackgroundValue(container, terminalCanvasStack);
-    return;
+    return terminalCanvasStack;
   }
 
   const xtermBackground = getElementBackgroundColor(xterm);
@@ -103,10 +125,10 @@ function syncTerminalGapBackground(container: HTMLElement, xterm: HTMLElement): 
   ].filter(isPaintedBackground);
 
   if (layers.length === 0) {
-    return;
+    return null;
   }
 
-  setTerminalGapBackground(container, layers);
+  return buildTerminalGapBackground(layers);
 }
 
 function getTerminalCanvasBackgroundStack(container: HTMLElement): string | null {
@@ -160,16 +182,19 @@ function isTransparentBackgroundColor(value: string): boolean {
   return channels[3] === 0;
 }
 
-function setTerminalGapBackground(container: HTMLElement, layers: string[]): void {
-  const background = layers
+function buildTerminalGapBackground(layers: string[]): string {
+  return layers
     .map((layer, index) =>
       index < layers.length - 1 ? `linear-gradient(${layer}, ${layer})` : layer,
     )
     .join(', ');
-  setTerminalGapBackgroundValue(container, background);
 }
 
 function setTerminalGapBackgroundValue(container: HTMLElement, background: string): void {
+  if (getTerminalGapStyleValue(container, '--terminal-gap-background') === background) {
+    return;
+  }
+
   if (typeof container.style.setProperty === 'function') {
     container.style.setProperty('--terminal-gap-background', background);
     return;
@@ -201,14 +226,25 @@ function ensureTerminalGapFillers(container: HTMLElement): void {
   }
 }
 
-function setTerminalGapVariable(container: HTMLElement, name: string, value: number): void {
-  const px = formatCssPixelValue(value);
+function setTerminalGapVariable(container: HTMLElement, name: string, px: string): void {
+  if (getTerminalGapStyleValue(container, name) === px) {
+    return;
+  }
+
   if (typeof container.style.setProperty === 'function') {
     container.style.setProperty(name, px);
     return;
   }
 
   (container.style as CSSStyleDeclaration & Record<string, string>)[name] = px;
+}
+
+function getTerminalGapStyleValue(container: HTMLElement, name: string): string {
+  if (typeof container.style.getPropertyValue === 'function') {
+    return container.style.getPropertyValue(name);
+  }
+
+  return (container.style as CSSStyleDeclaration & Record<string, string>)[name] ?? '';
 }
 
 function formatCssPixelValue(value: number): string {
