@@ -8,7 +8,6 @@
     "lint:fix": "eslint src playwright.config.ts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"playwright.config.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"playwright.config.ts\"",
-    "audit:video": "node scripts/audit-video-with-gemini.mjs",
     "test": "playwright test",
     "test:headed": "playwright test --headed",
     "test:debug": "playwright test --debug",
