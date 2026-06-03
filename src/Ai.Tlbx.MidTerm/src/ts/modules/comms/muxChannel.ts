@@ -1472,10 +1472,7 @@ export function updateTerminalVisibility(
   const sessionsNeedingReplay: string[] = [];
 
   nextStreamableSessionIds.forEach((sessionId) => {
-    if (
-      !currentStreamableSessionIds.has(sessionId) &&
-      bgOutput.hasDeferredBackgroundFrames(sessionId)
-    ) {
+    if (bgOutput.hasDeferredBackgroundFrames(sessionId)) {
       sessionsNeedingReplay.push(sessionId);
     }
   });

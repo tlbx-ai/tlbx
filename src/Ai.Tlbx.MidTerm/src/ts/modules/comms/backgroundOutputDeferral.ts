@@ -18,6 +18,12 @@ const backgroundSkippedSessions = new Set<string>();
 const backgroundReplayGates = new Map<string, BackgroundReplayGatePhase>();
 const backgroundReplayGateTimeouts = new Map<string, number>();
 
+function isBrowserDocumentHidden(): boolean {
+  return (
+    typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')
+  );
+}
+
 export function parseOutputFrameEnvelope(
   payload: Uint8Array,
   compressed: boolean,
@@ -38,6 +44,10 @@ export function isSessionStreamable(
 ): boolean {
   if (isHubSessionId(sessionId)) {
     return true;
+  }
+
+  if (isBrowserDocumentHidden()) {
+    return false;
   }
 
   const activeSessionId = $activeSessionId.get();

@@ -646,6 +646,8 @@ function setupVisibilityChangeHandler(): void {
         connectMuxWebSocket();
       }
 
+      syncMuxTerminalVisibility();
+
       // Refocus active terminal when page becomes visible
       focusActiveTerminal();
 

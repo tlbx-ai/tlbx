@@ -606,6 +606,58 @@ describe('muxChannel', () => {
     ).toBe(true);
   });
 
+  it('keeps active terminal buffer-only while the browser tab is hidden and replays on foreground sync', async () => {
+    Object.defineProperty(document, 'hidden', {
+      value: true,
+      configurable: true,
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'hidden',
+      configurable: true,
+    });
+
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    const terminal = attachFakeTerminal(harness.sessionTerminals, sessionId);
+
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        harness.encodeSessionId,
+        harness.constants.MUX_TYPE_OUTPUT,
+        harness.constants.MUX_HEADER_SIZE,
+        sessionId,
+        7n,
+        'hidden-active-output',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+
+    await Promise.resolve();
+
+    expect(terminal.writeMock).not.toHaveBeenCalled();
+    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq ?? 0n).toBe(0n);
+
+    Object.defineProperty(document, 'hidden', {
+      value: false,
+      configurable: true,
+    });
+    Object.defineProperty(document, 'visibilityState', {
+      value: 'visible',
+      configurable: true,
+    });
+
+    harness.ws.send.mockClear();
+    harness.updateTerminalVisibility(sessionId, []);
+
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(
+      frames.some(
+        (frame) =>
+          frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST &&
+          harness.decodeSessionId(frame, 1) === sessionId,
+      ),
+    ).toBe(true);
+  });
+
   it('requests replay before accepting live output after unopened background frames were skipped', async () => {
     const harness = await loadHarness([0, 0, 0, 0, 0, 0]);
     const backgroundSessionId = 'sess5678';
