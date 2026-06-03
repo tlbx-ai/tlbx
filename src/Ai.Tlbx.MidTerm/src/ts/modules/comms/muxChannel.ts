@@ -1305,7 +1305,8 @@ export function requestBufferRefresh(
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
   const replayRows = mode === 'quickResume' ? muxSessionRouting.getReplayRows(sessionId) : null;
-  const resumeSequence = getResumeSequence(browserTransportSnapshots.get(sessionId));
+  const resumeSequence =
+    mode === 'quickResume' ? getResumeSequence(browserTransportSnapshots.get(sessionId)) : null;
   const frame = createBufferRequestFrame(
     MUX_HEADER_SIZE,
     MUX_TYPE_BUFFER_REQUEST,
@@ -1372,7 +1373,10 @@ export function updateTerminalVisibility(
   const sessionsNeedingReplay: string[] = [];
 
   nextStreamableSessionIds.forEach((sessionId) => {
-    if (!currentStreamableSessionIds.has(sessionId)) {
+    if (
+      !currentStreamableSessionIds.has(sessionId) &&
+      bgOutput.hasDeferredBackgroundFrames(sessionId)
+    ) {
       sessionsNeedingReplay.push(sessionId);
     }
   });

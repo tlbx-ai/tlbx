@@ -70,6 +70,10 @@ export function noteBackgroundFrameDeferred(
   }
 }
 
+export function hasDeferredBackgroundFrames(sessionId: string): boolean {
+  return backgroundSkippedSessions.has(sessionId);
+}
+
 export function getBackgroundReplayGatePhase(
   sessionId: string,
 ): BackgroundReplayGatePhase | undefined {
@@ -126,7 +130,11 @@ export function prepareBackgroundOutputDelivery(
   currentVisibleSessionIds: readonly string[],
 ): boolean | null {
   const envelope = parseOutputFrameEnvelope(payload, compressed);
-  if (!isSessionStreamable(sessionId, currentStreamableSessionIds, currentVisibleSessionIds)) {
+  const state = sessionTerminals.get(sessionId);
+  if (
+    !isSessionStreamable(sessionId, currentStreamableSessionIds, currentVisibleSessionIds) &&
+    state?.opened !== true
+  ) {
     noteBackgroundFrameDeferred(sessionId, envelope);
     return null;
   }
