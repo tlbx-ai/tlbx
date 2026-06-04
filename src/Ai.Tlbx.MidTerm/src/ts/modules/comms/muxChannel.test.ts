@@ -663,7 +663,7 @@ describe('muxChannel', () => {
     ).toBe(true);
   });
 
-  it('advances the browser receive cursor without writing xterm during hidden idle drain', async () => {
+  it('does not advance the browser receive cursor for hidden output that was not rendered', async () => {
     Object.defineProperty(document, 'hidden', {
       value: true,
       configurable: true,
@@ -691,11 +691,11 @@ describe('muxChannel', () => {
     await Promise.resolve();
 
     expect(terminal.writeMock).not.toHaveBeenCalled();
-    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq).toBe(11n);
+    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq ?? 0n).toBe(0n);
     expect(getBrowserTransportSnapshot(sessionId)?.renderedSeq ?? 0n).toBe(0n);
   });
 
-  it('uses receive cursor for hidden background deltas and foreground replay', async () => {
+  it('does not request hidden background deltas and resumes foreground from rendered cursor', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('MessageChannel', undefined);
     Object.defineProperty(document, 'hidden', {
@@ -733,15 +733,7 @@ describe('muxChannel', () => {
           frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST &&
           harness.decodeSessionId(frame, 1) === sessionId,
       );
-    expect(backgroundDeltaRequest).toBeDefined();
-    expect(backgroundDeltaRequest?.byteLength).toBe(harness.constants.MUX_HEADER_SIZE + 11);
-    expect(
-      new DataView(
-        backgroundDeltaRequest!.buffer,
-        backgroundDeltaRequest!.byteOffset,
-        backgroundDeltaRequest!.byteLength,
-      ).getBigUint64(harness.constants.MUX_HEADER_SIZE + 3, true),
-    ).toBe(11n);
+    expect(backgroundDeltaRequest).toBeUndefined();
 
     Object.defineProperty(document, 'hidden', {
       value: false,
@@ -770,7 +762,7 @@ describe('muxChannel', () => {
         foregroundReplayRequest!.byteOffset,
         foregroundReplayRequest!.byteLength,
       ).getBigUint64(harness.constants.MUX_HEADER_SIZE + 3, true),
-    ).toBe(11n);
+    ).toBe(0n);
   });
 
   it('requests replay before accepting live output after unopened background frames were skipped', async () => {
