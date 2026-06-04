@@ -4,8 +4,12 @@ import { $activeSessionId } from '../../stores';
 import { isHubSessionId } from '../hub/runtime';
 
 const BACKGROUND_REPLAY_GATE_TIMEOUT_MS = 5000;
+const BACKGROUND_OUTPUT_IDLE_MS = 2000;
 
 type BackgroundReplayGatePhase = 'awaitingReset' | 'awaitingReplayFrame';
+export type BackgroundOutputDeliveryPlan =
+  | { deliverToTerminal: true; clearReplayGateAfterFrame: boolean }
+  | { deliverToTerminal: false; clearReplayGateAfterFrame: boolean };
 
 export interface OutputFrameEnvelope {
   sequenceEnd: bigint;
@@ -17,10 +21,25 @@ export interface OutputFrameEnvelope {
 const backgroundSkippedSessions = new Set<string>();
 const backgroundReplayGates = new Map<string, BackgroundReplayGatePhase>();
 const backgroundReplayGateTimeouts = new Map<string, number>();
+let lastInteractiveActivityAtMs = 0;
 
 function isBrowserDocumentHidden(): boolean {
   return (
     typeof document !== 'undefined' && (document.hidden || document.visibilityState === 'hidden')
+  );
+}
+
+function nowMs(): number {
+  return typeof performance !== 'undefined' ? performance.now() : Date.now();
+}
+
+export function noteInteractiveActivity(): void {
+  lastInteractiveActivityAtMs = nowMs();
+}
+
+export function isBackgroundOutputDrainAllowed(): boolean {
+  return (
+    isBrowserDocumentHidden() && nowMs() - lastInteractiveActivityAtMs >= BACKGROUND_OUTPUT_IDLE_MS
   );
 }
 
@@ -84,6 +103,10 @@ export function hasDeferredBackgroundFrames(sessionId: string): boolean {
   return backgroundSkippedSessions.has(sessionId);
 }
 
+export function getDeferredBackgroundSessionIds(): string[] {
+  return Array.from(backgroundSkippedSessions);
+}
+
 export function getBackgroundReplayGatePhase(
   sessionId: string,
 ): BackgroundReplayGatePhase | undefined {
@@ -110,6 +133,7 @@ export function clearCompletedBackgroundReplay(sessionId: string): void {
 
 export function clearAllBackgroundReplayState(): void {
   backgroundSkippedSessions.clear();
+  lastInteractiveActivityAtMs = 0;
   backgroundReplayGates.clear();
   backgroundReplayGateTimeouts.forEach((timeout) => {
     clearTimeout(timeout);
@@ -138,11 +162,13 @@ export function prepareBackgroundOutputDelivery(
   compressed: boolean,
   currentStreamableSessionIds: ReadonlySet<string>,
   currentVisibleSessionIds: readonly string[],
-): boolean | null {
+): BackgroundOutputDeliveryPlan | null {
   const envelope = parseOutputFrameEnvelope(payload, compressed);
   if (!isSessionStreamable(sessionId, currentStreamableSessionIds, currentVisibleSessionIds)) {
     noteBackgroundFrameDeferred(sessionId, envelope);
-    return null;
+    return isBackgroundOutputDrainAllowed()
+      ? { deliverToTerminal: false, clearReplayGateAfterFrame: false }
+      : null;
   }
 
   const replayGate = getBackgroundReplayGatePhase(sessionId);
@@ -154,7 +180,10 @@ export function prepareBackgroundOutputDelivery(
     markBackgroundReplayAwaitingFrame(sessionId);
   }
 
-  return replayGate === 'awaitingReplayFrame' && envelope.sequenceEnd !== 0n;
+  return {
+    deliverToTerminal: true,
+    clearReplayGateAfterFrame: replayGate === 'awaitingReplayFrame' && envelope.sequenceEnd !== 0n,
+  };
 }
 
 export function finishBackgroundOutputDelivery(

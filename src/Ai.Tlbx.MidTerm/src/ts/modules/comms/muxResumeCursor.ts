@@ -13,6 +13,18 @@ export function getResumeSequence(snapshot: ResumeCursorSnapshot | undefined): b
   return snapshot.renderedSeq !== 0n ? snapshot.renderedSeq : snapshot.receivedSeq;
 }
 
+export function getRenderedResumeSequence(
+  snapshot: ResumeCursorSnapshot | undefined,
+): bigint | null {
+  return snapshot ? snapshot.renderedSeq : null;
+}
+
+export function getReceivedResumeSequence(
+  snapshot: ResumeCursorSnapshot | undefined,
+): bigint | null {
+  return snapshot ? snapshot.receivedSeq : null;
+}
+
 export function buildResumeCursorQueryValue(
   sessionTerminals: Map<string, TerminalState>,
   getSnapshot: (sessionId: string) => ResumeCursorSnapshot | undefined,
@@ -55,7 +67,7 @@ export function createBufferRequestFrame(
   replayRows: number | null,
   resumeSequence: bigint | null,
 ): Uint8Array {
-  const includeResumeSequence = resumeSequence !== null && resumeSequence > 0n;
+  const includeResumeSequence = resumeSequence !== null;
   const frame = new Uint8Array(
     muxHeaderSize + (includeResumeSequence ? 11 : replayRows === null ? 1 : 3),
   );

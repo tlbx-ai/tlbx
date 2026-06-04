@@ -1698,7 +1698,7 @@ internal sealed class TerminalSession : IDisposable
         var delta = checked((int)(availableEnd - cursor));
         if (maxBytes is int cap && cap > 0 && delta > cap)
         {
-            return -1;
+            return cap;
         }
 
         return delta;

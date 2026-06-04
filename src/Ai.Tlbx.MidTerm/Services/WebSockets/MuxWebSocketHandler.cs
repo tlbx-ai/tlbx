@@ -632,7 +632,8 @@ public sealed class MuxWebSocketHandler
                 return;
             }
 
-            var quickResume = quickResumeRequested && client.ShouldUseQuickResume();
+            var cursorDeltaRequested = sinceSequence.HasValue;
+            var quickResume = quickResumeRequested && (client.ShouldUseQuickResume() || cursorDeltaRequested);
             var snapshot = await _sessionManager.GetBufferAsync(
                 sessionId,
                 maxBytes: ResolveReplayMaxBytes(session, replayRows, quickResume),

@@ -54,7 +54,7 @@ import {
   buildResumeCursorQueryValue,
   countLocalTerminals,
   createBufferRequestFrame,
-  getResumeSequence,
+  getReceivedResumeSequence,
 } from './muxResumeCursor';
 import {
   armOutputRttMeasurement as armTrackedOutputRttMeasurement,
@@ -137,6 +137,8 @@ const REPLAY_HEAT_QUIET_MS = 750;
 const RESYNC_HEAT_SUPPRESS_MS = 3000;
 const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
 const BUFFER_REPLAY_MAX_MS = 12000;
+const BACKGROUND_DELTA_DRAIN_INTERVAL_MS = 2000;
+const BACKGROUND_DELTA_DRAIN_MAX_SESSIONS = 4;
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
@@ -436,6 +438,7 @@ const scheduledOutputQueues = new Set<string>();
 let outputQueueGeneration = 0;
 let yieldToMainChannel: MessageChannel | null = null;
 const pendingYieldToMainResolves: Array<() => void> = [];
+let backgroundDeltaDrainTimer: number | null = null;
 const printableInputCoalescer = createPrintableInputBurstCoalescer(
   getPrintableInputCoalescingMs,
   sendInputNow,
@@ -520,6 +523,38 @@ function clearQueuedOutput(): void {
   sessionOutputQueues.clear();
   resetOutputRttTracker(outputRttTracker);
   outputQueueGeneration++;
+}
+
+function stopBackgroundDeltaDrain(): void {
+  if (backgroundDeltaDrainTimer !== null) {
+    clearInterval(backgroundDeltaDrainTimer);
+    backgroundDeltaDrainTimer = null;
+  }
+}
+
+function ensureBackgroundDeltaDrain(): void {
+  if (backgroundDeltaDrainTimer !== null || typeof window === 'undefined') {
+    return;
+  }
+
+  backgroundDeltaDrainTimer = window.setInterval(() => {
+    if (
+      !bgOutput.isBackgroundOutputDrainAllowed() ||
+      !muxWs ||
+      muxWs.readyState !== WebSocket.OPEN
+    ) {
+      return;
+    }
+
+    const sessionIds = bgOutput
+      .getDeferredBackgroundSessionIds()
+      .filter((sessionId) => !isHubSessionId(sessionId))
+      .slice(0, BACKGROUND_DELTA_DRAIN_MAX_SESSIONS);
+
+    sessionIds.forEach((sessionId) => {
+      requestBufferRefresh(sessionId, 'backgroundDelta');
+    });
+  }, BACKGROUND_DELTA_DRAIN_INTERVAL_MS);
 }
 
 function noteQueueOverflow(sessionId: string): void {
@@ -723,25 +758,29 @@ function processOneFrame(
   item: OutputFrameItem,
 ): TerminalOutputDelivery | null | Promise<TerminalOutputDelivery | null> {
   try {
-    const clearReplayGateAfterFrame = bgOutput.prepareBackgroundOutputDelivery(
+    const deliveryPlan = bgOutput.prepareBackgroundOutputDelivery(
       item.sessionId,
       item.payload,
       item.compressed,
       currentStreamableSessionIds,
       currentVisibleSessionIds,
     );
-    if (clearReplayGateAfterFrame === null) {
+    if (deliveryPlan === null) {
+      ensureBackgroundDeltaDrain();
       return null;
+    }
+    if (!deliveryPlan.deliverToTerminal) {
+      ensureBackgroundDeltaDrain();
     }
 
     if (item.compressed) {
-      return processCompressedFrame(item, clearReplayGateAfterFrame);
+      return processCompressedFrame(item, deliveryPlan);
     }
 
     const frame = parseOutputFrame(item.payload);
     return processParsedOutputFrame(
       item,
-      clearReplayGateAfterFrame,
+      deliveryPlan,
       frame.sequenceEnd,
       frame.cols,
       frame.rows,
@@ -755,13 +794,13 @@ function processOneFrame(
 
 async function processCompressedFrame(
   item: OutputFrameItem,
-  clearReplayGateAfterFrame: boolean,
+  deliveryPlan: bgOutput.BackgroundOutputDeliveryPlan,
 ): Promise<TerminalOutputDelivery | null> {
   try {
     const frame = await parseCompressedOutputFrame(item.payload);
     return processParsedOutputFrame(
       item,
-      clearReplayGateAfterFrame,
+      deliveryPlan,
       frame.sequenceEnd,
       frame.cols,
       frame.rows,
@@ -775,7 +814,7 @@ async function processCompressedFrame(
 
 function processParsedOutputFrame(
   item: OutputFrameItem,
-  clearReplayGateAfterFrame: boolean,
+  deliveryPlan: bgOutput.BackgroundOutputDeliveryPlan,
   sequenceEnd: bigint,
   cols: number,
   rows: number,
@@ -787,9 +826,20 @@ function processParsedOutputFrame(
     snapshot.receivedSeq = maxSequence(snapshot.receivedSeq, sequenceEnd);
 
     const state = sessionTerminals.get(item.sessionId);
+    if (!deliveryPlan.deliverToTerminal) {
+      bgOutput.finishBackgroundOutputDelivery(
+        item.sessionId,
+        deliveryPlan.clearReplayGateAfterFrame,
+      );
+      return null;
+    }
+
     if (state && state.opened) {
       if (trimmedData.length > 0) {
-        bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
+        bgOutput.finishBackgroundOutputDelivery(
+          item.sessionId,
+          deliveryPlan.clearReplayGateAfterFrame,
+        );
         return {
           sessionId: item.sessionId,
           state,
@@ -803,7 +853,7 @@ function processParsedOutputFrame(
       bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, trimmedData);
     }
 
-    bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
+    bgOutput.finishBackgroundOutputDelivery(item.sessionId, deliveryPlan.clearReplayGateAfterFrame);
     return null;
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
@@ -1295,6 +1345,8 @@ function sendFrame(frame: Uint8Array): void {
 }
 
 export function sendInput(sessionId: string, data: string): void {
+  bgOutput.noteInteractiveActivity();
+
   if (isHubSessionId(sessionId)) {
     sendHubInput(sessionId, data);
     return;
@@ -1355,6 +1407,8 @@ function flushPendingInput(): void {
 }
 
 export function sendResize(sessionId: string, cols: number, rows: number): void {
+  bgOutput.noteInteractiveActivity();
+
   if (!$isMainBrowser.get()) {
     return;
   }
@@ -1389,7 +1443,7 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
  */
 export function requestBufferRefresh(
   sessionId: string,
-  mode: 'fullReplay' | 'quickResume' = 'fullReplay',
+  mode: 'fullReplay' | 'quickResume' | 'backgroundDelta' = 'fullReplay',
 ): void {
   if (isHubSessionId(sessionId)) {
     requestHubBufferRefresh(sessionId);
@@ -1400,22 +1454,35 @@ export function requestBufferRefresh(
   _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.lastReplayReason =
-    mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
+    mode === 'backgroundDelta'
+      ? 'background_delta_replay'
+      : mode === 'quickResume'
+        ? 'quick_resume_tail_replay'
+        : 'buffer_refresh_tail_replay';
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
-  const replayRows = mode === 'quickResume' ? muxSessionRouting.getReplayRows(sessionId) : null;
+  const replayRows =
+    mode === 'quickResume' || mode === 'backgroundDelta'
+      ? muxSessionRouting.getReplayRows(sessionId)
+      : null;
   const resumeSequence =
-    mode === 'quickResume' ? getResumeSequence(browserTransportSnapshots.get(sessionId)) : null;
+    mode === 'backgroundDelta'
+      ? getReceivedResumeSequence(browserTransportSnapshots.get(sessionId))
+      : mode === 'quickResume'
+        ? getReceivedResumeSequence(browserTransportSnapshots.get(sessionId))
+        : null;
   const frame = createBufferRequestFrame(
     MUX_HEADER_SIZE,
     MUX_TYPE_BUFFER_REQUEST,
     encodeSessionId,
     sessionId,
-    mode === 'quickResume',
+    mode === 'quickResume' || mode === 'backgroundDelta',
     replayRows,
     resumeSequence,
   );
-  bgOutput.armBackgroundReplayGate(sessionId);
+  if (mode !== 'backgroundDelta') {
+    bgOutput.armBackgroundReplayGate(sessionId);
+  }
   sendFrame(frame);
 }
 
@@ -1423,6 +1490,8 @@ export function requestBufferRefresh(
  * Send active session hint to server for priority delivery.
  */
 export function sendActiveSessionHint(sessionId: string | null): void {
+  bgOutput.noteInteractiveActivity();
+
   if (sessionId && isHubSessionId(sessionId)) {
     return;
   }
@@ -1463,12 +1532,13 @@ export function updateTerminalVisibility(
   activeSessionId: string | null,
   visibleSessionIds: readonly string[],
 ): void {
+  bgOutput.noteInteractiveActivity();
+
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
   const nextStreamableSessionIds = muxSessionRouting.getStreamableSessionIds(
     activeSessionId,
     normalizedVisibleSessionIds,
   );
-  const quickResumeEnabled = muxSessionRouting.isQuickResumeEnabled();
   const sessionsNeedingReplay: string[] = [];
 
   nextStreamableSessionIds.forEach((sessionId) => {
@@ -1485,7 +1555,7 @@ export function updateTerminalVisibility(
   }
 
   sessionsNeedingReplay.forEach((sessionId) => {
-    requestBufferRefresh(sessionId, quickResumeEnabled ? 'quickResume' : 'fullReplay');
+    requestBufferRefresh(sessionId, 'quickResume');
   });
 }
 
@@ -1557,6 +1627,7 @@ export function resetMuxChannelRuntimeForTests(): void {
 
   replaySuppressedSessions.clear();
   bgOutput.clearAllBackgroundReplayState();
+  stopBackgroundDeltaDrain();
   browserTransportSnapshots.clear();
   bracketedPasteState.clear();
   clearBracketedPasteScanState();
