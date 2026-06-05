@@ -94,15 +94,37 @@ function alphaOf(value: string): number {
 
 let rootStyle: MockStyle;
 let bodyClassList: MockClassList;
+let documentListeners: Map<string, Array<() => void>>;
+let windowListeners: Map<string, Array<() => void>>;
+let documentHasFocus: boolean;
+
+function emitDocumentEvent(name: string): void {
+  documentListeners.get(name)?.forEach((listener) => listener());
+}
+
+function emitWindowEvent(name: string): void {
+  windowListeners.get(name)?.forEach((listener) => listener());
+}
 
 beforeEach(() => {
   rootStyle = new MockStyle();
   bodyClassList = new MockClassList();
+  documentListeners = new Map();
+  windowListeners = new Map();
+  documentHasFocus = true;
 
   Object.defineProperty(globalThis, 'document', {
     value: {
       documentElement: { style: rootStyle },
       body: { classList: bodyClassList },
+      hidden: false,
+      visibilityState: 'visible',
+      hasFocus: () => documentHasFocus,
+      addEventListener: (name: string, listener: () => void) => {
+        const listeners = documentListeners.get(name) ?? [];
+        listeners.push(listener);
+        documentListeners.set(name, listeners);
+      },
     },
     configurable: true,
     writable: true,
@@ -113,7 +135,11 @@ beforeEach(() => {
       innerWidth: 1280,
       innerHeight: 720,
       matchMedia: () => ({ matches: false }),
-      addEventListener: () => undefined,
+      addEventListener: (name: string, listener: () => void) => {
+        const listeners = windowListeners.get(name) ?? [];
+        listeners.push(listener);
+        windowListeners.set(name, listeners);
+      },
     },
     configurable: true,
     writable: true,
@@ -325,6 +351,78 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--app-background-animation')).toBe(firstAnimation);
     expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe(firstPanX);
     expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe(firstPanY);
+  });
+
+  it('pauses Ken Burns while the browser tab is hidden or the window is inactive', () => {
+    const settings = createSettings({
+      backgroundImageEnabled: true,
+      backgroundImageFileName: 'paper.jpg',
+      backgroundImageRevision: 12,
+      backgroundKenBurnsEnabled: true,
+      backgroundKenBurnsZoomPercent: 180,
+      backgroundKenBurnsSpeedPxPerSecond: 24,
+    });
+
+    applyBackgroundAppearance(settings);
+
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
+    expect(documentListeners.get('visibilitychange')?.length).toBe(1);
+    expect(windowListeners.get('blur')?.length).toBe(1);
+    expect(windowListeners.get('focus')?.length).toBe(1);
+
+    Object.assign(globalThis.document, {
+      hidden: true,
+      visibilityState: 'hidden',
+    });
+    emitDocumentEvent('visibilitychange');
+
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(true);
+
+    Object.assign(globalThis.document, {
+      hidden: false,
+      visibilityState: 'visible',
+    });
+    emitDocumentEvent('visibilitychange');
+
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
+
+    documentHasFocus = false;
+    emitWindowEvent('blur');
+
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(true);
+
+    documentHasFocus = true;
+    emitWindowEvent('focus');
+
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
+  });
+
+  it('clears Ken Burns pause state when the animation is disabled', () => {
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: true,
+        backgroundKenBurnsZoomPercent: 180,
+        backgroundKenBurnsSpeedPxPerSecond: 24,
+      }),
+    );
+
+    documentHasFocus = false;
+    emitWindowEvent('blur');
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(true);
+
+    applyBackgroundAppearance(
+      createSettings({
+        backgroundImageEnabled: true,
+        backgroundImageFileName: 'paper.jpg',
+        backgroundImageRevision: 12,
+        backgroundKenBurnsEnabled: false,
+      }),
+    );
+
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
   });
 
   it('allows the UI transparency slider to reach a fully transparent UI shell', () => {

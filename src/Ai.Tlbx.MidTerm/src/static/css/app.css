@@ -637,6 +637,10 @@ body::before {
   pointer-events: none;
 }
 
+body.app-background-animation-paused::before {
+  animation-play-state: paused;
+}
+
 @keyframes midterm-app-background-ken-burns {
   0% {
     transform: translate3d(

@@ -94,6 +94,10 @@ const BACKGROUND_KEN_BURNS_REFERENCE_SIZE_PX = 720;
 const BACKGROUND_KEN_BURNS_PATH_MULTIPLIER = Math.PI * 2 * 0.46;
 const BACKGROUND_KEN_BURNS_PAN_X_FACTOR = 0.24;
 const BACKGROUND_KEN_BURNS_PAN_Y_FACTOR = 0.16;
+const BACKGROUND_ANIMATION_PAUSED_CLASS = 'app-background-animation-paused';
+
+let backgroundKenBurnsAnimationActive = false;
+let backgroundAnimationPauseListenerWindow: Window | null = null;
 
 interface RgbColor {
   r: number;
@@ -283,14 +287,47 @@ function syncBackgroundKenBurnsEffect(
   root.style.setProperty('--app-background-ken-burns-pan-y', `${panYPercent.toFixed(3)}%`);
 
   if (!enabled || speedPxPerSecond <= 0) {
+    backgroundKenBurnsAnimationActive = false;
     root.style.setProperty('--app-background-animation', 'none');
+    syncBackgroundAnimationPauseState();
     return;
   }
 
+  backgroundKenBurnsAnimationActive = true;
+  ensureBackgroundAnimationPauseListeners();
   root.style.setProperty(
     '--app-background-animation',
     `midterm-app-background-ken-burns ${computeBackgroundKenBurnsDurationSeconds(scale, speedPxPerSecond).toFixed(3)}s linear infinite`,
   );
+  syncBackgroundAnimationPauseState();
+}
+
+function ensureBackgroundAnimationPauseListeners(): void {
+  if (typeof window === 'undefined' || backgroundAnimationPauseListenerWindow === window) {
+    return;
+  }
+
+  window.addEventListener('blur', syncBackgroundAnimationPauseState);
+  window.addEventListener('focus', syncBackgroundAnimationPauseState);
+  window.addEventListener('pagehide', syncBackgroundAnimationPauseState);
+  window.addEventListener('pageshow', syncBackgroundAnimationPauseState);
+  document.addEventListener('visibilitychange', syncBackgroundAnimationPauseState);
+  backgroundAnimationPauseListenerWindow = window;
+}
+
+function syncBackgroundAnimationPauseState(): void {
+  document.body.classList.toggle(
+    BACKGROUND_ANIMATION_PAUSED_CLASS,
+    backgroundKenBurnsAnimationActive && isBackgroundAnimationPageInactive(),
+  );
+}
+
+function isBackgroundAnimationPageInactive(): boolean {
+  if (document.hidden || document.visibilityState === 'hidden') {
+    return true;
+  }
+
+  return typeof document.hasFocus === 'function' && !document.hasFocus();
 }
 
 function computeBackgroundKenBurnsDurationSeconds(scale: number, speedPxPerSecond: number): number {
