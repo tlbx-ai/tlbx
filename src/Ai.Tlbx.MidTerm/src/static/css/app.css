@@ -637,10 +637,6 @@ body::before {
   pointer-events: none;
 }
 
-body.app-background-animation-paused::before {
-  animation-play-state: paused;
-}
-
 @keyframes midterm-app-background-ken-burns {
   0% {
     transform: translate3d(
@@ -799,6 +795,7 @@ body.app-background-animation-paused::before {
     .session-subtitle,
     .session-details,
     .session-foreground,
+    .session-extra-git,
     .voice-section-title,
     .network-section-title,
     .sidebar-footer .version,
@@ -815,6 +812,7 @@ body.app-background-animation-paused::before {
     .session-subtitle,
     .session-details,
     .session-foreground,
+    .session-extra-git,
     .voice-section-title,
     .network-section-title,
     .sidebar-footer .version,
@@ -16489,7 +16487,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 .sidebar
   .session-item
   .session-process-info
-  :is(.session-foreground, .fg-cwd, .fg-separator, .fg-process) {
+  :is(.session-foreground, .session-extra-git, .fg-cwd, .fg-separator, .fg-process) {
   color: var(--sidebar-session-secondary-text) !important;
 }
 

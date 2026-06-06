@@ -353,7 +353,7 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe(firstPanY);
   });
 
-  it('pauses Ken Burns while the browser tab is hidden or the window is inactive', () => {
+  it('keeps Ken Burns active while the browser tab is hidden or the window is inactive', () => {
     const settings = createSettings({
       backgroundImageEnabled: true,
       backgroundImageFileName: 'paper.jpg',
@@ -366,9 +366,9 @@ describe('backgroundAppearance', () => {
     applyBackgroundAppearance(settings);
 
     expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
-    expect(documentListeners.get('visibilitychange')?.length).toBe(1);
-    expect(windowListeners.get('blur')?.length).toBe(1);
-    expect(windowListeners.get('focus')?.length).toBe(1);
+    expect(documentListeners.get('visibilitychange')?.length ?? 0).toBe(0);
+    expect(windowListeners.get('blur')?.length ?? 0).toBe(0);
+    expect(windowListeners.get('focus')?.length ?? 0).toBe(0);
 
     Object.assign(globalThis.document, {
       hidden: true,
@@ -376,7 +376,7 @@ describe('backgroundAppearance', () => {
     });
     emitDocumentEvent('visibilitychange');
 
-    expect(bodyClassList.contains('app-background-animation-paused')).toBe(true);
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
 
     Object.assign(globalThis.document, {
       hidden: false,
@@ -389,7 +389,7 @@ describe('backgroundAppearance', () => {
     documentHasFocus = false;
     emitWindowEvent('blur');
 
-    expect(bodyClassList.contains('app-background-animation-paused')).toBe(true);
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
 
     documentHasFocus = true;
     emitWindowEvent('focus');
@@ -397,7 +397,7 @@ describe('backgroundAppearance', () => {
     expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
   });
 
-  it('clears Ken Burns pause state when the animation is disabled', () => {
+  it('does not add a Ken Burns pause state when the animation is disabled', () => {
     applyBackgroundAppearance(
       createSettings({
         backgroundImageEnabled: true,
@@ -411,7 +411,7 @@ describe('backgroundAppearance', () => {
 
     documentHasFocus = false;
     emitWindowEvent('blur');
-    expect(bodyClassList.contains('app-background-animation-paused')).toBe(true);
+    expect(bodyClassList.contains('app-background-animation-paused')).toBe(false);
 
     applyBackgroundAppearance(
       createSettings({

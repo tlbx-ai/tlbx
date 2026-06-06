@@ -254,6 +254,42 @@ public sealed class SessionUpdateStateServiceTests
     }
 
     [Fact]
+    public void BuildFullUpdateRestoreDecorations_SkipsUnrecoverableAppServerControlOnlySession()
+    {
+        var state = new SessionUpdateState
+        {
+            Kind = "full",
+            SavedAt = DateTimeOffset.UtcNow,
+            Sessions =
+            [
+                new SessionDecorationState
+                {
+                    SessionId = "agent-only-without-runtime-info",
+                    ShellType = "Pwsh",
+                    CurrentDirectory = "Q:\\repos\\MidTerm",
+                    AppServerControlOnly = true,
+                    Topic = "must not become zombie"
+                },
+                new SessionDecorationState
+                {
+                    SessionId = "recoverable-agent",
+                    ShellType = "Pwsh",
+                    CurrentDirectory = "Q:\\repos\\MidTerm",
+                    AppServerControlOnly = true,
+                    ProfileHint = "codex"
+                }
+            ]
+        };
+
+        var decorations = SessionUpdateStateService.BuildFullUpdateRestoreDecorations(
+            state,
+            new Dictionary<string, SessionResumeIntent>(StringComparer.Ordinal));
+
+        var decoration = Assert.Single(decorations);
+        Assert.Equal("recoverable-agent", decoration.SessionId);
+    }
+
+    [Fact]
     public void MergeExtraGitRepos_KeepsPersistedRepoWhenLiveWatcherMissesIt()
     {
         var repos = SessionUpdateStateService.MergeExtraGitRepos(

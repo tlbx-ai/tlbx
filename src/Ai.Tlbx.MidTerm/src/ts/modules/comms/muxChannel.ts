@@ -1325,11 +1325,7 @@ function sendInputNow(sessionId: string, data: string, inputAtMs: number): void 
     return;
   }
 
-  if (sessionId !== lastHintedSessionId) {
-    _suppressHeatCallback?.(1500);
-    sendActiveSessionHint(sessionId);
-    lastHintedSessionId = sessionId;
-  }
+  const shouldSendActiveHint = sessionId !== lastHintedSessionId;
 
   maybeSendInputTraceMarker(sessionId, inputAtMs, sendFrame, encodeSessionId);
   recordInputTimestamp(sessionId);
@@ -1344,6 +1340,12 @@ function sendInputNow(sessionId: string, data: string, inputAtMs: number): void 
       textEncoder,
     ),
   );
+
+  if (shouldSendActiveHint) {
+    _suppressHeatCallback?.(1500);
+    sendActiveSessionHint(sessionId);
+    lastHintedSessionId = sessionId;
+  }
 }
 
 function flushPendingInput(): void {
