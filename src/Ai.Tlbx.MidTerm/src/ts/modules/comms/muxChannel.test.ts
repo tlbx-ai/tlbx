@@ -905,15 +905,15 @@ describe('muxChannel', () => {
 
     expect(harness.ws.send).toHaveBeenCalledTimes(3);
     const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
-    expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_ACTIVE_HINT);
-    expect(frames[1]?.[0]).toBe(harness.constants.MUX_TYPE_INPUT_TRACE_MARKER);
-    expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_INPUT);
-    expect(frames[2]?.[harness.constants.MUX_HEADER_SIZE]).toBe('a'.charCodeAt(0));
+    expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_INPUT_TRACE_MARKER);
+    expect(frames[1]?.[0]).toBe(harness.constants.MUX_TYPE_INPUT);
+    expect(frames[1]?.[harness.constants.MUX_HEADER_SIZE]).toBe('a'.charCodeAt(0));
+    expect(frames[2]?.[0]).toBe(harness.constants.MUX_TYPE_ACTIVE_HINT);
 
     const markerView = new DataView(
-      frames[1]!.buffer,
-      frames[1]!.byteOffset,
-      frames[1]!.byteLength,
+      frames[0]!.buffer,
+      frames[0]!.byteOffset,
+      frames[0]!.byteLength,
     );
     expect(markerView.getUint32(harness.constants.MUX_HEADER_SIZE, true)).not.toBe(0);
   });
