@@ -9,6 +9,9 @@ perf.scenario = {
   terminalCountBefore: 0,
   refreshCallsBeforeFreeze: 0,
   refreshCallsAfterResume: 0,
+  refreshCallsAfterFocusPulse: 0,
+  claimedReferenceBrowser: false,
+  isMainBrowserBeforeFreeze: null,
   xtermsAfterOpen: 0,
 };
 
@@ -39,6 +42,16 @@ const created = await fetch("/api/sessions", {
 
 perf.scenario.sessionId = created.id;
 
+await waitFor(
+  () => document.querySelector(`[data-session-id="${created.id}"]`),
+  "created session row",
+);
+document.querySelector(`[data-session-id="${created.id}"]`)?.click();
+await waitFor(
+  () => window.mmDebug?.activeId === created.id,
+  "created session selected",
+);
+
 const state = await waitFor(() => {
   const terminalState = window.mmDebug?.terminals?.get(created.id);
   return terminalState?.opened ? terminalState : null;
@@ -47,6 +60,22 @@ const state = await waitFor(() => {
 perf.scenario.terminalCountBefore = window.mmDebug?.terminals?.size ?? 0;
 perf.scenario.xtermsAfterOpen = document.querySelectorAll(".xterm").length;
 
+const claimOverlay = document.querySelector(
+  ".terminal-container.scaled .scaled-overlay",
+);
+if (claimOverlay) {
+  claimOverlay.click();
+  perf.scenario.claimedReferenceBrowser = true;
+  await waitFor(
+    () =>
+      !document.body.innerText.includes(
+        "Make this the reference scale browser",
+      ),
+    "reference browser claim",
+  );
+  await sleep(500);
+}
+
 const originalRefresh = state.terminal.refresh.bind(state.terminal);
 state.terminal.refresh = (...args) => {
   perf.scenario.refreshCallsAfterResume += 1;
@@ -54,3 +83,11 @@ state.terminal.refresh = (...args) => {
 };
 
 perf.scenario.refreshCallsBeforeFreeze = perf.scenario.refreshCallsAfterResume;
+perf.scenario.isMainBrowserBeforeFreeze =
+  document.body.innerText.includes("Make this the reference scale browser") ===
+  false;
+
+window.dispatchEvent(new Event("focus"));
+await sleep(300);
+perf.scenario.refreshCallsAfterFocusPulse =
+  perf.scenario.refreshCallsAfterResume;

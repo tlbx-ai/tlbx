@@ -24,7 +24,7 @@ import {
   getSession,
 } from '../../stores';
 import { throttle } from '../../utils';
-import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
+import * as terminalManager from './manager';
 import {
   isTerminalVisible,
   remeasureTerminalCells,
@@ -99,11 +99,6 @@ export function refreshTerminalPresentation(
     refreshTerminalRenderer(currentState);
   });
 }
-
-/**
- * Get the total width of all visible dock panels.
- * Web preview can coexist with one other dock (commands, git, or file viewer).
- */
 function getDockPanelWidth(): number {
   let total = 0;
   for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock', 'web-preview-dock']) {
@@ -391,12 +386,12 @@ async function resolveMeasurementSource(
     return { source: 'existing-terminal', ...existingMeasurement };
   }
 
-  const calibrationPromise = getCalibrationPromise();
+  const calibrationPromise = terminalManager.getCalibrationPromise();
   if (calibrationPromise) {
     await calibrationPromise;
   }
 
-  const calibration = getCalibrationMeasurement();
+  const calibration = terminalManager.getCalibrationMeasurement();
   if (
     calibration &&
     calibration.fontSize === fontSize &&
@@ -510,10 +505,7 @@ export async function calculateOptimalDimensions(
 function refreshRendererForMeasurement(
   state: Pick<TerminalState, 'terminal' | 'container' | 'opened'>,
 ): boolean {
-  if (!state.opened || !isTerminalVisible(state)) {
-    return false;
-  }
-
+  if (!state.opened || !isTerminalVisible(state)) return false;
   remeasureTerminalCells(state);
   return true;
 }
@@ -751,7 +743,7 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
     state,
   );
   if (!isSoftKeyboardVisible()) {
-    focusActiveTerminal();
+    terminalManager.focusActiveTerminal();
   }
 }
 
@@ -1293,9 +1285,9 @@ export function scheduleForegroundResizeRecovery(): void {
       foregroundResizeRecoveryScheduled = false;
       if (!$isMainBrowser.get()) return;
       ensureMainBrowserContainerResizeObserver();
-      sessionTerminals.forEach((state) => {
+      sessionTerminals.forEach((state, sessionId) => {
         if (!state.opened || !isTerminalVisible(state)) return;
-        refreshTerminalRenderer(state);
+        terminalManager.recoverTerminalRendererAfterForeground(sessionId, state);
       });
       periodicResizeCheck();
     });

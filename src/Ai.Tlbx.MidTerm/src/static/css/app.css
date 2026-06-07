@@ -4489,6 +4489,23 @@ body::before {
   font-size: var(--fs-md);
 }
 
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+  .terminal-container.scaled .scaled-overlay {
+    inset: 50% 16px auto;
+    min-height: 52px;
+    justify-content: center;
+    padding: 12px 14px;
+    transform: translateY(-50%);
+    background-color: var(--bg-dropdown-opaque);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    box-shadow: 0 8px 26px var(--shadow-color);
+    opacity: 0.98;
+    text-align: center;
+    white-space: normal;
+  }
+}
+
 /* Sidebar header buttons */
 .sidebar-header-buttons {
   display: flex;
@@ -9270,8 +9287,8 @@ body.shared-session-mode .session-tab-bar {
   background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));
   color: var(--command-bay-text, var(--text-primary));
   min-height: var(--smart-input-textarea-min-height);
-  padding: var(--smart-input-textarea-padding-top) 9px
-    var(--smart-input-textarea-padding-bottom) 9px;
+  padding: var(--smart-input-textarea-padding-top) 9px var(--smart-input-textarea-padding-bottom)
+    9px;
   font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
   font-size: var(--terminal-font-size, 16px);
   font-weight: var(--terminal-font-weight, normal);
@@ -10805,7 +10822,10 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-tab-shell.active {
   border-color: var(--accent-gold);
-  border-bottom-color: var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background));
+  border-bottom-color: var(
+    --web-preview-pane-chrome-background,
+    var(--workspace-pane-chrome-background)
+  );
   background: color-mix(
     in srgb,
     var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 78%,
@@ -10997,7 +11017,11 @@ body.shared-session-mode .session-tab-bar {
 
 #web-preview-mobile-emulation[aria-pressed='true'] {
   color: var(--text-accent);
-  background: color-mix(in srgb, var(--text-accent) 18%, var(--command-bay-ui-reactive-surface, var(--btn-secondary)) 82%);
+  background: color-mix(
+    in srgb,
+    var(--text-accent) 18%,
+    var(--command-bay-ui-reactive-surface, var(--btn-secondary)) 82%
+  );
   border-color: color-mix(in srgb, var(--text-accent) 76%, var(--border-color) 24%);
   box-shadow:
     inset 0 0 0 1px color-mix(in srgb, var(--text-accent) 46%, transparent),
@@ -11217,7 +11241,11 @@ body.shared-session-mode .session-tab-bar {
   justify-content: center;
   padding: 10px;
   box-sizing: border-box;
-  background: color-mix(in srgb, var(--web-preview-pane-background, var(--workspace-pane-background)) 86%, var(--bg-primary) 14%);
+  background: color-mix(
+    in srgb,
+    var(--web-preview-pane-background, var(--workspace-pane-background)) 86%,
+    var(--bg-primary) 14%
+  );
 }
 
 #web-preview-iframe-host {
@@ -11475,10 +11503,7 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
   gap: 2px 10px;
   padding: 7px 9px;
   border-radius: var(--command-bay-control-radius, 8px);
-  background: var(
-    --command-bay-ui-reactive-surface,
-    var(--text-input-background, var(--bg-input))
-  );
+  background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));
   border: 1px solid
     var(--command-bay-queue-border, color-mix(in srgb, var(--text-secondary) 22%, transparent));
   width: 100%;
@@ -12691,9 +12716,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   z-index: 2;
   min-height: var(--command-bay-automation-chip-height, 30.6px);
   padding: 0 11px;
-  border: 1px solid var(--command-bay-ui-reactive-border, color-mix(in srgb, var(--bg-surface) 84%, transparent));
+  border: 1px solid
+    var(--command-bay-ui-reactive-border, color-mix(in srgb, var(--bg-surface) 84%, transparent));
   border-radius: var(--command-bay-pill-radius, 8px);
-  background: var(--command-bay-ui-reactive-surface, color-mix(in srgb, var(--bg-elevated) 94%, transparent));
+  background: var(
+    --command-bay-ui-reactive-surface,
+    color-mix(in srgb, var(--bg-elevated) 94%, transparent)
+  );
   color: var(--command-bay-action-ink, color-mix(in srgb, var(--text-secondary) 93%, transparent));
   box-shadow: var(--command-bay-shadow, none);
   font-family: var(--font-ui);
@@ -12712,8 +12741,14 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 }
 
 .agent-scroll-to-bottom:hover {
-  border-color: var(--command-bay-border-strong, color-mix(in srgb, var(--border-color) 72%, var(--accent-blue)));
-  background: var(--command-bay-surface-hover, color-mix(in srgb, var(--bg-surface) 94%, transparent));
+  border-color: var(
+    --command-bay-border-strong,
+    color-mix(in srgb, var(--border-color) 72%, var(--accent-blue))
+  );
+  background: var(
+    --command-bay-surface-hover,
+    color-mix(in srgb, var(--bg-surface) 94%, transparent)
+  );
   color: var(--command-bay-text, var(--text-primary));
 }
 
@@ -13180,7 +13215,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   mask-repeat: no-repeat;
   -webkit-mask-size: 300% 100%;
   mask-size: 300% 100%;
-  animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out infinite alternate;
+  animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out
+    infinite alternate;
   animation-delay: var(--agent-busy-animation-delay-ms, 0ms);
   will-change: mask-position;
 }
@@ -16516,10 +16552,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   --command-bay-pill-radius: 8px;
   --command-bay-font-size: 13px;
   --command-bay-meta-size: 11px;
-  --command-bay-control-background-color: var(
-    --command-bay-control-background,
-    var(--terminal-bg)
-  );
+  --command-bay-control-background-color: var(--command-bay-control-background, var(--terminal-bg));
   --command-bay-surface-color: var(--command-bay-control-background-color);
   --command-bay-surface: var(--command-bay-control-background);
   --command-bay-surface-strong-color: var(--command-bay-control-background-color);
@@ -16529,10 +16562,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
     var(--command-bay-control-background-color) 90%,
     var(--text-primary) 10%
   );
-  --command-bay-surface-hover: linear-gradient(
-      var(--command-bay-surface-hover-color),
-      var(--command-bay-surface-hover-color)
-    ),
+  --command-bay-surface-hover:
+    linear-gradient(var(--command-bay-surface-hover-color), var(--command-bay-surface-hover-color)),
     var(--command-bay-control-background);
   --command-bay-border: transparent;
   --command-bay-border-strong: transparent;
@@ -16879,8 +16910,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
   width: 100%;
   min-height: var(--smart-input-textarea-min-height);
   padding: var(--smart-input-textarea-padding-top)
-    calc(9px + var(--smart-input-expand-hit-size) - 10px)
-    var(--smart-input-textarea-padding-bottom) 9px;
+    calc(9px + var(--smart-input-expand-hit-size) - 10px) var(--smart-input-textarea-padding-bottom)
+    9px;
   border-radius: 10px;
   border: 1px solid var(--command-bay-textbox-border);
   background: var(--command-bay-ui-reactive-surface);
@@ -18130,8 +18161,8 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
       var(--smart-input-mobile-text-size) * 1.2 + var(--smart-input-textarea-line-gap-extra)
     );
     --smart-input-textarea-padding-y: 4px;
-    padding: var(--smart-input-textarea-padding-top) 33px
-      var(--smart-input-textarea-padding-bottom) 7px;
+    padding: var(--smart-input-textarea-padding-top) 33px var(--smart-input-textarea-padding-bottom)
+      7px;
     border-radius: 8px;
     font-size: var(--smart-input-mobile-text-size);
     line-height: var(--smart-input-textarea-line-height);

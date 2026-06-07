@@ -8,7 +8,7 @@ import {
   scheduleForegroundResizeRecovery,
 } from './scaling';
 import { sendResize } from '../comms';
-import { focusActiveTerminal } from './manager';
+import { focusActiveTerminal, recoverTerminalRendererAfterForeground } from './manager';
 
 const mocks = vi.hoisted(() => ({
   isTerminalVisible: vi.fn((state: any) => !state.container?.classList?.contains('hidden')),
@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
     }
   }),
   refreshTerminalRenderer: vi.fn(),
+  recoverTerminalRendererAfterForeground: vi.fn(),
 }));
 
 vi.mock('../comms', () => ({
@@ -43,6 +44,7 @@ vi.mock('./manager', () => ({
   focusActiveTerminal: vi.fn(),
   getCalibrationMeasurement: () => null,
   getCalibrationPromise: () => null,
+  recoverTerminalRendererAfterForeground: mocks.recoverTerminalRendererAfterForeground,
 }));
 
 vi.mock('./presentationRefresh', () => ({
@@ -191,6 +193,7 @@ describe('fitSessionToScreen', () => {
     mocks.isTerminalVisible.mockClear();
     mocks.remeasureTerminalCells.mockClear();
     mocks.refreshTerminalRenderer.mockClear();
+    mocks.recoverTerminalRendererAfterForeground.mockClear();
     vi.mocked(sendResize).mockReset();
     vi.mocked(focusActiveTerminal).mockReset();
     $isMainBrowser.set(true);
@@ -278,7 +281,7 @@ describe('fitSessionToScreen', () => {
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
 
-  it('redraws visible terminals without sending a resize on foreground recovery when the viewport already matches', () => {
+  it('recovers visible terminal renderers without sending a resize on foreground recovery when the viewport already matches', () => {
     const harness = createFitHarness();
     harness.state.terminal.cols = 81;
     harness.state.serverCols = 81;
@@ -286,7 +289,7 @@ describe('fitSessionToScreen', () => {
 
     scheduleForegroundResizeRecovery();
 
-    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledWith(harness.state);
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledWith('s1', harness.state);
     expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).not.toHaveBeenCalled();
   });
@@ -297,7 +300,7 @@ describe('fitSessionToScreen', () => {
 
     scheduleForegroundResizeRecovery();
 
-    expect(mocks.refreshTerminalRenderer).toHaveBeenCalledWith(harness.state);
+    expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledWith('s1', harness.state);
     expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
@@ -309,7 +312,7 @@ describe('fitSessionToScreen', () => {
 
     scheduleForegroundResizeRecovery();
 
-    expect(mocks.refreshTerminalRenderer).not.toHaveBeenCalled();
+    expect(recoverTerminalRendererAfterForeground).not.toHaveBeenCalled();
   });
 
   it('coalesces repeated scaling requests for the same terminal into one animation frame', () => {

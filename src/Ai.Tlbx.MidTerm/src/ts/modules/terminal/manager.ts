@@ -80,6 +80,7 @@ import {
 import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha';
 import { shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
+import { refreshTerminalRenderer } from './presentationRefresh';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -656,6 +657,35 @@ export function syncTerminalWebglState(
   }
 
   attachWebglAddon(sessionId, state);
+}
+
+export function recoverTerminalRendererAfterForeground(
+  sessionId: string,
+  state: TerminalState,
+): void {
+  if (!state.opened) {
+    return;
+  }
+
+  refreshTerminalRenderer(state);
+
+  if (!state.hasWebgl) {
+    return;
+  }
+
+  const settings = $currentSettings.get();
+  detachWebglAddon(sessionId, state);
+  attachWebglAddon(sessionId, state);
+  syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
+  syncTerminalRgbBackgroundTransparency(state, settings);
+
+  requestAnimationFrame(() => {
+    if (!sessionTerminals.has(sessionId) || !state.opened) {
+      return;
+    }
+
+    refreshTerminalRenderer(state);
+  });
 }
 
 /**
