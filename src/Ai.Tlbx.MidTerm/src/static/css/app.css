@@ -1707,11 +1707,11 @@ body::before {
 }
 
 .session-extra-git-stat-additions {
-  color: currentColor;
+  color: var(--accent-green);
 }
 
 .session-extra-git-stat-deletions {
-  color: currentColor;
+  color: var(--accent-red);
 }
 
 /* Unnamed sessions: process indicator promoted to title row */
