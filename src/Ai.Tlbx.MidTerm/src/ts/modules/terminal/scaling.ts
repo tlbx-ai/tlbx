@@ -135,9 +135,7 @@ function measureTerminalCellDimensions(
   state: Pick<TerminalState, 'terminal' | 'container'>,
 ): { cellWidth: number; cellHeight: number } | null {
   const xtermDims = getXtermCellDimensions(state.terminal);
-  if (xtermDims) {
-    return xtermDims;
-  }
+  if (xtermDims) return xtermDims;
 
   const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
   const terminalCols = state.terminal.cols;
@@ -161,9 +159,7 @@ function calculateOptimalDimensionsForViewport(
   isLayoutPane: boolean,
 ): { cols: number; rows: number } | null {
   const cellDims = measureTerminalCellDimensions(state);
-  if (!cellDims) {
-    return null;
-  }
+  if (!cellDims) return null;
 
   const rect = container.getBoundingClientRect();
   const tabBarH = isLayoutPane ? 0 : getTabBarHeight();
@@ -188,9 +184,7 @@ export function getTerminalViewportMismatch(
 ): { optimalCols: number; optimalRows: number; isTooLarge: boolean; isTooSmall: boolean } | null {
   const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
   const viewportContainer = layoutPane ?? dom.terminalsArea;
-  if (!viewportContainer) {
-    return null;
-  }
+  if (!viewportContainer) return null;
 
   const optimal = calculateOptimalDimensionsForViewport(state, viewportContainer, !!layoutPane);
   if (!optimal) {
@@ -1291,11 +1285,6 @@ function scheduleFooterReserveResize(): void {
 
 let foregroundResizeRecoveryScheduled = false;
 
-/**
- * Recover main-browser sizing after the page returns to the foreground.
- * Uses the lightweight mismatch check so correctly sized terminals
- * remain untouched and do not trigger unnecessary renderer/layout work.
- */
 export function scheduleForegroundResizeRecovery(): void {
   if (foregroundResizeRecoveryScheduled) return;
   foregroundResizeRecoveryScheduled = true;
@@ -1304,6 +1293,10 @@ export function scheduleForegroundResizeRecovery(): void {
       foregroundResizeRecoveryScheduled = false;
       if (!$isMainBrowser.get()) return;
       ensureMainBrowserContainerResizeObserver();
+      sessionTerminals.forEach((state) => {
+        if (!state.opened || !isTerminalVisible(state)) return;
+        refreshTerminalRenderer(state);
+      });
       periodicResizeCheck();
     });
   });

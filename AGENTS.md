@@ -28,7 +28,7 @@ Rules:
 - Direct stable release path: use `scripts/release.ps1` only when explicitly requested.
 - Never promote to stable, merge to `main`, or run `scripts/promote.ps1` unless the user explicitly asks for stable/main/promote. A dev/prerelease request never implies stable promotion.
 - Release scripts are allowed to create and push release tags and release commits as part of their authorized full cycle.
-- For urgent fixes, implement and verify the change first, then stop before release or promotion unless the user explicitly says to continue.
+- For MidTerm fixes, implement and verify the change, then cut a dev patch release with `scripts/release-dev.ps1` unless no good solution was found, verification is uncertain, or Johannes explicitly says not to release yet.
 - Before running a release script, inspect `git status`. Fix normal worktree issues yourself, including committing intended changes or removing accidental generated leftovers. If the tree contains outlandish or unrelated changes whose ownership or intent is unclear, stop and ask before releasing.
 - Choose `-mthostUpdate yes` when the protocol between `mt`, `mthost`, or `mtagenthost` changes, or when `mthost`/`mtagenthost` internals changed in a way that must ship to running installs. Choose `-mthostUpdate no` for web/frontend-only changes. If uncertain, ask before releasing.
 - For release tasks, the final stop message must end by showing the release contents. Prefer dumping the same changelog entries that were passed to the release script.
