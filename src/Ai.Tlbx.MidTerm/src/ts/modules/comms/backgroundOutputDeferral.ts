@@ -108,6 +108,11 @@ export function clearCompletedBackgroundReplay(sessionId: string): void {
   backgroundSkippedSessions.delete(sessionId);
 }
 
+export function clearBackgroundReplayStateForSession(sessionId: string): void {
+  clearBackgroundReplayGate(sessionId);
+  backgroundSkippedSessions.delete(sessionId);
+}
+
 export function clearAllBackgroundReplayState(): void {
   backgroundSkippedSessions.clear();
   backgroundReplayGates.clear();

@@ -131,6 +131,45 @@ public sealed class MuxClientTests
         Assert.Equal(MuxWebSocketHandler.ResolveViewportReplayBytes(session, replayRows: 40), maxBytes);
     }
 
+    [Fact]
+    public void ShouldSendResyncForBufferRequest_AlwaysResyncsFullReplay()
+    {
+        var snapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 100,
+            Data = [1, 2, 3]
+        };
+
+        Assert.True(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
+            quickResume: false,
+            sinceSequence: null,
+            snapshot));
+    }
+
+    [Fact]
+    public void ShouldSendResyncForBufferRequest_OnlyResyncsQuickResumeOnCursorMismatch()
+    {
+        var matchingSnapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 100,
+            Data = [1, 2, 3]
+        };
+        var mismatchedSnapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 90,
+            Data = [1, 2, 3]
+        };
+
+        Assert.False(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
+            quickResume: true,
+            sinceSequence: 100,
+            matchingSnapshot));
+        Assert.True(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
+            quickResume: true,
+            sinceSequence: 100,
+            mismatchedSnapshot));
+    }
+
     private class FakeWebSocket : WebSocket
     {
         public override WebSocketCloseStatus? CloseStatus => null;

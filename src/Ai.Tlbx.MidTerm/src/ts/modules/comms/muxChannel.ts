@@ -1056,7 +1056,11 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     sessionsNeedingResync.clear();
     browserTransportSnapshots.clear();
   }
-  bgOutput.clearAllBackgroundReplayState();
+  if (sessionId) {
+    bgOutput.clearBackgroundReplayStateForSession(sessionId);
+  } else {
+    bgOutput.clearAllBackgroundReplayState();
+  }
   clearQueuedOutput();
   return true;
 }
@@ -1487,7 +1491,7 @@ export function updateTerminalVisibility(
   }
 
   sessionsNeedingReplay.forEach((sessionId) => {
-    requestBufferRefresh(sessionId, 'quickResume');
+    requestBufferRefresh(sessionId, 'fullReplay');
   });
 }
 
