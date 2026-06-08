@@ -572,7 +572,7 @@ describe('muxChannel', () => {
     ).toBe(9n);
   });
 
-  it('keeps hidden background xterm sessions buffer-only and requests full replay on visibility', async () => {
+  it('keeps hidden background xterm sessions live without requesting replay on visibility', async () => {
     const harness = await loadHarness([0, 0, 0, 0]);
     const backgroundSessionId = 'sess5678';
     const terminal = attachFakeTerminal(harness.sessionTerminals, backgroundSessionId, 24, true);
@@ -590,8 +590,11 @@ describe('muxChannel', () => {
 
     await Promise.resolve();
 
-    expect(terminal.writeMock).not.toHaveBeenCalled();
-    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq ?? 0n).toBe(0n);
+    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+    expect(new TextDecoder().decode(terminal.writeMock.mock.calls[0]?.[0] as Uint8Array)).toBe(
+      'first',
+    );
+    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq).toBe(5n);
     expect(harness.sessionTerminals.get(backgroundSessionId)?.serverCols).toBe(80);
     expect(harness.sessionTerminals.get(backgroundSessionId)?.serverRows).toBe(24);
 
@@ -607,12 +610,10 @@ describe('muxChannel', () => {
         frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST &&
         harness.decodeSessionId(frame, 1) === backgroundSessionId,
     );
-    expect(replayRequest).toBeDefined();
-    expect(replayRequest?.byteLength).toBe(harness.constants.MUX_HEADER_SIZE + 1);
-    expect(replayRequest?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+    expect(replayRequest).toBeUndefined();
   });
 
-  it('keeps active terminal buffer-only while the browser tab is hidden and replays on foreground sync', async () => {
+  it('keeps active terminal live while the browser tab is hidden', async () => {
     Object.defineProperty(document, 'hidden', {
       value: true,
       configurable: true,
@@ -639,8 +640,11 @@ describe('muxChannel', () => {
 
     await Promise.resolve();
 
-    expect(terminal.writeMock).not.toHaveBeenCalled();
-    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq ?? 0n).toBe(0n);
+    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+    expect(new TextDecoder().decode(terminal.writeMock.mock.calls[0]?.[0] as Uint8Array)).toBe(
+      'hidden-active-output',
+    );
+    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq).toBe(7n);
 
     Object.defineProperty(document, 'hidden', {
       value: false,
@@ -660,12 +664,10 @@ describe('muxChannel', () => {
         frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST &&
         harness.decodeSessionId(frame, 1) === sessionId,
     );
-    expect(replayRequest).toBeDefined();
-    expect(replayRequest?.byteLength).toBe(harness.constants.MUX_HEADER_SIZE + 1);
-    expect(replayRequest?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+    expect(replayRequest).toBeUndefined();
   });
 
-  it('does not advance the browser receive cursor for hidden output that was not rendered', async () => {
+  it('advances the browser receive cursor for hidden output that was rendered', async () => {
     Object.defineProperty(document, 'hidden', {
       value: true,
       configurable: true,
@@ -692,12 +694,12 @@ describe('muxChannel', () => {
 
     await Promise.resolve();
 
-    expect(terminal.writeMock).not.toHaveBeenCalled();
-    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq ?? 0n).toBe(0n);
+    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
+    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq).toBe(11n);
     expect(getBrowserTransportSnapshot(sessionId)?.renderedSeq ?? 0n).toBe(0n);
   });
 
-  it('does not request hidden background deltas and resumes foreground with full replay', async () => {
+  it('does not request foreground replay after hidden output stayed live', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('MessageChannel', undefined);
     Object.defineProperty(document, 'hidden', {
@@ -724,6 +726,8 @@ describe('muxChannel', () => {
       ),
     } as MessageEvent<ArrayBuffer>);
     await Promise.resolve();
+
+    expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq).toBe(11n);
 
     harness.ws.send.mockClear();
     await vi.advanceTimersByTimeAsync(2000);
@@ -756,13 +760,11 @@ describe('muxChannel', () => {
           frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST &&
           harness.decodeSessionId(frame, 1) === sessionId,
       );
-    expect(foregroundReplayRequest).toBeDefined();
-    expect(foregroundReplayRequest?.byteLength).toBe(harness.constants.MUX_HEADER_SIZE + 1);
-    expect(foregroundReplayRequest?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+    expect(foregroundReplayRequest).toBeUndefined();
   });
 
-  it('requests replay before accepting live output after unopened background frames were skipped', async () => {
-    const harness = await loadHarness([0, 0, 0, 0, 0, 0]);
+  it('buffers unopened background frames without requesting replay on visibility', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
     const backgroundSessionId = 'sess5678';
 
     harness.ws.onmessage?.({
@@ -777,9 +779,10 @@ describe('muxChannel', () => {
     } as MessageEvent<ArrayBuffer>);
 
     await Promise.resolve();
-    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq ?? 0n).toBe(0n);
+    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq).toBe(5n);
+    expect(state.pendingOutputFrames.get(backgroundSessionId)).toHaveLength(1);
 
-    const terminal = attachFakeTerminal(harness.sessionTerminals, backgroundSessionId, 24, true);
+    attachFakeTerminal(harness.sessionTerminals, backgroundSessionId, 24, true);
     harness.ws.send.mockClear();
     harness.updateTerminalVisibility('sess1234', [backgroundSessionId]);
 
@@ -790,52 +793,8 @@ describe('muxChannel', () => {
           frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST &&
           harness.decodeSessionId(frame, 1) === backgroundSessionId,
       );
-    expect(backgroundReplayRequest).toBeDefined();
-    expect(backgroundReplayRequest?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
-
-    harness.ws.onmessage?.({
-      data: buildSequencedOutputMessage(
-        harness.encodeSessionId,
-        harness.constants.MUX_TYPE_OUTPUT,
-        harness.constants.MUX_HEADER_SIZE,
-        backgroundSessionId,
-        9n,
-        'live',
-      ),
-    } as MessageEvent<ArrayBuffer>);
-
-    await Promise.resolve();
-    expect(terminal.writeMock).not.toHaveBeenCalled();
-    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq ?? 0n).toBe(0n);
-
-    harness.ws.onmessage?.({
-      data: buildSequencedOutputMessage(
-        harness.encodeSessionId,
-        harness.constants.MUX_TYPE_OUTPUT,
-        harness.constants.MUX_HEADER_SIZE,
-        backgroundSessionId,
-        0n,
-        '\x1b[0m',
-      ),
-    } as MessageEvent<ArrayBuffer>);
-    harness.ws.onmessage?.({
-      data: buildSequencedOutputMessage(
-        harness.encodeSessionId,
-        harness.constants.MUX_TYPE_OUTPUT,
-        harness.constants.MUX_HEADER_SIZE,
-        backgroundSessionId,
-        9n,
-        'firstlive',
-      ),
-    } as MessageEvent<ArrayBuffer>);
-
-    await Promise.resolve();
-
-    expect(terminal.writeMock).toHaveBeenCalledTimes(1);
-    expect(new TextDecoder().decode(terminal.writeMock.mock.calls[0]?.[0] as Uint8Array)).toBe(
-      '\x1b[0mfirstlive',
-    );
-    expect(getBrowserTransportSnapshot(backgroundSessionId)?.receivedSeq).toBe(9n);
+    expect(backgroundReplayRequest).toBeUndefined();
+    expect(state.pendingOutputFrames.get(backgroundSessionId)).toHaveLength(1);
   });
 
   it('requests resync instead of dropping partial terminal frames when browser output queue exceeds byte budget', async () => {

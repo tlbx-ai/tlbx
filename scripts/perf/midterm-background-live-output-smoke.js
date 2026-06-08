@@ -1,16 +1,17 @@
 const result = {
-  name: "midterm-hidden-resume-full-replay-smoke",
+  name: "midterm-background-live-output-smoke",
   sessionId: null,
   bufferRequests: [],
   serverTailDoneSeen: false,
   serverTailSample: "",
+  hiddenTextHasDone: false,
   finalBaseY: null,
   finalBufferLength: null,
   finalTextHasDone: false,
   error: null,
 };
 
-window.__midtermHiddenResumeFullReplaySmoke = result;
+window.__midtermBackgroundLiveOutputSmoke = result;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,7 +36,9 @@ async function requestJson(url, options = {}) {
     },
   });
   if (!response.ok) {
-    throw new Error(`${options.method ?? "GET"} ${url} failed: ${response.status}`);
+    throw new Error(
+      `${options.method ?? "GET"} ${url} failed: ${response.status}`,
+    );
   }
   const text = await response.text();
   return text ? JSON.parse(text) : {};
@@ -77,8 +80,14 @@ function setDocumentVisibility(hidden) {
   document.dispatchEvent(new Event("visibilitychange"));
 }
 
-const originalHiddenDescriptor = Object.getOwnPropertyDescriptor(document, "hidden");
-const originalVisibilityDescriptor = Object.getOwnPropertyDescriptor(document, "visibilityState");
+const originalHiddenDescriptor = Object.getOwnPropertyDescriptor(
+  document,
+  "hidden",
+);
+const originalVisibilityDescriptor = Object.getOwnPropertyDescriptor(
+  document,
+  "visibilityState",
+);
 const originalSend = WebSocket.prototype.send;
 
 WebSocket.prototype.send = function patchedSend(data) {
@@ -99,7 +108,10 @@ WebSocket.prototype.send = function patchedSend(data) {
 };
 
 try {
-  await waitFor(() => window.mmDebug && document.querySelector(".terminal-page"), "MidTerm UI");
+  await waitFor(
+    () => window.mmDebug && document.querySelector(".terminal-page"),
+    "MidTerm UI",
+  );
 
   const created = await requestJson("/api/sessions", {
     method: "POST",
@@ -113,50 +125,77 @@ try {
     "created session row",
   );
   row.click();
-  await waitFor(() => window.mmDebug?.activeId === sessionId, "created session active");
-  await waitFor(() => getTerminalState(sessionId)?.opened, "created terminal opened");
+  await waitFor(
+    () => window.mmDebug?.activeId === sessionId,
+    "created session active",
+  );
+  await waitFor(
+    () => getTerminalState(sessionId)?.opened,
+    "created terminal opened",
+  );
 
   const marker = `hidden-resume-${Date.now()}`;
   setDocumentVisibility(true);
-  await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/input/text`, {
-    method: "POST",
-    body: JSON.stringify({
-      appendNewline: true,
-      text: [
-        "$ProgressPreference='SilentlyContinue'",
-        `$marker='${marker}'`,
-        "for ($i = 1; $i -le 180; $i++) { Write-Output ($marker + ' line-' + $i + ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') }",
-        "Write-Output ($marker + ' done')",
-      ].join("; "),
-    }),
-  });
+  await requestJson(
+    `/api/sessions/${encodeURIComponent(sessionId)}/input/text`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        appendNewline: true,
+        text: [
+          "$ProgressPreference='SilentlyContinue'",
+          `$marker='${marker}'`,
+          "for ($i = 1; $i -le 180; $i++) { Write-Output ($marker + ' line-' + $i + ' ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789') }",
+          "Write-Output ($marker + ' done')",
+        ].join("; "),
+      }),
+    },
+  );
 
-  await waitFor(async () => {
-    const text = await fetch(
-      `/api/sessions/${encodeURIComponent(sessionId)}/buffer/tail?lines=40&stripAnsi=true`,
-    ).then((response) => response.text());
-    result.serverTailSample = text.slice(-1000);
-    result.serverTailDoneSeen = text.includes(`${marker} done`);
-    return result.serverTailDoneSeen;
-  }, "server tail to contain hidden output", 30000);
+  await waitFor(
+    async () => {
+      const text = await fetch(
+        `/api/sessions/${encodeURIComponent(sessionId)}/buffer/tail?lines=40&stripAnsi=true`,
+      ).then((response) => response.text());
+      result.serverTailSample = text.slice(-1000);
+      result.serverTailDoneSeen = text.includes(`${marker} done`);
+      return result.serverTailDoneSeen;
+    },
+    "server tail to contain hidden output",
+    30000,
+  );
+
+  await waitFor(
+    () => getTerminalText(sessionId).includes(`${marker} done`),
+    "hidden live terminal output",
+  );
+  result.hiddenTextHasDone = getTerminalText(sessionId).includes(
+    `${marker} done`,
+  );
 
   setDocumentVisibility(false);
   window.dispatchEvent(new Event("focus"));
 
-  await waitFor(
-    () =>
-      result.bufferRequests.some(
-        (request) =>
-          request.sessionId === sessionId && request.mode === 0 && request.byteLength === 10,
-      ),
-    "full replay buffer request after foreground",
-  );
+  await sleep(500);
 
-  await waitFor(() => getTerminalText(sessionId).includes(`${marker} done`), "terminal replay");
+  const foregroundReplayRequest = result.bufferRequests.find(
+    (request) =>
+      request.sessionId === sessionId &&
+      request.mode === 0 &&
+      request.byteLength === 10,
+  );
+  if (foregroundReplayRequest) {
+    throw new Error(
+      "Foreground resume requested full replay even though hidden output stayed live",
+    );
+  }
+
   const state = getTerminalState(sessionId);
   result.finalBaseY = state.terminal.buffer.active.baseY;
   result.finalBufferLength = state.terminal.buffer.active.length;
-  result.finalTextHasDone = getTerminalText(sessionId).includes(`${marker} done`);
+  result.finalTextHasDone = getTerminalText(sessionId).includes(
+    `${marker} done`,
+  );
 
   return result;
 } catch (error) {
@@ -170,7 +209,11 @@ try {
     delete document.hidden;
   }
   if (originalVisibilityDescriptor) {
-    Object.defineProperty(document, "visibilityState", originalVisibilityDescriptor);
+    Object.defineProperty(
+      document,
+      "visibilityState",
+      originalVisibilityDescriptor,
+    );
   } else {
     delete document.visibilityState;
   }

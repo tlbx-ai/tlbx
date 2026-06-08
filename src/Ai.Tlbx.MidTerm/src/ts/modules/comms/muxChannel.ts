@@ -38,7 +38,6 @@ import {
 } from './cursorVisibility';
 import { clearBracketedPasteScanState, scanBracketedPasteMode } from './bracketedPasteScan';
 import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
-import * as bgOutput from './backgroundOutputDeferral';
 import * as muxSessionRouting from './muxSessionRouting';
 import { resolveMuxDataLossReason } from './muxDataLoss';
 import { createMuxInputFrame } from './muxInputFrame';
@@ -396,7 +395,6 @@ function measureCompletedOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
-let currentStreamableSessionIds = new Set<string>();
 
 // =============================================================================
 // Per-Session Output Delivery
@@ -723,30 +721,12 @@ function processOneFrame(
   item: OutputFrameItem,
 ): TerminalOutputDelivery | null | Promise<TerminalOutputDelivery | null> {
   try {
-    const deliveryPlan = bgOutput.prepareBackgroundOutputDelivery(
-      item.sessionId,
-      item.payload,
-      item.compressed,
-      currentStreamableSessionIds,
-      currentVisibleSessionIds,
-    );
-    if (deliveryPlan === null) {
-      return null;
-    }
-
     if (item.compressed) {
-      return processCompressedFrame(item, deliveryPlan);
+      return processCompressedFrame(item);
     }
 
     const frame = parseOutputFrame(item.payload);
-    return processParsedOutputFrame(
-      item,
-      deliveryPlan,
-      frame.sequenceEnd,
-      frame.cols,
-      frame.rows,
-      frame.data,
-    );
+    return processParsedOutputFrame(item, frame.sequenceEnd, frame.cols, frame.rows, frame.data);
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
     return null;
@@ -755,18 +735,10 @@ function processOneFrame(
 
 async function processCompressedFrame(
   item: OutputFrameItem,
-  clearReplayGateAfterFrame: boolean,
 ): Promise<TerminalOutputDelivery | null> {
   try {
     const frame = await parseCompressedOutputFrame(item.payload);
-    return processParsedOutputFrame(
-      item,
-      clearReplayGateAfterFrame,
-      frame.sequenceEnd,
-      frame.cols,
-      frame.rows,
-      frame.data,
-    );
+    return processParsedOutputFrame(item, frame.sequenceEnd, frame.cols, frame.rows, frame.data);
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
     return null;
@@ -775,7 +747,6 @@ async function processCompressedFrame(
 
 function processParsedOutputFrame(
   item: OutputFrameItem,
-  clearReplayGateAfterFrame: boolean,
   sequenceEnd: bigint,
   cols: number,
   rows: number,
@@ -790,7 +761,6 @@ function processParsedOutputFrame(
 
     if (state && state.opened) {
       if (trimmedData.length > 0) {
-        bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
         return {
           sessionId: item.sessionId,
           state,
@@ -804,7 +774,6 @@ function processParsedOutputFrame(
       bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, trimmedData);
     }
 
-    bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
     return null;
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
@@ -1056,11 +1025,6 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     sessionsNeedingResync.clear();
     browserTransportSnapshots.clear();
   }
-  if (sessionId) {
-    bgOutput.clearBackgroundReplayStateForSession(sessionId);
-  } else {
-    bgOutput.clearAllBackgroundReplayState();
-  }
   clearQueuedOutput();
   return true;
 }
@@ -1207,7 +1171,6 @@ export function connectMuxWebSocket(): void {
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
-      bgOutput.clearAllBackgroundReplayState();
       clearQueuedOutput();
       forEachLocalTerminal((_, sessionId) => {
         const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
@@ -1271,7 +1234,6 @@ export function connectMuxWebSocket(): void {
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
     replaySuppressedSessions.clear();
-    bgOutput.clearAllBackgroundReplayState();
     clearInputLatencyTraceInFlight();
     thawReconnectFreeze();
 
@@ -1422,7 +1384,6 @@ export function requestBufferRefresh(
     replayRows,
     resumeSequence,
   );
-  bgOutput.armBackgroundReplayGate(sessionId);
   sendFrame(frame);
 }
 
@@ -1467,32 +1428,16 @@ export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
 }
 
 export function updateTerminalVisibility(
-  activeSessionId: string | null,
+  _activeSessionId: string | null,
   visibleSessionIds: readonly string[],
 ): void {
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
-  const nextStreamableSessionIds = muxSessionRouting.getStreamableSessionIds(
-    activeSessionId,
-    normalizedVisibleSessionIds,
-  );
-  const sessionsNeedingReplay: string[] = [];
-
-  nextStreamableSessionIds.forEach((sessionId) => {
-    if (bgOutput.hasDeferredBackgroundFrames(sessionId)) {
-      sessionsNeedingReplay.push(sessionId);
-    }
-  });
 
   currentVisibleSessionIds = normalizedVisibleSessionIds;
-  currentStreamableSessionIds = nextStreamableSessionIds;
 
   if (muxWs && muxWs.readyState === WebSocket.OPEN) {
     sendVisibleSessionsHint(normalizedVisibleSessionIds);
   }
-
-  sessionsNeedingReplay.forEach((sessionId) => {
-    requestBufferRefresh(sessionId, 'fullReplay');
-  });
 }
 
 /**
@@ -1559,10 +1504,8 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
   currentVisibleSessionIds = [];
-  currentStreamableSessionIds = new Set<string>();
 
   replaySuppressedSessions.clear();
-  bgOutput.clearAllBackgroundReplayState();
   browserTransportSnapshots.clear();
   bracketedPasteState.clear();
   clearBracketedPasteScanState();
