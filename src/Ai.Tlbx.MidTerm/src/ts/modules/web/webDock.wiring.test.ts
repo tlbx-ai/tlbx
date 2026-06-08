@@ -63,6 +63,7 @@ describe('web dock footer spacing wiring', () => {
 
   it('reserves layout space for mobile emulation and the preview keyboard fallback', () => {
     expect(css).toContain('#web-preview-mobile-emulation {');
+    expect(css).toContain('#web-preview-detach-mobile svg,');
     expect(css).toContain("#web-preview-mobile-emulation[aria-pressed='true'] {");
     expect(css).toContain("#web-preview-mobile-emulation[aria-pressed='true']::after {");
     expect(css).toContain('background: var(--accent-green);');

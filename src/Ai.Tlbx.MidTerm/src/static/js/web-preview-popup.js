@@ -10,10 +10,13 @@
   var initialPreviewOrigin = params.get('origin') || window.location.origin;
   var initialTargetUrl = params.get('url');
   var sandboxEnabled = params.get('sandbox') === '1';
+  var initialMobileMode = params.get('mobile') === '1';
   var channelName = sessionId
     ? 'midterm-web-preview-' + sessionId + '-' + initialPreviewName
     : 'midterm-web-preview';
   var channel = new BroadcastChannel(channelName);
+  var MOBILE_VIEWPORT_WIDTH = 390;
+  var MOBILE_VIEWPORT_HEIGHT = 844;
 
   var sandboxBaseFlags = [
     'allow-scripts',
@@ -40,10 +43,12 @@
       : null;
   var previewSessions = [];
   var statusRefreshTimer = null;
+  var mobileMode = initialMobileMode;
 
   var tabsHost = document.getElementById('web-preview-tabs');
   var urlInput = document.getElementById('web-preview-url-input');
   var statusIndicator = document.getElementById('web-preview-status-indicator');
+  var deviceStatusNode = document.getElementById('web-preview-device-status');
   var actionMessage = document.getElementById('web-preview-action-message');
   var previewHost = document.getElementById('preview-host');
   var iframeHost = document.getElementById('web-preview-iframe-host');
@@ -154,6 +159,9 @@
     }
     if (currentTargetRevision > 0) {
       proxyUrl.searchParams.set('__mtTargetRevision', String(currentTargetRevision));
+    }
+    if (mobileMode) {
+      proxyUrl.searchParams.set('__mtMobile', '1');
     }
     return proxyUrl.toString();
   }
@@ -273,6 +281,110 @@
     window.requestAnimationFrame(function () {
       syncPopupViewportSize(targetWidth, targetHeight, 0);
     });
+  }
+
+  function getVisualViewportSize() {
+    var visual = window.visualViewport;
+    return {
+      width: Math.round((visual && visual.width) || window.innerWidth || 0),
+      height: Math.round((visual && visual.height) || window.innerHeight || 0),
+    };
+  }
+
+  function readMobileClientProbe() {
+    var viewport = getVisualViewportSize();
+    var maxTouchPoints = navigator.maxTouchPoints || 0;
+    var coarsePointer =
+      typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
+    var hoverNone =
+      typeof window.matchMedia === 'function' && window.matchMedia('(hover: none)').matches;
+    var standalone =
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(display-mode: standalone)').matches;
+    var iosStandalone = navigator.standalone === true;
+    var shortestSide = Math.min(
+      viewport.width || window.innerWidth || 0,
+      viewport.height || window.innerHeight || 0,
+    );
+    var likelyMobile =
+      shortestSide > 0 &&
+      shortestSide <= 820 &&
+      (maxTouchPoints > 0 || coarsePointer || hoverNone);
+
+    return {
+      viewport: viewport,
+      dpr: window.devicePixelRatio || 1,
+      maxTouchPoints: maxTouchPoints,
+      coarsePointer: coarsePointer,
+      hoverNone: hoverNone,
+      standalone: standalone || iosStandalone,
+      likelyMobile: likelyMobile,
+    };
+  }
+
+  function updateDeviceStatus() {
+    if (!deviceStatusNode) {
+      return;
+    }
+
+    if (!mobileMode) {
+      deviceStatusNode.textContent = '';
+      deviceStatusNode.title = '';
+      deviceStatusNode.classList.add('hidden');
+      return;
+    }
+
+    var probe = readMobileClientProbe();
+    var label = probe.likelyMobile ? 'Real mobile' : 'Desktop mobile size';
+    var title =
+      label +
+      ' - viewport ' +
+      probe.viewport.width +
+      'x' +
+      probe.viewport.height +
+      ', DPR ' +
+      probe.dpr +
+      ', touch ' +
+      probe.maxTouchPoints +
+      ', pointer ' +
+      (probe.coarsePointer ? 'coarse' : 'fine') +
+      (probe.standalone ? ', PWA standalone' : '');
+
+    deviceStatusNode.textContent = label;
+    deviceStatusNode.title = title;
+    deviceStatusNode.classList.remove('hidden');
+  }
+
+  function applyMobileMode(enabled, reloadFrame) {
+    mobileMode = enabled === true;
+    document.body.classList.toggle('web-preview-popup-mobile-mode', mobileMode);
+
+    var probe = readMobileClientProbe();
+    document.body.classList.toggle(
+      'web-preview-popup-real-mobile',
+      mobileMode && probe.likelyMobile,
+    );
+    document.body.classList.toggle(
+      'web-preview-popup-desktop-mobile-size',
+      mobileMode && !probe.likelyMobile,
+    );
+    updateDeviceStatus();
+
+    if (mobileMode) {
+      if (probe.likelyMobile) {
+        resetViewport();
+      } else {
+        applyViewport(MOBILE_VIEWPORT_WIDTH, MOBILE_VIEWPORT_HEIGHT);
+      }
+    } else if (initialViewportWidth > 0 || initialViewportHeight > 0) {
+      applyViewport(initialViewportWidth, initialViewportHeight);
+    } else {
+      resetViewport();
+    }
+
+    if (reloadFrame === true && currentUrl) {
+      loadFrame(currentUrl, createForceReloadToken());
+    }
   }
 
   function decodeIframeNavigationUrl(iframeUrl, targetOrigin) {
@@ -1253,6 +1365,11 @@
 
     if (event.data.type === 'viewport') {
       applyViewport(Number(event.data.width) || 0, Number(event.data.height) || 0);
+      return;
+    }
+
+    if (event.data.type === 'mobile-mode') {
+      applyMobileMode(event.data.enabled === true, true);
     }
   };
 
@@ -1312,6 +1429,17 @@
   window.addEventListener('blur', function () {
     void refreshStatusIndicator();
   });
+  window.addEventListener('resize', function () {
+    if (!mobileMode) {
+      return;
+    }
+    updateDeviceStatus();
+    if (readMobileClientProbe().likelyMobile) {
+      document.body.classList.add('web-preview-popup-real-mobile');
+      document.body.classList.remove('web-preview-popup-desktop-mobile-size');
+      resetViewport();
+    }
+  });
 
   async function initialize() {
     syncThemeFromOpener();
@@ -1334,9 +1462,10 @@
     }
 
     var initialUrl = initialPreview && initialPreview.url ? initialPreview.url : initialTargetUrl;
+    applyMobileMode(initialMobileMode, false);
     loadFrame(initialUrl);
 
-    if (initialViewportWidth > 0 || initialViewportHeight > 0) {
+    if (!initialMobileMode && (initialViewportWidth > 0 || initialViewportHeight > 0)) {
       applyViewport(initialViewportWidth, initialViewportHeight);
     }
 

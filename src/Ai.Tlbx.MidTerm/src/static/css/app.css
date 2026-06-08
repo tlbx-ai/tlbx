@@ -11008,6 +11008,7 @@ body.shared-session-mode .session-tab-bar {
   position: relative;
 }
 
+#web-preview-detach-mobile svg,
 #web-preview-mobile-emulation svg {
   transition:
     color 120ms ease,
