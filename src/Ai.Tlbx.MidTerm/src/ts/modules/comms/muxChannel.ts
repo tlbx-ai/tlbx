@@ -136,6 +136,7 @@ const REPLAY_HEAT_QUIET_MS = 750;
 const RESYNC_HEAT_SUPPRESS_MS = 3000;
 const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
 const BUFFER_REPLAY_MAX_MS = 12000;
+const BROWSER_RESUME_QUICK_REFRESH_COOLDOWN_MS = 3000;
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
@@ -395,6 +396,7 @@ function measureCompletedOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
+let lastBrowserResumeQuickRefreshAt = Number.NEGATIVE_INFINITY;
 
 // =============================================================================
 // Per-Session Output Delivery
@@ -1440,6 +1442,44 @@ export function updateTerminalVisibility(
   }
 }
 
+export function recoverVisibleTerminalsAfterBrowserResume(
+  activeSessionId: string | null,
+  visibleSessionIds: readonly string[],
+  options: { quickRefresh?: boolean } = {},
+): void {
+  const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
+  currentVisibleSessionIds = normalizedVisibleSessionIds;
+
+  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
+    connectMuxWebSocket();
+    return;
+  }
+
+  sendVisibleSessionsHint(normalizedVisibleSessionIds);
+  sendActiveSessionHint(activeSessionId);
+
+  if (options.quickRefresh !== true) {
+    return;
+  }
+
+  const now = performance.now();
+  if (now - lastBrowserResumeQuickRefreshAt < BROWSER_RESUME_QUICK_REFRESH_COOLDOWN_MS) {
+    return;
+  }
+  lastBrowserResumeQuickRefreshAt = now;
+
+  const refreshSessionIds = muxSessionRouting.normalizeSessionIds([
+    ...normalizedVisibleSessionIds,
+    ...(activeSessionId ? [activeSessionId] : []),
+  ]);
+
+  for (const sessionId of refreshSessionIds) {
+    if (sessionTerminals.get(sessionId)?.opened) {
+      requestBufferRefresh(sessionId, 'quickResume');
+    }
+  }
+}
+
 /**
  * Encode 8-character session ID into buffer at offset.
  */
@@ -1504,6 +1544,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
   currentVisibleSessionIds = [];
+  lastBrowserResumeQuickRefreshAt = Number.NEGATIVE_INFINITY;
 
   replaySuppressedSessions.clear();
   browserTransportSnapshots.clear();

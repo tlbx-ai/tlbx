@@ -19,6 +19,7 @@ import {
   sendInput,
   requestBufferRefresh,
   updateTerminalVisibility,
+  setupBrowserLifecycleRecovery,
   setSuppressHeatCallback,
   reportBrowserActivity,
 } from './modules/comms';
@@ -172,8 +173,6 @@ import {
   activeNotifications,
 } from './state';
 import {
-  $stateWsConnected,
-  $muxWsConnected,
   $activeSessionId,
   $settingsOpen,
   $sessionList,
@@ -633,41 +632,11 @@ function applyScrollbackProtection(): void {
 }
 
 function setupVisibilityChangeHandler(): void {
-  document.addEventListener('visibilitychange', () => {
-    reportBrowserActivity();
-
-    if (document.visibilityState === 'visible') {
-      // Reconnect WebSockets if they were dropped while in background
-      // Buffer refresh is handled by muxChannel's reconnect handler if needed
-      if (!$stateWsConnected.get()) {
-        connectStateWebSocket();
-      }
-      if (!$muxWsConnected.get()) {
-        connectMuxWebSocket();
-      }
-
-      syncMuxTerminalVisibility();
-
-      // Refocus active terminal when page becomes visible
-      focusActiveTerminal();
-
-      // Claude Code scrollback glitch protection
-      applyScrollbackProtection();
-    }
-  });
-
-  // Also protect against focus from clicking into the browser window
-  window.addEventListener('focus', () => {
-    reportBrowserActivity(true);
-    applyScrollbackProtection();
-  });
-
-  window.addEventListener('blur', () => {
-    reportBrowserActivity(false);
-  });
-
-  window.addEventListener('pagehide', () => {
-    reportBrowserActivity(false);
+  setupBrowserLifecycleRecovery({
+    getVisibleTerminalSessionIds,
+    syncMuxTerminalVisibility,
+    focusActiveTerminal,
+    applyScrollbackProtection,
   });
 }
 

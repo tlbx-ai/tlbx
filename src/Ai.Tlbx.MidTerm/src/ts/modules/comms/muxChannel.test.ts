@@ -8,6 +8,7 @@ import {
   encodeSessionId,
   getBrowserTransportSnapshot,
   isBracketedPasteEnabled,
+  recoverVisibleTerminalsAfterBrowserResume,
   requestBufferRefresh,
   resetMuxChannelRuntimeForTests,
   sendInput,
@@ -87,6 +88,7 @@ interface Harness {
   encodeSessionId: typeof encodeSessionId;
   decodeSessionId: typeof decodeSessionId;
   updateTerminalVisibility: typeof updateTerminalVisibility;
+  recoverVisibleTerminalsAfterBrowserResume: typeof recoverVisibleTerminalsAfterBrowserResume;
   sessionTerminals: (typeof import('../../state'))['sessionTerminals'];
   stores: typeof stores;
   constants: typeof constants;
@@ -218,6 +220,7 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
     decodeSessionId,
     encodeSessionId,
     updateTerminalVisibility,
+    recoverVisibleTerminalsAfterBrowserResume,
     sessionTerminals: state.sessionTerminals,
     stores,
     constants,
@@ -849,6 +852,75 @@ describe('muxChannel', () => {
     expect(harness.ws.send).toHaveBeenCalledTimes(1);
     const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
     expect(frames[0]?.[0]).toBe(harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT);
+  });
+
+  it('quick-resumes active and visible terminals after mobile browser resume', async () => {
+    const harness = await loadHarness([5000, 5000, 5000, 5000, 5000, 5000]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234', 41);
+    attachFakeTerminal(harness.sessionTerminals, 'sess5678', 29);
+    attachFakeTerminal(harness.sessionTerminals, 'sess9999', 33);
+
+    harness.ws.send.mockClear();
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess5678'], {
+      quickRefresh: true,
+    });
+
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(
+      frames.some((frame) => frame[0] === harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT),
+    ).toBe(true);
+    expect(
+      frames.some(
+        (frame) =>
+          frame[0] === harness.constants.MUX_TYPE_ACTIVE_HINT &&
+          harness.decodeSessionId(frame, 1) === 'sess1234',
+      ),
+    ).toBe(true);
+
+    const bufferRequests = frames.filter(
+      (frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST,
+    );
+    expect(bufferRequests.map((frame) => harness.decodeSessionId(frame, 1)).sort()).toEqual([
+      'sess1234',
+      'sess5678',
+    ]);
+    expect(bufferRequests.every((frame) => frame[harness.constants.MUX_HEADER_SIZE] === 1)).toBe(
+      true,
+    );
+  });
+
+  it('does not quick-resume visible terminals on ordinary focus recovery', async () => {
+    const harness = await loadHarness([5000, 5000, 5000, 5000]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234', 41);
+
+    harness.ws.send.mockClear();
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess1234'], {
+      quickRefresh: false,
+    });
+
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    expect(
+      frames.some((frame) => frame[0] === harness.constants.MUX_TYPE_VISIBLE_SESSIONS_HINT),
+    ).toBe(true);
+    expect(frames.some((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST)).toBe(
+      false,
+    );
+  });
+
+  it('reconnects mux with visible sessions after mobile browser resume closes the socket', async () => {
+    const harness = await loadHarness([5000, 5000, 5000, 5000]);
+    harness.ws.readyState = MockWebSocket.CLOSED;
+
+    harness.recoverVisibleTerminalsAfterBrowserResume('sess1234', ['sess5678'], {
+      quickRefresh: true,
+    });
+
+    const reconnectWs = MockWebSocket.instances.at(-1);
+    expect(MockWebSocket.instances).toHaveLength(2);
+    expect(reconnectWs).toBeDefined();
+    const url = new URL(reconnectWs!.url);
+    expect(url.searchParams.get('activeSessionId')).toBe('sess1234');
+    expect(url.searchParams.get('visibleSessionIds')).toBe('sess5678');
   });
 
   it('sends sampled input trace markers before normal input when tracing is enabled', async () => {

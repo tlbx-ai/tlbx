@@ -2,6 +2,7 @@ const result = {
   name: "midterm-background-live-output-smoke",
   sessionId: null,
   bufferRequests: [],
+  mobileResumeQuickRequests: [],
   serverTailDoneSeen: false,
   serverTailSample: "",
   hiddenTextHasDone: false,
@@ -173,10 +174,31 @@ try {
     `${marker} done`,
   );
 
+  window.dispatchEvent(new Event("pagehide"));
   setDocumentVisibility(false);
+  const pageShowEvent = new Event("pageshow");
+  Object.defineProperty(pageShowEvent, "persisted", {
+    value: true,
+    configurable: true,
+  });
+  window.dispatchEvent(pageShowEvent);
+  document.dispatchEvent(new Event("resume"));
   window.dispatchEvent(new Event("focus"));
 
-  await sleep(500);
+  await waitFor(
+    () =>
+      result.bufferRequests.some(
+        (request) =>
+          request.sessionId === sessionId &&
+          request.mode === 1 &&
+          request.byteLength >= 10,
+      ),
+    "mobile resume quick buffer request",
+    5000,
+  );
+  result.mobileResumeQuickRequests = result.bufferRequests.filter(
+    (request) => request.sessionId === sessionId && request.mode === 1,
+  );
 
   const foregroundReplayRequest = result.bufferRequests.find(
     (request) =>

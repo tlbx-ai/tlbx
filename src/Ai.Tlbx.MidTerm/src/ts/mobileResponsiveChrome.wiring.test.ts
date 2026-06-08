@@ -22,6 +22,10 @@ const smartInputMetricsSource = readFileSync(
   path.join(projectRoot, 'src/ts/modules/smartInput/smartInputMetrics.ts'),
   'utf8',
 );
+const browserLifecycleRecoverySource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/comms/browserLifecycleRecovery.ts'),
+  'utf8',
+);
 
 const mobileChromeMedia =
   '@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {';
@@ -119,5 +123,14 @@ describe('mobile responsive chrome wiring', () => {
       "window.matchMedia('(hover: none) and (pointer: coarse)').matches",
     );
     expect(sessionListSource).toContain('window.innerWidth <= MOBILE_TOUCH_BREAKPOINT');
+  });
+
+  it('recovers terminal transport after mobile PWA lifecycle resume events', () => {
+    expect(mainSource).toContain('setupBrowserLifecycleRecovery');
+    expect(browserLifecycleRecoverySource).toContain('recoverVisibleTerminalsAfterBrowserResume');
+    expect(browserLifecycleRecoverySource).toContain("window.addEventListener('pagehide'");
+    expect(browserLifecycleRecoverySource).toContain("window.addEventListener('pageshow'");
+    expect(browserLifecycleRecoverySource).toContain("document.addEventListener('resume'");
+    expect(browserLifecycleRecoverySource).toContain('quickRefresh: boolean');
   });
 });
