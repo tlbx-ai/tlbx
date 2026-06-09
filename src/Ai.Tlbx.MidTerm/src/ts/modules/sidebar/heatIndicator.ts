@@ -2,16 +2,12 @@
  * Heat Indicator Module
  *
  * Renders per-session thermal activity strips in the sidebar. Heat is sourced
- * from server-side session telemetry so it reflects actual mthost-produced
- * output rather than browser-side mux replay noise.
+ * from mux output events and server session snapshots. Mux replay suppression
+ * happens before recordBytes is called, so replay traffic cannot re-arm heat.
  */
 
-import { getSessions } from '../../api/client';
-import { createLogger } from '../logging';
+import { $sessionList } from '../../stores';
 
-const log = createLogger('heat');
-
-const POLL_INTERVAL_MS = 1000;
 const DRAW_THRESHOLD = 0.003;
 const CANVAS_CSS_H = 36;
 const RISE_TRANSITION_MS = 220;
@@ -45,11 +41,11 @@ interface SessionHeat {
   transitionToHeat: number;
   transitionStartedAtMs: number;
   transitionDurationMs: number;
+  fallTimerId: number | null;
 }
 
 const sessions = new Map<string, SessionHeat>();
-let pollTimerId: number | null = null;
-let pollInFlight = false;
+let unsubscribeSessionList: (() => void) | null = null;
 
 function clampHeat(heat: number): number {
   if (!Number.isFinite(heat)) {
@@ -152,7 +148,8 @@ function computeTransitionDurationMs(fromHeat: number, toHeat: number): number {
     return RISE_TRANSITION_MS;
   }
 
-  return POLL_INTERVAL_MS;
+  const startingHeat = Math.max(fromHeat, DRAW_THRESHOLD);
+  return Math.ceil(FALL_TIME_CONSTANT_MS * Math.log(startingHeat / DRAW_THRESHOLD));
 }
 
 function applyHeatStyles(element: HTMLElement, heat: number, durationMs: number): void {
@@ -164,6 +161,10 @@ function applyHeatStyles(element: HTMLElement, heat: number, durationMs: number)
   const gradient = `linear-gradient(180deg, rgba(${r}, ${g}, ${b}, ${edgeAlpha.toFixed(3)}), rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)}) 35%, rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)}) 65%, rgba(${r}, ${g}, ${b}, ${edgeAlpha.toFixed(3)}))`;
 
   element.style.setProperty('--session-heat-transition-ms', `${Math.round(durationMs)}ms`);
+  element.style.setProperty(
+    '--session-heat-transition-easing',
+    durationMs > RISE_TRANSITION_MS ? 'cubic-bezier(0.16, 1, 0.3, 1)' : 'linear',
+  );
   element.style.setProperty('--session-heat-gradient', gradient);
   element.style.setProperty('--session-heat-opacity', alpha.toFixed(3));
   element.style.setProperty('--session-heat-scale', visibleScale.toFixed(4));
@@ -201,6 +202,7 @@ function getOrCreateSessionHeat(sessionId: string): SessionHeat {
       transitionToHeat: 0,
       transitionStartedAtMs: getNowMs(),
       transitionDurationMs: 0,
+      fallTimerId: null,
     };
     sessions.set(sessionId, state);
   }
@@ -211,6 +213,35 @@ function getOrCreateSessionHeat(sessionId: string): SessionHeat {
 function syncSessionHeatVisual(sessionId: string, nowMs: number, immediate: boolean = false): void {
   const state = getOrCreateSessionHeat(sessionId);
   setDisplayedHeatTarget(state, getTargetHeatAt(state, nowMs), nowMs, immediate);
+}
+
+function clearFallTimer(state: SessionHeat): void {
+  if (state.fallTimerId !== null) {
+    window.clearTimeout(state.fallTimerId);
+    state.fallTimerId = null;
+  }
+}
+
+function startFall(sessionId: string): void {
+  const state = sessions.get(sessionId);
+  if (!state || document.hidden) {
+    return;
+  }
+
+  state.fallTimerId = null;
+  const nowMs = getNowMs();
+  setDisplayedHeatTarget(state, 0, nowMs);
+}
+
+function scheduleFall(sessionId: string, state: SessionHeat): void {
+  clearFallTimer(state);
+  if (document.hidden) {
+    return;
+  }
+
+  state.fallTimerId = window.setTimeout(() => {
+    startFall(sessionId);
+  }, RISE_TRANSITION_MS);
 }
 
 function applyHeat(
@@ -239,43 +270,35 @@ function applyHeat(
       // Ignore stale/cached hot snapshots so reloads and resumes cannot re-arm heat.
       effectiveHeat = 0;
     }
+  } else {
+    state.lastActivityAtMs = null;
+    state.activityHeat = 0;
   }
 
   state.heat = effectiveHeat;
   syncSessionHeatVisual(sessionId, nowMs, document.hidden || !state.element);
+  if (effectiveHeat > 0) {
+    scheduleFall(sessionId, state);
+  } else {
+    clearFallTimer(state);
+  }
 }
 
-async function refreshHeatFromServer(): Promise<void> {
-  if (pollInFlight || sessions.size === 0) {
-    return;
+function syncHeatFromSessionList(): void {
+  const activeIds = new Set<string>();
+  for (const session of $sessionList.get()) {
+    activeIds.add(session.id);
+    applyHeat(
+      session.id,
+      session.supervisor?.currentHeat ?? 0,
+      session.supervisor?.lastOutputAt ?? null,
+    );
   }
 
-  pollInFlight = true;
-  try {
-    const { data, response } = await getSessions();
-    if (!response.ok || !data) {
-      return;
+  for (const sessionId of sessions.keys()) {
+    if (!activeIds.has(sessionId)) {
+      applyHeat(sessionId, 0);
     }
-
-    const activeIds = new Set<string>();
-    for (const session of data.sessions) {
-      activeIds.add(session.id);
-      applyHeat(
-        session.id,
-        session.supervisor?.currentHeat ?? 0,
-        session.supervisor?.lastOutputAt ?? null,
-      );
-    }
-
-    for (const sessionId of sessions.keys()) {
-      if (!activeIds.has(sessionId)) {
-        applyHeat(sessionId, 0);
-      }
-    }
-  } catch (error) {
-    log.verbose(() => `Heat refresh skipped: ${String(error)}`);
-  } finally {
-    pollInFlight = false;
   }
 }
 
@@ -298,6 +321,7 @@ export function pruneHeatSessions(sessionIds: Iterable<string>): void {
   const validIds = new Set(sessionIds);
   for (const sessionId of sessions.keys()) {
     if (!validIds.has(sessionId)) {
+      clearFallTimer(getOrCreateSessionHeat(sessionId));
       sessions.delete(sessionId);
     }
   }
@@ -307,9 +331,9 @@ export function setSessionHeat(sessionId: string, heat: number): void {
   applyHeat(sessionId, heat);
 }
 
-export function recordBytes(_sessionId: string, _bytes: number): void {
-  // Sidebar heat is sourced from server telemetry. Byte-based browser heuristics
-  // remain available elsewhere (for example mobile PiP), but not for this strip.
+export function recordBytes(sessionId: string, bytes: number): void {
+  if (bytes <= 0) return;
+  applyHeat(sessionId, 1, Date.now());
 }
 
 export function getSessionHeat(sessionId: string): number {
@@ -335,47 +359,52 @@ function resumeHeatRendering(): void {
   }
 
   const nowMs = getNowMs();
-  sessions.forEach((_state, sessionId) => {
+  sessions.forEach((state, sessionId) => {
     syncSessionHeatVisual(sessionId, nowMs, true);
+    if (getTargetHeatAt(state, nowMs) >= DRAW_THRESHOLD) {
+      scheduleFall(sessionId, state);
+    }
   });
-
-  void refreshHeatFromServer();
 }
 
-export function initHeatIndicator(): void {
-  if (pollTimerId !== null) {
-    return;
-  }
-
-  void refreshHeatFromServer();
-  pollTimerId = window.setInterval(() => {
-    void refreshHeatFromServer();
-  }, POLL_INTERVAL_MS);
-
-  document.addEventListener('visibilitychange', () => {
-    const nowMs = getNowMs();
-    sessions.forEach((_state, sessionId) => {
-      syncSessionHeatVisual(sessionId, nowMs, true);
-    });
-
-    if (!document.hidden) {
-      resumeHeatRendering();
+function handleVisibilityChange(): void {
+  const nowMs = getNowMs();
+  sessions.forEach((state, sessionId) => {
+    syncSessionHeatVisual(sessionId, nowMs, true);
+    if (document.hidden) {
+      clearFallTimer(state);
     }
   });
 
-  window.addEventListener('focus', () => {
+  if (!document.hidden) {
     resumeHeatRendering();
+  }
+}
+
+function handleFocus(): void {
+  resumeHeatRendering();
+}
+
+export function initHeatIndicator(): void {
+  if (unsubscribeSessionList !== null) {
+    return;
+  }
+
+  syncHeatFromSessionList();
+  unsubscribeSessionList = $sessionList.subscribe(() => {
+    syncHeatFromSessionList();
   });
-  window.addEventListener('pageshow', () => {
-    resumeHeatRendering();
-  });
+
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+
+  window.addEventListener('focus', handleFocus);
+  window.addEventListener('pageshow', handleFocus);
 }
 
 export function destroyHeatIndicator(): void {
-  if (pollTimerId !== null) {
-    window.clearInterval(pollTimerId);
-    pollTimerId = null;
-  }
+  sessions.forEach(clearFallTimer);
+  unsubscribeSessionList?.();
+  unsubscribeSessionList = null;
 
   sessions.clear();
 }

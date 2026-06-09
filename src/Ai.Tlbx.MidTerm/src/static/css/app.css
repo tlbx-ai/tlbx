@@ -1327,6 +1327,7 @@ body::before {
   --session-heat-opacity: 0;
   --session-heat-scale: 0;
   --session-heat-transition-ms: 0ms;
+  --session-heat-transition-easing: linear;
 }
 
 .heat-canvas::before {
@@ -1339,8 +1340,8 @@ body::before {
   transform: scaleY(var(--session-heat-scale));
   transform-origin: center center;
   transition:
-    opacity var(--session-heat-transition-ms) linear,
-    transform var(--session-heat-transition-ms) linear,
+    opacity var(--session-heat-transition-ms) var(--session-heat-transition-easing),
+    transform var(--session-heat-transition-ms) var(--session-heat-transition-easing),
     background 0.15s linear;
 }
 

@@ -1,25 +1,20 @@
 /**
  * Traffic Indicator Module
  *
- * Displays WebSocket traffic rate in sidebar footer using SMA (Simple Moving Average).
+ * Displays WebSocket traffic rate in sidebar footer from WebSocket byte events.
  * Uses DIRECT DOM manipulation - no reactive stores for display value.
  * Completely isolated from sidebar rendering.
  */
-import { resetWsAccum, setWsRateEma } from '../../state';
+import { onWsTraffic, resetWsAccum, setWsRateEma } from '../../state';
 import { $muxWsConnected } from '../../stores';
 
 const UPDATE_MS = 500;
-const WINDOW_SIZE = 10; // 10 samples × 500ms = 5 second rolling window
 
-let intervalId: number | null = null;
+let sampleTimerId: number | null = null;
+let idleTimerId: number | null = null;
 let el: HTMLSpanElement | null = null;
 let lastText = '';
-
-// Circular buffer for SMA
-const txSamples: number[] = new Array<number>(WINDOW_SIZE).fill(0);
-const rxSamples: number[] = new Array<number>(WINDOW_SIZE).fill(0);
-let sampleIndex = 0;
-let filledSamples = 0;
+let unsubscribeTraffic: (() => void) | null = null;
 
 function formatRate(bps: number): string {
   if (bps < 1) return '0 B/s';
@@ -28,33 +23,50 @@ function formatRate(bps: number): string {
   return `${(bps / 1000000).toFixed(2)} MB/s`;
 }
 
-function tick(): void {
+function setText(text: string): void {
+  if (text !== lastText && el) {
+    el.textContent = text;
+    lastText = text;
+  }
+}
+
+function clearSampleTimer(): void {
+  if (sampleTimerId !== null) {
+    window.clearTimeout(sampleTimerId);
+    sampleTimerId = null;
+  }
+}
+
+function clearIdleTimer(): void {
+  if (idleTimerId !== null) {
+    window.clearTimeout(idleTimerId);
+    idleTimerId = null;
+  }
+}
+
+function markIdle(): void {
+  idleTimerId = null;
+  setWsRateEma(0, 0);
+  setText('0 B/s');
+}
+
+function sampleTraffic(): void {
+  sampleTimerId = null;
   const { tx, rx } = resetWsAccum();
   const txRate = (tx / UPDATE_MS) * 1000;
   const rxRate = (rx / UPDATE_MS) * 1000;
 
-  // Store in circular buffer
-  txSamples[sampleIndex] = txRate;
-  rxSamples[sampleIndex] = rxRate;
-  sampleIndex = (sampleIndex + 1) % WINDOW_SIZE;
-  if (filledSamples < WINDOW_SIZE) filledSamples++;
+  setWsRateEma(txRate, rxRate);
+  setText(formatRate(txRate + rxRate));
 
-  // Calculate SMA over filled samples
-  let txSum = 0,
-    rxSum = 0;
-  for (let i = 0; i < filledSamples; i++) {
-    txSum += txSamples[i] ?? 0;
-    rxSum += rxSamples[i] ?? 0;
-  }
-  const txAvg = txSum / filledSamples;
-  const rxAvg = rxSum / filledSamples;
+  clearIdleTimer();
+  idleTimerId = window.setTimeout(markIdle, UPDATE_MS);
+}
 
-  setWsRateEma(txAvg, rxAvg);
-
-  const text = formatRate(txAvg + rxAvg);
-  if (text !== lastText && el) {
-    el.textContent = text;
-    lastText = text;
+function scheduleTrafficSample(): void {
+  clearIdleTimer();
+  if (sampleTimerId === null) {
+    sampleTimerId = window.setTimeout(sampleTraffic, UPDATE_MS);
   }
 }
 
@@ -63,23 +75,23 @@ export function initTrafficIndicator(): void {
   if (!wsTraffic) return;
   el = wsTraffic as HTMLSpanElement;
 
-  intervalId = window.setInterval(tick, UPDATE_MS);
+  unsubscribeTraffic = onWsTraffic(scheduleTrafficSample);
 
   $muxWsConnected.subscribe((connected) => {
     if (el) el.style.opacity = connected ? '1' : '0.3';
     if (!connected) {
-      // Reset circular buffer and state
-      txSamples.fill(0);
-      rxSamples.fill(0);
-      sampleIndex = 0;
-      filledSamples = 0;
       setWsRateEma(0, 0);
       lastText = '';
+      clearSampleTimer();
+      clearIdleTimer();
+      if (el) el.textContent = '0 B/s';
     }
   });
 }
 
 export function destroyTrafficIndicator(): void {
-  if (intervalId !== null) clearInterval(intervalId);
-  intervalId = null;
+  clearSampleTimer();
+  clearIdleTimer();
+  unsubscribeTraffic?.();
+  unsubscribeTraffic = null;
 }
