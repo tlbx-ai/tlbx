@@ -38,6 +38,7 @@ import {
   initMobilePiP,
   initDevSoftKeyboardSimulator,
   resolveLaunchDimensions,
+  syncWebglSessionPriority,
 } from './modules/terminal';
 import {
   getSessionDisplayName,
@@ -523,7 +524,15 @@ function getVisibleTerminalSessionIds(): string[] {
 }
 
 function syncMuxTerminalVisibility(): void {
-  updateTerminalVisibility($activeSessionId.get(), getVisibleTerminalSessionIds());
+  const activeSessionId = $activeSessionId.get();
+  const visibleSessionIds = getVisibleTerminalSessionIds();
+  updateTerminalVisibility(activeSessionId, visibleSessionIds);
+
+  const prioritySessionIds = new Set(visibleSessionIds);
+  if (activeSessionId && !isHubSessionId(activeSessionId)) {
+    prioritySessionIds.add(activeSessionId);
+  }
+  syncWebglSessionPriority([...prioritySessionIds]);
 }
 
 function refreshHiddenSessionsForFullReplay(): void {
