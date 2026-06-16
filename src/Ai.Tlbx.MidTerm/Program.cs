@@ -96,6 +96,9 @@ public class Program
     {
         WriteEventLog("MainCore: Checking special commands");
 
+        var runtimeOptions = ArgumentParser.ParseOptions(args);
+        runtimeOptions.ApplyProcessEnvironment();
+
         if (CliCommands.HandleSpecialCommands(args))
         {
             return;
@@ -103,7 +106,7 @@ public class Program
 
         WriteEventLog("MainCore: Acquiring instance guard");
 
-        var (port, bindAddress) = ArgumentParser.Parse(args);
+        var (port, bindAddress) = (runtimeOptions.Port, runtimeOptions.BindAddress);
         var preflightSettings = new SettingsService();
         var instanceIdentity = MidTermInstanceIdentity.Load(preflightSettings.SettingsDirectory, port);
         using var settingsGuard = SingleInstanceGuard.TryAcquire(instanceIdentity.SettingsGuardName, out var settingsGuardInfo);
@@ -113,7 +116,7 @@ public class Program
             Console.WriteLine($"Error: {settingsGuardInfo}");
             Console.ResetColor();
             Console.WriteLine($"Another MidTerm instance is already using settings directory '{preflightSettings.SettingsDirectory}'.");
-            Console.WriteLine("Stop the other instance first, or launch this one with a separate MIDTERM_SETTINGS_DIR for isolated dev state.");
+            Console.WriteLine("Stop the other instance first, or launch this one with --settings-dir for isolated state.");
             Environment.Exit(1);
             return;
         }

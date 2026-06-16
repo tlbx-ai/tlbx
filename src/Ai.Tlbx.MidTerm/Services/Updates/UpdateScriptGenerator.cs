@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Globalization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Update;
+using Ai.Tlbx.MidTerm.Startup;
 
 using Ai.Tlbx.MidTerm.Services.Certificates;
 namespace Ai.Tlbx.MidTerm.Services.Updates;
@@ -22,9 +23,6 @@ public static class UpdateScriptGenerator
 {
     private const string AgentHostBinaryName = "mtagenthost";
     private const string TmuxShimBinaryName = "mttmux";
-    private const string ServiceName = "MidTerm";
-    private const string LaunchdLabel = "ai.tlbx.midterm";
-    private const string SystemdService = "MidTerm";
     private const int MaxRetries = 30;
     private const int RetryDelaySeconds = 1;
 
@@ -35,15 +33,32 @@ public static class UpdateScriptGenerator
         UpdateType updateType = UpdateType.Full,
         bool deleteSourceAfter = true)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return GenerateWindowsScript(extractedDir, currentBinaryPath, settingsDirectory, updateType, deleteSourceAfter);
-        }
-
-        return GenerateUnixScript(extractedDir, currentBinaryPath, settingsDirectory, updateType, deleteSourceAfter);
+        return GenerateUpdateScript(
+            extractedDir,
+            currentBinaryPath,
+            settingsDirectory,
+            MidTermServiceIdentity.FromEnvironment(),
+            updateType,
+            deleteSourceAfter);
     }
 
-    private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, string settingsDirectory, UpdateType updateType, bool deleteSourceAfter)
+    public static string GenerateUpdateScript(
+        string extractedDir,
+        string currentBinaryPath,
+        string settingsDirectory,
+        MidTermServiceIdentity serviceIdentity,
+        UpdateType updateType = UpdateType.Full,
+        bool deleteSourceAfter = true)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return GenerateWindowsScript(extractedDir, currentBinaryPath, settingsDirectory, serviceIdentity, updateType, deleteSourceAfter);
+        }
+
+        return GenerateUnixScript(extractedDir, currentBinaryPath, settingsDirectory, serviceIdentity, updateType, deleteSourceAfter);
+    }
+
+    private static string GenerateWindowsScript(string extractedDir, string currentBinaryPath, string settingsDirectory, MidTermServiceIdentity serviceIdentity, UpdateType updateType, bool deleteSourceAfter)
     {
         // IMPORTANT: Binary dir != Settings dir on Windows
         // Binaries: C:\Program Files\MidTerm (installDir)
@@ -68,6 +83,7 @@ public static class UpdateScriptGenerator
         var resultFilePath = Path.Combine(settingsDir, "update-result.json");
         var logFilePath = Path.Combine(settingsDir, "update.log");
         var scriptPath = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}.ps1");
+        var serviceName = EscapeForPowerShell(serviceIdentity.WindowsServiceName);
 
         var isWebOnly = updateType != UpdateType.Full;
 
@@ -102,6 +118,7 @@ $ResultFile = '{EscapeForPowerShell(resultFilePath)}'
 $MaxRetries = {MaxRetries}
 $IsWebOnly = ${(isWebOnly ? "true" : "false")}
 $DeleteSource = ${(deleteSourceAfter ? "true" : "false")}
+$ServiceName = '{serviceName}'
 
 # === Helper Functions ===
 
@@ -257,14 +274,14 @@ try {{
     Log '=== PHASE 1: Stopping processes ==='
 
     # Stop Windows service if running
-    $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($service -and $service.Status -eq 'Running') {{
-        Log 'Stopping MidTerm service...'
-        Stop-Service -Name '{ServiceName}' -Force -ErrorAction SilentlyContinue
+        Log ""Stopping MidTerm service '$ServiceName'...""
+        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
 
         # Verify service stopped
-        $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+        $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
         if ($service -and $service.Status -eq 'Running') {{
             Log 'Service did not stop gracefully, forcing...' 'WARN'
         }}
@@ -494,13 +511,13 @@ try {{
     Log ''
     Log '=== PHASE 5: Starting new version ==='
 
-    $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+    $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($service) {{
-        Log 'Starting MidTerm service...'
-        Start-Service -Name '{ServiceName}' -ErrorAction Stop
+        Log ""Starting MidTerm service '$ServiceName'...""
+        Start-Service -Name $ServiceName -ErrorAction Stop
         Start-Sleep -Seconds 8
 
-        $service = Get-Service -Name '{ServiceName}'
+        $service = Get-Service -Name $ServiceName
         if ($service.Status -ne 'Running') {{
             throw ""Service failed to start. Status: $($service.Status)""
         }}
@@ -695,10 +712,10 @@ try {{
 
         # Try to restart previous version
         Log 'Attempting to restart previous version...'
-        $service = Get-Service -Name '{ServiceName}' -ErrorAction SilentlyContinue
+        $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
         if ($service) {{
             try {{
-                Start-Service -Name '{ServiceName}' -ErrorAction Stop
+                Start-Service -Name $ServiceName -ErrorAction Stop
                 Log 'Previous version service started'
             }} catch {{
                 Log ""Failed to start service: $_"" 'ERROR'
@@ -727,7 +744,7 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
         return scriptPath;
     }
 
-    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, string settingsDirectory, UpdateType updateType, bool deleteSourceAfter)
+    private static string GenerateUnixScript(string extractedDir, string currentBinaryPath, string settingsDirectory, MidTermServiceIdentity serviceIdentity, UpdateType updateType, bool deleteSourceAfter)
     {
         // IMPORTANT: Binary and config directories are DIFFERENT on Unix:
         // - Binaries: /usr/local/bin/ (service) or ~/.local/bin/ (user)
@@ -763,8 +780,9 @@ Remove-Item $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 
         // macOS uses the launcher shim approach (staging + launchd respawn) — see EndpointSetup.cs.
         // This script is only generated for Linux now.
-        var stopServiceCmd = $"systemctl stop {SystemdService} 2>/dev/null || true";
-        var startServiceCmd = $"systemctl start {SystemdService} 2>/dev/null || true";
+        var systemdService = EscapeForBash(serviceIdentity.SystemdServiceName);
+        var stopServiceCmd = $"systemctl stop '{systemdService}' 2>/dev/null || true";
+        var startServiceCmd = $"systemctl start '{systemdService}' 2>/dev/null || true";
 
         var script = $@"#!/bin/bash
 # MidTerm Update Script (Linux)

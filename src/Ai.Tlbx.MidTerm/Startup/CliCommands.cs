@@ -13,6 +13,9 @@ public static class CliCommands
 {
     public static bool HandleSpecialCommands(string[] args)
     {
+        var runtimeOptions = ArgumentParser.ParseOptions(args);
+        runtimeOptions.ApplyProcessEnvironment();
+
         var clipboardWriteImageIdx = Array.IndexOf(args, "--clipboard-write-image");
         if (clipboardWriteImageIdx >= 0)
         {
@@ -154,16 +157,20 @@ public static class CliCommands
             ISecretStorage secretStorage;
             if (serviceMode)
             {
-                string settingsDir;
-                if (OperatingSystem.IsWindows())
+                var settingsDir = runtimeOptions.SettingsDirectory;
+                if (string.IsNullOrWhiteSpace(settingsDir))
                 {
-                    var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
-                    settingsDir = Path.Combine(programData, "MidTerm");
+                    if (OperatingSystem.IsWindows())
+                    {
+                        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+                        settingsDir = Path.Combine(programData, "MidTerm");
+                    }
+                    else
+                    {
+                        settingsDir = "/usr/local/etc/midterm";
+                    }
                 }
-                else
-                {
-                    settingsDir = "/usr/local/etc/midterm";
-                }
+
                 secretStorage = SecretStorageFactory.Create(settingsDir, isServiceMode: true);
             }
             else

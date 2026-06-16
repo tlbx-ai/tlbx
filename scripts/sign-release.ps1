@@ -57,7 +57,7 @@ try {
     [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($privateKeyB64)) | Set-Content $keyFile -NoNewline
 
     # Process each platform
-    $platforms = @("win-x64", "osx-arm64", "osx-x64", "linux-x64", "linux-arm64")
+    $platforms = @("win-x64", "win-x86", "osx-arm64", "osx-x64", "linux-x64", "linux-arm64")
 
     foreach ($platform in $platforms) {
         $platformDir = Join-Path $ArtifactsPath $platform
@@ -87,10 +87,10 @@ try {
         # installed runtime on web-only updates.
         $checksums = @{}
         $binaries = if ($isWebOnly) { @("mt", "mtagenthost") } else { @("mt", "mthost", "mtagenthost") }
-        if ($platform -eq "win-x64") {
+        if ($platform.StartsWith("win-")) {
             $binaries += "mttmux"
         }
-        $ext = if ($platform -eq "win-x64") { ".exe" } else { "" }
+        $ext = if ($platform.StartsWith("win-")) { ".exe" } else { "" }
         $expectedFiles = $binaries | ForEach-Object { "$_$ext" }
         $checksumManifestPath = Join-Path $platformDir "SHA256SUMS.txt"
 

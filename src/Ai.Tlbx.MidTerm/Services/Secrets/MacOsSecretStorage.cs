@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Security.Cryptography;
 using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Secrets;
@@ -14,15 +15,26 @@ namespace Ai.Tlbx.MidTerm.Services.Secrets;
 [SupportedOSPlatform("macos")]
 public sealed class MacOsSecretStorage : ISecretStorage
 {
-    private const string ServiceName = "ai.tlbx.midterm";
+    private const string ServiceNamePrefix = "ai.tlbx.midterm";
     private const int ErrSecSuccess = 0;
     private const int ErrSecItemNotFound = -25300;
     private const int ErrSecDuplicateItem = -25299;
 
     // macOS uses Keychain which is queried on-demand, no "load" phase
     // Individual operation failures are logged in each method
+    private readonly string _serviceName;
+
     public bool LoadFailed => false;
     public string? LoadError => null;
+
+    public MacOsSecretStorage(string settingsDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(settingsDirectory);
+        var normalized = Path.GetFullPath(settingsDirectory);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(normalized));
+        var suffix = Convert.ToHexString(hash.AsSpan(0, 8)).ToLowerInvariant();
+        _serviceName = $"{ServiceNamePrefix}.{suffix}";
+    }
 
     public string? GetSecret(string key)
     {
@@ -140,14 +152,14 @@ public sealed class MacOsSecretStorage : ISecretStorage
     /// Builds a base query dictionary with kSecClass, kSecAttrService, kSecAttrAccount,
     /// and kSecUseDataProtectionKeychain set.
     /// </summary>
-    private static IntPtr CreateQuery(string account)
+    private IntPtr CreateQuery(string account)
     {
         var dict = CFDictionaryCreateMutable(
             IntPtr.Zero, 4,
             ref kCFTypeDictionaryKeyCallBacks,
             ref kCFTypeDictionaryValueCallBacks);
 
-        var cfService = CFStringCreateWithCString(IntPtr.Zero, ServiceName, kCFStringEncodingUTF8);
+        var cfService = CFStringCreateWithCString(IntPtr.Zero, _serviceName, kCFStringEncodingUTF8);
         var cfAccount = CFStringCreateWithCString(IntPtr.Zero, account, kCFStringEncodingUTF8);
 
         try

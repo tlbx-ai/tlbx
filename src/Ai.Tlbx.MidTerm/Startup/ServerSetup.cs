@@ -34,6 +34,9 @@ public static class ServerSetup
     {
         writeEventLog?.Invoke("CreateBuilder: Starting", false);
 
+        var runtimeOptions = ArgumentParser.ParseOptions(args);
+        runtimeOptions.ApplyProcessEnvironment();
+
         var builder = WebApplication.CreateSlimBuilder(args);
 
 #if WINDOWS
@@ -113,10 +116,11 @@ public static class ServerSetup
         });
 
         builder.Services.AddSingleton(settingsService);
+        builder.Services.AddSingleton(runtimeOptions);
+        builder.Services.AddSingleton(runtimeOptions.ServiceIdentity);
         builder.Services.AddSingleton(sp =>
         {
-            var (port, bindAddress) = ArgumentParser.Parse(args);
-            return new ServerBindingInfo(port, bindAddress);
+            return new ServerBindingInfo(runtimeOptions.Port, runtimeOptions.BindAddress);
         });
         builder.Services.AddSingleton(sp =>
         {
@@ -178,8 +182,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<HubMuxWebSocketHandler>();
         builder.Services.AddSingleton(sp =>
         {
-            var (port, bindAddress) = ArgumentParser.Parse(args);
-            return BrowserPreviewOriginService.Create(port, bindAddress);
+            return BrowserPreviewOriginService.Create(runtimeOptions.Port, runtimeOptions.BindAddress);
         });
         builder.Services.AddSingleton<BrowserPreviewRegistry>();
         builder.Services.AddSingleton<BrowserPreviewOwnerService>();
@@ -187,10 +190,9 @@ public static class ServerSetup
         builder.Services.AddSingleton<BrowserUiBridge>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>
         {
-            var (port, _) = ArgumentParser.Parse(args);
             var cookiesDir = Path.Combine(settingsService.SettingsDirectory, "cookies");
             return new WebPreviewService(
-                port,
+                runtimeOptions.Port,
                 sp.GetRequiredService<BrowserPreviewOriginService>(),
                 cookiesDir);
         });
