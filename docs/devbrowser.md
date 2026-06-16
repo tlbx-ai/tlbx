@@ -206,6 +206,12 @@ CLI: `mt_proxylog [limit]` / `Mt-ProxyLog [-Limit N]`
 
 Use this as the **first diagnostic step** when a site doesn't work through the proxy.
 
+## Upstream TLS
+
+The Dev Browser proxy connects to upstream HTTPS targets from the `mt` server process. For explicitly targeted preview URLs, the proxy proceeds through upstream certificate validation errors such as expired certificates, matching the developer-browser "proceed anyway" workflow and `curl -k` diagnostics. This exception is scoped to Web Preview upstream HTTP/WebSocket connections; it does not affect MidTerm's own server certificate, authentication, installer, update downloads, or other app HTTP clients.
+
+The proxy also uses its own DNS connect fallback for upstream preview traffic. If a target host resolves to multiple addresses and the first address stalls, the proxy retries the remaining addresses before surfacing a MidTerm timeout. This keeps dynamic DNS and mixed IPv6/IPv4 targets aligned with browser behavior.
+
 ## Debugging Checklist
 
 When a website doesn't load through the web preview:
