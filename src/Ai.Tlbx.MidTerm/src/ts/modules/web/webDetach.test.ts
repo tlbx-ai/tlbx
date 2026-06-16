@@ -127,6 +127,14 @@ describe('webDetach dock layout sync', () => {
     expect(hideWebPreviewDockForDetach).toHaveBeenCalledTimes(1);
     expect($webPreviewDetached.get()).toBe(true);
     expect(popupReplace).toHaveBeenCalledTimes(1);
+    expect(String(popupReplace.mock.calls[0]?.[0] ?? '')).not.toContain('&mobile=1');
+  });
+
+  it('passes mobile mode to the detached popup when requested', async () => {
+    await detachPreview('s1', 'default', { mobileMode: true });
+
+    expect(popupReplace).toHaveBeenCalledTimes(1);
+    expect(String(popupReplace.mock.calls[0]?.[0] ?? '')).toContain('&mobile=1');
   });
 
   it('reopens the dock immediately when the active preview docks back', () => {

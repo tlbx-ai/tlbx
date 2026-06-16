@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Mux transport remains the protocol coordinator; hot-path helpers are split out as they become stable. */
 /**
  * Mux WebSocket terminal I/O. Output ordering is strict per session, not global;
  * xterm's own WriteBuffer remains the user-visible parse boundary.
@@ -37,11 +38,17 @@ import {
 } from './cursorVisibility';
 import { clearBracketedPasteScanState, scanBracketedPasteMode } from './bracketedPasteScan';
 import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
-import * as bgOutput from './backgroundOutputDeferral';
 import * as muxSessionRouting from './muxSessionRouting';
 import { resolveMuxDataLossReason } from './muxDataLoss';
 import { createMuxInputFrame } from './muxInputFrame';
 import { createPrintableInputBurstCoalescer } from './printableInputBurst';
+import {
+  appendTerminalWriteBatch,
+  canAppendTerminalWriteBatch,
+  combineTerminalWriteChunks,
+  type TerminalOutputDelivery,
+  type TerminalWriteBatch,
+} from './muxOutputBatch';
 import {
   buildResumeCursorQueryValue,
   countLocalTerminals,
@@ -129,6 +136,7 @@ const REPLAY_HEAT_QUIET_MS = 750;
 const RESYNC_HEAT_SUPPRESS_MS = 3000;
 const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
 const BUFFER_REPLAY_MAX_MS = 12000;
+const BROWSER_RESUME_QUICK_REFRESH_COOLDOWN_MS = 3000;
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
@@ -388,7 +396,7 @@ function measureCompletedOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
-let currentStreamableSessionIds = new Set<string>();
+let lastBrowserResumeQuickRefreshAt = Number.NEGATIVE_INFINITY;
 
 // =============================================================================
 // Per-Session Output Delivery
@@ -420,9 +428,11 @@ const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
+const MAX_TERMINAL_WRITE_BATCH_BYTES = 64 * 1024;
 const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
+const scheduledOutputQueues = new Set<string>();
 let outputQueueGeneration = 0;
 let yieldToMainChannel: MessageChannel | null = null;
 const pendingYieldToMainResolves: Array<() => void> = [];
@@ -572,7 +582,22 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
 
   queue.items.push({ sessionId, payload, compressed });
   queue.bytes += payload.byteLength;
-  void processSessionOutputQueue(sessionId, outputQueueGeneration);
+  scheduleSessionOutputQueue(sessionId, outputQueueGeneration);
+}
+
+function scheduleSessionOutputQueue(sessionId: string, generation: number): void {
+  if (scheduledOutputQueues.has(sessionId)) {
+    return;
+  }
+
+  scheduledOutputQueues.add(sessionId);
+  void Promise.resolve().then(() => {
+    scheduledOutputQueues.delete(sessionId);
+    if (generation !== outputQueueGeneration) {
+      return;
+    }
+    void processSessionOutputQueue(sessionId, generation);
+  });
 }
 
 async function processSessionOutputQueue(sessionId: string, generation: number): Promise<void> {
@@ -582,6 +607,15 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
   }
 
   queue.processing = true;
+  let writeBatch: TerminalWriteBatch | null = null;
+  const flushWriteBatch = (): void => {
+    if (!writeBatch) {
+      return;
+    }
+
+    deliverTerminalWriteBatch(writeBatch, generation);
+    writeBatch = null;
+  };
 
   try {
     let sliceStartMs = performance.now();
@@ -592,7 +626,17 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
         break;
       }
 
-      await processOneFrame(item, generation);
+      const processedFrame = processOneFrame(item);
+      const delivery = processedFrame instanceof Promise ? await processedFrame : processedFrame;
+      if (delivery) {
+        if (!canAppendTerminalWriteBatch(writeBatch, delivery)) {
+          flushWriteBatch();
+        }
+        writeBatch = appendTerminalWriteBatch(writeBatch, delivery);
+        if (writeBatch.bytes >= MAX_TERMINAL_WRITE_BATCH_BYTES) {
+          flushWriteBatch();
+        }
+      }
 
       if (generation !== outputQueueGeneration) {
         break;
@@ -601,11 +645,13 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
       // Heavy output must periodically yield so keyboard interrupts like Ctrl+C
       // can be processed promptly instead of waiting behind a long browser-side drain.
       if (performance.now() - sliceStartMs >= OUTPUT_DRAIN_BUDGET_MS) {
+        flushWriteBatch();
         await yieldToMain();
         sliceStartMs = performance.now();
       }
     }
   } finally {
+    flushWriteBatch();
     queue.processing = false;
 
     // If new frames landed after the current drain finished, restart the same
@@ -617,6 +663,18 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
       sessionOutputQueues.delete(sessionId);
     }
   }
+}
+
+function deliverTerminalWriteBatch(batch: TerminalWriteBatch, generation: number): void {
+  writeToTerminal(
+    batch.sessionId,
+    batch.state,
+    batch.sequenceEnd,
+    batch.cols,
+    batch.rows,
+    combineTerminalWriteChunks(batch.chunks, batch.bytes),
+    generation,
+  );
 }
 
 /**
@@ -661,54 +719,67 @@ function bufferPendingFrame(
   frames.push(bufferedPayload);
 }
 
-async function processOneFrame(item: OutputFrameItem, generation: number): Promise<void> {
+function processOneFrame(
+  item: OutputFrameItem,
+): TerminalOutputDelivery | null | Promise<TerminalOutputDelivery | null> {
   try {
-    const clearReplayGateAfterFrame = bgOutput.prepareBackgroundOutputDelivery(
-      item.sessionId,
-      item.payload,
-      item.compressed,
-      currentStreamableSessionIds,
-      currentVisibleSessionIds,
-    );
-    if (clearReplayGateAfterFrame === null) {
-      return;
-    }
-
-    let cols: number;
-    let rows: number;
-    let data: Uint8Array;
-    let sequenceEnd: bigint;
-
     if (item.compressed) {
-      const frame = await parseCompressedOutputFrame(item.payload);
-      sequenceEnd = frame.sequenceEnd;
-      cols = frame.cols;
-      rows = frame.rows;
-      data = frame.data;
-    } else {
-      const frame = parseOutputFrame(item.payload);
-      sequenceEnd = frame.sequenceEnd;
-      cols = frame.cols;
-      rows = frame.rows;
-      data = frame.data;
+      return processCompressedFrame(item);
     }
 
+    const frame = parseOutputFrame(item.payload);
+    return processParsedOutputFrame(item, frame.sequenceEnd, frame.cols, frame.rows, frame.data);
+  } catch (e) {
+    log.error(() => `Failed to process frame: ${String(e)}`);
+    return null;
+  }
+}
+
+async function processCompressedFrame(
+  item: OutputFrameItem,
+): Promise<TerminalOutputDelivery | null> {
+  try {
+    const frame = await parseCompressedOutputFrame(item.payload);
+    return processParsedOutputFrame(item, frame.sequenceEnd, frame.cols, frame.rows, frame.data);
+  } catch (e) {
+    log.error(() => `Failed to process frame: ${String(e)}`);
+    return null;
+  }
+}
+
+function processParsedOutputFrame(
+  item: OutputFrameItem,
+  sequenceEnd: bigint,
+  cols: number,
+  rows: number,
+  data: Uint8Array,
+): TerminalOutputDelivery | null {
+  try {
     const snapshot = getOrCreateBrowserTransportSnapshot(item.sessionId);
     const trimmedData = trimFrameToUnseenSuffix(data, sequenceEnd, snapshot.receivedSeq);
     snapshot.receivedSeq = maxSequence(snapshot.receivedSeq, sequenceEnd);
 
     const state = sessionTerminals.get(item.sessionId);
+
     if (state && state.opened) {
       if (trimmedData.length > 0) {
-        writeToTerminal(item.sessionId, state, sequenceEnd, cols, rows, trimmedData, generation);
+        return {
+          sessionId: item.sessionId,
+          state,
+          sequenceEnd,
+          cols,
+          rows,
+          data: trimmedData,
+        };
       }
     } else if (trimmedData.length > 0) {
       bufferPendingFrame(item.sessionId, sequenceEnd, cols, rows, trimmedData);
     }
 
-    bgOutput.finishBackgroundOutputDelivery(item.sessionId, clearReplayGateAfterFrame);
+    return null;
   } catch (e) {
     log.error(() => `Failed to process frame: ${String(e)}`);
+    return null;
   }
 }
 
@@ -956,7 +1027,6 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     sessionsNeedingResync.clear();
     browserTransportSnapshots.clear();
   }
-  bgOutput.clearAllBackgroundReplayState();
   clearQueuedOutput();
   return true;
 }
@@ -1103,7 +1173,6 @@ export function connectMuxWebSocket(): void {
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
       replaySuppressedSessions.clear();
-      bgOutput.clearAllBackgroundReplayState();
       clearQueuedOutput();
       forEachLocalTerminal((_, sessionId) => {
         const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
@@ -1167,7 +1236,6 @@ export function connectMuxWebSocket(): void {
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
     replaySuppressedSessions.clear();
-    bgOutput.clearAllBackgroundReplayState();
     clearInputLatencyTraceInFlight();
     thawReconnectFreeze();
 
@@ -1225,11 +1293,7 @@ function sendInputNow(sessionId: string, data: string, inputAtMs: number): void 
     return;
   }
 
-  if (sessionId !== lastHintedSessionId) {
-    _suppressHeatCallback?.(1500);
-    sendActiveSessionHint(sessionId);
-    lastHintedSessionId = sessionId;
-  }
+  const shouldSendActiveHint = sessionId !== lastHintedSessionId;
 
   maybeSendInputTraceMarker(sessionId, inputAtMs, sendFrame, encodeSessionId);
   recordInputTimestamp(sessionId);
@@ -1244,6 +1308,12 @@ function sendInputNow(sessionId: string, data: string, inputAtMs: number): void 
       textEncoder,
     ),
   );
+
+  if (shouldSendActiveHint) {
+    _suppressHeatCallback?.(1500);
+    sendActiveSessionHint(sessionId);
+    lastHintedSessionId = sessionId;
+  }
 }
 
 function flushPendingInput(): void {
@@ -1305,7 +1375,8 @@ export function requestBufferRefresh(
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
 
   const replayRows = mode === 'quickResume' ? muxSessionRouting.getReplayRows(sessionId) : null;
-  const resumeSequence = getResumeSequence(browserTransportSnapshots.get(sessionId));
+  const resumeSequence =
+    mode === 'quickResume' ? getResumeSequence(browserTransportSnapshots.get(sessionId)) : null;
   const frame = createBufferRequestFrame(
     MUX_HEADER_SIZE,
     MUX_TYPE_BUFFER_REQUEST,
@@ -1315,7 +1386,6 @@ export function requestBufferRefresh(
     replayRows,
     resumeSequence,
   );
-  bgOutput.armBackgroundReplayGate(sessionId);
   sendFrame(frame);
 }
 
@@ -1360,33 +1430,54 @@ export function sendVisibleSessionsHint(sessionIds: readonly string[]): void {
 }
 
 export function updateTerminalVisibility(
-  activeSessionId: string | null,
+  _activeSessionId: string | null,
   visibleSessionIds: readonly string[],
 ): void {
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
-  const nextStreamableSessionIds = muxSessionRouting.getStreamableSessionIds(
-    activeSessionId,
-    normalizedVisibleSessionIds,
-  );
-  const quickResumeEnabled = muxSessionRouting.isQuickResumeEnabled();
-  const sessionsNeedingReplay: string[] = [];
-
-  nextStreamableSessionIds.forEach((sessionId) => {
-    if (!currentStreamableSessionIds.has(sessionId)) {
-      sessionsNeedingReplay.push(sessionId);
-    }
-  });
 
   currentVisibleSessionIds = normalizedVisibleSessionIds;
-  currentStreamableSessionIds = nextStreamableSessionIds;
 
   if (muxWs && muxWs.readyState === WebSocket.OPEN) {
     sendVisibleSessionsHint(normalizedVisibleSessionIds);
   }
+}
 
-  sessionsNeedingReplay.forEach((sessionId) => {
-    requestBufferRefresh(sessionId, quickResumeEnabled ? 'quickResume' : 'fullReplay');
-  });
+export function recoverVisibleTerminalsAfterBrowserResume(
+  activeSessionId: string | null,
+  visibleSessionIds: readonly string[],
+  options: { quickRefresh?: boolean } = {},
+): void {
+  const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
+  currentVisibleSessionIds = normalizedVisibleSessionIds;
+
+  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
+    connectMuxWebSocket();
+    return;
+  }
+
+  sendVisibleSessionsHint(normalizedVisibleSessionIds);
+  sendActiveSessionHint(activeSessionId);
+
+  if (options.quickRefresh !== true) {
+    return;
+  }
+
+  const now = performance.now();
+  if (now - lastBrowserResumeQuickRefreshAt < BROWSER_RESUME_QUICK_REFRESH_COOLDOWN_MS) {
+    return;
+  }
+  lastBrowserResumeQuickRefreshAt = now;
+
+  const refreshSessionIds = muxSessionRouting.normalizeSessionIds([
+    ...normalizedVisibleSessionIds,
+    ...(activeSessionId ? [activeSessionId] : []),
+  ]);
+
+  for (const sessionId of refreshSessionIds) {
+    if (sessionTerminals.get(sessionId)?.opened) {
+      requestBufferRefresh(sessionId, 'quickResume');
+    }
+  }
 }
 
 /**
@@ -1453,10 +1544,9 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
   currentVisibleSessionIds = [];
-  currentStreamableSessionIds = new Set<string>();
+  lastBrowserResumeQuickRefreshAt = Number.NEGATIVE_INFINITY;
 
   replaySuppressedSessions.clear();
-  bgOutput.clearAllBackgroundReplayState();
   browserTransportSnapshots.clear();
   bracketedPasteState.clear();
   clearBracketedPasteScanState();
@@ -1473,3 +1563,5 @@ export function resetMuxChannelRuntimeForTests(): void {
   sessionsNeedingResync.clear();
   closeWebSocket(muxWs, setMuxWs);
 }
+
+/* eslint-enable max-lines */

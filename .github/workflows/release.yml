@@ -196,6 +196,12 @@ jobs:
           - os: macos-14
             rid: osx-arm64
             ext: ''
+          - os: macos-14
+            rid: osx-x64
+            ext: ''
+          - os: ubuntu-latest
+            rid: linux-x64
+            ext: ''
           - os: ubuntu-24.04-arm
             rid: linux-arm64
             ext: ''
@@ -246,7 +252,7 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
-          if [[ "${{ matrix.rid }}" == "win-x64" ]]; then
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
             cp src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/${{ matrix.rid }}/publish/mttmux.exe staging/${{ matrix.rid }}/
           fi
           if [[ -f src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} ]]; then
@@ -285,7 +291,7 @@ jobs:
         run: |
           cd staging/${{ matrix.rid }}
           files=(mt${{ matrix.ext }} mtagenthost${{ matrix.ext }})
-          if [[ "${{ matrix.rid }}" == "win-x64" ]]; then
+          if [[ "${{ matrix.rid }}" == win-* ]]; then
             files+=(mttmux.exe)
           fi
           if [[ -f mthost${{ matrix.ext }} ]]; then
@@ -503,6 +509,12 @@ jobs:
     if: needs.prepare.outputs.is_dev == 'true'
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+          - rid: win-x86
     runs-on: windows-latest
 
     steps:
@@ -520,37 +532,39 @@ jobs:
 
       - name: Build mt + mthost + mtagenthost + mttmux
         shell: pwsh
-        run: ./scripts/publish-runtime-set.ps1 -Rid 'win-x64' -Configuration Release
+        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Stage artifacts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
-          Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
-          Copy-Item src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/win-x64/publish/mttmux.exe staging/win-x64/
-          Copy-Item src/version.json staging/win-x64/
-          $mthostPath = 'src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe'
+          $rid = '${{ matrix.rid }}'
+          New-Item -ItemType Directory -Force "staging/$rid" | Out-Null
+          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
+          Copy-Item src/version.json "staging/$rid/"
+          $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {
-            Copy-Item $mthostPath staging/win-x64/
+            Copy-Item $mthostPath "staging/$rid/"
           } else {
-            Write-Host 'mthost.exe not found for win-x64; continuing with web-only artifact set'
+            Write-Host "mthost.exe not found for $rid; continuing with web-only artifact set"
           }
-          Copy-Item src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/win-x64/publish/mtagenthost.exe staging/win-x64/
+          Copy-Item "src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$rid/publish/mtagenthost.exe" "staging/$rid/"
 
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe', 'staging/win-x64/mttmux.exe')
-          if (Test-Path 'staging/win-x64/mthost.exe') {
-            $files += 'staging/win-x64/mthost.exe'
+          $rid = '${{ matrix.rid }}'
+          $files = @("staging/$rid/mt.exe", "staging/$rid/mtagenthost.exe", "staging/$rid/mttmux.exe")
+          if (Test-Path "staging/$rid/mthost.exe") {
+            $files += "staging/$rid/mthost.exe"
           }
           $hashes = Get-ChildItem $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           }
-          $hashes | Set-Content staging/win-x64/SHA256SUMS.txt
-          Write-Host "=== win-x64 ==="
-          Get-Content staging/win-x64/SHA256SUMS.txt
+          $hashes | Set-Content "staging/$rid/SHA256SUMS.txt"
+          Write-Host "=== $rid ==="
+          Get-Content "staging/$rid/SHA256SUMS.txt"
 
       - name: Sign version.json
         shell: pwsh
@@ -563,11 +577,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $archive = "staging/mt-win-x64.zip"
+          $rid = '${{ matrix.rid }}'
+          $archive = "staging/mt-$rid.zip"
           if (Get-Command 7z -ErrorAction SilentlyContinue) {
-            7z a -tzip -mx=9 $archive "./staging/win-x64/*" | Out-Null
+            7z a -tzip -mx=9 $archive "./staging/$rid/*" | Out-Null
           } else {
-            Compress-Archive -Path "./staging/win-x64/*" -DestinationPath $archive -Force
+            Compress-Archive -Path "./staging/$rid/*" -DestinationPath $archive -Force
           }
           gh release upload "${{ github.ref_name }}" $archive --clobber
 

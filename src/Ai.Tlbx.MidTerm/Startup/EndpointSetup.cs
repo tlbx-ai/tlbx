@@ -30,7 +30,6 @@ namespace Ai.Tlbx.MidTerm.Startup;
 
 public static class EndpointSetup
 {
-    private const string WindowsServiceName = "MidTerm";
     private static string? _cachedGitVersion;
     private static bool _gitVersionChecked;
     private static bool _codeSigned;
@@ -154,7 +153,7 @@ public static class EndpointSetup
 
         if (OperatingSystem.IsWindows())
         {
-            return TryScheduleWindowsServiceRestartHelper(WindowsServiceName);
+            return TryScheduleWindowsServiceRestartHelper(MidTermServiceIdentity.FromEnvironment().WindowsServiceName);
         }
 
         return true;

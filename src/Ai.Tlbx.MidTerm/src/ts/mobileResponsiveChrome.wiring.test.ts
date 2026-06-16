@@ -22,6 +22,10 @@ const smartInputMetricsSource = readFileSync(
   path.join(projectRoot, 'src/ts/modules/smartInput/smartInputMetrics.ts'),
   'utf8',
 );
+const browserLifecycleRecoverySource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/comms/browserLifecycleRecovery.ts'),
+  'utf8',
+);
 
 const mobileChromeMedia =
   '@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {';
@@ -35,10 +39,8 @@ describe('mobile responsive chrome wiring', () => {
 
   it('toggles merged mobile topbar state from the active session', () => {
     expect(mainSource).toContain("from './modules/sessionTabs/mobileActions'");
-    expect(mainSource).toContain("initWebPreview, syncActiveWebPreview");
-    expect(mainSource).toContain(
-      "'.session-wrapper:not(.hidden) .session-tab-bar'",
-    );
+    expect(mainSource).toContain('initWebPreview, syncActiveWebPreview');
+    expect(mainSource).toContain("'.session-wrapper:not(.hidden) .session-tab-bar'");
     expect(mobileActionsSource).toContain(
       "title?.toggleAttribute('hidden', Boolean(activeSessionId));",
     );
@@ -87,6 +89,12 @@ describe('mobile responsive chrome wiring', () => {
     expect(css).toContain('order: 4;');
   });
 
+  it('keeps the mobile follower scale claim visible instead of tiny terminal-only chrome', () => {
+    expect(css).toMatch(
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.terminal-container\.scaled \.scaled-overlay \{[\s\S]*?inset: 50% 16px auto;[\s\S]*?min-height: 52px;[\s\S]*?transform: translateY\(-50%\);/s,
+    );
+  });
+
   it('keeps the responsive sidebar opaque and exposes touch-sized row actions', () => {
     expect(css).toMatch(
       /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.sidebar \{[\s\S]*?background: var\(--bg-sidebar-opaque, var\(--bg-sidebar\)\);/s,
@@ -111,7 +119,18 @@ describe('mobile responsive chrome wiring', () => {
     expect(smartInputMetricsSource).toContain(
       'return isTouchPrimaryDevice() && window.innerWidth <= MOBILE_TOUCH_BREAKPOINT;',
     );
-    expect(sessionListSource).toContain("window.matchMedia('(hover: none) and (pointer: coarse)').matches");
+    expect(sessionListSource).toContain(
+      "window.matchMedia('(hover: none) and (pointer: coarse)').matches",
+    );
     expect(sessionListSource).toContain('window.innerWidth <= MOBILE_TOUCH_BREAKPOINT');
+  });
+
+  it('recovers terminal transport after mobile PWA lifecycle resume events', () => {
+    expect(mainSource).toContain('setupBrowserLifecycleRecovery');
+    expect(browserLifecycleRecoverySource).toContain('recoverVisibleTerminalsAfterBrowserResume');
+    expect(browserLifecycleRecoverySource).toContain("window.addEventListener('pagehide'");
+    expect(browserLifecycleRecoverySource).toContain("window.addEventListener('pageshow'");
+    expect(browserLifecycleRecoverySource).toContain("document.addEventListener('resume'");
+    expect(browserLifecycleRecoverySource).toContain('quickRefresh: boolean');
   });
 });

@@ -212,6 +212,7 @@ public static class MidtermDirectory
         | `mt_inject [id]` | Ensure `.midterm` + mtcli helpers in the target cwd |
         | `mt_activity [id] [seconds] [bellLimit]` | Output heatmap + bell history as JSON |
         | `mt_attention [agentOnly]` | Ranked fleet view for which worker sessions need attention |
+        | `mt_supervise [repo...]` | One-shot supervisor snapshot: optional repo binding, refreshed repo status, and fleet attention |
         | `mt_bootstrap <name> <cwd> <profile> [slashCommand...]` | Create a fresh agent-controlled worker session with guidance + AI CLI bootstrap |
         | `mt_new_session [shell] [cwd]` | Create a new terminal session |
         | `mt_split [-h]` | Split terminal (adjacent pane via tmux) |
@@ -297,6 +298,7 @@ public static class MidtermDirectory
 
         mt_attention → mt_tail SESSION_ID 80 → mt_prompt SESSION_ID "status update?" → mt_activity SESSION_ID
         mt_bootstrap "DAI worker" "Q:/repos/DAI2" codex approvals
+        mt_supervise "Q:/repos/Jpa" "Q:/repos/MidTerm" → check repos + fleet before dispatching more work
 
         ## Track multiple Git repositories in one session
 
@@ -305,6 +307,7 @@ public static class MidtermDirectory
         `mt_topic` gives repeated ad-hoc sessions a visible purpose in the sidebar. Set a concise 3-6 word high-level topic, and update it when the user's work area changes. Do not churn it for every small subplot.
 
         `mt_repo` bindings are session-scoped and ad hoc. Coding agents should add every additional repo they use, inspect, or edit when that repo is not the session working directory. This keeps MidTerm showing both repo states side by side in the IDE bar and a compact extra repo line under the sidebar cwd. The cwd repo remains automatic; `mt_repo remove REPO_ROOT` only removes extra bindings.
+        `mt_supervise` is the low-friction start-of-shift command for multi-agent work: pass every repo you expect to touch, and it will bind them, refresh Git status, and print the current fleet attention snapshot.
 
         ## Debug proxy issues
 
@@ -344,6 +347,7 @@ public static class MidtermDirectory
         - mt_wake queues a future prompt through the Command Bay queue, so delayed work survives helper reloads and can be canceled from the queue
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
         - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; add every additional repo you use that is not the cwd before falling back to ad hoc shell git checks
+        - mt_supervise [repo...] combines repo binding, repo refresh, and fleet attention into one low-token supervisor snapshot before dispatching or resuming workers
         - mt_bootstrap creates a fresh agent-controlled worker session, injects `.midterm`, launches the chosen AI CLI profile, and can immediately send slash commands
         - mt_preview_reset [url] is the fast recovery move when a named preview has the wrong logged-in user or stale browser state
         - After a MidTerm web update, the browser frontend can close while your terminal keeps running in mthost; reopen MidTerm from the terminal and run mt_open again for the current preview instead of recreating the session

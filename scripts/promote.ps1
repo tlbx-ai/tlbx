@@ -76,8 +76,7 @@ function Get-ChangelogPlainTextBlock {
 
 function Join-RecentBlocksWithinLimit {
     param(
-        [Parameter(Mandatory=$true)]
-        [string]$Prefix,
+        [string]$Prefix = "",
 
         [Parameter(Mandatory=$true)]
         [string[]]$Blocks,

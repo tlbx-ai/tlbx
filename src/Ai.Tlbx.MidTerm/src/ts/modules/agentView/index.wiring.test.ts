@@ -181,7 +181,7 @@ describe('agent view AppServerControl wiring', () => {
     );
     expect(css).toMatch(/\.agent-history-shell\s*\{[\s\S]*?position:\s*relative;/);
     expect(css).toMatch(
-      /\.agent-scroll-to-bottom\s*\{[\s\S]*?min-height:\s*var\(--command-bay-automation-chip-height,\s*30\.6px\);[\s\S]*?border-radius:\s*var\(--command-bay-pill-radius,\s*8px\);[\s\S]*?background:\s*var\(--command-bay-ui-reactive-surface,/s,
+      /\.agent-scroll-to-bottom\s*\{[\s\S]*?min-height:\s*var\(--command-bay-automation-chip-height,\s*30\.6px\);[\s\S]*?border-radius:\s*var\(--command-bay-pill-radius,\s*8px\);[\s\S]*?background:\s*var\(\s*--command-bay-ui-reactive-surface,/s,
     );
     expect(css).toMatch(/\.agent-scroll-to-bottom\s*\{[\s\S]*?bottom:\s*12px;/);
     expect(css).not.toContain('bottom: calc(20px + var(--adaptive-footer-reserved-height, 0px));');
@@ -438,8 +438,9 @@ describe('agent view AppServerControl wiring', () => {
     expect(css).not.toContain('agent-history-busy-spin');
     expect(css).not.toContain('.agent-history-busy-triangle');
     expect(css).toContain(
-      'animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out infinite alternate;',
+      'animation: agent-history-busy-sweep var(--agent-busy-animation-duration-ms, 2450.5ms) ease-in-out',
     );
+    expect(css).toContain('infinite alternate;');
     expect(css).toContain('animation-delay: var(--agent-busy-animation-delay-ms, 0ms);');
     expect(css).toMatch(/mask-position:\s*66%\s*0;/);
     expect(css).toMatch(/mask-position:\s*34%\s*0;/);

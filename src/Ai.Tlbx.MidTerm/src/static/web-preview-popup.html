@@ -89,6 +89,52 @@
             color: var(--text-primary);
             font-weight: 600;
         }
+        .web-preview-device-status {
+            flex: 0 0 auto;
+            max-width: 150px;
+            padding: 3px 7px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            background: var(--bg-secondary);
+            font-size: var(--fs-xs);
+            line-height: 1.2;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .web-preview-device-status.hidden {
+            display: none;
+        }
+        body.web-preview-popup-mobile-mode .web-preview-device-status {
+            color: var(--text-accent);
+            border-color: color-mix(in srgb, var(--text-accent) 52%, var(--border-color) 48%);
+            background: color-mix(in srgb, var(--text-accent) 12%, var(--bg-secondary) 88%);
+        }
+        body.web-preview-popup-mobile-mode .web-preview-dock-body.viewport-constrained {
+            align-items: center;
+            justify-content: center;
+            padding: 14px;
+            background:
+                linear-gradient(90deg, color-mix(in srgb, var(--border-color) 26%, transparent) 1px, transparent 1px),
+                linear-gradient(color-mix(in srgb, var(--border-color) 20%, transparent) 1px, transparent 1px),
+                var(--bg-primary);
+            background-size: 24px 24px;
+        }
+        body.web-preview-popup-mobile-mode .web-preview-dock-body.viewport-constrained #preview-frame {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            box-shadow: 0 10px 28px var(--shadow-color);
+            overflow: hidden;
+        }
+        body.web-preview-popup-real-mobile .web-preview-dock-body {
+            padding: 0;
+        }
+        body.web-preview-popup-real-mobile .web-preview-dock-body.viewport-constrained #preview-frame {
+            border: 0;
+            border-radius: 0;
+            box-shadow: none;
+        }
     </style>
 </head>
 <body>
@@ -122,6 +168,11 @@
                 title=""
                 >!</span
             >
+            <span
+                id="web-preview-device-status"
+                class="web-preview-device-status hidden"
+                title=""
+            ></span>
             <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
         </div>
         <div

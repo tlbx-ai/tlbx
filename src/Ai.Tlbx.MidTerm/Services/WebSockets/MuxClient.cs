@@ -68,6 +68,7 @@ public sealed class MuxClient : IAsyncDisposable
     private const int MaxQueuedItems = 1000;
     private const int MaxFrameChunkBytes = 32 * 1024;
     private const int ActiveFlushMaxChunksPerPass = 8;
+    private static readonly TimeSpan ActiveFlushInterval = TimeSpan.FromMilliseconds(12);
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
 
@@ -489,14 +490,18 @@ public sealed class MuxClient : IAsyncDisposable
             && _sessionBuffers.TryGetValue(activeId, out var activeBuffer)
             && activeBuffer.TotalBytes > 0)
         {
-            var delayMs = (int)Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
-            _lastFlushDelayMs[activeId] = delayMs;
-            if (delayMs > 50)
+            var queuedDelay = Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks);
+            if (activeBuffer.TotalBytes >= FlushThresholdBytes || queuedDelay >= ActiveFlushInterval)
             {
-                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
+                var delayMs = (int)queuedDelay.TotalMilliseconds;
+                _lastFlushDelayMs[activeId] = delayMs;
+                if (delayMs > 50)
+                {
+                    Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
+                }
+                await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
+                activeBuffer.LastFlushTicks = nowTicks;
             }
-            await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
-            activeBuffer.LastFlushTicks = nowTicks;
         }
 
         // Background sessions: flush if size threshold OR time elapsed
@@ -527,13 +532,14 @@ public sealed class MuxClient : IAsyncDisposable
 
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {
-            if (buffer.TotalBytes == 0 || sessionId == activeId)
+            if (buffer.TotalBytes == 0)
             {
                 continue;
             }
 
-            var elapsed = Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
-            var remaining = FlushInterval - elapsed;
+            var remaining = string.Equals(sessionId, activeId, StringComparison.Ordinal)
+                ? ActiveFlushInterval - Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks)
+                : FlushInterval - Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
             if (remaining <= TimeSpan.Zero)
             {
                 return TimeSpan.Zero;

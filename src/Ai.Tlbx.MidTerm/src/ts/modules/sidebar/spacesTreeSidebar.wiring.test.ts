@@ -92,6 +92,11 @@ describe('spacesTreeSidebar wiring', () => {
     expect(css).toContain('padding: 2px 0 2px 12px;');
   });
 
+  it('colors sidebar git change counts like other git surfaces', () => {
+    expect(css).toContain('.session-extra-git-stat-additions {\n  color: var(--accent-green);');
+    expect(css).toContain('.session-extra-git-stat-deletions {\n  color: var(--accent-red);');
+  });
+
   it('selects the session when notes are activated', () => {
     expect(source).toContain(
       'callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });',

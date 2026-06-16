@@ -18,6 +18,7 @@ describe('web preview popup wiring', () => {
     expect(html).toContain('id="web-preview-url-input"');
     expect(html).toContain('id="web-preview-go"');
     expect(html).toContain('id="web-preview-refresh"');
+    expect(html).toContain('id="web-preview-device-status"');
     expect(html).toContain('id="web-preview-screenshot"');
     expect(html).toContain('id="web-preview-clear-cookies"');
     expect(html).toContain('id="web-preview-clear-state"');
@@ -26,6 +27,11 @@ describe('web preview popup wiring', () => {
 
   it('drives detached tabs and url changes through the existing preview APIs', () => {
     expect(script).toContain('async function loadOwningSession()');
+    expect(script).toContain("var initialMobileMode = params.get('mobile') === '1';");
+    expect(script).toContain("proxyUrl.searchParams.set('__mtMobile', '1');");
+    expect(script).toContain('function readMobileClientProbe()');
+    expect(script).toContain('function applyMobileMode(enabled, reloadFrame)');
+    expect(script).toContain("'Desktop mobile size'");
     expect(script).toContain("var response = await fetch('/api/sessions');");
     expect(script).toContain('function getOwningSessionDisplayInfo()');
     expect(script).toContain('var screenshotInFlight = false;');
@@ -39,5 +45,6 @@ describe('web preview popup wiring', () => {
     expect(script).toContain('async function handleGo()');
     expect(script).toContain("type: 'dock-back'");
     expect(script).toContain("type: 'navigation'");
+    expect(script).toContain("type === 'mobile-mode'");
   });
 });

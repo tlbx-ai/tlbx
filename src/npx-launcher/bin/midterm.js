@@ -244,12 +244,28 @@ async function getPlatformTarget(runtime) {
       };
     }
 
+    if (runtime.arch === 'arm64') {
+      return {
+        assetName: 'mt-linux-arm64.tar.gz',
+        binaryName: 'mt',
+        hostBinaryName: 'mthost'
+      };
+    }
+
     throw new Error(`Unsupported WSL platform: linux ${runtime.arch}`);
   }
 
   if (process.platform === 'win32' && process.arch === 'x64') {
     return {
       assetName: 'mt-win-x64.zip',
+      binaryName: 'mt.exe',
+      hostBinaryName: 'mthost.exe'
+    };
+  }
+
+  if (process.platform === 'win32' && process.arch === 'ia32') {
+    return {
+      assetName: 'mt-win-x86.zip',
       binaryName: 'mt.exe',
       hostBinaryName: 'mthost.exe'
     };
@@ -274,6 +290,14 @@ async function getPlatformTarget(runtime) {
   if (process.platform === 'linux' && process.arch === 'x64') {
     return {
       assetName: 'mt-linux-x64.tar.gz',
+      binaryName: 'mt',
+      hostBinaryName: 'mthost'
+    };
+  }
+
+  if (process.platform === 'linux' && process.arch === 'arm64') {
+    return {
+      assetName: 'mt-linux-arm64.tar.gz',
       binaryName: 'mt',
       hostBinaryName: 'mthost'
     };

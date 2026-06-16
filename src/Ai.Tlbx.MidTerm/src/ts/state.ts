@@ -39,6 +39,9 @@ export let wsTxRateEma = 0;
 /** EMA-smoothed RX rate (bytes/sec) */
 export let wsRxRateEma = 0;
 
+type WsTrafficListener = () => void;
+const wsTrafficListeners = new Set<WsTrafficListener>();
+
 // =============================================================================
 // Terminal State
 // =============================================================================
@@ -133,10 +136,12 @@ export function setSuppressLayoutAutoFit(suppress: boolean): void {
 
 export function addWsTxBytes(bytes: number): void {
   wsTxAccum += bytes;
+  notifyWsTrafficListeners();
 }
 
 export function addWsRxBytes(bytes: number): void {
   wsRxAccum += bytes;
+  notifyWsTrafficListeners();
 }
 
 export function resetWsAccum(): { tx: number; rx: number } {
@@ -149,6 +154,17 @@ export function resetWsAccum(): { tx: number; rx: number } {
 export function setWsRateEma(tx: number, rx: number): void {
   wsTxRateEma = tx;
   wsRxRateEma = rx;
+}
+
+export function onWsTraffic(listener: WsTrafficListener): () => void {
+  wsTrafficListeners.add(listener);
+  return () => wsTrafficListeners.delete(listener);
+}
+
+function notifyWsTrafficListeners(): void {
+  wsTrafficListeners.forEach((listener) => {
+    listener();
+  });
 }
 
 // =============================================================================

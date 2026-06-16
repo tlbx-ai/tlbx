@@ -80,6 +80,7 @@ import {
 import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha';
 import { shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
+import { refreshTerminalRenderer } from './presentationRefresh';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
@@ -599,6 +600,81 @@ export function refreshCursorBlink(terminal: Terminal): void {
   }
 }
 
+// WebGL context ownership: browsers cap live WebGL contexts per page and evict
+// the oldest one when the cap is exceeded, which used to permanently downgrade
+// terminals to the DOM renderer. Visible terminals (active session plus layout
+// panes) get priority: they may evict a hidden terminal's context, and a lost
+// context is retried with backoff instead of being given up forever.
+const webglPrioritySessionIds = new Set<string>();
+let webglPriorityKnown = false;
+const webglContextLossTimestamps = new Map<string, number[]>();
+const WEBGL_REATTACH_BASE_DELAY_MS = 1500;
+const WEBGL_REATTACH_MAX_DELAY_MS = 30000;
+const WEBGL_LOSS_WINDOW_MS = 60000;
+const WEBGL_LOSS_SLOW_RETRY_THRESHOLD = 3;
+
+function isWebglOwnershipManaged(state: TerminalState): boolean {
+  // Aux terminals (e.g. the command output panel) live outside session
+  // wrappers and manage their renderer through their own lifecycle.
+  return Boolean(state.container.closest('.session-wrapper'));
+}
+
+function hasWebglPriority(sessionId: string, state: TerminalState): boolean {
+  if (!webglPriorityKnown || !isWebglOwnershipManaged(state)) {
+    return true;
+  }
+
+  return webglPrioritySessionIds.has(sessionId);
+}
+
+function evictWebglContextForPrioritySession(): boolean {
+  for (const candidateId of terminalsWithWebgl) {
+    const candidate = sessionTerminals.get(candidateId);
+    if (!candidate || !isWebglOwnershipManaged(candidate)) {
+      continue;
+    }
+
+    if (!webglPrioritySessionIds.has(candidateId)) {
+      detachWebglAddon(candidateId, candidate);
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function recordWebglContextLoss(sessionId: string): number {
+  const now = Date.now();
+  const recent = (webglContextLossTimestamps.get(sessionId) ?? []).filter(
+    (stamp) => now - stamp < WEBGL_LOSS_WINDOW_MS,
+  );
+  recent.push(now);
+  webglContextLossTimestamps.set(sessionId, recent);
+  return recent.length;
+}
+
+function scheduleWebglReattach(sessionId: string, state: TerminalState, delayMs: number): void {
+  window.setTimeout(() => {
+    if (sessionTerminals.get(sessionId) !== state || !state.opened || state.hasWebgl) {
+      return;
+    }
+    if (!shouldUseWebglRenderer($currentSettings.get())) {
+      return;
+    }
+    if (!hasWebglPriority(sessionId, state)) {
+      // Hidden terminals get their context back through the ownership sync
+      // once they become visible again.
+      return;
+    }
+
+    if (attachWebglAddon(sessionId, state)) {
+      refreshTerminalRenderer(state);
+    } else {
+      scheduleWebglReattach(sessionId, state, Math.min(delayMs * 2, WEBGL_REATTACH_MAX_DELAY_MS));
+    }
+  }, delayMs);
+}
+
 function detachWebglAddon(sessionId: string, state: TerminalState): void {
   detachTerminalLigatureState(state);
   const addon = state.webglAddon;
@@ -618,9 +694,18 @@ function detachWebglAddon(sessionId: string, state: TerminalState): void {
   }
 }
 
-function attachWebglAddon(sessionId: string, state: TerminalState): void {
-  if (!state.opened || state.hasWebgl || terminalsWithWebgl.size >= MAX_WEBGL_CONTEXTS) {
-    return;
+function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
+  if (!state.opened) {
+    return false;
+  }
+  if (state.hasWebgl) {
+    return true;
+  }
+
+  if (terminalsWithWebgl.size >= MAX_WEBGL_CONTEXTS) {
+    if (!hasWebglPriority(sessionId, state) || !evictWebglContextForPrioritySession()) {
+      return false;
+    }
   }
 
   try {
@@ -634,14 +719,23 @@ function attachWebglAddon(sessionId: string, state: TerminalState): void {
 
       detachWebglAddon(sessionId, state);
       requestBufferRefresh(sessionId);
+
+      const recentLosses = recordWebglContextLoss(sessionId);
+      const delayMs =
+        recentLosses >= WEBGL_LOSS_SLOW_RETRY_THRESHOLD
+          ? WEBGL_REATTACH_MAX_DELAY_MS
+          : WEBGL_REATTACH_BASE_DELAY_MS;
+      scheduleWebglReattach(sessionId, state, delayMs);
     });
     state.terminal.loadAddon(webglAddon);
     state.webglAddon = webglAddon;
     terminalsWithWebgl.add(sessionId);
     state.hasWebgl = true;
+    return true;
   } catch {
     state.webglAddon = null;
     state.hasWebgl = false;
+    return false;
   }
 }
 
@@ -656,6 +750,68 @@ export function syncTerminalWebglState(
   }
 
   attachWebglAddon(sessionId, state);
+}
+
+/**
+ * Tell the renderer which sessions are currently visible (active session plus
+ * layout panes). Visible sessions missing their WebGL context get it back,
+ * evicting hidden holders when the context budget is exhausted.
+ */
+export function syncWebglSessionPriority(prioritySessionIds: readonly string[]): void {
+  webglPriorityKnown = true;
+  webglPrioritySessionIds.clear();
+  for (const sessionId of prioritySessionIds) {
+    webglPrioritySessionIds.add(sessionId);
+  }
+
+  if (!shouldUseWebglRenderer($currentSettings.get())) {
+    return;
+  }
+
+  webglPrioritySessionIds.forEach((sessionId) => {
+    const state = sessionTerminals.get(sessionId);
+    if (!state || !state.opened || state.hasWebgl) {
+      return;
+    }
+
+    if (attachWebglAddon(sessionId, state)) {
+      refreshTerminalRenderer(state);
+    }
+  });
+}
+
+export function recoverTerminalRendererAfterForeground(
+  sessionId: string,
+  state: TerminalState,
+): void {
+  if (!state.opened) {
+    return;
+  }
+
+  refreshTerminalRenderer(state);
+
+  const settings = $currentSettings.get();
+  if (!state.hasWebgl) {
+    // A context lost while backgrounded (or denied at open) must come back as
+    // soon as the terminal is in the foreground again.
+    if (!shouldUseWebglRenderer(settings) || !attachWebglAddon(sessionId, state)) {
+      return;
+    }
+  } else {
+    detachWebglAddon(sessionId, state);
+    attachWebglAddon(sessionId, state);
+  }
+
+  syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
+  syncTerminalRgbBackgroundTransparency(state, settings);
+
+  requestAnimationFrame(() => {
+    if (!sessionTerminals.has(sessionId) || !state.opened) {
+      return;
+    }
+
+    refreshTerminalRenderer(state);
+  });
 }
 
 /**

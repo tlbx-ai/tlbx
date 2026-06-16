@@ -24,7 +24,7 @@ import {
   getSession,
 } from '../../stores';
 import { throttle } from '../../utils';
-import { getCalibrationMeasurement, getCalibrationPromise, focusActiveTerminal } from './manager';
+import * as terminalManager from './manager';
 import {
   isTerminalVisible,
   remeasureTerminalCells,
@@ -99,11 +99,6 @@ export function refreshTerminalPresentation(
     refreshTerminalRenderer(currentState);
   });
 }
-
-/**
- * Get the total width of all visible dock panels.
- * Web preview can coexist with one other dock (commands, git, or file viewer).
- */
 function getDockPanelWidth(): number {
   let total = 0;
   for (const id of ['git-dock', 'commands-dock', 'file-viewer-dock', 'web-preview-dock']) {
@@ -135,9 +130,7 @@ function measureTerminalCellDimensions(
   state: Pick<TerminalState, 'terminal' | 'container'>,
 ): { cellWidth: number; cellHeight: number } | null {
   const xtermDims = getXtermCellDimensions(state.terminal);
-  if (xtermDims) {
-    return xtermDims;
-  }
+  if (xtermDims) return xtermDims;
 
   const screen = state.container.querySelector<HTMLElement>('.xterm-screen');
   const terminalCols = state.terminal.cols;
@@ -161,9 +154,7 @@ function calculateOptimalDimensionsForViewport(
   isLayoutPane: boolean,
 ): { cols: number; rows: number } | null {
   const cellDims = measureTerminalCellDimensions(state);
-  if (!cellDims) {
-    return null;
-  }
+  if (!cellDims) return null;
 
   const rect = container.getBoundingClientRect();
   const tabBarH = isLayoutPane ? 0 : getTabBarHeight();
@@ -188,9 +179,7 @@ export function getTerminalViewportMismatch(
 ): { optimalCols: number; optimalRows: number; isTooLarge: boolean; isTooSmall: boolean } | null {
   const layoutPane = state.container.closest<HTMLElement>('.layout-leaf');
   const viewportContainer = layoutPane ?? dom.terminalsArea;
-  if (!viewportContainer) {
-    return null;
-  }
+  if (!viewportContainer) return null;
 
   const optimal = calculateOptimalDimensionsForViewport(state, viewportContainer, !!layoutPane);
   if (!optimal) {
@@ -397,12 +386,12 @@ async function resolveMeasurementSource(
     return { source: 'existing-terminal', ...existingMeasurement };
   }
 
-  const calibrationPromise = getCalibrationPromise();
+  const calibrationPromise = terminalManager.getCalibrationPromise();
   if (calibrationPromise) {
     await calibrationPromise;
   }
 
-  const calibration = getCalibrationMeasurement();
+  const calibration = terminalManager.getCalibrationMeasurement();
   if (
     calibration &&
     calibration.fontSize === fontSize &&
@@ -516,10 +505,7 @@ export async function calculateOptimalDimensions(
 function refreshRendererForMeasurement(
   state: Pick<TerminalState, 'terminal' | 'container' | 'opened'>,
 ): boolean {
-  if (!state.opened || !isTerminalVisible(state)) {
-    return false;
-  }
-
+  if (!state.opened || !isTerminalVisible(state)) return false;
   remeasureTerminalCells(state);
   return true;
 }
@@ -757,7 +743,7 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
     state,
   );
   if (!isSoftKeyboardVisible()) {
-    focusActiveTerminal();
+    terminalManager.focusActiveTerminal();
   }
 }
 
@@ -877,7 +863,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       overlay = null;
     },
   });
-  updateTerminalGapFillers(container, xterm, 1);
+  if (isMainBrowser) updateTerminalGapFillers(container, xterm, 1);
 }
 
 interface TerminalScalingContext {
@@ -1291,11 +1277,6 @@ function scheduleFooterReserveResize(): void {
 
 let foregroundResizeRecoveryScheduled = false;
 
-/**
- * Recover main-browser sizing after the page returns to the foreground.
- * Uses the lightweight mismatch check so correctly sized terminals
- * remain untouched and do not trigger unnecessary renderer/layout work.
- */
 export function scheduleForegroundResizeRecovery(): void {
   if (foregroundResizeRecoveryScheduled) return;
   foregroundResizeRecoveryScheduled = true;
@@ -1304,6 +1285,10 @@ export function scheduleForegroundResizeRecovery(): void {
       foregroundResizeRecoveryScheduled = false;
       if (!$isMainBrowser.get()) return;
       ensureMainBrowserContainerResizeObserver();
+      sessionTerminals.forEach((state, sessionId) => {
+        if (!state.opened || !isTerminalVisible(state)) return;
+        terminalManager.recoverTerminalRendererAfterForeground(sessionId, state);
+      });
       periodicResizeCheck();
     });
   });

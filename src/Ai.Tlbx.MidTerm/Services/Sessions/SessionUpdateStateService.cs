@@ -389,7 +389,7 @@ public sealed partial class SessionUpdateStateService
         IReadOnlyDictionary<string, SessionResumeIntent> pendingByOriginalId)
     {
         var result = state.Sessions
-            .Where(static item => !string.IsNullOrWhiteSpace(item.SessionId))
+            .Where(item => !string.IsNullOrWhiteSpace(item.SessionId) && HasEnoughStateToRecreate(item, pendingByOriginalId))
             .GroupBy(static item => item.SessionId, StringComparer.Ordinal)
             .Select(static group => group.First())
             .ToList();
@@ -414,6 +414,24 @@ public sealed partial class SessionUpdateStateService
         }
 
         return result;
+    }
+
+    private static bool HasEnoughStateToRecreate(
+        SessionDecorationState decoration,
+        IReadOnlyDictionary<string, SessionResumeIntent> pendingByOriginalId)
+    {
+        if (pendingByOriginalId.ContainsKey(decoration.SessionId))
+        {
+            return true;
+        }
+
+        if (!decoration.AppServerControlOnly)
+        {
+            return true;
+        }
+
+        return !string.IsNullOrWhiteSpace(decoration.ProfileHint)
+            && !string.IsNullOrWhiteSpace(decoration.CurrentDirectory);
     }
 
     private static int ResolveCols(SessionResumeIntent? intent, SessionDecorationState decoration)

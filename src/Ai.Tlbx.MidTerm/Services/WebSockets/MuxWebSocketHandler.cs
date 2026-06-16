@@ -632,7 +632,8 @@ public sealed class MuxWebSocketHandler
                 return;
             }
 
-            var quickResume = quickResumeRequested && client.ShouldUseQuickResume();
+            var cursorDeltaRequested = sinceSequence.HasValue;
+            var quickResume = quickResumeRequested && (client.ShouldUseQuickResume() || cursorDeltaRequested);
             var snapshot = await _sessionManager.GetBufferAsync(
                 sessionId,
                 maxBytes: ResolveReplayMaxBytes(session, replayRows, quickResume),
@@ -644,7 +645,7 @@ public sealed class MuxWebSocketHandler
                 Log.Warn(() => $"MuxHandler: BufferRequest for {sessionId}: IPC returned null (session disconnected?)");
                 return;
             }
-            if (RequiresReconcile(sinceSequence, snapshot))
+            if (ShouldSendResyncForBufferRequest(quickResume, sinceSequence, snapshot))
             {
                 await client.TrySendAsync(MuxProtocol.CreateSessionResyncFrame(sessionId));
             }
@@ -689,6 +690,14 @@ public sealed class MuxWebSocketHandler
         }
 
         return quickResume ? ResolveQuickResumeBurstBytes(session, configuredScrollbackBytes) : null;
+    }
+
+    internal static bool ShouldSendResyncForBufferRequest(
+        bool quickResume,
+        ulong? sinceSequence,
+        TtyHostBufferSnapshot snapshot)
+    {
+        return !quickResume || RequiresReconcile(sinceSequence, snapshot);
     }
 
     private static int ResolveQuickResumeBurstBytes(SessionInfo session, int configuredScrollbackBytes)

@@ -9,7 +9,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class SettingsService
 {
-    internal const string SettingsDirectoryEnvironmentVariable = "MIDTERM_SETTINGS_DIR";
+    public const string SettingsDirectoryEnvironmentVariable = "MIDTERM_SETTINGS_DIR";
     private readonly string _settingsPath;
     private readonly ISecretStorage _secretStorage;
     private MidTermSettings? _cached;
@@ -33,13 +33,13 @@ public sealed class SettingsService
         var overrideDirectory = GetSettingsDirectoryOverride();
         if (!string.IsNullOrWhiteSpace(overrideDirectory))
         {
-            IsRunningAsService = false;
+            IsRunningAsService = GetServiceModeOverride() ?? false;
             _settingsPath = Path.Combine(overrideDirectory, "settings.json");
-            _secretStorage = SecretStorageFactory.Create(overrideDirectory, isServiceMode: false);
+            _secretStorage = SecretStorageFactory.Create(overrideDirectory, IsRunningAsService);
             return;
         }
 
-        IsRunningAsService = DetectServiceMode();
+        IsRunningAsService = GetServiceModeOverride() ?? DetectServiceMode();
         _settingsPath = GetSettingsPath(IsRunningAsService);
         _secretStorage = SecretStorageFactory.Create(SettingsDirectory, IsRunningAsService);
     }
@@ -91,6 +91,17 @@ public sealed class SettingsService
         }
 
         return Path.GetFullPath(Environment.ExpandEnvironmentVariables(overrideDirectory.Trim()));
+    }
+
+    internal static bool? GetServiceModeOverride()
+    {
+        var value = Environment.GetEnvironmentVariable(Ai.Tlbx.MidTerm.Startup.MidTermRuntimeOptions.ServiceModeEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return bool.TryParse(value, out var parsed) ? parsed : null;
     }
 
     public static string ResolveEffectiveWorktreeRootDirectory(

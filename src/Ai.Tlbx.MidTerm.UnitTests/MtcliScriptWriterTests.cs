@@ -171,6 +171,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_activity()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_attention()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap()", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_supervise()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Tail", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-SendText", powershell, StringComparison.Ordinal);
@@ -185,11 +186,13 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Activity", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Attention", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Bootstrap", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_open -Value Mt-Open", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_paste -Value Mt-Paste", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_prompt -Value Mt-Prompt", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_wake -Value Mt-Wake", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_supervise -Value Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_status -Value Mt-Status", powershell, StringComparison.Ordinal);
         Assert.Contains("ValueFromRemainingArguments", powershell, StringComparison.Ordinal);
         Assert.Contains("/buffer/tail?lines=", shell, StringComparison.Ordinal);
@@ -202,6 +205,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("/api/sessions/attention", shell, StringComparison.Ordinal);
         Assert.Contains("/api/workers/bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("/activity?seconds=", powershell, StringComparison.Ordinal);
+        Assert.Contains("midterm supervisor snapshot", shell, StringComparison.Ordinal);
+        Assert.Contains("fleet attention:", powershell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -285,6 +290,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_activity", agents, StringComparison.Ordinal);
         Assert.Contains("mt_attention", agents, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_supervise", agents, StringComparison.Ordinal);
         Assert.Contains("mt_preview_reset", agents, StringComparison.Ordinal);
         Assert.Contains("status` and `mt_status` both resolve", agents, StringComparison.Ordinal);
         Assert.Contains("atomically", agents, StringComparison.Ordinal);

@@ -10,6 +10,8 @@ class TestElement {
   className = '';
   dataset: Record<string, string> = {};
   title = '';
+  innerHTML = '';
+  attributes: Record<string, string> = {};
   private ownTextContent = '';
   private readonly children: TestElement[] = [];
 
@@ -28,6 +30,10 @@ class TestElement {
   replaceChildren(...children: TestElement[]): void {
     this.children.length = 0;
     this.children.push(...children);
+  }
+
+  setAttribute(name: string, value: string): void {
+    this.attributes[name] = value;
   }
 
   querySelector(selector: string): TestElement | null {
@@ -166,6 +172,10 @@ describe('spaces tree sidebar process info', () => {
     });
 
     const line = processInfo.querySelector<HTMLElement>('.session-extra-git');
+    const icon = line?.querySelector<HTMLElement>('.session-extra-git-icon') as
+      | (HTMLElement & TestElement)
+      | null
+      | undefined;
     const details = line?.querySelector<HTMLElement>('.session-extra-git-details');
     const separators = Array.from(
       line?.querySelectorAll<HTMLElement>('.session-extra-git-separator') ?? [],
@@ -194,6 +204,9 @@ describe('spaces tree sidebar process info', () => {
     expect(
       line?.querySelector<HTMLElement>('.session-extra-git-stat-deletions')?.textContent,
     ).toBe('-24');
+    expect(icon?.attributes['aria-hidden']).toBe('true');
+    expect(icon?.innerHTML).toContain('<circle cx="7" cy="6" r="1.75"></circle>');
+    expect(line?.textContent).toBe('C:\\repos\\messengerSpecific-main+214-24');
     expect(details?.textContent).toBe('C:\\repos\\messengerSpecific-main');
     expect(separators.map((separator) => separator.textContent)).toEqual(['-']);
   });

@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 using Ai.Tlbx.MidTerm.Settings;
@@ -131,6 +132,89 @@ public sealed class MuxClientTests
         Assert.Equal(MuxWebSocketHandler.ResolveViewportReplayBytes(session, replayRows: 40), maxBytes);
     }
 
+    [Fact]
+    public void ShouldSendResyncForBufferRequest_AlwaysResyncsFullReplay()
+    {
+        var snapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 100,
+            Data = [1, 2, 3]
+        };
+
+        Assert.True(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
+            quickResume: false,
+            sinceSequence: null,
+            snapshot));
+    }
+
+    [Fact]
+    public void ShouldSendResyncForBufferRequest_OnlyResyncsQuickResumeOnCursorMismatch()
+    {
+        var matchingSnapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 100,
+            Data = [1, 2, 3]
+        };
+        var mismatchedSnapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 90,
+            Data = [1, 2, 3]
+        };
+
+        Assert.False(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
+            quickResume: true,
+            sinceSequence: 100,
+            matchingSnapshot));
+        Assert.True(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
+            quickResume: true,
+            sinceSequence: 100,
+            mismatchedSnapshot));
+    }
+
+    [Fact]
+    public async Task ActiveSessionOutput_CoalescesSmallAdjacentChunks()
+    {
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+
+        const string sessionId = "session1";
+
+        client.SetActiveSession(sessionId);
+
+        Assert.True(client.QueueOutput(sessionId, 1, 120, 30, RentOutput("a")));
+        Assert.True(client.QueueOutput(sessionId, 2, 120, 30, RentOutput("b")));
+
+        await WaitForAsync(() => socket.SentFrames.Count >= 1);
+        await Task.Delay(30);
+
+        var frame = Assert.Single(socket.SentFrames);
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var parsedSessionId, out var payload));
+        Assert.Equal(MuxProtocol.TypeTerminalOutput, type);
+        Assert.Equal(sessionId, parsedSessionId);
+        Assert.Equal((ulong)2, MuxProtocol.ParseOutputSequenceEnd(payload));
+        Assert.Equal("ab", Encoding.UTF8.GetString(MuxProtocol.GetOutputData(payload)));
+    }
+
+    private static SharedOutputBuffer RentOutput(string text)
+    {
+        var bytes = Encoding.UTF8.GetBytes(text);
+        var buffer = SharedOutputBuffer.Rent(bytes.Length);
+        bytes.CopyTo(buffer.WriteSpan);
+        return buffer;
+    }
+
+    private static async Task WaitForAsync(Func<bool> condition)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        while (!condition())
+        {
+            await Task.Delay(10, cts.Token);
+        }
+    }
+
     private class FakeWebSocket : WebSocket
     {
         public override WebSocketCloseStatus? CloseStatus => null;
@@ -196,6 +280,21 @@ public sealed class MuxClientTests
         {
             _sendStarted.TrySetResult();
             return _releaseSends.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    private sealed class RecordingWebSocket : FakeWebSocket
+    {
+        public List<byte[]> SentFrames { get; } = [];
+
+        public override Task SendAsync(
+            ArraySegment<byte> buffer,
+            WebSocketMessageType messageType,
+            bool endOfMessage,
+            CancellationToken cancellationToken)
+        {
+            SentFrames.Add(buffer.AsSpan().ToArray());
+            return Task.CompletedTask;
         }
     }
 }

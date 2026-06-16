@@ -33,6 +33,7 @@ const channels = new Map<string, BroadcastChannel>();
 const POPUP_FEATURES = 'popup,width=1280,height=900,menubar=no,toolbar=no,location=no,status=no';
 
 export interface DetachPreviewOptions {
+  mobileMode?: boolean;
   suppressFocus?: boolean;
 }
 
@@ -53,6 +54,9 @@ function getPopupKeysForSession(sessionId: string): string[] {
 export function initDetach(): void {
   document.getElementById('web-preview-detach')?.addEventListener('click', () => {
     void detachPreview();
+  });
+  document.getElementById('web-preview-detach-mobile')?.addEventListener('click', () => {
+    void detachPreview(undefined, undefined, { mobileMode: true });
   });
   document.getElementById('web-preview-dock-back')?.addEventListener('click', () => {
     dockBack();
@@ -106,6 +110,7 @@ function buildDetachedPopupUrl(args: {
   origin: string | null;
   url: string | null;
   viewport: { width: number; height: number } | null;
+  mobileMode: boolean;
 }): string {
   return (
     '/web-preview-popup.html' +
@@ -119,6 +124,7 @@ function buildDetachedPopupUrl(args: {
       ? `&viewportWidth=${encodeURIComponent(String(args.viewport.width))}` +
         `&viewportHeight=${encodeURIComponent(String(args.viewport.height))}`
       : '') +
+    (args.mobileMode ? '&mobile=1' : '') +
     (shouldSandboxPreviewFrame(args.url, isDevMode()) ? '&sandbox=1' : '') +
     (args.url ? `&url=${encodeURIComponent(args.url)}` : '')
   );
@@ -131,6 +137,44 @@ function syncDetachedStateToActiveDock(sessionId: string, previewName: string): 
 
   $webPreviewDetached.set(true);
   hideWebPreviewDockForDetach();
+}
+
+function activateExistingPopup(
+  key: string,
+  popup: Window,
+  mobileMode: boolean,
+  suppressFocus: boolean,
+): void {
+  channels.get(key)?.postMessage({
+    type: 'mobile-mode',
+    enabled: mobileMode,
+  });
+
+  if (suppressFocus) {
+    return;
+  }
+
+  popup.focus();
+}
+
+function openDetachedBootstrapPopup(sessionId: string, previewName: string): Window | null {
+  const popup = window.open(
+    'about:blank',
+    `midterm-web-preview-${sessionId}-${previewName}`,
+    POPUP_FEATURES,
+  );
+  if (!popup) {
+    return null;
+  }
+
+  try {
+    popup.document.title = 'MidTerm Web Preview';
+    popup.document.body.textContent = 'Opening preview...';
+  } catch {
+    // Ignore cross-origin or popup bootstrap access failures.
+  }
+
+  return popup;
 }
 
 /** Open a named web preview in a chromeless popup window and hide the dock panel. */
@@ -146,28 +190,16 @@ export async function detachPreview(
 
   const targetPreviewName = setSessionSelectedPreviewName(targetSessionId, previewName);
   const key = popupKey(targetSessionId, targetPreviewName);
+  const mobileMode = options?.mobileMode === true;
   const existing = popups.get(key);
   if (existing && !existing.closed) {
-    if (!options?.suppressFocus) {
-      existing.focus();
-    }
+    activateExistingPopup(key, existing, mobileMode, options?.suppressFocus === true);
     return;
   }
 
-  const popup = window.open(
-    'about:blank',
-    `midterm-web-preview-${targetSessionId}-${targetPreviewName}`,
-    POPUP_FEATURES,
-  );
+  const popup = openDetachedBootstrapPopup(targetSessionId, targetPreviewName);
   if (!popup) {
     return;
-  }
-
-  try {
-    popup.document.title = 'MidTerm Web Preview';
-    popup.document.body.textContent = 'Opening preview...';
-  } catch {
-    // Ignore cross-origin or popup bootstrap access failures.
   }
 
   const url = getPreviewUrlForDetach(targetSessionId, targetPreviewName);
@@ -191,6 +223,7 @@ export async function detachPreview(
     origin: previewClient.origin ?? null,
     url,
     viewport: getActiveDetachedViewport(targetSessionId, targetPreviewName),
+    mobileMode,
   });
 
   try {

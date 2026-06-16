@@ -19,6 +19,8 @@ import {
   sendInput,
   requestBufferRefresh,
   updateTerminalVisibility,
+  setupBrowserLifecycleRecovery,
+  setSessionBytesCallback,
   setSuppressHeatCallback,
   reportBrowserActivity,
 } from './modules/comms';
@@ -36,6 +38,7 @@ import {
   initMobilePiP,
   initDevSoftKeyboardSimulator,
   resolveLaunchDimensions,
+  syncWebglSessionPriority,
 } from './modules/terminal';
 import {
   getSessionDisplayName,
@@ -54,6 +57,7 @@ import {
   initSessionDrag,
   initTrafficIndicator,
   initHeatIndicator,
+  recordBytes,
   suppressAllHeat,
   renderSessionList,
   syncSidebarNavButtons,
@@ -172,8 +176,6 @@ import {
   activeNotifications,
 } from './state';
 import {
-  $stateWsConnected,
-  $muxWsConnected,
   $activeSessionId,
   $settingsOpen,
   $sessionList,
@@ -314,6 +316,7 @@ async function init(): Promise<void> {
   initUpdateRuntime();
   initAppShellStatePersistence();
   initTrafficIndicator();
+  setSessionBytesCallback(recordBytes);
   setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();
@@ -521,7 +524,15 @@ function getVisibleTerminalSessionIds(): string[] {
 }
 
 function syncMuxTerminalVisibility(): void {
-  updateTerminalVisibility($activeSessionId.get(), getVisibleTerminalSessionIds());
+  const activeSessionId = $activeSessionId.get();
+  const visibleSessionIds = getVisibleTerminalSessionIds();
+  updateTerminalVisibility(activeSessionId, visibleSessionIds);
+
+  const prioritySessionIds = new Set(visibleSessionIds);
+  if (activeSessionId && !isHubSessionId(activeSessionId)) {
+    prioritySessionIds.add(activeSessionId);
+  }
+  syncWebglSessionPriority([...prioritySessionIds]);
 }
 
 function refreshHiddenSessionsForFullReplay(): void {
@@ -633,39 +644,11 @@ function applyScrollbackProtection(): void {
 }
 
 function setupVisibilityChangeHandler(): void {
-  document.addEventListener('visibilitychange', () => {
-    reportBrowserActivity();
-
-    if (document.visibilityState === 'visible') {
-      // Reconnect WebSockets if they were dropped while in background
-      // Buffer refresh is handled by muxChannel's reconnect handler if needed
-      if (!$stateWsConnected.get()) {
-        connectStateWebSocket();
-      }
-      if (!$muxWsConnected.get()) {
-        connectMuxWebSocket();
-      }
-
-      // Refocus active terminal when page becomes visible
-      focusActiveTerminal();
-
-      // Claude Code scrollback glitch protection
-      applyScrollbackProtection();
-    }
-  });
-
-  // Also protect against focus from clicking into the browser window
-  window.addEventListener('focus', () => {
-    reportBrowserActivity(true);
-    applyScrollbackProtection();
-  });
-
-  window.addEventListener('blur', () => {
-    reportBrowserActivity(false);
-  });
-
-  window.addEventListener('pagehide', () => {
-    reportBrowserActivity(false);
+  setupBrowserLifecycleRecovery({
+    getVisibleTerminalSessionIds,
+    syncMuxTerminalVisibility,
+    focusActiveTerminal,
+    applyScrollbackProtection,
   });
 }
 

@@ -4,6 +4,15 @@ import type { GitRepoBinding, GitStatusResponse } from '../git/types';
 import { getForegroundInfo } from '../process';
 import { createForegroundIndicator } from './sessionList';
 
+const GIT_MONITOR_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
+  '<circle cx="7" cy="6" r="1.75"></circle>' +
+  '<circle cx="7" cy="18" r="1.75"></circle>' +
+  '<circle cx="17" cy="12" r="1.75"></circle>' +
+  '<path d="M8.75 6h3a4 4 0 0 1 4 4v2"></path>' +
+  '<path d="M8.75 18h3a4 4 0 0 0 4-4v-2"></path>' +
+  '</svg>';
+
 export interface SpacesTreeSidebarSessionProcessEntry {
   id: string;
   session: {
@@ -107,6 +116,11 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
   line.className = 'session-extra-git';
   line.title = buildExtraGitRepoTitle(repo, status);
 
+  const icon = document.createElement('span');
+  icon.className = 'session-extra-git-icon';
+  icon.setAttribute('aria-hidden', 'true');
+  icon.innerHTML = GIT_MONITOR_ICON;
+
   const details = document.createElement('span');
   details.className = 'session-extra-git-details';
 
@@ -138,7 +152,7 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
   stats.append(additions, deletions);
 
   details.append(repoName, branchSeparator, branch);
-  line.append(details, stats);
+  line.append(icon, details, stats);
   return line;
 }
 

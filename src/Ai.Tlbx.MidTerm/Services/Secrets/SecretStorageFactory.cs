@@ -16,7 +16,7 @@ public static class SecretStorageFactory
         // Keychain access from launchd services is unreliable due to ACL restrictions
         if (OperatingSystem.IsMacOS() && !isServiceMode)
         {
-            return new MacOsSecretStorage();
+            return new MacOsSecretStorage(settingsDirectory);
         }
 
         // Linux and macOS service mode use file-based storage

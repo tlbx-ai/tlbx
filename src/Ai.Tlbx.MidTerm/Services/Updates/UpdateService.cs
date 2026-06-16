@@ -6,6 +6,7 @@ using System.Security;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Logging;
+using Ai.Tlbx.MidTerm.Startup;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -810,7 +811,10 @@ public sealed partial class UpdateService : IDisposable
     {
         if (OperatingSystem.IsWindows())
         {
-            return "mt-win-x64.zip";
+            return System.Runtime.InteropServices.RuntimeInformation.OSArchitecture ==
+                   System.Runtime.InteropServices.Architecture.X86
+                ? "mt-win-x86.zip"
+                : "mt-win-x64.zip";
         }
 
         if (OperatingSystem.IsMacOS())
@@ -1003,6 +1007,7 @@ public sealed partial class UpdateService : IDisposable
                 extractedDir,
                 GetCurrentBinaryPath(),
                 settingsService.SettingsDirectory,
+                MidTermServiceIdentity.FromEnvironment(),
                 updateType,
                 deleteSourceAfter);
 

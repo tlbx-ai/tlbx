@@ -89,8 +89,8 @@ describe('smart input tab wiring', () => {
       '--command-bay-background-color: var(--terminal-canvas-background, var(--terminal-bg));',
     );
     expect(css).toContain('--command-bay-background: var(--terminal-canvas-background-stack);');
-    expect(css).toContain(
-      '--command-bay-control-background-color: var(\n    --command-bay-control-background,',
+    expect(css).toMatch(
+      /--command-bay-control-background-color:\s*var\(\s*--command-bay-control-background,/,
     );
     expect(css).toContain('--command-bay-surface: var(--command-bay-control-background);');
     expect(css).toContain('--command-bay-surface-strong: var(--command-bay-control-background);');
@@ -109,7 +109,9 @@ describe('smart input tab wiring', () => {
     expect(css).toContain('--command-bay-textbox-border: color-mix(');
     expect(css).toContain('--command-bay-textbox-border-focus: color-mix(');
     expect(css).toContain('--command-bay-ui-reactive-border: transparent;');
-    expect(css).toContain('--command-bay-floating-button-border: var(--command-bay-textbox-border);');
+    expect(css).toContain(
+      '--command-bay-floating-button-border: var(--command-bay-textbox-border);',
+    );
     expect(css).toContain('--command-bay-ui-reactive-floating-button-border: transparent;');
     expect(reserveRule).toContain('margin-right: var(--adaptive-footer-right-offset, 0px);');
     expect(reserveRule).toContain('background: var(--command-bay-background);');
@@ -307,7 +309,9 @@ describe('smart input tab wiring', () => {
     expect(source).toContain('shouldConvertPastedTextToSmartInputReference');
     expect(source).toContain('extractAppServerControlComposerPasteParts');
     expect(source).toContain('addAppServerControlComposerPasteParts');
-    expect(source).toContain('const sessionComposerPendingOperations = new Map<string, Promise<void>>();');
+    expect(source).toContain(
+      'const sessionComposerPendingOperations = new Map<string, Promise<void>>();',
+    );
     expect(source).toContain('function enqueueComposerPendingOperation(');
     expect(source).toContain('await waitForComposerPasteStagingToSettle(sessionId);');
     expect(source).toContain('markComposerPasteEvent(sessionId);');
@@ -642,7 +646,7 @@ describe('smart input tab wiring', () => {
     expect(source).toContain("createAppServerControlActionButton(\n        'Goal'");
     expect(source).toContain('void prepareAppServerControlGoal(sessionId);');
     expect(source).toContain('if (appServerControlGoalComposeSessionId === sessionId) {');
-    expect(source).toContain("appServerControlGoalComposeSessionId = null;");
+    expect(source).toContain('appServerControlGoalComposeSessionId = null;');
     expect(source).toContain('await setAppServerControlGoal(sessionId, { objective });');
     expect(viewSource).toContain("['xhigh', 'XHigh']");
   });

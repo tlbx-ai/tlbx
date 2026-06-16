@@ -19,6 +19,8 @@ describe('web preview screenshot wiring', () => {
     expect(html).toContain('<div class="web-preview-tabs" id="web-preview-tabs"></div>');
     expect(html).toContain('<div class="web-preview-dock-actions">');
     expect(html).toContain('id="web-preview-screenshot"');
+    expect(html).toContain('id="web-preview-detach"');
+    expect(html).toContain('id="web-preview-detach-mobile"');
     expect(html).not.toContain('class="web-preview-dock-title"');
     expect(html).not.toContain('>Dev Browser</span>');
   });
@@ -72,6 +74,7 @@ describe('web preview screenshot wiring', () => {
 
   it('wires mobile browser emulation as an active-tab URL-bar action', () => {
     expect(html).toContain('id="web-preview-mobile-emulation"');
+    expect(html).toContain('aria-label="Pop out mobile preview"');
     expect(html).toContain('aria-label="Emulate mobile browser"');
     expect(html).toContain('aria-pressed="false"');
     expect(source).toContain('mobileEmulationButton = document.getElementById(');
