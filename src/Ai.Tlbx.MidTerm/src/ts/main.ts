@@ -165,6 +165,7 @@ import { initSmartInput, setAppServerControlResumeConversationHandler } from './
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
 import { closeSpacesDropdown, initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
+import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -248,6 +249,7 @@ window.mmDebug = {
   get settings() {
     return $currentSettings.get();
   },
+  perf: createMidtermPerfDebugApi(),
   layout: {
     dock(
       targetSessionId: string,
