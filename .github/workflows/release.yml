@@ -317,22 +317,11 @@ jobs:
             files+=(staging/${{ matrix.rid }}/mthost)
           fi
           zip -j "$RUNNER_TEMP/notarize.zip" "${files[@]}"
-          set +e
-          notarize_output=$(xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
+          xcrun notarytool submit "$RUNNER_TEMP/notarize.zip" \
             --apple-id "$APPLE_ID" \
             --password "$APPLE_ID_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" \
-            --wait 2>&1)
-          notarize_exit=$?
-          set -e
-          echo "$notarize_output"
-          if [[ $notarize_exit -ne 0 ]]; then
-            if grep -qi "required agreement is missing or has expired" <<< "$notarize_output"; then
-              echo "::warning::Apple notarization skipped for dev prerelease because the Apple Developer agreement is missing or expired."
-            else
-              exit $notarize_exit
-            fi
-          fi
+            --wait
 
       - name: Sign version.json
         shell: pwsh
