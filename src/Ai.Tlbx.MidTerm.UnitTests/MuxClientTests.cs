@@ -27,6 +27,39 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public async Task DegradedClient_DeliversOnlyActiveAndVisibleSessions()
+    {
+        using var socket = new FakeWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+
+        client.SetActiveSession("active");
+        client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible" });
+        client.MarkTransportDegradedForTests();
+
+        Assert.True(client.IsTransportDegraded);
+        Assert.True(client.ShouldDeliverSession("active"));
+        Assert.True(client.ShouldDeliverSession("visible"));
+        Assert.False(client.ShouldDeliverSession("hidden"));
+    }
+
+    [Fact]
+    public async Task DegradedUnhintedClient_DeliversAllSessionsUntilBrowserHintsArrive()
+    {
+        using var socket = new FakeWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+
+        client.MarkTransportDegradedForTests();
+
+        Assert.True(client.ShouldDeliverSession("session-1"));
+    }
+
+    [Fact]
     public async Task ShareClient_DeliversOnlyAllowedSession()
     {
         using var socket = new FakeWebSocket();

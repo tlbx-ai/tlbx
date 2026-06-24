@@ -71,6 +71,9 @@ public sealed class MuxClient : IAsyncDisposable
     private static readonly TimeSpan ActiveFlushInterval = TimeSpan.FromMilliseconds(12);
     private static readonly TimeSpan FlushInterval = TimeSpan.FromMilliseconds(15);
     private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan SlowSendDegradedThreshold = TimeSpan.FromMilliseconds(750);
+    private static readonly TimeSpan TransportDegradedDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan DegradedLogInterval = TimeSpan.FromSeconds(5);
 
     private readonly SemaphoreSlim _sendLock = new(1, 1);
     private readonly Channel<OutputItem> _inputChannel;
@@ -93,6 +96,8 @@ public sealed class MuxClient : IAsyncDisposable
     private readonly Func<TerminalResumeModeSetting> _getResumeMode;
     private readonly Action<string, string, ulong, long>? _outputFrameSent;
     private FrozenSet<string> _visibleSessionIds = FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
+    private long _transportDegradedUntilMs;
+    private long _lastDegradedLogAtMs;
 
     public string Id { get; }
     public WebSocket WebSocket { get; }
@@ -292,6 +297,7 @@ public sealed class MuxClient : IAsyncDisposable
         if (!_inputChannel.Writer.TryWrite(new OutputItem(sessionId, sequenceEndExclusive, cols, rows, buffer)))
         {
             _droppedSessions.Enqueue(sessionId);
+            MarkTransportDegraded("client output queue full");
             Log.Verbose(() => $"[MuxClient] {Id}: Input queue full, dropped frame for {sessionId}");
             buffer.Release();
             return false;
@@ -508,6 +514,13 @@ public sealed class MuxClient : IAsyncDisposable
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {
             if (buffer.TotalBytes == 0 || sessionId == activeId) continue;
+            if (IsTransportDegradedAt(Environment.TickCount64) && !ShouldDeliverSession(sessionId))
+            {
+                buffer.Reset();
+                buffer.DroppedBytes = 0;
+                buffer.LastFlushTicks = nowTicks;
+                continue;
+            }
 
             var elapsed = Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
             if (buffer.TotalBytes >= FlushThresholdBytes
@@ -632,11 +645,14 @@ public sealed class MuxClient : IAsyncDisposable
             if (WebSocket.State == WebSocketState.Open)
             {
                 var token = GetSendTimeoutToken();
+                var sendStartedAt = Stopwatch.GetTimestamp();
                 await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
+                ObserveSendDuration(sendStartedAt, data.Length);
             }
         }
         catch (OperationCanceledException)
         {
+            MarkTransportDegraded("websocket send timeout");
             Log.Warn(() => $"[MuxClient] {Id}: SendAsync timed out, aborting WebSocket");
             WebSocket.Abort();
         }
@@ -654,11 +670,14 @@ public sealed class MuxClient : IAsyncDisposable
             if (WebSocket.State == WebSocketState.Open)
             {
                 var token = GetSendTimeoutToken();
+                var sendStartedAt = Stopwatch.GetTimestamp();
                 await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
+                ObserveSendDuration(sendStartedAt, length);
             }
         }
         catch (OperationCanceledException)
         {
+            MarkTransportDegraded("websocket send timeout");
             Log.Warn(() => $"[MuxClient] {Id}: SendAsync timed out, aborting WebSocket");
             WebSocket.Abort();
         }
@@ -688,6 +707,7 @@ public sealed class MuxClient : IAsyncDisposable
         if (_cts.IsCancellationRequested) return;
         if (WebSocket.State != WebSocketState.Open) return;
         if (sessionId is not null && !CanAccessSession(sessionId)) return;
+        if (sessionId is not null && !ShouldDeliverSession(sessionId)) return;
 
         _ = SendFrameAsync(frame);
     }
@@ -699,7 +719,22 @@ public sealed class MuxClient : IAsyncDisposable
 
     public bool ShouldDeliverSession(string sessionId)
     {
-        return CanAccessSession(sessionId);
+        if (!CanAccessSession(sessionId))
+        {
+            return false;
+        }
+
+        if (!IsTransportDegradedAt(Environment.TickCount64))
+        {
+            return true;
+        }
+
+        if (IsActiveSession(sessionId) || _visibleSessionIds.Contains(sessionId))
+        {
+            return true;
+        }
+
+        return _activeSessionId is null && _visibleSessionIds.Count == 0;
     }
 
     public bool IsActiveSession(string sessionId)
@@ -726,13 +761,16 @@ public sealed class MuxClient : IAsyncDisposable
             if (WebSocket.State == WebSocketState.Open)
             {
                 var token = GetSendTimeoutToken();
+                var sendStartedAt = Stopwatch.GetTimestamp();
                 await WebSocket.SendAsync(data, WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
+                ObserveSendDuration(sendStartedAt, data.Length);
                 return true;
             }
             return false;
         }
         catch (OperationCanceledException)
         {
+            MarkTransportDegraded("websocket send timeout");
             Log.Warn(() => $"[MuxClient] {Id}: TrySendAsync timed out, aborting WebSocket");
             WebSocket.Abort();
             return false;
@@ -761,13 +799,16 @@ public sealed class MuxClient : IAsyncDisposable
             if (WebSocket.State == WebSocketState.Open)
             {
                 var token = GetSendTimeoutToken();
+                var sendStartedAt = Stopwatch.GetTimestamp();
                 await WebSocket.SendAsync(data.AsMemory(0, length), WebSocketMessageType.Binary, true, token).ConfigureAwait(false);
+                ObserveSendDuration(sendStartedAt, length);
                 return true;
             }
             return false;
         }
         catch (OperationCanceledException)
         {
+            MarkTransportDegraded("websocket send timeout");
             Log.Warn(() => $"[MuxClient] {Id}: TrySendAsync timed out, aborting WebSocket");
             WebSocket.Abort();
             return false;
@@ -780,6 +821,53 @@ public sealed class MuxClient : IAsyncDisposable
         finally
         {
             _sendLock.Release();
+        }
+    }
+
+    internal bool IsTransportDegraded => IsTransportDegradedAt(Environment.TickCount64);
+
+    internal void MarkTransportDegradedForTests()
+    {
+        MarkTransportDegraded("test");
+    }
+
+    private bool IsTransportDegradedAt(long nowMs)
+    {
+        return Interlocked.Read(ref _transportDegradedUntilMs) > nowMs;
+    }
+
+    private void ObserveSendDuration(long sendStartedAtTicks, int byteCount)
+    {
+        var elapsed = Stopwatch.GetElapsedTime(sendStartedAtTicks);
+        if (elapsed < SlowSendDegradedThreshold)
+        {
+            return;
+        }
+
+        MarkTransportDegraded(string.Create(
+            CultureInfo.InvariantCulture,
+            $"slow websocket send {elapsed.TotalMilliseconds:F0}ms for {byteCount} bytes"));
+    }
+
+    private void MarkTransportDegraded(string reason)
+    {
+        var now = Environment.TickCount64;
+        var until = now + (long)TransportDegradedDuration.TotalMilliseconds;
+        var currentUntil = Interlocked.Read(ref _transportDegradedUntilMs);
+        if (until > currentUntil)
+        {
+            Interlocked.Exchange(ref _transportDegradedUntilMs, until);
+        }
+
+        var lastLog = Interlocked.Read(ref _lastDegradedLogAtMs);
+        if (now - lastLog < (long)DegradedLogInterval.TotalMilliseconds)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _lastDegradedLogAtMs, now, lastLog) == lastLog)
+        {
+            Log.Warn(() => $"[MuxClient] {Id}: transport degraded ({reason}); suppressing hidden background terminal output");
         }
     }
 

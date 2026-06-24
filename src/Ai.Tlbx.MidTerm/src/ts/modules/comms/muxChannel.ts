@@ -137,6 +137,8 @@ const RESYNC_HEAT_SUPPRESS_MS = 3000;
 const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
 const BUFFER_REPLAY_MAX_MS = 12000;
 const BROWSER_RESUME_QUICK_REFRESH_COOLDOWN_MS = 3000;
+const TRANSPORT_LOSS_BUFFER_REFRESH_COOLDOWN_MS = 2000;
+const QUEUE_OVERFLOW_BUFFER_REFRESH_COOLDOWN_MS = 5000;
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
@@ -397,6 +399,10 @@ function measureCompletedOutputRtt(sessionId: string): void {
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
 let lastBrowserResumeQuickRefreshAt = Number.NEGATIVE_INFINITY;
+const transportBackoffBufferRefreshes = new Map<
+  string,
+  { lastAtMs: number; timer: number | null }
+>();
 
 // =============================================================================
 // Per-Session Output Delivery
@@ -522,6 +528,63 @@ function clearQueuedOutput(): void {
   outputQueueGeneration++;
 }
 
+function clearTransportBackoffBufferRefreshes(sessionId?: string): void {
+  if (sessionId !== undefined) {
+    const entry = transportBackoffBufferRefreshes.get(sessionId);
+    const timer = entry?.timer;
+    if (timer !== null && timer !== undefined) {
+      window.clearTimeout(timer);
+    }
+    transportBackoffBufferRefreshes.delete(sessionId);
+    return;
+  }
+
+  transportBackoffBufferRefreshes.forEach((entry) => {
+    if (entry.timer !== null) {
+      window.clearTimeout(entry.timer);
+    }
+  });
+  transportBackoffBufferRefreshes.clear();
+}
+
+function requestBufferRefreshAfterTransportLoss(sessionId: string, cooldownMs: number): void {
+  if (isHubSessionId(sessionId)) {
+    requestHubBufferRefresh(sessionId);
+    return;
+  }
+
+  const activeSessionId = $activeSessionId.get();
+  const effectiveCooldownMs =
+    activeSessionId === sessionId ? Math.min(cooldownMs, 750) : cooldownMs;
+  const now = performance.now();
+  const entry = transportBackoffBufferRefreshes.get(sessionId);
+  const lastAtMs = entry?.lastAtMs ?? Number.NEGATIVE_INFINITY;
+  const elapsedMs = now - lastAtMs;
+
+  if (elapsedMs >= effectiveCooldownMs) {
+    if (entry?.timer !== null && entry?.timer !== undefined) {
+      window.clearTimeout(entry.timer);
+    }
+    transportBackoffBufferRefreshes.set(sessionId, { lastAtMs: now, timer: null });
+    requestBufferRefresh(sessionId);
+    return;
+  }
+
+  if (entry?.timer !== null && entry?.timer !== undefined) {
+    return;
+  }
+
+  const waitMs = Math.max(0, effectiveCooldownMs - elapsedMs);
+  const timer = window.setTimeout(() => {
+    transportBackoffBufferRefreshes.set(sessionId, {
+      lastAtMs: performance.now(),
+      timer: null,
+    });
+    requestBufferRefresh(sessionId);
+  }, waitMs);
+  transportBackoffBufferRefreshes.set(sessionId, { lastAtMs, timer });
+}
+
 function noteQueueOverflow(sessionId: string): void {
   log.warn(() => `Output queue full for ${sessionId}, dropping oldest queued frame`);
   $dataLossDetected.set({ sessionId, timestamp: Date.now() });
@@ -576,7 +639,7 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
     queue.bytes = 0;
     sessionOutputQueues.delete(sessionId);
     sessionsNeedingResync.add(sessionId);
-    requestBufferRefresh(sessionId);
+    requestBufferRefreshAfterTransportLoss(sessionId, QUEUE_OVERFLOW_BUFFER_REFRESH_COOLDOWN_MS);
     return;
   }
 
@@ -712,7 +775,7 @@ function bufferPendingFrame(
     const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
     snapshot.dataLossCount += 1;
     snapshot.lastDataLossReason = 'browser_pending_overflow';
-    requestBufferRefresh(sessionId);
+    requestBufferRefreshAfterTransportLoss(sessionId, QUEUE_OVERFLOW_BUFFER_REFRESH_COOLDOWN_MS);
     return;
   }
 
@@ -1022,10 +1085,12 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     pendingOutputFrames.delete(sessionId);
     sessionsNeedingResync.delete(sessionId);
     browserTransportSnapshots.delete(sessionId);
+    clearTransportBackoffBufferRefreshes(sessionId);
   } else {
     pendingOutputFrames.clear();
     sessionsNeedingResync.clear();
     browserTransportSnapshots.clear();
+    clearTransportBackoffBufferRefreshes();
   }
   clearQueuedOutput();
   return true;
@@ -1105,7 +1170,7 @@ function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8A
   snapshot.dataLossCount += 1;
   snapshot.lastDataLossReason = resolveMuxDataLossReason(reasonCode);
   sessionsNeedingResync.add(sessionId);
-  requestBufferRefresh(sessionId);
+  requestBufferRefreshAfterTransportLoss(sessionId, TRANSPORT_LOSS_BUFFER_REFRESH_COOLDOWN_MS);
   return true;
 }
 
@@ -1548,6 +1613,7 @@ export function resetMuxChannelRuntimeForTests(): void {
 
   replaySuppressedSessions.clear();
   browserTransportSnapshots.clear();
+  clearTransportBackoffBufferRefreshes();
   bracketedPasteState.clear();
   clearBracketedPasteScanState();
   outputRttListeners.clear();

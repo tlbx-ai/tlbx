@@ -146,6 +146,22 @@ function buildSequencedOutputMessage(
   return frame.buffer;
 }
 
+function buildDataLossMessage(
+  encodeSessionId: (buffer: Uint8Array, offset: number, sessionId: string) => void,
+  dataLossType: number,
+  headerSize: number,
+  sessionId: string,
+  droppedBytes: number,
+): ArrayBuffer {
+  const frame = new Uint8Array(headerSize + 5);
+  const view = new DataView(frame.buffer);
+  frame[0] = dataLossType;
+  encodeSessionId(frame, 1, sessionId);
+  frame[headerSize] = 0;
+  view.setUint32(headerSize + 1, droppedBytes, true);
+  return frame.buffer;
+}
+
 function attachFakeTerminal(
   sessionTerminals: (typeof import('../../state'))['sessionTerminals'],
   sessionId: string,
@@ -534,6 +550,29 @@ describe('muxChannel', () => {
     expect(frame).toBeDefined();
     expect(frame?.byteLength).toBe(harness.constants.MUX_HEADER_SIZE + 1);
     expect(frame?.[harness.constants.MUX_HEADER_SIZE]).toBe(0);
+  });
+
+  it('backs off repeated transport-loss buffer refresh requests', async () => {
+    const harness = await loadHarness([0, 0, 0, 0, 0, 0]);
+
+    harness.ws.send.mockClear();
+    const dataLossMessage = buildDataLossMessage(
+      harness.encodeSessionId,
+      harness.constants.MUX_TYPE_DATA_LOSS,
+      harness.constants.MUX_HEADER_SIZE,
+      'sess5678',
+      128,
+    );
+
+    harness.ws.onmessage?.({ data: dataLossMessage } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({ data: dataLossMessage } as MessageEvent<ArrayBuffer>);
+
+    const bufferRequestFrames = harness.ws.send.mock.calls
+      .map((call) => call[0] as Uint8Array)
+      .filter((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST);
+
+    expect(bufferRequestFrames).toHaveLength(1);
+    resetMuxChannelRuntimeForTests();
   });
 
   it('includes local resume cursor in quick-resume buffer refresh requests', async () => {
