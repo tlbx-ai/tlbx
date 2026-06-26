@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
 import {
   resolveHistoryEstimatedEntryHeight,
+  pruneHistoryMeasurementCache,
   recordHistoryMeasuredHeight,
   resolveHistoryViewportEntryHeight,
 } from './historyMeasurements';
@@ -1082,6 +1083,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         container as HTMLDivElement,
         state,
       );
+      pruneHistoryMeasurementCache(state, entries);
       deps.pruneAssistantMarkdownCache(state, entries);
       renderScrollToBottomControl(panel, state);
     }

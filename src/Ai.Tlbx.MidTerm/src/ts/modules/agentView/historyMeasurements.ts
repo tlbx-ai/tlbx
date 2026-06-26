@@ -99,6 +99,39 @@ export function recordHistoryMeasuredHeight(
   return changed;
 }
 
+export function pruneHistoryMeasurementCache(
+  state: SessionAppServerControlViewState,
+  entries: readonly AppServerControlHistoryEntry[],
+): void {
+  ensureMeasurementBucketState(state);
+  const retainedIds = new Set(entries.map((entry) => entry.id));
+  pruneMeasurementMap(state.historyMeasuredHeights, retainedIds);
+  pruneMeasurementMap(state.historyObservedHeights, retainedIds);
+  pruneBucketMap(state.historyMeasuredHeightsByBucket, retainedIds);
+  pruneBucketMap(state.historyObservedHeightsByBucket, retainedIds);
+  pruneBucketMap(state.historyObservedHeightSamplesByBucket, retainedIds);
+}
+
+function pruneMeasurementMap<T>(map: Map<string, T>, retainedIds: ReadonlySet<string>): void {
+  for (const key of map.keys()) {
+    if (!retainedIds.has(key)) {
+      map.delete(key);
+    }
+  }
+}
+
+function pruneBucketMap<T>(
+  buckets: Map<number, Map<string, T>>,
+  retainedIds: ReadonlySet<string>,
+): void {
+  for (const [bucketKey, bucket] of buckets) {
+    pruneMeasurementMap(bucket, retainedIds);
+    if (bucket.size === 0) {
+      buckets.delete(bucketKey);
+    }
+  }
+}
+
 export function resolveRepresentativeHistoryEntryHeight(
   observedHeights?: Iterable<number> | null,
 ): number {
