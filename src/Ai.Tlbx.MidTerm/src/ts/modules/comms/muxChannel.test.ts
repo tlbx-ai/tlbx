@@ -192,6 +192,7 @@ function attachFakeTerminal(
       write: writeMock,
       resize: vi.fn(),
       clear: vi.fn(),
+      reset: vi.fn(),
     },
     fitAddon: {} as never,
     container,
@@ -572,6 +573,22 @@ describe('muxChannel', () => {
       .filter((frame) => frame[0] === harness.constants.MUX_TYPE_BUFFER_REQUEST);
 
     expect(bufferRequestFrames).toHaveLength(1);
+    resetMuxChannelRuntimeForTests();
+  });
+
+  it('fully resets the terminal parser state on resync frames', async () => {
+    const harness = await loadHarness([0, 0, 0, 0]);
+    const sessionId = 'sess1234';
+    attachFakeTerminal(harness.sessionTerminals, sessionId);
+    const state = harness.sessionTerminals.get(sessionId);
+
+    const frame = new Uint8Array(harness.constants.MUX_HEADER_SIZE);
+    frame[0] = harness.constants.MUX_TYPE_RESYNC;
+    harness.encodeSessionId(frame, 1, sessionId);
+    harness.ws.onmessage?.({ data: frame.buffer } as MessageEvent<ArrayBuffer>);
+
+    expect(state?.terminal.reset).toHaveBeenCalledOnce();
+    expect(state?.terminal.clear).not.toHaveBeenCalled();
     resetMuxChannelRuntimeForTests();
   });
 

@@ -1077,8 +1077,11 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     }
 
     if (state.opened) {
-      state.terminal.clear();
-      state.terminal.write('\x1b[0m');
+      // A resync follows transport data loss. The byte hole may have poisoned
+      // parser state (charset shifts, pending escape sequences), so only a full
+      // reset guarantees the replay renders cleanly; clear() + SGR reset cannot
+      // repair a stuck charset.
+      state.terminal.reset();
     }
   });
   if (sessionId) {

@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -57,6 +58,38 @@ public sealed class MuxClientTests
         client.MarkTransportDegradedForTests();
 
         Assert.True(client.ShouldDeliverSession("session-1"));
+    }
+
+    [Fact]
+    public async Task DegradedHiddenSessionDrop_SurfacesDataLossWhenDeliveryResumes()
+    {
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+
+        client.SetActiveSession("active01");
+        client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible1" });
+        client.MarkTransportDegradedForTests();
+
+        Assert.False(client.QueueOutput("hidden01", 4, 120, 30, RentOutput("lost")));
+
+        client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible1", "hidden01" });
+        Assert.True(client.QueueOutput("hidden01", 9, 120, 30, RentOutput("after")));
+
+        await WaitForAsync(() => socket.SentFrames.Count >= 2);
+        await Task.Delay(30);
+
+        Assert.True(MuxProtocol.TryParseFrame(socket.SentFrames[0], out var lossType, out var lossSessionId, out var lossPayload));
+        Assert.Equal(MuxProtocol.TypeDataLoss, lossType);
+        Assert.Equal("hidden01", lossSessionId);
+        Assert.Equal(4, BinaryPrimitives.ReadInt32LittleEndian(lossPayload.Slice(1, 4)));
+
+        Assert.True(MuxProtocol.TryParseFrame(socket.SentFrames[1], out var outputType, out var outputSessionId, out var outputPayload));
+        Assert.Equal(MuxProtocol.TypeTerminalOutput, outputType);
+        Assert.Equal("hidden01", outputSessionId);
+        Assert.Equal("after", Encoding.UTF8.GetString(MuxProtocol.GetOutputData(outputPayload)));
     }
 
     [Fact]

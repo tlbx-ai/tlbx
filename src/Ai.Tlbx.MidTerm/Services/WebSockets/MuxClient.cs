@@ -80,6 +80,7 @@ public sealed class MuxClient : IAsyncDisposable
     private readonly Dictionary<string, SessionBuffer> _sessionBuffers = new(StringComparer.Ordinal);
     private readonly ConcurrentQueue<string> _sessionsToRemove = new();
     private readonly ConcurrentQueue<string> _droppedSessions = new();
+    private readonly ConcurrentDictionary<string, long> _suppressedOutputBytes = new(StringComparer.Ordinal);
     private readonly CancellationTokenSource _cts = new();
     private readonly Task _processor;
 
@@ -290,6 +291,9 @@ public sealed class MuxClient : IAsyncDisposable
         }
         if (!ShouldDeliverSession(sessionId))
         {
+            // Degraded-transport suppression must stay an accounted loss so the
+            // client gets a data-loss frame and resyncs when delivery resumes.
+            RecordSuppressedOutput(sessionId, buffer.Length);
             buffer.Release();
             return false;
         }
@@ -386,6 +390,7 @@ public sealed class MuxClient : IAsyncDisposable
                 // 1. Process pending session removals (dispose buffers to return to pool)
                 while (_sessionsToRemove.TryDequeue(out var sessionId))
                 {
+                    _suppressedOutputBytes.TryRemove(sessionId, out _);
                     if (_sessionBuffers.Remove(sessionId, out var buffer))
                     {
                         buffer.Dispose();
@@ -445,6 +450,7 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (!ShouldDeliverSession(item.SessionId))
             {
+                RecordSuppressedOutput(item.SessionId, item.Buffer.Length);
                 return;
             }
 
@@ -462,6 +468,42 @@ public sealed class MuxClient : IAsyncDisposable
         finally
         {
             item.Buffer.Release();
+        }
+    }
+
+    private void RecordSuppressedOutput(string sessionId, int byteCount)
+    {
+        if (byteCount <= 0 || !CanAccessSession(sessionId))
+        {
+            return;
+        }
+
+        _suppressedOutputBytes.AddOrUpdate(
+            sessionId,
+            static (_, added) => added,
+            static (_, total, added) => total + added,
+            (long)byteCount);
+    }
+
+    private void PromoteSuppressedOutputToDroppedBytes()
+    {
+        if (_suppressedOutputBytes.IsEmpty)
+        {
+            return;
+        }
+
+        foreach (var sessionId in _suppressedOutputBytes.Keys)
+        {
+            if (!ShouldDeliverSession(sessionId))
+            {
+                continue;
+            }
+
+            if (_suppressedOutputBytes.TryRemove(sessionId, out var suppressed) && suppressed > 0)
+            {
+                var buffer = GetOrCreateSessionBuffer(sessionId);
+                buffer.DroppedBytes = (int)Math.Min(int.MaxValue, buffer.DroppedBytes + suppressed);
+            }
         }
     }
 
@@ -490,20 +532,27 @@ public sealed class MuxClient : IAsyncDisposable
         if (WebSocket.State != WebSocketState.Open) return;
         if (_flushSuspended) return;
 
+        PromoteSuppressedOutputToDroppedBytes();
+
         // Active session first — ensures it gets WebSocket priority ahead of background flushes
         var activeId = _activeSessionId;
         if (activeId is not null
             && _sessionBuffers.TryGetValue(activeId, out var activeBuffer)
-            && activeBuffer.TotalBytes > 0)
+            && (activeBuffer.TotalBytes > 0 || activeBuffer.DroppedBytes > 0))
         {
             var queuedDelay = Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks);
-            if (activeBuffer.TotalBytes >= FlushThresholdBytes || queuedDelay >= ActiveFlushInterval)
+            if (activeBuffer.DroppedBytes > 0
+                || activeBuffer.TotalBytes >= FlushThresholdBytes
+                || queuedDelay >= ActiveFlushInterval)
             {
-                var delayMs = (int)queuedDelay.TotalMilliseconds;
-                _lastFlushDelayMs[activeId] = delayMs;
-                if (delayMs > 50)
+                if (activeBuffer.TotalBytes > 0)
                 {
-                    Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
+                    var delayMs = (int)queuedDelay.TotalMilliseconds;
+                    _lastFlushDelayMs[activeId] = delayMs;
+                    if (delayMs > 50)
+                    {
+                        Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Active session flush delayed {delayMs}ms"));
+                    }
                 }
                 await FlushBufferAsync(activeId, activeBuffer, compress: false, flushAllAvailable: true, maxChunks: ActiveFlushMaxChunksPerPass).ConfigureAwait(false);
                 activeBuffer.LastFlushTicks = nowTicks;
@@ -513,20 +562,26 @@ public sealed class MuxClient : IAsyncDisposable
         // Background sessions: flush if size threshold OR time elapsed
         foreach (var (sessionId, buffer) in _sessionBuffers)
         {
-            if (buffer.TotalBytes == 0 || sessionId == activeId) continue;
+            if ((buffer.TotalBytes == 0 && buffer.DroppedBytes == 0) || sessionId == activeId) continue;
             if (IsTransportDegradedAt(Environment.TickCount64) && !ShouldDeliverSession(sessionId))
             {
+                // Discarding suppressed output must stay an accounted loss so the
+                // client gets a data-loss frame and resyncs when delivery resumes.
+                buffer.DroppedBytes = (int)Math.Min(int.MaxValue, (long)buffer.DroppedBytes + buffer.TotalBytes);
                 buffer.Reset();
-                buffer.DroppedBytes = 0;
                 buffer.LastFlushTicks = nowTicks;
                 continue;
             }
 
             var elapsed = Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
-            if (buffer.TotalBytes >= FlushThresholdBytes
+            if (buffer.DroppedBytes > 0
+                || buffer.TotalBytes >= FlushThresholdBytes
                 || elapsed >= FlushInterval)
             {
-                _lastFlushDelayMs[sessionId] = (int)Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
+                if (buffer.TotalBytes > 0)
+                {
+                    _lastFlushDelayMs[sessionId] = (int)Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks).TotalMilliseconds;
+                }
                 await FlushBufferAsync(sessionId, buffer, compress: true, flushAllAvailable: false).ConfigureAwait(false);
                 buffer.LastFlushTicks = nowTicks;
             }
@@ -547,6 +602,10 @@ public sealed class MuxClient : IAsyncDisposable
         {
             if (buffer.TotalBytes == 0)
             {
+                if (buffer.DroppedBytes > 0 && ShouldDeliverSession(sessionId))
+                {
+                    return TimeSpan.Zero;
+                }
                 continue;
             }
 
@@ -574,18 +633,19 @@ public sealed class MuxClient : IAsyncDisposable
         bool flushAllAvailable,
         int maxChunks = int.MaxValue)
     {
+        // If data was dropped, notify client before sending (so client can request
+        // resync) — even when no new output is pending yet.
+        if (buffer.DroppedBytes > 0)
+        {
+            var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes, TerminalReplayReason.MuxOverflow);
+            await SendFrameAsync(lossFrame).ConfigureAwait(false);
+            Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes before delivery"));
+            buffer.DroppedBytes = 0;
+        }
+
         var chunksFlushed = 0;
         while (buffer.TotalBytes > 0 && chunksFlushed < maxChunks)
         {
-            // If data was dropped, notify client before sending (so client can request resync)
-            if (buffer.DroppedBytes > 0)
-            {
-                var lossFrame = MuxProtocol.CreateDataLossFrame(sessionId, buffer.DroppedBytes, TerminalReplayReason.MuxOverflow);
-                await SendFrameAsync(lossFrame).ConfigureAwait(false);
-                Log.Warn(() => string.Create(CultureInfo.InvariantCulture, $"[MuxClient] {Id}: Session {sessionId} lost {buffer.DroppedBytes} bytes (buffer overflow)"));
-                buffer.DroppedBytes = 0;
-            }
-
             // Get data directly from pooled buffer (zero-copy until frame creation)
             var totalBytes = buffer.TotalBytes;
             var data = buffer.GetData();
