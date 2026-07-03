@@ -14,8 +14,8 @@ const mobileActionsSource = readFileSync(
   path.join(projectRoot, 'src/ts/modules/sessionTabs/mobileActions.ts'),
   'utf8',
 );
-const sessionListSource = readFileSync(
-  path.join(projectRoot, 'src/ts/modules/sidebar/sessionList.ts'),
+const spacesTreeSidebarSource = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/sidebar/spacesTreeSidebar.ts'),
   'utf8',
 );
 const smartInputMetricsSource = readFileSync(
@@ -50,7 +50,7 @@ describe('mobile responsive chrome wiring', () => {
     expect(mobileActionsSource).toContain("resolveSessionSurfaceMode(activeSession) === 'agent'");
     expect(mobileActionsSource).toContain('activeSessionId !== null &&');
     expect(mobileActionsSource).toContain("isTabAvailable(activeSessionId, 'agent');");
-    expect(mainSource).toContain('void syncActiveWebPreview();');
+    expect(mainSource).toContain('void syncActiveWebPreview().finally(() => {');
   });
 
   it('keeps mobile footer controls in the adaptive dock instead of hiding automation outright', () => {
@@ -95,21 +95,33 @@ describe('mobile responsive chrome wiring', () => {
     );
   });
 
-  it('keeps the responsive sidebar opaque and exposes touch-sized row actions', () => {
+  it('keeps the responsive sidebar opaque with compact rows and a dropdown action menu', () => {
     expect(css).toMatch(
       /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.sidebar \{[\s\S]*?background: var\(--bg-sidebar-opaque, var\(--bg-sidebar\)\);/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.sidebar \.session-actions \{[\s\S]*?opacity: 1;[\s\S]*?visibility: visible;[\s\S]*?pointer-events: auto;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-item \{[\s\S]*?min-height: 64px;/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-actions \.session-pin,[\s\S]*?\.session-actions \.session-close \{[\s\S]*?width: 44px;[\s\S]*?height: 44px;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-actions \{[\s\S]*?position: fixed;[\s\S]*?background: var\(--bg-dropdown-opaque\);/s,
     );
     expect(css).toMatch(
-      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-item \{[\s\S]*?flex-wrap: wrap;[\s\S]*?min-height: 112px;[\s\S]*?\.session-actions \{[\s\S]*?flex: 0 0 calc\(100% - 18px\);[\s\S]*?margin: 2px 0 0 18px;/s,
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-item\.menu-open \.session-actions \{[\s\S]*?opacity: 1;[\s\S]*?visibility: visible;[\s\S]*?pointer-events: auto;/s,
     );
     expect(css).toMatch(
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.session-actions \.session-pin,[\s\S]*?\.session-actions \.session-close \{[\s\S]*?width: 100%;[\s\S]*?min-height: 48px;/s,
+    );
+    expect(css).not.toMatch(
       /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.sidebar \.session-menu-btn \{[\s\S]*?display: none;/s,
+    );
+  });
+
+  it('keeps the mobile close action neutral at rest with red reserved for the press state', () => {
+    expect(css).toMatch(
+      /\.session-actions \.session-close \.session-action-icon \{[\s\S]*?background: color-mix\(in srgb, var\(--text-secondary\) 16%, transparent\);[\s\S]*?color: var\(--text-secondary\);/s,
+    );
+    expect(css).toMatch(
+      /\.session-actions \.session-close:active \{[\s\S]*?background-color: var\(--accent-red\);/s,
     );
   });
 
@@ -119,10 +131,10 @@ describe('mobile responsive chrome wiring', () => {
     expect(smartInputMetricsSource).toContain(
       'return isTouchPrimaryDevice() && window.innerWidth <= MOBILE_TOUCH_BREAKPOINT;',
     );
-    expect(sessionListSource).toContain(
+    expect(spacesTreeSidebarSource).toContain(
       "window.matchMedia('(hover: none) and (pointer: coarse)').matches",
     );
-    expect(sessionListSource).toContain('window.innerWidth <= MOBILE_TOUCH_BREAKPOINT');
+    expect(spacesTreeSidebarSource).toContain('window.innerWidth <= MOBILE_TOUCH_BREAKPOINT');
   });
 
   it('recovers terminal transport after mobile PWA lifecycle resume events', () => {

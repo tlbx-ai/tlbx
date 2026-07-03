@@ -6,7 +6,7 @@ import {
   setSessionNotes as apiSetSessionNotes,
   type HistoryPatchRequest,
 } from '../../api/client';
-import { icon } from '../../constants';
+import { icon, MOBILE_BREAKPOINT, MOBILE_TOUCH_BREAKPOINT } from '../../constants';
 import { dom } from '../../state';
 import {
   $activeSessionId,
@@ -191,6 +191,11 @@ export function initializeSessionList(): void {
   sessionFilterController.initialize();
   syncSearchControls();
   document.addEventListener('click', handleGlobalPopoverClick);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeMobileSessionActionMenu();
+    }
+  });
   window.addEventListener('resize', closePopovers);
   window.addEventListener('orientationchange', closePopovers);
   void refreshSidebarSpacesTree(true);
@@ -926,6 +931,7 @@ function createSidebarSessionNode(
 
   item.appendChild(info);
   item.appendChild(createSidebarSessionActions(entry));
+  item.appendChild(createSidebarSessionMenuButton(item, entry));
   return item;
 }
 
@@ -989,6 +995,9 @@ function reconcileSidebarSessions(
 }
 
 function destroySidebarSessionNode(item: HTMLElement): void {
+  if (item.classList.contains('menu-open')) {
+    closeMobileSessionActionMenu();
+  }
   const sessionId = item.dataset.sessionId;
   if (sessionId) {
     unregisterHeatCanvas(sessionId);
@@ -1138,6 +1147,17 @@ function createSidebarSessionActions(entry: SidebarSessionRef): HTMLDivElement {
   const actions = document.createElement('div');
   actions.className = 'session-actions';
   actions.setAttribute('role', 'menu');
+  // Capture phase: action buttons stopPropagation, but a tap on any of them
+  // must still dismiss the mobile dropdown menu.
+  actions.addEventListener(
+    'click',
+    (event) => {
+      if ((event.target as HTMLElement | null)?.closest('button')) {
+        closeMobileSessionActionMenu();
+      }
+    },
+    true,
+  );
   patchSidebarSessionActions(actions, entry);
   return actions;
 }
@@ -1275,6 +1295,145 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
   });
 
   actions.appendChild(closeButton);
+}
+
+// =============================================================================
+// Mobile Session Action Menu
+// =============================================================================
+
+let mobileSessionActionBackdrop: HTMLDivElement | null = null;
+
+/**
+ * Session action dropdowns are only used on mobile layouts.
+ */
+function isMobileSessionMenuEnabled(): boolean {
+  if (window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches) {
+    return true;
+  }
+
+  return (
+    window.matchMedia('(hover: none) and (pointer: coarse)').matches &&
+    window.innerWidth <= MOBILE_TOUCH_BREAKPOINT
+  );
+}
+
+/**
+ * Close any open mobile session action menus.
+ */
+export function closeMobileSessionActionMenu(): void {
+  document.querySelectorAll<HTMLElement>('.session-item.menu-open').forEach((el) => {
+    el.classList.remove('menu-open');
+    el.classList.remove('menu-open-up');
+
+    const actions = el.querySelector<HTMLElement>('.session-actions');
+    if (actions) {
+      actions.style.removeProperty('left');
+      actions.style.removeProperty('top');
+      actions.style.removeProperty('max-height');
+    }
+
+    const menuBtn = el.querySelector<HTMLButtonElement>('.session-menu-btn');
+    menuBtn?.setAttribute('aria-expanded', 'false');
+  });
+  if (mobileSessionActionBackdrop) {
+    mobileSessionActionBackdrop.remove();
+    mobileSessionActionBackdrop = null;
+  }
+}
+
+function showMobileSessionActionBackdrop(): void {
+  if (mobileSessionActionBackdrop) return;
+  mobileSessionActionBackdrop = document.createElement('div');
+  mobileSessionActionBackdrop.className = 'session-action-backdrop';
+  mobileSessionActionBackdrop.addEventListener('click', () => {
+    closeMobileSessionActionMenu();
+  });
+  document.body.appendChild(mobileSessionActionBackdrop);
+}
+
+/**
+ * Position the mobile dropdown next to its trigger while keeping it on-screen.
+ */
+function positionMobileSessionActionMenu(item: HTMLElement): void {
+  if (!isMobileSessionMenuEnabled()) {
+    return;
+  }
+
+  const actions = item.querySelector<HTMLElement>('.session-actions');
+  const menuBtn = item.querySelector<HTMLElement>('.session-menu-btn');
+  if (!actions || !menuBtn) {
+    return;
+  }
+
+  const viewportPadding = 12;
+  const gap = 8;
+  const triggerRect = menuBtn.getBoundingClientRect();
+
+  item.classList.remove('menu-open-up');
+  actions.style.removeProperty('max-height');
+
+  const initialRect = actions.getBoundingClientRect();
+  const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
+  const availableAbove = triggerRect.top - viewportPadding - gap;
+  const openUp =
+    availableBelow < Math.min(initialRect.height, 220) && availableAbove > availableBelow;
+
+  item.classList.toggle('menu-open-up', openUp);
+
+  const heightBudget = Math.max(
+    96,
+    Math.min(openUp ? availableAbove : availableBelow, window.innerHeight - viewportPadding * 2),
+  );
+  actions.style.maxHeight = `${heightBudget}px`;
+
+  const menuRect = actions.getBoundingClientRect();
+  const menuHeight = Math.min(menuRect.height, heightBudget);
+  const menuWidth = menuRect.width;
+
+  let left = triggerRect.right - menuWidth;
+  left = Math.max(viewportPadding, Math.min(left, window.innerWidth - viewportPadding - menuWidth));
+
+  let top = triggerRect.bottom + gap;
+  if (openUp) {
+    top = Math.max(viewportPadding, triggerRect.top - menuHeight - gap);
+  } else {
+    top = Math.min(top, window.innerHeight - viewportPadding - menuHeight);
+  }
+
+  actions.style.left = `${left}px`;
+  actions.style.top = `${top}px`;
+}
+
+function createSidebarSessionMenuButton(
+  item: HTMLElement,
+  entry: SidebarSessionRef,
+): HTMLButtonElement {
+  const menuBtn = document.createElement('button');
+  menuBtn.className = 'session-menu-btn';
+  menuBtn.innerHTML = icon('menu');
+  menuBtn.title = t('session.actions');
+  menuBtn.setAttribute('aria-label', t('session.actions'));
+  menuBtn.setAttribute('aria-haspopup', 'menu');
+  menuBtn.setAttribute('aria-controls', `session-actions-${entry.id}`);
+  menuBtn.setAttribute('aria-expanded', 'false');
+  menuBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (!isMobileSessionMenuEnabled()) {
+      return;
+    }
+
+    const isOpen = item.classList.contains('menu-open');
+    closeMobileSessionActionMenu();
+    if (!isOpen) {
+      item.classList.add('menu-open');
+      menuBtn.setAttribute('aria-expanded', 'true');
+      showMobileSessionActionBackdrop();
+      requestAnimationFrame(() => {
+        positionMobileSessionActionMenu(item);
+      });
+    }
+  });
+  return menuBtn;
 }
 
 function createSessionNotesPane(entry: SidebarSessionRef): HTMLDivElement {
@@ -1957,6 +2116,7 @@ function positionPopover(popover: HTMLElement, trigger: HTMLElement): void {
 function closePopovers(): void {
   actionPopoverEl?.classList.add('hidden');
   chooserPopoverEl?.classList.add('hidden');
+  closeMobileSessionActionMenu();
 }
 
 function handleGlobalPopoverClick(event: MouseEvent): void {

@@ -125,7 +125,7 @@ vi.mock('../comms', () => ({
   persistSessionOrder,
 }));
 
-vi.mock('./sessionList', () => ({
+vi.mock('./spacesTreeSidebar', () => ({
   isSessionFilterActive: () => false,
 }));
 
