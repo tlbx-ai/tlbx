@@ -14,11 +14,25 @@ import {
 } from '../../stores';
 import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { hideIframe, restoreLastUrl, showIframe, unloadIframe } from './webPanel';
+import {
+  hideIframe,
+  renderPreviewTabs,
+  restoreLastUrl,
+  showIframe,
+  unloadIframe,
+} from './webPanel';
 import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
-import { getActiveMode, getActivePreviewName, setActiveMode } from './webSessionState';
+import {
+  DEFAULT_PREVIEW_NAME,
+  getActiveMode,
+  getActivePreview,
+  getActivePreviewName,
+  listSessionPreviews,
+  setActiveMode,
+  setSessionSelectedPreviewName,
+} from './webSessionState';
 
 const log = createLogger('webDock');
 
@@ -115,8 +129,29 @@ export function toggleWebPreviewDock(): void {
   }
 }
 
+/**
+ * When the selected preview is still the empty default but the session already
+ * has a live named preview target (e.g. set by an agent through the API),
+ * opening the dock should show that target instead of adding an empty
+ * default tab next to it.
+ */
+export function selectPreferredActivePreview(): void {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+  if (getActivePreview()?.url) return;
+
+  const named = listSessionPreviews(sessionId).find(
+    (preview) => preview.previewName !== DEFAULT_PREVIEW_NAME && !!preview.url,
+  );
+  if (named) {
+    setSessionSelectedPreviewName(sessionId, named.previewName);
+  }
+}
+
 /** Open the web preview dock panel, restore saved width, and show the iframe. */
 export function openWebPreviewDock(): void {
+  selectPreferredActivePreview();
+  renderPreviewTabs();
   setActiveMode('docked');
   $webPreviewDocked.set(true);
   setActionButtonActive('web', true);

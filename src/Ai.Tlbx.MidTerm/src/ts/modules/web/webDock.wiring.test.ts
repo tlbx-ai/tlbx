@@ -26,6 +26,28 @@ describe('web dock footer spacing wiring', () => {
     expect(css).toContain('.web-preview-menu-item {');
   });
 
+  it('sizes the Dev Browser dock chrome for touch on phones', () => {
+    expect(css).toMatch(
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.web-preview-dock-actions \.btn-icon,[\s\S]*?\.web-preview-dock-url-bar \.btn-icon \{[\s\S]*?min-width: var\(--command-bay-control-height-mobile, 44px\);[\s\S]*?height: var\(--command-bay-control-height-mobile, 44px\);/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.web-preview-tab-close \{[\s\S]*?width: 40px;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.web-preview-dock-url-bar input \{[\s\S]*?font-size: 16px;/s,
+    );
+    expect(css).toMatch(
+      /@media \(max-width: 768px\), \(hover: none\) and \(pointer: coarse\) and \(max-width: 1024px\) \{[\s\S]*?\.web-preview-menu-item \{[\s\S]*?min-height: 44px;/s,
+    );
+  });
+
+  it('reuses an existing named preview target when the dock opens', () => {
+    expect(source).toContain('function selectPreferredActivePreview(): void {');
+    expect(source).toMatch(
+      /export function openWebPreviewDock\(\): void \{\s*selectPreferredActivePreview\(\);/,
+    );
+  });
+
   it('pushes the adaptive footer dock left when right-side docks are visible', () => {
     expect(source).toContain("const footerDock = document.getElementById('adaptive-footer-dock');");
     expect(source).toContain("footerDock.style.right = total > 0 ? `${total}px` : '';");

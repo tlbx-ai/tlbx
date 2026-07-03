@@ -1283,8 +1283,11 @@ function bindEvents(): void {
     activateMobileTab('files');
   });
   bindClick('btn-mobile-web', () => {
-    clickActiveSessionTabBarControl('[data-action="web"]');
-    void syncActiveWebPreview();
+    // Sync the session's preview list first so opening the dock can reuse an
+    // existing named preview target instead of the empty default.
+    void syncActiveWebPreview().finally(() => {
+      clickActiveSessionTabBarControl('[data-action="web"]');
+    });
   });
   bindClick('btn-mobile-commands', () => {
     clickActiveSessionTabBarControl('[data-action="commands"]');

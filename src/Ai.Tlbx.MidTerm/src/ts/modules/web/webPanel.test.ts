@@ -188,4 +188,13 @@ describe('webPanel preview tabs', () => {
     expect(source).toContain("closeButton.className = 'web-preview-tab-close';");
     expect(source).toContain('previewTabCloseHandler?.(preview.previewName);');
   });
+
+  it('hides the empty seeded default tab while a named preview is in use', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
+
+    expect(source).toContain('preview.previewName === DEFAULT_PREVIEW_NAME &&');
+    expect(source).toContain('preview.previewName !== selectedPreviewName &&');
+    expect(source).toContain('!preview.url &&');
+    expect(source).toContain('previews.length > 1');
+  });
 });

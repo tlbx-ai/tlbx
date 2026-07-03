@@ -36,6 +36,7 @@ import {
 import { openTopLevelPreview, resolveTopLevelProxyUrl } from './webTopLevelHandoff';
 import { buildPreviewTabLabel } from './webPreviewTabLabel';
 import {
+  DEFAULT_PREVIEW_NAME,
   getActiveDockedClient,
   getActivePreview,
   getActivePreviewName,
@@ -165,7 +166,18 @@ export function renderPreviewTabs(): void {
     return;
   }
 
-  for (const preview of listSessionPreviews(sessionId)) {
+  const previews = listSessionPreviews(sessionId);
+  for (const preview of previews) {
+    if (
+      preview.previewName === DEFAULT_PREVIEW_NAME &&
+      preview.previewName !== selectedPreviewName &&
+      !preview.url &&
+      previews.length > 1
+    ) {
+      // The default preview is always seeded locally; do not show it as an
+      // extra empty tab while a named preview is in use.
+      continue;
+    }
     const tab = document.createElement('div');
     tab.className = 'web-preview-tab-shell';
     tab.dataset.previewName = preview.previewName;

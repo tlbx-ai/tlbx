@@ -3820,12 +3820,10 @@ body::before {
     touch-action: pan-y;
   }
 
-  /* Mobile: keep session context actions visible as touch targets inside the sidebar */
+  /* Mobile: compact session rows; context actions live in a touch dropdown menu */
   .session-item {
-    flex-wrap: wrap;
-    align-items: flex-start;
     padding: 10px 10px 10px 8px;
-    min-height: 112px;
+    min-height: 64px;
     gap: 6px;
   }
 
@@ -3834,56 +3832,52 @@ body::before {
   }
 
   .session-actions {
-    position: static;
+    position: fixed;
+    top: 0;
+    left: 0;
     display: flex;
-    flex: 0 0 calc(100% - 18px);
-    flex-direction: row;
-    align-items: center;
-    justify-content: flex-start;
-    width: auto;
-    max-width: none;
-    margin: 2px 0 0 18px;
-    padding: 0;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    opacity: 1;
+    flex-direction: column;
+    align-items: stretch;
+    width: min(
+      320px,
+      calc(100vw - 16px - env(safe-area-inset-left, 0) - env(safe-area-inset-right, 0))
+    );
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    background: var(--bg-dropdown-opaque);
+    box-shadow: 0 18px 36px var(--shadow-color-lg);
+    opacity: 0;
     visibility: hidden;
-    pointer-events: auto;
-    transform: none;
-    transform-origin: center;
+    pointer-events: none;
+    transform: translateY(-6px) scale(0.98);
+    transform-origin: top right;
     transition:
       opacity 0.18s ease,
       transform 0.18s ease,
       visibility 0.18s ease;
-    gap: 4px;
-    max-height: none;
-    overflow: visible;
-    overscroll-behavior: auto;
-    z-index: 2;
-  }
-
-  .sidebar .session-actions {
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
+    gap: 6px;
+    max-height: min(70vh, 420px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    z-index: 1003;
   }
 
   .sidebar .session-info {
-    flex: 1 1 calc(100% - 28px);
+    flex: 1 1 auto;
+    min-width: 0;
     padding-left: 4px;
   }
 
   .session-item.menu-open.menu-open-up .session-actions {
-    transform-origin: center;
+    transform-origin: bottom right;
   }
 
   .session-item.menu-open .session-actions {
     opacity: 1;
     visibility: visible;
     pointer-events: auto;
-    transform: none;
+    transform: translateY(0) scale(1);
   }
 
   .session-actions .session-control,
@@ -3894,13 +3888,12 @@ body::before {
   .session-actions .session-inject,
   .session-actions .session-undock,
   .session-actions .session-close {
-    width: 44px;
-    min-width: 44px;
-    min-height: 44px;
-    height: 44px;
-    justify-content: center;
-    gap: 0;
-    padding: 0;
+    width: 100%;
+    min-height: 48px;
+    height: auto;
+    justify-content: flex-start;
+    gap: 14px;
+    padding: 10px 14px;
     border-radius: 12px;
     background: var(--bg-session-active-opaque, var(--bg-session-active));
     color: var(--text-primary);
@@ -3908,7 +3901,13 @@ body::before {
   }
 
   .session-actions .session-action-label {
-    display: none;
+    display: block;
+    flex: 1;
+    min-width: 0;
+    line-height: 1.3;
+    text-align: left;
+    white-space: normal;
+    font-weight: 500;
   }
 
   .session-actions .session-action-icon {
@@ -3945,9 +3944,11 @@ body::before {
     color: var(--accent-green);
   }
 
+  /* Close stays neutral at rest so it is not the loudest element in the
+     drawer; the destructive red cue appears only in the :active press state. */
   .session-actions .session-close .session-action-icon {
-    background: var(--accent-red-10);
-    color: var(--accent-red);
+    background: color-mix(in srgb, var(--text-secondary) 16%, transparent);
+    color: var(--text-secondary);
   }
 
   .session-actions .session-control:active,
@@ -3991,10 +3992,6 @@ body::before {
   .session-actions .session-undock:active .session-action-icon {
     color: var(--bg-primary);
     background: transparent;
-  }
-
-  .sidebar .session-menu-btn {
-    display: none;
   }
 
   /* Mobile menu button */
@@ -4196,6 +4193,7 @@ body::before {
     z-index: 200;
     border-left: none;
   }
+
 
   .terminal-page.file-viewer-docked .session-tab-panels,
   .terminal-page.commands-docked .session-tab-panels,
@@ -11344,7 +11342,58 @@ body.shared-session-mode .session-tab-bar {
   background: var(--bg-elevated);
 }
 
-/* web-preview-dock mobile override handled in main 768px block */
+/* web-preview-dock full-screen mobile override handled in main 768px block */
+
+/* Dev Browser dock chrome: touch-sized targets on phones. Placed after the
+   base dock rules because media queries do not add specificity. */
+@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
+  .web-preview-dock {
+    /* The desktop dock caps at 80% of the workspace; the phone overlay owns
+       the whole viewport. */
+    max-width: 100%;
+  }
+
+  .web-preview-tab-strip {
+    min-height: 52px;
+    padding: 8px 8px 0;
+  }
+
+  .web-preview-tab {
+    padding: 11px 10px 12px 14px;
+    font-size: var(--fs-md);
+  }
+
+  .web-preview-tab-close {
+    width: 40px;
+    min-width: 40px;
+    font-size: 19px;
+  }
+
+  .web-preview-dock-actions .btn-icon,
+  .web-preview-dock-url-bar .btn-icon {
+    width: var(--command-bay-control-height-mobile, 44px);
+    min-width: var(--command-bay-control-height-mobile, 44px);
+    height: var(--command-bay-control-height-mobile, 44px);
+  }
+
+  /* Touch-sized buttons no longer fit beside the URL field on a phone width;
+     let the field take its own full row above the actions. */
+  .web-preview-dock-url-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .web-preview-dock-url-bar input {
+    flex: 1 1 100%;
+    min-height: 44px;
+    /* >=16px keeps iOS Safari from zooming into the focused URL field */
+    font-size: 16px;
+  }
+
+  .web-preview-menu-item {
+    min-height: 44px;
+  }
+}
 
 /* =============================================
    Dev Soft Keyboard Simulator
