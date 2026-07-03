@@ -197,10 +197,14 @@ if (-not (Test-Path $OpenApiSpec)) {
 }
 
 Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
-& npx openapi-typescript $OpenApiSpec -o $GeneratedTypes
+# Run the project-local binaries directly: npx resolves by current directory and
+# silently falls back to an arbitrary cached version when this script is invoked
+# from outside the web project (e.g. scripts/dev.ps1), which yields generated
+# output that disagrees with the lint gate.
+& node (Join-Path $NodeModulesRoot "openapi-typescript/bin/cli.js") $OpenApiSpec -o $GeneratedTypes
 if ($LASTEXITCODE -ne 0) { Write-Error "openapi-typescript failed"; exit $LASTEXITCODE }
 
-& npx prettier --write $GeneratedTypes 2>&1 | Out-Null
+& node (Join-Path $NodeModulesRoot "prettier/bin/prettier.cjs") --write $GeneratedTypes 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Error "prettier formatting failed"; exit $LASTEXITCODE }
 
 Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
