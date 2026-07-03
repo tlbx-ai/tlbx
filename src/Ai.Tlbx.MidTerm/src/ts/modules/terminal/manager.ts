@@ -668,7 +668,9 @@ function scheduleWebglReattach(sessionId: string, state: TerminalState, delayMs:
     }
 
     if (attachWebglAddon(sessionId, state)) {
-      refreshTerminalRenderer(state);
+      // A fresh renderer re-uploads from the shared atlas; clearing it here
+      // would force every terminal sharing the atlas to re-rasterize.
+      refreshTerminalRenderer(state, { preserveTextureAtlas: true });
     } else {
       scheduleWebglReattach(sessionId, state, Math.min(delayMs * 2, WEBGL_REATTACH_MAX_DELAY_MS));
     }
@@ -775,7 +777,8 @@ export function syncWebglSessionPriority(prioritySessionIds: readonly string[]):
     }
 
     if (attachWebglAddon(sessionId, state)) {
-      refreshTerminalRenderer(state);
+      // Session-switch churn must not clear the shared texture atlas.
+      refreshTerminalRenderer(state, { preserveTextureAtlas: true });
     }
   });
 }
@@ -810,7 +813,8 @@ export function recoverTerminalRendererAfterForeground(
       return;
     }
 
-    refreshTerminalRenderer(state);
+    // The atlas was already cleared by the synchronous recovery refresh above.
+    refreshTerminalRenderer(state, { preserveTextureAtlas: true });
   });
 }
 

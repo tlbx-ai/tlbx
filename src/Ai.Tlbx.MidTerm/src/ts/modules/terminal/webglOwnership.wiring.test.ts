@@ -32,6 +32,24 @@ describe('WebGL context ownership wiring', () => {
     );
   });
 
+  it('keeps the shared texture atlas when re-attaching WebGL on churn paths', () => {
+    const preserveCount =
+      managerSource.match(/refreshTerminalRenderer\(state, \{ preserveTextureAtlas: true \}\)/g)
+        ?.length ?? 0;
+    expect(preserveCount).toBe(3);
+  });
+
+  it('ships per-renderer atlas invalidation generations and page identity in the webgl addon patch', () => {
+    const patchSource = readFileSync(
+      path.join(__dirname, '../../../../patches/@xterm+addon-webgl+0.19.0.patch'),
+      'utf8',
+    );
+    expect(patchSource).toContain('_clearModelGeneration');
+    expect(patchSource).toContain('_lastAtlasGeneration');
+    expect(patchSource).toContain('.uid!==this._atlasTextures[');
+    expect(patchSource).not.toContain('+    this._requestClearModel = true;');
+  });
+
   it('leaves aux terminals outside session wrappers unmanaged', () => {
     expect(managerSource).toContain("state.container.closest('.session-wrapper')");
   });
