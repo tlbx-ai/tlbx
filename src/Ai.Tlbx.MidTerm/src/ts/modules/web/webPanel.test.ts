@@ -5,6 +5,7 @@ import { shouldReloadPreviewFrame } from './previewLoadToken';
 import { buildProxyUrl } from './previewProxyUrl';
 import type { BrowserStatusResponse } from './webApi';
 import { buildBrowserPreviewStatusIndicatorState } from './webPreviewStatus';
+import { shouldRenderPreviewTab } from './webPreviewTabLabel';
 
 describe('webPanel preview reload decision', () => {
   it('reloads when the upstream target revision changes even if the proxy URL stays the same', () => {
@@ -192,9 +193,20 @@ describe('webPanel preview tabs', () => {
   it('hides the empty seeded default tab while a named preview is in use', () => {
     const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
 
-    expect(source).toContain('preview.previewName === DEFAULT_PREVIEW_NAME &&');
-    expect(source).toContain('preview.previewName !== selectedPreviewName &&');
-    expect(source).toContain('!preview.url &&');
-    expect(source).toContain('previews.length > 1');
+    expect(source).toContain(
+      'if (!shouldRenderPreviewTab(preview, selectedPreviewName, previews.length)) {',
+    );
+
+    expect(shouldRenderPreviewTab({ previewName: 'default', url: null }, 'mobile-social', 2)).toBe(
+      false,
+    );
+    expect(shouldRenderPreviewTab({ previewName: 'default', url: null }, 'default', 2)).toBe(true);
+    expect(shouldRenderPreviewTab({ previewName: 'default', url: null }, 'default', 1)).toBe(true);
+    expect(
+      shouldRenderPreviewTab({ previewName: 'default', url: 'https://x.test/' }, 'mobile-social', 2),
+    ).toBe(true);
+    expect(
+      shouldRenderPreviewTab({ previewName: 'mobile-social', url: null }, 'default', 2),
+    ).toBe(true);
   });
 });
