@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/marketing/Icons/FancyLogoToBeChanged.png" alt="MidTerm Banner" width="600">
+  <img src="docs/marketing/Icons/midterm-banner.png" alt="MidTerm Banner" width="600">
 </p>
 
 # MidTerm
@@ -12,7 +12,7 @@
 
 **Your terminal workspace, anywhere.** Run AI coding agents and local tools on your own machine, then keep using them from any browser on desktop, tablet, or phone.
 
-![MidTerm Screenshot](docs/marketing/Screenshots/sc1.png)
+![MidTerm workspace with terminal sessions, git sidebar, and the docked Dev Browser](docs/marketing/Screenshots/workspace-overview.png)
 
 ## What MidTerm Is
 
@@ -33,6 +33,11 @@ The core idea is still simple:
 - **Security and operations for real installs.** Password auth, local HTTPS cert generation, trust-page onboarding, API keys, run-as-user support, diagnostics overlays, live settings sync, stable/dev update channels, and install/update scripts for user mode or service mode.
 
 The full tracked inventory is in [docs/FEATURES.md](docs/FEATURES.md).
+
+<p>
+  <img src="docs/marketing/Screenshots/console-and-dev-browser.png" width="49%" alt="Console work beside the session-scoped Dev Browser">
+  <img src="docs/marketing/Screenshots/agent-sessions.png" width="49%" alt="Multiple agent sessions supervised from the sidebar">
+</p>
 
 ## Install
 
@@ -117,6 +122,7 @@ MidTerm also includes a trust page and certificate download helpers so local HTT
 
 - `mt` / `mt.exe` - web server, static asset host, REST API, WebSockets, update UI, settings UI
 - `mthost` / `mthost.exe` - PTY host, one process per terminal session
+- `mtagenthost` / `mtagenthost.exe` - agent host for explicit Lens sessions, runs the provider runtime behind the Codex/Claude Lens surfaces
 
 ### Settings Locations
 

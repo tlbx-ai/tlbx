@@ -188,6 +188,7 @@ async function stabilizeSurface(page: Page): Promise<void> {
 
       body.social-marketing-capture [data-testid*="password" i],
       body.social-marketing-capture [class*="password" i],
+      body.social-marketing-capture .security-warning,
       body.social-marketing-capture .scaled-overlay,
       body.social-marketing-capture .git-repo-chip,
       body.social-marketing-capture .manager-bar,
@@ -550,6 +551,10 @@ async function captureStory(page: Page, story: Story, runDir: string): Promise<v
             visibleSession: await page
               .locator(`.session-wrapper[data-session-id="${sessions[story.focus]}"]:not(.hidden)`)
               .isVisible(),
+            securityWarningHidden: await page.evaluate(() => {
+              const el = document.getElementById('security-warning');
+              return !el || getComputedStyle(el).display === 'none';
+            }),
           },
         },
         null,

@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face {
+    font-family: 'Cascadia Code';
+    src: url('../../../src/Ai.Tlbx.MidTerm/wwwroot/fonts/CascadiaCode-SemiBold.woff2') format('woff2');
+    font-weight: 600;
+  }
+  @font-face {
+    font-family: 'Cascadia Code';
+    src: url('../../../src/Ai.Tlbx.MidTerm/wwwroot/fonts/CascadiaCode-Regular.woff2') format('woff2');
+    font-weight: 400;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1920px; height: 560px; overflow: hidden; }
+  body {
+    background: #05070b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .glow {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1400px;
+    height: 900px;
+    transform: translate(-50%, -50%);
+    background: radial-gradient(ellipse at center, rgba(68, 106, 164, 0.16) 0%, rgba(68, 106, 164, 0.05) 45%, transparent 70%);
+    pointer-events: none;
+  }
+  .lockup {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 64px;
+  }
+  .mark svg {
+    width: 340px;
+    height: 241px;
+    display: block;
+    filter: drop-shadow(0 0 22px rgba(68, 106, 164, 0.75))
+      drop-shadow(0 0 3px rgba(36, 46, 94, 0.9));
+  }
+  .words {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .wordmark {
+    font-family: 'Cascadia Code', monospace;
+    font-weight: 600;
+    font-size: 158px;
+    line-height: 1;
+    color: #fdfefc;
+    letter-spacing: -0.01em;
+    text-shadow: 0 0 60px rgba(68, 106, 164, 0.55);
+  }
+  .tagline {
+    font-family: 'Cascadia Code', monospace;
+    font-weight: 400;
+    font-size: 38px;
+    color: #8b93a7;
+    letter-spacing: 0.01em;
+  }
+  .tagline .prompt { color: #80b6f2; }
+  .tagline .cursor {
+    display: inline-block;
+    width: 0.55em;
+    height: 1.05em;
+    background: #80b6f2;
+    vertical-align: text-bottom;
+    margin-left: 10px;
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+  <div class="glow"></div>
+  <div class="lockup">
+    <div class="mark">
+      <svg width="200" height="142" viewBox="0 0 52.916667 37.570832" version="1.1" xmlns="http://www.w3.org/2000/svg">
+        <g style="fill-opacity:1">
+          <path style="fill:#fdfefc;fill-opacity:1;stroke-width:0.264583" d="m 20.911652,2.385858 3.958952,-0.00524 -14.016261,33.328603 -3.7072562,-0.0052 z"/>
+          <path style="fill:#fdfefc;fill-opacity:1;stroke-width:0.264583" d="m 29.091736,2.3806144 14.031992,33.3390876 3.961831,-0.006 L 33.055181,2.3767102 Z"/>
+          <circle style="fill:#80b6f2;fill-opacity:1;stroke-width:0.294925" cx="27.007734" cy="19.013681" r="1.8390769"/>
+        </g>
+      </svg>
+    </div>
+    <div class="words">
+      <div class="wordmark">MidTerm</div>
+      <div class="tagline"><span class="prompt">&gt;</span> your terminal, anywhere<span class="cursor"></span></div>
+    </div>
+  </div>
+</body>
+</html>
