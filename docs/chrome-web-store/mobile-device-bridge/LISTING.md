@@ -46,13 +46,13 @@ Open an explicitly selected MidTerm Dev Browser preview in a local top-level Chr
 ## Privacy declarations
 
 - **Remote code:** No. All executable code is packaged with the extension.
-- **Developer-operated data collection:** None.
-- **Website content:** Device-tab pixels are processed locally only when the user explicitly requests a screenshot. The screenshot is returned only to the activated MidTerm tab and is not transmitted to the developer or a third party by the extension.
-- **Web browsing activity:** Not collected. The extension navigates only to the preview URL supplied by the activated MidTerm tab and does not retain that URL after navigation.
+- **Website content:** Select this data type. Device-tab pixels are processed locally only when the user explicitly requests a screenshot. The screenshot is returned only to the activated MidTerm tab and is not transmitted to the developer or a third party by the extension.
+- **Web history:** Select this data type. The extension handles only the single preview URL supplied by the activated MidTerm tab and does not retain it after navigation.
 - **Authentication information:** Not collected.
-- **Analytics, advertising, sale, or sharing:** None.
+- **Developer-operated data collection, analytics, advertising, sale, or sharing:** None.
+- **Retention:** The preview URL is not retained after navigation. Screenshot pixels are not retained after delivery to the activated MidTerm tab. Controller identifiers and device state exist only in `chrome.storage.session`.
 
-Certify all Chrome Web Store Limited Use statements. Select only **Website content** if the dashboard requires a data-type disclosure for local screenshot processing.
+For both selected data types, certify that they are used only for the extension's single purpose and are not sold, transferred for unrelated purposes, used for creditworthiness or lending, or used for advertising. Certify all Chrome Web Store Limited Use statements.
 
 ## Reviewer instructions
 
