@@ -9,12 +9,12 @@ The Chrome device runs on the computer where the user has opened MidTerm. The Mi
 
 ## Connect Chrome
 
-1. In the Dev Browser overflow menu, choose **Download Chrome bridge**.
+1. Click the visible download button beside **Responsive frame** in the Dev Browser URL bar. **Download Chrome bridge** remains available in the overflow menu as a fallback.
 2. Extract the ZIP to a permanent local folder.
 3. Open `chrome://extensions`, enable Developer mode, and choose **Load unpacked**.
 4. Select the extracted folder.
 5. Click the **MidTerm Mobile Device Bridge** extension icon in the MidTerm tab, or press `Ctrl+Shift+Y` (`Cmd+Shift+Y` on macOS).
-6. Use the second device button in the Dev Browser URL bar.
+6. The same button now shows the device icon; click it to open the Pixel 8 target.
 
 Chrome displays its normal debugger notice while the device target is attached.
 

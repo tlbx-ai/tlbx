@@ -19,6 +19,15 @@ const DEVICE_MENU_ACTIONS = [
   'web-preview-device-close',
 ] as const;
 
+const MOBILE_DEVICE_BRIDGE_ARCHIVE = '/midterm-mobile-device-bridge.zip';
+
+function downloadMobileDeviceBridge(): void {
+  const link = document.createElement('a');
+  link.href = MOBILE_DEVICE_BRIDGE_ARCHIVE;
+  link.download = 'midterm-mobile-device-bridge.zip';
+  link.click();
+}
+
 function updateControls(): void {
   const state = getMobileDeviceState();
   const open = state?.open === true;
@@ -26,11 +35,14 @@ function updateControls(): void {
   const deviceButton = document.getElementById('web-preview-mobile-device');
   deviceButton?.setAttribute('aria-pressed', String(open));
   if (deviceButton instanceof HTMLButtonElement) {
-    deviceButton.title = connected
+    deviceButton.dataset.bridgeConnected = String(connected);
+    const label = connected
       ? open
         ? 'Focus Pixel 8 Chrome device'
         : 'Open Pixel 8 Chrome device'
-      : 'Connect Chrome device bridge';
+      : 'Download Chrome device bridge';
+    deviceButton.title = label;
+    deviceButton.setAttribute('aria-label', label);
   }
 
   for (const id of DEVICE_MENU_ACTIONS) {
@@ -70,7 +82,11 @@ function wireMenuAction(
 export function initMobileDeviceUi(options: MobileDeviceUiOptions): void {
   initMobileDeviceController();
   document.getElementById('web-preview-mobile-device')?.addEventListener('click', () => {
-    void runAction('open', options);
+    if (isMobileDeviceConnected()) {
+      void runAction('open', options);
+    } else {
+      downloadMobileDeviceBridge();
+    }
   });
   wireMenuAction('web-preview-device-rotate', () => 'rotate', options);
   wireMenuAction('web-preview-device-keyboard', () => 'keyboard', options);
@@ -82,10 +98,7 @@ export function initMobileDeviceUi(options: MobileDeviceUiOptions): void {
   wireMenuAction('web-preview-device-close', () => 'close', options);
   document.getElementById('web-preview-device-download')?.addEventListener('click', () => {
     options.closeMenu();
-    const link = document.createElement('a');
-    link.href = '/midterm-mobile-device-bridge.zip';
-    link.download = 'midterm-mobile-device-bridge.zip';
-    link.click();
+    downloadMobileDeviceBridge();
   });
   window.addEventListener(MOBILE_DEVICE_STATE_EVENT, updateControls);
   updateControls();

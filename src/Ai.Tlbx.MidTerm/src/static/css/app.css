@@ -11017,6 +11017,15 @@ body.shared-session-mode .session-tab-bar {
     stroke-width 120ms ease;
 }
 
+#web-preview-mobile-device .mobile-device-open-icon,
+#web-preview-mobile-device[data-bridge-connected='true'] .mobile-device-download-icon {
+  display: none;
+}
+
+#web-preview-mobile-device[data-bridge-connected='true'] .mobile-device-open-icon {
+  display: block;
+}
+
 #web-preview-responsive-frame[aria-pressed='true'],
 #web-preview-mobile-device[aria-pressed='true'] {
   color: var(--text-accent);

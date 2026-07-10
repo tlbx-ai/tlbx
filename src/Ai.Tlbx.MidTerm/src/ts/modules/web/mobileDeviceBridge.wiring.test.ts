@@ -14,6 +14,13 @@ const manifest = JSON.parse(readFileSync(path.join(extensionRoot, 'manifest.json
 };
 const worker = readFileSync(path.join(extensionRoot, 'service-worker.js'), 'utf8');
 const pageBridge = readFileSync(path.join(extensionRoot, 'page-bridge.js'), 'utf8');
+const projectFile = readFileSync(path.join(projectRoot, 'Ai.Tlbx.MidTerm.csproj'), 'utf8');
+const frontendBuild = readFileSync(path.join(projectRoot, 'frontend-build.ps1'), 'utf8');
+const indexHtml = readFileSync(path.join(projectRoot, 'src/static/index.html'), 'utf8');
+const deviceUi = readFileSync(
+  path.join(projectRoot, 'src/ts/modules/web/mobileDeviceUi.ts'),
+  'utf8',
+);
 
 describe('mobile device bridge wiring', () => {
   it('requires explicit activation on a MidTerm tab without broad host access', () => {
@@ -45,5 +52,16 @@ describe('mobile device bridge wiring', () => {
     expect(pageBridge).toContain('.sendMessage({');
     expect(pageBridge).toContain('source: EXTENSION_SOURCE');
     expect(worker).toContain("type: 'normal'");
+  });
+
+  it('embeds the bridge archive and downloads it directly from the visible device control', () => {
+    expect(projectFile).toContain('<EmbeddedResource Include="wwwroot\\**\\*.zip" />');
+    expect(frontendBuild).toContain('Compress-Archive -Path');
+    expect(frontendBuild).toContain('midterm-mobile-device-bridge.zip');
+    expect(indexHtml).toContain('class="mobile-device-download-icon"');
+    expect(indexHtml).toContain('data-bridge-connected="false"');
+    expect(deviceUi).toContain("const MOBILE_DEVICE_BRIDGE_ARCHIVE = '/midterm-mobile-device-bridge.zip';");
+    expect(deviceUi).toContain('if (isMobileDeviceConnected())');
+    expect(deviceUi).toContain('downloadMobileDeviceBridge();');
   });
 });
