@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MidTerm Mobile Device Bridge store assets</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; }
+    body {
+      background: #06080d;
+      color: #f7f8fb;
+      font-family: Inter, "Segoe UI", Arial, sans-serif;
+      letter-spacing: 0;
+    }
+    .asset { position: relative; width: 100vw; height: 100vh; overflow: hidden; }
+    .brand { display: flex; align-items: center; gap: 14px; font-size: 22px; font-weight: 700; }
+    .brand img { width: 44px; height: 44px; border-radius: 5px; }
+    .eyebrow { color: #70e7f1; font: 700 15px/1.2 "Cascadia Mono", Consolas, monospace; text-transform: uppercase; }
+    h1 { margin: 18px 0 16px; max-width: 610px; font-size: 56px; line-height: 1.02; letter-spacing: 0; }
+    p { margin: 0; max-width: 570px; color: #bdc3ce; font-size: 21px; line-height: 1.45; }
+    .accent-line { width: 72px; height: 4px; margin-top: 28px; background: #f2d35e; }
+    .copy { position: absolute; z-index: 4; left: 58px; top: 48px; }
+    .desktop {
+      position: absolute;
+      left: 58px;
+      bottom: -22px;
+      width: 790px;
+      height: 420px;
+      overflow: hidden;
+      border: 1px solid #303640;
+      border-radius: 6px;
+      box-shadow: 0 22px 70px rgba(0, 0, 0, .48);
+      background: #11151c;
+    }
+    .desktop img { width: 100%; height: 100%; object-fit: cover; object-position: center; }
+    .device {
+      position: absolute;
+      z-index: 3;
+      right: 72px;
+      top: 42px;
+      width: 334px;
+      height: 716px;
+      padding: 12px;
+      overflow: hidden;
+      border: 2px solid #555d6b;
+      border-radius: 38px;
+      background: #020307;
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .7);
+    }
+    .device::before {
+      content: "";
+      position: absolute;
+      z-index: 2;
+      top: 18px;
+      left: 50%;
+      width: 68px;
+      height: 5px;
+      transform: translateX(-50%);
+      border-radius: 3px;
+      background: #181b21;
+    }
+    .device img { width: 100%; height: 100%; object-fit: cover; object-position: top center; border-radius: 28px; }
+    .device-label {
+      position: absolute;
+      z-index: 4;
+      right: 30px;
+      bottom: 28px;
+      padding: 10px 13px;
+      border: 1px solid #38404c;
+      border-radius: 5px;
+      background: #080b11;
+      color: #fff;
+      font: 700 14px/1 "Cascadia Mono", Consolas, monospace;
+    }
+
+    .promo .copy { left: 28px; top: 27px; right: 24px; }
+    .promo .brand { gap: 10px; font-size: 15px; }
+    .promo .brand img { width: 30px; height: 30px; border-radius: 4px; }
+    .promo .eyebrow { margin-top: 31px; font-size: 10px; }
+    .promo h1 { margin: 7px 0 0; width: 280px; font-size: 32px; line-height: 1.04; }
+    .promo p { display: none; }
+    .promo .device {
+      right: 20px;
+      top: 45px;
+      width: 116px;
+      height: 244px;
+      padding: 5px;
+      border-radius: 17px;
+      border-width: 1px;
+      box-shadow: 0 14px 32px rgba(0, 0, 0, .65);
+    }
+    .promo .device::before { top: 8px; width: 24px; height: 2px; }
+    .promo .device img { border-radius: 12px; }
+    .promo .desktop { display: none; }
+    .promo .device-label { display: none; }
+    .promo .accent-line { width: 42px; height: 3px; margin-top: 18px; }
+  </style>
+</head>
+<body>
+  <main class="asset" id="asset">
+    <div class="copy">
+      <div class="brand">
+        <img src="../../../src/Ai.Tlbx.MidTerm/src/static/img/logo.png" alt="">
+        <span>MidTerm</span>
+      </div>
+      <div class="eyebrow">Mobile Device Bridge</div>
+      <h1>Real mobile Chrome beside your terminal.</h1>
+      <p>Open any remote Dev Browser preview as a local Pixel 8 with touch, rotation, lifecycle controls, keyboard emulation, and screenshots.</p>
+      <div class="accent-line"></div>
+    </div>
+    <div class="desktop">
+      <img src="../../marketing/Screenshots/console-and-dev-browser.png" alt="MidTerm terminal and Dev Browser">
+    </div>
+    <div class="device">
+      <img src="../../marketing/ScreenshotAutomation/output/mobile-feature-series/final-mobile-2026-06-13/05-mobile-dev-browser-audit-03.png" alt="MidTerm Dev Browser on a mobile viewport">
+    </div>
+    <div class="device-label">Pixel 8 / Chrome</div>
+  </main>
+  <script>
+    if (new URLSearchParams(location.search).get('asset') === 'promo') {
+      document.getElementById('asset').classList.add('promo');
+    }
+  </script>
+</body>
+</html>

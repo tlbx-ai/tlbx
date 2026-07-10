@@ -1,0 +1,101 @@
+name: Publish Mobile Device Bridge
+
+on:
+  push:
+    tags:
+      - 'mobile-device-bridge-v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Validate tag and package extension
+        shell: pwsh
+        run: |
+          $archive = & ./scripts/chrome-web-store/build-mobile-device-bridge.ps1 -OutputDirectory ./artifacts/chrome-web-store
+          $manifest = Get-Content ./src/Ai.Tlbx.MidTerm/src/mobile-device-bridge/manifest.json -Raw | ConvertFrom-Json
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $expectedTag = "mobile-device-bridge-v$($manifest.version)"
+            if ('${{ github.ref_name }}' -ne $expectedTag) {
+              throw "Tag '${{ github.ref_name }}' does not match manifest version '$expectedTag'."
+            }
+          }
+          "ARCHIVE_PATH=$archive" >> $env:GITHUB_ENV
+
+      - name: Exchange refresh token
+        id: auth
+        shell: bash
+        env:
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          response=$(curl --fail-with-body --silent --show-error \
+            https://oauth2.googleapis.com/token \
+            --data-urlencode "client_id=$CWS_CLIENT_ID" \
+            --data-urlencode "client_secret=$CWS_CLIENT_SECRET" \
+            --data-urlencode "refresh_token=$CWS_REFRESH_TOKEN" \
+            --data-urlencode "grant_type=refresh_token")
+          access_token=$(jq -r '.access_token // empty' <<<"$response")
+          test -n "$access_token"
+          echo "::add-mask::$access_token"
+          echo "access_token=$access_token" >> "$GITHUB_OUTPUT"
+
+      - name: Upload package
+        shell: bash
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/zip" \
+            -X POST \
+            --data-binary "@${ARCHIVE_PATH}" \
+            "https://chromewebstore.googleapis.com/upload/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:upload" \
+            | tee upload-result.json
+          jq -e '.uploadState == "SUCCEEDED" or .uploadState == "IN_PROGRESS"' upload-result.json
+
+      - name: Wait for package processing
+        shell: bash
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          for attempt in {1..30}; do
+            curl --fail-with-body --silent --show-error \
+              -H "Authorization: Bearer $ACCESS_TOKEN" \
+              "https://chromewebstore.googleapis.com/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:fetchStatus" \
+              | tee upload-status.json
+            state=$(jq -r '.lastAsyncUploadState // empty' upload-status.json)
+            case "$state" in
+              SUCCEEDED) exit 0 ;;
+              FAILED) echo "Chrome Web Store package processing failed." >&2; exit 1 ;;
+              *) sleep 10 ;;
+            esac
+          done
+          echo "Chrome Web Store package processing timed out." >&2
+          exit 1
+
+      - name: Submit for review and publish on approval
+        shell: bash
+        env:
+          ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
+        run: |
+          curl --fail-with-body --silent --show-error \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "Content-Type: application/json" \
+            -X POST \
+            --data '{"publishType":"DEFAULT_PUBLISH","blockOnWarnings":true}' \
+            "https://chromewebstore.googleapis.com/v2/publishers/${CWS_PUBLISHER_ID}/items/${CWS_EXTENSION_ID}:publish" \
+            | tee publish-result.json
