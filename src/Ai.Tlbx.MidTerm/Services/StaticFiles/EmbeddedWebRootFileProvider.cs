@@ -14,7 +14,7 @@ public sealed class EmbeddedWebRootFileProvider : IFileProvider
     private static readonly HashSet<string> KnownExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         "html", "css", "js", "json", "txt", "xml", "svg", "png", "jpg", "jpeg", "gif", "ico",
-        "woff", "woff2", "ttf", "eot", "otf", "map", "webmanifest"
+        "woff", "woff2", "ttf", "eot", "otf", "map", "webmanifest", "zip"
     };
 
     private static readonly HashSet<string> CompoundExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -70,7 +70,7 @@ public sealed class EmbeddedWebRootFileProvider : IFileProvider
 
     private readonly record struct ResourceInfo(string Name, long Length);
 
-    private static string ConvertResourceNameToPath(string resourceName)
+    internal static string ConvertResourceNameToPath(string resourceName)
     {
         var parts = resourceName.Split('.');
 

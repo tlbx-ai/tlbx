@@ -308,6 +308,7 @@ public static class ServerSetup
         contentTypeProvider.Mappings[".woff2"] = "font/woff2";
         contentTypeProvider.Mappings[".ttf"] = "font/ttf";
         contentTypeProvider.Mappings[".eot"] = "application/vnd.ms-fontobject";
+        contentTypeProvider.Mappings[".zip"] = "application/zip";
 
         app.UseStaticFiles(new StaticFileOptions
         {
