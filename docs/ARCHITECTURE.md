@@ -451,7 +451,11 @@ Available operations include:
 - script execution and wait operations
 - screenshot, snapshot, outline, attrs, CSS, forms, links, and proxy-log flows
 
-For deeper implementation detail, see [devbrowser.md](devbrowser.md).
+### Local Chrome Device Bridge
+
+Responsive-frame mode only changes the embedded iframe's dimensions. Full Chromium mobile emulation lives in an optional MV3 extension on the user's browser machine, not in a Chrome process beside the MidTerm server. After explicit `activeTab` activation, the extension creates a top-level device window and applies CDP emulation locally. The target loads a separately registered preview identity, so it joins the existing preview-scoped browser bridge and inherits DOM automation, logs, and screenshots. This keeps the normal remote topology intact: MidTerm and the app may run on another machine while Chrome emulation runs where the UI is actually viewed.
+
+For deeper implementation detail, see [devbrowser.md](devbrowser.md) and [MOBILE_DEVICE_LAB.md](MOBILE_DEVICE_LAB.md).
 
 ## 6. Settings, Data Model, and Storage
 

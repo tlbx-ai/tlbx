@@ -83,16 +83,18 @@ describe('web dock footer spacing wiring', () => {
     expect(source).not.toContain('const DOCK_MAX_WIDTH = 800;');
   });
 
-  it('reserves layout space for mobile emulation and the preview keyboard fallback', () => {
-    expect(css).toContain('#web-preview-mobile-emulation {');
+  it('reserves layout space for the responsive frame and preview keyboard fallback', () => {
+    expect(css).toContain('#web-preview-responsive-frame,');
     expect(css).toContain('#web-preview-detach-mobile svg,');
-    expect(css).toContain("#web-preview-mobile-emulation[aria-pressed='true'] {");
-    expect(css).toContain("#web-preview-mobile-emulation[aria-pressed='true']::after {");
+    expect(css).toContain("#web-preview-responsive-frame[aria-pressed='true'],");
+    expect(css).toContain("#web-preview-responsive-frame[aria-pressed='true']::after,");
     expect(css).toContain('background: var(--accent-green);');
     expect(css).toContain('box-shadow:');
-    expect(css).toContain('.web-preview-dock-body.mobile-emulation {');
-    expect(css).toContain('.web-preview-dock-body.mobile-emulation #web-preview-iframe-host {');
-    expect(css).toContain('max-width: 430px;');
+    expect(css).toContain('.web-preview-dock-body.responsive-mobile-frame {');
+    expect(css).toContain(
+      '.web-preview-dock-body.responsive-mobile-frame #web-preview-iframe-host {',
+    );
+    expect(css).toContain('max-width: 412px;');
     expect(css).toContain('body.dev-soft-keyboard-preview-fallback .web-preview-dock-body {');
     expect(css).toContain('flex-direction: column;');
     expect(css).toContain(

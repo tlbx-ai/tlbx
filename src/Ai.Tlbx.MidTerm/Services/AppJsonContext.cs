@@ -307,6 +307,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(BrowserWsMessage))]
 [JsonSerializable(typeof(BrowserWsResult))]
 [JsonSerializable(typeof(BrowserUiInstruction))]
+[JsonSerializable(typeof(MobileDeviceRequest))]
 [JsonSerializable(typeof(ViewportRequest))]
 
 // --- WebSocket Protocol ---
@@ -326,7 +327,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

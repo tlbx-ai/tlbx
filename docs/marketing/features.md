@@ -13,7 +13,7 @@ It keeps the work where it already lives: on the developer's machine, inside rea
 | User pressure | MidTerm answer |
 | --- | --- |
 | Long-running AI coding agents need supervision after the laptop or browser tab moves | Persistent terminal and Agent Controller surfaces stay alive behind an authenticated browser UI |
-| Local web apps need real validation, not screenshots from memory | Session-scoped Dev Browser previews include proxying, tabs, logs, screenshots, mobile emulation, soft-keyboard testing, and CLI/DOM automation |
+| Local web apps need real validation, not screenshots from memory | Session-scoped Dev Browser previews include proxying, tabs, logs, screenshots, responsive frames, a local Chrome Mobile Device Lab, and CLI/DOM automation |
 | Mobile SSH and remote shell work feel fragile | HTTPS browser access, touch controls, mobile sidebar, PWA affordances, and explicit terminal-size ownership |
 | Cloud terminals move context away from the machine that owns the work | Local credentials, repos, local servers, installed tools, and hardware remain local |
 | Terminal work sprawls across terminals, tmux, browser tabs, git tools, and scripts | MidTerm collects terminal, preview, files, git, commands, automation, and diagnostics in one browser workspace |
@@ -25,7 +25,7 @@ MidTerm is not a terminal-in-a-tab. The current product has these major surfaces
 - **Terminal workspace:** multiple real PTY sessions, split layouts, terminal search, manual size ownership, scrollback controls, paste/upload flows, file radar, activity heat, reconnect hardening, and hidden-output deferral.
 - **Sidebar and workspace chrome:** session creation, notes, process/cwd detail, bookmarks/history, drag reorder, split-dock actions, update/network/voice sections, multi-repo Git indicators, mobile drawer behavior, and compact responsive actions.
 - **Command Bay / Automation Bar:** a shared active-session footer for Terminal and Agent Controller composition, smart input, quick actions, attachments, touch controls, scheduled prompt queueing, and status/model controls.
-- **Dev Browser:** session-scoped web previews with named browser contexts, URL bar, tabs, screenshots, proxy logs, detached/docked views, clear-state tools, mobile viewport/UA emulation, soft-keyboard simulation, and CLI/DOM automation.
+- **Dev Browser:** session-scoped web previews with named browser contexts, URL bar, tabs, screenshots, proxy logs, detached/docked views, responsive sizing, a remote-first local Chrome device target, clear-state tools, and CLI/DOM automation.
 - **Files, Git, and Commands:** file browser and previews, inline text editing, repo-state panels, recent commit inspection, explicit git-command handoff, and saved command runners backed by hidden execution sessions.
 - **Agent Controller Session:** explicit provider-backed agent sessions that render conversation history/timeline separately from normal terminal transcripts while preserving the Terminal boundary.
 - **Operations and security:** password auth, signed sessions, API keys, local TLS/cert trust helpers, update channels, web-only updates, service/user installs, logs, diagnostics, restart/shutdown, and release health surfaces.
@@ -95,7 +95,7 @@ MidTerm is not a terminal-in-a-tab. The current product has these major surfaces
 | Reverse proxy | HTML, fetch, XHR, WebSocket, EventSource, forms, links, history, and DOM writes are rewritten to stay inside the preview where possible. |
 | Blazor compatibility | Recent proxy work injects a MidTerm-scoped base href for Blazor Server apps so proxied routes behave like the real app. |
 | Dev Browser tabs | Preview tabs are compact, active-state aware, and keep screenshot/reload/utility controls in the right chrome level. |
-| Mobile emulation | The active preview can switch to a mobile viewport, mobile User-Agent/client hints, and a visible active toggle state. |
+| Mobile validation | Responsive-frame mode is explicitly size-only; the optional local Chrome bridge opens a top-level Pixel 8 target with mobile metrics, touch, UA/Client Hints, rotation, lifecycle, and screenshots even when MidTerm runs remotely. |
 | Soft-keyboard tester | Mobile keyboard simulation reserves layout space instead of covering the app under test. |
 | Clear-state tools | Cookies, storage, cache, service workers, and leaked route state can be cleared for repeatable validation. |
 | CLI/DOM bridge | `mt_open`, `mt_status`, `mt_exec`, `mt_query`, `mt_click`, `mt_fill`, `mt_submit`, `mt_screenshot`, `mt_log`, and `mt_proxylog` let agents validate visible browser state from the terminal. |

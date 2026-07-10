@@ -671,6 +671,12 @@ public static class MtcliScriptWriter
           _MREQUIRECTX "mt_viewport" || return $?
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
         }
+        # mt_mobile ACTION [PROFILE]  — control the local Chrome device attached to the owning MidTerm tab
+        mt_mobile() {
+          local action="${1:-status}" profile="${2:-pixel-8}"
+          _MREQUIRECTX "mt_mobile" || return $?
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"action\":\"$(_ME "$action")\",\"profile\":\"$(_ME "$profile")\"}" "$_MT/api/browser/mobile-device"
+        }
 
         # Status
         mt_status()     { _MREQUIRECTX "mt_status" || return $?; _MSTATUS || _MC "$_MT/api/webpreview/target$(_MQ)"; }
@@ -1399,6 +1405,12 @@ public static class MtcliScriptWriter
             _MRequireSessionContext "mt_viewport"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
         }
+        # Mt-Mobile [-Action ACTION] [-Profile PROFILE]  — control the local Chrome device attached to this MidTerm tab
+        function Mt-Mobile {
+            param([string]$Action = "status", [string]$Profile = "pixel-8")
+            _MRequireSessionContext "mt_mobile"
+            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); action=$Action; profile=$Profile}) "$script:_MT/api/browser/mobile-device"
+        }
 
         # Status
         function Mt-Status     { _MRequireSessionContext "mt_status"; try { _MStatus } catch { Mt-Target } }
@@ -1472,6 +1484,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_detach -Value Mt-Detach
         Set-Alias -Name mt_dock -Value Mt-Dock
         Set-Alias -Name mt_viewport -Value Mt-Viewport
+        Set-Alias -Name mt_mobile -Value Mt-Mobile
         Set-Alias -Name mt_status -Value Mt-Status
 
         # Direct execution: pwsh .midterm\mtcli.ps1 query ".error"

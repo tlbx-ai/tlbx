@@ -49,6 +49,7 @@ import { syncActiveWebPreview } from '../web';
 import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
+import type { MobileDeviceAction } from '../web/mobileDeviceBridge';
 
 interface TmuxDockMessage {
   type: 'tmux-dock';
@@ -84,6 +85,8 @@ interface BrowserUiMessage {
   sessionId?: string;
   previewName?: string;
   activateSession?: boolean;
+  deviceAction?: string;
+  deviceProfile?: string;
 }
 
 interface LayoutStateMessage {
@@ -628,6 +631,22 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
       break;
     case 'open':
       handleOpenBrowserUiCommand(msg);
+      break;
+    case 'mobile-device':
+      if (msg.deviceAction) {
+        void import('../web/mobileDeviceController')
+          .then(({ controlMobileDevice }) =>
+            controlMobileDevice(
+              msg.deviceAction as MobileDeviceAction,
+              msg.sessionId,
+              msg.previewName,
+              msg.deviceProfile,
+            ),
+          )
+          .catch((error: unknown) => {
+            log.warn(() => `Mobile device command failed: ${String(error)}`);
+          });
+      }
       break;
     default:
       log.warn(() => `Unknown browser-ui command: ${msg.command}`);

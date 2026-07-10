@@ -89,6 +89,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("\"$_MT/api/browser/open\"", shell, StringComparison.Ordinal);
         Assert.DoesNotContain("mt_navigate()   { _MREQUIRECTX \"mt_navigate\" || return $?; _MJ", shell, StringComparison.Ordinal);
         Assert.Contains("mt_open() {", shell, StringComparison.Ordinal);
+        Assert.Contains("mt_mobile() {", shell, StringComparison.Ordinal);
+        Assert.Contains("/api/browser/mobile-device", shell, StringComparison.Ordinal);
         Assert.Contains("local claim=0 url=\"\" open_out status", shell, StringComparison.Ordinal);
         Assert.Contains("--claim) claim=1", shell, StringComparison.Ordinal);
         Assert.Contains("mt_claim_preview >/dev/null", shell, StringComparison.Ordinal);
@@ -124,6 +126,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_navigate failed: preview did not become controllable.", powershell, StringComparison.Ordinal);
         Assert.DoesNotContain("-X PUT \"$script:_MT/api/webpreview/target\"", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Open {", powershell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Mobile {", powershell, StringComparison.Ordinal);
         Assert.Contains("param([string]$Url, [switch]$Claim)", powershell, StringComparison.Ordinal);
         Assert.Contains("Mt-ClaimPreview | Out-Null", powershell, StringComparison.Ordinal);
         Assert.Contains("$openResponse = _MJR -d", powershell, StringComparison.Ordinal);
@@ -139,6 +142,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_capabilities -Value Mt-Capabilities", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_inspect -Value Mt-Inspect", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_mobile -Value Mt-Mobile", powershell, StringComparison.Ordinal);
         Assert.Contains("$env:MT_SESSION_ID", powershell, StringComparison.Ordinal);
         Assert.Contains("previewName=(_MPreview)", powershell, StringComparison.Ordinal);
         Assert.Contains("activateSession=$true", powershell, StringComparison.Ordinal);

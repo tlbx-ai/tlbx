@@ -502,11 +502,12 @@ The feature inventory above remains the numbered baseline. The following current
 - `D011` Terminal text brightness boost blends foreground/ANSI colors toward white without boosting backgrounds, selection, cursor, or scrollbar backgrounds.
 - `D012` Dev Browser proxying injects a MidTerm-scoped base href for Blazor Server apps so proxied app routes render correctly.
 - `D013` Dev Browser chrome is now tab/URL-bar centered, with screenshot on the active tab URL bar and utilities in overflow.
-- `D014` Dev Browser mobile emulation can constrain the preview iframe, send mobile User-Agent/client hints, strip internal flags, and show an active toggle state.
+- `D014` Dev Browser responsive-frame mode constrains the preview without claiming that a desktop iframe is a mobile browser.
 - `D015` Dev Browser soft-keyboard simulation reserves page layout space instead of overlaying the app under test.
 - `D016` Mobile sidebar drawer readability and touch action placement have been hardened for transparent UI settings.
 - `D017` Multi-repo Git monitoring can show session-scoped extra repos in addition to the cwd repo.
 - `D018` Keyed sidebar DOM reconciliation preserves node identity during hot session-list updates.
+- `D019` The remote-first Mobile Device Lab ships an explicit-activation Chrome extension that opens a local top-level Pixel 8 CDP target with touch, Android UA/Client Hints, rotation, keyboard-viewport, lifecycle, screenshots, and existing MidTerm DOM automation.
 
 ### README.md
 

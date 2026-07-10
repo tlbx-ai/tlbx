@@ -372,6 +372,19 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
+        void OnMobileDevice(string? sessionId, string? previewName, string action, string? profile)
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "mobile-device",
+                SessionId = sessionId,
+                PreviewName = previewName,
+                DeviceAction = action,
+                DeviceProfile = profile
+            };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
         if (shareAccess is null)
         {
             _browserUiBridge?.RegisterListener(
@@ -380,7 +393,8 @@ public sealed class StateWebSocketHandler
                 detach: OnBrowserDetach,
                 dock: OnBrowserDock,
                 viewport: OnBrowserViewport,
-                open: OnBrowserOpen);
+                open: OnBrowserOpen,
+                mobileDevice: OnMobileDevice);
         }
 
         try

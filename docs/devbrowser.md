@@ -106,7 +106,9 @@ Browser automation is now scoped per named preview session instead of "whichever
 
 The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
-Browser UI instructions (`open`, `dock`, `detach`, `viewport`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no MidTerm browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
+Browser UI instructions (`open`, `dock`, `detach`, `viewport`, `mobile-device`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no MidTerm browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
+
+The responsive mobile-frame toggle is deliberately dimension-only. Full Chromium mobile signals are owned by the optional local Chrome extension described in [MOBILE_DEVICE_LAB.md](MOBILE_DEVICE_LAB.md). Its top-level target registers a separate preview identity and therefore participates in the same preview ownership and browser-command selection rules as docked and detached clients.
 
 Preview control ownership is now backend-owned per `(sessionId, previewName)` instead of being inferred only from focus/visibility heuristics:
 

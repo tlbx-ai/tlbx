@@ -51,6 +51,8 @@ import {
 import { shouldSandboxPreviewFrame } from './previewSandbox';
 import { buildBrowserPreviewStatusIndicatorState } from './webPreviewStatus';
 import { decodeScreenshotDataUrl, normalizeUrl } from './webPanelUtils';
+import { captureMobileDeviceScreenshot } from './mobileDeviceController';
+import { initMobileDeviceUi, refreshMobileDeviceUi } from './mobileDeviceUi';
 
 interface UploadResponse {
   path?: string;
@@ -104,13 +106,13 @@ let previewTabs: HTMLElement | null = null;
 let statusIndicator: HTMLElement | null = null;
 let actionMessage: HTMLElement | null = null;
 let screenshotButton: HTMLButtonElement | null = null;
-let mobileEmulationButton: HTMLButtonElement | null = null;
+let responsiveFrameButton: HTMLButtonElement | null = null;
 let loadedUrl: string | null = null;
 let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
-const mobileEmulationByFrame = new Map<string, boolean>();
+const responsiveFrameByFrame = new Map<string, boolean>();
 const STATUS_REFRESH_INTERVAL_MS = 4000;
 const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;
 const PREVIEW_TAB_CHANGED_EVENT = 'midterm:web-preview-active-tab-changed';
@@ -221,8 +223,8 @@ export function initWebPanel(): void {
   statusIndicator = document.getElementById('web-preview-status-indicator');
   actionMessage = document.getElementById('web-preview-action-message');
   screenshotButton = document.getElementById('web-preview-screenshot') as HTMLButtonElement | null;
-  mobileEmulationButton = document.getElementById(
-    'web-preview-mobile-emulation',
+  responsiveFrameButton = document.getElementById(
+    'web-preview-responsive-frame',
   ) as HTMLButtonElement | null;
 
   const goBtn = document.getElementById('web-preview-go');
@@ -259,8 +261,8 @@ export function initWebPanel(): void {
   screenshotButton?.addEventListener('click', (event: MouseEvent) => {
     void handleScreenshot(event.ctrlKey);
   });
-  mobileEmulationButton?.addEventListener('click', () => {
-    void handleMobileEmulationToggle();
+  responsiveFrameButton?.addEventListener('click', () => {
+    handleResponsiveFrameToggle();
   });
   document.getElementById('web-preview-clear-cookies')?.addEventListener('click', () => {
     closeWebPreviewOverflowMenu();
@@ -279,6 +281,10 @@ export function initWebPanel(): void {
     void handleClearState();
   });
   initWebPreviewOverflowMenu();
+  initMobileDeviceUi({
+    closeMenu: closeWebPreviewOverflowMenu,
+    setMessage: setActionMessage,
+  });
   document.getElementById('web-preview-agent-hint')?.addEventListener('click', handleAgentHint);
   document.addEventListener('visibilitychange', () => {
     void refreshBrowserPreviewStatus();
@@ -640,7 +646,7 @@ function destroyPreviewFrameByKey(
   frame.removeAttribute(PREVIEW_LOAD_TOKEN_ATTRIBUTE);
   frame.remove();
   previewFrames.delete(frameKey);
-  mobileEmulationByFrame.delete(frameKey);
+  responsiveFrameByFrame.delete(frameKey);
 
   if (activeFrameKey === frameKey) {
     activeFrameKey = null;
@@ -713,48 +719,40 @@ function setVisiblePreviewFrame(frameKey: string | null): void {
     frame.tabIndex = isActive ? 0 : -1;
     refreshPreviewBridgeVisibility(frame, isActive);
   }
-  applyMobileEmulationChrome(frameKey);
+  applyResponsiveFrameChrome(frameKey);
+  refreshMobileDeviceUi();
   window.dispatchEvent(new CustomEvent(PREVIEW_TAB_CHANGED_EVENT, { detail: { frameKey } }));
 }
 
-function isMobileEmulationEnabled(frameKey: string | null = activeFrameKey): boolean {
-  return frameKey !== null && mobileEmulationByFrame.get(frameKey) === true;
+function isResponsiveFrameEnabled(frameKey: string | null = activeFrameKey): boolean {
+  return frameKey !== null && responsiveFrameByFrame.get(frameKey) === true;
 }
 
-function applyMobileEmulationChrome(frameKey: string | null = activeFrameKey): void {
-  const enabled = isMobileEmulationEnabled(frameKey);
+function applyResponsiveFrameChrome(frameKey: string | null = activeFrameKey): void {
+  const enabled = isResponsiveFrameEnabled(frameKey);
   const dockBody = document.querySelector('.web-preview-dock-body');
-  dockBody?.classList.toggle('mobile-emulation', enabled);
-  if (!mobileEmulationButton) {
+  dockBody?.classList.toggle('responsive-mobile-frame', enabled);
+  if (!responsiveFrameButton) {
     return;
   }
 
-  mobileEmulationButton.setAttribute('aria-pressed', String(enabled));
-  mobileEmulationButton.setAttribute(
+  responsiveFrameButton.setAttribute('aria-pressed', String(enabled));
+  responsiveFrameButton.setAttribute(
     'aria-label',
-    enabled ? 'Disable mobile browser emulation' : 'Enable mobile browser emulation',
+    `${enabled ? 'Disable' : 'Enable'} responsive mobile frame`,
   );
-  mobileEmulationButton.title = enabled
-    ? 'Mobile browser emulation on'
-    : 'Mobile browser emulation off';
+  responsiveFrameButton.title = enabled ? 'Responsive mobile frame on' : 'Responsive mobile frame';
 }
 
-async function handleMobileEmulationToggle(): Promise<void> {
+function handleResponsiveFrameToggle(): void {
   const frameKey = getActivePreviewFrameKey();
   if (!frameKey) {
     return;
   }
 
-  const next = !isMobileEmulationEnabled(frameKey);
-  mobileEmulationByFrame.set(frameKey, next);
-  applyMobileEmulationChrome(frameKey);
-
-  const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
-  if (!currentUrl) {
-    return;
-  }
-
-  await handleRefresh('force');
+  const next = !isResponsiveFrameEnabled(frameKey);
+  responsiveFrameByFrame.set(frameKey, next);
+  applyResponsiveFrameChrome(frameKey);
 }
 
 function postCookieBridgeResponse(
@@ -824,7 +822,6 @@ function getActiveTopLevelProxyUrl(): string | null {
     currentUrl: activePreview?.url ?? getActiveUrl() ?? $webPreviewUrl.get(),
     targetRevision: activePreview?.targetRevision ?? 0,
     origin: activeClient?.origin ?? window.location.origin,
-    mobileEmulation: isMobileEmulationEnabled(),
     buildProxyUrl,
   });
 }
@@ -967,10 +964,7 @@ export async function loadPreview(reloadToken?: string): Promise<void> {
       previewClient,
       currentTargetRevision,
       previewClient.origin ?? window.location.origin,
-      {
-        mobileEmulation: isMobileEmulationEnabled(frameKey),
-        ...(reloadToken ? { reloadToken } : {}),
-      },
+      reloadToken ? { reloadToken } : {},
     );
     if (shouldReloadPreviewFrame(frame, proxyUrl, currentUrl, currentTargetRevision)) {
       if (frame.src === proxyUrl) {
@@ -1204,7 +1198,9 @@ async function handleScreenshot(download = false, requestedPreviewName?: string)
   const filename = `screenshot_${ts}.png`;
 
   try {
-    const dataUrl = await captureBrowserScreenshotRaw(sessionId, undefined, previewName);
+    const deviceCapture = await captureMobileDeviceScreenshot(sessionId, previewName);
+    const dataUrl =
+      deviceCapture ?? (await captureBrowserScreenshotRaw(sessionId, undefined, previewName));
     if (!dataUrl) {
       setActionMessage(
         'error',

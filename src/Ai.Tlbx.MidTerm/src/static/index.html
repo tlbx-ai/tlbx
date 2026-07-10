@@ -3151,10 +3151,10 @@ Enable terminal key log to capture Enter and modifier events.</pre
             </button>
             <button
               class="btn-icon"
-              id="web-preview-mobile-emulation"
+              id="web-preview-responsive-frame"
               type="button"
-              title="Emulate mobile browser"
-              aria-label="Emulate mobile browser"
+              title="Responsive mobile frame"
+              aria-label="Enable responsive mobile frame"
               aria-pressed="false"
             >
               <svg
@@ -3171,6 +3171,30 @@ Enable terminal key log to capture Enter and modifier events.</pre
               >
                 <rect x="7" y="2" width="10" height="20" rx="2" />
                 <path d="M11 18h2" />
+              </svg>
+            </button>
+            <button
+              class="btn-icon"
+              id="web-preview-mobile-device"
+              type="button"
+              title="Open Pixel 8 Chrome device"
+              aria-label="Open Pixel 8 Chrome device"
+              aria-pressed="false"
+            >
+              <svg
+                viewBox="0 0 24 24"
+                width="19"
+                height="19"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <rect x="6" y="2" width="12" height="20" rx="2" />
+                <path d="m10 9 5 3-5 3z" />
               </svg>
             </button>
             <div class="web-preview-overflow">
@@ -3212,6 +3236,60 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 >
                   <span class="web-preview-menu-icon">&#x2197;</span>
                   <span>Open top-level</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-rotate"
+                  type="button"
+                  title="Rotate Chrome device"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&#x21bb;</span>
+                  <span>Device: Rotate</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-keyboard"
+                  type="button"
+                  title="Toggle Chrome device keyboard viewport"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&#x2328;</span>
+                  <span>Device: Keyboard</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-background"
+                  type="button"
+                  title="Toggle Chrome device lifecycle"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&#x25d0;</span>
+                  <span data-device-label>Device: Background</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-close"
+                  type="button"
+                  title="Close Chrome device"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&times;</span>
+                  <span>Device: Close</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-download"
+                  type="button"
+                  title="Download Chrome device bridge"
+                  role="menuitem"
+                >
+                  <span class="web-preview-menu-icon">&#x2193;</span>
+                  <span>Download Chrome bridge</span>
                 </button>
                 <button
                   class="web-preview-menu-item"

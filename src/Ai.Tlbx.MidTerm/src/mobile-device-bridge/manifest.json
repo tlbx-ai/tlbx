@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "MidTerm Mobile Device Bridge",
+  "version": "1.0.0",
+  "description": "Runs MidTerm mobile previews in a local Chrome device target.",
+  "minimum_chrome_version": "120",
+  "permissions": ["activeTab", "debugger", "scripting", "storage", "tabs"],
+  "action": {
+    "default_title": "Connect this MidTerm tab"
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      }
+    }
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  }
+}

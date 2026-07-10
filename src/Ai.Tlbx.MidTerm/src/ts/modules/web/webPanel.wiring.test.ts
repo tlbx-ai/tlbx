@@ -72,18 +72,19 @@ describe('web preview screenshot wiring', () => {
     expect(source).toContain("reload: () => void handleRefresh('force'),");
   });
 
-  it('wires mobile browser emulation as an active-tab URL-bar action', () => {
-    expect(html).toContain('id="web-preview-mobile-emulation"');
+  it('separates responsive sizing from local Chrome device emulation', () => {
+    expect(html).toContain('id="web-preview-responsive-frame"');
+    expect(html).toContain('id="web-preview-mobile-device"');
     expect(html).toContain('aria-label="Pop out mobile preview"');
-    expect(html).toContain('aria-label="Emulate mobile browser"');
+    expect(html).toContain('aria-label="Enable responsive mobile frame"');
+    expect(html).toContain('aria-label="Open Pixel 8 Chrome device"');
+    expect(html).toContain('id="web-preview-device-download"');
     expect(html).toContain('aria-pressed="false"');
-    expect(source).toContain('mobileEmulationButton = document.getElementById(');
-    expect(source).toContain('const mobileEmulationByFrame = new Map<string, boolean>();');
-    expect(source).toContain('function handleMobileEmulationToggle(): Promise<void>');
-    expect(source).toContain("'Disable mobile browser emulation'");
-    expect(source).toContain("'Mobile browser emulation on'");
-    expect(source).toContain('mobileEmulation: isMobileEmulationEnabled(frameKey),');
-    expect(source).toContain('...(reloadToken ? { reloadToken } : {}),');
+    expect(source).toContain('const responsiveFrameByFrame = new Map<string, boolean>();');
+    expect(source).toContain('function handleResponsiveFrameToggle(): void');
+    expect(source).toContain('initMobileDeviceUi({');
+    expect(source).toContain('captureMobileDeviceScreenshot(sessionId, previewName)');
+    expect(source).not.toContain('__mtMobile');
   });
 
   it('allows modern popup and top-navigation flows inside sandboxed external previews', () => {

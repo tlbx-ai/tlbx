@@ -143,6 +143,23 @@ public static class BrowserEndpoints
                 : Results.Text(error + "\n", statusCode: 409);
         });
 
+        app.MapPost("/api/browser/mobile-device", (Models.Browser.MobileDeviceRequest request) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.SessionId))
+            {
+                return Results.BadRequest("sessionId required");
+            }
+
+            return uiBridge.RequestMobileDevice(
+                NormalizeOptional(request.SessionId),
+                NormalizeOptional(request.PreviewName),
+                request.Action,
+                NormalizeOptional(request.Profile),
+                out var error)
+                ? Results.Accepted()
+                : Results.Text(error + "\n", statusCode: 409);
+        });
+
         app.MapPost("/api/browser/open", async (Models.WebPreview.WebPreviewTargetRequest request, CancellationToken cancellationToken) =>
         {
             var sessionId = NormalizeOptional(request.SessionId);
@@ -208,10 +225,31 @@ public static class BrowserEndpoints
             if (args.Count == 0)
             {
                 BrowserLog.Error($"Empty request ({body.Length} bytes)");
-                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  scroll [selector] [deltaY|top|bottom|left|right] [deltaX]\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  claim               Explicitly claim preview ownership for this browser UI\n  claim-main          Make the selected browser preview the leading browser\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
+                return Results.Text("usage: mtbrowser <command> [args...]\n\nCommands:\n  query <selector> [--depth N] [--text]\n  click <selector>\n  scroll [selector] [deltaY|top|bottom|left|right] [deltaX]\n  fill <selector> <value>\n  exec <js-code>\n  screenshot [--session <id>]\n  snapshot --session <id>\n  wait <selector> [--timeout N]\n  navigate <url>\n  reload [--force|--hard]\n  outline [depth]     Page structure (tag+id+class tree)\n  attrs <selector>    Element attributes (no children)\n  css <selector> <props>  Computed CSS (comma-separated)\n  log [error|warn|all]    Console log buffer\n  links               All links on page\n  submit [selector]   Submit form (default: first form)\n  forms [selector]    Form structure and values\n  url                 Current upstream page URL\n  clearcookies        Clear browser-side cookies in iframe\n  clearstate          Clear browser-side cookies and storage in iframe\n  status              Preview bridge status\n  mobile <action>     Local Chrome mobile device control\n  claim               Explicitly claim preview ownership for this browser UI\n  claim-main          Make the selected browser preview the leading browser\n  capabilities [--json]  Compact command/capability discovery\n  inspect [--screenshot] Compact page/status/proxy diagnostic bundle\n  proxylog-summary [--limit N] Compact proxy request summary\n", statusCode: 400);
             }
 
             var command = args[0].ToLowerInvariant();
+
+            if (command == "mobile")
+            {
+                if (uiBridge is null)
+                {
+                    return Results.Text("Browser UI bridge is not available.\n", statusCode: 409);
+                }
+
+                var action = args.Count > 1 ? args[1] : "status";
+                var sessionId = GetFlagValue(args, "--session");
+                var previewName = GetFlagValue(args, "--preview");
+                var profile = GetFlagValue(args, "--profile");
+                if (string.IsNullOrWhiteSpace(sessionId))
+                {
+                    return Results.Text("sessionId required\n", statusCode: 400);
+                }
+
+                return uiBridge.RequestMobileDevice(sessionId, previewName, action, profile, out var error)
+                    ? Results.Text($"mobile device {action} requested\n")
+                    : Results.Text(error + "\n", statusCode: 409);
+            }
 
             if (command == "status")
             {
@@ -588,6 +626,7 @@ public static class BrowserEndpoints
                 "mt_scroll [selector] [deltaY|top|bottom]",
                 "mt_query <selector> --text",
                 "mt_exec <js>",
+                "mt_mobile open|status|rotate|keyboard|background|foreground|reload|screenshot|close",
                 "mt_topic <text>",
                 "mt_wake [id] <delay> <prompt>",
                 "mt_repo list|add|remove|refresh",
@@ -619,7 +658,8 @@ public static class BrowserEndpoints
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so MidTerm shows it in the IDE bar and sidebar.",
                 "Use mt_supervise at the start of multi-agent work to bind known repos, refresh repo status, and get one fleet attention snapshot.",
-                "Screenshots use in-page html2canvas and can differ from native browser screenshots for canvas, video, and cross-origin frame content."
+                "Docked preview screenshots use in-page html2canvas; an open Chrome mobile device uses native CDP capture instead.",
+                "Chrome mobile device control runs in the optional extension on the owning browser machine, so the MidTerm server may remain remote."
             ]
         };
     }

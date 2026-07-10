@@ -28,7 +28,7 @@ describe('web preview popup wiring', () => {
   it('drives detached tabs and url changes through the existing preview APIs', () => {
     expect(script).toContain('async function loadOwningSession()');
     expect(script).toContain("var initialMobileMode = params.get('mobile') === '1';");
-    expect(script).toContain("proxyUrl.searchParams.set('__mtMobile', '1');");
+    expect(script).not.toContain('__mtMobile');
     expect(script).toContain('function readMobileClientProbe()');
     expect(script).toContain('function applyMobileMode(enabled, reloadFrame)');
     expect(script).toContain("'Desktop mobile size'");

@@ -27,7 +27,7 @@ The core idea is still simple:
 ## What You Get
 
 - **Terminal workspace, not a single shell page.** Multiple sessions, split-pane layouts, session reordering, search, heat indicators, bookmarks/history, tmux compatibility, and a manual-resize model built for multi-device use.
-- **Workflow surfaces around the terminal.** Per-session Files tabs with preview and save, Git status with diff overlays, Commands panels for saved scripts, a customizable manager bar, and session-scoped web preview/browser automation.
+- **Workflow surfaces around the terminal.** Per-session Files tabs with preview and save, Git status with diff overlays, Commands panels for saved scripts, a customizable manager bar, session-scoped web preview/browser automation, and a remote-first local Chrome Mobile Device Lab.
 - **Clear terminal vs Lens boundaries.** MidTerm keeps ordinary terminal sessions as `Terminal + Files`; provider-branded Lens tabs such as Codex or Claude appear only for sessions the user explicitly launched as Lens sessions.
 - **Remote and mobile features built in.** Smart Input, touch controller, mobile action menus, PWA install, document Picture-in-Picture, voice/chat hooks, shared-session links, and Share Access packets for sending trusted connection details to other devices.
 - **Security and operations for real installs.** Password auth, local HTTPS cert generation, trust-page onboarding, API keys, run-as-user support, diagnostics overlays, live settings sync, stable/dev update channels, and install/update scripts for user mode or service mode.
