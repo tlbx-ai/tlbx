@@ -20,6 +20,12 @@ const DEVICE_MENU_ACTIONS = [
 ] as const;
 
 const MOBILE_DEVICE_BRIDGE_ARCHIVE = '/midterm-mobile-device-bridge.zip';
+const MOBILE_DEVICE_BRIDGE_STORE =
+  'https://chromewebstore.google.com/detail/mipkpmmedaoighaadeedfedimiaaekcn';
+
+function openMobileDeviceBridgeStore(): void {
+  window.open(MOBILE_DEVICE_BRIDGE_STORE, '_blank', 'noopener,noreferrer');
+}
 
 function downloadMobileDeviceBridge(): void {
   const link = document.createElement('a');
@@ -40,7 +46,7 @@ function updateControls(): void {
       ? open
         ? 'Focus Pixel 8 Chrome device'
         : 'Open Pixel 8 Chrome device'
-      : 'Download Chrome device bridge';
+      : 'Install Chrome device bridge';
     deviceButton.title = label;
     deviceButton.setAttribute('aria-label', label);
   }
@@ -85,7 +91,7 @@ export function initMobileDeviceUi(options: MobileDeviceUiOptions): void {
     if (isMobileDeviceConnected()) {
       void runAction('open', options);
     } else {
-      downloadMobileDeviceBridge();
+      openMobileDeviceBridgeStore();
     }
   });
   wireMenuAction('web-preview-device-rotate', () => 'rotate', options);

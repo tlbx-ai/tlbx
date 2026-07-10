@@ -65,14 +65,20 @@ describe('mobile device bridge wiring', () => {
     expect(worker).toContain("type: 'normal'");
   });
 
-  it('embeds the bridge archive and downloads it directly from the visible device control', () => {
+  it('opens the Web Store from the visible control and retains the embedded archive fallback', () => {
     expect(projectFile).toContain('<EmbeddedResource Include="wwwroot\\**\\*.zip" />');
     expect(frontendBuild).toContain('Compress-Archive -Path');
     expect(frontendBuild).toContain('midterm-mobile-device-bridge.zip');
     expect(indexHtml).toContain('class="mobile-device-download-icon"');
     expect(indexHtml).toContain('data-bridge-connected="false"');
+    expect(indexHtml).toContain('aria-label="Install Chrome device bridge"');
     expect(deviceUi).toContain("const MOBILE_DEVICE_BRIDGE_ARCHIVE = '/midterm-mobile-device-bridge.zip';");
+    expect(deviceUi).toContain(
+      "'https://chromewebstore.google.com/detail/mipkpmmedaoighaadeedfedimiaaekcn'",
+    );
+    expect(deviceUi).toContain("window.open(MOBILE_DEVICE_BRIDGE_STORE, '_blank', 'noopener,noreferrer');");
     expect(deviceUi).toContain('if (isMobileDeviceConnected())');
+    expect(deviceUi).toContain('openMobileDeviceBridgeStore();');
     expect(deviceUi).toContain('downloadMobileDeviceBridge();');
   });
 });

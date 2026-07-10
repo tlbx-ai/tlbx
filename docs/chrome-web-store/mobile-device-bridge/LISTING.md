@@ -3,6 +3,8 @@
 ## Store listing
 
 - **Name:** MidTerm Mobile Device Bridge
+- **Extension ID:** `mipkpmmedaoighaadeedfedimiaaekcn`
+- **Store URL:** https://chromewebstore.google.com/detail/mipkpmmedaoighaadeedfedimiaaekcn
 - **Summary:** Open remote MidTerm previews in a local Pixel 8 Chrome device with touch, rotation, lifecycle, keyboard, and screenshots.
 - **Category:** Developer Tools
 - **Language:** English

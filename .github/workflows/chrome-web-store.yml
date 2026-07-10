@@ -12,6 +12,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    env:
+      CWS_EXTENSION_ID: mipkpmmedaoighaadeedfedimiaaekcn
     steps:
       - uses: actions/checkout@v5
 
@@ -52,7 +54,6 @@ jobs:
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
         run: |
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
@@ -68,7 +69,6 @@ jobs:
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
         run: |
           for attempt in {1..30}; do
             curl --fail-with-body --silent --show-error \
@@ -90,7 +90,6 @@ jobs:
         env:
           ACCESS_TOKEN: ${{ steps.auth.outputs.access_token }}
           CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
-          CWS_EXTENSION_ID: ${{ secrets.CWS_EXTENSION_ID }}
         run: |
           curl --fail-with-body --silent --show-error \
             -H "Authorization: Bearer $ACCESS_TOKEN" \
