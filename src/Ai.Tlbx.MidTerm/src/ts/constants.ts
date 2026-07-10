@@ -30,7 +30,7 @@ export const ASSET_VERSION: string =
 export const MUX_HEADER_SIZE = 9;
 
 /** Mux protocol version - increment when making breaking protocol changes */
-export const MUX_PROTOCOL_VERSION = 1;
+export const MUX_PROTOCOL_VERSION = 2;
 
 /** Minimum compatible protocol version */
 export const MUX_MIN_COMPATIBLE_VERSION = 1;
@@ -51,6 +51,8 @@ export const MUX_TYPE_SYNC_COMPLETE = 0x0d; // Server -> Client: Initial buffer 
 export const MUX_TYPE_VISIBLE_SESSIONS_HINT = 0x0e; // Client -> Server: Visible terminal sessions
 export const MUX_TYPE_INPUT_TRACE_MARKER = 0x0f; // Client -> Server: Sample next input for latency trace
 export const MUX_TYPE_INPUT_TRACE_RESULT = 0x10; // Server -> Client: Sampled input latency trace result
+export const MUX_TYPE_RECOVERY_BEGIN = 0x11; // Server -> Client: Per-session recovery transaction starts
+export const MUX_TYPE_RECOVERY_END = 0x12; // Server -> Client: Per-session recovery transaction commits
 
 // Custom WebSocket close codes (4000-4999 range)
 export const WS_CLOSE_AUTH_FAILED = 4401;

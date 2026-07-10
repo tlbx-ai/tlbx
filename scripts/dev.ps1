@@ -336,13 +336,6 @@ function Invoke-DevLoopCleanup {
     }
 }
 
-$cancelHandler = [ConsoleCancelEventHandler]{
-    param($sender, $eventArgs)
-    Invoke-DevLoopCleanup
-    $eventArgs.Cancel = $false
-}
-[Console]::add_CancelKeyPress($cancelHandler)
-
 if ($ReservedPorts -contains $Port) {
     throw "Port $Port conflicts with the installed MidTerm service or its preview origin. Use 2100 or another non-reserved port."
 }
@@ -389,6 +382,5 @@ try {
     }
 }
 finally {
-    [Console]::remove_CancelKeyPress($cancelHandler)
     Invoke-DevLoopCleanup
 }

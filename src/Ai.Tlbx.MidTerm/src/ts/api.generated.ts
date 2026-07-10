@@ -4650,6 +4650,18 @@ export interface components {
       /** Format: int32 */
       dataLossCount: number;
       lastDataLossReason: null | string;
+      /** Format: int64 */
+      recoveryRequested: number;
+      /** Format: int64 */
+      recoveryCoalesced: number;
+      /** Format: int64 */
+      recoveryCompleted: number;
+      /** Format: int64 */
+      recoveryResets: number;
+      /** Format: int64 */
+      recoveryReplayBytes: number;
+      /** Format: int64 */
+      recoveryFailed: number;
     };
     /** @enum {unknown} */
     ThemeSetting: 'dark' | 'light' | 'solarizedDark' | 'solarizedLight';

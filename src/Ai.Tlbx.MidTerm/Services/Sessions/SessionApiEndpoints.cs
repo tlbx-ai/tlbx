@@ -69,7 +69,8 @@ public static partial class SessionApiEndpoints
         ProviderResumeCatalogService providerResumeCatalog,
         SessionAgentVibeService agentVibe,
         AiCliProfileService aiCliProfileService,
-        WorkerSessionRegistryService workerSessionRegistry)
+        WorkerSessionRegistryService workerSessionRegistry,
+        TtyHostMuxConnectionManager muxManager)
     {
         app.MapGet("/api/state", () =>
         {
@@ -421,7 +422,7 @@ public static partial class SessionApiEndpoints
             {
                 Session = GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id),
                 Previews = webPreviewService.ListPreviewSessions(id).Previews.ToArray(),
-                TerminalTransport = BuildTerminalTransportDiagnostics(sessionManager, id)
+                TerminalTransport = BuildTerminalTransportDiagnostics(sessionManager, muxManager, id)
             };
 
             if (includeBuffer)
@@ -1410,11 +1411,13 @@ public static partial class SessionApiEndpoints
 
     private static TerminalTransportDiagnosticsDto BuildTerminalTransportDiagnostics(
         TtyHostSessionManager sessionManager,
+        TtyHostMuxConnectionManager muxManager,
         string sessionId)
     {
         var session = sessionManager.GetSession(sessionId);
         var transport = session?.Transport;
         var runtime = sessionManager.GetTransportRuntimeSnapshot(sessionId);
+        var recovery = muxManager.GetRecoveryTelemetry(sessionId);
 
         return new TerminalTransportDiagnosticsDto
         {
@@ -1430,7 +1433,13 @@ public static partial class SessionApiEndpoints
             LastReplayReason = (runtime.LastReplayReason ?? transport?.LastReplayReason)?.ToString(),
             ReconnectCount = runtime.ReconnectCount,
             DataLossCount = Math.Max(transport?.DataLossCount ?? 0, runtime.DataLossCount),
-            LastDataLossReason = (runtime.LastDataLossReason ?? transport?.LastDataLossReason)?.ToString()
+            LastDataLossReason = (runtime.LastDataLossReason ?? transport?.LastDataLossReason)?.ToString(),
+            RecoveryRequested = recovery.Requested,
+            RecoveryCoalesced = recovery.Coalesced,
+            RecoveryCompleted = recovery.Completed,
+            RecoveryResets = recovery.Resets,
+            RecoveryReplayBytes = recovery.ReplayBytes,
+            RecoveryFailed = recovery.Failed
         };
     }
 

@@ -68,3 +68,30 @@ Observed aggregate:
 - created sessions cleaned up: `3/3` in every run
 
 This is a smoke baseline, not a proof that leaks cannot exist. Treat regressions in heap, DOM node count, listener count, p95 switch latency, or long-task count as candidates for focused trace/CPU-profile inspection.
+
+## Mux Lifecycle And Recovery Scenario
+
+`midterm-background-live-output-smoke.js` keeps a real terminal live while output is
+produced, runs twelve mobile/PWA hide-show-resume-focus cycles, and fails if any lifecycle
+event emits a buffer request without data-loss evidence. The Chrome profiler then measures
+retained heap, DOM/listener growth, long tasks, CPU, and frame pacing after the session is
+deleted. Pair it with `-FreezeSeconds` to include a real Chrome background/restore boundary:
+
+```powershell
+pwsh -File "$env:USERPROFILE\.codex\skills\chrome-perf\scripts\Invoke-ChromePerfProfile.ps1" `
+  -Url https://127.0.0.1:2100/ `
+  -Scenario script `
+  -ActionScriptPath Q:\repos\MidTerm\scripts\perf\midterm-background-live-output-smoke.js `
+  -DurationSeconds 3 `
+  -FreezeSeconds 2 `
+  -CookieHeader $cookie `
+  -IgnoreCertificateErrors `
+  -MaxHeapGrowthMB 30 `
+  -MaxDomNodeGrowth 1000
+```
+
+Protocol unit tests provide deterministic forward-gap injection and verify one in-flight
+request, session-local queue invalidation, ordered recovery begin/end, and replay completion.
+The browser profile complements those tests with the long-running mobile lifecycle and
+cleanup surface that is most likely to expose retained timers, maps, listeners, or repaint
+loops.

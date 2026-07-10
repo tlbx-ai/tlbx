@@ -116,7 +116,7 @@ dotnet test src/Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj
 dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj
 
 # AOT publish (platform-specific)
-src/Ai.Tlbx.MidTerm/build-aot.cmd        # Windows
+pwsh -File src/Ai.Tlbx.MidTerm/build-aot.ps1 # Windows
 ./src/Ai.Tlbx.MidTerm/build-aot-linux.sh # Linux
 ./src/Ai.Tlbx.MidTerm/build-aot-macos.sh # macOS
 ```

@@ -63,6 +63,7 @@ public sealed class TtyHostClient : IAsyncDisposable
     private int _consecutiveRequestTimeouts;
     private int _consecutiveReadTimeouts;
     private DateTime _lastDataReceived = DateTime.UtcNow;
+    private ulong _lastOutputSequenceEndExclusive;
 
     private TaskCompletionSource<(TtyHostMessageType type, byte[] payload)>? _pendingResponse;
 
@@ -547,7 +548,10 @@ public sealed class TtyHostClient : IAsyncDisposable
         var request = TtyHostProtocol.CreateAttachRequest(new TtyHostAttachRequest
         {
             InstanceId = _instanceId!,
-            OwnerToken = _ownerToken!
+            OwnerToken = _ownerToken!,
+            LastReceivedSequence = _lastOutputSequenceEndExclusive == 0
+                ? null
+                : _lastOutputSequenceEndExclusive
         });
 
         if (_readTask is not null)
@@ -739,7 +743,35 @@ public sealed class TtyHostClient : IAsyncDisposable
                 {
                     var sequenceStart = TtyHostProtocol.ParseOutputSequenceStart(payload.Span);
                     var (cols, rows) = TtyHostProtocol.ParseOutputDimensions(payload.Span);
-                    OnOutput?.Invoke(_sessionId, sequenceStart, cols, rows, payload.Slice(12));
+                    var output = payload.Slice(12);
+                    if (_lastOutputSequenceEndExclusive != 0)
+                    {
+                        if (sequenceStart > _lastOutputSequenceEndExclusive)
+                        {
+                            var missingBytes = sequenceStart - _lastOutputSequenceEndExclusive;
+                            OnDataLoss?.Invoke(_sessionId, new TtyHostDataLossPayload
+                            {
+                                Reason = TerminalReplayReason.IpcSequenceGap,
+                                DroppedBytes = (int)Math.Min(int.MaxValue, missingBytes),
+                                MissingSequenceStart = _lastOutputSequenceEndExclusive,
+                                MissingSequenceEndExclusive = sequenceStart
+                            });
+                        }
+                        else if (sequenceStart < _lastOutputSequenceEndExclusive)
+                        {
+                            var overlap = _lastOutputSequenceEndExclusive - sequenceStart;
+                            if (overlap >= (ulong)output.Length)
+                            {
+                                break;
+                            }
+
+                            output = output.Slice((int)overlap);
+                            sequenceStart = _lastOutputSequenceEndExclusive;
+                        }
+                    }
+
+                    _lastOutputSequenceEndExclusive = sequenceStart + (ulong)output.Length;
+                    OnOutput?.Invoke(_sessionId, sequenceStart, cols, rows, output);
                 }
                 catch (Exception ex)
                 {

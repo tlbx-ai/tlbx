@@ -24,6 +24,7 @@ import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } 
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
 import {
   isBracketedPasteEnabled,
+  forgetMuxSession,
   reconcileSynchronizedOutputCursor,
   requestBufferRefresh,
   sendCommand,
@@ -720,7 +721,6 @@ function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
       }
 
       detachWebglAddon(sessionId, state);
-      requestBufferRefresh(sessionId);
 
       const recentLosses = recordWebglContextLoss(sessionId);
       const delayMs =
@@ -1473,8 +1473,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   state.terminal.dispose();
   state.container.remove();
   sessionTerminals.delete(sessionId);
-  pendingOutputFrames.delete(sessionId);
-  sessionsNeedingResync.delete(sessionId);
+  forgetMuxSession(sessionId);
 }
 
 // WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin

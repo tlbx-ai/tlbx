@@ -143,6 +143,6 @@ describe('mobile responsive chrome wiring', () => {
     expect(browserLifecycleRecoverySource).toContain("window.addEventListener('pagehide'");
     expect(browserLifecycleRecoverySource).toContain("window.addEventListener('pageshow'");
     expect(browserLifecycleRecoverySource).toContain("document.addEventListener('resume'");
-    expect(browserLifecycleRecoverySource).toContain('quickRefresh: boolean');
+    expect(browserLifecycleRecoverySource).not.toContain('requestBufferRefresh');
   });
 });

@@ -159,7 +159,7 @@ public sealed class CircularByteBuffer : IDisposable
     public bool TryCopySince(ulong position, Span<byte> destination, out int bytesCopied)
     {
         var availableStart = TailPosition;
-        if (position < availableStart)
+        if (position < availableStart || position > _totalBytesWritten)
         {
             bytesCopied = 0;
             return false;

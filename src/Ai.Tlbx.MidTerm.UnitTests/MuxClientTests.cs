@@ -1,4 +1,3 @@
-using System.Buffers.Binary;
 using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -61,7 +60,7 @@ public sealed class MuxClientTests
     }
 
     [Fact]
-    public async Task DegradedHiddenSessionDrop_SurfacesDataLossWhenDeliveryResumes()
+    public async Task DegradedHiddenSession_PausesAtDeliveredCursorUntilRecoveryCompletes()
     {
         using var socket = new RecordingWebSocket();
         await using var client = new MuxClient(
@@ -74,22 +73,126 @@ public sealed class MuxClientTests
         client.MarkTransportDegradedForTests();
 
         Assert.False(client.QueueOutput("hidden01", 4, 120, 30, RentOutput("lost")));
+        Assert.True(client.TryGetPausedSession("hidden01", out var paused));
+        Assert.Equal(0UL, paused.ResumeSequence);
+        Assert.Equal(4UL, paused.SourceSequenceEndExclusive);
 
         client.SetVisibleSessions(new HashSet<string>(StringComparer.Ordinal) { "visible1", "hidden01" });
-        Assert.True(client.QueueOutput("hidden01", 9, 120, 30, RentOutput("after")));
+        Assert.False(client.QueueOutput("hidden01", 9, 120, 30, RentOutput("after")));
 
-        await WaitForAsync(() => socket.SentFrames.Count >= 2);
+        Assert.True(await client.ExecuteRecoveryAsync(
+            "hidden01",
+            static (_, _) => Task.FromResult(new MuxClient.RecoveryResult(true, 9, 9, true)),
+            CancellationToken.None));
+        Assert.False(client.TryGetPausedSession("hidden01", out _));
+
+        Assert.True(client.QueueOutput("hidden01", 14, 120, 30, RentOutput("fresh")));
+        await WaitForAsync(() => socket.SentFrames.Count >= 1);
         await Task.Delay(30);
 
-        Assert.True(MuxProtocol.TryParseFrame(socket.SentFrames[0], out var lossType, out var lossSessionId, out var lossPayload));
-        Assert.Equal(MuxProtocol.TypeDataLoss, lossType);
-        Assert.Equal("hidden01", lossSessionId);
-        Assert.Equal(4, BinaryPrimitives.ReadInt32LittleEndian(lossPayload.Slice(1, 4)));
-
-        Assert.True(MuxProtocol.TryParseFrame(socket.SentFrames[1], out var outputType, out var outputSessionId, out var outputPayload));
+        var frame = Assert.Single(socket.SentFrames);
+        Assert.True(MuxProtocol.TryParseFrame(frame, out var outputType, out var outputSessionId, out var outputPayload));
         Assert.Equal(MuxProtocol.TypeTerminalOutput, outputType);
         Assert.Equal("hidden01", outputSessionId);
-        Assert.Equal("after", Encoding.UTF8.GetString(MuxProtocol.GetOutputData(outputPayload)));
+        Assert.Equal("fresh", Encoding.UTF8.GetString(MuxProtocol.GetOutputData(outputPayload)));
+    }
+
+    [Fact]
+    public async Task Recovery_HoldsLiveOutputAndCoalescesConcurrentRequests()
+    {
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+        const string sessionId = "session1";
+        client.SetActiveSession(sessionId);
+
+        var recoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var recovery = client.ExecuteRecoveryAsync(
+            sessionId,
+            async (_, ct) =>
+            {
+                recoveryStarted.TrySetResult();
+                await releaseRecovery.Task.WaitAsync(ct);
+                return new MuxClient.RecoveryResult(true, 0, 0, false);
+            },
+            CancellationToken.None);
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        Assert.True(client.QueueOutput(sessionId, 4, 120, 30, RentOutput("live")));
+        Assert.False(await client.ExecuteRecoveryAsync(
+            sessionId,
+            static (_, _) => Task.FromResult(new MuxClient.RecoveryResult(true, 0, 0, false)),
+            CancellationToken.None));
+        await Task.Delay(30);
+        Assert.Empty(socket.SentFrames);
+
+        releaseRecovery.TrySetResult();
+        Assert.True(await recovery);
+        await WaitForAsync(() => socket.SentFrames.Count == 1);
+
+        var telemetry = client.GetRecoveryTelemetry(sessionId);
+        Assert.Equal(2, telemetry.Requested);
+        Assert.Equal(1, telemetry.Coalesced);
+        Assert.Equal(1, telemetry.Completed);
+        Assert.Equal(0, telemetry.Failed);
+
+        client.RemoveSession(sessionId);
+        await WaitForAsync(() => client.GetRecoveryTelemetry(sessionId).Requested == 0);
+    }
+
+    [Fact]
+    public async Task Recovery_DefersNewDataLossUntilAfterTransactionEnd()
+    {
+        using var socket = new RecordingWebSocket();
+        await using var client = new MuxClient(
+            "client-1",
+            socket,
+            () => TerminalResumeModeSetting.FullReplay);
+        const string sessionId = "session1";
+        var recoveryStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseRecovery = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var recovery = client.ExecuteRecoveryAsync(
+            sessionId,
+            async (generation, ct) =>
+            {
+                Assert.True(await client.TrySendAsync(MuxProtocol.CreateRecoveryBeginFrame(
+                    sessionId,
+                    generation,
+                    false,
+                    TerminalReplayReason.QuickResumeTailReplay,
+                    0,
+                    10)));
+                recoveryStarted.TrySetResult();
+                await releaseRecovery.Task.WaitAsync(ct);
+                Assert.True(await client.TrySendAsync(MuxProtocol.CreateRecoveryEndFrame(sessionId, generation, 10, 10)));
+                return new MuxClient.RecoveryResult(true, 10, 10, false);
+            },
+            CancellationToken.None);
+        await recoveryStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        client.NotifyDataLoss(
+            sessionId,
+            TerminalReplayReason.MuxOverflow,
+            2,
+            missingSequenceStart: 10,
+            missingSequenceEndExclusive: 12);
+        await Task.Delay(30);
+        Assert.Single(socket.SentFrames);
+
+        releaseRecovery.TrySetResult();
+        Assert.True(await recovery);
+        await WaitForAsync(() => socket.SentFrames.Count == 3);
+
+        var frameTypes = socket.SentFrames.Select(static frame => frame[0]).ToArray();
+        Assert.Equal(
+            new[] { MuxProtocol.TypeRecoveryBegin, MuxProtocol.TypeRecoveryEnd, MuxProtocol.TypeDataLoss },
+            frameTypes);
+        Assert.True(client.TryGetPausedSession(sessionId, out var paused));
+        Assert.Equal(12UL, paused.SourceSequenceEndExclusive);
     }
 
     [Fact]
@@ -196,45 +299,6 @@ public sealed class MuxClientTests
             configuredScrollbackBytes: 2 * 1024 * 1024);
 
         Assert.Equal(MuxWebSocketHandler.ResolveViewportReplayBytes(session, replayRows: 40), maxBytes);
-    }
-
-    [Fact]
-    public void ShouldSendResyncForBufferRequest_AlwaysResyncsFullReplay()
-    {
-        var snapshot = new TtyHostBufferSnapshot
-        {
-            SequenceStart = 100,
-            Data = [1, 2, 3]
-        };
-
-        Assert.True(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
-            quickResume: false,
-            sinceSequence: null,
-            snapshot));
-    }
-
-    [Fact]
-    public void ShouldSendResyncForBufferRequest_OnlyResyncsQuickResumeOnCursorMismatch()
-    {
-        var matchingSnapshot = new TtyHostBufferSnapshot
-        {
-            SequenceStart = 100,
-            Data = [1, 2, 3]
-        };
-        var mismatchedSnapshot = new TtyHostBufferSnapshot
-        {
-            SequenceStart = 90,
-            Data = [1, 2, 3]
-        };
-
-        Assert.False(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
-            quickResume: true,
-            sinceSequence: 100,
-            matchingSnapshot));
-        Assert.True(MuxWebSocketHandler.ShouldSendResyncForBufferRequest(
-            quickResume: true,
-            sinceSequence: 100,
-            mismatchedSnapshot));
     }
 
     [Fact]

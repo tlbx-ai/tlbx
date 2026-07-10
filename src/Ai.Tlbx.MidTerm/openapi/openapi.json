@@ -6882,7 +6882,13 @@
           "lastReplayReason",
           "reconnectCount",
           "dataLossCount",
-          "lastDataLossReason"
+          "lastDataLossReason",
+          "recoveryRequested",
+          "recoveryCoalesced",
+          "recoveryCompleted",
+          "recoveryResets",
+          "recoveryReplayBytes",
+          "recoveryFailed"
         ],
         "type": "object",
         "properties": {
@@ -6937,6 +6943,30 @@
               "null",
               "string"
             ]
+          },
+          "recoveryRequested": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryCoalesced": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryCompleted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryResets": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryReplayBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryFailed": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

@@ -14,6 +14,16 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 /// </summary>
 public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 {
+    private sealed class ArchivedRecoveryCounters
+    {
+        public long Requested;
+        public long Coalesced;
+        public long Completed;
+        public long Resets;
+        public long ReplayBytes;
+        public long Failed;
+    }
+
     private readonly record struct PooledOutputItem(
         string SessionId,
         ulong SequenceEndExclusive,
@@ -61,6 +71,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private readonly ConcurrentDictionary<string, int> _lastServerRttMs = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<(string ClientId, string SessionId), InputLatencyTrace> _inputTraceMarkers = new();
     private readonly ConcurrentDictionary<(string SessionId, uint TraceId), InputLatencyTrace> _activeInputTraces = new();
+    private readonly ConcurrentDictionary<string, ArchivedRecoveryCounters> _archivedRecoveryCounters = new(StringComparer.Ordinal);
     private const int MaxInputLatencyTraces = 256;
     private const long InputLatencyTraceTimeoutMs = 10_000;
     private const int MaxQueuedOutputs = 1000;
@@ -75,6 +86,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
     private readonly Action<string> _sessionClosedHandler;
     private readonly Action<string, ForegroundChangePayload> _foregroundChangedHandler;
     private readonly Action<string, TtyHostInputTraceReport> _inputTraceHandler;
+    private readonly Action<string, TtyHostDataLossPayload> _dataLossHandler;
     private readonly string _settingsListenerId;
     private TerminalResumeModeSetting _resumeMode;
     private bool _disposed;
@@ -89,10 +101,12 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         _sessionClosedHandler = HandleSessionClosed;
         _foregroundChangedHandler = HandleForegroundChanged;
         _inputTraceHandler = HandleInputTrace;
+        _dataLossHandler = HandleDataLoss;
         _sessionManager.OnOutput += _outputHandler;
         _sessionManager.OnSessionClosed += _sessionClosedHandler;
         _sessionManager.OnForegroundChanged += _foregroundChangedHandler;
         _sessionManager.OnInputTrace += _inputTraceHandler;
+        _sessionManager.OnDataLoss += _dataLossHandler;
 
         _cts = new CancellationTokenSource();
         _outputProcessor = ProcessOutputQueueAsync(_cts.Token);
@@ -103,6 +117,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         _inputTimestamps.TryRemove(sessionId, out _);
         _lastServerRttMs.TryRemove(sessionId, out _);
         RemoveInputTracesForSession(sessionId);
+        _archivedRecoveryCounters.TryRemove(sessionId, out _);
         MuxProtocol.ClearSessionCache(sessionId);
 
         foreach (var client in _clients.Values)
@@ -134,7 +149,12 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             {
                 if (client.WebSocket.State == WebSocketState.Open)
                 {
-                    client.QueueFrame(MuxProtocol.CreateDataLossFrame(sessionId, data.Length, TerminalReplayReason.MuxOverflow), sessionId);
+                    client.NotifyDataLoss(
+                        sessionId,
+                        TerminalReplayReason.MuxOverflow,
+                        data.Length,
+                        sequenceStart,
+                        sequenceEndExclusive);
                 }
             }
             shared.Release();
@@ -146,6 +166,22 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             lock (trace.Gate)
             {
                 trace.MuxQueueEnqueuedAtMs = Environment.TickCount64;
+            }
+        }
+    }
+
+    private void HandleDataLoss(string sessionId, TtyHostDataLossPayload payload)
+    {
+        foreach (var client in _clients.Values)
+        {
+            if (client.WebSocket.State == WebSocketState.Open)
+            {
+                client.NotifyDataLoss(
+                    sessionId,
+                    payload.Reason,
+                    payload.DroppedBytes,
+                    payload.MissingSequenceStart,
+                    payload.MissingSequenceEndExclusive);
             }
         }
     }
@@ -254,7 +290,61 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         if (_clients.TryRemove(clientId, out var client))
         {
             RemoveInputTracesForClient(clientId);
+            ArchiveRecoveryTelemetry(client);
             await client.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    internal MuxClient.RecoveryTelemetrySnapshot GetRecoveryTelemetry(string sessionId)
+    {
+        long requested = 0;
+        long coalesced = 0;
+        long completed = 0;
+        long resets = 0;
+        long replayBytes = 0;
+        long failed = 0;
+
+        if (_archivedRecoveryCounters.TryGetValue(sessionId, out var archived))
+        {
+            requested += Interlocked.Read(ref archived.Requested);
+            coalesced += Interlocked.Read(ref archived.Coalesced);
+            completed += Interlocked.Read(ref archived.Completed);
+            resets += Interlocked.Read(ref archived.Resets);
+            replayBytes += Interlocked.Read(ref archived.ReplayBytes);
+            failed += Interlocked.Read(ref archived.Failed);
+        }
+
+        foreach (var client in _clients.Values)
+        {
+            var current = client.GetRecoveryTelemetry(sessionId);
+            requested += current.Requested;
+            coalesced += current.Coalesced;
+            completed += current.Completed;
+            resets += current.Resets;
+            replayBytes += current.ReplayBytes;
+            failed += current.Failed;
+        }
+
+        return new MuxClient.RecoveryTelemetrySnapshot(
+            requested,
+            coalesced,
+            completed,
+            resets,
+            replayBytes,
+            failed);
+    }
+
+    private void ArchiveRecoveryTelemetry(MuxClient client)
+    {
+        foreach (var (sessionId, snapshot) in client.GetAllRecoveryTelemetry())
+        {
+            var archived = _archivedRecoveryCounters.GetOrAdd(sessionId, static _ => new ArchivedRecoveryCounters());
+            Interlocked.Add(ref archived.Requested, snapshot.Requested);
+            Interlocked.Add(ref archived.Coalesced, snapshot.Coalesced);
+            Interlocked.Add(ref archived.Completed, snapshot.Completed);
+            Interlocked.Add(ref archived.Resets, snapshot.Resets);
+            Interlocked.Add(ref archived.ReplayBytes, snapshot.ReplayBytes);
+            Interlocked.Add(ref archived.Failed, snapshot.Failed);
         }
     }
 
@@ -618,6 +708,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         {
             try
             {
+                ArchiveRecoveryTelemetry(client);
                 await client.DisposeAsync().ConfigureAwait(false);
             }
             catch
@@ -629,8 +720,10 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         _sessionManager.OnSessionClosed -= _sessionClosedHandler;
         _sessionManager.OnForegroundChanged -= _foregroundChangedHandler;
         _sessionManager.OnInputTrace -= _inputTraceHandler;
+        _sessionManager.OnDataLoss -= _dataLossHandler;
         _inputTraceMarkers.Clear();
         _activeInputTraces.Clear();
+        _archivedRecoveryCounters.Clear();
         _settingsService.RemoveSettingsListener(_settingsListenerId);
     }
 

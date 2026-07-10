@@ -23,6 +23,16 @@ describe('WebGL context ownership wiring', () => {
     );
   });
 
+  it('repairs only the renderer after context loss without replaying terminal transport', () => {
+    const contextLossHandler = managerSource.match(
+      /webglAddon\.onContextLoss\(\(\) => \{([\s\S]*?)\n    \}\);\n    state\.terminal\.loadAddon/,
+    );
+
+    expect(contextLossHandler).not.toBeNull();
+    expect(contextLossHandler?.[1]).toContain('scheduleWebglReattach(sessionId, state, delayMs)');
+    expect(contextLossHandler?.[1]).not.toContain('requestBufferRefresh');
+  });
+
   it('re-attempts WebGL attach on foreground recovery after an earlier loss', () => {
     expect(managerSource).toContain(
       '// A context lost while backgrounded (or denied at open) must come back as',

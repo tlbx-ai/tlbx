@@ -384,7 +384,8 @@ public class Program
             providerResumeCatalog,
             agentVibe,
             aiCliProfileService,
-            workerSessionRegistry);
+            workerSessionRegistry,
+            muxManager);
         SpaceEndpoints.MapSpaceEndpoints(
             app,
             spaceService,

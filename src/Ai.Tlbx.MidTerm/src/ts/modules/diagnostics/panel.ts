@@ -260,7 +260,11 @@ function setLiveTransportDiagnostics(
 ): void {
   const backlog = `${transport.ipcBacklogFrames}f, ${transport.ipcBacklogBytes}b, age ${transport.oldestBacklogAgeMs}ms`;
   const replayReason = transport.lastReplayReason ?? 'none';
-  const replay = `${transport.lastReplayBytes}b (${replayReason})`;
+  const browserRecovery = browser
+    ? `browser ${browser.recoveryCompleted}/${browser.recoveryRequested}, coalesced ${browser.recoveryCoalesced}, gaps ${browser.recoveryGapCount}, ${browser.recoveryReplayBytes}b, cause ${browser.lastRecoveryCause ?? 'server'}`
+    : 'browser -';
+  const serverRecovery = `server ${transport.recoveryCompleted}/${transport.recoveryRequested}, coalesced ${transport.recoveryCoalesced}, reset ${transport.recoveryResets}, failed ${transport.recoveryFailed}, ${transport.recoveryReplayBytes}b`;
+  const replay = `${transport.lastReplayBytes}b (${replayReason}); ${serverRecovery}; ${browserRecovery}`;
   const lossReason = browser?.lastDataLossReason ?? transport.lastDataLossReason ?? 'none';
   const lossCount = Math.max(browser?.dataLossCount ?? 0, transport.dataLossCount);
 
@@ -276,7 +280,9 @@ function setBrowserOnlyTransportDiagnostics(
   setDiagValue('diag-ipc-backlog', '-');
   setDiagValue(
     'diag-last-replay',
-    browser?.lastReplayReason ? `browser (${browser.lastReplayReason})` : '-',
+    browser?.lastReplayReason
+      ? `${browser.lastReplayBytes}b (${browser.lastReplayReason}); recovery ${browser.recoveryCompleted}/${browser.recoveryRequested}, coalesced ${browser.recoveryCoalesced}, gaps ${browser.recoveryGapCount}, ${browser.recoveryReplayBytes}b`
+      : '-',
   );
   setDiagValue('diag-reconnect-count', '-');
   setDiagValue(

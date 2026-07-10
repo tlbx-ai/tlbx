@@ -109,11 +109,50 @@ Relevant frame families include:
 - output
 - input
 - resize
-- resync
+- legacy resync (protocol v1 compatibility only)
 - compressed background output
 - active-session hint
 - foreground-process change
 - data-loss notification
+- recovery begin/end (protocol v2 per-session transaction boundaries)
+
+### Terminal Recovery Contract
+
+Terminal recovery is cursor-based and session-local. It is not a general repaint mechanism.
+The source cursor counts PTY output bytes and is carried across all three transport boundaries:
+`mthost` scrollback, `mt` mux delivery, and the browser's received/rendered cursors.
+
+The invariants are:
+
+1. A frame is written to xterm only when its byte range is contiguous with the browser cursor. Duplicate prefixes may be trimmed at a UTF-8/terminal-parser-safe boundary; a forward gap is never rendered.
+2. A data-loss or forward-gap signal starts at most one recovery per session. Later requests coalesce into that transaction instead of creating timer-driven replay storms.
+3. `RecoveryBegin` invalidates only the named session's async decode/write generation. Other terminals continue rendering and accepting input.
+4. Live output for the recovering session is held on the server until its snapshot and `RecoveryEnd` have been written in order. Buffered live bytes at or before the committed snapshot cursor are discarded as duplicates before flushing resumes.
+5. A terminal reset occurs only when the requested cursor is no longer retained or a caller explicitly requests full replay. Reset repairs potentially partial ANSI, UTF-8, and bracketed-paste parser state; ordinary visibility, focus, page resume, and WebGL context loss are not data-loss evidence and must not request replay.
+6. Intentional hidden-session pacing under a degraded client records a resume cursor. It does not claim data loss. Visibility/active hints cause one cursor recovery when that session becomes streamable again.
+
+`TtyHostClient` includes its last consumed source cursor in the ownership attach request.
+`mthost` replays the retained IPC suffix before enabling live forwarding and emits an
+explicit missing range if that cursor fell outside scrollback. Buffer requests that cannot
+return the complete requested delta return a bounded tail with a different start cursor;
+that mismatch is the authoritative reset decision.
+
+Every mux socket has one `PrioritizedWebSocketWriter`. It is the sole WebSocket write owner,
+uses a bounded 2,048-frame / 8 MiB queue, applies a send timeout, and schedules complete frames in
+this order: control, active live output, visible live output, recovery, background live
+output. Recovery producers await each chunk, so control priority cannot reorder begin/end
+across snapshot bytes. There are no parallel `SendAsync` calls and no unbounded send tasks.
+
+Recovery diagnostics expose requested, coalesced, completed, reset, failed, and replay-byte
+counters on both server and browser sides, plus the last recovery/data-loss cause. Per-session
+queues, counters, parser scan tails, and recovery ownership are released when a terminal is
+destroyed; server-side archived client counters are released when the session closes.
+
+The browser's `receivedSeq` is the resume boundary: it advances only after a frame has been
+validated and handed to xterm. `RecoveryBegin` inserts one empty xterm write as a barrier,
+then resets parser state when required and starts replay. This lets xterm finish bytes it
+already owns without serializing ordinary live writes or replaying its internal WriteBuffer;
+`renderedSeq` remains the user-visible diagnostics boundary reported by xterm callbacks.
 
 ### Foreground Process and Session Metadata
 

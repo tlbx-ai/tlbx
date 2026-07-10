@@ -69,7 +69,8 @@ public class TtyHostProtocolTests
         var requestFrame = TtyHostProtocol.CreateAttachRequest(new TtyHostAttachRequest
         {
             InstanceId = "inst1234abcd5678",
-            OwnerToken = "owner-token"
+            OwnerToken = "owner-token",
+            LastReceivedSequence = 12345
         });
 
         Assert.True(TtyHostProtocol.TryReadHeader(requestFrame, out var requestType, out var requestPayloadLength));
@@ -81,6 +82,7 @@ public class TtyHostProtocolTests
         Assert.NotNull(request);
         Assert.Equal("inst1234abcd5678", request!.InstanceId);
         Assert.Equal("owner-token", request.OwnerToken);
+        Assert.Equal(12345UL, request.LastReceivedSequence);
 
         var ackFrame = TtyHostProtocol.CreateAttachAck(true, "ok");
         Assert.True(TtyHostProtocol.TryReadHeader(ackFrame, out var ackType, out var ackPayloadLength));
@@ -176,7 +178,9 @@ public class TtyHostProtocolTests
         var frame = TtyHostProtocol.CreateDataLoss(new TtyHostDataLossPayload
         {
             Reason = TerminalReplayReason.MthostIpcOverflow,
-            DroppedBytes = 8192
+            DroppedBytes = 8192,
+            MissingSequenceStart = 100,
+            MissingSequenceEndExclusive = 8292
         });
 
         Assert.True(TtyHostProtocol.TryReadHeader(frame, out var type, out var payloadLength));
@@ -186,6 +190,8 @@ public class TtyHostProtocolTests
         Assert.NotNull(payload);
         Assert.Equal(TerminalReplayReason.MthostIpcOverflow, payload!.Reason);
         Assert.Equal(8192, payload.DroppedBytes);
+        Assert.Equal(100UL, payload.MissingSequenceStart);
+        Assert.Equal(8292UL, payload.MissingSequenceEndExclusive);
     }
 
     [Fact]
