@@ -1,7 +1,7 @@
 {
   "name": "@tlbx-ai/midterm",
   "version": "9.18.13-dev",
-  "description": "Ephemeral launcher for MidTerm's self-hosted browser terminal",
+  "description": "Ephemeral loopback launcher for a MidTerm browser workspace",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -29,7 +29,9 @@
     "ai-agents",
     "coding-agents",
     "agent-orchestration",
-    "local-first",
+    "multi-host",
+    "persistent-sessions",
+    "remote-workspace",
     "self-hosted",
     "terminal",
     "remote-terminal",

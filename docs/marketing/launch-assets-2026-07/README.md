@@ -13,9 +13,9 @@ node docs/marketing/ScreenshotAutomation/scripts/export-launch-assets.mjs
 | ------------------------------------------------ | ---------------------------- |
 | `product-hunt-thumbnail-240x240.png`             | Product Hunt thumbnail       |
 | `product-hunt-01-browser-workspace-1270x760.png` | Product Hunt gallery image 1 |
-| `product-hunt-02-live-sessions-1270x760.png`     | Product Hunt gallery image 2 |
+| `product-hunt-02-multiple-hosts-1270x760.png`    | Product Hunt gallery image 2 |
 | `x-01-browser-next-to-work-1600x900.png`         | X/LinkedIn launch image      |
-| `x-02-local-first-anywhere-1600x900.png`         | X/LinkedIn local-first image |
+| `x-02-your-machines-1600x900.png`                | X/LinkedIn multi-host image  |
 
 These PNGs are distribution formats only. The README continues to reference
 SVG assets exclusively.

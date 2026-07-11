@@ -14,8 +14,9 @@ const assets = [
   { name: 'midterm-mark', width: 512, height: 512 },
   { name: 'midterm-wordmark', width: 1600, height: 520 },
   { name: 'browser-next-to-work', width: 1600, height: 720 },
+  { name: 'your-machines-are-tabs', width: 1600, height: 680 },
   { name: 'agent-control-room', width: 1600, height: 900 },
-  { name: 'local-first-anywhere', width: 1600, height: 650 },
+  { name: 'host-session-anywhere', width: 1600, height: 650 },
 ];
 
 await fs.mkdir(outputDir, { recursive: true });

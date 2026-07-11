@@ -22,8 +22,8 @@ const exports = [
     height: 760,
   },
   {
-    source: 'agent-control-room.svg',
-    output: 'product-hunt-02-live-sessions-1270x760.png',
+    source: 'your-machines-are-tabs.svg',
+    output: 'product-hunt-02-multiple-hosts-1270x760.png',
     width: 1270,
     height: 760,
   },
@@ -34,8 +34,8 @@ const exports = [
     height: 900,
   },
   {
-    source: 'local-first-anywhere.svg',
-    output: 'x-02-local-first-anywhere-1600x900.png',
+    source: 'your-machines-are-tabs.svg',
+    output: 'x-02-your-machines-1600x900.png',
     width: 1600,
     height: 900,
   },

@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="MidTerm — persistent local PTYs in any browser" width="100%">
+  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="MidTerm — your machines are browser tabs" width="100%">
 </p>
 
 <p align="center">
   <a href="#install-midterm-recommended"><strong>Install MidTerm</strong></a>
   ·
-  <a href="#system-model"><strong>System model</strong></a>
+  <a href="#not-ssh-in-a-browser"><strong>Mental model</strong></a>
   ·
   <a href="docs/FEATURES.md"><strong>Feature inventory</strong></a>
   ·
@@ -18,14 +18,27 @@
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
 </p>
 
-# Persistent local PTYs in any browser.
+# Your machines are browser tabs.
 
-MidTerm is a self-hosted web interface for the terminal-native tools already on your machine. It multiplexes persistent PTYs, repository state, logs, and localhost previews over HTTPS/WebSocket.
+Install MidTerm on each machine you want to reach. From any browser, open that host's already-running agents, shells, files, Git state, logs, and localhost apps—across the room or across the country.
 
-**The browser is a client, not the runtime.** Disconnect it and the shell, agent, test run, or dev server continues. Reconnect from another browser to the same process state—without making SSH or remote desktop the interface.
+**The work stays on its machine. You don't.** Each MidTerm instance remains independent; your browser moves between them as ordinary tabs. Disconnecting the browser does not terminate the work.
 
 <p align="center">
-  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="A browser client connected to persistent local PTYs, repository state, and a localhost preview" width="100%">
+  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Home workstation and office laptop exposed as adjacent MidTerm browser tabs beside the rest of the user's work" width="100%">
+</p>
+
+## Not SSH in a browser
+
+SSH opens a connection to a shell. MidTerm reopens the machine's living workspace: persistent agents and terminals plus their files, Git state, commands, notes, logs, screenshots, and app previews.
+
+- Run one MidTerm instance on every host you want to reach.
+- Open each independent instance in its own browser tab.
+- Leave, switch networks, or change devices; the host-side sessions continue.
+- Bring your own network path—LAN, VPN, or reverse tunnel—without making it the working interface.
+
+<p align="center">
+  <img src="docs/marketing/readme/your-machines-are-tabs.svg" alt="A browser anywhere connects to independent MidTerm instances on a home workstation, office laptop, and server; each machine keeps its own repositories, agents, and processes" width="100%">
 </p>
 
 ## Install MidTerm (recommended)
@@ -53,18 +66,19 @@ Then open `https://localhost:2000` in your browser.
 
 ## System model
 
-| Property       | MidTerm's boundary                                                                                                 |
-| -------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Execution**  | Real PTYs and child processes run on your machine, against its repositories, credentials, tools, and network       |
-| **Client**     | Any modern browser; disconnecting it does not terminate the process                                                |
-| **Transport**  | HTTPS + WebSocket over loopback, LAN, your VPN, or your reverse tunnel                                             |
-| **State**      | Sessions retain process, working-directory, scrollback, repository, notes, and layout context                      |
-| **Agents**     | Any terminal-native agent; structured runtimes get tool activity, approvals, diffs, model controls, and interrupts |
-| **Validation** | Local app previews, DOM control, console/proxy logs, screenshots, and responsive inspection stay session-scoped    |
+| Property      | MidTerm's boundary                                                                                                    |
+| ------------- | --------------------------------------------------------------------------------------------------------------------- |
+| **Host**      | Each installation exposes one machine and remains operationally independent                                           |
+| **Execution** | Real PTYs and child processes use that host's repositories, credentials, tools, hardware, and network                 |
+| **Client**    | Any authorized browser; multiple MidTerm hosts can sit in adjacent tabs                                               |
+| **Transport** | HTTPS + WebSocket over loopback, LAN, your VPN, or your reverse tunnel                                                |
+| **Lifetime**  | Browser connections are transient; host-side agents, shells, tests, and servers persist                               |
+| **Context**   | Working directory, scrollback, repository state, files, Git, notes, logs, and previews remain attached to the session |
+| **Agents**    | Any terminal-native agent; structured runtimes get tool activity, approvals, diffs, model controls, and interrupts    |
 
-Run Codex, Claude Code, Grok, Gemini CLI, Copilot CLI, Aider, or any other terminal-native tool where it already belongs. MidTerm does not introduce a hosted execution environment.
+Run Codex, Claude Code, Grok, Gemini CLI, Copilot CLI, Aider, or any other terminal-native tool where it already belongs. MidTerm does not move the repository into a hosted execution environment.
 
-Files, Git state, commands, notes, previews, logs, screenshots, and responsive testing remain attached to the session. Multiple agents, shells, test runners, and servers can be split, reordered, bookmarked, and monitored across repositories.
+Within one host, multiple agents, shells, test runners, and servers can be split, reordered, bookmarked, and monitored across repositories.
 
 <p align="center">
   <img src="docs/marketing/readme/agent-control-room.svg" alt="Persistent PTYs, repository state, browser evidence, and the same session across browser clients" width="100%">
@@ -72,17 +86,17 @@ Files, Git state, commands, notes, previews, logs, screenshots, and responsive t
 
 ## Network boundary
 
-Remote access follows the network path that matches your threat model:
+MidTerm is not a VPN, mesh network, or hosted relay. Remote access follows the network path that matches your threat model:
 
 - [Tailscale](https://tailscale.com)
 - Cloudflare Tunnel
 - nginx, Caddy, or another HTTPS reverse proxy
 - loopback or LAN
 
-The service provides password authentication, local HTTPS and certificate-trust helpers, API keys, and scoped share links. SSH remains available _inside_ a MidTerm terminal when the target system requires it; it is not required as MidTerm's client protocol.
+Each instance provides password authentication, local HTTPS and certificate-trust helpers, API keys, and scoped share links. SSH remains available _inside_ a MidTerm terminal when the target system requires it; it is not the interface used to reach MidTerm itself.
 
 <p align="center">
-  <img src="docs/marketing/readme/local-first-anywhere.svg" alt="Repositories, credentials, tools, terminals and local servers stay on the MidTerm machine while the same sessions open in desktop and mobile browsers without SSH" width="100%">
+  <img src="docs/marketing/readme/host-session-anywhere.svg" alt="A MidTerm session remains on its host while browsers at a desk, on a laptop, and on a phone reconnect to it from different locations" width="100%">
 </p>
 
 > [!IMPORTANT]
@@ -128,14 +142,13 @@ The uninstallers remove only known MidTerm-owned locations and request elevation
 ## Architecture
 
 ```text
-browser on desktop · tablet · phone
-                 │ HTTPS / WebSocket
-                 ▼
-            mt web server
-              ├── mthost ─────── real shell / PTY / any CLI agent
-              ├── mtagenthost ── structured agent runtimes
-              ├── Dev Browser ── preview / DOM / logs / screenshots
-              └── Files / Git / Commands / API / diagnostics
+browser anywhere
+   ├── HTTPS / WebSocket ──► MidTerm on home workstation
+   │                           ├── mthost / mtagenthost
+   │                           └── repos / tools / apps / processes
+   └── HTTPS / WebSocket ──► MidTerm on office laptop
+                               ├── mthost / mtagenthost
+                               └── repos / tools / apps / processes
 ```
 
 MidTerm is built with .NET 10 Native AOT, TypeScript, and xterm.js.

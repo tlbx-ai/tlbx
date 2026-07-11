@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="720" viewBox="0 0 1600 720" role="img" aria-labelledby="title desc">
-  <title id="title">The browser is a MidTerm client, not the runtime</title>
-  <desc id="desc">A browser window shows MidTerm beside other work. The active tab connects to persistent local PTYs, repository state and a localhost preview.</desc>
+  <title id="title">Your MidTerm machines are browser tabs</title>
+  <desc id="desc">A browser window shows separate MidTerm tabs for a home workstation and an office laptop beside issues, docs, an app and a calendar.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0b1321"/></linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#141d2d"/><stop offset="1" stop-color="#0d1420"/></linearGradient>
@@ -12,8 +12,8 @@
   <rect x="1" y="1" width="1598" height="718" rx="27" fill="none" stroke="#80b6f2" stroke-opacity="0.2" stroke-width="2"/>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-  <text x="800" y="62" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">THE BROWSER IS A CLIENT, NOT THE RUNTIME</text>
-  <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">Persistent local PTYs beside the rest of your work.</text>
+  <text x="800" y="62" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">HOME · OFFICE · CLOUD</text>
+  <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">Your machines are browser tabs.</text>
 
     <g transform="translate(70 142)">
       <rect width="1460" height="474" rx="20" fill="#080c13" stroke="#3a4963" stroke-width="2"/>
@@ -26,15 +26,16 @@
 
       <g transform="translate(104 8)" font-size="13">
         <rect width="190" height="46" rx="10" fill="#101827"/>
-        <text x="24" y="29" fill="#8f9caf">Inbox</text>
+        <text x="24" y="29" fill="#8f9caf">Issues</text>
         <rect x="200" width="190" height="46" rx="10" fill="#101827"/>
-        <text x="224" y="29" fill="#8f9caf">Issues</text>
+        <text x="224" y="29" fill="#8f9caf">Docs</text>
         <rect x="400" width="190" height="46" rx="10" fill="#101827"/>
-        <text x="424" y="29" fill="#8f9caf">Docs</text>
+        <circle cx="420" cy="24" r="4" fill="#c997ff"/>
+        <text x="434" y="29" fill="#aebad0">MidTerm · office</text>
         <rect x="600" width="250" height="54" rx="10" fill="#17243b" stroke="#80b6f2" stroke-opacity="0.55"/>
         <path d="M624 13h8l-12 29h-7zM639 13h8l12 29h-7z" fill="#f7faff"/>
         <circle cx="636" cy="31" r="2.5" fill="#80b6f2"/>
-        <text x="676" y="31" fill="#f7faff" font-weight="700">MidTerm</text>
+        <text x="676" y="31" fill="#f7faff" font-weight="700">MidTerm · home</text>
         <circle cx="824" cy="27" r="5" fill="#77f2a1" filter="url(#glow)"/>
         <rect x="860" width="220" height="46" rx="10" fill="#101827"/>
         <text x="884" y="29" fill="#8f9caf">Local app</text>
@@ -43,7 +44,7 @@
       </g>
 
       <rect x="18" y="98" width="282" height="354" rx="12" fill="#0b111c" stroke="#26344a"/>
-      <text x="38" y="130" fill="#80b6f2" font-size="11" font-weight="700" letter-spacing="1.5">LIVE SESSIONS</text>
+      <text x="38" y="130" fill="#80b6f2" font-size="11" font-weight="700" letter-spacing="1.5">HOME WORKSTATION · LIVE</text>
       <g transform="translate(34 150)">
         <rect width="250" height="68" rx="9" fill="#17243b" stroke="#80b6f2" stroke-opacity="0.55"/>
         <circle cx="19" cy="23" r="6" fill="#77f2a1"/>
@@ -64,7 +65,7 @@
       </g>
 
       <rect x="318" y="98" width="710" height="354" rx="12" fill="#05080d" stroke="#26344a"/>
-      <text x="342" y="130" fill="#80b6f2" font-size="11" font-weight="700">TERMINAL · REAL LOCAL PTY</text>
+      <text x="342" y="130" fill="#80b6f2" font-size="11" font-weight="700">TERMINAL · HOME WORKSTATION</text>
       <text x="342" y="174" fill="#77f2a1" font-size="15">✓ implementation complete</text>
       <text x="342" y="212" fill="#f7faff" font-size="15">agent&gt; opening the changed page</text>
       <text x="342" y="250" fill="#80b6f2" font-size="15">browser&gt; console clean · 200 OK</text>
@@ -88,7 +89,7 @@
       <text x="1167" y="372" fill="#07101d" font-size="11" text-anchor="middle" font-weight="700">OPEN DEV BROWSER</text>
     </g>
 
-    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">HTTPS/WebSocket instead of an SSH or remote-desktop UI.</text>
-    <text x="800" y="697" fill="#8f9caf" font-size="14" text-anchor="middle">The PTY outlives the browser connection.</text>
+    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">The work runs there. You steer it from here.</text>
+    <text x="800" y="697" fill="#8f9caf" font-size="14" text-anchor="middle">No SSH client. No remote desktop. Sessions outlive browser connections.</text>
   </g>
 </svg>

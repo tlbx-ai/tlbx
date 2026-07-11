@@ -1,26 +1,35 @@
 # MidTerm launch week — 12–19 July 2026
 
-## Goal
+## The mental-model shift
 
-Reach developers who can evaluate the architecture without onboarding copy:
+Make one idea clear in ten seconds:
 
-> MidTerm is a self-hosted service that multiplexes persistent local PTYs, repository state, and localhost previews into any browser.
+> Your machines are browser tabs. The work stays on its machine. You don't.
 
-Target: 1,000 real users by the end of the week. Treat that as a direction, not a claim or vanity target. Optimize for useful installs, honest feedback and retained use.
+The concrete proof is the real use case:
+
+- Johannes can be at the Baltic Sea while one MidTerm tab steers an agent on his workstation at home.
+- The next tab can open an independent MidTerm instance on another machine elsewhere.
+- Each host retains its own repositories, credentials, tools, processes, sessions, and network.
+- The browser moves; the work does not.
+
+This is not “a local terminal in a browser,” and it is not “SSH in a tab.” MidTerm reopens a machine's living workspace: agents, shells, files, Git state, logs, notes, screenshots, and localhost apps.
+
+Target: 1,000 real users by the end of the week. Treat that as direction, not a public claim. Optimize for useful installations, retained use, and technically serious feedback.
 
 ## What we lead with
 
-1. **Client ≠ runtime.** Browser disconnects do not terminate PTYs or child processes.
-2. **Local execution.** Repositories, credentials, tools, agents, tests, and servers remain on the host.
-3. **Explicit transport.** HTTPS/WebSocket over loopback, LAN, VPN, or the operator's tunnel—not an SSH or remote-desktop UI.
-4. **Correlated state.** PTY, working directory, repository state, files, logs, notes, and browser evidence share session context.
-5. **Tool independence.** Any terminal-native agent or shell works; structured runtimes can expose richer controls.
+1. **Geographic freedom.** Be anywhere; reach the machine that owns the work.
+2. **One instance per host.** Home workstation, office laptop, server, or lab machine remain independent and become ordinary browser tabs.
+3. **Living context, not a shell connection.** Reopen the already-running workspace instead of reconstructing it after login.
+4. **Persistent host-side sessions.** Agents, shells, tests, and servers outlive browser connections and device changes.
+5. **Honest network boundary.** MidTerm is not a VPN or hosted relay. Use LAN, your VPN, or your reverse tunnel; MidTerm replaces SSH as the working interface, not the network layer.
 
-Assume the audience understands PTYs, loopback, tunnels, and provider boundaries. State the mechanism and trade-off once; let readers infer the benefit.
+Assume the audience understands PTYs, process lifetime, VPNs, tunnels, and provider boundaries. Use a concrete scenario first, then state the architecture precisely.
 
 ## Primary installation
 
-Link people to the repository and native installers:
+Install MidTerm on each machine you want to reach:
 
 ```bash
 # macOS / Linux
@@ -32,9 +41,7 @@ curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 ```
 
-Use the service install for an always-available local workspace. User mode is documented in the README.
-
-The npm launcher is a temporary trial fallback. It is not the main call to action.
+Use service mode for a host that should remain reachable across logouts and reboots. The npm launcher remains an ephemeral loopback fallback, not the primary call to action.
 
 ## Honest starting point
 
@@ -48,64 +55,66 @@ Snapshot taken 11 July 2026:
 | npm downloads, 7 days           |       36 |
 | Latest stable release downloads |       19 |
 
-Record the same numbers once per day. Do not combine visitors, downloads and installs into one invented “users” number.
+Record the same numbers once per day. Do not combine visitors, downloads, and installations into one invented “users” number.
 
 ## Assets
 
 Upload-ready PNGs live in `docs/marketing/launch-assets-2026-07/`.
 
-| Story                                     | Asset                                            |
-| ----------------------------------------- | ------------------------------------------------ |
-| Browser tab beside existing work          | `x-01-browser-next-to-work-1600x900.png`         |
-| Same sessions from another browser/device | `x-02-local-first-anywhere-1600x900.png`         |
-| Product Hunt gallery 1                    | `product-hunt-01-browser-workspace-1270x760.png` |
-| Product Hunt gallery 2                    | `product-hunt-02-live-sessions-1270x760.png`     |
-| Product Hunt thumbnail                    | `product-hunt-thumbnail-240x240.png`             |
+| Story                                 | Asset                                            |
+| ------------------------------------- | ------------------------------------------------ |
+| Several MidTerm hosts as browser tabs | `x-01-browser-next-to-work-1600x900.png`         |
+| Browser anywhere to independent hosts | `x-02-your-machines-1600x900.png`                |
+| Product Hunt gallery 1                | `product-hunt-01-browser-workspace-1270x760.png` |
+| Product Hunt gallery 2                | `product-hunt-02-multiple-hosts-1270x760.png`    |
+| Product Hunt thumbnail                | `product-hunt-thumbnail-240x240.png`             |
 
-Use real product clips when motion explains the feature better:
+Use real product clips where motion proves persistence or remote operation:
 
 | Feature             | Existing clip                                   |
 | ------------------- | ----------------------------------------------- |
 | Persistent sessions | `06-multi-agents.mp4`                           |
 | Browser validation  | `13-dev-browser.mp4`                            |
-| File and Git work   | `11-files-editor.mp4`, `12-source-control.mp4`  |
+| Files and Git       | `11-files-editor.mp4`, `12-source-control.mp4`  |
 | Phone access        | `03-sidebar-swipe.mp4`, `04-quick-controls.mp4` |
 
 ## Publishing sequence
 
-### Sunday 12 July — correct the first impression
+### Sunday 12 July — the real use case
 
 Update GitHub metadata and publish the new README.
 
 Post:
 
-> MidTerm multiplexes persistent local PTYs into a browser UI.
+> Right now I'm on the Baltic coast. One browser tab is steering an agent on my workstation at home. Another opens a separate MidTerm instance on a second machine elsewhere.
 >
-> The browser is a client, not the runtime: disconnect it and agents, shells, tests, and dev servers keep running. Reconnect to the same process state.
+> The work stays on those machines. I don't.
 >
 > https://github.com/tlbx-ai/MidTerm
 
 Attach `x-01-browser-next-to-work-1600x900.png`.
 
-### Monday 13 July — show persistence
+### Monday 13 July — the new mental model
 
 Post:
 
-> Browser connection lifetime ≠ process lifetime.
+> Your machines are browser tabs.
 >
-> MidTerm keeps PTYs local and persistent, then reconnects any browser over HTTPS/WebSocket. Long-running agents, tests, and servers survive client churn.
+> Run one MidTerm instance per host. Open the home workstation, office laptop, or server from any browser. Each machine keeps its own repositories, tools, processes, and session state.
 >
 > https://github.com/tlbx-ai/MidTerm
 
-Attach a short recording that closes and reopens the browser while the session continues.
+Attach `x-02-your-machines-1600x900.png`.
 
-### Tuesday 14 July — show the whole work surface
+### Tuesday 14 July — not SSH in a tab
 
 Post:
 
-> One session context: real PTY, repository state, files, Git, logs, and a loopback app preview.
+> SSH opens a connection to a shell.
 >
-> Execution stays local. The browser becomes the interface instead of an SSH client or remote desktop.
+> MidTerm reopens the machine's living workspace: persistent agents and terminals plus files, Git, logs, notes, screenshots, and localhost apps.
+>
+> Bring your own VPN or tunnel.
 >
 > https://github.com/tlbx-ai/MidTerm
 
@@ -115,47 +124,49 @@ Attach the Dev Browser clip.
 
 Title:
 
-> Show HN: MidTerm – local terminals and AI agents in the browser
+> Show HN: MidTerm – your machines as persistent browser workspaces
 
 Opening:
 
-> MidTerm is a .NET 10 Native AOT service with a browser client. Real PTYs remain owned by the local host; the UI connects over HTTPS/WebSocket and can disconnect without terminating them.
+> I am currently away from the machines doing my work. One MidTerm tab connects to an agent running on my workstation at home; another opens an independent instance on a second machine elsewhere. The processes, repositories, credentials, tools, and localhost apps remain on those hosts.
 >
-> Session context includes scrollback, working directory, repository state, files, Git, notes, logs, screenshots, and localhost previews. Terminal-native tools—Codex, Claude Code, Gemini CLI, Copilot CLI, ordinary shells—run unchanged. Structured runtimes can expose approvals, tools, diffs, model controls, and interrupts.
+> MidTerm runs as a self-hosted service on each machine. Its browser UI reconnects over HTTPS/WebSocket to persistent host-side PTYs and session context. Closing the browser, changing devices, or moving between networks does not terminate the agent, shell, test run, or dev server.
 >
-> The trust boundary is explicit: repositories, credentials, tools, and processes stay on the MidTerm host. Agent processes still contact their configured providers. Remote browser access uses your VPN or reverse tunnel; MidTerm provides HTTPS, password auth, API keys, and scoped share links.
+> This is not an SSH client implemented in a browser. SSH gives you a shell connection; MidTerm reopens the surrounding working context—files, Git state, commands, notes, logs, screenshots, and app previews. Terminal-native tools such as Codex, Claude Code, Gemini CLI, Copilot CLI, and ordinary shells run unchanged. Structured runtimes can additionally expose tool activity, approvals, diffs, model controls, and interrupts.
 >
-> Native installers are available for Windows, macOS and Linux. The project is AGPL-licensed:
+> Each MidTerm installation is independent. MidTerm is not a VPN, mesh network, or hosted relay; remote access uses the LAN, VPN, or reverse tunnel you choose. It provides HTTPS, password auth, API keys, and scoped share links at the application layer.
+>
+> Native installers are available for Windows, macOS, and Linux. The project is AGPL-licensed:
 >
 > https://github.com/tlbx-ai/MidTerm
 >
-> I would value scrutiny of the process-lifetime model, remote-access boundary, and anything the architecture claims without proving.
+> I would value scrutiny of the multi-host mental model, trust boundary, and where this is—or is not—better than terminal multiplexers plus SSH.
 
-Stay available to answer technical questions directly. Do not ask for upvotes.
+Stay available for technical questions. Do not ask for upvotes.
 
-### Thursday 16 July — another browser, same machine
+### Thursday 16 July — host-side persistence
 
 Post:
 
-> One execution host, multiple browser clients.
+> The browser is where you meet the work, not where it runs.
 >
-> Repositories, credentials, PTYs, and localhost services remain on the host. Desktop, tablet, and phone reconnect over your VPN or tunnel.
+> Disconnect, change devices, cross the country, and reconnect to the same MidTerm host. Agents, shells, tests, servers, repository state, and localhost apps are still there.
 >
 > https://github.com/tlbx-ai/MidTerm
 
-Attach `x-02-local-first-anywhere-1600x900.png`.
+Attach a short recording that closes one browser and reopens the same session from another device.
 
-### Friday 17 July — explain the boundary
+### Friday 17 July — state the boundary
 
 Post:
 
-> Self-hosted execution. Browser client.
+> MidTerm is not a cloud IDE, VPN, or hosted relay.
 >
-> Repos, credentials, PTYs, and child processes stay on the host. Sessions cross HTTPS/WebSocket; agent-provider traffic is unchanged.
+> Each instance exposes one machine through HTTPS/WebSocket. Its repositories, credentials, tools, agents, and processes stay on that host. You choose the network path.
 >
-> Architecture: https://github.com/tlbx-ai/MidTerm#architecture
+> https://github.com/tlbx-ai/MidTerm#network-boundary
 
-Answer security questions with the documented defaults. Do not imply a security audit or guarantees the project has not earned.
+Answer security questions from documented behavior. Do not imply an audit or guarantees the project has not earned.
 
 ### Saturday 18 July — Product Hunt
 
@@ -165,59 +176,59 @@ Name:
 
 Tagline:
 
-> Persistent local PTYs in any browser
+> Your machines are browser tabs
 
 Description:
 
-> MidTerm is a self-hosted browser interface for persistent local PTYs. Agents, shells, tests, and dev servers keep running across client disconnects; files, Git state, logs, and localhost previews share session context. Connect over HTTPS/WebSocket instead of using SSH or remote desktop as the UI. Open source for Windows, macOS, and Linux.
+> Install MidTerm on each machine that owns work. From any browser, reopen that host's persistent agents, terminals, files, Git state, logs, and localhost apps. Each instance remains independent; sessions survive browser disconnects and device changes. Bring your own LAN, VPN, or reverse tunnel—without making SSH or remote desktop the working interface. Open source for Windows, macOS, and Linux.
 
 First comment:
 
-> MidTerm separates process lifetime from browser connection lifetime.
+> I am away from both machines doing my current work. One browser tab connects to an agent on my workstation at home; another opens a separate MidTerm instance elsewhere.
 >
-> The server and PTYs run locally. Browser clients reconnect over HTTPS/WebSocket. Session context binds terminal state to repository state, files, Git, logs, notes, and local app previews.
+> That is the product: each machine keeps its repositories, credentials, tools, processes, and session state. The browser moves between them.
 >
-> I would value technical criticism of the trust boundary, transport model, and where this is—or is not—better than a terminal plus SSH.
+> MidTerm is not a hosted relay or network overlay. It turns each host into a persistent browser workspace over the network path you choose. I would value technical criticism of the trust boundary and whether this is meaningfully better than your current tmux/SSH/remote-desktop setup.
 
 Use the native installer page as the main destination.
 
-### Sunday 19 July — report what happened
+### Sunday 19 July — report evidence
 
 Publish:
 
 - traffic and install signals against the baseline,
-- the three most useful pieces of feedback,
+- the three strongest technical objections,
 - what was fixed during the week,
-- what remains unclear.
+- what remains unproven.
 
 Avoid a victory post unless the data supports one.
 
 ## Direct feedback request
 
-Send only to people for whom the workflow is relevant:
+Send only to people who operate work across more than one machine:
 
-> Could you review MidTerm's README as a systems tool rather than a product pitch?
+> Could you review MidTerm's README against this real use case?
 >
-> The claim is: persistent local PTYs and their repository/browser context, reachable from any browser without making SSH or remote desktop the UI.
+> I can be away from my machines while one browser tab steers an agent on my home workstation and the next opens an independent MidTerm host elsewhere. The work stays on those machines; I move.
 >
-> Which architectural claim is unclear, unearned, or missing a trade-off? https://github.com/tlbx-ai/MidTerm
+> Which architectural claim is unclear, unearned, or still sounds like SSH in a tab? https://github.com/tlbx-ai/MidTerm
 
 ## Daily operating loop
 
-1. Publish one concrete story.
+1. Publish one concrete multi-host or persistence story.
 2. Answer replies and issues.
-3. Note repeated confusion in plain language.
-4. Fix the smallest README, setup or product issue that blocks real use.
+3. Capture repeated SSH/tunnel assumptions verbatim.
+4. Fix the smallest copy, setup, or product issue blocking the mental-model shift.
 5. Record the same metrics once.
 
-If people visit but do not install, inspect installation trust and clarity. If they install but do not return, inspect first-run usefulness. Do not respond by adding more slogans.
+If readers still call it a browser terminal, the multi-host freedom is not clear enough. If they understand the use case but do not install, inspect trust and network setup. Do not answer either problem with more slogans.
 
 ## Fallback trial command
 
-When someone cannot or does not want to install yet, offer:
+For someone unwilling to install yet:
 
 ```bash
 npx @tlbx-ai/midterm
 ```
 
-Describe it explicitly as a temporary trial. Keep it out of the headline and primary call to action.
+Describe it as an ephemeral loopback trial. It cannot demonstrate the real always-on, remote, multi-host value as well as a native installation.

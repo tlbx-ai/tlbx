@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
-  <title id="title">MidTerm — persistent local PTYs in any browser</title>
-  <desc id="desc">MidTerm's twin-rail logo beside a concise system model: local execution, persistent process state and a browser client.</desc>
+  <title id="title">MidTerm — your machines are browser tabs</title>
+  <desc id="desc">MidTerm's twin-rail logo beside its central idea: work remains on each machine while the user reaches it from any browser.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#030508"/>
@@ -42,17 +42,17 @@
 
     <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
       <text x="650" y="242" fill="#f7faff" font-size="132" font-weight="700" letter-spacing="-7">MidTerm</text>
-      <text x="658" y="307" fill="#80b6f2" font-size="26" font-weight="700" letter-spacing="4">LOCAL PTYS. ANY BROWSER.</text>
-      <text x="658" y="372" fill="#dbe5f5" font-size="24">Clients disconnect · processes continue · state stays local</text>
+      <text x="658" y="307" fill="#80b6f2" font-size="26" font-weight="700" letter-spacing="4">YOUR MACHINES ARE BROWSER TABS</text>
+      <text x="658" y="372" fill="#dbe5f5" font-size="24">The work stays there · you can be anywhere</text>
     </g>
 
     <g transform="translate(658 421)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700" letter-spacing="1.5">
       <circle cx="7" cy="-5" r="6" fill="#77f2a1"/>
-      <text x="25" y="0" fill="#9ca9be">SELF-HOSTED</text>
-      <circle cx="185" cy="-5" r="6" fill="#80b6f2"/>
-      <text x="203" y="0" fill="#9ca9be">HTTPS + WS</text>
-      <circle cx="395" cy="-5" r="6" fill="#c997ff"/>
-      <text x="413" y="0" fill="#9ca9be">OPEN SOURCE</text>
+      <text x="25" y="0" fill="#9ca9be">ONE INSTANCE / HOST</text>
+      <circle cx="255" cy="-5" r="6" fill="#80b6f2"/>
+      <text x="273" y="0" fill="#9ca9be">ANY BROWSER</text>
+      <circle cx="425" cy="-5" r="6" fill="#c997ff"/>
+      <text x="443" y="0" fill="#9ca9be">SESSIONS PERSIST</text>
     </g>
   </g>
   <rect x="0.75" y="0.75" width="1598.5" height="518.5" rx="29.25" fill="none" stroke="#80b6f2" stroke-opacity="0.18" stroke-width="1.5"/>
