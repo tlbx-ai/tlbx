@@ -1,7 +1,7 @@
 {
   "name": "@tlbx-ai/midterm",
   "version": "9.18.13-dev",
-  "description": "Launch MidTerm via npx by downloading the native binary for your platform",
+  "description": "The open control room for AI agents — run locally, validate the work, steer from any browser",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -26,6 +26,11 @@
   },
   "keywords": [
     "midterm",
+    "ai-agents",
+    "coding-agents",
+    "agent-orchestration",
+    "local-first",
+    "self-hosted",
     "terminal",
     "remote-terminal",
     "browser-terminal",

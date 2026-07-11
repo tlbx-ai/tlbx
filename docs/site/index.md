@@ -5,10 +5,11 @@ title: MidTerm
 
 # MidTerm
 
-Your terminal workspace, anywhere.
+**The open control room for AI agents.**
 
-Run AI coding agents and local tools on your own machine, then keep using them from any browser on desktop, tablet, or phone.
+Run any AI coding agent locally, keep every session alive, validate its work, and steer the whole fleet from any browser.
 
+- Try it now: `npx @tlbx-ai/midterm`
 - Install on macOS/Linux: `curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash`
 - Install on Windows: `irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex`
 - Source repo: [github.com/tlbx-ai/MidTerm](https://github.com/tlbx-ai/MidTerm)

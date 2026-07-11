@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="650" viewBox="0 0 1600 650" role="img" aria-labelledby="title desc">
+  <title id="title">The work stays local while the control surface goes anywhere</title>
+  <desc id="desc">Repositories, credentials, tools, terminals and local servers remain on the user's machine. MidTerm exposes a protected browser control surface to desktop, tablet and phone.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0b1321"/></linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#80b6f2" stop-opacity="0"/><stop offset="0.45" stop-color="#80b6f2" stop-opacity="0.9"/><stop offset="1" stop-color="#80b6f2" stop-opacity="0"/></linearGradient>
+    <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#80b6f2" stroke-opacity="0.045"/></pattern>
+  </defs>
+  <rect width="1600" height="650" rx="28" fill="url(#bg)"/>
+  <rect width="1600" height="650" rx="28" fill="url(#grid)"/>
+  <rect x="1" y="1" width="1598" height="648" rx="27" fill="none" stroke="#80b6f2" stroke-opacity="0.18" stroke-width="2"/>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="800" y="67" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">LOCAL-FIRST BY DESIGN</text>
+    <text x="800" y="110" fill="#f7faff" font-size="33" text-anchor="middle" font-weight="700">The work stays home. The control surface goes anywhere.</text>
+
+    <!-- Local machine -->
+    <g transform="translate(90 168)">
+      <rect width="535" height="350" rx="22" fill="#0c1421" stroke="#34445f" stroke-width="1.5"/>
+      <rect width="535" height="55" rx="22" fill="#121d30"/>
+      <rect y="36" width="535" height="19" fill="#121d30"/>
+      <circle cx="27" cy="28" r="6" fill="#77f2a1"/>
+      <text x="46" y="34" fill="#f7faff" font-size="16" font-weight="700">YOUR MACHINE</text>
+      <text x="507" y="34" fill="#77f2a1" font-size="12" text-anchor="end" font-weight="700">OWNS THE WORK</text>
+
+      <g transform="translate(24 80)">
+        <rect width="147" height="95" rx="12" fill="#101c2d" stroke="#283750"/>
+        <path d="M24 28h24l7 8h67v38H24z" fill="#172842" stroke="#80b6f2" stroke-opacity="0.55"/>
+        <text x="73" y="82" fill="#dbe5f5" font-size="12" text-anchor="middle" font-weight="700">REPOS</text>
+      </g>
+      <g transform="translate(194 80)">
+        <rect width="147" height="95" rx="12" fill="#101c2d" stroke="#283750"/>
+        <circle cx="73" cy="39" r="18" fill="none" stroke="#ffd479" stroke-width="3"/>
+        <path d="M73 57v16m0-6h17" stroke="#ffd479" stroke-width="3"/>
+        <text x="73" y="82" fill="#dbe5f5" font-size="12" text-anchor="middle" font-weight="700">SECRETS</text>
+      </g>
+      <g transform="translate(364 80)">
+        <rect width="147" height="95" rx="12" fill="#101c2d" stroke="#283750"/>
+        <path d="M42 33l-15 12 15 12m62-24 15 12-15 12M85 25 62 67" fill="none" stroke="#c997ff" stroke-width="3"/>
+        <text x="73" y="82" fill="#dbe5f5" font-size="12" text-anchor="middle" font-weight="700">TOOLS</text>
+      </g>
+      <g transform="translate(24 199)">
+        <rect width="232" height="112" rx="12" fill="#06090e" stroke="#283750"/>
+        <text x="18" y="30" fill="#77f2a1" font-size="12">$ codex --project .</text>
+        <text x="18" y="56" fill="#80b6f2" font-size="12">agent running · 42m</text>
+        <text x="18" y="82" fill="#f7faff" font-size="12">tests · dev server · logs</text>
+        <text x="116" y="103" fill="#7f8da3" font-size="10" text-anchor="middle">REAL TERMINALS</text>
+      </g>
+      <g transform="translate(279 199)">
+        <rect width="232" height="112" rx="12" fill="#0f1a2b" stroke="#283750"/>
+        <rect x="16" y="16" width="200" height="63" rx="7" fill="#15243b"/>
+        <text x="30" y="43" fill="#f7faff" font-size="13" font-weight="700">localhost:5173</text>
+        <text x="30" y="65" fill="#80b6f2" font-size="11">your app · your hardware</text>
+        <text x="116" y="103" fill="#7f8da3" font-size="10" text-anchor="middle">LOCAL SERVERS</text>
+      </g>
+    </g>
+
+    <!-- MidTerm gateway based on logo -->
+    <g transform="translate(687 214)">
+      <circle cx="113" cy="132" r="128" fill="#0a1423" stroke="#80b6f2" stroke-opacity="0.45"/>
+      <circle cx="113" cy="132" r="109" fill="none" stroke="#80b6f2" stroke-opacity="0.12"/>
+      <path d="M78 57h24L47 208H24zM130 57h24l57 151h-24z" fill="#fdfefc"/>
+      <circle cx="112" cy="142" r="10" fill="#80b6f2" filter="url(#glow)"/>
+      <text x="113" y="247" fill="#80b6f2" font-size="12" text-anchor="middle" font-weight="700" letter-spacing="2">PROTECTED GATEWAY</text>
+    </g>
+
+    <!-- Beam -->
+    <rect x="608" y="341" width="606" height="3" fill="url(#beam)"/>
+    <circle cx="800" cy="342" r="5" fill="#80b6f2" filter="url(#glow)"/>
+    <text x="800" y="545" fill="#8f9caf" font-size="13" text-anchor="middle">HTTPS · PASSWORD AUTH · API KEYS · YOUR VPN OR TUNNEL</text>
+
+    <!-- Devices -->
+    <g transform="translate(1010 179)">
+      <text x="250" y="-11" fill="#f7faff" font-size="18" text-anchor="middle" font-weight="700">YOUR BROWSERS</text>
+      <rect x="0" y="42" width="330" height="218" rx="14" fill="#0b111c" stroke="#536481" stroke-width="2"/>
+      <rect x="13" y="55" width="304" height="177" rx="8" fill="#101a2b"/>
+      <rect x="27" y="70" width="67" height="146" rx="7" fill="#080d15"/>
+      <rect x="106" y="70" width="130" height="146" rx="7" fill="#06090e"/>
+      <rect x="248" y="70" width="55" height="146" rx="7" fill="#13223a"/>
+      <circle cx="41" cy="89" r="4" fill="#77f2a1"/>
+      <path d="M119 92h57M119 117h91M119 142h71" stroke="#80b6f2" stroke-width="6" stroke-linecap="round"/>
+      <text x="275" y="100" fill="#80b6f2" font-size="8" text-anchor="middle">PROOF</text>
+      <path d="M135 260h60l12 22H123z" fill="#26344a"/>
+      <rect x="93" y="282" width="144" height="8" rx="4" fill="#3d4d68"/>
+
+      <g transform="translate(360 86)">
+        <rect width="118" height="218" rx="22" fill="#080b12" stroke="#617392" stroke-width="2"/>
+        <rect x="9" y="12" width="100" height="194" rx="15" fill="#111b2d"/>
+        <rect x="40" y="18" width="38" height="5" rx="2.5" fill="#2b374b"/>
+        <circle cx="25" cy="48" r="4" fill="#ffd479"/>
+        <text x="36" y="51" fill="#f7faff" font-size="8" font-weight="700">needs input</text>
+        <rect x="18" y="70" width="82" height="58" rx="7" fill="#070b11"/>
+        <path d="M27 86h50M27 101h64M27 116h39" stroke="#80b6f2" stroke-width="4" stroke-linecap="round"/>
+        <rect x="18" y="144" width="82" height="29" rx="6" fill="#80b6f2"/>
+        <text x="59" y="163" fill="#07101d" font-size="8" text-anchor="middle" font-weight="700">STEER AGENT</text>
+        <text x="59" y="191" fill="#8f9caf" font-size="7" text-anchor="middle">from your phone</text>
+      </g>
+      <text x="250" y="348" fill="#80b6f2" font-size="13" text-anchor="middle" font-weight="700">DESKTOP · TABLET · PHONE</text>
+      <text x="250" y="376" fill="#8f9caf" font-size="12" text-anchor="middle">The browser can leave. The sessions keep working.</text>
+    </g>
+
+    <text x="800" y="611" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">No cloud IDE migration. No provider lock-in. No lost context.</text>
+  </g>
+</svg>
