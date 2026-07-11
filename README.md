@@ -23,7 +23,7 @@
 
 AI coding agents can work for hours. The hard part is no longer starting one—it is seeing what every agent is doing, giving it the next decision, and verifying that the work actually works.
 
-**MidTerm is the open, local-first control room for the AI agents you already use.** Run Codex, Claude Code, Grok, Gemini CLI, Copilot CLI, Aider, or any other terminal-native agent on the machine that owns your work. MidTerm keeps the sessions alive, surrounds them with files, git, browser and device proof, and lets you steer everything from any browser.
+**MidTerm is the open, local-first control room for the AI agents you already use.** Run Codex, Claude Code, Grok, Gemini CLI, Copilot CLI, Aider, or any other terminal-native agent on the machine that owns your work. MidTerm keeps the sessions alive, surrounds them with files, git and browser proof, and lets you steer everything from any browser.
 
 <p align="center">
   <img src="docs/marketing/readme/agent-control-room.svg" alt="Multiple AI agents, their terminals, files, git state, browser proof and mobile controls visible in one MidTerm workspace" width="100%">
@@ -51,7 +51,7 @@ Long-lived sessions stay visible with their activity, process, working directory
 
 ### Make agents prove the work
 
-The Dev Browser sits beside the session that owns it. Agents can open the app they changed, inspect DOM and console state, read proxy logs, reset browser storage, capture screenshots, and validate responsive or real mobile-Chrome behavior instead of stopping at “the build passed.”
+The Dev Browser sits beside the session that owns it. Agents can open the app they changed, inspect DOM and console state, read proxy logs, reset browser storage, capture screenshots, and validate responsive or mobile layouts instead of stopping at “the build passed.”
 
 ### Intervene from anywhere
 
@@ -83,7 +83,7 @@ The browser may disconnect; the work keeps running. Reopen MidTerm from a deskto
 | --- | --- |
 | **Persistent terminals** | Multiple real PTYs, split layouts, search, exact paste, uploads, touch controls, activity heat, recovery, and tmux-compatible workflows |
 | **Agent Controller** | Structured Codex/Grok/compatible provider sessions with streaming turns, tool progress, approvals, answers, diffs, interrupts, and model settings |
-| **Dev Browser** | Session-scoped previews, isolated browser contexts, DOM control, console and proxy logs, screenshots, responsive frames, and a local Chrome Mobile Device Lab |
+| **Dev Browser** | Session-scoped previews, isolated browser contexts, DOM control, console and proxy logs, screenshots, and responsive/mobile test frames |
 | **Files + Git** | Lazy file tree, previews, editing, repo state, line deltas, conflicts, stashes, recent commits, and multi-repo monitoring |
 | **Command Bay** | Smart multiline input, files and images, reusable actions, mobile keys, prompt routing, and scheduled agent wakeups |
 | **Operations** | Password auth, local HTTPS, API keys, scoped share links, service mode, stable/dev updates, diagnostics, logs, and restart controls |

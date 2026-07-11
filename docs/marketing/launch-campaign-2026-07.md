@@ -45,7 +45,7 @@ Run any AI coding agent locally, keep every session alive, validate its work, an
 ### Three messages to repeat
 
 1. **The model can change. Your control room stays.** Provider-open real PTYs plus structured runtimes where supported.
-2. **“Done” is not proof.** Terminal, git, files, Dev Browser, logs, screenshots, and mobile validation stay in the same loop.
+2. **“Done” is not proof.** Terminal, git, files, Dev Browser, logs, screenshots, and responsive/mobile validation stay in the same loop.
 3. **The work stays home. The control surface goes anywhere.** Local tools and context remain on the machine; the browser follows the human.
 
 ### Copy to avoid
@@ -168,7 +168,7 @@ X draft:
 
 > “The build passed” is not proof the feature works.
 >
-> MidTerm puts a Dev Browser beside the agent: DOM, console, proxy logs, screenshots, responsive frames and real mobile Chrome.
+> MidTerm puts a Dev Browser beside the agent: DOM, console, proxy logs, screenshots, and responsive/mobile test frames.
 >
 > The agent can build, inspect and fix in one loop.
 >
@@ -281,7 +281,7 @@ Maker first comment draft:
 >
 > - Use the agent you prefer. MidTerm runs terminal-native agents in real PTYs and adds structured views where provider runtimes support them.
 > - Keep the work on the machine that already has the repository, tools, credentials, servers and hardware.
-> - Make validation part of the agent loop. Files, git, previews, DOM state, logs, screenshots and mobile testing belong beside the session.
+> - Make validation part of the agent loop. Files, git, previews, DOM state, logs, screenshots and responsive testing belong beside the session.
 > - Keep the human able to answer, approve, interrupt or redirect from desktop, tablet or phone.
 >
 > MidTerm is open source under AGPL-3.0. The fastest trial is:
