@@ -12075,6 +12075,18 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
   box-shadow: var(--command-bay-shadow, 0 10px 24px var(--shadow-color-lg));
 }
 
+.session-input-history-menu {
+  width: min(440px, calc(100vw - 16px));
+  max-height: min(520px, calc(100vh - 16px));
+  overflow: hidden;
+}
+
+.session-input-history-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .manager-bar-overflow-popover {
   max-height: min(320px, calc(100vh - 32px));
   overflow-y: auto;

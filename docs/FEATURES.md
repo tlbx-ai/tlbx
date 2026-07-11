@@ -508,9 +508,9 @@ The feature inventory above remains the numbered baseline. The following current
 - `D017` Multi-repo Git monitoring can show session-scoped extra repos in addition to the cwd repo.
 - `D018` Keyed sidebar DOM reconciliation preserves node identity during hot session-list updates.
 - `D019` The remote-first Mobile Device Lab ships an explicit-activation Chrome extension that opens a local top-level Pixel 8 CDP target with touch, Android UA/Client Hints, rotation, keyboard-viewport, lifecycle, screenshots, and existing MidTerm DOM automation.
-- `D020` The sidebar keeps Bookmarks unchanged and exposes deterministic Terminal input history through a direct **Prompt & Paste** entry; `Alt+H` opens it directly.
+- `D020` The sidebar keeps Bookmarks unchanged; every session exposes its own deterministic Terminal input history through a **Prompt & Paste** top-bar menu, and `Alt+H` opens the active session's menu.
 - `D021` Server-owned input history records only exact MidTerm-handled prompts, text pastes, clipboard images, file drops, and uploads; it never reconstructs prompts from PTY output.
-- `D022` Input history is bounded, atomically persisted, thumbnail-capable, replayable into another session, and available through generated `mt_input_history` helpers.
+- `D022` Input history is bounded, atomically persisted, thumbnail-capable, session-scoped, and available through generated `mt_input_history` helpers.
 - `D023` The explicit agent control plane stores bounded work items, published session status, and checkpoints with timestamps, revision, source, project, repository, and session provenance.
 - `D024` Operator presents exact process facts separately from agent-published meaning and aggregates trusted Hub-machine control planes through the existing authenticated proxy.
 - `D025` Generated `mt_work_*`, `mt_publish_status`, `mt_checkpoint`, and `mt_control_plane` helpers make every control-plane record readable and writable as JSON without MidTerm-owned intelligence.

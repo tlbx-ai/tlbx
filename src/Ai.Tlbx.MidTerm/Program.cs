@@ -311,6 +311,7 @@ public class Program
 
         sessionManager.OnSessionClosed += sessionId =>
         {
+            inputHistoryService.ClearSession(sessionId);
             sessionPathAllowlistService.ClearSession(sessionId);
             gitWatcher.UnregisterSession(sessionId);
             shareGrantService.RevokeBySession(sessionId);

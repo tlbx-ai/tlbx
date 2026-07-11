@@ -118,6 +118,7 @@ const translations: Record<string, string> = {
   'sessionTabs.agent': 'Agent',
   'sessionTabs.files': 'Files',
   'sessionTabs.git': 'Git',
+  'sidebar.inputHistory': 'Prompt & Paste',
   'sessionTabs.share': 'Share',
   'sessionTabs.web': 'Browser',
   'sessionTabs.webShort': 'Browser',
@@ -168,14 +169,20 @@ describe('tabBar', () => {
 
     const buttons = actions.children;
 
-    expect(buttons.map((button) => button.dataset.action)).toEqual(['web', 'share', 'git']);
-    expect(buttons.slice(0, 2).map((button) => button.children[1]?.textContent)).toEqual([
+    expect(buttons.map((button) => button.dataset.action)).toEqual([
+      'inputHistory',
+      'web',
+      'share',
+      'git',
+    ]);
+    expect(buttons.slice(0, 3).map((button) => button.children[1]?.textContent)).toEqual([
+      'Prompt & Paste',
       'Browser',
       'Share',
     ]);
-    expect(buttons[2]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
-    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
-    expect(buttons[2]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
+    expect(buttons[3]?.querySelector('.git-indicator-branch')?.textContent).toBe('No repo');
+    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('+0');
+    expect(buttons[3]?.querySelector('.git-indicator-stats')?.innerHTML).toContain('-0');
   });
 
   it('uses the registered share handler and updates git stats', async () => {
@@ -190,8 +197,8 @@ describe('tabBar', () => {
     if (!actions) {
       throw new Error('Expected IDE actions container');
     }
-    const shareButton = actions.children[1];
-    const gitButton = actions.children[2];
+    const shareButton = actions.children[2];
+    const gitButton = actions.children[3];
 
     shareButton.click();
     expect(shareClick).toHaveBeenCalledTimes(1);

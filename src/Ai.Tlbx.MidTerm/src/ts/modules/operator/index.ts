@@ -61,7 +61,7 @@ export function initOperatorView(nextOptions: OperatorViewOptions): void {
     closeHistoryDropdown();
     toggleOperatorView();
   });
-  for (const id of ['btn-settings', 'btn-spaces', 'btn-bookmarks', 'btn-input-history']) {
+  for (const id of ['btn-settings', 'btn-spaces', 'btn-bookmarks']) {
     document.getElementById(id)?.addEventListener('click', closeOperatorView);
   }
   unsubscribeSessions ??= $sessionList.subscribe(() => {

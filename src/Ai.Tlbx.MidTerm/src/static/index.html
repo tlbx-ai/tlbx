@@ -250,23 +250,6 @@
                 /></svg></span
             ><span data-i18n="sidebar.loadBookmarked">Bookmarks</span>
           </button>
-          <button class="sidebar-nav-btn btn-input-history" id="btn-input-history">
-            <span class="icon icon-svg" aria-hidden="true"
-              ><svg
-                viewBox="0 0 24 24"
-                width="1em"
-                height="1em"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              >
-                <path d="M3 12a9 9 0 1 0 3-6.7" />
-                <path d="M3 4v5h5" />
-                <path d="M12 7v5l3 2" /></svg></span
-            ><span data-i18n="sidebar.inputHistory">Prompt &amp; Paste</span>
-          </button>
         </div>
         <div id="session-filter-bar" class="session-filter-bar" hidden>
           <input
@@ -641,6 +624,17 @@
                 hidden
               >
                 <span class="mobile-actions-label" data-i18n="sessionTabs.agent">Agent</span>
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-input-history"
+                data-i18n-title="sidebar.inputHistory"
+                title="Prompt &amp; Paste"
+              >
+                <span class="mobile-actions-symbol" aria-hidden="true">↶</span>
+                <span class="mobile-actions-label" data-i18n="sidebar.inputHistory"
+                  >Prompt &amp; Paste</span
+                >
               </button>
               <button
                 class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"

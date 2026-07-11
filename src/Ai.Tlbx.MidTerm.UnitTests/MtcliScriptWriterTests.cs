@@ -184,6 +184,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_checkpoint()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_input_history()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_input_history_replay()", shell, StringComparison.Ordinal);
+        Assert.Contains("api/input-history?sessionId=", shell, StringComparison.Ordinal);
+        Assert.Contains("[ -n \"$sid\" ] || { echo \"Session id required.\"", shell, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_supervise()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
@@ -211,6 +213,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Checkpoint", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-InputHistory", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-InputHistoryReplay", powershell, StringComparison.Ordinal);
+        Assert.Contains("if (-not $SessionId) { Write-Error \"Session id required.\"", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);

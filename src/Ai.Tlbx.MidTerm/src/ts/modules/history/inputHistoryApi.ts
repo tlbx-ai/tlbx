@@ -26,21 +26,20 @@ interface InputHistoryListResponse {
 
 export async function fetchInputHistory(
   args: {
-    sessionId?: string | null;
+    sessionId: string;
     kind?: InputHistoryKind | null;
     limit?: number;
-  } = {},
+  },
+  signal?: AbortSignal,
 ): Promise<InputHistoryListResponse> {
   const url = new URL('/api/input-history', window.location.origin);
   url.searchParams.set('limit', Math.max(1, Math.min(500, args.limit ?? 100)).toString());
-  if (args.sessionId) {
-    url.searchParams.set('sessionId', args.sessionId);
-  }
+  url.searchParams.set('sessionId', args.sessionId);
   if (args.kind) {
     url.searchParams.set('kind', args.kind);
   }
 
-  const response = await fetch(url);
+  const response = await fetch(url, signal ? { signal } : undefined);
   if (!response.ok) {
     throw new Error((await response.text()) || 'Failed to load input history.');
   }

@@ -196,6 +196,14 @@ public sealed class InputHistoryServiceTests : IDisposable
         Assert.Equal("original", loaded.Turn!.Text);
     }
 
+    [Fact]
+    public void ListingRequiresAnOwningSession()
+    {
+        using var service = CreateService();
+
+        Assert.Throws<ArgumentException>(() => service.GetEntries("", null, 20));
+    }
+
     public void Dispose()
     {
         try

@@ -219,7 +219,7 @@ public static class MidtermDirectory
         | `mt_work_list` / `mt_work_add` / `mt_work_update` / `mt_work_delete` | Publish and maintain concrete todos, mail replies, coding tasks, and next steps |
         | `mt_publish_status` / `mt_status_list` / `mt_status_clear` | Publish or read explicit session meaning (`working`, `waiting`, `needsInput`, `blocked`, `done`) |
         | `mt_checkpoint` / `mt_checkpoints` | Publish and read durable, timestamped progress or verification facts |
-        | `mt_input_history [id] [kind] [limit]` | List deterministic Terminal prompt, paste, and upload history as JSON |
+        | `mt_input_history [id] [kind] [limit]` | List one session's deterministic Terminal prompt, paste, and upload history as JSON |
         | `mt_input_history_show <entryId>` | Read one full input-history entry |
         | `mt_input_history_replay <entryId> [targetId]` | Replay an exact prompt or paste into the original or target session |
         | `mt_input_history_delete <entryId>` | Delete one input-history entry |
@@ -372,7 +372,7 @@ public static class MidtermDirectory
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended
         - mt_slash routes slash commands like `/status` or `/compact` through the same prompt path instead of pasting them manually
         - mt_wake queues a future prompt through the Command Bay queue, so delayed work survives helper reloads and can be canceled from the queue
-        - mt_input_history and its show/replay/delete helpers expose the same deterministic Terminal history available to the UI; use them instead of scraping terminal output to recover prior prompts or pasted paths
+        - mt_input_history and its show/replay/delete helpers expose the same session-scoped deterministic Terminal history available in each session's top bar; use them instead of scraping terminal output to recover prior prompts or pasted paths
         - mt_control_plane is the machine-readable operator outlet; use mt_work_add/update, mt_publish_status, and mt_checkpoint to make work and next actions visible without asking MidTerm to infer them
         - mt_agent_capabilities reports product-authored feature flags and exact session runtime flags; mt_dispatch acts only on the session IDs you pass and returns a separate accepted/queued/error result for each
         - mt_events is an ordered event feed derived only from explicit control-plane mutations; use its latestSequence cursor instead of parsing terminal output for completion or attention

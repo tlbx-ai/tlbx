@@ -19,24 +19,12 @@ import { formatRuntimeDisplay } from '../sidebar/processDisplay';
 import { closeSpacesDropdown } from '../spaces';
 import { formatHistoryDirectoryDisplay } from './historyPathDisplay';
 import { getHistoryModeBadgeText, getHistoryModeDisplayText } from './launchMode';
-import { $activeSessionId } from '../../stores';
-import {
-  deleteInputHistory,
-  fetchInputHistory,
-  replayInputHistory,
-  type InputHistoryEntry,
-} from './inputHistoryApi';
-import { renderInputHistoryPanel } from './inputHistoryPanel';
 
 const log = createLogger('history-dropdown');
 
 let dropdownEl: HTMLElement | null = null;
 let isOpen = false;
 let cachedEntries: LaunchEntry[] = [];
-let cachedInputEntries: InputHistoryEntry[] = [];
-type HistoryView = 'sessions' | 'input';
-let activeView: HistoryView = 'sessions';
-let inputLoadGeneration = 0;
 let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
 let onRenameEntry: ((entryId: string, newLabel: string) => void) | null = null;
 
@@ -63,41 +51,20 @@ export function initHistoryDropdown(
   onSpawnSession = spawnCallback;
   onRenameEntry = renameCallback ?? null;
   createDropdownElement();
-  for (const [id, view] of [
-    ['btn-bookmarks', 'sessions'],
-    ['btn-input-history', 'input'],
-  ] as const) {
-    document.getElementById(id)?.addEventListener('click', () => {
-      closeSpacesDropdown();
-      toggleHistoryDropdown(view);
-    });
-  }
+  document.getElementById('btn-bookmarks')?.addEventListener('click', () => {
+    closeSpacesDropdown();
+    toggleHistoryDropdown();
+  });
   void loadHistory();
   window.addEventListener('resize', handleViewportChange);
   window.addEventListener('orientationchange', handleViewportChange);
-  document.addEventListener('keydown', handleInputHistoryShortcut);
-}
-
-function handleInputHistoryShortcut(event: KeyboardEvent): void {
-  if (
-    !event.altKey ||
-    event.ctrlKey ||
-    event.metaKey ||
-    event.shiftKey ||
-    event.key.toLowerCase() !== 'h'
-  ) {
-    return;
-  }
-
-  event.preventDefault();
-  toggleHistoryDropdown('input');
 }
 
 /**
  * Refresh history from backend.
  */
 export function refreshHistory(): void {
-  void loadActiveHistory().then(() => {
+  void loadHistory().then(() => {
     if (isOpen) {
       positionDropdown();
       renderDropdownContent();
@@ -108,24 +75,21 @@ export function refreshHistory(): void {
 /**
  * Toggle the history dropdown visibility.
  */
-export function toggleHistoryDropdown(view: HistoryView = 'sessions'): void {
-  if (isOpen && activeView === view) {
+export function toggleHistoryDropdown(): void {
+  if (isOpen) {
     closeHistoryDropdown();
   } else {
-    openHistoryDropdown(view);
+    openHistoryDropdown();
   }
 }
 
 /**
  * Open the history dropdown.
  */
-export function openHistoryDropdown(view: HistoryView = 'sessions'): void {
+export function openHistoryDropdown(): void {
   if (!dropdownEl) return;
 
-  activeView = view;
-  syncHistoryHeader();
-  renderDropdownLoadingState();
-  void loadActiveHistory().then(() => {
+  void loadHistory().then(() => {
     positionDropdown();
     renderDropdownContent();
     dropdownEl?.classList.add('visible');
@@ -157,27 +121,6 @@ async function loadHistory(): Promise<void> {
   }
 }
 
-async function loadInputHistory(): Promise<void> {
-  const generation = ++inputLoadGeneration;
-  try {
-    const response = await fetchInputHistory({ limit: 100 });
-    if (generation !== inputLoadGeneration) {
-      return;
-    }
-    cachedInputEntries = response.entries.filter((entry) => entry.surface === 'terminal');
-  } catch (e) {
-    if (generation !== inputLoadGeneration) {
-      return;
-    }
-    log.warn(() => `Failed to load input history: ${String(e)}`);
-    cachedInputEntries = [];
-  }
-}
-
-function loadActiveHistory(): Promise<void> {
-  return activeView === 'input' ? loadInputHistory() : loadHistory();
-}
-
 function createDropdownElement(): void {
   dropdownEl = document.createElement('div');
   dropdownEl.className = 'history-dropdown';
@@ -196,9 +139,7 @@ function createDropdownElement(): void {
 function positionDropdown(): void {
   if (!dropdownEl) return;
 
-  const trigger = document.getElementById(
-    activeView === 'input' ? 'btn-input-history' : 'btn-bookmarks',
-  );
+  const trigger = document.getElementById('btn-bookmarks');
   const sidebar = document.getElementById('sidebar');
   if (!(trigger instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) {
     return;
@@ -221,13 +162,6 @@ function renderDropdownContent(): void {
   const content = dropdownEl.querySelector('.history-dropdown-content');
   const empty = dropdownEl.querySelector('.history-dropdown-empty');
   if (!content || !empty) return;
-
-  if (activeView === 'input') {
-    renderInputDropdownContent(content as HTMLElement, empty as HTMLElement);
-    return;
-  }
-
-  empty.textContent = t('history.noHistory');
 
   const adHocEntries = cachedEntries.filter(
     (entry) => (entry.launchOrigin ?? '').toLowerCase() !== 'space',
@@ -273,67 +207,6 @@ function renderDropdownContent(): void {
       recentContainer.appendChild(createHistoryItem(entry, false));
     });
     content.appendChild(recentContainer);
-  }
-}
-
-function renderInputDropdownContent(content: HTMLElement, empty: HTMLElement): void {
-  if (cachedInputEntries.length === 0) {
-    content.classList.add('hidden');
-    empty.textContent = t('inputHistory.empty');
-    empty.classList.remove('hidden');
-    return;
-  }
-
-  content.classList.remove('hidden');
-  empty.classList.add('hidden');
-  renderInputHistoryPanel(content, cachedInputEntries, {
-    onDelete: (entry) => {
-      void deleteInputHistory(entry.id)
-        .then(() => {
-          cachedInputEntries = cachedInputEntries.filter((candidate) => candidate.id !== entry.id);
-          renderDropdownContent();
-        })
-        .catch((error: unknown) => {
-          log.warn(() => `Failed to delete input history: ${String(error)}`);
-        });
-    },
-    onReplay: (entry) => {
-      const targetSessionId = $activeSessionId.get() ?? entry.sessionId;
-      void replayInputHistory(entry.id, targetSessionId)
-        .then(() => {
-          closeHistoryDropdown();
-        })
-        .catch((error: unknown) => {
-          log.warn(() => `Failed to replay input history: ${String(error)}`);
-        });
-    },
-  });
-}
-
-function syncHistoryHeader(): void {
-  if (!dropdownEl) {
-    return;
-  }
-
-  const header = dropdownEl.querySelector<HTMLElement>('.history-dropdown-header');
-  if (header) {
-    header.textContent = t(
-      activeView === 'input' ? 'sidebar.inputHistory' : 'sidebar.loadBookmarked',
-    );
-  }
-}
-
-function renderDropdownLoadingState(): void {
-  if (!dropdownEl) {
-    return;
-  }
-
-  const content = dropdownEl.querySelector<HTMLElement>('.history-dropdown-content');
-  const empty = dropdownEl.querySelector<HTMLElement>('.history-dropdown-empty');
-  content?.classList.add('hidden');
-  if (empty) {
-    empty.textContent = t('inputHistory.loading');
-    empty.classList.remove('hidden');
   }
 }
 
@@ -773,11 +646,7 @@ function handleOutsideClick(e: MouseEvent): void {
   if (!dropdownEl) return;
 
   const target = e.target as Element;
-  if (
-    !dropdownEl.contains(target) &&
-    !target.closest('#btn-bookmarks') &&
-    !target.closest('#btn-input-history')
-  ) {
+  if (!dropdownEl.contains(target) && !target.closest('#btn-bookmarks')) {
     closeHistoryDropdown();
   }
 }

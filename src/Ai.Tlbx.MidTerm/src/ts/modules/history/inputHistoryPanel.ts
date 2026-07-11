@@ -5,6 +5,7 @@ import type { InputHistoryEntry, InputHistoryKind } from './inputHistoryApi';
 export interface InputHistoryPanelActions {
   onDelete: (entry: InputHistoryEntry) => void;
   onReplay: (entry: InputHistoryEntry) => void;
+  includeSessionName?: boolean;
 }
 
 const KIND_LABEL_KEYS: Record<InputHistoryKind, string> = {
@@ -74,7 +75,7 @@ function createInputHistoryItem(
 
   const secondary = document.createElement('div');
   secondary.className = 'history-item-secondary input-history-meta';
-  secondary.textContent = formatInputHistoryMeta(entry);
+  secondary.textContent = formatInputHistoryMeta(entry, Date.now(), actions.includeSessionName);
   info.appendChild(secondary);
   item.appendChild(info);
 
@@ -129,9 +130,14 @@ export function formatInputHistoryPreview(entry: InputHistoryEntry): string {
   return entry.displayName?.trim() || fileNameFromPath(entry.path) || t('inputHistory.untitled');
 }
 
-export function formatInputHistoryMeta(entry: InputHistoryEntry, now = Date.now()): string {
+export function formatInputHistoryMeta(
+  entry: InputHistoryEntry,
+  now = Date.now(),
+  includeSessionName = true,
+): string {
   const session = entry.sessionName?.trim() || entry.sessionId;
-  return `${session} · ${formatRelativeAge(entry.createdAt, now)}`;
+  const age = formatRelativeAge(entry.createdAt, now);
+  return includeSessionName ? `${session} · ${age}` : age;
 }
 
 export function formatRelativeAge(value: string, now = Date.now()): string {

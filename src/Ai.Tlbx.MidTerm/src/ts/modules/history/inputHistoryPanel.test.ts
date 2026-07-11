@@ -20,6 +20,8 @@ import { formatInputHistoryMeta, formatInputHistoryPreview } from './inputHistor
 const html = readFileSync(new URL('../../../static/index.html', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../../static/css/app.css', import.meta.url), 'utf8');
 const dropdown = readFileSync(new URL('./historyDropdown.ts', import.meta.url), 'utf8');
+const tabBar = readFileSync(new URL('../sessionTabs/tabBar.ts', import.meta.url), 'utf8');
+const sessionMenu = readFileSync(new URL('./sessionInputHistoryMenu.ts', import.meta.url), 'utf8');
 
 function entry(overrides: Partial<InputHistoryEntry> = {}): InputHistoryEntry {
   return {
@@ -44,13 +46,22 @@ function entry(overrides: Partial<InputHistoryEntry> = {}): InputHistoryEntry {
 }
 
 describe('input history formatting', () => {
-  it('preserves Bookmarks and exposes Terminal input history directly in the native sidebar', () => {
+  it('preserves Bookmarks and puts input history in each session top bar', () => {
     expect(html).toContain('id="btn-bookmarks"');
     expect(html).toContain('data-i18n="sidebar.loadBookmarked">Bookmarks</span>');
-    expect(html).toContain('id="btn-input-history"');
-    expect(html).toContain('data-i18n="sidebar.inputHistory">Prompt &amp; Paste</span>');
-    expect(dropdown).toContain("toggleHistoryDropdown('input')");
-    expect(dropdown).toContain("activeView === 'input' ? 'btn-input-history' : 'btn-bookmarks'");
+    expect(html).not.toContain('id="btn-input-history"');
+    expect(html).toContain('id="btn-mobile-input-history"');
+    expect(dropdown).not.toContain('fetchInputHistory');
+    expect(tabBar).toContain('ide-bar-btn ide-bar-input-history');
+    expect(tabBar).toContain('inputHistoryClickHandler?.(sessionId, inputHistoryBtn)');
+  });
+
+  it('lists and replays only through the owning session boundary', () => {
+    expect(sessionMenu).toContain('fetchInputHistory({ sessionId, limit: 100 }');
+    expect(sessionMenu).toContain('entry.sessionId === sessionId');
+    expect(sessionMenu).toContain("entry.surface === 'terminal'");
+    expect(sessionMenu).toContain('replayInputHistory(entry.id, sessionId)');
+    expect(sessionMenu).not.toContain('$activeSessionId.get() ?? entry.sessionId');
   });
 
   it('reuses the established history and sidebar colors instead of defining a parallel treatment', () => {
@@ -92,5 +103,6 @@ describe('input history formatting', () => {
     expect(formatInputHistoryMeta(entry({ createdAt: 'invalid' }), now)).toBe(
       'Codex · Unknown time',
     );
+    expect(formatInputHistoryMeta(entry(), now, false)).toBe('2h ago');
   });
 });

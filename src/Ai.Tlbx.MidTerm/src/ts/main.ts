@@ -91,6 +91,7 @@ import {
   closeHistoryDropdown,
   getBookmarkSurfaceType,
   initHistoryDropdown,
+  initSessionInputHistoryMenus,
   type LaunchEntry,
 } from './modules/history';
 import { linkAndReplayRemoteBookmark } from './modules/history/remoteBookmarkLaunch';
@@ -345,6 +346,7 @@ async function init(): Promise<void> {
       }
     },
   );
+  initSessionInputHistoryMenus();
   initOperatorView({ onSelectSession: selectSession });
   const spacesRuntimeOptions = {
     resolveLaunchDimensions: resolveNewSessionDimensions,

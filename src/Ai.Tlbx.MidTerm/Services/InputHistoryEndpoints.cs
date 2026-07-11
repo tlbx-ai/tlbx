@@ -16,6 +16,11 @@ public static class InputHistoryEndpoints
     {
         app.MapGet("/api/input-history", (string? sessionId, string? kind, int limit = 100) =>
         {
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                return Results.BadRequest("Session id is required.");
+            }
+
             var response = inputHistory.GetEntries(sessionId, kind, limit);
             return Results.Json(response, AppJsonContext.Default.InputHistoryListResponse);
         });

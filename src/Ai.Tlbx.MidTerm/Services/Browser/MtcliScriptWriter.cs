@@ -740,8 +740,8 @@ public static class MtcliScriptWriter
             kind="${1:-}"
             limit="${2:-100}"
           fi
-          url="$_MT/api/input-history?limit=$limit"
-          [ -n "$sid" ] && url+="&sessionId=$(_MURLENC "$sid")"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          url="$_MT/api/input-history?sessionId=$(_MURLENC "$sid")&limit=$limit"
           [ -n "$kind" ] && url+="&kind=$(_MURLENC "$kind")"
           _MC "$url"
         }
@@ -1650,8 +1650,8 @@ public static class MtcliScriptWriter
         function Mt-InputHistory {
             param([string]$SessionId, [string]$Kind, [int]$Limit = 100)
             if (-not $SessionId) { $SessionId = _MSID }
-            $query = "limit=$Limit"
-            if ($SessionId) { $query += "&sessionId=$([Uri]::EscapeDataString($SessionId))" }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            $query = "sessionId=$([Uri]::EscapeDataString($SessionId))&limit=$Limit"
             if ($Kind) { $query += "&kind=$([Uri]::EscapeDataString($Kind))" }
             _MC "$script:_MT/api/input-history?$query"
         }

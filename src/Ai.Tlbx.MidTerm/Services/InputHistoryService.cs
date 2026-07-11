@@ -123,19 +123,16 @@ public sealed class InputHistoryService : IDisposable
         });
     }
 
-    public InputHistoryListResponse GetEntries(string? sessionId, string? kind, int limit)
+    public InputHistoryListResponse GetEntries(string sessionId, string? kind, int limit)
     {
         var boundedLimit = Math.Clamp(limit, 1, MaxEntries);
-        var normalizedSessionId = NormalizeOptional(sessionId, 128);
+        var normalizedSessionId = NormalizeRequired(sessionId, 128, nameof(sessionId));
         var normalizedKind = NormalizeOptional(kind, 32);
 
         lock (_lock)
         {
-            var query = _history.Entries.AsEnumerable();
-            if (normalizedSessionId is not null)
-            {
-                query = query.Where(entry => string.Equals(entry.SessionId, normalizedSessionId, StringComparison.Ordinal));
-            }
+            var query = _history.Entries.Where(entry =>
+                string.Equals(entry.SessionId, normalizedSessionId, StringComparison.Ordinal));
 
             if (normalizedKind is not null)
             {
