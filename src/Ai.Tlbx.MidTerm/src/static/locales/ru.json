@@ -2,7 +2,7 @@
   "sidebar.newTerminal": "Новая сессия",
   "sidebar.settings": "Настройки",
   "sidebar.loadBookmarked": "Закладки",
-  "sidebar.inputHistory": "Промпты и вставки",
+  "sidebar.inputHistory": "История",
   "sidebar.terminals": "Терминалы",
   "sidebar.humanControlled": "Под контролем человека",
   "sidebar.agentControlled": "Под контролем агента",

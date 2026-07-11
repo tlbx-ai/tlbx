@@ -35,7 +35,7 @@ MidTerm runs any terminal-native tool in a real PTY, but it is shaped around lon
 - **Run many:** split, reorder, bookmark, and revisit independent agent, shell, test, and server sessions.
 - **Paste screenshots normally:** `Ctrl+V` / `Cmd+V` uploads the image to the host and inserts its path. Structured agent sessions stage it as an attachment.
 - **Compose real prompts:** multiline input, per-session drafts, files, drag-and-drop, camera capture, reusable actions, and scheduled follow-ups.
-- **Reuse exact inputs:** each session's **Prompt & Paste** top-bar menu (`Alt+H` for the active session) keeps that Terminal's prompts, pastes, images, and files replayable in place.
+- **Reuse exact inputs:** each session's **History** top-bar menu (`Alt+H` for the active session) keeps that Terminal's explicitly captured prompts, pastes, images, and files replayable in place.
 - **See what needs you:** Operator separates machine facts from agent-published status, todos, mail, coding tasks, next steps, and checkpoints across hosts.
 - **Let agents operate MidTerm:** generated `mt` helpers expose history, capabilities, direct multi-session dispatch, ordered events, and the control plane as stable JSON.
 - **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.

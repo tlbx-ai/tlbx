@@ -2,7 +2,7 @@
   "sidebar.newTerminal": "新しいセッション",
   "sidebar.settings": "設定",
   "sidebar.loadBookmarked": "ブックマーク",
-  "sidebar.inputHistory": "プロンプトと貼り付け",
+  "sidebar.inputHistory": "履歴",
   "sidebar.terminals": "ターミナル",
   "sidebar.humanControlled": "人間が操作",
   "sidebar.agentControlled": "エージェントが操作",

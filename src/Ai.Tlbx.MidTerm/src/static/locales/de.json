@@ -2,7 +2,7 @@
   "sidebar.newTerminal": "Neue Session",
   "sidebar.settings": "Einstellungen",
   "sidebar.loadBookmarked": "Lesezeichen",
-  "sidebar.inputHistory": "Prompts & Einfügen",
+  "sidebar.inputHistory": "Verlauf",
   "sidebar.terminals": "Terminals",
   "sidebar.humanControlled": "Menschlich gesteuert",
   "sidebar.agentControlled": "Agent-gesteuert",

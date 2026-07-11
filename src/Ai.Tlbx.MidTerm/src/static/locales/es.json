@@ -2,7 +2,7 @@
   "sidebar.newTerminal": "Nueva sesión",
   "sidebar.settings": "Configuración",
   "sidebar.loadBookmarked": "Marcadores",
-  "sidebar.inputHistory": "Prompts y pegado",
+  "sidebar.inputHistory": "Historial",
   "sidebar.terminals": "Terminales",
   "sidebar.humanControlled": "Control humano",
   "sidebar.agentControlled": "Controlado por agente",

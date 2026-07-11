@@ -118,7 +118,7 @@ const translations: Record<string, string> = {
   'sessionTabs.agent': 'Agent',
   'sessionTabs.files': 'Files',
   'sessionTabs.git': 'Git',
-  'sidebar.inputHistory': 'Prompt & Paste',
+  'sidebar.inputHistory': 'History',
   'sessionTabs.share': 'Share',
   'sessionTabs.web': 'Browser',
   'sessionTabs.webShort': 'Browser',
@@ -176,7 +176,7 @@ describe('tabBar', () => {
       'git',
     ]);
     expect(buttons.slice(0, 3).map((button) => button.children[1]?.textContent)).toEqual([
-      'Prompt & Paste',
+      'History',
       'Browser',
       'Share',
     ]);
