@@ -90,6 +90,20 @@ Primary campaign clips:
 
 Every post should show the product. Avoid generic AI art. The current clips were already audited for private data and visible MidTerm state.
 
+### Upload-ready stills
+
+Generated from the SVG masters and committed under
+`docs/marketing/launch-assets-2026-07/`:
+
+- `product-hunt-thumbnail-240x240.png`
+- `product-hunt-01-control-room-1270x760.png`
+- `product-hunt-02-proof-loop-1270x760.png`
+- `x-01-agent-control-room-1600x900.png`
+- `x-02-local-first-anywhere-1600x900.png`
+
+Regenerate them with
+`node docs/marketing/ScreenshotAutomation/scripts/export-launch-assets.mjs`.
+
 ## Campaign rhythm
 
 One central idea per day. Post once, then spend the next hour answering real questions. Do not dump the same link into many communities on the same day.
@@ -292,9 +306,9 @@ Maker first comment draft:
 
 Product Hunt gallery preparation:
 
-1. Export `midterm-mark.svg` as a 240×240 logo thumbnail, not the full horizontal wordmark.
-2. Export `agent-control-room.svg` to 1270×760 with crop-safe margins.
-3. Export `agent-proof-loop.svg` to 1270×760 with crop-safe margins.
+1. Upload `product-hunt-thumbnail-240x240.png` as the logo thumbnail.
+2. Upload `product-hunt-01-control-room-1270x760.png` as gallery image 1.
+3. Upload `product-hunt-02-proof-loop-1270x760.png` as gallery image 2.
 4. Add a short public demo video; Product Hunt accepts YouTube links, not a local MP4 upload.
 5. Ask people to visit and comment, never directly to upvote. This follows the [Product Hunt launch guide](https://www.producthunt.com/launch/preparing-for-launch).
 
