@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="720" viewBox="0 0 1600 720" role="img" aria-labelledby="title desc">
-  <title id="title">MidTerm in a browser tab beside the rest of your work</title>
-  <desc id="desc">A browser window shows Inbox, Issues, Docs, MidTerm and Local app tabs. The active MidTerm tab contains persistent agent sessions, a real terminal and an app preview.</desc>
+  <title id="title">The browser is a MidTerm client, not the runtime</title>
+  <desc id="desc">A browser window shows MidTerm beside other work. The active tab connects to persistent local PTYs, repository state and a localhost preview.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0b1321"/></linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#141d2d"/><stop offset="1" stop-color="#0d1420"/></linearGradient>
@@ -12,8 +12,8 @@
   <rect x="1" y="1" width="1598" height="718" rx="27" fill="none" stroke="#80b6f2" stroke-opacity="0.2" stroke-width="2"/>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-    <text x="800" y="62" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">THE TERMINAL IS JUST ANOTHER BROWSER TAB</text>
-    <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">MidTerm stays beside the rest of your work.</text>
+  <text x="800" y="62" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">THE BROWSER IS A CLIENT, NOT THE RUNTIME</text>
+  <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">Persistent local PTYs beside the rest of your work.</text>
 
     <g transform="translate(70 142)">
       <rect width="1460" height="474" rx="20" fill="#080c13" stroke="#3a4963" stroke-width="2"/>
@@ -88,7 +88,7 @@
       <text x="1167" y="372" fill="#07101d" font-size="11" text-anchor="middle" font-weight="700">OPEN DEV BROWSER</text>
     </g>
 
-    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">No SSH client to switch to. No remote desktop window.</text>
-    <text x="800" y="697" fill="#8f9caf" font-size="14" text-anchor="middle">Your local sessions stay alive even when this browser tab closes.</text>
+    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">HTTPS/WebSocket instead of an SSH or remote-desktop UI.</text>
+    <text x="800" y="697" fill="#8f9caf" font-size="14" text-anchor="middle">The PTY outlives the browser connection.</text>
   </g>
 </svg>

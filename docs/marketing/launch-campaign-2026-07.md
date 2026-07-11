@@ -2,21 +2,21 @@
 
 ## Goal
 
-Help developers understand and try the product that already exists:
+Reach developers who can evaluate the architecture without onboarding copy:
 
-> MidTerm runs local terminals and AI coding agents in a normal browser tab beside the rest of your work. No SSH client or remote desktop.
+> MidTerm is a self-hosted service that multiplexes persistent local PTYs, repository state, and localhost previews into any browser.
 
 Target: 1,000 real users by the end of the week. Treat that as a direction, not a claim or vanity target. Optimize for useful installs, honest feedback and retained use.
 
 ## What we lead with
 
-1. **It is in the browser.** Keep terminals and agents beside mail, issues, docs, dashboards and the app being built.
-2. **No SSH client or remote desktop.** Open the machine's real local sessions through the browser.
-3. **The work stays together.** Terminals, files, Git, logs and app previews are available in the same tab.
-4. **Sessions survive the tab.** Close the browser and return later without killing the work.
-5. **It runs locally.** Repositories, tools, credentials and processes remain on the machine that owns them.
+1. **Client ≠ runtime.** Browser disconnects do not terminate PTYs or child processes.
+2. **Local execution.** Repositories, credentials, tools, agents, tests, and servers remain on the host.
+3. **Explicit transport.** HTTPS/WebSocket over loopback, LAN, VPN, or the operator's tunnel—not an SSH or remote-desktop UI.
+4. **Correlated state.** PTY, working directory, repository state, files, logs, notes, and browser evidence share session context.
+5. **Tool independence.** Any terminal-native agent or shell works; structured runtimes can expose richer controls.
 
-Do not lead with category labels, agent-fleet language or installation gimmicks. Show the ordinary workflow clearly.
+Assume the audience understands PTYs, loopback, tunnels, and provider boundaries. State the mechanism and trade-off once; let readers infer the benefit.
 
 ## Primary installation
 
@@ -79,9 +79,9 @@ Update GitHub metadata and publish the new README.
 
 Post:
 
-> I built MidTerm because I wanted my local terminals and coding agents in the browser next to mail, issues, docs and the app I’m building.
+> MidTerm multiplexes persistent local PTYs into a browser UI.
 >
-> No SSH client. No remote desktop. Close the tab and the sessions keep running.
+> The browser is a client, not the runtime: disconnect it and agents, shells, tests, and dev servers keep running. Reconnect to the same process state.
 >
 > https://github.com/tlbx-ai/MidTerm
 
@@ -91,9 +91,9 @@ Attach `x-01-browser-next-to-work-1600x900.png`.
 
 Post:
 
-> A browser tab should not own the process behind it.
+> Browser connection lifetime ≠ process lifetime.
 >
-> MidTerm runs the terminal session locally, so you can close the tab, reopen it later and continue where the agent or shell is still running.
+> MidTerm keeps PTYs local and persistent, then reconnects any browser over HTTPS/WebSocket. Long-running agents, tests, and servers survive client churn.
 >
 > https://github.com/tlbx-ai/MidTerm
 
@@ -103,9 +103,9 @@ Attach a short recording that closes and reopens the browser while the session c
 
 Post:
 
-> Terminal on the left. The local app on the right. Files, Git and logs in the same browser tab.
+> One session context: real PTY, repository state, files, Git, logs, and a loopback app preview.
 >
-> MidTerm removes the SSH/remote-desktop detour without moving the work off your machine.
+> Execution stays local. The browser becomes the interface instead of an SSH client or remote desktop.
 >
 > https://github.com/tlbx-ai/MidTerm
 
@@ -119,17 +119,17 @@ Title:
 
 Opening:
 
-> I built MidTerm because I kept switching between browser work and a separate terminal or remote-access client.
+> MidTerm is a .NET 10 Native AOT service with a browser client. Real PTYs remain owned by the local host; the UI connects over HTTPS/WebSocket and can disconnect without terminating them.
 >
-> MidTerm runs on the machine that owns the repository and exposes its real terminal sessions in a browser UI. The tab can sit next to issues, docs and the app being built. Closing the browser does not stop the session.
+> Session context includes scrollback, working directory, repository state, files, Git, notes, logs, screenshots, and localhost previews. Terminal-native tools—Codex, Claude Code, Gemini CLI, Copilot CLI, ordinary shells—run unchanged. Structured runtimes can expose approvals, tools, diffs, model controls, and interrupts.
 >
-> It also brings files, Git, logs and local app previews into the same workspace. It works with terminal-native tools such as Codex, Claude Code, Gemini CLI, Copilot CLI and normal shells.
+> The trust boundary is explicit: repositories, credentials, tools, and processes stay on the MidTerm host. Agent processes still contact their configured providers. Remote browser access uses your VPN or reverse tunnel; MidTerm provides HTTPS, password auth, API keys, and scoped share links.
 >
 > Native installers are available for Windows, macOS and Linux. The project is AGPL-licensed:
 >
 > https://github.com/tlbx-ai/MidTerm
 >
-> I would especially value feedback on the no-SSH browser workflow and what still feels harder than using a normal local terminal.
+> I would value scrutiny of the process-lifetime model, remote-access boundary, and anything the architecture claims without proving.
 
 Stay available to answer technical questions directly. Do not ask for upvotes.
 
@@ -137,9 +137,9 @@ Stay available to answer technical questions directly. Do not ask for upvotes.
 
 Post:
 
-> The work runs on your machine. The interface can be any browser you trust.
+> One execution host, multiple browser clients.
 >
-> Open the same live MidTerm sessions from your desk, tablet or phone over your VPN or tunnel—without turning SSH into the user interface.
+> Repositories, credentials, PTYs, and localhost services remain on the host. Desktop, tablet, and phone reconnect over your VPN or tunnel.
 >
 > https://github.com/tlbx-ai/MidTerm
 
@@ -149,9 +149,9 @@ Attach `x-02-local-first-anywhere-1600x900.png`.
 
 Post:
 
-> MidTerm does not upload your repository to a hosted development environment.
+> Self-hosted execution. Browser client.
 >
-> Repos, tools, credentials and processes stay on your machine. MidTerm provides the protected browser gateway and session UI.
+> Repos, credentials, PTYs, and child processes stay on the host. Sessions cross HTTPS/WebSocket; agent-provider traffic is unchanged.
 >
 > Architecture: https://github.com/tlbx-ai/MidTerm#architecture
 
@@ -165,19 +165,19 @@ Name:
 
 Tagline:
 
-> Local terminals and AI agents in your browser
+> Persistent local PTYs in any browser
 
 Description:
 
-> MidTerm runs on your computer and puts its real terminal sessions in a browser tab beside the rest of your work. Use normal shells or terminal-native coding agents, keep sessions alive after the tab closes, and work with files, Git, logs and local app previews without switching to an SSH client or remote desktop. Open source for Windows, macOS and Linux.
+> MidTerm is a self-hosted browser interface for persistent local PTYs. Agents, shells, tests, and dev servers keep running across client disconnects; files, Git state, logs, and localhost previews share session context. Connect over HTTPS/WebSocket instead of using SSH or remote desktop as the UI. Open source for Windows, macOS, and Linux.
 
 First comment:
 
-> I built MidTerm to remove a very ordinary interruption: browser work in one place, terminals and remote access somewhere else.
+> MidTerm separates process lifetime from browser connection lifetime.
 >
-> The server and PTYs run locally. The browser is the interface, so the terminal can stay beside issues, docs and the app you are building. Closing the tab does not terminate the work.
+> The server and PTYs run locally. Browser clients reconnect over HTTPS/WebSocket. Session context binds terminal state to repository state, files, Git, logs, notes, and local app previews.
 >
-> I would value blunt feedback on setup, trust and whether the browser workflow is actually more useful than your current terminal plus SSH setup.
+> I would value technical criticism of the trust boundary, transport model, and where this is—or is not—better than a terminal plus SSH.
 
 Use the native installer page as the main destination.
 
@@ -196,11 +196,11 @@ Avoid a victory post unless the data supports one.
 
 Send only to people for whom the workflow is relevant:
 
-> I changed how I explain MidTerm and would value a blunt first-impression check.
+> Could you review MidTerm's README as a systems tool rather than a product pitch?
 >
-> The core is: your local terminals and coding agents in a normal browser tab beside the rest of your work—no SSH client or remote desktop.
+> The claim is: persistent local PTYs and their repository/browser context, reachable from any browser without making SSH or remote desktop the UI.
 >
-> Does the README make that clear in ten seconds? https://github.com/tlbx-ai/MidTerm
+> Which architectural claim is unclear, unearned, or missing a trade-off? https://github.com/tlbx-ai/MidTerm
 
 ## Daily operating loop
 

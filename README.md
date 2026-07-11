@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="MidTerm — local terminals and AI agents in the browser" width="100%">
+  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="MidTerm — persistent local PTYs in any browser" width="100%">
 </p>
 
 <p align="center">
   <a href="#install-midterm-recommended"><strong>Install MidTerm</strong></a>
   ·
-  <a href="#what-you-get-in-the-browser-tab"><strong>What you get</strong></a>
+  <a href="#system-model"><strong>System model</strong></a>
   ·
   <a href="docs/FEATURES.md"><strong>Feature inventory</strong></a>
   ·
@@ -18,19 +18,19 @@
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
 </p>
 
-# Local terminals and AI agents, in the browser.
+# Persistent local PTYs in any browser.
 
-MidTerm runs on your computer and puts its live terminals, coding agents, files, Git state, and app previews into a normal browser tab. Open it beside your mail, issue tracker, documentation, dashboards, and the application you are building.
+MidTerm is a self-hosted web interface for the terminal-native tools already on your machine. It multiplexes persistent PTYs, repository state, logs, and localhost previews over HTTPS/WebSocket.
 
-**No SSH client. No remote desktop. No separate terminal application on the device in front of you.** Close the tab and the sessions keep running. Open MidTerm later—or from another browser—and continue with the same local processes and context.
+**The browser is a client, not the runtime.** Disconnect it and the shell, agent, test run, or dev server continues. Reconnect from another browser to the same process state—without making SSH or remote desktop the interface.
 
 <p align="center">
-  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="MidTerm open as a browser tab beside Inbox, Issues, Docs, the local app, and Calendar, with live agent sessions, terminal, and preview together" width="100%">
+  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="A browser client connected to persistent local PTYs, repository state, and a localhost preview" width="100%">
 </p>
 
 ## Install MidTerm (recommended)
 
-The native installer is the normal way to use MidTerm. It installs the local server, configures password-protected HTTPS, supports service mode, and gives you the regular update path.
+The native installer configures the local service, password-protected HTTPS, and the update path.
 
 **macOS / Linux**
 
@@ -51,47 +51,42 @@ Then open `https://localhost:2000` in your browser.
 | **System service** | MidTerm should stay available across logouts and reboots, including from other devices |
 | **User install**   | You want a persistent personal install without administrator access                    |
 
-## What you get in the browser tab
+## System model
 
-### Your real local terminal
+| Property       | MidTerm's boundary                                                                                                 |
+| -------------- | ------------------------------------------------------------------------------------------------------------------ |
+| **Execution**  | Real PTYs and child processes run on your machine, against its repositories, credentials, tools, and network       |
+| **Client**     | Any modern browser; disconnecting it does not terminate the process                                                |
+| **Transport**  | HTTPS + WebSocket over loopback, LAN, your VPN, or your reverse tunnel                                             |
+| **State**      | Sessions retain process, working-directory, scrollback, repository, notes, and layout context                      |
+| **Agents**     | Any terminal-native agent; structured runtimes get tool activity, approvals, diffs, model controls, and interrupts |
+| **Validation** | Local app previews, DOM control, console/proxy logs, screenshots, and responsive inspection stay session-scoped    |
 
-MidTerm uses real PTYs. Shells, TUIs, build processes, test runners, dev servers, and terminal-native agents run on the machine where your repositories and tools already live. The browser is the interface; it is not a second cloud environment.
+Run Codex, Claude Code, Grok, Gemini CLI, Copilot CLI, Aider, or any other terminal-native tool where it already belongs. MidTerm does not introduce a hosted execution environment.
 
-### Any terminal-native agent
-
-Run Codex, Claude Code, Grok, Gemini CLI, Copilot CLI, Aider, or another CLI agent exactly where you would normally run it. Structured provider runtimes can also use MidTerm's dedicated agent conversation surface for turns, tool activity, approvals, diffs, model settings, and interrupts.
-
-### The surrounding work
-
-Each session can keep its files, Git status, saved commands, notes, browser previews, logs, screenshots, and responsive testing close to the terminal. An agent can change the app and inspect the result without sending you to a separate browser workflow.
-
-### More than one session
-
-Keep agents, ordinary shells, dev servers, logs, and tests visible together. Sessions show activity, process, working directory, notes, and repository state; they can be split, reordered, bookmarked, and monitored across repositories.
+Files, Git state, commands, notes, previews, logs, screenshots, and responsive testing remain attached to the session. Multiple agents, shells, test runners, and servers can be split, reordered, bookmarked, and monitored across repositories.
 
 <p align="center">
-  <img src="docs/marketing/readme/agent-control-room.svg" alt="AI agents, terminals, files, Git information, app preview, and the same session on a phone inside MidTerm" width="100%">
+  <img src="docs/marketing/readme/agent-control-room.svg" alt="Persistent PTYs, repository state, browser evidence, and the same session across browser clients" width="100%">
 </p>
 
-## Continue from another browser
+## Network boundary
 
-The processes run on the MidTerm machine, not inside the browser tab. You can close your laptop browser, open MidTerm from a desktop, tablet, or phone, and return to the same live sessions.
+Remote access follows the network path that matches your threat model:
 
-Use your own network path:
-
-- [Tailscale](https://tailscale.com) for the simplest private-network setup
+- [Tailscale](https://tailscale.com)
 - Cloudflare Tunnel
 - nginx, Caddy, or another HTTPS reverse proxy
-- A local/LAN address when that is all you need
+- loopback or LAN
 
-MidTerm includes password authentication, local HTTPS and certificate-trust helpers, API keys, and scoped share links. You do not need SSH to reach MidTerm. You can still use SSH _inside_ a MidTerm terminal when your actual work requires it.
+The service provides password authentication, local HTTPS and certificate-trust helpers, API keys, and scoped share links. SSH remains available _inside_ a MidTerm terminal when the target system requires it; it is not required as MidTerm's client protocol.
 
 <p align="center">
   <img src="docs/marketing/readme/local-first-anywhere.svg" alt="Repositories, credentials, tools, terminals and local servers stay on the MidTerm machine while the same sessions open in desktop and mobile browsers without SSH" width="100%">
 </p>
 
 > [!IMPORTANT]
-> MidTerm does not upload your repository or credentials to a MidTerm cloud service—there is no such service. An AI agent you launch still communicates with its own provider according to that provider's terms and your configuration.
+> MidTerm has no repository-hosting cloud. Agent processes still communicate with their configured providers under those providers' terms.
 
 ## Main surfaces
 
@@ -108,13 +103,13 @@ See the complete [feature inventory](docs/FEATURES.md) and [architecture](docs/A
 
 ## Fallback: run it once with `npx`
 
-If you only want a disposable local look before installing MidTerm properly:
+For an ephemeral loopback trial:
 
 ```bash
 npx @tlbx-ai/midterm
 ```
 
-The launcher downloads the native stable binary, binds it to loopback, and opens a browser. This is a trial/fallback path; use the [native installer](#install-midterm-recommended) for normal persistent or remote use.
+The launcher downloads the stable native binary, binds it to loopback, and opens a browser. Use the [native installer](#install-midterm-recommended) for persistent or remote use.
 
 ## Uninstall
 
@@ -129,12 +124,6 @@ irm https://tlbx-ai.github.io/MidTerm/uninstall.ps1 | iex
 ```
 
 The uninstallers remove only known MidTerm-owned locations and request elevation only when system-level cleanup requires it.
-
-## What MidTerm is—and is not
-
-MidTerm is a self-hosted browser interface for persistent terminal work and AI coding agents. It keeps the terminal, agent supervision, files, Git, previews, and operations together.
-
-It is not an AI model, a hosted cloud IDE, or a remote desktop. It does not replace your editor or your agent; it makes the machine running them usable from the browser you already have open.
 
 ## Architecture
 

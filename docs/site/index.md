@@ -5,14 +5,14 @@ title: MidTerm
 
 # MidTerm
 
-**Local terminals and AI agents, in the browser.**
+**Persistent local PTYs in any browser.**
 
-MidTerm runs on your computer and opens as a normal browser tab beside your mail, issues, docs, dashboards and local app.
+MidTerm multiplexes real local PTYs, repository state, logs, and localhost previews over HTTPS/WebSocket. The browser is a client; processes outlive it.
 
-- No SSH client
-- No remote desktop
-- No separate terminal app
-- Sessions keep running when the browser tab closes
+- self-hosted execution
+- persistent process state across browser disconnects
+- no SSH client or remote-desktop UI
+- files, Git, logs, and previews in the same session context
 
 Install MidTerm:
 
@@ -21,4 +21,4 @@ Install MidTerm:
 - Source repo: [github.com/tlbx-ai/MidTerm](https://github.com/tlbx-ai/MidTerm)
 - Product docs: [docs/FEATURES.md](https://github.com/tlbx-ai/MidTerm/blob/main/docs/FEATURES.md)
 
-For a temporary trial, the fallback is `npx @tlbx-ai/midterm`.
+Ephemeral loopback fallback: `npx @tlbx-ai/midterm`.

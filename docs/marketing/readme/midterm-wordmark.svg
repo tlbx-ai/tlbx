@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
-  <title id="title">MidTerm — local terminals and AI agents in the browser</title>
-  <desc id="desc">MidTerm's twin-rail logo beside the product name and its promise: no SSH client, the same live sessions in a browser tab.</desc>
+  <title id="title">MidTerm — persistent local PTYs in any browser</title>
+  <desc id="desc">MidTerm's twin-rail logo beside a concise system model: local execution, persistent process state and a browser client.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#030508"/>
@@ -42,17 +42,15 @@
 
     <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
       <text x="650" y="242" fill="#f7faff" font-size="132" font-weight="700" letter-spacing="-7">MidTerm</text>
-      <text x="658" y="307" fill="#80b6f2" font-size="26" font-weight="700" letter-spacing="4">YOUR LOCAL AGENTS, IN THE BROWSER</text>
-      <text x="658" y="372" fill="#aab6c9" font-size="25">No SSH client.</text>
-      <text x="871" y="372" fill="#f7faff" font-size="25">Same live sessions.</text>
-      <text x="1135" y="372" fill="#80b6f2" font-size="25">Beside your work.</text>
+      <text x="658" y="307" fill="#80b6f2" font-size="26" font-weight="700" letter-spacing="4">LOCAL PTYS. ANY BROWSER.</text>
+      <text x="658" y="372" fill="#dbe5f5" font-size="24">Clients disconnect · processes continue · state stays local</text>
     </g>
 
     <g transform="translate(658 421)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700" letter-spacing="1.5">
       <circle cx="7" cy="-5" r="6" fill="#77f2a1"/>
-      <text x="25" y="0" fill="#9ca9be">RUNS LOCALLY</text>
+      <text x="25" y="0" fill="#9ca9be">SELF-HOSTED</text>
       <circle cx="185" cy="-5" r="6" fill="#80b6f2"/>
-      <text x="203" y="0" fill="#9ca9be">BROWSER UI</text>
+      <text x="203" y="0" fill="#9ca9be">HTTPS + WS</text>
       <circle cx="395" cy="-5" r="6" fill="#c997ff"/>
       <text x="413" y="0" fill="#9ca9be">OPEN SOURCE</text>
     </g>

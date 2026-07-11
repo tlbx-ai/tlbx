@@ -1,7 +1,7 @@
 {
   "name": "@tlbx-ai/midterm",
   "version": "9.18.13-dev",
-  "description": "Fallback launcher for local terminals and AI agents in the browser",
+  "description": "Ephemeral launcher for MidTerm's self-hosted browser terminal",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
