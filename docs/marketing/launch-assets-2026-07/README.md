@@ -9,13 +9,13 @@ Regenerate from the repository root:
 node docs/marketing/ScreenshotAutomation/scripts/export-launch-assets.mjs
 ```
 
-| File | Use |
-| --- | --- |
-| `product-hunt-thumbnail-240x240.png` | Product Hunt thumbnail |
-| `product-hunt-01-control-room-1270x760.png` | Product Hunt gallery image 1 |
-| `product-hunt-02-proof-loop-1270x760.png` | Product Hunt gallery image 2 |
-| `x-01-agent-control-room-1600x900.png` | X/LinkedIn launch image |
-| `x-02-local-first-anywhere-1600x900.png` | X/LinkedIn local-first image |
+| File                                             | Use                          |
+| ------------------------------------------------ | ---------------------------- |
+| `product-hunt-thumbnail-240x240.png`             | Product Hunt thumbnail       |
+| `product-hunt-01-browser-workspace-1270x760.png` | Product Hunt gallery image 1 |
+| `product-hunt-02-live-sessions-1270x760.png`     | Product Hunt gallery image 2 |
+| `x-01-browser-next-to-work-1600x900.png`         | X/LinkedIn launch image      |
+| `x-02-local-first-anywhere-1600x900.png`         | X/LinkedIn local-first image |
 
 These PNGs are distribution formats only. The README continues to reference
 SVG assets exclusively.

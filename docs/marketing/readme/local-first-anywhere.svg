@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="650" viewBox="0 0 1600 650" role="img" aria-labelledby="title desc">
-  <title id="title">The work stays local while the control surface goes anywhere</title>
-  <desc id="desc">Repositories, credentials, tools, terminals and local servers remain on the user's machine. MidTerm exposes a protected browser control surface to desktop, tablet and phone.</desc>
+  <title id="title">MidTerm runs locally and opens in any browser</title>
+  <desc id="desc">Repositories, credentials, tools, terminals and local servers remain on the user's machine while MidTerm opens through HTTPS on desktop, tablet and phone without an SSH client.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0b1321"/></linearGradient>
     <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#80b6f2" stop-opacity="0"/><stop offset="0.45" stop-color="#80b6f2" stop-opacity="0.9"/><stop offset="1" stop-color="#80b6f2" stop-opacity="0"/></linearGradient>
@@ -12,8 +12,8 @@
   <rect x="1" y="1" width="1598" height="648" rx="27" fill="none" stroke="#80b6f2" stroke-opacity="0.18" stroke-width="2"/>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-    <text x="800" y="67" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">LOCAL-FIRST BY DESIGN</text>
-    <text x="800" y="110" fill="#f7faff" font-size="33" text-anchor="middle" font-weight="700">The work stays home. The control surface goes anywhere.</text>
+    <text x="800" y="67" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">RUNS ON YOUR MACHINE</text>
+    <text x="800" y="110" fill="#f7faff" font-size="33" text-anchor="middle" font-weight="700">Open the same live sessions in any browser.</text>
 
     <!-- Local machine -->
     <g transform="translate(90 168)">
@@ -100,6 +100,6 @@
       <text x="250" y="376" fill="#8f9caf" font-size="12" text-anchor="middle">The browser can leave. The sessions keep working.</text>
     </g>
 
-    <text x="800" y="611" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">No cloud IDE migration. No provider lock-in. No lost context.</text>
+    <text x="800" y="611" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">No SSH client. No remote desktop. No separate terminal app.</text>
   </g>
 </svg>

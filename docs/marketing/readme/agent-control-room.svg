@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
-  <title id="title">One control room for every AI coding agent</title>
-  <desc id="desc">Codex, Claude Code, Grok and any terminal-native agent run in persistent local sessions while MidTerm keeps their terminal, files, git state, browser proof and mobile controls visible together.</desc>
+  <title id="title">AI agents, terminals and previews together in one browser tab</title>
+  <desc id="desc">Codex, Claude Code, Grok and any terminal-native agent run locally while MidTerm keeps their terminal, files, git state and browser preview together without requiring an SSH client.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0a111e"/></linearGradient>
     <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#111a2b"/><stop offset="1" stop-color="#090e18"/></linearGradient>
@@ -16,9 +16,9 @@
   <rect x="1" y="1" width="1598" height="898" rx="27" fill="none" stroke="#80b6f2" stroke-opacity="0.18" stroke-width="2"/>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-    <text x="90" y="86" fill="#80b6f2" font-size="17" font-weight="700" letter-spacing="3">THE FLEET</text>
-    <text x="90" y="126" fill="#f7faff" font-size="31" font-weight="700">Every agent stays visible.</text>
-    <text x="1510" y="86" fill="#7f8ca2" font-size="15" text-anchor="end">LOCAL MACHINE · LIVE SESSIONS · HUMAN IN CONTROL</text>
+    <text x="90" y="86" fill="#80b6f2" font-size="17" font-weight="700" letter-spacing="3">ONE BROWSER TAB</text>
+    <text x="90" y="126" fill="#f7faff" font-size="31" font-weight="700">Agents, terminals and previews stay together.</text>
+    <text x="1510" y="86" fill="#7f8ca2" font-size="15" text-anchor="end">NO SSH CLIENT · NO REMOTE DESKTOP</text>
 
     <!-- Agent session rail -->
     <g transform="translate(72 180)">
@@ -112,7 +112,7 @@
 
     <!-- Anywhere / human control -->
     <g transform="translate(1272 222)">
-      <text x="112" y="-20" fill="#80b6f2" font-size="14" text-anchor="middle" font-weight="700" letter-spacing="2">ANY BROWSER</text>
+      <text x="112" y="-20" fill="#80b6f2" font-size="14" text-anchor="middle" font-weight="700" letter-spacing="2">SAME SESSION</text>
       <rect width="224" height="432" rx="34" fill="#080b12" stroke="#617392" stroke-width="2"/>
       <rect x="12" y="12" width="200" height="408" rx="25" fill="#0d1523"/>
       <rect x="77" y="22" width="70" height="7" rx="3.5" fill="#2a3548"/>
@@ -141,7 +141,7 @@
     <circle cx="428" cy="352" r="5" fill="#80b6f2" filter="url(#glow)"/>
     <circle cx="1254" cy="440" r="5" fill="#80b6f2" filter="url(#glow)"/>
 
-    <text x="800" y="823" fill="#f7faff" font-size="27" text-anchor="middle" font-weight="700">Launch agents. Watch the fleet. Inspect the proof. Intervene when it matters.</text>
-    <text x="800" y="855" fill="#8e9bb0" font-size="15" text-anchor="middle">The model can change. Your control room stays.</text>
+    <text x="800" y="823" fill="#f7faff" font-size="27" text-anchor="middle" font-weight="700">Open MidTerm beside the work you already have open.</text>
+    <text x="800" y="855" fill="#8e9bb0" font-size="15" text-anchor="middle">Close the tab when you want. The local sessions keep running.</text>
   </g>
 </svg>

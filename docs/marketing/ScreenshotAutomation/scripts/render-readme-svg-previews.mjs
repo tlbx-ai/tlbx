@@ -13,8 +13,8 @@ const outputDir = process.argv[2]
 const assets = [
   { name: 'midterm-mark', width: 512, height: 512 },
   { name: 'midterm-wordmark', width: 1600, height: 520 },
+  { name: 'browser-next-to-work', width: 1600, height: 720 },
   { name: 'agent-control-room', width: 1600, height: 900 },
-  { name: 'agent-proof-loop', width: 1600, height: 690 },
   { name: 'local-first-anywhere', width: 1600, height: 650 },
 ];
 
