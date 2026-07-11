@@ -83,6 +83,12 @@ import { shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
 import { refreshTerminalRenderer } from './presentationRefresh';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
+import {
+  captureTerminalInputData,
+  captureTerminalLineBreak,
+  captureTerminalPasteText,
+  clearTerminalInputCapture,
+} from '../history/terminalInputCapture';
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
 import { pinMobileStableTerminalShellToBottom } from './mobileVerticalStability';
@@ -307,6 +313,7 @@ function deliverTerminalEnterOverride(
   bytes: string,
   routeThroughXtermInput: boolean,
 ): void {
+  captureTerminalLineBreak(sessionId);
   const state = routeThroughXtermInput ? sessionTerminals.get(sessionId) : null;
   if (state?.terminal) {
     state.terminal.input(bytes, true);
@@ -1099,6 +1106,7 @@ export function createTerminalForSession(
     // Other event handlers are set up later in setupTerminalEvents
     state.earlyDataDisposable = terminal.onData((data: string) => {
       pinMobileStableTerminalShellToBottom(state, { force: true });
+      captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);
     });
 
@@ -1258,6 +1266,7 @@ export function setupTerminalEvents(
       if (state) {
         pinMobileStableTerminalShellToBottom(state, { force: true });
       }
+      captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);
     }),
   );
@@ -1409,6 +1418,7 @@ export function destroyTerminalForSession(sessionId: string): void {
 
   enterModifierLatches.delete(sessionId);
   enterOverrideSuppress.clearTerminalEnterOverrideHandled(sessionId);
+  clearTerminalInputCapture(sessionId);
 
   // Clean up xterm event disposables
   if (state.disposables) {
@@ -1521,6 +1531,7 @@ export async function pasteToTerminal(
     showPasteIndicator();
   }
 
+  captureTerminalPasteText(sessionId, data);
   try {
     await sendSessionPasteInput(sessionId, {
       text: data,

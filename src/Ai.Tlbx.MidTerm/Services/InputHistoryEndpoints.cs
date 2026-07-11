@@ -25,6 +25,31 @@ public static class InputHistoryEndpoints
             return Results.Json(response, AppJsonContext.Default.InputHistoryListResponse);
         });
 
+        app.MapPost("/api/sessions/{sessionId}/input-history", (
+            string sessionId,
+            TerminalInputHistoryRequest request) =>
+        {
+            var session = sessionManager.GetSession(sessionId);
+            if (session is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Text))
+            {
+                return Results.BadRequest("Terminal input history requires text.");
+            }
+
+            var entry = inputHistory.RecordPrompt(
+                sessionId,
+                session.Name,
+                session.CurrentDirectory,
+                InputHistorySources.TerminalInput,
+                InputHistorySurfaces.Terminal,
+                new AppServerControlTurnRequest { Text = request.Text });
+            return Results.Json(entry, AppJsonContext.Default.InputHistoryEntry);
+        });
+
         app.MapGet("/api/input-history/{id}", (string id) =>
         {
             var entry = inputHistory.GetEntry(id);

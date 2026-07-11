@@ -1,19 +1,12 @@
 import { icon } from '../../constants';
 import { t } from '../i18n';
-import type { InputHistoryEntry, InputHistoryKind } from './inputHistoryApi';
+import type { InputHistoryEntry } from './inputHistoryApi';
 
 export interface InputHistoryPanelActions {
   onDelete: (entry: InputHistoryEntry) => void;
   onReplay: (entry: InputHistoryEntry) => void;
   includeSessionName?: boolean;
 }
-
-const KIND_LABEL_KEYS: Record<InputHistoryKind, string> = {
-  prompt: 'inputHistory.kindPrompt',
-  textPaste: 'inputHistory.kindPaste',
-  imagePaste: 'inputHistory.kindImage',
-  fileUpload: 'inputHistory.kindFile',
-};
 
 export function renderInputHistoryPanel(
   container: HTMLElement,
@@ -22,7 +15,7 @@ export function renderInputHistoryPanel(
 ): void {
   const fragment = document.createDocumentFragment();
   const list = document.createElement('div');
-  list.className = 'history-entry-list input-history-list';
+  list.className = 'input-history-timeline';
 
   for (const entry of entries) {
     list.appendChild(createInputHistoryItem(entry, actions));
@@ -37,7 +30,7 @@ function createInputHistoryItem(
   actions: InputHistoryPanelActions,
 ): HTMLDivElement {
   const item = document.createElement('div');
-  item.className = 'history-item input-history-item';
+  item.className = 'input-history-event';
   item.dataset.id = entry.id;
   item.tabIndex = 0;
   item.setAttribute('role', 'button');
@@ -46,41 +39,45 @@ function createInputHistoryItem(
     `${t('inputHistory.replay')}: ${formatInputHistoryPreview(entry)}`,
   );
 
+  const marker = document.createElement('span');
+  marker.className = 'input-history-marker';
+  marker.setAttribute('aria-hidden', 'true');
+  item.appendChild(marker);
+
+  const info = document.createElement('div');
+  info.className = 'input-history-info';
+
+  const timestamp = document.createElement('time');
+  timestamp.className = 'input-history-timestamp';
+  timestamp.dateTime = entry.createdAt;
+  timestamp.textContent = formatInputHistoryTimestamp(entry.createdAt);
+  info.appendChild(timestamp);
+
   if (entry.kind === 'imagePaste' && entry.path) {
     const thumbnail = document.createElement('img');
     thumbnail.className = 'input-history-thumbnail';
-    thumbnail.alt = '';
+    thumbnail.alt = entry.displayName?.trim() || t('inputHistory.kindImage');
     thumbnail.loading = 'lazy';
     thumbnail.decoding = 'async';
     thumbnail.src = `/api/input-history/${encodeURIComponent(entry.id)}/content`;
-    item.appendChild(thumbnail);
+    info.appendChild(thumbnail);
+  } else {
+    const text = document.createElement('div');
+    text.className = 'input-history-text';
+    text.textContent = formatInputHistoryText(entry);
+    info.appendChild(text);
   }
 
-  const info = document.createElement('div');
-  info.className = 'history-item-info input-history-info';
-
-  const primary = document.createElement('div');
-  primary.className = 'history-item-primary';
-  const mode = document.createElement('span');
-  mode.className = `history-item-mode input-history-kind input-history-kind-${entry.kind}`;
-  mode.textContent = t(KIND_LABEL_KEYS[entry.kind]);
-  primary.appendChild(mode);
-
-  const label = document.createElement('span');
-  label.className = 'history-item-label input-history-preview';
-  label.textContent = formatInputHistoryPreview(entry);
-  label.title = entry.text ?? entry.path ?? entry.displayName ?? '';
-  primary.appendChild(label);
-  info.appendChild(primary);
-
-  const secondary = document.createElement('div');
-  secondary.className = 'history-item-secondary input-history-meta';
-  secondary.textContent = formatInputHistoryMeta(entry, Date.now(), actions.includeSessionName);
-  info.appendChild(secondary);
+  if (actions.includeSessionName) {
+    const session = document.createElement('div');
+    session.className = 'input-history-session';
+    session.textContent = entry.sessionName?.trim() || entry.sessionId;
+    info.appendChild(session);
+  }
   item.appendChild(info);
 
   const itemActions = document.createElement('div');
-  itemActions.className = 'history-item-actions input-history-actions';
+  itemActions.className = 'input-history-actions';
 
   const replay = document.createElement('button');
   replay.type = 'button';
@@ -128,6 +125,28 @@ export function formatInputHistoryPreview(entry: InputHistoryEntry): string {
   }
 
   return entry.displayName?.trim() || fileNameFromPath(entry.path) || t('inputHistory.untitled');
+}
+
+export function formatInputHistoryText(entry: InputHistoryEntry): string {
+  return (
+    entry.text ??
+    entry.displayName?.trim() ??
+    fileNameFromPath(entry.path) ??
+    t('inputHistory.untitled')
+  );
+}
+
+export function formatInputHistoryTimestamp(value: string): string {
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime())) return t('inputHistory.timeUnknown');
+
+  const date = timestamp.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const time = timestamp.toLocaleTimeString(undefined, {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  return `${date} · ${time}`;
 }
 
 export function formatInputHistoryMeta(

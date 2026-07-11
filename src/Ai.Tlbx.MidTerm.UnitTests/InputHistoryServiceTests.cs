@@ -204,6 +204,26 @@ public sealed class InputHistoryServiceTests : IDisposable
         Assert.Throws<ArgumentException>(() => service.GetEntries("", null, 20));
     }
 
+    [Fact]
+    public void RecordsOneMultilineTerminalInputSubmission()
+    {
+        using var service = CreateService();
+        const string text = "first line\nsecond line";
+
+        service.RecordPrompt(
+            "session-a",
+            "Codex",
+            @"Q:\repo",
+            InputHistorySources.TerminalInput,
+            InputHistorySurfaces.Terminal,
+            new AppServerControlTurnRequest { Text = text });
+
+        var entry = Assert.Single(service.GetEntries("session-a", null, 20).Entries);
+        Assert.Equal(text, entry.Text);
+        Assert.Equal(InputHistorySources.TerminalInput, entry.Source);
+        Assert.True(entry.Submit);
+    }
+
     public void Dispose()
     {
         try

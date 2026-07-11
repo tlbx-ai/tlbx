@@ -324,7 +324,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_activity", agents, StringComparison.Ordinal);
         Assert.Contains("mt_attention", agents, StringComparison.Ordinal);
         Assert.Contains("mt_input_history", agents, StringComparison.Ordinal);
-        Assert.Contains("does not guess semantic prompts", agents, StringComparison.Ordinal);
+        Assert.Contains("does not infer prompts from PTY output", agents, StringComparison.Ordinal);
         Assert.Contains("mt_control_plane", agents, StringComparison.Ordinal);
         Assert.Contains("mt_publish_status", agents, StringComparison.Ordinal);
         Assert.Contains("mt_agent_capabilities", agents, StringComparison.Ordinal);

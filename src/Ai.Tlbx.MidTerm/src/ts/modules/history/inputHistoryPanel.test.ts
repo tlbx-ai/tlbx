@@ -15,7 +15,11 @@ vi.mock('../i18n', () => ({
 }));
 
 import type { InputHistoryEntry } from './inputHistoryApi';
-import { formatInputHistoryMeta, formatInputHistoryPreview } from './inputHistoryPanel';
+import {
+  formatInputHistoryMeta,
+  formatInputHistoryPreview,
+  formatInputHistoryText,
+} from './inputHistoryPanel';
 
 const html = readFileSync(new URL('../../../static/index.html', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../../static/css/app.css', import.meta.url), 'utf8');
@@ -76,6 +80,16 @@ describe('input history formatting', () => {
     expect(source).not.toContain("url.searchParams.set('sessionId'");
   });
 
+  it('renders a timestamped vertical timeline with text or image content', () => {
+    const source = readFileSync(new URL('./inputHistoryPanel.ts', import.meta.url), 'utf8');
+    expect(source).toContain("list.className = 'input-history-timeline'");
+    expect(source).toContain("timestamp.className = 'input-history-timestamp'");
+    expect(source).toContain("text.className = 'input-history-text'");
+    expect(source).toContain("thumbnail.className = 'input-history-thumbnail'");
+    expect(css).toContain('.input-history-timeline::before');
+    expect(source).not.toContain('input-history-kind');
+  });
+
   it('normalizes and bounds exact text previews', () => {
     const value = `${'word '.repeat(40)}\nnext`;
     const preview = formatInputHistoryPreview(entry({ text: value }));
@@ -94,6 +108,7 @@ describe('input history formatting', () => {
         entry({ text: null, displayName: null, path: 'Q:\\repo\\evidence.pdf' }),
       ),
     ).toBe('evidence.pdf');
+    expect(formatInputHistoryText(entry({ text: 'first\nsecond' }))).toBe('first\nsecond');
   });
 
   it('formats deterministic relative time buckets', () => {

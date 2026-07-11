@@ -219,7 +219,7 @@ public static class MidtermDirectory
         | `mt_work_list` / `mt_work_add` / `mt_work_update` / `mt_work_delete` | Publish and maintain concrete todos, mail replies, coding tasks, and next steps |
         | `mt_publish_status` / `mt_status_list` / `mt_status_clear` | Publish or read explicit session meaning (`working`, `waiting`, `needsInput`, `blocked`, `done`) |
         | `mt_checkpoint` / `mt_checkpoints` | Publish and read durable, timestamped progress or verification facts |
-        | `mt_input_history [id] [kind] [limit]` | List one session's deterministic Terminal prompt, paste, and upload history as JSON |
+        | `mt_input_history [id] [kind] [limit]` | List one session's authored submissions, pastes, and uploads as JSON |
         | `mt_input_history_show <entryId>` | Read one full input-history entry |
         | `mt_input_history_replay <entryId> [targetId]` | Replay an exact prompt or paste into the original or target session |
         | `mt_input_history_delete <entryId>` | Delete one input-history entry |
@@ -316,7 +316,7 @@ public static class MidtermDirectory
 
         mt_input_history → mt_input_history_show ENTRY_ID → mt_input_history_replay ENTRY_ID SESSION_ID
 
-        Input history contains only events MidTerm handled explicitly, such as Terminal Command Bay prompts, `mt_prompt`, text paste, clipboard images, and file uploads. It does not guess semantic prompts from PTY output or screen contents.
+        History includes direct browser-authored terminal text committed by unmodified Enter, Terminal Automation Bar prompts, `mt_prompt`, text paste, clipboard images, and file uploads. Modified Enter and pasted newlines stay inside one submission. MidTerm does not infer prompts from PTY output or screen contents.
 
         ## Publish operator state
 

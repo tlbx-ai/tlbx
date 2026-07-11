@@ -22,6 +22,7 @@ public static class InputHistorySources
     public const string UploadPath = "uploadPath";
     public const string ControlPlaneDispatch = "controlPlaneDispatch";
     public const string HistoryReplay = "historyReplay";
+    public const string TerminalInput = "terminalInput";
 }
 
 public static class InputHistorySurfaces
@@ -67,6 +68,11 @@ public sealed class InputHistoryReplayRequest
     public string? TargetSessionId { get; set; }
 }
 
+public sealed class TerminalInputHistoryRequest
+{
+    public string Text { get; set; } = string.Empty;
+}
+
 public sealed class InputHistoryReplayResponse
 {
     public string EntryId { get; set; } = string.Empty;
@@ -83,6 +89,7 @@ public sealed class InputHistoryClearResponse
 
 [JsonSerializable(typeof(InputHistoryDocument))]
 [JsonSerializable(typeof(InputHistoryEntry))]
+[JsonSerializable(typeof(TerminalInputHistoryRequest))]
 [JsonSerializable(typeof(List<InputHistoryEntry>))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]

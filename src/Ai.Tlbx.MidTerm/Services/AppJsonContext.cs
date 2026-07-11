@@ -170,6 +170,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<InputHistoryEntry>))]
 [JsonSerializable(typeof(InputHistoryListResponse))]
 [JsonSerializable(typeof(InputHistoryReplayRequest))]
+[JsonSerializable(typeof(TerminalInputHistoryRequest))]
 [JsonSerializable(typeof(InputHistoryReplayResponse))]
 [JsonSerializable(typeof(InputHistoryClearResponse))]
 
@@ -355,7 +356,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

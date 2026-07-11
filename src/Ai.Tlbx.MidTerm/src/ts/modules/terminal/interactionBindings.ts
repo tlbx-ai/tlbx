@@ -16,6 +16,12 @@ import {
 } from './fileDrop';
 import { getForegroundInfo } from '../process';
 import { evaluateTerminalKeyAudit, isModifierKeyOnlyEvent, isThirdLevelShift } from './keyAudit';
+import {
+  classifyTerminalEnterIntent,
+  captureTerminalInputData,
+  captureTerminalLineBreak,
+  expectTerminalSubmission,
+} from '../history/terminalInputCapture';
 
 export interface TerminalInteractionBindings {
   contextMenuHandler: (event: MouseEvent) => void;
@@ -91,6 +97,15 @@ export function bindTerminalInteractionHandlers({
   let keyPressHandled = false;
   let unprocessedDeadKey = false;
 
+  const captureEnterIntent = (event: KeyboardEvent, directInputDelivery: boolean): void => {
+    const intent = classifyTerminalEnterIntent(event);
+    if (intent === 'lineBreak') {
+      captureTerminalLineBreak(sessionId, directInputDelivery);
+    } else if (intent === 'submit') {
+      expectTerminalSubmission(sessionId);
+    }
+  };
+
   const resetKeyAuditState = (): void => {
     keyDownHandled = false;
     keyDownSeen = false;
@@ -109,6 +124,7 @@ export function bindTerminalInteractionHandlers({
         return false;
       case 'sendKey':
         if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.altKey && !event.metaKey) {
+          captureTerminalInputData(sessionId, '\x03');
           sendInput(sessionId, '\x03');
           return true;
         }
@@ -223,6 +239,7 @@ export function bindTerminalInteractionHandlers({
       return true;
     }
 
+    captureTerminalInputData(sessionId, result.key);
     sendInput(sessionId, result.key);
     markHandled(event);
     return true;
@@ -263,6 +280,8 @@ export function bindTerminalInteractionHandlers({
       keyDownHandled = true;
       return;
     }
+
+    captureEnterIntent(event, true);
 
     if (event.key === 'Dead' || event.key === 'AltGraph') {
       unprocessedDeadKey = true;
@@ -324,7 +343,9 @@ export function bindTerminalInteractionHandlers({
       return;
     }
 
-    sendInput(sessionId, String.fromCharCode(keyCode));
+    const data = String.fromCharCode(keyCode);
+    captureTerminalInputData(sessionId, data);
+    sendInput(sessionId, data);
     keyPressHandled = true;
     unprocessedDeadKey = false;
     cancelTerminalInputEvent(event);
@@ -394,6 +415,7 @@ export function bindTerminalInteractionHandlers({
       }
 
       unprocessedDeadKey = false;
+      captureTerminalInputData(sessionId, inputEvent.data);
       sendInput(sessionId, inputEvent.data);
       cancelTerminalInputEvent(event);
       return;
@@ -454,6 +476,8 @@ export function bindTerminalInteractionHandlers({
     if (tryHandleTerminalEnterOverride(sessionId, event, undefined, 'xterm-enter')) {
       return false;
     }
+
+    captureEnterIntent(event, true);
 
     if (tryHandleCopyShortcut(event)) {
       return false;

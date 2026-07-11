@@ -69,3 +69,14 @@ export async function deleteInputHistory(entryId: string): Promise<void> {
     throw new Error((await response.text()) || 'Failed to delete input history.');
   }
 }
+
+export async function recordTerminalInputHistory(sessionId: string, text: string): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/input-history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!response.ok) {
+    throw new Error((await response.text()) || 'Failed to record terminal input history.');
+  }
+}
