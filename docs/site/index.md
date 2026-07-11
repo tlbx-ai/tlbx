@@ -5,14 +5,14 @@ title: MidTerm
 
 # MidTerm
 
-**Your machines are browser tabs.**
+**Run your coding agents on your machines. Steer them from anywhere.**
 
-Install MidTerm on each machine you want to reach. From any browser, reopen that host's agents, terminals, files, Git state, logs, and localhost apps.
+Run Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or all of them at once. MidTerm keeps their sessions alive and puts control in any browser.
 
-- one independent MidTerm instance per host
-- persistent host-side sessions across browser disconnects and device changes
-- LAN, VPN, or reverse tunnel of your choice
-- no SSH client or remote desktop as the working interface
+- normal `Ctrl+V` / `Cmd+V` screenshot paste into terminal CLIs
+- multiline prompts, per-session drafts, files, camera input, and scheduled follow-ups
+- process, activity, repository, attention, approval, diff, and browser-proof surfaces
+- independent MidTerm hosts as browser tabs over the network path you choose
 
 Install MidTerm:
 
@@ -21,4 +21,4 @@ Install MidTerm:
 - Source repo: [github.com/tlbx-ai/MidTerm](https://github.com/tlbx-ai/MidTerm)
 - Product docs: [docs/FEATURES.md](https://github.com/tlbx-ai/MidTerm/blob/main/docs/FEATURES.md)
 
-Ephemeral loopback fallback: `npx @tlbx-ai/midterm`. Native installation is required to experience the always-on remote workflow properly.
+Ephemeral loopback fallback: `npx @tlbx-ai/midterm`. Native installation is required to experience persistent remote agent control properly.

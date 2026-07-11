@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
-  <title id="title">Reopen a machine's live working context, not only a shell</title>
-  <desc id="desc">A MidTerm host keeps agents, terminals, repository state and browser evidence together while browsers reconnect from anywhere.</desc>
+  <title id="title">Steer every coding agent from one browser</title>
+  <desc id="desc">Codex, Claude Code, Grok Build, OpenCode, Copilot CLI, Antigravity CLI and other terminal-native agents run as concurrent MidTerm sessions.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0a111e"/></linearGradient>
     <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#111a2b"/><stop offset="1" stop-color="#090e18"/></linearGradient>
@@ -16,9 +16,9 @@
   <rect x="1" y="1" width="1598" height="898" rx="27" fill="none" stroke="#80b6f2" stroke-opacity="0.18" stroke-width="2"/>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-  <text x="90" y="86" fill="#80b6f2" font-size="17" font-weight="700" letter-spacing="3">ONE MACHINE'S LIVE WORKSPACE</text>
-  <text x="90" y="126" fill="#f7faff" font-size="31" font-weight="700">Reopen context, not a shell connection.</text>
-  <text x="1510" y="86" fill="#7f8ca2" font-size="15" text-anchor="end">OPEN FROM ANYWHERE</text>
+  <text x="90" y="86" fill="#80b6f2" font-size="17" font-weight="700" letter-spacing="3">ANY CLI AGENT · OR ALL AT ONCE</text>
+  <text x="90" y="126" fill="#f7faff" font-size="31" font-weight="700">Steer every agent from one browser.</text>
+  <text x="1510" y="86" fill="#7f8ca2" font-size="15" text-anchor="end">LIVE · WAIT · BUSY · NEEDS INPUT</text>
 
     <!-- Agent session rail -->
     <g transform="translate(72 180)">
@@ -45,15 +45,15 @@
       <g transform="translate(18 294)">
         <rect width="302" height="91" rx="12" fill="#101827" stroke="#27344b"/>
         <circle cx="25" cy="30" r="7" fill="#c997ff"/>
-        <text x="45" y="35" fill="#f7faff" font-size="18" font-weight="700">Grok</text>
+        <text x="45" y="35" fill="#f7faff" font-size="18" font-weight="700">Grok Build</text>
         <text x="45" y="61" fill="#9aa8bd" font-size="13">perf-audit · thinking</text>
         <text x="277" y="35" fill="#c997ff" font-size="12" text-anchor="end">BUSY</text>
       </g>
       <g transform="translate(18 399)">
         <rect width="302" height="91" rx="12" fill="#101827" stroke="#27344b"/>
         <circle cx="25" cy="30" r="7" fill="#80b6f2"/>
-        <text x="45" y="35" fill="#f7faff" font-size="18" font-weight="700">Any CLI agent</text>
-        <text x="45" y="61" fill="#9aa8bd" font-size="13">your tool · real PTY</text>
+        <text x="45" y="35" fill="#f7faff" font-size="18" font-weight="700">OpenCode</text>
+        <text x="45" y="61" fill="#9aa8bd" font-size="13">Copilot · Antigravity · any CLI</text>
         <text x="277" y="35" fill="#80b6f2" font-size="12" text-anchor="end">OPEN</text>
       </g>
     </g>
@@ -74,7 +74,7 @@
       <text x="734" y="34" fill="#9aa8bd" font-size="11" text-anchor="end">CONNECTED</text>
 
       <rect x="20" y="78" width="478" height="390" rx="12" fill="url(#terminal)" stroke="#202b3d"/>
-      <text x="42" y="116" fill="#77f2a1" font-size="15">✓ tests passed</text>
+        <text x="42" y="116" fill="#77f2a1" font-size="15">paste&gt; screenshot.png → /uploads/screenshot.png</text>
       <text x="42" y="151" fill="#f7faff" font-size="15">agent&gt; opening the app in Dev Browser</text>
       <text x="42" y="186" fill="#80b6f2" font-size="15">browser&gt; 200 · console clean · 390×844</text>
       <text x="42" y="221" fill="#f7faff" font-size="15">agent&gt; found overflow at mobile width</text>
@@ -141,7 +141,7 @@
     <circle cx="428" cy="352" r="5" fill="#80b6f2" filter="url(#glow)"/>
     <circle cx="1254" cy="440" r="5" fill="#80b6f2" filter="url(#glow)"/>
 
-  <text x="800" y="823" fill="#f7faff" font-size="27" text-anchor="middle" font-weight="700">Same host. Same session. Any browser.</text>
-  <text x="800" y="855" fill="#8e9bb0" font-size="15" text-anchor="middle">The process remains on its machine; the interface follows you.</text>
+  <text x="800" y="823" fill="#f7faff" font-size="27" text-anchor="middle" font-weight="700">One browser for every agent you run.</text>
+  <text x="800" y="855" fill="#8e9bb0" font-size="15" text-anchor="middle">Keep sessions, prompts, repository state and browser proof in view.</text>
   </g>
 </svg>

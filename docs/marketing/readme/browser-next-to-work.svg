@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="720" viewBox="0 0 1600 720" role="img" aria-labelledby="title desc">
-  <title id="title">Your MidTerm machines are browser tabs</title>
-  <desc id="desc">A browser window shows separate MidTerm tabs for a home workstation and an office laptop beside issues, docs, an app and a calendar.</desc>
+  <title id="title">Run coding agents on your machines and steer them from any browser</title>
+  <desc id="desc">A browser window shows Codex, Claude Code, and Grok Build running concurrently on a home workstation beside a second MidTerm host tab.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0b1321"/></linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#141d2d"/><stop offset="1" stop-color="#0d1420"/></linearGradient>
@@ -12,8 +12,8 @@
   <rect x="1" y="1" width="1598" height="718" rx="27" fill="none" stroke="#80b6f2" stroke-opacity="0.2" stroke-width="2"/>
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-  <text x="800" y="62" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">HOME · OFFICE · CLOUD</text>
-  <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">Your machines are browser tabs.</text>
+  <text x="800" y="62" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">CODEX · CLAUDE CODE · GROK BUILD · OPENCODE</text>
+  <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">Run them there. Steer them from anywhere.</text>
 
     <g transform="translate(70 142)">
       <rect width="1460" height="474" rx="20" fill="#080c13" stroke="#3a4963" stroke-width="2"/>
@@ -44,7 +44,7 @@
       </g>
 
       <rect x="18" y="98" width="282" height="354" rx="12" fill="#0b111c" stroke="#26344a"/>
-      <text x="38" y="130" fill="#80b6f2" font-size="11" font-weight="700" letter-spacing="1.5">HOME WORKSTATION · LIVE</text>
+      <text x="38" y="130" fill="#80b6f2" font-size="11" font-weight="700" letter-spacing="1.5">3 AGENTS · HOME WORKSTATION</text>
       <g transform="translate(34 150)">
         <rect width="250" height="68" rx="9" fill="#17243b" stroke="#80b6f2" stroke-opacity="0.55"/>
         <circle cx="19" cy="23" r="6" fill="#77f2a1"/>
@@ -54,18 +54,18 @@
       <g transform="translate(34 230)">
         <rect width="250" height="68" rx="9" fill="#101827" stroke="#26344a"/>
         <circle cx="19" cy="23" r="6" fill="#ffd479"/>
-        <text x="36" y="28" fill="#f7faff" font-size="14" font-weight="700">Tests</text>
-        <text x="36" y="51" fill="#9aa8bd" font-size="10">needs attention</text>
+        <text x="36" y="28" fill="#f7faff" font-size="14" font-weight="700">Claude Code</text>
+        <text x="36" y="51" fill="#9aa8bd" font-size="10">api-review · needs input</text>
       </g>
       <g transform="translate(34 310)">
         <rect width="250" height="68" rx="9" fill="#101827" stroke="#26344a"/>
         <circle cx="19" cy="23" r="6" fill="#80b6f2"/>
-        <text x="36" y="28" fill="#f7faff" font-size="14" font-weight="700">Dev server</text>
-        <text x="36" y="51" fill="#9aa8bd" font-size="10">localhost:5173</text>
+        <text x="36" y="28" fill="#f7faff" font-size="14" font-weight="700">Grok Build</text>
+        <text x="36" y="51" fill="#9aa8bd" font-size="10">perf-audit · running</text>
       </g>
 
       <rect x="318" y="98" width="710" height="354" rx="12" fill="#05080d" stroke="#26344a"/>
-      <text x="342" y="130" fill="#80b6f2" font-size="11" font-weight="700">TERMINAL · HOME WORKSTATION</text>
+      <text x="342" y="130" fill="#80b6f2" font-size="11" font-weight="700">ACTIVE · CODEX · HOME WORKSTATION</text>
       <text x="342" y="174" fill="#77f2a1" font-size="15">✓ implementation complete</text>
       <text x="342" y="212" fill="#f7faff" font-size="15">agent&gt; opening the changed page</text>
       <text x="342" y="250" fill="#80b6f2" font-size="15">browser&gt; console clean · 200 OK</text>
@@ -89,7 +89,7 @@
       <text x="1167" y="372" fill="#07101d" font-size="11" text-anchor="middle" font-weight="700">OPEN DEV BROWSER</text>
     </g>
 
-    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">The work runs there. You steer it from here.</text>
-    <text x="800" y="697" fill="#8f9caf" font-size="14" text-anchor="middle">No SSH client. No remote desktop. Sessions outlive browser connections.</text>
+    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">Your machines are tabs. Your agents keep running.</text>
+    <text x="800" y="697" fill="#8f9caf" font-size="14" text-anchor="middle">OpenCode · Antigravity CLI · Copilot CLI · any terminal-native agent</text>
   </g>
 </svg>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="MidTerm — your machines are browser tabs" width="100%">
+  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="MidTerm — your coding agents, your machines, any browser" width="100%">
 </p>
 
 <p align="center">
@@ -18,14 +18,31 @@
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
 </p>
 
-# Your machines are browser tabs.
+# Run your coding agents on your machines. Steer them from anywhere.
 
-Install MidTerm on each machine you want to reach. From any browser, open that host's already-running agents, shells, files, Git state, logs, and localhost apps—across the room or across the country.
+Start Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or all of them at once—on the machines that own your work. MidTerm keeps every session alive and puts control in any browser.
 
-**The work stays on its machine. You don't.** Each MidTerm instance remains independent; your browser moves between them as ordinary tabs. Disconnecting the browser does not terminate the work.
+**Your machines are browser tabs. Your agents keep working when you leave.** Each MidTerm instance remains independent; your browser moves between them without moving the repositories, credentials, tools, or processes.
 
 <p align="center">
-  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Home workstation and office laptop exposed as adjacent MidTerm browser tabs beside the rest of the user's work" width="100%">
+  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a MidTerm browser tab beside another MidTerm host" width="100%">
+</p>
+
+## Agent CLI ergonomics
+
+MidTerm runs any terminal-native tool in a real PTY, but it is deliberately shaped around the friction of long-running coding agents.
+
+| Friction                   | What MidTerm does                                                                                                                                                                                               |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Several agents at once** | Keep Codex, Claude Code, Grok Build, OpenCode, Antigravity CLI, Copilot CLI, ordinary shells, tests, and servers visible as independent sessions; split, reorder, bookmark, and revisit them                    |
+| **Screenshot paste**       | Press `Ctrl+V` or `Cmd+V`; MidTerm uploads the clipboard image to the host and inserts its path into the active terminal CLI. The structured agent composer stages images as attachments with stable references |
+| **Prompt composition**     | Use multiline input, per-session drafts, files, drag-and-drop, camera capture, reusable actions, and scheduled follow-ups instead of fighting terminal input semantics                                          |
+| **Attention and control**  | See process, activity, working directory, repository state, and sessions needing input; structured runtimes additionally expose approvals, questions, tools, diffs, model controls, and interrupts              |
+| **Proof, not claims**      | Open the changed app beside the agent; inspect DOM, console and proxy logs, responsive layouts, and screenshots without leaving the session                                                                     |
+| **Leave and return**       | Agent processes survive browser disconnects, device changes, and travel; phone controls remain available when a full keyboard is not                                                                            |
+
+<p align="center">
+  <img src="docs/marketing/readme/agent-control-room.svg" alt="Codex, Claude Code, Grok Build, OpenCode, Copilot CLI, and Antigravity CLI sessions controlled concurrently in MidTerm" width="100%">
 </p>
 
 ## Not SSH in a browser
@@ -76,13 +93,9 @@ Then open `https://localhost:2000` in your browser.
 | **Context**   | Working directory, scrollback, repository state, files, Git, notes, logs, and previews remain attached to the session |
 | **Agents**    | Any terminal-native agent; structured runtimes get tool activity, approvals, diffs, model controls, and interrupts    |
 
-Run Codex, Claude Code, Grok, Gemini CLI, Copilot CLI, Aider, or any other terminal-native tool where it already belongs. MidTerm does not move the repository into a hosted execution environment.
+Run Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI, Aider, or any other terminal-native tool where it already belongs. MidTerm does not move the repository into a hosted execution environment.
 
 Within one host, multiple agents, shells, test runners, and servers can be split, reordered, bookmarked, and monitored across repositories.
-
-<p align="center">
-  <img src="docs/marketing/readme/agent-control-room.svg" alt="Persistent PTYs, repository state, browser evidence, and the same session across browser clients" width="100%">
-</p>
 
 ## Network boundary
 
