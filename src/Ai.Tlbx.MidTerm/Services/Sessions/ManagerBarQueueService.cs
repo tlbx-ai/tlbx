@@ -191,6 +191,20 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         }
     }
 
+    public async Task<bool> DispatchPromptDirectAsync(
+        string sessionId,
+        AppServerControlTurnRequest turn,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
+        {
+            return false;
+        }
+
+        await _runtime.SendTurnAsync(trimmedSessionId, normalizedTurn, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
     public async Task<(bool Accepted, ManagerBarQueueEntryDto? Entry)> SubmitActionAsync(
         string sessionId,
         ManagerBarButton action,

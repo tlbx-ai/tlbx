@@ -18,12 +18,23 @@ import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
 import { formatHistoryDirectoryDisplay } from './historyPathDisplay';
 import { getHistoryModeBadgeText, getHistoryModeDisplayText } from './launchMode';
+import { $activeSessionId } from '../../stores';
+import {
+  deleteInputHistory,
+  fetchInputHistory,
+  replayInputHistory,
+  type InputHistoryEntry,
+} from './inputHistoryApi';
+import { renderInputHistoryPanel } from './inputHistoryPanel';
 
 const log = createLogger('history-dropdown');
 
 let dropdownEl: HTMLElement | null = null;
 let isOpen = false;
 let cachedEntries: LaunchEntry[] = [];
+let cachedInputEntries: InputHistoryEntry[] = [];
+let activeView: 'sessions' | 'input' = 'sessions';
+let inputLoadGeneration = 0;
 let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
 let onRenameEntry: ((entryId: string, newLabel: string) => void) | null = null;
 
@@ -53,13 +64,37 @@ export function initHistoryDropdown(
   void loadHistory();
   window.addEventListener('resize', handleViewportChange);
   window.addEventListener('orientationchange', handleViewportChange);
+  document.addEventListener('keydown', handleInputHistoryShortcut);
+}
+
+function handleInputHistoryShortcut(event: KeyboardEvent): void {
+  if (
+    !event.altKey ||
+    event.ctrlKey ||
+    event.metaKey ||
+    event.shiftKey ||
+    event.key.toLowerCase() !== 'h'
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  activeView = 'input';
+  if (!isOpen) {
+    document.getElementById('btn-bookmarks')?.click();
+    return;
+  }
+
+  syncHistoryViewTabs();
+  renderDropdownLoadingState();
+  void loadInputHistory().then(renderDropdownContent);
 }
 
 /**
  * Refresh history from backend.
  */
 export function refreshHistory(): void {
-  void loadHistory().then(() => {
+  void loadActiveHistory().then(() => {
     if (isOpen) {
       positionDropdown();
       renderDropdownContent();
@@ -84,7 +119,7 @@ export function toggleHistoryDropdown(): void {
 export function openHistoryDropdown(): void {
   if (!dropdownEl) return;
 
-  void loadHistory().then(() => {
+  void loadActiveHistory().then(() => {
     positionDropdown();
     renderDropdownContent();
     dropdownEl?.classList.add('visible');
@@ -116,16 +151,53 @@ async function loadHistory(): Promise<void> {
   }
 }
 
+async function loadInputHistory(): Promise<void> {
+  const generation = ++inputLoadGeneration;
+  try {
+    const response = await fetchInputHistory({ limit: 100 });
+    if (generation !== inputLoadGeneration) {
+      return;
+    }
+    cachedInputEntries = response.entries.filter((entry) => entry.surface === 'terminal');
+  } catch (e) {
+    if (generation !== inputLoadGeneration) {
+      return;
+    }
+    log.warn(() => `Failed to load input history: ${String(e)}`);
+    cachedInputEntries = [];
+  }
+}
+
+function loadActiveHistory(): Promise<void> {
+  return activeView === 'input' ? loadInputHistory() : loadHistory();
+}
+
 function createDropdownElement(): void {
   dropdownEl = document.createElement('div');
   dropdownEl.className = 'history-dropdown';
   dropdownEl.innerHTML = `
-    <div class="history-dropdown-header">
-      <span>${t('sidebar.loadBookmarked')}</span>
+    <div class="history-dropdown-header history-dropdown-tabs" role="tablist">
+      <button type="button" class="history-dropdown-tab active" data-history-view="sessions" role="tab" aria-selected="true">${t('inputHistory.sessionsTab')}</button>
+      <button type="button" class="history-dropdown-tab" data-history-view="input" role="tab" aria-selected="false">${t('inputHistory.inputTab')}</button>
     </div>
     <div class="history-dropdown-content"></div>
     <div class="history-dropdown-empty">${t('history.noHistory')}</div>
   `;
+
+  dropdownEl.querySelector('.history-dropdown-tabs')?.addEventListener('click', (event) => {
+    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(
+      '.history-dropdown-tab',
+    );
+    const view = button?.dataset.historyView;
+    if (view !== 'sessions' && view !== 'input') {
+      return;
+    }
+
+    activeView = view;
+    syncHistoryViewTabs();
+    renderDropdownLoadingState();
+    void loadActiveHistory().then(renderDropdownContent);
+  });
 
   const sidebar = document.getElementById('sidebar');
   if (sidebar) {
@@ -159,6 +231,13 @@ function renderDropdownContent(): void {
   const content = dropdownEl.querySelector('.history-dropdown-content');
   const empty = dropdownEl.querySelector('.history-dropdown-empty');
   if (!content || !empty) return;
+
+  if (activeView === 'input') {
+    renderInputDropdownContent(content as HTMLElement, empty as HTMLElement);
+    return;
+  }
+
+  empty.textContent = t('history.noHistory');
 
   const adHocEntries = cachedEntries.filter(
     (entry) => (entry.launchOrigin ?? '').toLowerCase() !== 'space',
@@ -204,6 +283,66 @@ function renderDropdownContent(): void {
       recentContainer.appendChild(createHistoryItem(entry, false));
     });
     content.appendChild(recentContainer);
+  }
+}
+
+function renderInputDropdownContent(content: HTMLElement, empty: HTMLElement): void {
+  if (cachedInputEntries.length === 0) {
+    content.classList.add('hidden');
+    empty.textContent = t('inputHistory.empty');
+    empty.classList.remove('hidden');
+    return;
+  }
+
+  content.classList.remove('hidden');
+  empty.classList.add('hidden');
+  renderInputHistoryPanel(content, cachedInputEntries, {
+    onDelete: (entry) => {
+      void deleteInputHistory(entry.id)
+        .then(() => {
+          cachedInputEntries = cachedInputEntries.filter((candidate) => candidate.id !== entry.id);
+          renderDropdownContent();
+        })
+        .catch((error: unknown) => {
+          log.warn(() => `Failed to delete input history: ${String(error)}`);
+        });
+    },
+    onReplay: (entry) => {
+      const targetSessionId = $activeSessionId.get() ?? entry.sessionId;
+      void replayInputHistory(entry.id, targetSessionId)
+        .then(() => {
+          closeHistoryDropdown();
+        })
+        .catch((error: unknown) => {
+          log.warn(() => `Failed to replay input history: ${String(error)}`);
+        });
+    },
+  });
+}
+
+function syncHistoryViewTabs(): void {
+  if (!dropdownEl) {
+    return;
+  }
+
+  dropdownEl.querySelectorAll<HTMLButtonElement>('.history-dropdown-tab').forEach((button) => {
+    const selected = button.dataset.historyView === activeView;
+    button.classList.toggle('active', selected);
+    button.setAttribute('aria-selected', selected ? 'true' : 'false');
+  });
+}
+
+function renderDropdownLoadingState(): void {
+  if (!dropdownEl) {
+    return;
+  }
+
+  const content = dropdownEl.querySelector<HTMLElement>('.history-dropdown-content');
+  const empty = dropdownEl.querySelector<HTMLElement>('.history-dropdown-empty');
+  content?.classList.add('hidden');
+  if (empty) {
+    empty.textContent = t('inputHistory.loading');
+    empty.classList.remove('hidden');
   }
 }
 

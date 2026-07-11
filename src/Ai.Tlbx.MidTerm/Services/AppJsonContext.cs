@@ -18,9 +18,31 @@ using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Models.Hub;
 using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Models.Git;
+using Ai.Tlbx.MidTerm.Models.InputHistory;
+using Ai.Tlbx.MidTerm.Models.ControlPlane;
 using Ai.Tlbx.MidTerm.Services.Git;
 using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
+
+// --- Agent control plane ---
+[JsonSerializable(typeof(ControlPlaneWorkItem))]
+[JsonSerializable(typeof(ControlPlaneWorkItemListResponse))]
+[JsonSerializable(typeof(CreateControlPlaneWorkItemRequest))]
+[JsonSerializable(typeof(UpdateControlPlaneWorkItemRequest))]
+[JsonSerializable(typeof(ControlPlaneSessionStatus))]
+[JsonSerializable(typeof(ControlPlaneSessionStatusListResponse))]
+[JsonSerializable(typeof(PublishControlPlaneSessionStatusRequest))]
+[JsonSerializable(typeof(ControlPlaneCheckpoint))]
+[JsonSerializable(typeof(ControlPlaneCheckpointListResponse))]
+[JsonSerializable(typeof(CreateControlPlaneCheckpointRequest))]
+[JsonSerializable(typeof(ControlPlaneSnapshotResponse))]
+[JsonSerializable(typeof(ControlPlaneEvent))]
+[JsonSerializable(typeof(ControlPlaneEventListResponse))]
+[JsonSerializable(typeof(ControlPlaneDispatchRequest))]
+[JsonSerializable(typeof(ControlPlaneDispatchResult))]
+[JsonSerializable(typeof(ControlPlaneDispatchResponse))]
+[JsonSerializable(typeof(ControlPlaneSessionCapability))]
+[JsonSerializable(typeof(ControlPlaneCapabilitiesResponse))]
 
 // --- Bootstrap & System ---
 [JsonSerializable(typeof(BootstrapResponse))]
@@ -144,6 +166,12 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(ManagerBarQueueEntryDto))]
 [JsonSerializable(typeof(List<ManagerBarQueueEntryDto>))]
 [JsonSerializable(typeof(ManagerBarQueueEnqueueRequest))]
+[JsonSerializable(typeof(InputHistoryEntry))]
+[JsonSerializable(typeof(List<InputHistoryEntry>))]
+[JsonSerializable(typeof(InputHistoryListResponse))]
+[JsonSerializable(typeof(InputHistoryReplayRequest))]
+[JsonSerializable(typeof(InputHistoryReplayResponse))]
+[JsonSerializable(typeof(InputHistoryClearResponse))]
 
 // --- Files ---
 [JsonSerializable(typeof(FileCheckRequest))]
@@ -327,9 +355,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
-
-
 
 
 

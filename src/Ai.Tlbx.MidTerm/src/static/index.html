@@ -212,6 +212,27 @@
                 <rect x="14" y="14" width="7" height="7" rx="1" /></svg></span
             ><span data-i18n="spaces.title">Spaces</span>
           </button>
+          <button class="sidebar-nav-btn btn-operator" id="btn-operator">
+            <span class="icon icon-svg" aria-hidden="true"
+              ><svg
+                viewBox="0 0 24 24"
+                width="1em"
+                height="1em"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path d="M9 6h11" />
+                <path d="M9 12h11" />
+                <path d="M9 18h11" />
+                <path d="m3 6 1 1 2-2" />
+                <path d="m3 12 1 1 2-2" />
+                <path d="m3 18 1 1 2-2" /></svg></span
+            ><span data-i18n="operator.title">Operator</span>
+            <span id="operator-notification-badge" class="operator-notification-badge" hidden></span>
+          </button>
           <button class="sidebar-nav-btn btn-history btn-bookmarks" id="btn-bookmarks">
             <span class="icon icon-svg"
               ><svg
@@ -224,10 +245,10 @@
                 stroke-linecap="round"
                 stroke-linejoin="round"
               >
-                <polygon
-                  points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
-                /></svg></span
-            ><span data-i18n="sidebar.loadBookmarked">Bookmarks</span>
+                <path d="M3 12a9 9 0 1 0 3-6.7" />
+                <path d="M3 4v5h5" />
+                <path d="M12 7v5l3 2" /></svg></span
+            ><span data-i18n="sidebar.history">History</span>
           </button>
         </div>
         <div id="session-filter-bar" class="session-filter-bar" hidden>
@@ -679,6 +700,66 @@
               <span class="icon">&#xe909;</span>
             </button>
           </div>
+          <section id="operator-view" class="operator-view hidden" aria-labelledby="operator-title">
+            <header class="operator-header">
+              <div>
+                <h1 id="operator-title" data-i18n="operator.title">Operator</h1>
+                <p data-i18n="operator.subtitle">
+                  Exact machine facts and agent-published meaning across your fleet.
+                </p>
+              </div>
+              <div class="operator-header-actions">
+                <button
+                  id="operator-refresh"
+                  class="btn-icon"
+                  type="button"
+                  data-i18n-title="operator.refresh"
+                  title="Refresh"
+                >
+                  <span class="icon">&#xea2e;</span>
+                </button>
+                <button
+                  id="operator-close"
+                  class="btn-icon"
+                  type="button"
+                  data-i18n-title="operator.close"
+                  title="Close"
+                >
+                  <span class="icon">&#xe909;</span>
+                </button>
+              </div>
+            </header>
+            <div class="operator-scroll">
+              <div id="operator-metrics" class="operator-metrics"></div>
+              <section class="operator-section" aria-labelledby="operator-sessions-title">
+                <header class="operator-section-header">
+                  <h2 id="operator-sessions-title" data-i18n="operator.sessions">Sessions</h2>
+                  <span data-i18n="operator.sessionsHint">Process facts · agent publications · open work</span>
+                </header>
+                <div class="operator-session-head" aria-hidden="true">
+                  <span data-i18n="operator.session">Session</span>
+                  <span data-i18n="operator.machineFact">Machine fact</span>
+                  <span data-i18n="operator.agentPublished">Agent published</span>
+                  <span data-i18n="operator.work">Work</span>
+                </div>
+                <div id="operator-sessions" class="operator-session-list"></div>
+              </section>
+              <section class="operator-section" aria-labelledby="operator-work-title">
+                <header class="operator-section-header">
+                  <h2 id="operator-work-title" data-i18n="operator.workQueue">Work queue</h2>
+                  <span data-i18n="operator.workHint">Todos, mail, coding tasks, and next steps published by agents</span>
+                </header>
+                <div id="operator-work-items" class="operator-work-list"></div>
+              </section>
+              <section class="operator-section" aria-labelledby="operator-checkpoints-title">
+                <header class="operator-section-header">
+                  <h2 id="operator-checkpoints-title" data-i18n="operator.checkpoints">Checkpoints</h2>
+                  <span data-i18n="operator.checkpointsHint">Recent explicit progress and verification facts</span>
+                </header>
+                <div id="operator-checkpoints" class="operator-checkpoint-list"></div>
+              </section>
+            </div>
+          </section>
           <div id="empty-state" class="empty-state">
             <img src="/img/Midterm_exp.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
             <p data-i18n="terminal.noTerminals">No terminals open</p>

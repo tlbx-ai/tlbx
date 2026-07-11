@@ -144,7 +144,13 @@ describe('fileDrop', () => {
 
     expect(sendAppServerControlTurn).not.toHaveBeenCalled();
     expect(pasteToTerminal).toHaveBeenNthCalledWith(1, 's1', 'plain text', false);
-    expect(pasteToTerminal).toHaveBeenNthCalledWith(2, 's1', 'Q:/repo/uploads/pic.png', true);
+    expect(pasteToTerminal).toHaveBeenNthCalledWith(
+      2,
+      's1',
+      'Q:/repo/uploads/pic.png',
+      true,
+      'uploadPath',
+    );
   });
 
   it('uses upload-plus-path paste for clipboard images even for codex-like foreground apps', async () => {
@@ -170,11 +176,16 @@ describe('fileDrop', () => {
     expect(result).toBe('image');
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/sessions/s1/upload',
+      '/api/sessions/s1/upload?source=clipboard',
       expect.objectContaining({
         method: 'POST',
       }),
     );
-    expect(pasteToTerminal).toHaveBeenCalledWith('s1', 'Q:/repo/uploads/pic.png', true);
+    expect(pasteToTerminal).toHaveBeenCalledWith(
+      's1',
+      'Q:/repo/uploads/pic.png',
+      true,
+      'uploadPath',
+    );
   });
 });

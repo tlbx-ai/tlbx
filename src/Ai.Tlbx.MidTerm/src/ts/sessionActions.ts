@@ -81,6 +81,7 @@ import {
 } from './api/client';
 import { sendActiveSessionHint } from './modules/comms';
 import { t } from './modules/i18n';
+import { closeOperatorView } from './modules/operator';
 
 const log = createLogger('main');
 
@@ -266,6 +267,7 @@ export function createSessionActionHandlers({
   }
 
   function selectSession(sessionId: string, options?: SessionSelectionOptions): void {
+    closeOperatorView();
     closeMobileActionsMenu();
     if (options?.closeSettingsPanel !== false) {
       closeSettings();

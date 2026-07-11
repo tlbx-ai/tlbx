@@ -457,7 +457,31 @@ Responsive-frame mode only changes the embedded iframe's dimensions. Full Chromi
 
 For deeper implementation detail, see [devbrowser.md](devbrowser.md) and [MOBILE_DEVICE_LAB.md](MOBILE_DEVICE_LAB.md).
 
-## 6. Settings, Data Model, and Storage
+## 6. Deterministic Input History and Agent Control Plane
+
+MidTerm has two server-owned operator data streams that deliberately avoid semantic reconstruction from terminal output.
+
+### Terminal input history
+
+`InputHistoryService` records only interactions MidTerm itself handled through an explicit boundary: Command Bay or prompt API submission, server-side text paste, clipboard image upload, file drop, and upload. Normal PTY output and arbitrary keystrokes are not parsed into “prompts.” Entries keep the exact replay payload and origin surface, are bounded by count and aggregate text size, and are atomically persisted to `input-history.json`.
+
+The History dropdown renders the same records exposed by `/api/input-history` and the generated `mt_input_history*` helpers. Image previews use an entry-scoped content endpoint, so a persisted thumbnail does not depend on the original session still existing. Replay goes through the existing server prompt/paste paths, so the UI and agents use the same contract.
+
+### Agent control plane
+
+`ControlPlaneService` is an outlet for agents, not an agent. It stores three explicit record types:
+
+- work items for todos, mail, coding tasks, decisions, and next actions
+- one agent-published status per session
+- append-only checkpoints for progress and verification facts
+
+Records carry source, session, project, repository, timestamps, and revision where applicable. Known semantic states are validated rather than guessed. A bounded sequence log is emitted from mutations, which powers `mt_events` and exact browser notifications.
+
+Operator combines those publications with authoritative session facts such as `isRunning`, exit code, and the reported foreground process. It never presents `SessionSupervisorService` heat/timing classifications as agent meaning. Trusted Hub machines are read through authenticated Hub proxy endpoints.
+
+`mt_dispatch` accepts an explicit, deduplicated target list and calls the direct turn path for each target. It does not select targets or route through the heat-based Command Bay queue. `mt_agent_capabilities` likewise reports only product features and exact runtime flags.
+
+## 7. Settings, Data Model, and Storage
 
 ### Public vs Internal Settings
 
@@ -493,8 +517,10 @@ MidTerm uses a mix of server-side and browser-side storage:
 | Sidebar width/collapse       | cookies                                       |
 | Smart Input/chat/touch prefs | browser `localStorage`                        |
 | Preview snapshots            | `.midterm/snapshot_*` under the working tree  |
+| Terminal input history       | server-side `input-history.json`              |
+| Agent control plane          | server-side `control-plane.json`              |
 
-## 7. Security and Remote Access
+## 8. Security and Remote Access
 
 MidTerm assumes that anyone who reaches the UI could gain shell access, so the design layers multiple controls.
 
@@ -528,7 +554,7 @@ MidTerm also includes:
 - single-session share grants with expiry and scoped access modes
 - shared-session UI reduction so the recipient only sees the granted terminal context
 
-## 8. Install and Update Pipeline
+## 9. Install and Update Pipeline
 
 MidTerm treats installer and self-update reliability as part of the architecture, not an afterthought.
 
@@ -563,7 +589,7 @@ The update-script generator produces non-interactive scripts that:
 
 That is how MidTerm can update installed systems without asking users to manually babysit file replacement.
 
-## 9. Protocols and APIs
+## 10. Protocols and APIs
 
 ### WebSockets
 
@@ -590,7 +616,7 @@ Major API areas include:
 
 MidTerm's API surface is large because the browser shell is a real workstation shell, not only a terminal transport.
 
-## 10. Diagnostics and Operations
+## 11. Diagnostics and Operations
 
 The diagnostics layer exposes:
 

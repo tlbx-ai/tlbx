@@ -512,6 +512,7 @@ export async function sendSessionPasteInput(
     text: string;
     bracketedPaste: boolean;
     isFilePath?: boolean;
+    historySource?: string;
   },
 ): Promise<void> {
   const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/input/paste`, {
@@ -523,6 +524,7 @@ export async function sendSessionPasteInput(
       text: request.text,
       bracketedPaste: request.bracketedPaste,
       isFilePath: request.isFilePath ?? false,
+      historySource: request.historySource ?? null,
     }),
   });
 

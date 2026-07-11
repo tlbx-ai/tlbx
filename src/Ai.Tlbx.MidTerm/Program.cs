@@ -213,6 +213,8 @@ public class Program
         var aiCliProfileService = app.Services.GetRequiredService<AiCliProfileService>();
         var workerSessionRegistry = app.Services.GetRequiredService<WorkerSessionRegistryService>();
         var historyService = app.Services.GetRequiredService<HistoryService>();
+        var inputHistoryService = app.Services.GetRequiredService<InputHistoryService>();
+        var controlPlaneService = app.Services.GetRequiredService<ControlPlaneService>();
         var spaceService = app.Services.GetRequiredService<SpaceService>();
         var sessionPathAllowlistService = app.Services.GetRequiredService<SessionPathAllowlistService>();
         var gitWatcher = app.Services.GetRequiredService<GitWatcherService>();
@@ -385,7 +387,8 @@ public class Program
             agentVibe,
             aiCliProfileService,
             workerSessionRegistry,
-            muxManager);
+            muxManager,
+            inputHistoryService);
         SpaceEndpoints.MapSpaceEndpoints(
             app,
             spaceService,
@@ -406,6 +409,19 @@ public class Program
         }
         TmuxEndpoints.MapSessionInputEndpoint(app, sessionManager);
         HistoryEndpoints.MapHistoryEndpoints(app, historyService, sessionManager);
+        InputHistoryEndpoints.MapInputHistoryEndpoints(
+            app,
+            inputHistoryService,
+            sessionManager,
+            sessionTelemetry,
+            managerBarQueueService);
+        ControlPlaneEndpoints.MapControlPlaneEndpoints(
+            app,
+            controlPlaneService,
+            sessionManager,
+            appServerControlRuntime,
+            managerBarQueueService,
+            inputHistoryService);
         FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService, gitWatcher);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);

@@ -165,6 +165,7 @@ import { initSmartInput, setAppServerControlResumeConversationHandler } from './
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
 import { closeSpacesDropdown, initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
+import { initOperatorView } from './modules/operator';
 import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
@@ -179,6 +180,7 @@ import {
 import {
   $activeSessionId,
   $settingsOpen,
+  $operatorOpen,
   $sessionList,
   $currentSettings,
   $layout,
@@ -344,6 +346,7 @@ async function init(): Promise<void> {
       }
     },
   );
+  initOperatorView({ onSelectSession: selectSession });
   const spacesRuntimeOptions = {
     resolveLaunchDimensions: resolveNewSessionDimensions,
     resolveShell: resolveLauncherShell,
@@ -514,7 +517,7 @@ async function initShared(): Promise<void> {
 }
 
 function getVisibleTerminalSessionIds(): string[] {
-  if ($settingsOpen.get()) {
+  if ($settingsOpen.get() || $operatorOpen.get()) {
     return [];
   }
 
@@ -569,6 +572,7 @@ function bindTerminalVisibilitySync(): void {
   $settingsOpen.subscribe(() => {
     syncMuxTerminalVisibility();
   });
+  $operatorOpen.subscribe(syncMuxTerminalVisibility);
 
   let lastResumeMode = $currentSettings.get()?.resumeMode ?? null;
   $currentSettings.subscribe((settings) => {

@@ -1506,6 +1506,7 @@ export async function pasteToTerminal(
   sessionId: string,
   data: string,
   isFilePath: boolean = false,
+  historySource?: string,
 ): Promise<void> {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
@@ -1525,6 +1526,7 @@ export async function pasteToTerminal(
       text: data,
       bracketedPaste: bpmEnabled,
       isFilePath,
+      ...(historySource ? { historySource } : {}),
     });
   } finally {
     if (showIndicator) {

@@ -173,6 +173,8 @@ public static class ServerSetup
                 settingsService: _.GetRequiredService<SettingsService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
+        builder.Services.AddSingleton<InputHistoryService>();
+        builder.Services.AddSingleton<ControlPlaneService>();
         builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();

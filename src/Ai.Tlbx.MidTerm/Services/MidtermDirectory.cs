@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "24";
+    private const string GuidanceVersion = "27";
 
     private static int _port;
     private static AuthService? _authService;
@@ -212,6 +212,18 @@ public static class MidtermDirectory
         | `mt_inject [id]` | Ensure `.midterm` + mtcli helpers in the target cwd |
         | `mt_activity [id] [seconds] [bellLimit]` | Output heatmap + bell history as JSON |
         | `mt_attention [agentOnly]` | Ranked fleet view for which worker sessions need attention |
+        | `mt_control_plane [machineId]` | Read local or Hub-machine agent-published work, session status, and checkpoints as JSON |
+        | `mt_agent_capabilities [machineId]` | Discover exact product features and per-session prompt modes from runtime flags |
+        | `mt_events [after] [limit] [machineId]` | Read ordered, exact control-plane mutation events without transcript interpretation |
+        | `mt_dispatch <id,id,...> <text...>` | Fan one prompt out to an explicit session set and receive one result per target |
+        | `mt_work_list` / `mt_work_add` / `mt_work_update` / `mt_work_delete` | Publish and maintain concrete todos, mail replies, coding tasks, and next steps |
+        | `mt_publish_status` / `mt_status_list` / `mt_status_clear` | Publish or read explicit session meaning (`working`, `waiting`, `needsInput`, `blocked`, `done`) |
+        | `mt_checkpoint` / `mt_checkpoints` | Publish and read durable, timestamped progress or verification facts |
+        | `mt_input_history [id] [kind] [limit]` | List deterministic Terminal prompt, paste, and upload history as JSON |
+        | `mt_input_history_show <entryId>` | Read one full input-history entry |
+        | `mt_input_history_replay <entryId> [targetId]` | Replay an exact prompt or paste into the original or target session |
+        | `mt_input_history_delete <entryId>` | Delete one input-history entry |
+        | `mt_input_history_clear [id]` | Clear deterministic input history for a session |
         | `mt_supervise [repo...]` | One-shot supervisor snapshot: optional repo binding, refreshed repo status, and fleet attention |
         | `mt_bootstrap <name> <cwd> <profile> [slashCommand...]` | Create a fresh agent-controlled worker session with guidance + AI CLI bootstrap |
         | `mt_new_session [shell] [cwd]` | Create a new terminal session |
@@ -300,6 +312,21 @@ public static class MidtermDirectory
         mt_bootstrap "DAI worker" "Q:/repos/DAI2" codex approvals
         mt_supervise "Q:/repos/Jpa" "Q:/repos/MidTerm" → check repos + fleet before dispatching more work
 
+        ## Reuse exact Terminal input
+
+        mt_input_history → mt_input_history_show ENTRY_ID → mt_input_history_replay ENTRY_ID SESSION_ID
+
+        Input history contains only events MidTerm handled explicitly, such as Terminal Command Bay prompts, `mt_prompt`, text paste, clipboard images, and file uploads. It does not guess semantic prompts from PTY output or screen contents.
+
+        ## Publish operator state
+
+        mt_publish_status working "Implementing deterministic history" "Control plane API" "Run focused tests" MidTerm
+        mt_work_add mail "Answer rollout question" "Customer asked for the date" "Draft reply for approval" high JPA gmail-thread-42
+        mt_checkpoint verified "Focused tests pass" "18 backend tests" MidTerm
+        mt_agent_capabilities → mt_dispatch a1b2c3d4,e5f6g7h8 "Run the focused verification and publish a checkpoint"
+
+        The control plane is an outlet for agents, not another agent. Publish only facts you know. MidTerm stores and displays those records verbatim; it does not infer project meaning, blocked state, or next steps from terminal output.
+
         ## Track multiple Git repositories in one session
 
         mt_repo list → mt_repo add "Q:/repos/Jpa" target → mt_repo refresh → check the IDE bar Git blocks
@@ -345,6 +372,10 @@ public static class MidtermDirectory
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended
         - mt_slash routes slash commands like `/status` or `/compact` through the same prompt path instead of pasting them manually
         - mt_wake queues a future prompt through the Command Bay queue, so delayed work survives helper reloads and can be canceled from the queue
+        - mt_input_history and its show/replay/delete helpers expose the same deterministic Terminal history available to the UI; use them instead of scraping terminal output to recover prior prompts or pasted paths
+        - mt_control_plane is the machine-readable operator outlet; use mt_work_add/update, mt_publish_status, and mt_checkpoint to make work and next actions visible without asking MidTerm to infer them
+        - mt_agent_capabilities reports product-authored feature flags and exact session runtime flags; mt_dispatch acts only on the session IDs you pass and returns a separate accepted/queued/error result for each
+        - mt_events is an ordered event feed derived only from explicit control-plane mutations; use its latestSequence cursor instead of parsing terminal output for completion or attention
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
         - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; add every additional repo you use that is not the cwd before falling back to ad hoc shell git checks
         - mt_supervise [repo...] combines repo binding, repo refresh, and fleet attention into one low-token supervisor snapshot before dispatching or resuming workers

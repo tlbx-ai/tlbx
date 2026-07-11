@@ -317,12 +317,17 @@ export function sanitizePasteContent(text: string): string {
 /**
  * Upload a file to the server for the given session
  */
-export async function uploadFile(sessionId: string, file: File): Promise<string | null> {
+export async function uploadFile(
+  sessionId: string,
+  file: File,
+  source: 'clipboard' | 'fileDrop' | 'upload' = 'upload',
+): Promise<string | null> {
   const formData = new FormData();
   formData.append('file', file);
 
   try {
-    const response = await fetch(`/api/sessions/${sessionId}/upload`, {
+    const query = new URLSearchParams({ source });
+    const response = await fetch(`/api/sessions/${sessionId}/upload?${query.toString()}`, {
       method: 'POST',
       body: formData,
     });
@@ -410,13 +415,13 @@ async function pasteClipboardImageAsPath(
   const overlay = showTransferOverlay(sessionId, t('fileDrop.uploadingToTerminal'));
   const file = buildClipboardImageFile(imageData);
   try {
-    const path = await uploadFile(sessionId, file);
+    const path = await uploadFile(sessionId, file, 'clipboard');
     if (!path) {
       return 'unavailable';
     }
 
     overlay.setLabel(t('fileDrop.transferringToTerminal'));
-    await pasteToTerminal(sessionId, sanitizePasteContent(path), true);
+    await pasteToTerminal(sessionId, sanitizePasteContent(path), true, 'uploadPath');
     return 'image';
   } finally {
     overlay.close();
@@ -508,7 +513,7 @@ async function uploadDroppedFile(
   kind: AppServerControlAttachmentReference['kind'],
   state: FileDropProcessingState,
 ): Promise<void> {
-  const path = await uploadFile(sessionId, file);
+  const path = await uploadFile(sessionId, file, 'fileDrop');
   if (!path) {
     return;
   }
@@ -582,7 +587,7 @@ async function flushTerminalDropUploads(
 
   overlay?.setLabel(t('fileDrop.transferringToTerminal'));
   const joined = sanitizePasteContent(uploadedPaths.join(' '));
-  await pasteToTerminal(sessionId, joined, true);
+  await pasteToTerminal(sessionId, joined, true, 'uploadPath');
 }
 
 /**
