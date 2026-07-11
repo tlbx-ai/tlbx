@@ -3,13 +3,13 @@
 </p>
 
 <p align="center">
-  <a href="#install-midterm-recommended"><strong>Install MidTerm</strong></a>
+  <a href="#install"><strong>Install</strong></a>
   ·
-  <a href="#not-ssh-in-a-browser"><strong>Mental model</strong></a>
+  <a href="#agent-cli-ergonomics"><strong>Agent ergonomics</strong></a>
   ·
-  <a href="docs/FEATURES.md"><strong>Feature inventory</strong></a>
+  <a href="#private-remote-access"><strong>Remote access</strong></a>
   ·
-  <a href="docs/ARCHITECTURE.md"><strong>Architecture</strong></a>
+  <a href="docs/FEATURES.md"><strong>All features</strong></a>
 </p>
 
 <p align="center">
@@ -20,9 +20,9 @@
 
 # Run your coding agents on your machines. Steer them from anywhere.
 
-Start Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or all of them at once—on the machines that own your work. MidTerm keeps every session alive and puts control in any browser.
+Start Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or several at once—where the repos live. MidTerm keeps every session alive and puts control in any browser.
 
-**Your machines are browser tabs. Your agents keep working when you leave.** Each MidTerm instance remains independent; your browser moves between them without moving the repositories, credentials, tools, or processes.
+**Your machines are browser tabs. Your agents keep working when you leave.**
 
 <p align="center">
   <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a MidTerm browser tab beside another MidTerm host" width="100%">
@@ -30,16 +30,14 @@ Start Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—o
 
 ## Agent CLI ergonomics
 
-MidTerm runs any terminal-native tool in a real PTY, but it is deliberately shaped around the friction of long-running coding agents.
+MidTerm runs any terminal-native tool in a real PTY, but it is shaped around long-running coding agents:
 
-| Friction                   | What MidTerm does                                                                                                                                                                                               |
-| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Several agents at once** | Keep Codex, Claude Code, Grok Build, OpenCode, Antigravity CLI, Copilot CLI, ordinary shells, tests, and servers visible as independent sessions; split, reorder, bookmark, and revisit them                    |
-| **Screenshot paste**       | Press `Ctrl+V` or `Cmd+V`; MidTerm uploads the clipboard image to the host and inserts its path into the active terminal CLI. The structured agent composer stages images as attachments with stable references |
-| **Prompt composition**     | Use multiline input, per-session drafts, files, drag-and-drop, camera capture, reusable actions, and scheduled follow-ups instead of fighting terminal input semantics                                          |
-| **Attention and control**  | See process, activity, working directory, repository state, and sessions needing input; structured runtimes additionally expose approvals, questions, tools, diffs, model controls, and interrupts              |
-| **Proof, not claims**      | Open the changed app beside the agent; inspect DOM, console and proxy logs, responsive layouts, and screenshots without leaving the session                                                                     |
-| **Leave and return**       | Agent processes survive browser disconnects, device changes, and travel; phone controls remain available when a full keyboard is not                                                                            |
+- **Run many:** split, reorder, bookmark, and revisit independent agent, shell, test, and server sessions.
+- **Paste screenshots normally:** `Ctrl+V` / `Cmd+V` uploads the image to the host and inserts its path. Structured agent sessions stage it as an attachment.
+- **Compose real prompts:** multiline input, per-session drafts, files, drag-and-drop, camera capture, reusable actions, and scheduled follow-ups.
+- **See what needs you:** process, activity, working directory, repository state, and attention; supported structured runtimes add tools, approvals, questions, diffs, models, and interrupts.
+- **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.
+- **Leave and return:** sessions survive browser disconnects, device changes, and travel.
 
 <p align="center">
   <img src="docs/marketing/readme/agent-control-room.svg" alt="Codex, Claude Code, Grok Build, OpenCode, Copilot CLI, and Antigravity CLI sessions controlled concurrently in MidTerm" width="100%">
@@ -47,20 +45,17 @@ MidTerm runs any terminal-native tool in a real PTY, but it is deliberately shap
 
 ## Not SSH in a browser
 
-SSH opens a connection to a shell. MidTerm reopens the machine's living workspace: persistent agents and terminals plus their files, Git state, commands, notes, logs, screenshots, and app previews.
+SSH opens a shell connection. MidTerm reopens the machine's living context: agents, terminals, files, Git, notes, logs, and app previews.
 
-- Run one MidTerm instance on every host you want to reach.
-- Open each independent instance in its own browser tab.
-- Leave, switch networks, or change devices; the host-side sessions continue.
-- Bring your own network path—LAN, VPN, or reverse tunnel—without making it the working interface.
+Run one independent MidTerm instance per host. Open your home workstation, office laptop, or server as adjacent tabs. Bring LAN, VPN, or reverse-tunnel connectivity; MidTerm becomes the working interface.
 
 <p align="center">
   <img src="docs/marketing/readme/your-machines-are-tabs.svg" alt="A browser anywhere connects to independent MidTerm instances on a home workstation, office laptop, and server; each machine keeps its own repositories, agents, and processes" width="100%">
 </p>
 
-## Install MidTerm (recommended)
+## Install
 
-The native installer configures the local service, password-protected HTTPS, and the update path.
+The native installer configures the service, password-protected HTTPS, and updates.
 
 **macOS / Linux**
 
@@ -74,61 +69,38 @@ curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 ```
 
-Then open `https://localhost:2000` in your browser.
+Open `https://localhost:2000`. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.
 
-| Install mode       | Use it when                                                                            |
-| ------------------ | -------------------------------------------------------------------------------------- |
-| **System service** | MidTerm should stay available across logouts and reboots, including from other devices |
-| **User install**   | You want a persistent personal install without administrator access                    |
+## Private remote access
 
-## System model
+MidTerm is not a VPN or hosted relay. You choose the network path.
 
-| Property      | MidTerm's boundary                                                                                                    |
-| ------------- | --------------------------------------------------------------------------------------------------------------------- |
-| **Host**      | Each installation exposes one machine and remains operationally independent                                           |
-| **Execution** | Real PTYs and child processes use that host's repositories, credentials, tools, hardware, and network                 |
-| **Client**    | Any authorized browser; multiple MidTerm hosts can sit in adjacent tabs                                               |
-| **Transport** | HTTPS + WebSocket over loopback, LAN, your VPN, or your reverse tunnel                                                |
-| **Lifetime**  | Browser connections are transient; host-side agents, shells, tests, and servers persist                               |
-| **Context**   | Working directory, scrollback, repository state, files, Git, notes, logs, and previews remain attached to the session |
-| **Agents**    | Any terminal-native agent; structured runtimes get tool activity, approvals, diffs, model controls, and interrupts    |
+**Recommended default:** put the MidTerm host and your client devices in the same [Tailscale](https://tailscale.com/) tailnet—or use an equivalent WireGuard mesh VPN—and open MidTerm through its private address instead of exposing it publicly.
 
-Run Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI, Aider, or any other terminal-native tool where it already belongs. MidTerm does not move the repository into a hosted execution environment.
+This is a strong security baseline: tailnet traffic is end-to-end encrypted, and [grants/ACLs](https://tailscale.com/docs/features/access-control) can restrict which identities and devices reach the host. Keep MidTerm's HTTPS/password authentication enabled, use least-privilege rules, and keep both products updated.
 
-Within one host, multiple agents, shells, test runners, and servers can be split, reordered, bookmarked, and monitored across repositories.
-
-## Network boundary
-
-MidTerm is not a VPN, mesh network, or hosted relay. Remote access follows the network path that matches your threat model:
-
-- [Tailscale](https://tailscale.com)
-- Cloudflare Tunnel
-- nginx, Caddy, or another HTTPS reverse proxy
-- loopback or LAN
-
-Each instance provides password authentication, local HTTPS and certificate-trust helpers, API keys, and scoped share links. SSH remains available _inside_ a MidTerm terminal when the target system requires it; it is not the interface used to reach MidTerm itself.
+Cloudflare Tunnel, nginx/Caddy, LAN, and other private-network setups also work.
 
 <p align="center">
   <img src="docs/marketing/readme/host-session-anywhere.svg" alt="A MidTerm session remains on its host while browsers at a desk, on a laptop, and on a phone reconnect to it from different locations" width="100%">
 </p>
 
 > [!IMPORTANT]
-> MidTerm has no repository-hosting cloud. Agent processes still communicate with their configured providers under those providers' terms.
+> MidTerm has no repository-hosting cloud. Repos, credentials, tools, and processes stay on each host. Agent-provider traffic remains subject to that provider's configuration and terms.
 
-## Main surfaces
+## System boundary
 
-| Surface         | Purpose                                                                                                                    |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Terminal**    | Persistent real PTYs, split layouts, search, exact paste, uploads, touch controls, activity and recovery                   |
-| **Agent view**  | Structured turns, tools, approvals, answers, diffs, interrupts and model settings where the provider runtime supports them |
-| **Dev Browser** | Session-scoped previews, isolated contexts, DOM control, console/proxy logs, screenshots and responsive testing            |
-| **Files + Git** | File tree, previews, editing, repository state, line deltas, conflicts, stashes and recent commits                         |
-| **Command Bay** | Multiline input, files and images, reusable actions, mobile keys, prompt routing and scheduled follow-ups                  |
-| **Operations**  | Authentication, HTTPS, API keys, scoped sharing, updates, diagnostics, logs and service controls                           |
+| Part          | Behavior                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| **Host**      | One independent MidTerm instance exposes one machine                                       |
+| **Execution** | Real PTYs use that host's repos, credentials, tools, hardware, and network                 |
+| **Client**    | Any authorized browser; several hosts can sit in adjacent tabs                             |
+| **Lifetime**  | Browser connections are transient; agents, shells, tests, and servers persist              |
+| **Context**   | Working directory, scrollback, Git, files, notes, logs, and previews stay with the session |
 
-See the complete [feature inventory](docs/FEATURES.md) and [architecture](docs/ARCHITECTURE.md).
+Structured agent controls are runtime-dependent. Every terminal-native tool still works through its real PTY.
 
-## Fallback: run it once with `npx`
+## Trial fallback
 
 For an ephemeral loopback trial:
 
@@ -136,55 +108,28 @@ For an ephemeral loopback trial:
 npx @tlbx-ai/midterm
 ```
 
-The launcher downloads the stable native binary, binds it to loopback, and opens a browser. Use the [native installer](#install-midterm-recommended) for persistent or remote use.
+The launcher downloads the stable native binary and opens a browser. Use the native installer for persistent remote operation.
 
-## Uninstall
-
-```bash
-# macOS / Linux
-curl -fsSL https://tlbx-ai.github.io/MidTerm/uninstall.sh | bash
-```
-
-```powershell
-# Windows PowerShell
-irm https://tlbx-ai.github.io/MidTerm/uninstall.ps1 | iex
-```
-
-The uninstallers remove only known MidTerm-owned locations and request elevation only when system-level cleanup requires it.
-
-## Architecture
+## Architecture and source
 
 ```text
 browser anywhere
-   ├── HTTPS / WebSocket ──► MidTerm on home workstation
-   │                           ├── mthost / mtagenthost
-   │                           └── repos / tools / apps / processes
-   └── HTTPS / WebSocket ──► MidTerm on office laptop
-                               ├── mthost / mtagenthost
-                               └── repos / tools / apps / processes
+   ├── HTTPS / WebSocket ──► MidTerm on home workstation ──► agents / repos / apps
+   └── HTTPS / WebSocket ──► MidTerm on office laptop ─────► agents / repos / apps
 ```
 
-MidTerm is built with .NET 10 Native AOT, TypeScript, and xterm.js.
+MidTerm uses .NET 10 Native AOT, TypeScript, and xterm.js.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature inventory](docs/FEATURES.md)
-- [Dev Browser design](docs/devbrowser.md)
-- [Contributing guide](docs/CONTRIBUTING.md)
-
-## Build from source
-
-Prerequisites: [.NET 10 SDK](https://dotnet.microsoft.com/download) and [esbuild](https://esbuild.github.io/) in `PATH`.
+- [Contributing](docs/CONTRIBUTING.md)
 
 ```bash
 git clone https://github.com/tlbx-ai/MidTerm.git
 cd MidTerm
 dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
-dotnet test src/Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj
-dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj
 ```
 
-## Contributing and license
+Uninstallers: [macOS/Linux](https://tlbx-ai.github.io/MidTerm/uninstall.sh) · [Windows](https://tlbx-ai.github.io/MidTerm/uninstall.ps1)
 
-Issues, field reports, and contributions are welcome. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md); contributions require acceptance of the [Contributor License Agreement](docs/CLA.md).
-
-MidTerm is licensed under [GNU AGPL v3](LICENSE). Commercial licensing is available from [tlbx-ai](https://github.com/tlbx-ai).
+MidTerm is [GNU AGPL v3](LICENSE). Commercial licensing is available from [tlbx-ai](https://github.com/tlbx-ai).

@@ -21,4 +21,6 @@ Install MidTerm:
 - Source repo: [github.com/tlbx-ai/MidTerm](https://github.com/tlbx-ai/MidTerm)
 - Product docs: [docs/FEATURES.md](https://github.com/tlbx-ai/MidTerm/blob/main/docs/FEATURES.md)
 
+For private remote access, use Tailscale—or an equivalent WireGuard mesh VPN—and open MidTerm through the host's private address.
+
 Ephemeral loopback fallback: `npx @tlbx-ai/midterm`. Native installation is required to experience persistent remote agent control properly.
