@@ -465,7 +465,7 @@ MidTerm has two server-owned operator data streams that deliberately avoid seman
 
 `InputHistoryService` records only interactions MidTerm itself handled through an explicit boundary: Command Bay or prompt API submission, server-side text paste, clipboard image upload, file drop, and upload. Normal PTY output and arbitrary keystrokes are not parsed into “prompts.” Entries keep the exact replay payload and origin surface, are bounded by count and aggregate text size, and are atomically persisted to `input-history.json`.
 
-The History dropdown renders the same records exposed by `/api/input-history` and the generated `mt_input_history*` helpers. Image previews use an entry-scoped content endpoint, so a persisted thumbnail does not depend on the original session still existing. Replay goes through the existing server prompt/paste paths, so the UI and agents use the same contract.
+The direct **Prompt & Paste** sidebar entry renders the same records exposed by `/api/input-history` and the generated `mt_input_history*` helpers. Bookmarks remains a separate, unchanged launch-history surface. Image previews use an entry-scoped content endpoint, so a persisted thumbnail does not depend on the original session still existing. Replay goes through the existing server prompt/paste paths, so the UI and agents use the same contract.
 
 ### Agent control plane
 

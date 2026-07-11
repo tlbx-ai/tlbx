@@ -1802,43 +1802,6 @@ body::before {
   border-bottom: 1px solid var(--border-color);
 }
 
-.history-dropdown-tabs {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  padding: 4px;
-}
-
-.history-dropdown-tab {
-  flex: 1 1 0;
-  min-width: 0;
-  height: 28px;
-  padding: 0 8px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.history-dropdown-tab:hover {
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--btn-secondary) 64%, transparent);
-}
-
-.history-dropdown-tab.active {
-  color: var(--text-primary);
-  background: var(--btn-secondary);
-}
-
-.history-dropdown-tab:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-blue) 72%, transparent);
-  outline-offset: -2px;
-}
-
 .spaces-dropdown-header {
   display: flex;
   align-items: center;
@@ -1888,18 +1851,6 @@ body::before {
 
 .input-history-info {
   padding-right: 42px;
-}
-
-.input-history-kind {
-  border-color: color-mix(in srgb, var(--accent-blue) 28%, transparent);
-  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
-  color: color-mix(in srgb, var(--accent-blue) 76%, var(--text-primary));
-}
-
-.input-history-kind-imagePaste {
-  border-color: color-mix(in srgb, var(--accent-green) 28%, transparent);
-  background: color-mix(in srgb, var(--accent-green) 8%, transparent);
-  color: color-mix(in srgb, var(--accent-green) 76%, var(--text-primary));
 }
 
 .input-history-preview {

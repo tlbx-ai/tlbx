@@ -16,6 +16,7 @@ import { icon } from '../../constants';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
+import { closeSpacesDropdown } from '../spaces';
 import { formatHistoryDirectoryDisplay } from './historyPathDisplay';
 import { getHistoryModeBadgeText, getHistoryModeDisplayText } from './launchMode';
 import { $activeSessionId } from '../../stores';
@@ -33,7 +34,8 @@ let dropdownEl: HTMLElement | null = null;
 let isOpen = false;
 let cachedEntries: LaunchEntry[] = [];
 let cachedInputEntries: InputHistoryEntry[] = [];
-let activeView: 'sessions' | 'input' = 'sessions';
+type HistoryView = 'sessions' | 'input';
+let activeView: HistoryView = 'sessions';
 let inputLoadGeneration = 0;
 let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
 let onRenameEntry: ((entryId: string, newLabel: string) => void) | null = null;
@@ -61,6 +63,15 @@ export function initHistoryDropdown(
   onSpawnSession = spawnCallback;
   onRenameEntry = renameCallback ?? null;
   createDropdownElement();
+  for (const [id, view] of [
+    ['btn-bookmarks', 'sessions'],
+    ['btn-input-history', 'input'],
+  ] as const) {
+    document.getElementById(id)?.addEventListener('click', () => {
+      closeSpacesDropdown();
+      toggleHistoryDropdown(view);
+    });
+  }
   void loadHistory();
   window.addEventListener('resize', handleViewportChange);
   window.addEventListener('orientationchange', handleViewportChange);
@@ -79,15 +90,7 @@ function handleInputHistoryShortcut(event: KeyboardEvent): void {
   }
 
   event.preventDefault();
-  activeView = 'input';
-  if (!isOpen) {
-    document.getElementById('btn-bookmarks')?.click();
-    return;
-  }
-
-  syncHistoryViewTabs();
-  renderDropdownLoadingState();
-  void loadInputHistory().then(renderDropdownContent);
+  toggleHistoryDropdown('input');
 }
 
 /**
@@ -105,20 +108,23 @@ export function refreshHistory(): void {
 /**
  * Toggle the history dropdown visibility.
  */
-export function toggleHistoryDropdown(): void {
-  if (isOpen) {
+export function toggleHistoryDropdown(view: HistoryView = 'sessions'): void {
+  if (isOpen && activeView === view) {
     closeHistoryDropdown();
   } else {
-    openHistoryDropdown();
+    openHistoryDropdown(view);
   }
 }
 
 /**
  * Open the history dropdown.
  */
-export function openHistoryDropdown(): void {
+export function openHistoryDropdown(view: HistoryView = 'sessions'): void {
   if (!dropdownEl) return;
 
+  activeView = view;
+  syncHistoryHeader();
+  renderDropdownLoadingState();
   void loadActiveHistory().then(() => {
     positionDropdown();
     renderDropdownContent();
@@ -176,28 +182,10 @@ function createDropdownElement(): void {
   dropdownEl = document.createElement('div');
   dropdownEl.className = 'history-dropdown';
   dropdownEl.innerHTML = `
-    <div class="history-dropdown-header history-dropdown-tabs" role="tablist">
-      <button type="button" class="history-dropdown-tab active" data-history-view="sessions" role="tab" aria-selected="true">${t('inputHistory.sessionsTab')}</button>
-      <button type="button" class="history-dropdown-tab" data-history-view="input" role="tab" aria-selected="false">${t('inputHistory.inputTab')}</button>
-    </div>
+    <div class="history-dropdown-header">${t('sidebar.loadBookmarked')}</div>
     <div class="history-dropdown-content"></div>
     <div class="history-dropdown-empty">${t('history.noHistory')}</div>
   `;
-
-  dropdownEl.querySelector('.history-dropdown-tabs')?.addEventListener('click', (event) => {
-    const button = (event.target as HTMLElement | null)?.closest<HTMLButtonElement>(
-      '.history-dropdown-tab',
-    );
-    const view = button?.dataset.historyView;
-    if (view !== 'sessions' && view !== 'input') {
-      return;
-    }
-
-    activeView = view;
-    syncHistoryViewTabs();
-    renderDropdownLoadingState();
-    void loadActiveHistory().then(renderDropdownContent);
-  });
 
   const sidebar = document.getElementById('sidebar');
   if (sidebar) {
@@ -208,7 +196,9 @@ function createDropdownElement(): void {
 function positionDropdown(): void {
   if (!dropdownEl) return;
 
-  const trigger = document.getElementById('btn-bookmarks');
+  const trigger = document.getElementById(
+    activeView === 'input' ? 'btn-input-history' : 'btn-bookmarks',
+  );
   const sidebar = document.getElementById('sidebar');
   if (!(trigger instanceof HTMLElement) || !(sidebar instanceof HTMLElement)) {
     return;
@@ -320,16 +310,17 @@ function renderInputDropdownContent(content: HTMLElement, empty: HTMLElement): v
   });
 }
 
-function syncHistoryViewTabs(): void {
+function syncHistoryHeader(): void {
   if (!dropdownEl) {
     return;
   }
 
-  dropdownEl.querySelectorAll<HTMLButtonElement>('.history-dropdown-tab').forEach((button) => {
-    const selected = button.dataset.historyView === activeView;
-    button.classList.toggle('active', selected);
-    button.setAttribute('aria-selected', selected ? 'true' : 'false');
-  });
+  const header = dropdownEl.querySelector<HTMLElement>('.history-dropdown-header');
+  if (header) {
+    header.textContent = t(
+      activeView === 'input' ? 'sidebar.inputHistory' : 'sidebar.loadBookmarked',
+    );
+  }
 }
 
 function renderDropdownLoadingState(): void {
@@ -782,7 +773,11 @@ function handleOutsideClick(e: MouseEvent): void {
   if (!dropdownEl) return;
 
   const target = e.target as Element;
-  if (!dropdownEl.contains(target) && !target.closest('#btn-bookmarks')) {
+  if (
+    !dropdownEl.contains(target) &&
+    !target.closest('#btn-bookmarks') &&
+    !target.closest('#btn-input-history')
+  ) {
     closeHistoryDropdown();
   }
 }

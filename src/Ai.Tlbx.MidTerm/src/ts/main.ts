@@ -91,7 +91,6 @@ import {
   closeHistoryDropdown,
   getBookmarkSurfaceType,
   initHistoryDropdown,
-  toggleHistoryDropdown,
   type LaunchEntry,
 } from './modules/history';
 import { linkAndReplayRemoteBookmark } from './modules/history/remoteBookmarkLaunch';
@@ -163,7 +162,7 @@ import {
 import { initDockState } from './modules/dockState';
 import { initSmartInput, setAppServerControlResumeConversationHandler } from './modules/smartInput';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
-import { closeSpacesDropdown, initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
+import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
 import { initOperatorView } from './modules/operator';
 import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
@@ -1354,11 +1353,6 @@ function bindEvents(): void {
     closeHistoryDropdown();
     toggleSpacesDropdown();
   });
-  bindClick('btn-bookmarks', () => {
-    closeSpacesDropdown();
-    toggleHistoryDropdown();
-  });
-
   // Global keyboard shortcut: Alt+T to create new terminal
   document.addEventListener('keydown', (e) => {
     if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 't') {
