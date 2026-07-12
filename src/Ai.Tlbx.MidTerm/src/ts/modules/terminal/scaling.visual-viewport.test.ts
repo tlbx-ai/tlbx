@@ -439,6 +439,54 @@ describe('setupVisualViewport', () => {
     expect(documentElement.style['--midterm-visual-viewport-offset-top']).toBe('24px');
   });
 
+  it('keeps a content-resized layout anchored when the visual viewport offset twitches', () => {
+    const scrollCallbacks: Array<() => void> = [];
+    const appEl = { style: createStyleObject() };
+    const documentElement = { style: createStyleObject() };
+    const body = {
+      style: createStyleObject(),
+      classList: {
+        contains: () => false,
+        toggle: vi.fn(),
+      },
+    };
+    const visualViewport = {
+      width: 390,
+      height: 500,
+      offsetTop: 0,
+      addEventListener: vi.fn((type: string, callback: () => void) => {
+        if (type === 'scroll') scrollCallbacks.push(callback);
+      }),
+    };
+
+    globalThis.document = {
+      querySelector: (selector: string) =>
+        selector === '.terminal-page' ? (appEl as unknown as Element) : null,
+      documentElement: documentElement as unknown as Document['documentElement'],
+      body: body as unknown as Document['body'],
+      activeElement: { tagName: 'TEXTAREA', isContentEditable: false },
+      getElementById: () => null,
+    } as unknown as Document;
+    Object.defineProperty(host, 'innerHeight', {
+      configurable: true,
+      value: 500,
+    });
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    });
+
+    setupVisualViewport();
+    expect(appEl.style.top).toBe('0px');
+
+    visualViewport.offsetTop = 24;
+    scrollCallbacks.forEach((callback) => callback());
+
+    expect(appEl.style.top).toBe('0px');
+    expect(documentElement.style['--midterm-visual-viewport-offset-top']).toBe('0px');
+    expect(host.scrollTo).not.toHaveBeenCalled();
+  });
+
   it('does not clamp the desktop app shell when the visual viewport shrinks with the window', () => {
     const bodyClasses = new Set<string>();
     const appEl = { style: createStyleObject() };
