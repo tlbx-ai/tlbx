@@ -31,11 +31,10 @@ export function initSessionInputHistoryMenus(): void {
       toggleSessionInputHistoryMenu(sessionId, event.currentTarget);
     }
   });
-  document.addEventListener('click', handleOutsideClick);
+  document.addEventListener('pointerdown', handleOutsidePointerDown);
   document.addEventListener('keydown', handleKeydown);
-  window.addEventListener('resize', closeSessionInputHistoryMenu);
-  window.addEventListener('orientationchange', closeSessionInputHistoryMenu);
-  window.addEventListener('scroll', closeSessionInputHistoryMenu, true);
+  window.addEventListener('resize', positionMenu);
+  window.addEventListener('orientationchange', positionMenu);
 }
 
 export function toggleSessionInputHistoryMenu(sessionId: string, nextAnchor: HTMLElement): void {
@@ -72,7 +71,8 @@ export function closeSessionInputHistoryMenu(): void {
 function createMenu(): HTMLDivElement {
   const element = document.createElement('div');
   element.className = 'manager-bar-action-popover session-input-history-menu';
-  element.setAttribute('role', 'menu');
+  element.setAttribute('role', 'dialog');
+  element.setAttribute('aria-label', t('sidebar.inputHistory'));
 
   const header = document.createElement('div');
   header.className = 'history-dropdown-header';
@@ -87,6 +87,8 @@ function createMenu(): HTMLDivElement {
 }
 
 async function loadSessionEntries(sessionId: string): Promise<void> {
+  loadController?.abort();
+  renderStatus(t('inputHistory.loading'));
   const generation = ++loadGeneration;
   const controller = new AbortController();
   loadController = controller;
@@ -102,7 +104,11 @@ async function loadSessionEntries(sessionId: string): Promise<void> {
     if (generation !== loadGeneration || controller.signal.aborted) return;
     if (isAuthRedirectPending()) return;
     log.warn(() => `Failed to load session input history: ${String(error)}`);
-    renderStatus(t('inputHistory.empty'));
+    renderStatus(t('auth.connectionError'), () => {
+      if (ownerSessionId === sessionId) {
+        void loadSessionEntries(sessionId);
+      }
+    });
   }
 }
 
@@ -138,12 +144,24 @@ function renderEntries(): void {
   });
 }
 
-function renderStatus(message: string): void {
+function renderStatus(message: string, onRetry?: () => void): void {
   const content = menu?.querySelector<HTMLElement>('.session-input-history-content');
   if (!content) return;
   const status = document.createElement('div');
-  status.className = 'history-dropdown-empty';
-  status.textContent = message;
+  status.className = 'history-dropdown-empty input-history-status';
+
+  const label = document.createElement('span');
+  label.textContent = message;
+  status.appendChild(label);
+
+  if (onRetry) {
+    const retry = document.createElement('button');
+    retry.type = 'button';
+    retry.className = 'input-history-retry';
+    retry.textContent = t('settings.diagnostics.retryConnection');
+    retry.addEventListener('click', onRetry);
+    status.appendChild(retry);
+  }
   content.replaceChildren(status);
 }
 
@@ -151,9 +169,9 @@ function positionMenu(): void {
   if (!menu || !anchor) return;
   const anchorRect = anchor.getBoundingClientRect();
   const margin = 8;
-  const width = Math.min(360, window.innerWidth - margin * 2);
+  const width = Math.min(460, window.innerWidth - margin * 2);
   menu.style.width = `${width}px`;
-  menu.style.left = `${Math.max(margin, Math.min(anchorRect.right - width, window.innerWidth - width - margin))}px`;
+  menu.style.left = `${Math.max(margin, Math.min(anchorRect.left, window.innerWidth - width - margin))}px`;
   const menuHeight = Math.min(menu.scrollHeight, window.innerHeight - margin * 2);
   const below = anchorRect.bottom + margin;
   const top =
@@ -163,11 +181,40 @@ function positionMenu(): void {
   menu.style.top = `${top}px`;
 }
 
-function handleOutsideClick(event: MouseEvent): void {
-  if (!menu || !(event.target instanceof Node)) return;
-  if (!menu.contains(event.target) && !anchor?.contains(event.target)) {
+function handleOutsidePointerDown(event: PointerEvent): void {
+  if (!menu) return;
+  if (shouldDismissSessionInputHistoryMenu(event, menu, anchor)) {
     closeSessionInputHistoryMenu();
   }
+}
+
+interface PointerEventLocation {
+  readonly clientX: number;
+  readonly clientY: number;
+  composedPath(): EventTarget[];
+}
+
+export function shouldDismissSessionInputHistoryMenu(
+  event: PointerEventLocation,
+  popover: HTMLElement,
+  trigger: HTMLElement | null,
+): boolean {
+  return !isPointerWithinElement(event, popover) && !isPointerWithinElement(event, trigger);
+}
+
+function isPointerWithinElement(event: PointerEventLocation, element: HTMLElement | null): boolean {
+  if (!element) return false;
+  if (event.composedPath().includes(element)) return true;
+
+  // Browser scrollbar pointer events can be retargeted to the document. Keep
+  // gestures inside the painted popover from being mistaken for outside input.
+  const rect = element.getBoundingClientRect();
+  return (
+    event.clientX >= rect.left &&
+    event.clientX <= rect.right &&
+    event.clientY >= rect.top &&
+    event.clientY <= rect.bottom
+  );
 }
 
 function handleKeydown(event: KeyboardEvent): void {

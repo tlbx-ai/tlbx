@@ -1838,17 +1838,17 @@ body::before {
   position: relative;
   display: grid;
   grid-template-columns: 14px minmax(0, 1fr) auto;
-  min-height: 48px;
+  min-height: 56px;
   gap: 8px;
   align-items: start;
-  padding: 6px 4px;
+  padding: 8px 4px;
   cursor: pointer;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   transition: background 0.1s;
 }
 
 .input-history-event:hover {
-  background: var(--btn-secondary);
+  background: var(--bg-session-hover-opaque, var(--bg-hover));
 }
 
 .input-history-event:focus-visible {
@@ -1883,10 +1883,11 @@ body::before {
 
 .input-history-thumbnail {
   display: block;
-  width: min(180px, 100%);
-  max-height: 112px;
-  margin-top: 4px;
-  border-radius: var(--radius-md);
+  width: min(220px, 100%);
+  max-height: 124px;
+  margin-top: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   object-fit: cover;
   background: var(--bg-input);
 }
@@ -1905,7 +1906,7 @@ body::before {
 }
 
 .input-history-text {
-  max-height: 8.4em;
+  max-height: 5.6em;
   overflow: hidden;
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -1941,11 +1942,11 @@ body::before {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: var(--command-bay-control-height, 36px);
-  height: var(--command-bay-control-height, 36px);
+  width: var(--bar-height, 40px);
+  height: var(--bar-height, 40px);
   padding: 0;
   border: 1px solid transparent;
-  border-radius: var(--command-bay-control-radius, 12px);
+  border-radius: var(--radius-lg);
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
@@ -12195,16 +12196,77 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
 }
 
 .session-input-history-menu {
-  width: min(360px, calc(100vw - 16px));
-  max-height: min(520px, calc(100vh - 16px));
+  width: min(460px, calc(100vw - 16px));
+  max-height: min(560px, calc(100vh - 16px));
   overflow: hidden;
-  gap: 4px;
+  gap: 0;
+  padding: 0;
+  border-color: var(--border-subtle);
+  border-radius: var(--radius-xl);
+  background: var(--bg-elevated-opaque);
+  box-shadow: 0 12px 32px var(--shadow-color-lg);
+}
+
+.session-input-history-menu .history-dropdown-header {
+  display: flex;
+  min-height: var(--bar-height);
+  align-items: center;
+  padding: 0 14px;
+  color: var(--text-primary);
+  font-size: var(--fs-base);
+  border-bottom-color: var(--border-subtle);
 }
 
 .session-input-history-content {
   min-height: 0;
+  padding: 6px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.input-history-status {
+  display: flex;
+  min-height: 112px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+}
+
+.input-history-retry {
+  min-width: 96px;
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--border-emphasis);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.input-history-retry:hover,
+.input-history-retry:focus-visible {
+  border-color: var(--accent-blue);
+  background: var(--bg-hover);
+  outline: none;
+}
+
+@media (max-width: 520px) {
+  .session-input-history-menu {
+    max-height: calc(100dvh - 16px);
+  }
+
+  .input-history-action {
+    width: 44px;
+    height: 44px;
+  }
+
+  .input-history-text {
+    max-height: 7em;
+  }
 }
 
 .manager-bar-overflow-popover {
