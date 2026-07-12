@@ -6,6 +6,7 @@
 
 import { createLogger } from '../logging';
 import { ReconnectController, createWsUrl } from '../../utils';
+import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { fetchGitRepos, fetchGitStatus } from './gitApi';
 import type { GitRepoBinding, GitWsMessage, GitStatusResponse } from './types';
 
@@ -105,10 +106,13 @@ export function connectGitWebSocket(): void {
     emitDiag('ws-error', 'connection error');
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     log.info(() => 'Git WebSocket closed');
     emitDiag('ws-close', 'disconnected');
     ws = null;
+    if (handleAuthenticatedWebSocketClose(event)) {
+      return;
+    }
     if (subscribedSessions.size > 0) {
       gitReconnect.schedule(connectGitWebSocket);
     }

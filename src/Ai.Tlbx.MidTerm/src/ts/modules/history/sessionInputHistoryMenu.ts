@@ -1,4 +1,5 @@
 import { $activeSessionId } from '../../stores';
+import { isAuthRedirectPending } from '../auth/sessionLifetime';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { setInputHistoryClickHandler } from '../sessionTabs/tabBar';
@@ -99,6 +100,7 @@ async function loadSessionEntries(sessionId: string): Promise<void> {
     positionMenu();
   } catch (error) {
     if (generation !== loadGeneration || controller.signal.aborted) return;
+    if (isAuthRedirectPending()) return;
     log.warn(() => `Failed to load session input history: ${String(error)}`);
     renderStatus(t('inputHistory.empty'));
   }

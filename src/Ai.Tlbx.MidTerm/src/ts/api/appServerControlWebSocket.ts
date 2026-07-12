@@ -13,6 +13,7 @@ import {
 } from './types';
 import { AppServerControlHttpError } from './errors';
 import { ReconnectController, createWsUrl } from '../utils';
+import { handleAuthenticatedWebSocketClose } from '../modules/auth/sessionLifetime';
 
 type AppServerControlWsRequestAction =
   | 'attach'
@@ -347,11 +348,14 @@ async function ensureConnected(): Promise<void> {
       dispatchSubscriptionError(event);
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event) => {
       const shouldReconnect = subscriptions.size > 0;
       ws = null;
       connectPromise = null;
       rejectAllPending(createAppServerControlWsError('AppServerControl WebSocket disconnected.'));
+      if (handleAuthenticatedWebSocketClose(event)) {
+        return;
+      }
       if (shouldReconnect) {
         reconnect.schedule(() => {
           void ensureConnected();

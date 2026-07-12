@@ -15,6 +15,7 @@ public interface IAuthHandler
 {
     IResult Login(LoginRequest request, HttpContext ctx);
     IResult Logout(HttpContext ctx);
+    IResult Refresh(HttpContext ctx);
     IResult ChangePassword(ChangePasswordRequest request, HttpContext ctx);
     IResult GetStatus();
 }

@@ -26,7 +26,7 @@ public static class MtcliScriptWriter
         # MidTerm CLI helpers — auto-generated, do not edit.
         # Source: . .midterm/mtcli.sh   |   Run: .midterm/mtcli.sh <cmd> [args]
         #
-        # Auth token below is auto-generated and ephemeral (expires in ~3 days).
+        # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
@@ -851,7 +851,7 @@ public static class MtcliScriptWriter
         # MidTerm CLI helpers — auto-generated, do not edit.
         # Dot-source: . .midterm\mtcli.ps1   |   Run: pwsh .midterm\mtcli.ps1 <cmd> [args]
         #
-        # Auth token below is auto-generated and ephemeral (expires in ~3 days).
+        # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"

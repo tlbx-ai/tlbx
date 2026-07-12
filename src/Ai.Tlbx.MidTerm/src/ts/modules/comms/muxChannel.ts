@@ -5,6 +5,7 @@
  */
 
 import type { TerminalState } from '../../types';
+import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { createLogger } from '../logging';
 import {
   MUX_HEADER_SIZE,
@@ -1540,6 +1541,10 @@ export function connectMuxWebSocket(): void {
       log.info(() => 'Server shutting down, will reconnect');
     } else if (event.code !== 1000 && event.code !== 1001) {
       log.warn(() => `WebSocket closed: code=${event.code}, reason=${event.reason || 'none'}`);
+    }
+
+    if (handleAuthenticatedWebSocketClose(event)) {
+      return;
     }
 
     scheduleMuxReconnect();

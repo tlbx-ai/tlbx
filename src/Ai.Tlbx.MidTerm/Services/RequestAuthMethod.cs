@@ -7,3 +7,8 @@ public enum RequestAuthMethod
     ApiKey = 2,
     OpenAccess = 3
 }
+
+public readonly record struct RequestAuthentication(
+    RequestAuthMethod Method,
+    string? SessionTokenId = null,
+    DateTimeOffset? ExpiresAtUtc = null);

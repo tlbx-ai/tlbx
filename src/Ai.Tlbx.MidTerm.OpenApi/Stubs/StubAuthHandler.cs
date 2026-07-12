@@ -20,6 +20,9 @@ public class StubAuthHandler : IAuthHandler
     public IResult Logout(HttpContext ctx) =>
         Results.Ok();
 
+    public IResult Refresh(HttpContext ctx) =>
+        Results.NoContent();
+
     public IResult ChangePassword(ChangePasswordRequest request, HttpContext ctx) =>
         Results.Json(new AuthResponse { Success = true });
 

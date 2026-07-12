@@ -19,6 +19,7 @@ import type {
   WsCommandResponse,
 } from '../../types';
 import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
+import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { createLogger } from '../logging';
 import { initializeFromSession } from '../process';
 import { destroyTerminalForSession, createTerminalForSession } from '../terminal/manager';
@@ -313,7 +314,7 @@ export function connectStateWebSocket(): void {
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     $stateWsConnected.set(false);
 
     // Reject all pending commands immediately (don't wait for timeout)
@@ -322,6 +323,10 @@ export function connectStateWebSocket(): void {
       cmd.reject(new Error('Connection lost'));
       pendingCommands.delete(id);
     });
+
+    if (handleAuthenticatedWebSocketClose(event)) {
+      return;
+    }
 
     scheduleStateReconnect();
   };

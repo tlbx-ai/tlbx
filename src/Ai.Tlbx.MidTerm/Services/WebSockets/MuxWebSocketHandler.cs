@@ -50,6 +50,7 @@ public sealed class MuxWebSocketHandler
         var path = context.Request.Path.Value ?? "";
         var shareAccess = RequestAccessContext.GetShareAccess(context);
         var isShareConnection = string.Equals(path, "/ws/share/mux", StringComparison.Ordinal);
+        var authentication = new RequestAuthentication(RequestAuthMethod.None);
 
         if (isShareConnection)
         {
@@ -61,7 +62,8 @@ public sealed class MuxWebSocketHandler
         }
         else
         {
-            if (_authService.AuthenticateRequest(context.Request) == RequestAuthMethod.None)
+            authentication = _authService.AuthenticateRequestWithContext(context.Request);
+            if (authentication.Method == RequestAuthMethod.None)
             {
                 context.Response.StatusCode = 401;
                 return;
@@ -69,6 +71,9 @@ public sealed class MuxWebSocketHandler
         }
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var authLease = isShareConnection
+            ? null
+            : _authService.TrackWebSocketAuthentication(authentication, ws);
         var clientId = Guid.NewGuid().ToString("N");
         Timer? expiryTimer = null;
         Action<string>? revokeHandler = null;

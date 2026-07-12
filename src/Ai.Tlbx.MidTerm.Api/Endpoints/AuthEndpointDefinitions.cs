@@ -21,6 +21,11 @@ public static class AuthEndpointDefinitions
             handler.Logout(ctx))
             .Produces(StatusCodes.Status200OK);
 
+        app.MapPost("/api/auth/refresh", (HttpContext ctx, IAuthHandler handler) =>
+            handler.Refresh(ctx))
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status401Unauthorized);
+
         app.MapPost("/api/auth/change-password", (ChangePasswordRequest request, HttpContext ctx, IAuthHandler handler) =>
             handler.ChangePassword(request, ctx))
             .Produces<AuthResponse>(StatusCodes.Status200OK, "application/json");

@@ -8,6 +8,7 @@
 import { initLoginPage } from './modules/login';
 import { initTrustPage } from './modules/trust';
 import { initThemeFromBrowserCache } from './modules/theming';
+import { initAuthSessionLifetime } from './modules/auth/sessionLifetime';
 import { createLogger, initLogConcerns } from './modules/logging';
 import { ASSET_VERSION } from './constants';
 import {
@@ -311,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function init(): Promise<void> {
+  initAuthSessionLifetime();
   initLogConcerns();
   log.info(() => 'MidTerm frontend initializing');
   initBackButtonGuard();

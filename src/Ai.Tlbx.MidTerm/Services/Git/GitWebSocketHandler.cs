@@ -33,13 +33,15 @@ public sealed class GitWebSocketHandler
 
     public async Task HandleAsync(HttpContext context)
     {
-        if (_authService.AuthenticateRequest(context.Request) == RequestAuthMethod.None)
+        var authentication = _authService.AuthenticateRequestWithContext(context.Request);
+        if (authentication.Method == RequestAuthMethod.None)
         {
             context.Response.StatusCode = 401;
             return;
         }
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var authLease = _authService.TrackWebSocketAuthentication(authentication, ws);
         var sendLock = new SemaphoreSlim(1, 1);
         var subscribedSessions = new HashSet<string>(StringComparer.Ordinal);
         var shutdownToken = _shutdownService.Token;
