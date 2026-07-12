@@ -405,7 +405,11 @@ export function panMobileStableTerminalShellScroll(
   const previousScrollTop = container.scrollTop;
   const nextScrollTop = Math.max(0, Math.min(maxScrollTop, previousScrollTop + deltaY));
   container.scrollTop = nextScrollTop;
-  return container.scrollTop - previousScrollTop;
+  const appliedDelta = container.scrollTop - previousScrollTop;
+  if (appliedDelta !== 0) {
+    container.dataset.mobileCursorFollowing = 'false';
+  }
+  return appliedDelta;
 }
 
 function cancelLongPress(s: TouchScrollState): void {

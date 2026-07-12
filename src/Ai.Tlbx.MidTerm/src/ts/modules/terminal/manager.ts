@@ -91,7 +91,7 @@ import {
 } from '../history/terminalInputCapture';
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
-import { pinMobileStableTerminalShellToBottom } from './mobileVerticalStability';
+import { revealMobileStableTerminalCursor } from './mobileVerticalStability';
 import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
 import { getActiveTab } from '../sessionTabs';
@@ -1105,7 +1105,7 @@ export function createTerminalForSession(
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
     // Other event handlers are set up later in setupTerminalEvents
     state.earlyDataDisposable = terminal.onData((data: string) => {
-      pinMobileStableTerminalShellToBottom(state, { force: true });
+      revealMobileStableTerminalCursor(state, { force: true });
       captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);
     });
@@ -1264,7 +1264,7 @@ export function setupTerminalEvents(
     terminal.onData((data: string) => {
       const state = sessionTerminals.get(sessionId);
       if (state) {
-        pinMobileStableTerminalShellToBottom(state, { force: true });
+        revealMobileStableTerminalCursor(state, { force: true });
       }
       captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);
@@ -1282,7 +1282,7 @@ export function setupTerminalEvents(
       reconcileSynchronizedOutputCursor(sessionId);
       const state = sessionTerminals.get(sessionId);
       if (state) {
-        pinMobileStableTerminalShellToBottom(state);
+        revealMobileStableTerminalCursor(state);
       }
     }),
   );

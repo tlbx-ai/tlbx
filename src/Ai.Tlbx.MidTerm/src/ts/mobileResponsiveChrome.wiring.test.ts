@@ -31,6 +31,11 @@ const mobileChromeMedia =
   '@media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {';
 
 describe('mobile responsive chrome wiring', () => {
+  it('makes the mobile layout viewport end above the on-screen keyboard', () => {
+    expect(html).toContain('interactive-widget=resizes-content');
+    expect(html).not.toContain('interactive-widget=overlays-content');
+  });
+
   it('nests the mobile tab strip inside the mobile topbar', () => {
     expect(html).toMatch(
       /<header class="mobile-topbar" id="mobile-topbar">[\s\S]*?<div class="topbar-title" id="mobile-title">[\s\S]*?<nav class="mobile-tab-strip" id="mobile-tab-strip"[\s\S]*?<div class="topbar-actions no-terminal" id="topbar-actions">/,

@@ -1,21 +1,36 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionTerminals } from '../../state';
 import {
-  pinMobileStableTerminalShellToBottom,
+  revealMobileStableTerminalCursor,
   setMobileVerticalStability,
 } from './mobileVerticalStability';
 
-function createContainer(scrollTop: number, scrollHeight: number, clientHeight: number) {
+function createState(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+  cursorY: number,
+) {
   const classes = new Set<string>();
-  return {
+  const rows = 10;
+  const screen = { offsetHeight: scrollHeight, offsetTop: 0 };
+  const container = {
     scrollTop,
     scrollHeight,
     clientHeight,
     dataset: {},
+    querySelector: (selector: string) => (selector === '.xterm-screen' ? screen : null),
     classList: {
       add: (name: string) => classes.add(name),
       remove: (name: string) => classes.delete(name),
       contains: (name: string) => classes.has(name),
+    },
+  };
+  return {
+    container,
+    terminal: {
+      rows,
+      buffer: { active: { cursorY } },
     },
   };
 }
@@ -47,25 +62,29 @@ describe('mobile terminal vertical stability', () => {
     vi.unstubAllGlobals();
   });
 
-  it('force-pins the stable terminal shell to the bottom after mobile input', () => {
-    const container = createContainer(0, 240, 100);
-    sessionTerminals.set('s1', { container } as never);
+  it('reveals the exact cursor row after mobile input without pinning the canvas bottom', () => {
+    const state = createState(0, 200, 100, 5);
+    sessionTerminals.set('s1', state as never);
     setMobileVerticalStability(true);
-    container.scrollTop = 0;
+    state.container.scrollTop = 0;
 
-    pinMobileStableTerminalShellToBottom({ container } as never, { force: true });
+    revealMobileStableTerminalCursor(state as never, { force: true });
 
-    expect(container.scrollTop).toBe(240);
+    expect(state.container.scrollTop).toBe(28);
+    expect(state.container.scrollTop).toBeLessThan(
+      state.container.scrollHeight - state.container.clientHeight,
+    );
   });
 
   it('does not steal manual browse position on output when the shell is away from bottom', () => {
-    const container = createContainer(0, 240, 100);
-    sessionTerminals.set('s1', { container } as never);
+    const state = createState(0, 200, 100, 9);
+    sessionTerminals.set('s1', state as never);
     setMobileVerticalStability(true);
-    container.scrollTop = 0;
+    state.container.scrollTop = 0;
+    state.container.dataset.mobileCursorFollowing = 'false';
 
-    pinMobileStableTerminalShellToBottom({ container } as never);
+    revealMobileStableTerminalCursor(state as never);
 
-    expect(container.scrollTop).toBe(0);
+    expect(state.container.scrollTop).toBe(0);
   });
 });

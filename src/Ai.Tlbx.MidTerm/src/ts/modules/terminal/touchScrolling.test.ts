@@ -21,6 +21,7 @@ function createShell(scrollTop: number, scrollHeight: number, clientHeight: numb
     scrollTop,
     scrollHeight,
     clientHeight,
+    dataset: { mobileCursorFollowing: 'true' },
     classList: {
       contains: (name: string) => classes.has(name),
     },
@@ -43,6 +44,7 @@ describe('mobile terminal touch scrolling', () => {
     const panned = panMobileStableTerminalShellScroll(state as never, 50);
 
     expect(container.scrollTop).toBe(70);
+    expect(container.dataset.mobileCursorFollowing).toBe('false');
     expect(panned).toBe(50);
   });
 

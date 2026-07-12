@@ -135,6 +135,8 @@ export function setupVisualViewport(): void {
 
   const vv = window.visualViewport;
   let lastHeight = 0;
+  let lastTop = -1;
+  let lastWidth = 0;
   let baselineHeight = Math.max(window.innerHeight, vv.height);
   const appEl = document.querySelector<HTMLElement>('.terminal-page');
 
@@ -148,8 +150,17 @@ export function setupVisualViewport(): void {
       ? getSoftKeyboardBottomGuard(rawViewportHeight, baselineHeight)
       : 0;
     const vh = Math.max(1, rawViewportHeight - bottomGuard);
-    if (Math.abs(vh - lastHeight) < 1) return;
+    const viewportTop = Math.max(0, vv.offsetTop);
+    const viewportWidth = Math.max(1, vv.width || window.innerWidth);
+    if (
+      Math.abs(vh - lastHeight) < 1 &&
+      Math.abs(viewportTop - lastTop) < 1 &&
+      Math.abs(viewportWidth - lastWidth) < 1
+    )
+      return;
     lastHeight = vh;
+    lastTop = viewportTop;
+    lastWidth = viewportWidth;
 
     if (constrainShell) {
       applyVisualViewportShellGeometry(vv, vh, appEl);

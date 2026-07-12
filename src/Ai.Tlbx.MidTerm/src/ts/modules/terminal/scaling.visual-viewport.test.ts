@@ -48,7 +48,7 @@ function createHarness() {
   const terminal = {
     cols: 82,
     rows: 24,
-    buffer: { active: { viewportY: 0, baseY: 0 } },
+    buffer: { active: { viewportY: 0, baseY: 0, cursorY: 23 } },
     resize: vi.fn((nextCols: number, nextRows: number) => {
       terminal.cols = nextCols;
       terminal.rows = nextRows;
@@ -76,6 +76,9 @@ function createHarness() {
 
   const screen = {};
   Object.defineProperties(screen, {
+    offsetTop: {
+      get: () => 0,
+    },
     offsetWidth: {
       get: () => terminal.cols * 10,
     },
@@ -281,7 +284,7 @@ describe('setupVisualViewport', () => {
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
 
-  it('keeps terminal rows stable and pans the terminal on mobile height-only viewport changes', () => {
+  it('keeps terminal rows stable without blindly pinning the canvas bottom', () => {
     const bodyClasses = new Set<string>();
     const resizeCallbacks: Array<() => void> = [];
     const visualViewport = {
@@ -333,7 +336,7 @@ describe('setupVisualViewport', () => {
     expect(bodyClasses.has('keyboard-visible')).toBe(true);
     expect(bodyClasses.has('mobile-terminal-vertical-stable')).toBe(true);
     expect(state.container.classList.contains('mobile-terminal-vertical-stable')).toBe(true);
-    expect(state.container.scrollTop).toBe(state.container.scrollHeight);
+    expect(state.container.scrollTop).toBe(0);
   });
 
   it('pins the app shell to the visual viewport and marks the keyboard-visible state', () => {
@@ -391,6 +394,49 @@ describe('setupVisualViewport', () => {
     expect(body.style.maxHeight).toBe('482px');
     expect(bodyClasses.has('keyboard-visible')).toBe(true);
     expect(host.scrollTo).toHaveBeenCalledWith(0, 0);
+  });
+
+  it('tracks visual viewport panning even when its height does not change', () => {
+    const scrollCallbacks: Array<() => void> = [];
+    const appEl = { style: createStyleObject() };
+    const documentElement = { style: createStyleObject() };
+    const body = {
+      style: createStyleObject(),
+      classList: {
+        contains: () => false,
+        toggle: vi.fn(),
+      },
+    };
+    const visualViewport = {
+      width: 390,
+      height: 500,
+      offsetTop: 0,
+      addEventListener: vi.fn((type: string, callback: () => void) => {
+        if (type === 'scroll') scrollCallbacks.push(callback);
+      }),
+    };
+
+    globalThis.document = {
+      querySelector: (selector: string) =>
+        selector === '.terminal-page' ? (appEl as unknown as Element) : null,
+      documentElement: documentElement as unknown as Document['documentElement'],
+      body: body as unknown as Document['body'],
+      activeElement: { tagName: 'TEXTAREA', isContentEditable: false },
+      getElementById: () => null,
+    } as unknown as Document;
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    });
+
+    setupVisualViewport();
+    expect(appEl.style.top).toBe('0px');
+
+    visualViewport.offsetTop = 24;
+    scrollCallbacks.forEach((callback) => callback());
+
+    expect(appEl.style.top).toBe('24px');
+    expect(documentElement.style['--midterm-visual-viewport-offset-top']).toBe('24px');
   });
 
   it('does not clamp the desktop app shell when the visual viewport shrinks with the window', () => {
