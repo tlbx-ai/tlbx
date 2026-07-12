@@ -8,6 +8,7 @@ import { login, getBootstrapLogin } from '../api/client';
 import { t, initI18n } from './i18n';
 
 const CERT_HIDDEN_KEY = 'mt-cert-info-hidden';
+const AUTH_RETURN_URL_KEY = 'midterm-auth-return-url';
 
 export async function initLoginPage(): Promise<void> {
   const form = document.getElementById('login-form') as HTMLFormElement | null;
@@ -65,7 +66,7 @@ async function handleLoginSubmit(
     const { data, response } = await login(password);
 
     if (response.ok && data?.success) {
-      window.location.href = '/';
+      window.location.href = consumeAuthReturnUrl();
     } else {
       showError(errorDiv, data?.error ?? t('auth.loginFailed'));
       passwordInput.value = '';
@@ -77,6 +78,20 @@ async function handleLoginSubmit(
     loginBtn.disabled = false;
     loginBtn.textContent = t('auth.login');
   }
+}
+
+function consumeAuthReturnUrl(): string {
+  try {
+    const value = window.sessionStorage.getItem(AUTH_RETURN_URL_KEY);
+    window.sessionStorage.removeItem(AUTH_RETURN_URL_KEY);
+    if (value?.startsWith('/') && !value.startsWith('//') && !value.startsWith('/login')) {
+      return value;
+    }
+  } catch {
+    // Session storage can be unavailable in hardened/private browser contexts.
+  }
+
+  return '/';
 }
 
 function showError(errorDiv: HTMLElement, msg: string): void {

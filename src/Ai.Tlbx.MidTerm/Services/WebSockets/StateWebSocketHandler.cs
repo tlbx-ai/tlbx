@@ -73,6 +73,7 @@ public sealed class StateWebSocketHandler
         var path = context.Request.Path.Value ?? "";
         var shareAccess = RequestAccessContext.GetShareAccess(context);
         var isShareConnection = string.Equals(path, "/ws/share/state", StringComparison.Ordinal);
+        var authentication = new RequestAuthentication(RequestAuthMethod.None);
 
         if (isShareConnection)
         {
@@ -84,7 +85,8 @@ public sealed class StateWebSocketHandler
         }
         else
         {
-            if (_authService.AuthenticateRequest(context.Request) == RequestAuthMethod.None)
+            authentication = _authService.AuthenticateRequestWithContext(context.Request);
+            if (authentication.Method == RequestAuthMethod.None)
             {
                 context.Response.StatusCode = 401;
                 return;
@@ -92,6 +94,9 @@ public sealed class StateWebSocketHandler
         }
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        using var authLease = isShareConnection
+            ? null
+            : _authService.TrackWebSocketAuthentication(authentication, ws);
         var sendLock = new SemaphoreSlim(1, 1);
         Timer? expiryTimer = null;
         Action<string>? revokeHandler = null;
@@ -372,6 +377,19 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
+        void OnMobileDevice(string? sessionId, string? previewName, string action, string? profile)
+        {
+            var instruction = new Models.Browser.BrowserUiInstruction
+            {
+                Command = "mobile-device",
+                SessionId = sessionId,
+                PreviewName = previewName,
+                DeviceAction = action,
+                DeviceProfile = profile
+            };
+            _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
+        }
+
         if (shareAccess is null)
         {
             _browserUiBridge?.RegisterListener(
@@ -380,7 +398,8 @@ public sealed class StateWebSocketHandler
                 detach: OnBrowserDetach,
                 dock: OnBrowserDock,
                 viewport: OnBrowserViewport,
-                open: OnBrowserOpen);
+                open: OnBrowserOpen,
+                mobileDevice: OnMobileDevice);
         }
 
         try

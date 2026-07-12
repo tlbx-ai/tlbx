@@ -1,40 +1,47 @@
-import { readFileSync } from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const source = readFileSync(path.join(__dirname, 'tabs.ts'), 'utf8');
+vi.mock('../diagnostics', () => ({
+  startLatencyMeasurement: vi.fn(),
+  stopLatencyMeasurement: vi.fn(),
+}));
+
+import { normalizeStoredSettingsTab } from './tabs';
 
 describe('settings tab migration', () => {
-  it('maps legacy settings tabs to the new top-level tabs', () => {
-    expect(source).toContain("case 'general':");
-    expect(source).toContain("return 'updates';");
-    expect(source).toContain("case 'command-bay':");
-    expect(source).toContain("return 'workflow';");
-    expect(source).toContain("case 'diagnostics':");
-    expect(source).toContain("return 'advanced';");
-    expect(source).toContain("case 'behavior':");
-    expect(source).toContain("return 'workflow';");
-    expect(source).toContain("case 'agent-ui':");
-    expect(source).toContain("return 'ai-agents';");
+  it('maps legacy tabs to their current destinations', () => {
+    const migrations = new Map([
+      ['general', 'updates'],
+      ['hub', 'connected-hosts'],
+      ['command-bay', 'workflow'],
+      ['agent', 'ai-agents'],
+      ['diagnostics', 'advanced'],
+      ['behavior', 'workflow'],
+      ['agent-ui', 'ai-agents'],
+    ]);
+
+    for (const [legacy, expected] of migrations) {
+      expect(normalizeStoredSettingsTab(legacy)).toBe(expected);
+    }
   });
 
-  it('defines the new top-level settings tabs as valid', () => {
-    expect(source).toContain("| 'updates'");
-    expect(source).toContain("| 'workflow'");
-    expect(source).toContain("| 'sessions'");
-    expect(source).toContain("| 'terminal'");
-    expect(source).toContain("| 'ai-agents'");
-    expect(source).toContain("| 'connected-hosts'");
-    expect(source).toContain("| 'advanced'");
-    expect(source).toContain("'updates',");
-    expect(source).toContain("'workflow',");
-    expect(source).toContain("'sessions',");
-    expect(source).toContain("'terminal',");
-    expect(source).toContain("'ai-agents',");
-    expect(source).toContain("'connected-hosts',");
-    expect(source).toContain("'advanced',");
+  it('accepts current tabs unchanged', () => {
+    for (const tab of [
+      'updates',
+      'sessions',
+      'appearance',
+      'workflow',
+      'terminal',
+      'ai-agents',
+      'security',
+      'connected-hosts',
+      'advanced',
+    ]) {
+      expect(normalizeStoredSettingsTab(tab)).toBe(tab);
+    }
+  });
+
+  it('rejects missing and unknown tabs', () => {
+    expect(normalizeStoredSettingsTab(null)).toBeNull();
+    expect(normalizeStoredSettingsTab('obsolete')).toBeNull();
   });
 });

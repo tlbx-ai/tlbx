@@ -160,9 +160,6 @@
     if (currentTargetRevision > 0) {
       proxyUrl.searchParams.set('__mtTargetRevision', String(currentTargetRevision));
     }
-    if (mobileMode) {
-      proxyUrl.searchParams.set('__mtMobile', '1');
-    }
     return proxyUrl.toString();
   }
 

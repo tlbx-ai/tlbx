@@ -3,6 +3,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.Spaces;
+using Ai.Tlbx.MidTerm.Models.ControlPlane;
 using Ai.Tlbx.MidTerm.Services.Hub;
 
 namespace Ai.Tlbx.MidTerm.Services.Hub;
@@ -38,6 +39,30 @@ public static class HubEndpoints
         {
             var machine = await hubService.GetMachineStateAsync(id, ct);
             return Results.Json(machine, AppJsonContext.Default.HubMachineState);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/control-plane", async (string id, CancellationToken ct) =>
+        {
+            var snapshot = await hubService.GetControlPlaneAsync(id, ct);
+            return Results.Json(snapshot, AppJsonContext.Default.ControlPlaneSnapshotResponse);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/control-plane/events", async (
+            string id,
+            long after,
+            int limit,
+            CancellationToken ct) =>
+        {
+            var events = await hubService.GetControlPlaneEventsAsync(id, after, limit, ct);
+            return Results.Json(events, AppJsonContext.Default.ControlPlaneEventListResponse);
+        });
+
+        app.MapGet("/api/hub/machines/{id}/control-plane/capabilities", async (
+            string id,
+            CancellationToken ct) =>
+        {
+            var capabilities = await hubService.GetControlPlaneCapabilitiesAsync(id, ct);
+            return Results.Json(capabilities, AppJsonContext.Default.ControlPlaneCapabilitiesResponse);
         });
 
         app.MapPost("/api/hub/machines/{id}/pin", async (string id, HubMachinePinRequest request, CancellationToken ct) =>

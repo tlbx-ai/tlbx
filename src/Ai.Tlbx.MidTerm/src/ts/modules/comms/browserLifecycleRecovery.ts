@@ -10,9 +10,7 @@ interface BrowserLifecycleRecoveryOptions {
 }
 
 export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryOptions): void {
-  let pageWasHidden = isDocumentHidden();
-
-  const recoverRealtimeAfterBrowserResume = (quickRefresh: boolean): void => {
+  const recoverRealtimeAfterBrowserResume = (): void => {
     reportBrowserActivity(true);
 
     if (!$stateWsConnected.get()) {
@@ -22,7 +20,6 @@ export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryO
     recoverVisibleTerminalsAfterBrowserResume(
       $activeSessionId.get(),
       options.getVisibleTerminalSessionIds(),
-      { quickRefresh },
     );
 
     options.syncMuxTerminalVisibility();
@@ -34,17 +31,14 @@ export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryO
     reportBrowserActivity();
 
     if (isDocumentHidden()) {
-      pageWasHidden = true;
       return;
     }
 
-    const quickRefresh = pageWasHidden;
-    pageWasHidden = false;
-    recoverRealtimeAfterBrowserResume(quickRefresh);
+    recoverRealtimeAfterBrowserResume();
   });
 
   window.addEventListener('focus', () => {
-    recoverRealtimeAfterBrowserResume(false);
+    recoverRealtimeAfterBrowserResume();
   });
 
   window.addEventListener('blur', () => {
@@ -52,19 +46,15 @@ export function setupBrowserLifecycleRecovery(options: BrowserLifecycleRecoveryO
   });
 
   window.addEventListener('pagehide', () => {
-    pageWasHidden = true;
     reportBrowserActivity(false);
   });
 
-  window.addEventListener('pageshow', (event: PageTransitionEvent) => {
-    const quickRefresh = pageWasHidden || event.persisted;
-    pageWasHidden = false;
-    recoverRealtimeAfterBrowserResume(quickRefresh);
+  window.addEventListener('pageshow', () => {
+    recoverRealtimeAfterBrowserResume();
   });
 
   document.addEventListener('resume', () => {
-    pageWasHidden = false;
-    recoverRealtimeAfterBrowserResume(true);
+    recoverRealtimeAfterBrowserResume();
   });
 }
 

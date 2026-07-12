@@ -12,6 +12,19 @@ const KEYBOARD_PIXEL_THRESHOLD = 120;
 const KEYBOARD_BOTTOM_GUARD_MIN_PX = 10;
 const KEYBOARD_BOTTOM_GUARD_MAX_PX = 24;
 const KEYBOARD_BOTTOM_GUARD_RATIO = 0.035;
+const LAYOUT_VISUAL_VIEWPORT_HEIGHT_TOLERANCE_PX = 2;
+
+function getVisualViewportShellTop(visualViewport: VisualViewport): number {
+  // Chromium with interactive-widget=resizes-content already moves the layout
+  // boundary above the keyboard. Its visual viewport may still emit transient
+  // offsetTop values while the focused textarea is edited; following those
+  // values would move the entire app on every keystroke. Browsers that keep the
+  // larger layout viewport (notably iOS) still need the visual offset fallback.
+  const layoutViewportTracksVisualViewport =
+    Math.abs(window.innerHeight - visualViewport.height) <=
+    LAYOUT_VISUAL_VIEWPORT_HEIGHT_TOLERANCE_PX;
+  return layoutViewportTracksVisualViewport ? 0 : Math.max(0, visualViewport.offsetTop);
+}
 
 function hasEditableElementFocus(): boolean {
   const activeElement = document.activeElement as {
@@ -36,7 +49,7 @@ function applyVisualViewportShellGeometry(
   viewportHeight: number,
   appEl: HTMLElement | null,
 ): void {
-  const viewportTop = Math.max(0, visualViewport.offsetTop);
+  const viewportTop = getVisualViewportShellTop(visualViewport);
   if (appEl) {
     appEl.style.top = `${viewportTop}px`;
     appEl.style.bottom = 'auto';
@@ -59,7 +72,7 @@ function applyVisualViewportShellGeometry(
   document.body.style.height = `${viewportHeight}px`;
   document.body.style.maxHeight = `${viewportHeight}px`;
 
-  if (visualViewport.offsetTop !== 0 && !hasEditableElementFocus()) {
+  if (viewportTop !== 0 && !hasEditableElementFocus()) {
     window.scrollTo(0, 0);
   }
 }
@@ -135,6 +148,8 @@ export function setupVisualViewport(): void {
 
   const vv = window.visualViewport;
   let lastHeight = 0;
+  let lastTop = -1;
+  let lastWidth = 0;
   let baselineHeight = Math.max(window.innerHeight, vv.height);
   const appEl = document.querySelector<HTMLElement>('.terminal-page');
 
@@ -148,8 +163,26 @@ export function setupVisualViewport(): void {
       ? getSoftKeyboardBottomGuard(rawViewportHeight, baselineHeight)
       : 0;
     const vh = Math.max(1, rawViewportHeight - bottomGuard);
-    if (Math.abs(vh - lastHeight) < 1) return;
+    const viewportTop = getVisualViewportShellTop(vv);
+    const viewportWidth = Math.max(1, vv.width || window.innerWidth);
+    const keyboardVisible = isSoftKeyboardVisible(rawViewportHeight, baselineHeight);
+    const heightAndWidthStable =
+      Math.abs(vh - lastHeight) < 1 && Math.abs(viewportWidth - lastWidth) < 1;
+    if (keyboardVisible && hasEditableElementFocus() && heightAndWidthStable) {
+      // Mobile browsers can pan the focused xterm/prompt textarea on every
+      // character. The visible boundary did not change, so following that
+      // offset would move the whole shell and repeat terminal synchronization.
+      return;
+    }
+    if (
+      Math.abs(vh - lastHeight) < 1 &&
+      Math.abs(viewportTop - lastTop) < 1 &&
+      Math.abs(viewportWidth - lastWidth) < 1
+    )
+      return;
     lastHeight = vh;
+    lastTop = viewportTop;
+    lastWidth = viewportWidth;
 
     if (constrainShell) {
       applyVisualViewportShellGeometry(vv, vh, appEl);

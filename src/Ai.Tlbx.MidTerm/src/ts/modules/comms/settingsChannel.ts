@@ -7,6 +7,7 @@
 
 import type { MidTermSettingsPublic, UpdateInfo } from '../../types';
 import { ReconnectController, createWsUrl, closeWebSocket } from '../../utils';
+import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { createLogger } from '../logging';
 import { $currentSettings, $updateInfo, $settingsWsConnected } from '../../stores';
 import { applyReceivedSettings } from '../settings/persistence';
@@ -52,9 +53,12 @@ export function connectSettingsWebSocket(): void {
     }
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     $settingsWsConnected.set(false);
     log.info(() => 'Settings WebSocket disconnected');
+    if (handleAuthenticatedWebSocketClose(event)) {
+      return;
+    }
     settingsReconnect.schedule(connectSettingsWebSocket);
   };
 

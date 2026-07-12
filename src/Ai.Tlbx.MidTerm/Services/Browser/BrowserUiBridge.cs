@@ -32,7 +32,8 @@ public sealed class BrowserUiBridge
         Action<string?, string?> detach,
         Action<string?, string?> dock,
         Action<string?, string?, int, int> viewport,
-        Action<string?, string?, string, bool> open)
+        Action<string?, string?, string, bool> open,
+        Action<string?, string?, string, string?>? mobileDevice = null)
     {
         lock (_lock)
         {
@@ -44,6 +45,7 @@ public sealed class BrowserUiBridge
                 Dock = dock,
                 Viewport = viewport,
                 Open = open,
+                MobileDevice = mobileDevice,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
         }
@@ -108,6 +110,42 @@ public sealed class BrowserUiBridge
 
         target.Open(sessionId, previewName, url, activateSession);
         return true;
+    }
+
+    public bool RequestMobileDevice(
+        string? sessionId,
+        string? previewName,
+        string action,
+        string? profile,
+        out string error)
+    {
+        error = "";
+        if (!IsSupportedMobileDeviceAction(action))
+        {
+            error = "Unsupported mobile device action. Use status, open, rotate, keyboard, background, foreground, reload, screenshot, or close.";
+            return false;
+        }
+
+        if (!TryGetTargetListener(sessionId, previewName, out var target, out error))
+        {
+            return false;
+        }
+
+        if (target.MobileDevice is null)
+        {
+            error = "The connected MidTerm browser UI does not support mobile device control. Reload it and retry.";
+            return false;
+        }
+
+        target.MobileDevice(sessionId, previewName, action.Trim().ToLowerInvariant(), profile);
+        return true;
+    }
+
+    private static bool IsSupportedMobileDeviceAction(string action)
+    {
+        return !string.IsNullOrWhiteSpace(action) && action.Trim().ToLowerInvariant() is
+            "status" or "open" or "rotate" or "keyboard" or "background" or "foreground" or
+            "reload" or "screenshot" or "close";
     }
 
     public bool RequestClaim(string? sessionId, string? previewName, out string error)
@@ -320,6 +358,7 @@ public sealed class BrowserUiBridge
         public required Action<string?, string?> Dock { get; init; }
         public required Action<string?, string?, int, int> Viewport { get; init; }
         public required Action<string?, string?, string, bool> Open { get; init; }
+        public Action<string?, string?, string, string?>? MobileDevice { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
     }
 }

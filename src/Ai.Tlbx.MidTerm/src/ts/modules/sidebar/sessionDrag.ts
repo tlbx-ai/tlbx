@@ -8,7 +8,9 @@
 import { dom, sessionTerminals } from '../../state';
 import { reorderSessions, $sessionList, $activeSessionId } from '../../stores';
 import { persistSessionOrder } from '../comms';
-import { isSessionFilterActive } from './sessionList';
+// The live filter state is owned by the active sidebar renderer; sessionList's
+// filter controller instance is never initialized.
+import { isSessionFilterActive } from './spacesTreeSidebar';
 import {
   showDockOverlay,
   hideDockOverlay,

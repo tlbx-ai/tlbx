@@ -16,3 +16,8 @@ export {
 
 export { fetchHistory, toggleStar, removeHistoryEntry, createHistoryEntry } from './historyApi';
 export { animateBookmarkSaveSuccess, getBookmarkSurfaceType } from './bookmarkSession';
+export {
+  closeSessionInputHistoryMenu,
+  initSessionInputHistoryMenus,
+  toggleSessionInputHistoryMenu,
+} from './sessionInputHistoryMenu';

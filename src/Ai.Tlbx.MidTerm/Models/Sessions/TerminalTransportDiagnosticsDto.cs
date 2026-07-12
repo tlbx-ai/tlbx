@@ -15,4 +15,10 @@ public sealed class TerminalTransportDiagnosticsDto
     public int ReconnectCount { get; set; }
     public int DataLossCount { get; set; }
     public string? LastDataLossReason { get; set; }
+    public long RecoveryRequested { get; set; }
+    public long RecoveryCoalesced { get; set; }
+    public long RecoveryCompleted { get; set; }
+    public long RecoveryResets { get; set; }
+    public long RecoveryReplayBytes { get; set; }
+    public long RecoveryFailed { get; set; }
 }

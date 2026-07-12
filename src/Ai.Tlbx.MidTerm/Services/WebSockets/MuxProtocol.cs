@@ -22,7 +22,7 @@ public static class MuxProtocol
     public const int MaxFrameSize = 64 * 1024;
 
     // Protocol versioning
-    public const ushort ProtocolVersion = 1;
+    public const ushort ProtocolVersion = 2;
     public const ushort MinCompatibleProtocolVersion = 1;
 
     // Custom WebSocket close codes (4000-4999 range)
@@ -46,6 +46,8 @@ public static class MuxProtocol
     public const byte TypeVisibleSessionsHint = 0x0E; // Client -> Server: visible terminal sessions for quick resume
     public const byte TypeInputTraceMarker = 0x0F; // Client -> Server: sample the next input for latency tracing
     public const byte TypeInputTraceResult = 0x10; // Server -> Client: sampled input latency trace result
+    public const byte TypeRecoveryBegin = 0x11; // Server -> Client: ordered per-session recovery starts
+    public const byte TypeRecoveryEnd = 0x12; // Server -> Client: ordered per-session recovery completed
 
     // Compression settings
     public const int CompressionChunkSize = 256 * 1024; // Chunk large data before compressing
@@ -151,26 +153,6 @@ public static class MuxProtocol
         return frame;
     }
 
-    /// <summary>
-    /// Creates a resync frame that tells client to clear all terminals.
-    /// Buffer refresh will follow immediately after.
-    /// </summary>
-    public static byte[] CreateClearScreenFrame()
-    {
-        var frame = new byte[HeaderSize];
-        frame[0] = TypeResync;
-        // Session ID is all zeros (applies to all sessions)
-        return frame;
-    }
-
-    public static byte[] CreateSessionResyncFrame(string sessionId)
-    {
-        var frame = new byte[HeaderSize];
-        frame[0] = TypeResync;
-        WriteSessionId(frame.AsSpan(1, 8), sessionId);
-        return frame;
-    }
-
     public static bool TryParseFrame(
         ReadOnlySpan<byte> data,
         out byte type,
@@ -271,13 +253,24 @@ public static class MuxProtocol
     /// Format: [type:1][sessionId:8][droppedBytes:4]
     /// Client should request buffer refresh when receiving this.
     /// </summary>
-    public static byte[] CreateDataLossFrame(string sessionId, int droppedBytes, TerminalReplayReason reason)
+    public static byte[] CreateDataLossFrame(
+        string sessionId,
+        int droppedBytes,
+        TerminalReplayReason reason,
+        ulong? missingSequenceStart = null,
+        ulong? missingSequenceEndExclusive = null)
     {
-        var frame = new byte[HeaderSize + 5];
+        var includeRange = missingSequenceStart.HasValue && missingSequenceEndExclusive.HasValue;
+        var frame = new byte[HeaderSize + 5 + (includeRange ? 16 : 0)];
         frame[0] = TypeDataLoss;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
         frame[HeaderSize] = (byte)reason;
         BinaryPrimitives.WriteInt32LittleEndian(frame.AsSpan(HeaderSize + 1, 4), droppedBytes);
+        if (includeRange)
+        {
+            BinaryPrimitives.WriteUInt64LittleEndian(frame.AsSpan(HeaderSize + 5, 8), missingSequenceStart!.Value);
+            BinaryPrimitives.WriteUInt64LittleEndian(frame.AsSpan(HeaderSize + 13, 8), missingSequenceEndExclusive!.Value);
+        }
         return frame;
     }
 
@@ -290,6 +283,82 @@ public static class MuxProtocol
             ? BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(1, 4))
             : 0;
         return (reason, droppedBytes);
+    }
+
+    public static MuxDataLossDetails ParseDataLossDetails(ReadOnlySpan<byte> payload)
+    {
+        var (reason, droppedBytes) = ParseDataLossPayload(payload);
+        var missingSequenceStart = payload.Length >= 21
+            ? BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(5, 8))
+            : (ulong?)null;
+        var missingSequenceEndExclusive = payload.Length >= 21
+            ? BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(13, 8))
+            : (ulong?)null;
+        return new MuxDataLossDetails(reason, droppedBytes, missingSequenceStart, missingSequenceEndExclusive);
+    }
+
+    public static byte[] CreateRecoveryBeginFrame(
+        string sessionId,
+        uint generation,
+        bool resetTerminal,
+        TerminalReplayReason reason,
+        ulong sequenceStart,
+        ulong sourceSequenceEndExclusive)
+    {
+        var frame = new byte[HeaderSize + 22];
+        frame[0] = TypeRecoveryBegin;
+        WriteSessionId(frame.AsSpan(1, 8), sessionId);
+        var payload = frame.AsSpan(HeaderSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[..4], generation);
+        payload[4] = resetTerminal ? (byte)1 : (byte)0;
+        payload[5] = (byte)reason;
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(6, 8), sequenceStart);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(14, 8), sourceSequenceEndExclusive);
+        return frame;
+    }
+
+    public static MuxRecoveryBegin ParseRecoveryBeginPayload(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < 22)
+        {
+            return default;
+        }
+
+        return new MuxRecoveryBegin(
+            BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]),
+            payload[4] != 0,
+            (TerminalReplayReason)payload[5],
+            BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(6, 8)),
+            BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(14, 8)));
+    }
+
+    public static byte[] CreateRecoveryEndFrame(
+        string sessionId,
+        uint generation,
+        ulong sourceSequenceEndExclusive,
+        int replayBytes)
+    {
+        var frame = new byte[HeaderSize + 16];
+        frame[0] = TypeRecoveryEnd;
+        WriteSessionId(frame.AsSpan(1, 8), sessionId);
+        var payload = frame.AsSpan(HeaderSize);
+        BinaryPrimitives.WriteUInt32LittleEndian(payload[..4], generation);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(4, 8), sourceSequenceEndExclusive);
+        BinaryPrimitives.WriteInt32LittleEndian(payload.Slice(12, 4), replayBytes);
+        return frame;
+    }
+
+    public static MuxRecoveryEnd ParseRecoveryEndPayload(ReadOnlySpan<byte> payload)
+    {
+        if (payload.Length < 16)
+        {
+            return default;
+        }
+
+        return new MuxRecoveryEnd(
+            BinaryPrimitives.ReadUInt32LittleEndian(payload[..4]),
+            BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(4, 8)),
+            BinaryPrimitives.ReadInt32LittleEndian(payload.Slice(12, 4)));
     }
 
     public static byte[] CreateSyncCompleteFrame()
@@ -471,3 +540,21 @@ public readonly record struct MuxInputTraceResult(
     int MuxQueuedToClientQueuedMs,
     int ClientQueuedToWsFlushMs,
     int ServerReceiveToWsFlushMs);
+
+public readonly record struct MuxDataLossDetails(
+    TerminalReplayReason Reason,
+    int DroppedBytes,
+    ulong? MissingSequenceStart,
+    ulong? MissingSequenceEndExclusive);
+
+public readonly record struct MuxRecoveryBegin(
+    uint Generation,
+    bool ResetTerminal,
+    TerminalReplayReason Reason,
+    ulong SequenceStart,
+    ulong SourceSequenceEndExclusive);
+
+public readonly record struct MuxRecoveryEnd(
+    uint Generation,
+    ulong SourceSequenceEndExclusive,
+    int ReplayBytes);

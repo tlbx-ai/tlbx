@@ -1,6 +1,8 @@
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using System.Net;
+using System.Net.Security;
+using System.Net.Sockets;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -18,6 +20,56 @@ public class WebPreviewServiceTests
         var targetUri = service.GetTargetUri("session-1");
         Assert.NotNull(targetUri);
         Assert.Equal("/coaching/plans/", targetUri!.AbsolutePath);
+    }
+
+    [Fact]
+    public void ShouldAcceptPreviewCertificate_AllowsRemoteHttpsCertificateErrors()
+    {
+        var target = new Uri("https://syno.kunzebau.de:5001/sharing/jh1IVMrgW");
+
+        var accepted = WebPreviewService.ShouldAcceptPreviewCertificate(
+            target,
+            SslPolicyErrors.RemoteCertificateChainErrors);
+
+        Assert.True(accepted);
+    }
+
+    [Fact]
+    public void ShouldAcceptPreviewCertificate_RequiresTargetForCertificateErrors()
+    {
+        var accepted = WebPreviewService.ShouldAcceptPreviewCertificate(
+            null,
+            SslPolicyErrors.RemoteCertificateChainErrors);
+
+        Assert.False(accepted);
+    }
+
+    [Fact]
+    public void ShouldAcceptPreviewCertificate_AlwaysAcceptsCleanCertificate()
+    {
+        var accepted = WebPreviewService.ShouldAcceptPreviewCertificate(
+            null,
+            SslPolicyErrors.None);
+
+        Assert.True(accepted);
+    }
+
+    [Fact]
+    public async Task ConnectPreviewSocketAsync_ConnectsToLocalhostListener()
+    {
+        using var listener = new TcpListener(IPAddress.Loopback, port: 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        var acceptTask = listener.AcceptTcpClientAsync();
+
+        await using var stream = await WebPreviewService.ConnectPreviewSocketAsync(
+            "localhost",
+            port,
+            CancellationToken.None);
+        using var accepted = await acceptTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(stream.CanRead);
+        Assert.True(accepted.Connected);
     }
 
     [Fact]

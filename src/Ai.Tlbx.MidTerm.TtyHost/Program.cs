@@ -732,7 +732,20 @@ public static class Program
 
                 if (!replayed)
                 {
-                    Log.Warn(() => "Buffered output dropped before handshake completed (scrollback too small)");
+                    var (availableStart, _) = session.GetOutputBufferRange();
+                    var missingBytes = availableStart > handshakeCursor
+                        ? (int)Math.Min(int.MaxValue, availableStart - handshakeCursor)
+                        : 0;
+                    var loss = TtyHostProtocol.CreateDataLoss(new TtyHostDataLossPayload
+                    {
+                        Reason = TerminalReplayReason.IpcSequenceGap,
+                        DroppedBytes = missingBytes,
+                        MissingSequenceStart = handshakeCursor,
+                        MissingSequenceEndExclusive = availableStart
+                    });
+                    EnqueueFrame(channelWriter, loss);
+                    session.RecordDataLoss(TerminalReplayReason.IpcSequenceGap, missingBytes);
+                    Log.Warn(() => "IPC reconnect cursor fell outside retained terminal output; client must reconcile from a buffer snapshot");
                 }
 
                 // Now enable live forwarding — all replay data has been enqueued
@@ -763,7 +776,8 @@ public static class Program
                         session.OnForegroundChanged += OnForegroundChanged;
                     }
                 },
-                onAttached).ConfigureAwait(false);
+                onAttached,
+                resumeCursor => handshakeCursor = resumeCursor).ConfigureAwait(false);
             }
             finally
             {
@@ -864,7 +878,8 @@ public static class Program
         ChannelWriter<PooledFrame> channelWriter,
         CancellationToken ct,
         Action? onHandshakeComplete = null,
-        Action? onAttached = null)
+        Action? onAttached = null,
+        Action<ulong>? onResumeCursor = null)
     {
         var headerBuffer = new byte[TtyHostProtocol.HeaderSize];
         var attached = !session.RequiresOwnershipHandshake;
@@ -956,6 +971,13 @@ public static class Program
                         EnqueueFrame(channelWriter, reject);
                         Log.Warn(() => $"Rejected client for session {session.Id}: ownership mismatch");
                         break;
+                    }
+
+                    // Initial owners omit the cursor. A reconnecting mt supplies the
+                    // last source byte it consumed so mthost can bridge the entire IPC gap.
+                    if (attachRequest.LastReceivedSequence is ulong lastReceivedSequence)
+                    {
+                        onResumeCursor?.Invoke(lastReceivedSequence);
                     }
 
                     attached = true;
@@ -1698,7 +1720,10 @@ internal sealed class TerminalSession : IDisposable
         var delta = checked((int)(availableEnd - cursor));
         if (maxBytes is int cap && cap > 0 && delta > cap)
         {
-            return cap;
+            // Returning a capped prefix would create a silent hole before live output.
+            // The negative result selects a bounded tail whose changed SequenceStart
+            // makes mt send an explicit reset before applying it.
+            return -1;
         }
 
         return delta;
@@ -1709,6 +1734,14 @@ internal sealed class TerminalSession : IDisposable
         lock (_bufferLock)
         {
             return _outputBuffer.TotalBytesWritten;
+        }
+    }
+
+    public (ulong Start, ulong End) GetOutputBufferRange()
+    {
+        lock (_bufferLock)
+        {
+            return (_outputBuffer.TailPosition, _outputBuffer.TotalBytesWritten);
         }
     }
 

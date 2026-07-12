@@ -182,6 +182,13 @@ function cacheRepos(sessionId: string, repos: GitRepoBinding[]): void {
 }
 
 function syncCachedRepoStatus(sessionId: string, status: GitStatusResponse): void {
+  if (!status.repoRoot) {
+    // A bare/default status (no repo resolved yet) carries no usable identity.
+    // Synthesizing a binding from it renders a "repo - HEAD +0 -0" placeholder
+    // chip; show nothing until a real repos push or resolved status arrives.
+    return;
+  }
+
   const repos = cachedRepos.get(sessionId);
   if (!repos) {
     cachedRepos.set(sessionId, [statusToRepoBinding(status)]);

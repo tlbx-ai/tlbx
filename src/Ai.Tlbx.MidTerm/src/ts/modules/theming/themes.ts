@@ -8,7 +8,6 @@ import type { MidTermSettingsPublic, ThemeName, TerminalTheme } from '../../type
 import { THEMES } from '../../constants';
 import { sessionTerminals } from '../../state';
 import { $currentSettings } from '../../stores';
-import { setCookie } from '../../utils';
 import { applyCssTheme } from './cssThemes';
 import { isMobilePresentationContext, shouldRenderBackgroundImage } from './backgroundVisibility';
 import { getTerminalThemeByName } from './terminalColorSchemes';
@@ -40,6 +39,8 @@ const TEXT_LIGHTNESS_KEYS = [
 const DOM_ANSI_OVERRIDE_STYLE_ID = 'midterm-xterm-ansi-overrides';
 const LIGHT_TERMINAL_MINIMUM_CONTRAST_RATIO = 4.5;
 const LIGHT_TERMINAL_BACKGROUND_LUMINANCE = 0.55;
+const THEME_STORAGE_KEY = 'mm-theme';
+const UI_THEME_NAMES = new Set<ThemeName>(['dark', 'light', 'solarizedDark', 'solarizedLight']);
 
 type ResolvedTerminalTheme = {
   foregroundTheme: TerminalTheme;
@@ -212,19 +213,39 @@ export function applyXtermThemeToTerminals(): void {
  * Apply theme and persist to cookie
  */
 export function setTheme(themeName: ThemeName): void {
-  setCookie('mm-theme', themeName);
+  cacheTheme(themeName);
   applyXtermThemeToTerminals();
   applyCssTheme(themeName);
 }
 
 /**
- * Initialize theme from saved cookie
+ * Cache the theme per origin. Unlike cookies, localStorage includes the port,
+ * so a source-dev instance cannot leak its theme into the stable supervisor.
  */
-export function initThemeFromCookie(): void {
-  const savedTheme = document.cookie.match(/mm-theme=([^;]+)/)?.[1] as ThemeName | undefined;
-  if (savedTheme && THEMES[savedTheme]) {
-    applyCssTheme(savedTheme);
+export function cacheTheme(themeName: ThemeName): void {
+  try {
+    window.localStorage.setItem(THEME_STORAGE_KEY, themeName);
+  } catch {
+    // Storage can be unavailable in hardened/private browser contexts.
   }
+}
+
+export function resolveInitialThemeName(savedTheme: string | null | undefined): ThemeName {
+  return savedTheme && UI_THEME_NAMES.has(savedTheme as ThemeName)
+    ? (savedTheme as ThemeName)
+    : 'dark';
+}
+
+/** Initialize with a per-origin cached theme; first launch is always dark. */
+export function initThemeFromBrowserCache(): void {
+  let savedTheme: string | null = null;
+  try {
+    savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
+  } catch {
+    // Fall through to the dark first-launch default.
+  }
+
+  applyCssTheme(resolveInitialThemeName(savedTheme));
 }
 
 function applyAnsiTransparency(theme: TerminalTheme, alpha: number): void {

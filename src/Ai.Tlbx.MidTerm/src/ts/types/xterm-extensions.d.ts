@@ -6,6 +6,7 @@
  * (like CSSStyleDeclaration.zoom).
  */
 
+import type { PerfDebugApi } from '../modules/perf/frameRecorder';
 import type { TerminalState, MidTermSettingsPublic } from '../types';
 
 // Extend Terminal with internal properties we access
@@ -33,6 +34,7 @@ declare global {
       readonly terminals: Map<string, TerminalState>;
       readonly activeId: string | null;
       readonly settings: MidTermSettingsPublic | null;
+      readonly perf: PerfDebugApi;
       readonly layout: {
         dock: (
           targetSessionId: string,

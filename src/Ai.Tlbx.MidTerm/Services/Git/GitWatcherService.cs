@@ -12,6 +12,7 @@ public sealed class GitWatcherService : IDisposable
     private readonly ConcurrentDictionary<string, RepoWatcher> _watchers = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, string> _sessionToRepo = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, GitRepoBinding>> _sessionExtraRepos = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, string> _sessionPrimaryLabels = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, byte> _subscribedSessions = new(StringComparer.Ordinal);
     private static readonly SemaphoreSlim _globalRefreshThrottle = new(2, 2);
 
@@ -174,6 +175,7 @@ public sealed class GitWatcherService : IDisposable
     public void UnregisterSession(string sessionId)
     {
         _subscribedSessions.TryRemove(sessionId, out _);
+        _sessionPrimaryLabels.TryRemove(sessionId, out _);
         if (_sessionToRepo.TryRemove(sessionId, out var repoRoot))
         {
             ReleaseRepo(repoRoot);
@@ -276,7 +278,8 @@ public sealed class GitWatcherService : IDisposable
         var result = new List<GitRepoBinding>();
         if (_sessionToRepo.TryGetValue(sessionId, out var primary))
         {
-            result.Add(CreateBinding(primary, "cwd", "auto", true));
+            _sessionPrimaryLabels.TryGetValue(sessionId, out var primaryLabel);
+            result.Add(CreateBinding(primary, "cwd", "auto", true, primaryLabel));
         }
 
         if (_sessionExtraRepos.TryGetValue(sessionId, out var extra))
@@ -299,6 +302,21 @@ public sealed class GitWatcherService : IDisposable
         if (_sessionToRepo.TryGetValue(sessionId, out var primary)
             && string.Equals(primary, repoRoot, StringComparison.OrdinalIgnoreCase))
         {
+            // The added path is the session's primary/cwd repo: honor an explicit
+            // label instead of silently discarding it. Refresh before notifying so
+            // listeners never observe the binding without a status.
+            await RefreshStatusAsync(repoRoot);
+            if (!string.IsNullOrWhiteSpace(label))
+            {
+                var primaryLabel = label.Trim();
+                _sessionPrimaryLabels.TryGetValue(sessionId, out var currentLabel);
+                if (!string.Equals(currentLabel, primaryLabel, StringComparison.Ordinal))
+                {
+                    _sessionPrimaryLabels[sessionId] = primaryLabel;
+                    OnReposChanged?.Invoke(sessionId);
+                }
+            }
+
             return GetRepoBindings(sessionId);
         }
 
@@ -309,6 +327,7 @@ public sealed class GitWatcherService : IDisposable
         var nextLabel = string.IsNullOrWhiteSpace(label) ? Path.GetFileName(repoRoot) : label.Trim();
         var nextRole = string.IsNullOrWhiteSpace(role) ? "target" : role.Trim();
 
+        var announceAdded = false;
         if (repos.TryGetValue(repoRoot, out var existing))
         {
             if (!string.Equals(existing.Label, nextLabel, StringComparison.Ordinal)
@@ -339,10 +358,17 @@ public sealed class GitWatcherService : IDisposable
                 }
             }
 
+            announceAdded = true;
+        }
+
+        // Populate the cached status before announcing a newly added repo so the
+        // first repos push never carries a null status (branch/stats missing).
+        await RefreshStatusAsync(repoRoot);
+        if (announceAdded)
+        {
             OnReposChanged?.Invoke(sessionId);
         }
 
-        await RefreshStatusAsync(repoRoot);
         return GetRepoBindings(sessionId);
     }
 

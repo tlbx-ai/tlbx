@@ -14,6 +14,8 @@ export function resolveMuxDataLossReason(reasonCode: number): string {
       return 'reconnect_tail_replay';
     case 7:
       return 'quick_resume_tail_replay';
+    case 8:
+      return 'ipc_sequence_gap';
     default:
       return 'manual';
   }

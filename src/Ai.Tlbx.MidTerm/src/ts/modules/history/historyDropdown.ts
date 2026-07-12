@@ -16,6 +16,7 @@ import { icon } from '../../constants';
 import { t } from '../i18n';
 import { createLogger } from '../logging';
 import { formatRuntimeDisplay } from '../sidebar/processDisplay';
+import { closeSpacesDropdown } from '../spaces';
 import { formatHistoryDirectoryDisplay } from './historyPathDisplay';
 import { getHistoryModeBadgeText, getHistoryModeDisplayText } from './launchMode';
 
@@ -50,6 +51,10 @@ export function initHistoryDropdown(
   onSpawnSession = spawnCallback;
   onRenameEntry = renameCallback ?? null;
   createDropdownElement();
+  document.getElementById('btn-bookmarks')?.addEventListener('click', () => {
+    closeSpacesDropdown();
+    toggleHistoryDropdown();
+  });
   void loadHistory();
   window.addEventListener('resize', handleViewportChange);
   window.addEventListener('orientationchange', handleViewportChange);
@@ -120,9 +125,7 @@ function createDropdownElement(): void {
   dropdownEl = document.createElement('div');
   dropdownEl.className = 'history-dropdown';
   dropdownEl.innerHTML = `
-    <div class="history-dropdown-header">
-      <span>${t('sidebar.loadBookmarked')}</span>
-    </div>
+    <div class="history-dropdown-header">${t('sidebar.loadBookmarked')}</div>
     <div class="history-dropdown-content"></div>
     <div class="history-dropdown-empty">${t('history.noHistory')}</div>
   `;

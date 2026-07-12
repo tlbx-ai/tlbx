@@ -2,7 +2,11 @@ const BRACKETED_PASTE_MODE_SEQUENCE_LENGTH = 8;
 const BRACKETED_PASTE_MODE_TAIL_LENGTH = BRACKETED_PASTE_MODE_SEQUENCE_LENGTH - 1;
 const bracketedPasteScanTail = new Map<string, Uint8Array>();
 
-export function clearBracketedPasteScanState(): void {
+export function clearBracketedPasteScanState(sessionId?: string): void {
+  if (sessionId !== undefined) {
+    bracketedPasteScanTail.delete(sessionId);
+    return;
+  }
   bracketedPasteScanTail.clear();
 }
 

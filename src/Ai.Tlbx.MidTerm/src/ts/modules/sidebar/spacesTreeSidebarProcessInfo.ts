@@ -126,10 +126,9 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
 
   const repoName = document.createElement('span');
   repoName.className = 'session-extra-git-repo';
-  appendMiddleEllipsizedPath(
-    repoName,
-    repo.repoRoot || repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo',
-  );
+  // Same display priority as the desktop tab-bar chip: the human label wins
+  // over the raw repo path, which stays available in the tooltip.
+  appendMiddleEllipsizedPath(repoName, getExtraGitRepoDisplayName(repo, status));
 
   const branchSeparator = document.createElement('span');
   branchSeparator.className = 'session-extra-git-separator';
@@ -156,9 +155,15 @@ function createExtraGitRepoLine(repo: GitRepoBinding): HTMLElement {
   return line;
 }
 
+function getExtraGitRepoDisplayName(
+  repo: GitRepoBinding,
+  status: GitStatusResponse | null,
+): string {
+  return repo.label || status?.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
+}
+
 function buildExtraGitRepoTitle(repo: GitRepoBinding, status: GitStatusResponse | null): string {
-  const repoName =
-    repo.repoRoot || repo.label || getRepoNameFromRoot(repo.repoRoot) || repo.role || 'repo';
+  const repoName = getExtraGitRepoDisplayName(repo, status);
   const branch = status?.branch || 'HEAD';
   const sync =
     status && (status.ahead > 0 || status.behind > 0)

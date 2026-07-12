@@ -790,6 +790,8 @@ public sealed class WebPreviewService
             UseCookies = false,
             AutomaticDecompression = DecompressionMethods.None,
             ConnectTimeout = TimeSpan.FromSeconds(10),
+            ConnectCallback = static (context, cancellationToken) =>
+                ConnectPreviewSocketAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, cancellationToken),
             SslOptions = new SslClientAuthenticationOptions
             {
                 RemoteCertificateValidationCallback = (sender, certificate, chain, errors) =>
@@ -820,13 +822,72 @@ public sealed class WebPreviewService
         _ = certificate;
         _ = chain;
 
+        return ShouldAcceptPreviewCertificate(state.TargetUri, sslPolicyErrors);
+    }
+
+    internal static bool ShouldAcceptPreviewCertificate(Uri? target, SslPolicyErrors sslPolicyErrors)
+    {
         if (sslPolicyErrors == SslPolicyErrors.None)
         {
             return true;
         }
 
-        var target = state.TargetUri;
-        return target is not null && IsLocalAddress(target.Host);
+        return target is not null && target.Scheme == Uri.UriSchemeHttps;
+    }
+
+    internal static async ValueTask<Stream> ConnectPreviewSocketAsync(
+        string host,
+        int port,
+        CancellationToken cancellationToken)
+    {
+        var addresses = await ResolvePreviewConnectAddressesAsync(host, cancellationToken).ConfigureAwait(false);
+        var perAddressTimeout = addresses.Length > 1
+            ? TimeSpan.FromSeconds(2)
+            : TimeSpan.FromSeconds(10);
+        Exception? lastError = null;
+
+        foreach (var address in addresses)
+        {
+            Socket? socket = new(address.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+
+            try
+            {
+                socket.NoDelay = true;
+                using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                attemptCts.CancelAfter(perAddressTimeout);
+                await socket.ConnectAsync(new IPEndPoint(address, port), attemptCts.Token).ConfigureAwait(false);
+                var stream = new NetworkStream(socket, ownsSocket: true);
+                socket = null;
+                return stream;
+            }
+            catch (Exception ex) when (ex is SocketException or OperationCanceledException)
+            {
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+
+                lastError = ex;
+            }
+            finally
+            {
+                socket?.Dispose();
+            }
+        }
+
+        throw lastError ?? new SocketException((int)SocketError.HostNotFound);
+    }
+
+    private static async Task<IPAddress[]> ResolvePreviewConnectAddressesAsync(
+        string host,
+        CancellationToken cancellationToken)
+    {
+        if (IPAddress.TryParse(host.AsSpan(), out var parsed))
+        {
+            return [parsed];
+        }
+
+        return await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
     }
 
     private void PersistCookiesLocked(PreviewState state, Uri target)

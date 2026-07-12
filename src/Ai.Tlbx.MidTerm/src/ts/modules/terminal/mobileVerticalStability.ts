@@ -5,6 +5,7 @@ const MOBILE_VIEWPORT_WIDTH_MAX = 768;
 const MOBILE_VERTICAL_WIDTH_TOLERANCE_PX = 2;
 const MOBILE_VERTICAL_HEIGHT_TOLERANCE_PX = 1;
 const MOBILE_VERTICAL_BOTTOM_STICKY_PX = 32;
+const MOBILE_CURSOR_GUARD_PX = 8;
 
 type ViewportSnapshot = {
   width: number;
@@ -13,6 +14,7 @@ type ViewportSnapshot = {
 
 let lastObservedViewportSnapshot: ViewportSnapshot | null = null;
 let mobileVerticalStabilityActive = false;
+const pendingCursorRevealContainers = new WeakSet<HTMLElement>();
 
 export function rememberCurrentMobileViewportSnapshot(): void {
   lastObservedViewportSnapshot = readViewportSnapshot();
@@ -80,6 +82,7 @@ export function syncMobileVerticalStableTerminals(): void {
       container.scrollTop = 0;
       if (dataset) {
         delete dataset.mobileVerticalScrollable;
+        delete dataset.mobileCursorFollowing;
       }
       return;
     }
@@ -88,16 +91,19 @@ export function syncMobileVerticalStableTerminals(): void {
       container.scrollHeight - container.clientHeight > MOBILE_VERTICAL_BOTTOM_STICKY_PX;
     if (dataset) {
       dataset.mobileVerticalScrollable = isScrollable ? 'true' : 'false';
+      if (!wasActive || !wasScrollable) {
+        dataset.mobileCursorFollowing = 'true';
+      }
     }
 
     if (!wasActive || !wasScrollable || nearBottom) {
-      pinMobileStableTerminalShellToBottom(state, { force: true });
+      revealMobileStableTerminalCursor(state, { force: true });
     }
   });
 }
 
-export function pinMobileStableTerminalShellToBottom(
-  state: Pick<TerminalState, 'container'>,
+export function revealMobileStableTerminalCursor(
+  state: Pick<TerminalState, 'container' | 'terminal'>,
   options: { force?: boolean } = {},
 ): void {
   if (!mobileVerticalStabilityActive || !isMobileTerminalViewport()) {
@@ -109,19 +115,76 @@ export function pinMobileStableTerminalShellToBottom(
     return;
   }
 
-  const nearBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight <=
-    MOBILE_VERTICAL_BOTTOM_STICKY_PX;
-  if (!options.force && !nearBottom) {
+  const dataset = (container as { dataset?: DOMStringMap }).dataset;
+  if (options.force) {
+    if (dataset) {
+      dataset.mobileCursorFollowing = 'true';
+    }
+  } else if (dataset?.mobileCursorFollowing !== 'true') {
     return;
   }
 
+  if (pendingCursorRevealContainers.has(container)) {
+    return;
+  }
+  pendingCursorRevealContainers.add(container);
   requestAnimationFrame(() => {
-    container.scrollTop = container.scrollHeight;
+    scrollMobileStableTerminalCursorIntoView(state);
     requestAnimationFrame(() => {
-      container.scrollTop = container.scrollHeight;
+      scrollMobileStableTerminalCursorIntoView(state);
+      pendingCursorRevealContainers.delete(container);
     });
   });
+}
+
+export function resumeMobileStableTerminalCursorFollowing(
+  state: Pick<TerminalState, 'container'>,
+): void {
+  if (!mobileVerticalStabilityActive || !isMobileTerminalViewport()) {
+    return;
+  }
+
+  const container = state.container;
+  if (!container.classList.contains('mobile-terminal-vertical-stable')) {
+    return;
+  }
+
+  const dataset = (container as { dataset?: DOMStringMap }).dataset;
+  if (dataset) {
+    dataset.mobileCursorFollowing = 'true';
+  }
+}
+
+function scrollMobileStableTerminalCursorIntoView(
+  state: Pick<TerminalState, 'container' | 'terminal'>,
+): void {
+  const { container, terminal } = state;
+  const screen = container.querySelector<HTMLElement>('.xterm-screen');
+  const rows = Math.max(1, terminal.rows);
+  const screenHeight = screen?.offsetHeight ?? 0;
+  if (!screen || screenHeight <= 0 || container.clientHeight <= 0) {
+    return;
+  }
+
+  const cursorRow = Math.max(0, Math.min(rows - 1, terminal.buffer.active.cursorY));
+  const cellHeight = screenHeight / rows;
+  const cursorTop = screen.offsetTop + cursorRow * cellHeight;
+  const cursorBottom = cursorTop + cellHeight;
+  const visibleTop = container.scrollTop;
+  const visibleBottom = visibleTop + container.clientHeight;
+  let nextScrollTop = visibleTop;
+
+  if (cursorBottom + MOBILE_CURSOR_GUARD_PX > visibleBottom) {
+    nextScrollTop = cursorBottom + MOBILE_CURSOR_GUARD_PX - container.clientHeight;
+  } else if (cursorTop - MOBILE_CURSOR_GUARD_PX < visibleTop) {
+    nextScrollTop = cursorTop - MOBILE_CURSOR_GUARD_PX;
+  }
+
+  const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+  const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, nextScrollTop));
+  if (Math.abs(clampedScrollTop - container.scrollTop) > 0.5) {
+    container.scrollTop = clampedScrollTop;
+  }
 }
 
 export function shouldPreserveMobileTerminalRows(

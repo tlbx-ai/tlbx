@@ -18,10 +18,8 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string PreviewBootstrapTokenQueryParam = "__mtPreviewToken";
     private const string PreviewTargetRevisionQueryParam = "__mtTargetRevision";
     private const string PreviewReloadTokenQueryParam = "__mtReloadToken";
-    private const string PreviewMobileEmulationQueryParam = "__mtMobile";
     private const string InternalProxyRequestHeaderName = "X-MidTerm-Internal-Proxy";
     private const string InternalProxyRequestHeaderValue = "1";
-    private const string MobileEmulationUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
     private const int WsBufferSize = 8192;
     private static readonly TimeSpan WsCloseTimeout = TimeSpan.FromSeconds(5);
     private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
@@ -75,12 +73,11 @@ public sealed partial class WebPreviewProxyMiddleware
           function mtStripBootstrapQuery(){
             try{
               var url=new URL(location.href);
-              if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken")&&!url.searchParams.has("__mtTargetRevision")&&!url.searchParams.has("__mtReloadToken")&&!url.searchParams.has("__mtMobile"))return;
+              if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken")&&!url.searchParams.has("__mtTargetRevision")&&!url.searchParams.has("__mtReloadToken"))return;
               url.searchParams.delete("__mtPreviewId");
               url.searchParams.delete("__mtPreviewToken");
               url.searchParams.delete("__mtTargetRevision");
               url.searchParams.delete("__mtReloadToken");
-              url.searchParams.delete("__mtMobile");
               history.replaceState(history.state,"",url.pathname+url.search+url.hash);
             }catch(e){}
           }
@@ -1852,13 +1849,9 @@ public sealed partial class WebPreviewProxyMiddleware
         Uri currentTargetUri,
         string upstreamOrigin)
     {
-        var mobileEmulation = IsMobileEmulationRequest(source);
         foreach (var header in source.Headers)
         {
             if (BlockedRequestHeaders.Contains(header.Key))
-                continue;
-
-            if (mobileEmulation && IsDesktopClientHintHeader(header.Key))
                 continue;
 
             if (header.Key.Equals("Origin", StringComparison.OrdinalIgnoreCase))
@@ -1876,24 +1869,6 @@ public sealed partial class WebPreviewProxyMiddleware
             target.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray());
         }
 
-        if (mobileEmulation)
-        {
-            target.Headers.TryAddWithoutValidation("User-Agent", MobileEmulationUserAgent);
-            target.Headers.TryAddWithoutValidation("Sec-CH-UA-Mobile", "?1");
-            target.Headers.TryAddWithoutValidation("Sec-CH-UA-Platform", "\"iOS\"");
-            target.Headers.TryAddWithoutValidation("Viewport-Width", "390");
-            target.Headers.TryAddWithoutValidation("DPR", "3");
-        }
-    }
-
-    private static bool IsDesktopClientHintHeader(string headerName)
-    {
-        return headerName.Equals("User-Agent", StringComparison.OrdinalIgnoreCase)
-            || headerName.Equals("Sec-CH-UA", StringComparison.OrdinalIgnoreCase)
-            || headerName.Equals("Sec-CH-UA-Mobile", StringComparison.OrdinalIgnoreCase)
-            || headerName.Equals("Sec-CH-UA-Platform", StringComparison.OrdinalIgnoreCase)
-            || headerName.Equals("Viewport-Width", StringComparison.OrdinalIgnoreCase)
-            || headerName.Equals("DPR", StringComparison.OrdinalIgnoreCase);
     }
 
     internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri)
@@ -2767,8 +2742,7 @@ public sealed partial class WebPreviewProxyMiddleware
         if (!parsed.ContainsKey(PreviewBootstrapIdQueryParam)
             && !parsed.ContainsKey(PreviewBootstrapTokenQueryParam)
             && !parsed.ContainsKey(PreviewTargetRevisionQueryParam)
-            && !parsed.ContainsKey(PreviewReloadTokenQueryParam)
-            && !parsed.ContainsKey(PreviewMobileEmulationQueryParam))
+            && !parsed.ContainsKey(PreviewReloadTokenQueryParam))
         {
             return queryString ?? "";
         }
@@ -2779,8 +2753,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if (entry.Key.Equals(PreviewBootstrapIdQueryParam, StringComparison.Ordinal)
                 || entry.Key.Equals(PreviewBootstrapTokenQueryParam, StringComparison.Ordinal)
                 || entry.Key.Equals(PreviewTargetRevisionQueryParam, StringComparison.Ordinal)
-                || entry.Key.Equals(PreviewReloadTokenQueryParam, StringComparison.Ordinal)
-                || entry.Key.Equals(PreviewMobileEmulationQueryParam, StringComparison.Ordinal))
+                || entry.Key.Equals(PreviewReloadTokenQueryParam, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -2792,36 +2765,6 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return QueryString.Create(sanitized).Value ?? "";
-    }
-
-    internal static bool IsMobileEmulationRequest(HttpRequest request)
-    {
-        if (HasMobileEmulationFlag(request.Query))
-        {
-            return true;
-        }
-
-        if (!request.Headers.TryGetValue("Referer", out var refererValues))
-        {
-            return false;
-        }
-
-        return Uri.TryCreate(refererValues.FirstOrDefault(), UriKind.Absolute, out var refererUri)
-            && HasMobileEmulationFlag(QueryHelpers.ParseQuery(refererUri.Query));
-    }
-
-    private static bool HasMobileEmulationFlag(IQueryCollection query)
-    {
-        return query.TryGetValue(PreviewMobileEmulationQueryParam, out var values)
-            && values.Any(value => string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
-    }
-
-    private static bool HasMobileEmulationFlag(IDictionary<string, Microsoft.Extensions.Primitives.StringValues> query)
-    {
-        return query.TryGetValue(PreviewMobileEmulationQueryParam, out var values)
-            && values.Any(value => string.Equals(value, "1", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string? GetPreviewReloadToken(IQueryCollection query)

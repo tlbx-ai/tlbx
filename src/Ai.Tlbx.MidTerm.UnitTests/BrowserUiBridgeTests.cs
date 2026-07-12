@@ -7,6 +7,44 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class BrowserUiBridgeTests
 {
     [Fact]
+    public void RequestMobileDevice_ForwardsToSelectedBrowserUi()
+    {
+        var bridge = new BrowserUiBridge(new MainBrowserService());
+        string? requested = null;
+        bridge.RegisterListener(
+            "l1",
+            "browser-a",
+            (_, _) => { },
+            (_, _) => { },
+            (_, _, _, _) => { },
+            (_, _, _, _) => { },
+            (sessionId, previewName, action, profile) =>
+                requested = $"{sessionId}/{previewName}/{action}/{profile}");
+
+        var ok = bridge.RequestMobileDevice(
+            "session-a",
+            "default",
+            "ROTATE",
+            "pixel-8",
+            out var error);
+
+        Assert.True(ok);
+        Assert.Equal("", error);
+        Assert.Equal("session-a/default/rotate/pixel-8", requested);
+    }
+
+    [Fact]
+    public void RequestMobileDevice_RejectsUnsupportedAction()
+    {
+        var bridge = new BrowserUiBridge(new MainBrowserService());
+
+        var ok = bridge.RequestMobileDevice("session-a", "default", "launch", null, out var error);
+
+        Assert.False(ok);
+        Assert.Contains("Unsupported", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RequestOpen_WithoutListeners_ReturnsHelpfulError()
     {
         var mainBrowser = new MainBrowserService();

@@ -624,6 +624,7 @@ public sealed class TtyHostAttachRequest
 {
     public string InstanceId { get; set; } = string.Empty;
     public string OwnerToken { get; set; } = string.Empty;
+    public ulong? LastReceivedSequence { get; set; }
 }
 
 public sealed class TtyHostAttachResponse
@@ -649,6 +650,8 @@ public sealed class TtyHostDataLossPayload
 {
     public TerminalReplayReason Reason { get; set; } = TerminalReplayReason.Manual;
     public int DroppedBytes { get; set; }
+    public ulong? MissingSequenceStart { get; set; }
+    public ulong? MissingSequenceEndExclusive { get; set; }
 }
 
 public sealed class TtyHostTransportInfo
@@ -676,7 +679,8 @@ public enum TerminalReplayReason
     IpcTimeoutReconnect = 4,
     BufferRefreshTailReplay = 5,
     ReconnectTailReplay = 6,
-    QuickResumeTailReplay = 7
+    QuickResumeTailReplay = 7,
+    IpcSequenceGap = 8
 }
 
 [JsonSerializable(typeof(SessionInfo))]

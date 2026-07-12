@@ -12,7 +12,14 @@ import { reconcileKeyedChildren } from '../../utils/domReconcile';
 
 export type SessionTabId = 'terminal' | 'agent' | 'files';
 
-export type IdeBarActionId = 'git' | 'commands' | 'web' | 'share';
+export type IdeBarActionId = 'git' | 'commands' | 'inputHistory' | 'web' | 'share';
+
+const INPUT_HISTORY_BUTTON_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
+  '<path d="M3 12a9 9 0 1 0 3-6.7"></path>' +
+  '<path d="M3 4v5h5"></path>' +
+  '<path d="M12 7v5l3 2"></path>' +
+  '</svg>';
 
 const WEB_BUTTON_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round">' +
@@ -589,6 +596,7 @@ function createActionButton(
 let gitClickHandler: ((repoRoot?: string) => void) | null = null;
 let webClickHandler: (() => void) | null = null;
 let shareClickHandler: ((sessionId: string) => void) | null = null;
+let inputHistoryClickHandler: ((sessionId: string, anchor: HTMLElement) => void) | null = null;
 export function setCommandsClickHandler(_handler: () => void): void {
   // Commands is temporarily hidden from the IDE bar, so registration is ignored.
 }
@@ -607,6 +615,12 @@ export function setWebClickHandler(handler: () => void): void {
 
 export function setShareClickHandler(handler: (sessionId: string) => void): void {
   shareClickHandler = handler;
+}
+
+export function setInputHistoryClickHandler(
+  handler: (sessionId: string, anchor: HTMLElement) => void,
+): void {
+  inputHistoryClickHandler = handler;
 }
 
 export function createTabBar(
@@ -652,6 +666,18 @@ export function createTabBar(
 
   const actions = document.createElement('div');
   actions.className = 'ide-bar-actions';
+
+  const inputHistoryBtn = createActionButton(
+    'inputHistory',
+    'ide-bar-btn ide-bar-input-history',
+    t('sidebar.inputHistory'),
+    t('sidebar.inputHistory'),
+    INPUT_HISTORY_BUTTON_ICON,
+    () => inputHistoryClickHandler?.(sessionId, inputHistoryBtn),
+  );
+  inputHistoryBtn.setAttribute('aria-haspopup', 'menu');
+  inputHistoryBtn.setAttribute('aria-expanded', 'false');
+  actions.appendChild(inputHistoryBtn);
 
   const webBtn = createActionButton(
     'web',

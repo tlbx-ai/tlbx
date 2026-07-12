@@ -173,6 +173,8 @@ public static class ServerSetup
                 settingsService: _.GetRequiredService<SettingsService>()));
         builder.Services.AddSingleton<TtyHostMuxConnectionManager>();
         builder.Services.AddSingleton<HistoryService>();
+        builder.Services.AddSingleton<InputHistoryService>();
+        builder.Services.AddSingleton<ControlPlaneService>();
         builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();
@@ -308,6 +310,7 @@ public static class ServerSetup
         contentTypeProvider.Mappings[".woff2"] = "font/woff2";
         contentTypeProvider.Mappings[".ttf"] = "font/ttf";
         contentTypeProvider.Mappings[".eot"] = "application/vnd.ms-fontobject";
+        contentTypeProvider.Mappings[".zip"] = "application/zip";
 
         app.UseStaticFiles(new StaticFileOptions
         {

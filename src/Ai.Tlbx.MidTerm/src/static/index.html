@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta
       name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
     <title>MidTerm</title>
 
@@ -606,6 +606,17 @@
               </button>
               <button
                 class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
+                id="btn-mobile-input-history"
+                data-i18n-title="sidebar.inputHistory"
+                title="History"
+              >
+                <span class="mobile-actions-symbol" aria-hidden="true">↶</span>
+                <span class="mobile-actions-label" data-i18n="sidebar.inputHistory"
+                  >History</span
+                >
+              </button>
+              <button
+                class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
                 id="btn-mobile-web"
                 data-i18n-title="sessionTabs.web"
                 title="Browser"
@@ -679,6 +690,66 @@
               <span class="icon">&#xe909;</span>
             </button>
           </div>
+          <section id="operator-view" class="operator-view hidden" aria-labelledby="operator-title">
+            <header class="operator-header">
+              <div>
+                <h1 id="operator-title" data-i18n="operator.title">Operator</h1>
+                <p data-i18n="operator.subtitle">
+                  Exact machine facts and agent-published meaning across your fleet.
+                </p>
+              </div>
+              <div class="operator-header-actions">
+                <button
+                  id="operator-refresh"
+                  class="btn-icon"
+                  type="button"
+                  data-i18n-title="operator.refresh"
+                  title="Refresh"
+                >
+                  <span class="icon">&#xea2e;</span>
+                </button>
+                <button
+                  id="operator-close"
+                  class="btn-icon"
+                  type="button"
+                  data-i18n-title="operator.close"
+                  title="Close"
+                >
+                  <span class="icon">&#xe909;</span>
+                </button>
+              </div>
+            </header>
+            <div class="operator-scroll">
+              <div id="operator-metrics" class="operator-metrics"></div>
+              <section class="operator-section" aria-labelledby="operator-sessions-title">
+                <header class="operator-section-header">
+                  <h2 id="operator-sessions-title" data-i18n="operator.sessions">Sessions</h2>
+                  <span data-i18n="operator.sessionsHint">Process facts · agent publications · open work</span>
+                </header>
+                <div class="operator-session-head" aria-hidden="true">
+                  <span data-i18n="operator.session">Session</span>
+                  <span data-i18n="operator.machineFact">Machine fact</span>
+                  <span data-i18n="operator.agentPublished">Agent published</span>
+                  <span data-i18n="operator.work">Work</span>
+                </div>
+                <div id="operator-sessions" class="operator-session-list"></div>
+              </section>
+              <section class="operator-section" aria-labelledby="operator-work-title">
+                <header class="operator-section-header">
+                  <h2 id="operator-work-title" data-i18n="operator.workQueue">Work queue</h2>
+                  <span data-i18n="operator.workHint">Todos, mail, coding tasks, and next steps published by agents</span>
+                </header>
+                <div id="operator-work-items" class="operator-work-list"></div>
+              </section>
+              <section class="operator-section" aria-labelledby="operator-checkpoints-title">
+                <header class="operator-section-header">
+                  <h2 id="operator-checkpoints-title" data-i18n="operator.checkpoints">Checkpoints</h2>
+                  <span data-i18n="operator.checkpointsHint">Recent explicit progress and verification facts</span>
+                </header>
+                <div id="operator-checkpoints" class="operator-checkpoint-list"></div>
+              </section>
+            </div>
+          </section>
           <div id="empty-state" class="empty-state">
             <img src="/img/Midterm_exp.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
             <p data-i18n="terminal.noTerminals">No terminals open</p>
@@ -3151,10 +3222,10 @@ Enable terminal key log to capture Enter and modifier events.</pre
             </button>
             <button
               class="btn-icon"
-              id="web-preview-mobile-emulation"
+              id="web-preview-responsive-frame"
               type="button"
-              title="Emulate mobile browser"
-              aria-label="Emulate mobile browser"
+              title="Responsive mobile frame"
+              aria-label="Enable responsive mobile frame"
               aria-pressed="false"
             >
               <svg
@@ -3171,6 +3242,49 @@ Enable terminal key log to capture Enter and modifier events.</pre
               >
                 <rect x="7" y="2" width="10" height="20" rx="2" />
                 <path d="M11 18h2" />
+              </svg>
+            </button>
+            <button
+              class="btn-icon"
+              id="web-preview-mobile-device"
+              type="button"
+              title="Install Chrome device bridge"
+              aria-label="Install Chrome device bridge"
+              aria-pressed="false"
+              data-bridge-connected="false"
+            >
+              <svg
+                class="mobile-device-download-icon"
+                viewBox="0 0 24 24"
+                width="19"
+                height="19"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <path d="m7 10 5 5 5-5" />
+                <path d="M12 15V3" />
+              </svg>
+              <svg
+                class="mobile-device-open-icon"
+                viewBox="0 0 24 24"
+                width="19"
+                height="19"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <rect x="6" y="2" width="12" height="20" rx="2" />
+                <path d="m10 9 5 3-5 3z" />
               </svg>
             </button>
             <div class="web-preview-overflow">
@@ -3212,6 +3326,60 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 >
                   <span class="web-preview-menu-icon">&#x2197;</span>
                   <span>Open top-level</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-rotate"
+                  type="button"
+                  title="Rotate Chrome device"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&#x21bb;</span>
+                  <span>Device: Rotate</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-keyboard"
+                  type="button"
+                  title="Toggle Chrome device keyboard viewport"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&#x2328;</span>
+                  <span>Device: Keyboard</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-background"
+                  type="button"
+                  title="Toggle Chrome device lifecycle"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&#x25d0;</span>
+                  <span data-device-label>Device: Background</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-close"
+                  type="button"
+                  title="Close Chrome device"
+                  role="menuitem"
+                  disabled
+                >
+                  <span class="web-preview-menu-icon">&times;</span>
+                  <span>Device: Close</span>
+                </button>
+                <button
+                  class="web-preview-menu-item"
+                  id="web-preview-device-download"
+                  type="button"
+                  title="Download Chrome device bridge"
+                  role="menuitem"
+                >
+                  <span class="web-preview-menu-icon">&#x2193;</span>
+                  <span>Download Chrome bridge</span>
                 </button>
                 <button
                   class="web-preview-menu-item"

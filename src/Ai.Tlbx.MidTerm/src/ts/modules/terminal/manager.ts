@@ -24,6 +24,7 @@ import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } 
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
 import {
   isBracketedPasteEnabled,
+  forgetMuxSession,
   reconcileSynchronizedOutputCursor,
   requestBufferRefresh,
   sendCommand,
@@ -82,9 +83,18 @@ import { shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
 import { refreshTerminalRenderer } from './presentationRefresh';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
+import {
+  captureTerminalInputData,
+  captureTerminalLineBreak,
+  captureTerminalPasteText,
+  clearTerminalInputCapture,
+} from '../history/terminalInputCapture';
 const log = createLogger('terminalManager');
 import { initTouchScrolling, teardownTouchScrolling, isTouchSelecting } from './touchScrolling';
-import { pinMobileStableTerminalShellToBottom } from './mobileVerticalStability';
+import {
+  revealMobileStableTerminalCursor,
+  resumeMobileStableTerminalCursorFollowing,
+} from './mobileVerticalStability';
 import { handleOsc7Cwd } from '../process';
 import { recordTerminalKeyLog } from '../diagnostics';
 import { getActiveTab } from '../sessionTabs';
@@ -306,6 +316,7 @@ function deliverTerminalEnterOverride(
   bytes: string,
   routeThroughXtermInput: boolean,
 ): void {
+  captureTerminalLineBreak(sessionId);
   const state = routeThroughXtermInput ? sessionTerminals.get(sessionId) : null;
   if (state?.terminal) {
     state.terminal.input(bytes, true);
@@ -668,7 +679,9 @@ function scheduleWebglReattach(sessionId: string, state: TerminalState, delayMs:
     }
 
     if (attachWebglAddon(sessionId, state)) {
-      refreshTerminalRenderer(state);
+      // A fresh renderer re-uploads from the shared atlas; clearing it here
+      // would force every terminal sharing the atlas to re-rasterize.
+      refreshTerminalRenderer(state, { preserveTextureAtlas: true });
     } else {
       scheduleWebglReattach(sessionId, state, Math.min(delayMs * 2, WEBGL_REATTACH_MAX_DELAY_MS));
     }
@@ -718,7 +731,6 @@ function attachWebglAddon(sessionId: string, state: TerminalState): boolean {
       }
 
       detachWebglAddon(sessionId, state);
-      requestBufferRefresh(sessionId);
 
       const recentLosses = recordWebglContextLoss(sessionId);
       const delayMs =
@@ -775,7 +787,8 @@ export function syncWebglSessionPriority(prioritySessionIds: readonly string[]):
     }
 
     if (attachWebglAddon(sessionId, state)) {
-      refreshTerminalRenderer(state);
+      // Session-switch churn must not clear the shared texture atlas.
+      refreshTerminalRenderer(state, { preserveTextureAtlas: true });
     }
   });
 }
@@ -810,7 +823,8 @@ export function recoverTerminalRendererAfterForeground(
       return;
     }
 
-    refreshTerminalRenderer(state);
+    // The atlas was already cleared by the synchronous recovery refresh above.
+    refreshTerminalRenderer(state, { preserveTextureAtlas: true });
   });
 }
 
@@ -1094,7 +1108,8 @@ export function createTerminalForSession(
     // Register onData immediately to avoid losing keystrokes during font/rAF delay
     // Other event handlers are set up later in setupTerminalEvents
     state.earlyDataDisposable = terminal.onData((data: string) => {
-      pinMobileStableTerminalShellToBottom(state, { force: true });
+      resumeMobileStableTerminalCursorFollowing(state);
+      captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);
     });
 
@@ -1252,8 +1267,9 @@ export function setupTerminalEvents(
     terminal.onData((data: string) => {
       const state = sessionTerminals.get(sessionId);
       if (state) {
-        pinMobileStableTerminalShellToBottom(state, { force: true });
+        resumeMobileStableTerminalCursorFollowing(state);
       }
+      captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);
     }),
   );
@@ -1269,7 +1285,7 @@ export function setupTerminalEvents(
       reconcileSynchronizedOutputCursor(sessionId);
       const state = sessionTerminals.get(sessionId);
       if (state) {
-        pinMobileStableTerminalShellToBottom(state);
+        revealMobileStableTerminalCursor(state);
       }
     }),
   );
@@ -1405,6 +1421,7 @@ export function destroyTerminalForSession(sessionId: string): void {
 
   enterModifierLatches.delete(sessionId);
   enterOverrideSuppress.clearTerminalEnterOverrideHandled(sessionId);
+  clearTerminalInputCapture(sessionId);
 
   // Clean up xterm event disposables
   if (state.disposables) {
@@ -1469,8 +1486,7 @@ export function destroyTerminalForSession(sessionId: string): void {
   state.terminal.dispose();
   state.container.remove();
   sessionTerminals.delete(sessionId);
-  pendingOutputFrames.delete(sessionId);
-  sessionsNeedingResync.delete(sessionId);
+  forgetMuxSession(sessionId);
 }
 
 // WebSocket frame limit - backend MuxProtocol.MaxFrameSize is 64KB, use 32KB for safety margin
@@ -1503,6 +1519,7 @@ export async function pasteToTerminal(
   sessionId: string,
   data: string,
   isFilePath: boolean = false,
+  historySource?: string,
 ): Promise<void> {
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
@@ -1517,11 +1534,13 @@ export async function pasteToTerminal(
     showPasteIndicator();
   }
 
+  captureTerminalPasteText(sessionId, data);
   try {
     await sendSessionPasteInput(sessionId, {
       text: data,
       bracketedPaste: bpmEnabled,
       isFilePath,
+      ...(historySource ? { historySource } : {}),
     });
   } finally {
     if (showIndicator) {

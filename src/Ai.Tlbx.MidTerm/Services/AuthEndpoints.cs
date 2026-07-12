@@ -17,7 +17,7 @@ public static class AuthEndpoints
             : SameSiteMode.Lax,
         Secure = true,
         Path = "/",
-        MaxAge = TimeSpan.FromDays(3)
+        MaxAge = AuthService.SessionTokenValidity
     };
 
     public static void MapAuthEndpoints(WebApplication app, SettingsService settingsService, AuthService authService)
@@ -69,8 +69,29 @@ public static class AuthEndpoints
 
         app.MapPost("/api/auth/logout", (HttpContext ctx) =>
         {
+            authService.RevokeSessionToken(ctx.Request.Cookies[AuthService.SessionCookieName]);
             ctx.Response.Cookies.Delete(AuthService.SessionCookieName, GetSessionCookieOptions(settingsService));
             return Results.Ok();
+        });
+
+        app.MapPost("/api/auth/refresh", (HttpContext ctx) =>
+        {
+            var authentication = authService.AuthenticateRequestWithContext(ctx.Request);
+            if (authentication.Method == RequestAuthMethod.None)
+            {
+                AuthService.MarkAuthenticationRequired(ctx.Response);
+                return Results.Unauthorized();
+            }
+
+            if (authentication.Method == RequestAuthMethod.SessionCookie)
+            {
+                ctx.Response.Cookies.Append(
+                    AuthService.SessionCookieName,
+                    authService.RenewSessionToken(authentication.SessionTokenId!),
+                    GetSessionCookieOptions(settingsService));
+            }
+
+            return Results.NoContent();
         });
 
         app.MapPost("/api/auth/change-password", (ChangePasswordRequest request, HttpContext ctx) =>
@@ -99,8 +120,8 @@ public static class AuthEndpoints
 
             pwSettings.PasswordHash = authService.HashPassword(request.NewPassword);
             pwSettings.AuthenticationEnabled = true;
-            authService.InvalidateAllSessions();
             settingsService.Save(pwSettings);
+            authService.InvalidateAllSessions();
 
             var token = authService.CreateSessionToken();
             ctx.Response.Cookies.Append(

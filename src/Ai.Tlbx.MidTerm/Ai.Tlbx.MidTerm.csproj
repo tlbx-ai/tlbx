@@ -47,6 +47,7 @@
   <ItemGroup>
     <UpToDateCheckInput Include="src\static\**\*" />
     <UpToDateCheckInput Include="src\ts\**\*" />
+    <UpToDateCheckInput Include="src\mobile-device-bridge\**\*" />
   </ItemGroup>
 
   <ItemGroup>
@@ -158,6 +159,7 @@
   <ItemGroup Condition="'$(IsPublishing)' == 'true'">
     <EmbeddedResource Include="wwwroot\**\*.br" />
     <EmbeddedResource Include="wwwroot\**\*.png" />
+    <EmbeddedResource Include="wwwroot\**\*.zip" />
     <EmbeddedResource Include="wwwroot\fonts\CascadiaCode-Regular.woff2" />
     <EmbeddedResource Include="wwwroot\fonts\CascadiaCode-SemiBold.woff2" />
     <EmbeddedResource Include="wwwroot\fonts\JetBrainsMono-Regular.woff2" />

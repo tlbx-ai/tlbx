@@ -47,6 +47,21 @@
         }
       }
     },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "description": "Unauthorized"
+          }
+        }
+      }
+    },
     "/api/auth/change-password": {
       "post": {
         "tags": [
@@ -6882,7 +6897,13 @@
           "lastReplayReason",
           "reconnectCount",
           "dataLossCount",
-          "lastDataLossReason"
+          "lastDataLossReason",
+          "recoveryRequested",
+          "recoveryCoalesced",
+          "recoveryCompleted",
+          "recoveryResets",
+          "recoveryReplayBytes",
+          "recoveryFailed"
         ],
         "type": "object",
         "properties": {
@@ -6937,6 +6958,30 @@
               "null",
               "string"
             ]
+          },
+          "recoveryRequested": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryCoalesced": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryCompleted": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryResets": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryReplayBytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "recoveryFailed": {
+            "type": "integer",
+            "format": "int64"
           }
         }
       },

@@ -2,7 +2,8 @@ const result = {
   name: "midterm-background-live-output-smoke",
   sessionId: null,
   bufferRequests: [],
-  mobileResumeQuickRequests: [],
+  lifecycleReplayRequests: [],
+  lifecycleCycles: 0,
   serverTailDoneSeen: false,
   serverTailSample: "",
   hiddenTextHasDone: false,
@@ -174,41 +175,30 @@ try {
     `${marker} done`,
   );
 
-  window.dispatchEvent(new Event("pagehide"));
-  setDocumentVisibility(false);
-  const pageShowEvent = new Event("pageshow");
-  Object.defineProperty(pageShowEvent, "persisted", {
-    value: true,
-    configurable: true,
-  });
-  window.dispatchEvent(pageShowEvent);
-  document.dispatchEvent(new Event("resume"));
-  window.dispatchEvent(new Event("focus"));
-
-  await waitFor(
-    () =>
-      result.bufferRequests.some(
-        (request) =>
-          request.sessionId === sessionId &&
-          request.mode === 1 &&
-          request.byteLength >= 10,
-      ),
-    "mobile resume quick buffer request",
-    5000,
-  );
-  result.mobileResumeQuickRequests = result.bufferRequests.filter(
-    (request) => request.sessionId === sessionId && request.mode === 1,
-  );
-
-  const foregroundReplayRequest = result.bufferRequests.find(
-    (request) =>
-      request.sessionId === sessionId &&
-      request.mode === 0 &&
-      request.byteLength === 10,
-  );
-  if (foregroundReplayRequest) {
+  const requestsBeforeLifecycle = result.bufferRequests.length;
+  for (let cycle = 0; cycle < 12; cycle += 1) {
+    setDocumentVisibility(true);
+    window.dispatchEvent(new Event("pagehide"));
+    await sleep(25);
+    setDocumentVisibility(false);
+    const pageShowEvent = new Event("pageshow");
+    Object.defineProperty(pageShowEvent, "persisted", {
+      value: cycle % 2 === 0,
+      configurable: true,
+    });
+    window.dispatchEvent(pageShowEvent);
+    document.dispatchEvent(new Event("resume"));
+    window.dispatchEvent(new Event("focus"));
+    result.lifecycleCycles += 1;
+    await sleep(25);
+  }
+  await sleep(1000);
+  result.lifecycleReplayRequests = result.bufferRequests
+    .slice(requestsBeforeLifecycle)
+    .filter((request) => request.sessionId === sessionId);
+  if (result.lifecycleReplayRequests.length > 0) {
     throw new Error(
-      "Foreground resume requested full replay even though hidden output stayed live",
+      `Lifecycle recovery requested replay without data-loss evidence: ${JSON.stringify(result.lifecycleReplayRequests)}`,
     );
   }
 

@@ -1,0 +1,76 @@
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('../../constants', () => ({ icon: (name: string) => name }));
+vi.mock('../i18n', () => ({
+  t: (key: string) =>
+    ({
+      'inputHistory.untitled': 'Untitled input',
+      'inputHistory.timeUnknown': 'Unknown time',
+      'inputHistory.timeNow': 'Just now',
+      'inputHistory.timeMinutes': '{count}m ago',
+      'inputHistory.timeHours': '{count}h ago',
+      'inputHistory.timeDays': '{count}d ago',
+    })[key] ?? key,
+}));
+
+import type { InputHistoryEntry } from './inputHistoryApi';
+import {
+  formatInputHistoryMeta,
+  formatInputHistoryPreview,
+  formatInputHistoryText,
+} from './inputHistoryPanel';
+
+function entry(overrides: Partial<InputHistoryEntry> = {}): InputHistoryEntry {
+  return {
+    id: 'entry-1',
+    sessionId: 'session-a',
+    sessionName: 'Codex',
+    workingDirectory: 'Q:\\repo',
+    kind: 'textPaste',
+    source: 'terminalPaste',
+    surface: 'terminal',
+    createdAt: '2026-07-11T10:00:00Z',
+    text: 'inspect this',
+    path: null,
+    displayName: null,
+    mimeType: null,
+    sizeBytes: null,
+    bracketedPaste: true,
+    isFilePath: false,
+    submit: false,
+    ...overrides,
+  };
+}
+
+describe('input history formatting', () => {
+  it('normalizes and bounds exact text previews', () => {
+    const value = `${'word '.repeat(40)}\nnext`;
+    const preview = formatInputHistoryPreview(entry({ text: value }));
+
+    expect(preview.length).toBe(140);
+    expect(preview.endsWith('…')).toBe(true);
+    expect(preview).not.toContain('\n');
+  });
+
+  it('uses the uploaded file name or path leaf without interpreting content', () => {
+    expect(formatInputHistoryPreview(entry({ text: null, displayName: 'screen.png' }))).toBe(
+      'screen.png',
+    );
+    expect(
+      formatInputHistoryPreview(
+        entry({ text: null, displayName: null, path: 'Q:\\repo\\evidence.pdf' }),
+      ),
+    ).toBe('evidence.pdf');
+    expect(formatInputHistoryText(entry({ text: 'first\nsecond' }))).toBe('first\nsecond');
+  });
+
+  it('formats deterministic relative time buckets', () => {
+    const now = Date.parse('2026-07-11T12:00:00Z');
+
+    expect(formatInputHistoryMeta(entry(), now)).toBe('Codex · 2h ago');
+    expect(formatInputHistoryMeta(entry({ createdAt: 'invalid' }), now)).toBe(
+      'Codex · Unknown time',
+    );
+    expect(formatInputHistoryMeta(entry(), now, false)).toBe('2h ago');
+  });
+});

@@ -13,6 +13,7 @@ import { JS_BUILD_VERSION } from '../../constants';
 import { applyCssTheme } from '../theming/cssThemes';
 import { applyBackgroundAppearance, getBackgroundImageUrl } from '../theming/backgroundAppearance';
 import {
+  cacheTheme,
   getEffectiveXtermThemeForSettings,
   resolveEffectiveTerminalMinimumContrastRatio,
   syncEffectiveXtermThemeDomOverrides,
@@ -715,7 +716,7 @@ export function applyReceivedSettings(settings: MidTermSettingsPublic): void {
   }
 
   applyCssTheme(settings.theme);
-  setCookie('mm-theme', settings.theme);
+  cacheTheme(settings.theme);
 
   setCookie('mm-language', settings.language);
   void setLocale(settings.language);
@@ -760,7 +761,7 @@ function persistSettingsSnapshot(
   nextSettings: MidTermSettingsPublic | null,
   payload: MidTermSettingsUpdate,
 ): void {
-  setCookie('mm-theme', payload.theme);
+  cacheTheme(payload.theme);
 
   setCookie('mm-language', payload.language);
 

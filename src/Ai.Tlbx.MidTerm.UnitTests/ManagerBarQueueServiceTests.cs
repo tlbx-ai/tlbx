@@ -172,6 +172,26 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task DispatchPromptDirectAsync_IgnoresHeatAndNeverCreatesAHeuristicQueueEntry()
+    {
+        var runtime = new FakeRuntime(["session-1"])
+        {
+            CurrentHeat = 1.0,
+            LastOutputAt = _timeProvider.GetUtcNow()
+        };
+
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+
+        var accepted = await service.DispatchPromptDirectAsync(
+            "session-1",
+            new AppServerControlTurnRequest { Text = "run exact verification" });
+
+        Assert.True(accepted);
+        Assert.Equal(["run exact verification"], runtime.SentPrompts);
+        Assert.Empty(service.GetSnapshot(["session-1"]));
+    }
+
+    [Fact]
     public async Task SubmitPromptAsync_QueuesTerminalPromptWhenRecentOutputHasNotSettled()
     {
         var runtime = new FakeRuntime(["session-1"])

@@ -39,6 +39,9 @@ export const $sessions = map<Record<string, Session>>({});
 /** Currently active session ID */
 export const $activeSessionId = atom<string | null>(null);
 
+/** Full-fleet operator view is covering terminal surfaces. */
+export const $operatorOpen = atom(false);
+
 /**
  * Pending renames awaiting server confirmation.
  * Maps sessionId -> pending name (empty string means clearing the name).

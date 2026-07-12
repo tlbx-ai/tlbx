@@ -122,7 +122,7 @@ describe('spaces tree sidebar process info', () => {
     });
   });
 
-  it('shows monitored repositories by full directory path', () => {
+  it('shows monitored repositories by their label like the desktop chip', () => {
     mocks.repos.push({
       repoRoot: 'Q:\\repos\\MidTermWorkspace4',
       label: 'MidTerm',
@@ -142,8 +142,58 @@ describe('spaces tree sidebar process info', () => {
       },
     });
 
+    const line = processInfo.querySelector<HTMLElement>('.session-extra-git');
     const repo = processInfo.querySelector<HTMLElement>('.session-extra-git-repo');
-    expect(repo?.textContent).toBe('Q:\\repos\\MidTermWorkspace4');
+    expect(repo?.textContent).toBe('MidTerm');
+    expect(line?.title).toContain('Q:\\repos\\MidTermWorkspace4');
+  });
+
+  it('falls back to the repo folder name when no label is set', () => {
+    mocks.repos.push({
+      repoRoot: 'Q:\\repos\\MidTermWorkspace4',
+      label: '',
+      role: 'target',
+      source: 'manual',
+      isPrimary: false,
+      status: makeStatus({ label: '' }),
+    });
+
+    const processInfo = document.createElement('div') as unknown as HTMLElement;
+    syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, {
+      id: 's1',
+      session: {
+        currentDirectory: 'Q:/repos/Jpa',
+        workspacePath: 'Q:/repos/Jpa',
+        shellType: 'pwsh',
+      },
+    });
+
+    const repo = processInfo.querySelector<HTMLElement>('.session-extra-git-repo');
+    expect(repo?.textContent).toBe('MidTermWorkspace4');
+  });
+
+  it('keeps the label visible while the first status is still loading', () => {
+    mocks.repos.push({
+      repoRoot: 'Q:\\repos\\MidTerm',
+      label: 'MidTerm',
+      role: 'target',
+      source: 'manual',
+      isPrimary: false,
+      status: null,
+    });
+
+    const processInfo = document.createElement('div') as unknown as HTMLElement;
+    syncSpacesTreeSidebarSessionProcessInfoElement(processInfo, {
+      id: 's1',
+      session: {
+        currentDirectory: 'Q:/repos/Jpa',
+        workspacePath: 'Q:/repos/Jpa',
+        shellType: 'pwsh',
+      },
+    });
+
+    const repo = processInfo.querySelector<HTMLElement>('.session-extra-git-repo');
+    expect(repo?.textContent).toBe('MidTerm');
   });
 
   it('renders each monitored repository as workdir branch and changes on one row', () => {
@@ -182,13 +232,7 @@ describe('spaces tree sidebar process info', () => {
     );
 
     const repo = details?.querySelector<HTMLElement>('.session-extra-git-repo');
-    expect(repo?.textContent).toBe('C:\\repos\\messengerSpecific');
-    expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-root')?.textContent).toBe(
-      'C:\\',
-    );
-    expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-middle')?.textContent).toBe(
-      'repos\\',
-    );
+    expect(repo?.textContent).toBe('messengerSpecific');
     expect(repo?.querySelector<HTMLElement>('.session-extra-git-path-tail')?.textContent).toBe(
       'messengerSpecific',
     );
@@ -206,8 +250,9 @@ describe('spaces tree sidebar process info', () => {
     ).toBe('-24');
     expect(icon?.attributes['aria-hidden']).toBe('true');
     expect(icon?.innerHTML).toContain('<circle cx="7" cy="6" r="1.75"></circle>');
-    expect(line?.textContent).toBe('C:\\repos\\messengerSpecific-main+214-24');
-    expect(details?.textContent).toBe('C:\\repos\\messengerSpecific-main');
+    expect(line?.textContent).toBe('messengerSpecific-main+214-24');
+    expect(details?.textContent).toBe('messengerSpecific-main');
+    expect(line?.title).toContain('C:\\repos\\messengerSpecific');
     expect(separators.map((separator) => separator.textContent)).toEqual(['-']);
   });
 
@@ -258,7 +303,7 @@ describe('spaces tree sidebar process info', () => {
       processInfo.querySelectorAll<HTMLElement>('.session-extra-git-branch'),
     ).map((branch) => branch.textContent);
 
-    expect(repos).toEqual(['Q:\\repos\\Jpa', 'Q:\\repos\\MidTerm']);
+    expect(repos).toEqual(['Jpa', 'MidTerm']);
     expect(branches).toEqual(['main', 'dev']);
   });
 });

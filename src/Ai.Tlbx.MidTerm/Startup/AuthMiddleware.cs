@@ -71,17 +71,18 @@ public static class AuthMiddleware
                     return;
                 }
 
+                AuthService.MarkAuthenticationRequired(context.Response);
                 context.Response.StatusCode = 401;
                 return;
             }
 
-            var requestAuthMethod = authService.AuthenticateRequest(context.Request);
-            if (requestAuthMethod != RequestAuthMethod.None)
+            var authentication = authService.AuthenticateRequestWithContext(context.Request);
+            if (authentication.Method != RequestAuthMethod.None)
             {
                 RequestAccessContext.SetFullUser(context, true);
-                if (requestAuthMethod == RequestAuthMethod.SessionCookie && !context.WebSockets.IsWebSocketRequest)
+                if (authentication.Method == RequestAuthMethod.SessionCookie && !context.WebSockets.IsWebSocketRequest)
                 {
-                    var freshToken = authService.CreateSessionToken();
+                    var freshToken = authService.RenewSessionToken(authentication.SessionTokenId!);
                     context.Response.Cookies.Append(
                         AuthService.SessionCookieName,
                         freshToken,
@@ -93,6 +94,7 @@ public static class AuthMiddleware
 
             if (path.StartsWith("/api/", StringComparison.Ordinal) || path.StartsWith("/ws/", StringComparison.Ordinal))
             {
+                AuthService.MarkAuthenticationRequired(context.Response);
                 context.Response.StatusCode = 401;
                 return;
             }
@@ -145,7 +147,7 @@ public static class AuthMiddleware
             : SameSiteMode.Lax,
         Secure = true,
         Path = "/",
-        MaxAge = TimeSpan.FromDays(3)
+        MaxAge = AuthService.SessionTokenValidity
     };
 
     internal static bool IsPublicPath(string path)

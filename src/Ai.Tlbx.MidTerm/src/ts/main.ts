@@ -7,7 +7,8 @@
 
 import { initLoginPage } from './modules/login';
 import { initTrustPage } from './modules/trust';
-import { initThemeFromCookie } from './modules/theming';
+import { initThemeFromBrowserCache } from './modules/theming';
+import { initAuthSessionLifetime } from './modules/auth/sessionLifetime';
 import { createLogger, initLogConcerns } from './modules/logging';
 import { ASSET_VERSION } from './constants';
 import {
@@ -65,6 +66,7 @@ import {
   updateMobileTitle,
 } from './modules/sidebar';
 import { initI18n, t } from './modules/i18n';
+import { initPwaInstall, syncAppModeClasses } from './modules/pwaInstall';
 import { initTabTitle } from './modules/tabTitle';
 import { bindVoiceEvents, initVoiceControls } from './modules/voice';
 import { initChatPanel } from './modules/chat';
@@ -91,7 +93,7 @@ import {
   closeHistoryDropdown,
   getBookmarkSurfaceType,
   initHistoryDropdown,
-  toggleHistoryDropdown,
+  initSessionInputHistoryMenus,
   type LaunchEntry,
 } from './modules/history';
 import { linkAndReplayRemoteBookmark } from './modules/history/remoteBookmarkLaunch';
@@ -163,8 +165,10 @@ import {
 import { initDockState } from './modules/dockState';
 import { initSmartInput, setAppServerControlResumeConversationHandler } from './modules/smartInput';
 import { openProviderResumePicker, type ResumeProvider } from './modules/providerResume';
-import { closeSpacesDropdown, initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
+import { initSpacesDropdown, toggleSpacesDropdown } from './modules/spaces';
 import { initSpacesRuntime, type SpaceSurface } from './modules/spaces/runtime';
+import { initOperatorView } from './modules/operator';
+import { createMidtermPerfDebugApi } from './modules/perf/midtermPerfDebug';
 import {
   cacheDOMElements,
   sessionTerminals,
@@ -178,6 +182,7 @@ import {
 import {
   $activeSessionId,
   $settingsOpen,
+  $operatorOpen,
   $sessionList,
   $currentSettings,
   $layout,
@@ -248,6 +253,7 @@ window.mmDebug = {
   get settings() {
     return $currentSettings.get();
   },
+  perf: createMidtermPerfDebugApi(),
   layout: {
     dock(
       targetSessionId: string,
@@ -289,7 +295,7 @@ window.mmDebug = {
 // Initialization
 // =============================================================================
 
-initThemeFromCookie();
+initThemeFromBrowserCache();
 clearPendingAppRefreshMarker();
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -306,6 +312,7 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function init(): Promise<void> {
+  initAuthSessionLifetime();
   initLogConcerns();
   log.info(() => 'MidTerm frontend initializing');
   initBackButtonGuard();
@@ -342,6 +349,8 @@ async function init(): Promise<void> {
       }
     },
   );
+  initSessionInputHistoryMenus();
+  initOperatorView({ onSelectSession: selectSession });
   const spacesRuntimeOptions = {
     resolveLaunchDimensions: resolveNewSessionDimensions,
     resolveShell: resolveLauncherShell,
@@ -458,7 +467,9 @@ async function init(): Promise<void> {
   }
 
   if (serviceWorker?.register) {
-    serviceWorker.register(`/js/sw.js?v=${encodeURIComponent(ASSET_VERSION)}`).catch(() => {});
+    serviceWorker
+      .register(`/sw.js?v=${encodeURIComponent(ASSET_VERSION)}`, { scope: '/' })
+      .catch(() => {});
   }
 
   log.info(() => 'MidTerm frontend initialized');
@@ -512,7 +523,7 @@ async function initShared(): Promise<void> {
 }
 
 function getVisibleTerminalSessionIds(): string[] {
-  if ($settingsOpen.get()) {
+  if ($settingsOpen.get() || $operatorOpen.get()) {
     return [];
   }
 
@@ -567,6 +578,7 @@ function bindTerminalVisibilitySync(): void {
   $settingsOpen.subscribe(() => {
     syncMuxTerminalVisibility();
   });
+  $operatorOpen.subscribe(syncMuxTerminalVisibility);
 
   let lastResumeMode = $currentSettings.get()?.resumeMode ?? null;
   $currentSettings.subscribe((settings) => {
@@ -1091,105 +1103,6 @@ function showBellNotification(sessionId: string): void {
   }
 }
 
-// =============================================================================
-// PWA Install
-// =============================================================================
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-}
-
-interface NavigatorWithStandalone extends Navigator {
-  standalone?: boolean;
-}
-
-function initPwaInstall(): void {
-  let deferredPrompt: BeforeInstallPromptEvent | null = null;
-  const row = document.getElementById('pwa-install-row');
-  const btn = document.getElementById('btn-install-pwa') as HTMLButtonElement | null;
-  if (!row || !btn) return;
-
-  const rowEl = row;
-  const btnEl = btn;
-  const isIos = isIosInstallableDevice();
-
-  function showRow(): void {
-    rowEl.classList.remove('hidden');
-  }
-
-  function hideRow(): void {
-    rowEl.classList.add('hidden');
-  }
-
-  function setButtonLabel(key: string): void {
-    btnEl.dataset.i18n = key;
-    btnEl.textContent = t(key);
-  }
-
-  if (isRunningAsInstalledPwa()) {
-    hideRow();
-    return;
-  }
-
-  if (isIos) {
-    showRow();
-    setButtonLabel('settings.behavior.showInstallSteps');
-  }
-
-  window.addEventListener('beforeinstallprompt', (e) => {
-    e.preventDefault();
-    deferredPrompt = e as BeforeInstallPromptEvent;
-    setButtonLabel('settings.behavior.install');
-    showRow();
-  });
-
-  btn.addEventListener('click', () => {
-    if (deferredPrompt) {
-      void deferredPrompt.prompt().then(() => {
-        deferredPrompt = null;
-        hideRow();
-      });
-      return;
-    }
-
-    if (!isIos) return;
-
-    void showAlert(t('settings.behavior.installIosMessage'), {
-      title: t('settings.behavior.installIosTitle'),
-    });
-  });
-
-  window.addEventListener('appinstalled', () => {
-    hideRow();
-    deferredPrompt = null;
-    syncAppModeClasses();
-  });
-}
-
-function isIosInstallableDevice(): boolean {
-  const ua = navigator.userAgent.toLowerCase();
-  return (
-    /iphone|ipad|ipod/.test(ua) ||
-    // eslint-disable-next-line @typescript-eslint/no-deprecated
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-  );
-}
-
-function isRunningAsInstalledPwa(): boolean {
-  const standaloneNavigator = navigator as NavigatorWithStandalone;
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    window.matchMedia('(display-mode: fullscreen)').matches ||
-    window.matchMedia('(display-mode: window-controls-overlay)').matches ||
-    standaloneNavigator.standalone === true
-  );
-}
-
-function syncAppModeClasses(): void {
-  document.body.classList.toggle('installed-pwa', isRunningAsInstalledPwa());
-  document.body.classList.toggle('ios-installable-device', isIosInstallableDevice());
-}
-
 function getActiveSessionTabBar(): HTMLDivElement | null {
   if (!dom.terminalsArea) return null;
   const activeSessionId = $activeSessionId.get();
@@ -1281,8 +1194,11 @@ function bindEvents(): void {
     activateMobileTab('files');
   });
   bindClick('btn-mobile-web', () => {
-    clickActiveSessionTabBarControl('[data-action="web"]');
-    void syncActiveWebPreview();
+    // Sync the session's preview list first so opening the dock can reuse an
+    // existing named preview target instead of the empty default.
+    void syncActiveWebPreview().finally(() => {
+      clickActiveSessionTabBarControl('[data-action="web"]');
+    });
   });
   bindClick('btn-mobile-commands', () => {
     clickActiveSessionTabBarControl('[data-action="commands"]');
@@ -1345,11 +1261,6 @@ function bindEvents(): void {
     closeHistoryDropdown();
     toggleSpacesDropdown();
   });
-  bindClick('btn-bookmarks', () => {
-    closeSpacesDropdown();
-    toggleHistoryDropdown();
-  });
-
   // Global keyboard shortcut: Alt+T to create new terminal
   document.addEventListener('keydown', (e) => {
     if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 't') {

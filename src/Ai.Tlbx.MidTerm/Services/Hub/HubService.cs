@@ -17,6 +17,7 @@ using Ai.Tlbx.MidTerm.Models.Spaces;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Models.Certificates;
+using Ai.Tlbx.MidTerm.Models.ControlPlane;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Hub;
@@ -235,6 +236,45 @@ public sealed class HubService
         }
 
         return state;
+    }
+
+    public async Task<ControlPlaneSnapshotResponse> GetControlPlaneAsync(
+        string machineId,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        return await remote.Client.GetFromJsonAsync(
+            "/api/control-plane",
+            AppJsonContext.Default.ControlPlaneSnapshotResponse,
+            ct) ?? new ControlPlaneSnapshotResponse();
+    }
+
+    public async Task<ControlPlaneEventListResponse> GetControlPlaneEventsAsync(
+        string machineId,
+        long after,
+        int limit,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        var path = $"/api/control-plane/events?after={Math.Max(0, after).ToString(CultureInfo.InvariantCulture)}&limit={Math.Clamp(limit, 1, 500).ToString(CultureInfo.InvariantCulture)}";
+        return await remote.Client.GetFromJsonAsync(
+            path,
+            AppJsonContext.Default.ControlPlaneEventListResponse,
+            ct) ?? new ControlPlaneEventListResponse();
+    }
+
+    public async Task<ControlPlaneCapabilitiesResponse> GetControlPlaneCapabilitiesAsync(
+        string machineId,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
+        return await remote.Client.GetFromJsonAsync(
+            "/api/control-plane/capabilities",
+            AppJsonContext.Default.ControlPlaneCapabilitiesResponse,
+            ct) ?? new ControlPlaneCapabilitiesResponse();
     }
 
     public async Task<SessionInfoDto> CreateSessionAsync(

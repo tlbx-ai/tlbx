@@ -10,7 +10,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { createLogger } from '../logging';
 import { t } from '../i18n';
 import { sessionTerminals, hiddenSessionIds } from '../../state';
-import { sendInput, sendResize } from '../comms/muxChannel';
+import { forgetMuxSession, sendInput, sendResize } from '../comms/muxChannel';
 import { getTerminalOptions } from '../terminal/terminalOptions';
 import { syncTerminalWebglState } from '../terminal/manager';
 import { syncTerminalLigatureState } from '../terminal/ligatures';
@@ -179,8 +179,13 @@ export function closeOverlay(hiddenSessionId: string): void {
   saveOverlayRect(rect.left, rect.top, rect.width, rect.height);
 
   state.resizeObserver.disconnect();
+  const terminalState = sessionTerminals.get(hiddenSessionId);
+  if (terminalState) {
+    syncTerminalWebglState(hiddenSessionId, terminalState, false);
+  }
   state.terminal.dispose();
   sessionTerminals.delete(hiddenSessionId);
+  forgetMuxSession(hiddenSessionId);
   hiddenSessionIds.delete(hiddenSessionId);
   state.overlay.remove();
   activeOverlays.delete(hiddenSessionId);

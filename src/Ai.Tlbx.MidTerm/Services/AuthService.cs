@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using Ai.Tlbx.MidTerm.Models.Security;
@@ -15,16 +16,22 @@ namespace Ai.Tlbx.MidTerm.Services;
 public sealed class AuthService
 {
     public const string SessionCookieName = "mm-session";
+    public const string AuthRequiredHeaderName = "X-MidTerm-Auth-Required";
 
     private const int Iterations = 100_000;
     private const int SaltSize = 32;
     private const int HashSize = 32;
-    private const int SessionTokenValidityHours = 24 * 3; // 3 days (sliding window refresh on activity)
+    public const int SessionTokenValidityDays = 8;
+    public static readonly TimeSpan SessionTokenValidity = TimeSpan.FromDays(SessionTokenValidityDays);
 
     private readonly SettingsService _settingsService;
     private readonly ApiKeyService _apiKeyService;
     private readonly TimeProvider _timeProvider;
     private readonly ConcurrentDictionary<string, RateLimitEntry> _rateLimits = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, DateTimeOffset> _revokedSessionTokens = new(StringComparer.Ordinal);
+    private event Action<string>? SessionTokenRevoked;
+    private event Action<string, DateTimeOffset>? SessionTokenRenewed;
+    private event Action? AllSessionTokensInvalidated;
 
     public AuthService(
         SettingsService settingsService,
@@ -59,25 +66,39 @@ public sealed class AuthService
 
     public RequestAuthMethod AuthenticateRequest(HttpRequest request)
     {
+        return AuthenticateRequestWithContext(request).Method;
+    }
+
+    public static void MarkAuthenticationRequired(HttpResponse response)
+    {
+        response.Headers[AuthRequiredHeaderName] = "true";
+    }
+
+    public RequestAuthentication AuthenticateRequestWithContext(HttpRequest request)
+    {
         var settings = _settingsService.Load();
         if (!settings.AuthenticationEnabled || string.IsNullOrEmpty(settings.PasswordHash))
         {
-            return RequestAuthMethod.OpenAccess;
+            return new RequestAuthentication(RequestAuthMethod.OpenAccess);
         }
 
         var sessionToken = request.Cookies[SessionCookieName];
-        if (sessionToken is not null && ValidateSessionToken(sessionToken))
+        if (sessionToken is not null &&
+            TryValidateSessionToken(sessionToken, out var expiresAtUtc, out var sessionTokenId))
         {
-            return RequestAuthMethod.SessionCookie;
+            return new RequestAuthentication(
+                RequestAuthMethod.SessionCookie,
+                sessionTokenId,
+                expiresAtUtc);
         }
 
         var apiKey = ExtractApiKey(request);
         if (apiKey is not null && _apiKeyService.TryValidateApiKey(apiKey, out _))
         {
-            return RequestAuthMethod.ApiKey;
+            return new RequestAuthentication(RequestAuthMethod.ApiKey);
         }
 
-        return RequestAuthMethod.None;
+        return new RequestAuthentication(RequestAuthMethod.None);
     }
 
     /// <summary>
@@ -142,17 +163,32 @@ public sealed class AuthService
     }
 
     /// <summary>
-    /// Creates a new HMAC-signed session token valid for 3 weeks.
+    /// Creates a new HMAC-signed session token with an eight-day sliding validity window.
     /// </summary>
     public string CreateSessionToken()
+    {
+        return CreateSessionTokenCore(Convert.ToHexString(RandomNumberGenerator.GetBytes(16)));
+    }
+
+    public string RenewSessionToken(string sessionTokenId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionTokenId);
+        return CreateSessionTokenCore(sessionTokenId);
+    }
+
+    private string CreateSessionTokenCore(string sessionTokenId)
     {
         var settings = _settingsService.Load();
         EnsureSessionSecret(settings);
 
         var timestamp = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
-        var signature = ComputeHmac(timestamp.ToString(CultureInfo.InvariantCulture), settings.SessionSecret!);
+        var payload = string.Create(CultureInfo.InvariantCulture, $"{timestamp}:{sessionTokenId}");
+        var signature = ComputeHmac(payload, settings.SessionSecret!);
+        var expiresAtUtc = DateTimeOffset.FromUnixTimeSeconds(timestamp) + SessionTokenValidity;
 
-        return string.Create(CultureInfo.InvariantCulture, $"{timestamp}:{signature}");
+        SessionTokenRenewed?.Invoke(sessionTokenId, expiresAtUtc);
+
+        return string.Create(CultureInfo.InvariantCulture, $"{payload}:{signature}");
     }
 
     /// <summary>
@@ -160,19 +196,50 @@ public sealed class AuthService
     /// </summary>
     public bool ValidateSessionToken(string? token)
     {
+        return TryValidateSessionToken(token, out _, out _);
+    }
+
+    public bool TryValidateSessionToken(string? token, out DateTimeOffset expiresAtUtc)
+    {
+        return TryValidateSessionToken(token, out expiresAtUtc, out _);
+    }
+
+    private bool TryValidateSessionToken(
+        string? token,
+        out DateTimeOffset expiresAtUtc,
+        out string sessionTokenId)
+    {
+        expiresAtUtc = default;
+        sessionTokenId = "";
         if (string.IsNullOrEmpty(token))
         {
             return false;
         }
 
         var parts = token.Split(':');
-        if (parts.Length != 2 || !long.TryParse(parts[0], CultureInfo.InvariantCulture, out var timestamp))
+        if ((parts.Length != 2 && parts.Length != 3) ||
+            !long.TryParse(parts[0], CultureInfo.InvariantCulture, out var timestamp))
         {
             return false;
         }
 
-        var tokenTime = DateTimeOffset.FromUnixTimeSeconds(timestamp);
-        if (_timeProvider.GetUtcNow() - tokenTime > TimeSpan.FromHours(SessionTokenValidityHours))
+        sessionTokenId = parts.Length == 3 ? parts[1] : GetLegacySessionTokenId(token);
+        if (string.IsNullOrWhiteSpace(sessionTokenId))
+        {
+            return false;
+        }
+
+        DateTimeOffset tokenTime;
+        try
+        {
+            tokenTime = DateTimeOffset.FromUnixTimeSeconds(timestamp);
+            expiresAtUtc = tokenTime + SessionTokenValidity;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+        if (_timeProvider.GetUtcNow() > expiresAtUtc)
         {
             return false;
         }
@@ -183,10 +250,72 @@ public sealed class AuthService
             return false;
         }
 
-        var expectedSignature = ComputeHmac(timestamp.ToString(CultureInfo.InvariantCulture), settings.SessionSecret);
-        return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(parts[1]),
+        var signedPayload = parts.Length == 3
+            ? string.Create(CultureInfo.InvariantCulture, $"{timestamp}:{sessionTokenId}")
+            : timestamp.ToString(CultureInfo.InvariantCulture);
+        var signature = parts[^1];
+        var expectedSignature = ComputeHmac(signedPayload, settings.SessionSecret);
+        var signatureValid = CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(signature),
             Encoding.UTF8.GetBytes(expectedSignature));
+        if (!signatureValid)
+        {
+            return false;
+        }
+
+        if (_revokedSessionTokens.TryGetValue(sessionTokenId, out var revokedUntil))
+        {
+            if (revokedUntil > _timeProvider.GetUtcNow())
+            {
+                return false;
+            }
+
+            _revokedSessionTokens.TryRemove(sessionTokenId, out _);
+        }
+
+        return true;
+    }
+
+    public void RevokeSessionToken(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        foreach (var revoked in _revokedSessionTokens)
+        {
+            if (revoked.Value <= now)
+            {
+                _revokedSessionTokens.TryRemove(revoked.Key, out _);
+            }
+        }
+
+        if (!TryValidateSessionToken(token, out var expiresAtUtc, out var sessionTokenId))
+        {
+            return;
+        }
+
+        _revokedSessionTokens[sessionTokenId] = expiresAtUtc;
+        SessionTokenRevoked?.Invoke(sessionTokenId);
+    }
+
+    public IDisposable TrackWebSocketAuthentication(RequestAuthentication authentication, WebSocket webSocket)
+    {
+        if (authentication.Method != RequestAuthMethod.SessionCookie ||
+            string.IsNullOrWhiteSpace(authentication.SessionTokenId) ||
+            authentication.ExpiresAtUtc is null)
+        {
+            return NoopDisposable.Instance;
+        }
+
+        return new SessionWebSocketLease(
+            this,
+            webSocket,
+            authentication.SessionTokenId,
+            authentication.ExpiresAtUtc.Value,
+            _timeProvider);
     }
 
     /// <summary>
@@ -256,6 +385,8 @@ public sealed class AuthService
         var settings = _settingsService.Load();
         settings.SessionSecret = GenerateSessionSecret();
         _settingsService.Save(settings);
+        _revokedSessionTokens.Clear();
+        AllSessionTokensInvalidated?.Invoke();
     }
 
     private void EnsureSessionSecret(MidTermSettings settings)
@@ -277,6 +408,11 @@ public sealed class AuthService
         using var hmac = new HMACSHA256(Convert.FromBase64String(secret));
         var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
         return Convert.ToBase64String(hash);
+    }
+
+    private static string GetLegacySessionTokenId(string token)
+    {
+        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     }
 
     private static string? ExtractApiKey(HttpRequest request)
@@ -317,5 +453,122 @@ public sealed class AuthService
             get => new(Interlocked.Read(ref _blockedUntilTicks));
             set => Interlocked.Exchange(ref _blockedUntilTicks, value.Ticks);
         }
+    }
+
+    private sealed class SessionWebSocketLease : IDisposable
+    {
+        private readonly AuthService _owner;
+        private readonly WebSocket _webSocket;
+        private readonly string _sessionTokenId;
+        private readonly ITimer _expiryTimer;
+        private int _closeStarted;
+        private int _disposed;
+
+        public SessionWebSocketLease(
+            AuthService owner,
+            WebSocket webSocket,
+            string sessionTokenId,
+            DateTimeOffset expiresAtUtc,
+            TimeProvider timeProvider)
+        {
+            _owner = owner;
+            _webSocket = webSocket;
+            _sessionTokenId = sessionTokenId;
+            _owner.SessionTokenRevoked += OnSessionTokenRevoked;
+            _owner.SessionTokenRenewed += OnSessionTokenRenewed;
+            _owner.AllSessionTokensInvalidated += OnAllSessionTokensInvalidated;
+
+            var delay = expiresAtUtc - timeProvider.GetUtcNow();
+            _expiryTimer = timeProvider.CreateTimer(
+                static state => ((SessionWebSocketLease)state!).Expire("Authentication expired"),
+                this,
+                delay > TimeSpan.Zero ? delay : TimeSpan.Zero,
+                Timeout.InfiniteTimeSpan);
+        }
+
+        private void OnSessionTokenRevoked(string sessionTokenId)
+        {
+            if (string.Equals(_sessionTokenId, sessionTokenId, StringComparison.Ordinal))
+            {
+                Expire("Authentication revoked");
+            }
+        }
+
+        private void OnSessionTokenRenewed(string sessionTokenId, DateTimeOffset expiresAtUtc)
+        {
+            if (!string.Equals(_sessionTokenId, sessionTokenId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var delay = expiresAtUtc - _owner._timeProvider.GetUtcNow();
+            try
+            {
+                _expiryTimer.Change(
+                    delay > TimeSpan.Zero ? delay : TimeSpan.Zero,
+                    Timeout.InfiniteTimeSpan);
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        private void OnAllSessionTokensInvalidated()
+        {
+            Expire("Authentication invalidated");
+        }
+
+        private void Expire(string reason)
+        {
+            if (Interlocked.Exchange(ref _closeStarted, 1) != 0)
+            {
+                return;
+            }
+
+            _ = CloseAuthenticationExpiredAsync(reason);
+        }
+
+        private async Task CloseAuthenticationExpiredAsync(string reason)
+        {
+            try
+            {
+                if (_webSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
+                {
+                    await _webSocket.CloseOutputAsync(
+                        (WebSocketCloseStatus)4401,
+                        reason,
+                        CancellationToken.None).ConfigureAwait(false);
+                }
+            }
+            catch
+            {
+                try
+                {
+                    _webSocket.Abort();
+                }
+                catch
+                {
+                }
+            }
+        }
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0)
+            {
+                return;
+            }
+
+            _owner.SessionTokenRevoked -= OnSessionTokenRevoked;
+            _owner.SessionTokenRenewed -= OnSessionTokenRenewed;
+            _owner.AllSessionTokensInvalidated -= OnAllSessionTokensInvalidated;
+            _expiryTimer.Dispose();
+        }
+    }
+
+    private sealed class NoopDisposable : IDisposable
+    {
+        public static readonly NoopDisposable Instance = new();
+        public void Dispose() { }
     }
 }

@@ -26,7 +26,7 @@ public static class MtcliScriptWriter
         # MidTerm CLI helpers — auto-generated, do not edit.
         # Source: . .midterm/mtcli.sh   |   Run: .midterm/mtcli.sh <cmd> [args]
         #
-        # Auth token below is auto-generated and ephemeral (expires in ~3 days).
+        # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
@@ -57,6 +57,7 @@ public static class MtcliScriptWriter
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
+        _MSOURCE() { printf '%s' "${MT_AGENT_NAME:-mtcli}"; }
         _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
         _MPWSHQ() { local s="${1:-}"; s="${s//\'/\'\'}"; printf '%s' "$s"; }
         _MCTXERR() {
@@ -622,6 +623,151 @@ public static class MtcliScriptWriter
           local agent_only="${1:-true}"
           _MC "$_MT/api/sessions/attention?agentOnly=$agent_only"
         }
+        # Explicit agent control plane. MidTerm stores what agents publish; it does not infer meaning from PTY output.
+        mt_control_plane() {
+          if [ -n "${1:-}" ]; then
+            _MC "$_MT/api/hub/machines/$(_MURLENC "$1")/control-plane"
+          else
+            _MC "$_MT/api/control-plane"
+          fi
+        }
+        # mt_agent_capabilities [MACHINE_ID]  — exact product and per-session runtime capabilities as JSON
+        mt_agent_capabilities() {
+          if [ -n "${1:-}" ]; then
+            _MC "$_MT/api/hub/machines/$(_MURLENC "$1")/control-plane/capabilities"
+          else
+            _MC "$_MT/api/control-plane/capabilities"
+          fi
+        }
+        # mt_events [AFTER_SEQUENCE] [LIMIT] [MACHINE_ID]  — exact control-plane mutation events
+        mt_events() {
+          local after="${1:-0}" limit="${2:-100}" machine="${3:-}" url
+          if [ -n "$machine" ]; then
+            url="$_MT/api/hub/machines/$(_MURLENC "$machine")/control-plane/events"
+          else
+            url="$_MT/api/control-plane/events"
+          fi
+          _MC "$url?after=$(_MURLENC "$after")&limit=$(_MURLENC "$limit")"
+        }
+        # mt_dispatch SESSION_ID[,SESSION_ID...] TEXT...  — explicit deterministic fan-out
+        mt_dispatch() {
+          [ $# -ge 2 ] || { echo "Usage: mt_dispatch SESSION_ID[,SESSION_ID...] TEXT..." >&2; return 1; }
+          local targets="$1" text_value json_ids="" id
+          shift
+          text_value="$*"
+          IFS=',' read -r -a _mt_dispatch_ids <<< "$targets"
+          for id in "${_mt_dispatch_ids[@]}"; do
+            [ -n "$id" ] || continue
+            [ -n "$json_ids" ] && json_ids+=","
+            json_ids+="\"$(_MJSONESC "$id")\""
+          done
+          [ -n "$json_ids" ] || { echo "At least one session id is required." >&2; return 1; }
+          local body="{\"sessionIds\":[$json_ids],\"turn\":{\"text\":\"$(_MJSONESC "$text_value")\"}"
+          body+="}"
+          _MJ -d "$body" "$_MT/api/control-plane/dispatch"
+        }
+        # mt_work_list [STATE] [KIND] [SESSION_ID] [LIMIT]
+        mt_work_list() {
+          local state="${1:-}" kind="${2:-}" sid="${3:-}" limit="${4:-100}" url
+          url="$_MT/api/control-plane/work-items?limit=$(_MURLENC "$limit")"
+          [ -n "$state" ] && url+="&state=$(_MURLENC "$state")"
+          [ -n "$kind" ] && url+="&kind=$(_MURLENC "$kind")"
+          [ -n "$sid" ] && url+="&sessionId=$(_MURLENC "$sid")"
+          _MC "$url"
+        }
+        # mt_work_add KIND TITLE [SUMMARY] [NEXT_ACTION] [PRIORITY] [PROJECT] [DEDUPE_KEY] [SESSION_ID] [URL] [REPOSITORY_PATH]
+        mt_work_add() {
+          [ $# -ge 2 ] || { echo "Usage: mt_work_add KIND TITLE [SUMMARY] [NEXT_ACTION] [PRIORITY] [PROJECT] [DEDUPE_KEY] [SESSION_ID] [URL] [REPOSITORY_PATH]" >&2; return 1; }
+          local kind="$1" title="$2" summary="${3:-}" next="${4:-}" priority="${5:-normal}" project="${6:-}" dedupe="${7:-}" sid="${8:-$(_MSID)}" url="${9:-}" repo="${10:-}" body
+          body="{\"kind\":\"$(_MJSONESC "$kind")\",\"title\":\"$(_MJSONESC "$title")\",\"summary\":\"$(_MJSONESC "$summary")\",\"nextAction\":\"$(_MJSONESC "$next")\",\"priority\":\"$(_MJSONESC "$priority")\",\"project\":\"$(_MJSONESC "$project")\",\"dedupeKey\":\"$(_MJSONESC "$dedupe")\",\"sessionId\":\"$(_MJSONESC "$sid")\",\"url\":\"$(_MJSONESC "$url")\",\"repositoryPath\":\"$(_MJSONESC "$repo")\",\"source\":\"$(_MJSONESC "$(_MSOURCE)")\"}"
+          _MJ -d "$body" "$_MT/api/control-plane/work-items"
+        }
+        # mt_work_update ID STATE [SUMMARY] [NEXT_ACTION] [URL] [REPOSITORY_PATH]
+        mt_work_update() {
+          [ $# -ge 2 ] || { echo "Usage: mt_work_update ID STATE [SUMMARY] [NEXT_ACTION] [URL] [REPOSITORY_PATH]" >&2; return 1; }
+          local body="{\"state\":\"$(_MJSONESC "$2")\",\"source\":\"$(_MJSONESC "$(_MSOURCE)")\""
+          [ $# -ge 3 ] && body+=",\"summary\":\"$(_MJSONESC "$3")\""
+          [ $# -ge 4 ] && body+=",\"nextAction\":\"$(_MJSONESC "$4")\""
+          [ $# -ge 5 ] && body+=",\"url\":\"$(_MJSONESC "$5")\""
+          [ $# -ge 6 ] && body+=",\"repositoryPath\":\"$(_MJSONESC "$6")\""
+          body+="}"
+          _MC -X PATCH -H "Content-Type: application/json" -d "$body" "$_MT/api/control-plane/work-items/$(_MURLENC "$1")"
+        }
+        mt_work_delete() {
+          [ $# -eq 1 ] || { echo "Usage: mt_work_delete ID" >&2; return 1; }
+          _MC -X DELETE "$_MT/api/control-plane/work-items/$(_MURLENC "$1")"
+        }
+        # mt_publish_status STATE SUMMARY [CURRENT_TASK] [NEXT_ACTION] [PROJECT] [SESSION_ID] [REPOSITORY_PATH]
+        mt_publish_status() {
+          [ $# -ge 2 ] || { echo "Usage: mt_publish_status STATE SUMMARY [CURRENT_TASK] [NEXT_ACTION] [PROJECT] [SESSION_ID] [REPOSITORY_PATH]" >&2; return 1; }
+          local sid="${6:-$(_MSID)}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          local body="{\"state\":\"$(_MJSONESC "$1")\",\"summary\":\"$(_MJSONESC "$2")\",\"currentTask\":\"$(_MJSONESC "${3:-}")\",\"nextAction\":\"$(_MJSONESC "${4:-}")\",\"project\":\"$(_MJSONESC "${5:-}")\",\"repositoryPath\":\"$(_MJSONESC "${7:-}")\",\"source\":\"$(_MJSONESC "$(_MSOURCE)")\"}"
+          _MC -X PUT -H "Content-Type: application/json" -d "$body" "$_MT/api/control-plane/session-status/$(_MURLENC "$sid")"
+        }
+        mt_status_list() {
+          local sid="${1:-}" url="$_MT/api/control-plane/session-status"
+          [ -n "$sid" ] && url+="?sessionId=$(_MURLENC "$sid")"
+          _MC "$url"
+        }
+        mt_status_clear() {
+          local sid="${1:-$(_MSID)}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC -X DELETE "$_MT/api/control-plane/session-status/$(_MURLENC "$sid")"
+        }
+        # mt_checkpoint KIND SUMMARY [DETAILS] [PROJECT] [SESSION_ID] [REPOSITORY_PATH]
+        mt_checkpoint() {
+          [ $# -ge 2 ] || { echo "Usage: mt_checkpoint KIND SUMMARY [DETAILS] [PROJECT] [SESSION_ID] [REPOSITORY_PATH]" >&2; return 1; }
+          local sid="${5:-$(_MSID)}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          local body="{\"sessionId\":\"$(_MJSONESC "$sid")\",\"kind\":\"$(_MJSONESC "$1")\",\"summary\":\"$(_MJSONESC "$2")\",\"details\":\"$(_MJSONESC "${3:-}")\",\"project\":\"$(_MJSONESC "${4:-}")\",\"repositoryPath\":\"$(_MJSONESC "${6:-}")\",\"source\":\"$(_MJSONESC "$(_MSOURCE)")\"}"
+          _MJ -d "$body" "$_MT/api/control-plane/checkpoints"
+        }
+        mt_checkpoints() {
+          local sid="${1:-}" kind="${2:-}" limit="${3:-100}" url="$_MT/api/control-plane/checkpoints?limit=$(_MURLENC "${3:-100}")"
+          [ -n "$sid" ] && url+="&sessionId=$(_MURLENC "$sid")"
+          [ -n "$kind" ] && url+="&kind=$(_MURLENC "$kind")"
+          _MC "$url"
+        }
+        # mt_input_history [SESSION_ID] [KIND] [LIMIT]  — deterministic prompt/paste/upload history as JSON
+        mt_input_history() {
+          local sid="" kind="" limit="${3:-100}" url
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+            kind="${2:-}"
+          else
+            sid="$(_MSID)"
+            kind="${1:-}"
+            limit="${2:-100}"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          url="$_MT/api/input-history?sessionId=$(_MURLENC "$sid")&limit=$limit"
+          [ -n "$kind" ] && url+="&kind=$(_MURLENC "$kind")"
+          _MC "$url"
+        }
+        # mt_input_history_show ID
+        mt_input_history_show() {
+          [ $# -eq 1 ] || { echo "Usage: mt_input_history_show ID" >&2; return 1; }
+          _MC "$_MT/api/input-history/$(_MURLENC "$1")"
+        }
+        # mt_input_history_replay ID [TARGET_SESSION_ID]
+        mt_input_history_replay() {
+          [ $# -ge 1 ] || { echo "Usage: mt_input_history_replay ID [TARGET_SESSION_ID]" >&2; return 1; }
+          local target="${2:-$(_MSID)}" body='{}'
+          [ -n "$target" ] && body="{\"targetSessionId\":\"$(_MJSONESC "$target")\"}"
+          _MJ -d "$body" "$_MT/api/input-history/$(_MURLENC "$1")/replay"
+        }
+        # mt_input_history_delete ID
+        mt_input_history_delete() {
+          [ $# -eq 1 ] || { echo "Usage: mt_input_history_delete ID" >&2; return 1; }
+          _MC -X DELETE "$_MT/api/input-history/$(_MURLENC "$1")"
+        }
+        # mt_input_history_clear [SESSION_ID]
+        mt_input_history_clear() {
+          local sid="${1:-$(_MSID)}"
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC -X DELETE "$_MT/api/input-history?sessionId=$(_MURLENC "$sid")"
+        }
         # mt_bootstrap NAME CWD PROFILE [SLASH_COMMAND ...]  — create an agent-controlled worker session
         mt_bootstrap() {
           [ $# -ge 3 ] || { echo "Usage: mt_bootstrap NAME CWD PROFILE [SLASH_COMMAND ...]" >&2; return 1; }
@@ -671,6 +817,12 @@ public static class MtcliScriptWriter
           _MREQUIRECTX "mt_viewport" || return $?
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
         }
+        # mt_mobile ACTION [PROFILE]  — control the local Chrome device attached to the owning MidTerm tab
+        mt_mobile() {
+          local action="${1:-status}" profile="${2:-pixel-8}"
+          _MREQUIRECTX "mt_mobile" || return $?
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"action\":\"$(_ME "$action")\",\"profile\":\"$(_ME "$profile")\"}" "$_MT/api/browser/mobile-device"
+        }
 
         # Status
         mt_status()     { _MREQUIRECTX "mt_status" || return $?; _MSTATUS || _MC "$_MT/api/webpreview/target$(_MQ)"; }
@@ -699,7 +851,7 @@ public static class MtcliScriptWriter
         # MidTerm CLI helpers — auto-generated, do not edit.
         # Dot-source: . .midterm\mtcli.ps1   |   Run: pwsh .midterm\mtcli.ps1 <cmd> [args]
         #
-        # Auth token below is auto-generated and ephemeral (expires in ~3 days).
+        # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's MidTerm instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
@@ -724,6 +876,7 @@ public static class MtcliScriptWriter
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         function script:_MSID { $env:MT_SESSION_ID }
+        function script:_MSource { if ($env:MT_AGENT_NAME) { $env:MT_AGENT_NAME } else { "mtcli" } }
         function script:_MPwshQuote {
             param([string]$Value)
             if ($null -eq $Value) { return "" }
@@ -1353,6 +1506,183 @@ public static class MtcliScriptWriter
             param([bool]$AgentOnly = $true)
             _MC "$script:_MT/api/sessions/attention?agentOnly=$AgentOnly"
         }
+        # Explicit agent control plane. MidTerm stores what agents publish; it does not infer meaning from PTY output.
+        function Mt-ControlPlane {
+            param([string]$MachineId)
+            if ($MachineId) {
+                _MC "$script:_MT/api/hub/machines/$([Uri]::EscapeDataString($MachineId))/control-plane"
+            } else {
+                _MC "$script:_MT/api/control-plane"
+            }
+        }
+        function Mt-AgentCapabilities {
+            param([string]$MachineId)
+            if ($MachineId) {
+                _MC "$script:_MT/api/hub/machines/$([Uri]::EscapeDataString($MachineId))/control-plane/capabilities"
+            } else {
+                _MC "$script:_MT/api/control-plane/capabilities"
+            }
+        }
+        function Mt-Events {
+            param([long]$After = 0, [int]$Limit = 100, [string]$MachineId)
+            $url = if ($MachineId) {
+                "$script:_MT/api/hub/machines/$([Uri]::EscapeDataString($MachineId))/control-plane/events"
+            } else {
+                "$script:_MT/api/control-plane/events"
+            }
+            _MC "${url}?after=$After&limit=$Limit"
+        }
+        function Mt-Dispatch {
+            param(
+                [Parameter(Mandatory=$true)][string[]]$SessionId,
+                [Parameter(Mandatory=$true)][string]$Text
+            )
+            _MJ -d (_MH @{ sessionIds = @($SessionId); turn = @{ text = $Text } }) "$script:_MT/api/control-plane/dispatch"
+        }
+        function Mt-WorkList {
+            param([string]$State, [string]$Kind, [string]$SessionId, [int]$Limit = 100)
+            $query = "limit=$Limit"
+            if ($State) { $query += "&state=$([Uri]::EscapeDataString($State))" }
+            if ($Kind) { $query += "&kind=$([Uri]::EscapeDataString($Kind))" }
+            if ($SessionId) { $query += "&sessionId=$([Uri]::EscapeDataString($SessionId))" }
+            _MC "$script:_MT/api/control-plane/work-items?$query"
+        }
+        function Mt-WorkAdd {
+            param(
+                [Parameter(Mandatory=$true)][string]$Kind,
+                [Parameter(Mandatory=$true)][string]$Title,
+                [string]$Summary,
+                [string]$NextAction,
+                [ValidateSet("low", "normal", "high", "urgent")][string]$Priority = "normal",
+                [string]$Project,
+                [string]$DedupeKey,
+                [string]$SessionId,
+                [string]$Url,
+                [string]$RepositoryPath
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            $body = @{ kind = $Kind; title = $Title; priority = $Priority; source = (_MSource) }
+            if ($Summary) { $body.summary = $Summary }
+            if ($NextAction) { $body.nextAction = $NextAction }
+            if ($Project) { $body.project = $Project }
+            if ($DedupeKey) { $body.dedupeKey = $DedupeKey }
+            if ($SessionId) { $body.sessionId = $SessionId }
+            if ($Url) { $body.url = $Url }
+            if ($RepositoryPath) { $body.repositoryPath = $RepositoryPath }
+            _MJ -d (_MH $body) "$script:_MT/api/control-plane/work-items"
+        }
+        function Mt-WorkUpdate {
+            param(
+                [Parameter(Mandatory=$true)][string]$Id,
+                [Parameter(Mandatory=$true)][ValidateSet("open", "active", "waiting", "blocked", "done", "dismissed")][string]$State,
+                [string]$Summary,
+                [string]$NextAction,
+                [string]$Url,
+                [string]$RepositoryPath
+            )
+            $body = @{ state = $State; source = (_MSource) }
+            if ($PSBoundParameters.ContainsKey("Summary")) { $body.summary = $Summary }
+            if ($PSBoundParameters.ContainsKey("NextAction")) { $body.nextAction = $NextAction }
+            if ($PSBoundParameters.ContainsKey("Url")) { $body.url = $Url }
+            if ($PSBoundParameters.ContainsKey("RepositoryPath")) { $body.repositoryPath = $RepositoryPath }
+            _MC -X PATCH -H "Content-Type: application/json" -d (_MH $body) "$script:_MT/api/control-plane/work-items/$([Uri]::EscapeDataString($Id))"
+        }
+        function Mt-WorkDelete {
+            param([Parameter(Mandatory=$true)][string]$Id)
+            _MC -X DELETE "$script:_MT/api/control-plane/work-items/$([Uri]::EscapeDataString($Id))"
+        }
+        function Mt-PublishStatus {
+            param(
+                [Parameter(Mandatory=$true)][ValidateSet("working", "waiting", "needsInput", "blocked", "done")][string]$State,
+                [Parameter(Mandatory=$true)][string]$Summary,
+                [string]$CurrentTask,
+                [string]$NextAction,
+                [string]$Project,
+                [string]$SessionId,
+                [string]$RepositoryPath
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            $body = @{ state = $State; summary = $Summary; source = (_MSource) }
+            if ($CurrentTask) { $body.currentTask = $CurrentTask }
+            if ($NextAction) { $body.nextAction = $NextAction }
+            if ($Project) { $body.project = $Project }
+            if ($RepositoryPath) { $body.repositoryPath = $RepositoryPath }
+            _MC -X PUT -H "Content-Type: application/json" -d (_MH $body) "$script:_MT/api/control-plane/session-status/$([Uri]::EscapeDataString($SessionId))"
+        }
+        function Mt-StatusList {
+            param([string]$SessionId)
+            $url = "$script:_MT/api/control-plane/session-status"
+            if ($SessionId) { $url += "?sessionId=$([Uri]::EscapeDataString($SessionId))" }
+            _MC $url
+        }
+        function Mt-StatusClear {
+            param([string]$SessionId)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MC -X DELETE "$script:_MT/api/control-plane/session-status/$([Uri]::EscapeDataString($SessionId))"
+        }
+        function Mt-Checkpoint {
+            param(
+                [Parameter(Mandatory=$true)][string]$Kind,
+                [Parameter(Mandatory=$true)][string]$Summary,
+                [string]$Details,
+                [string]$Project,
+                [string]$SessionId,
+                [string]$RepositoryPath
+            )
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            $body = @{ sessionId = $SessionId; kind = $Kind; summary = $Summary; source = (_MSource) }
+            if ($Details) { $body.details = $Details }
+            if ($Project) { $body.project = $Project }
+            if ($RepositoryPath) { $body.repositoryPath = $RepositoryPath }
+            _MJ -d (_MH $body) "$script:_MT/api/control-plane/checkpoints"
+        }
+        function Mt-Checkpoints {
+            param([string]$SessionId, [string]$Kind, [int]$Limit = 100)
+            $query = "limit=$Limit"
+            if ($SessionId) { $query += "&sessionId=$([Uri]::EscapeDataString($SessionId))" }
+            if ($Kind) { $query += "&kind=$([Uri]::EscapeDataString($Kind))" }
+            _MC "$script:_MT/api/control-plane/checkpoints?$query"
+        }
+        # Mt-InputHistory [-SessionId ID] [-Kind KIND] [-Limit N]  — deterministic prompt/paste/upload history as JSON
+        function Mt-InputHistory {
+            param([string]$SessionId, [string]$Kind, [int]$Limit = 100)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            $query = "sessionId=$([Uri]::EscapeDataString($SessionId))&limit=$Limit"
+            if ($Kind) { $query += "&kind=$([Uri]::EscapeDataString($Kind))" }
+            _MC "$script:_MT/api/input-history?$query"
+        }
+        # Mt-InputHistoryShow ID
+        function Mt-InputHistoryShow {
+            param([Parameter(Mandatory=$true)][string]$Id)
+            _MC "$script:_MT/api/input-history/$([Uri]::EscapeDataString($Id))"
+        }
+        # Mt-InputHistoryReplay ID [-TargetSessionId ID]
+        function Mt-InputHistoryReplay {
+            param(
+                [Parameter(Mandatory=$true)][string]$Id,
+                [string]$TargetSessionId
+            )
+            if (-not $TargetSessionId) { $TargetSessionId = _MSID }
+            $body = @{}
+            if ($TargetSessionId) { $body.targetSessionId = $TargetSessionId }
+            _MJ -d (_MH $body) "$script:_MT/api/input-history/$([Uri]::EscapeDataString($Id))/replay"
+        }
+        # Mt-InputHistoryDelete ID
+        function Mt-InputHistoryDelete {
+            param([Parameter(Mandatory=$true)][string]$Id)
+            _MC -X DELETE "$script:_MT/api/input-history/$([Uri]::EscapeDataString($Id))"
+        }
+        # Mt-InputHistoryClear [-SessionId ID]
+        function Mt-InputHistoryClear {
+            param([string]$SessionId)
+            if (-not $SessionId) { $SessionId = _MSID }
+            if (-not $SessionId) { Write-Error "Session id required."; return }
+            _MC -X DELETE "$script:_MT/api/input-history?sessionId=$([Uri]::EscapeDataString($SessionId))"
+        }
         # Mt-Bootstrap -Name NAME -Cwd PATH -Profile PROFILE [-SlashCommands ...]  — create an agent-controlled worker session
         function Mt-Bootstrap {
             param(
@@ -1398,6 +1728,12 @@ public static class MtcliScriptWriter
             param([int]$Width = 0, [int]$Height = 0)
             _MRequireSessionContext "mt_viewport"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
+        }
+        # Mt-Mobile [-Action ACTION] [-Profile PROFILE]  — control the local Chrome device attached to this MidTerm tab
+        function Mt-Mobile {
+            param([string]$Action = "status", [string]$Profile = "pixel-8")
+            _MRequireSessionContext "mt_mobile"
+            _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); action=$Action; profile=$Profile}) "$script:_MT/api/browser/mobile-device"
         }
 
         # Status
@@ -1466,12 +1802,31 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_inject -Value Mt-Inject
         Set-Alias -Name mt_activity -Value Mt-Activity
         Set-Alias -Name mt_attention -Value Mt-Attention
+        Set-Alias -Name mt_control_plane -Value Mt-ControlPlane
+        Set-Alias -Name mt_agent_capabilities -Value Mt-AgentCapabilities
+        Set-Alias -Name mt_events -Value Mt-Events
+        Set-Alias -Name mt_dispatch -Value Mt-Dispatch
+        Set-Alias -Name mt_work_list -Value Mt-WorkList
+        Set-Alias -Name mt_work_add -Value Mt-WorkAdd
+        Set-Alias -Name mt_work_update -Value Mt-WorkUpdate
+        Set-Alias -Name mt_work_delete -Value Mt-WorkDelete
+        Set-Alias -Name mt_publish_status -Value Mt-PublishStatus
+        Set-Alias -Name mt_status_list -Value Mt-StatusList
+        Set-Alias -Name mt_status_clear -Value Mt-StatusClear
+        Set-Alias -Name mt_checkpoint -Value Mt-Checkpoint
+        Set-Alias -Name mt_checkpoints -Value Mt-Checkpoints
+        Set-Alias -Name mt_input_history -Value Mt-InputHistory
+        Set-Alias -Name mt_input_history_show -Value Mt-InputHistoryShow
+        Set-Alias -Name mt_input_history_replay -Value Mt-InputHistoryReplay
+        Set-Alias -Name mt_input_history_delete -Value Mt-InputHistoryDelete
+        Set-Alias -Name mt_input_history_clear -Value Mt-InputHistoryClear
         Set-Alias -Name mt_bootstrap -Value Mt-Bootstrap
         Set-Alias -Name mt_new_session -Value Mt-NewSession
         Set-Alias -Name mt_split -Value Mt-Split
         Set-Alias -Name mt_detach -Value Mt-Detach
         Set-Alias -Name mt_dock -Value Mt-Dock
         Set-Alias -Name mt_viewport -Value Mt-Viewport
+        Set-Alias -Name mt_mobile -Value Mt-Mobile
         Set-Alias -Name mt_status -Value Mt-Status
 
         # Direct execution: pwsh .midterm\mtcli.ps1 query ".error"

@@ -5,6 +5,7 @@
  */
 
 import type { TerminalState } from '../../types';
+import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { createLogger } from '../logging';
 import {
   MUX_HEADER_SIZE,
@@ -23,6 +24,8 @@ import {
   MUX_TYPE_PONG,
   MUX_TYPE_SYNC_COMPLETE,
   MUX_TYPE_VISIBLE_SESSIONS_HINT,
+  MUX_TYPE_RECOVERY_BEGIN,
+  MUX_TYPE_RECOVERY_END,
   WS_CLOSE_SERVER_SHUTDOWN,
 } from '../../constants';
 import type { ForegroundChangePayload } from '../../types';
@@ -37,7 +40,11 @@ import {
   showBurstCursor,
 } from './cursorVisibility';
 import { clearBracketedPasteScanState, scanBracketedPasteMode } from './bracketedPasteScan';
-import { maxSequence, trimFrameToUnseenSuffix } from './terminalFrameTrim';
+import {
+  classifyTerminalFrameSequence,
+  maxSequence,
+  trimFrameToUnseenSuffix,
+} from './terminalFrameTrim';
 import * as muxSessionRouting from './muxSessionRouting';
 import { resolveMuxDataLossReason } from './muxDataLoss';
 import { createMuxInputFrame } from './muxInputFrame';
@@ -132,11 +139,11 @@ export function setSuppressHeatCallback(cb: SuppressHeatCallback): void {
 }
 
 let syncCompleteTimeout: number | null = null;
+let syncCompletePending = false;
 const REPLAY_HEAT_QUIET_MS = 750;
 const RESYNC_HEAT_SUPPRESS_MS = 3000;
 const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
 const BUFFER_REPLAY_MAX_MS = 12000;
-const BROWSER_RESUME_QUICK_REFRESH_COOLDOWN_MS = 3000;
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
@@ -145,10 +152,44 @@ interface BrowserTransportSnapshot {
   lastDataLossReason: string | null;
   lastReplayReason: string | null;
   lastReplayBytes: number;
+  recoveryRequested: number;
+  recoveryCoalesced: number;
+  recoveryCompleted: number;
+  recoveryResetCount: number;
+  recoveryGapCount: number;
+  recoveryReplayBytes: number;
+  lastRecoveryCause: string | null;
+}
+
+interface ActiveSessionRecovery {
+  generation: number;
+  sourceSequenceEndExclusive: bigint;
+  endReceived: boolean;
+  replayBytes: number;
+  resetTerminal: boolean;
+  prepared: boolean;
+  ready: Promise<void> | null;
+  releaseBarrier: () => void;
 }
 
 const replaySuppressedSessions = new Map<string, { quietUntilMs: number; hardUntilMs: number }>();
 const browserTransportSnapshots = new Map<string, BrowserTransportSnapshot>();
+const activeSessionRecoveries = new Map<string, ActiveSessionRecovery>();
+const recoveryRequestsInFlight = new Set<string>();
+const recoveryFollowupCauses = new Map<string, string>();
+
+function discardSessionRecovery(sessionId: string): void {
+  const recovery = activeSessionRecoveries.get(sessionId);
+  activeSessionRecoveries.delete(sessionId);
+  if (recovery?.ready) {
+    recovery.ready = null;
+    recovery.releaseBarrier();
+  }
+}
+
+function discardAllSessionRecoveries(): void {
+  [...activeSessionRecoveries.keys()].forEach(discardSessionRecovery);
+}
 function forEachLocalTerminal(callback: (state: TerminalState, sessionId: string) => void): void {
   sessionTerminals.forEach((state, sessionId) => {
     if (isHubSessionId(sessionId)) {
@@ -217,25 +258,8 @@ function thawReconnectFreeze(): void {
   });
 }
 
-function isSgrResetFrame(type: number, payload: Uint8Array): boolean {
-  if (type !== MUX_TYPE_OUTPUT) return false;
-  return (
-    payload.length === 16 &&
-    payload[12] === 0x1b &&
-    payload[13] === 0x5b &&
-    payload[14] === 0x30 &&
-    payload[15] === 0x6d
-  );
-}
-
-function shouldRecordHeat(
-  sessionId: string,
-  bytes: number,
-  type: number,
-  payload: Uint8Array,
-): boolean {
+function shouldRecordHeat(sessionId: string, bytes: number): boolean {
   if (bytes <= 0) return false;
-  if (isSgrResetFrame(type, payload)) return false;
 
   const now = Date.now();
   const suppression = replaySuppressedSessions.get(sessionId);
@@ -396,7 +420,6 @@ function measureCompletedOutputRtt(sessionId: string): void {
 // Track last hinted session to avoid redundant hints
 let lastHintedSessionId: string | null = null;
 let currentVisibleSessionIds: string[] = [];
-let lastBrowserResumeQuickRefreshAt = Number.NEGATIVE_INFINITY;
 
 // =============================================================================
 // Per-Session Output Delivery
@@ -433,7 +456,8 @@ const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
 
 const sessionOutputQueues = new Map<string, SessionOutputQueue>();
 const scheduledOutputQueues = new Set<string>();
-let outputQueueGeneration = 0;
+const sessionOutputGenerations = new Map<string, number>();
+let nextOutputGeneration = 1;
 let yieldToMainChannel: MessageChannel | null = null;
 const pendingYieldToMainResolves: Array<() => void> = [];
 const printableInputCoalescer = createPrintableInputBurstCoalescer(
@@ -492,6 +516,13 @@ function getOrCreateBrowserTransportSnapshot(sessionId: string): BrowserTranspor
       lastDataLossReason: null,
       lastReplayReason: null,
       lastReplayBytes: 0,
+      recoveryRequested: 0,
+      recoveryCoalesced: 0,
+      recoveryCompleted: 0,
+      recoveryResetCount: 0,
+      recoveryGapCount: 0,
+      recoveryReplayBytes: 0,
+      lastRecoveryCause: null,
     };
     browserTransportSnapshots.set(sessionId, snapshot);
   }
@@ -501,6 +532,21 @@ function getOrCreateBrowserTransportSnapshot(sessionId: string): BrowserTranspor
 
 export function getBrowserTransportSnapshot(sessionId: string): BrowserTransportSnapshot | null {
   return browserTransportSnapshots.get(sessionId) ?? null;
+}
+
+/** Releases every per-session transport owner when a terminal is destroyed. */
+export function forgetMuxSession(sessionId: string): void {
+  clearQueuedOutput(sessionId);
+  pendingOutputFrames.delete(sessionId);
+  sessionsNeedingResync.delete(sessionId);
+  replaySuppressedSessions.delete(sessionId);
+  browserTransportSnapshots.delete(sessionId);
+  discardSessionRecovery(sessionId);
+  recoveryRequestsInFlight.delete(sessionId);
+  recoveryFollowupCauses.delete(sessionId);
+  bracketedPasteState.delete(sessionId);
+  clearBracketedPasteScanState(sessionId);
+  sessionOutputGenerations.delete(sessionId);
 }
 
 function getPendingFrameCount(queue: SessionOutputQueue): number {
@@ -516,10 +562,39 @@ function getOrCreateSessionQueue(sessionId: string): SessionOutputQueue {
   return queue;
 }
 
-function clearQueuedOutput(): void {
+function getOutputGeneration(sessionId: string): number {
+  let generation = sessionOutputGenerations.get(sessionId);
+  if (generation === undefined) {
+    generation = nextOutputGeneration++;
+    sessionOutputGenerations.set(sessionId, generation);
+  }
+  return generation;
+}
+
+function isOutputGenerationCurrent(sessionId: string, generation: number): boolean {
+  return sessionOutputGenerations.get(sessionId) === generation;
+}
+
+function clearQueuedOutput(sessionId?: string): void {
+  if (sessionId !== undefined) {
+    sessionOutputGenerations.set(sessionId, nextOutputGeneration++);
+    sessionOutputQueues.delete(sessionId);
+    scheduledOutputQueues.delete(sessionId);
+    outputRttTracker.inputTimestamps.delete(sessionId);
+    outputRttTracker.pendingOutputTimestamps.delete(sessionId);
+    return;
+  }
+
+  const knownSessionIds = new Set([
+    ...sessionOutputGenerations.keys(),
+    ...sessionOutputQueues.keys(),
+  ]);
+  knownSessionIds.forEach((knownSessionId) => {
+    sessionOutputGenerations.set(knownSessionId, nextOutputGeneration++);
+  });
   sessionOutputQueues.clear();
+  scheduledOutputQueues.clear();
   resetOutputRttTracker(outputRttTracker);
-  outputQueueGeneration++;
 }
 
 function noteQueueOverflow(sessionId: string): void {
@@ -576,13 +651,13 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
     queue.bytes = 0;
     sessionOutputQueues.delete(sessionId);
     sessionsNeedingResync.add(sessionId);
-    requestBufferRefresh(sessionId);
+    requestSessionRecovery(sessionId, 'browser_output_queue_overflow');
     return;
   }
 
   queue.items.push({ sessionId, payload, compressed });
   queue.bytes += payload.byteLength;
-  scheduleSessionOutputQueue(sessionId, outputQueueGeneration);
+  scheduleSessionOutputQueue(sessionId, getOutputGeneration(sessionId));
 }
 
 function scheduleSessionOutputQueue(sessionId: string, generation: number): void {
@@ -593,7 +668,7 @@ function scheduleSessionOutputQueue(sessionId: string, generation: number): void
   scheduledOutputQueues.add(sessionId);
   void Promise.resolve().then(() => {
     scheduledOutputQueues.delete(sessionId);
-    if (generation !== outputQueueGeneration) {
+    if (!isOutputGenerationCurrent(sessionId, generation)) {
       return;
     }
     void processSessionOutputQueue(sessionId, generation);
@@ -620,7 +695,7 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
   try {
     let sliceStartMs = performance.now();
 
-    while (generation === outputQueueGeneration) {
+    while (isOutputGenerationCurrent(sessionId, generation)) {
       const item = dequeueOutputFrame(sessionId);
       if (!item) {
         break;
@@ -638,7 +713,7 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
         }
       }
 
-      if (generation !== outputQueueGeneration) {
+      if (!isOutputGenerationCurrent(sessionId, generation)) {
         break;
       }
 
@@ -657,7 +732,7 @@ async function processSessionOutputQueue(sessionId: string, generation: number):
     // If new frames landed after the current drain finished, restart the same
     // per-session worker. We keep sequencing at the session boundary so async
     // decompression and timed yields cannot reorder a terminal's output.
-    if (generation === outputQueueGeneration && getPendingFrameCount(queue) > 0) {
+    if (isOutputGenerationCurrent(sessionId, generation) && getPendingFrameCount(queue) > 0) {
       void processSessionOutputQueue(sessionId, generation);
     } else if (sessionOutputQueues.get(sessionId) === queue && getPendingFrameCount(queue) === 0) {
       sessionOutputQueues.delete(sessionId);
@@ -712,7 +787,7 @@ function bufferPendingFrame(
     const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
     snapshot.dataLossCount += 1;
     snapshot.lastDataLossReason = 'browser_pending_overflow';
-    requestBufferRefresh(sessionId);
+    requestSessionRecovery(sessionId, 'browser_pending_output_overflow');
     return;
   }
 
@@ -720,6 +795,15 @@ function bufferPendingFrame(
 }
 
 function processOneFrame(
+  item: OutputFrameItem,
+): TerminalOutputDelivery | null | Promise<TerminalOutputDelivery | null> {
+  const recoveryReady = activeSessionRecoveries.get(item.sessionId)?.ready;
+  return recoveryReady
+    ? recoveryReady.then(() => processOneFrameAfterRecoveryBarrier(item))
+    : processOneFrameAfterRecoveryBarrier(item);
+}
+
+function processOneFrameAfterRecoveryBarrier(
   item: OutputFrameItem,
 ): TerminalOutputDelivery | null | Promise<TerminalOutputDelivery | null> {
   try {
@@ -756,8 +840,33 @@ function processParsedOutputFrame(
 ): TerminalOutputDelivery | null {
   try {
     const snapshot = getOrCreateBrowserTransportSnapshot(item.sessionId);
+    const sequence = classifyTerminalFrameSequence(data.length, sequenceEnd, snapshot.receivedSeq);
+    if (sequence.kind === 'gap') {
+      log.warn(
+        () =>
+          `Forward sequence gap for ${item.sessionId}: expected ${snapshot.receivedSeq.toString()}, got ${sequence.sequenceStart.toString()}`,
+      );
+      snapshot.dataLossCount += 1;
+      snapshot.recoveryGapCount += 1;
+      snapshot.lastDataLossReason = 'browser_forward_sequence_gap';
+      $dataLossDetected.set({ sessionId: item.sessionId, timestamp: Date.now() });
+      sessionsNeedingResync.add(item.sessionId);
+      pendingOutputFrames.delete(item.sessionId);
+      clearQueuedOutput(item.sessionId);
+      if (activeSessionRecoveries.has(item.sessionId)) {
+        // A gap inside an ordered snapshot means this socket can no longer prove
+        // its transaction boundary. Reconnect is safer than waiting on an end
+        // cursor that the cleared queue can never reach.
+        muxWs?.close(4400, 'sequence gap during recovery');
+        return null;
+      }
+      requestSessionRecovery(item.sessionId, 'browser_forward_sequence_gap');
+      return null;
+    }
+
     const trimmedData = trimFrameToUnseenSuffix(data, sequenceEnd, snapshot.receivedSeq);
     snapshot.receivedSeq = maxSequence(snapshot.receivedSeq, sequenceEnd);
+    tryCompleteSessionRecovery(item.sessionId);
 
     const state = sessionTerminals.get(item.sessionId);
 
@@ -817,7 +926,7 @@ function writeTerminalData(
   // xterm already preserves write order internally. We use the callback for
   // "parsed and visible" notifications only, not as a per-frame flow-control gate.
   state.terminal.write(data, () => {
-    if (generation !== outputQueueGeneration) {
+    if (!isOutputGenerationCurrent(sessionId, generation)) {
       return;
     }
 
@@ -913,7 +1022,10 @@ function writeOutputDataWithPathScan(
   writeTerminalData(sessionId, state, sequenceEnd, data, generation, () => {
     if (sessionId === $activeSessionId.get()) {
       void yieldToMain().then(() => {
-        if (generation === outputQueueGeneration && sessionId === $activeSessionId.get()) {
+        if (
+          isOutputGenerationCurrent(sessionId, generation) &&
+          sessionId === $activeSessionId.get()
+        ) {
           scanOutputForPaths(sessionId, data);
         }
       });
@@ -944,7 +1056,7 @@ export function applyOutputFrameToTerminal(
   rows: number,
   data: Uint8Array,
 ): void {
-  writeToTerminal(sessionId, state, sequenceEnd, cols, rows, data, outputQueueGeneration);
+  writeToTerminal(sessionId, state, sequenceEnd, cols, rows, data, getOutputGeneration(sessionId));
 }
 
 function handleMuxInitFrame(type: number, data: Uint8Array): boolean {
@@ -980,6 +1092,17 @@ function handleMuxSyncCompleteFrame(type: number): boolean {
     return false;
   }
 
+  syncCompletePending = true;
+  finishInitialSyncWhenRecoveriesAreParsed();
+  return true;
+}
+
+function finishInitialSyncWhenRecoveriesAreParsed(): void {
+  if (!syncCompletePending || activeSessionRecoveries.size > 0) {
+    return;
+  }
+
+  syncCompletePending = false;
   if (syncCompleteTimeout !== null) {
     clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = null;
@@ -987,7 +1110,143 @@ function handleMuxSyncCompleteFrame(type: number): boolean {
   thawReconnectFreeze();
   _suppressHeatCallback?.(0);
   setBellNotificationsSuppressed(false);
+}
+
+function handleMuxRecoveryBeginFrame(
+  type: number,
+  sessionId: string,
+  payload: Uint8Array,
+): boolean {
+  if (type !== MUX_TYPE_RECOVERY_BEGIN) {
+    return false;
+  }
+  if (payload.length < 22) {
+    log.warn(() => `Ignoring malformed recovery-begin frame for ${sessionId}`);
+    return true;
+  }
+
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const generation = view.getUint32(0, true);
+  const resetTerminal = view.getUint8(4) !== 0;
+  const reasonCode = view.getUint8(5);
+  const sequenceStart = view.getBigUint64(6, true);
+  const sourceSequenceEndExclusive = view.getBigUint64(14, true);
+
+  // Invalidate only this session. Async decompression and xterm callbacks from
+  // other terminals must remain live while this transaction re-establishes one cursor.
+  clearQueuedOutput(sessionId);
+  pendingOutputFrames.delete(sessionId);
+  sessionsNeedingResync.delete(sessionId);
+  clearBracketedPasteScanState(sessionId);
+  bracketedPasteState.delete(sessionId);
+  beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
+  _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
+
+  const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+  snapshot.lastReplayReason = resolveMuxDataLossReason(reasonCode);
+  let releaseRecoveryBarrier: () => void = () => {};
+  const recoveryReady = new Promise<void>((resolve) => {
+    releaseRecoveryBarrier = resolve;
+  });
+  const recovery: ActiveSessionRecovery = {
+    generation,
+    sourceSequenceEndExclusive,
+    endReceived: false,
+    replayBytes: 0,
+    resetTerminal,
+    prepared: false,
+    ready: recoveryReady,
+    releaseBarrier: releaseRecoveryBarrier,
+  };
+  activeSessionRecoveries.set(sessionId, recovery);
+
+  const prepareRecovery = (): void => {
+    if (activeSessionRecoveries.get(sessionId) !== recovery) {
+      releaseRecoveryBarrier();
+      return;
+    }
+
+    if (resetTerminal) {
+      const state = sessionTerminals.get(sessionId);
+      if (state?.opened) {
+        // Missing terminal bytes may end inside UTF-8 or ANSI state. reset() is the
+        // only operation that repairs parser state; clear() only erases the viewport.
+        state.terminal.reset();
+      }
+    }
+    snapshot.receivedSeq = sequenceStart;
+    snapshot.renderedSeq = sequenceStart;
+    recovery.prepared = true;
+    recovery.ready = null;
+    releaseRecoveryBarrier();
+    tryCompleteSessionRecovery(sessionId);
+  };
+
+  const state = sessionTerminals.get(sessionId);
+  if (state?.opened) {
+    // xterm owns writes once terminal.write returns. This empty write waits for
+    // that internal queue before reset/replay without serializing normal output.
+    try {
+      state.terminal.write('', prepareRecovery);
+    } catch {
+      prepareRecovery();
+    }
+  } else {
+    prepareRecovery();
+  }
   return true;
+}
+
+function handleMuxRecoveryEndFrame(type: number, sessionId: string, payload: Uint8Array): boolean {
+  if (type !== MUX_TYPE_RECOVERY_END) {
+    return false;
+  }
+  if (payload.length < 16) {
+    log.warn(() => `Ignoring malformed recovery-end frame for ${sessionId}`);
+    return true;
+  }
+
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+  const generation = view.getUint32(0, true);
+  const recovery = activeSessionRecoveries.get(sessionId);
+  if (!recovery || recovery.generation !== generation) {
+    return true;
+  }
+
+  recovery.sourceSequenceEndExclusive = view.getBigUint64(4, true);
+  recovery.replayBytes = Math.max(0, view.getInt32(12, true));
+  recovery.endReceived = true;
+  tryCompleteSessionRecovery(sessionId);
+  return true;
+}
+
+function tryCompleteSessionRecovery(sessionId: string): void {
+  const recovery = activeSessionRecoveries.get(sessionId);
+  const snapshot = browserTransportSnapshots.get(sessionId);
+  if (
+    !recovery?.prepared ||
+    !recovery.endReceived ||
+    !snapshot ||
+    snapshot.receivedSeq !== recovery.sourceSequenceEndExclusive
+  ) {
+    return;
+  }
+
+  discardSessionRecovery(sessionId);
+  recoveryRequestsInFlight.delete(sessionId);
+  sessionsNeedingResync.delete(sessionId);
+  snapshot.recoveryCompleted += 1;
+  snapshot.recoveryReplayBytes += recovery.replayBytes;
+  snapshot.lastReplayBytes = recovery.replayBytes;
+  if (recovery.resetTerminal) {
+    snapshot.recoveryResetCount += 1;
+  }
+  const followupCause = recoveryFollowupCauses.get(sessionId);
+  recoveryFollowupCauses.delete(sessionId);
+  if (followupCause !== undefined) {
+    requestSessionRecovery(sessionId, followupCause);
+  }
+  finishInitialSyncWhenRecoveriesAreParsed();
 }
 
 function handleMuxResyncFrame(type: number, sessionId: string): boolean {
@@ -1014,20 +1273,39 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
     }
 
     if (state.opened) {
-      state.terminal.clear();
-      state.terminal.write('\x1b[0m');
+      // A resync follows transport data loss. The byte hole may have poisoned
+      // parser state (charset shifts, pending escape sequences), so only a full
+      // reset guarantees the replay renders cleanly; clear() + SGR reset cannot
+      // repair a stuck charset.
+      state.terminal.reset();
     }
   });
   if (sessionId) {
     pendingOutputFrames.delete(sessionId);
     sessionsNeedingResync.delete(sessionId);
-    browserTransportSnapshots.delete(sessionId);
+    const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+    snapshot.receivedSeq = 0n;
+    snapshot.renderedSeq = 0n;
+    discardSessionRecovery(sessionId);
+    recoveryRequestsInFlight.delete(sessionId);
+    recoveryFollowupCauses.delete(sessionId);
+    clearBracketedPasteScanState(sessionId);
+    bracketedPasteState.delete(sessionId);
+    clearQueuedOutput(sessionId);
   } else {
     pendingOutputFrames.clear();
     sessionsNeedingResync.clear();
-    browserTransportSnapshots.clear();
+    browserTransportSnapshots.forEach((snapshot) => {
+      snapshot.receivedSeq = 0n;
+      snapshot.renderedSeq = 0n;
+    });
+    discardAllSessionRecoveries();
+    recoveryRequestsInFlight.clear();
+    recoveryFollowupCauses.clear();
+    clearBracketedPasteScanState();
+    bracketedPasteState.clear();
+    clearQueuedOutput();
   }
-  clearQueuedOutput();
   return true;
 }
 
@@ -1040,7 +1318,7 @@ function handleMuxOutputFrame(type: number, sessionId: string, payload: Uint8Arr
   recordInputTraceOutputReceived(sessionId, payload);
   const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 16 : 12;
   const termDataBytes = Math.max(0, payload.length - hdrBytes);
-  if (shouldRecordHeat(sessionId, termDataBytes, type, payload)) {
+  if (shouldRecordHeat(sessionId, termDataBytes)) {
     _sessionBytesCallback?.(sessionId, termDataBytes);
   }
   if (payload.length >= 4) {
@@ -1097,15 +1375,22 @@ function handleMuxDataLossFrame(type: number, sessionId: string, payload: Uint8A
 
   const dataView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
   const droppedBytes = payload.length >= 5 ? dataView.getUint32(1, true) : 0;
+  const missingSequenceStart = payload.length >= 21 ? dataView.getBigUint64(5, true) : null;
+  const missingSequenceEndExclusive = payload.length >= 21 ? dataView.getBigUint64(13, true) : null;
   log.warn(
-    () => `Data loss: session ${sessionId} dropped ${droppedBytes} bytes, requesting resync`,
+    () =>
+      `Data loss: session ${sessionId} dropped ${droppedBytes} bytes` +
+      (missingSequenceStart !== null && missingSequenceEndExclusive !== null
+        ? ` (${missingSequenceStart.toString()}..${missingSequenceEndExclusive.toString()})`
+        : '') +
+      ', requesting cursor recovery',
   );
   const reasonCode = payload.length >= 1 ? dataView.getUint8(0) : 0;
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.dataLossCount += 1;
   snapshot.lastDataLossReason = resolveMuxDataLossReason(reasonCode);
   sessionsNeedingResync.add(sessionId);
-  requestBufferRefresh(sessionId);
+  requestSessionRecovery(sessionId, snapshot.lastDataLossReason);
   return true;
 }
 
@@ -1146,12 +1431,14 @@ export function connectMuxWebSocket(): void {
 
   ws.onopen = () => {
     muxReconnect.reset();
+    syncCompletePending = false;
 
     // Suppress bell and heat until server sends SyncComplete (10s safety timeout)
     setBellNotificationsSuppressed(true);
     _suppressHeatCallback?.(Number.MAX_SAFE_INTEGER);
     if (syncCompleteTimeout !== null) clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = window.setTimeout(() => {
+      syncCompletePending = false;
       thawReconnectFreeze();
       _suppressHeatCallback?.(0);
       setBellNotificationsSuppressed(false);
@@ -1221,6 +1508,12 @@ export function connectMuxWebSocket(): void {
     const sessionId = decodeSessionId(data, 1);
     const payload = data.subarray(MUX_HEADER_SIZE); // zero-copy view
 
+    if (handleMuxRecoveryBeginFrame(type, sessionId, payload)) {
+      return;
+    }
+    if (handleMuxRecoveryEndFrame(type, sessionId, payload)) {
+      return;
+    }
     if (handleMuxResyncFrame(type, sessionId)) {
       return;
     }
@@ -1235,7 +1528,11 @@ export function connectMuxWebSocket(): void {
   ws.onclose = (event) => {
     $muxWsConnected.set(false);
     lastHintedSessionId = null;
+    syncCompletePending = false;
     replaySuppressedSessions.clear();
+    discardAllSessionRecoveries();
+    recoveryRequestsInFlight.clear();
+    recoveryFollowupCauses.clear();
     clearInputLatencyTraceInFlight();
     thawReconnectFreeze();
 
@@ -1244,6 +1541,10 @@ export function connectMuxWebSocket(): void {
       log.info(() => 'Server shutting down, will reconnect');
     } else if (event.code !== 1000 && event.code !== 1001) {
       log.warn(() => `WebSocket closed: code=${event.code}, reason=${event.reason || 'none'}`);
+    }
+
+    if (handleAuthenticatedWebSocketClose(event)) {
+      return;
     }
 
     scheduleMuxReconnect();
@@ -1361,6 +1662,7 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
 export function requestBufferRefresh(
   sessionId: string,
   mode: 'fullReplay' | 'quickResume' = 'fullReplay',
+  recoveryCause = mode === 'quickResume' ? 'quick_resume' : 'manual_full_replay',
 ): void {
   if (isHubSessionId(sessionId)) {
     requestHubBufferRefresh(sessionId);
@@ -1370,9 +1672,17 @@ export function requestBufferRefresh(
   beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
   _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+  if (recoveryRequestsInFlight.has(sessionId) || activeSessionRecoveries.has(sessionId)) {
+    snapshot.recoveryCoalesced += 1;
+    return;
+  }
   snapshot.lastReplayReason =
     mode === 'quickResume' ? 'quick_resume_tail_replay' : 'buffer_refresh_tail_replay';
   if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+
+  recoveryRequestsInFlight.add(sessionId);
+  snapshot.recoveryRequested += 1;
+  snapshot.lastRecoveryCause = recoveryCause;
 
   const replayRows = mode === 'quickResume' ? muxSessionRouting.getReplayRows(sessionId) : null;
   const resumeSequence =
@@ -1387,6 +1697,16 @@ export function requestBufferRefresh(
     resumeSequence,
   );
   sendFrame(frame);
+}
+
+function requestSessionRecovery(sessionId: string, cause: string): void {
+  if (activeSessionRecoveries.has(sessionId)) {
+    const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
+    snapshot.recoveryCoalesced += 1;
+    recoveryFollowupCauses.set(sessionId, cause);
+    return;
+  }
+  requestBufferRefresh(sessionId, 'quickResume', cause);
 }
 
 /**
@@ -1445,7 +1765,6 @@ export function updateTerminalVisibility(
 export function recoverVisibleTerminalsAfterBrowserResume(
   activeSessionId: string | null,
   visibleSessionIds: readonly string[],
-  options: { quickRefresh?: boolean } = {},
 ): void {
   const normalizedVisibleSessionIds = muxSessionRouting.normalizeSessionIds(visibleSessionIds);
   currentVisibleSessionIds = normalizedVisibleSessionIds;
@@ -1457,27 +1776,6 @@ export function recoverVisibleTerminalsAfterBrowserResume(
 
   sendVisibleSessionsHint(normalizedVisibleSessionIds);
   sendActiveSessionHint(activeSessionId);
-
-  if (options.quickRefresh !== true) {
-    return;
-  }
-
-  const now = performance.now();
-  if (now - lastBrowserResumeQuickRefreshAt < BROWSER_RESUME_QUICK_REFRESH_COOLDOWN_MS) {
-    return;
-  }
-  lastBrowserResumeQuickRefreshAt = now;
-
-  const refreshSessionIds = muxSessionRouting.normalizeSessionIds([
-    ...normalizedVisibleSessionIds,
-    ...(activeSessionId ? [activeSessionId] : []),
-  ]);
-
-  for (const sessionId of refreshSessionIds) {
-    if (sessionTerminals.get(sessionId)?.opened) {
-      requestBufferRefresh(sessionId, 'quickResume');
-    }
-  }
 }
 
 /**
@@ -1526,7 +1824,7 @@ export function writeOutputFrame(
     frame.cols,
     frame.rows,
     frame.data,
-    outputQueueGeneration,
+    getOutputGeneration(sessionId),
   );
 }
 
@@ -1535,6 +1833,7 @@ export function resetMuxChannelRuntimeForTests(): void {
     clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = null;
   }
+  syncCompletePending = false;
 
   _sessionBytesCallback = null;
   _suppressHeatCallback = null;
@@ -1544,10 +1843,11 @@ export function resetMuxChannelRuntimeForTests(): void {
   lastServerIoRttMs = null;
   lastHintedSessionId = null;
   currentVisibleSessionIds = [];
-  lastBrowserResumeQuickRefreshAt = Number.NEGATIVE_INFINITY;
-
   replaySuppressedSessions.clear();
   browserTransportSnapshots.clear();
+  discardAllSessionRecoveries();
+  recoveryRequestsInFlight.clear();
+  recoveryFollowupCauses.clear();
   bracketedPasteState.clear();
   clearBracketedPasteScanState();
   outputRttListeners.clear();
@@ -1559,6 +1859,7 @@ export function resetMuxChannelRuntimeForTests(): void {
   yieldToMainChannel = null;
 
   clearQueuedOutput();
+  sessionOutputGenerations.clear();
   pendingOutputFrames.clear();
   sessionsNeedingResync.clear();
   closeWebSocket(muxWs, setMuxWs);

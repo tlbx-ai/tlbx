@@ -14,6 +14,7 @@ using Ai.Tlbx.MidTerm.Models.Files;
 using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
+using Ai.Tlbx.MidTerm.Models.InputHistory;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
@@ -69,8 +70,29 @@ public static partial class SessionApiEndpoints
         ProviderResumeCatalogService providerResumeCatalog,
         SessionAgentVibeService agentVibe,
         AiCliProfileService aiCliProfileService,
-        WorkerSessionRegistryService workerSessionRegistry)
+        WorkerSessionRegistryService workerSessionRegistry,
+        TtyHostMuxConnectionManager muxManager,
+        InputHistoryService inputHistory)
     {
+        void RecordPromptHistory(string sessionId, AppServerControlTurnRequest turn, string source, string? surface = null)
+        {
+            var session = sessionManager.GetSession(sessionId);
+            if (session is null)
+            {
+                return;
+            }
+
+            inputHistory.RecordPrompt(
+                sessionId,
+                session.Name,
+                session.CurrentDirectory,
+                source,
+                surface ?? (appServerControlRuntime.IsAttached(sessionId)
+                    ? InputHistorySurfaces.AgentControl
+                    : InputHistorySurfaces.Terminal),
+                turn);
+        }
+
         app.MapGet("/api/state", () =>
         {
             var response = new StateUpdate
@@ -133,6 +155,7 @@ public static partial class SessionApiEndpoints
                         return Results.BadRequest("Only queued command-bay items can be enqueued.");
                     }
 
+                    RecordPromptHistory(request.SessionId, request.Turn, InputHistorySources.CommandBay);
                     return Results.Json(entry, AppJsonContext.Default.ManagerBarQueueEntryDto);
                 }
                 else
@@ -145,6 +168,7 @@ public static partial class SessionApiEndpoints
                         return Results.BadRequest("Only queued command-bay items can be enqueued.");
                     }
 
+                    RecordPromptHistory(request.SessionId, request.Turn, InputHistorySources.CommandBay);
                     if (queuedEntry is null)
                     {
                         return Results.Ok();
@@ -421,7 +445,7 @@ public static partial class SessionApiEndpoints
             {
                 Session = GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id),
                 Previews = webPreviewService.ListPreviewSessions(id).Previews.ToArray(),
-                TerminalTransport = BuildTerminalTransportDiagnostics(sessionManager, id)
+                TerminalTransport = BuildTerminalTransportDiagnostics(sessionManager, muxManager, id)
             };
 
             if (includeBuffer)
@@ -469,6 +493,19 @@ public static partial class SessionApiEndpoints
             }
 
             await SendPasteInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, request.BracketedPaste, ct);
+            if (!string.Equals(request.HistorySource, InputHistorySources.UploadPath, StringComparison.Ordinal))
+            {
+                _ = TryGetPasteText(request, out var historyText, out _);
+                var pasteSession = sessionManager.GetSession(id);
+                inputHistory.RecordPaste(
+                    id,
+                    pasteSession?.Name,
+                    pasteSession?.CurrentDirectory,
+                    historyText,
+                    request.BracketedPaste,
+                    request.IsFilePath,
+                    request.HistorySource ?? InputHistorySources.TerminalPaste);
+            }
             return Results.Ok();
         });
 
@@ -511,6 +548,15 @@ public static partial class SessionApiEndpoints
             {
                 var promptProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
                 agentFeed.NotePrompt(id, promptProfile, request);
+                var historyText = GetPromptHistoryText(request);
+                if (!string.IsNullOrEmpty(historyText))
+                {
+                    RecordPromptHistory(
+                        id,
+                        new AppServerControlTurnRequest { Text = historyText },
+                        InputHistorySources.SessionPrompt,
+                        InputHistorySurfaces.AgentControl);
+                }
                 return Results.Ok();
             }
 
@@ -527,6 +573,15 @@ public static partial class SessionApiEndpoints
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
             agentFeed.NotePrompt(id, resolvedProfile, request);
+            var terminalHistoryText = GetPromptHistoryText(request);
+            if (!string.IsNullOrEmpty(terminalHistoryText))
+            {
+                RecordPromptHistory(
+                    id,
+                    new AppServerControlTurnRequest { Text = terminalHistoryText },
+                    InputHistorySources.SessionPrompt,
+                    InputHistorySurfaces.Terminal);
+            }
             return Results.Ok();
         });
 
@@ -664,7 +719,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id), AppJsonContext.Default.SessionInfoDto);
         });
 
-        app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/upload", async (string id, IFormFile file, string? source, CancellationToken ct) =>
         {
             var session = sessionManager.GetSession(id);
             if (session is null)
@@ -687,6 +742,19 @@ public static partial class SessionApiEndpoints
 
             // Use 8.3 short path on Windows for compatibility with legacy apps
             var responsePath = ToShortPath(targetPath);
+
+            inputHistory.RecordUpload(
+                id,
+                session.Name,
+                session.CurrentDirectory,
+                responsePath,
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                source ?? InputHistorySources.Upload,
+                appServerControlRuntime.IsAttached(id)
+                    ? InputHistorySurfaces.AgentControl
+                    : InputHistorySurfaces.Terminal);
 
             return Results.Json(new FileUploadResponse { Path = responsePath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
@@ -720,6 +788,19 @@ public static partial class SessionApiEndpoints
             }
 
             await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 }, ct);
+
+            inputHistory.RecordUpload(
+                id,
+                session.Name,
+                session.CurrentDirectory,
+                ToShortPath(targetPath),
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                InputHistorySources.Clipboard,
+                appServerControlRuntime.IsAttached(id)
+                    ? InputHistorySurfaces.AgentControl
+                    : InputHistorySurfaces.Terminal);
 
             return Results.Ok();
         }).DisableAntiforgery();
@@ -824,6 +905,63 @@ public static partial class SessionApiEndpoints
 
         data = Encoding.UTF8.GetBytes(text);
         return true;
+    }
+
+    internal static async Task<bool> SendHistoryPasteAsync(
+        TtyHostSessionManager sessionManager,
+        SessionTelemetryService sessionTelemetry,
+        string sessionId,
+        string text,
+        bool bracketedPaste,
+        bool isFilePath,
+        CancellationToken ct = default)
+    {
+        if (sessionManager.GetSession(sessionId) is null)
+        {
+            return false;
+        }
+
+        var request = new SessionPasteRequest
+        {
+            Text = text,
+            BracketedPaste = bracketedPaste,
+            IsFilePath = isFilePath
+        };
+        if (!TryGetPasteInputBytes(request, out var data, out _))
+        {
+            return false;
+        }
+
+        await SendPasteInputAndRecordAsync(
+            sessionManager,
+            sessionTelemetry,
+            sessionId,
+            data,
+            bracketedPaste,
+            ct).ConfigureAwait(false);
+        return true;
+    }
+
+    private static string? GetPromptHistoryText(SessionPromptRequest request)
+    {
+        if (!string.IsNullOrEmpty(request.Text))
+        {
+            return request.Text;
+        }
+
+        if (string.IsNullOrEmpty(request.Base64))
+        {
+            return null;
+        }
+
+        try
+        {
+            return Encoding.UTF8.GetString(Convert.FromBase64String(request.Base64));
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     private static bool TryGetPasteText(SessionPasteRequest request, out string text, out string error)
@@ -1410,11 +1548,13 @@ public static partial class SessionApiEndpoints
 
     private static TerminalTransportDiagnosticsDto BuildTerminalTransportDiagnostics(
         TtyHostSessionManager sessionManager,
+        TtyHostMuxConnectionManager muxManager,
         string sessionId)
     {
         var session = sessionManager.GetSession(sessionId);
         var transport = session?.Transport;
         var runtime = sessionManager.GetTransportRuntimeSnapshot(sessionId);
+        var recovery = muxManager.GetRecoveryTelemetry(sessionId);
 
         return new TerminalTransportDiagnosticsDto
         {
@@ -1430,7 +1570,13 @@ public static partial class SessionApiEndpoints
             LastReplayReason = (runtime.LastReplayReason ?? transport?.LastReplayReason)?.ToString(),
             ReconnectCount = runtime.ReconnectCount,
             DataLossCount = Math.Max(transport?.DataLossCount ?? 0, runtime.DataLossCount),
-            LastDataLossReason = (runtime.LastDataLossReason ?? transport?.LastDataLossReason)?.ToString()
+            LastDataLossReason = (runtime.LastDataLossReason ?? transport?.LastDataLossReason)?.ToString(),
+            RecoveryRequested = recovery.Requested,
+            RecoveryCoalesced = recovery.Coalesced,
+            RecoveryCompleted = recovery.Completed,
+            RecoveryResets = recovery.Resets,
+            RecoveryReplayBytes = recovery.ReplayBytes,
+            RecoveryFailed = recovery.Failed
         };
     }
 

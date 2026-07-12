@@ -28,6 +28,7 @@ $ErrorActionPreference = "Stop"
 $WwwRoot = Join-Path $PSScriptRoot "wwwroot"
 $TsSource = Join-Path $PSScriptRoot "src/ts"
 $StaticSource = Join-Path $PSScriptRoot "src/static"
+$MobileDeviceBridgeSource = Join-Path $PSScriptRoot "src/mobile-device-bridge"
 $OutFile = Join-Path $WwwRoot "js/terminal.min.js"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $NodeModulesRoot = Join-Path $PSScriptRoot "node_modules"
@@ -197,10 +198,14 @@ if (-not (Test-Path $OpenApiSpec)) {
 }
 
 Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
-& npx openapi-typescript $OpenApiSpec -o $GeneratedTypes
+# Run the project-local binaries directly: npx resolves by current directory and
+# silently falls back to an arbitrary cached version when this script is invoked
+# from outside the web project (e.g. scripts/dev.ps1), which yields generated
+# output that disagrees with the lint gate.
+& node (Join-Path $NodeModulesRoot "openapi-typescript/bin/cli.js") $OpenApiSpec -o $GeneratedTypes
 if ($LASTEXITCODE -ne 0) { Write-Error "openapi-typescript failed"; exit $LASTEXITCODE }
 
-& npx prettier --write $GeneratedTypes 2>&1 | Out-Null
+& node (Join-Path $NodeModulesRoot "prettier/bin/prettier.cjs") --write $GeneratedTypes 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { Write-Error "prettier formatting failed"; exit $LASTEXITCODE }
 
 Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
@@ -208,6 +213,7 @@ Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
 $AssetVersion = Get-AssetFingerprint -Paths @(
     $TsSource,
     $StaticSource,
+    $MobileDeviceBridgeSource,
     $OpenApiSpec,
     (Join-Path $PSScriptRoot "package.json"),
     (Join-Path $PSScriptRoot "package-lock.json")
@@ -273,6 +279,15 @@ Write-Host "  terminal.min.js ($([math]::Round($jsSize/1KB, 1)) KB)" -Foreground
 
 Write-Host "Copying static assets..." -ForegroundColor Cyan
 Write-Host "::group::Copying static assets"
+
+# Chrome runs the bridge locally on the user's machine even when MidTerm is remote.
+# Ship it as an unpacked MV3 extension archive; Chrome itself is the only runtime dependency.
+$mobileDeviceBridgeArchive = Join-Path $WwwRoot "midterm-mobile-device-bridge.zip"
+if (Test-Path $MobileDeviceBridgeSource) {
+    Remove-Item $mobileDeviceBridgeArchive -Force -ErrorAction SilentlyContinue
+    Compress-Archive -Path (Join-Path $MobileDeviceBridgeSource "*") -DestinationPath $mobileDeviceBridgeArchive -CompressionLevel Optimal
+    Write-Host "  midterm-mobile-device-bridge.zip" -ForegroundColor DarkGray
+}
 
 # Binary files that benefit from Brotli compression (publish only)
 # These get both the original (debug) and .br version (publish)
@@ -346,7 +361,7 @@ if ($Publish) {
 # PHASE 5: Process text assets
 # ===========================================
 # Text files to process (compress for publish, copy for debug)
-$textExtensions = @('*.html', '*.css', '*.txt', '*.json', '*.webmanifest')
+$textExtensions = @('*.html', '*.css', '*.js', '*.txt', '*.json', '*.webmanifest')
 $totalSaved = 0
 
 function Process-TextFile {

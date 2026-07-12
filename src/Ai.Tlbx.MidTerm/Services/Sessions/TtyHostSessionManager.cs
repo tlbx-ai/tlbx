@@ -61,6 +61,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     public event Action<string, ForegroundChangePayload>? OnForegroundChanged;
     public event Action<string, string>? OnCwdChanged;
     public event Action<string, TtyHostInputTraceReport>? OnInputTrace;
+    public event Action<string, TtyHostDataLossPayload>? OnDataLoss;
 
     public TtyHostSessionManager(
         string? expectedVersion = null,
@@ -1061,6 +1062,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
         state.DataLossCount++;
         state.LastDataLossReason = payload.Reason;
+        OnDataLoss?.Invoke(sessionId, payload);
     }
 
     private void HandleClientInputTrace(string sessionId, TtyHostInputTraceReport report)

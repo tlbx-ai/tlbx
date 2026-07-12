@@ -172,16 +172,6 @@ public class MuxProtocolTests
     }
 
     [Fact]
-    public void CreateClearScreenFrame_HasCorrectFormat()
-    {
-        var frame = MuxProtocol.CreateClearScreenFrame();
-
-        Assert.Equal(MuxProtocol.HeaderSize, frame.Length);
-        Assert.Equal(MuxProtocol.TypeResync, frame[0]);
-        Assert.All(frame.Skip(1).Take(8), b => Assert.Equal(0, b));
-    }
-
-    [Fact]
     public void WriteSessionId_ShortId_PadsWithZeros()
     {
         var shortId = "abc";
@@ -211,7 +201,12 @@ public class MuxProtocolTests
     [Fact]
     public void CreateDataLossFrame_RoundTrips_ReasonAndDroppedBytes()
     {
-        var frame = MuxProtocol.CreateDataLossFrame("session1", 1234, TerminalReplayReason.MuxOverflow);
+        var frame = MuxProtocol.CreateDataLossFrame(
+            "session1",
+            1234,
+            TerminalReplayReason.MuxOverflow,
+            100,
+            1334);
 
         Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
         Assert.Equal(MuxProtocol.TypeDataLoss, type);
@@ -220,6 +215,32 @@ public class MuxProtocolTests
         var (reason, droppedBytes) = MuxProtocol.ParseDataLossPayload(payload);
         Assert.Equal(TerminalReplayReason.MuxOverflow, reason);
         Assert.Equal(1234, droppedBytes);
+        var details = MuxProtocol.ParseDataLossDetails(payload);
+        Assert.Equal(100UL, details.MissingSequenceStart);
+        Assert.Equal(1334UL, details.MissingSequenceEndExclusive);
+    }
+
+    [Fact]
+    public void RecoveryFrames_RoundTrip_TransactionBoundaries()
+    {
+        var beginFrame = MuxProtocol.CreateRecoveryBeginFrame(
+            "session1",
+            generation: 42,
+            resetTerminal: true,
+            TerminalReplayReason.IpcSequenceGap,
+            sequenceStart: 100,
+            sourceSequenceEndExclusive: 150);
+        Assert.True(MuxProtocol.TryParseFrame(beginFrame, out var beginType, out var sessionId, out var beginPayload));
+        Assert.Equal(MuxProtocol.TypeRecoveryBegin, beginType);
+        Assert.Equal("session1", sessionId);
+        Assert.Equal(
+            new MuxRecoveryBegin(42, true, TerminalReplayReason.IpcSequenceGap, 100, 150),
+            MuxProtocol.ParseRecoveryBeginPayload(beginPayload));
+
+        var endFrame = MuxProtocol.CreateRecoveryEndFrame("session1", 42, 150, 50);
+        Assert.True(MuxProtocol.TryParseFrame(endFrame, out var endType, out _, out var endPayload));
+        Assert.Equal(MuxProtocol.TypeRecoveryEnd, endType);
+        Assert.Equal(new MuxRecoveryEnd(42, 150, 50), MuxProtocol.ParseRecoveryEndPayload(endPayload));
     }
 
     [Fact]
@@ -252,17 +273,6 @@ public class MuxProtocolTests
         Assert.False(options.QuickResume);
         Assert.Null(options.ReplayRows);
         Assert.Null(options.SinceSequence);
-    }
-
-    [Fact]
-    public void CreateSessionResyncFrame_RoundTrips_SessionId()
-    {
-        var frame = MuxProtocol.CreateSessionResyncFrame("session1");
-
-        Assert.True(MuxProtocol.TryParseFrame(frame, out var type, out var sessionId, out var payload));
-        Assert.Equal(MuxProtocol.TypeResync, type);
-        Assert.Equal("session1", sessionId);
-        Assert.True(payload.IsEmpty);
     }
 
     [Fact]

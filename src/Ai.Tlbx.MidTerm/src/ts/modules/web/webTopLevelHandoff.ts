@@ -15,14 +15,7 @@ export interface TopLevelProxyUrlOptions<TClient> {
   currentUrl: string | null | undefined;
   targetRevision: number;
   origin: string;
-  mobileEmulation: boolean;
-  buildProxyUrl: (
-    url: string,
-    client: TClient,
-    targetRevision: number,
-    origin: string,
-    options: { mobileEmulation: boolean },
-  ) => string;
+  buildProxyUrl: (url: string, client: TClient, targetRevision: number, origin: string) => string;
 }
 
 export function resolveTopLevelProxyUrl<TClient>(
@@ -35,7 +28,6 @@ export function resolveTopLevelProxyUrl<TClient>(
     options.activeClient,
     options.targetRevision,
     options.origin,
-    { mobileEmulation: options.mobileEmulation },
   );
 }
 

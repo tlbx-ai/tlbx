@@ -6,6 +6,7 @@ import {
   getEffectiveTerminalBackgroundAlpha,
   getEffectiveTerminalCellBackgroundAlpha,
   getEffectiveXtermThemeForSettings,
+  resolveInitialThemeName,
   resolveEffectiveTerminalMinimumContrastRatio,
 } from './themes';
 
@@ -46,6 +47,13 @@ function createSettings(
 }
 
 describe('themes', () => {
+  it('uses dark for a first launch without an origin-local theme cache', () => {
+    expect(resolveInitialThemeName(null)).toBe('dark');
+    expect(resolveInitialThemeName(undefined)).toBe('dark');
+    expect(resolveInitialThemeName('not-a-theme')).toBe('dark');
+    expect(resolveInitialThemeName('solarizedLight')).toBe('solarizedLight');
+  });
+
   beforeEach(() => {
     Object.defineProperty(globalThis, 'window', {
       value: {

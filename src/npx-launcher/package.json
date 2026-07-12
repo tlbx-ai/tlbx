@@ -1,7 +1,7 @@
 {
   "name": "@tlbx-ai/midterm",
-  "version": "9.18.0",
-  "description": "Launch MidTerm via npx by downloading the native binary for your platform",
+  "version": "9.19.0-dev",
+  "description": "Ephemeral launcher for MidTerm's multi-agent browser workspace",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
@@ -26,6 +26,13 @@
   },
   "keywords": [
     "midterm",
+    "ai-agents",
+    "coding-agents",
+    "agent-orchestration",
+    "multi-host",
+    "persistent-sessions",
+    "remote-workspace",
+    "self-hosted",
     "terminal",
     "remote-terminal",
     "browser-terminal",

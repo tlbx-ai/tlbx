@@ -6,4 +6,5 @@ public sealed class SessionPasteRequest
     public string? Base64 { get; set; }
     public bool BracketedPaste { get; set; }
     public bool IsFilePath { get; set; }
+    public string? HistorySource { get; set; }
 }

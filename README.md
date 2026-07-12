@@ -1,42 +1,63 @@
 <p align="center">
-  <img src="docs/marketing/Icons/FancyLogoToBeChanged.png" alt="MidTerm Banner" width="600">
+  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="MidTerm — your coding agents, your machines, any browser" width="100%">
 </p>
 
-# MidTerm
+<p align="center">
+  <a href="#install"><strong>Install</strong></a>
+  ·
+  <a href="#agent-cli-ergonomics"><strong>Agent ergonomics</strong></a>
+  ·
+  <a href="#private-remote-access"><strong>Remote access</strong></a>
+  ·
+  <a href="docs/FEATURES.md"><strong>All features</strong></a>
+</p>
 
-[![GitHub Release](https://img.shields.io/github/v/release/tlbx-ai/MidTerm)](https://github.com/tlbx-ai/MidTerm/releases/latest)
-[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
-[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#install)
-[![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](#install)
-[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](#install)
+<p align="center">
+  <a href="https://github.com/tlbx-ai/MidTerm/releases/latest"><img src="https://img.shields.io/github/v/release/tlbx-ai/MidTerm?style=flat-square&color=80b6f2" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-80b6f2?style=flat-square" alt="AGPL-3.0 license"></a>
+  <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
+</p>
 
-**Your terminal workspace, anywhere.** Run AI coding agents and local tools on your own machine, then keep using them from any browser on desktop, tablet, or phone.
+# Run your coding agents on your machines. Steer them from anywhere.
 
-![MidTerm Screenshot](docs/marketing/Screenshots/sc1.png)
+Start Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or several at once—where the repos live. MidTerm keeps every session alive and puts control in any browser.
 
-## What MidTerm Is
+**Your machines are browser tabs. Your agents keep working when you leave.**
 
-MidTerm is a web-based terminal multiplexer with a lot more around the terminal than a simple shell tab. It gives you multiple long-lived terminal sessions, split layouts, files and git panels, saved commands, browser previews, mobile-first controls, voice and smart-input workflows, update management, certificate trust help, and remote-access tooling in one local install.
+<p align="center">
+  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a MidTerm browser tab beside another MidTerm host" width="100%">
+</p>
 
-The core idea is still simple:
+## Agent CLI ergonomics
 
-1. Start work on your main machine.
-2. Open MidTerm from another browser later.
-3. Keep the same sessions alive without moving your code or secrets to someone else's server.
+MidTerm runs any terminal-native tool in a real PTY, but it is shaped around long-running coding agents:
 
-## What You Get
+- **Run many:** split, reorder, bookmark, and revisit independent agent, shell, test, and server sessions.
+- **Paste screenshots normally:** `Ctrl+V` / `Cmd+V` uploads the image to the host and inserts its path. Structured agent sessions stage it as an attachment.
+- **Compose real prompts:** multiline input, per-session drafts, files, drag-and-drop, camera capture, reusable actions, and scheduled follow-ups.
+- **Reuse exact inputs:** each session's **History** top-bar menu (`Alt+H` for the active session) keeps direct Enter-submitted text, multiline prompts, pastes, images, and files replayable in place.
+- **See what needs you:** Operator separates machine facts from agent-published status, todos, mail, coding tasks, next steps, and checkpoints across hosts.
+- **Let agents operate MidTerm:** generated `mt` helpers expose history, capabilities, direct multi-session dispatch, ordered events, and the control plane as stable JSON.
+- **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.
+- **Leave and return:** sessions survive browser disconnects, device changes, and travel.
 
-- **Terminal workspace, not a single shell page.** Multiple sessions, split-pane layouts, session reordering, search, heat indicators, bookmarks/history, tmux compatibility, and a manual-resize model built for multi-device use.
-- **Workflow surfaces around the terminal.** Per-session Files tabs with preview and save, Git status with diff overlays, Commands panels for saved scripts, a customizable manager bar, and session-scoped web preview/browser automation.
-- **Clear terminal vs Lens boundaries.** MidTerm keeps ordinary terminal sessions as `Terminal + Files`; provider-branded Lens tabs such as Codex or Claude appear only for sessions the user explicitly launched as Lens sessions.
-- **Remote and mobile features built in.** Smart Input, touch controller, mobile action menus, PWA install, document Picture-in-Picture, voice/chat hooks, shared-session links, and Share Access packets for sending trusted connection details to other devices.
-- **Security and operations for real installs.** Password auth, local HTTPS cert generation, trust-page onboarding, API keys, run-as-user support, diagnostics overlays, live settings sync, stable/dev update channels, and install/update scripts for user mode or service mode.
+<p align="center">
+  <img src="docs/marketing/readme/agent-control-room.svg" alt="Codex, Claude Code, Grok Build, OpenCode, Copilot CLI, and Antigravity CLI sessions controlled concurrently in MidTerm" width="100%">
+</p>
 
-The full tracked inventory is in [docs/FEATURES.md](docs/FEATURES.md).
+## Not SSH in a browser
+
+SSH opens a shell connection. MidTerm reopens the machine's living context: agents, terminals, files, Git, notes, logs, and app previews.
+
+Run one independent MidTerm instance per host. Open your home workstation, office laptop, or server as adjacent tabs. Bring LAN, VPN, or reverse-tunnel connectivity; MidTerm becomes the working interface.
+
+<p align="center">
+  <img src="docs/marketing/readme/your-machines-are-tabs.svg" alt="A browser anywhere connects to independent MidTerm instances on a home workstation, office laptop, and server; each machine keeps its own repositories, agents, and processes" width="100%">
+</p>
 
 ## Install
 
-Recommended for real installs: use the native installer. It handles password setup, service mode, certificate setup, and the normal update path.
+The native installer configures the service, password-protected HTTPS, and updates.
 
 **macOS / Linux**
 
@@ -44,122 +65,73 @@ Recommended for real installs: use the native installer. It handles password set
 curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
 ```
 
-**Windows (PowerShell)**
+**Windows PowerShell**
 
 ```powershell
 irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
 ```
 
-### Uninstall
+Open `https://localhost:2000`. Choose service mode for a host that should survive logouts and reboots; user mode needs no administrator access.
 
-**macOS / Linux**
+## Private remote access
 
-```bash
-curl -fsSL https://tlbx-ai.github.io/MidTerm/uninstall.sh | bash
-```
+MidTerm is not a VPN or hosted relay. You choose the network path.
 
-**Windows (PowerShell)**
+**Recommended default:** put the MidTerm host and your client devices in the same [Tailscale](https://tailscale.com/) tailnet—or use an equivalent WireGuard mesh VPN—and open MidTerm through its private address instead of exposing it publicly.
 
-```powershell
-irm https://tlbx-ai.github.io/MidTerm/uninstall.ps1 | iex
-```
+This is a strong security baseline: tailnet traffic is end-to-end encrypted, and [grants/ACLs](https://tailscale.com/docs/features/access-control) can restrict which identities and devices reach the host. Keep MidTerm's HTTPS/password authentication enabled, use least-privilege rules, and keep both products updated.
 
-The uninstaller removes only known MidTerm-owned locations. It cleans user-scope files first, then asks for elevation only if it needs to remove service-mode files, trusted certificates, firewall rules, or other system-owned traces.
+Cloudflare Tunnel, nginx/Caddy, LAN, and other private-network setups also work.
 
-**Quick launch via `npx`**
+<p align="center">
+  <img src="docs/marketing/readme/host-session-anywhere.svg" alt="A MidTerm session remains on its host while browsers at a desk, on a laptop, and on a phone reconnect to it from different locations" width="100%">
+</p>
+
+> [!IMPORTANT]
+> MidTerm has no repository-hosting cloud. Repos, credentials, tools, and processes stay on each host. Agent-provider traffic remains subject to that provider's configuration and terms.
+
+## System boundary
+
+| Part          | Behavior                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------ |
+| **Host**      | One independent MidTerm instance exposes one machine                                       |
+| **Execution** | Real PTYs use that host's repos, credentials, tools, hardware, and network                 |
+| **Client**    | Any authorized browser; several hosts can sit in adjacent tabs                             |
+| **Lifetime**  | Browser connections are transient; agents, shells, tests, and servers persist              |
+| **Context**   | Working directory, scrollback, Git, files, notes, logs, and previews stay with the session |
+
+Structured agent controls are runtime-dependent. Every terminal-native tool still works through its real PTY.
+
+## Trial fallback
+
+For an ephemeral loopback trial:
 
 ```bash
 npx @tlbx-ai/midterm
 ```
 
-That path is useful for trying MidTerm in user mode. Use the native installer when you want the persistent install, service integration, and normal update flow.
+The launcher downloads the stable native binary and opens a browser. Use the native installer for persistent remote operation.
 
-Open `https://localhost:2000`, create a session, and you have the full workspace.
-
-### Install Modes
-
-| Mode | Best for | Notes |
-| --- | --- | --- |
-| System service | Always-on access, remote use, headless or shared machines | Starts in the background and survives logouts/reboots |
-| User install | Trying MidTerm, personal workstations, no admin access | Runs in your user context and is started when needed |
-
-## Common Workflows
-
-- **AI coding agents on your own hardware.** Run Claude Code, Codex, Aider, Cursor CLI, or any other terminal-native agent, then continue approving steps from your phone.
-- **Explicit Lens sessions when you want a conversation surface.** Launch Codex or Claude from MidTerm's New Session flow when you want the provider-branded Lens lane; starting those CLIs inside an existing terminal does not convert that terminal into Lens.
-- **Long-running sessions that stay put.** Builds, deploys, test suites, data jobs, shells, and TUIs stay alive while the browser client comes and goes.
-- **Terminal-plus-browser workflows.** Use web preview and browser automation beside the terminal instead of constantly switching out to a separate browser window.
-- **Remote access without turning your machine into a cloud IDE.** Pair MidTerm with Tailscale, Cloudflare Tunnel, or your own reverse proxy and keep your code, tools, and API keys on the box you control.
-
-## Remote Access
-
-The simplest path is usually [Tailscale](https://tailscale.com). Install it on the machine running MidTerm, then open MidTerm from any of your devices over the Tailnet.
-
-Other common options:
-
-- [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
-- Reverse proxy with HTTPS via nginx or Caddy
-- Shared-session links when you want to expose only one session instead of the full UI
-
-MidTerm also includes a trust page and certificate download helpers so local HTTPS access works cleanly on phones and tablets.
-
-## Architecture and Docs
-
-- [docs/FEATURES.md](docs/FEATURES.md) - canonical 432-feature inventory grouped by subsystem
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - runtime, protocols, storage, security, and update architecture
-- [docs/devbrowser.md](docs/devbrowser.md) - web preview proxy and browser automation design
-- [docs/file-radar.md](docs/file-radar.md) - terminal path detection design
-- [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) - contribution guide
-
-## Reference
-
-### Binaries
-
-- `mt` / `mt.exe` - web server, static asset host, REST API, WebSockets, update UI, settings UI
-- `mthost` / `mthost.exe` - PTY host, one process per terminal session
-
-### Settings Locations
-
-- Service mode: `%ProgramData%\MidTerm\settings.json` on Windows or `/usr/local/etc/midterm/settings.json` on Unix
-- User mode: `~/.midterm/settings.json`
-
-### Command Line
+## Architecture and source
 
 ```text
-mt [options]
-
-  --port 2000       Port to listen on (default: 2000)
-  --bind 0.0.0.0    Address to bind to (default: 0.0.0.0)
-  --version         Show version and exit
-  --hash-password   Hash a password for settings.json
+browser anywhere
+   ├── HTTPS / WebSocket ──► MidTerm on home workstation ──► agents / repos / apps
+   └── HTTPS / WebSocket ──► MidTerm on office laptop ─────► agents / repos / apps
 ```
 
-## Build From Source
+MidTerm uses .NET 10 Native AOT, TypeScript, and xterm.js.
 
-**Prerequisites**
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download)
-- [esbuild](https://esbuild.github.io/) in `PATH`
+- [Architecture](docs/ARCHITECTURE.md)
+- [Feature inventory](docs/FEATURES.md)
+- [Contributing](docs/CONTRIBUTING.md)
 
 ```bash
 git clone https://github.com/tlbx-ai/MidTerm.git
 cd MidTerm
-
 dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
-dotnet test src/Ai.Tlbx.MidTerm.Tests/Ai.Tlbx.MidTerm.Tests.csproj
-dotnet test src/Ai.Tlbx.MidTerm.UnitTests/Ai.Tlbx.MidTerm.UnitTests.csproj
 ```
 
-Platform-specific AOT publish scripts live under `src/Ai.Tlbx.MidTerm/`.
+Uninstallers: [macOS/Linux](https://tlbx-ai.github.io/MidTerm/uninstall.sh) · [Windows](https://tlbx-ai.github.io/MidTerm/uninstall.ps1)
 
-## Contributing
-
-Contributions are welcome. See [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) for guidelines.
-
-All contributions require acceptance of the [Contributor License Agreement](docs/CLA.md).
-
-## License
-
-[GNU Affero General Public License v3.0](LICENSE)
-
-Commercial licensing is available via [tlbx-ai](https://github.com/tlbx-ai).
+MidTerm is [GNU AGPL v3](LICENSE). Commercial licensing is available from [tlbx-ai](https://github.com/tlbx-ai).
