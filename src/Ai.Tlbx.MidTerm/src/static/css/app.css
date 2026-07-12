@@ -4836,25 +4836,6 @@ body::before {
   color: var(--text-primary);
 }
 
-.btn-operator {
-  position: relative;
-}
-
-.operator-notification-badge {
-  min-width: 17px;
-  height: 17px;
-  margin-left: auto;
-  padding: 0 4px;
-  border-radius: 9px;
-  background: var(--accent-red);
-  color: var(--bg-primary);
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 17px;
-  text-align: center;
-}
-
 .operator-view.hidden {
   display: none;
 }

@@ -16,7 +16,6 @@ import {
   type ControlPlaneSnapshot,
   type ControlPlaneWorkItem,
 } from './controlPlaneApi';
-import { clearControlPlaneNotificationBadge, initControlPlaneNotifications } from './notifications';
 
 interface OperatorViewOptions {
   onSelectSession: (sessionId: string) => void;
@@ -50,7 +49,6 @@ let origins: OperatorOrigin[] = [];
 
 export function initOperatorView(nextOptions: OperatorViewOptions): void {
   options = nextOptions;
-  initControlPlaneNotifications(openOperatorView);
   view = document.getElementById('operator-view');
   document.getElementById('operator-refresh')?.addEventListener('click', () => {
     void refreshOperator();
@@ -81,7 +79,6 @@ export function openOperatorView(): void {
   if (!view) return;
   closeSettings();
   $operatorOpen.set(true);
-  clearControlPlaneNotificationBadge();
   view.classList.remove('hidden');
   document.getElementById('btn-operator')?.classList.add('active');
   document.getElementById('empty-state')?.classList.add('hidden');
