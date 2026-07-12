@@ -149,7 +149,7 @@ function positionMenu(): void {
   if (!menu || !anchor) return;
   const anchorRect = anchor.getBoundingClientRect();
   const margin = 8;
-  const width = Math.min(440, window.innerWidth - margin * 2);
+  const width = Math.min(360, window.innerWidth - margin * 2);
   menu.style.width = `${width}px`;
   menu.style.left = `${Math.max(margin, Math.min(anchorRect.right - width, window.innerWidth - width - margin))}px`;
   const menuHeight = Math.min(menu.scrollHeight, window.innerHeight - margin * 2);

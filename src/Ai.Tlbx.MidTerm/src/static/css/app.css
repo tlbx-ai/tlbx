@@ -1837,9 +1837,11 @@ body::before {
 .input-history-event {
   position: relative;
   display: grid;
-  grid-template-columns: 14px minmax(0, 1fr);
+  grid-template-columns: 14px minmax(0, 1fr) auto;
+  min-height: 48px;
   gap: 8px;
-  padding: 7px 6px;
+  align-items: start;
+  padding: 6px 4px;
   cursor: pointer;
   border-radius: var(--radius-md);
   transition: background 0.1s;
@@ -1860,9 +1862,9 @@ body::before {
 
 .input-history-timeline::before {
   position: absolute;
-  top: 13px;
-  bottom: 13px;
-  left: 12px;
+  top: 17px;
+  bottom: 17px;
+  left: 10px;
   width: 1px;
   background: var(--border-color);
   content: '';
@@ -1873,7 +1875,7 @@ body::before {
   z-index: 1;
   width: 7px;
   height: 7px;
-  margin: 5px 0 0 3px;
+  margin: 8px 0 0 3px;
   border: 1px solid var(--text-muted);
   border-radius: 50%;
   background: var(--bg-dropdown-opaque, var(--bg-elevated-opaque));
@@ -1891,7 +1893,7 @@ body::before {
 
 .input-history-info {
   min-width: 0;
-  padding-right: 42px;
+  padding: 3px 0;
 }
 
 .input-history-timestamp {
@@ -1923,10 +1925,63 @@ body::before {
 }
 
 .input-history-actions {
-  position: absolute;
-  top: 6px;
-  right: 4px;
   display: flex;
+  align-items: center;
+  gap: 2px;
+  opacity: 0.72;
+  transition: opacity 0.1s;
+}
+
+.input-history-event:hover .input-history-actions,
+.input-history-event:focus-within .input-history-actions {
+  opacity: 1;
+}
+
+.input-history-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--command-bay-control-height, 36px);
+  height: var(--command-bay-control-height, 36px);
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--command-bay-control-radius, 12px);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--fs-base);
+  touch-action: manipulation;
+  transition:
+    background-color 0.1s,
+    border-color 0.1s,
+    color 0.1s;
+}
+
+.input-history-action:hover,
+.input-history-action:focus-visible {
+  border-color: var(--command-bay-border, var(--border-color));
+  background: var(--command-bay-surface, var(--bg-hover));
+  outline: none;
+}
+
+.input-history-action svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.input-history-replay:hover,
+.input-history-replay:focus-visible {
+  color: var(--accent-blue);
+}
+
+.input-history-delete:hover,
+.input-history-delete:focus-visible {
+  color: var(--accent-red);
 }
 
 .history-item.dragging {
@@ -12140,9 +12195,10 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
 }
 
 .session-input-history-menu {
-  width: min(440px, calc(100vw - 16px));
+  width: min(360px, calc(100vw - 16px));
   max-height: min(520px, calc(100vh - 16px));
   overflow: hidden;
+  gap: 4px;
 }
 
 .session-input-history-content {

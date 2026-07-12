@@ -90,6 +90,16 @@ describe('input history formatting', () => {
     expect(source).not.toContain('input-history-kind');
   });
 
+  it('uses a compact menu and full-size isolated action targets', () => {
+    const source = readFileSync(new URL('./inputHistoryPanel.ts', import.meta.url), 'utf8');
+    expect(sessionMenu).toContain('const width = Math.min(360');
+    expect(source).toContain("replay.className = 'input-history-action input-history-replay'");
+    expect(source).toContain("remove.className = 'input-history-action input-history-delete'");
+    expect(source).toContain('if (event.target !== item)');
+    expect(css).toContain('width: var(--command-bay-control-height, 36px)');
+    expect(css).toContain('height: var(--command-bay-control-height, 36px)');
+  });
+
   it('normalizes and bounds exact text previews', () => {
     const value = `${'word '.repeat(40)}\nnext`;
     const preview = formatInputHistoryPreview(entry({ text: value }));

@@ -1,6 +1,10 @@
-import { icon } from '../../constants';
 import { t } from '../i18n';
 import type { InputHistoryEntry } from './inputHistoryApi';
+
+const REPLAY_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7-4 4 4 4"/><path d="M5 11h9a5 5 0 0 1 5 5v1"/></svg>';
+const DELETE_ICON =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="m7 7 1 13h8l1-13"/><path d="M10 11v5M14 11v5"/></svg>';
 
 export interface InputHistoryPanelActions {
   onDelete: (entry: InputHistoryEntry) => void;
@@ -81,10 +85,10 @@ function createInputHistoryItem(
 
   const replay = document.createElement('button');
   replay.type = 'button';
-  replay.className = 'history-item-rename input-history-replay';
+  replay.className = 'input-history-action input-history-replay';
   replay.title = t('inputHistory.replay');
   replay.setAttribute('aria-label', t('inputHistory.replay'));
-  replay.innerHTML = icon('update');
+  replay.innerHTML = REPLAY_ICON;
   replay.addEventListener('click', (event) => {
     event.stopPropagation();
     actions.onReplay(entry);
@@ -93,10 +97,10 @@ function createInputHistoryItem(
 
   const remove = document.createElement('button');
   remove.type = 'button';
-  remove.className = 'history-item-delete input-history-delete';
+  remove.className = 'input-history-action input-history-delete';
   remove.title = t('inputHistory.remove');
   remove.setAttribute('aria-label', t('inputHistory.remove'));
-  remove.innerHTML = icon('close');
+  remove.innerHTML = DELETE_ICON;
   remove.addEventListener('click', (event) => {
     event.stopPropagation();
     actions.onDelete(entry);
@@ -109,6 +113,9 @@ function createInputHistoryItem(
   };
   item.addEventListener('click', replayEntry);
   item.addEventListener('keydown', (event) => {
+    if (event.target !== item) {
+      return;
+    }
     if (event.key !== 'Enter' && event.key !== ' ') {
       return;
     }
