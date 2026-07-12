@@ -176,6 +176,7 @@
   "settings.behavior.showInstallSteps": "चरण दिखाएँ",
   "settings.behavior.installIosTitle": "iPhone या iPad पर इंस्टॉल करें",
   "settings.behavior.installIosMessage": "MidTerm को iPhone या iPad पर इंस्टॉल करने के लिए, इस पेज को Safari में खोलें, शेयर पर टैप करें, फिर होम स्क्रीन पर जोड़ें पर टैप करें।",
+  "settings.behavior.installManualMessage": "ब्राउज़र मेनू खोलें और ऐप इंस्टॉल करें या होम स्क्रीन पर जोड़ें चुनें।",
   "settings.behavior.integrations": "इंटीग्रेशन",
   "settings.behavior.tmuxCompatibility": "Tmux संगतता",
   "settings.behavior.tmuxHint": "AI कोडिंग टूल्स को tmux कमांड से पैन प्रबंधित करने देता है। अगर आप SSH से रिमोट होस्ट पर असली tmux चलाते हैं तो अक्षम करें। पुनरारंभ आवश्यक।",

@@ -361,7 +361,7 @@ if ($Publish) {
 # PHASE 5: Process text assets
 # ===========================================
 # Text files to process (compress for publish, copy for debug)
-$textExtensions = @('*.html', '*.css', '*.txt', '*.json', '*.webmanifest')
+$textExtensions = @('*.html', '*.css', '*.js', '*.txt', '*.json', '*.webmanifest')
 $totalSaved = 0
 
 function Process-TextFile {

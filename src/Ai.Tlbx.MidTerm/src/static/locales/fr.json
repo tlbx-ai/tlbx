@@ -176,6 +176,7 @@
   "settings.behavior.showInstallSteps": "Afficher les étapes",
   "settings.behavior.installIosTitle": "Installer sur iPhone ou iPad",
   "settings.behavior.installIosMessage": "Pour installer MidTerm sur iPhone ou iPad, ouvrez cette page dans Safari, touchez Partager, puis touchez Ajouter à l’écran d’accueil.",
+  "settings.behavior.installManualMessage": "Ouvrez le menu du navigateur, puis choisissez Installer l’application ou Ajouter à l’écran d’accueil.",
   "settings.behavior.integrations": "Intégrations",
   "settings.behavior.tmuxCompatibility": "Compatibilité Tmux",
   "settings.behavior.tmuxHint": "Permet aux outils de codage IA de gérer les panneaux via les commandes tmux. Désactivez si vous vous connectez en SSH à des hôtes distants exécutant un vrai tmux. Nécessite un redémarrage.",

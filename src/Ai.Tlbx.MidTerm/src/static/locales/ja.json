@@ -176,6 +176,7 @@
   "settings.behavior.showInstallSteps": "手順を表示",
   "settings.behavior.installIosTitle": "iPhone または iPad にインストール",
   "settings.behavior.installIosMessage": "MidTerm を iPhone または iPad にインストールするには、このページを Safari で開き、共有をタップしてから「ホーム画面に追加」をタップしてください。",
+  "settings.behavior.installManualMessage": "ブラウザのメニューを開き、「アプリをインストール」または「ホーム画面に追加」を選択してください。",
   "settings.behavior.integrations": "統合",
   "settings.behavior.tmuxCompatibility": "Tmux互換性",
   "settings.behavior.tmuxHint": "AIコーディングツールがtmuxコマンドでペインを管理できるようにします。SSHでリモートホストの実際のtmuxを使う場合は無効にしてください。再起動が必要です。",

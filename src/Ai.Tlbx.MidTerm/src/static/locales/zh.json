@@ -179,6 +179,7 @@
   "settings.behavior.showInstallSteps": "显示步骤",
   "settings.behavior.installIosTitle": "在 iPhone 或 iPad 上安装",
   "settings.behavior.installIosMessage": "要在 iPhone 或 iPad 上安装 MidTerm，请在 Safari 中打开此页面，轻点“共享”，然后轻点“添加到主屏幕”。",
+  "settings.behavior.installManualMessage": "打开浏览器菜单，然后选择“安装应用”或“添加到主屏幕”。",
   "settings.behavior.integrations": "集成",
   "settings.behavior.tmuxCompatibility": "Tmux 兼容性",
   "settings.behavior.tmuxHint": "允许 AI 编码工具通过 tmux 命令管理窗格。如果您 SSH 到运行真实 tmux 的远程主机，请禁用此选项。需要重启。",

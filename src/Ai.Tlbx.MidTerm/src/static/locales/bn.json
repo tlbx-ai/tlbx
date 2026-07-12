@@ -176,6 +176,7 @@
   "settings.behavior.showInstallSteps": "ধাপ দেখান",
   "settings.behavior.installIosTitle": "iPhone বা iPad-এ ইনস্টল করুন",
   "settings.behavior.installIosMessage": "iPhone বা iPad-এ MidTerm ইনস্টল করতে, এই পেজটি Safari-তে খুলুন, শেয়ার-এ ট্যাপ করুন, তারপর হোম স্ক্রিনে যোগ করুন-এ ট্যাপ করুন।",
+  "settings.behavior.installManualMessage": "ব্রাউজার মেনু খুলে অ্যাপ ইনস্টল করুন অথবা হোম স্ক্রিনে যোগ করুন বেছে নিন।",
   "settings.behavior.integrations": "ইন্টিগ্রেশন",
   "settings.behavior.tmuxCompatibility": "Tmux সামঞ্জস্যতা",
   "settings.behavior.tmuxHint": "AI কোডিং টুলগুলোকে tmux কমান্ড দিয়ে প্যান পরিচালনা করতে দেয়। রিমোট হোস্টে SSH করে আসল tmux চালালে নিষ্ক্রিয় করুন। রিস্টার্ট প্রয়োজন।",
