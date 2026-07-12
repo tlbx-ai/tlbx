@@ -35,6 +35,18 @@ const dark: CssThemePalette = {
   '--text-terminal': '#E0E2F0',
   '--text-secondary': '#8B8FA6',
   '--text-muted': '#767B94',
+  '--sidebar-readable-text-color': 'color-mix(in srgb, white 94%, var(--text-primary) 6%)',
+  '--sidebar-readable-muted-text-color': 'color-mix(in srgb, white 84%, var(--text-secondary) 16%)',
+  '--sidebar-readable-shadow-core':
+    'color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 85%, transparent)',
+  '--sidebar-readable-shadow-soft':
+    'color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 65%, transparent)',
+  '--sidebar-readable-shadow-wide':
+    'color-mix(in srgb, var(--bg-sidebar-opaque, var(--bg-sidebar)) 47%, transparent)',
+  '--sidebar-readable-text-shadow':
+    '0 0 2px var(--sidebar-readable-shadow-core), 0 1px 12px var(--sidebar-readable-shadow-soft), 0 2px 26px var(--sidebar-readable-shadow-wide)',
+  '--sidebar-readable-icon-shadow':
+    'drop-shadow(0 0 2px var(--sidebar-readable-shadow-core)) drop-shadow(0 1px 16px var(--sidebar-readable-shadow-soft)) drop-shadow(0 2px 34px var(--sidebar-readable-shadow-wide))',
 
   '--accent-blue': '#7BA2F7',
   '--accent-blue-hover': '#8FB5FF',
@@ -470,9 +482,17 @@ export const CSS_THEMES: Record<string, CssThemePalette> = {
   solarizedLight,
 };
 
+const CSS_THEME_PROPERTIES = new Set(
+  Object.values(CSS_THEMES).flatMap((palette) => Object.keys(palette)),
+);
+
 export function applyCssTheme(themeName: ThemeName): void {
   const root = document.documentElement;
   const palette = CSS_THEMES[themeName];
+  for (const prop of CSS_THEME_PROPERTIES) {
+    root.style.removeProperty(prop);
+  }
+
   if (palette) {
     const nativeColorScheme = getNativeColorScheme(themeName);
     for (const [prop, value] of Object.entries(palette)) {
@@ -482,13 +502,7 @@ export function applyCssTheme(themeName: ThemeName): void {
     root.dataset.nativeColorScheme = nativeColorScheme;
     updateThemeColor(palette['--bg-primary'] ?? '#0D0E14');
   } else {
-    // Dark is the base theme in app.css — clear any overrides
-    const anyPalette = Object.values(CSS_THEMES)[0];
-    if (anyPalette) {
-      for (const prop of Object.keys(anyPalette)) {
-        root.style.removeProperty(prop);
-      }
-    }
+    // Dark is the base theme in app.css; all inline theme overrides are already cleared.
     root.style.colorScheme = 'dark';
     root.dataset.nativeColorScheme = 'dark';
     updateThemeColor('#0D0E14');

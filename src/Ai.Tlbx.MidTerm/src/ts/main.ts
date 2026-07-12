@@ -7,7 +7,7 @@
 
 import { initLoginPage } from './modules/login';
 import { initTrustPage } from './modules/trust';
-import { initThemeFromCookie } from './modules/theming';
+import { initThemeFromBrowserCache } from './modules/theming';
 import { createLogger, initLogConcerns } from './modules/logging';
 import { ASSET_VERSION } from './constants';
 import {
@@ -294,7 +294,7 @@ window.mmDebug = {
 // Initialization
 // =============================================================================
 
-initThemeFromCookie();
+initThemeFromBrowserCache();
 clearPendingAppRefreshMarker();
 
 document.addEventListener('DOMContentLoaded', () => {

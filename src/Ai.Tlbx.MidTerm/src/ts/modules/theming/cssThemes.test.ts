@@ -10,6 +10,12 @@ class MockStyle {
     this.values.set(name, value);
   }
 
+  public removeProperty(name: string): string {
+    const previous = this.values.get(name) ?? '';
+    this.values.delete(name);
+    return previous;
+  }
+
   public getPropertyValue(name: string): string {
     return this.values.get(name) ?? '';
   }
@@ -130,6 +136,21 @@ describe('CSS_THEMES CTA tokens', () => {
       '--sidebar-readable-shadow-core',
     );
     expect(CSS_THEMES.solarizedDark['--sidebar-readable-icon-shadow']).toContain('drop-shadow');
+  });
+
+  it('restores dark high-contrast sidebar colors after a light theme', () => {
+    applyCssTheme('solarizedLight');
+    applyCssTheme('dark');
+
+    expect(rootStyle.getPropertyValue('--sidebar-readable-text-color')).toBe(
+      CSS_THEMES.dark['--sidebar-readable-text-color'],
+    );
+    expect(rootStyle.getPropertyValue('--sidebar-readable-muted-text-color')).toBe(
+      CSS_THEMES.dark['--sidebar-readable-muted-text-color'],
+    );
+    expect(rootStyle.getPropertyValue('--sidebar-readable-text-shadow')).toContain(
+      '--sidebar-readable-shadow-core',
+    );
   });
 
   it('publishes the active native color scheme for browser-rendered controls', () => {
