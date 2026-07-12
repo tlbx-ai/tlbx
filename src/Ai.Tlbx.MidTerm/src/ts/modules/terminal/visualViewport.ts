@@ -165,6 +165,15 @@ export function setupVisualViewport(): void {
     const vh = Math.max(1, rawViewportHeight - bottomGuard);
     const viewportTop = getVisualViewportShellTop(vv);
     const viewportWidth = Math.max(1, vv.width || window.innerWidth);
+    const keyboardVisible = isSoftKeyboardVisible(rawViewportHeight, baselineHeight);
+    const heightAndWidthStable =
+      Math.abs(vh - lastHeight) < 1 && Math.abs(viewportWidth - lastWidth) < 1;
+    if (keyboardVisible && hasEditableElementFocus() && heightAndWidthStable) {
+      // Mobile browsers can pan the focused xterm/prompt textarea on every
+      // character. The visible boundary did not change, so following that
+      // offset would move the whole shell and repeat terminal synchronization.
+      return;
+    }
     if (
       Math.abs(vh - lastHeight) < 1 &&
       Math.abs(viewportTop - lastTop) < 1 &&

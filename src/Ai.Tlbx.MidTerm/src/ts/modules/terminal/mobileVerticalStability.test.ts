@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { sessionTerminals } from '../../state';
 import {
   revealMobileStableTerminalCursor,
+  resumeMobileStableTerminalCursorFollowing,
   setMobileVerticalStability,
 } from './mobileVerticalStability';
 
@@ -85,6 +86,19 @@ describe('mobile terminal vertical stability', () => {
 
     revealMobileStableTerminalCursor(state as never);
 
+    expect(state.container.scrollTop).toBe(0);
+  });
+
+  it('resumes cursor following on direct input without scrolling before terminal render', () => {
+    const state = createState(0, 200, 100, 5);
+    sessionTerminals.set('s1', state as never);
+    setMobileVerticalStability(true);
+    state.container.scrollTop = 0;
+    state.container.dataset.mobileCursorFollowing = 'false';
+
+    resumeMobileStableTerminalCursorFollowing(state as never);
+
+    expect(state.container.dataset.mobileCursorFollowing).toBe('true');
     expect(state.container.scrollTop).toBe(0);
   });
 });

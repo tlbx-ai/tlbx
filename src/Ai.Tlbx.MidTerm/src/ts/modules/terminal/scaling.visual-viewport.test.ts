@@ -396,7 +396,7 @@ describe('setupVisualViewport', () => {
     expect(host.scrollTo).toHaveBeenCalledWith(0, 0);
   });
 
-  it('tracks visual viewport panning even when its height does not change', () => {
+  it('ignores focused-input viewport panning when the visible boundary did not change', () => {
     const scrollCallbacks: Array<() => void> = [];
     const appEl = { style: createStyleObject() };
     const documentElement = { style: createStyleObject() };
@@ -432,6 +432,47 @@ describe('setupVisualViewport', () => {
     setupVisualViewport();
     expect(appEl.style.top).toBe('0px');
 
+    visualViewport.offsetTop = 24;
+    scrollCallbacks.forEach((callback) => callback());
+
+    expect(appEl.style.top).toBe('0px');
+    expect(documentElement.style['--midterm-visual-viewport-offset-top']).toBe('0px');
+  });
+
+  it('tracks viewport panning when no editable input owns focus', () => {
+    const scrollCallbacks: Array<() => void> = [];
+    const appEl = { style: createStyleObject() };
+    const documentElement = { style: createStyleObject() };
+    const body = {
+      style: createStyleObject(),
+      classList: {
+        contains: () => false,
+        toggle: vi.fn(),
+      },
+    };
+    const visualViewport = {
+      width: 390,
+      height: 500,
+      offsetTop: 0,
+      addEventListener: vi.fn((type: string, callback: () => void) => {
+        if (type === 'scroll') scrollCallbacks.push(callback);
+      }),
+    };
+
+    globalThis.document = {
+      querySelector: (selector: string) =>
+        selector === '.terminal-page' ? (appEl as unknown as Element) : null,
+      documentElement: documentElement as unknown as Document['documentElement'],
+      body: body as unknown as Document['body'],
+      activeElement: null,
+      getElementById: () => null,
+    } as unknown as Document;
+    Object.defineProperty(host, 'visualViewport', {
+      configurable: true,
+      value: visualViewport,
+    });
+
+    setupVisualViewport();
     visualViewport.offsetTop = 24;
     scrollCallbacks.forEach((callback) => callback());
 

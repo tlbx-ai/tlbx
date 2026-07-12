@@ -14,6 +14,7 @@ type ViewportSnapshot = {
 
 let lastObservedViewportSnapshot: ViewportSnapshot | null = null;
 let mobileVerticalStabilityActive = false;
+const pendingCursorRevealContainers = new WeakSet<HTMLElement>();
 
 export function rememberCurrentMobileViewportSnapshot(): void {
   lastObservedViewportSnapshot = readViewportSnapshot();
@@ -123,12 +124,35 @@ export function revealMobileStableTerminalCursor(
     return;
   }
 
+  if (pendingCursorRevealContainers.has(container)) {
+    return;
+  }
+  pendingCursorRevealContainers.add(container);
   requestAnimationFrame(() => {
     scrollMobileStableTerminalCursorIntoView(state);
     requestAnimationFrame(() => {
       scrollMobileStableTerminalCursorIntoView(state);
+      pendingCursorRevealContainers.delete(container);
     });
   });
+}
+
+export function resumeMobileStableTerminalCursorFollowing(
+  state: Pick<TerminalState, 'container'>,
+): void {
+  if (!mobileVerticalStabilityActive || !isMobileTerminalViewport()) {
+    return;
+  }
+
+  const container = state.container;
+  if (!container.classList.contains('mobile-terminal-vertical-stable')) {
+    return;
+  }
+
+  const dataset = (container as { dataset?: DOMStringMap }).dataset;
+  if (dataset) {
+    dataset.mobileCursorFollowing = 'true';
+  }
 }
 
 function scrollMobileStableTerminalCursorIntoView(
@@ -157,7 +181,10 @@ function scrollMobileStableTerminalCursorIntoView(
   }
 
   const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
-  container.scrollTop = Math.max(0, Math.min(maxScrollTop, nextScrollTop));
+  const clampedScrollTop = Math.max(0, Math.min(maxScrollTop, nextScrollTop));
+  if (Math.abs(clampedScrollTop - container.scrollTop) > 0.5) {
+    container.scrollTop = clampedScrollTop;
+  }
 }
 
 export function shouldPreserveMobileTerminalRows(
