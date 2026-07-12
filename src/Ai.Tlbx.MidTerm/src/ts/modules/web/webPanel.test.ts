@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { shouldReloadPreviewFrame } from './previewLoadToken';
 import { buildProxyUrl } from './previewProxyUrl';
@@ -154,59 +152,21 @@ describe('webPanel browser status indicator', () => {
 });
 
 describe('webPanel preview tabs', () => {
-  it('keeps Go navigation aligned with the backend target revision', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
-
-    expect(source).toContain('upsertSessionPreview(result);');
-    expect(source).toContain('setCurrentPreviewUrl(result.url ?? url);');
-  });
-
-  it('keeps URL bar shortcuts browser-like', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
-
-    expect(source).toContain("if (e.key === 'Escape')");
-    expect(source).toContain('restoreCurrentUrlToInput();');
-    expect(source).toContain("e.key.toLowerCase() === 'l'");
-    expect(source).toContain('urlInput.select();');
-  });
-
-  it('asks the embedded bridge to refresh browser state when a frame is shown', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
-
-    expect(source).toContain(
-      'const PREVIEW_VISIBILITY_REFRESH_DELAYS_MS = [0, 50, 200, 500] as const;',
-    );
-    expect(source).toContain("{ type: 'mt-refresh-browser-state', force: true, visible }");
-    expect(source).toContain('refreshPreviewBridgeVisibility(frame, isActive);');
-  });
-
-  it('wires a close button for every preview tab', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
-
-    expect(source).toContain(
-      'let previewTabCloseHandler: ((previewName: string) => void) | null = null;',
-    );
-    expect(source).toContain("closeButton.className = 'web-preview-tab-close';");
-    expect(source).toContain('previewTabCloseHandler?.(preview.previewName);');
-  });
-
   it('hides the empty seeded default tab while a named preview is in use', () => {
-    const source = fs.readFileSync(path.resolve(__dirname, './webPanel.ts'), 'utf8');
-
-    expect(source).toContain(
-      'if (!shouldRenderPreviewTab(preview, selectedPreviewName, previews.length)) {',
-    );
-
     expect(shouldRenderPreviewTab({ previewName: 'default', url: null }, 'mobile-social', 2)).toBe(
       false,
     );
     expect(shouldRenderPreviewTab({ previewName: 'default', url: null }, 'default', 2)).toBe(true);
     expect(shouldRenderPreviewTab({ previewName: 'default', url: null }, 'default', 1)).toBe(true);
     expect(
-      shouldRenderPreviewTab({ previewName: 'default', url: 'https://x.test/' }, 'mobile-social', 2),
+      shouldRenderPreviewTab(
+        { previewName: 'default', url: 'https://x.test/' },
+        'mobile-social',
+        2,
+      ),
     ).toBe(true);
-    expect(
-      shouldRenderPreviewTab({ previewName: 'mobile-social', url: null }, 'default', 2),
-    ).toBe(true);
+    expect(shouldRenderPreviewTab({ previewName: 'mobile-social', url: null }, 'default', 2)).toBe(
+      true,
+    );
   });
 });

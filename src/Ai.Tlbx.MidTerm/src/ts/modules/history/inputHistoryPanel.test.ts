@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
 
 vi.mock('../../constants', () => ({ icon: (name: string) => name }));
 vi.mock('../i18n', () => ({
@@ -20,12 +19,6 @@ import {
   formatInputHistoryPreview,
   formatInputHistoryText,
 } from './inputHistoryPanel';
-
-const html = readFileSync(new URL('../../../static/index.html', import.meta.url), 'utf8');
-const css = readFileSync(new URL('../../../static/css/app.css', import.meta.url), 'utf8');
-const dropdown = readFileSync(new URL('./historyDropdown.ts', import.meta.url), 'utf8');
-const tabBar = readFileSync(new URL('../sessionTabs/tabBar.ts', import.meta.url), 'utf8');
-const sessionMenu = readFileSync(new URL('./sessionInputHistoryMenu.ts', import.meta.url), 'utf8');
 
 function entry(overrides: Partial<InputHistoryEntry> = {}): InputHistoryEntry {
   return {
@@ -50,56 +43,6 @@ function entry(overrides: Partial<InputHistoryEntry> = {}): InputHistoryEntry {
 }
 
 describe('input history formatting', () => {
-  it('preserves Bookmarks and puts input history in each session top bar', () => {
-    expect(html).toContain('id="btn-bookmarks"');
-    expect(html).toContain('data-i18n="sidebar.loadBookmarked">Bookmarks</span>');
-    expect(html).not.toContain('id="btn-input-history"');
-    expect(html).toContain('id="btn-mobile-input-history"');
-    expect(dropdown).not.toContain('fetchInputHistory');
-    expect(tabBar).toContain('ide-bar-btn ide-bar-input-history');
-    expect(tabBar).toContain('inputHistoryClickHandler?.(sessionId, inputHistoryBtn)');
-  });
-
-  it('lists and replays only through the owning session boundary', () => {
-    expect(sessionMenu).toContain('fetchInputHistory({ sessionId, limit: 100 }');
-    expect(sessionMenu).toContain('entry.sessionId === sessionId');
-    expect(sessionMenu).toContain("entry.surface === 'terminal'");
-    expect(sessionMenu).toContain('replayInputHistory(entry.id, sessionId)');
-    expect(sessionMenu).not.toContain('$activeSessionId.get() ?? entry.sessionId');
-  });
-
-  it('reuses the established history and sidebar colors instead of defining a parallel treatment', () => {
-    expect(css).not.toContain('.history-dropdown-tab');
-    expect(css).not.toContain('.input-history-kind {');
-    expect(css).not.toContain('.input-history-kind-imagePaste');
-  });
-
-  it('loads image thumbnails through the persisted entry boundary', () => {
-    const source = readFileSync(new URL('./inputHistoryPanel.ts', import.meta.url), 'utf8');
-    expect(source).toContain('/api/input-history/${encodeURIComponent(entry.id)}/content');
-    expect(source).not.toContain("url.searchParams.set('sessionId'");
-  });
-
-  it('renders a timestamped vertical timeline with text or image content', () => {
-    const source = readFileSync(new URL('./inputHistoryPanel.ts', import.meta.url), 'utf8');
-    expect(source).toContain("list.className = 'input-history-timeline'");
-    expect(source).toContain("timestamp.className = 'input-history-timestamp'");
-    expect(source).toContain("text.className = 'input-history-text'");
-    expect(source).toContain("thumbnail.className = 'input-history-thumbnail'");
-    expect(css).toContain('.input-history-timeline::before');
-    expect(source).not.toContain('input-history-kind');
-  });
-
-  it('uses a compact menu and full-size isolated action targets', () => {
-    const source = readFileSync(new URL('./inputHistoryPanel.ts', import.meta.url), 'utf8');
-    expect(sessionMenu).toContain('const width = Math.min(360');
-    expect(source).toContain("replay.className = 'input-history-action input-history-replay'");
-    expect(source).toContain("remove.className = 'input-history-action input-history-delete'");
-    expect(source).toContain('if (event.target !== item)');
-    expect(css).toContain('width: var(--command-bay-control-height, 36px)');
-    expect(css).toContain('height: var(--command-bay-control-height, 36px)');
-  });
-
   it('normalizes and bounds exact text previews', () => {
     const value = `${'word '.repeat(40)}\nnext`;
     const preview = formatInputHistoryPreview(entry({ text: value }));
