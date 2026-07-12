@@ -16,10 +16,18 @@
 
 .EXAMPLE
     ./scripts/dev.ps1 -Port 2100 -NoBuild
+
+.EXAMPLE
+    ./scripts/dev.ps1 -Tailnet -Port 2100 -NoBuild
+
+    Exposes the source instance only on this machine's Tailscale IPv4 address.
+    The command fails closed unless the stable supervisor is healthy and the
+    isolated source settings contain working authentication credentials.
 #>
 
 param(
     [switch]$NoBuild,
+    [switch]$Tailnet,
     [int]$Port = 2100,
     [string]$BindAddress = "127.0.0.1",
     [string]$SettingsDir = "",
@@ -41,6 +49,97 @@ $SettingsDir = [System.IO.Path]::GetFullPath($SettingsDir)
 $ReservedPorts = @(2000, 2001)
 $CodeWatchRoot = Join-Path $RepoRoot "src"
 $DebugWebOutputDir = Join-Path $WebProjectDir "bin\Debug\net10.0"
+
+function Test-StableSupervisor {
+    try {
+        $version = Invoke-RestMethod `
+            -Uri "https://localhost:2000/api/version" `
+            -SkipCertificateCheck `
+            -TimeoutSec 5
+    }
+    catch {
+        throw "The stable MidTerm supervisor on https://localhost:2000 is not healthy. Refusing to start a source instance while supervision is unavailable."
+    }
+
+    if ([string]::IsNullOrWhiteSpace([string]$version)) {
+        throw "The stable MidTerm supervisor returned no version. Refusing to start the source instance."
+    }
+
+    return [string]$version
+}
+
+function Resolve-TailnetIPv4 {
+    if (-not $IsWindows) {
+        throw "-Tailnet credential preflight currently supports Windows only. Use an explicit loopback -BindAddress on other platforms."
+    }
+
+    if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) {
+        throw "Tailscale CLI was not found. Install or start Tailscale before using -Tailnet."
+    }
+
+    try {
+        $status = (& tailscale status --json | ConvertFrom-Json)
+    }
+    catch {
+        throw "Could not read Tailscale status: $($_.Exception.Message)"
+    }
+
+    $address = @($status.TailscaleIPs) |
+        Where-Object { $_ -is [string] -and $_ -match '^\d{1,3}(\.\d{1,3}){3}$' } |
+        Select-Object -First 1
+
+    if ([string]::IsNullOrWhiteSpace($address)) {
+        throw "Tailscale is not connected or did not report an IPv4 address."
+    }
+
+    return $address
+}
+
+function Test-TailnetAuthentication {
+    param([string]$SourceSettingsDirectory)
+
+    $settingsPath = Join-Path $SourceSettingsDirectory "settings.json"
+    $secretsPath = Join-Path $SourceSettingsDirectory "secrets.bin"
+
+    if (-not (Test-Path $settingsPath)) {
+        throw "Tailnet exposure requires isolated source settings at $settingsPath. Start on loopback and configure authentication first."
+    }
+
+    $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+    if ($settings.authenticationEnabled -ne $true) {
+        throw "Tailnet exposure requires authenticationEnabled=true in $settingsPath."
+    }
+
+    if (-not (Test-Path $secretsPath)) {
+        throw "Tailnet exposure requires a protected password hash in $secretsPath."
+    }
+
+    try {
+        $secrets = Get-Content $secretsPath -Raw | ConvertFrom-Json -AsHashtable
+        $protectedValue = $secrets["midterm.password_hash"]
+        if ([string]::IsNullOrWhiteSpace($protectedValue)) {
+            throw "Password hash is missing."
+        }
+
+        $protectedBytes = [Convert]::FromBase64String($protectedValue)
+        $plainBytes = [Security.Cryptography.ProtectedData]::Unprotect(
+            $protectedBytes,
+            $null,
+            [Security.Cryptography.DataProtectionScope]::CurrentUser)
+
+        if ($plainBytes.Length -eq 0) {
+            throw "Password hash decrypted to an empty value."
+        }
+    }
+    catch {
+        throw "Tailnet exposure requires a decryptable current-user password hash in $secretsPath. $($_.Exception.Message)"
+    }
+    finally {
+        if ($plainBytes) {
+            [Security.Cryptography.CryptographicOperations]::ZeroMemory($plainBytes)
+        }
+    }
+}
 
 function Get-InstalledMidTermDirectory {
     $service = Get-CimInstance Win32_Service -Filter "Name='MidTerm'" -ErrorAction SilentlyContinue
@@ -313,13 +412,6 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     }
 }
 
-New-Item -ItemType Directory -Path $SettingsDir -Force | Out-Null
-$resolvedTtyHostPath = Resolve-TtyHostPath
-$codeWatcher = New-CodeWatcher
-Stop-StaleSourceServerProcesses
-$serverState = $null
-$esbuildProcess = $null
-
 function Invoke-DevLoopCleanup {
     if ($script:serverState) {
         Stop-DevProcess -state $script:serverState -reason "script shutdown"
@@ -340,11 +432,32 @@ if ($ReservedPorts -contains $Port) {
     throw "Port $Port conflicts with the installed MidTerm service or its preview origin. Use 2100 or another non-reserved port."
 }
 
+New-Item -ItemType Directory -Path $SettingsDir -Force | Out-Null
+
+if ($Tailnet) {
+    if ($BindAddress -ne "127.0.0.1") {
+        throw "Do not combine -Tailnet with -BindAddress. -Tailnet resolves and binds the VPN address itself."
+    }
+
+    Test-TailnetAuthentication -SourceSettingsDirectory $SettingsDir
+    $BindAddress = Resolve-TailnetIPv4
+}
+
+$stableVersion = Test-StableSupervisor
+$resolvedTtyHostPath = Resolve-TtyHostPath
+$codeWatcher = New-CodeWatcher
+Stop-StaleSourceServerProcesses
+$serverState = $null
+$esbuildProcess = $null
+
 Write-Host ""
 Write-Host "  MidTerm Local Source Dev" -ForegroundColor Cyan
 Write-Host "  ───────────────────────────────────────────" -ForegroundColor DarkGray
-Write-Host "  Stable service : https://localhost:2000 (kept alive)" -ForegroundColor DarkGray
+Write-Host "  Stable service : https://localhost:2000 ($stableVersion, kept alive)" -ForegroundColor DarkGray
 Write-Host "  Source server  : https://$BindAddress`:$Port" -ForegroundColor DarkGray
+if ($Tailnet) {
+    Write-Host "  Exposure       : tailnet only, authentication preflight passed" -ForegroundColor DarkGray
+}
 Write-Host "  Settings dir   : $SettingsDir" -ForegroundColor DarkGray
 Write-Host "  mthost         : $resolvedTtyHostPath" -ForegroundColor DarkGray
 Write-Host "  mtagenthost    : local Debug build" -ForegroundColor DarkGray
