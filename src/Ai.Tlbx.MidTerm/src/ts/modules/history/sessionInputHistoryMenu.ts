@@ -74,11 +74,6 @@ function createMenu(): HTMLDivElement {
   element.setAttribute('role', 'dialog');
   element.setAttribute('aria-label', t('sidebar.inputHistory'));
 
-  const header = document.createElement('div');
-  header.className = 'history-dropdown-header';
-  header.textContent = t('sidebar.inputHistory');
-  element.appendChild(header);
-
   const content = document.createElement('div');
   content.className = 'session-input-history-content';
   element.appendChild(content);
@@ -168,16 +163,17 @@ function renderStatus(message: string, onRetry?: () => void): void {
 function positionMenu(): void {
   if (!menu || !anchor) return;
   const anchorRect = anchor.getBoundingClientRect();
-  const margin = 8;
-  const width = Math.min(460, window.innerWidth - margin * 2);
+  const viewportMargin = 8;
+  const anchorGap = 2;
+  const width = Math.min(460, window.innerWidth - viewportMargin * 2);
   menu.style.width = `${width}px`;
-  menu.style.left = `${Math.max(margin, Math.min(anchorRect.left, window.innerWidth - width - margin))}px`;
-  const menuHeight = Math.min(menu.scrollHeight, window.innerHeight - margin * 2);
-  const below = anchorRect.bottom + margin;
+  menu.style.left = `${Math.max(viewportMargin, Math.min(anchorRect.left, window.innerWidth - width - viewportMargin))}px`;
+  const menuHeight = Math.min(menu.scrollHeight, window.innerHeight - viewportMargin * 2);
+  const below = anchorRect.bottom + anchorGap;
   const top =
-    below + menuHeight <= window.innerHeight - margin
+    below + menuHeight <= window.innerHeight - viewportMargin
       ? below
-      : Math.max(margin, anchorRect.top - menuHeight - margin);
+      : Math.max(viewportMargin, anchorRect.top - menuHeight - anchorGap);
   menu.style.top = `${top}px`;
 }
 

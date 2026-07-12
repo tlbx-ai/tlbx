@@ -12207,16 +12207,6 @@ body.dev-soft-keyboard-preview-fallback .web-preview-dock-body .dev-soft-keyboar
   box-shadow: 0 12px 32px var(--shadow-color-lg);
 }
 
-.session-input-history-menu .history-dropdown-header {
-  display: flex;
-  min-height: var(--bar-height);
-  align-items: center;
-  padding: 0 14px;
-  color: var(--text-primary);
-  font-size: var(--fs-base);
-  border-bottom-color: var(--border-subtle);
-}
-
 .session-input-history-content {
   min-height: 0;
   padding: 6px;
