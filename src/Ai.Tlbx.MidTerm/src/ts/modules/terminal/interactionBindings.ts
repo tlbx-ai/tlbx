@@ -7,6 +7,8 @@ import {
   resolveCopyShortcutAction,
   isPasteShortcut,
   isNativeImagePasteShortcut,
+  writeTextToClipboardEvent,
+  type CopyShortcutAction,
 } from './clipboardShortcuts';
 import {
   handleClipboardPaste,
@@ -113,23 +115,21 @@ export function bindTerminalInteractionHandlers({
     unprocessedDeadKey = false;
   };
 
-  const tryHandleCopyShortcut = (event: KeyboardEvent): boolean => {
+  const tryHandleCopyShortcut = (event: KeyboardEvent): CopyShortcutAction => {
     const style = getClipboardStyle($currentSettings.get()?.clipboardShortcuts ?? 'auto');
-    switch (resolveCopyShortcutAction(event, style, terminal.hasSelection())) {
-      case 'copy':
-        navigator.clipboard.writeText(sanitizeCopyContent(terminal.getSelection())).catch(() => {});
-        terminal.clearSelection();
-        return true;
-      case 'ignore':
-        return false;
-      case 'sendKey':
-        if (event.key.toLowerCase() === 'c' && event.ctrlKey && !event.altKey && !event.metaKey) {
-          captureTerminalInputData(sessionId, '\x03');
-          sendInput(sessionId, '\x03');
-          return true;
-        }
-        return false;
+    const action = resolveCopyShortcutAction(event, style, terminal.hasSelection());
+    if (
+      action === 'sendKey' &&
+      event.key.toLowerCase() === 'c' &&
+      event.ctrlKey &&
+      !event.altKey &&
+      !event.metaKey
+    ) {
+      captureTerminalInputData(sessionId, '\x03');
+      sendInput(sessionId, '\x03');
     }
+
+    return action;
   };
 
   const tryHandleImagePasteShortcut = (event: KeyboardEvent): boolean => {
@@ -261,8 +261,13 @@ export function bindTerminalInteractionHandlers({
       return;
     }
 
-    if (tryHandleCopyShortcut(event)) {
-      markHandled(event);
+    const copyAction = tryHandleCopyShortcut(event);
+    if (copyAction !== 'ignore') {
+      // Do not cancel a copy action. The browser must emit its trusted `copy`
+      // event so clipboardData can be populated without navigator.clipboard.
+      if (copyAction === 'sendKey') {
+        markHandled(event);
+      }
       return;
     }
 
@@ -456,6 +461,13 @@ export function bindTerminalInteractionHandlers({
   addManagedListener('keypress', terminalKeyAuditKeypressHandler, true);
   addManagedListener('input', terminalKeyAuditInputHandler, true);
   addManagedListener('keyup', terminalKeyAuditKeyupHandler, true);
+  addManagedListener('copy', (event) => {
+    if (!terminal.hasSelection()) {
+      return;
+    }
+
+    writeTextToClipboardEvent(event, sanitizeCopyContent(terminal.getSelection()));
+  });
   container.addEventListener('keydown', enterOverrideHandler, true);
 
   terminal.attachCustomKeyEventHandler((event: KeyboardEvent) => {
@@ -479,7 +491,7 @@ export function bindTerminalInteractionHandlers({
 
     captureEnterIntent(event, true);
 
-    if (tryHandleCopyShortcut(event)) {
+    if (tryHandleCopyShortcut(event) !== 'ignore') {
       return false;
     }
 

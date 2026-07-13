@@ -17,12 +17,20 @@ export interface ShortcutInput {
 
 export type CopyShortcutAction = 'copy' | 'sendKey' | 'ignore';
 
+type ClipboardCopyEvent = Pick<ClipboardEvent, 'clipboardData' | 'preventDefault'>;
+
 /**
  * Resolve whether the event is a copy shortcut for the current style.
  */
 export function isCopyShortcut(input: ShortcutInput, style: 'windows' | 'unix'): boolean {
   const key = input.key.toLowerCase();
   if (key !== 'c') return false;
+
+  // Cmd+C is the browser-native copy gesture on macOS regardless of whether
+  // terminal shortcuts are configured in Windows or Unix mode.
+  if (input.metaKey && !input.ctrlKey && !input.shiftKey && !input.altKey) {
+    return true;
+  }
 
   if (style === 'windows') {
     return input.ctrlKey && !input.shiftKey && !input.altKey && !input.metaKey;
@@ -44,7 +52,27 @@ export function resolveCopyShortcutAction(
     return 'ignore';
   }
 
-  return hasSelection ? 'copy' : 'sendKey';
+  if (hasSelection) {
+    return 'copy';
+  }
+
+  // Cmd+C without a selection is a browser shortcut, not terminal input.
+  return input.metaKey ? 'ignore' : 'sendKey';
+}
+
+/**
+ * Populate the synchronous browser copy event. Unlike navigator.clipboard,
+ * this path works for a trusted keyboard copy gesture on origins whose local
+ * HTTPS certificate has not yet been trusted.
+ */
+export function writeTextToClipboardEvent(event: ClipboardCopyEvent, text: string): boolean {
+  if (!event.clipboardData) {
+    return false;
+  }
+
+  event.clipboardData.setData('text/plain', text);
+  event.preventDefault();
+  return true;
 }
 
 /**
