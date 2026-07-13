@@ -57,6 +57,7 @@ import {
 import * as enterOverrideSuppress from './enterOverrideSuppress';
 import { bindTerminalInteractionHandlers } from './interactionBindings';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
+import { openTerminalWebLinkInNewTab } from './webLinks';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, clearPathAllowlist } from './fileLinks';
@@ -1123,11 +1124,7 @@ export function createTerminalForSession(
 
     // Load Web-Links addon for clickable URLs
     try {
-      const webLinksAddon = new WebLinksAddon((_event: MouseEvent, uri: string) => {
-        if (uri.startsWith('http://') || uri.startsWith('https://')) {
-          window.open(uri, '_blank', 'noopener,noreferrer');
-        }
-      });
+      const webLinksAddon = new WebLinksAddon(openTerminalWebLinkInNewTab);
       terminal.loadAddon(webLinksAddon);
     } catch {
       // Web-Links addon failed to load

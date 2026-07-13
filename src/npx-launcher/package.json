@@ -1,6 +1,6 @@
 {
   "name": "@tlbx-ai/midterm",
-  "version": "9.19.0",
+  "version": "9.19.1-dev",
   "description": "Ephemeral launcher for MidTerm's multi-agent browser workspace",
   "license": "AGPL-3.0-only",
   "repository": {
