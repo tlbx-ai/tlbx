@@ -3,6 +3,8 @@
 </p>
 
 <p align="center">
+  <a href="https://midterm.tlbx.ai"><strong>Website</strong></a>
+  ·
   <a href="#install"><strong>Install</strong></a>
   ·
   <a href="#agent-cli-ergonomics"><strong>Agent ergonomics</strong></a>
@@ -24,6 +26,8 @@ Start Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—o
 
 **Your machines are browser tabs. Your agents keep working when you leave.**
 
+Explore screenshots, architecture, features, and installation at **[midterm.tlbx.ai](https://midterm.tlbx.ai)**.
+
 <p align="center">
   <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a MidTerm browser tab beside another MidTerm host" width="100%">
 </p>
@@ -36,7 +40,6 @@ MidTerm runs any terminal-native tool in a real PTY, but it is shaped around lon
 - **Paste screenshots normally:** `Ctrl+V` / `Cmd+V` uploads the image to the host and inserts its path. Structured agent sessions stage it as an attachment.
 - **Compose real prompts:** multiline input, per-session drafts, files, drag-and-drop, camera capture, reusable actions, and scheduled follow-ups.
 - **Reuse exact inputs:** each session's **History** top-bar menu (`Alt+H` for the active session) keeps direct Enter-submitted text, multiline prompts, pastes, images, and files replayable in place.
-- **See what needs you:** Operator separates machine facts from agent-published status, todos, mail, coding tasks, next steps, and checkpoints across hosts.
 - **Let agents operate MidTerm:** generated `mt` helpers expose history, capabilities, direct multi-session dispatch, ordered events, and the control plane as stable JSON.
 - **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.
 - **Leave and return:** sessions survive browser disconnects, device changes, and travel.
