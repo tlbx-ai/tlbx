@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="680" viewBox="0 0 1600 680" role="img" aria-labelledby="title desc">
   <title id="title">Your coding agents run where the work lives</title>
-  <desc id="desc">A browser used from anywhere steers named coding agents across independent MidTerm instances on a home workstation, office laptop and another machine.</desc>
+  <desc id="desc">A browser used from anywhere steers named coding agents across independent tlbx instances on a home workstation, office laptop and another machine.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0b1321"/></linearGradient>
     <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#121c2e"/><stop offset="1" stop-color="#0a101b"/></linearGradient>
