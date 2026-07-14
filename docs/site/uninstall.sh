@@ -1,10 +1,10 @@
 #!/bin/bash
 # MidTerm GitHub Pages bootstrap uninstaller
-# Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/uninstall.sh | bash
+# Usage: curl -fsSL https://get.tlbx.ai/uninstall.sh | bash
 
 set -e
 
-SCRIPT_URL="https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/uninstall.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/tlbx-ai/tlbx/main/uninstall.sh"
 
 download_to_file() {
     local url="$1"

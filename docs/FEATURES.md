@@ -6,7 +6,7 @@ that own the repositories, credentials, tools, and hardware; authorized
 browsers are control surfaces that can disconnect and return later.
 
 For screenshots and task-oriented guides, see
-[midterm.tlbx.ai/features](https://midterm.tlbx.ai/features). This document
+[tlbx.ai/features](https://tlbx.ai/features). This document
 describes the current product boundary in the source repository.
 
 ## Agent work from any browser
@@ -152,11 +152,11 @@ Release builds target Windows x64/x86, macOS x64/arm64, and Linux x64/arm64. Use
 the native installer for persistent remote operation:
 
 ```bash
-curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
+curl -fsSL https://get.tlbx.ai/install.sh | bash
 ```
 
 ```powershell
-irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
+irm https://get.tlbx.ai/install.ps1 | iex
 ```
 
 The npm launcher is an ephemeral loopback trial, not the recommended remote

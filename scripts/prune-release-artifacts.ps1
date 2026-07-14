@@ -19,7 +19,7 @@
     Stable tag that anchors retention, for example v8.11.24.
 
 .EXAMPLE
-    ./scripts/prune-release-artifacts.ps1 -Repository tlbx-ai/MidTerm -CurrentTag v8.11.24
+    ./scripts/prune-release-artifacts.ps1 -Repository tlbx-ai/tlbx -CurrentTag v8.11.24
 
 .EXAMPLE
     ./scripts/prune-release-artifacts.ps1 -CurrentTag v8.11.24 -WhatIf

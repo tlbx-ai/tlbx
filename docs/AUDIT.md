@@ -37,8 +37,8 @@ run log; it is not an immutable build appliance.
 
 Open the release and the Release workflow:
 
-- <https://github.com/tlbx-ai/MidTerm/releases>
-- <https://github.com/tlbx-ai/MidTerm/actions/workflows/release.yml>
+- <https://github.com/tlbx-ai/tlbx/releases>
+- <https://github.com/tlbx-ai/tlbx/actions/workflows/release.yml>
 
 Check that:
 

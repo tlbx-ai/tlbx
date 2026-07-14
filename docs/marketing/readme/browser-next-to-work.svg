@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="720" viewBox="0 0 1600 720" role="img" aria-labelledby="title desc">
   <title id="title">Run coding agents on your machines and steer them from any browser</title>
-  <desc id="desc">A browser window shows Codex, Claude Code, and Grok Build running concurrently on a home workstation beside a second MidTerm host tab.</desc>
+  <desc id="desc">A browser window shows Codex, Claude Code, and Grok Build running concurrently on a home workstation beside a second tlbx host tab.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0b1321"/></linearGradient>
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#141d2d"/><stop offset="1" stop-color="#0d1420"/></linearGradient>
@@ -31,11 +31,11 @@
         <text x="224" y="29" fill="#8f9caf">Docs</text>
         <rect x="400" width="190" height="46" rx="10" fill="#101827"/>
         <circle cx="420" cy="24" r="4" fill="#c997ff"/>
-        <text x="434" y="29" fill="#aebad0">MidTerm · office</text>
+        <text x="434" y="29" fill="#aebad0">tlbx · office</text>
         <rect x="600" width="250" height="54" rx="10" fill="#17243b" stroke="#80b6f2" stroke-opacity="0.55"/>
         <path d="M624 13h8l-12 29h-7zM639 13h8l12 29h-7z" fill="#f7faff"/>
         <circle cx="636" cy="31" r="2.5" fill="#80b6f2"/>
-        <text x="676" y="31" fill="#f7faff" font-weight="700">MidTerm · home</text>
+        <text x="676" y="31" fill="#f7faff" font-weight="700">tlbx · home</text>
         <circle cx="824" cy="27" r="5" fill="#77f2a1" filter="url(#glow)"/>
         <rect x="860" width="220" height="46" rx="10" fill="#101827"/>
         <text x="884" y="29" fill="#8f9caf">Local app</text>

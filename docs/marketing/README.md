@@ -9,7 +9,7 @@ Current product truth lives in:
 - the root [README](../../README.md)
 - the [feature guide](../FEATURES.md)
 - the [architecture guide](../ARCHITECTURE.md)
-- [midterm.tlbx.ai](https://midterm.tlbx.ai)
+- [tlbx.ai](https://tlbx.ai)
 
 ## Canonical asset sets
 

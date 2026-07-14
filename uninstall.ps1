@@ -55,7 +55,7 @@ function Write-Banner
     Write-Host "        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |" -ForegroundColor White
     Write-Host "       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|" -ForegroundColor White
     Write-Host "      //               \\   " -NoNewline -ForegroundColor White
-    Write-Host "by J. Schmidt - https://github.com/tlbx-ai/MidTerm" -ForegroundColor Green
+    Write-Host "tlbx.ai - https://github.com/tlbx-ai/tlbx" -ForegroundColor Green
     Write-Host ""
 }
 

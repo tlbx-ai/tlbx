@@ -1,11 +1,11 @@
 #!/bin/bash
 # MidTerm GitHub Pages bootstrap installer
-# Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
-# Dev:   curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash -s -- --dev
+# Usage: curl -fsSL https://get.tlbx.ai/install.sh | bash
+# Dev:   curl -fsSL https://get.tlbx.ai/install.sh | bash -s -- --dev
 
 set -e
 
-SCRIPT_URL="https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.sh"
+SCRIPT_URL="https://raw.githubusercontent.com/tlbx-ai/tlbx/main/install.sh"
 
 download_to_file() {
     local url="$1"

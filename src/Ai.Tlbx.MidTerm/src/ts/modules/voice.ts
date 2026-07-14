@@ -21,7 +21,7 @@ import type { VoiceHealthResponse, VoiceProvider } from '../types';
 import { showAlert } from '../utils/dialog';
 
 const log = createLogger('voice');
-const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
+const VOICE_SERVER_URL = 'https://api.tlbx.ai';
 
 let ws: WebSocket | null = null;
 let isSessionActive = false;
@@ -260,7 +260,7 @@ export async function startVoiceSession(): Promise<void> {
   }
 
   try {
-    let wsUrl = `wss://midterm.tlbx.ai/voice`;
+    let wsUrl = `wss://api.tlbx.ai/voice`;
 
     // Append password if configured
     const password = $voiceServerPassword.get();

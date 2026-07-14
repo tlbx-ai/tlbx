@@ -4,7 +4,7 @@
 
 Use GitHub's private vulnerability reporting form:
 
-**[Report a vulnerability](https://github.com/tlbx-ai/MidTerm/security/advisories/new)**
+**[Report a vulnerability](https://github.com/tlbx-ai/tlbx/security/advisories/new)**
 
 Do not open a public issue for an undisclosed vulnerability. Include the
 affected MidTerm version and platform, impact, reproduction steps or a minimal

@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$repo = "tlbx-ai/MidTerm"
+$repo = "tlbx-ai/tlbx"
 
 function Assert-Windows {
     if (-not $IsWindows) {

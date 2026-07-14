@@ -484,4 +484,4 @@ if ($LASTEXITCODE -ne 0) { throw "git push tag failed" }
 
 Write-Host ""
 Write-Host "Released v$newVersion" -ForegroundColor Green
-Write-Host "Monitor build: https://github.com/tlbx-ai/MidTerm/actions" -ForegroundColor Cyan
+Write-Host "Monitor build: https://github.com/tlbx-ai/tlbx/actions" -ForegroundColor Cyan

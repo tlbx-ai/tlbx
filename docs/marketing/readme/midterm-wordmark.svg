@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
-  <title id="title">MidTerm — your coding agents, your machines, any browser</title>
-  <desc id="desc">MidTerm's twin-rail logo beside its central use: run coding agents on the machines that own the work and steer them from any browser.</desc>
+  <title id="title">tlbx — your coding agents, your machines, any browser</title>
+  <desc id="desc">tlbx's twin-rail logo beside its central use: run coding agents on the machines that own the work and steer them from any browser.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#030508"/>
@@ -34,14 +34,14 @@
     <path d="M0 440H1600" stroke="#80b6f2" stroke-opacity="0.16"/>
     <path d="M1130 440h470" stroke="#80b6f2" stroke-opacity="0.55"/>
 
-    <g aria-label="MidTerm logo">
+    <g aria-label="tlbx logo">
       <path d="M247 99h58L170 421h-54zM367 99h58l136 322h-55z" fill="#446aa4" opacity="0.7" filter="url(#railGlow)"/>
       <path d="M247 99h58L170 421h-54zM367 99h58l136 322h-55z" fill="#fdfefc"/>
       <circle cx="336" cy="282" r="17" fill="#80b6f2" filter="url(#dotGlow)"/>
     </g>
 
     <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
-      <text x="650" y="242" fill="#f7faff" font-size="132" font-weight="700" letter-spacing="-7">MidTerm</text>
+      <text x="650" y="242" fill="#f7faff" font-size="132" font-weight="700" letter-spacing="-7">tlbx</text>
       <text x="658" y="307" fill="#80b6f2" font-size="26" font-weight="700" letter-spacing="4">YOUR AGENTS. YOUR MACHINES. ANY BROWSER.</text>
       <text x="658" y="372" fill="#dbe5f5" font-size="24">Run them there · steer them from anywhere</text>
     </g>

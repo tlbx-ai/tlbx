@@ -15,7 +15,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/tlbx-ai/MidTerm/releases/latest"><img src="https://img.shields.io/github/v/release/tlbx-ai/tlbx?style=flat-square&color=80b6f2" alt="Latest release"></a>
+  <a href="https://github.com/tlbx-ai/tlbx/releases/latest"><img src="https://img.shields.io/github/v/release/tlbx-ai/tlbx?style=flat-square&color=80b6f2" alt="Latest release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0-80b6f2?style=flat-square" alt="AGPL-3.0 license"></a>
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
 </p>
@@ -141,7 +141,7 @@ connects through tlbx's REST and WebSocket mux/state channels. It is
 unofficial and is not maintained or support-guaranteed by the tlbx project.
 
 ```bash
-git clone https://github.com/tlbx-ai/MidTerm.git tlbx
+git clone https://github.com/tlbx-ai/tlbx.git tlbx
 cd tlbx
 dotnet build src/Ai.Tlbx.tlbx/Ai.Tlbx.tlbx.csproj
 ```

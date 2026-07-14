@@ -37,4 +37,4 @@ Closing the device window, closing the activated MidTerm tab, or ending the Chro
 
 ## Contact
 
-Questions and support requests can be filed at <https://github.com/tlbx-ai/MidTerm/issues>.
+Questions and support requests can be filed at <https://github.com/tlbx-ai/tlbx/issues>.

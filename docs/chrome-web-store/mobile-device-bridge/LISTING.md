@@ -9,9 +9,9 @@
 - **Category:** Developer Tools
 - **Language:** English
 - **Visibility:** Public
-- **Homepage:** https://github.com/tlbx-ai/MidTerm
-- **Support:** https://github.com/tlbx-ai/MidTerm/issues
-- **Privacy policy:** https://github.com/tlbx-ai/MidTerm/blob/dev/docs/MOBILE_DEVICE_BRIDGE_PRIVACY.md
+- **Homepage:** https://github.com/tlbx-ai/tlbx
+- **Support:** https://github.com/tlbx-ai/tlbx/issues
+- **Privacy policy:** https://github.com/tlbx-ai/tlbx/blob/dev/docs/MOBILE_DEVICE_BRIDGE_PRIVACY.md
 
 ## Detailed description
 
@@ -31,7 +31,7 @@ Features:
 
 The extension has no analytics, advertising, tracking, or developer-operated backend. It has no broad host permission and injects its packaged bridge only after you click the extension in a MidTerm tab.
 
-MidTerm is open source: https://github.com/tlbx-ai/MidTerm
+MidTerm is open source: https://github.com/tlbx-ai/tlbx
 
 ## Single purpose
 
@@ -58,7 +58,7 @@ For both selected data types, certify that they are used only for the extension'
 
 ## Reviewer instructions
 
-1. Install MidTerm from https://github.com/tlbx-ai/MidTerm or run `npx @tlbx-ai/midterm`.
+1. Install MidTerm from https://github.com/tlbx-ai/tlbx or run `npx @tlbx-ai/midterm`.
 2. Open `https://localhost:2000`, create a terminal session, and open any HTTP or HTTPS URL in the Dev Browser.
 3. Click the MidTerm Mobile Device Bridge icon in that MidTerm tab.
 4. Click the device button in the Dev Browser URL bar.

@@ -9,7 +9,7 @@ import { $voiceServerPassword } from '../../stores';
 import { createLogger } from '../logging';
 
 const log = createLogger('transcription');
-const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
+const VOICE_SERVER_URL = 'https://api.tlbx.ai';
 
 let audioChunks: ArrayBuffer[] = [];
 let isRecording = false;

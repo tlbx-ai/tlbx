@@ -14,7 +14,7 @@ ASSET_PATH=""
 PASSWORD_HASH=""
 PASSWORD=""
 FORCE=false
-REPO="tlbx-ai/MidTerm"
+REPO="tlbx-ai/tlbx"
 
 usage() {
   cat <<'EOF'

@@ -68,7 +68,7 @@ viable 32-bit assets for those operating systems.
 ## Release asset lookup
 
 By default, the installers download from the latest GitHub release of
-`tlbx-ai/MidTerm`. Set `VersionTag` / `--version-tag` to pin a release. Set
+`tlbx-ai/tlbx`. Set `VersionTag` / `--version-tag` to pin a release. Set
 `AssetPath` / `--asset-path` to use a local release asset instead of GitHub.
 
 Expected asset names:
