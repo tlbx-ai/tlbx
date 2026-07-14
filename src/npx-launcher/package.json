@@ -1,13 +1,13 @@
 {
   "name": "@tlbx-ai/midterm",
-  "version": "9.19.7-dev",
-  "description": "Quick-trial launcher for MidTerm, the self-hosted browser control station for remote AI coding agents",
+  "version": "9.19.8-dev",
+  "description": "Quick-trial launcher for tlbx, the self-hosted browser control station for remote AI coding agents",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tlbx-ai/MidTerm.git"
   },
-  "homepage": "https://midterm.tlbx.ai",
+  "homepage": "https://tlbx.ai",
   "bugs": {
     "url": "https://github.com/tlbx-ai/MidTerm/issues"
   },
@@ -26,6 +26,7 @@
   },
   "keywords": [
     "midterm",
+    "tlbx",
     "ai-agents",
     "coding-agents",
     "agent-orchestration",

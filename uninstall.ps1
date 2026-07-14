@@ -1,5 +1,5 @@
 # MidTerm Windows Uninstaller
-# Usage: irm https://tlbx-ai.github.io/MidTerm/uninstall.ps1 | iex
+# Usage: irm https://get.tlbx.ai/uninstall.ps1 | iex
 
 param(
     [switch]$Elevated,
@@ -434,7 +434,7 @@ if ($serviceTraces)
         Write-Host ""
         Write-Host "  Requesting administrator privileges to remove the MidTerm service, trusted certs, firewall rule, and system files..." -ForegroundColor Yellow
 
-        $scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/uninstall.ps1"
+        $scriptUrl = "https://get.tlbx.ai/uninstall.ps1"
         $tempScript = Join-Path $env:TEMP "mt-uninstall-elevated.ps1"
         Invoke-CompatibleWebRequest -Uri $scriptUrl -OutFile $tempScript
 

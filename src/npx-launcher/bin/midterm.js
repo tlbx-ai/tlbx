@@ -15,9 +15,9 @@ const DEFAULT_PORT = 2000;
 const MAX_PORT_SCAN_ATTEMPTS = 100;
 const SERVER_READY_TIMEOUT_MS = 15000;
 const SERVER_READY_INTERVAL_MS = 500;
-const REPO_OWNER = 'tlbx-ai';
-const REPO_NAME = 'MidTerm';
-const GITHUB_API = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}`;
+const LEGACY_REPOSITORY = 'tlbx-ai/MidTerm';
+const RENAMED_REPOSITORY = 'tlbx-ai/tlbx';
+const REPOSITORY_COORDINATE_URL = 'https://get.tlbx.ai/v1/repository';
 
 async function main() {
   const { launcher, passthrough } = parseArgs(process.argv.slice(2));
@@ -312,12 +312,27 @@ async function resolveRelease(channel) {
     'Accept': 'application/vnd.github+json'
   };
 
+  const repository = await resolveRepository();
+  try {
+    return await resolveReleaseFromRepository(repository, channel, headers);
+  } catch (error) {
+    if (repository === LEGACY_REPOSITORY) {
+      throw error;
+    }
+
+    console.error(`@tlbx-ai/midterm: ${repository} unavailable; falling back to ${LEGACY_REPOSITORY}`);
+    return resolveReleaseFromRepository(LEGACY_REPOSITORY, channel, headers);
+  }
+}
+
+async function resolveReleaseFromRepository(repository, channel, headers) {
+  const githubApi = `https://api.github.com/repos/${repository}`;
   if (channel === 'stable') {
-    const release = await fetchJson(`${GITHUB_API}/releases/latest`, headers);
+    const release = await fetchJson(`${githubApi}/releases/latest`, headers);
     return mapRelease(release);
   }
 
-  const releases = await fetchJson(`${GITHUB_API}/releases?per_page=50`, headers);
+  const releases = await fetchJson(`${githubApi}/releases?per_page=50`, headers);
   const prereleases = Array.isArray(releases) ? releases.filter((release) => release.prerelease) : [];
   if (prereleases.length === 0) {
     throw new Error('No dev releases found on GitHub');
@@ -325,6 +340,28 @@ async function resolveRelease(channel) {
 
   prereleases.sort((left, right) => compareVersions(right.tag_name, left.tag_name));
   return mapRelease(prereleases[0]);
+}
+
+async function resolveRepository() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+      const response = await fetch(REPOSITORY_COORDINATE_URL, { signal: controller.signal });
+      if (!response.ok) {
+        return LEGACY_REPOSITORY;
+      }
+
+      const repository = (await response.text()).trim();
+      return repository === LEGACY_REPOSITORY || repository === RENAMED_REPOSITORY
+        ? repository
+        : LEGACY_REPOSITORY;
+    } finally {
+      clearTimeout(timeout);
+    }
+  } catch {
+    return LEGACY_REPOSITORY;
+  }
 }
 
 function mapRelease(release) {

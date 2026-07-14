@@ -1,14 +1,14 @@
 # @tlbx-ai/midterm
 
-Ephemeral loopback launcher for [MidTerm](https://midterm.tlbx.ai), the browser control station for AI coding agents.
+Ephemeral loopback launcher for [tlbx](https://tlbx.ai), the browser control station for AI coding agents. tlbx was previously named MidTerm; the package name remains stable so existing users keep receiving updates.
 
 ```bash
 npx @tlbx-ai/midterm
 ```
 
-The launcher downloads the native MidTerm release for your platform, caches it in your user profile, runs it locally, and opens MidTerm in your default browser.
+The launcher downloads the native tlbx release for your platform, caches it in your user profile, runs it locally, and opens tlbx in your default browser.
 
-For persistent or remote operation, use the [native installer](https://midterm.tlbx.ai/install). The npm launcher is the quick-trial fallback.
+For persistent or remote operation, use the [native installer](https://tlbx.ai/install). The npm launcher is the quick-trial fallback.
 
 Supported platforms:
 

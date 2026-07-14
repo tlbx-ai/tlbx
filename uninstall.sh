@@ -1,6 +1,6 @@
 #!/bin/bash
 # MidTerm macOS/Linux Uninstaller
-# Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/uninstall.sh | bash
+# Usage: curl -fsSL https://get.tlbx.ai/uninstall.sh | bash
 
 set -u
 
@@ -35,7 +35,7 @@ bootstrap_download() {
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH" == "/usr/bin/bash" ]]; then
     TEMP_SCRIPT=$(mktemp)
-    bootstrap_download "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/uninstall.sh" "$TEMP_SCRIPT"
+    bootstrap_download "https://get.tlbx.ai/uninstall.sh" "$TEMP_SCRIPT"
     chmod +x "$TEMP_SCRIPT"
     exec "$TEMP_SCRIPT" "$@"
 fi

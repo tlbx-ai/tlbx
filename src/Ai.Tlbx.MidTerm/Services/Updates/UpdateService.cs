@@ -17,8 +17,9 @@ namespace Ai.Tlbx.MidTerm.Services.Updates;
 public sealed partial class UpdateService : IDisposable
 {
     private const string AgentHostBinaryName = "mtagenthost";
-    private const string RepoOwner = "tlbx-ai";
-    private const string RepoName = "MidTerm";
+    private const string LegacyRepoOwner = "tlbx-ai";
+    private const string LegacyRepoName = "MidTerm";
+    private const string RepositoryCoordinateUrl = "https://get.tlbx.ai/v1/repository";
     private const string DevEnvironmentName = "THELAIR";
     private const string FallbackMinCompatiblePty = "2.0.0";
     private const int RecentReleaseTagProbeLimit = 20;
@@ -178,8 +179,8 @@ public sealed partial class UpdateService : IDisposable
             var assetName = GetAssetNameForPlatform();
             Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}, asset={assetName}");
 
-            var releases = await FetchReleasesAsync(updateChannel, _currentVersion);
-            var selection = SelectBestRelease(releases, updateChannel, _currentVersion, assetName);
+            var releaseCatalog = await FetchReleasesAsync(updateChannel, _currentVersion);
+            var selection = SelectBestRelease(releaseCatalog.Releases, updateChannel, _currentVersion, assetName);
             if (selection is null)
             {
                 return TryCreateLocalOnlyUpdate(devEnv);
@@ -190,7 +191,7 @@ public sealed partial class UpdateService : IDisposable
             var comparison = CompareVersions(latestVersion, _currentVersion);
             Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"[UpdateCheck] latest={latestVersion}, comparison={comparison}, downgrade={selection.IsDowngrade}"));
 
-            var releaseManifest = await FetchReleaseManifestAsync(release.TagName!);
+            var releaseManifest = await FetchReleaseManifestAsync(release.TagName!, releaseCatalog.Repository);
             var updateType = DetermineUpdateType(_installedManifest, releaseManifest);
 
             var localUpdate = devEnv is not null ? CheckLocalUpdate() : null;
@@ -200,7 +201,8 @@ public sealed partial class UpdateService : IDisposable
                 Available = true,
                 CurrentVersion = _currentVersion,
                 LatestVersion = latestVersion,
-                ReleaseUrl = release.HtmlUrl ?? $"https://github.com/{RepoOwner}/{RepoName}/releases/tag/{release.TagName}",
+                ReleaseUrl = release.HtmlUrl ??
+                    $"https://github.com/{releaseCatalog.Repository.Owner}/{releaseCatalog.Repository.Name}/releases/tag/{release.TagName}",
                 DownloadUrl = selection.DownloadUrl,
                 AssetName = assetName,
                 ReleaseNotes = release.Body,
@@ -269,27 +271,50 @@ public sealed partial class UpdateService : IDisposable
         return _latestUpdate;
     }
 
-    private async Task<List<GitHubRelease>> FetchReleasesAsync(string updateChannel, string currentVersion)
+    private async Task<ReleaseCatalog> FetchReleasesAsync(string updateChannel, string currentVersion)
     {
-        var apiUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases?per_page=50";
+        var repository = await ResolveRepositoryAsync();
+
+        try
+        {
+            return await FetchReleasesFromRepositoryAsync(repository, updateChannel, currentVersion);
+        }
+        catch (Exception ex) when (repository != RepositoryCoordinate.Legacy)
+        {
+            Console.Error.WriteLine($"[UpdateCheck] repository {repository} failed, falling back to {RepositoryCoordinate.Legacy}: {ex.Message}");
+            Log.Warn(() => $"Update repository {repository} failed; falling back to {RepositoryCoordinate.Legacy}: {ex.Message}");
+            return await FetchReleasesFromRepositoryAsync(RepositoryCoordinate.Legacy, updateChannel, currentVersion);
+        }
+    }
+
+    private async Task<ReleaseCatalog> FetchReleasesFromRepositoryAsync(
+        RepositoryCoordinate repository,
+        string updateChannel,
+        string currentVersion)
+    {
+        var apiUrl = $"https://api.github.com/repos/{repository.Owner}/{repository.Name}/releases?per_page=50";
         var response = await _httpClient.GetStringAsync(apiUrl);
         var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(
             response,
             GitHubReleaseContext.Default.ListGitHubRelease) ?? [];
 
-        return string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase)
-            ? await IncludeRecentTaggedReleasesAsync(releases, currentVersion)
-            : releases;
+        if (string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase))
+        {
+            releases = await IncludeRecentTaggedReleasesAsync(repository, releases, currentVersion);
+        }
+
+        return new ReleaseCatalog(repository, releases);
     }
 
     private async Task<List<GitHubRelease>> IncludeRecentTaggedReleasesAsync(
+        RepositoryCoordinate repository,
         List<GitHubRelease> releases,
         string currentVersion)
     {
         List<GitHubTag> tags;
         try
         {
-            var tagsUrl = $"https://api.github.com/repos/{RepoOwner}/{RepoName}/tags?per_page={RecentReleaseTagProbeLimit}";
+            var tagsUrl = $"https://api.github.com/repos/{repository.Owner}/{repository.Name}/tags?per_page={RecentReleaseTagProbeLimit}";
             var response = await _httpClient.GetStringAsync(tagsUrl);
             tags = JsonSerializer.Deserialize<List<GitHubTag>>(
                 response,
@@ -304,7 +329,7 @@ public sealed partial class UpdateService : IDisposable
 
         foreach (var tagName in GetMissingNewerReleaseTagNames(releases, tags, currentVersion))
         {
-            var release = await FetchReleaseByTagAsync(tagName);
+            var release = await FetchReleaseByTagAsync(repository, tagName);
             if (release is null)
             {
                 continue;
@@ -349,12 +374,12 @@ public sealed partial class UpdateService : IDisposable
         return missingTags;
     }
 
-    private async Task<GitHubRelease?> FetchReleaseByTagAsync(string tagName)
+    private async Task<GitHubRelease?> FetchReleaseByTagAsync(RepositoryCoordinate repository, string tagName)
     {
         try
         {
             var tagUrl =
-                $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/tags/{Uri.EscapeDataString(tagName)}";
+                $"https://api.github.com/repos/{repository.Owner}/{repository.Name}/releases/tags/{Uri.EscapeDataString(tagName)}";
             var response = await _httpClient.GetStringAsync(tagUrl);
             return JsonSerializer.Deserialize<GitHubRelease>(
                 response,
@@ -456,9 +481,11 @@ public sealed partial class UpdateService : IDisposable
         return asset?.BrowserDownloadUrl;
     }
 
-    private async Task<VersionManifest> FetchReleaseManifestAsync(string tagName)
+    private async Task<VersionManifest> FetchReleaseManifestAsync(
+        string tagName,
+        RepositoryCoordinate repository)
     {
-        foreach (var url in GetReleaseManifestUrls(tagName))
+        foreach (var url in GetReleaseManifestUrls(tagName, repository.Owner, repository.Name))
         {
             try
             {
@@ -484,13 +511,46 @@ public sealed partial class UpdateService : IDisposable
         };
     }
 
-    internal static IReadOnlyList<string> GetReleaseManifestUrls(string tagName)
+    internal static IReadOnlyList<string> GetReleaseManifestUrls(
+        string tagName,
+        string repoOwner = LegacyRepoOwner,
+        string repoName = LegacyRepoName)
     {
-        return
-        [
-            $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/src/version.json",
-            $"https://raw.githubusercontent.com/{RepoOwner}/{RepoName}/{tagName}/version.json"
-        ];
+        var urls = new List<string>
+        {
+            $"https://raw.githubusercontent.com/{repoOwner}/{repoName}/{tagName}/src/version.json",
+            $"https://raw.githubusercontent.com/{repoOwner}/{repoName}/{tagName}/version.json"
+        };
+
+        if (!string.Equals(repoOwner, LegacyRepoOwner, StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(repoName, LegacyRepoName, StringComparison.OrdinalIgnoreCase))
+        {
+            urls.Add($"https://raw.githubusercontent.com/{LegacyRepoOwner}/{LegacyRepoName}/{tagName}/src/version.json");
+            urls.Add($"https://raw.githubusercontent.com/{LegacyRepoOwner}/{LegacyRepoName}/{tagName}/version.json");
+        }
+
+        return urls;
+    }
+
+    private async Task<RepositoryCoordinate> ResolveRepositoryAsync()
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+            var value = (await _httpClient.GetStringAsync(RepositoryCoordinateUrl, timeout.Token)).Trim();
+            if (RepositoryCoordinate.TryParseAllowed(value, out var repository))
+            {
+                return repository;
+            }
+
+            Log.Warn(() => $"Ignoring unsupported update repository coordinate '{value}'");
+        }
+        catch (Exception ex)
+        {
+            Log.Warn(() => $"Update repository discovery unavailable; using {RepositoryCoordinate.Legacy}: {ex.Message}");
+        }
+
+        return RepositoryCoordinate.Legacy;
     }
 
     private LocalUpdateInfo? CheckLocalUpdate()
@@ -1885,6 +1945,39 @@ internal sealed class GitHubAsset
     public string? Name { get; set; }
     public string? BrowserDownloadUrl { get; set; }
 }
+
+internal readonly record struct RepositoryCoordinate(string Owner, string Name)
+{
+    public static RepositoryCoordinate Legacy { get; } = new("tlbx-ai", "MidTerm");
+    public static RepositoryCoordinate Renamed { get; } = new("tlbx-ai", "tlbx");
+
+    public static bool TryParseAllowed(string value, out RepositoryCoordinate repository)
+    {
+        if (string.Equals(value, Legacy.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            repository = Legacy;
+            return true;
+        }
+
+        if (string.Equals(value, Renamed.ToString(), StringComparison.OrdinalIgnoreCase))
+        {
+            repository = Renamed;
+            return true;
+        }
+
+        repository = default;
+        return false;
+    }
+
+    public override string ToString()
+    {
+        return $"{Owner}/{Name}";
+    }
+}
+
+internal readonly record struct ReleaseCatalog(
+    RepositoryCoordinate Repository,
+    List<GitHubRelease> Releases);
 
 internal sealed class ReleaseSelection
 {
