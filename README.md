@@ -128,8 +128,15 @@ browser anywhere
 MidTerm uses .NET 10 Native AOT, TypeScript, and xterm.js.
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Feature inventory](docs/FEATURES.md)
+- [Feature guide](docs/FEATURES.md)
 - [Contributing](docs/CONTRIBUTING.md)
+
+### Community client
+
+[midterm-gtk](https://github.com/elsirion/midterm-gtk) is an independent,
+community-maintained GTK4/libadwaita desktop client with VTE terminals. It
+connects through MidTerm's REST and WebSocket mux/state channels. It is
+unofficial and is not maintained or support-guaranteed by the MidTerm project.
 
 ```bash
 git clone https://github.com/tlbx-ai/MidTerm.git

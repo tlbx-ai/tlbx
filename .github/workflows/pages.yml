@@ -37,6 +37,39 @@ jobs:
           test -f ./_site/uninstall.sh
           test -f ./_site/uninstall.ps1
 
+      - name: Normalize and verify duplicate Pages search metadata
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          path = Path("_site/index.html")
+          html = path.read_text(encoding="utf-8")
+          canonical_pattern = re.compile(
+              r'<link\b[^>]*\brel=["\']canonical["\'][^>]*>',
+              flags=re.IGNORECASE,
+          )
+          generated = canonical_pattern.findall(html)
+          if len(generated) != 1:
+              raise SystemExit(f"Expected one generated canonical link, found {len(generated)}")
+          html = canonical_pattern.sub(
+              '<link rel="canonical" href="https://midterm.tlbx.ai/">',
+              html,
+          )
+          path.write_text(html, encoding="utf-8")
+
+          canonicals = canonical_pattern.findall(html)
+          if len(canonicals) != 1:
+              raise SystemExit(f"Expected one canonical link, found {len(canonicals)}")
+          if 'href="https://midterm.tlbx.ai/"' not in canonicals[0]:
+              raise SystemExit(f"Unexpected canonical: {canonicals[0]}")
+          if not re.search(
+              r'<meta\b[^>]*\bname=["\']robots["\'][^>]*\bcontent=["\']noindex, follow["\']',
+              html,
+              flags=re.IGNORECASE,
+          ):
+              raise SystemExit("Missing noindex, follow robots directive")
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v4
 

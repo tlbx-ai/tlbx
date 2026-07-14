@@ -4,7 +4,7 @@
 
 This document is the source of truth for the visual and interaction design of MidTerm Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
-Agent Controller Session is a provider-backed conversation surface for explicit Codex and Claude sessions. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
+Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The current new-session launcher exposes Codex and Grok Build. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
 Any future Agent Controller Session UI change that affects layout, hierarchy, history ordering, timeline rendering, typography, spacing, scrolling, item rendering, or interaction states must update this document with the new fundamental rule or revised rationale.
 
@@ -68,7 +68,7 @@ New Agent Controller Session work must use the following concept names consisten
 - use `history window` for an absolute index range inside canonical history
 - use `history count` for the total number of canonical history items
 - use `timeline` for the rendered visual presentation of history in the UI
-- use `provider event` for raw Codex or Claude structured inputs before canonization
+- use `provider event` for raw provider-specific structured inputs before canonization
 - use `canonization` for the provider-to-canonical mapping step in `mtagenthost`
 - use `canonical item type` for the backend-defined item kind that determines frontend rendering behavior
 - use `interview item` for the dedicated question-list widget style item type
@@ -97,14 +97,14 @@ Naming rule:
 
 ## Runtime Boundary
 
-- Explicit Codex and Claude Agent Controller Sessions must ingest exactly one MidTerm-owned canonical runtime stream, and that stream must come through `mtagenthost`.
+- Explicit Agent Controller Sessions must ingest exactly one MidTerm-owned canonical runtime stream, and that stream must come through `mtagenthost`.
 - The active `mtagenthost` Agent Controller Session host protocol is `app-server-control-host-v2`; MidTerm should reject older host protocol versions instead of carrying parallel legacy protocol support.
 - `mtagenthost` is the only place where provider-specific transport, protocol parsing, provider-specific semantics, and event canonization belong for Agent Controller Session.
 - `mtagenthost` must reduce provider-specific structured events into one provider-neutral canonical Agent Controller Session history model that is a capability superset of the supported provider surfaces.
 - `mtagenthost` must own the canonical in-memory Agent Controller Session history for a session. `mt` should broker access to that history, not build and own a second competing canonical reducer.
-- Agent Controller Sessions must be immune to `mt` restarts. Restarting or replacing `mt` must not destroy, reset, or orphan the canonical Agent Controller Session state for an attached Codex or Claude Agent Controller Runtime.
+- Agent Controller Sessions must be immune to `mt` restarts. Restarting or replacing `mt` must not destroy, reset, or orphan canonical state for an attached supported provider runtime.
 - All canonical Agent Controller Session state needed for recovery after an `mt` restart must live in the owning `mtagenthost` instance for that Agent Controller Session.
-- The intended runtime cardinality is one dedicated `mtagenthost` process per explicit Codex Agent Controller Session or Claude Agent Controller Session.
+- The intended runtime cardinality is one dedicated `mtagenthost` process per explicit Agent Controller Session.
 - Canonical Agent Controller Session history must be optimized for human consumption. Transport noise, fluff, superseded chatter, and non-view-affecting provider detail should be discarded as early as possible to save memory.
 - If `mtagenthost` attach fails, Agent Controller Session should surface that failure and remain unattached rather than switching to a second provider ingestion path with different behavior.
 - The frontend should consume the same canonical MidTerm Agent Controller Session concepts regardless of provider and regardless of the provider's raw wire shape.
@@ -113,7 +113,7 @@ Naming rule:
 
 Specified architecture:
 
-1. Codex and Claude emit structured events with provider-specific formats and semantics.
+1. Provider runtimes emit structured events with provider-specific formats and semantics.
 2. `mtagenthost` canonizes those provider events into one linear in-memory history of canonical Agent Controller Session items.
 3. That canonical history is index-addressable and human-oriented. Each item has a type that dictates frontend rendering behavior.
 4. `mt` brokers access to that history. It is a bridge layer, not the canonical history owner.
@@ -282,7 +282,7 @@ The canonical history contract must satisfy the following:
 
 ### Raw Event Reduction
 
-- Codex and Claude may emit radically different structured event shapes and semantics.
+- Provider runtimes may emit radically different structured event shapes and semantics.
 - `mtagenthost` must canonize those provider-specific events into one provider-neutral canonical history model before the web UI sees them.
 - Provider runtimes may emit vastly more data than Agent Controller Session should render directly.
 - Raw provider traffic is not the Agent Controller Session UX contract. Canonical history is.
@@ -389,7 +389,7 @@ The canonical history contract must satisfy the following:
 - Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Agent Controller Session history.
 - Provider startup/runtime state notices that MidTerm understands, such as Codex MCP server startup-status updates, should map into quiet canonical `Agent State` system rows instead of falling through as unknown-agent tool rows.
 - Provider CLI/runtime error blocks that arrive outside the normal assistant stream, including multi-line stderr startup failures and deprecation errors, should map into canonical `Agent Error` notice rows with stronger red emphasis than ordinary system rows.
-- When Codex or Claude emits an unknown structured provider event, MidTerm should preserve it as a canonical diagnostic history item instead of silently dropping it.
+- When a provider emits an unknown structured event, MidTerm should preserve it as a canonical diagnostic history item instead of silently dropping it.
 - Those fallback unknown-agent rows may render raw provider method/payload detail, but they must remain clearly marked as unknown MidTerm fallback output rather than pretending to be a first-class mapped concept.
 - Agent Controller Session should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before MidTerm ships a dedicated mapping.
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
@@ -503,7 +503,6 @@ The canonical history contract must satisfy the following:
 ## Current Gaps
 
 - not yet implemented: browser virtualization now carries forward observed row-height samples across previously seen windows at the current width bucket, but it still does not keep a richer canonical or long-run distribution model for highly heterogeneous off-window scrollbar accuracy
-- not yet implemented: legacy `SessionAgent Controller SessionHistoryService` usage still exists in some non-Agent Controller Session-browser paths even though the Agent Controller Session browser-facing canonical history path now comes from `mtagenthost`
 - not yet implemented: older transport-era naming and `transcript` naming still leak through non-browser services, reducer internals, host-owned canonical state types, and some debug/test surfaces even though the active browser/websocket path is now history-first
 - not yet implemented: interview interactions now render inline in the timeline with a dedicated request widget, but they are still modeled as request summaries plus request history rows rather than a fully separate canonical `interview` item type end to end
 - not yet implemented: Codex interview/user-input is supported through a verified structured runtime contract, but Claude interview/user-input remains explicitly unsupported until MidTerm integrates a verified structured Claude contract instead of a guessed bridge
@@ -552,7 +551,7 @@ Status in this branch/work item:
 - implemented: hidden/background Agent Controller Sessions may continue ingesting runtime state, but history DOM work is deferred until that Agent Controller Session surface is visible again
 - implemented: hidden/background Agent Controller Sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
 - implemented: Agent Controller Session history is treated as a bounded browser-side view window over MidTerm-owned canonical history rather than as an unbounded full-history browser cache
-- implemented: explicit Codex and Claude Agent Controller Sessions now route through `mtagenthost` as the single structured runtime boundary; `SessionAgent Controller SessionRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
+- implemented: Codex, Claude, and Grok Agent Controller runtimes route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
 - implemented: Claude Agent Controller Session no longer injects or parses a MidTerm-invented XML user-input bridge in the active runtime path; unsupported Claude interview/user-input now remains unsupported instead of relying on guessed protocol behavior
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
 - implemented: MidTerm-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
@@ -643,7 +642,7 @@ Status in this branch/work item:
 - implemented: staged Agent Controller Session image attachments now also insert stable atomic inline references such as `[Image 1]` into the composer text, and removing either the inline reference or the chip removes the other so prompt text can refer to specific images deterministically
 - implemented: Agent Controller Session now converts large plain-text pastes into staged text-reference chips and atomic inline tokens such as `[Text 1 - 37 lines - 594 chars]`, so oversized pasted content stays inspectable through the file viewer without flooding the composer textarea
 - implemented: inline Agent Controller Session composer references are UI-facing placeholders only; on send, Agent Controller Session keeps semantic markers such as `[Image 1]` in the prompt, expands staged text references into appended full-text blocks, and preserves real non-text attachments separately so the runtime receives the actual content rather than only placeholder token text
-- implemented: quick-settings state is MidTerm-owned and canonical, while Codex and Claude permission/runtime mappings stay in the C# host/runtime layer
+- implemented: quick-settings state is MidTerm-owned and canonical, while provider permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Agent Controller Session quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
 - implemented: provider-scoped remembered default Agent Controller Session models are now persisted in MidTerm-owned settings and seed new Agent Controller Sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists
 - implemented: Codex Agent Controller Session exposes `/model`, `/plan`, and `/goal` action buttons inside the quick-settings rail; `/model` opens the Agent Controller Session model picker, `/plan` toggles plan mode, and `/goal` prepares a goal command in the composer while Codex goal update/clear notifications are canonized as runtime messages instead of unknown fallback rows

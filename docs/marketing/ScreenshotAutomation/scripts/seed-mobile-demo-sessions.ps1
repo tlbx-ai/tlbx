@@ -91,7 +91,7 @@ $buildLoop = Join-Path $PSScriptRoot 'demo-build-loop.ps1'
 $agentConsole = Join-Path $PSScriptRoot 'demo-agent-console.ps1'
 
 $created = @()
-$planFile = Join-Path $RepoRoot 'docs\marketing\mobile-vertical-demo-plan-2026-05.md'
+$planFile = Join-Path $RepoRoot 'docs\FEATURES.md'
 
 $created += New-DemoSession -Name 'Editor TUI' -Command "edit `"$planFile`"" -Cols 82 -Rows 34
 $created += New-DemoSession -Name 'Build Loop' -Command "pwsh -NoLogo -NoProfile -ExecutionPolicy Bypass -File `"$buildLoop`"" -Cols 82 -Rows 34

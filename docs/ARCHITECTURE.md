@@ -1,6 +1,9 @@
 # Architecture
 
-MidTerm is a web-based terminal workspace built around a native server (`mt`), a per-session PTY host (`mthost`), and a browser frontend that adds layout, files, git, commands, web preview, mobile controls, and operations UI around live terminal sessions.
+MidTerm is a web-based terminal workspace built around a native server (`mt`),
+per-session PTY hosts (`mthost`), provider-backed agent hosts (`mtagenthost`),
+and a browser frontend that adds layout, files, Git, commands, web preview,
+mobile controls, and operations UI around long-running work.
 
 The important architectural point is that MidTerm is not only a terminal renderer. The browser shell coordinates multiple long-lived sessions, several WebSocket channels, local settings and storage, browser preview bridges, session sharing, and an installer/update pipeline that has to keep real user installs recoverable.
 
@@ -9,12 +12,14 @@ The important architectural point is that MidTerm is not only a terminal rendere
 ```text
 Browser
 ├─ xterm.js terminals
+├─ provider-backed Agent Controller Session timelines
 ├─ sidebar, layout engine, files/git/commands panels
 ├─ Command Bay (smart input, automation bar, touch/mobile shell), diagnostics
 ├─ web preview iframe or detached preview window
-├─ /ws/mux       binary terminal I/O
-├─ /ws/state     JSON session/update state
-├─ /ws/settings  JSON settings sync
+├─ /ws/mux                 binary terminal I/O
+├─ /ws/app-server-control  structured agent-session synchronization
+├─ /ws/state               JSON session/update state
+├─ /ws/settings            JSON settings sync
 └─ REST APIs for auth, sessions, files, preview, updates, logs
             │
             ▼
@@ -24,11 +29,17 @@ mt / mt.exe
 ├─ settings, auth, share, cert, update, diagnostics services
 ├─ embedded static assets
 └─ web preview proxy + browser bridge coordination
-            │
-            ▼
-mthost / mthost.exe (one per session)
-└─ PTY host for ConPTY on Windows or forkpty on Unix
+       ┌────┴───────────────────────┐
+       ▼                            ▼
+mthost / mthost.exe          mtagenthost / mtagenthost.exe
+(Terminal PTY sidecar)       (one per Agent Controller Session)
+└─ ConPTY or forkpty         └─ structured provider runtime + canonical history
 ```
+
+Current Agent Controller Session creation still goes through the shared session
+plumbing and may provision an unused `mthost` backing session. That is an
+implementation detail, not a second runtime: provider state, history, and
+commands come only from `mtagenthost`, never from that PTY.
 
 ## 1. Runtime Model
 
@@ -55,6 +66,18 @@ Each terminal session runs in its own `mthost` process. That gives MidTerm:
 - platform-specific PTY handling without pulling terminal lifecycle into the web host
 - the ability to restart or replace the web server separately from terminal hosts in web-only update flows
 
+### `mtagenthost`
+
+Each explicit Agent Controller Session runs through its own `mtagenthost`
+process. Provider-specific transports and event shapes are reduced there into
+MidTerm-owned canonical history items. `mt` brokers browser access to that
+history; it does not reconstruct the conversation from terminal output.
+
+This boundary keeps structured agent sessions alive across `mt` restarts and
+keeps provider plumbing out of the TypeScript frontend. A currently provisioned
+backing `mthost` is not the Agent Controller runtime and is never a transcript
+fallback.
+
 ### Instance Ownership Model
 
 MidTerm now treats the connection between `mt` and `mthost` as an explicit ownership contract instead of a best-effort local reconnect.
@@ -78,10 +101,10 @@ MidTerm's frontend is vanilla TypeScript organized by feature modules rather tha
 
 The browser shell includes:
 
-- sidebar modules for sessions, history, update notices, network/share, and voice controls
+- sidebar modules for sessions, bookmarks, update notices, network/share, and voice controls
 - terminal modules for creation, sizing, search, paste/drop handling, scaling, and mobile PiP
 - layout modules for split panes and dock overlays
-- session wrappers that add Files tabs plus web, commands, share, git, and experimental Agent Controller Session surfaces per session
+- session wrappers that expose `Terminal` + `Files` for PTY sessions or a provider tab + `Files` for explicit Agent Controller Sessions, plus web, commands, share, and Git actions where applicable
 - feature panels for files, git, commands, and web preview
 - Command Bay modules for smart input, the automation bar, touch controller, Agent Controller Session quick settings, and attachment/media affordances, plus chat, PWA, and diagnostics modules
 
@@ -214,7 +237,8 @@ MidTerm intentionally keeps shown sessions as live terminals. Latency work is ex
 
 The sidebar is a full control surface, not just a tab strip. It handles:
 
-- create/settings/history entry points
+- create, settings, and Bookmarks entry points; deterministic input History is
+  session-owned and opens from each session's top bar
 - session rename, close, bookmark, inject-guidance, and undock actions
 - session ordering and drag-to-layout docking
 - update notices, voice controls, network/share helpers, and footer telemetry
@@ -260,16 +284,15 @@ It exists because MidTerm no longer treats those pieces as unrelated bars stacke
 
 Agent Controller Session is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
 
-- the canonical turn, request, and stream state still belongs to the backend Agent Controller Runtime
-- the frontend Agent Controller Session panel renders that state as provider-backed history/timeline UI without taking ownership away from Terminal
-- when live attach is unavailable, Agent Controller Session can stay open on read-only history or a terminal-buffer fallback instead of pretending the conversation lane is authoritative
-- Agent Controller Session is currently dev-gated in the session tabs while the UX is still being refined
+- the canonical turn, request, and stream state belongs to the owning `mtagenthost` runtime
+- the frontend renders that state as provider-backed history/timeline UI; it does not attach to or reinterpret a Terminal session
+- if structured-runtime attach fails, MidTerm exposes the failure and leaves the session unattached rather than switching to PTY output as a second source of truth
 
 The boundary between Terminal and Agent Controller Session is a core design rule:
 
 - a plain terminal session remains terminal-owned even if its foreground process is `codex`, `claude`, or another AI CLI
 - foreground process detection may label, summarize, or describe a session, but it must not by itself promote that session into Agent Controller Session
-- only sessions explicitly created as Agent Controller Sessions should expose provider-primary tabs such as `Codex` or `Claude`
+- only sessions explicitly created as Agent Controller Sessions should expose provider-primary tabs such as `Codex` or `Grok`
 - the IDE bar is exclusive by surface: terminal sessions show `Terminal` plus `Files`, while explicit Agent Controller Sessions show the provider tab plus `Files`
 
 ### Agent Controller Session Provider Runtime Decision
@@ -284,9 +307,9 @@ Terminology matters here:
 
 That means:
 
-- an explicit Codex or Claude Agent Controller Session owns a dedicated Agent Controller Runtime for that provider
+- an explicit Agent Controller Session owns a dedicated runtime for its supported provider
 - `mtagenthost` is the intended MidTerm host/runtime boundary for those provider-backed Agent Controller Sessions
-- explicit Agent Controller Sessions do not use `mthost` and do not gain terminal access through the PTY layer
+- current creation plumbing may allocate an unused `mthost` backing session, but Agent Controller state and commands never use that PTY or expose it as terminal access
 - the runtime launches or attaches using the provider's supported structured protocol
 - MidTerm normalizes that provider traffic into canonical Agent Controller Session turn, item, request, stream, and diff events
 - the Agent Controller Session UI renders those canonical events and snapshots as a conversation surface
@@ -304,7 +327,7 @@ The correct architectural direction is therefore:
 
 - Terminal stays terminal-native
 - Agent Controller Session stays provider-runtime-native through `mtagenthost` plus provider APIs and structured protocols intended for rich UI clients
-- `mthost` is for real terminals; `mtagenthost` is for explicit provider Agent Controller Sessions
+- `mthost` owns real PTY behavior; `mtagenthost` exclusively owns explicit provider Agent Controller behavior even where shared lifecycle plumbing still allocates an unused PTY sidecar
 - canonical Agent Controller Session events bridge the runtime and the web UI
 
 ### Agent Controller Session Sync Transport
@@ -313,7 +336,7 @@ Agent Controller Session sync is now owned by a dedicated `/ws/app-server-contro
 
 - HTTP remains for explicit Agent Controller Session creation/bootstrap only
 - after session start, Agent Controller Session attach, snapshot reads, history window reads, turn submission, interrupts, approvals, and user-input answers all flow through `/ws/app-server-control`
-- `mt` remains the state master and durable owner of canonical Agent Controller Session history plus the derived live read model
+- the owning `mtagenthost` remains the durable canonical-history owner; `mt` brokers access and maintains only the derived live read model needed by connected clients
 - the browser keeps one multiplexed Agent Controller Session socket and can subscribe to many Agent Controller Sessions at once
 - Agent Controller Session history is synchronized as a windowed read model, not as a full-history replay on every reconnect
 - reconnect starts from a fresh bounded history window, usually anchored at the live bottom, then resumes ordered live events
@@ -325,7 +348,7 @@ Provider-backed Agent Controller Runtimes can emit huge amounts of low-value tra
 
 Agent Controller Session must therefore enforce a strict ownership and byte-budget model:
 
-- `mtagenthost` and MidTerm own the in-flight provider reduction path plus the canonical derived Agent Controller Session history
+- the owning `mtagenthost` owns the in-flight provider reduction path and canonical derived history; `mt` brokers bounded views of it
 - the browser does not own full Agent Controller Session history and must not accumulate the full provider event stream in memory
 - the browser consumes a bounded view window over canonical history, not an unbounded raw-event feed
 - multiple browsers may view the same Agent Controller Session concurrently, but each browser owns only its own local viewport/window state
@@ -346,8 +369,8 @@ This leads to the following transport rules:
 
 The architectural target is:
 
-- one canonical history store in MidTerm
-- MidTerm durability uses canonical reduced Agent Controller Session state, not appended provider-shaped event logs
+- one canonical history store per session in its owning `mtagenthost`
+- Agent Controller Session durability uses canonical reduced state, not appended provider-shaped event logs
 - one bounded visible history window per browser/session view
 - deterministic fetches for arbitrary older/newer portions of that history
 - minimal duplicated byte transfer across reconnects and across multiple browsers
@@ -391,11 +414,11 @@ For UI iteration and bug discussion, Agent Controller Session also emits a dev-o
 - raw tool output should be summarized before it reaches both the Agent Controller Session timeline and the screen log, and duplicate no-op screen states should not be re-logged
 - raw provider payloads and PTY output are not the screen log contract
 
-### Agent Controller Session UX Target And DOD
+### Agent Controller Session User Contract
 
-The intended Definition of Done for provider-backed Agent Controller Sessions is:
+For a supported provider runtime, the Agent Controller Session contract is:
 
-1. A user can create a new session in MidTerm and explicitly choose `Codex` or `Claude`.
+1. A user can create a new session in MidTerm and explicitly choose a provider currently exposed by the launcher, such as `Codex` or `Grok`.
 2. The session opens on the provider Agent Controller Session surface with the Smart Input / composer visible.
 3. MidTerm shows a subtle ready indication when the provider runtime is connected and able to accept a prompt.
 4. The user can submit a prompt from the Agent Controller Session composer without switching to Terminal.
@@ -405,7 +428,10 @@ The intended Definition of Done for provider-backed Agent Controller Sessions is
 8. Plan-mode or equivalent provider-driven question flows appear as first-class Agent Controller Session interactions, not as raw terminal text.
 9. The full Agent Controller Session experience is implemented without hijacking or reclassifying normal terminal sessions.
 
-In practical terms, the user should experience Agent Controller Session as a polished web conversation surface for explicit provider sessions, with the same functional breadth as the provider CLI, while Terminal remains an independent real terminal.
+In practical terms, Agent Controller Session is the structured web conversation
+surface for explicit provider sessions, while Terminal remains an independent
+real terminal. Provider-specific capabilities may differ and are reported by
+the runtime rather than inferred from a foreground process name.
 
 The visual and interaction design rules for that Agent Controller Session surface are maintained separately in [AgentControllerSessionDesign.md](AgentControllerSessionDesign.md). Architecture decisions belong here; the concrete Agent Controller Session UX contract, hierarchy, history/timeline behavior, and performance-oriented rendering rules belong in that design document and should evolve alongside implementation.
 
@@ -459,7 +485,7 @@ For deeper implementation detail, see [devbrowser.md](devbrowser.md) and [MOBILE
 
 ## 6. Deterministic Input History and Agent Control Plane
 
-MidTerm has two server-owned operator data streams that deliberately avoid semantic reconstruction from terminal output.
+MidTerm has two server-owned deterministic data streams that deliberately avoid semantic reconstruction from terminal output.
 
 ### Terminal input history
 
@@ -477,7 +503,12 @@ Each session's **History** top-bar menu renders that session's records as a time
 
 Records carry source, session, project, repository, timestamps, and revision where applicable. Known semantic states are validated rather than guessed. A bounded sequence log is emitted from mutations, which powers `mt_events` and exact browser notifications.
 
-Operator combines those publications with authoritative session facts such as `isRunning`, exit code, and the reported foreground process. It never presents `SessionSupervisorService` heat/timing classifications as agent meaning. Trusted Hub machines are read through authenticated Hub proxy endpoints.
+The unfinished Operator sidebar was withdrawn. The control-plane API, generated
+CLI helpers, and authenticated Hub proxy endpoints remain the supported
+surfaces. Consumers may combine explicit publications with authoritative facts
+such as `isRunning`, exit code, and reported foreground process, but MidTerm
+does not turn `SessionSupervisorService` heat/timing classifications into agent
+meaning.
 
 `mt_dispatch` accepts an explicit, deduplicated target list and calls the direct turn path for each target. It does not select targets or route through the heat-based Command Bay queue. `mt_agent_capabilities` likewise reports only product features and exact runtime flags.
 
@@ -593,11 +624,12 @@ That is how MidTerm can update installed systems without asking users to manuall
 
 ### WebSockets
 
-| Endpoint       | Purpose                                                   |
-| -------------- | --------------------------------------------------------- |
-| `/ws/mux`      | Binary multiplexed terminal I/O                           |
-| `/ws/state`    | Session list, update state, and related JSON state pushes |
-| `/ws/settings` | Live settings synchronization                             |
+| Endpoint                 | Purpose                                                   |
+| ------------------------ | --------------------------------------------------------- |
+| `/ws/mux`                | Binary multiplexed terminal I/O                           |
+| `/ws/app-server-control` | Structured Agent Controller Session synchronization       |
+| `/ws/state`              | Session list, update state, and related JSON state pushes |
+| `/ws/settings`           | Live settings synchronization                             |
 
 ### HTTP API Groups
 
@@ -632,6 +664,7 @@ Operationally, MidTerm also tracks update results, log files, session ordering, 
 
 ## Related Documents
 
-- [FEATURES.md](FEATURES.md) for the exhaustive capability inventory
+- [FEATURES.md](FEATURES.md) for the current product boundary
+- [AgentControllerSessionDesign.md](AgentControllerSessionDesign.md) for the structured agent-session visual and interaction contract
 - [devbrowser.md](devbrowser.md) for preview proxy and browser-control internals
 - [file-radar.md](file-radar.md) for path detection design

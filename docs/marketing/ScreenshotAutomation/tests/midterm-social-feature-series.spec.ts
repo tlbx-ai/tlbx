@@ -363,7 +363,7 @@ async function ensureDemoSessions(page: Page): Promise<DemoSessions> {
     files: {
       name: 'MT Social - File Radar',
       command:
-        "Clear-Host; Write-Host 'File Radar demo' -ForegroundColor Cyan; Write-Host 'docs\\marketing\\features.md:1'; Write-Host 'src\\Ai.Tlbx.MidTerm\\Program.cs:1'",
+        "Clear-Host; Write-Host 'File Radar demo' -ForegroundColor Cyan; Write-Host 'docs\\FEATURES.md:1'; Write-Host 'src\\Ai.Tlbx.MidTerm\\Program.cs:1'",
     },
     agents: {
       name: 'MT Social - Agents',

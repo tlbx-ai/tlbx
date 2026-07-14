@@ -17,6 +17,7 @@ No separate signature is required — submitting a PR implies acceptance.
 - Search existing issues first to avoid duplicates
 - Include reproduction steps, expected behavior, and actual behavior
 - Include OS, browser, and MidTerm version
+- Report vulnerabilities through the private process in [SECURITY.md](../SECURITY.md), not a public issue
 
 ### Pull Requests
 
@@ -58,4 +59,4 @@ dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
 
 ## Questions?
 
-Open an issue or start a discussion on GitHub.
+Open a GitHub issue. Repository Discussions are not enabled.
