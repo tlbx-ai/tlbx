@@ -1,6 +1,6 @@
 # MidTerm Features
 
-Current feature brief as of `v9.15.22-dev` / `476d75a4`, last reconciled with Git history on 2026-05-25.
+Historical feature brief captured at `v9.15.22-dev` / `476d75a4` on 2026-05-25. It is retained as campaign research, not current product truth. Use [midterm.tlbx.ai/features](https://midterm.tlbx.ai/features) and the root [README](../../README.md) for the current public surface.
 
 This is the marketing and product feature brief. The exhaustive engineering checklist remains in `docs/FEATURES.md`; this page frames the product in language a user, reviewer, buyer, or launch partner can evaluate quickly.
 

@@ -1,6 +1,6 @@
 # MidTerm Feature Inventory
 
-This is the canonical feature sweep baseline for the current codebase, with a current delta addendum last reconciled against Git history on 2026-05-25 at `v9.15.22-dev` / `476d75a4`. The coverage order follows the requested path: settings and their rabbit holes, the sidebar and its buttons and drag behavior, the session bar and IDE-adjacent panels, the Command Bay / Automation Bar, the smart input bar, the protocols, and the installer/update system.
+This is an engineering inventory baseline captured at `v9.15.22-dev` / `476d75a4`, followed by later deltas. It is useful for implementation archaeology, but it is not the canonical current product description. See [midterm.tlbx.ai/features](https://midterm.tlbx.ai/features) for the current public feature surface and the root [README](../README.md) for the current product boundary.
 
 ## Cluster Map
 
@@ -512,11 +512,11 @@ The feature inventory above remains the numbered baseline. The following current
 - `D021` Session-owned input history records direct browser-authored text once per actual unmodified-Enter submission plus exact MidTerm-handled prompts, multiline text pastes, clipboard images, file drops, and uploads; modified Enter and pasted newline bytes remain inside one entry, and no prompt is reconstructed from PTY output.
 - `D022` Input history is bounded, atomically persisted, thumbnail-capable, session-scoped, and available through generated `mt_input_history` helpers.
 - `D023` The explicit agent control plane stores bounded work items, published session status, and checkpoints with timestamps, revision, source, project, repository, and session provenance.
-- `D024` Operator presents exact process facts separately from agent-published meaning and aggregates trusted Hub-machine control planes through the existing authenticated proxy.
+- `D024` The experimental Operator sidebar was removed in `v9.18.28-dev`; the deterministic control-plane API and CLI remain available for agents without a MidTerm-owned intelligence layer.
 - `D025` Generated `mt_work_*`, `mt_publish_status`, `mt_checkpoint`, and `mt_control_plane` helpers make every control-plane record readable and writable as JSON without MidTerm-owned intelligence.
 - `D026` `mt_agent_capabilities` reports product-authored feature flags and exact per-session runtime modes without process-name or transcript heuristics.
 - `D027` `mt_dispatch` fans a turn directly to at most 32 explicit, deduplicated session IDs and returns an independent result per target without heat-based queue decisions.
-- `D028` The bounded `mt_events` feed and Operator badge/notifications derive only from explicit control-plane mutations and use sequence cursors instead of terminal-text inference.
+- `D028` The bounded `mt_events` feed remains derived only from explicit control-plane mutations and uses sequence cursors instead of terminal-text inference; the shelved Operator badge and notification UI are not part of the current product surface.
 
 ### README.md
 

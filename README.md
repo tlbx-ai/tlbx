@@ -11,7 +11,7 @@
   ·
   <a href="#private-remote-access"><strong>Remote access</strong></a>
   ·
-  <a href="docs/FEATURES.md"><strong>All features</strong></a>
+  <a href="https://midterm.tlbx.ai/features"><strong>All features</strong></a>
 </p>
 
 <p align="center">
@@ -22,11 +22,13 @@
 
 # Run your coding agents on your machines. Steer them from anywhere.
 
-Start Grok Build, Codex, Claude Code, OpenCode, Antigravity CLI, Copilot CLI—or several at once—where the repos live. MidTerm keeps every session alive and puts control in any browser.
+MidTerm is a self-hosted browser control station for remote AI coding agents. Run Codex, Claude Code, Gemini CLI, Grok Build, OpenCode, Copilot CLI, Antigravity CLI—or several together—on the machines that own your repos, credentials, and tools. Supervise them from any desktop, tablet, or phone browser.
+
+The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running.
 
 **Your machines are browser tabs. Your agents keep working when you leave.**
 
-Explore screenshots, architecture, features, and installation at **[midterm.tlbx.ai](https://midterm.tlbx.ai)**.
+Technical guides: **[remote AI agents](https://midterm.tlbx.ai/remote-ai-agents)** · **[Claude Code + Codex](https://midterm.tlbx.ai/claude-code-codex-browser)** · **[features](https://midterm.tlbx.ai/features)** · **[architecture](https://midterm.tlbx.ai/architecture)** · **[install](https://midterm.tlbx.ai/install)**
 
 <p align="center">
   <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a MidTerm browser tab beside another MidTerm host" width="100%">

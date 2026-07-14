@@ -13,9 +13,11 @@ For persistent or remote operation, use the [native installer](https://midterm.t
 Supported platforms:
 
 - Windows x64
+- Windows x86
 - macOS x64
 - macOS ARM64
 - Linux x64
+- Linux ARM64
 
 Extra arguments are passed through to `mt`:
 

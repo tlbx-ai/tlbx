@@ -161,7 +161,7 @@ jobs:
         run: npm run verify
 
   dotnet-tests:
-    needs: prepare
+    needs: [prepare, frontend]
     if: needs.prepare.outputs.is_dev != 'true'
     runs-on: windows-latest
     steps:
@@ -171,13 +171,11 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - uses: actions/setup-node@v5
+      - name: Download frontend
+        uses: actions/download-artifact@v8
         with:
-          node-version: '24'
-
-      - name: Install npm packages
-        working-directory: src/Ai.Tlbx.MidTerm
-        run: npm ci --include=dev --prefer-offline --no-audit --no-fund
+          name: frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
 
       - name: Run .NET test suite
         shell: pwsh
