@@ -44,8 +44,10 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
+          import json
           import re
 
+          product_url = "https://midterm.tlbx.ai/"
           path = Path("_site/index.html")
           html = path.read_text(encoding="utf-8")
           canonical_pattern = re.compile(
@@ -56,16 +58,54 @@ jobs:
           if len(generated) != 1:
               raise SystemExit(f"Expected one generated canonical link, found {len(generated)}")
           html = canonical_pattern.sub(
-              '<link rel="canonical" href="https://midterm.tlbx.ai/">',
+              f'<link rel="canonical" href="{product_url}">',
               html,
           )
+
+          og_url_pattern = re.compile(
+              r'<meta\s+property=["\']og:url["\']\s+content=["\'][^"\']+["\']\s*/?>',
+              flags=re.IGNORECASE,
+          )
+          html, og_url_count = og_url_pattern.subn(
+              f'<meta property="og:url" content="{product_url}" />',
+              html,
+          )
+          if og_url_count != 1:
+              raise SystemExit(f"Expected one Open Graph URL, found {og_url_count}")
+
+          json_ld_pattern = re.compile(
+              r'(<script\s+type=["\']application/ld\+json["\']>\s*)(.*?)(\s*</script>)',
+              flags=re.IGNORECASE | re.DOTALL,
+          )
+
+          def normalize_json_ld(match):
+              payload = json.loads(match.group(2))
+              if payload.get("@type") != "WebSite":
+                  raise SystemExit(f"Unexpected Pages JSON-LD type: {payload.get('@type')}")
+              payload["url"] = product_url
+              return match.group(1) + json.dumps(
+                  payload,
+                  ensure_ascii=False,
+                  separators=(",", ":"),
+              ) + match.group(3)
+
+          html, json_ld_count = json_ld_pattern.subn(normalize_json_ld, html)
+          if json_ld_count != 1:
+              raise SystemExit(f"Expected one JSON-LD block, found {json_ld_count}")
+
           path.write_text(html, encoding="utf-8")
 
           canonicals = canonical_pattern.findall(html)
           if len(canonicals) != 1:
               raise SystemExit(f"Expected one canonical link, found {len(canonicals)}")
-          if 'href="https://midterm.tlbx.ai/"' not in canonicals[0]:
+          if f'href="{product_url}"' not in canonicals[0]:
               raise SystemExit(f"Unexpected canonical: {canonicals[0]}")
+          og_urls = og_url_pattern.findall(html)
+          if len(og_urls) != 1 or f'content="{product_url}"' not in og_urls[0]:
+              raise SystemExit(f"Unexpected Open Graph URL: {og_urls}")
+          json_ld = json.loads(json_ld_pattern.search(html).group(2))
+          if json_ld.get("url") != product_url:
+              raise SystemExit(f"Unexpected JSON-LD URL: {json_ld.get('url')}")
           if not re.search(
               r'<meta\b[^>]*\bname=["\']robots["\'][^>]*\bcontent=["\']noindex, follow["\']',
               html,
