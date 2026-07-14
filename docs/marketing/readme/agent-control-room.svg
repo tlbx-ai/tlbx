@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900" viewBox="0 0 1600 900" role="img" aria-labelledby="title desc">
   <title id="title">Steer every coding agent from one browser</title>
-  <desc id="desc">Codex, Claude Code, Grok Build, OpenCode, Copilot CLI, Antigravity CLI and other terminal-native agents run as concurrent MidTerm sessions.</desc>
+  <desc id="desc">Codex, Claude Code, Grok Build, OpenCode, Copilot CLI, Antigravity CLI and other terminal-native agents run as concurrent tlbx sessions.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#040609"/><stop offset="1" stop-color="#0a111e"/></linearGradient>
     <linearGradient id="panel" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#111a2b"/><stop offset="1" stop-color="#090e18"/></linearGradient>
@@ -58,14 +58,14 @@
       </g>
     </g>
 
-    <!-- Main MidTerm workspace -->
+    <!-- Main tlbx workspace -->
     <g transform="translate(446 180)">
       <rect width="790" height="566" rx="20" fill="#080c13" stroke="#34435d" stroke-width="1.5"/>
       <rect width="790" height="58" rx="20" fill="#101827"/>
       <rect y="40" width="790" height="18" fill="#101827"/>
       <circle cx="27" cy="29" r="6" fill="#80b6f2"/>
       <path d="M42 17h10L38 42H28zM58 17h10l14 25H72z" fill="#f7faff"/>
-      <text x="99" y="36" fill="#f7faff" font-size="17" font-weight="700">MidTerm</text>
+      <text x="99" y="36" fill="#f7faff" font-size="17" font-weight="700">tlbx</text>
       <text x="210" y="36" fill="#80b6f2" font-size="14" font-weight="700">TERMINAL</text>
       <text x="319" y="36" fill="#8997ad" font-size="14">FILES</text>
       <text x="385" y="36" fill="#8997ad" font-size="14">GIT</text>
@@ -118,7 +118,7 @@
       <rect x="77" y="22" width="70" height="7" rx="3.5" fill="#2a3548"/>
       <path d="M30 50h9l-12 25h-8zM44 50h9l12 25h-8z" fill="#f7faff"/>
       <circle cx="42" cy="66" r="3" fill="#80b6f2"/>
-      <text x="77" y="68" fill="#f7faff" font-size="13" font-weight="700">MidTerm</text>
+      <text x="77" y="68" fill="#f7faff" font-size="13" font-weight="700">tlbx</text>
       <rect x="25" y="94" width="174" height="69" rx="10" fill="#17243b" stroke="#80b6f2" stroke-opacity="0.55"/>
       <circle cx="43" cy="119" r="6" fill="#ffd479"/>
       <text x="58" y="122" fill="#f7faff" font-size="13" font-weight="700">Needs input</text>
