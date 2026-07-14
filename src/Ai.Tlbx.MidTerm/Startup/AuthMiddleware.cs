@@ -163,6 +163,7 @@ public static class AuthMiddleware
                path.StartsWith("/openapi/", StringComparison.Ordinal) ||
                path == "/api/health" ||
                path == "/api/version" ||
+               path == "/api/bootstrap/login" ||
                path == "/api/security/status" ||
                path == "/api/share/claim" ||
                path == "/api/certificate/info" ||
@@ -175,11 +176,14 @@ public static class AuthMiddleware
                path.StartsWith("/js/", StringComparison.Ordinal) ||
                path.StartsWith("/fonts/", StringComparison.Ordinal) ||
                path.StartsWith("/locales/", StringComparison.Ordinal) ||
-               path.EndsWith(".ico", StringComparison.Ordinal) ||
-               path.EndsWith(".png", StringComparison.Ordinal) ||
-               path.EndsWith(".webmanifest", StringComparison.Ordinal) ||
-               path.EndsWith(".woff", StringComparison.Ordinal) ||
-               path.EndsWith(".woff2", StringComparison.Ordinal);
+               path.StartsWith("/img/", StringComparison.Ordinal) ||
+               path == "/favicon.ico" ||
+               path == "/site.webmanifest" ||
+               path == "/android-chrome-192x192.png" ||
+               path == "/android-chrome-512x512.png" ||
+               path == "/apple-touch-icon.png" ||
+               path == "/favicon-16x16.png" ||
+               path == "/favicon-32x32.png";
     }
 
     private static bool IsShareProtectedPath(string path)
