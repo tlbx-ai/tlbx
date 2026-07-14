@@ -19,7 +19,7 @@ env:
 
 jobs:
 
-  # ── Create the draft release immediately so it exists before builds finish ──
+  # ── Create dev prereleases immediately; keep stable releases unpublished ──
   prepare:
     runs-on: ubuntu-latest
     permissions:
@@ -41,8 +41,12 @@ jobs:
         run: |
           TITLE=$(git tag -l --format='%(contents:subject)' ${{ github.ref_name }})
           NOTES=$(git tag -l --format='%(contents:body)' ${{ github.ref_name }})
-          PRERELEASE=""
-          [[ "${{ github.ref_name }}" == *"-dev"* ]] && PRERELEASE="--prerelease"
+          IS_DEV=false
+          RELEASE_STATE=(--draft)
+          if [[ "${{ github.ref_name }}" == *"-dev"* ]]; then
+            IS_DEV=true
+            RELEASE_STATE=(--prerelease)
+          fi
           MAX_RELEASE_BODY=124000
           export NOTES MAX_RELEASE_BODY
           RELEASE_NOTES=$(python3 - <<'PY'
@@ -97,13 +101,20 @@ jobs:
           trap 'rm -f "$RELEASE_NOTES_FILE"' EXIT
           printf '%s' "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
           if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
+            if [[ "$IS_DEV" != "true" ]]; then
+              IS_DRAFT=$(gh release view ${{ github.ref_name }} --json isDraft --jq '.isDraft')
+              if [[ "$IS_DRAFT" != "true" ]]; then
+                echo "::error::Stable release ${{ github.ref_name }} is already published; refusing to move it back to draft."
+                exit 1
+              fi
+            fi
             gh release edit ${{ github.ref_name }} \
-              $PRERELEASE \
+              "${RELEASE_STATE[@]}" \
               --title "$TITLE" \
               --notes-file "$RELEASE_NOTES_FILE"
           else
             gh release create ${{ github.ref_name }} \
-              $PRERELEASE \
+              "${RELEASE_STATE[@]}" \
               --title "$TITLE" \
               --notes-file "$RELEASE_NOTES_FILE"
           fi
@@ -589,6 +600,11 @@ jobs:
     if: needs.prepare.outputs.is_dev != 'true'
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        rid: [win-x64, win-x86]
     runs-on: [self-hosted, windows, signing]
 
     steps:
@@ -611,46 +627,49 @@ jobs:
 
       - name: Build mt + mthost + mtagenthost + mttmux
         shell: pwsh
-        run: ./scripts/publish-runtime-set.ps1 -Rid 'win-x64' -Configuration Release
+        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Stage artifacts
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force staging/win-x64 | Out-Null
-          Copy-Item src/Ai.Tlbx.MidTerm/bin/Release/net10.0/win-x64/publish/mt.exe staging/win-x64/
-          Copy-Item src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/win-x64/publish/mttmux.exe staging/win-x64/
-          Copy-Item src/version.json staging/win-x64/
-          $mthostPath = 'src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/win-x64/publish/mthost.exe'
+          $rid = '${{ matrix.rid }}'
+          New-Item -ItemType Directory -Force "staging/$rid" | Out-Null
+          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
+          Copy-Item src/version.json "staging/$rid/"
+          $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {
-            Copy-Item $mthostPath staging/win-x64/
+            Copy-Item $mthostPath "staging/$rid/"
           } else {
-            Write-Host 'mthost.exe not found for win-x64; continuing with web-only artifact set'
+            Write-Host "mthost.exe not found for $rid; continuing with web-only artifact set"
           }
-          Copy-Item src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/win-x64/publish/mtagenthost.exe staging/win-x64/
+          Copy-Item "src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$rid/publish/mtagenthost.exe" "staging/$rid/"
 
       - name: Require stable Windows signing inputs
         shell: pwsh
         run: |
-          if (-not (Test-Path 'staging/win-x64/mt.exe')) {
+          $rid = '${{ matrix.rid }}'
+          if (-not (Test-Path "staging/$rid/mt.exe")) {
             throw 'mt.exe must be present before stable Windows signing.'
           }
-          if (-not (Test-Path 'staging/win-x64/mtagenthost.exe')) {
+          if (-not (Test-Path "staging/$rid/mtagenthost.exe")) {
             throw 'mtagenthost.exe must be present before stable Windows signing.'
           }
-          if (-not (Test-Path 'staging/win-x64/mttmux.exe')) {
+          if (-not (Test-Path "staging/$rid/mttmux.exe")) {
             throw 'mttmux.exe must be present before stable Windows signing.'
           }
 
       - name: Sign Windows binaries (mt.exe, mthost.exe, mtagenthost.exe, mttmux.exe)
         shell: pwsh
-        run: ./scripts/sign-windows-binaries.ps1 -StagingPath staging/win-x64
+        run: ./scripts/sign-windows-binaries.ps1 -StagingPath 'staging/${{ matrix.rid }}'
 
       - name: Verify stable Windows Authenticode signatures
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe', 'staging/win-x64/mttmux.exe')
-          if (Test-Path 'staging/win-x64/mthost.exe') {
-            $files += 'staging/win-x64/mthost.exe'
+          $rid = '${{ matrix.rid }}'
+          $files = @("staging/$rid/mt.exe", "staging/$rid/mtagenthost.exe", "staging/$rid/mttmux.exe")
+          if (Test-Path "staging/$rid/mthost.exe") {
+            $files += "staging/$rid/mthost.exe"
           }
 
           foreach ($file in $files) {
@@ -663,17 +682,18 @@ jobs:
       - name: Generate SHA256SUMS
         shell: pwsh
         run: |
-          $files = @('staging/win-x64/mt.exe', 'staging/win-x64/mtagenthost.exe', 'staging/win-x64/mttmux.exe')
-          if (Test-Path 'staging/win-x64/mthost.exe') {
-            $files += 'staging/win-x64/mthost.exe'
+          $rid = '${{ matrix.rid }}'
+          $files = @("staging/$rid/mt.exe", "staging/$rid/mtagenthost.exe", "staging/$rid/mttmux.exe")
+          if (Test-Path "staging/$rid/mthost.exe") {
+            $files += "staging/$rid/mthost.exe"
           }
           $hashes = Get-ChildItem $files | ForEach-Object {
             $hash = (Get-FileHash $_ -Algorithm SHA256).Hash.ToLower()
             "$hash  $($_.Name)"
           }
-          $hashes | Set-Content staging/win-x64/SHA256SUMS.txt
-          Write-Host "=== win-x64 ==="
-          Get-Content staging/win-x64/SHA256SUMS.txt
+          $hashes | Set-Content "staging/$rid/SHA256SUMS.txt"
+          Write-Host "=== $rid ==="
+          Get-Content "staging/$rid/SHA256SUMS.txt"
 
       - name: Sign version.json
         shell: pwsh
@@ -686,11 +706,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $archive = "staging/mt-win-x64.zip"
+          $rid = '${{ matrix.rid }}'
+          $archive = "staging/mt-$rid.zip"
           if (Get-Command 7z -ErrorAction SilentlyContinue) {
-            7z a -tzip -mx=9 $archive "./staging/win-x64/*" | Out-Null
+            7z a -tzip -mx=9 $archive "./staging/$rid/*" | Out-Null
           } else {
-            Compress-Archive -Path "./staging/win-x64/*" -DestinationPath $archive -Force
+            Compress-Archive -Path "./staging/$rid/*" -DestinationPath $archive -Force
           }
           gh release upload "${{ github.ref_name }}" $archive --clobber
 
@@ -729,8 +750,96 @@ jobs:
           fi
           npm publish --access public --provenance --tag latest
 
-  prune-artifacts:
+  publish-release:
     needs: [prepare, build, build-windows, publish-npm]
+    if: needs.prepare.outputs.is_dev != 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Validate exact stable release assets
+        id: validate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          RELEASE_JSON=$(mktemp)
+          trap 'rm -f "$RELEASE_JSON"' EXIT
+          gh release view "$RELEASE_TAG" \
+            --repo "$REPOSITORY" \
+            --json databaseId,tagName,isDraft,isPrerelease,assets \
+            > "$RELEASE_JSON"
+
+          RELEASE_ID=$(python3 - "$RELEASE_JSON" "$RELEASE_TAG" <<'PY'
+          import json
+          import sys
+
+          release_path, expected_tag = sys.argv[1:]
+          with open(release_path, encoding="utf-8") as handle:
+              release = json.load(handle)
+
+          expected_assets = {
+              "mt-linux-arm64.tar.gz",
+              "mt-linux-x64.tar.gz",
+              "mt-osx-arm64.tar.gz",
+              "mt-osx-x64.tar.gz",
+              "mt-win-x64.zip",
+              "mt-win-x86.zip",
+          }
+
+          if release.get("tagName") != expected_tag:
+              raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}, got {release.get('tagName')!r}")
+          if release.get("isDraft") is not True:
+              raise SystemExit("Stable release must still be a draft before publication.")
+          if release.get("isPrerelease") is not False:
+              raise SystemExit("Stable release must not be marked as a prerelease.")
+
+          assets = release.get("assets") or []
+          actual_names = {asset.get("name") for asset in assets}
+          missing = sorted(expected_assets - actual_names)
+          unexpected = sorted(actual_names - expected_assets)
+          if len(assets) != len(expected_assets) or missing or unexpected:
+              raise SystemExit(
+                  "Stable asset set mismatch: "
+                  f"expected={sorted(expected_assets)}, missing={missing}, unexpected={unexpected}"
+              )
+
+          empty = sorted(
+              asset["name"]
+              for asset in assets
+              if not isinstance(asset.get("size"), int) or asset["size"] <= 0
+          )
+          if empty:
+              raise SystemExit(f"Stable assets must be nonzero: {empty}")
+
+          release_id = release.get("databaseId")
+          if not isinstance(release_id, int) or release_id <= 0:
+              raise SystemExit(f"Invalid GitHub release id: {release_id!r}")
+
+          print(release_id)
+          PY
+          )
+          echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Publish validated stable release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE_ID: ${{ steps.validate.outputs.release_id }}
+        run: |
+          gh api \
+            --method PATCH \
+            "repos/$REPOSITORY/releases/$RELEASE_ID" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest=true \
+            > /dev/null
+
+  prune-artifacts:
+    needs: [prepare, publish-release]
     if: needs.prepare.outputs.is_dev != 'true'
     runs-on: ubuntu-latest
     permissions:
