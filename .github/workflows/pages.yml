@@ -37,6 +37,9 @@ jobs:
           test -f ./_site/uninstall.sh
           test -f ./_site/uninstall.ps1
 
+      - name: Make Pages artifact writable
+        run: sudo chown -R "$(id -u):$(id -g)" ./_site
+
       - name: Normalize and verify duplicate Pages search metadata
         shell: python
         run: |
