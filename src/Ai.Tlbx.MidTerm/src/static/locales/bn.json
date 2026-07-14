@@ -454,6 +454,7 @@
   "session.split": "বিভক্ত",
   "session.splitTooltip": "সেশনটি বিভক্ত লেআউটে আছে",
   "session.pinToQuickLaunch": "কুইক লঞ্চে পিন করুন",
+  "session.repairDisplay": "ডিসপ্লে মেরামত করুন",
   "session.rename": "সেশনের নাম পরিবর্তন করুন",
   "session.markAgentControlled": "এজেন্ট নিয়ন্ত্রিত হিসেবে চিহ্নিত করুন",
   "session.markHumanControlled": "মানব নিয়ন্ত্রণে ফিরিয়ে দিন",

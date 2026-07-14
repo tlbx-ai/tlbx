@@ -454,6 +454,7 @@
   "session.split": "DIVIDIDO",
   "session.splitTooltip": "A sessão está em um layout dividido",
   "session.pinToQuickLaunch": "Fixar no início rápido",
+  "session.repairDisplay": "Reparar exibição",
   "session.rename": "Renomear sessão",
   "session.markAgentControlled": "Marcar como controlado por agente",
   "session.markHumanControlled": "Retornar ao controle humano",

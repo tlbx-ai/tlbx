@@ -717,6 +717,7 @@
   "session.split": "SPLIT",
   "session.splitTooltip": "Session is in a split layout",
   "session.pinToQuickLaunch": "Pin to QuickLaunch",
+  "session.repairDisplay": "Repair display",
   "session.rename": "Rename session",
   "session.markAgentControlled": "Mark as agent controlled",
   "session.markHumanControlled": "Return to human control",

@@ -78,10 +78,24 @@ Write-Host "Location: $tempDir" -ForegroundColor Gray
 # Start mt.exe directly (self-contained, no dotnet.exe needed)
 Write-Host "`nStarting mt.exe on port $port..." -ForegroundColor Cyan
 $mtExePath = Join-Path $tempDir "mt.exe"
+$launcherLogDir = Join-Path $tempDir "launcher-logs"
+$stdoutPath = Join-Path $launcherLogDir "mt.stdout.log"
+$stderrPath = Join-Path $launcherLogDir "mt.stderr.log"
+New-Item -ItemType Directory -Path $launcherLogDir -Force | Out-Null
 
-# Run mt.exe directly - no longer needs dotnet.exe to host it
-Start-Process -FilePath $mtExePath -ArgumentList "--port", $port -WorkingDirectory $tempDir
+# This process deliberately outlives the launcher. Never let it inherit the
+# invoking terminal: delayed native diagnostics would otherwise corrupt that PTY.
+$mtProcess = Start-Process `
+    -FilePath $mtExePath `
+    -ArgumentList "--port", $port `
+    -WorkingDirectory $tempDir `
+    -RedirectStandardOutput $stdoutPath `
+    -RedirectStandardError $stderrPath `
+    -WindowStyle Hidden `
+    -PassThru
 
-Write-Host "`nmt.exe started (self-contained). Access at: https://localhost:$port" -ForegroundColor Green
+Write-Host "`nmt.exe started (PID: $($mtProcess.Id), self-contained). Access at: https://localhost:$port" -ForegroundColor Green
+Write-Host "Launcher stdout: $stdoutPath" -ForegroundColor Gray
+Write-Host "Launcher stderr: $stderrPath" -ForegroundColor Gray
 Write-Host "Logs: C:\Users\$env:USERNAME\.midterm\logs\" -ForegroundColor Gray
 Write-Host "`nThis is a self-contained debug build - mt.exe runs directly without dotnet.exe" -ForegroundColor Gray

@@ -454,6 +454,7 @@
   "session.split": "РАЗДЕЛЁН",
   "session.splitTooltip": "Сессия находится в разделённом макете",
   "session.pinToQuickLaunch": "Закрепить в быстром запуске",
+  "session.repairDisplay": "Исправить отображение",
   "session.rename": "Переименовать сессию",
   "session.markAgentControlled": "Пометить как управляемый агентом",
   "session.markHumanControlled": "Вернуть под контроль человека",

@@ -457,6 +457,7 @@
   "session.split": "分屏",
   "session.splitTooltip": "会话处于分屏布局",
   "session.pinToQuickLaunch": "固定到快速启动",
+  "session.repairDisplay": "修复显示",
   "session.rename": "重命名会话",
   "session.markAgentControlled": "标记为代理控制",
   "session.markHumanControlled": "恢复为人工控制",

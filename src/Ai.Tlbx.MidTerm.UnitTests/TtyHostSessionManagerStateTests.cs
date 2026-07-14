@@ -497,6 +497,126 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Equal("Before", info.Name);
     }
 
+    [Theory]
+    [InlineData(30, 31)]
+    [InlineData(100, 99)]
+    public async Task ExecuteRedrawPulseAsync_PulsesOneRowAndRestoresCanonicalGeometry(
+        int canonicalRows,
+        int expectedPulseRows)
+    {
+        var calls = new List<(int Cols, int Rows, bool CanBeCanceled)>();
+        using var cancellation = new CancellationTokenSource();
+
+        var success = await TtyHostSessionManager.ExecuteRedrawPulseAsync(
+            120,
+            canonicalRows,
+            (cols, rows, token) =>
+            {
+                calls.Add((cols, rows, token.CanBeCanceled));
+                return Task.FromResult(true);
+            },
+            cancellation.Token);
+
+        Assert.True(success);
+        Assert.Equal(
+            [(120, expectedPulseRows, true), (120, canonicalRows, false)],
+            calls);
+    }
+
+    [Fact]
+    public async Task ExecuteRedrawPulseAsync_WhenPulseFails_StillRestoresCanonicalGeometry()
+    {
+        var calls = new List<(int Cols, int Rows)>();
+
+        var success = await TtyHostSessionManager.ExecuteRedrawPulseAsync(
+            120,
+            30,
+            (cols, rows, _) =>
+            {
+                calls.Add((cols, rows));
+                return Task.FromResult(calls.Count > 1);
+            },
+            CancellationToken.None);
+
+        Assert.False(success);
+        Assert.Equal([(120, 31), (120, 30)], calls);
+    }
+
+    [Fact]
+    public async Task RedrawSessionAsync_UnknownSession_DoesNotRetainResizeState()
+    {
+        await using var manager = CreateManager();
+
+        var success = await manager.RedrawSessionAsync("not-a-session");
+
+        Assert.False(success);
+        var gates = GetField<ConcurrentDictionary<string, SemaphoreSlim>>(manager, "_resizeGates");
+        Assert.Empty(gates);
+    }
+
+    [Fact]
+    public async Task CloseSessionAsync_WaitsForResizeTransactionThenRemovesItsGate()
+    {
+        await using var manager = CreateManager();
+        AddCachedSession(manager, "s1");
+        AddDisconnectedClient(manager, "s1");
+        Assert.False(await manager.ResizeSessionAsync("s1", 120, 30));
+
+        var gates = GetField<ConcurrentDictionary<string, SemaphoreSlim>>(manager, "_resizeGates");
+        var resizeGate = gates["s1"];
+        await resizeGate.WaitAsync();
+        var closeTask = manager.CloseSessionAsync("s1");
+        try
+        {
+            Assert.False(closeTask.IsCompleted);
+        }
+        finally
+        {
+            resizeGate.Release();
+        }
+
+        Assert.True(await closeTask);
+        Assert.False(gates.ContainsKey("s1"));
+    }
+
+    [Fact]
+    public async Task HandleClientOutput_DuringRedraw_ForwardsCanonicalGeometry()
+    {
+        await using var manager = CreateManager();
+        var forwarded = new List<(int Cols, int Rows)>();
+        manager.OnOutput += (_, _, cols, rows, _) => forwarded.Add((cols, rows));
+
+        var overrides = GetField<ConcurrentDictionary<string, TtyHostSessionManager.TerminalDimensions>>(
+            manager,
+            "_redrawDimensionOverrides");
+        overrides["s1"] = new TtyHostSessionManager.TerminalDimensions(120, 30);
+
+        InvokeHandleClientOutput(manager, "s1", [], cols: 120, rows: 31);
+
+        Assert.Equal([(120, 30)], forwarded);
+    }
+
+    [Fact]
+    public async Task CacheRefreshedSessionInfo_DuringRedraw_PreservesCanonicalGeometry()
+    {
+        await using var manager = CreateManager();
+        var existing = AddCachedSession(manager, "s1");
+        existing.Cols = 120;
+        existing.Rows = 30;
+
+        var overrides = GetField<ConcurrentDictionary<string, TtyHostSessionManager.TerminalDimensions>>(
+            manager,
+            "_redrawDimensionOverrides");
+        overrides["s1"] = new TtyHostSessionManager.TerminalDimensions(120, 30);
+        var pulseSnapshot = new SessionInfo { Id = "s1", Cols = 120, Rows = 31 };
+
+        InvokeCacheRefreshedSessionInfo(manager, "s1", pulseSnapshot);
+
+        Assert.Equal(120, pulseSnapshot.Cols);
+        Assert.Equal(30, pulseSnapshot.Rows);
+        Assert.Same(pulseSnapshot, manager.GetSession("s1"));
+    }
+
     [Fact]
     public async Task OscTitleSequence_BelTerminator_UpdatesTerminalTitle()
     {
@@ -718,13 +838,18 @@ public sealed class TtyHostSessionManagerStateTests
         clients[sessionId] = new TtyHostClient(sessionId, hostPid: 999999);
     }
 
-    private static void InvokeHandleClientOutput(TtyHostSessionManager manager, string sessionId, byte[] output)
+    private static void InvokeHandleClientOutput(
+        TtyHostSessionManager manager,
+        string sessionId,
+        byte[] output,
+        int cols = 120,
+        int rows = 30)
     {
         var method = typeof(TtyHostSessionManager).GetMethod(
             "HandleClientOutput",
             BindingFlags.Instance | BindingFlags.NonPublic)!;
 
-        method.Invoke(manager, [sessionId, 0UL, 120, 30, new ReadOnlyMemory<byte>(output)]);
+        method.Invoke(manager, [sessionId, 0UL, cols, rows, new ReadOnlyMemory<byte>(output)]);
     }
 
     private static void InvokeHandleClientForegroundChanged(
@@ -737,6 +862,18 @@ public sealed class TtyHostSessionManagerStateTests
             BindingFlags.Instance | BindingFlags.NonPublic)!;
 
         method.Invoke(manager, [sessionId, payload]);
+    }
+
+    private static void InvokeCacheRefreshedSessionInfo(
+        TtyHostSessionManager manager,
+        string sessionId,
+        SessionInfo refreshed)
+    {
+        var method = typeof(TtyHostSessionManager).GetMethod(
+            "CacheRefreshedSessionInfo",
+            BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        method.Invoke(manager, [sessionId, refreshed]);
     }
 
     private static void InvokeMergeCachedFields(SessionInfo refreshed, SessionInfo existing)

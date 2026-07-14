@@ -479,6 +479,7 @@
   "session.split": "GETEILT",
   "session.splitTooltip": "Sitzung ist in einem geteilten Layout",
   "session.pinToQuickLaunch": "An Schnellstart anheften",
+  "session.repairDisplay": "Anzeige reparieren",
   "session.rename": "Sitzung umbenennen",
   "session.markAgentControlled": "Als agentengesteuert markieren",
   "session.markHumanControlled": "Zur menschlichen Steuerung zurückgeben",

@@ -71,6 +71,7 @@ export interface SessionListCallbacks {
   onSelect: (sessionId: string, options?: SessionSelectionOptions) => void;
   onDelete: (sessionId: string) => void;
   onRename: (sessionId: string) => void;
+  onRepairDisplay: (sessionId: string) => void;
   onToggleAgentControl: (sessionId: string) => void;
   onPinToHistory: (sessionId: string) => void;
   onEnableMidtermFeatures?: (sessionId: string) => void;
@@ -1179,9 +1180,33 @@ function getSidebarSessionActionsSignature(entry: SidebarSessionRef): string {
     t(isSessionNotesExpanded(entry.id) ? 'session.collapseNotes' : 'session.expandNotes'),
     isSessionInLayout(entry.id),
     t('session.removeFromLayout'),
+    entry.machineId === null && !entry.session.appServerControlOnly,
+    t('session.repairDisplay'),
     t('session.rename'),
     t('session.close'),
   ].join('\u001f');
+}
+
+function appendRepairDisplayAction(actions: HTMLDivElement, entry: SidebarSessionRef): void {
+  if (entry.machineId !== null || entry.session.appServerControlOnly) {
+    return;
+  }
+
+  const repairButton = document.createElement('button');
+  repairButton.className = 'session-repair-display';
+  repairButton.setAttribute('role', 'menuitem');
+  repairButton.title = t('session.repairDisplay');
+  repairButton.setAttribute('aria-label', t('session.repairDisplay'));
+  repairButton.innerHTML = `
+    <span class="session-action-icon text-icon" aria-hidden="true">↻</span>
+    <span class="session-action-label">${escapeHtml(t('session.repairDisplay'))}</span>
+  `;
+  repairButton.addEventListener('click', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    callbacks?.onRepairDisplay(entry.id);
+  });
+  actions.appendChild(repairButton);
 }
 
 function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessionRef): void {
@@ -1262,6 +1287,8 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     });
     actions.appendChild(undockButton);
   }
+
+  appendRepairDisplayAction(actions, entry);
 
   const renameButton = document.createElement('button');
   renameButton.className = 'session-rename';

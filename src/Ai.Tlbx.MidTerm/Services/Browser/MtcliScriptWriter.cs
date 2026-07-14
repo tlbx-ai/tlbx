@@ -31,6 +31,7 @@ public static class MtcliScriptWriter
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         _MK="mm-session={{token}}"
+        _MTDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
         _MCURL() {
           if command -v curl.exe >/dev/null 2>&1; then
             curl.exe "$@"
@@ -173,6 +174,38 @@ public static class MtcliScriptWriter
               return 1
               ;;
           esac
+        }
+
+        # mt_run_isolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
+        mt_run_isolated() {
+          if [ $# -lt 1 ] || [ -z "${1:-}" ]; then
+            echo "Usage: mt_run_isolated EXECUTABLE [ARG ...]" >&2
+            return 1
+          fi
+
+          local executable="$1"
+          shift
+          if [[ "$executable" == */* ]]; then
+            [ -x "$executable" ] || { printf 'Executable not found or not executable: %s\n' "$executable" >&2; return 1; }
+          elif ! command -v "$executable" >/dev/null 2>&1; then
+            printf 'Executable not found: %s\n' "$executable" >&2
+            return 1
+          fi
+          command -v nohup >/dev/null 2>&1 || { echo "mt_run_isolated requires nohup." >&2; return 1; }
+
+          local runs_root="$_MTDIR/runs" run_dir run_id stdout_path stderr_path pid
+          mkdir -p -- "$runs_root" || return $?
+          run_dir="$(mktemp -d "$runs_root/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")" || return $?
+          run_id="${run_dir##*/}"
+          stdout_path="$run_dir/stdout.log"
+          stderr_path="$run_dir/stderr.log"
+          (umask 077; : >"$stdout_path"; : >"$stderr_path") || return $?
+
+          (exec nohup "$executable" "$@") </dev/null >>"$stdout_path" 2>>"$stderr_path" &
+          pid=$!
+          disown "$pid" 2>/dev/null || true
+          printf '{"pid":%s,"runId":"%s","stdoutPath":"%s","stderrPath":"%s"}\n' \
+            "$pid" "$(_MJSONESC "$run_id")" "$(_MJSONESC "$stdout_path")" "$(_MJSONESC "$stderr_path")"
         }
 
         # Browser interaction (requires web preview panel open in MidTerm)
@@ -415,6 +448,17 @@ public static class MtcliScriptWriter
           fi
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           _MC "$_MT/api/sessions/$sid/buffer"
+        }
+        # mt_redraw [SESSION_ID]  — ask the foreground console application to repaint its current screen
+        mt_redraw() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC -X POST "$_MT/api/sessions/$sid/redraw"
         }
         # mt_tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
         mt_tail() {
@@ -887,6 +931,33 @@ public static class MtcliScriptWriter
             if ($null -eq $Value) { return "''" }
             return "'" + $Value.Replace("'", "'""'""'") + "'"
         }
+        function script:_MQuoteProcessArgument {
+            param([AllowEmptyString()][string]$Value)
+            if ($null -eq $Value -or $Value.Length -eq 0) { return '""' }
+            if ($Value -notmatch '[\s"]') { return $Value }
+
+            $result = '"'
+            $backslashes = 0
+            foreach ($character in $Value.ToCharArray()) {
+                if ($character -eq '\') {
+                    $backslashes++
+                    continue
+                }
+                if ($character -eq '"') {
+                    if ($backslashes -gt 0) { $result += (('\' * ($backslashes * 2)) -join '') }
+                    $result += '\"'
+                    $backslashes = 0
+                    continue
+                }
+                if ($backslashes -gt 0) {
+                    $result += (('\' * $backslashes) -join '')
+                    $backslashes = 0
+                }
+                $result += $character
+            }
+            if ($backslashes -gt 0) { $result += (('\' * ($backslashes * 2)) -join '') }
+            return $result + '"'
+        }
         function script:_MContextMissingMessage {
             param([string]$CommandName = "This command")
             @(
@@ -1062,6 +1133,66 @@ public static class MtcliScriptWriter
                 "" { Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
                 default { throw "Usage: mt_context [text|bash|pwsh|json]" }
             }
+        }
+
+        # Mt-RunIsolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
+        function Mt-RunIsolated {
+            [CmdletBinding()]
+            param(
+                [Parameter(Mandatory=$true, Position=0)][string]$Executable,
+                [Parameter(Position=1, ValueFromRemainingArguments=$true)][AllowEmptyString()][string[]]$ArgumentList = @()
+            )
+
+            $isWindowsHost = $IsWindows -or $PSVersionTable.PSEdition -eq "Desktop"
+            $launchExecutable = $Executable
+            [string[]]$launchArguments = @($ArgumentList)
+            if (-not $isWindowsHost) {
+                $nohup = Get-Command nohup -CommandType Application -ErrorAction SilentlyContinue
+                if (-not $nohup) {
+                    throw "Mt-RunIsolated requires nohup on macOS and Linux."
+                }
+                $launchExecutable = $nohup.Source
+                $launchArguments = @($Executable) + @($ArgumentList)
+            }
+
+            $runsRoot = Join-Path $PSScriptRoot "runs"
+            $runId = "{0:yyyyMMddTHHmmssfffZ}-{1}" -f [DateTime]::UtcNow, ([Guid]::NewGuid().ToString("N").Substring(0, 8))
+            $runDirectory = Join-Path $runsRoot $runId
+            $stdoutPath = Join-Path $runDirectory "stdout.log"
+            $stderrPath = Join-Path $runDirectory "stderr.log"
+            $stdinPath = Join-Path $runDirectory "stdin.empty"
+
+            [void](New-Item -ItemType Directory -Path $runDirectory -Force)
+            [IO.File]::WriteAllBytes($stdinPath, [byte[]]::new(0))
+            $startParameters = @{
+                FilePath = $launchExecutable
+                WorkingDirectory = (Get-Location).Path
+                RedirectStandardInput = $stdinPath
+                RedirectStandardOutput = $stdoutPath
+                RedirectStandardError = $stderrPath
+                PassThru = $true
+                ErrorAction = "Stop"
+            }
+            if ($launchArguments.Count -gt 0) {
+                $startParameters.ArgumentList = (($launchArguments | ForEach-Object { _MQuoteProcessArgument $_ }) -join ' ')
+            }
+            if ($isWindowsHost) {
+                $startParameters.WindowStyle = "Hidden"
+            }
+
+            try {
+                $process = Start-Process @startParameters
+            } catch {
+                Remove-Item -LiteralPath $runDirectory -Recurse -Force -ErrorAction SilentlyContinue
+                throw
+            }
+
+            [pscustomobject]@{
+                pid = $process.Id
+                runId = $runId
+                stdoutPath = $stdoutPath
+                stderrPath = $stderrPath
+            } | ConvertTo-Json -Compress
         }
 
         # Browser interaction (requires web preview panel open in MidTerm)
@@ -1294,6 +1425,13 @@ public static class MtcliScriptWriter
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer"
+        }
+        # Mt-Redraw [SESSION_ID]  — ask the foreground console application to repaint its current screen
+        function Mt-Redraw {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/redraw"
         }
         # Mt-Tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
         function Mt-Tail {
@@ -1741,6 +1879,7 @@ public static class MtcliScriptWriter
 
         # PowerShell aliases matching the documented mt_* helper names
         Set-Alias -Name mt_context -Value Mt-Context
+        Set-Alias -Name mt_run_isolated -Value Mt-RunIsolated
         Set-Alias -Name mt_query -Value Mt-Query
         Set-Alias -Name mt_click -Value Mt-Click
         Set-Alias -Name mt_fill -Value Mt-Fill
@@ -1783,6 +1922,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_apply_update -Value Mt-ApplyUpdate
         Set-Alias -Name mt_sessions -Value Mt-Sessions
         Set-Alias -Name mt_buffer -Value Mt-Buffer
+        Set-Alias -Name mt_redraw -Value Mt-Redraw
         Set-Alias -Name mt_tail -Value Mt-Tail
         Set-Alias -Name mt_sendtext -Value Mt-SendText
         Set-Alias -Name mt_paste -Value Mt-Paste

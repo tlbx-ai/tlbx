@@ -5,7 +5,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 public static class MidtermDirectory
 {
     public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "27";
+    private const string GuidanceVersion = "28";
 
     private static int _port;
     private static AuthService? _authService;
@@ -118,6 +118,7 @@ public static class MidtermDirectory
         | `uploads/` | Files uploaded via drag-drop or paste into a terminal session |
         | `screenshots/` | Web preview screenshots (`mt_screenshot`) |
         | `snapshot_*/` | DOM snapshots with downloaded CSS (`mt_snapshot`) |
+        | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`mt_run_isolated`) |
         | `*.ps1`, `*.sh` | Saved command scripts, mtcli helper scripts |
         | `CLAUDE.md` | This file — AI agent guidance |
         | `AGENTS.md` | Workflow examples for AI agents |
@@ -150,6 +151,10 @@ public static class MidtermDirectory
         Use `mt_session` to print the current terminal session id, `mt_preview [name]` to inspect or switch the current named browser context, and `mt_previews` to list all named previews under this terminal.
         Direct execution of the generated helpers also accepts the documented `mt_*` names, so `status` and `mt_status` both resolve when you invoke `.midterm/mtcli.sh` or `.midterm/mtcli.ps1` directly.
 
+        ## Isolated Background Processes
+
+        Use `mt_run_isolated <executable> [arg ...]` for a browser, profiler, daemon, or other non-interactive child that may outlive the command which starts it. Pass the executable and every argument as separate argv tokens, never as one shell command string. MidTerm detaches stdin, routes stdout and stderr to distinct files under `.midterm/runs/<run-id>/`, and returns their paths with the PID as JSON. Interactive shells and TUIs belong in a normal terminal or split pane instead.
+
         **Rules:**
         - Start with `mt_outline` (10x smaller than `mt_query`)
         - Use `mt_query SELECTOR --text` for text-only output
@@ -179,6 +184,7 @@ public static class MidtermDirectory
         | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
         | `mt_session` | Print the current MidTerm terminal session id |
         | `mt_context [format]` | Print reusable session-context exports (`text`, `bash`, `pwsh`, or `json`) |
+        | `mt_run_isolated <exe> [arg...]` | Start a non-interactive child with detached stdin and separate stdout/stderr artifacts |
         | `mt_topic <text>` | Set the current ad-hoc session topic shown in the sidebar (`mt_topic --clear` clears it) |
         | `mt_preview [name]` | Print or switch the current named preview (`default`, `user1`, `user2`, ...) |
         | `mt_previews` | List named previews for the current terminal session |
@@ -198,6 +204,7 @@ public static class MidtermDirectory
         | `mt_apply_update [source]` | Apply pending update and wait for server |
         | `mt_sessions` | List terminal sessions |
         | `mt_buffer <id>` | Terminal buffer content |
+        | `mt_redraw [id]` | Ask the foreground console application to repaint its current screen |
         | `mt_tail [id] [lines]` | Cleaned terminal tail with ANSI stripped |
         | `mt_sendtext [id] <text...>` | Send literal text without auto-submit |
         | `mt_paste [--bracketed] [--file] [id] <text...>` | Paste clipboard-style text through the same server path as UI paste; reads stdin when text is omitted |
@@ -306,6 +313,12 @@ public static class MidtermDirectory
 
         mt_new_session → mt_sessions — find the new session id → tmux send-keys -t %1 "htop" Enter
 
+        ## Start a background tool without contaminating the terminal
+
+        mt_run_isolated chrome --headless https://example.com → read the returned JSON → inspect `.midterm/runs/<run-id>/stdout.log` and `stderr.log`
+
+        Pass one executable plus separate argv tokens. Use this for non-interactive browsers, profilers, daemons, and workers; use a normal terminal or split pane for interactive shells and TUIs.
+
         ## Remote-control another terminal
 
         mt_attention → mt_tail SESSION_ID 80 → mt_prompt SESSION_ID "status update?" → mt_activity SESSION_ID
@@ -362,11 +375,13 @@ public static class MidtermDirectory
         - mt_status reports `state: ready`, `state: waiting`, or `state: ambiguous` so you can tell whether the browser bridge is actually usable
         - Every C# change in the local source loop restarts the source `mt`; wait for the source URL to answer again before trusting browser results from that iteration
         - mt_session prints the current MidTerm terminal session ID that mtcli browser commands default to
+        - mt_run_isolated detaches child stdin and sends stdout/stderr to separate `.midterm/runs/<run-id>/` artifacts; never pass it one shell command string
         - mt_context --bash / mt_context --pwsh print export commands for nested shells so child bash/pwsh processes keep the same MidTerm session scope
         - mt_topic labels the current ad-hoc session in the sidebar; keep it at 3-6 words and update it when the user's high-level topic shifts
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
         - When one MidTerm instance is previewing another, the outer MidTerm browser tab owns `/ws/state`; the nested preview target alone cannot satisfy browser-control commands
         - mt_tail strips ANSI escape sequences and compresses noisy blank-line runs so supervisor sessions can read clean terminal output
+        - mt_redraw performs a temporary PTY geometry pulse when a full-screen console application needs to repaint after foreign output
         - mt_prompt uses MidTerm's server-side prompt API so text plus submit happen atomically instead of as two client-side calls
         - mt_prompt is state-aware: bootstrapped workers auto-resume from shell, and shell vs idle prompt vs busy turn should be decided by MidTerm, not guessed ad hoc by the supervisor
         - mt_prompt_now is the explicit takeover helper for busy AI terminals when immediate interrupt-first execution is intended

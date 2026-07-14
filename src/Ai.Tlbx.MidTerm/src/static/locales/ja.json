@@ -454,6 +454,7 @@
   "session.split": "分割",
   "session.splitTooltip": "セッションは分割レイアウトです",
   "session.pinToQuickLaunch": "クイック起動にピン留め",
+  "session.repairDisplay": "表示を修復",
   "session.rename": "セッション名を変更",
   "session.markAgentControlled": "エージェント操作としてマーク",
   "session.markHumanControlled": "人間操作に戻す",

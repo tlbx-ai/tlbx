@@ -24,6 +24,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 {
     public const int MaxSessions = 256;
     private const int SessionIdLength = 8;
+    private const int MaximumTerminalRows = 100;
     private const string FallbackMinCompatibleVersion = "2.0.0";
 
     private readonly SessionRegistry _registry;
@@ -34,6 +35,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly SessionForegroundProcessService _foregroundProcessService;
     private readonly SettingsService? _settingsService;
     private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _resizeGates = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TerminalDimensions> _redrawDimensionOverrides = new(StringComparer.Ordinal);
     private string? _runAsUser;
     private string? _runAsUserSid;
     private bool _disposed;
@@ -614,21 +617,37 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public async Task<SessionInfo?> GetSessionFreshAsync(string sessionId, CancellationToken ct = default)
     {
-        if (!_clients.TryGetValue(sessionId, out var client))
+        if (!_clients.ContainsKey(sessionId))
         {
             return null;
         }
 
-        var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
-        if (info is not null)
+        var resizeGate = GetResizeGate(sessionId);
+        await resizeGate.WaitAsync(ct).ConfigureAwait(false);
+        var removeResizeGate = false;
+        try
         {
-            if (_sessionCache.TryGetValue(sessionId, out var existing))
+            if (!_clients.TryGetValue(sessionId, out var client))
             {
-                MergeCachedFields(info, existing);
+                removeResizeGate = true;
+                return null;
             }
-            _sessionCache[sessionId] = info;
+
+            var info = await client.GetInfoAsync(ct).ConfigureAwait(false);
+            if (info is not null)
+            {
+                CacheRefreshedSessionInfo(sessionId, info);
+            }
+            return info;
         }
-        return info;
+        finally
+        {
+            resizeGate.Release();
+            if (removeResizeGate && !_clients.ContainsKey(sessionId))
+            {
+                TryRemoveResizeGate(sessionId, resizeGate);
+            }
+        }
     }
 
     private void ApplyDiscoveredHostMetadata(SessionInfo info)
@@ -727,6 +746,31 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public async Task<bool> CloseSessionAsync(string sessionId, CancellationToken ct = default)
     {
+        if (!_clients.ContainsKey(sessionId))
+        {
+            return false;
+        }
+
+        var resizeGate = GetResizeGate(sessionId);
+        await resizeGate.WaitAsync(ct).ConfigureAwait(false);
+        var closed = false;
+        try
+        {
+            closed = await CloseSessionCoreAsync(sessionId, ct).ConfigureAwait(false);
+            return closed;
+        }
+        finally
+        {
+            resizeGate.Release();
+            if (closed || !_clients.ContainsKey(sessionId))
+            {
+                TryRemoveResizeGate(sessionId, resizeGate);
+            }
+        }
+    }
+
+    private async Task<bool> CloseSessionCoreAsync(string sessionId, CancellationToken ct)
+    {
         if (!_clients.TryRemove(sessionId, out var client))
         {
             return false;
@@ -735,6 +779,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _registry.RemoveSessionState(sessionId);
         _ownershipRegistry.Remove(sessionId);
         _transportState.TryRemove(sessionId, out _);
+        _redrawDimensionOverrides.TryRemove(sessionId, out _);
 
         await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
@@ -748,22 +793,130 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     public async Task<bool> ResizeSessionAsync(string sessionId, int cols, int rows, CancellationToken ct = default)
     {
-        if (!_clients.TryGetValue(sessionId, out var client))
+        if (!_clients.ContainsKey(sessionId))
         {
             return false;
         }
 
-        var success = await client.ResizeAsync(cols, rows, ct).ConfigureAwait(false);
-
-        if (success && _sessionCache.TryGetValue(sessionId, out var info))
+        var resizeGate = GetResizeGate(sessionId);
+        await resizeGate.WaitAsync(ct).ConfigureAwait(false);
+        var removeResizeGate = false;
+        try
         {
-            info.Cols = cols;
-            info.Rows = rows;
-            OnStateChanged?.Invoke(sessionId);
-            NotifyStateChange();
+            if (!_clients.TryGetValue(sessionId, out var client))
+            {
+                removeResizeGate = true;
+                return false;
+            }
+
+            var success = await client.ResizeAsync(cols, rows, ct).ConfigureAwait(false);
+
+            if (success && _sessionCache.TryGetValue(sessionId, out var info))
+            {
+                info.Cols = cols;
+                info.Rows = rows;
+                OnStateChanged?.Invoke(sessionId);
+                NotifyStateChange();
+            }
+
+            return success;
+        }
+        finally
+        {
+            resizeGate.Release();
+            if (removeResizeGate && !_clients.ContainsKey(sessionId))
+            {
+                TryRemoveResizeGate(sessionId, resizeGate);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Requests a deterministic foreground redraw without changing the browser-visible terminal geometry.
+    /// The one-row pulse makes full-screen console applications repaint their own model, then restores the
+    /// canonical dimensions before releasing the per-session resize gate.
+    /// </summary>
+    public async Task<bool> RedrawSessionAsync(string sessionId, CancellationToken ct = default)
+    {
+        if (!_clients.ContainsKey(sessionId) || !_sessionCache.ContainsKey(sessionId))
+        {
+            return false;
         }
 
-        return success;
+        var resizeGate = GetResizeGate(sessionId);
+        await resizeGate.WaitAsync(ct).ConfigureAwait(false);
+        var removeResizeGate = false;
+        try
+        {
+            if (!_clients.TryGetValue(sessionId, out var client) ||
+                !_sessionCache.TryGetValue(sessionId, out var info) ||
+                info.Cols <= 0 ||
+                info.Rows <= 0)
+            {
+                removeResizeGate = !_clients.ContainsKey(sessionId);
+                return false;
+            }
+
+            var canonicalDimensions = new TerminalDimensions(info.Cols, info.Rows);
+            _redrawDimensionOverrides[sessionId] = canonicalDimensions;
+            try
+            {
+                return await ExecuteRedrawPulseAsync(
+                    canonicalDimensions.Cols,
+                    canonicalDimensions.Rows,
+                    client.ResizeAsync,
+                    ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                _redrawDimensionOverrides.TryRemove(sessionId, out _);
+            }
+        }
+        finally
+        {
+            resizeGate.Release();
+            if (removeResizeGate && !_clients.ContainsKey(sessionId))
+            {
+                TryRemoveResizeGate(sessionId, resizeGate);
+            }
+        }
+    }
+
+    private SemaphoreSlim GetResizeGate(string sessionId) =>
+        _resizeGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+
+    private bool TryRemoveResizeGate(string sessionId, SemaphoreSlim resizeGate) =>
+        ((ICollection<KeyValuePair<string, SemaphoreSlim>>)_resizeGates)
+            .Remove(new KeyValuePair<string, SemaphoreSlim>(sessionId, resizeGate));
+
+    internal static async Task<bool> ExecuteRedrawPulseAsync(
+        int cols,
+        int rows,
+        Func<int, int, CancellationToken, Task<bool>> resizeAsync,
+        CancellationToken ct)
+    {
+        var pulseRows = rows < MaximumTerminalRows ? rows + 1 : rows - 1;
+        if (cols <= 0 || rows <= 0 || pulseRows <= 0 || pulseRows == rows)
+        {
+            return false;
+        }
+
+        var pulseAccepted = false;
+        var restoreAccepted = false;
+        try
+        {
+            pulseAccepted = await resizeAsync(cols, pulseRows, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // A canceled request may have reached mthost before its acknowledgement was observed.
+            // Briefly allow the foreground application to observe the intermediate size,
+            // then restore with an independent token so the PTY cannot remain at pulse geometry.
+            await Task.Delay(TimeSpan.FromMilliseconds(25), CancellationToken.None).ConfigureAwait(false);
+            restoreAccepted = await resizeAsync(cols, rows, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        return pulseAccepted && restoreAccepted;
     }
 
     public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default)
@@ -1044,6 +1197,12 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private void HandleClientOutput(string sessionId, ulong sequenceStart, int cols, int rows, ReadOnlyMemory<byte> data)
     {
+        if (_redrawDimensionOverrides.TryGetValue(sessionId, out var canonicalDimensions))
+        {
+            cols = canonicalDimensions.Cols;
+            rows = canonicalDimensions.Rows;
+        }
+
         var state = _transportState.GetOrAdd(sessionId, static _ => new TerminalTransportRuntimeState());
         state.SourceSeq = sequenceStart + (ulong)data.Length;
         state.MuxReceivedSeq = state.SourceSeq;
@@ -1285,6 +1444,14 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private async Task HandleClientStateChangedAsync(string sessionId)
     {
+        if (!_clients.ContainsKey(sessionId))
+        {
+            return;
+        }
+
+        var resizeGate = GetResizeGate(sessionId);
+        await resizeGate.WaitAsync().ConfigureAwait(false);
+        var removeResizeGate = false;
         try
         {
             if (_clients.TryGetValue(sessionId, out var c))
@@ -1292,18 +1459,14 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 var info = await c.GetInfoAsync().ConfigureAwait(false);
                 if (info is not null)
                 {
-                    if (_sessionCache.TryGetValue(sessionId, out var existing))
-                    {
-                        MergeCachedFields(info, existing);
-                    }
-                    _sessionCache[sessionId] = info;
+                    CacheRefreshedSessionInfo(sessionId, info);
                 }
 
                 if (info is null || !info.IsRunning)
                 {
                     if (_tmuxCreatedSessions.TryRemove(sessionId, out _))
                     {
-                        await CloseSessionAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
+                        removeResizeGate = await CloseSessionCoreAsync(sessionId, CancellationToken.None).ConfigureAwait(false);
                         return;
                     }
 
@@ -1313,8 +1476,14 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                     }
                     _registry.RemoveSessionState(sessionId);
                     _transportState.TryRemove(sessionId, out _);
+                    _redrawDimensionOverrides.TryRemove(sessionId, out _);
                     _ownershipRegistry.Remove(sessionId);
+                    removeResizeGate = true;
                 }
+            }
+            else
+            {
+                removeResizeGate = true;
             }
 
             OnStateChanged?.Invoke(sessionId);
@@ -1324,6 +1493,30 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         {
             Log.Exception(ex, $"TtyHostSessionManager.HandleClientStateChanged({sessionId})");
         }
+        finally
+        {
+            resizeGate.Release();
+            if (removeResizeGate && !_clients.ContainsKey(sessionId))
+            {
+                TryRemoveResizeGate(sessionId, resizeGate);
+            }
+        }
+    }
+
+    private void CacheRefreshedSessionInfo(string sessionId, SessionInfo refreshed)
+    {
+        if (_sessionCache.TryGetValue(sessionId, out var existing))
+        {
+            MergeCachedFields(refreshed, existing);
+        }
+
+        if (_redrawDimensionOverrides.TryGetValue(sessionId, out var canonicalDimensions))
+        {
+            refreshed.Cols = canonicalDimensions.Cols;
+            refreshed.Rows = canonicalDimensions.Rows;
+        }
+
+        _sessionCache[sessionId] = refreshed;
     }
 
     private static void MergeCachedFields(SessionInfo refreshed, SessionInfo existing)
@@ -1405,7 +1598,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
 
         _registry.ClearAll();
+        _resizeGates.Clear();
+        _redrawDimensionOverrides.Clear();
     }
+
+    internal readonly record struct TerminalDimensions(int Cols, int Rows);
 
     private static void KillProcess(int processId)
     {

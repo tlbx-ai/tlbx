@@ -393,6 +393,16 @@ export async function resizeSession(
   });
 }
 
+export async function redrawSession(id: string): Promise<void> {
+  const response = await fetch(`/api/sessions/${encodeURIComponent(id)}/redraw`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    await throwApiProblem(response, 'Failed to redraw terminal.');
+  }
+}
+
 export async function renameSession(
   id: string,
   name: string,

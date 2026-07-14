@@ -2398,6 +2398,7 @@ body::before {
 .session-control,
 .session-pin,
 .session-resize,
+.session-repair-display,
 .session-rename,
 .session-notes-toggle,
 .session-inject,
@@ -2513,6 +2514,7 @@ body::before {
 .session-control:hover,
 .session-pin:hover,
 .session-resize:hover,
+.session-repair-display:hover,
 .session-rename:hover,
 .session-notes-toggle:hover,
 .session-inject:hover,
@@ -2527,6 +2529,7 @@ body::before {
 .session-control:hover .session-action-icon,
 .session-pin:hover .session-action-icon,
 .session-resize:hover .session-action-icon,
+.session-repair-display:hover .session-action-icon,
 .session-rename:hover .session-action-icon,
 .session-notes-toggle:hover .session-action-icon,
 .session-inject:hover .session-action-icon,
@@ -4034,6 +4037,7 @@ body::before {
   .session-actions .session-control,
   .session-actions .session-pin,
   .session-actions .session-resize,
+  .session-actions .session-repair-display,
   .session-actions .session-rename,
   .session-actions .session-notes-toggle,
   .session-actions .session-inject,
@@ -4085,6 +4089,11 @@ body::before {
     color: var(--text-secondary);
   }
 
+  .session-actions .session-repair-display .session-action-icon {
+    background: var(--accent-blue-15);
+    color: var(--accent-blue);
+  }
+
   .session-actions .session-notes-toggle .session-action-icon {
     background: var(--accent-blue-15);
     color: var(--accent-blue);
@@ -4117,6 +4126,11 @@ body::before {
     background-color: var(--btn-secondary-hover);
   }
 
+  .session-actions .session-repair-display:active {
+    background-color: var(--accent-blue);
+    color: var(--text-on-accent);
+  }
+
   .session-actions .session-notes-toggle:active {
     background-color: var(--accent-blue);
     color: var(--text-on-accent);
@@ -4135,6 +4149,7 @@ body::before {
   .session-actions .session-control:active .session-action-icon,
   .session-actions .session-inject:active .session-action-icon,
   .session-actions .session-pin:active .session-action-icon,
+  .session-actions .session-repair-display:active .session-action-icon,
   .session-actions .session-close:active .session-action-icon {
     color: inherit;
     background: transparent;

@@ -454,6 +454,7 @@
   "session.split": "विभाजित",
   "session.splitTooltip": "सत्र विभाजित लेआउट में है",
   "session.pinToQuickLaunch": "क्विक लॉन्च में पिन करें",
+  "session.repairDisplay": "डिस्प्ले ठीक करें",
   "session.rename": "सत्र का नाम बदलें",
   "session.markAgentControlled": "एजेंट नियंत्रित के रूप में चिह्नित करें",
   "session.markHumanControlled": "मानव नियंत्रण पर लौटाएँ",
