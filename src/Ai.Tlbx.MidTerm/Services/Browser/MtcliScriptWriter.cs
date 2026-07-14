@@ -777,7 +777,7 @@ public static class MtcliScriptWriter
           local slash_delay_ms="${MT_BOOTSTRAP_SLASH_DELAY_MS:-350}"
           local body="{\"name\":\"$(_MJE "$name")\",\"workingDirectory\":\"$(_MJE "$cwd")\",\"profile\":\"$(_MJE "$profile")\",\"agentControlled\":true,\"injectGuidance\":true,\"launchDelayMs\":$launch_delay_ms,\"slashCommandDelayMs\":$slash_delay_ms"
           if [ $# -gt 0 ]; then
-            body+=',\"slashCommands\":['
+            body+=',"slashCommands":['
             local first=1
             local command
             for command in "$@"; do

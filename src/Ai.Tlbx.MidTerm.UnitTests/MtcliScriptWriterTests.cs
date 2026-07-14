@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Xunit;
@@ -244,6 +246,49 @@ public sealed class MtcliScriptWriterTests : IDisposable
     }
 
     [Fact]
+    public void WriteScripts_BashBootstrapProducesValidJsonWithSlashCommands()
+    {
+        var bashPath = ResolveBashPath();
+        if (bashPath is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_tempDir);
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+
+        var scriptPath = ToBashPath(Path.Combine(_tempDir, "mtcli.sh"));
+        var startInfo = new ProcessStartInfo(bashPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("-c");
+        startInfo.ArgumentList.Add(
+            "source \"$1\"; _MJ() { printf '%s' \"$2\"; }; " +
+            "mt_bootstrap 'review \"worker\"' 'Q:/repo with space' codex status compact");
+        startInfo.ArgumentList.Add("midterm-test");
+        startInfo.ArgumentList.Add(scriptPath);
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, error);
+        using var json = JsonDocument.Parse(output);
+        var root = json.RootElement;
+        Assert.Equal("review \"worker\"", root.GetProperty("name").GetString());
+        Assert.Equal("Q:/repo with space", root.GetProperty("workingDirectory").GetString());
+        Assert.Equal("codex", root.GetProperty("profile").GetString());
+        var slashCommands = root.GetProperty("slashCommands");
+        Assert.Equal(2, slashCommands.GetArrayLength());
+        Assert.Equal("status", slashCommands[0].GetString());
+        Assert.Equal("compact", slashCommands[1].GetString());
+    }
+
+    [Fact]
     public void WriteScripts_WritesNormalizedDirectExecutionHelpers()
     {
         Directory.CreateDirectory(_tempDir);
@@ -372,5 +417,27 @@ public sealed class MtcliScriptWriterTests : IDisposable
         catch
         {
         }
+    }
+
+    private static string? ResolveBashPath()
+    {
+        string[] candidates = OperatingSystem.IsWindows()
+            ? [@"C:\Program Files\Git\bin\bash.exe", @"C:\Program Files\Git\usr\bin\bash.exe"]
+            : ["/bin/bash", "/usr/bin/bash"];
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string ToBashPath(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return path;
+        }
+
+        var normalized = path.Replace('\\', '/');
+        return normalized.Length >= 3 && normalized[1] == ':'
+            ? $"/{char.ToLowerInvariant(normalized[0])}/{normalized[3..]}"
+            : normalized;
     }
 }

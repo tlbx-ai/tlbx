@@ -13,6 +13,11 @@ public class AuthMiddlewareTests
     [InlineData("/swagger/swagger-ui.css")]
     [InlineData("/swagger/swagger-ui-bundle.js")]
     [InlineData("/openapi/openapi.json")]
+    [InlineData("/api/certificate/info")]
+    [InlineData("/api/certificate/download/pem")]
+    [InlineData("/api/certificate/download/crt")]
+    [InlineData("/api/certificate/download/mobileconfig")]
+    [InlineData("/api/certificate/share-packet")]
     public void IsPublicPath_DiscoverabilityAssets_ArePublic(string path)
     {
         Assert.True(AuthMiddleware.IsPublicPath(path));
@@ -21,9 +26,12 @@ public class AuthMiddlewareTests
     [Theory]
     [InlineData("/api/state")]
     [InlineData("/api/system")]
+    [InlineData("/api/paths")]
     [InlineData("/api/sessions/abc/state")]
     [InlineData("/api/security/api-keys")]
     [InlineData("/api/browser/status")]
+    [InlineData("/api/certificate/regenerate")]
+    [InlineData("/api/certificate/unknown")]
     [InlineData("/ws/state")]
     public void IsPublicPath_RemoteControlEndpoints_RemainProtected(string path)
     {

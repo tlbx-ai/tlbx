@@ -105,7 +105,6 @@ public static class ControlPlaneEndpoints
                 [
                     "inputHistory",
                     "controlPlane",
-                    "operatorView",
                     "multiSessionDispatch",
                     "hubControlPlane",
                     "exactEvents"
