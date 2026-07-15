@@ -70,7 +70,7 @@ function buildPrompt() {
   const rubric = fs.readFileSync(rubricPath, 'utf8');
   return `${rubric}
 
-Review the attached MidTerm marketing video.
+Review the attached tlbx marketing video.
 
 Be skeptical and taste-aware. Do not reward the clip for merely proving that a feature exists.
 Judge whether it is publishable for a developer-facing social post.

@@ -7,7 +7,7 @@ const landscapeViewport = { width: 1920, height: 1080 };
 const repoRoot = path.resolve(__dirname, '../../../..');
 const backgroundAssetPath = path.resolve(
   __dirname,
-  '../../assets/midterm-sci-fi-ken-burns-background-steel-cyan-2026-06-03.png',
+  '../../assets/tlbx-sci-fi-ken-burns-background-steel-cyan-2026-06-03.png',
 );
 
 type Settings = Record<string, unknown>;

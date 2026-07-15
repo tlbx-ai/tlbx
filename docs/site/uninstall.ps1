@@ -1,5 +1,5 @@
-# MidTerm GitHub Pages bootstrap uninstaller
-# Usage: irm https://tlbx-ai.github.io/MidTerm/uninstall.ps1 | iex
+# tlbx GitHub Pages bootstrap uninstaller
+# Usage: irm https://get.tlbx.ai/uninstall.ps1 | iex
 
 param(
     [switch]$Elevated,
@@ -11,7 +11,7 @@ param(
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$scriptUrl = 'https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/uninstall.ps1'
+$scriptUrl = 'https://raw.githubusercontent.com/tlbx-ai/tlbx/main/uninstall.ps1'
 if ($PSVersionTable.PSVersion.Major -lt 6) {
     $scriptContent = Invoke-RestMethod -Uri $scriptUrl -UseBasicParsing
 } else {

@@ -1,7 +1,7 @@
 {
   "name": "midterm-screenshot-automation",
   "version": "1.0.0",
-  "description": "Playwright automation for MidTerm marketing videos",
+  "description": "Playwright automation for tlbx marketing videos",
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint src playwright.config.ts",

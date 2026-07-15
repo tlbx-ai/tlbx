@@ -7,7 +7,7 @@ Generates a seamless multi-clip video where:
 - Audio is enabled for ambient sound and effects
 - Reference assets (screenshots, logos, memes) can be passed to influence generation
 
-Example scene: Developer discovers MidTerm
+Example scene: Developer discovers tlbx
 - Clip 1: Frustrated at desk (stuck) -> Has an idea (lightbulb moment)
 - Clip 2: Has idea -> Typing excitedly on laptop
 - Clip 3: Typing -> Celebrating with arms raised
@@ -276,7 +276,7 @@ def main():
 
     print("="*60)
     print("MULTI-CLIP VIDEO WORKFLOW WITH AUDIO")
-    print("Scene: Developer discovers MidTerm")
+    print("Scene: Developer discovers tlbx")
     print("="*60)
 
     # Load reference assets

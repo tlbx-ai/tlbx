@@ -1,10 +1,10 @@
-# MidTerm Screenshot Automation Runner
+# tlbx Screenshot Automation Runner
 # Runs Playwright test to record demo video
 
 $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 
-Write-Host "=== MidTerm Screenshot Automation ===" -ForegroundColor Cyan
+Write-Host "=== tlbx Screenshot Automation ===" -ForegroundColor Cyan
 Write-Host ""
 
 # Change to script directory
@@ -22,15 +22,15 @@ try {
         Write-Host ""
     }
 
-    # Check if MidTerm is running
-    Write-Host "Checking if MidTerm is running on localhost:2000..." -ForegroundColor Yellow
+    # Check if tlbx is running
+    Write-Host "Checking if tlbx is running on localhost:2000..." -ForegroundColor Yellow
     try {
         $response = Invoke-WebRequest -Uri "http://localhost:2000/api/health" -UseBasicParsing -TimeoutSec 5
-        Write-Host "MidTerm is running!" -ForegroundColor Green
+        Write-Host "tlbx is running!" -ForegroundColor Green
     }
     catch {
-        Write-Host "ERROR: MidTerm is not running!" -ForegroundColor Red
-        Write-Host "Please start MidTerm first: mt.exe (or run from Ai.Tlbx.MidTerm)" -ForegroundColor Yellow
+        Write-Host "ERROR: tlbx is not running!" -ForegroundColor Red
+        Write-Host "Please start tlbx first: mt.exe (or run from Ai.Tlbx.MidTerm)" -ForegroundColor Yellow
         exit 1
     }
     Write-Host ""

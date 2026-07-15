@@ -30,7 +30,7 @@ export default defineConfig({
       size: { width: VIEWPORT_WIDTH, height: VIEWPORT_HEIGHT },
     },
 
-    // Base URL for MidTerm
+    // Base URL for tlbx
     baseURL: MIDTERM_BASE_URL,
     ignoreHTTPSErrors: true,
 

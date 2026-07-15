@@ -192,7 +192,7 @@ if ($stitchWidth -ne 1920 -or $stitchHeight -ne 1080) {
 $stitchup = [pscustomobject]@{
     slug = "00-all-features-stitchup"
     feature = "All ten desktop feature clips"
-    hook = "Ten MidTerm desktop-mode features in one pass."
+    hook = "Ten tlbx desktop-mode features in one pass."
     output = (Split-Path -Leaf $stitchupPath)
     durationSeconds = [Math]::Round($stitchDuration, 2)
     size = "${stitchWidth}x${stitchHeight}"

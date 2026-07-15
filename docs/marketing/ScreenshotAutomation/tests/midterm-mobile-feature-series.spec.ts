@@ -387,7 +387,7 @@ async function ensureDemoSessions(page: Page): Promise<DemoSessions> {
     result[key] = await createSession(page, def.name, def.command);
   }
 
-  await createBookmark(page, 'MidTerm demo workspace', 'pwsh -NoLogo');
+  await createBookmark(page, 'tlbx demo workspace', 'pwsh -NoLogo');
   await createBookmark(page, 'Build loop fixture', 'pwsh -File docs\\marketing\\ScreenshotAutomation\\scripts\\demo-build-loop.ps1');
 
   return result as DemoSessions;
@@ -405,7 +405,7 @@ async function hideNonDemoSidebarSessions(page: Page, sessionIds: string[]): Pro
 
       for (const item of document.querySelectorAll<HTMLElement>('.history-item')) {
         const text = item.innerText ?? '';
-        if (text.includes('MidTerm demo workspace') || text.includes('Build loop fixture')) {
+        if (text.includes('tlbx demo workspace') || text.includes('Build loop fixture')) {
           item.style.display = '';
         } else if (text.includes('JPA') || text.includes('Q:\\repos') || text.includes('commit and push')) {
           item.style.display = 'none';
@@ -479,7 +479,7 @@ async function selectSession(page: Page, sessionId: string): Promise<void> {
   });
   await closeSidebar(page);
   // API-seeded sessions start at a PTY size that does not match the phone
-  // viewport; MidTerm then waits for a manual "resize to this viewport" tap
+  // viewport; tlbx then waits for a manual "resize to this viewport" tap
   // before rendering. Click the overlay so the terminal fits and renders.
   const scaledOverlayClicked = await claimTerminalScale(page, sessionId);
   terminalContentWaits.push({ sessionId, scaledOverlayClicked });
@@ -495,7 +495,7 @@ async function openBookmarks(page: Page): Promise<boolean> {
   await button.click({ force: true });
   await page.locator('.history-dropdown, .history-entry-list, .history-item').first().waitFor({ timeout: 5000 });
   await page.evaluate(() => {
-    const allowed = ['MidTerm demo workspace', 'Build loop fixture'];
+    const allowed = ['tlbx demo workspace', 'Build loop fixture'];
     for (const item of document.querySelectorAll<HTMLElement>('.history-item')) {
       const text = item.innerText ?? '';
       item.style.display = allowed.some((label) => text.includes(label)) ? '' : 'none';
@@ -512,7 +512,7 @@ async function bindGitRepo(page: Page, sessionId: string): Promise<void> {
       sessionId,
       path: repoRoot,
       role: 'target',
-      label: 'MidTerm',
+      label: 'tlbx',
     },
   }).catch(() => ({}));
   await fetchJson<Record<string, unknown>>(page, '/api/git/repos/refresh', {

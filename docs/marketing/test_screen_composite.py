@@ -2,7 +2,7 @@
 """
 Test: Can Gemini incorporate a screenshot as monitor content?
 
-Approach: Pass MidTerm screenshot + prompt asking to generate a person
+Approach: Pass a tlbx screenshot + prompt asking to generate a person
 looking at a monitor displaying that exact screenshot.
 """
 

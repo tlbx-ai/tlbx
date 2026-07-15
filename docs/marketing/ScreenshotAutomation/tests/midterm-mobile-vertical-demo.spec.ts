@@ -112,7 +112,7 @@ async function claimMainBrowser(page: Page): Promise<string> {
     const tabId = window.sessionStorage.getItem('mt-tab-id');
     const browserId = clientId && tabId ? `${clientId}:${tabId}` : clientId;
     if (!browserId) {
-      throw new Error('Cannot resolve MidTerm browser id for mobile capture.');
+      throw new Error('Cannot resolve tlbx browser id for mobile capture.');
     }
 
     const response = await fetch('/api/browser/main', {
