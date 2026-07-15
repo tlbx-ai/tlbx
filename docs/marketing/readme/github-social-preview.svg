@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+  <title id="title">tlbx — your agents, your machines, any browser</title>
+  <desc id="desc">The tlbx toolbox mark and the product promise: run coding agents on your own machines and steer them from any browser.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#030508"/>
+      <stop offset="0.58" stop-color="#080d17"/>
+      <stop offset="1" stop-color="#0c1423"/>
+    </linearGradient>
+    <radialGradient id="signal" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#bfe0ff" stop-opacity="0.82"/>
+      <stop offset="0.3" stop-color="#80b6f2" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#80b6f2" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="dotGlow" x="-300%" y="-300%" width="700%" height="700%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M48 0H0V48" fill="none" stroke="#80b6f2" stroke-opacity="0.05"/>
+    </pattern>
+    <symbol id="mark" viewBox="0 0 400 400">
+      <g fill="none" stroke="#f7f8fb" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 98 265 7 385 69 385 299 132 390 12 328Z"/>
+        <path d="M12 98 132 160 385 69M12 140 132 202 385 111M132 160V390M132 202 266.09 277.97 385 111"/>
+      </g>
+      <path d="M240.79 141.87Q266.09 108.77 291.39 123.67Q266.09 156.77 240.79 141.87Z" fill="#f7f8fb"/>
+      <circle cx="266.09" cy="132.77" r="9.5" fill="#05070b"/>
+      <circle cx="266.09" cy="132.77" r="4.6" fill="#69b7ff" filter="url(#dotGlow)"/>
+      <path d="M94.6 241.077C84.6 224.91 65.6 213.093 51.6 218.86C38.6 223.143 41.6 238.693 53.6 248.893C66.6 263.61 85.6 269.427 94.6 261.077V251.077L76.6 241.777" fill="none" stroke="#f7f8fb" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+  <rect width="1280" height="640" rx="28" fill="url(#bg)"/>
+  <rect width="1280" height="640" rx="28" fill="url(#grid)"/>
+  <circle cx="265" cy="320" r="310" fill="url(#signal)" opacity="0.28"/>
+  <circle cx="1160" cy="20" r="390" fill="url(#signal)" opacity="0.11"/>
+  <use href="#mark" x="62" y="120" width="400" height="400"/>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <text x="530" y="282" fill="#f7faff" font-size="116" font-weight="700" letter-spacing="9">tlbx</text>
+    <text x="538" y="350" fill="#80b6f2" font-size="22" font-weight="700" letter-spacing="3.2">YOUR AGENTS. YOUR MACHINES. ANY BROWSER.</text>
+    <text x="538" y="407" fill="#dbe5f5" font-size="22">Run them there · steer them from anywhere</text>
+  </g>
+  <g transform="translate(538 470)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700" letter-spacing="1.2">
+    <circle cx="7" cy="-5" r="6" fill="#77f2a1"/><text x="25" y="0" fill="#9ca9be">ANY CLI AGENT</text>
+    <circle cx="178" cy="-5" r="6" fill="#80b6f2"/><text x="196" y="0" fill="#9ca9be">MULTIPLE AT ONCE</text>
+    <circle cx="378" cy="-5" r="6" fill="#c997ff"/><text x="396" y="0" fill="#9ca9be">SESSIONS PERSIST</text>
+  </g>
+  <path d="M0 550H1280" stroke="#80b6f2" stroke-opacity="0.14"/>
+  <path d="M930 550h350" stroke="#80b6f2" stroke-opacity="0.52"/>
+  <rect x="0.75" y="0.75" width="1278.5" height="638.5" rx="27.25" fill="none" stroke="#80b6f2" stroke-opacity="0.18" stroke-width="1.5"/>
+</svg>

@@ -9,7 +9,7 @@ $steps = @(
 )
 
 Clear-Host
-Write-Host 'MidTerm demo build loop' -ForegroundColor White
+Write-Host 'tlbx demo build loop' -ForegroundColor White
 Write-Host 'Q:\repos\MidTerm  mobile capture fixture' -ForegroundColor DarkGray
 Write-Host ''
 

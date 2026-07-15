@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Single Clip Generator for MidTerm Marketing Videos
+Single Clip Generator for tlbx Marketing Videos
 
 Creates one video clip from start/end frame descriptions.
 

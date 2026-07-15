@@ -39,6 +39,12 @@ const exports = [
     width: 1600,
     height: 900,
   },
+  {
+    source: 'github-social-preview.svg',
+    output: 'github-social-preview-1280x640.png',
+    width: 1280,
+    height: 640,
+  },
 ];
 
 await fs.mkdir(outputDir, { recursive: true });

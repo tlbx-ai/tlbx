@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-FFmpeg Clip Chainer for MidTerm Marketing Videos
+FFmpeg Clip Chainer for tlbx Marketing Videos
 
 Chains 2-3 video clips into a single video with optional crossfade.
 

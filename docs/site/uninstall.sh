@@ -1,5 +1,5 @@
 #!/bin/bash
-# MidTerm GitHub Pages bootstrap uninstaller
+# tlbx GitHub Pages bootstrap uninstaller
 # Usage: curl -fsSL https://get.tlbx.ai/uninstall.sh | bash
 
 set -e
@@ -13,17 +13,17 @@ download_to_file() {
     if command -v curl >/dev/null 2>&1; then
         curl --fail --silent --show-error --location \
             --retry 3 --retry-delay 1 --retry-all-errors \
-            -H "User-Agent: MidTerm-Uninstaller-Bootstrap" \
+            -H "User-Agent: tlbx-Uninstaller-Bootstrap" \
             "$url" -o "$dest"
         return
     fi
 
     if command -v wget >/dev/null 2>&1; then
-        wget -qO "$dest" --user-agent="MidTerm-Uninstaller-Bootstrap" "$url"
+        wget -qO "$dest" --user-agent="tlbx-Uninstaller-Bootstrap" "$url"
         return
     fi
 
-    echo "Error: MidTerm uninstaller requires 'curl' or 'wget' to download files." >&2
+    echo "Error: tlbx uninstaller requires 'curl' or 'wget' to download files." >&2
     exit 1
 }
 

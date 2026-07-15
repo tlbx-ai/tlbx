@@ -1,4 +1,4 @@
-# MidTerm GitHub Pages bootstrap installer
+# tlbx GitHub Pages bootstrap installer
 # Usage: irm https://get.tlbx.ai/install.ps1 | iex
 # Dev:   & ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1))) -Dev
 

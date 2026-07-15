@@ -53,7 +53,7 @@ See [CLAUDE.md](ai/CLAUDE.md) for detailed style guidelines.
 
 ```bash
 git clone https://github.com/tlbx-ai/tlbx.git
-cd MidTerm
+cd tlbx
 dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
 ```
 

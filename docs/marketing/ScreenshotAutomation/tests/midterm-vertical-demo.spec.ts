@@ -165,7 +165,7 @@ async function claimMainBrowserAndAssert(page: Page): Promise<string | null> {
     const tabId = window.sessionStorage.getItem('mt-tab-id');
     const browserId = clientId && tabId ? `${clientId}:${tabId}` : clientId;
     if (!browserId) {
-      throw new Error('Cannot resolve MidTerm browser id for production capture.');
+      throw new Error('Cannot resolve tlbx browser id for production capture.');
     }
 
     let lastError = '';
@@ -279,7 +279,7 @@ async function selectDemoSession(page: Page): Promise<string | undefined> {
     return demoSessionId;
   }
 
-  const demoSession = page.getByText('MidTerm Demo Workspace', { exact: false }).first();
+  const demoSession = page.getByText('tlbx Demo Workspace', { exact: false }).first();
   if (await demoSession.isVisible().catch(() => false)) {
     await demoSession.click({ force: true });
     await pause(1200);

@@ -1,4 +1,4 @@
-# MidTerm GitHub Pages bootstrap uninstaller
+# tlbx GitHub Pages bootstrap uninstaller
 # Usage: irm https://get.tlbx.ai/uninstall.ps1 | iex
 
 param(

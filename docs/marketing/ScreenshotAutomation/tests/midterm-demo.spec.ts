@@ -31,7 +31,7 @@ async function pause(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-test('MidTerm Demo - Create, Rename, and Close Sessions', async ({ page }) => {
+test('tlbx demo - create, rename, and close sessions', async ({ page }) => {
   const outputBase = path.join(__dirname, '../output');
   const runNumber = getNextRunNumber(outputBase);
   const runDir = path.join(outputBase, `run-${runNumber}`);
@@ -39,7 +39,7 @@ test('MidTerm Demo - Create, Rename, and Close Sessions', async ({ page }) => {
 
   console.log(`Recording to: ${runDir}`);
 
-  // Step 1: Navigate to MidTerm
+  // Step 1: Navigate to tlbx
   await page.goto('/');
   await expect(page.locator('#app')).toBeVisible();
   await pause(1000);

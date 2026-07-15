@@ -137,7 +137,7 @@ if ($AuditFrames -and $auditFrameFiles.Count -gt 0) {
 $stitchup = [pscustomobject]@{
     slug = "00-all-features-stitchup"
     feature = "All mobile feature clips"
-    hook = "MidTerm mobile features in one pass."
+    hook = "tlbx mobile features in one pass."
     output = (Split-Path -Leaf $stitchupPath)
     durationSeconds = [Math]::Round($stitchDuration, 2)
     size = "${stitchWidth}x${stitchHeight}"
