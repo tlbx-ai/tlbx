@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Clean debug build and run script for MidTerm
+# Clean debug build and run script for tlbx
 # Ensures we're running exactly the code we're looking at
 
 $ErrorActionPreference = "Stop"
@@ -7,7 +7,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $tempDir = "C:\Temp\MidTermDebug"
 $port = 2001
 
-Write-Host "=== MidTerm Debug Build & Run ===" -ForegroundColor Cyan
+Write-Host "=== tlbx Debug Build & Run ===" -ForegroundColor Cyan
 
 # Step 1: Stop service and kill existing processes
 Write-Host "`n[1/6] Stopping service and killing existing processes..." -ForegroundColor Yellow
@@ -16,7 +16,7 @@ Write-Host "`n[1/6] Stopping service and killing existing processes..." -Foregro
 $service = Get-Service -Name "MidTerm" -ErrorAction SilentlyContinue
 if ($service -and $service.Status -eq 'Running')
 {
-    Write-Host "  Stopping MidTerm service..." -ForegroundColor Gray
+    Write-Host "  Stopping tlbx service..." -ForegroundColor Gray
     Stop-Service -Name "MidTerm" -Force -ErrorAction SilentlyContinue
     Start-Sleep -Seconds 2
 }

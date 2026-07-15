@@ -45,7 +45,7 @@ function Write-SgrRow {
 }
 
 for ($pass = 1; $pass -le $Repeat; $pass++) {
-    Write-Section "MidTerm terminal color rendering test pass $pass"
+    Write-Section "tlbx terminal color rendering test pass $pass"
     Write-Raw "This script writes real ANSI SGR control sequences through stdout.`r`n"
     Write-Raw "Use Advanced & Diagnostics > Terminal buffer dump to capture rendered text, xterm cell attributes, and raw ESC bytes.`r`n"
 

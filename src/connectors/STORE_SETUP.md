@@ -27,7 +27,7 @@ keytool -genkeypair -v \
   -keyalg RSA -keysize 2048 \
   -validity 10000 \
   -alias upload \
-  -dname "CN=MidTerm, O=tlbx.ai, L=Vienna, C=AT"
+  -dname "CN=tlbx, O=tlbx.ai, L=Vienna, C=AT"
 ```
 
 Store `upload.jks` securely — losing it means you can't push updates.

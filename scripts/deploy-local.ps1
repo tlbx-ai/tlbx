@@ -1,7 +1,7 @@
 #Requires -RunAsAdministrator
 <#
 .SYNOPSIS
-    Deploy local release to MidTerm service. Run as admin.
+    Deploy local release to the tlbx service. Run as admin.
 #>
 $ErrorActionPreference = 'Stop'
 
@@ -9,7 +9,7 @@ $Source = 'C:\temp\mtlocalrelease'
 $Dest = 'C:\Program Files\MidTerm'
 
 Write-Host ""
-Write-Host "  MidTerm Local Deploy" -ForegroundColor Cyan
+Write-Host "  tlbx Local Deploy" -ForegroundColor Cyan
 Write-Host "  ====================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -26,7 +26,7 @@ Write-Host "Source:      $Source" -ForegroundColor Gray
 Write-Host "Destination: $Dest" -ForegroundColor Gray
 Write-Host ""
 
-Write-Host "Stopping MidTerm service..." -ForegroundColor Gray
+Write-Host "Stopping tlbx service..." -ForegroundColor Gray
 Stop-Service MidTerm -ErrorAction SilentlyContinue
 
 Write-Host "Killing mthost processes..." -ForegroundColor Gray
@@ -42,7 +42,7 @@ Write-Host "  mthost.exe ($mthostSize MB)" -ForegroundColor DarkGray
 Copy-Item "$Source\mtagenthost.exe" "$Dest\mtagenthost.exe" -Force
 Write-Host "  mtagenthost.exe ($mtagenthostSize MB)" -ForegroundColor DarkGray
 
-Write-Host "Starting MidTerm service..." -ForegroundColor Gray
+Write-Host "Starting tlbx service..." -ForegroundColor Gray
 Start-Service MidTerm
 Start-Sleep 2
 

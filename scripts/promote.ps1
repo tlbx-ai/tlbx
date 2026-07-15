@@ -164,7 +164,7 @@ $lastStableTag = git tag --sort=-v:refname | Where-Object { $_ -notmatch '-dev' 
 $lastStableVersion = [version]($lastStableTag -replace '^v', '')
 
 Write-Host ""
-Write-Host "  MidTerm Promotion" -ForegroundColor Cyan
+Write-Host "  tlbx Promotion" -ForegroundColor Cyan
 Write-Host "  =================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Dev version:    $devVersion" -ForegroundColor Gray

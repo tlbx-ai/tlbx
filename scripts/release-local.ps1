@@ -87,7 +87,7 @@ if (-not (Get-Command vswhere -ErrorAction SilentlyContinue))
 }
 
 Write-Host ""
-Write-Host "  MidTerm Local Release" -ForegroundColor Cyan
+Write-Host "  tlbx Local Release" -ForegroundColor Cyan
 Write-Host "  =====================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -304,5 +304,5 @@ Write-Host "  Output: $OutputDir" -ForegroundColor Gray
 Write-Host "  Version: $localWebVersion" -ForegroundColor Gray
 Write-Host "  Type: $updateType" -ForegroundColor Gray
 Write-Host ""
-Write-Host "To test: set MIDTERM_ENVIRONMENT=THELAIR and apply local update in MidTerm" -ForegroundColor Yellow
+Write-Host "To test: set MIDTERM_ENVIRONMENT=THELAIR and apply the local update in tlbx" -ForegroundColor Yellow
 Write-Host ""

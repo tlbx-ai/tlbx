@@ -230,19 +230,17 @@ function markMarkup(config, { compact = false, pupilVariant = compact ? 'topbar'
     ${gMarkup(config, g, compact)}`;
 }
 
-// The 16px mark is an optical reduction, not a miniature tracing. Keep the
-// lid, box projection, front V, and blue eye; the side G returns at topbar
-// size where it has enough pixels to remain a letter instead of noise.
+// The 16px mark is an optical reduction, not a miniature tracing. Keep only
+// the box projection, lid seam, and blue signal. The eye, front fold, and side
+// G return at topbar size where they have enough pixels to read cleanly.
 function faviconMarkMarkup() {
   return `<g fill="none" stroke="var(--tlbx-ink)" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round">
       <path d="M 1.5 5.5 L 8.5 2.5 L 14.5 5 L 14.5 11.5 L 6.5 14 L 1.5 11 Z"/>
       <path d="M 1.5 5.5 L 6.5 7.75 L 14.5 5"/>
       <path d="M 6.5 7.75 L 6.5 14"/>
-      <path d="M 6.5 7.75 L 10.25 10.25 L 14.5 5.15"/>
     </g>
-    <path d="M 9.15 5.55 Q 10.5 4.25 11.85 5.3 Q 10.5 6.6 9.15 5.55 Z" fill="var(--tlbx-ink)"/>
-    <circle cx="10.5" cy="5.5" r="0.76" fill="var(--tlbx-background)"/>
-    <circle cx="10.5" cy="5.5" r="0.62" fill="var(--tlbx-accent)"/>`;
+    <circle cx="10.5" cy="5.45" r="0.88" fill="var(--tlbx-background)"/>
+    <circle cx="10.5" cy="5.45" r="0.65" fill="var(--tlbx-accent)"/>`;
 }
 
 function svgDocument(config, options = {}) {

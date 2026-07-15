@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Runs a local source MidTerm instance beside the installed service.
+    Runs a local source tlbx instance beside the installed service.
 
 .DESCRIPTION
-    This is the default MidTerm development loop:
-    - Keep the installed MidTerm service on https://localhost:2000 alive for JPA and stable supervision
+    This is the default tlbx development loop:
+    - Keep the installed tlbx service on https://localhost:2000 alive for JPA and stable supervision
     - Run a separate source instance on another port (default: 2100)
     - Reuse the installed release mthost for PTY sessions
     - Rebuild and use the local Debug mtagenthost for AppServerControl/runtime work
@@ -58,11 +58,11 @@ function Test-StableSupervisor {
             -TimeoutSec 5
     }
     catch {
-        throw "The stable MidTerm supervisor on https://localhost:2000 is not healthy. Refusing to start a source instance while supervision is unavailable."
+        throw "The stable tlbx supervisor on https://localhost:2000 is not healthy. Refusing to start a source instance while supervision is unavailable."
     }
 
     if ([string]::IsNullOrWhiteSpace([string]$version)) {
-        throw "The stable MidTerm supervisor returned no version. Refusing to start the source instance."
+        throw "The stable tlbx supervisor returned no version. Refusing to start the source instance."
     }
 
     return [string]$version
@@ -157,7 +157,7 @@ function Get-InstalledMidTermDirectory {
         return $fallback
     }
 
-    throw "Could not resolve the installed MidTerm directory. Pass -TtyHostPath explicitly."
+    throw "Could not resolve the installed tlbx directory. Pass -TtyHostPath explicitly."
 }
 
 function Resolve-TtyHostPath {
@@ -358,7 +358,7 @@ function Stop-StaleSourceServerProcesses {
         }
 
     foreach ($staleProcess in $staleProcesses) {
-        Stop-ProcessTree -ProcessId ([int]$staleProcess.ProcessId) -Reason "stale local source MidTerm on port $Port"
+        Stop-ProcessTree -ProcessId ([int]$staleProcess.ProcessId) -Reason "stale local source tlbx on port $Port"
     }
 }
 
@@ -403,10 +403,10 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     $process.EnableRaisingEvents = $true
 
     if (-not $process.Start()) {
-        throw "Failed to start the local source MidTerm process."
+        throw "Failed to start the local source tlbx process."
     }
 
-    Write-Host "  Local source MidTerm running on https://$BindAddress`:$Port (PID: $($process.Id))" -ForegroundColor DarkGray
+    Write-Host "  Local source tlbx running on https://$BindAddress`:$Port (PID: $($process.Id))" -ForegroundColor DarkGray
     return @{
         Process = $process
     }
@@ -429,7 +429,7 @@ function Invoke-DevLoopCleanup {
 }
 
 if ($ReservedPorts -contains $Port) {
-    throw "Port $Port conflicts with the installed MidTerm service or its preview origin. Use 2100 or another non-reserved port."
+    throw "Port $Port conflicts with the installed tlbx service or its preview origin. Use 2100 or another non-reserved port."
 }
 
 New-Item -ItemType Directory -Path $SettingsDir -Force | Out-Null

@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.1",
   "info": {
-    "title": "MidTerm API",
-    "description": "MidTerm terminal multiplexer API",
+    "title": "tlbx API",
+    "description": "tlbx browser control station API",
     "version": "1.0.0"
   },
   "paths": {

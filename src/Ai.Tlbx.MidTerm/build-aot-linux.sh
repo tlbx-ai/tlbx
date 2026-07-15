@@ -13,10 +13,10 @@ cd "$SCRIPT_DIR"
 CI_FLAG=""
 if [[ "$1" == "--reproducible" ]]; then
     CI_FLAG="/p:ContinuousIntegrationBuild=true"
-    echo "Building MidTerm AOT for Linux x64..."
+    echo "Building tlbx AOT for Linux x64..."
     echo "  (Reproducible build mode enabled)"
 else
-    echo "Building MidTerm AOT for Linux x64..."
+    echo "Building tlbx AOT for Linux x64..."
 fi
 
 dotnet publish -c Release -r linux-x64 /p:IsPublishing=true $CI_FLAG
