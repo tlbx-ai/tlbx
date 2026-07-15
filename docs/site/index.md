@@ -20,9 +20,9 @@ Install MidTerm:
 
 - macOS/Linux: `curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash`
 - Windows: `irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex`
-- Source repo: [github.com/tlbx-ai/MidTerm](https://github.com/tlbx-ai/MidTerm)
+- Source repo: [github.com/tlbx-ai/tlbx](https://github.com/tlbx-ai/tlbx)
 - Product website: [midterm.tlbx.ai](https://midterm.tlbx.ai)
-- Product docs: [docs/FEATURES.md](https://github.com/tlbx-ai/MidTerm/blob/main/docs/FEATURES.md)
+- Product docs: [docs/FEATURES.md](https://github.com/tlbx-ai/tlbx/blob/main/docs/FEATURES.md)
 
 For private remote access, use Tailscale—or an equivalent WireGuard mesh VPN—and open MidTerm through the host's private address.
 

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/marketing/readme/midterm-wordmark.svg" alt="tlbx — your coding agents, your machines, any browser" width="100%">
+  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — your coding agents, your machines, any browser" width="100%">
 </p>
 
 <p align="center">
@@ -145,7 +145,7 @@ unofficial and is not maintained or support-guaranteed by the tlbx project.
 ```bash
 git clone https://github.com/tlbx-ai/tlbx.git tlbx
 cd tlbx
-dotnet build src/Ai.Tlbx.tlbx/Ai.Tlbx.tlbx.csproj
+dotnet build src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj
 ```
 
 Uninstallers: [macOS/Linux](https://get.tlbx.ai/uninstall.sh) · [Windows](https://get.tlbx.ai/uninstall.ps1)

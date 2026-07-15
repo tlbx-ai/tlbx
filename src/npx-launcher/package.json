@@ -5,11 +5,11 @@
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/tlbx-ai/MidTerm.git"
+    "url": "git+https://github.com/tlbx-ai/tlbx.git"
   },
   "homepage": "https://midterm.tlbx.ai",
   "bugs": {
-    "url": "https://github.com/tlbx-ai/MidTerm/issues"
+    "url": "https://github.com/tlbx-ai/tlbx/issues"
   },
   "bin": {
     "midterm": "bin/midterm.js"
