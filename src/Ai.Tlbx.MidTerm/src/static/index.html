@@ -9,7 +9,8 @@
     <title>tlbx</title>
 
     <!-- Favicons -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=__MIDTERM_ASSET_VERSION__" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__" />
     <link
       rel="apple-touch-icon"
       sizes="192x192"
@@ -142,11 +143,11 @@
         <div class="sidebar-header">
           <div class="sidebar-brand">
             <img
-              src="/img/Midterm_exp.svg?v=__MIDTERM_ASSET_VERSION__"
+              src="/img/tlbx-toolbox-compact.svg?v=__MIDTERM_ASSET_VERSION__"
               alt="tlbx"
               class="sidebar-logo"
             />
-            <span class="sidebar-title">tlbx</span>
+            <span class="sidebar-title tlbx-wordmark">tlbx</span>
           </div>
           <div class="sidebar-header-buttons">
             <button
@@ -457,7 +458,14 @@
           >
             <span class="icon">&#xe919;</span>
           </button>
-          <div class="topbar-title" id="mobile-title">tlbx</div>
+          <div class="topbar-title tlbx-wordmark" id="mobile-title">
+            <img
+              src="/img/tlbx-toolbox-compact.svg?v=__MIDTERM_ASSET_VERSION__"
+              alt=""
+              class="topbar-brand-icon"
+            />
+            <span>tlbx</span>
+          </div>
           <nav class="mobile-tab-strip" id="mobile-tab-strip" aria-label="Session tabs" hidden>
             <button
               class="mobile-tab-pill"
@@ -751,7 +759,7 @@
             </div>
           </section>
           <div id="empty-state" class="empty-state">
-            <img src="/img/Midterm_exp.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
+            <img src="/img/tlbx-toolbox.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
             <p data-i18n="terminal.noTerminals">No terminals open</p>
             <button id="btn-create-terminal" data-i18n="terminal.createTerminal">
               Create Terminal

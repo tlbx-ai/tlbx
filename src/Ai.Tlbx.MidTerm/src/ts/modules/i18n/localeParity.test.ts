@@ -1,3 +1,5 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -25,5 +27,26 @@ describe('locale parity', () => {
       enforcedMissing,
       `Expected parity for prefixes: ${STAGED_REQUIRED_PREFIXES.join(', ')}`,
     ).toEqual([]);
+  });
+
+  it('resolves every static HTML translation reference', () => {
+    const staticRoot = resolve(__dirname, '../../../static');
+    const canonical = JSON.parse(
+      readFileSync(resolve(staticRoot, 'locales/en.json'), 'utf8'),
+    ) as Record<string, string>;
+    const missing: string[] = [];
+    const referencePattern = /data-i18n(?:-(?:title|placeholder|text))?=(['"])(.*?)\1/g;
+
+    for (const fileName of readdirSync(staticRoot).filter((name) => name.endsWith('.html'))) {
+      const html = readFileSync(resolve(staticRoot, fileName), 'utf8');
+      for (const match of html.matchAll(referencePattern)) {
+        const key = match[2];
+        if (key && !(key in canonical)) {
+          missing.push(`${fileName}: ${key}`);
+        }
+      }
+    }
+
+    expect(missing).toEqual([]);
   });
 });

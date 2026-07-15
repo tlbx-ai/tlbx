@@ -19,6 +19,7 @@ public class AuthMiddlewareTests
     [InlineData("/api/certificate/download/crt")]
     [InlineData("/api/certificate/download/mobileconfig")]
     [InlineData("/api/certificate/share-packet")]
+    [InlineData("/favicon.svg")]
     [InlineData("/favicon.ico")]
     [InlineData("/site.webmanifest")]
     [InlineData("/android-chrome-192x192.png")]

@@ -240,7 +240,7 @@ const light: CssThemePalette = {
   '--white-03': 'rgba(0, 0, 0, 0.03)',
   '--white-60': 'rgba(0, 0, 0, 0.45)',
 
-  '--logo-filter': 'invert(1)',
+  '--logo-filter': 'invert(1) hue-rotate(180deg)',
   '--text-on-accent': '#FFFEFA',
 };
 
@@ -471,7 +471,7 @@ const solarizedLight: CssThemePalette = {
   '--white-03': 'rgba(0, 0, 0, 0.03)',
   '--white-60': 'rgba(0, 0, 0, 0.45)',
 
-  '--logo-filter': 'invert(1)',
+  '--logo-filter': 'invert(1) hue-rotate(180deg)',
   '--text-on-accent': '#FFFDF6',
 };
 

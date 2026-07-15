@@ -5,6 +5,7 @@ import * as path from 'path';
 const outputBase = path.join(__dirname, '../output/social-feature-series');
 const landscapeViewport = { width: 1920, height: 1080 };
 const repoRoot = path.resolve(__dirname, '../../../..');
+const captureWorkingDirectory = process.env.MIDTERM_MARKETING_WORKDIR?.trim() || repoRoot;
 const demoUrl = process.env.MIDTERM_DEMO_URL?.trim() || 'http://127.0.0.1:4177/';
 
 type SessionDto = {
@@ -191,6 +192,7 @@ async function stabilizeSurface(page: Page): Promise<void> {
       body.social-marketing-capture .security-warning,
       body.social-marketing-capture .scaled-overlay,
       body.social-marketing-capture .git-repo-chip,
+      body.social-marketing-capture .session-extra-git,
       body.social-marketing-capture .manager-bar,
       body.social-marketing-capture .manager-bar-buttons,
       body.social-marketing-capture .agent-history-placeholder-chip,
@@ -270,7 +272,7 @@ async function createSession(
     method: 'POST',
     body: {
       shell: 'Pwsh',
-      workingDirectory: repoRoot,
+      workingDirectory: captureWorkingDirectory,
       cols: 96,
       rows: 36,
       surface,
@@ -317,7 +319,7 @@ async function createBookmark(page: Page, label: string, commandLine: string): P
       shellType: 'Pwsh',
       executable: label.toLowerCase().replaceAll(' ', '-'),
       commandLine,
-      workingDirectory: repoRoot,
+      workingDirectory: captureWorkingDirectory,
       dedupeKey: `marketing-social-${label}`,
       isStarred: true,
       label,
@@ -346,42 +348,42 @@ async function ensureDemoSessions(page: Page): Promise<DemoSessions> {
 
   const defs = {
     adhoc: {
-      name: 'MT Social - Ad-hoc shell',
+      name: 'tlbx demo - Ad-hoc shell',
       command:
-        "Clear-Host; Write-Host 'New ad-hoc shell' -ForegroundColor Cyan; Write-Host 'created inside MidTerm'; Get-Location",
+        "Clear-Host; Write-Host 'New ad-hoc shell' -ForegroundColor Cyan; Write-Host 'created inside tlbx'; Get-Location",
     },
     terminal: {
-      name: 'MT Social - Web terminal',
+      name: 'tlbx demo - Web terminal',
       command:
         "Clear-Host; Write-Host 'Real local PTY' -ForegroundColor Green; Write-Host 'browser tab can reconnect'; Write-Host ''; Get-Date",
     },
     paste: {
-      name: 'MT Social - Paste target',
+      name: 'tlbx demo - Paste target',
       command:
         "Clear-Host; Write-Host 'Paste target ready' -ForegroundColor Yellow; Write-Host 'waiting for structured multiline text...'",
     },
     files: {
-      name: 'MT Social - File Radar',
+      name: 'tlbx demo - File Radar',
       command:
         "Clear-Host; Write-Host 'File Radar demo' -ForegroundColor Cyan; Write-Host 'docs\\FEATURES.md:1'; Write-Host 'src\\Ai.Tlbx.MidTerm\\Program.cs:1'",
     },
     agents: {
-      name: 'MT Social - Agents',
+      name: 'tlbx demo - Agents',
       command:
         "Clear-Host; Write-Host 'Agent supervision' -ForegroundColor Magenta; Write-Host 'codex   running in local repo'; Write-Host 'claude  ready for review'; Write-Host 'grok    waiting for prompt'",
     },
     console: {
-      name: 'MT Social - Console work',
+      name: 'tlbx demo - Console work',
       command:
-        "Clear-Host; Write-Host 'Regular console work' -ForegroundColor White; Write-Host 'build loop, tests, logs, release scripts'; Write-Host ''; dir docs\\marketing | Select-Object -First 8",
+        "Clear-Host; Write-Host 'Regular console work' -ForegroundColor White; Write-Host 'build loop, tests, logs, release scripts'; Write-Host ''; Get-ChildItem | Where-Object Name -ne '.midterm' | Select-Object -First 8",
     },
     browser: {
-      name: 'MT Social - Dev Browser',
+      name: 'tlbx demo - Dev Browser',
       command:
         "Clear-Host; Write-Host 'Dev Browser session' -ForegroundColor Cyan; Write-Host 'Preview target: http://127.0.0.1:4177/'",
     },
     git: {
-      name: 'MT Social - Files and Git',
+      name: 'tlbx demo - Files and Git',
       command:
         "Clear-Host; Write-Host 'Files + Git context' -ForegroundColor Green; git status --short --branch",
     },
@@ -392,7 +394,7 @@ async function ensureDemoSessions(page: Page): Promise<DemoSessions> {
     result[key] = await createSession(page, def.name, def.command);
   }
 
-  await createBookmark(page, 'MidTerm demo workspace', 'pwsh -NoLogo');
+  await createBookmark(page, 'tlbx demo workspace', 'pwsh -NoLogo');
   await createBookmark(page, 'Build loop fixture', 'pwsh -File docs\\marketing\\ScreenshotAutomation\\scripts\\demo-build-loop.ps1');
 
   return result as DemoSessions;
@@ -405,12 +407,12 @@ async function hideNonDemoSidebarSessions(page: Page, sessionIds: string[]): Pro
       for (const item of document.querySelectorAll<HTMLElement>('.session-item[data-session-id]')) {
         const id = item.dataset.sessionId ?? '';
         const text = item.innerText ?? '';
-        item.style.display = keep.has(id) || text.includes('MT Social -') ? '' : 'none';
+        item.style.display = keep.has(id) || text.includes('tlbx demo -') ? '' : 'none';
       }
 
       for (const item of document.querySelectorAll<HTMLElement>('.history-item')) {
         const text = item.innerText ?? '';
-        if (text.includes('MidTerm demo workspace') || text.includes('Build loop fixture')) {
+        if (text.includes('tlbx demo workspace') || text.includes('Build loop fixture')) {
           item.style.display = '';
         } else if (text.includes('JPA') || text.includes('Q:\\repos') || text.includes('commit and push')) {
           item.style.display = 'none';
@@ -467,7 +469,7 @@ async function openBookmarks(page: Page): Promise<void> {
   await page.locator('#btn-bookmarks').click({ force: true });
   await page.locator('.history-dropdown, .history-entry-list, .history-item').first().waitFor({ timeout: 5000 });
   await page.evaluate(() => {
-    const allowed = ['MidTerm demo workspace', 'Build loop fixture'];
+    const allowed = ['tlbx demo workspace', 'Build loop fixture'];
     for (const item of document.querySelectorAll<HTMLElement>('.history-item')) {
       const text = item.innerText ?? '';
       item.style.display = allowed.some((label) => text.includes(label)) ? '' : 'none';

@@ -426,7 +426,7 @@ export function buildAppServerControlDebugScenario(
 } {
   const now = Date.now();
   const at = (offsetMs: number) => new Date(now + offsetMs).toISOString();
-  const heroImageUrl = new URL('/img/logo.png', origin).href;
+  const heroImageUrl = new URL('/img/tlbx-toolbox.svg', origin).href;
 
   const createItem = (
     itemId: string,

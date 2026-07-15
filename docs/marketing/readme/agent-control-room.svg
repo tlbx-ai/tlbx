@@ -8,6 +8,15 @@
     <radialGradient id="halo"><stop stop-color="#80b6f2" stop-opacity="0.26"/><stop offset="1" stop-color="#80b6f2" stop-opacity="0"/></radialGradient>
     <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     <pattern id="grid" width="50" height="50" patternUnits="userSpaceOnUse"><path d="M50 0H0V50" fill="none" stroke="#80b6f2" stroke-opacity="0.045"/></pattern>
+    <symbol id="tlbxSmallMark" viewBox="0 0 16 16">
+      <g fill="none" stroke="#f7f8fb" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1.5 5.5 8.5 2.5 14.5 5V11.5L6.5 14 1.5 11Z"/>
+        <path d="M1.5 5.5 6.5 7.75 14.5 5M6.5 7.75V14M6.5 7.75 10.25 10.25 14.5 5.15"/>
+      </g>
+      <path d="M9.15 5.55Q10.5 4.25 11.85 5.3Q10.5 6.6 9.15 5.55Z" fill="#f7f8fb"/>
+      <circle cx="10.5" cy="5.5" r="0.76" fill="#05070b"/>
+      <circle cx="10.5" cy="5.5" r="0.56" fill="#69b7ff"/>
+    </symbol>
   </defs>
 
   <rect width="1600" height="900" rx="28" fill="url(#bg)"/>
@@ -63,8 +72,7 @@
       <rect width="790" height="566" rx="20" fill="#080c13" stroke="#34435d" stroke-width="1.5"/>
       <rect width="790" height="58" rx="20" fill="#101827"/>
       <rect y="40" width="790" height="18" fill="#101827"/>
-      <circle cx="27" cy="29" r="6" fill="#80b6f2"/>
-      <path d="M42 17h10L38 42H28zM58 17h10l14 25H72z" fill="#f7faff"/>
+      <use href="#tlbxSmallMark" x="20" y="7" width="48" height="48"/>
       <text x="99" y="36" fill="#f7faff" font-size="17" font-weight="700">tlbx</text>
       <text x="210" y="36" fill="#80b6f2" font-size="14" font-weight="700">TERMINAL</text>
       <text x="319" y="36" fill="#8997ad" font-size="14">FILES</text>
@@ -91,8 +99,7 @@
       <circle cx="546" cy="110" r="4" fill="#77f2a1"/>
       <text x="559" y="115" fill="#aebad0" font-size="11">localhost:5173</text>
       <rect x="530" y="142" width="226" height="207" rx="8" fill="#101c30"/>
-      <path d="M549 166h8l-18 43h-7zM565 166h8l18 43h-7z" fill="#f7faff"/>
-      <circle cx="562" cy="193" r="3" fill="#80b6f2"/>
+      <use href="#tlbxSmallMark" x="531" y="152" width="66" height="66"/>
       <text x="549" y="246" fill="#f7faff" font-size="18" font-weight="700">App verified.</text>
       <text x="549" y="273" fill="#9aa8bd" font-size="11">DOM · logs · screenshot</text>
       <rect x="549" y="295" width="134" height="28" rx="6" fill="#80b6f2"/>
@@ -116,8 +123,7 @@
       <rect width="224" height="432" rx="34" fill="#080b12" stroke="#617392" stroke-width="2"/>
       <rect x="12" y="12" width="200" height="408" rx="25" fill="#0d1523"/>
       <rect x="77" y="22" width="70" height="7" rx="3.5" fill="#2a3548"/>
-      <path d="M30 50h9l-12 25h-8zM44 50h9l12 25h-8z" fill="#f7faff"/>
-      <circle cx="42" cy="66" r="3" fill="#80b6f2"/>
+      <use href="#tlbxSmallMark" x="18" y="42" width="50" height="50"/>
       <text x="77" y="68" fill="#f7faff" font-size="13" font-weight="700">tlbx</text>
       <rect x="25" y="94" width="174" height="69" rx="10" fill="#17243b" stroke="#80b6f2" stroke-opacity="0.55"/>
       <circle cx="43" cy="119" r="6" fill="#ffd479"/>

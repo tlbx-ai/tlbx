@@ -177,6 +177,7 @@ public static class AuthMiddleware
                path.StartsWith("/fonts/", StringComparison.Ordinal) ||
                path.StartsWith("/locales/", StringComparison.Ordinal) ||
                path.StartsWith("/img/", StringComparison.Ordinal) ||
+               path == "/favicon.svg" ||
                path == "/favicon.ico" ||
                path == "/site.webmanifest" ||
                path == "/android-chrome-192x192.png" ||

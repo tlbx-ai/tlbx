@@ -1,7 +1,14 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const STAGED_REQUIRED_PREFIXES = ['sidebar.', 'share.', 'update.', 'settings.hub.'];
+const STAGED_REQUIRED_PREFIXES = [
+  'auth.',
+  'trust.',
+  'sidebar.',
+  'share.',
+  'update.',
+  'settings.hub.',
+];
 const STAGED_REQUIRED_KEYS = ['settings.general.showUpdateNotification'];
 
 function getLocaleDir() {

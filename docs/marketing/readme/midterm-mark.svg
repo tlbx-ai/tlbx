@@ -1,16 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
   <title id="title">tlbx logo</title>
-  <desc id="desc">Two bright terminal rails forming a gateway around a blue signal.</desc>
+  <desc id="desc">A long isometric toolbox with a closed lid, blue pupil, front chevron, and G-shaped side handle.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#030508"/><stop offset="1" stop-color="#0d1727"/></linearGradient>
-    <radialGradient id="halo"><stop stop-color="#80b6f2" stop-opacity="0.38"/><stop offset="1" stop-color="#80b6f2" stop-opacity="0"/></radialGradient>
     <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="14" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><path d="M32 0H0V32" fill="none" stroke="#80b6f2" stroke-opacity="0.06"/></pattern>
   </defs>
   <rect width="512" height="512" rx="92" fill="url(#bg)"/>
   <rect width="512" height="512" rx="92" fill="url(#grid)"/>
-  <circle cx="256" cy="276" r="225" fill="url(#halo)"/>
-  <path d="M174 86h63L91 433H32zM275 86h63l146 347h-59z" fill="#fdfefc"/>
-  <circle cx="254" cy="292" r="20" fill="#80b6f2" filter="url(#glow)"/>
+  <g transform="translate(46 46) scale(1.05)">
+    <g fill="none" stroke="#f7f8fb" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 98 265 7 385 69 385 299 132 390 12 328Z"/>
+      <path d="M12 98 132 160 385 69M12 140 132 202 385 111M132 160V390M132 202 266.09 277.97 385 111"/>
+    </g>
+    <path d="M240.79 141.87Q266.09 108.77 291.39 123.67Q266.09 156.77 240.79 141.87Z" fill="#f7f8fb"/>
+    <circle cx="266.09" cy="132.77" r="9.5" fill="#05070b"/>
+    <circle cx="266.09" cy="132.77" r="4.6" fill="#69b7ff" filter="url(#glow)"/>
+    <path d="M94.6 241.077C84.6 224.91 65.6 213.093 51.6 218.86C38.6 223.143 41.6 238.693 53.6 248.893C66.6 263.61 85.6 269.427 94.6 261.077V251.077L76.6 241.777" fill="none" stroke="#f7f8fb" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
   <rect x="1" y="1" width="510" height="510" rx="91" fill="none" stroke="#80b6f2" stroke-opacity="0.22" stroke-width="2"/>
 </svg>

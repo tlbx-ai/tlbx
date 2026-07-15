@@ -6,6 +6,15 @@
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#141d2d"/><stop offset="1" stop-color="#0d1420"/></linearGradient>
     <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#80b6f2" stroke-opacity="0.045"/></pattern>
     <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <symbol id="tlbxSmallMark" viewBox="0 0 16 16">
+      <g fill="none" stroke="#f7f8fb" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M1.5 5.5 8.5 2.5 14.5 5V11.5L6.5 14 1.5 11Z"/>
+        <path d="M1.5 5.5 6.5 7.75 14.5 5M6.5 7.75V14M6.5 7.75 10.25 10.25 14.5 5.15"/>
+      </g>
+      <path d="M9.15 5.55Q10.5 4.25 11.85 5.3Q10.5 6.6 9.15 5.55Z" fill="#f7f8fb"/>
+      <circle cx="10.5" cy="5.5" r="0.76" fill="#05070b"/>
+      <circle cx="10.5" cy="5.5" r="0.56" fill="#69b7ff"/>
+    </symbol>
   </defs>
   <rect width="1600" height="720" rx="28" fill="url(#bg)"/>
   <rect width="1600" height="720" rx="28" fill="url(#grid)"/>
@@ -33,8 +42,7 @@
         <circle cx="420" cy="24" r="4" fill="#c997ff"/>
         <text x="434" y="29" fill="#aebad0">tlbx · office</text>
         <rect x="600" width="250" height="54" rx="10" fill="#17243b" stroke="#80b6f2" stroke-opacity="0.55"/>
-        <path d="M624 13h8l-12 29h-7zM639 13h8l12 29h-7z" fill="#f7faff"/>
-        <circle cx="636" cy="31" r="2.5" fill="#80b6f2"/>
+        <use href="#tlbxSmallMark" x="611" y="7" width="48" height="48"/>
         <text x="676" y="31" fill="#f7faff" font-weight="700">tlbx · home</text>
         <circle cx="824" cy="27" r="5" fill="#77f2a1" filter="url(#glow)"/>
         <rect x="860" width="220" height="46" rx="10" fill="#101827"/>
@@ -81,8 +89,7 @@
       <circle cx="1078" cy="131" r="4" fill="#77f2a1"/>
       <text x="1092" y="136" fill="#aebad0" font-size="10">http://localhost:5173</text>
       <rect x="1062" y="164" width="364" height="242" rx="8" fill="#111e32"/>
-      <path d="M1096 194h13l-24 60h-12zM1122 194h13l25 60h-12z" fill="#f7faff"/>
-      <circle cx="1116" cy="232" r="4" fill="#80b6f2"/>
+      <use href="#tlbxSmallMark" x="1070" y="180" width="92" height="92"/>
       <text x="1090" y="292" fill="#f7faff" font-size="22" font-weight="700">The app is right here.</text>
       <text x="1090" y="324" fill="#9aa8bd" font-size="12">Preview · inspect · fix · repeat</text>
       <rect x="1090" y="350" width="154" height="34" rx="7" fill="#80b6f2"/>

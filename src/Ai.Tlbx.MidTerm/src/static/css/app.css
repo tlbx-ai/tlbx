@@ -490,6 +490,7 @@
   /* Misc */
   --logo-filter: none;
   --text-on-accent: #ffffff;
+  --tlbx-wordmark-tracking: 0.09em;
 
   /* Spacing scale */
   --space-1: 4px;
@@ -747,7 +748,7 @@ body::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 7px;
   min-width: 0;
 }
 
@@ -760,12 +761,13 @@ body::before {
 }
 
 .sidebar-brand:hover .sidebar-logo {
-  filter: var(--logo-filter, none) drop-shadow(0 0 8px var(--accent-blue-40));
+  filter: var(--logo-filter, none);
 }
 
 .sidebar-title {
   font-size: var(--fs-lg);
-  font-weight: 600;
+  font-weight: 650;
+  letter-spacing: var(--tlbx-wordmark-tracking);
   color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
@@ -3752,14 +3754,24 @@ body::before {
   .topbar-title {
     flex: 1;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
     font-size: var(--fs-lg);
-    font-weight: 500;
+    font-weight: 650;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--text-primary);
     text-align: left;
     padding: 0 12px;
+  }
+
+  .topbar-brand-icon {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+    filter: var(--logo-filter, none);
   }
 
   /* Actions container */
@@ -4387,6 +4399,11 @@ body::before {
 
   .topbar-title {
     font-size: var(--fs-md);
+  }
+
+  .topbar-brand-icon {
+    width: 20px;
+    height: 20px;
   }
 
   .mobile-actions-dropdown {
@@ -6776,20 +6793,20 @@ body::before {
 }
 
 .login-logo-wrapper {
-  width: 148px;
-  height: 148px;
+  width: 180px;
+  height: 150px;
   display: flex;
   align-items: center;
   justify-content: center;
   margin: 0 auto 24px;
-  background-color: var(--bg-primary);
-  border-radius: var(--radius-3xl);
-  border: 1px solid var(--border-subtle);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
 }
 
 .login-logo {
-  width: 123px;
-  height: 123px;
+  width: 180px;
+  height: 150px;
   max-width: 100%;
   object-fit: contain;
   animation-name: logo-float !important;
@@ -6826,9 +6843,13 @@ body::before {
 .login-header h1 {
   margin: 0 0 6px;
   font-size: var(--fs-4xl);
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-primary);
-  letter-spacing: -0.5px;
+  letter-spacing: 0.1em;
+}
+
+.tlbx-wordmark {
+  letter-spacing: var(--tlbx-wordmark-tracking);
 }
 
 .login-tagline {
@@ -6948,14 +6969,14 @@ body::before {
   }
 
   .login-logo-wrapper {
-    width: 100px;
-    height: 100px;
+    width: 148px;
+    height: 124px;
     margin-bottom: 16px;
   }
 
   .login-logo {
-    width: 80px;
-    height: 80px;
+    width: 148px;
+    height: 124px;
   }
 }
 

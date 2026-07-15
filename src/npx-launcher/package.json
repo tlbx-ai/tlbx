@@ -1,6 +1,6 @@
 {
   "name": "@tlbx-ai/midterm",
-  "version": "9.19.9-dev",
+  "version": "9.19.10-dev",
   "description": "Quick-trial launcher for tlbx, the self-hosted browser control station for remote AI coding agents",
   "license": "AGPL-3.0-only",
   "repository": {

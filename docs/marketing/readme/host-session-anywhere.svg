@@ -6,6 +6,16 @@
     <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#80b6f2" stop-opacity="0"/><stop offset="0.45" stop-color="#80b6f2" stop-opacity="0.9"/><stop offset="1" stop-color="#80b6f2" stop-opacity="0"/></linearGradient>
     <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="10" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
     <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#80b6f2" stroke-opacity="0.045"/></pattern>
+    <symbol id="tlbxToolboxMark" viewBox="0 0 400 400">
+      <g fill="none" stroke="#f7f8fb" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 98 265 7 385 69 385 299 132 390 12 328Z"/>
+        <path d="M12 98 132 160 385 69M12 140 132 202 385 111M132 160V390M132 202 266.09 277.97 385 111"/>
+      </g>
+      <path d="M240.79 141.87Q266.09 108.77 291.39 123.67Q266.09 156.77 240.79 141.87Z" fill="#f7f8fb"/>
+      <circle cx="266.09" cy="132.77" r="9.5" fill="#05070b"/>
+      <circle cx="266.09" cy="132.77" r="4.6" fill="#69b7ff" filter="url(#glow)"/>
+      <path d="M94.6 241.077C84.6 224.91 65.6 213.093 51.6 218.86C38.6 223.143 41.6 238.693 53.6 248.893C66.6 263.61 85.6 269.427 94.6 261.077V251.077L76.6 241.777" fill="none" stroke="#f7f8fb" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
   </defs>
   <rect width="1600" height="650" rx="28" fill="url(#bg)"/>
   <rect width="1600" height="650" rx="28" fill="url(#grid)"/>
@@ -21,7 +31,7 @@
       <rect width="535" height="55" rx="22" fill="#121d30"/>
       <rect y="36" width="535" height="19" fill="#121d30"/>
       <circle cx="27" cy="28" r="6" fill="#77f2a1"/>
-  <text x="46" y="34" fill="#f7faff" font-size="16" font-weight="700">THE MIDTERM HOST</text>
+  <text x="46" y="34" fill="#f7faff" font-size="16" font-weight="700">tlbx HOST</text>
       <text x="507" y="34" fill="#77f2a1" font-size="12" text-anchor="end" font-weight="700">OWNS THE WORK</text>
 
       <g transform="translate(24 80)">
@@ -60,8 +70,7 @@
     <g transform="translate(687 214)">
       <circle cx="113" cy="132" r="128" fill="#0a1423" stroke="#80b6f2" stroke-opacity="0.45"/>
       <circle cx="113" cy="132" r="109" fill="none" stroke="#80b6f2" stroke-opacity="0.12"/>
-      <path d="M78 57h24L47 208H24zM130 57h24l57 151h-24z" fill="#fdfefc"/>
-      <circle cx="112" cy="142" r="10" fill="#80b6f2" filter="url(#glow)"/>
+      <use href="#tlbxToolboxMark" x="8" y="18" width="210" height="210"/>
       <text x="113" y="247" fill="#80b6f2" font-size="12" text-anchor="middle" font-weight="700" letter-spacing="2">PROTECTED GATEWAY</text>
     </g>
 
