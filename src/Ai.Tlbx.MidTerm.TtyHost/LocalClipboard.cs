@@ -57,7 +57,7 @@ internal static class LocalClipboard
         var mtBinaryPath = GetMidTermBinaryPath();
         if (string.IsNullOrWhiteSpace(mtBinaryPath) || !File.Exists(mtBinaryPath))
         {
-            return (false, "MidTerm helper binary not found");
+            return (false, "tlbx helper binary not found");
         }
 
         return await RunProcessAsync(mtBinaryPath, BuildClipboardHelperArguments(filePath, mimeType));
@@ -69,7 +69,7 @@ internal static class LocalClipboard
         var mtBinaryPath = GetMidTermBinaryPath();
         if (string.IsNullOrWhiteSpace(mtBinaryPath) || !File.Exists(mtBinaryPath))
         {
-            return (false, "MidTerm helper binary not found");
+            return (false, "tlbx helper binary not found");
         }
 
         var directResult = await RunProcessAsync(mtBinaryPath, BuildClipboardHelperArguments(filePath, mimeType), logFailures: false);
@@ -86,7 +86,7 @@ internal static class LocalClipboard
         var mtBinaryPath = GetMidTermBinaryPath();
         if (string.IsNullOrWhiteSpace(mtBinaryPath) || !File.Exists(mtBinaryPath))
         {
-            return (false, "MidTerm helper binary not found");
+            return (false, "tlbx helper binary not found");
         }
 
         return await RunProcessAsync(mtBinaryPath, BuildClipboardHelperArguments(filePath, mimeType));

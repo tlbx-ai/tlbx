@@ -1,6 +1,6 @@
 # Screenshot and video automation
 
-This Playwright workspace records repeatable MidTerm product evidence. Use
+This Playwright workspace records repeatable tlbx product evidence. Use
 neutral fixture sessions only; never capture private repositories, accounts,
 tokens, prompts, or customer data.
 
@@ -12,7 +12,7 @@ npx playwright install chromium
 npm run verify
 ```
 
-Run a MidTerm source instance separately (normally `scripts/dev.ps1 -Port
+Run a tlbx source instance separately (normally `scripts/dev.ps1 -Port
 2100`) and, for Dev Browser stories, serve the neutral fixture on
 `http://127.0.0.1:4177/`. Configure the capture process explicitly:
 
@@ -31,7 +31,7 @@ Record the real narrow viewport first, then scale the exported video. The
 mobile series uses a raw viewport around `390x693` and exports to `1080x1920`;
 do not record a large desktop canvas and crop it into a phone frame.
 
-Set MidTerm's capture settings to `useWebGL: false`. Chromium mobile emulation
+Set tlbx's capture settings to `useWebGL: false`. Chromium mobile emulation
 can produce a black xterm canvas under WebGL, while the DOM renderer remains
 observable and records correctly. `.xterm-rows` is therefore a valid content
 probe only for the DOM renderer.

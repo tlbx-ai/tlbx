@@ -136,7 +136,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("controllable: yes", powershell, StringComparison.Ordinal);
         Assert.Contains("selected visible: yes", powershell, StringComparison.Ordinal);
         Assert.Contains("Get-Command $candidate -ErrorAction SilentlyContinue", powershell, StringComparison.Ordinal);
-        Assert.Contains("Unknown MidTerm CLI command: $cmd", powershell, StringComparison.Ordinal);
+        Assert.Contains("Unknown tlbx CLI command: $cmd", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_context -Value Mt-Context", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
@@ -151,7 +151,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("_normalized_cmd=\"${_cmd#mt_}\"", shell, StringComparison.Ordinal);
         Assert.Contains("_normalized_cmd=\"${_cmd#mt-}\"", shell, StringComparison.Ordinal);
         Assert.Contains("command -v \"mt_$_normalized_cmd\"", shell, StringComparison.Ordinal);
-        Assert.Contains("Unknown MidTerm CLI command: %s", shell, StringComparison.Ordinal);
+        Assert.Contains("Unknown tlbx CLI command: %s", shell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -490,9 +490,9 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_open is the CLI command that opens/docks the preview", agents, StringComparison.Ordinal);
         Assert.Contains("state: ready", agents, StringComparison.Ordinal);
         Assert.Contains("Every C# change in the local source loop restarts the source `mt`", agents, StringComparison.Ordinal);
-        Assert.Contains("the outer MidTerm browser tab owns `/ws/state`", agents, StringComparison.Ordinal);
+        Assert.Contains("the outer tlbx browser tab owns `/ws/state`", agents, StringComparison.Ordinal);
         Assert.Contains("ui clients: 0", agents, StringComparison.Ordinal);
-        Assert.Contains("mt_session prints the current MidTerm terminal session ID", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_session prints the current tlbx terminal session ID", agents, StringComparison.Ordinal);
         Assert.Contains("mt_context --bash / mt_context --pwsh", agents, StringComparison.Ordinal);
         Assert.Contains("mt_preview user1", agents, StringComparison.Ordinal);
         Assert.Contains("mt_tail", agents, StringComparison.Ordinal);

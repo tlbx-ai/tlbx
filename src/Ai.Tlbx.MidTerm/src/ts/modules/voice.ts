@@ -1,7 +1,7 @@
 /**
  * Voice Module
  *
- * Handles WebSocket connection to MidTerm.Voice server
+ * Handles WebSocket connection to tlbx.Voice server
  * and bridges audio capture/playback.
  */
 
@@ -36,7 +36,7 @@ let selectedVoice = '';
 let selectedSpeed = 1.0;
 
 /**
- * Check if MidTerm.Voice server is available and fetch providers
+ * Check if tlbx.Voice server is available and fetch providers
  */
 export async function checkVoiceServerHealth(): Promise<boolean> {
   try {
@@ -242,7 +242,7 @@ async function requestMicrophonePermission(): Promise<boolean> {
 }
 
 /**
- * Start a voice session - connect to MidTerm.Voice and begin recording.
+ * Start a voice session - connect to tlbx.Voice and begin recording.
  * Single entry point: requests mic permission if needed, then starts session.
  */
 export async function startVoiceSession(): Promise<void> {

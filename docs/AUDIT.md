@@ -1,6 +1,6 @@
 # Release verification and build audit
 
-MidTerm release artifacts are built from a version tag by the public
+tlbx release artifacts are built from a version tag by the public
 [`release.yml`](../.github/workflows/release.yml) workflow. This document states
 what that process currently proves and, equally importantly, what it does not.
 
@@ -96,7 +96,7 @@ Replace the runtime identifier for another supported target and use the matching
 host operating system/toolchain.
 
 The repository enables deterministic .NET compilation settings and
-`ContinuousIntegrationBuild` in CI. MidTerm does **not** currently claim that a
+`ContinuousIntegrationBuild` in CI. tlbx does **not** currently claim that a
 local Native AOT build will be byte-identical to a published artifact. Native
 toolchains, linker inputs, runner images, signing, and notarization can all
 affect final bytes. A differing local binary hash is therefore a reason to

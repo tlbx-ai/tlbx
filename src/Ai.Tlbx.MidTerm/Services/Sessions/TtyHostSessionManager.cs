@@ -437,7 +437,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return SessionCreationResult.Failed(new SessionLaunchFailure(
                 "limits",
                 $"Session limit reached ({MaxSessions}).",
-                "MidTerm refused to create a new session because the maximum number of live sessions is already in use. Close an existing session and try again."));
+                "tlbx refused to create a new session because the maximum number of live sessions is already in use. Close an existing session and try again."));
         }
 
         var sessionId = Guid.NewGuid().ToString("N")[..SessionIdLength];
@@ -533,8 +533,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 "connect",
                 processRunning
                     ? "The terminal host did not open its IPC channel in time."
-                    : "The terminal host exited before MidTerm could attach to it.",
-                string.Create(CultureInfo.InvariantCulture, $"MidTerm launched mthost ({processDescription}) but could not complete IPC attach after {failedConnectElapsedMs} ms."),
+                    : "The terminal host exited before tlbx could attach to it.",
+                string.Create(CultureInfo.InvariantCulture, $"tlbx launched mthost ({processDescription}) but could not complete IPC attach after {failedConnectElapsedMs} ms."),
                 processRunning ? null : "ProcessExited"));
         }
 
@@ -552,7 +552,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return SessionCreationResult.Failed(new SessionLaunchFailure(
                 "handshake",
                 "The terminal host connected but never returned session metadata.",
-                string.Create(CultureInfo.InvariantCulture, $"MidTerm established IPC to mthost ({processDescription}) but GetInfo returned no data after {failedInfoElapsedMs} ms.")));
+                string.Create(CultureInfo.InvariantCulture, $"tlbx established IPC to mthost ({processDescription}) but GetInfo returned no data after {failedInfoElapsedMs} ms.")));
         }
 
         info.TerminalTitle = NormalizeTerminalTitle(info, info.TerminalTitle);

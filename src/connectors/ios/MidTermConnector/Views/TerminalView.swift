@@ -60,7 +60,7 @@ struct WebViewContainer: UIViewRepresentable {
                 return
             }
 
-            // MidTerm commonly fronts private and self-signed deployments.
+            // tlbx commonly fronts private and self-signed deployments.
             completionHandler(.useCredential, URLCredential(trust: trust))
         }
 

@@ -30,7 +30,7 @@ async function poll(): Promise<void> {
     (machine) => machine.machine.enabled && machine.status === 'online' && !machine.requiresTrust,
   );
   const origins = [
-    { key: 'local', machineId: null, name: 'MidTerm' },
+    { key: 'local', machineId: null, name: 'tlbx' },
     ...machines.map((machine) => ({
       key: `hub:${machine.machine.id}`,
       machineId: machine.machine.id,

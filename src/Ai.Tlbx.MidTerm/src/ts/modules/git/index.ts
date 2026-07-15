@@ -241,7 +241,7 @@ function clearSessionGitCache(sessionId: string): void {
 async function promptAndAddRepo(sessionId: string): Promise<void> {
   const path = await showTextPrompt({
     title: 'Track Git repository',
-    message: 'Add another repository to the current MidTerm session.',
+    message: 'Add another repository to the current tlbx session.',
     placeholder: 'Q:\\repos\\Jpa',
     confirmLabel: 'Track',
     validate: (value) => (value.trim().length === 0 ? 'Repository path is required.' : null),

@@ -1,6 +1,6 @@
-# Contributing to MidTerm
+# Contributing to tlbx
 
-Contributions are welcome! This document explains how to contribute to MidTerm.
+Contributions are welcome! This document explains how to contribute to tlbx.
 
 ## Contributor License Agreement (CLA)
 
@@ -16,7 +16,7 @@ No separate signature is required — submitting a PR implies acceptance.
 
 - Search existing issues first to avoid duplicates
 - Include reproduction steps, expected behavior, and actual behavior
-- Include OS, browser, and MidTerm version
+- Include OS, browser, and tlbx version
 - Report vulnerabilities through the private process in [SECURITY.md](../SECURITY.md), not a public issue
 
 ### Pull Requests

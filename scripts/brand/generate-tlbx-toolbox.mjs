@@ -234,7 +234,7 @@ function markMarkup(config, { compact = false, pupilVariant = compact ? 'topbar'
 // lid, box projection, front V, and blue eye; the side G returns at topbar
 // size where it has enough pixels to remain a letter instead of noise.
 function faviconMarkMarkup() {
-  return `<g fill="none" stroke="var(--tlbx-ink)" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round">
+  return `<g fill="none" stroke="var(--tlbx-ink)" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round">
       <path d="M 1.5 5.5 L 8.5 2.5 L 14.5 5 L 14.5 11.5 L 6.5 14 L 1.5 11 Z"/>
       <path d="M 1.5 5.5 L 6.5 7.75 L 14.5 5"/>
       <path d="M 6.5 7.75 L 6.5 14"/>
@@ -242,7 +242,7 @@ function faviconMarkMarkup() {
     </g>
     <path d="M 9.15 5.55 Q 10.5 4.25 11.85 5.3 Q 10.5 6.6 9.15 5.55 Z" fill="var(--tlbx-ink)"/>
     <circle cx="10.5" cy="5.5" r="0.76" fill="var(--tlbx-background)"/>
-    <circle cx="10.5" cy="5.5" r="0.56" fill="var(--tlbx-accent)"/>`;
+    <circle cx="10.5" cy="5.5" r="0.62" fill="var(--tlbx-accent)"/>`;
 }
 
 function svgDocument(config, options = {}) {
@@ -254,16 +254,21 @@ function svgDocument(config, options = {}) {
     title = 'tlbx toolbox mark',
   } = options;
   const viewBox = compact ? '0 0 16 16' : foreground ? '0 0 512 512' : '0 0 400 400';
-  const tileMarkup = tile
-    ? compact
-      ? '  <rect width="16" height="16" rx="3" fill="var(--tlbx-background)"/>\n'
-      : `  <rect width="400" height="400" rx="${config.tileRadius}" fill="var(--tlbx-background)"/>\n`
-    : '';
+  const tileMarkup =
+    tile === 'rounded'
+      ? compact
+        ? '  <rect width="16" height="16" rx="3" fill="var(--tlbx-background)"/>\n'
+        : `  <rect width="400" height="400" rx="${config.tileRadius}" fill="var(--tlbx-background)"/>\n`
+      : tile === 'full'
+        ? compact
+          ? '  <rect width="16" height="16" fill="var(--tlbx-background)"/>\n'
+          : '  <rect width="400" height="400" fill="var(--tlbx-background)"/>\n'
+        : '';
   const markTransform = foreground
     ? 'translate(96 96) scale(.8)'
     : compact && pupilVariant !== 'favicon'
     ? `translate(${config.compactOffsetX} ${config.compactOffsetY}) scale(${config.compactScale})`
-    : tile && !compact
+    : tile !== false && !compact
       ? 'translate(20 20) scale(.9)'
       : '';
   const transformAttribute = markTransform ? ` transform="${markTransform}"` : '';
@@ -300,14 +305,23 @@ const outputs = [
     'src/Ai.Tlbx.MidTerm/src/static/favicon.svg',
     svgDocument(config, {
       compact: true,
-      tile: true,
+      tile: 'rounded',
       pupilVariant: 'favicon',
       title: 'tlbx favicon',
     }),
   ],
   [
     'src/Ai.Tlbx.MidTerm/src/static/favicon-large.svg',
-    svgDocument(config, { tile: true, title: 'tlbx large app icon' }),
+    svgDocument(config, { tile: 'full', title: 'tlbx large app icon' }),
+  ],
+  [
+    'src/Ai.Tlbx.MidTerm/src/static/favicon-opaque.svg',
+    svgDocument(config, {
+      compact: true,
+      tile: 'full',
+      pupilVariant: 'favicon',
+      title: 'tlbx small app icon',
+    }),
   ],
 ];
 
@@ -325,7 +339,7 @@ if (config.websiteRoot) {
       resolve(config.websiteRoot, 'favicon.svg'),
       svgDocument(config, {
         compact: true,
-        tile: true,
+        tile: 'rounded',
         pupilVariant: 'favicon',
         title: 'tlbx favicon',
       }),

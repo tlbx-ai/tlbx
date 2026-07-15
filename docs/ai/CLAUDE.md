@@ -63,7 +63,7 @@ Guidance for AI coding agents working with this repository.
 
 ## What This Is
 
-MidTerm is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/Windows/Linux. Serves terminal sessions via browser at `http://localhost:2000`.
+tlbx is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/Windows/Linux. Serves terminal sessions via browser at `http://localhost:2000`.
 
 **Binaries:**
 - `mt` / `mt.exe` — Web server (UI, REST API, WebSockets)
@@ -187,20 +187,20 @@ Before changing mux behavior, read `Services/WebSockets/MuxClient.cs` and `MuxPr
 
 ## Tmux Compatibility Layer
 
-MidTerm includes a tmux shim that allows AI coding tools to use split panes and related tmux behaviors natively.
+tlbx includes a tmux shim that allows AI coding tools to use split panes and related tmux behaviors natively.
 - Controlled by `TmuxCompatibility` setting (default: true)
 - Implemented under `Services/Tmux/`
 - Used by tools that detect tmux and issue pane or send-keys commands
 
 ## Web Preview
 
-MidTerm includes a reverse proxy for previewing local dev servers (or any website) inside an iframe panel.
+tlbx includes a reverse proxy for previewing local dev servers (or any website) inside an iframe panel.
 
 - Implemented under `Services/WebPreview/` plus the frontend `web/` module
 - Handles cookie bridging, URL rewriting, external resource proxying, and WebSocket proxying
 - DOM snapshots save into `<cwd>/.midterm/snapshot_*/`
 - **Before modifying any web preview proxy code, read `docs/devbrowser.md` first. After changes, update that document to reflect the new state.**
-- For browser-control workflows inside a MidTerm terminal, see `.midterm/AGENTS.md`
+- For browser-control workflows inside a tlbx terminal, see `.midterm/AGENTS.md`
 
 ## Code Style (C#)
 
@@ -418,4 +418,4 @@ New code should be easy to find by folder, file name, and type name alone.
 - Extract duplicated logic instead of maintaining parallel copies.
 - Keep one concern per file.
 
-This terminal runs inside MidTerm (web terminal multiplexer) — see .midterm/CLAUDE.md for browser control, tmux split-pane, and DOM inspection tools.
+This terminal runs inside tlbx (web terminal multiplexer) — see .midterm/CLAUDE.md for browser control, tmux split-pane, and DOM inspection tools.

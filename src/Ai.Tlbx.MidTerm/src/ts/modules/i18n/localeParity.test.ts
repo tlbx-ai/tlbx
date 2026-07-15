@@ -12,6 +12,25 @@ const { createLocaleParityReport, STAGED_REQUIRED_PREFIXES } =
   };
 
 describe('locale parity', () => {
+  it('uses the tlbx product name in every translated value', () => {
+    const localeRoot = resolve(__dirname, '../../../static/locales');
+    const staleValues: string[] = [];
+
+    for (const fileName of readdirSync(localeRoot).filter((name) => name.endsWith('.json'))) {
+      const translations = JSON.parse(readFileSync(resolve(localeRoot, fileName), 'utf8')) as Record<
+        string,
+        string
+      >;
+      for (const [key, value] of Object.entries(translations)) {
+        if (value.includes('MidTerm')) {
+          staleValues.push(`${fileName}: ${key}`);
+        }
+      }
+    }
+
+    expect(staleValues).toEqual([]);
+  });
+
   it('has no stale extra keys in localized files', () => {
     const report = createLocaleParityReport();
     const extras = report.issues.filter((issue) => issue.type === 'extra');

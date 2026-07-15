@@ -11,7 +11,7 @@
 
 ## Tone Rules
 
-- Keep `MidTerm`, `Codex`, `Claude`, `Git`, `tmux`, `API key`, and platform names unchanged unless a locale already uses an established native equivalent.
+- Keep `tlbx`, `Codex`, `Claude`, `Git`, `tmux`, `API key`, and platform names unchanged unless a locale already uses an established native equivalent.
 - Keep borrowed product/UI words such as `Session`, `Frontend`, `Agent`, or `Host` when that is the more natural product voice for the locale's audience.
 - Prefer concise in-product wording over formal or textbook phrasing.
 - Avoid translating strings mechanically key by key; preserve meaning, action, and expected UX tone.

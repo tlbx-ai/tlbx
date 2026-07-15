@@ -181,7 +181,7 @@ function buildTablesDebugScenario(
       '| Alpha | AppServerControl | Streaming | 1420 | 18233 | 68% | 118 ms | 880 ms | gpt-5.4 | Codex | 0 | Long answer with code and tables kept live while the operator watches scrollback |',
       '| Beta | Terminal | Idle | 0 | 932 | 12% | 74 ms | 140 ms | none | Human | 1 | Waiting for next prompt and preserving shell ownership |',
       '| Gamma | AppServerControl | Blocked | 17 | 4112 | 31% | 129 ms | 1420 ms | gpt-5.4-mini | Codex | 3 | Approval request open and should stay visible even when the assistant lane is busy |',
-      '| Delta | AppServerControl | Replaying | 921 | 15540 | 54% | 105 ms | 650 ms | claude-opus | Claude | 0 | Canonical history restored from MidTerm and replayed into the history lane |',
+      '| Delta | AppServerControl | Replaying | 921 | 15540 | 54% | 105 ms | 650 ms | claude-opus | Claude | 0 | Canonical history restored from tlbx and replayed into the history lane |',
       '',
       '| Metric | P50 | P95 | P99 | Target | Last good build | Regressed by | Notes |',
       '| --- | ---: | ---: | ---: | ---: | :--- | :--- | :--- |',

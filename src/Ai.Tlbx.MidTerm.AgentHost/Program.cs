@@ -68,7 +68,7 @@ public static class Program
     {
         Console.WriteLine(
             """
-            mtagenthost - MidTerm external agent runtime host
+            mtagenthost - tlbx external agent runtime host
 
             Usage:
               mtagenthost --stdio
@@ -79,7 +79,7 @@ public static class Program
 
             Current scope:
               - stdio JSON transport
-              - owned IPC transport for persistent MidTerm reconnect
+              - owned IPC transport for persistent tlbx reconnect
               - real Codex, Claude, and Grok runtimes
               - synthetic provider mode for protocol/integration testing
             """);

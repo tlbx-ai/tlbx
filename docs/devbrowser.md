@@ -1,8 +1,8 @@
 # Web Preview Dev Browser — Route-Keyed Proxy Design
 
-The web preview reverse proxy (`/webpreview/{routeKey}/*`) intercepts browser requests and forwards them to an upstream target that belongs to one named preview session under one MidTerm terminal session. HTTP requests are straightforward (strip prefix, forward, return response). WebSocket connections are relayed without content modification.
+The web preview reverse proxy (`/webpreview/{routeKey}/*`) intercepts browser requests and forwards them to an upstream target that belongs to one named preview session under one tlbx terminal session. HTTP requests are straightforward (strip prefix, forward, return response). WebSocket connections are relayed without content modification.
 
-Targets may also be local `file:///...` URLs. MidTerm only accepts `file:` URLs that resolve to the same machine as the running `mt` process. Remote file-share targets such as `file://server/share/...` remain blocked.
+Targets may also be local `file:///...` URLs. tlbx only accepts `file:` URLs that resolve to the same machine as the running `mt` process. Remote file-share targets such as `file://server/share/...` remain blocked.
 
 ## URL Space Design
 
@@ -30,7 +30,7 @@ The `<base href="/webpreview/{routeKey}/">` tag is injected into every HTML resp
 - `location.href` = `https://proxy:2000/webpreview/{routeKey}/page` (real browser URL)
 - Both are consistent — frameworks see the app mounted at `/webpreview/{routeKey}/`
 
-For local file previews there is no upstream HTTP origin. MidTerm serves the requested file directly from disk, still injects the proxy `<base>` tag plus runtime rewrite script, and keeps all subsequent asset requests inside `/webpreview/{routeKey}/...`.
+For local file previews there is no upstream HTTP origin. tlbx serves the requested file directly from disk, still injects the proxy `<base>` tag plus runtime rewrite script, and keeps all subsequent asset requests inside `/webpreview/{routeKey}/...`.
 
 ### Navigation Notifications
 
@@ -42,7 +42,7 @@ The injected script sends `postMessage({type: "mt-navigation", url: location.hre
 - `popstate` / `hashchange` events — back/forward navigation
 - Initial page load (`setTimeout(ntfyNow, 0)`) — captures redirects
 
-Navigation notifications are now coalesced and deduplicated inside the injected runtime before they reach the parent shell. A preview that churns `history.replaceState` without actually changing its effective URL can no longer flood the owning MidTerm tab with redundant `postMessage` traffic.
+Navigation notifications are now coalesced and deduplicated inside the injected runtime before they reach the parent shell. A preview that churns `history.replaceState` without actually changing its effective URL can no longer flood the owning tlbx tab with redundant `postMessage` traffic.
 
 The parent `webPanel.ts` / detached popup listener accepts these messages only when the preview identity matches the current iframe. It prefers the injected `upstreamUrl` field, so redirects and `_ext` navigations no longer need to be reverse-engineered from the iframe URL bar.
 
@@ -68,7 +68,7 @@ In practice, Blazor and most SPA frameworks derive all URLs from client-provided
 
 ## Cookie Bridge
 
-Upstream cookies are stored in MidTerm's server-side `CookieContainer`. The browser bridge under `/webpreview/{routeKey}/_cookies` intentionally exposes only **script-visible** cookies:
+Upstream cookies are stored in tlbx's server-side `CookieContainer`. The browser bridge under `/webpreview/{routeKey}/_cookies` intentionally exposes only **script-visible** cookies:
 
 - `HttpOnly` cookies stay server-only and are still forwarded upstream on HTTP/WebSocket requests
 - `document.cookie` inside the proxied page sees only non-`HttpOnly` cookies
@@ -87,7 +87,7 @@ When the preview iframe is sandboxed without a usable same-origin storage contex
 - `localStorage` and `sessionStorage` fall back to per-frame in-memory stores instead of throwing `SecurityError`
 - `navigator.serviceWorker` falls back to a no-op container that resolves registration calls without taking over the real page scope
 
-These shims exist specifically so MidTerm-in-MidTerm and similar apps can still bootstrap inside an opaque-origin sandbox. They do **not** provide persistence across reloads, and they are intentionally weaker than a real same-origin browser context.
+These shims exist specifically so tlbx-in-tlbx and similar apps can still bootstrap inside an opaque-origin sandbox. They do **not** provide persistence across reloads, and they are intentionally weaker than a real same-origin browser context.
 
 ## Browser Bridge Targeting
 
@@ -102,11 +102,11 @@ Browser automation is now scoped per named preview session instead of "whichever
 - commands with `--session` and `--preview` route only to that named preview
 - `mt_status` / `/api/browser/status` now report the explicitly targeted preview/session scope instead of only the global default browser client
 - docked UI screenshot capture sends the active docked `previewId`, so sibling previews under the same terminal session do not collide
-- the MidTerm UI shows one tab per named preview under the active terminal session; each tab keeps its own target URL, cookies, proxy log, and detached popup state
+- the tlbx UI shows one tab per named preview under the active terminal session; each tab keeps its own target URL, cookies, proxy log, and detached popup state
 
-The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets MidTerm claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
+The injected browser bridge now connects immediately from the server-injected head script, before upstream page scripts run. This lets tlbx claim the preview's browser-control channel before page JavaScript can open its own `/ws/browser` socket. The injected screenshot command also loads `html2canvas` via a blob URL created from the native fetch response, so proxy URL rewriting no longer breaks `mtbrowser screenshot`.
 
-Browser UI instructions (`open`, `dock`, `detach`, `viewport`, `mobile-device`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no MidTerm browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
+Browser UI instructions (`open`, `dock`, `detach`, `viewport`, `mobile-device`) are now targeted to a registered `/ws/state` UI listener instead of being fire-and-forget broadcasts. If no tlbx browser UI is connected, the API returns a helpful `409` error instead of silently succeeding.
 
 The responsive mobile-frame toggle is deliberately dimension-only. Full Chromium mobile signals are owned by the optional local Chrome extension described in [MOBILE_DEVICE_LAB.md](MOBILE_DEVICE_LAB.md). Its top-level target registers a separate preview identity and therefore participates in the same preview ownership and browser-command selection rules as docked and detached clients.
 
@@ -114,12 +114,12 @@ Preview control ownership is now backend-owned per `(sessionId, previewName)` in
 
 - the first browser that creates or bootstraps a named preview becomes that preview's control owner
 - browser commands and browser-UI instructions for that named preview route to the owned browser first
-- if the owner disappears and exactly one other browser remains attached for that preview, MidTerm reassigns ownership to that sole remaining browser deterministically
-- if the owner disappears and the explicit leading browser is attached, MidTerm reassigns ownership to the leading browser deterministically
+- if the owner disappears and exactly one other browser remains attached for that preview, tlbx reassigns ownership to that sole remaining browser deterministically
+- if the owner disappears and the explicit leading browser is attached, tlbx reassigns ownership to the leading browser deterministically
 - if the owner disappears and multiple different non-leading browsers remain attached, the preview stays non-controllable instead of silently picking one by focus or recency
 - presentation state such as docked vs detached mode, viewport size, and scroll position remains browser-local and is not replicated globally
 
-Agents can explicitly recover from stale preview ownership with `mt_claim_preview` or `mt_open --claim <url>`. Normal `mt_open <url>` also reclaims a stale owner to the attached leading browser and activates the target session before it docks the preview, so two connected MidTerm tabs or an inactive source session cannot leave CLI browser automation stranded on an offline tab. The claim path assigns the selected `(sessionId, previewName)` to the connected leading MidTerm browser UI listener, then normal `open`, `reload`, and browser-command routing use that owner. `mt_status` now includes a compact `bridge phase` field such as `no-ui-client`, `no-target`, `owner-offline`, `preview-frame-disconnected`, `ambiguous-preview`, or `ready`, plus a one-line recovery hint.
+Agents can explicitly recover from stale preview ownership with `mt_claim_preview` or `mt_open --claim <url>`. Normal `mt_open <url>` also reclaims a stale owner to the attached leading browser and activates the target session before it docks the preview, so two connected tlbx tabs or an inactive source session cannot leave CLI browser automation stranded on an offline tab. The claim path assigns the selected `(sessionId, previewName)` to the connected leading tlbx browser UI listener, then normal `open`, `reload`, and browser-command routing use that owner. `mt_status` now includes a compact `bridge phase` field such as `no-ui-client`, `no-target`, `owner-offline`, `preview-frame-disconnected`, `ambiguous-preview`, or `ready`, plus a one-line recovery hint.
 
 `mt_open` and `/api/browser/open` require the selected browser bridge to reconnect from a visible preview frame before they report success. When the dock activates a hidden iframe, the parent posts `mt-refresh-browser-state` into that frame so the injected bridge immediately refreshes its visibility/focus flags and reconnects if needed. This prevents agents from receiving a false-ready result from a stale hidden frame while the user-visible dev browser has not visibly moved.
 
@@ -130,61 +130,61 @@ For token-efficient discovery and diagnostics, agents should prefer:
 - `mt_inspect --screenshot` when the screenshot path is needed in the same diagnostic pass
 - `mt_proxylog_summary [limit]` for status buckets, websocket totals, slow requests, and recent failures without dumping full headers
 
-When the proxied page leaks root-relative asset URLs outside `/webpreview/{routeKey}` and those URLs collide with MidTerm's own static prefixes (`/js/*`, `/css/*`, `/fonts/*`, `/img/*`, `/locales/*`, `/favicon/*`), MidTerm now treats them as preview traffic when the request referer is a preview route. The only built-in exception today is `/js/html2canvas.min.js`, which remains a local MidTerm asset used by the injected screenshot helper.
+When the proxied page leaks root-relative asset URLs outside `/webpreview/{routeKey}` and those URLs collide with tlbx's own static prefixes (`/js/*`, `/css/*`, `/fonts/*`, `/img/*`, `/locales/*`, `/favicon/*`), tlbx now treats them as preview traffic when the request referer is a preview route. The only built-in exception today is `/js/html2canvas.min.js`, which remains a local tlbx asset used by the injected screenshot helper.
 
-## Embedded MidTerm Guardrails
+## Embedded tlbx Guardrails
 
-When MidTerm itself is running inside `/webpreview/`, the nested MidTerm UI now treats its own web-preview controls as inactive:
+When tlbx itself is running inside `/webpreview/`, the nested tlbx UI now treats its own web-preview controls as inactive:
 
-- embedded MidTerm pages no-op frontend calls that mutate `/api/webpreview/*`
-- embedded MidTerm pages do not create nested browser preview clients through the normal docked-preview path
-- browser-ui `open` / `dock` / `detach` / `viewport` instructions are ignored inside embedded MidTerm pages
+- embedded tlbx pages no-op frontend calls that mutate `/api/webpreview/*`
+- embedded tlbx pages do not create nested browser preview clients through the normal docked-preview path
+- browser-ui `open` / `dock` / `detach` / `viewport` instructions are ignored inside embedded tlbx pages
 
-This prevents the previewed MidTerm app from clearing or repointing the host MidTerm dev-browser target during bootstrap.
+This prevents the previewed tlbx app from clearing or repointing the host tlbx dev-browser target during bootstrap.
 
 ## Preview Sandbox
 
-In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox for every target. Outside that mode, MidTerm still force-sandboxes external HTTP(S) sites and local `file:` previews so an arbitrary page cannot execute with full access to the owning MidTerm shell origin:
+In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox for every target. Outside that mode, tlbx still force-sandboxes external HTTP(S) sites and local `file:` previews so an arbitrary page cannot execute with full access to the owning tlbx shell origin:
 
 - baseline flags: `allow-scripts allow-forms allow-popups allow-modals allow-downloads`
-- when the preview is loaded from the dedicated preview origin (`https://host:port+1`), MidTerm also adds `allow-same-origin`
-- when MidTerm falls back to the primary app origin, it still omits `allow-same-origin`, so the proxied page runs with an opaque origin
-- MidTerm's own `localStorage`, `CacheStorage`, and service-worker scope are no longer shared with the previewed app
+- when the preview is loaded from the dedicated preview origin (`https://host:port+1`), tlbx also adds `allow-same-origin`
+- when tlbx falls back to the primary app origin, it still omits `allow-same-origin`, so the proxied page runs with an opaque origin
+- tlbx's own `localStorage`, `CacheStorage`, and service-worker scope are no longer shared with the previewed app
 
-The dedicated preview origin makes `allow-same-origin` safe for self-preview and similar apps that require `localStorage` or `navigator.serviceWorker`: the iframe becomes same-origin with `port + 1`, not with the main MidTerm shell on `port`.
+The dedicated preview origin makes `allow-same-origin` safe for self-preview and similar apps that require `localStorage` or `navigator.serviceWorker`: the iframe becomes same-origin with `port + 1`, not with the main tlbx shell on `port`.
 
-Because sandboxed preview frames are cross-site from the main app's perspective, MidTerm relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs where MidTerm itself needs to operate inside that sandbox. Production/stable-style runs keep `SameSite=Lax`.
+Because sandboxed preview frames are cross-site from the main app's perspective, tlbx relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs where tlbx itself needs to operate inside that sandbox. Production/stable-style runs keep `SameSite=Lax`.
 
 ## Dedicated Preview Origin
 
-When MidTerm can reserve `port + 1`, preview clients now receive a dedicated frame origin on that secondary listener:
+When tlbx can reserve `port + 1`, preview clients now receive a dedicated frame origin on that secondary listener:
 
 - the main app stays on `https://host:port`
 - the iframe loads proxied content from `https://host:port+1`
 - preview client registration returns that origin to the docked panel and detached popup
 
-The preview listener blocks normal MidTerm app pages and non-browser WebSockets on the secondary port, so leaked navigations do not fall back into the MidTerm application on the preview origin. If the extra port is unavailable, MidTerm falls back to the primary origin and keeps the sandbox protections from step 3.
+The preview listener blocks normal tlbx app pages and non-browser WebSockets on the secondary port, so leaked navigations do not fall back into the tlbx application on the preview origin. If the extra port is unavailable, tlbx falls back to the primary origin and keeps the sandbox protections from step 3.
 
-The server must bind both the main app URL and the preview URL explicitly at startup. Advertising a preview origin without listening on `port + 1` breaks MidTerm-in-MidTerm immediately once the iframe tries to navigate to the isolated frame host.
+The server must bind both the main app URL and the preview URL explicitly at startup. Advertising a preview origin without listening on `port + 1` breaks tlbx-in-tlbx immediately once the iframe tries to navigate to the isolated frame host.
 
-## MidTerm-In-MidTerm
+## tlbx in tlbx
 
 Self-preview is supported only when the dedicated preview origin is active:
 
 - target the main app origin (`https://host:port`), not the preview origin (`port + 1`)
 - the preview-origin listener itself is still rejected as a web-preview target, so the proxy never points at its own isolated frame host
-- proxied requests to MidTerm itself mirror the current `mm-session` auth cookie from the browser request into the in-memory proxy cookie jar before each upstream HTTP/WebSocket hop
-- that mirrored auth cookie is deliberately excluded from cookie-disk persistence, so nested MidTerm stays authenticated without writing MidTerm session tokens into the preview cookie files
+- proxied requests to tlbx itself mirror the current `mm-session` auth cookie from the browser request into the in-memory proxy cookie jar before each upstream HTTP/WebSocket hop
+- that mirrored auth cookie is deliberately excluded from cookie-disk persistence, so nested tlbx stays authenticated without writing tlbx session tokens into the preview cookie files
 
-This is what keeps nested MidTerm from falling into `/login.html` once its own `/api/*` and `/ws/*` traffic starts flowing through the dev browser.
+This is what keeps nested tlbx from falling into `/login.html` once its own `/api/*` and `/ws/*` traffic starts flowing through the dev browser.
 
-The main MidTerm shell also has to allow that isolated frame host in its own CSP `frame-src`. Without that, the browser blocks `https://host:port+1/webpreview/...` before the nested app can render.
+The main tlbx shell also has to allow that isolated frame host in its own CSP `frame-src`. Without that, the browser blocks `https://host:port+1/webpreview/...` before the nested app can render.
 
-For self-targets, internal upstream hops must not re-enter the catch-all "leaked root-relative URL" proxy path. MidTerm marks those server-originated self-proxy requests and lets them fall through to local static files and normal handlers, which prevents recursive `/site.webmanifest` and `/favicon.ico` loops that otherwise explode into `431 Request Header Fields Too Large`.
+For self-targets, internal upstream hops must not re-enter the catch-all "leaked root-relative URL" proxy path. tlbx marks those server-originated self-proxy requests and lets them fall through to local static files and normal handlers, which prevents recursive `/site.webmanifest` and `/favicon.ico` loops that otherwise explode into `431 Request Header Fields Too Large`.
 
 ## Canonical Host Adoption
 
-MidTerm only auto-updates the stored preview target when a **document/iframe HTML navigation** lands on a different authority:
+tlbx only auto-updates the stored preview target when a **document/iframe HTML navigation** lands on a different authority:
 
 - asset redirects no longer rewrite the preview target
 - same-host/different-port URLs are treated as different authorities
@@ -200,7 +200,7 @@ MidTerm only auto-updates the stored preview target when a **document/iframe HTM
 - WebSocket sub-protocols, negotiated protocol
 - Error messages on failure
 
-`requestCookies` now reflects the effective cookie header MidTerm forwarded from the preview's server-side cookie jar for that upstream URL, not just any explicit `Cookie` header present on the outgoing request object.
+`requestCookies` now reflects the effective cookie header tlbx forwarded from the preview's server-side cookie jar for that upstream URL, not just any explicit `Cookie` header present on the outgoing request object.
 
 CLI: `mt_proxylog [limit]` / `Mt-ProxyLog [-Limit N]`
 
@@ -210,9 +210,9 @@ Use this as the **first diagnostic step** when a site doesn't work through the p
 
 ## Upstream TLS
 
-The Dev Browser proxy connects to upstream HTTPS targets from the `mt` server process. For explicitly targeted preview URLs, the proxy proceeds through upstream certificate validation errors such as expired certificates, matching the developer-browser "proceed anyway" workflow and `curl -k` diagnostics. This exception is scoped to Web Preview upstream HTTP/WebSocket connections; it does not affect MidTerm's own server certificate, authentication, installer, update downloads, or other app HTTP clients.
+The Dev Browser proxy connects to upstream HTTPS targets from the `mt` server process. For explicitly targeted preview URLs, the proxy proceeds through upstream certificate validation errors such as expired certificates, matching the developer-browser "proceed anyway" workflow and `curl -k` diagnostics. This exception is scoped to Web Preview upstream HTTP/WebSocket connections; it does not affect tlbx's own server certificate, authentication, installer, update downloads, or other app HTTP clients.
 
-The proxy also uses its own DNS connect fallback for upstream preview traffic. If a target host resolves to multiple addresses and the first address stalls, the proxy retries the remaining addresses before surfacing a MidTerm timeout. This keeps dynamic DNS and mixed IPv6/IPv4 targets aligned with browser behavior.
+The proxy also uses its own DNS connect fallback for upstream preview traffic. If a target host resolves to multiple addresses and the first address stalls, the proxy retries the remaining addresses before surfacing a tlbx timeout. This keeps dynamic DNS and mixed IPv6/IPv4 targets aligned with browser behavior.
 
 ## Debugging Checklist
 
@@ -231,11 +231,11 @@ When a website doesn't load through the web preview:
 | WS status 502 | Upstream rejected connection (wrong Origin, missing cookies, SSL error) |
 | WS 101 but page empty | Framework routing issue — check NavigationManager or router state |
 | Page renders but navigation broken | URL inconsistency between location.href and document.baseURI |
-| CSS/JS 404s | Root-relative URLs claimed by `IsMidTermPath` or missing leaked-asset fallback — check whether the failing path collides with MidTerm static prefixes and whether the request referer is the preview route |
+| CSS/JS 404s | Root-relative URLs claimed by `IsMidTermPath` or missing leaked-asset fallback — check whether the failing path collides with tlbx static prefixes and whether the request referer is the preview route |
 | Login redirect loops | Cookies not forwarding — check `requestCookies`/`responseCookies` in proxylog |
 | All assets return HTML | Host redirect (e.g. `foo.com` → `www.foo.com`) drops the path — proxy auto-updates target on first redirect |
 
-Leaked root-relative asset chains can lose the original `/webpreview/{routeKey}` referer after the first rescued request. MidTerm now remembers which preview first claimed leaked paths like `/js/login.js`, so follow-up imports from referers such as `/js/login.js` or `/js3/html2-login.js` can still recover the same `routeKey` instead of falling through to local `404`s on the preview origin.
+Leaked root-relative asset chains can lose the original `/webpreview/{routeKey}` referer after the first rescued request. tlbx now remembers which preview first claimed leaked paths like `/js/login.js`, so follow-up imports from referers such as `/js/login.js` or `/js3/html2-login.js` can still recover the same `routeKey` instead of falling through to local `404`s on the preview origin.
 
 ## Implementation Files
 
@@ -255,4 +255,4 @@ Leaked root-relative asset chains can lose the original `/webpreview/{routeKey}`
 
 **Write-side interception is sufficient.** Outgoing APIs (fetch, XHR, WebSocket, history, element setters) are patched to add `/webpreview/{routeKey}` before requests leave JS. This ensures all requests route through the correct preview-scoped proxy middleware.
 
-For targets that live under a deep document path but serve assets from the origin root (for example docs sites that load `/_astro/*` from a page under `/foo/bar/...`), MidTerm now primes its root-fallback cache directly from the rewritten HTML before the browser requests those assets. That avoids the first-wave `404` noise where the proxy would otherwise try `targetBase + /_astro/...` once and only then learn to retry the server-root path.
+For targets that live under a deep document path but serve assets from the origin root (for example docs sites that load `/_astro/*` from a page under `/foo/bar/...`), tlbx now primes its root-fallback cache directly from the rewritten HTML before the browser requests those assets. That avoids the first-wave `404` noise where the proxy would otherwise try `targetBase + /_astro/...` once and only then learn to retry the server-root path.

@@ -1,4 +1,4 @@
-# MidTerm visual assets
+# tlbx visual assets
 
 This directory contains reusable product artwork, screenshots, launch exports,
 and the scripts that regenerate them. It is an asset workspace, not product
@@ -14,7 +14,7 @@ Current product truth lives in:
 ## Canonical asset sets
 
 - `readme/` contains the SVG artwork used by the repository README.
-- `Screenshots/` contains real MidTerm product captures.
+- `Screenshots/` contains real tlbx product captures.
 - `launch-assets-2026-07/` contains raster exports derived from the README
   artwork, with regeneration instructions in its own README.
 - [`ScreenshotAutomation/`](ScreenshotAutomation/README.md) contains the

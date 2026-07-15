@@ -1,8 +1,8 @@
-# MidTerm Release Size Audit - 2026-05-08
+# tlbx Release Size Audit - 2026-05-08
 
 ## Ziel
 
-MidTerm war auf dem Windows-Downloadpfad einmal bei etwa 10 MiB gezippter
+tlbx war auf dem Windows-Downloadpfad einmal bei etwa 10 MiB gezippter
 Downloadgroesse und liegt aktuell bei etwa 19 MiB. Die Downloadgroesse ist hier
 aber nur ein Signal. Das primaere Ziel ist, Dead Weight zu finden, das Menschen
 und AI-Agenten bei Edits verwirrt, Kontextfenster aufblaeht, falsche Faehrten

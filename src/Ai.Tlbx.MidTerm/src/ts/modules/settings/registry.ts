@@ -1,7 +1,7 @@
 /**
  * Settings Registry Module
  *
- * Central metadata registry for MidTerm settings. This is the authoritative
+ * Central metadata registry for tlbx settings. This is the authoritative
  * frontend map for editability, ownership, validation shape, and apply mode.
  */
 

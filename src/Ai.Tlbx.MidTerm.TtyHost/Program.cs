@@ -1259,7 +1259,7 @@ public static class Program
     private static void PrintHelp()
     {
         Console.WriteLine($"""
-            mthost {VersionInfo.Version} - MidTerm Console Host
+            mthost {VersionInfo.Version} - tlbx Console Host
 
             Usage: mthost --session <id> [options]
                    mthost --pty-exec <slave-path> <cols> <rows> <shell> [shell-args...]

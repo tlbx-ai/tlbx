@@ -1,11 +1,11 @@
-# MidTerm Mobile Device Bridge - Chrome Web Store Listing
+# tlbx Mobile Device Bridge — Chrome Web Store listing
 
 ## Store listing
 
-- **Name:** MidTerm Mobile Device Bridge
+- **Name:** tlbx Mobile Device Bridge
 - **Extension ID:** `mipkpmmedaoighaadeedfedimiaaekcn`
 - **Store URL:** https://chromewebstore.google.com/detail/mipkpmmedaoighaadeedfedimiaaekcn
-- **Summary:** Open remote MidTerm previews in a local Pixel 8 Chrome device with touch, rotation, lifecycle, keyboard, and screenshots.
+- **Summary:** Open remote tlbx previews in a local Pixel 8 Chrome device with touch, rotation, lifecycle, keyboard, and screenshots.
 - **Category:** Developer Tools
 - **Language:** English
 - **Visibility:** Public
@@ -17,7 +17,7 @@
 
 Test mobile behavior without putting a phone in the development loop.
 
-MidTerm Mobile Device Bridge connects only to a MidTerm tab that you explicitly activate. It opens the selected Dev Browser preview in a separate top-level Chrome window and applies a Pixel 8 profile through Chrome DevTools Protocol.
+tlbx Mobile Device Bridge connects only to a tlbx tab that you explicitly activate. It opens the selected Dev Browser preview in a separate top-level Chrome window and applies a Pixel 8 profile through Chrome DevTools Protocol.
 
 Features:
 
@@ -26,41 +26,41 @@ Features:
 - Background and foreground lifecycle testing
 - Mobile keyboard viewport approximation
 - Native device-window screenshots
-- Full compatibility with MidTerm's existing Dev Browser DOM automation
-- Remote-first operation: Chrome runs locally while MidTerm and the application under test may run on another machine
+- Full compatibility with tlbx's existing Dev Browser DOM automation
+- Remote-first operation: Chrome runs locally while tlbx and the application under test may run on another machine
 
-The extension has no analytics, advertising, tracking, or developer-operated backend. It has no broad host permission and injects its packaged bridge only after you click the extension in a MidTerm tab.
+The extension has no analytics, advertising, tracking, or developer-operated backend. It has no broad host permission and injects its packaged bridge only after you click the extension in a tlbx tab.
 
-MidTerm is open source: https://github.com/tlbx-ai/tlbx
+tlbx is open source: https://github.com/tlbx-ai/tlbx
 
 ## Single purpose
 
-Open an explicitly selected MidTerm Dev Browser preview in a local top-level Chrome window with mobile-device emulation and return user-requested device controls or screenshots to that MidTerm tab.
+Open an explicitly selected tlbx Dev Browser preview in a local top-level Chrome window with mobile-device emulation and return user-requested device controls or screenshots to that tlbx tab.
 
 ## Permission justifications
 
-- **activeTab:** Accesses only the MidTerm tab in which the user explicitly clicks the extension. This avoids broad host permissions and always-on injection.
-- **scripting:** Injects the packaged `page-bridge.js` file into the explicitly activated MidTerm tab so that tab can send device commands to the extension.
+- **activeTab:** Accesses only the tlbx tab in which the user explicitly clicks the extension. This avoids broad host permissions and always-on injection.
+- **scripting:** Injects the packaged `page-bridge.js` file into the explicitly activated tlbx tab so that tab can send device commands to the extension.
 - **debugger:** Attaches only to the extension-created device tab. It is required for device metrics, Android User-Agent and Client Hints, touch, safe areas, lifecycle state, focus emulation, rotation, and user-requested screenshots.
 - **storage:** Uses `chrome.storage.session` for approved controller tab identifiers and transient open-device state. Data lasts only for the current Chrome session.
-- **tabs:** Creates, validates, focuses, reloads, and closes the controller/device tabs and restores the page bridge after an approved MidTerm tab reloads.
+- **tabs:** Creates, validates, focuses, reloads, and closes the controller/device tabs and restores the page bridge after an approved tlbx tab reloads.
 
 ## Privacy declarations
 
 - **Remote code:** No. All executable code is packaged with the extension.
-- **Website content:** Select this data type. Device-tab pixels are processed locally only when the user explicitly requests a screenshot. The screenshot is returned only to the activated MidTerm tab and is not transmitted to the developer or a third party by the extension.
-- **Web history:** Select this data type. The extension handles only the single preview URL supplied by the activated MidTerm tab and does not retain it after navigation.
+- **Website content:** Select this data type. Device-tab pixels are processed locally only when the user explicitly requests a screenshot. The screenshot is returned only to the activated tlbx tab and is not transmitted to the developer or a third party by the extension.
+- **Web history:** Select this data type. The extension handles only the single preview URL supplied by the activated tlbx tab and does not retain it after navigation.
 - **Authentication information:** Not collected.
 - **Developer-operated data collection, analytics, advertising, sale, or sharing:** None.
-- **Retention:** The preview URL is not retained after navigation. Screenshot pixels are not retained after delivery to the activated MidTerm tab. Controller identifiers and device state exist only in `chrome.storage.session`.
+- **Retention:** The preview URL is not retained after navigation. Screenshot pixels are not retained after delivery to the activated tlbx tab. Controller identifiers and device state exist only in `chrome.storage.session`.
 
 For both selected data types, certify that they are used only for the extension's single purpose and are not sold, transferred for unrelated purposes, used for creditworthiness or lending, or used for advertising. Certify all Chrome Web Store Limited Use statements.
 
 ## Reviewer instructions
 
-1. Install MidTerm from https://github.com/tlbx-ai/tlbx or run `npx @tlbx-ai/midterm`.
+1. Install tlbx from https://github.com/tlbx-ai/tlbx or use the legacy fallback `npx @tlbx-ai/midterm`.
 2. Open `https://localhost:2000`, create a terminal session, and open any HTTP or HTTPS URL in the Dev Browser.
-3. Click the MidTerm Mobile Device Bridge icon in that MidTerm tab.
+3. Click the tlbx Mobile Device Bridge icon in that tlbx tab.
 4. Click the device button in the Dev Browser URL bar.
 5. Verify that a separate Pixel 8-sized Chrome window opens. Rotation, keyboard viewport, lifecycle, screenshot, and close actions are available from the Dev Browser overflow menu.
 

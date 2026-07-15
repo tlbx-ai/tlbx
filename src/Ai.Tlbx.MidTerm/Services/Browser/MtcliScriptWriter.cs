@@ -23,11 +23,11 @@ public static class MtcliScriptWriter
     private static string GenerateShellScript(int port, string token) =>
         $$"""
         #!/bin/bash
-        # MidTerm CLI helpers — auto-generated, do not edit.
+        # tlbx CLI helpers — auto-generated, do not edit.
         # Source: . .midterm/mtcli.sh   |   Run: .midterm/mtcli.sh <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
-        # It only works on this machine's MidTerm instance. Treat it like a local session secret.
+        # It only works on this machine's tlbx instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         _MK="mm-session={{token}}"
@@ -64,9 +64,9 @@ public static class MtcliScriptWriter
         _MCTXERR() {
           local cmd="${1:-This command}"
           printf '%s\n' \
-            "$cmd requires MidTerm session context, but MT_SESSION_ID is empty in this shell." \
+            "$cmd requires tlbx session context, but MT_SESSION_ID is empty in this shell." \
             "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME." \
-            "Re-export them from the parent MidTerm shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it." >&2
+            "Re-export them from the parent tlbx shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it." >&2
         }
         _MREQUIRECTX() {
           local cmd="${1:-This command}"
@@ -208,7 +208,7 @@ public static class MtcliScriptWriter
             "$pid" "$(_MJSONESC "$run_id")" "$(_MJSONESC "$stdout_path")" "$(_MJSONESC "$stderr_path")"
         }
 
-        # Browser interaction (requires web preview panel open in MidTerm)
+        # Browser interaction (requires web preview panel open in tlbx)
         # mt_query SELECTOR [--text]  — query DOM; --text for text-only (smaller output)
         mt_query() { _MBB query "$@"; }
         # mt_click SELECTOR
@@ -322,7 +322,7 @@ public static class MtcliScriptWriter
         mt_target()     { _MREQUIRECTX "mt_target" || return $?; _MC "$_MT/api/webpreview/target$(_MQ)"; }
         mt_cookies()    { _MREQUIRECTX "mt_cookies" || return $?; _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
         mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
-        # mt_claim_preview  — explicitly assign this named preview to the connected MidTerm browser
+        # mt_claim_preview  — explicitly assign this named preview to the connected tlbx browser
         mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
         # mt_claim_main_browser [browser-id]  — make the selected preview/browser the leading browser for terminal sizing
         mt_claim_main_browser() {
@@ -667,7 +667,7 @@ public static class MtcliScriptWriter
           local agent_only="${1:-true}"
           _MC "$_MT/api/sessions/attention?agentOnly=$agent_only"
         }
-        # Explicit agent control plane. MidTerm stores what agents publish; it does not infer meaning from PTY output.
+        # Explicit agent control plane. tlbx stores what agents publish; it does not infer meaning from PTY output.
         mt_control_plane() {
           if [ -n "${1:-}" ]; then
             _MC "$_MT/api/hub/machines/$(_MURLENC "$1")/control-plane"
@@ -861,7 +861,7 @@ public static class MtcliScriptWriter
           _MREQUIRECTX "mt_viewport" || return $?
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
         }
-        # mt_mobile ACTION [PROFILE]  — control the local Chrome device attached to the owning MidTerm tab
+        # mt_mobile ACTION [PROFILE]  — control the local Chrome device attached to the owning tlbx tab
         mt_mobile() {
           local action="${1:-status}" profile="${2:-pixel-8}"
           _MREQUIRECTX "mt_mobile" || return $?
@@ -884,7 +884,7 @@ public static class MtcliScriptWriter
           elif [ -n "$_normalized_cmd" ] && command -v "mt_$_normalized_cmd" >/dev/null 2>&1; then
             "mt_$_normalized_cmd" "$@"
           else
-            printf 'Unknown MidTerm CLI command: %s\n' "$_cmd" >&2
+            printf 'Unknown tlbx CLI command: %s\n' "$_cmd" >&2
             exit 1
           fi
         fi
@@ -892,11 +892,11 @@ public static class MtcliScriptWriter
 
     private static string GeneratePowerShellScript(int port, string token) =>
         $$"""
-        # MidTerm CLI helpers — auto-generated, do not edit.
+        # tlbx CLI helpers — auto-generated, do not edit.
         # Dot-source: . .midterm\mtcli.ps1   |   Run: pwsh .midterm\mtcli.ps1 <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
-        # It only works on this machine's MidTerm instance. Treat it like a local session secret.
+        # It only works on this machine's tlbx instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         $script:_MK = "mm-session={{token}}"
@@ -961,9 +961,9 @@ public static class MtcliScriptWriter
         function script:_MContextMissingMessage {
             param([string]$CommandName = "This command")
             @(
-                "$CommandName requires MidTerm session context, but MT_SESSION_ID is empty in this shell.",
+                "$CommandName requires tlbx session context, but MT_SESSION_ID is empty in this shell.",
                 "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME.",
-                "Re-export them from the parent MidTerm shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it."
+                "Re-export them from the parent tlbx shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it."
             ) -join [Environment]::NewLine
         }
         function script:_MRequireSessionContext {
@@ -1195,7 +1195,7 @@ public static class MtcliScriptWriter
             } | ConvertTo-Json -Compress
         }
 
-        # Browser interaction (requires web preview panel open in MidTerm)
+        # Browser interaction (requires web preview panel open in tlbx)
         # Mt-Query -Selector CSS_SELECTOR [-Text]  — query DOM; -Text for text-only
         function Mt-Query {
             param([string]$Selector, [switch]$Text)
@@ -1305,7 +1305,7 @@ public static class MtcliScriptWriter
         function Mt-Target     { _MRequireSessionContext "mt_target"; _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
         function Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
         function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
-        # Mt-ClaimPreview  — explicitly assign this named preview to the connected MidTerm browser
+        # Mt-ClaimPreview  — explicitly assign this named preview to the connected tlbx browser
         function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
         # Mt-ClaimMainBrowser [-BrowserId ID]  — make the selected preview/browser the leading browser for terminal sizing
         function Mt-ClaimMainBrowser {
@@ -1644,7 +1644,7 @@ public static class MtcliScriptWriter
             param([bool]$AgentOnly = $true)
             _MC "$script:_MT/api/sessions/attention?agentOnly=$AgentOnly"
         }
-        # Explicit agent control plane. MidTerm stores what agents publish; it does not infer meaning from PTY output.
+        # Explicit agent control plane. tlbx stores what agents publish; it does not infer meaning from PTY output.
         function Mt-ControlPlane {
             param([string]$MachineId)
             if ($MachineId) {
@@ -1867,7 +1867,7 @@ public static class MtcliScriptWriter
             _MRequireSessionContext "mt_viewport"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
         }
-        # Mt-Mobile [-Action ACTION] [-Profile PROFILE]  — control the local Chrome device attached to this MidTerm tab
+        # Mt-Mobile [-Action ACTION] [-Profile PROFILE]  — control the local Chrome device attached to this tlbx tab
         function Mt-Mobile {
             param([string]$Action = "status", [string]$Profile = "pixel-8")
             _MRequireSessionContext "mt_mobile"
@@ -1989,7 +1989,7 @@ public static class MtcliScriptWriter
                 }
             }
 
-            throw "Unknown MidTerm CLI command: $cmd"
+            throw "Unknown tlbx CLI command: $cmd"
         }
         """;
 }

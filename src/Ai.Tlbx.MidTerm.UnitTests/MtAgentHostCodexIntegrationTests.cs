@@ -280,7 +280,7 @@ public sealed class MtAgentHostCodexIntegrationTests
             Assert.Contains("thread/start", capture.Methods);
             Assert.DoesNotContain("thread/resume", capture.Methods);
             Assert.Equal("midterm", capture.InitializeClientName);
-            Assert.Equal("MidTerm App Server Controller", capture.InitializeClientTitle);
+            Assert.Equal("tlbx App Server Controller", capture.InitializeClientTitle);
             Assert.False(string.IsNullOrWhiteSpace(capture.InitializeClientVersion));
             Assert.True(capture.InitializeExperimentalApi);
             Assert.Equal(fakeCodex.Root, capture.ThreadStartCwd);

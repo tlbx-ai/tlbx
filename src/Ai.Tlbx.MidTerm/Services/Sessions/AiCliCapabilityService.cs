@@ -66,7 +66,7 @@ public sealed class AiCliCapabilityService
                     "App Server Controller runtime unavailable",
                     "Explicit Codex App Server Controller sessions require the Codex CLI plus its structured app-server runtime on this machine.",
                     [
-                        CreateCapability("cli", "Codex CLI", "missing", "Missing", "MidTerm could not find `codex` on PATH."),
+                        CreateCapability("cli", "Codex CLI", "missing", "Missing", "tlbx could not find `codex` on PATH."),
                         CreateCapability("native", "Codex app-server", "missing", "Missing", "Without `codex app-server`, this explicit App Server Controller session cannot become live."),
                         CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                     ]);
@@ -76,9 +76,9 @@ public sealed class AiCliCapabilityService
                 "fallback-only",
                 "fallback",
                 "Fallback only",
-                "MidTerm is rendering this Codex lane from supervisor state and terminal telemetry because the Codex CLI is not available on this machine.",
+                "tlbx is rendering this Codex lane from supervisor state and terminal telemetry because the Codex CLI is not available on this machine.",
                 [
-                    CreateCapability("cli", "Codex CLI", "missing", "Missing", "MidTerm could not find `codex` on PATH."),
+                    CreateCapability("cli", "Codex CLI", "missing", "Missing", "tlbx could not find `codex` on PATH."),
                     CreateCapability("native", "Native events", "missing", "Missing", "Without the Codex CLI, there is no app-server lane to attach yet."),
                     CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm stays fully available and remains the source of truth.")
                 ]);
@@ -105,7 +105,7 @@ public sealed class AiCliCapabilityService
                 "fallback-ready",
                 "positive",
                 "Fallback now, native-ready",
-                "MidTerm is still rendering this Codex lane from terminal signals, but `codex app-server` is available here so a native event feed can be attached later without changing the UI or replacing xterm.",
+                "tlbx is still rendering this Codex lane from terminal signals, but `codex app-server` is available here so a native event feed can be attached later without changing the UI or replacing xterm.",
                 [
                     CreateCapability("cli", "Codex CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                     CreateCapability("native", "Codex app-server", "ready", "Ready", "The native Codex lane can be wired in on this machine."),
@@ -131,7 +131,7 @@ public sealed class AiCliCapabilityService
             "fallback-gated",
             "warning",
             "Fallback with upgrade gap",
-            "MidTerm is rendering this Codex lane from terminal signals. The Codex CLI exists, but `codex app-server` did not answer cleanly, so native events stay gated for now.",
+            "tlbx is rendering this Codex lane from terminal signals. The Codex CLI exists, but `codex app-server` did not answer cleanly, so native events stay gated for now.",
             [
                 CreateCapability("cli", "Codex CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                 CreateCapability("native", "Codex app-server", "gated", "Gated", BuildProbeDetail(probe, "The native Codex lane is not reliably available yet.")),
@@ -152,7 +152,7 @@ public sealed class AiCliCapabilityService
                     "App Server Controller runtime unavailable",
                     "Explicit Claude App Server Controller sessions require the Claude CLI plus its structured runtime support on this machine.",
                     [
-                        CreateCapability("cli", "Claude CLI", "missing", "Missing", "MidTerm could not find `claude` on PATH."),
+                        CreateCapability("cli", "Claude CLI", "missing", "Missing", "tlbx could not find `claude` on PATH."),
                         CreateCapability("native", "Claude structured runtime", "missing", "Missing", "Without structured Claude runtime support, this explicit App Server Controller session cannot become live."),
                         CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                     ]);
@@ -162,9 +162,9 @@ public sealed class AiCliCapabilityService
                 "fallback-only",
                 "fallback",
                 "Fallback only",
-                "MidTerm is rendering this Claude lane from supervisor state and terminal telemetry because the Claude CLI is not available on this machine.",
+                "tlbx is rendering this Claude lane from supervisor state and terminal telemetry because the Claude CLI is not available on this machine.",
                 [
-                    CreateCapability("cli", "Claude CLI", "missing", "Missing", "MidTerm could not find `claude` on PATH."),
+                    CreateCapability("cli", "Claude CLI", "missing", "Missing", "tlbx could not find `claude` on PATH."),
                     CreateCapability("native", "Claude SDK lane", "missing", "Missing", "Without the Claude CLI, there is no SDK-backed lane to attach."),
                     CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm stays fully available and remains the source of truth.")
                 ]);
@@ -194,7 +194,7 @@ public sealed class AiCliCapabilityService
                 "fallback-ready",
                 "positive",
                 "Fallback now, native-ready",
-                "MidTerm is still rendering this Claude lane from terminal signals, but the installed CLI advertises `--sdk-mode`, so a native event feed can be added later without changing the UI or replacing xterm.",
+                "tlbx is still rendering this Claude lane from terminal signals, but the installed CLI advertises `--sdk-mode`, so a native event feed can be added later without changing the UI or replacing xterm.",
                 [
                     CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                     CreateCapability("native", "Claude SDK lane", "ready", "Ready", "This machine advertises `--sdk-mode`."),
@@ -222,7 +222,7 @@ public sealed class AiCliCapabilityService
             "fallback-gated",
             "warning",
             "Fallback with upgrade gap",
-            "MidTerm is rendering this Claude lane from terminal signals. The Claude CLI exists, but a safe SDK lane is not advertised here yet, so native events stay gated for now.",
+            "tlbx is rendering this Claude lane from terminal signals. The Claude CLI exists, but a safe SDK lane is not advertised here yet, so native events stay gated for now.",
             [
                 CreateCapability("cli", "Claude CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                 CreateCapability("native", "Claude SDK lane", "gated", "Gated", advertisesSdk
@@ -245,7 +245,7 @@ public sealed class AiCliCapabilityService
                     "App Server Controller runtime unavailable",
                     "Explicit Grok App Server Controller sessions require the Grok Build CLI plus its ACP runtime on this machine.",
                     [
-                        CreateCapability("cli", "Grok CLI", "missing", "Missing", "MidTerm could not find `grok` on PATH."),
+                        CreateCapability("cli", "Grok CLI", "missing", "Missing", "tlbx could not find `grok` on PATH."),
                         CreateCapability("native", "Grok ACP", "missing", "Missing", "Without `grok agent stdio`, this explicit App Server Controller session cannot become live."),
                         CreateCapability("terminal", "Terminal", "absent", "Absent", "Explicit App Server Controller sessions do not own an `mthost` terminal.")
                     ]);
@@ -255,9 +255,9 @@ public sealed class AiCliCapabilityService
                 "fallback-only",
                 "fallback",
                 "Fallback only",
-                "MidTerm can render Grok terminal sessions from supervisor state, but the Grok CLI is not available for a structured ACP lane on this machine.",
+                "tlbx can render Grok terminal sessions from supervisor state, but the Grok CLI is not available for a structured ACP lane on this machine.",
                 [
-                    CreateCapability("cli", "Grok CLI", "missing", "Missing", "MidTerm could not find `grok` on PATH."),
+                    CreateCapability("cli", "Grok CLI", "missing", "Missing", "tlbx could not find `grok` on PATH."),
                     CreateCapability("native", "Grok ACP", "missing", "Missing", "Without the Grok CLI, there is no ACP lane to attach."),
                     CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm stays fully available and remains the source of truth.")
                 ]);
@@ -286,7 +286,7 @@ public sealed class AiCliCapabilityService
                 "fallback-ready",
                 "positive",
                 "Fallback now, native-ready",
-                "MidTerm is rendering this Grok lane from terminal signals, but `grok agent stdio` is available here so a native ACP feed can be attached later.",
+                "tlbx is rendering this Grok lane from terminal signals, but `grok agent stdio` is available here so a native ACP feed can be attached later.",
                 [
                     CreateCapability("cli", "Grok CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                     CreateCapability("native", "Grok ACP", "ready", "Ready", "The Grok ACP lane can be wired in on this machine."),
@@ -312,7 +312,7 @@ public sealed class AiCliCapabilityService
             "fallback-gated",
             "warning",
             "Fallback with upgrade gap",
-            "MidTerm is rendering this Grok lane from terminal signals. The Grok CLI exists, but `grok agent stdio` did not answer cleanly, so native events stay gated for now.",
+            "tlbx is rendering this Grok lane from terminal signals. The Grok CLI exists, but `grok agent stdio` did not answer cleanly, so native events stay gated for now.",
             [
                 CreateCapability("cli", "Grok CLI", "ready", "Ready", $"Using `{binaryPath}`."),
                 CreateCapability("native", "Grok ACP", "gated", "Gated", BuildProbeDetail(probe, "The Grok ACP lane is not reliably available yet.")),
@@ -326,10 +326,10 @@ public sealed class AiCliCapabilityService
             "fallback-only",
             "fallback",
             "Fallback only",
-            "MidTerm can render OpenCode sessions from terminal telemetry, but there is no MidTerm-native structured lane for this provider yet.",
+            "tlbx can render OpenCode sessions from terminal telemetry, but there is no tlbx-native structured lane for this provider yet.",
             [
-                CreateCapability("runtime", "OpenCode runtime", "ready", "Ready", "The session can still be supervised through MidTerm state and terminal output."),
-                CreateCapability("native", "Native events", "planned", "Planned", "MidTerm does not ship an OpenCode-native event lane yet."),
+                CreateCapability("runtime", "OpenCode runtime", "ready", "Ready", "The session can still be supervised through tlbx state and terminal output."),
+                CreateCapability("native", "Native events", "planned", "Planned", "tlbx does not ship an OpenCode-native event lane yet."),
                 CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm remains the source of truth.")
             ]);
     }
@@ -340,9 +340,9 @@ public sealed class AiCliCapabilityService
             "fallback-only",
             "fallback",
             "Fallback only",
-            "MidTerm can render this agent from generic terminal supervision, but provider-native events are not standardized for this lane yet.",
+            "tlbx can render this agent from generic terminal supervision, but provider-native events are not standardized for this lane yet.",
             [
-                CreateCapability("runtime", "Interactive agent", "ready", "Ready", "MidTerm can still infer state from activity, bells, and foreground app changes."),
+                CreateCapability("runtime", "Interactive agent", "ready", "Ready", "tlbx can still infer state from activity, bells, and foreground app changes."),
                 CreateCapability("native", "Native events", "planned", "Planned", "A provider-specific adapter would need to be added first."),
                 CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "xterm remains the source of truth.")
             ]);
@@ -356,7 +356,7 @@ public sealed class AiCliCapabilityService
             "Terminal only",
             "This session currently looks like a plain shell, so the Agent view is only a light telemetry appServerControl over the terminal.",
             [
-                CreateCapability("runtime", "AI runtime", "missing", "Missing", "MidTerm does not currently detect an interactive agent in the foreground."),
+                CreateCapability("runtime", "AI runtime", "missing", "Missing", "tlbx does not currently detect an interactive agent in the foreground."),
                 CreateCapability("native", "Native events", "missing", "Missing", "No structured provider lane can attach while the session is just a shell."),
                 CreateCapability("terminal", "Terminal fallback", "ready", "Ready", "The terminal tab remains the correct primary surface.")
             ]);
@@ -368,7 +368,7 @@ public sealed class AiCliCapabilityService
             "fallback-only",
             "fallback",
             "Fallback only",
-            "MidTerm can still render this session from terminal telemetry, but this provider is not recognized yet for a richer lane.",
+            "tlbx can still render this session from terminal telemetry, but this provider is not recognized yet for a richer lane.",
             [
                 CreateCapability("runtime", "Provider", "ready", "Ready", string.IsNullOrWhiteSpace(profile) ? "Unknown provider." : $"Detected `{profile}`."),
                 CreateCapability("native", "Native events", "planned", "Planned", "A provider-specific bridge would need to be added first."),

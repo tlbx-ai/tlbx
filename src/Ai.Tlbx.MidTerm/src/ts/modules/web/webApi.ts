@@ -341,7 +341,7 @@ export async function getBrowserPreviewStatus(
   }
 }
 
-/** Run a scoped browser command through the MidTerm browser bridge. */
+/** Run a scoped browser command through the tlbx browser bridge. */
 export interface BrowserCommandRequestOptions {
   selector?: string | null;
   value?: string | null;

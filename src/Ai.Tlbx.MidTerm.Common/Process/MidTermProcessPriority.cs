@@ -65,7 +65,7 @@ public static class MidTermProcessPriority
         {
             warn?.Invoke(string.Create(
                 CultureInfo.InvariantCulture,
-                $"Failed to apply MidTerm process priority to {role} PID {processId}: {ex.Message}"));
+                $"Failed to apply tlbx process priority to {role} PID {processId}: {ex.Message}"));
             return false;
         }
     }
@@ -120,14 +120,14 @@ public static class MidTermProcessPriority
             process.PriorityClass = target;
             info?.Invoke(string.Create(
                 CultureInfo.InvariantCulture,
-                $"Applied MidTerm process priority {target} to {role} PID {process.Id}"));
+                $"Applied tlbx process priority {target} to {role} PID {process.Id}"));
             return true;
         }
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or PlatformNotSupportedException)
         {
             warn?.Invoke(string.Create(
                 CultureInfo.InvariantCulture,
-                $"Failed to apply MidTerm process priority to {role} PID {SafeProcessId(process)}: {ex.Message}"));
+                $"Failed to apply tlbx process priority to {role} PID {SafeProcessId(process)}: {ex.Message}"));
             return false;
         }
     }

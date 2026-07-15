@@ -2231,7 +2231,7 @@ internal sealed class CodexAppServerControlAgentRuntime : IAppServerControlAgent
             writer.WritePropertyName("clientInfo");
             writer.WriteStartObject();
             writer.WriteString("name", "midterm");
-            writer.WriteString("title", "MidTerm App Server Controller");
+            writer.WriteString("title", "tlbx App Server Controller");
             writer.WriteString("version", "dev");
             writer.WriteEndObject();
             writer.WritePropertyName("capabilities");

@@ -345,7 +345,7 @@ export function createSessionActionHandlers({
       const fg = getForegroundInfo(sessionId);
       await pasteToTerminal(sessionId, t(getInjectGuidancePromptKey(fg.name)));
     } catch (e: unknown) {
-      log.error(() => `Failed to enable MidTerm features for ${sessionId}: ${String(e)}`);
+      log.error(() => `Failed to enable tlbx features for ${sessionId}: ${String(e)}`);
     }
   }
 

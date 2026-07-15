@@ -1,7 +1,7 @@
 {
-  "name": "midterm",
+  "name": "tlbx",
   "private": true,
-  "description": "Frontend build dependencies for MidTerm",
+  "description": "Frontend build dependencies for tlbx",
   "engines": {
     "node": ">=24 <25",
     "npm": ">=11 <12"

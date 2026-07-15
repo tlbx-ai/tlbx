@@ -471,7 +471,7 @@ async function handleGo(): Promise<void> {
   log.info(() => `Setting web preview target: ${sessionId}/${previewName} -> ${url}`);
   const result = await setWebPreviewTarget(sessionId, previewName, url);
   if (!result?.active) {
-    setActionMessage('error', 'Navigation failed: MidTerm could not set the preview target.');
+    setActionMessage('error', 'Navigation failed: tlbx could not set the preview target.');
     log.warn(() => 'Failed to set web preview target');
     return;
   }
@@ -1000,7 +1000,7 @@ async function handleRefresh(mode: PreviewReloadMode = 'force'): Promise<void> {
   if (currentUrl) {
     const result = await setWebPreviewTarget(sessionId, previewName, currentUrl);
     if (!result?.active) {
-      setActionMessage('error', 'Reload failed: MidTerm could not refresh the preview target.');
+      setActionMessage('error', 'Reload failed: tlbx could not refresh the preview target.');
       log.warn(() => 'Failed to refresh web preview target');
       return;
     }
@@ -1204,7 +1204,7 @@ async function handleScreenshot(download = false, requestedPreviewName?: string)
     if (!dataUrl) {
       setActionMessage(
         'error',
-        'Screenshot failed: MidTerm did not receive image data back from the dev browser.',
+        'Screenshot failed: tlbx did not receive image data back from the dev browser.',
       );
       log.warn(() => 'Browser screenshot capture failed');
       return;
@@ -1240,7 +1240,7 @@ async function handleScreenshot(download = false, requestedPreviewName?: string)
     if (!resp.ok) {
       setActionMessage(
         'error',
-        `Screenshot failed: MidTerm could not upload it to the session (${resp.status}).`,
+        `Screenshot failed: tlbx could not upload it to the session (${resp.status}).`,
       );
       log.warn(() => `Screenshot upload failed: ${resp.status}`);
       return;
@@ -1254,7 +1254,7 @@ async function handleScreenshot(download = false, requestedPreviewName?: string)
     }
     setActionMessage(
       'error',
-      'Screenshot failed: the upload completed but MidTerm did not return a usable file path.',
+      'Screenshot failed: the upload completed but tlbx did not return a usable file path.',
     );
   } catch (err) {
     setActionMessage('error', `Screenshot failed: ${String(err)}`);

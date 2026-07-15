@@ -203,7 +203,7 @@
       sessionSubtitleNode.textContent = sessionDisplay.secondary || '';
       sessionSubtitleNode.classList.toggle('hidden', !sessionDisplay.secondary);
     }
-    document.title = sessionDisplay.primary + ' - MidTerm';
+    document.title = sessionDisplay.primary + ' — tlbx';
   }
 
   function setPreviewContext(client) {
@@ -992,7 +992,7 @@
       return {
         severity: 'error',
         message:
-          'No MidTerm browser tab is connected to /ws/state. The dev browser cannot work until a live MidTerm tab is open.',
+          'No tlbx browser tab is connected to /ws/state. The dev browser cannot work until a live tlbx tab is open.',
       };
     }
 
@@ -1230,7 +1230,7 @@
       if (!dataUrl) {
         setActionMessage(
           'error',
-          'Screenshot failed: MidTerm did not receive image data back from the dev browser.',
+          'Screenshot failed: tlbx did not receive image data back from the dev browser.',
         );
         return;
       }
@@ -1260,7 +1260,7 @@
       if (!upload) {
         setActionMessage(
           'error',
-          'Screenshot failed: MidTerm could not upload it to the owning session.',
+          'Screenshot failed: tlbx could not upload it to the owning session.',
         );
         return;
       }
@@ -1270,7 +1270,7 @@
         if (!pasted) {
           setActionMessage(
             'error',
-            'Screenshot failed: the file was uploaded, but MidTerm could not paste its path into the owning terminal.',
+            'Screenshot failed: the file was uploaded, but tlbx could not paste its path into the owning terminal.',
           );
           return;
         }
@@ -1280,7 +1280,7 @@
 
       setActionMessage(
         'error',
-        'Screenshot failed: the upload completed but MidTerm did not return a usable file path.',
+        'Screenshot failed: the upload completed but tlbx did not return a usable file path.',
       );
     } finally {
       screenshotInFlight = false;

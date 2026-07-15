@@ -231,7 +231,7 @@ export function updateMobileTitle(): void {
   const session =
     sessions.find((s) => s.id === activeSessionId) ??
     (activeSessionId ? getHubSession(activeSessionId) : null);
-  dom.mobileTitle.textContent = session ? getSessionDisplayName(session) : 'MidTerm';
+  dom.mobileTitle.textContent = session ? getSessionDisplayName(session) : 'tlbx';
 
   if (dom.topbarActions) {
     if (session) {
@@ -252,7 +252,7 @@ function updateTitleBar(session: Session | undefined): void {
   if (!dom.titleBarCustom || !dom.titleBarTerminal || !dom.titleBarSeparator) return;
 
   if (!session) {
-    dom.titleBarCustom.textContent = 'MidTerm';
+    dom.titleBarCustom.textContent = 'tlbx';
     dom.titleBarTerminal.textContent = '';
     dom.titleBarSeparator.style.display = 'none';
     return;

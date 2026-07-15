@@ -117,9 +117,9 @@ public sealed class CertificateInfoService
             <key>PayloadContent</key>
             <data>{certBase64}</data>
             <key>PayloadDescription</key>
-            <string>Adds a root certificate for MidTerm terminal access</string>
+            <string>Adds a root certificate for tlbx access</string>
             <key>PayloadDisplayName</key>
-            <string>MidTerm Certificate</string>
+            <string>tlbx Certificate</string>
             <key>PayloadIdentifier</key>
             <string>ai.tlbx.midterm.cert.{payloadUuid}</string>
             <key>PayloadType</key>
@@ -131,13 +131,13 @@ public sealed class CertificateInfoService
         </dict>
     </array>
     <key>PayloadDescription</key>
-    <string>Trust certificate for MidTerm terminal server at {hostname}</string>
+    <string>Trust certificate for tlbx at {hostname}</string>
     <key>PayloadDisplayName</key>
-    <string>MidTerm Certificate</string>
+    <string>tlbx Certificate</string>
     <key>PayloadIdentifier</key>
     <string>ai.tlbx.midterm.profile.{profileUuid}</string>
     <key>PayloadOrganization</key>
-    <string>MidTerm</string>
+    <string>tlbx.ai</string>
     <key>PayloadRemovalDisallowed</key>
     <false/>
     <key>PayloadType</key>

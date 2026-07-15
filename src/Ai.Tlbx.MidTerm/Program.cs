@@ -115,7 +115,7 @@ public class Program
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"Error: {settingsGuardInfo}");
             Console.ResetColor();
-            Console.WriteLine($"Another MidTerm instance is already using settings directory '{preflightSettings.SettingsDirectory}'.");
+            Console.WriteLine($"Another tlbx instance is already using settings directory '{preflightSettings.SettingsDirectory}'.");
             Console.WriteLine("Stop the other instance first, or launch this one with --settings-dir for isolated state.");
             Environment.Exit(1);
             return;
@@ -127,7 +127,7 @@ public class Program
             Console.ForegroundColor = ConsoleColor.Red;
             Console.WriteLine($"Error: {portGuardInfo}");
             Console.ResetColor();
-            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Another MidTerm instance is already running for port {port}."));
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"Another tlbx instance is already running for port {port}."));
             Console.WriteLine("Use a different port or stop the existing instance first.");
             Environment.Exit(1);
             return;
@@ -176,7 +176,7 @@ public class Program
             "mt",
             message => Log.Info(() => message),
             message => Log.Warn(() => message));
-        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"MidTerm server starting (instance={resolvedInstanceIdentity.GetShortInstanceId()}, port={port})"));
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"tlbx server starting (instance={resolvedInstanceIdentity.GetShortInstanceId()}, port={port})"));
 
         // Validate security state and log any warnings (informational only - does not block)
         var securityStatusService = app.Services.GetRequiredService<SecurityStatusService>();

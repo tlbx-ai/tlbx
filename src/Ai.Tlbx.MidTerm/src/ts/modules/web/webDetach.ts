@@ -168,7 +168,7 @@ function openDetachedBootstrapPopup(sessionId: string, previewName: string): Win
   }
 
   try {
-    popup.document.title = 'MidTerm Web Preview';
+    popup.document.title = 'Opening browser — tlbx';
     popup.document.body.textContent = 'Opening preview...';
   } catch {
     // Ignore cross-origin or popup bootstrap access failures.

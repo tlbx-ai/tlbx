@@ -12,7 +12,7 @@ export function buildBrowserPreviewStatusIndicatorState(
     return {
       severity: 'error',
       message:
-        'No MidTerm browser tab is connected to /ws/state. The dev browser cannot work until a live MidTerm tab is open.',
+        'No tlbx browser tab is connected to /ws/state. The dev browser cannot work until a live tlbx tab is open.',
     };
   }
 

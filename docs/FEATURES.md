@@ -1,6 +1,6 @@
-# MidTerm features
+# tlbx features
 
-MidTerm is a self-hosted browser control station for remote AI coding agents
+tlbx is a self-hosted browser control station for remote AI coding agents
 and other long-running terminal work. Agents and shells run on the machines
 that own the repositories, credentials, tools, and hardware; authorized
 browsers are control surfaces that can disconnect and return later.
@@ -15,9 +15,9 @@ describes the current product boundary in the source repository.
   Antigravity CLI, or any other terminal-native tool in a real PTY.
 - Keep independent agent, shell, test, log, and server sessions visible at the
   same time; split, reorder, name, bookmark, and revisit them.
-- Open independent MidTerm hosts as adjacent browser tabs. A home workstation,
+- Open independent tlbx hosts as adjacent browser tabs. A home workstation,
   office laptop, and server remain separate machines with separate state.
-- Paste screenshots with the normal `Ctrl+V` or `Cmd+V` shortcut. MidTerm
+- Paste screenshots with the normal `Ctrl+V` or `Cmd+V` shortcut. tlbx
   uploads the image to the host and inserts a usable path or structured
   attachment, depending on the session surface.
 - Compose multiline prompts, keep per-session drafts, attach files or camera
@@ -69,7 +69,7 @@ fully usable as a terminal-native CLI without being advertised in that launcher.
 ## Deterministic per-session input history
 
 Every session has a **History** menu in its top bar. It is a timestamped,
-session-owned timeline of input MidTerm observed at an explicit input boundary:
+session-owned timeline of input tlbx observed at an explicit input boundary:
 
 - browser-authored terminal text committed once when an unmodified Enter is
   actually sent
@@ -78,13 +78,13 @@ session-owned timeline of input MidTerm observed at an explicit input boundary:
 - clipboard images, file drops, and uploads
 
 Modified Enter shortcuts and newline bytes inside a paste remain part of the
-current entry; they are not recorded as separate commands. MidTerm does not
+current entry; they are not recorded as separate commands. tlbx does not
 guess prompts from PTY output. Text can be replayed, image entries retain
 thumbnails, and the bounded history is persisted on the host.
 
 ## Agent-visible control plane
 
-MidTerm exposes a deterministic control plane through authenticated APIs and
+tlbx exposes a deterministic control plane through authenticated APIs and
 generated `mt` helpers. Agents can publish and read:
 
 - work items such as coding tasks, mail to answer, decisions, and next actions
@@ -92,7 +92,7 @@ generated `mt` helpers. Agents can publish and read:
 - append-only progress and verification checkpoints
 - an ordered event feed derived from those explicit mutations
 
-The control plane is an outlet for agents, not another agent. MidTerm does not
+The control plane is an outlet for agents, not another agent. tlbx does not
 invent priorities, infer project meaning from terminal text, or choose dispatch
 targets. `mt_dispatch` operates only on the explicit session IDs it receives.
 The unfinished **Operator** sidebar UI was withdrawn; the API and CLI contract
@@ -116,7 +116,7 @@ remain available.
   submit, script execution, viewport changes, screenshots, console logs, and
   proxy logs.
 - An optional local Chrome Mobile Device Bridge for top-level CDP device
-  emulation on the browser machine while MidTerm and the app may run elsewhere.
+  emulation on the browser machine while tlbx and the app may run elsewhere.
 
 ## Mobile and multi-client behavior
 
@@ -142,9 +142,9 @@ remain available.
 - Stable and development update channels with rollback-oriented update scripts
   and separate web-only versus full-runtime update paths.
 
-MidTerm is not a VPN, hosted relay, repository cloud, or SSH tunnel. For private
+tlbx is not a VPN, hosted relay, repository cloud, or SSH tunnel. For private
 remote access, the recommended default is Tailscale or an equivalent WireGuard
-mesh VPN. Keep MidTerm authentication and HTTPS enabled as an additional layer.
+mesh VPN. Keep tlbx authentication and HTTPS enabled as an additional layer.
 
 ## Platforms and installation
 

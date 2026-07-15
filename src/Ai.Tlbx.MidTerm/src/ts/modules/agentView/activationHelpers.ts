@@ -169,11 +169,11 @@ export function classifyAppServerControlActivationIssue(
       body: hasReadonlyHistory
         ? appServerControlText(
             'appServerControl.issue.missingResumeId.bodyReadonly',
-            'AppServerControl can still show canonical history, but MidTerm does not yet know a resumable Codex thread id for live handoff in this session. Keep using Terminal for the live lane, or retry after the thread identity becomes known.',
+            'AppServerControl can still show canonical history, but tlbx does not yet know a resumable Codex thread id for live handoff in this session. Keep using Terminal for the live lane, or retry after the thread identity becomes known.',
           )
         : appServerControlText(
             'appServerControl.issue.missingResumeId.body',
-            'MidTerm cannot determine a resumable Codex thread id for this session yet, so live AppServerControl attach is unavailable. Use Terminal for the live lane, or retry later.',
+            'tlbx cannot determine a resumable Codex thread id for this session yet, so live AppServerControl attach is unavailable. Use Terminal for the live lane, or retry later.',
           ),
       actions,
     };
@@ -193,7 +193,7 @@ export function classifyAppServerControlActivationIssue(
       ),
       body: appServerControlText(
         'appServerControl.issue.shellRecoveryFailed.body',
-        'MidTerm stopped the foreground Codex process but the session did not settle back into a clean live lane. Retry AppServerControl once the lane is stable again.',
+        'tlbx stopped the foreground Codex process but the session did not settle back into a clean live lane. Retry AppServerControl once the lane is stable again.',
       ),
       actions,
     };
@@ -215,7 +215,7 @@ export function classifyAppServerControlActivationIssue(
       ),
       body: appServerControlText(
         'appServerControl.issue.nativeRuntimeUnavailable.body',
-        'MidTerm could not start the native AppServerControl runtime for this session. Retry after the session becomes native-runtime-capable.',
+        'tlbx could not start the native AppServerControl runtime for this session. Retry after the session becomes native-runtime-capable.',
       ),
       actions,
     };

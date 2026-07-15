@@ -455,7 +455,7 @@ function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
 
   // xterm's inactive cursor style is driven by its private browser focus service,
   // not only the root .focus class. Mirror proxy focus into that internal state so
-  // the renderer paints the active cursor while MidTerm owns the actual DOM focus.
+  // the renderer paints the active cursor while tlbx owns the actual DOM focus.
   coreBrowserService._isFocused = focused;
   coreBrowserService._cachedIsFocused = undefined;
   fireTerminalFocusEvent(privateCore, focused);

@@ -131,16 +131,16 @@ public sealed class TmuxCommandDispatcher
                 "rename-window" or "renamew" => TmuxResult.Ok(),
 
                 // Informational
-                "server-info" or "info" => TmuxResult.Ok("MidTerm tmux compatibility layer\n"),
+                "server-info" or "info" => TmuxResult.Ok("tlbx tmux compatibility layer\n"),
                 "start-server" or "start" => TmuxResult.Ok(),
-                "kill-server" => TmuxResult.Fail("kill-server is not supported in MidTerm\n"),
+                "kill-server" => TmuxResult.Fail("kill-server is not supported in tlbx\n"),
 
                 // Not implemented
-                "-CC" or "-C" => TmuxResult.Fail("control mode is not supported by MidTerm\n"),
-                "attach-session" or "attach" or "a" => TmuxResult.Fail("attach-session is not applicable in MidTerm (use the web UI)\n"),
-                "detach-client" or "detach" => TmuxResult.Fail("detach-client is not applicable in MidTerm\n"),
-                "copy-mode" => TmuxResult.Fail("copy-mode is not supported by MidTerm\n"),
-                "choose-tree" => TmuxResult.Fail("choose-tree is not supported by MidTerm\n"),
+                "-CC" or "-C" => TmuxResult.Fail("control mode is not supported by tlbx\n"),
+                "attach-session" or "attach" or "a" => TmuxResult.Fail("attach-session is not applicable in tlbx (use the web UI)\n"),
+                "detach-client" or "detach" => TmuxResult.Fail("detach-client is not applicable in tlbx\n"),
+                "copy-mode" => TmuxResult.Fail("copy-mode is not supported by tlbx\n"),
+                "choose-tree" => TmuxResult.Fail("choose-tree is not supported by tlbx\n"),
 
                 _ => TmuxResult.Fail($"unknown command: {cmd.Name}\n")
             };

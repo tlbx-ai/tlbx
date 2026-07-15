@@ -1,8 +1,8 @@
 /**
- * MidTerm Guidance Helpers
+ * tlbx Guidance Helpers
  *
  * Resolves which guidance file and prompt text a terminal should receive
- * after MidTerm creates the local .midterm/ directory.
+ * after tlbx creates the local .midterm/ directory.
  */
 
 function normalizeExecutableName(value: string | null | undefined): string {

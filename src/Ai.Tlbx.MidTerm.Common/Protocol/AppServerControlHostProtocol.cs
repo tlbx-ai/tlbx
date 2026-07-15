@@ -204,7 +204,7 @@ public static class AppServerControlQuickSettings
         }
 
         const string planInstruction =
-            "MidTerm plan mode is enabled for this turn. Start with a concise step-by-step plan, keep it updated while you work, and use native planning capabilities when available.";
+            "tlbx plan mode is enabled for this turn. Start with a concise step-by-step plan, keep it updated while you work, and use native planning capabilities when available.";
 
         return string.IsNullOrWhiteSpace(prompt)
             ? planInstruction

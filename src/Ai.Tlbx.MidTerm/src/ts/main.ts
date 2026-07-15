@@ -1,5 +1,5 @@
 /**
- * MidTerm Terminal Client
+ * tlbx Terminal Client
  *
  * Web-based terminal multiplexer frontend using xterm.js.
  * Main entry point - wires together all modules.
@@ -314,7 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
 async function init(): Promise<void> {
   initAuthSessionLifetime();
   initLogConcerns();
-  log.info(() => 'MidTerm frontend initializing');
+  log.info(() => 'tlbx frontend initializing');
   initBackButtonGuard();
 
   cacheDOMElements();
@@ -472,12 +472,12 @@ async function init(): Promise<void> {
       .catch(() => {});
   }
 
-  log.info(() => 'MidTerm frontend initialized');
+  log.info(() => 'tlbx frontend initialized');
 }
 
 async function initShared(): Promise<void> {
   initLogConcerns();
-  log.info(() => 'MidTerm shared frontend initializing');
+  log.info(() => 'tlbx shared frontend initializing');
   initBackButtonGuard();
 
   cacheDOMElements();
@@ -519,7 +519,7 @@ async function initShared(): Promise<void> {
   connectStateWebSocket();
   connectMuxWebSocket();
 
-  log.info(() => 'MidTerm shared frontend initialized');
+  log.info(() => 'tlbx shared frontend initialized');
 }
 
 function getVisibleTerminalSessionIds(): string[] {

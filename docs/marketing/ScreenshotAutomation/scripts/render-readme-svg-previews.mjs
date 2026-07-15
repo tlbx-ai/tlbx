@@ -11,8 +11,8 @@ const outputDir = process.argv[2]
   : path.join(repoRoot, '.artifacts', 'readme-svg-preview');
 
 const assets = [
-  { name: 'midterm-mark', width: 512, height: 512 },
-  { name: 'midterm-wordmark', width: 1600, height: 520 },
+  { name: 'tlbx-mark', width: 512, height: 512 },
+  { name: 'tlbx-wordmark', width: 1600, height: 520 },
   { name: 'browser-next-to-work', width: 1600, height: 720 },
   { name: 'your-machines-are-tabs', width: 1600, height: 680 },
   { name: 'agent-control-room', width: 1600, height: 900 },

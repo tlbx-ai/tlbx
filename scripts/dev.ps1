@@ -451,7 +451,7 @@ $serverState = $null
 $esbuildProcess = $null
 
 Write-Host ""
-Write-Host "  MidTerm Local Source Dev" -ForegroundColor Cyan
+Write-Host "  tlbx Local Source Dev" -ForegroundColor Cyan
 Write-Host "  ───────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host "  Stable service : https://localhost:2000 ($stableVersion, kept alive)" -ForegroundColor DarkGray
 Write-Host "  Source server  : https://$BindAddress`:$Port" -ForegroundColor DarkGray
@@ -463,24 +463,24 @@ Write-Host "  mthost         : $resolvedTtyHostPath" -ForegroundColor DarkGray
 Write-Host "  mtagenthost    : local Debug build" -ForegroundColor DarkGray
 Write-Host "  TS changes     : esbuild watch rebuilds" -ForegroundColor DarkGray
 Write-Host "  CSS changes    : refresh browser" -ForegroundColor DarkGray
-Write-Host "  C# changes     : script rebuilds and restarts local source MidTerm" -ForegroundColor DarkGray
+Write-Host "  C# changes     : script rebuilds and restarts local source tlbx" -ForegroundColor DarkGray
 Write-Host ""
 
 Invoke-FrontendBuild
 $esbuildProcess = Start-EsbuildWatch
 
-Write-Host "[3/4] Starting local source MidTerm..." -ForegroundColor Cyan
+Write-Host "[3/4] Starting local source tlbx..." -ForegroundColor Cyan
 
 try {
     $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
 
     Write-Host ""
-    Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the MidTerm dev browser." -ForegroundColor Green
+    Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the tlbx dev browser." -ForegroundColor Green
     Write-Host ""
 
     while ($true) {
         if ($serverState.Process.HasExited) {
-            Write-Host "  Local source MidTerm exited. Restarting..." -ForegroundColor Yellow
+            Write-Host "  Local source tlbx exited. Restarting..." -ForegroundColor Yellow
             Start-Sleep -Seconds 1
             $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
             continue

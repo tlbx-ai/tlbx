@@ -2,9 +2,9 @@
  * Preview sandbox policy shared by docked and detached web preview surfaces.
  *
  * Dev mode keeps the existing "sandbox everything" behavior. Outside dev
- * mode, MidTerm still force-sandboxes obviously untrusted targets so an
+ * mode, tlbx still force-sandboxes obviously untrusted targets so an
  * arbitrary website or local HTML file cannot execute with full access to the
- * owning MidTerm shell origin.
+ * owning tlbx shell origin.
  */
 
 const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);

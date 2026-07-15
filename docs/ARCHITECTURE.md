@@ -1,11 +1,11 @@
 # Architecture
 
-MidTerm is a web-based terminal workspace built around a native server (`mt`),
+tlbx is a web-based terminal workspace built around a native server (`mt`),
 per-session PTY hosts (`mthost`), provider-backed agent hosts (`mtagenthost`),
 and a browser frontend that adds layout, files, Git, commands, web preview,
 mobile controls, and operations UI around long-running work.
 
-The important architectural point is that MidTerm is not only a terminal renderer. The browser shell coordinates multiple long-lived sessions, several WebSocket channels, local settings and storage, browser preview bridges, session sharing, and an installer/update pipeline that has to keep real user installs recoverable.
+The important architectural point is that tlbx is not only a terminal renderer. The browser shell coordinates multiple long-lived sessions, several WebSocket channels, local settings and storage, browser preview bridges, session sharing, and an installer/update pipeline that has to keep real user installs recoverable.
 
 ## Runtime Topology
 
@@ -59,7 +59,7 @@ The server is compiled with Native AOT, uses source-generated JSON serialization
 
 ### `mthost`
 
-Each terminal session runs in its own `mthost` process. That gives MidTerm:
+Each terminal session runs in its own `mthost` process. That gives tlbx:
 
 - crash isolation between sessions
 - a clean privilege boundary between the web server and the PTY process
@@ -70,7 +70,7 @@ Each terminal session runs in its own `mthost` process. That gives MidTerm:
 
 Each explicit Agent Controller Session runs through its own `mtagenthost`
 process. Provider-specific transports and event shapes are reduced there into
-MidTerm-owned canonical history items. `mt` brokers browser access to that
+tlbx-owned canonical history items. `mt` brokers browser access to that
 history; it does not reconstruct the conversation from terminal output.
 
 This boundary keeps structured agent sessions alive across `mt` restarts and
@@ -80,24 +80,24 @@ fallback.
 
 ### Instance Ownership Model
 
-MidTerm now treats the connection between `mt` and `mthost` as an explicit ownership contract instead of a best-effort local reconnect.
+tlbx now treats the connection between `mt` and `mthost` as an explicit ownership contract instead of a best-effort local reconnect.
 
 - every running `mt` instance loads a stable install-scope secret from the settings directory
 - the live instance identity is derived from that stable scope plus the configured port
 - `mthost` is launched with that instance identity and owner token
-- IPC endpoints are namespaced by instance identity, so side-by-side MidTerm instances on different ports do not enumerate each other's PTY hosts
+- IPC endpoints are namespaced by instance identity, so side-by-side tlbx instances on different ports do not enumerate each other's PTY hosts
 - after connecting, `mt` must still complete an attach handshake; `mthost` rejects foreign instances even if they somehow reach the endpoint
 - only a successfully attached owner is allowed to replace the current `mt` connection during reconnect
 
-This is what allows multiple MidTerm installations or ports to run side by side while still keeping reconnect fast and deterministic.
+This is what allows multiple tlbx installations or ports to run side by side while still keeping reconnect fast and deterministic.
 
 ### Static Assets
 
-Production assets are precompressed and embedded into the server assembly. MidTerm serves its frontend from memory instead of relying on a mutable on-disk web root.
+Production assets are precompressed and embedded into the server assembly. tlbx serves its frontend from memory instead of relying on a mutable on-disk web root.
 
 ## 2. Frontend Composition
 
-MidTerm's frontend is vanilla TypeScript organized by feature modules rather than a component framework. `main.ts` wires the subsystems together at startup.
+tlbx's frontend is vanilla TypeScript organized by feature modules rather than a component framework. `main.ts` wires the subsystems together at startup.
 
 The browser shell includes:
 
@@ -179,7 +179,7 @@ already owns without serializing ordinary live writes or replaying its internal 
 
 ### Foreground Process and Session Metadata
 
-MidTerm tracks foreground cwd, process, command line, and terminal title. That data feeds:
+tlbx tracks foreground cwd, process, command line, and terminal title. That data feeds:
 
 - session naming fallbacks
 - per-session cwd display in the session bar
@@ -189,8 +189,8 @@ MidTerm tracks foreground cwd, process, command line, and terminal title. That d
 
 ### Terminal Resize Principle
 
-MidTerm intentionally does **not** auto-resize existing sessions just because another client connected or a page reloaded.
-MidTerm also treats terminal size ownership as a **manual** decision, not something the system should guess.
+tlbx intentionally does **not** auto-resize existing sessions just because another client connected or a page reloaded.
+tlbx also treats terminal size ownership as a **manual** decision, not something the system should guess.
 
 The model is:
 
@@ -210,7 +210,7 @@ The engineering goal is therefore twofold:
 
 ### Host Reconnect and Updates
 
-MidTerm's PTY reconnect path is now split into two cases:
+tlbx's PTY reconnect path is now split into two cases:
 
 - **owned reconnect**: `mt` reconnects to namespaced `mthost` endpoints belonging to its current instance identity
 - **legacy import**: after upgrading from older single-instance builds, `mt` can do a one-time import of pre-ownership `mthost` endpoints and then records them in its owned session registry
@@ -219,7 +219,7 @@ The legacy path exists so a full `mt` + `mthost` upgrade can keep already-runnin
 
 ### Terminal UX Layer
 
-Around the raw PTY stream, MidTerm adds:
+Around the raw PTY stream, tlbx adds:
 
 - font preloading and calibration terminals
 - WebGL-backed rendering when enabled
@@ -229,7 +229,7 @@ Around the raw PTY stream, MidTerm adds:
 - File Radar path detection with a per-session allowlist boundary
 - scrollback protection and visibility-aware focus handling
 
-MidTerm intentionally keeps shown sessions as live terminals. Latency work is expected to optimize transport, scheduling, buffering, and rendering costs without proposing terminal virtualization or deactivation for visible sessions.
+tlbx intentionally keeps shown sessions as live terminals. Latency work is expected to optimize transport, scheduling, buffering, and rendering costs without proposing terminal virtualization or deactivation for visible sessions.
 
 ## 4. Workspace Surfaces Around the Terminal
 
@@ -258,7 +258,7 @@ Each session wrapper adds:
 
 The Command Bay is the shared active-session footer system beneath Terminal and Agent Controller Session.
 It is the superset that now contains the old Smart Input composer, the old automation bar (formerly the middle manager bar), the old Agent Controller Session quick settings strip, the embedded touch controller path, attachment/media affordances, and the small session status controls.
-It exists because MidTerm no longer treats those pieces as unrelated bars stacked under the pane.
+It exists because tlbx no longer treats those pieces as unrelated bars stacked under the pane.
 - the primary rail hosts Smart Input / the composer when input is visible
 - the automation rail hosts the old automation bar and keeps it to one line with overflow instead of wrapping into extra toolbar bands; on cramped mobile Terminal layouts it may collapse visible action chips into overflow-first chrome rather than spending a full inline row on them
 - the Command Bay queue is backend-owned and persists queued work per session so follow-up prompts and Automation Bar items survive browser disconnects or reconnects
@@ -282,11 +282,11 @@ It exists because MidTerm no longer treats those pieces as unrelated bars stacke
 
 ### Agent Conversation Surface
 
-Agent Controller Session is MidTerm's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
+Agent Controller Session is tlbx's conversation-first surface for agent-controlled sessions. Architecturally it stays thin on purpose:
 
 - the canonical turn, request, and stream state belongs to the owning `mtagenthost` runtime
 - the frontend renders that state as provider-backed history/timeline UI; it does not attach to or reinterpret a Terminal session
-- if structured-runtime attach fails, MidTerm exposes the failure and leaves the session unattached rather than switching to PTY output as a second source of truth
+- if structured-runtime attach fails, tlbx exposes the failure and leaves the session unattached rather than switching to PTY output as a second source of truth
 
 The boundary between Terminal and Agent Controller Session is a core design rule:
 
@@ -297,7 +297,7 @@ The boundary between Terminal and Agent Controller Session is a core design rule
 
 ### Agent Controller Session Provider Runtime Decision
 
-For provider-backed Agent Controller Sessions, MidTerm should treat the provider runtime as the source of truth instead of trying to reconstruct an agent conversation from PTY output.
+For provider-backed Agent Controller Sessions, tlbx should treat the provider runtime as the source of truth instead of trying to reconstruct an agent conversation from PTY output.
 
 Terminology matters here:
 
@@ -308,10 +308,10 @@ Terminology matters here:
 That means:
 
 - an explicit Agent Controller Session owns a dedicated runtime for its supported provider
-- `mtagenthost` is the intended MidTerm host/runtime boundary for those provider-backed Agent Controller Sessions
+- `mtagenthost` is the intended tlbx host/runtime boundary for those provider-backed Agent Controller Sessions
 - current creation plumbing may allocate an unused `mthost` backing session, but Agent Controller state and commands never use that PTY or expose it as terminal access
 - the runtime launches or attaches using the provider's supported structured protocol
-- MidTerm normalizes that provider traffic into canonical Agent Controller Session turn, item, request, stream, and diff events
+- tlbx normalizes that provider traffic into canonical Agent Controller Session turn, item, request, stream, and diff events
 - the Agent Controller Session UI renders those canonical events and snapshots as a conversation surface
 - the terminal remains a separate surface with separate ownership and behavior
 
@@ -352,7 +352,7 @@ Agent Controller Session must therefore enforce a strict ownership and byte-budg
 - the browser does not own full Agent Controller Session history and must not accumulate the full provider event stream in memory
 - the browser consumes a bounded view window over canonical history, not an unbounded raw-event feed
 - multiple browsers may view the same Agent Controller Session concurrently, but each browser owns only its own local viewport/window state
-- browser scrolling is a read-window operation against MidTerm-owned canonical history, not a request for provider raw-event replay
+- browser scrolling is a read-window operation against tlbx-owned canonical history, not a request for provider raw-event replay
 
 This leads to the following transport rules:
 
@@ -377,7 +377,7 @@ The architectural target is:
 
 ### Agent Controller Session History Reduction Policy
 
-MidTerm needs an explicit reduction layer between raw provider events and canonical Agent Controller Session history.
+tlbx needs an explicit reduction layer between raw provider events and canonical Agent Controller Session history.
 
 Canonical history should keep:
 
@@ -397,7 +397,7 @@ Canonical history should usually reduce or suppress:
 - superseded intermediate states once the canonical row has settled
 - any content that is neither shown later nor required to determine what is shown later
 
-Where giant payloads exist, MidTerm should prefer:
+Where giant payloads exist, tlbx should prefer:
 
 - command invocation + bounded tail/head window + omitted-line markers
 - file-read path + excerpt policy + compact preview, not full file body
@@ -408,8 +408,8 @@ Where giant payloads exist, MidTerm should prefer:
 
 For UI iteration and bug discussion, Agent Controller Session also emits a dev-only per-session screen log derived from the same canonical backend history model that drives `/ws/app-server-control`.
 
-- the screen log is written by MidTerm, not by the browser
-- one GUID-named log file is created per Agent Controller Session under the normal MidTerm log root
+- the screen log is written by tlbx, not by the browser
+- one GUID-named log file is created per Agent Controller Session under the normal tlbx log root
 - records are screen-oriented and capture rendered-history facts such as kind, label, title, meta, body, render mode, and collapsed-by-default hints
 - raw tool output should be summarized before it reaches both the Agent Controller Session timeline and the screen log, and duplicate no-op screen states should not be re-logged
 - raw provider payloads and PTY output are not the screen log contract
@@ -418,9 +418,9 @@ For UI iteration and bug discussion, Agent Controller Session also emits a dev-o
 
 For a supported provider runtime, the Agent Controller Session contract is:
 
-1. A user can create a new session in MidTerm and explicitly choose a provider currently exposed by the launcher, such as `Codex` or `Grok`.
+1. A user can create a new session in tlbx and explicitly choose a provider currently exposed by the launcher, such as `Codex` or `Grok`.
 2. The session opens on the provider Agent Controller Session surface with the Smart Input / composer visible.
-3. MidTerm shows a subtle ready indication when the provider runtime is connected and able to accept a prompt.
+3. tlbx shows a subtle ready indication when the provider runtime is connected and able to accept a prompt.
 4. The user can submit a prompt from the Agent Controller Session composer without switching to Terminal.
 5. Assistant output streams into the Agent Controller Session history/timeline incrementally as it is generated, rather than appearing only after full completion.
 6. Tool activity is visible as it happens, including starts, updates, completions, approvals, and user-input questions.
@@ -466,9 +466,9 @@ HTTP and HTML handling are separate from WebSocket relay. HTTP responses may be 
 
 ### Browser Bridge
 
-MidTerm also exposes browser-control APIs and CLI helpers for the current preview client. That bridge is preview-scoped, not global, so browser actions target the intended session and preview.
+tlbx also exposes browser-control APIs and CLI helpers for the current preview client. That bridge is preview-scoped, not global, so browser actions target the intended session and preview.
 
-The same design principle now applies to native sidecars: `mtagenthost` processes are launched with the current MidTerm instance identity so auxiliary session runtimes stay aligned with the owning `mt` instance.
+The same design principle now applies to native sidecars: `mtagenthost` processes are launched with the current tlbx instance identity so auxiliary session runtimes stay aligned with the owning `mt` instance.
 
 Available operations include:
 
@@ -479,19 +479,19 @@ Available operations include:
 
 ### Local Chrome Device Bridge
 
-Responsive-frame mode only changes the embedded iframe's dimensions. Full Chromium mobile emulation lives in an optional MV3 extension on the user's browser machine, not in a Chrome process beside the MidTerm server. After explicit `activeTab` activation, the extension creates a top-level device window and applies CDP emulation locally. The target loads a separately registered preview identity, so it joins the existing preview-scoped browser bridge and inherits DOM automation, logs, and screenshots. This keeps the normal remote topology intact: MidTerm and the app may run on another machine while Chrome emulation runs where the UI is actually viewed.
+Responsive-frame mode only changes the embedded iframe's dimensions. Full Chromium mobile emulation lives in an optional MV3 extension on the user's browser machine, not in a Chrome process beside the tlbx server. After explicit `activeTab` activation, the extension creates a top-level device window and applies CDP emulation locally. The target loads a separately registered preview identity, so it joins the existing preview-scoped browser bridge and inherits DOM automation, logs, and screenshots. This keeps the normal remote topology intact: tlbx and the app may run on another machine while Chrome emulation runs where the UI is actually viewed.
 
 For deeper implementation detail, see [devbrowser.md](devbrowser.md) and [MOBILE_DEVICE_LAB.md](MOBILE_DEVICE_LAB.md).
 
 ## 6. Deterministic Input History and Agent Control Plane
 
-MidTerm has two server-owned deterministic data streams that deliberately avoid semantic reconstruction from terminal output.
+tlbx has two server-owned deterministic data streams that deliberately avoid semantic reconstruction from terminal output.
 
 ### Terminal input history
 
-`InputHistoryService` records only interactions MidTerm itself handled through an explicit boundary: Command Bay or prompt API submission, server-side text paste, clipboard image upload, file drop, and upload. Normal PTY output and arbitrary keystrokes are not parsed into “prompts.” Entries keep the exact replay payload and origin surface, are bounded by count and aggregate text size, and are atomically persisted to `input-history.json`.
+`InputHistoryService` records only interactions tlbx itself handled through an explicit boundary: Command Bay or prompt API submission, server-side text paste, clipboard image upload, file drop, and upload. Normal PTY output and arbitrary keystrokes are not parsed into “prompts.” Entries keep the exact replay payload and origin surface, are bounded by count and aggregate text size, and are atomically persisted to `input-history.json`.
 
-Each session's **History** top-bar menu renders that session's records as a timestamped vertical timeline. Direct browser-authored terminal text is buffered per session and persisted once only when an unmodified Enter is actually delivered. Modified Enter inserts a line break, and newline bytes inside paste payloads never create extra history entries. Text/image/file paste operations retain their explicit transaction boundary; image records render through an entry-scoped thumbnail endpoint. The `/api/input-history` list endpoint requires `sessionId`, and generated `mt_input_history*` helpers expose the same records. History is bounded and local, but it can contain sensitive terminal input because MidTerm does not guess which prompts are passwords.
+Each session's **History** top-bar menu renders that session's records as a timestamped vertical timeline. Direct browser-authored terminal text is buffered per session and persisted once only when an unmodified Enter is actually delivered. Modified Enter inserts a line break, and newline bytes inside paste payloads never create extra history entries. Text/image/file paste operations retain their explicit transaction boundary; image records render through an entry-scoped thumbnail endpoint. The `/api/input-history` list endpoint requires `sessionId`, and generated `mt_input_history*` helpers expose the same records. History is bounded and local, but it can contain sensitive terminal input because tlbx does not guess which prompts are passwords.
 
 ### Agent control plane
 
@@ -506,7 +506,7 @@ Records carry source, session, project, repository, timestamps, and revision whe
 The unfinished Operator sidebar was withdrawn. The control-plane API, generated
 CLI helpers, and authenticated Hub proxy endpoints remain the supported
 surfaces. Consumers may combine explicit publications with authoritative facts
-such as `isRunning`, exit code, and reported foreground process, but MidTerm
+such as `isRunning`, exit code, and reported foreground process, but tlbx
 does not turn `SessionSupervisorService` heat/timing classifications into agent
 meaning.
 
@@ -516,7 +516,7 @@ meaning.
 
 ### Public vs Internal Settings
 
-MidTerm uses two settings models:
+tlbx uses two settings models:
 
 - `MidTermSettings` for internal state, including secrets and platform-only details
 - `MidTermSettingsPublic` for the API-safe subset exposed to the browser
@@ -536,7 +536,7 @@ The frontend settings registry defines editability, apply mode, control ownershi
 
 ### Storage Boundaries
 
-MidTerm uses a mix of server-side and browser-side storage:
+tlbx uses a mix of server-side and browser-side storage:
 
 | Area                         | Storage                                       |
 | ---------------------------- | --------------------------------------------- |
@@ -553,7 +553,7 @@ MidTerm uses a mix of server-side and browser-side storage:
 
 ## 8. Security and Remote Access
 
-MidTerm assumes that anyone who reaches the UI could gain shell access, so the design layers multiple controls.
+tlbx assumes that anyone who reaches the UI could gain shell access, so the design layers multiple controls.
 
 ### Authentication
 
@@ -573,11 +573,11 @@ MidTerm assumes that anyone who reaches the UI could gain shell access, so the d
 
 ### Certificates
 
-MidTerm generates and manages a local HTTPS certificate, exposes trust helpers in the UI, and can download platform-friendly trust artifacts such as PEM output and Apple `mobileconfig` profiles.
+tlbx generates and manages a local HTTPS certificate, exposes trust helpers in the UI, and can download platform-friendly trust artifacts such as PEM output and Apple `mobileconfig` profiles.
 
 ### Additional Security Surfaces
 
-MidTerm also includes:
+tlbx also includes:
 
 - API-key management
 - run-as-user support for service installs
@@ -587,7 +587,7 @@ MidTerm also includes:
 
 ## 9. Install and Update Pipeline
 
-MidTerm treats installer and self-update reliability as part of the architecture, not an afterthought.
+tlbx treats installer and self-update reliability as part of the architecture, not an afterthought.
 
 ### Installers
 
@@ -618,7 +618,7 @@ The update-script generator produces non-interactive scripts that:
 - write logs and a structured result file
 - roll back if replacement or restart fails
 
-That is how MidTerm can update installed systems without asking users to manually babysit file replacement.
+That is how tlbx can update installed systems without asking users to manually babysit file replacement.
 
 ## 10. Protocols and APIs
 
@@ -646,7 +646,7 @@ Major API areas include:
 - update check/apply/result/log
 - diagnostics, logs, restart, and shutdown
 
-MidTerm's API surface is large because the browser shell is a real workstation shell, not only a terminal transport.
+tlbx's API surface is large because the browser shell is a real workstation shell, not only a terminal transport.
 
 ## 11. Diagnostics and Operations
 
@@ -660,7 +660,7 @@ The diagnostics layer exposes:
 - settings reload and server restart actions
 - frontend logging helpers
 
-Operationally, MidTerm also tracks update results, log files, session ordering, and preview proxy logs so users can debug the product from inside the product.
+Operationally, tlbx also tracks update results, log files, session ordering, and preview proxy logs so users can debug the product from inside the product.
 
 ## Related Documents
 

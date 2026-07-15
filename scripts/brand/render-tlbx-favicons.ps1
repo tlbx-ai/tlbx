@@ -7,6 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 $compactSource = Join-Path $repoRoot 'src\Ai.Tlbx.MidTerm\src\static\favicon.svg'
+$compactOpaqueSource = Join-Path $repoRoot 'src\Ai.Tlbx.MidTerm\src\static\favicon-opaque.svg'
 $largeSource = Join-Path $repoRoot 'src\Ai.Tlbx.MidTerm\src\static\favicon-large.svg'
 $foregroundSource = Join-Path $repoRoot 'src\Ai.Tlbx.MidTerm\src\static\img\tlbx-toolbox-foreground.svg'
 $faviconRoot = Join-Path $repoRoot 'src\Ai.Tlbx.MidTerm\src\static\favicon'
@@ -94,9 +95,9 @@ function Render-SquareSvgPng {
 }
 
 New-Item -ItemType Directory -Force -Path $faviconRoot | Out-Null
-Render-SquareSvgPng $compactSource 16 (Join-Path $faviconRoot 'favicon-16x16.png')
-Render-SquareSvgPng $compactSource 32 (Join-Path $faviconRoot 'favicon-32x32.png')
-Render-SquareSvgPng $compactSource 32 (Join-Path $faviconRoot 'favicon-32.png')
+Render-SquareSvgPng $compactSource 16 (Join-Path $faviconRoot 'favicon-16x16.png') -Transparent
+Render-SquareSvgPng $compactSource 32 (Join-Path $faviconRoot 'favicon-32x32.png') -Transparent
+Render-SquareSvgPng $compactSource 32 (Join-Path $faviconRoot 'favicon-32.png') -Transparent
 Render-SquareSvgPng $largeSource 192 (Join-Path $faviconRoot 'android-chrome-192x192.png')
 Render-SquareSvgPng $largeSource 512 (Join-Path $faviconRoot 'android-chrome-512x512.png')
 
@@ -108,7 +109,7 @@ Remove-Item -LiteralPath $favicon32
 
 if ($WebsiteRoot) {
     $resolvedWebsiteRoot = (Resolve-Path -LiteralPath $WebsiteRoot).Path
-    Render-SquareSvgPng $compactSource 64 (Join-Path $resolvedWebsiteRoot 'favicon.png')
+    Render-SquareSvgPng $compactSource 64 (Join-Path $resolvedWebsiteRoot 'favicon.png') -Transparent
     Render-SquareSvgPng $largeSource 512 (Join-Path $resolvedWebsiteRoot 'tlbx-icon.png')
 }
 
@@ -121,7 +122,7 @@ if ($ProductAssets) {
     $iosIconRoot = Join-Path $repoRoot 'src\connectors\ios\MidTermConnector\Assets.xcassets\AppIcon.appiconset'
 
     Render-SquareSvgPng $largeSource 400 (Join-Path $staticImageRoot 'logo.png')
-    Render-SquareSvgPng $compactSource 16 (Join-Path $bridgeIconRoot 'icon16.png')
+    Render-SquareSvgPng $compactSource 16 (Join-Path $bridgeIconRoot 'icon16.png') -Transparent
     Render-SquareSvgPng $largeSource 48 (Join-Path $bridgeIconRoot 'icon48.png')
     Render-SquareSvgPng $largeSource 128 (Join-Path $bridgeIconRoot 'icon128.png')
     Copy-Item -LiteralPath (Join-Path $bridgeIconRoot 'icon128.png') -Destination (Join-Path $storeAssetRoot 'icon128.png') -Force
@@ -146,7 +147,7 @@ if ($ProductAssets) {
         @{ Directory = 'mipmap-xxhdpi'; Size = 144 },
         @{ Directory = 'mipmap-xxxhdpi'; Size = 192 }
     )) {
-        $source = if ($item.Size -le 72) { $compactSource } else { $largeSource }
+        $source = if ($item.Size -le 72) { $compactOpaqueSource } else { $largeSource }
         foreach ($name in @('ic_launcher.png', 'ic_launcher_round.png')) {
             Render-SquareSvgPng $source $item.Size (Join-Path $androidRoot "$($item.Directory)\$name")
         }
@@ -158,7 +159,7 @@ if ($ProductAssets) {
             throw "Expected a square iOS app icon: $($icon.FullName)"
         }
         $size = [int]$dimensions[0]
-        $source = if ($size -le 40) { $compactSource } else { $largeSource }
+        $source = if ($size -le 40) { $compactOpaqueSource } else { $largeSource }
         Render-SquareSvgPng $source $size $icon.FullName
     }
 }

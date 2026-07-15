@@ -311,7 +311,7 @@ export function isLikelyFalsePositive(path: string): boolean {
     // path separators is almost certainly a FQN, not a file
     if (dotCount >= 4) return true;
     // PascalCase "extension" (5+ chars starting uppercase) without path separators —
-    // catches method calls (Results.Forbid), project names (Ai.Tlbx.MidTerm)
+    // catches method calls (Results.Forbid), project names (Ai.Tlbx.tlbx)
     if (dotCount >= 1) {
       const ext = normalized.split('.').pop();
       if (ext && ext.length >= 5 && /^[A-Z]/.test(ext)) return true;

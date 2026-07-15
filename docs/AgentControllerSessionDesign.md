@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document is the source of truth for the visual and interaction design of MidTerm Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
+This document is the source of truth for the visual and interaction design of tlbx Agent Controller Session. It exists to prevent Agent Controller Session UI behavior from drifting across ad hoc iterations.
 
 Agent Controller Session is a provider-backed conversation surface for explicitly launched supported providers. The current new-session launcher exposes Codex and Grok Build. It is not a terminal transcript viewer, and its visual system must be designed as a lean, high-signal web UI for agent interaction.
 
@@ -12,7 +12,7 @@ Any future Agent Controller Session UI change that affects layout, hierarchy, hi
 
 This document is intentionally split into:
 
-- specified: the rules MidTerm Agent Controller Session must satisfy
+- specified: the rules tlbx Agent Controller Session must satisfy
 - implemented: the rules that are currently implemented and verified in code
 
 When Agent Controller Session UX changes, update both sections in the same work. If a rule is specified but not yet implemented, leave that gap visible instead of silently drifting the document.
@@ -28,7 +28,7 @@ This document governs:
 - spacing, typography, hierarchy, density, and use of screen space
 - DOM/performance constraints for long-running sessions
 
-Provider-specific transport details belong in the C# runtime layer, not here. This document describes the Agent Controller Session UX contract after provider events have been normalized into MidTerm-owned concepts.
+Provider-specific transport details belong in the C# runtime layer, not here. This document describes the Agent Controller Session UX contract after provider events have been normalized into tlbx-owned concepts.
 
 ## Non-Regression Floor
 
@@ -61,7 +61,7 @@ New Agent Controller Session work must use the following concept names consisten
 
 - use `Agent Controller` for software that speaks the App Server Protocol and provides an agent-control UI
 - use `Agent Controller Session` for one live controlled provider conversation
-- use `App Server Protocol` for the protocol boundary spoken between an Agent Controller and MidTerm's provider runtime
+- use `App Server Protocol` for the protocol boundary spoken between an Agent Controller and tlbx's provider runtime
 - use `Agent Controller Runtime` for the backend-owned provider runtime that drives an Agent Controller Session
 - use `history` for the canonical ordered Agent Controller Session item sequence
 - use `history item` for one canonical renderable entry
@@ -97,8 +97,8 @@ Naming rule:
 
 ## Runtime Boundary
 
-- Explicit Agent Controller Sessions must ingest exactly one MidTerm-owned canonical runtime stream, and that stream must come through `mtagenthost`.
-- The active `mtagenthost` Agent Controller Session host protocol is `app-server-control-host-v2`; MidTerm should reject older host protocol versions instead of carrying parallel legacy protocol support.
+- Explicit Agent Controller Sessions must ingest exactly one tlbx-owned canonical runtime stream, and that stream must come through `mtagenthost`.
+- The active `mtagenthost` Agent Controller Session host protocol is `app-server-control-host-v2`; tlbx should reject older host protocol versions instead of carrying parallel legacy protocol support.
 - `mtagenthost` is the only place where provider-specific transport, protocol parsing, provider-specific semantics, and event canonization belong for Agent Controller Session.
 - `mtagenthost` must reduce provider-specific structured events into one provider-neutral canonical Agent Controller Session history model that is a capability superset of the supported provider surfaces.
 - `mtagenthost` must own the canonical in-memory Agent Controller Session history for a session. `mt` should broker access to that history, not build and own a second competing canonical reducer.
@@ -107,7 +107,7 @@ Naming rule:
 - The intended runtime cardinality is one dedicated `mtagenthost` process per explicit Agent Controller Session.
 - Canonical Agent Controller Session history must be optimized for human consumption. Transport noise, fluff, superseded chatter, and non-view-affecting provider detail should be discarded as early as possible to save memory.
 - If `mtagenthost` attach fails, Agent Controller Session should surface that failure and remain unattached rather than switching to a second provider ingestion path with different behavior.
-- The frontend should consume the same canonical MidTerm Agent Controller Session concepts regardless of provider and regardless of the provider's raw wire shape.
+- The frontend should consume the same canonical tlbx Agent Controller Session concepts regardless of provider and regardless of the provider's raw wire shape.
 
 ## Architecture Contract
 
@@ -208,10 +208,10 @@ The canonical history contract must satisfy the following:
 - On touch-sized viewports, the progress navigator should expose at least a 44px touch target while keeping the visible track/thumb visually quiet; the hit target should not read as a separate glowing sidebar.
 - Responsive behavior must be designed, not treated as desktop shrinkage.
 
-### 8. Internationalized MidTerm UI copy
+### 8. Internationalized tlbx UI copy
 
-- Every MidTerm-provided Agent Controller Session label, action, helper text, ready-state string, empty-state string, and interruption string must come from i18n keys.
-- Provider content is not translated by MidTerm, but MidTerm-owned UI strings must not be hardcoded English in the renderer.
+- Every tlbx-provided Agent Controller Session label, action, helper text, ready-state string, empty-state string, and interruption string must come from i18n keys.
+- Provider content is not translated by tlbx, but tlbx-owned UI strings must not be hardcoded English in the renderer.
 
 ### 9. Streaming-first feedback
 
@@ -387,11 +387,11 @@ The canonical history contract must satisfy the following:
 - Tool, reasoning, plan, diff, request, and system rows should share one restrained structural language instead of mixing rail markers, unrelated borders, and unrelated card treatments.
 - Raw transport noise must not leak into the UI.
 - Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Agent Controller Session history.
-- Provider startup/runtime state notices that MidTerm understands, such as Codex MCP server startup-status updates, should map into quiet canonical `Agent State` system rows instead of falling through as unknown-agent tool rows.
+- Provider startup/runtime state notices that tlbx understands, such as Codex MCP server startup-status updates, should map into quiet canonical `Agent State` system rows instead of falling through as unknown-agent tool rows.
 - Provider CLI/runtime error blocks that arrive outside the normal assistant stream, including multi-line stderr startup failures and deprecation errors, should map into canonical `Agent Error` notice rows with stronger red emphasis than ordinary system rows.
-- When a provider emits an unknown structured event, MidTerm should preserve it as a canonical diagnostic history item instead of silently dropping it.
-- Those fallback unknown-agent rows may render raw provider method/payload detail, but they must remain clearly marked as unknown MidTerm fallback output rather than pretending to be a first-class mapped concept.
-- Agent Controller Session should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before MidTerm ships a dedicated mapping.
+- When a provider emits an unknown structured event, tlbx should preserve it as a canonical diagnostic history item instead of silently dropping it.
+- Those fallback unknown-agent rows may render raw provider method/payload detail, but they must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
+- Agent Controller Session should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before tlbx ships a dedicated mapping.
 - Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
@@ -443,12 +443,12 @@ The canonical history contract must satisfy the following:
 - That Agent Controller Session status rail should stay intentionally small and session-oriented.
 - Normal terminal smart input should reuse the same dock shell while keeping Agent Controller Session-only runtime controls out of ordinary terminal sessions.
 - If the user queues follow-up work from the shared Command Bay, Agent Controller Session should render that queue as a compact vertical stack directly above the composer instead of inventing a separate floating queue surface.
-- Agent Controller Session queue ownership belongs to MidTerm, not the browser. Queued Command Bay prompts and queued Automation Bar items must survive browser disconnects and drain only when the current turn has returned control to the user.
-- If the shared Command Bay queue is empty and the active session can accept work immediately, MidTerm should fast-track that submission directly to the runtime instead of briefly rendering a one-item queued row before sending. For Agent Controller Sessions this means the turn has returned to the user; for Terminal sessions this means the session is idle enough to pass the cooldown heat gate.
+- Agent Controller Session queue ownership belongs to tlbx, not the browser. Queued Command Bay prompts and queued Automation Bar items must survive browser disconnects and drain only when the current turn has returned control to the user.
+- If the shared Command Bay queue is empty and the active session can accept work immediately, tlbx should fast-track that submission directly to the runtime instead of briefly rendering a one-item queued row before sending. For Agent Controller Sessions this means the turn has returned to the user; for Terminal sessions this means the session is idle enough to pass the cooldown heat gate.
 - On desktop, Agent Controller Session quick settings should read as a low-clutter translucent control rail rather than a full-width form.
 - The model quick setting should use a provider-scoped populated list, while still preserving any current non-preset model already active in the session or draft.
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
-- MidTerm's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
+- tlbx's dock chrome should stay relatively boxy: tighter corner radii, compact control heights, and restrained padding rather than oversized capsule pills.
 - Prompt-side utility buttons, automation chips, quick-setting pills, and status controls should all use restrained tonal surfaces instead of individual glow or shadow gimmicks.
 - On mobile, Agent Controller Session should keep model/effort/plan awareness always visible in the dock status rail and may reveal only those three editable controls from that status row. The expanded mobile sheet must stay keyboard-safe: one compact row of three buttons, not a multi-row settings form.
 - When the mobile soft keyboard is open, Agent Controller Session should keep that compact status rail ahead of the composer so model/effort/plan awareness stays reachable without hiding the prompt.
@@ -464,13 +464,13 @@ The canonical history contract must satisfy the following:
   - plan mode
   - permission or approval mode
 - Codex Agent Controller Session should expose low-chrome slash-equivalent action buttons for `/model`, `/plan`, and `/goal` directly in the quick-settings rail. `/model` opens the model picker, `/plan` toggles the next-turn plan-mode setting, and `/goal` prepares the provider goal command in the composer so the operator can set the objective without remembering command syntax. The `/plan` affordance should read as a quiet mode toggle, not a primary command button.
-- These quick controls should be MidTerm-owned canonical settings, not scraped provider-native menus.
+- These quick controls should be tlbx-owned canonical settings, not scraped provider-native menus.
 - Provider-specific meaning and transport mapping for those controls must stay in the C# Agent Controller Runtime layer.
 - The TypeScript Agent Controller Session UI should render the common quick-settings surface from the canonical model without branching deeply on provider quirks.
 - Quick-settings changes should be sticky for the active Agent Controller Session and may also reuse provider-level draft defaults where that improves flow.
 - Quick-settings must communicate whether they affect the next turn, the active session runtime, or require a thread/runtime reopen behind the scenes.
 - Agent Controller Sessions that were launched from a bookmark may expose a small provider-native `Resume` action inline with the quick-settings rail, immediately after the permission control.
-- That `Resume` action must open MidTerm's provider resume picker and create a new Agent Controller Session bound to the selected provider conversation; it must not silently swap the current Agent Controller Session to a different provider thread in place.
+- That `Resume` action must open tlbx's provider resume picker and create a new Agent Controller Session bound to the selected provider conversation; it must not silently swap the current Agent Controller Session to a different provider thread in place.
 - While the shared Command Bay composer is focused, bare `Shift+Tab` should toggle Agent Controller Session plan mode for the active Agent Controller Session surface instead of moving browser focus away from the composer.
 - The same shared composer shortcut must remain surface-aware: when the active surface is Terminal, bare `Shift+Tab` should pass through to the terminal as a raw backtab key instead of toggling Agent Controller Session state.
 - Agent Controller Session composer attachments should stage inside the composer itself as removable chips instead of triggering an immediate turn on selection.
@@ -505,11 +505,11 @@ The canonical history contract must satisfy the following:
 - not yet implemented: browser virtualization now carries forward observed row-height samples across previously seen windows at the current width bucket, but it still does not keep a richer canonical or long-run distribution model for highly heterogeneous off-window scrollbar accuracy
 - not yet implemented: older transport-era naming and `transcript` naming still leak through non-browser services, reducer internals, host-owned canonical state types, and some debug/test surfaces even though the active browser/websocket path is now history-first
 - not yet implemented: interview interactions now render inline in the timeline with a dedicated request widget, but they are still modeled as request summaries plus request history rows rather than a fully separate canonical `interview` item type end to end
-- not yet implemented: Codex interview/user-input is supported through a verified structured runtime contract, but Claude interview/user-input remains explicitly unsupported until MidTerm integrates a verified structured Claude contract instead of a guessed bridge
+- not yet implemented: Codex interview/user-input is supported through a verified structured runtime contract, but Claude interview/user-input remains explicitly unsupported until tlbx integrates a verified structured Claude contract instead of a guessed bridge
 
 ## Dev Diagnostics
 
-- In dev mode, MidTerm should write one GUID-named Agent Controller Session screen log per session under the normal MidTerm log root.
+- In dev mode, tlbx should write one GUID-named Agent Controller Session screen log per session under the normal tlbx log root.
 - The Agent Controller Session screen log should be derived from canonical Agent Controller Session history deltas, not raw provider transport payloads or frontend DOM scraping.
 - Screen-log records should include the rendered-history facts needed to discuss the UI: stable history identity, kind, label, title, meta, body, render mode, and whether the body collapses by default.
 - Agent Controller Session dev diagnostics must not introduce a second retained raw-event history layer. The screen log is a derived canonical view aid only.
@@ -542,19 +542,19 @@ Status in this branch/work item:
 - implemented: when a visible history row changes materially, Agent Controller Session now replaces that row node by stable key instead of mutating an older DOM node into a new future shape
 - implemented: scroll-follow suppression while the user is away from the live edge, plus an explicit return-to-bottom control
 - implemented: non-user layout growth and sizing changes no longer clear live-edge follow state by themselves; only explicit user scrolling moves Agent Controller Session out of follow mode
-- implemented: when a hidden Agent Controller Session surface is shown again, whether by MidTerm tab reactivation or browser foreground return, it restores a fresh latest-history window and re-enters live-edge follow mode by default instead of preserving a stale mid-history scroll offset
+- implemented: when a hidden Agent Controller Session surface is shown again, whether by tlbx tab reactivation or browser foreground return, it restores a fresh latest-history window and re-enters live-edge follow mode by default instead of preserving a stale mid-history scroll offset
 - implemented: terminal-font monospace rendering for machine-oriented Agent Controller Session content
 - implemented: provider-stream-driven assistant rendering so partial assistant text can appear before the final provider message lands
 - implemented: responsive Agent Controller Session styling for mobile-sized layouts
-- implemented: Agent Controller Session-specific themed CSS tokens layered onto the existing MidTerm theme system
-- implemented: i18n-backed MidTerm Agent Controller Session labels, buttons, helper copy, ready-state text, and interruption text
+- implemented: Agent Controller Session-specific themed CSS tokens layered onto the existing tlbx theme system
+- implemented: i18n-backed tlbx Agent Controller Session labels, buttons, helper copy, ready-state text, and interruption text
 - implemented: hidden/background Agent Controller Sessions may continue ingesting runtime state, but history DOM work is deferred until that Agent Controller Session surface is visible again
 - implemented: hidden/background Agent Controller Sessions clear rendered history DOM and compact retained browser-side history back to a bounded latest window without interrupting the live runtime
-- implemented: Agent Controller Session history is treated as a bounded browser-side view window over MidTerm-owned canonical history rather than as an unbounded full-history browser cache
+- implemented: Agent Controller Session history is treated as a bounded browser-side view window over tlbx-owned canonical history rather than as an unbounded full-history browser cache
 - implemented: Codex, Claude, and Grok Agent Controller runtimes route through `mtagenthost` as the single structured runtime boundary; `SessionAppServerControlRuntimeService` no longer falls back to a second in-process Codex runtime when host attach fails
-- implemented: Claude Agent Controller Session no longer injects or parses a MidTerm-invented XML user-input bridge in the active runtime path; unsupported Claude interview/user-input now remains unsupported instead of relying on guessed protocol behavior
+- implemented: Claude Agent Controller Session no longer injects or parses a tlbx-invented XML user-input bridge in the active runtime path; unsupported Claude interview/user-input now remains unsupported instead of relying on guessed protocol behavior
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
-- implemented: MidTerm-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
+- implemented: tlbx-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Agent Controller Session surface no longer routes through terminal focus reclaim, so drag text selection in Agent Controller Session remains intact after the mouse button is released
 - implemented: long non-diff machine-oriented Agent Controller Session bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
 - implemented: Agent Controller Session diff rows stay expanded by default, suppress non-essential unified-diff preamble noise where possible, and cap visible diff rendering at 200 lines plus an ellipsis marker
@@ -642,9 +642,9 @@ Status in this branch/work item:
 - implemented: staged Agent Controller Session image attachments now also insert stable atomic inline references such as `[Image 1]` into the composer text, and removing either the inline reference or the chip removes the other so prompt text can refer to specific images deterministically
 - implemented: Agent Controller Session now converts large plain-text pastes into staged text-reference chips and atomic inline tokens such as `[Text 1 - 37 lines - 594 chars]`, so oversized pasted content stays inspectable through the file viewer without flooding the composer textarea
 - implemented: inline Agent Controller Session composer references are UI-facing placeholders only; on send, Agent Controller Session keeps semantic markers such as `[Image 1]` in the prompt, expands staged text references into appended full-text blocks, and preserves real non-text attachments separately so the runtime receives the actual content rather than only placeholder token text
-- implemented: quick-settings state is MidTerm-owned and canonical, while provider permission/runtime mappings stay in the C# host/runtime layer
+- implemented: quick-settings state is tlbx-owned and canonical, while provider permission/runtime mappings stay in the C# host/runtime layer
 - implemented: Agent Controller Session quick-settings drafts stay sticky per session and reuse provider-level remembered defaults for recurring workflows
-- implemented: provider-scoped remembered default Agent Controller Session models are now persisted in MidTerm-owned settings and seed new Agent Controller Sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists
+- implemented: provider-scoped remembered default Agent Controller Session models are now persisted in tlbx-owned settings and seed new Agent Controller Sessions, with Codex defaulting to `gpt-5.4` when no explicit stored model exists
 - implemented: Codex Agent Controller Session exposes `/model`, `/plan`, and `/goal` action buttons inside the quick-settings rail; `/model` opens the Agent Controller Session model picker, `/plan` toggles plan mode, and `/goal` prepares a goal command in the composer while Codex goal update/clear notifications are canonized as runtime messages instead of unknown fallback rows
 - implemented: desktop Agent Controller Session quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Agent Controller Session quick settings remain hidden unless the active session is an explicit Agent Controller Session surface; ordinary terminal sessions and no-session empty states never show Agent Controller Session-only quick controls
@@ -656,7 +656,7 @@ Status in this branch/work item:
 - implemented: Codex/Claude history rows now render with a flatter console-like surface and remove the remaining card/bubble chrome while the renderer is being hardened
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label, phase-locks both its sweep and spinner animations to a shared wallclock-derived phase, and keeps the existing busy DOM node alive across live label/elapsed updates so redraws do not visibly restart the motion
 - implemented: the trailing busy-label text highlight now mirrors at the right edge and travels back left through the word instead of snapping from the end back to the first letter
-- implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by MidTerm-owned persistent queue state rather than browser-local Agent Controller Session-only submission state
+- implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by tlbx-owned persistent queue state rather than browser-local Agent Controller Session-only submission state
 - implemented: explicit Agent Controller Sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
 - implemented: shared Command Bay prompt submissions now bypass the visible queue entirely when that queue is empty and the target session can accept work immediately, so idle Terminal sends and user-turn Agent Controller Session sends do not flash a transient queued row before dispatch
 - implemented: settled turn-duration notes now render as a quiet near-full-width horizontal end-of-turn marker with the duration label centered between rule segments

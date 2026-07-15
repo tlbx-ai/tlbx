@@ -1,6 +1,6 @@
 # Settings Audit
 
-## Why MidTerm Settings Feel Complicated
+## Why tlbx Settings Feel Complicated
 
 The same setting is usually hand-wired in several places:
 

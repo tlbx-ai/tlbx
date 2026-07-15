@@ -44,10 +44,10 @@ describe('tabTitle', () => {
     setSettings({ tabTitleMode: 'hostname' });
 
     initTabTitle();
-    expect(document.title).toBe('MidTerm - alpha');
+    expect(document.title).toBe('tlbx — alpha');
 
     setSettings({ tabTitleMode: 'static' });
-    expect(document.title).toBe('MidTerm');
+    expect(document.title).toBe('tlbx');
   });
 
   it('updates immediately when the hostname changes in hostname mode', () => {
@@ -55,9 +55,9 @@ describe('tabTitle', () => {
     $serverHostname.set('alpha');
 
     initTabTitle();
-    expect(document.title).toBe('MidTerm - alpha');
+    expect(document.title).toBe('tlbx — alpha');
 
     $serverHostname.set('beta');
-    expect(document.title).toBe('MidTerm - beta');
+    expect(document.title).toBe('tlbx — beta');
   });
 });

@@ -48,7 +48,7 @@ internal static class SystemSleepInhibitorBackendFactory
             RedirectStandardError = true
         };
         startInfo.ArgumentList.Add("--what=sleep");
-        startInfo.ArgumentList.Add("--why=MidTerm active sessions");
+        startInfo.ArgumentList.Add("--why=tlbx active sessions");
         startInfo.ArgumentList.Add("--mode=block");
         startInfo.ArgumentList.Add("sh");
         startInfo.ArgumentList.Add("-c");

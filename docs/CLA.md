@@ -1,6 +1,6 @@
 # Individual Contributor License Agreement
 
-Thank you for your interest in contributing to MidTerm. This Contributor License Agreement ("Agreement") documents the rights granted by contributors to this project.
+Thank you for your interest in contributing to tlbx. This Contributor License Agreement ("Agreement") documents the rights granted by contributors to this project.
 
 By submitting a pull request or other contribution to this project, you agree to the following terms:
 

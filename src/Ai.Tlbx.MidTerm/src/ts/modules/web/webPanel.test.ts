@@ -98,13 +98,13 @@ function createBrowserStatus(
 }
 
 describe('webPanel browser status indicator', () => {
-  it('reports a hard error when no MidTerm browser UI is attached', () => {
+  it('reports a hard error when no tlbx browser UI is attached', () => {
     expect(
       buildBrowserPreviewStatusIndicatorState(createBrowserStatus({ hasUiClient: false })),
     ).toEqual({
       severity: 'error',
       message:
-        'No MidTerm browser tab is connected to /ws/state. The dev browser cannot work until a live MidTerm tab is open.',
+        'No tlbx browser tab is connected to /ws/state. The dev browser cannot work until a live tlbx tab is open.',
     });
   });
 

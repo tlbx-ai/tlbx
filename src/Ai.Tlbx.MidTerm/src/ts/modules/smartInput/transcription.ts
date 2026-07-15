@@ -2,7 +2,7 @@
  * Historyion Client
  *
  * Records audio via webAudioAccess.js, then POSTs raw PCM16
- * to the MidTerm.Voice /api/transcribe REST endpoint.
+ * to the tlbx.Voice /api/transcribe REST endpoint.
  */
 
 import { $voiceServerPassword } from '../../stores';

@@ -257,7 +257,7 @@ export function updateMobileTitle(): void {
   const activeSession = getAllSidebarSessions().find(
     (entry) => entry.id === activeSessionId,
   )?.session;
-  dom.mobileTitle.textContent = activeSession ? getSessionDisplayName(activeSession) : 'MidTerm';
+  dom.mobileTitle.textContent = activeSession ? getSessionDisplayName(activeSession) : 'tlbx';
 }
 
 async function refreshSidebarSpacesTree(force = false): Promise<void> {

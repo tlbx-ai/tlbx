@@ -47,7 +47,7 @@ jobs:
           import json
           import re
 
-          product_url = "https://midterm.tlbx.ai/"
+          product_url = "https://tlbx.ai/"
           path = Path("_site/index.html")
           html = path.read_text(encoding="utf-8")
           canonical_pattern = re.compile(

@@ -10,7 +10,7 @@ const outputDir = path.join(repoRoot, 'docs', 'marketing', 'launch-assets-2026-0
 
 const exports = [
   {
-    source: 'midterm-mark.svg',
+    source: 'tlbx-mark.svg',
     output: 'product-hunt-thumbnail-240x240.png',
     width: 240,
     height: 240,

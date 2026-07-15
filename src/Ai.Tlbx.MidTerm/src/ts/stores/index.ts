@@ -454,5 +454,5 @@ export const $isMainBrowser = atom<boolean>(false);
 /** Whether the main browser button should be visible (server has seen 2+ unique clients) */
 export const $showMainBrowserButton = atom<boolean>(false);
 
-/** Connected browser sessions and their server-observed active MidTerm session */
+/** Connected browser sessions and their server-observed active tlbx session */
 export const $browserSessions = atom<BrowserSessionStatus[]>([]);

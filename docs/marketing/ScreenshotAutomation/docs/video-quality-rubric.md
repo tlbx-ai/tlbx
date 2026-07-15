@@ -1,4 +1,4 @@
-# MidTerm Marketing Video AI Review Rubric
+# tlbx Marketing Video AI Review Rubric
 
 Use this rubric before accepting a generated marketing clip. The model should judge the clip as a social/video creative reviewer, not as a test runner.
 
@@ -13,7 +13,7 @@ Use this rubric before accepting a generated marketing clip. The model should ju
 
 - Judge readability at phone-feed size: terminal text, captions, and sidebar labels must survive a 1080x1920 phone screen without zooming.
 - Keep platform safe zones in mind: the right edge (action buttons) and bottom ~20% (caption/UI overlays) of Reels/Shorts/TikTok are partially covered; critical text should not live only there.
-- The clip must show MidTerm's real phone-width mobile UI, not a squeezed desktop layout. A desktop UI crammed into 9:16 is a hard fail.
+- The clip must show tlbx's real phone-width mobile UI, not a squeezed desktop layout. A desktop UI crammed into 9:16 is a hard fail.
 - Touch affordances shown (hamburger sidebar, Command Bay, action buttons) should look intentional and finger-sized, not like shrunken desktop chrome.
 - Vertical framing: the key surface (terminal output, preview, sidebar) should fill the frame; large dead bands above/below are a fail.
 
@@ -38,7 +38,7 @@ Score each criterion from 0 to 10, with 7 as the minimum publishable score.
 2. Audience fit: speaks to developers/operators rather than generic SaaS viewers.
 3. Readability: terminal text, captions, sidebar labels, and browser content survive social compression and laptop viewing.
 4. Composition: the important thing is visually centered or deliberately framed, with no wasted focus.
-5. Product truth: shows a real MidTerm workflow rather than fake UI, stock atmosphere, or ornamental motion.
+5. Product truth: shows a real tlbx workflow rather than fake UI, stock atmosphere, or ornamental motion.
 6. Pacing: no slow setup, no dead time, no rushed unreadable actions.
 7. Visual taste: polished, restrained, not cheesy, not cluttered, not one-note purple/blue.
 8. Motion quality: camera, Ken Burns, cursor, browser, and terminal movement feel intentional and smooth.

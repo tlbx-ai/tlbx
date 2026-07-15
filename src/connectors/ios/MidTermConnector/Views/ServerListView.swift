@@ -9,14 +9,14 @@ struct LaunchView: View {
         NavigationStack {
             Form {
                 Section {
-                    Text("A native shell for your MidTerm workspace.")
+                    Text("A native shell for your tlbx workspace.")
                         .font(.headline)
                         .foregroundStyle(.primary)
-                    Text("Enter one MidTerm address here, then use Hub inside MidTerm to move between machines and workspaces.")
+                    Text("Enter one tlbx address here, then use Hub inside tlbx to move between machines and workspaces.")
                         .foregroundStyle(.secondary)
                 }
 
-                Section("MidTerm Address") {
+                Section("tlbx Address") {
                     TextField("https://hostname:2000", text: $address)
                         .textContentType(.URL)
                         .keyboardType(.URL)
@@ -30,13 +30,13 @@ struct LaunchView: View {
                 LauncherHintSection(lastConnected: store.server?.lastConnected)
 
                 Section {
-                    Button("Open MidTerm") {
+                    Button("Open tlbx") {
                         openMidTerm()
                     }
                     .disabled(address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
-            .navigationTitle("MidTerm")
+            .navigationTitle("tlbx")
             .onAppear {
                 address = store.server?.url ?? ""
             }

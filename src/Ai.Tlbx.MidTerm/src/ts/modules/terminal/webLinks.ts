@@ -1,5 +1,5 @@
 /**
- * Opens an xterm-detected web link without replacing the MidTerm application.
+ * Opens an xterm-detected web link without replacing the tlbx application.
  *
  * An actual anchor carries the browser-native new-tab semantics more reliably
  * than window.open(), particularly from installed mobile web apps.

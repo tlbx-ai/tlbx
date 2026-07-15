@@ -752,11 +752,11 @@ export function withInlineAppServerControlStatus(
     (streamConnected
       ? appServerControlText(
           'appServerControl.status.connectedWaiting',
-          'AppServerControl is connected to MidTerm and waiting for history content.',
+          'AppServerControl is connected to tlbx and waiting for history content.',
         )
       : appServerControlText(
           'appServerControl.status.reconnecting',
-          'AppServerControl is reconnecting to MidTerm.',
+          'AppServerControl is reconnecting to tlbx.',
         ));
 
   if ((!statusBody || hasConversation) && !snapshot.session.lastError) {
@@ -769,7 +769,7 @@ export function withInlineAppServerControlStatus(
       order: Number.MIN_SAFE_INTEGER,
       kind: snapshot.session.lastError ? 'notice' : 'system',
       tone: snapshot.session.lastError ? 'attention' : streamConnected ? 'positive' : 'warning',
-      label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
+      label: appServerControlText('appServerControl.label.midterm', 'tlbx'),
       title: '',
       body: statusBody,
       meta: streamConnected
@@ -1135,7 +1135,7 @@ export function withActivationIssueNotice(
       order: Number.MIN_SAFE_INTEGER,
       kind: issue.tone === 'attention' ? 'notice' : 'system',
       tone: issue.tone,
-      label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
+      label: appServerControlText('appServerControl.label.midterm', 'tlbx'),
       title: issue.title,
       body: issue.body,
       meta: issue.meta,
@@ -1155,7 +1155,7 @@ export function buildActivationHistoryEntries(
         order: 0,
         kind: 'system',
         tone: state.activationState === 'failed' ? 'attention' : 'warning',
-        label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
+        label: appServerControlText('appServerControl.label.midterm', 'tlbx'),
         title: '',
         body: state.activationDetail || 'Waiting for AppServerControl boot steps…',
         meta:
@@ -1179,7 +1179,7 @@ export function buildActivationHistoryEntries(
     order: index,
     kind: entry.tone === 'attention' ? ('notice' as const) : ('system' as const),
     tone: entry.tone,
-    label: appServerControlText('appServerControl.label.midterm', 'MidTerm'),
+    label: appServerControlText('appServerControl.label.midterm', 'tlbx'),
     title: '',
     body: entry.detail,
     meta: entry.meta,
