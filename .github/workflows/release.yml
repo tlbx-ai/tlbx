@@ -719,6 +719,7 @@ jobs:
     needs: [prepare, build, build-windows]
     if: needs.prepare.outputs.is_dev != 'true'
     runs-on: ubuntu-latest
+    continue-on-error: true
     permissions:
       contents: read
       id-token: write
@@ -751,7 +752,7 @@ jobs:
           npm publish --access public --provenance --tag latest
 
   publish-release:
-    needs: [prepare, build, build-windows, publish-npm]
+    needs: [prepare, build, build-windows]
     if: needs.prepare.outputs.is_dev != 'true'
     runs-on: ubuntu-latest
     permissions:

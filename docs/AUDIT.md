@@ -17,8 +17,10 @@ A pushed `v*` tag starts the release workflow. The workflow:
 5. signs the release manifest and performs platform signing/notarization where
    configured
 6. uploads the platform archives to the matching GitHub release
-7. for stable tags, publishes the npm launcher, verifies the exact six expected
-   platform archives are present and nonempty, and only then publishes the draft
+7. for stable tags, verifies the exact six expected platform archives are present
+   and nonempty, and only then publishes the draft
+8. independently attempts to publish the optional npm quick-trial launcher;
+   npm failure is visible in the workflow but cannot block native release channels
 
 Development releases use GitHub-hosted runners. Stable macOS and Linux builds
 also use GitHub-hosted runners; stable Windows x64 and x86 builds use the repository's
