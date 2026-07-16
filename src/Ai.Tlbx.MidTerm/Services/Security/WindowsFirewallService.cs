@@ -117,7 +117,7 @@ public sealed class WindowsFirewallService
 
         if (!IsAdministrator())
         {
-            throw new UnauthorizedAccessException("MidTerm must be running with Administrator privileges to change Windows firewall rules.");
+            throw new UnauthorizedAccessException("tlbx must be running with Administrator privileges to change Windows firewall rules.");
         }
     }
 

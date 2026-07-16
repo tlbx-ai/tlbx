@@ -2,14 +2,14 @@
  * Historyion Client
  *
  * Records audio via webAudioAccess.js, then POSTs raw PCM16
- * to the MidTerm.Voice /api/transcribe REST endpoint.
+ * to the tlbx.Voice /api/transcribe REST endpoint.
  */
 
 import { $voiceServerPassword } from '../../stores';
 import { createLogger } from '../logging';
 
 const log = createLogger('transcription');
-const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
+const VOICE_SERVER_URL = 'https://api.tlbx.ai';
 
 let audioChunks: ArrayBuffer[] = [];
 let isRecording = false;

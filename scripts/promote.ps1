@@ -164,7 +164,7 @@ $lastStableTag = git tag --sort=-v:refname | Where-Object { $_ -notmatch '-dev' 
 $lastStableVersion = [version]($lastStableTag -replace '^v', '')
 
 Write-Host ""
-Write-Host "  MidTerm Promotion" -ForegroundColor Cyan
+Write-Host "  tlbx Promotion" -ForegroundColor Cyan
 Write-Host "  =================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  Dev version:    $devVersion" -ForegroundColor Gray
@@ -393,5 +393,5 @@ git push origin dev 2>&1 | Out-Null
 
 Write-Host ""
 Write-Host "Promoted v$stableVersion ($($changelog.Count) dev releases, $($ReleaseNotes.Count) changelog entries)" -ForegroundColor Green
-Write-Host "Monitor build: https://github.com/tlbx-ai/MidTerm/actions" -ForegroundColor Cyan
+Write-Host "Monitor build: https://github.com/tlbx-ai/tlbx/actions" -ForegroundColor Cyan
 Write-Host ""

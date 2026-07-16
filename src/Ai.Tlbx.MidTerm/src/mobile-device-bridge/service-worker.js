@@ -63,7 +63,7 @@ chrome.action.onClicked.addListener(async (tab) => {
   } catch (error) {
     await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#b33a3a' });
     await chrome.action.setBadgeText({ tabId: tab.id, text: 'ERR' });
-    console.error('MidTerm bridge injection failed', error);
+    console.error('tlbx bridge injection failed', error);
   }
 });
 

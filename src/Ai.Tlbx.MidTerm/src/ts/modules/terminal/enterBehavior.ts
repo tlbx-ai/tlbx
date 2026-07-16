@@ -1,7 +1,7 @@
 /**
  * Terminal Enter Behavior
  *
- * Computes MidTerm-specific Enter key overrides before xterm.js applies its
+ * Computes tlbx-specific Enter key overrides before xterm.js applies its
  * default keyboard translation.
  */
 
@@ -110,7 +110,7 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 }
 
 /**
- * Returns the raw terminal bytes to send when MidTerm overrides Enter.
+ * Returns the raw terminal bytes to send when tlbx overrides Enter.
  *
  * Codex on Windows treats multiline paste bursts differently from isolated
  * Enter bytes. The space/Enter/Backspace sequence starts Codex's paste-burst

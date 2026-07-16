@@ -2,7 +2,7 @@ THIRD-PARTY NOTICES
 ===================
 
 The following attribution notices apply to third-party software redistributed
-with MidTerm.
+with tlbx.
 
 
 ================================================================================

@@ -271,17 +271,17 @@ public sealed class BrowserCommandService
 
         if (!status.HasUiClient)
         {
-            lines.Add("hint: No MidTerm browser UI is attached to /ws/state. The dev browser cannot work until the owning MidTerm browser tab is open.");
+            lines.Add("hint: No tlbx browser UI is attached to /ws/state. The dev browser cannot work until the owning tlbx browser tab is open.");
         }
 
         if (status.State == "waiting" && status.HasTarget)
         {
-            lines.Add("hint: The preview target is set, but no controllable browser has attached yet. Open the preview panel in MidTerm or wait for it to finish docking.");
+            lines.Add("hint: The preview target is set, but no controllable browser has attached yet. Open the preview panel in tlbx or wait for it to finish docking.");
         }
 
         if (status.Controllable && status.DefaultClient?.IsVisible == false)
         {
-            lines.Add("hint: The selected preview bridge is controllable, but it is attached from a hidden frame. Re-run mt_open so MidTerm docks and refreshes the visible dev browser frame.");
+            lines.Add("hint: The selected preview bridge is controllable, but it is attached from a hidden frame. Re-run mt_open so tlbx docks and refreshes the visible dev browser frame.");
         }
 
         if (status.State == "waiting" && !string.IsNullOrWhiteSpace(status.OwnerBrowserId) && !status.OwnerConnected)
@@ -296,7 +296,7 @@ public sealed class BrowserCommandService
 
         if (status.State == "ambiguous")
         {
-            lines.Add("hint: Narrow the scope with --session, --preview, or --preview-id so MidTerm can pick a single browser preview.");
+            lines.Add("hint: Narrow the scope with --session, --preview, or --preview-id so tlbx can pick a single browser preview.");
         }
 
         return string.Join('\n', lines) + "\n";
@@ -713,12 +713,12 @@ public sealed class BrowserCommandService
 
         if (hasTarget)
         {
-            return $"Target is configured, but no MidTerm browser UI is currently attached to /ws/state, so the dev browser cannot work yet. {reason}";
+            return $"Target is configured, but no tlbx browser UI is currently attached to /ws/state, so the dev browser cannot work yet. {reason}";
         }
 
         if (hasUiClient)
         {
-            return $"A MidTerm UI is connected, but no matching browser preview is attached. {reason}";
+            return $"A tlbx UI is connected, but no matching browser preview is attached. {reason}";
         }
 
         return reason;
@@ -741,7 +741,7 @@ public sealed class BrowserCommandService
             return $"No browser preview connected for session '{sessionId}'.";
         }
 
-        return "Open the web preview panel in a live MidTerm browser tab to enable browser commands.";
+        return "Open the web preview panel in a live tlbx browser tab to enable browser commands.";
     }
 
     private static string BuildAmbiguousStatusMessage(string? sessionId, string? previewName, string? previewId)
@@ -761,7 +761,7 @@ public sealed class BrowserCommandService
             return $"Multiple browser clients are attached for session '{sessionId}'.";
         }
 
-        return "Multiple browser previews are connected. Narrow the scope so MidTerm can select one deterministically.";
+        return "Multiple browser previews are connected. Narrow the scope so tlbx can select one deterministically.";
     }
 
     private static string BuildOwnerUnavailableStatusMessage(
@@ -849,7 +849,7 @@ public sealed class BrowserCommandService
     {
         if (!hasUiClient)
         {
-            return "Open or reload the owning MidTerm browser tab so /ws/state can receive browser UI instructions.";
+            return "Open or reload the owning tlbx browser tab so /ws/state can receive browser UI instructions.";
         }
 
         if (!hasTarget)
@@ -859,7 +859,7 @@ public sealed class BrowserCommandService
 
         if (!string.IsNullOrWhiteSpace(ownerBrowserId) && !ownerConnected)
         {
-            return "Run mt_claim_preview to explicitly assign this preview to the connected MidTerm browser, then retry mt_open or mt_reload.";
+            return "Run mt_claim_preview to explicitly assign this preview to the connected tlbx browser, then retry mt_open or mt_reload.";
         }
 
         if (ambiguous)
@@ -869,7 +869,7 @@ public sealed class BrowserCommandService
 
         if (!connected)
         {
-            return "The target is configured but the iframe has not attached to /ws/browser; retry mt_open, mt_reload, or inspect the MidTerm browser console.";
+            return "The target is configured but the iframe has not attached to /ws/browser; retry mt_open, mt_reload, or inspect the tlbx browser console.";
         }
 
         return null;
@@ -907,7 +907,7 @@ public sealed class BrowserCommandService
         var clients = _clients.Values.ToArray();
         if (clients.Length == 0)
         {
-            error = "No browser connected. The dev browser cannot work until a live MidTerm browser tab is attached to /ws/state.";
+            error = "No browser connected. The dev browser cannot work until a live tlbx browser tab is attached to /ws/state.";
             return false;
         }
 

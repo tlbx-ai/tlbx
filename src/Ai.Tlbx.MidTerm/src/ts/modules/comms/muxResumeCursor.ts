@@ -12,7 +12,7 @@ export function getResumeSequence(snapshot: ResumeCursorSnapshot | undefined): b
 
   // receivedSeq means the bytes have been handed to xterm. RecoveryBegin places
   // a write barrier behind them, so resuming here avoids replaying xterm's own
-  // pending WriteBuffer while still excluding frames in MidTerm's decode queue.
+  // pending WriteBuffer while still excluding frames in tlbx's decode queue.
   return snapshot.receivedSeq !== 0n ? snapshot.receivedSeq : snapshot.renderedSeq;
 }
 

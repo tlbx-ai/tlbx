@@ -1,6 +1,6 @@
 #!/bin/bash
 # MidTerm macOS/Linux Uninstaller
-# Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/uninstall.sh | bash
+# Usage: curl -fsSL https://get.tlbx.ai/uninstall.sh | bash
 
 set -u
 
@@ -35,7 +35,7 @@ bootstrap_download() {
 SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH" == "/usr/bin/bash" ]]; then
     TEMP_SCRIPT=$(mktemp)
-    bootstrap_download "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/uninstall.sh" "$TEMP_SCRIPT"
+    bootstrap_download "https://get.tlbx.ai/uninstall.sh" "$TEMP_SCRIPT"
     chmod +x "$TEMP_SCRIPT"
     exec "$TEMP_SCRIPT" "$@"
 fi
@@ -75,7 +75,7 @@ print_midterm_banner() {
     echo -e "         ${WHITE}//  ( ${CYAN}·${WHITE} )  \\\\      | |\\/| | |/ _\` | | |/ _ \\\\ '__| '_ \` _ \\\\${NC}"
     echo -e "        ${WHITE}//           \\\\     | |  | | | (_| | | |  __/ |  | | | | | |${NC}"
     echo -e "       ${WHITE}//             \\\\    |_|  |_|_|\\__,_| |_|\\___|_|  |_| |_| |_|${NC}"
-    echo -e "      ${WHITE}//               \\\\   ${GREEN}by J. Schmidt - https://github.com/tlbx-ai/MidTerm${NC}"
+    echo -e "      ${WHITE}//               \\\\   ${GREEN}tlbx.ai - https://github.com/tlbx-ai/tlbx${NC}"
     echo ""
 }
 

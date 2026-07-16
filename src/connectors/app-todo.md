@@ -5,7 +5,7 @@
 - [ ] **1. Create app** in [Google Play Console](https://play.google.com/console) → package name `ai.tlbx.midterm`
 - [ ] **2. Generate upload keystore** locally:
   ```
-  keytool -genkeypair -v -keystore upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -dname "CN=MidTerm, O=tlbx.ai, L=Vienna, C=AT"
+  keytool -genkeypair -v -keystore upload.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload -dname "CN=tlbx, O=tlbx.ai, L=Vienna, C=AT"
   ```
 - [ ] **3. Create service account** in [Google Cloud Console](https://console.cloud.google.com) → grant "Release manager" in Play Console → download JSON key
 - [ ] **4. Add GitHub secrets:**

@@ -1022,7 +1022,7 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
         targetContext: buildVoiceTargetContext(),
         responseText: 'Session creation failed.',
         nextAction:
-          'Inspect the MidTerm session list or retry with a specific shell and working directory.',
+          'Inspect the tlbx session list or retry with a specific shell and working directory.',
       };
     }
 
@@ -1043,13 +1043,13 @@ async function handleCreateSession(args: CreateSessionArgs): Promise<unknown> {
       targetContext: buildVoiceTargetContext(),
       responseText: `Session creation failed: ${message}.`,
       nextAction:
-        'Ask for a different shell or working directory, or inspect the MidTerm session list.',
+        'Ask for a different shell or working directory, or inspect the tlbx session list.',
     };
   }
 }
 
 /**
- * Handle select_session tool - bring a session into the active MidTerm surface.
+ * Handle select_session tool - bring a session into the active tlbx surface.
  */
 function handleSelectSession(args: SelectSessionArgs): unknown {
   const session = getSession(args.sessionId);
@@ -1153,7 +1153,7 @@ async function handleAgentTurn(args: AgentTurnArgs): Promise<unknown> {
       targetContext: buildVoiceTargetContext({ action: 'agent_turn' }),
       requestedSessionId,
       resolvedTargetSource: resolvedTarget.source,
-      responseText: 'No focused MidTerm session is available for the agent turn.',
+      responseText: 'No focused tlbx session is available for the agent turn.',
       nextAction:
         'Call session_overview or focus_context status, then select a session or provide the exact sessionId before retrying agent_turn.',
     };
@@ -1677,7 +1677,7 @@ function buildContinuityResponseText(sessions: ConversationContinuityResult['ses
     return complete.summary;
   }
 
-  return sessions[0]?.summary ?? 'No matching MidTerm session is available.';
+  return sessions[0]?.summary ?? 'No matching tlbx session is available.';
 }
 
 /**
@@ -2004,7 +2004,7 @@ function buildCampaignResponseText(
   sessions: CampaignStatusResult['sessions'],
 ): string {
   const target = sessions.find((session) => session.sessionId === chooseCampaignFocus(sessions));
-  if (!target) return 'No MidTerm sessions are available.';
+  if (!target) return 'No tlbx sessions are available.';
 
   if (campaignState === 'needs_user') {
     return `${target.title} needs input: ${target.attentionReason || target.summary}`;
@@ -2031,7 +2031,7 @@ function buildCampaignNextAction(
   campaignState: CampaignStatusResult['campaignState'],
   recommendedFocusSessionId: string | null,
 ): string {
-  if (!recommendedFocusSessionId) return 'Create or select a MidTerm session before acting.';
+  if (!recommendedFocusSessionId) return 'Create or select a tlbx session before acting.';
   if (campaignState === 'needs_user') {
     return `Select ${recommendedFocusSessionId}, tell the user what input is needed, then stop.`;
   }
@@ -2592,7 +2592,7 @@ async function handleDevBrowserScreenshot(args: DevBrowserScreenshotArgs): Promi
       }),
       target,
       status,
-      error: 'MidTerm did not receive screenshot image data from the Dev Browser',
+      error: 'tlbx did not receive screenshot image data from the Dev Browser',
     };
   }
 
@@ -2764,7 +2764,7 @@ function requireDockPosition(position: DockPosition | null | undefined): DockPos
 }
 
 /**
- * Handle layout_control tool - inspect and arrange MidTerm's multi-session layout.
+ * Handle layout_control tool - inspect and arrange tlbx's multi-session layout.
  */
 function handleLayoutControl(args: LayoutControlArgs): unknown {
   const action = args.action.toLowerCase();
@@ -2858,7 +2858,7 @@ function buildAppShellResponse(
 }
 
 /**
- * Handle app_shell tool - inspect or navigate MidTerm's global app chrome.
+ * Handle app_shell tool - inspect or navigate tlbx's global app chrome.
  */
 function handleAppShell(args: AppShellArgs): AppShellResult {
   const action = normalizeAppShellAction(args.action);
@@ -2887,7 +2887,7 @@ function handleAppShell(args: AppShellArgs): AppShellResult {
       action,
       requestedSettingsTab,
       'Closed Settings.',
-      'Continue with the active MidTerm session or call session_overview before the next session-scoped action.',
+      'Continue with the active tlbx session or call session_overview before the next session-scoped action.',
     );
   }
 

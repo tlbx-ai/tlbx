@@ -244,8 +244,8 @@ function renderReinstallHint(platform: string): void {
 
   const isWindows = /win/i.test(platform);
   const cmd = isWindows
-    ? 'irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex'
-    : 'curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash';
+    ? 'irm https://get.tlbx.ai/install.ps1 | iex'
+    : 'curl -fsSL https://get.tlbx.ai/install.sh | bash';
 
   container.classList.remove('hidden');
   container.innerHTML =

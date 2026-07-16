@@ -50,7 +50,7 @@ Created `Ai.Tlbx.MidTerm.Voice` project:
 
 ### 🔲 Phase 2: Browser Audio Code (PENDING)
 
-Need to add audio capture/playback to MidTerm frontend.
+Need to add audio capture/playback to tlbx frontend.
 
 **Option A (Quick):** Copy existing JS from VoiceAssistant.Hardware.Web
 ```
@@ -62,9 +62,9 @@ VoiceAssistant/Hardware/Ai.Tlbx.VoiceAssistant.Hardware.Web/wwwroot/js/
 **Option B (Better, Future):** Create npm package from TypeScript source
 - Port JS to TypeScript in VoiceAssistant repo
 - Publish as `@ai-tlbx/voice-audio` npm package
-- Both MidTerm and Hardware.Web consume from single source
+- Both tlbx and Hardware.Web consume from single source
 
-**MidTerm Frontend Tasks:**
+**tlbx Frontend Tasks:**
 | File | Description | Status |
 |------|-------------|--------|
 | `src/static/js/webAudioAccess.js` | Copy from VoiceAssistant | 🔲 |
@@ -80,7 +80,7 @@ Connect voice AI to terminal operations:
 | Task | Description | Status |
 |------|-------------|--------|
 | Terminal tools | Add tools for VoiceAssistant to execute terminal commands | 🔲 |
-| Session bridge | Connect VoiceAssistant to MidTerm session API | 🔲 |
+| Session bridge | Connect VoiceAssistant to tlbx session API | 🔲 |
 | Context awareness | Voice AI understands current terminal state | 🔲 |
 
 ### 🔲 Phase 4: Single Source Refactor (FUTURE)
@@ -140,7 +140,7 @@ dotnet run
 
 ## Testing
 
-1. Run MidTerm on localhost:2000
+1. Run tlbx on localhost:2000
 2. Run MidTerm.Voice on localhost:3000
 3. Connect browser WebSocket to ws://localhost:3000/voice
 4. Send `{ "type": "start" }` to begin session

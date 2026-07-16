@@ -1,6 +1,6 @@
 # File Radar Design
 
-This document describes how MidTerm's File Radar detects, validates, and opens file paths from terminal output.
+This document describes how tlbx's File Radar detects, validates, and opens file paths from terminal output.
 
 ## Goals
 

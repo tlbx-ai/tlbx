@@ -52,7 +52,7 @@ export async function downloadActiveTerminalBufferDump(): Promise<string> {
 
 export function buildTerminalBufferDumpText(options: DumpBuildOptions): string {
   const lines: string[] = [
-    'MidTerm terminal buffer diagnostic dump',
+    'tlbx terminal buffer diagnostic dump',
     `Generated: ${options.generatedAt.toISOString()}`,
     `Session: ${options.sessionId}`,
     VISIBLE_ESCAPE_NOTE,

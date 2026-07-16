@@ -33,7 +33,7 @@ async function openShareEmail(): Promise<void> {
     }
 
     const info = data;
-    const subject = `MidTerm Terminal Access - ${location.hostname}`;
+    const subject = `tlbx access — ${location.hostname}`;
     const body = generateEmailBody(info);
     const mailtoUrl = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
@@ -101,8 +101,8 @@ function generateEmailBody(info: SharePacketInfo): string {
 
   const thumbprint = info.certificate.fingerprint;
 
-  return `MidTerm Terminal Access
-=======================
+  return `tlbx access
+===========
 
 SECURITY: VERIFY FINGERPRINT FIRST
 ----------------------------------
@@ -127,6 +127,6 @@ TIP: Send this email to yourself, your work email, and family members
 who may need terminal access from their phones or tablets.
 
 ---
-MidTerm - Web Terminal Multiplexer
+tlbx — browser control station
 `;
 }

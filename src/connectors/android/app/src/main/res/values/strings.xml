@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">MidTerm</string>
-    <string name="launcher_title">MidTerm</string>
-    <string name="launcher_body">A native shell for your MidTerm workspace. Connect once, then use Hub inside MidTerm to move between machines and workspaces.</string>
-    <string name="address_label">MidTerm address</string>
+    <string name="app_name">tlbx</string>
+    <string name="launcher_title">tlbx</string>
+    <string name="launcher_body">A native shell for your tlbx workspace. Connect once, then use Hub inside tlbx to move between machines and workspaces.</string>
+    <string name="address_label">tlbx address</string>
     <string name="hint_url">https://hostname:2000</string>
     <string name="address_hint">Paste the full URL or just host:port. HTTPS is added automatically when you omit the scheme.</string>
-    <string name="open_midterm">Open MidTerm</string>
-    <string name="hub_hint">Need a different target later? Open MidTerm Hub after you connect instead of keeping a list of saved servers here.</string>
+    <string name="open_midterm">Open tlbx</string>
+    <string name="hub_hint">Need a different target later? Open tlbx Hub after you connect instead of keeping a list of saved servers here.</string>
     <string name="persistence_hint">This address stays on the device so the same start screen is ready next time.</string>
-    <string name="address_required">Enter a MidTerm address</string>
+    <string name="address_required">Enter a tlbx address</string>
 </resources>

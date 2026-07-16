@@ -2,7 +2,7 @@ THIRD-PARTY SOFTWARE LICENSES
 =============================
 
 This file contains the licenses for third-party software redistributed with
-MidTerm. Apache-licensed components also ship their full license text in
+tlbx. Apache-licensed components also ship their full license text in
 APACHE-2.0.txt and notices in THIRD-PARTY-NOTICES.txt.
 
 

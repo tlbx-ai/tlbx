@@ -1,6 +1,6 @@
-# MidTerm Windows Installer
-# Usage: irm https://tlbx-ai.github.io/MidTerm/install.ps1 | iex
-# Dev:   & ([scriptblock]::Create((irm https://tlbx-ai.github.io/MidTerm/install.ps1))) -Dev
+# tlbx Windows Installer (formerly MidTerm)
+# Usage: irm https://get.tlbx.ai/install.ps1 | iex
+# Dev:   & ([scriptblock]::Create((irm https://get.tlbx.ai/install.ps1))) -Dev
 #
 # Design goals:
 # - install only official MidTerm release artifacts into known locations
@@ -194,6 +194,19 @@ $AssetPattern = "mt-win-x64.zip"
 # Certificate subject CN - must match CertificateGenerator.CertificateSubject in C#
 $CertificateSubject = "CN=ai.tlbx.midterm"
 
+try
+{
+    $repositoryCoordinate = (Invoke-CompatibleRestMethod -Uri "https://get.tlbx.ai/v1/repository" -TimeoutSec 3).Trim()
+    if ($repositoryCoordinate -in @("tlbx-ai/MidTerm", "tlbx-ai/tlbx"))
+    {
+        $RepoOwner, $RepoName = $repositoryCoordinate.Split("/", 2)
+    }
+}
+catch
+{
+    # Migration discovery is optional. Existing installs remain valid through the legacy coordinate.
+}
+
 # ============================================================================
 # PATH CONSTANTS - SYNC: These paths MUST match:
 #   - SettingsService.cs (GetSettingsPath method)
@@ -225,7 +238,7 @@ function Write-Banner
     Write-Host "        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |" -ForegroundColor White
     Write-Host "       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|" -ForegroundColor White
     Write-Host "      //               \\   " -NoNewline -ForegroundColor White
-    Write-Host "by J. Schmidt - https://github.com/tlbx-ai/MidTerm" -ForegroundColor Green
+    Write-Host "tlbx.ai - https://github.com/tlbx-ai/tlbx" -ForegroundColor Green
     Write-Host ""
 }
 
@@ -317,7 +330,7 @@ function Get-CurrentInstallerScriptContent
     }
 
     $branch = if ($Dev) { "dev" } else { "main" }
-    $scriptUrl = "https://raw.githubusercontent.com/tlbx-ai/MidTerm/$branch/install.ps1"
+    $scriptUrl = "https://get.tlbx.ai/install.ps1"
     return Invoke-CompatibleRestMethod -Uri $scriptUrl -Headers @{ "User-Agent" = "MidTerm-Installer" }
 }
 
@@ -1811,7 +1824,7 @@ function Create-UninstallScript
 `$ErrorActionPreference = "Stop"
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-`$scriptUrl = 'https://tlbx-ai.github.io/MidTerm/uninstall.ps1'
+`$scriptUrl = 'https://get.tlbx.ai/uninstall.ps1'
 if (`$PSVersionTable.PSVersion.Major -lt 6)
 {
     `$scriptContent = Invoke-RestMethod -Uri `$scriptUrl -UseBasicParsing

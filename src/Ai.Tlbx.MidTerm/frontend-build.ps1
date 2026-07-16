@@ -361,7 +361,7 @@ if ($Publish) {
 # PHASE 5: Process text assets
 # ===========================================
 # Text files to process (compress for publish, copy for debug)
-$textExtensions = @('*.html', '*.css', '*.js', '*.txt', '*.json', '*.webmanifest')
+$textExtensions = @('*.html', '*.css', '*.js', '*.txt', '*.json', '*.webmanifest', '*.svg')
 $totalSaved = 0
 
 function Process-TextFile {
@@ -511,6 +511,11 @@ if (Test-Path $imageSource) {
     $imageDir = Join-Path $WwwRoot "img"
     if (-not (Test-Path $imageDir)) {
         New-Item -ItemType Directory -Path $imageDir -Force | Out-Null
+    }
+    else {
+        # Keep generated public SVGs as an exact mirror of src/static/img so
+        # retired brand assets cannot survive indefinitely in wwwroot.
+        Get-ChildItem -Path $imageDir -Filter '*.svg' -File | Remove-Item -Force
     }
     Get-ChildItem -Path "$imageSource\*.svg" | ForEach-Object {
         $dstPath = Join-Path $imageDir $_.Name

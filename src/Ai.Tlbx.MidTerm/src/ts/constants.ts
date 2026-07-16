@@ -400,7 +400,7 @@ export const ICONS = {
   history: '\ue967', // history (clock with arrow)
   undock: '\ue920', // close_fullscreen
   fullscreen: '\ue90c', // expand (open fullscreen)
-  inject: '\ue997', // magic-wand (tell AI about MidTerm)
+  inject: '\ue997', // magic-wand (tell AI about tlbx)
   notes: '\ue922', // pen-tool
 } as const;
 

@@ -246,9 +246,7 @@ public static class ServerSetup
             {
                 context.Request.Path = "/index.html";
             }
-            else if (path == "/apple-touch-icon.png" ||
-                     path == "/favicon-16x16.png" ||
-                     path == "/favicon-32x32.png")
+            else if (path == "/apple-touch-icon.png")
             {
                 context.Request.Path = "/android-chrome-192x192.png";
             }
@@ -431,7 +429,7 @@ public static class ServerSetup
                "style-src 'self' 'unsafe-inline'; " +
                "img-src 'self' data:; " +
                "font-src 'self' data:; " +
-               "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
+               "connect-src 'self' ws: wss: https://api.github.com https://api.tlbx.ai https://midterm.tlbx.ai; " +
                $"frame-src {string.Join(' ', frameSources)}; " +
                "frame-ancestors 'self'";
     }

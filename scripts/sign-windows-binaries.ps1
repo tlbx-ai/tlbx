@@ -147,7 +147,7 @@ function Send-Notification
 <toast>
   <visual>
     <binding template="ToastGeneric">
-      <text>MidTerm Release</text>
+      <text>tlbx Release</text>
       <text>Windows code signing required — authenticate in SimplySign Desktop</text>
     </binding>
   </visual>
@@ -159,7 +159,7 @@ function Send-Notification
         $doc = [Windows.Data.Xml.Dom.XmlDocument]::new()
         $doc.LoadXml($xml)
         $toast = [Windows.UI.Notifications.ToastNotification]::new($doc)
-        $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("MidTerm.Release")
+        $notifier = [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("tlbx.Release")
         $notifier.Show($toast)
     }
     catch

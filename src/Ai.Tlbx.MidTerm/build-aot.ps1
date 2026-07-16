@@ -17,7 +17,7 @@ try
 {
     $ciFlag = if ($Reproducible) { '/p:ContinuousIntegrationBuild=true' } else { '' }
 
-    Write-Host "Building MidTerm AOT for Windows x64..."
+    Write-Host "Building tlbx AOT for Windows x64..."
     if ($Reproducible) { Write-Host "  (Reproducible build mode enabled)" }
 
     dotnet publish -c Release -r win-x64 /p:IsPublishing=true $ciFlag

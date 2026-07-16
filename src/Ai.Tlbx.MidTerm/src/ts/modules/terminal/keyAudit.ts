@@ -1,7 +1,7 @@
 /**
  * Terminal key auditing helpers.
  *
- * This adapts the relevant xterm keyboard translation logic so MidTerm can
+ * This adapts the relevant xterm keyboard translation logic so tlbx can
  * intercept keyboard input before xterm sees it and still forward the expected
  * bytes to the PTY.
  */

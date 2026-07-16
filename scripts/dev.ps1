@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Runs a local source MidTerm instance beside the installed service.
+    Runs a local source tlbx instance beside the installed service.
 
 .DESCRIPTION
-    This is the default MidTerm development loop:
-    - Keep the installed MidTerm service on https://localhost:2000 alive for JPA and stable supervision
+    This is the default tlbx development loop:
+    - Keep the installed tlbx service on https://localhost:2000 alive for JPA and stable supervision
     - Run a separate source instance on another port (default: 2100)
     - Reuse the installed release mthost for PTY sessions
     - Rebuild and use the local Debug mtagenthost for AppServerControl/runtime work
@@ -58,11 +58,11 @@ function Test-StableSupervisor {
             -TimeoutSec 5
     }
     catch {
-        throw "The stable MidTerm supervisor on https://localhost:2000 is not healthy. Refusing to start a source instance while supervision is unavailable."
+        throw "The stable tlbx supervisor on https://localhost:2000 is not healthy. Refusing to start a source instance while supervision is unavailable."
     }
 
     if ([string]::IsNullOrWhiteSpace([string]$version)) {
-        throw "The stable MidTerm supervisor returned no version. Refusing to start the source instance."
+        throw "The stable tlbx supervisor returned no version. Refusing to start the source instance."
     }
 
     return [string]$version
@@ -157,7 +157,7 @@ function Get-InstalledMidTermDirectory {
         return $fallback
     }
 
-    throw "Could not resolve the installed MidTerm directory. Pass -TtyHostPath explicitly."
+    throw "Could not resolve the installed tlbx directory. Pass -TtyHostPath explicitly."
 }
 
 function Resolve-TtyHostPath {
@@ -358,7 +358,7 @@ function Stop-StaleSourceServerProcesses {
         }
 
     foreach ($staleProcess in $staleProcesses) {
-        Stop-ProcessTree -ProcessId ([int]$staleProcess.ProcessId) -Reason "stale local source MidTerm on port $Port"
+        Stop-ProcessTree -ProcessId ([int]$staleProcess.ProcessId) -Reason "stale local source tlbx on port $Port"
     }
 }
 
@@ -403,10 +403,10 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     $process.EnableRaisingEvents = $true
 
     if (-not $process.Start()) {
-        throw "Failed to start the local source MidTerm process."
+        throw "Failed to start the local source tlbx process."
     }
 
-    Write-Host "  Local source MidTerm running on https://$BindAddress`:$Port (PID: $($process.Id))" -ForegroundColor DarkGray
+    Write-Host "  Local source tlbx running on https://$BindAddress`:$Port (PID: $($process.Id))" -ForegroundColor DarkGray
     return @{
         Process = $process
     }
@@ -429,7 +429,7 @@ function Invoke-DevLoopCleanup {
 }
 
 if ($ReservedPorts -contains $Port) {
-    throw "Port $Port conflicts with the installed MidTerm service or its preview origin. Use 2100 or another non-reserved port."
+    throw "Port $Port conflicts with the installed tlbx service or its preview origin. Use 2100 or another non-reserved port."
 }
 
 New-Item -ItemType Directory -Path $SettingsDir -Force | Out-Null
@@ -451,7 +451,7 @@ $serverState = $null
 $esbuildProcess = $null
 
 Write-Host ""
-Write-Host "  MidTerm Local Source Dev" -ForegroundColor Cyan
+Write-Host "  tlbx Local Source Dev" -ForegroundColor Cyan
 Write-Host "  ───────────────────────────────────────────" -ForegroundColor DarkGray
 Write-Host "  Stable service : https://localhost:2000 ($stableVersion, kept alive)" -ForegroundColor DarkGray
 Write-Host "  Source server  : https://$BindAddress`:$Port" -ForegroundColor DarkGray
@@ -463,24 +463,24 @@ Write-Host "  mthost         : $resolvedTtyHostPath" -ForegroundColor DarkGray
 Write-Host "  mtagenthost    : local Debug build" -ForegroundColor DarkGray
 Write-Host "  TS changes     : esbuild watch rebuilds" -ForegroundColor DarkGray
 Write-Host "  CSS changes    : refresh browser" -ForegroundColor DarkGray
-Write-Host "  C# changes     : script rebuilds and restarts local source MidTerm" -ForegroundColor DarkGray
+Write-Host "  C# changes     : script rebuilds and restarts local source tlbx" -ForegroundColor DarkGray
 Write-Host ""
 
 Invoke-FrontendBuild
 $esbuildProcess = Start-EsbuildWatch
 
-Write-Host "[3/4] Starting local source MidTerm..." -ForegroundColor Cyan
+Write-Host "[3/4] Starting local source tlbx..." -ForegroundColor Cyan
 
 try {
     $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
 
     Write-Host ""
-    Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the MidTerm dev browser." -ForegroundColor Green
+    Write-Host "[4/4] Dev loop active. Open https://$BindAddress`:$Port in the tlbx dev browser." -ForegroundColor Green
     Write-Host ""
 
     while ($true) {
         if ($serverState.Process.HasExited) {
-            Write-Host "  Local source MidTerm exited. Restarting..." -ForegroundColor Yellow
+            Write-Host "  Local source tlbx exited. Restarting..." -ForegroundColor Yellow
             Start-Sleep -Seconds 1
             $serverState = Start-DevServer -resolvedTtyHostPath $resolvedTtyHostPath
             continue

@@ -1,1 +1,1 @@
-Read and follow Agents.md as if it was Claude.md
+Read and follow `AGENTS.md` as if it were this file.

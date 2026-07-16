@@ -1,7 +1,7 @@
 /**
  * Voice Module
  *
- * Handles WebSocket connection to MidTerm.Voice server
+ * Handles WebSocket connection to tlbx.Voice server
  * and bridges audio capture/playback.
  */
 
@@ -21,7 +21,7 @@ import type { VoiceHealthResponse, VoiceProvider } from '../types';
 import { showAlert } from '../utils/dialog';
 
 const log = createLogger('voice');
-const VOICE_SERVER_URL = 'https://midterm.tlbx.ai';
+const VOICE_SERVER_URL = 'https://api.tlbx.ai';
 
 let ws: WebSocket | null = null;
 let isSessionActive = false;
@@ -36,7 +36,7 @@ let selectedVoice = '';
 let selectedSpeed = 1.0;
 
 /**
- * Check if MidTerm.Voice server is available and fetch providers
+ * Check if tlbx.Voice server is available and fetch providers
  */
 export async function checkVoiceServerHealth(): Promise<boolean> {
   try {
@@ -242,7 +242,7 @@ async function requestMicrophonePermission(): Promise<boolean> {
 }
 
 /**
- * Start a voice session - connect to MidTerm.Voice and begin recording.
+ * Start a voice session - connect to tlbx.Voice and begin recording.
  * Single entry point: requests mic permission if needed, then starts session.
  */
 export async function startVoiceSession(): Promise<void> {
@@ -260,7 +260,7 @@ export async function startVoiceSession(): Promise<void> {
   }
 
   try {
-    let wsUrl = `wss://midterm.tlbx.ai/voice`;
+    let wsUrl = `wss://api.tlbx.ai/voice`;
 
     // Append password if configured
     const password = $voiceServerPassword.get();

@@ -19,7 +19,7 @@ let unsubscribeServerHostname: (() => void) | null = null;
  * Get the current tab title based on mode and active session
  */
 function getTabTitle(mode: TabTitleMode, session: Session | null): string {
-  const base = 'MidTerm';
+  const base = 'tlbx';
 
   switch (mode) {
     case 'static':
@@ -27,17 +27,17 @@ function getTabTitle(mode: TabTitleMode, session: Session | null): string {
 
     case 'hostname': {
       const hostname = $serverHostname.get();
-      return hostname ? `${base} - ${hostname}` : base;
+      return hostname ? `${base} — ${hostname}` : base;
     }
 
     case 'sessionName':
-      return session?.name ? `${base} - ${session.name}` : base;
+      return session?.name ? `${base} — ${session.name}` : base;
 
     case 'terminalTitle':
-      return session?.terminalTitle ? `${base} - ${session.terminalTitle}` : base;
+      return session?.terminalTitle ? `${base} — ${session.terminalTitle}` : base;
 
     case 'foregroundProcess':
-      return session?.foregroundName ? `${base} - ${session.foregroundName}` : base;
+      return session?.foregroundName ? `${base} — ${session.foregroundName}` : base;
 
     default:
       return base;

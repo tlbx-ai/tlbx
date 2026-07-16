@@ -286,7 +286,7 @@ public sealed class SpaceService
         var repoInfo = await GitCommandRunner.GetRepositoryInfoAsync(record.RootPath).ConfigureAwait(false);
         if (repoInfo is null)
         {
-            throw new InvalidOperationException("Git repository initialization completed, but MidTerm could not resolve the repository metadata.");
+            throw new InvalidOperationException("Git repository initialization completed, but tlbx could not resolve the repository metadata.");
         }
 
         lock (_lock)

@@ -14,9 +14,9 @@ import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 const log = createLogger('updating');
 let releaseBackButtonLayer: (() => void) | null = null;
 
-const GITHUB_RELEASES_BASE = 'https://api.github.com/repos/tlbx-ai/MidTerm/releases';
+const GITHUB_RELEASES_BASE = 'https://api.github.com/repos/tlbx-ai/tlbx/releases';
 const PER_PAGE = 30;
-const GITHUB_RELEASES_PAGE = 'https://github.com/tlbx-ai/MidTerm/releases';
+const GITHUB_RELEASES_PAGE = 'https://github.com/tlbx-ai/tlbx/releases';
 
 interface GitHubRelease {
   tag_name?: string;

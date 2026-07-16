@@ -158,6 +158,39 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
+    public void GetReleaseManifestUrls_RenamedRepositoryRetainsLegacyFallbacks()
+    {
+        var urls = UpdateService.GetReleaseManifestUrls("v9.20.0-dev", "tlbx-ai", "tlbx");
+
+        Assert.Equal(
+            [
+                "https://raw.githubusercontent.com/tlbx-ai/tlbx/v9.20.0-dev/src/version.json",
+                "https://raw.githubusercontent.com/tlbx-ai/tlbx/v9.20.0-dev/version.json",
+                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v9.20.0-dev/src/version.json",
+                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v9.20.0-dev/version.json"
+            ],
+            urls);
+    }
+
+    [Theory]
+    [InlineData("tlbx-ai/MidTerm", "MidTerm")]
+    [InlineData("TLBX-AI/TLBX", "tlbx")]
+    public void RepositoryCoordinate_OnlyAcceptsSupportedMigrationCoordinates(string value, string expectedName)
+    {
+        var parsed = RepositoryCoordinate.TryParseAllowed(value, out var repository);
+
+        Assert.True(parsed);
+        Assert.Equal("tlbx-ai", repository.Owner, ignoreCase: true);
+        Assert.Equal(expectedName, repository.Name, ignoreCase: true);
+    }
+
+    [Fact]
+    public void RepositoryCoordinate_RejectsUntrustedRepository()
+    {
+        Assert.False(RepositoryCoordinate.TryParseAllowed("attacker/tlbx", out _));
+    }
+
+    [Fact]
     public void TryReadLocalUpdateInfo_WebOnlyManifest_ReturnsWebOnly()
     {
         var localReleaseDir = Path.Combine(_tempDir, "localrelease");

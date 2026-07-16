@@ -70,7 +70,7 @@ public sealed partial class TmuxFormatter
             "client_termfeatures" => "RGB,clipboard,extkeys,focus,title",
 
             "session_id" => "$0",
-            "session_name" => "MidTerm",
+            "session_name" => "tlbx",
             "session_windows" => "1",
             "session_attached" => "1",
             "session_group" => "",
@@ -78,7 +78,7 @@ public sealed partial class TmuxFormatter
 
             "window_id" => "@0",
             "window_index" => "0",
-            "window_name" => "MidTerm",
+            "window_name" => "tlbx",
             "window_width" => session.Cols.ToString(CultureInfo.InvariantCulture),
             "window_height" => session.Rows.ToString(CultureInfo.InvariantCulture),
             "window_panes" => totalPanes.ToString(CultureInfo.InvariantCulture),
@@ -113,7 +113,7 @@ public sealed partial class TmuxFormatter
         var sessions = _sessionManager.GetSessionList().Sessions;
         var paneCount = sessions.Count;
         var created = sessions.Count > 0 ? sessions[0].CreatedAt : DateTime.UtcNow;
-        return string.Create(CultureInfo.InvariantCulture, $"MidTerm: {paneCount} windows (created {created:ddd MMM dd HH:mm:ss yyyy}) (attached)");
+        return string.Create(CultureInfo.InvariantCulture, $"tlbx: {paneCount} windows (created {created:ddd MMM dd HH:mm:ss yyyy}) (attached)");
     }
 
     /// <summary>
@@ -123,6 +123,6 @@ public sealed partial class TmuxFormatter
     {
         var sessions = _sessionManager.GetSessionList().Sessions;
         var paneCount = sessions.Count;
-        return string.Create(CultureInfo.InvariantCulture, $"0: MidTerm* ({paneCount} panes) [active]");
+        return string.Create(CultureInfo.InvariantCulture, $"0: tlbx* ({paneCount} panes) [active]");
     }
 }

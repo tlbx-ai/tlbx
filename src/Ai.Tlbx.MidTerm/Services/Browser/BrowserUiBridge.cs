@@ -133,7 +133,7 @@ public sealed class BrowserUiBridge
 
         if (target.MobileDevice is null)
         {
-            error = "The connected MidTerm browser UI does not support mobile device control. Reload it and retry.";
+            error = "The connected tlbx browser UI does not support mobile device control. Reload it and retry.";
             return false;
         }
 
@@ -153,7 +153,7 @@ public sealed class BrowserUiBridge
         error = "";
         if (_previewOwnerService is null)
         {
-            error = "Preview ownership is not available in this MidTerm instance.";
+            error = "Preview ownership is not available in this tlbx instance.";
             return false;
         }
 
@@ -168,7 +168,7 @@ public sealed class BrowserUiBridge
         {
             if (_listeners.Count == 0)
             {
-                error = "No MidTerm browser UI is connected. Open the owning MidTerm browser tab first; the preview target alone cannot drive /ws/state.";
+                error = "No tlbx browser UI is connected. Open the owning tlbx browser tab first; the preview target alone cannot drive /ws/state.";
                 return false;
             }
 
@@ -179,8 +179,8 @@ public sealed class BrowserUiBridge
         if (target is null || string.IsNullOrWhiteSpace(target.BrowserId))
         {
             error = listeners.Length > 1
-                ? "Multiple MidTerm browser UIs are connected, but none is the leading browser. Claim leading-browser ownership in the intended tab, then retry mt_claim_preview."
-                : "A MidTerm browser UI is connected, but it did not report a browser identity. Reload the MidTerm tab, then retry mt_claim_preview.";
+                ? "Multiple tlbx browser UIs are connected, but none is the leading browser. Claim leading-browser ownership in the intended tab, then retry mt_claim_preview."
+                : "A tlbx browser UI is connected, but it did not report a browser identity. Reload the tlbx tab, then retry mt_claim_preview.";
             return false;
         }
 
@@ -198,7 +198,7 @@ public sealed class BrowserUiBridge
         {
             if (_listeners.Count == 0)
             {
-                error = "No MidTerm browser UI is connected. Open the owning MidTerm browser tab first; the preview target alone cannot drive /ws/state.";
+                error = "No tlbx browser UI is connected. Open the owning tlbx browser tab first; the preview target alone cannot drive /ws/state.";
                 return false;
             }
 
@@ -218,8 +218,8 @@ public sealed class BrowserUiBridge
         if (target is null || string.IsNullOrWhiteSpace(target.BrowserId))
         {
             error = string.IsNullOrWhiteSpace(browserId)
-                ? "Multiple MidTerm browser UIs are connected. Pass --browser with the intended browser id to claim the leading browser deterministically."
-                : $"No connected MidTerm browser UI matches '{browserId}'.";
+                ? "Multiple tlbx browser UIs are connected. Pass --browser with the intended browser id to claim the leading browser deterministically."
+                : $"No connected tlbx browser UI matches '{browserId}'.";
             return false;
         }
 
@@ -239,7 +239,7 @@ public sealed class BrowserUiBridge
         {
             if (_listeners.Count == 0)
             {
-                error = "No MidTerm browser UI is connected. Open the owning MidTerm browser tab first; the preview target alone cannot drive /ws/state.";
+                error = "No tlbx browser UI is connected. Open the owning tlbx browser tab first; the preview target alone cannot drive /ws/state.";
                 target = null!;
                 return false;
             }
@@ -267,7 +267,7 @@ public sealed class BrowserUiBridge
                 return true;
             }
 
-            error = $"Preview '{previewName ?? WebPreview.WebPreviewService.DefaultPreviewName}' in session '{sessionId ?? "(any)"}' is owned by browser '{currentOwnerBrowserId}', but that MidTerm browser is not currently attached to /ws/state and no connected leading browser can reclaim it deterministically.";
+            error = $"Preview '{previewName ?? WebPreview.WebPreviewService.DefaultPreviewName}' in session '{sessionId ?? "(any)"}' is owned by browser '{currentOwnerBrowserId}', but that tlbx browser is not currently attached to /ws/state and no connected leading browser can reclaim it deterministically.";
             target = null!;
             return false;
         }

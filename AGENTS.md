@@ -49,40 +49,39 @@ Rules:
 
 ## Session Surface Boundary
 
-- Treat Terminal and Lens as separate surfaces with an explicit boundary.
-- What happens in Terminal stays in Terminal unless the user explicitly launched a Lens session through the Lens-oriented flow.
-- Do not infer a Lens session from foreground process metadata alone. Running `codex`, `claude`, or another AI CLI inside a normal terminal must not auto-switch surfaces, surface Lens tabs, or reclassify the session as Lens-owned.
+- Treat Terminal and Agent Controller Session as separate surfaces with an explicit boundary.
+- What happens in Terminal stays in Terminal unless the user explicitly launched an Agent Controller Session through the structured provider flow.
+- Do not infer an Agent Controller Session from foreground process metadata alone. Running `codex`, `claude`, or another AI CLI inside a normal terminal must not auto-switch surfaces, surface provider tabs, or reclassify the session as Agent Controller-owned.
 - The IDE bar rule is exclusive, not additive:
   - normal terminal session: `Terminal` + `Files`
-  - explicit Codex Lens session: `Codex` + `Files`
-  - explicit Claude Lens session: `Claude` + `Files`
+  - explicit Codex Agent Controller Session: `Codex` + `Files`
+  - explicit Grok Agent Controller Session: `Grok` + `Files`
 
-## Lens Runtime Principle
+## Agent Controller Runtime Principle
 
-- Implement provider-backed Lens sessions as Lens-owned runtimes, not as reinterpretations of terminal transcript output.
-- For each explicit Codex or Claude Lens session, MidTerm should launch or attach a dedicated provider runtime for that Lens surface and consume structured runtime events from that runtime.
-- Lens is not a terminal transcript view. It must rely on explicit provider APIs and structured protocols that Codex and Claude expose for rich UI clients, with `mtagenthost` as the intended MidTerm host boundary for those integrations.
-- Reserve `transcript` terminology for actual terminal/PTTY capture or legacy wire names only. In Lens code and docs, prefer `history` for the canonical provider-backed item sequence and `timeline` for its rendered visual presentation.
-- An explicit Lens session does not own or attach to an `mthost` terminal. Its runtime boundary is `mtagenthost`, which launches the provider with the parameters and structured transport needed for a rich web UI integration.
-- Do not scrape the terminal buffer, infer assistant turns from PTY text, or depend on foreground process output as the source of truth for Lens conversation state.
-- Do not treat terminal stdout/stderr as the Lens protocol. PTY output may still exist for Terminal, diagnostics, or fallback scenarios, but it is not the authoritative source for Lens turns, streaming assistant output, tool lifecycle, approvals, plan-mode questions, or diffs.
-- The purpose of Lens is to tap into provider capabilities that support rich UI visualization of agent operation, then render those capabilities in MidTerm's web UI.
-- Lens should model progressive assistant output, tool activity, plan-mode questions, approvals, and diffs from canonical runtime events with stable per-turn and per-item identity.
-- Keep provider-specific plumbing deep in the C# runtime/host layer. Codex and Claude may expose completely different transports, event schemas, and lifecycle details, but the TypeScript Lens UI should consume a mostly provider-neutral canonical event model rather than branching on provider quirks.
-- When expanding Lens capabilities, prefer adapting provider events into MidTerm-owned canonical concepts such as turns, streams, items, requests, diffs, and task/tool progress instead of leaking raw provider event shapes into the frontend.
-- Preserve the surface boundary while improving Lens: making Codex or Claude work better in Lens must never break, hijack, or reclassify ordinary terminal sessions.
-- MidTerm is in production. Do not invent, fake, or hand-wave Codex or Claude Lens behavior when the exact provider/runtime contract is not known.
-- Before implementing or extending a Codex or Claude Lens capability, verify the exact request, event, and response shape from provider documentation, trusted reference implementations, direct observation of provider/runtime logs and message traces, or exploratory experiments and integration tests before assuming capability shape.
+- Implement provider-backed Agent Controller Sessions as dedicated runtimes, not as reinterpretations of terminal transcript output.
+- For each explicit Agent Controller Session, MidTerm should launch or attach a dedicated supported provider runtime and consume structured runtime events from it. The current new-session launcher exposes Codex and Grok Build; do not infer launcher support from dormant or legacy provider code.
+- Agent Controller Session is not a terminal transcript view. It relies on explicit provider APIs and structured protocols for rich UI clients, with `mtagenthost` as the MidTerm host boundary.
+- Reserve `transcript` terminology for actual terminal/PTTY capture or legacy wire names only. In Agent Controller code and docs, prefer `history` for the canonical provider-backed item sequence and `timeline` for its rendered visual presentation.
+- An explicit Agent Controller Session's provider state and transport belong exclusively to `mtagenthost`, which launches the provider with the parameters and structured protocol needed for a rich web UI integration. Current session-creation plumbing may still provision an unused `mthost` backing session; never treat that PTY as the Agent Controller runtime or as a transcript fallback.
+- Do not scrape the terminal buffer, infer assistant turns from PTY text, or depend on foreground process output as the source of truth for Agent Controller Session state.
+- Do not treat terminal stdout/stderr as the Agent Controller protocol or as a fallback source of truth for turns, streaming assistant output, tool lifecycle, approvals, plan-mode questions, or diffs.
+- Agent Controller Session should model progressive assistant output, tool activity, plan-mode questions, approvals, and diffs from canonical runtime events with stable per-turn and per-item identity.
+- Keep provider-specific plumbing deep in the C# runtime/host layer. Supported providers may expose different transports, event schemas, and lifecycle details, but the TypeScript UI should consume a mostly provider-neutral canonical event model rather than branching on provider quirks.
+- When expanding Agent Controller capabilities, prefer adapting provider events into MidTerm-owned canonical concepts such as turns, streams, items, requests, diffs, and task/tool progress instead of leaking raw provider event shapes into the frontend.
+- Preserve the surface boundary: making any provider work better in Agent Controller Session must never break, hijack, or reclassify ordinary terminal sessions.
+- MidTerm is in production. Do not invent, fake, or hand-wave provider behavior when the exact runtime contract is not known.
+- Before implementing or extending a provider-specific Agent Controller capability, verify the exact request, event, and response shape from provider documentation, trusted reference implementations, direct observation of provider/runtime logs and message traces, or exploratory experiments and integration tests before assuming capability shape.
 - When documentation is incomplete or ambiguous, use trial-and-error, exploratory experiments, exploratory integration tests, and concrete inspection of logs/message logs as required sources of truth before declaring the capability unsupported.
-- If the exact Lens/provider contract cannot be verified, say so clearly and leave the capability unsupported or stubbed with an honest note. Do not ship guessed protocol bridges, fake success paths, or speculative code in Lens or elsewhere.
+- If the exact provider contract cannot be verified, say so clearly and leave the capability unsupported or stubbed with an honest note. Do not ship guessed protocol bridges, fake success paths, or speculative code.
 
-## Lens Design Documentation
+## Agent Controller Design Documentation
 
-- The visual and interaction design contract for Lens lives in [docs/LensDesign.md](docs/LensDesign.md).
-- Read that document into working context before making Lens history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, hierarchy, virtualization, or history-window changes.
-- Do not make Lens feature changes from memory or from nearby code alone; load [docs/LensDesign.md](docs/LensDesign.md) first in the same turn so design-contract drift is visible while implementing.
-- Treat `docs/LensDesign.md` as a maintained design contract, not a one-off note.
-- Any future Lens UI change that affects fundamentals must update `docs/LensDesign.md` in the same work so the current design understanding remains traceable for future sessions.
+- The visual and interaction design contract lives in [docs/AgentControllerSessionDesign.md](docs/AgentControllerSessionDesign.md).
+- Read that document into working context before making Agent Controller history, timeline, composer, item-rendering, layout, spacing, typography, scrolling, hierarchy, virtualization, or history-window changes.
+- Do not make Agent Controller feature changes from memory or from nearby code alone; load the design contract first in the same turn so design-contract drift is visible while implementing.
+- Treat it as a maintained design contract, not a one-off note.
+- Any future Agent Controller UI change that affects fundamentals must update that document in the same work so the current design understanding remains traceable for future sessions.
 
 ## Command Bay Naming
 

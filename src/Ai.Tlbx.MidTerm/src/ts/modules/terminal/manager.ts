@@ -57,6 +57,7 @@ import {
 import * as enterOverrideSuppress from './enterOverrideSuppress';
 import { bindTerminalInteractionHandlers } from './interactionBindings';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
+import { openTerminalWebLinkInNewTab } from './webLinks';
 
 import { createLogger } from '../logging';
 import { registerFileLinkProvider, clearPathAllowlist } from './fileLinks';
@@ -454,7 +455,7 @@ function setTerminalVisualFocus(state: TerminalState, focused: boolean): void {
 
   // xterm's inactive cursor style is driven by its private browser focus service,
   // not only the root .focus class. Mirror proxy focus into that internal state so
-  // the renderer paints the active cursor while MidTerm owns the actual DOM focus.
+  // the renderer paints the active cursor while tlbx owns the actual DOM focus.
   coreBrowserService._isFocused = focused;
   coreBrowserService._cachedIsFocused = undefined;
   fireTerminalFocusEvent(privateCore, focused);
@@ -1123,11 +1124,7 @@ export function createTerminalForSession(
 
     // Load Web-Links addon for clickable URLs
     try {
-      const webLinksAddon = new WebLinksAddon((_event: MouseEvent, uri: string) => {
-        if (uri.startsWith('http://') || uri.startsWith('https://')) {
-          window.open(uri, '_blank', 'noopener,noreferrer');
-        }
-      });
+      const webLinksAddon = new WebLinksAddon(openTerminalWebLinkInNewTab);
       terminal.loadAddon(webLinksAddon);
     } catch {
       // Web-Links addon failed to load

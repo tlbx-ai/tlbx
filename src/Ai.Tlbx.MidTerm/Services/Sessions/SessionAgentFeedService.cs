@@ -40,8 +40,8 @@ public sealed class SessionAgentFeedService
                 "info",
                 "bootstrap",
                 string.IsNullOrWhiteSpace(launchCommand)
-                    ? $"{PrettifyProfile(profile)} App Server Controller session started in MidTerm."
-                    : $"{PrettifyProfile(profile)} worker started in MidTerm.",
+                    ? $"{PrettifyProfile(profile)} App Server Controller session started in tlbx."
+                    : $"{PrettifyProfile(profile)} worker started in tlbx.",
                 string.IsNullOrWhiteSpace(launchCommand)
                     ? BuildBootstrapDetail(slashCommands, guidanceInjected)
                     : $"Launch command `{launchCommand.Trim()}` queued. {BuildBootstrapDetail(slashCommands, guidanceInjected)}");
@@ -170,7 +170,7 @@ public sealed class SessionAgentFeedService
                         "positive",
                         "attention",
                         "Attention state cleared.",
-                        "MidTerm no longer thinks this session is blocked or missing its agent runtime.");
+                        "tlbx no longer thinks this session is blocked or missing its agent runtime.");
                 }
             }
 
@@ -239,8 +239,8 @@ public sealed class SessionAgentFeedService
     private static string BuildBootstrapDetail(IReadOnlyList<string> slashCommands, bool guidanceInjected)
     {
         var detail = guidanceInjected
-            ? "MidTerm guidance was injected."
-            : "No MidTerm guidance was injected.";
+            ? "tlbx guidance was injected."
+            : "No tlbx guidance was injected.";
 
         if (slashCommands.Count == 0)
         {
@@ -261,11 +261,11 @@ public sealed class SessionAgentFeedService
             SessionSupervisorService.BlockedState =>
                 "Recent input or bell activity suggests the agent may be waiting for approval, confirmation, or operator help.",
             SessionSupervisorService.ShellState =>
-                "The terminal is alive, but MidTerm does not currently detect an interactive AI runtime in the foreground.",
+                "The terminal is alive, but tlbx does not currently detect an interactive AI runtime in the foreground.",
             SessionSupervisorService.DeadState =>
                 "The PTY host reported that this session is no longer running.",
             _ =>
-                "MidTerm does not yet have enough signal to classify this session confidently."
+                "tlbx does not yet have enough signal to classify this session confidently."
         };
     }
 
@@ -315,8 +315,8 @@ public sealed class SessionAgentFeedService
         {
             "session-exited" => "Session exited.",
             "prompt-not-acknowledged" => "Prompt was sent but the agent did not acknowledge it.",
-            "ai-cli-not-running" => "MidTerm expected an AI CLI here, but the foreground app looks like a plain shell.",
-            null or "" => "MidTerm flagged the session for human attention.",
+            "ai-cli-not-running" => "tlbx expected an AI CLI here, but the foreground app looks like a plain shell.",
+            null or "" => "tlbx flagged the session for human attention.",
             _ => attentionReason
         };
     }

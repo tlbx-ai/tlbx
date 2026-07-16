@@ -1,4 +1,4 @@
-// webAudioAccess.js - Adapted for MidTerm Voice Assistant
+// webAudioAccess.js - Adapted for tlbx Voice Assistant
 // Simplified version using callbacks instead of DotNet interop
 
 let mediaStream = null;

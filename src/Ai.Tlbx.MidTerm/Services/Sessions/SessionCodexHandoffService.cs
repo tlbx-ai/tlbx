@@ -103,7 +103,7 @@ public sealed class SessionCodexHandoffService
 
         if (string.IsNullOrWhiteSpace(resumeThreadId))
         {
-            throw new InvalidOperationException("MidTerm could not determine the Codex resume id for this session.");
+            throw new InvalidOperationException("tlbx could not determine the Codex resume id for this session.");
         }
 
         RememberResumeThreadId(session.Id, resumeThreadId);
@@ -219,7 +219,7 @@ public sealed class SessionCodexHandoffService
             return resolvedFromDisk;
         }
 
-        throw new InvalidOperationException("MidTerm could not determine the Codex resume id for this session.");
+        throw new InvalidOperationException("tlbx could not determine the Codex resume id for this session.");
     }
 
     private async Task<string?> TryResolveResumeThreadIdFromDiskAsync(SessionInfoDto session, CancellationToken ct)

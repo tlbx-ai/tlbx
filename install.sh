@@ -1,7 +1,7 @@
 #!/bin/bash
-# MidTerm macOS/Linux Installer
-# Usage: curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash
-# Dev:   curl -fsSL https://tlbx-ai.github.io/MidTerm/install.sh | bash -s -- --dev
+# tlbx macOS/Linux Installer (formerly MidTerm)
+# Usage: curl -fsSL https://get.tlbx.ai/install.sh | bash
+# Dev:   curl -fsSL https://get.tlbx.ai/install.sh | bash -s -- --dev
 #
 # Design goals:
 # - fetch and validate an official MidTerm release before touching system paths
@@ -43,13 +43,24 @@ SCRIPT_PATH="${BASH_SOURCE[0]:-$0}"
 if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH" == "/usr/bin/bash" ]]; then
     TEMP_SCRIPT=$(mktemp)
     # Script is being piped - we need to download it to a file
-    bootstrap_download "https://raw.githubusercontent.com/tlbx-ai/MidTerm/main/install.sh" "$TEMP_SCRIPT"
+    bootstrap_download "https://get.tlbx.ai/install.sh" "$TEMP_SCRIPT"
     chmod +x "$TEMP_SCRIPT"
     exec "$TEMP_SCRIPT" "$@"
 fi
 
 REPO_OWNER="tlbx-ai"
 REPO_NAME="MidTerm"
+if command_exists curl; then
+    REPOSITORY_COORDINATE=$(curl --fail --silent --show-error --max-time 3 https://get.tlbx.ai/v1/repository 2>/dev/null || true)
+elif command_exists wget; then
+    REPOSITORY_COORDINATE=$(wget -qO- --timeout=3 https://get.tlbx.ai/v1/repository 2>/dev/null || true)
+fi
+case "${REPOSITORY_COORDINATE:-}" in
+    tlbx-ai/MidTerm|tlbx-ai/tlbx)
+        REPO_OWNER="${REPOSITORY_COORDINATE%%/*}"
+        REPO_NAME="${REPOSITORY_COORDINATE#*/}"
+        ;;
+esac
 SERVICE_NAME="MidTerm"
 LAUNCHD_LABEL="ai.tlbx.midterm"
 DEV_CHANNEL=false
@@ -352,7 +363,7 @@ print_midterm_banner() {
     echo -e "         ${WHITE}//  ( ${CYAN}·${WHITE} )  \\\\      | |\\/| | |/ _\` | | |/ _ \\\\ '__| '_ \` _ \\\\${NC}"
     echo -e "        ${WHITE}//           \\\\     | |  | | | (_| | | |  __/ |  | | | | | |${NC}"
     echo -e "       ${WHITE}//             \\\\    |_|  |_|_|\\__,_| |_|\\___|_|  |_| |_| |_|${NC}"
-    echo -e "      ${WHITE}//               \\\\   ${GREEN}by J. Schmidt - https://github.com/tlbx-ai/MidTerm${NC}"
+    echo -e "      ${WHITE}//               \\\\   ${GREEN}tlbx.ai - https://github.com/tlbx-ai/tlbx${NC}"
     echo ""
 }
 
@@ -2351,7 +2362,7 @@ create_uninstall_script() {
 
 set -e
 
-SCRIPT_URL="https://tlbx-ai.github.io/MidTerm/uninstall.sh"
+SCRIPT_URL="https://get.tlbx.ai/uninstall.sh"
 
 if command -v curl >/dev/null 2>&1; then
     curl -fsSL "$SCRIPT_URL" | bash

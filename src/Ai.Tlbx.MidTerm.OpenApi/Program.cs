@@ -23,9 +23,9 @@ builder.Services.AddOpenApi(options =>
 {
     options.AddDocumentTransformer((document, context, cancellationToken) =>
     {
-        document.Info.Title = "MidTerm API";
+        document.Info.Title = "tlbx API";
         document.Info.Version = "1.0.0";
-        document.Info.Description = "MidTerm terminal multiplexer API";
+        document.Info.Description = "tlbx browser control station API";
         return Task.CompletedTask;
     });
 

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 16 16" role="img" aria-labelledby="title desc" style="--tlbx-ink:#f7f8fb;--tlbx-background:#05070b;--tlbx-accent:#69b7ff">
+  <title id="title">tlbx topbar toolbox mark</title>
+  <desc id="desc">A long isometric toolbox with a closed lid, eye, front chevron, and G-shaped side handle.</desc>
+  <defs>
+    <radialGradient id="tlbx-pupil-glow">
+      <stop offset="0" stop-color="var(--tlbx-accent)" stop-opacity="0.72"/>
+      <stop offset="0.48" stop-color="var(--tlbx-accent)" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="var(--tlbx-accent)" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <g transform="translate(0.31 0.49) scale(0.03655)">
+    <g fill="none" stroke="var(--tlbx-ink)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 12 98 L 265 7 L 385 69 L 385 299 L 132 390 L 12 328 Z"/>
+      <path d="M 12 98 L 132 160 L 385 69"/>
+      <path d="M 12 140 L 132 202 L 385 111"/>
+      <path d="M 132 160 L 132 390"/>
+      <path d="M 132 202 L 266.09 277.97 L 385 111"/>
+    </g>
+    <path d="M 231.935 145.055 Q 266.09 84.77 300.245 120.485 Q 266.09 180.77 231.935 145.055 Z" fill="var(--tlbx-ink)"/>
+    <circle cx="266.09" cy="132.77" r="16" fill="var(--tlbx-background)"/>
+    <circle cx="266.09" cy="132.77" r="14" fill="url(#tlbx-pupil-glow)"/>
+    <circle cx="266.09" cy="132.77" r="10.5" fill="var(--tlbx-accent)"/>
+    <path d="M 103.35 242.097 C 89.85 220.272 64.2 204.32 45.3 212.105 C 27.75 217.887 31.8 238.88 48 252.65 C 65.55 272.517 91.2 280.37 103.35 269.097 L 103.35 255.597 L 79.05 243.042" fill="none" stroke="var(--tlbx-ink)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

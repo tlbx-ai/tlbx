@@ -41,12 +41,12 @@ Set the terminal title to the current overall topic you are working on.
 
 ## Local Dev Loop First
 
-For normal MidTerm iteration, do not default to a GitHub dev release.
+For normal tlbx iteration, do not default to a GitHub dev release.
 
 Use this workflow first:
-- keep the hard-installed MidTerm service on `https://localhost:2000` running as the stable supervisor
+- keep the hard-installed tlbx service on `https://localhost:2000` running as the stable supervisor
 - start a separate local source instance on another port with `pwsh -NoProfile -Command '& ./scripts/dev.ps1'`
-- open that local source instance in the MidTerm dev browser and do validation there
+- open that local source instance in the tlbx dev browser and do validation there
 - keep using the installed release `mthost`
 - keep iterating the local Debug `mtagenthost`
 - only cut GitHub dev releases for release-worthy improvements that should be shared beyond the local source loop
@@ -54,11 +54,11 @@ Use this workflow first:
 `scripts/dev.ps1` is the preferred fast path and is expected to keep the source instance isolated from the installed service.
 
 When using this loop:
-- target the local source app in the MidTerm browser, usually `https://127.0.0.1:2100`
+- target the local source app in the tlbx browser, usually `https://127.0.0.1:2100`
 - validate Agent Controller Session and UX changes in that local browser before considering a GitHub dev release
 - every C# change is a restart boundary for the local source `mt`: wait for `https://127.0.0.1:2100/api/sessions` to respond again before trusting any browser result
 - a restarted source app can leave the dev preview/browser bridge stale even when the target URL still looks right; re-check `mt_status` after C# changes instead of assuming the existing preview is still controllable
-- when using one MidTerm instance to test another MidTerm instance, remember the stable outer MidTerm tab owns the `/ws/state` browser bridge; the nested preview target alone is not enough
+- when using one tlbx instance to test another tlbx instance, remember the stable outer tlbx tab owns the `/ws/state` browser bridge; the nested preview target alone is not enough
 - if the browser looks stale after a TS/CSS iteration, prefer `mt_preview_reset` on the local source URL over guessing
 - if a clean build/test is blocked by a lingering local source `mt.exe`, stop the local dev loop first and restart it after verification
 
@@ -88,7 +88,7 @@ Guidance for AI coding agents working with this repository.
 
 ## What This Is
 
-MidTerm is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/Windows/Linux. Serves terminal sessions via browser at `http://localhost:2000`.
+tlbx is a web-based terminal multiplexer. Native AOT compiled, runs on macOS/Windows/Linux. Serves terminal sessions via browser at `http://localhost:2000`.
 
 **Binaries:**
 - `mt` / `mt.exe` — Web server (UI, REST API, WebSockets)
@@ -226,20 +226,20 @@ Before changing mux behavior, read `Services/WebSockets/MuxClient.cs` and `MuxPr
 
 ## Tmux Compatibility Layer
 
-MidTerm includes a tmux shim that allows AI coding tools to use split panes and related tmux behaviors natively.
+tlbx includes a tmux shim that allows AI coding tools to use split panes and related tmux behaviors natively.
 - Controlled by `TmuxCompatibility` setting (default: true)
 - Implemented under `Services/Tmux/`
 - Used by tools that detect tmux and issue pane or send-keys commands
 
 ## Web Preview
 
-MidTerm includes a reverse proxy for previewing local dev servers (or any website) inside an iframe panel.
+tlbx includes a reverse proxy for previewing local dev servers (or any website) inside an iframe panel.
 
 - Implemented under `Services/WebPreview/` plus the frontend `web/` module
 - Handles cookie bridging, URL rewriting, external resource proxying, and WebSocket proxying
 - DOM snapshots save into `<cwd>/.midterm/snapshot_*/`
 - **Before modifying any web preview proxy code, read `docs/devbrowser.md` first. After changes, update that document to reflect the new state.**
-- For browser-control workflows inside a MidTerm terminal, see `.midterm/AGENTS.md`
+- For browser-control workflows inside a tlbx terminal, see `.midterm/AGENTS.md`
 
 ## Code Style (C#)
 

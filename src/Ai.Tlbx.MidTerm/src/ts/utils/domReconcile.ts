@@ -1,5 +1,5 @@
 /**
- * Minimal keyed DOM reconciliation for MidTerm-owned UI lists and trees.
+ * Minimal keyed DOM reconciliation for tlbx-owned UI lists and trees.
  *
  * This is intentionally not a UI framework, virtual DOM, templating layer, or
  * state system. It is a small ownership primitive for places where we already

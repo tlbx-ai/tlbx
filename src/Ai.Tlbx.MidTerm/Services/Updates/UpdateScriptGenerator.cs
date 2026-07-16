@@ -247,7 +247,7 @@ Remove-Item $LogFile -Force -ErrorAction SilentlyContinue
 Remove-Item $ResultFile -Force -ErrorAction SilentlyContinue
 
 Log '=========================================='
-Log 'MidTerm Update Script Starting'
+Log 'tlbx update starting'
 Log ""Update type: $(if ($IsWebOnly) {{ 'Web-only' }} else {{ 'Full' }})""
 Log '=========================================='
 
@@ -276,7 +276,7 @@ try {{
     # Stop Windows service if running
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($service -and $service.Status -eq 'Running') {{
-        Log ""Stopping MidTerm service '$ServiceName'...""
+        Log ""Stopping tlbx service '$ServiceName'...""
         Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
 
@@ -445,7 +445,7 @@ try {{
     }}
 
     # List MidTerm certs in Root store
-    Log '  Trusted MidTerm certificates in Root store:'
+    Log '  Trusted tlbx certificates in Root store:'
     try {{
         $store = New-Object System.Security.Cryptography.X509Certificates.X509Store(""Root"",""LocalMachine"")
         $store.Open(""ReadOnly"")
@@ -513,7 +513,7 @@ try {{
 
     $service = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($service) {{
-        Log ""Starting MidTerm service '$ServiceName'...""
+        Log ""Starting tlbx service '$ServiceName'...""
         Start-Service -Name $ServiceName -ErrorAction Stop
         Start-Sleep -Seconds 8
 
@@ -1065,7 +1065,7 @@ mkdir -p ""$BACKUP_DIR"" 2>/dev/null || true
 rm -f ""$RESULT_FILE"" 2>/dev/null || true
 
 log '=========================================='
-log 'MidTerm Update Script v{generatingVersion}'
+log 'tlbx update script v{generatingVersion}'
 log ""Running as: $(whoami) (SERVICE_USER=${{SERVICE_USER:-unknown}})""
 log ""Update type: $(if $IS_WEB_ONLY; then echo 'Web-only'; else echo 'Full'; fi)""
 log ""Platform: Linux""
@@ -1534,7 +1534,7 @@ write_result true ""Update completed successfully""
                     }
 
                     throw new InvalidOperationException(
-                        "Failed to launch the Linux service updater outside the MidTerm service cgroup: " + details);
+                        "Failed to launch the Linux service updater outside the tlbx service cgroup: " + details);
                 }
 
                 return;

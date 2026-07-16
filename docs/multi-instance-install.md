@@ -1,16 +1,16 @@
-# MidTerm multi-instance installer guide
+# tlbx multi-instance installer guide
 
 This document is the operational guide for installing more than one isolated
-MidTerm service instance on the same physical or virtual machine without Docker
+tlbx service instance on the same physical or virtual machine without Docker
 or VMs.
 
 The normal single-instance installers (`install.ps1` and `install.sh`) remain
 the default path for regular users. Use this guide only when one machine must
-host multiple independent MidTerm users or test tenants.
+host multiple independent tlbx users or test tenants.
 
 ## Core model
 
-Every multi-instance MidTerm installation is a separate service scope:
+Every multi-instance tlbx installation is a separate service scope:
 
 - one service identity
 - one HTTPS port
@@ -28,14 +28,14 @@ binary directory is not.
 
 Use `install-multi.ps1` or `install-multi.sh` when:
 
-- several people need their own MidTerm instance on one machine
+- several people need their own tlbx instance on one machine
 - each person needs a separate login password and session history
 - each instance must be updated, removed, or restarted independently
 - the host must avoid Docker, VMs, or per-user OS accounts
 
 Use the normal installer when:
 
-- there is only one MidTerm service on the machine
+- there is only one tlbx service on the machine
 - the service should stay at the default identity and port
 - you are upgrading an existing normal installation
 
@@ -68,7 +68,7 @@ viable 32-bit assets for those operating systems.
 ## Release asset lookup
 
 By default, the installers download from the latest GitHub release of
-`tlbx-ai/MidTerm`. Set `VersionTag` / `--version-tag` to pin a release. Set
+`tlbx-ai/tlbx`. Set `VersionTag` / `--version-tag` to pin a release. Set
 `AssetPath` / `--asset-path` to use a local release asset instead of GitHub.
 
 Expected asset names:
@@ -226,7 +226,7 @@ Use this sequence for a new multi-instance deployment.
    reachable from other machines.
 5. Run `plan` mode and inspect service names, ports, install directories, and
    settings directories.
-6. Confirm the plan does not overlap with the normal MidTerm installation or
+6. Confirm the plan does not overlap with the normal tlbx installation or
    another instance.
 7. Install with a password hash when automating. Use a prompted password for
    manual operations.

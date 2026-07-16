@@ -213,7 +213,7 @@ public static class TtyHostSpawner
         {
             var message = $"mthost not found at: {TtyHostPath}";
             Log.Error(() => $"TtyHostSpawner: {message}");
-            return TtyHostSpawnResult.Failed(message, detail: "MidTerm could not find the tty host binary.");
+            return TtyHostSpawnResult.Failed(message, detail: "tlbx could not find the tty host binary.");
         }
 
         if (!VerifyMthostIntegrity())
@@ -222,7 +222,7 @@ public static class TtyHostSpawner
             Log.Error(() => $"TtyHostSpawner: {message}");
             return TtyHostSpawnResult.Failed(
                 "mthost integrity verification failed.",
-                detail: "MidTerm refused to launch an mthost binary whose checksum did not match the installed manifest.");
+                detail: "tlbx refused to launch an mthost binary whose checksum did not match the installed manifest.");
         }
 
         var args = BuildArgs(sessionId, shellType, workingDirectory, cols, rows,

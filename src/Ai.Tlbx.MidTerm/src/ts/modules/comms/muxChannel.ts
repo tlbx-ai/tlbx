@@ -428,7 +428,7 @@ let currentVisibleSessionIds: string[] = [];
 // Each session keeps a small owned queue so we can preserve strict in-order
 // delivery across async decompression and xterm's async write callback.
 //
-// We intentionally keep MidTerm's own queue shallow. xterm already preserves
+// We intentionally keep tlbx's own queue shallow. xterm already preserves
 // write order internally, so we only use its async callback for "parsed and
 // visible" notifications while periodically yielding the main thread to keep
 // input responsive during flood output.

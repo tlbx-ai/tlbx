@@ -17,19 +17,23 @@ public static class WelcomeScreen
         Console.WriteLine();
 
         Console.ForegroundColor = ConsoleColor.White;
-        Console.WriteLine(@"            //   \\");
-        Console.WriteLine(@"           //     \\         __  __ _     _ _____");
-        Console.WriteLine(@"          //       \\       |  \/  (_) __| |_   _|__ _ __ _ __ ___");
-        Console.Write(@"         //  ( ");
+        Console.WriteLine(@"          _______________");
+        Console.WriteLine(@"         /______________/|");
+        Console.Write(@"        |       (");
         Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.Write("·");
+        Console.Write("o");
         Console.ForegroundColor = ConsoleColor.White;
-        Console.WriteLine(@" )  \\      | |\/| | |/ _` | | |/ _ \ '__| '_ ` _ \");
-        Console.WriteLine(@"        //           \\     | |  | | | (_| | | |  __/ |  | | | | | |");
-        Console.WriteLine(@"       //             \\    |_|  |_|_|\__,_| |_|\___|_|  |_| |_| |_|");
-        Console.Write(@"      //               \\   ");
+        Console.WriteLine(@")      ||");
+        Console.WriteLine(@"        | \            /||");
+        Console.WriteLine(@"        |  \__________/ |/");
+        Console.WriteLine(@"        '---------------'");
+        Console.WriteLine();
+        Console.WriteLine("              tlbx");
+        Console.WriteLine("     browser control station");
+        Console.WriteLine();
+        Console.Write("  ");
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("by J. Schmidt - https://github.com/tlbx-ai/MidTerm");
+        Console.WriteLine("https://tlbx.ai  |  github.com/tlbx-ai/tlbx");
 
         Console.ResetColor();
         Console.WriteLine();
@@ -176,7 +180,7 @@ public static class WelcomeScreen
             Log.Error(() => string.Create(CultureInfo.InvariantCulture, $"Failed to bind https://{bindAddress}:{port}: {socketEx.SocketErrorCode}. Exiting."));
 
             Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  Error: MidTerm could not bind to https://{bindAddress}:{port}."));
+            Console.WriteLine(string.Create(CultureInfo.InvariantCulture, $"  Error: tlbx could not bind to https://{bindAddress}:{port}."));
             Console.ResetColor();
             Console.WriteLine();
             Console.WriteLine("  The port is already in use, reserved, or blocked by OS permissions.");

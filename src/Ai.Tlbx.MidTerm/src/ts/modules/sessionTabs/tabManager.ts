@@ -126,7 +126,7 @@ export function onTabDeactivated(tab: SessionTabId, callback: (sessionId: string
 
 /**
  * Builds the stable per-session shell that all non-terminal surfaces hang off,
- * preserving the terminal instance while MidTerm layers IDE-style panels around it.
+ * preserving the terminal instance while tlbx layers IDE-style panels around it.
  */
 export function ensureSessionWrapper(sessionId: string): SessionTabState {
   const existing = sessionTabStates.get(sessionId);
@@ -317,7 +317,7 @@ export function getTabLabelForSession(sessionId: string, tab: SessionTabId): str
 
 /**
  * Switches visible workflow surfaces while preserving the underlying terminal
- * container, which is the key reason MidTerm can feel IDE-like without forking sessions.
+ * container, which is the key reason tlbx can feel IDE-like without forking sessions.
  */
 export function switchTab(
   sessionId: string,
@@ -389,7 +389,7 @@ export function reparentTerminalContainer(sessionId: string, container: HTMLDivE
 
 /**
  * Keeps session-tab chrome anchored in the user's real working context, which
- * matters when MidTerm is used as a multi-session workspace rather than one shell.
+ * matters when tlbx is used as a multi-session workspace rather than one shell.
  */
 export function updateSessionCwd(sessionId: string, cwd: string): void {
   const state = sessionTabStates.get(sessionId);

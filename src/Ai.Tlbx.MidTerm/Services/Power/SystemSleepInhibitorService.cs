@@ -103,7 +103,7 @@ internal sealed class SystemSleepInhibitorService : IDisposable
             }
             else
             {
-                Log.Warn(() => "Failed to enable sleep inhibitor for active MidTerm sessions");
+                Log.Warn(() => "Failed to enable sleep inhibitor for active tlbx sessions");
             }
 
             return;

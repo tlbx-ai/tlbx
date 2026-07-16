@@ -217,7 +217,7 @@ public sealed class SessionCodexHandoffServiceTests : IDisposable
         };
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.ResolveResumeThreadIdAsync(session, CancellationToken.None));
-        Assert.Equal("MidTerm could not determine the Codex resume id for this session.", error.Message);
+        Assert.Equal("tlbx could not determine the Codex resume id for this session.", error.Message);
     }
 
     public void Dispose()

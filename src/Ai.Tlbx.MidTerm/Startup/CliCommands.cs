@@ -415,7 +415,7 @@ public static class CliCommands
 
     public static void PrintHelp()
     {
-        Console.WriteLine($"MidTerm {GetVersion()} - Web-based Terminal Multiplexer");
+        Console.WriteLine($"tlbx {GetVersion()} — browser control station");
         Console.WriteLine();
         Console.WriteLine("Usage: mt [options]");
         Console.WriteLine();
@@ -432,10 +432,10 @@ public static class CliCommands
         Console.WriteLine();
         Console.WriteLine("Password Recovery:");
         Console.WriteLine("  If you forget your password:");
-        Console.WriteLine("  1. Stop the MidTerm service");
+        Console.WriteLine("  1. Stop the tlbx service");
         Console.WriteLine("  2. Edit settings.json (location shown on startup)");
         Console.WriteLine("  3. Set \"authenticationEnabled\" to false");
-        Console.WriteLine("  4. Restart MidTerm");
+        Console.WriteLine("  4. Restart tlbx");
         Console.WriteLine("  5. Set new password in Settings > Security");
         Console.WriteLine();
         Console.WriteLine("Settings locations:");

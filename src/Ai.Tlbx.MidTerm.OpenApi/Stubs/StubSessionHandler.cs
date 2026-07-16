@@ -45,6 +45,9 @@ public class StubSessionHandler : ISessionHandler
     public Task<IResult> ResizeSessionAsync(string id, ResizeRequest request) =>
         Task.FromResult<IResult>(Results.Json(new ResizeResponse { Accepted = true }));
 
+    public Task<IResult> RedrawSessionAsync(string id) =>
+        Task.FromResult<IResult>(Results.NoContent());
+
     public Task<IResult> GetSessionStateAsync(string id, bool includeBuffer, bool includeBufferBase64) =>
         Task.FromResult<IResult>(Results.Json(new SessionStateResponse
         {

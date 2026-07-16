@@ -1,7 +1,7 @@
 SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
 -----------------------------------------------------------
 
-This license applies to the following fonts bundled with MidTerm:
+This license applies to the following fonts bundled with tlbx:
 - JetBrains Mono (Copyright 2020 The JetBrains Mono Project Authors)
 - Cascadia Code (Copyright 2019 Microsoft Corporation)
 - Terminus (Copyright 2010-2020 Dimitar Toshkov Zhekov)

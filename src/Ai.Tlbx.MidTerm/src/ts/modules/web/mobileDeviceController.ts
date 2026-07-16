@@ -48,7 +48,7 @@ async function ensureClient(
   const existing = clients.get(deviceKey);
   if (existing) return existing;
   const created = await createBrowserPreviewClient(sessionId, previewName);
-  if (!created) throw new Error('MidTerm could not register the device preview.');
+  if (!created) throw new Error('tlbx could not register the device preview.');
   clients.set(deviceKey, created);
   return created;
 }
@@ -145,7 +145,7 @@ export async function controlMobileDevice(
   const target = resolveTarget(requestedSessionId, requestedPreviewName);
   if (!isMobileDeviceBridgeReady()) {
     throw new Error(
-      'Chrome device bridge is not connected. Install it from the preview menu, then click its extension icon in this MidTerm tab.',
+      'Chrome device bridge is not connected. Install it from the preview menu, then click its extension icon in this tlbx tab.',
     );
   }
 

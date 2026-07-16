@@ -53,7 +53,7 @@ public sealed class BrowserUiBridgeTests
         var ok = bridge.RequestOpen(null, null, "https://example.com", true, out var error);
 
         Assert.False(ok);
-        Assert.Contains("No MidTerm browser UI is connected", error, StringComparison.Ordinal);
+        Assert.Contains("No tlbx browser UI is connected", error, StringComparison.Ordinal);
         Assert.Contains("/ws/state", error, StringComparison.Ordinal);
     }
 

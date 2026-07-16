@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 400 400" role="img" aria-labelledby="title desc" style="--tlbx-ink:#f7f8fb;--tlbx-background:#05070b;--tlbx-accent:#69b7ff">
+  <title id="title">tlbx large app icon</title>
+  <desc id="desc">A long isometric toolbox with a closed lid, eye, front chevron, and G-shaped side handle.</desc>
+  <defs>
+    <radialGradient id="tlbx-pupil-glow">
+      <stop offset="0" stop-color="var(--tlbx-accent)" stop-opacity="0.72"/>
+      <stop offset="0.48" stop-color="var(--tlbx-accent)" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="var(--tlbx-accent)" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="400" height="400" fill="var(--tlbx-background)"/>
+  <g transform="translate(20 20) scale(.9)">
+    <g fill="none" stroke="var(--tlbx-ink)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M 12 98 L 265 7 L 385 69 L 385 299 L 132 390 L 12 328 Z"/>
+      <path d="M 12 98 L 132 160 L 385 69"/>
+      <path d="M 12 140 L 132 202 L 385 111"/>
+      <path d="M 132 160 L 132 390"/>
+      <path d="M 132 202 L 266.09 277.97 L 385 111"/>
+    </g>
+    <path d="M 240.79 141.87 Q 266.09 108.77 291.39 123.67 Q 266.09 156.77 240.79 141.87 Z" fill="var(--tlbx-ink)"/>
+    <circle cx="266.09" cy="132.77" r="9.5" fill="var(--tlbx-background)"/>
+    <circle cx="266.09" cy="132.77" r="7.4" fill="url(#tlbx-pupil-glow)"/>
+    <circle cx="266.09" cy="132.77" r="4.6" fill="var(--tlbx-accent)"/>
+    <path d="M 94.6 241.077 C 84.6 224.91 65.6 213.093 51.6 218.86 C 38.6 223.143 41.6 238.693 53.6 248.893 C 66.6 263.61 85.6 269.427 94.6 261.077 L 94.6 251.077 L 76.6 241.777" fill="none" stroke="var(--tlbx-ink)" stroke-width="8.5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -135,7 +135,7 @@ internal sealed class GrokAcpAppServerControlAgentRuntime : IAppServerControlAge
                     writer.WritePropertyName("clientInfo");
                     writer.WriteStartObject();
                     writer.WriteString("name", "midterm");
-                    writer.WriteString("title", "MidTerm");
+                    writer.WriteString("title", "tlbx");
                     writer.WriteString("version", "dev");
                     writer.WriteEndObject();
                     writer.WriteEndObject();

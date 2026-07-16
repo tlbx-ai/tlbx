@@ -163,20 +163,28 @@ public static class AuthMiddleware
                path.StartsWith("/openapi/", StringComparison.Ordinal) ||
                path == "/api/health" ||
                path == "/api/version" ||
-               path == "/api/paths" ||
+               path == "/api/bootstrap/login" ||
                path == "/api/security/status" ||
                path == "/api/share/claim" ||
-               path.StartsWith("/api/certificate/", StringComparison.Ordinal) ||
+               path == "/api/certificate/info" ||
+               path == "/api/certificate/download/pem" ||
+               path == "/api/certificate/download/crt" ||
+               path == "/api/certificate/download/mobileconfig" ||
+               path == "/api/certificate/share-packet" ||
                path.StartsWith("/api/auth/", StringComparison.Ordinal) ||
                path.StartsWith("/css/", StringComparison.Ordinal) ||
                path.StartsWith("/js/", StringComparison.Ordinal) ||
                path.StartsWith("/fonts/", StringComparison.Ordinal) ||
                path.StartsWith("/locales/", StringComparison.Ordinal) ||
-               path.EndsWith(".ico", StringComparison.Ordinal) ||
-               path.EndsWith(".png", StringComparison.Ordinal) ||
-               path.EndsWith(".webmanifest", StringComparison.Ordinal) ||
-               path.EndsWith(".woff", StringComparison.Ordinal) ||
-               path.EndsWith(".woff2", StringComparison.Ordinal);
+               path.StartsWith("/img/", StringComparison.Ordinal) ||
+               path == "/favicon.svg" ||
+               path == "/favicon.ico" ||
+               path == "/site.webmanifest" ||
+               path == "/android-chrome-192x192.png" ||
+               path == "/android-chrome-512x512.png" ||
+               path == "/apple-touch-icon.png" ||
+               path == "/favicon-16x16.png" ||
+               path == "/favicon-32x32.png";
     }
 
     private static bool IsShareProtectedPath(string path)

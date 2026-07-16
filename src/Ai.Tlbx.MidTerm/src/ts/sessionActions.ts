@@ -82,6 +82,7 @@ import {
 import { sendActiveSessionHint } from './modules/comms';
 import { t } from './modules/i18n';
 import { closeOperatorView } from './modules/operator';
+import { repairTerminalDisplay } from './modules/terminal/displayRepair';
 
 const log = createLogger('main');
 
@@ -344,7 +345,22 @@ export function createSessionActionHandlers({
       const fg = getForegroundInfo(sessionId);
       await pasteToTerminal(sessionId, t(getInjectGuidancePromptKey(fg.name)));
     } catch (e: unknown) {
-      log.error(() => `Failed to enable MidTerm features for ${sessionId}: ${String(e)}`);
+      log.error(() => `Failed to enable tlbx features for ${sessionId}: ${String(e)}`);
+    }
+  }
+
+  async function repairSessionDisplay(sessionId: string): Promise<void> {
+    if (isHubSessionId(sessionId)) {
+      return;
+    }
+
+    try {
+      await repairTerminalDisplay(sessionId);
+    } catch (error) {
+      log.error(() => `Failed to repair terminal display for ${sessionId}: ${String(error)}`);
+      await showAlert(error instanceof Error ? error.message : String(error), {
+        title: t('session.repairDisplay'),
+      });
     }
   }
 
@@ -789,6 +805,7 @@ export function createSessionActionHandlers({
     enableMidtermFeatures,
     pinSessionToHistory,
     promptRenameSession,
+    repairSessionDisplay,
     renameSession,
     selectSession,
     startInlineRename,

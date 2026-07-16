@@ -1,8 +1,8 @@
-# MidTerm C# to Rust Rewrite Analysis (2025 Edition)
+# tlbx C# to Rust Rewrite Analysis (2025 Edition)
 
 ## Executive Summary
 
-This document analyzes the technical architecture of MidTerm (a web-based terminal multiplexer running on **.NET 10 Native AOT**) and evaluates whether a Rust rewrite would provide meaningful benefits in 2025.
+This document analyzes the technical architecture of tlbx (a web-based terminal multiplexer running on **.NET 10 Native AOT**) and evaluates whether a Rust rewrite would provide meaningful benefits in 2025.
 
 **Current Stack**: .NET 10 Native AOT (with extensive trimming/optimization), Kestrel Minimal APIs, ConPTY/forkpty P/Invoke, Named Pipes/Unix Sockets
 
@@ -107,7 +107,7 @@ struct SessionInfo { ... }
 |--|-------------|------|
 | **Console app** | ~1-2 MB | ~500 KB |
 | **Web app (Kestrel/Axum)** | ~9-10 MB | ~4-5 MB |
-| **This app (MidTerm)** | ~12-15 MB estimate | ~6-8 MB estimate |
+| **This app (tlbx)** | ~12-15 MB estimate | ~6-8 MB estimate |
 
 The gap has **shrunk** from 3-4x to ~2x with .NET 10 optimizations.
 

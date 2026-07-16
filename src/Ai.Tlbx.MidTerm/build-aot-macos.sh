@@ -21,10 +21,10 @@ fi
 CI_FLAG=""
 if [[ "$1" == "--reproducible" ]]; then
     CI_FLAG="/p:ContinuousIntegrationBuild=true"
-    echo "Building MidTerm AOT for macOS ($RID)..."
+    echo "Building tlbx AOT for macOS ($RID)..."
     echo "  (Reproducible build mode enabled)"
 else
-    echo "Building MidTerm AOT for macOS ($RID)..."
+    echo "Building tlbx AOT for macOS ($RID)..."
 fi
 
 dotnet publish -c Release -r "$RID" /p:IsPublishing=true $CI_FLAG

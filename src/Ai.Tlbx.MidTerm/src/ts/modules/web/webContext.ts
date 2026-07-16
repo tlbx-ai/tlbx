@@ -1,7 +1,7 @@
 /**
  * Web Preview Context
  *
- * Helpers for detecting when MidTerm itself is running inside the dev browser.
+ * Helpers for detecting when tlbx itself is running inside the dev browser.
  */
 
 /** True when the current page is itself loaded through `/webpreview/`. */

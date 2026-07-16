@@ -6,21 +6,23 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <title>MidTerm</title>
+    <title>tlbx</title>
+    <meta name="application-name" content="tlbx" />
 
     <!-- Favicons -->
-    <link rel="icon" type="image/x-icon" href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=__MIDTERM_ASSET_VERSION__" />
+    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__" />
     <link
       rel="apple-touch-icon"
       sizes="192x192"
       href="/android-chrome-192x192.png?v=__MIDTERM_ASSET_VERSION__"
     />
     <link rel="manifest" href="/site.webmanifest?v=__MIDTERM_ASSET_VERSION__" />
-    <meta name="theme-color" content="#0D0E14" />
+    <meta name="theme-color" content="#0d0e14" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="MidTerm" />
+    <meta name="apple-mobile-web-app-title" content="tlbx" />
     <script src="/js/appRefreshBootstrap.js?v=__MIDTERM_ASSET_VERSION__"></script>
     <style>
       html.midterm-app-refreshing,
@@ -38,7 +40,7 @@
       }
 
       html.midterm-app-refreshing body::before {
-        content: 'Updating MidTerm...';
+        content: 'Updating tlbx...';
         position: fixed;
         inset: 0;
         display: flex;
@@ -142,11 +144,11 @@
         <div class="sidebar-header">
           <div class="sidebar-brand">
             <img
-              src="/img/Midterm_exp.svg?v=__MIDTERM_ASSET_VERSION__"
-              alt="MidTerm"
+              src="/img/tlbx-toolbox-compact.svg?v=__MIDTERM_ASSET_VERSION__"
+              alt="tlbx"
               class="sidebar-logo"
             />
-            <span class="sidebar-title">MidTerm</span>
+            <span class="sidebar-title tlbx-wordmark">tlbx</span>
           </div>
           <div class="sidebar-header-buttons">
             <button
@@ -457,7 +459,14 @@
           >
             <span class="icon">&#xe919;</span>
           </button>
-          <div class="topbar-title" id="mobile-title">MidTerm</div>
+          <div class="topbar-title tlbx-wordmark" id="mobile-title">
+            <img
+              src="/img/tlbx-toolbox-compact.svg?v=__MIDTERM_ASSET_VERSION__"
+              alt=""
+              class="topbar-brand-icon"
+            />
+            <span>tlbx</span>
+          </div>
           <nav class="mobile-tab-strip" id="mobile-tab-strip" aria-label="Session tabs" hidden>
             <button
               class="mobile-tab-pill"
@@ -561,11 +570,11 @@
                 class="mobile-actions-item topbar-btn topbar-action"
                 id="btn-inject-mobile"
                 data-i18n-title="session.injectGuidance"
-                title="Enable MidTerm Features"
+                title="Enable tlbx Features"
               >
                 <span class="icon">&#xea0c;</span>
                 <span class="mobile-actions-label" data-i18n="session.injectGuidance"
-                  >Enable MidTerm Features</span
+                  >Enable tlbx Features</span
                 >
               </button>
               <button
@@ -751,7 +760,7 @@
             </div>
           </section>
           <div id="empty-state" class="empty-state">
-            <img src="/img/Midterm_exp.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
+            <img src="/img/tlbx-toolbox.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
             <p data-i18n="terminal.noTerminals">No terminals open</p>
             <button id="btn-create-terminal" data-i18n="terminal.createTerminal">
               Create Terminal
@@ -870,7 +879,7 @@
                   role="tab"
                   aria-selected="false"
                   data-i18n-title="settings.connectedHosts.tooltip"
-                  title="Remote MidTerm hosts, shared trust, and host-oriented integrations."
+                  title="Remote tlbx hosts, shared trust, and host-oriented integrations."
                 >
                   <span class="icon">&#xe925;</span>
                   <span class="tab-label" data-i18n="settings.connectedHosts">
@@ -1042,7 +1051,7 @@
                   <div class="settings-section">
                     <h3 data-i18n="settings.general.ossLicenses">Open Source Licenses</h3>
                     <p class="setting-hint" data-i18n="settings.general.ossHint">
-                      MidTerm uses the following open source components:
+                      tlbx uses the following open source components:
                     </p>
                     <div class="license-item">
                       <strong>.NET Runtime Libraries</strong>
@@ -2013,7 +2022,7 @@
                           type="text"
                           id="setting-worktree-root-dir"
                           data-i18n-placeholder="settings.behavior.worktreeRootDirectoryHint"
-                          placeholder="Leave empty to use MidTerm's default worktree folder"
+                          placeholder="Leave empty to use tlbx's default worktree folder"
                         />
                         <button type="button" class="inline-save-btn" title="Save">
                           <span class="icon">&#xe90f;</span>
@@ -2035,7 +2044,7 @@
                           Hostname
                         </option>
                         <option value="static" data-i18n="settings.options.tabStatic">
-                          Just MidTerm
+                          Just tlbx
                         </option>
                         <option value="sessionName" data-i18n="settings.options.tabSessionName">
                           Session Name
@@ -2183,7 +2192,7 @@
                         </div>
                         <div id="background-image-name" class="background-image-name"></div>
                         <div class="setting-hint" data-i18n="settings.appearance.backgroundHint">
-                          Uploads a PNG or JPG and stores it beside the MidTerm logs.
+                          Uploads a PNG or JPG and stores it beside the tlbx logs.
                         </div>
                       </div>
                     </div>
@@ -2377,7 +2386,7 @@
                       <input type="checkbox" id="setting-keep-system-awake" />
                     </div>
                     <p class="setting-hint" data-i18n="settings.behavior.keepAwakeHint">
-                      Prevents sleep or standby while MidTerm has at least one live session. The
+                      Prevents sleep or standby while tlbx has at least one live session. The
                       display may still turn off. On Mac laptops, closing the lid still puts the
                       computer to sleep.
                     </p>
@@ -2388,7 +2397,7 @@
                     <div class="setting-row">
                       <label
                         for="setting-tmux-compatibility"
-                        title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside MidTerm terminals (e.g. via SSH)."
+                        title="Injects a tmux shim into spawned terminals so AI coding assistants (Claude Code, Cursor, etc.) can use split-window, send-keys, and other tmux commands. Disable if you use real tmux inside tlbx terminals (e.g. via SSH)."
                         data-i18n="settings.behavior.tmuxCompatibility"
                         >Tmux Compatibility</label
                       >
@@ -2560,7 +2569,7 @@
                       </button>
                     </div>
                     <p class="setting-hint" data-i18n="settings.security.regenerateHint">
-                      Delete and recreate the HTTPS certificate. MidTerm will restart and browsers
+                      Delete and recreate the HTTPS certificate. tlbx will restart and browsers
                       will need to re-trust the new certificate.
                     </p>
                   </div>
@@ -2606,7 +2615,7 @@
                       data-i18n="settings.security.firewallHint"
                     >
                       Windows Firewall can allow other PCs on your network to reach the current
-                      MidTerm HTTPS port.
+                      tlbx HTTPS port.
                     </p>
                   </div>
                 </section>
@@ -2615,9 +2624,9 @@
                   <h2 data-i18n="settings.connectedHosts.title">Connected Hosts</h2>
 
                   <div class="settings-section">
-                    <h3 data-i18n="settings.hub.title">MidTerm Hub</h3>
+                    <h3 data-i18n="settings.hub.title">tlbx Hub</h3>
                     <p class="setting-hint" data-i18n="settings.hub.description">
-                      Connect your other MidTerm hosts here so you can manage agents across your
+                      Connect your other tlbx hosts here so you can manage agents across your
                       Mac, Linux PC, Raspberry Pi, or server from one frontend. Add each host URL
                       and its credentials to get started.
                     </p>

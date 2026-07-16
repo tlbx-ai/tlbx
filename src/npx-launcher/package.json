@@ -1,13 +1,13 @@
 {
   "name": "@tlbx-ai/midterm",
-  "version": "9.19.0",
-  "description": "Ephemeral launcher for MidTerm's multi-agent browser workspace",
+  "version": "10.0.0-dev",
+  "description": "Quick-trial launcher for tlbx, the self-hosted browser control station for remote AI coding agents",
   "license": "AGPL-3.0-only",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/tlbx-ai/tlbx.git"
   },
-  "homepage": "https://midterm.tlbx.ai",
+  "homepage": "https://tlbx.ai",
   "bugs": {
     "url": "https://github.com/tlbx-ai/tlbx/issues"
   },
@@ -26,6 +26,7 @@
   },
   "keywords": [
     "midterm",
+    "tlbx",
     "ai-agents",
     "coding-agents",
     "agent-orchestration",
@@ -33,9 +34,19 @@
     "persistent-sessions",
     "remote-workspace",
     "self-hosted",
+    "remote-ai-agents",
+    "claude-code",
+    "codex",
+    "gemini-cli",
+    "opencode",
+    "copilot-cli",
+    "grok-build",
+    "multi-agent",
     "terminal",
     "remote-terminal",
     "browser-terminal",
+    "mobile-terminal",
+    "ssh-alternative",
     "npx"
   ]
 }

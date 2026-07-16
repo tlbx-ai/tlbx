@@ -32,7 +32,7 @@ class TerminalActivity : Activity() {
         webView.webChromeClient = WebChromeClient()
         webView.webViewClient = object : WebViewClient() {
             override fun onReceivedSslError(view: WebView, handler: SslErrorHandler, error: SslError) {
-                // MidTerm commonly fronts private and self-signed deployments.
+                // tlbx commonly fronts private and self-signed deployments.
                 handler.proceed()
             }
 

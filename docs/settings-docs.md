@@ -1,6 +1,6 @@
-# MidTerm Settings Inventory
+# tlbx Settings Inventory
 
-This document is a current-source inventory of MidTerm's settings surfaces. It is meant as a starting point for a future settings reorganization, not as polished end-user documentation.
+This document is a current-source inventory of tlbx's settings surfaces. It is meant as a starting point for a future settings reorganization, not as polished end-user documentation.
 
 Current sources used for this pass:
 
@@ -26,7 +26,7 @@ Current sources used for this pass:
 
 ## Settings Surfaces
 
-MidTerm currently has four separate settings-like surfaces:
+tlbx currently has four separate settings-like surfaces:
 
 1. The main tabbed Settings panel.
 2. Agent Controller Session quick settings in the session footer rail/sheet.
@@ -126,7 +126,7 @@ Current top-level order in the UI:
   `Automation Bar` — `managerBarEnabled`, `settings.json`, Immediate. Shows or hides the Automation Bar.
   `Enable Ligatures` — `commandBayLigaturesEnabled`, `settings.json`, Immediate. Enables ligature-style rendering in Smart Input / Automation Bar surfaces.
 - `Git & Worktrees`
-  `Worktree Root Directory` — `worktreeRootDirectory`, `settings.json`, New sessions / server workflows. Sets the root folder MidTerm uses for managed worktree and Spaces flows.
+  `Worktree Root Directory` — `worktreeRootDirectory`, `settings.json`, New sessions / server workflows. Sets the root folder tlbx uses for managed worktree and Spaces flows.
 - `Navigation & Discovery`
   `Browser Tab Title` — `tabTitleMode`, `settings.json`, Immediate. Chooses hostname/static/session-name/terminal-title/foreground-process tab naming.
   `Show Bookmarks` — `showBookmarks`, `settings.json`, Immediate.
@@ -192,8 +192,8 @@ Notes:
 
 ### Connected Hosts
 
-- `MidTerm Hub`
-  `Configured Machines` — `hubMachines` mirror plus hub APIs, endpoint-managed, Immediate. Shows remote MidTerm machines, session counts, update state, auth mode, trust state, and any current error.
+- `tlbx Hub`
+  `Configured Machines` — `hubMachines` mirror plus hub APIs, endpoint-managed, Immediate. Shows remote tlbx machines, session counts, update state, auth mode, trust state, and any current error.
   `Control Updates` — hub update API, action, Immediate.
   `Add Host` — hub machine modal, action, Immediate.
   `Host Modal / URL` — hub machine `baseUrl`, endpoint-managed, Immediate after save.
@@ -206,7 +206,7 @@ Notes:
   `Per-machine Pin / Clear Pin` — hub trust pin API, endpoint-managed, Immediate.
   `Per-machine Remove Machine` — hub delete API, endpoint-managed, Immediate.
 - `Integrations`
-  `Tmux Compatibility` — `tmuxCompatibility`, `settings.json`, Server-only. Injects the MidTerm tmux shim for AI tools. Disable it if you are running real tmux inside MidTerm sessions, especially over SSH.
+  `Tmux Compatibility` — `tmuxCompatibility`, `settings.json`, Server-only. Injects the tlbx tmux shim for AI tools. Disable it if you are running real tmux inside tlbx sessions, especially over SSH.
 
 Notes:
 

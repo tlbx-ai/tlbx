@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>MidTerm</string>
+    <string>tlbx</string>
     <key>CFBundleDisplayName</key>
-    <string>MidTerm</string>
+    <string>tlbx</string>
     <key>CFBundleIdentifier</key>
     <string>ai.tlbx.midterm</string>
     <key>CFBundleVersion</key>

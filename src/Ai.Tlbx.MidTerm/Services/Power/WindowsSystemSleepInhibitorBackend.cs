@@ -36,7 +36,7 @@ internal sealed class WindowsSystemSleepInhibitorBackend : ISystemSleepInhibitor
             var workerThread = new Thread(ThreadMain)
             {
                 IsBackground = true,
-                Name = "MidTerm Sleep Inhibitor"
+                Name = "tlbx Sleep Inhibitor"
             };
 
             try

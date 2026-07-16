@@ -23,14 +23,15 @@ public static class MtcliScriptWriter
     private static string GenerateShellScript(int port, string token) =>
         $$"""
         #!/bin/bash
-        # MidTerm CLI helpers — auto-generated, do not edit.
+        # tlbx CLI helpers — auto-generated, do not edit.
         # Source: . .midterm/mtcli.sh   |   Run: .midterm/mtcli.sh <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
-        # It only works on this machine's MidTerm instance. Treat it like a local session secret.
+        # It only works on this machine's tlbx instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         _MK="mm-session={{token}}"
+        _MTDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
         _MCURL() {
           if command -v curl.exe >/dev/null 2>&1; then
             curl.exe "$@"
@@ -63,9 +64,9 @@ public static class MtcliScriptWriter
         _MCTXERR() {
           local cmd="${1:-This command}"
           printf '%s\n' \
-            "$cmd requires MidTerm session context, but MT_SESSION_ID is empty in this shell." \
+            "$cmd requires tlbx session context, but MT_SESSION_ID is empty in this shell." \
             "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME." \
-            "Re-export them from the parent MidTerm shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it." >&2
+            "Re-export them from the parent tlbx shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it." >&2
         }
         _MREQUIRECTX() {
           local cmd="${1:-This command}"
@@ -175,7 +176,39 @@ public static class MtcliScriptWriter
           esac
         }
 
-        # Browser interaction (requires web preview panel open in MidTerm)
+        # mt_run_isolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
+        mt_run_isolated() {
+          if [ $# -lt 1 ] || [ -z "${1:-}" ]; then
+            echo "Usage: mt_run_isolated EXECUTABLE [ARG ...]" >&2
+            return 1
+          fi
+
+          local executable="$1"
+          shift
+          if [[ "$executable" == */* ]]; then
+            [ -x "$executable" ] || { printf 'Executable not found or not executable: %s\n' "$executable" >&2; return 1; }
+          elif ! command -v "$executable" >/dev/null 2>&1; then
+            printf 'Executable not found: %s\n' "$executable" >&2
+            return 1
+          fi
+          command -v nohup >/dev/null 2>&1 || { echo "mt_run_isolated requires nohup." >&2; return 1; }
+
+          local runs_root="$_MTDIR/runs" run_dir run_id stdout_path stderr_path pid
+          mkdir -p -- "$runs_root" || return $?
+          run_dir="$(mktemp -d "$runs_root/$(date -u +%Y%m%dT%H%M%SZ)-XXXXXXXX")" || return $?
+          run_id="${run_dir##*/}"
+          stdout_path="$run_dir/stdout.log"
+          stderr_path="$run_dir/stderr.log"
+          (umask 077; : >"$stdout_path"; : >"$stderr_path") || return $?
+
+          (exec nohup "$executable" "$@") </dev/null >>"$stdout_path" 2>>"$stderr_path" &
+          pid=$!
+          disown "$pid" 2>/dev/null || true
+          printf '{"pid":%s,"runId":"%s","stdoutPath":"%s","stderrPath":"%s"}\n' \
+            "$pid" "$(_MJSONESC "$run_id")" "$(_MJSONESC "$stdout_path")" "$(_MJSONESC "$stderr_path")"
+        }
+
+        # Browser interaction (requires web preview panel open in tlbx)
         # mt_query SELECTOR [--text]  — query DOM; --text for text-only (smaller output)
         mt_query() { _MBB query "$@"; }
         # mt_click SELECTOR
@@ -289,7 +322,7 @@ public static class MtcliScriptWriter
         mt_target()     { _MREQUIRECTX "mt_target" || return $?; _MC "$_MT/api/webpreview/target$(_MQ)"; }
         mt_cookies()    { _MREQUIRECTX "mt_cookies" || return $?; _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
         mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
-        # mt_claim_preview  — explicitly assign this named preview to the connected MidTerm browser
+        # mt_claim_preview  — explicitly assign this named preview to the connected tlbx browser
         mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
         # mt_claim_main_browser [browser-id]  — make the selected preview/browser the leading browser for terminal sizing
         mt_claim_main_browser() {
@@ -415,6 +448,17 @@ public static class MtcliScriptWriter
           fi
           [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
           _MC "$_MT/api/sessions/$sid/buffer"
+        }
+        # mt_redraw [SESSION_ID]  — ask the foreground console application to repaint its current screen
+        mt_redraw() {
+          local sid
+          if [ $# -gt 0 ] && _MISID "$1"; then
+            sid="$1"
+          else
+            sid="$(_MSID)"
+          fi
+          [ -n "$sid" ] || { echo "Session id required." >&2; return 1; }
+          _MC -X POST "$_MT/api/sessions/$sid/redraw"
         }
         # mt_tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
         mt_tail() {
@@ -623,7 +667,7 @@ public static class MtcliScriptWriter
           local agent_only="${1:-true}"
           _MC "$_MT/api/sessions/attention?agentOnly=$agent_only"
         }
-        # Explicit agent control plane. MidTerm stores what agents publish; it does not infer meaning from PTY output.
+        # Explicit agent control plane. tlbx stores what agents publish; it does not infer meaning from PTY output.
         mt_control_plane() {
           if [ -n "${1:-}" ]; then
             _MC "$_MT/api/hub/machines/$(_MURLENC "$1")/control-plane"
@@ -777,7 +821,7 @@ public static class MtcliScriptWriter
           local slash_delay_ms="${MT_BOOTSTRAP_SLASH_DELAY_MS:-350}"
           local body="{\"name\":\"$(_MJE "$name")\",\"workingDirectory\":\"$(_MJE "$cwd")\",\"profile\":\"$(_MJE "$profile")\",\"agentControlled\":true,\"injectGuidance\":true,\"launchDelayMs\":$launch_delay_ms,\"slashCommandDelayMs\":$slash_delay_ms"
           if [ $# -gt 0 ]; then
-            body+=',\"slashCommands\":['
+            body+=',"slashCommands":['
             local first=1
             local command
             for command in "$@"; do
@@ -817,7 +861,7 @@ public static class MtcliScriptWriter
           _MREQUIRECTX "mt_viewport" || return $?
           _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"width\":$w,\"height\":$h}" "$_MT/api/browser/viewport"
         }
-        # mt_mobile ACTION [PROFILE]  — control the local Chrome device attached to the owning MidTerm tab
+        # mt_mobile ACTION [PROFILE]  — control the local Chrome device attached to the owning tlbx tab
         mt_mobile() {
           local action="${1:-status}" profile="${2:-pixel-8}"
           _MREQUIRECTX "mt_mobile" || return $?
@@ -840,7 +884,7 @@ public static class MtcliScriptWriter
           elif [ -n "$_normalized_cmd" ] && command -v "mt_$_normalized_cmd" >/dev/null 2>&1; then
             "mt_$_normalized_cmd" "$@"
           else
-            printf 'Unknown MidTerm CLI command: %s\n' "$_cmd" >&2
+            printf 'Unknown tlbx CLI command: %s\n' "$_cmd" >&2
             exit 1
           fi
         fi
@@ -848,11 +892,11 @@ public static class MtcliScriptWriter
 
     private static string GeneratePowerShellScript(int port, string token) =>
         $$"""
-        # MidTerm CLI helpers — auto-generated, do not edit.
+        # tlbx CLI helpers — auto-generated, do not edit.
         # Dot-source: . .midterm\mtcli.ps1   |   Run: pwsh .midterm\mtcli.ps1 <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
-        # It only works on this machine's MidTerm instance. Treat it like a local session secret.
+        # It only works on this machine's tlbx instance. Treat it like a local session secret.
         # Optional: set MT_API_KEY to use API-key auth instead of the generated browser session cookie.
         $script:_MT = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
         $script:_MK = "mm-session={{token}}"
@@ -887,12 +931,39 @@ public static class MtcliScriptWriter
             if ($null -eq $Value) { return "''" }
             return "'" + $Value.Replace("'", "'""'""'") + "'"
         }
+        function script:_MQuoteProcessArgument {
+            param([AllowEmptyString()][string]$Value)
+            if ($null -eq $Value -or $Value.Length -eq 0) { return '""' }
+            if ($Value -notmatch '[\s"]') { return $Value }
+
+            $result = '"'
+            $backslashes = 0
+            foreach ($character in $Value.ToCharArray()) {
+                if ($character -eq '\') {
+                    $backslashes++
+                    continue
+                }
+                if ($character -eq '"') {
+                    if ($backslashes -gt 0) { $result += (('\' * ($backslashes * 2)) -join '') }
+                    $result += '\"'
+                    $backslashes = 0
+                    continue
+                }
+                if ($backslashes -gt 0) {
+                    $result += (('\' * $backslashes) -join '')
+                    $backslashes = 0
+                }
+                $result += $character
+            }
+            if ($backslashes -gt 0) { $result += (('\' * ($backslashes * 2)) -join '') }
+            return $result + '"'
+        }
         function script:_MContextMissingMessage {
             param([string]$CommandName = "This command")
             @(
-                "$CommandName requires MidTerm session context, but MT_SESSION_ID is empty in this shell.",
+                "$CommandName requires tlbx session context, but MT_SESSION_ID is empty in this shell.",
                 "This usually means a nested shell was spawned without forwarding MT_SESSION_ID and MT_PREVIEW_NAME.",
-                "Re-export them from the parent MidTerm shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it."
+                "Re-export them from the parent tlbx shell with mt_context --bash or mt_context --pwsh, or pass an explicit session id when the command supports it."
             ) -join [Environment]::NewLine
         }
         function script:_MRequireSessionContext {
@@ -1064,7 +1135,67 @@ public static class MtcliScriptWriter
             }
         }
 
-        # Browser interaction (requires web preview panel open in MidTerm)
+        # Mt-RunIsolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
+        function Mt-RunIsolated {
+            [CmdletBinding()]
+            param(
+                [Parameter(Mandatory=$true, Position=0)][string]$Executable,
+                [Parameter(Position=1, ValueFromRemainingArguments=$true)][AllowEmptyString()][string[]]$ArgumentList = @()
+            )
+
+            $isWindowsHost = $IsWindows -or $PSVersionTable.PSEdition -eq "Desktop"
+            $launchExecutable = $Executable
+            [string[]]$launchArguments = @($ArgumentList)
+            if (-not $isWindowsHost) {
+                $nohup = Get-Command nohup -CommandType Application -ErrorAction SilentlyContinue
+                if (-not $nohup) {
+                    throw "Mt-RunIsolated requires nohup on macOS and Linux."
+                }
+                $launchExecutable = $nohup.Source
+                $launchArguments = @($Executable) + @($ArgumentList)
+            }
+
+            $runsRoot = Join-Path $PSScriptRoot "runs"
+            $runId = "{0:yyyyMMddTHHmmssfffZ}-{1}" -f [DateTime]::UtcNow, ([Guid]::NewGuid().ToString("N").Substring(0, 8))
+            $runDirectory = Join-Path $runsRoot $runId
+            $stdoutPath = Join-Path $runDirectory "stdout.log"
+            $stderrPath = Join-Path $runDirectory "stderr.log"
+            $stdinPath = Join-Path $runDirectory "stdin.empty"
+
+            [void](New-Item -ItemType Directory -Path $runDirectory -Force)
+            [IO.File]::WriteAllBytes($stdinPath, [byte[]]::new(0))
+            $startParameters = @{
+                FilePath = $launchExecutable
+                WorkingDirectory = (Get-Location).Path
+                RedirectStandardInput = $stdinPath
+                RedirectStandardOutput = $stdoutPath
+                RedirectStandardError = $stderrPath
+                PassThru = $true
+                ErrorAction = "Stop"
+            }
+            if ($launchArguments.Count -gt 0) {
+                $startParameters.ArgumentList = (($launchArguments | ForEach-Object { _MQuoteProcessArgument $_ }) -join ' ')
+            }
+            if ($isWindowsHost) {
+                $startParameters.WindowStyle = "Hidden"
+            }
+
+            try {
+                $process = Start-Process @startParameters
+            } catch {
+                Remove-Item -LiteralPath $runDirectory -Recurse -Force -ErrorAction SilentlyContinue
+                throw
+            }
+
+            [pscustomobject]@{
+                pid = $process.Id
+                runId = $runId
+                stdoutPath = $stdoutPath
+                stderrPath = $stderrPath
+            } | ConvertTo-Json -Compress
+        }
+
+        # Browser interaction (requires web preview panel open in tlbx)
         # Mt-Query -Selector CSS_SELECTOR [-Text]  — query DOM; -Text for text-only
         function Mt-Query {
             param([string]$Selector, [switch]$Text)
@@ -1174,7 +1305,7 @@ public static class MtcliScriptWriter
         function Mt-Target     { _MRequireSessionContext "mt_target"; _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
         function Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
         function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
-        # Mt-ClaimPreview  — explicitly assign this named preview to the connected MidTerm browser
+        # Mt-ClaimPreview  — explicitly assign this named preview to the connected tlbx browser
         function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
         # Mt-ClaimMainBrowser [-BrowserId ID]  — make the selected preview/browser the leading browser for terminal sizing
         function Mt-ClaimMainBrowser {
@@ -1294,6 +1425,13 @@ public static class MtcliScriptWriter
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer"
+        }
+        # Mt-Redraw [SESSION_ID]  — ask the foreground console application to repaint its current screen
+        function Mt-Redraw {
+            param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
+            $resolved = _MResolveSessionArgs $InputArgs
+            if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
+            _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/redraw"
         }
         # Mt-Tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
         function Mt-Tail {
@@ -1506,7 +1644,7 @@ public static class MtcliScriptWriter
             param([bool]$AgentOnly = $true)
             _MC "$script:_MT/api/sessions/attention?agentOnly=$AgentOnly"
         }
-        # Explicit agent control plane. MidTerm stores what agents publish; it does not infer meaning from PTY output.
+        # Explicit agent control plane. tlbx stores what agents publish; it does not infer meaning from PTY output.
         function Mt-ControlPlane {
             param([string]$MachineId)
             if ($MachineId) {
@@ -1729,7 +1867,7 @@ public static class MtcliScriptWriter
             _MRequireSessionContext "mt_viewport"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
         }
-        # Mt-Mobile [-Action ACTION] [-Profile PROFILE]  — control the local Chrome device attached to this MidTerm tab
+        # Mt-Mobile [-Action ACTION] [-Profile PROFILE]  — control the local Chrome device attached to this tlbx tab
         function Mt-Mobile {
             param([string]$Action = "status", [string]$Profile = "pixel-8")
             _MRequireSessionContext "mt_mobile"
@@ -1741,6 +1879,7 @@ public static class MtcliScriptWriter
 
         # PowerShell aliases matching the documented mt_* helper names
         Set-Alias -Name mt_context -Value Mt-Context
+        Set-Alias -Name mt_run_isolated -Value Mt-RunIsolated
         Set-Alias -Name mt_query -Value Mt-Query
         Set-Alias -Name mt_click -Value Mt-Click
         Set-Alias -Name mt_fill -Value Mt-Fill
@@ -1783,6 +1922,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_apply_update -Value Mt-ApplyUpdate
         Set-Alias -Name mt_sessions -Value Mt-Sessions
         Set-Alias -Name mt_buffer -Value Mt-Buffer
+        Set-Alias -Name mt_redraw -Value Mt-Redraw
         Set-Alias -Name mt_tail -Value Mt-Tail
         Set-Alias -Name mt_sendtext -Value Mt-SendText
         Set-Alias -Name mt_paste -Value Mt-Paste
@@ -1849,7 +1989,7 @@ public static class MtcliScriptWriter
                 }
             }
 
-            throw "Unknown MidTerm CLI command: $cmd"
+            throw "Unknown tlbx CLI command: $cmd"
         }
         """;
 }

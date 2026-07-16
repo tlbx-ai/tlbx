@@ -13,7 +13,7 @@ param(
     [ValidateSet("dev", "main")]
     [string]$Channel = "dev",
 
-    [string]$Repository = "tlbx-ai/MidTerm",
+    [string]$Repository = "tlbx-ai/tlbx",
 
     [string]$OutputRoot = (Join-Path $PSScriptRoot "..\.dev\aot-dissection"),
 

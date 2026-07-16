@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Xunit;
@@ -134,7 +136,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("controllable: yes", powershell, StringComparison.Ordinal);
         Assert.Contains("selected visible: yes", powershell, StringComparison.Ordinal);
         Assert.Contains("Get-Command $candidate -ErrorAction SilentlyContinue", powershell, StringComparison.Ordinal);
-        Assert.Contains("Unknown MidTerm CLI command: $cmd", powershell, StringComparison.Ordinal);
+        Assert.Contains("Unknown tlbx CLI command: $cmd", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_context -Value Mt-Context", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
@@ -149,7 +151,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("_normalized_cmd=\"${_cmd#mt_}\"", shell, StringComparison.Ordinal);
         Assert.Contains("_normalized_cmd=\"${_cmd#mt-}\"", shell, StringComparison.Ordinal);
         Assert.Contains("command -v \"mt_$_normalized_cmd\"", shell, StringComparison.Ordinal);
-        Assert.Contains("Unknown MidTerm CLI command: %s", shell, StringComparison.Ordinal);
+        Assert.Contains("Unknown tlbx CLI command: %s", shell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -162,6 +164,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
         var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
 
+        Assert.Contains("mt_redraw()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_tail()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_sendtext()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_paste()", shell, StringComparison.Ordinal);
@@ -189,6 +192,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_bootstrap()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_supervise()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
+        Assert.Contains("function Mt-Redraw", powershell, StringComparison.Ordinal);
+        Assert.Contains("Get-Command nohup -CommandType Application", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Tail", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-SendText", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Paste", powershell, StringComparison.Ordinal);
@@ -218,6 +223,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_open -Value Mt-Open", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_redraw -Value Mt-Redraw", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_paste -Value Mt-Paste", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_prompt -Value Mt-Prompt", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_wake -Value Mt-Wake", powershell, StringComparison.Ordinal);
@@ -229,6 +235,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_status -Value Mt-Status", powershell, StringComparison.Ordinal);
         Assert.Contains("ValueFromRemainingArguments", powershell, StringComparison.Ordinal);
         Assert.Contains("/buffer/tail?lines=", shell, StringComparison.Ordinal);
+        Assert.Contains("/api/sessions/$sid/redraw", shell, StringComparison.Ordinal);
         Assert.Contains("/input/keys", powershell, StringComparison.Ordinal);
         Assert.Contains("/input/text", shell, StringComparison.Ordinal);
         Assert.Contains("/input/paste", shell, StringComparison.Ordinal);
@@ -241,6 +248,177 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("/activity?seconds=", powershell, StringComparison.Ordinal);
         Assert.Contains("midterm supervisor snapshot", shell, StringComparison.Ordinal);
         Assert.Contains("fleet attention:", powershell, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteScripts_BashBootstrapProducesValidJsonWithSlashCommands()
+    {
+        var bashPath = ResolveBashPath();
+        if (bashPath is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_tempDir);
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+
+        var scriptPath = ToBashPath(Path.Combine(_tempDir, "mtcli.sh"));
+        var startInfo = new ProcessStartInfo(bashPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("-c");
+        startInfo.ArgumentList.Add(
+            "source \"$1\"; _MJ() { printf '%s' \"$2\"; }; " +
+            "mt_bootstrap 'review \"worker\"' 'Q:/repo with space' codex status compact");
+        startInfo.ArgumentList.Add("midterm-test");
+        startInfo.ArgumentList.Add(scriptPath);
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, error);
+        using var json = JsonDocument.Parse(output);
+        var root = json.RootElement;
+        Assert.Equal("review \"worker\"", root.GetProperty("name").GetString());
+        Assert.Equal("Q:/repo with space", root.GetProperty("workingDirectory").GetString());
+        Assert.Equal("codex", root.GetProperty("profile").GetString());
+        var slashCommands = root.GetProperty("slashCommands");
+        Assert.Equal(2, slashCommands.GetArrayLength());
+        Assert.Equal("status", slashCommands[0].GetString());
+        Assert.Equal("compact", slashCommands[1].GetString());
+    }
+
+    [Fact]
+    public void WriteScripts_BashRunIsolatedKeepsChildBytesOutOfCallerAndPreservesArgv()
+    {
+        var bashPath = ResolveBashPath();
+        if (bashPath is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_tempDir);
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        var childPath = Path.Combine(_tempDir, "isolated-child.sh");
+        File.WriteAllText(childPath,
+            "sleep 0.15\n" +
+            "printf 'stdout-sentinel\\n'\n" +
+            "printf 'arg1=<%s>\\n' \"$1\"\n" +
+            "printf 'arg2=<%s>\\n' \"$2\"\n" +
+            "printf 'arg3=<%s>\\n' \"$3\"\n" +
+            "if IFS= read -r line; then printf 'stdin=<%s>\\n' \"$line\"; else printf 'stdin=<eof>\\n'; fi\n" +
+            "printf 'stderr-sentinel\\n' >&2\n");
+
+        var startInfo = new ProcessStartInfo(bashPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("-c");
+        startInfo.ArgumentList.Add("source \"$1\"; mt_run_isolated \"$2\" \"$3\" \"$4\" \"$5\" \"$6\"");
+        startInfo.ArgumentList.Add("midterm-test");
+        startInfo.ArgumentList.Add(ToBashPath(Path.Combine(_tempDir, "mtcli.sh")));
+        startInfo.ArgumentList.Add(ToBashPath(bashPath));
+        startInfo.ArgumentList.Add(ToBashPath(childPath));
+        startInfo.ArgumentList.Add("two words");
+        startInfo.ArgumentList.Add("quote\"value");
+        startInfo.ArgumentList.Add("slash and space\\");
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, error);
+        Assert.DoesNotContain("stdout-sentinel", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("stderr-sentinel", error, StringComparison.Ordinal);
+        using var receipt = JsonDocument.Parse(output);
+        var root = receipt.RootElement;
+        Assert.True(root.GetProperty("pid").GetInt32() > 0);
+        var runId = root.GetProperty("runId").GetString()!;
+        var stdoutPath = Path.Combine(_tempDir, "runs", runId, "stdout.log");
+        var stderrPath = Path.Combine(_tempDir, "runs", runId, "stderr.log");
+
+        var childOutput = WaitForFileContent(stdoutPath, content => content.Contains("stdin=<eof>", StringComparison.Ordinal));
+        var childError = WaitForFileContent(stderrPath, content => content.Contains("stderr-sentinel", StringComparison.Ordinal));
+        Assert.Contains("stdout-sentinel", childOutput, StringComparison.Ordinal);
+        Assert.Contains("arg1=<two words>", childOutput, StringComparison.Ordinal);
+        Assert.Contains("arg2=<quote\"value>", childOutput, StringComparison.Ordinal);
+        Assert.Contains("arg3=<slash and space\\>", childOutput, StringComparison.Ordinal);
+        Assert.Equal("stderr-sentinel", childError.Trim());
+        Assert.EndsWith($"/runs/{runId}/stdout.log", root.GetProperty("stdoutPath").GetString()!.Replace('\\', '/'), StringComparison.Ordinal);
+        Assert.EndsWith($"/runs/{runId}/stderr.log", root.GetProperty("stderrPath").GetString()!.Replace('\\', '/'), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WriteScripts_PowerShellRunIsolatedKeepsChildBytesOutOfCallerAndPreservesArgv()
+    {
+        var powershellPath = ResolvePowerShellPath();
+        if (powershellPath is null)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(_tempDir);
+        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        var childPath = Path.Combine(_tempDir, "isolated-child.ps1");
+        File.WriteAllText(childPath,
+            "param([Parameter(ValueFromRemainingArguments=$true)][string[]]$InputArgs)\n" +
+            "Start-Sleep -Milliseconds 150\n" +
+            "[Console]::Out.WriteLine('stdout-sentinel')\n" +
+            "$InputArgs | ForEach-Object -Begin { $index = 0 } -Process { [Console]::Out.WriteLine(('arg{0}=<{1}>' -f (++$index), $_)) }\n" +
+            "[Console]::Out.WriteLine(('stdin-length={0}' -f ([Console]::In.ReadToEnd().Length)))\n" +
+            "[Console]::Error.WriteLine('stderr-sentinel')\n");
+
+        var startInfo = new ProcessStartInfo(powershellPath)
+        {
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false
+        };
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(Path.Combine(_tempDir, "mtcli.ps1"));
+        startInfo.ArgumentList.Add("mt_run_isolated");
+        startInfo.ArgumentList.Add(powershellPath);
+        startInfo.ArgumentList.Add("-NoProfile");
+        startInfo.ArgumentList.Add("-NonInteractive");
+        startInfo.ArgumentList.Add("-File");
+        startInfo.ArgumentList.Add(childPath);
+        startInfo.ArgumentList.Add("two words");
+        startInfo.ArgumentList.Add("quote\"value");
+        startInfo.ArgumentList.Add("slash and space\\");
+
+        using var process = Process.Start(startInfo)!;
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        Assert.True(process.ExitCode == 0, error);
+        Assert.DoesNotContain("stdout-sentinel", output, StringComparison.Ordinal);
+        Assert.DoesNotContain("stderr-sentinel", error, StringComparison.Ordinal);
+        using var receipt = JsonDocument.Parse(output);
+        var root = receipt.RootElement;
+        Assert.True(root.GetProperty("pid").GetInt32() > 0);
+        var runId = root.GetProperty("runId").GetString()!;
+        var stdoutPath = root.GetProperty("stdoutPath").GetString()!;
+        var stderrPath = root.GetProperty("stderrPath").GetString()!;
+        Assert.Equal(Path.Combine(_tempDir, "runs", runId, "stdout.log"), stdoutPath);
+        Assert.Equal(Path.Combine(_tempDir, "runs", runId, "stderr.log"), stderrPath);
+
+        var childOutput = WaitForFileContent(stdoutPath, content => content.Contains("stdin-length=0", StringComparison.Ordinal));
+        var childError = WaitForFileContent(stderrPath, content => content.Contains("stderr-sentinel", StringComparison.Ordinal));
+        Assert.Contains("stdout-sentinel", childOutput, StringComparison.Ordinal);
+        Assert.Contains("arg1=<two words>", childOutput, StringComparison.Ordinal);
+        Assert.Contains("arg2=<quote\"value>", childOutput, StringComparison.Ordinal);
+        Assert.Contains("arg3=<slash and space\\>", childOutput, StringComparison.Ordinal);
+        Assert.Equal("stderr-sentinel", childError.Trim());
     }
 
     [Fact]
@@ -302,6 +480,8 @@ public sealed class MtcliScriptWriterTests : IDisposable
 
         var agentsPath = Path.Combine(_tempDir, MidtermDirectory.DirectoryName, "AGENTS.md");
         var agents = File.ReadAllText(agentsPath);
+        var claudePath = Path.Combine(_tempDir, MidtermDirectory.DirectoryName, "CLAUDE.md");
+        var claude = File.ReadAllText(claudePath);
 
         Assert.Contains("guidance-version:", agents, StringComparison.Ordinal);
         Assert.Contains("mt_apply_update", agents, StringComparison.Ordinal);
@@ -310,9 +490,9 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_open is the CLI command that opens/docks the preview", agents, StringComparison.Ordinal);
         Assert.Contains("state: ready", agents, StringComparison.Ordinal);
         Assert.Contains("Every C# change in the local source loop restarts the source `mt`", agents, StringComparison.Ordinal);
-        Assert.Contains("the outer MidTerm browser tab owns `/ws/state`", agents, StringComparison.Ordinal);
+        Assert.Contains("the outer tlbx browser tab owns `/ws/state`", agents, StringComparison.Ordinal);
         Assert.Contains("ui clients: 0", agents, StringComparison.Ordinal);
-        Assert.Contains("mt_session prints the current MidTerm terminal session ID", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_session prints the current tlbx terminal session ID", agents, StringComparison.Ordinal);
         Assert.Contains("mt_context --bash / mt_context --pwsh", agents, StringComparison.Ordinal);
         Assert.Contains("mt_preview user1", agents, StringComparison.Ordinal);
         Assert.Contains("mt_tail", agents, StringComparison.Ordinal);
@@ -333,6 +513,11 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("outlet for agents, not another agent", agents, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
         Assert.Contains("mt_supervise", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_run_isolated", agents, StringComparison.Ordinal);
+        Assert.Contains(".midterm/runs/<run-id>/", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_run_isolated", claude, StringComparison.Ordinal);
+        Assert.Contains("separate argv tokens", claude, StringComparison.Ordinal);
+        Assert.Contains(".midterm/runs/<run-id>/", claude, StringComparison.Ordinal);
         Assert.Contains("mt_preview_reset", agents, StringComparison.Ordinal);
         Assert.Contains("status` and `mt_status` both resolve", agents, StringComparison.Ordinal);
         Assert.Contains("atomically", agents, StringComparison.Ordinal);
@@ -372,5 +557,74 @@ public sealed class MtcliScriptWriterTests : IDisposable
         catch
         {
         }
+    }
+
+    private static string? ResolveBashPath()
+    {
+        string[] candidates = OperatingSystem.IsWindows()
+            ? [@"C:\Program Files\Git\bin\bash.exe", @"C:\Program Files\Git\usr\bin\bash.exe"]
+            : ["/bin/bash", "/usr/bin/bash"];
+
+        return candidates.FirstOrDefault(File.Exists);
+    }
+
+    private static string? ResolvePowerShellPath()
+    {
+        string[] candidates = OperatingSystem.IsWindows()
+            ? [@"C:\Program Files\PowerShell\7\pwsh.exe"]
+            : ["/usr/bin/pwsh", "/usr/local/bin/pwsh"];
+
+        var fixedPath = candidates.FirstOrDefault(File.Exists);
+        if (fixedPath is not null)
+        {
+            return fixedPath;
+        }
+
+        var executableName = OperatingSystem.IsWindows() ? "pwsh.exe" : "pwsh";
+        return (Environment.GetEnvironmentVariable("PATH") ?? string.Empty)
+            .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
+            .Select(path => Path.Combine(path, executableName))
+            .FirstOrDefault(File.Exists);
+    }
+
+    private static string WaitForFileContent(string path, Func<string, bool> completed)
+    {
+        var timeout = Stopwatch.StartNew();
+        string content = string.Empty;
+        while (timeout.Elapsed < TimeSpan.FromSeconds(10))
+        {
+            if (File.Exists(path))
+            {
+                try
+                {
+                    content = File.ReadAllText(path);
+                    if (completed(content))
+                    {
+                        return content;
+                    }
+                }
+                catch (IOException)
+                {
+                }
+            }
+
+            Thread.Sleep(25);
+        }
+
+        Assert.Fail($"Timed out waiting for isolated run artifact '{path}'. Last content: {content}");
+        return content;
+    }
+
+    private static string ToBashPath(string path)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return path;
+        }
+
+        var normalized = path.Replace('\\', '/');
+        return normalized.Length >= 3 && normalized[1] == ':'
+            ? $"/{char.ToLowerInvariant(normalized[0])}/{normalized[3..]}"
+            : normalized;
     }
 }

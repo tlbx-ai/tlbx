@@ -1,153 +1,118 @@
-# Build Verification & Audit
+# Release verification and build audit
 
-MidTerm releases are built entirely through GitHub Actions using public CI infrastructure. This document explains how to verify releases and the current limitations of reproducible builds.
+tlbx release artifacts are built from a version tag by the public
+[`release.yml`](../.github/workflows/release.yml) workflow. This document states
+what that process currently proves and, equally importantly, what it does not.
 
-## Accountability Model
+## Current release chain
 
-All release binaries are produced by GitHub Actions with:
+A pushed `v*` tag starts the release workflow. The workflow:
 
-- **Public workflow**: [`.github/workflows/release.yml`](.github/workflows/release.yml) defines the complete build process
-- **No secrets in build**: Build steps use only public inputs (source code, .NET SDK, Node.js)
-- **Immutable build environment**: GitHub-hosted runners with published OS/SDK versions
-- **Tamper-evident releases**: Each release includes `checksums.txt` with SHA256 hashes
+1. reads the annotated tag; development tags create/update a published
+   prerelease, while stable tags create or reuse an unpublished draft
+2. builds the frontend once; stable tags additionally run the configured
+   frontend and .NET test jobs
+3. publishes the runtime set for each release platform
+4. generates a `SHA256SUMS.txt` file **inside each platform archive**
+5. signs the release manifest and performs platform signing/notarization where
+   configured
+6. uploads the platform archives to the matching GitHub release
+7. for stable tags, publishes the npm launcher, verifies the exact six expected
+   platform archives are present and nonempty, and only then publishes the draft
 
-The accountability comes from GitHub as a trusted third party. The build process has no hidden side-channels—what you see in the workflow file is what runs.
+Development releases use GitHub-hosted runners. Stable macOS and Linux builds
+also use GitHub-hosted runners; stable Windows x64 and x86 builds use the repository's
+self-hosted Windows signing runner. Apple signing/notarization, Windows signing,
+and manifest signing require repository secrets. Compilation inputs are public,
+but it is incorrect to describe the entire release job as secret-free or every
+runner as third-party hosted.
 
-## Verifying a Release
+The workflow declares its SDK and action versions, but hosted runner images and
+major-version action tags can evolve. The environment is inspectable from the
+run log; it is not an immutable build appliance.
 
-### 1. Check the workflow run
+## Verify a release
 
-Every release tag triggers a build. Find the corresponding workflow run:
+### 1. Match tag, commit, and workflow run
 
-```
-https://github.com/tlbx-ai/MidTerm/actions/workflows/release.yml
-```
+Open the release and the Release workflow:
 
-Verify:
-- The run was triggered by a tag push (not manual dispatch)
-- The commit SHA matches the tagged release
-- All build jobs completed successfully
+- <https://github.com/tlbx-ai/tlbx/releases>
+- <https://github.com/tlbx-ai/tlbx/actions/workflows/release.yml>
 
-### 2. Verify checksums
+Check that:
 
-Each release includes a `checksums.txt` file and per-platform `SHA256SUMS.txt` inside archives.
+- the run was triggered by the expected tag
+- the workflow commit is the commit referenced by that tag
+- required test and platform jobs succeeded
+- the release assets were uploaded by that run
+
+The release workflow is tag-triggered; it has no manual-dispatch trigger.
+
+### 2. Verify the archive's internal manifest
+
+Each archive contains a platform-local `SHA256SUMS.txt`. There is currently no
+separate top-level `checksums.txt` release asset.
+
+For a Unix archive:
 
 ```bash
-# Download and verify
-curl -LO https://github.com/tlbx-ai/MidTerm/releases/download/v5.x.x/checksums.txt
-curl -LO https://github.com/tlbx-ai/MidTerm/releases/download/v5.x.x/mt-win-x64.zip
-
-# Extract and check
-unzip mt-win-x64.zip
+mkdir midterm-release
+tar -xzf mt-linux-x64.tar.gz -C midterm-release
+cd midterm-release
 sha256sum -c SHA256SUMS.txt
 ```
 
-### 3. Inspect the build logs
+For a Windows archive, extract it and compare every line in
+`SHA256SUMS.txt` with `Get-FileHash -Algorithm SHA256` for the named binary.
 
-GitHub Actions logs are public and retained for 90 days. The logs show:
-- Exact SDK versions used
-- Full compiler output
-- Generated checksums
+This check detects damaged or changed files *inside the extracted archive*.
+Because the checksum manifest travels in the same archive, it is not an
+independent signature of the archive itself. Authentication additionally relies
+on the Git tag/workflow chain, the signed `version.json` manifest, and applicable
+platform code signatures.
 
-## Reproducible Builds: Current Limitations
+### 3. Inspect platform signatures
 
-### The Goal
+- Stable Windows binaries are Authenticode-signed and the workflow rejects an
+  invalid signature before upload.
+- macOS binaries in both release channels are Developer ID signed and submitted
+  to Apple's notarization service before upload.
+- Development Windows builds and Linux binaries do not provide the same
+  platform trust signals; inspect the workflow run and internal checksum
+  manifest instead.
 
-Reproducible builds allow anyone to compile the source and get a byte-identical binary, proving the release matches the source code.
+## Rebuilding locally
 
-### What We've Configured
+The runtime-set publisher used by CI is
+[`scripts/publish-runtime-set.ps1`](../scripts/publish-runtime-set.ps1). From a
+checkout of the release tag, a representative Windows build is:
 
-The project includes reproducible build settings:
-
-```xml
-<!-- Directory.Build.props -->
-<Deterministic>true</Deterministic>
-<ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+```powershell
+pwsh -File scripts/publish-runtime-set.ps1 -Rid win-x64 -Configuration Release
 ```
 
-Build scripts support reproducible mode:
-```bash
-# Windows
-.\build-aot.ps1 -Reproducible
+Replace the runtime identifier for another supported target and use the matching
+host operating system/toolchain.
 
-# Linux/macOS
-./build-aot-linux.sh --reproducible
-```
+The repository enables deterministic .NET compilation settings and
+`ContinuousIntegrationBuild` in CI. tlbx does **not** currently claim that a
+local Native AOT build will be byte-identical to a published artifact. Native
+toolchains, linker inputs, runner images, signing, and notarization can all
+affect final bytes. A differing local binary hash is therefore a reason to
+inspect inputs and logs, not by itself proof of tampering.
 
-### Why AOT Builds Are Not Yet Reproducible
+## Honest trust boundary
 
-**Tested result**: Building the same source twice with identical settings produces different binaries.
+The verifiable evidence available today is:
 
-```
-Build 1: 83F8A57588C4A59BCE3B887B844E981925E1D50EBB440C9CB073A59191FA7C00
-Build 2: 1F7DDB8D04EA869260C943EFD183B5E442D7853C6414ACA906D444197CA61F13
-```
+- public source and release workflow at the tagged commit
+- public GitHub Actions logs for hosted portions of the build while retained
+- tag-to-run-to-release correspondence
+- tests executed by the workflow for stable tags
+- internal per-platform binary checksums
+- signed release manifest and stable platform signatures where applicable
 
-The .NET Native AOT compiler (ILC) currently has non-deterministic elements:
-- Timestamp or GUID embedding in native code
-- Non-deterministic ordering in certain compilation phases
-- Platform linker behavior variations
-
-This is a known limitation. The .NET team is working toward fully reproducible AOT builds, but it's not available as of .NET 10.
-
-### What IS Deterministic
-
-- **IL compilation**: The intermediate assembly (`mt.dll`) before AOT is deterministic
-- **TypeScript bundle**: `terminal.min.js` is deterministic (esbuild is reproducible)
-- **Workflow execution**: Same workflow + same commit = same build steps
-
-## For Auditors
-
-### Trust Model
-
-Since local reproducibility isn't achievable with AOT, trust relies on:
-
-1. **Source code review**: All code is public in this repository
-2. **Workflow review**: Build process is fully defined in `.github/workflows/release.yml`
-3. **GitHub as build authority**: GitHub Actions provides the trusted execution environment
-4. **Checksum consistency**: Hashes in release artifacts match workflow output logs
-
-### Verification Checklist
-
-- [ ] Review source code changes between versions
-- [ ] Verify workflow file hasn't been modified to inject malicious steps
-- [ ] Confirm release was created by workflow (check Actions tab)
-- [ ] Match checksums from release with workflow run logs
-- [ ] Verify no manual artifacts were uploaded (all from matrix build jobs)
-
-### Building Locally (For Comparison)
-
-To build locally with the same settings as CI:
-
-```bash
-# Requires: .NET 10 SDK, Node.js 24.x, Visual Studio 2022 (Windows)
-
-# 1. Clone at the release tag
-git clone https://github.com/tlbx-ai/MidTerm.git
-cd MidTerm
-git checkout v5.x.x
-
-# 2. Build frontend
-npm ci
-cd Ai.Tlbx.MidTerm
-npx tsc --noEmit
-npx esbuild src/ts/main.ts --bundle --minify --sourcemap=linked \
-  --outfile=wwwroot/js/terminal.min.js --target=es2020
-
-# 3. Build native binary (reproducible mode)
-dotnet publish -c Release -r win-x64 /p:IsPublishing=true /p:ContinuousIntegrationBuild=true
-
-# 4. Compare hash (will differ from release due to AOT non-determinism)
-sha256sum bin/Release/net10.0/win-x64/publish/mt.exe
-```
-
-**Expected result**: Hash will differ from the release binary. This does NOT indicate tampering—it reflects AOT compiler non-determinism.
-
-## Future Improvements
-
-When .NET achieves reproducible AOT builds:
-- Local builds will match CI builds byte-for-byte
-- Third-party verification becomes fully independent
-- The reproducible build configuration is already in place
-
-Until then, GitHub Actions provides the verifiable build chain.
+The process does not yet provide independently published archive checksums,
+SLSA provenance, or guaranteed byte-for-byte reproducibility. Those would be
+meaningful future improvements; this document must not imply they already exist.

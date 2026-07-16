@@ -395,7 +395,7 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public void GetStatusText_WithoutUiClient_ExplainsThatTheOwningMidTermTabIsMissing()
+    public void GetStatusText_WithoutUiClient_ExplainsThatTheOwningTlbxTabIsMissing()
     {
         var service = new BrowserCommandService();
 
@@ -410,7 +410,7 @@ public class BrowserCommandServiceTests
         Assert.Contains("ui clients: 0", status, StringComparison.Ordinal);
         Assert.Contains("/ws/state", status, StringComparison.Ordinal);
         Assert.Contains("dev browser cannot work", status, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("owning MidTerm browser tab", status, StringComparison.Ordinal);
+        Assert.Contains("owning tlbx browser tab", status, StringComparison.Ordinal);
     }
 
     [Fact]

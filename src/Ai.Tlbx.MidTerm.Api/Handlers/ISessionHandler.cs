@@ -21,6 +21,7 @@ public interface ISessionHandler
     IResult ReorderSessions(SessionReorderRequest request);
     Task<IResult> DeleteSessionAsync(string id);
     Task<IResult> ResizeSessionAsync(string id, ResizeRequest request);
+    Task<IResult> RedrawSessionAsync(string id);
     Task<IResult> GetSessionStateAsync(string id, bool includeBuffer, bool includeBufferBase64);
     Task<IResult> SendRawInputAsync(string id, byte[] body);
     Task<IResult> SendTextInputAsync(string id, SessionInputRequest request);

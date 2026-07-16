@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   isCopyShortcut,
   isNativeImagePasteShortcut,
   isPasteShortcut,
   resolveCopyShortcutAction,
+  writeTextToClipboardEvent,
   type ShortcutInput,
 } from './clipboardShortcuts';
 
@@ -56,6 +57,12 @@ describe('isCopyShortcut', () => {
     expect(isCopyShortcut(key('c', { ctrlKey: true, shiftKey: true }), 'unix')).toBe(true);
     expect(isCopyShortcut(key('c', { ctrlKey: true }), 'unix')).toBe(false);
   });
+
+  it('always recognizes the native macOS copy shortcut', () => {
+    expect(isCopyShortcut(key('c', { metaKey: true }), 'windows')).toBe(true);
+    expect(isCopyShortcut(key('C', { metaKey: true }), 'unix')).toBe(true);
+    expect(isCopyShortcut(key('c', { metaKey: true, shiftKey: true }), 'unix')).toBe(false);
+  });
 });
 
 describe('resolveCopyShortcutAction', () => {
@@ -75,7 +82,39 @@ describe('resolveCopyShortcutAction', () => {
     ).toBe('sendKey');
   });
 
+  it('does not turn Cmd+C without a selection into terminal input', () => {
+    expect(resolveCopyShortcutAction(key('c', { metaKey: true }), 'unix', false)).toBe('ignore');
+  });
+
   it('ignores unrelated shortcuts', () => {
     expect(resolveCopyShortcutAction(key('x', { ctrlKey: true }), 'windows', false)).toBe('ignore');
+  });
+});
+
+describe('writeTextToClipboardEvent', () => {
+  it('writes through the synchronous copy event without navigator.clipboard', () => {
+    const setData = vi.fn();
+    const preventDefault = vi.fn();
+
+    expect(
+      writeTextToClipboardEvent(
+        {
+          clipboardData: { setData } as unknown as DataTransfer,
+          preventDefault,
+        },
+        'selected terminal text',
+      ),
+    ).toBe(true);
+    expect(setData).toHaveBeenCalledWith('text/plain', 'selected terminal text');
+    expect(preventDefault).toHaveBeenCalledOnce();
+  });
+
+  it('leaves the event untouched when clipboardData is unavailable', () => {
+    const preventDefault = vi.fn();
+
+    expect(
+      writeTextToClipboardEvent({ clipboardData: null, preventDefault }, 'selected terminal text'),
+    ).toBe(false);
+    expect(preventDefault).not.toHaveBeenCalled();
   });
 });

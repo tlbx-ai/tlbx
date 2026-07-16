@@ -1,6 +1,6 @@
 # Code Signing
 
-MidTerm uses three layers of code signing to protect users from tampered or fake binaries.
+tlbx uses three layers of code signing to protect users from tampered or fake binaries.
 
 ## Overview
 
@@ -121,7 +121,7 @@ Every release (dev and stable) gets an ECDSA P-384 signature in `version.json`. 
 3. Signs the JSON with an ECDSA P-384 private key (stored as `SIGNING_PRIVATE_KEY` GitHub secret)
 4. Writes `checksums` and `signature` fields into `version.json`
 
-MidTerm intentionally keeps this as a two-mode model:
+tlbx intentionally keeps this as a two-mode model:
 - `webOnly=true`: frequent web/UI/web-facing releases; running installs preserve their current `mthost` and `mtagenthost`
 - full update: low-level runtime refresh; running installs replace both host binaries
 

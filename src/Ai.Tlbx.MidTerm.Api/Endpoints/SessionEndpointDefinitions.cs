@@ -50,6 +50,11 @@ public static class SessionEndpointDefinitions
             await handler.ResizeSessionAsync(id, request))
             .Produces<ResizeResponse>(StatusCodes.Status200OK, "application/json");
 
+        app.MapPost("/api/sessions/{id}/redraw", async (string id, ISessionHandler handler) =>
+            await handler.RedrawSessionAsync(id))
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces(StatusCodes.Status404NotFound);
+
         app.MapGet("/api/sessions/{id}/state", async (string id, ISessionHandler handler, bool includeBuffer = true, bool includeBufferBase64 = false) =>
             await handler.GetSessionStateAsync(id, includeBuffer, includeBufferBase64))
             .Produces<SessionStateResponse>(StatusCodes.Status200OK, "application/json");

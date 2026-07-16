@@ -432,6 +432,12 @@ public static partial class SessionApiEndpoints
             }, AppJsonContext.Default.ResizeResponse);
         });
 
+        app.MapPost("/api/sessions/{id}/redraw", async (string id, CancellationToken ct) =>
+        {
+            var success = await sessionManager.RedrawSessionAsync(id, ct);
+            return success ? Results.NoContent() : Results.NotFound();
+        });
+
         app.MapGet("/api/sessions/{id}/state", async (string id, bool includeBuffer = true, bool includeBufferBase64 = false, CancellationToken ct = default) =>
         {
             if (sessionManager.GetSession(id) is null)

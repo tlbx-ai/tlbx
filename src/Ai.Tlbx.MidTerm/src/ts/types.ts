@@ -800,7 +800,7 @@ export interface SessionTurnSummaryArgs {
   bellLimit?: number;
 }
 
-/** Compact lifecycle status for a MidTerm agent turn */
+/** Compact lifecycle status for a tlbx agent turn */
 export type SessionTurnStatus =
   | 'complete'
   | 'busy'

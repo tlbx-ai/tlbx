@@ -1,5 +1,5 @@
 #!/usr/bin/env pwsh
-# Sign MidTerm release artifacts using openssl
+# Sign tlbx release artifacts using openssl
 # Updates version.json files with checksums and ECDSA P-256 signatures
 
 param(

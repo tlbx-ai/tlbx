@@ -279,7 +279,7 @@ function appServerControlFormat(
 
 /**
  * Wires AppServerControl into the session-tab shell so supported agent sessions can open a
- * conversation-first surface without changing MidTerm's terminal-owned runtime
+ * conversation-first surface without changing tlbx's terminal-owned runtime
  * model underneath.
  */
 export function initAgentView(): void {
@@ -556,7 +556,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
     ),
     appServerControlText(
       'appServerControl.activation.opening.body',
-      'MidTerm is opening the AppServerControl conversation surface for this session.',
+      'tlbx is opening the AppServerControl conversation surface for this session.',
     ),
   );
   setActivationState(
@@ -605,7 +605,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
       ),
       appServerControlText(
         'appServerControl.activation.waitingSnapshot.body',
-        'Waiting for the first canonical AppServerControl history window from MidTerm.',
+        'Waiting for the first canonical AppServerControl history window from tlbx.',
       ),
     );
     renderCurrentAgentView(sessionId);
@@ -665,7 +665,7 @@ async function activateAgentView(sessionId: string): Promise<void> {
         ),
         appServerControlText(
           'appServerControl.activation.historyRestored.body',
-          'MidTerm recovered canonical AppServerControl history after the initial attach failed, so it is retrying the live attach automatically.',
+          'tlbx recovered canonical AppServerControl history after the initial attach failed, so it is retrying the live attach automatically.',
         ),
       );
       await resumeAppServerControlFromHistory(sessionId, state, activationRunId);
@@ -2544,7 +2544,7 @@ async function waitForInitialAppServerControlSnapshot(
           ),
           appServerControlFormat(
             'appServerControl.activation.snapshotReady.body',
-            'MidTerm produced the first canonical AppServerControl history window on retry {attempt}.',
+            'tlbx produced the first canonical AppServerControl history window on retry {attempt}.',
             { attempt },
           ),
         );
@@ -2594,7 +2594,7 @@ async function retryAppServerControlActivation(sessionId: string): Promise<void>
     ),
     appServerControlText(
       'appServerControl.activation.retry.detail',
-      'MidTerm is retrying the live AppServerControl attach for this session.',
+      'tlbx is retrying the live AppServerControl attach for this session.',
     ),
   );
   renderCurrentAgentView(sessionId);

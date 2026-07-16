@@ -1,4 +1,4 @@
-# MidTerm launch exports — July 2026
+# tlbx launch exports — July 2026
 
 Upload-ready raster exports generated from the pure-vector masters in
 `docs/marketing/readme/`.
