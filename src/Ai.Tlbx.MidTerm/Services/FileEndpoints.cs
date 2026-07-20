@@ -689,7 +689,7 @@ public static class FileEndpoints
     {
         try
         {
-            var probePath = Path.Combine(path, $".midterm-write-test-{Guid.NewGuid():N}.tmp");
+            var probePath = Path.Combine(path, $".tlbx-write-test-{Guid.NewGuid():N}.tmp");
             using (var stream = new FileStream(
                        probePath,
                        new FileStreamOptions

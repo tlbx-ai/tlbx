@@ -204,7 +204,7 @@ function describeTerminalKeyLogTarget(
   }
 
   if (element instanceof HTMLTextAreaElement) {
-    if (element.classList.contains('midterm-terminal-input-proxy')) {
+    if (element.classList.contains('tlbx-terminal-input-proxy')) {
       return 'proxy';
     }
     if (element.classList.contains('xterm-helper-textarea')) {
@@ -377,7 +377,7 @@ function isTerminalInputOwnerElement(element: Element | null): element is HTMLTe
   return (
     element instanceof HTMLTextAreaElement &&
     (element.classList.contains('xterm-helper-textarea') ||
-      element.classList.contains('midterm-terminal-input-proxy'))
+      element.classList.contains('tlbx-terminal-input-proxy'))
   );
 }
 
@@ -387,7 +387,7 @@ function getOwnedXtermTextarea(container: HTMLDivElement): HTMLTextAreaElement |
 }
 
 function getOwnedTerminalInputProxy(container: HTMLDivElement): HTMLTextAreaElement | null {
-  const proxy = container.querySelector('textarea.midterm-terminal-input-proxy');
+  const proxy = container.querySelector('textarea.tlbx-terminal-input-proxy');
   return proxy instanceof HTMLTextAreaElement ? proxy : null;
 }
 
@@ -870,7 +870,7 @@ function hasNonTerminalFocus(): boolean {
   if (
     el instanceof HTMLTextAreaElement &&
     (el.classList.contains('xterm-helper-textarea') ||
-      el.classList.contains('midterm-terminal-input-proxy'))
+      el.classList.contains('tlbx-terminal-input-proxy'))
   ) {
     return false;
   }
@@ -1057,7 +1057,7 @@ export function createTerminalForSession(
       container.style.position = 'relative';
     }
     const inputProxy = document.createElement('textarea');
-    inputProxy.className = 'midterm-terminal-input-proxy';
+    inputProxy.className = 'tlbx-terminal-input-proxy';
     inputProxy.tabIndex = -1;
     inputProxy.setAttribute('aria-label', 'Terminal input');
     inputProxy.setAttribute('autocorrect', 'off');

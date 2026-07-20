@@ -4638,23 +4638,23 @@ body::before {
 
 .terminal-gap-fill-right {
   top: 0;
-  left: var(--terminal-gap-content-width, 0px);
-  width: var(--terminal-gap-right-width, 0px);
+  left: var(--terminal-gap-fill-right-start, var(--terminal-gap-content-width, 0px));
+  width: var(--terminal-gap-fill-right-width, var(--terminal-gap-right-width, 0px));
   height: var(--terminal-gap-content-height, 0px);
 }
 
 .terminal-gap-fill-bottom {
-  top: var(--terminal-gap-content-height, 0px);
+  top: var(--terminal-gap-fill-bottom-start, var(--terminal-gap-content-height, 0px));
   left: 0;
   width: var(--terminal-gap-content-width, 0px);
-  height: var(--terminal-gap-bottom-height, 0px);
+  height: var(--terminal-gap-fill-bottom-height, var(--terminal-gap-bottom-height, 0px));
 }
 
 .terminal-gap-fill-corner {
-  top: var(--terminal-gap-content-height, 0px);
-  left: var(--terminal-gap-content-width, 0px);
-  width: var(--terminal-gap-right-width, 0px);
-  height: var(--terminal-gap-bottom-height, 0px);
+  top: var(--terminal-gap-fill-bottom-start, var(--terminal-gap-content-height, 0px));
+  left: var(--terminal-gap-fill-right-start, var(--terminal-gap-content-width, 0px));
+  width: var(--terminal-gap-fill-right-width, var(--terminal-gap-right-width, 0px));
+  height: var(--terminal-gap-fill-bottom-height, var(--terminal-gap-bottom-height, 0px));
 }
 
 .scaled-overlay {

@@ -4173,9 +4173,9 @@ export interface components {
     /** Format: binary */
     IFormFile: string;
     InjectGuidanceResponse: {
-      midtermDir: string;
-      mtcliShellPath: string;
-      mtcliPowerShellPath: string;
+      tlbxDir: string;
+      tlbxCliShellPath: string;
+      tlbxCliPowerShellPath: string;
       claudeMdUpdated: boolean;
       agentsMdUpdated: boolean;
     };
@@ -4933,7 +4933,7 @@ export interface components {
       launchCommand: null | string;
       slashCommands: string[];
       guidanceInjected: boolean;
-      midtermDir: null | string;
+      tlbxDir: null | string;
     };
   };
   responses: never;

@@ -199,6 +199,7 @@ import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessio
 import {
   createSession as apiCreateSession,
   bootstrapWorker,
+  waitForApiReachability,
   setSessionBookmark,
   setSessionNotes,
 } from './api/client';
@@ -799,6 +800,13 @@ async function createSession(): Promise<void> {
   }
 
   if (!selection) return;
+
+  try {
+    await waitForApiReachability();
+  } catch (error: unknown) {
+    showSessionLaunchFailure(error);
+    return;
+  }
 
   const { cols, rows } = await resolveNewSessionDimensions();
   const tempId = createPendingSession(cols, rows);

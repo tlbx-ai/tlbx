@@ -1,6 +1,6 @@
 This terminal runs inside MidTerm (web terminal multiplexer).
 
-If `.midterm/AGENTS.md` exists, follow it for browser control and tmux workflows.
+If `.tlbx/AGENTS.md` exists, follow it for browser control and tmux workflows.
 If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 ## Release Authority

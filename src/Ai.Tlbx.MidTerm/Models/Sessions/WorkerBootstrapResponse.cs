@@ -7,5 +7,5 @@ public sealed class WorkerBootstrapResponse
     public string? LaunchCommand { get; set; }
     public List<string> SlashCommands { get; set; } = [];
     public bool GuidanceInjected { get; set; }
-    public string? MidtermDir { get; set; }
+    public string? TlbxDir { get; set; }
 }

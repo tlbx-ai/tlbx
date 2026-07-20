@@ -15,7 +15,23 @@ export function createScalingOverlay(
   const overlay = document.createElement('button');
   overlay.className = 'scaled-overlay';
   overlay.type = 'button';
-  overlay.addEventListener('click', () => {
+  overlay.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !event.isPrimary) return;
+
+    // Claim before the terminal/session focus handlers can rebuild the follower UI.
+    // The ensuing pointer-generated click is ignored below to avoid a second claim.
+    event.preventDefault();
+    event.stopPropagation();
+    void handleScalingOverlayClick(overlay, container, fitOwnedTerminal);
+  });
+  overlay.addEventListener('click', (event) => {
+    event.stopPropagation();
+    if (event.detail !== 0) {
+      event.preventDefault();
+      return;
+    }
+
+    // Keyboard activation and HTMLElement.click() do not emit pointerdown.
     void handleScalingOverlayClick(overlay, container, fitOwnedTerminal);
   });
   container.appendChild(overlay);

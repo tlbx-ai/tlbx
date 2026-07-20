@@ -201,7 +201,7 @@ public class Program
             browserPreviewOriginService,
             browserPreviewRegistry);
 
-        MidtermDirectory.Initialize(port, authService);
+        TlbxDirectory.Initialize(port, authService);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var layoutStateService = app.Services.GetRequiredService<SessionLayoutStateService>();
@@ -263,21 +263,21 @@ public class Program
         var browserUiBridge = app.Services.GetRequiredService<BrowserUiBridge>();
         BrowserScriptWriter.WriteScript(port);
 
-        static void SyncMidtermDirectoryForCwd(string? cwd)
+        static void SyncTlbxDirectoryForCwd(string? cwd)
         {
-            MidtermDirectory.TryEnsureForCwd(cwd);
+            TlbxDirectory.TryEnsureForCwd(cwd);
         }
 
         sessionManager.OnSessionCreated += (sessionId, _) =>
         {
             var cwd = sessionManager.GetSession(sessionId)?.CurrentDirectory;
-            SyncMidtermDirectoryForCwd(cwd);
+            SyncTlbxDirectoryForCwd(cwd);
         };
 
         sessionManager.OnForegroundChanged += (sessionId, payload) =>
         {
             agentFeed.NoteForeground(sessionId, payload);
-            SyncMidtermDirectoryForCwd(payload.Cwd);
+            SyncTlbxDirectoryForCwd(payload.Cwd);
             var session = sessionManager.GetSession(sessionId);
             if (session is not null && !string.IsNullOrEmpty(payload.Name) && !string.IsNullOrEmpty(payload.Cwd))
             {
@@ -300,7 +300,7 @@ public class Program
 
         sessionManager.OnCwdChanged += (sessionId, cwd) =>
         {
-            SyncMidtermDirectoryForCwd(cwd);
+            SyncTlbxDirectoryForCwd(cwd);
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 

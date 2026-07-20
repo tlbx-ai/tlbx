@@ -318,14 +318,14 @@ public static partial class SessionApiEndpoints
                     : request.LaunchCommand.Trim();
 
             var guidanceInjected = false;
-            string? midtermDir = null;
+            string? tlbxDir = null;
             var targetDirectory = workerSession.CurrentDirectory ?? request.WorkingDirectory;
             if (request.InjectGuidance &&
                 !string.IsNullOrWhiteSpace(targetDirectory) &&
                 Directory.Exists(targetDirectory))
             {
-                midtermDir = MidtermDirectory.TryEnsureForCwd(targetDirectory);
-                guidanceInjected = midtermDir is not null;
+                tlbxDir = TlbxDirectory.TryEnsureForCwd(targetDirectory);
+                guidanceInjected = tlbxDir is not null;
             }
 
             if (!string.IsNullOrWhiteSpace(launchCommand))
@@ -382,7 +382,7 @@ public static partial class SessionApiEndpoints
                 LaunchCommand = launchCommand,
                 SlashCommands = slashCommands,
                 GuidanceInjected = guidanceInjected,
-                MidtermDir = midtermDir
+                TlbxDir = tlbxDir
             }, AppJsonContext.Default.WorkerBootstrapResponse);
         });
 
@@ -836,13 +836,13 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest("Session has no valid working directory");
             }
 
-            var midtermDir = MidtermDirectory.Ensure(cwd);
+            var tlbxDir = TlbxDirectory.Ensure(cwd);
 
             return Results.Json(new InjectGuidanceResponse
             {
-                MidtermDir = midtermDir,
-                MtcliShellPath = Path.Combine(midtermDir, "mtcli.sh"),
-                MtcliPowerShellPath = Path.Combine(midtermDir, "mtcli.ps1"),
+                TlbxDir = tlbxDir,
+                TlbxCliShellPath = Path.Combine(tlbxDir, "tlbx_cli.sh"),
+                TlbxCliPowerShellPath = Path.Combine(tlbxDir, "tlbx_cli.ps1"),
                 ClaudeMdUpdated = false,
                 AgentsMdUpdated = false,
             }, AppJsonContext.Default.InjectGuidanceResponse);
@@ -1523,7 +1523,7 @@ public static partial class SessionApiEndpoints
         {
             try
             {
-                return MidtermDirectory.EnsureSubdirectory(cwd, "uploads");
+                return TlbxDirectory.EnsureSubdirectory(cwd, "uploads");
             }
             catch
             {

@@ -551,7 +551,7 @@ tlbx uses a mix of server-side and browser-side storage:
 | Split layout                 | server-side `session-layout.json`            |
 | Sidebar width/collapse       | cookies                                       |
 | Smart Input/chat/touch prefs | browser `localStorage`                        |
-| Preview snapshots            | `.midterm/snapshot_*` under the working tree  |
+| Preview snapshots            | `.tlbx/snapshot_*` under the working tree  |
 | Terminal input history       | server-side `input-history.json`              |
 | Agent control plane          | server-side `control-plane.json`              |
 

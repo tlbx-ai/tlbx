@@ -233,4 +233,18 @@ describe('api client appServerControl helpers', () => {
     );
     expect(data?.id).toBe('session-1');
   });
+
+  it('waits out a transient API disconnect before a non-idempotent launch', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce({ ok: true, status: 200 });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { waitForApiReachability } = await import('./client');
+    await waitForApiReachability();
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/version', { cache: 'no-store' });
+  });
 });

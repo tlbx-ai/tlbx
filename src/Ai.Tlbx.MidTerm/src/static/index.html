@@ -25,21 +25,21 @@
     <meta name="apple-mobile-web-app-title" content="tlbx" />
     <script src="/js/appRefreshBootstrap.js?v=__MIDTERM_ASSET_VERSION__"></script>
     <style>
-      html.midterm-app-refreshing,
-      html.midterm-app-refreshing body {
+      html.tlbx-app-refreshing,
+      html.tlbx-app-refreshing body {
         background: #0d0e14;
       }
 
-      html.midterm-app-refreshing body {
+      html.tlbx-app-refreshing body {
         margin: 0;
         overflow: hidden;
       }
 
-      html.midterm-app-refreshing body > * {
+      html.tlbx-app-refreshing body > * {
         visibility: hidden;
       }
 
-      html.midterm-app-refreshing body::before {
+      html.tlbx-app-refreshing body::before {
         content: 'Updating tlbx...';
         position: fixed;
         inset: 0;
@@ -53,7 +53,7 @@
         letter-spacing: 0.02em;
       }
 
-      html.midterm-app-refreshing body::after {
+      html.tlbx-app-refreshing body::after {
         content: '';
         position: fixed;
         left: 50%;

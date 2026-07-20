@@ -4727,21 +4727,21 @@
       },
       "InjectGuidanceResponse": {
         "required": [
-          "midtermDir",
-          "mtcliShellPath",
-          "mtcliPowerShellPath",
+          "tlbxDir",
+          "tlbxCliShellPath",
+          "tlbxCliPowerShellPath",
           "claudeMdUpdated",
           "agentsMdUpdated"
         ],
         "type": "object",
         "properties": {
-          "midtermDir": {
+          "tlbxDir": {
             "type": "string"
           },
-          "mtcliShellPath": {
+          "tlbxCliShellPath": {
             "type": "string"
           },
-          "mtcliPowerShellPath": {
+          "tlbxCliPowerShellPath": {
             "type": "string"
           },
           "claudeMdUpdated": {
@@ -7787,7 +7787,7 @@
           "launchCommand",
           "slashCommands",
           "guidanceInjected",
-          "midtermDir"
+          "tlbxDir"
         ],
         "type": "object",
         "properties": {
@@ -7812,7 +7812,7 @@
           "guidanceInjected": {
             "type": "boolean"
           },
-          "midtermDir": {
+          "tlbxDir": {
             "type": [
               "null",
               "string"

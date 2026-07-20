@@ -50,8 +50,9 @@ type FakeElement = {
   appendChild: (child: FakeElement) => FakeElement;
   remove: () => void;
   setAttribute: (name: string, value: string) => void;
-  addEventListener: (type: string, handler: () => void) => void;
+  addEventListener: (type: string, handler: (event: FakeEvent) => void) => void;
   click?: () => void;
+  pointerClick?: () => void;
   closest: <T>(selector: string) => T | null;
   getElementsByClassName?: (className: string) => { item: (index: number) => FakeElement | null };
   getBoundingClientRect: () => { width: number; height: number };
@@ -61,6 +62,14 @@ type FakeElement = {
   clientHeight?: number;
   offsetWidth?: number;
   offsetHeight?: number;
+};
+
+type FakeEvent = {
+  button: number;
+  isPrimary: boolean;
+  detail: number;
+  preventDefault: () => void;
+  stopPropagation: () => void;
 };
 
 function createClassList(initial: string[] = []) {
@@ -78,7 +87,14 @@ function createClassList(initial: string[] = []) {
 
 function createElementByClassName(className = ''): FakeElement {
   const attrs = new Map<string, string>();
-  const listeners = new Map<string, () => void>();
+  const listeners = new Map<string, (event: FakeEvent) => void>();
+  const event = (detail: number): FakeEvent => ({
+    button: 0,
+    isPrimary: true,
+    detail,
+    preventDefault: vi.fn(),
+    stopPropagation: vi.fn(),
+  });
   return {
     className,
     style: {},
@@ -95,7 +111,11 @@ function createElementByClassName(className = ''): FakeElement {
       listeners.set(type, handler);
     },
     click() {
-      listeners.get('click')?.();
+      listeners.get('click')?.(event(0));
+    },
+    pointerClick() {
+      listeners.get('pointerdown')?.(event(0));
+      listeners.get('click')?.(event(1));
     },
     closest: () => null,
     getBoundingClientRect: () => ({ width: 0, height: 0 }),
@@ -117,6 +137,7 @@ function createTerminalHarness(
     rows,
     buffer: { active: { viewportY: 0, baseY: 0 } },
     options: {},
+    focus: vi.fn(),
     resize: vi.fn((nextCols: number, nextRows: number) => {
       terminal.cols = nextCols;
       terminal.rows = nextRows;
@@ -378,12 +399,14 @@ describe('terminal scaling badge thresholds', () => {
       }),
     );
     const harness = createTerminalHarness(81, 24);
+    sessionTerminals.set('s1', harness.state as never);
     applyTerminalScalingSync(harness.state as never);
     const overlay = harness.getOverlay();
 
-    overlay?.click?.();
+    overlay?.pointerClick?.();
 
     expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', true);
+    expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledTimes(1);
     expect(overlay?.disabled).toBe(true);
     expect(overlay?.classList.contains('claiming')).toBe(true);
 
@@ -404,6 +427,7 @@ describe('terminal scaling badge thresholds', () => {
     await Promise.resolve();
     await Promise.resolve();
 
+    expect(harness.terminal.focus).toHaveBeenCalledTimes(1);
     expect(overlay?.disabled).toBe(false);
     expect(overlay?.classList.contains('claiming')).toBe(false);
   });
@@ -421,6 +445,10 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.container.style['--terminal-gap-content-height']).toBe('480px');
     expect(harness.container.style['--terminal-gap-right-width']).toBe('8px');
     expect(harness.container.style['--terminal-gap-bottom-height']).toBe('8px');
+    expect(harness.container.style['--terminal-gap-fill-right-start']).toBe('809px');
+    expect(harness.container.style['--terminal-gap-fill-bottom-start']).toBe('479px');
+    expect(harness.container.style['--terminal-gap-fill-right-width']).toBe('9px');
+    expect(harness.container.style['--terminal-gap-fill-bottom-height']).toBe('9px');
   });
 
   it('keeps passive scaling free of resize side effects after the browser becomes main', () => {

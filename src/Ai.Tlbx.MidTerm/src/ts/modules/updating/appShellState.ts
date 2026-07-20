@@ -84,7 +84,7 @@ export function clearPendingAppRefreshMarker(): void {
     // Ignore sessionStorage failures and continue.
   }
 
-  document.documentElement.classList.remove('midterm-app-refreshing');
+  document.documentElement.classList.remove('tlbx-app-refreshing');
 }
 
 export function reloadAppShell(): void {

@@ -45,7 +45,6 @@ import {
 } from './fontConfig';
 import { sendResize } from '../comms';
 import { t } from '../i18n';
-import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
 import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';
 import {
@@ -620,30 +619,12 @@ function removeScalingOverlay(container: HTMLElement): void {
   if (overlay) overlay.remove();
 }
 
-function buildScaledOverlayLabel(
-  container: HTMLElement,
-  state: TerminalState,
-  scale: number,
-): string {
+function buildScaledOverlayLabel(container: HTMLElement, scale: number): string {
   const pct = Math.round(scale * 100);
-  const screen = container.querySelector<HTMLElement>('.xterm-screen');
-  let diagHtml = '';
-  if (isDevMode() && screen) {
-    const cols = state.terminal.cols;
-    const rows = state.terminal.rows;
-    const cellW = (screen.offsetWidth / cols).toFixed(2);
-    const cellH = (screen.offsetHeight / rows).toFixed(2);
-    const termPx = `${screen.offsetWidth}×${screen.offsetHeight}`;
-    const containerPx = `${container.clientWidth}×${container.clientHeight}`;
-    const scaleTxt = scale.toPrecision(5);
-    diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
-  }
   const sessionId = getTerminalSessionId(container);
-  const overlayLabel =
-    sessionId && hasTerminalSizeControl(sessionId)
-      ? `${t('terminal.scaledTo')} ${pct}%`
-      : `${t('terminal.scaledViewExplanation')} (${pct}%)`;
-  return `${overlayLabel}${diagHtml}`;
+  return sessionId && hasTerminalSizeControl(sessionId)
+    ? `${t('terminal.scaledTo')} ${pct}%`
+    : `${t('terminal.scaledViewExplanation')} (${pct}%)`;
 }
 
 /**
@@ -821,7 +802,6 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     applyScaledDownTerminalState({
       container,
       xterm,
-      state,
       scale,
       ownsSize,
       hasOptimalSizeMismatch,
@@ -968,14 +948,13 @@ function shouldApplyUndersizedTerminalState(
 function applyScaledDownTerminalState(args: {
   container: HTMLElement;
   xterm: HTMLElement;
-  state: TerminalState;
   scale: number;
   ownsSize: boolean;
   hasOptimalSizeMismatch: boolean;
   showOverlay: (label: string) => void;
   resetScaleState: () => void;
 }): void {
-  const { container, xterm, state, scale, ownsSize, showOverlay, resetScaleState } = args;
+  const { container, xterm, scale, ownsSize, showOverlay, resetScaleState } = args;
   const scaleOwner = ownsSize && isMobileDenseTerminalModeEnabled();
   if (ownsSize && !scaleOwner) {
     resetScaleState();
@@ -988,7 +967,7 @@ function applyScaledDownTerminalState(args: {
   container.classList.add('scaled');
   updateTerminalGapFillers(container, xterm, scale);
   if (!scaleOwner) {
-    showOverlay(buildScaledOverlayLabel(container, state, scale));
+    showOverlay(buildScaledOverlayLabel(container, scale));
   } else {
     removeScalingOverlay(container);
   }
@@ -1062,6 +1041,8 @@ function fitOwnedTerminalToCurrentContainer(sessionId: string, container: HTMLEl
   } else {
     fitSessionToScreen(sessionId);
   }
+
+  requestAnimationFrame(() => sessionTerminals.get(sessionId)?.terminal.focus());
 }
 
 function resetTerminalScaleState(container: HTMLElement, xterm: HTMLElement): void {

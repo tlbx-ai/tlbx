@@ -60,6 +60,7 @@ import {
 import { getBrowserDeviceLabel, getOrCreateTabId } from '../utils/cookies';
 
 const client = createClient<paths>({ baseUrl: '' });
+const API_RECONNECT_DELAYS_MS = [0, 150, 400, 900];
 
 type ClientGetPath = PathsWithMethod<paths, 'get'>;
 type ClientPostPath = PathsWithMethod<paths, 'post'>;
@@ -235,6 +236,27 @@ async function postJsonWithProblem<TResponse>(
     data: text ? (parse ? parse(text) : (JSON.parse(text) as TResponse)) : undefined,
     response,
   };
+}
+
+/**
+ * Wait for the same-origin API before issuing a non-idempotent launch request.
+ * The health probes are safe to retry; the actual session POST still runs once.
+ */
+export async function waitForApiReachability(): Promise<void> {
+  for (const delayMs of API_RECONNECT_DELAYS_MS) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+    }
+
+    try {
+      await fetch('/api/version', { cache: 'no-store' });
+      return;
+    } catch {
+      // A later health probe may succeed after a brief service or network interruption.
+    }
+  }
+
+  throw new Error('tlbx is still reconnecting. Try again or reload this page.');
 }
 
 async function fetchAppServerControlJson<T>(

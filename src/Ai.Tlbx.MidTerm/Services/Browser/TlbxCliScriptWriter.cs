@@ -2,11 +2,11 @@ using System.Globalization;
 
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
-public static class MtcliScriptWriter
+public static class TlbxCliScriptWriter
 {
-    internal static void WriteScripts(string midtermDir, int port, string authToken)
+    internal static void WriteScripts(string tlbxDir, int port, string authToken)
     {
-        var shPath = Path.Combine(midtermDir, "mtcli.sh");
+        var shPath = Path.Combine(tlbxDir, "tlbx_cli.sh");
         File.WriteAllText(shPath, GenerateShellScript(port, authToken));
         if (!OperatingSystem.IsWindows())
         {
@@ -16,7 +16,7 @@ public static class MtcliScriptWriter
                 UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
         }
 
-        var ps1Path = Path.Combine(midtermDir, "mtcli.ps1");
+        var ps1Path = Path.Combine(tlbxDir, "tlbx_cli.ps1");
         File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken));
     }
 
@@ -24,7 +24,7 @@ public static class MtcliScriptWriter
         $$"""
         #!/bin/bash
         # tlbx CLI helpers — auto-generated, do not edit.
-        # Source: . .midterm/mtcli.sh   |   Run: .midterm/mtcli.sh <cmd> [args]
+        # Source: . .tlbx/tlbx_cli.sh   |   Run: .tlbx/tlbx_cli.sh <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's tlbx instance. Treat it like a local session secret.
@@ -58,7 +58,7 @@ public static class MtcliScriptWriter
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
-        _MSOURCE() { printf '%s' "${MT_AGENT_NAME:-mtcli}"; }
+        _MSOURCE() { printf '%s' "${MT_AGENT_NAME:-tlbx_cli}"; }
         _MPREVIEW() { printf '%s' "${MT_PREVIEW_NAME:-default}"; }
         _MPWSHQ() { local s="${1:-}"; s="${s//\'/\'\'}"; printf '%s' "$s"; }
         _MCTXERR() {
@@ -637,7 +637,7 @@ public static class MtcliScriptWriter
         mt_down()       { mt_sendkeys "$@" Down; }
         mt_left()       { mt_sendkeys "$@" Left; }
         mt_right()      { mt_sendkeys "$@" Right; }
-        # mt_inject [SESSION_ID]  — ensure .midterm + mtcli helpers in the target cwd
+        # mt_inject [SESSION_ID]  — ensure .tlbx + tlbx_cli helpers in the target cwd
         mt_inject() {
           local sid
           if [ $# -gt 0 ] && _MISID "$1"; then
@@ -871,7 +871,7 @@ public static class MtcliScriptWriter
         # Status
         mt_status()     { _MREQUIRECTX "mt_status" || return $?; _MSTATUS || _MC "$_MT/api/webpreview/target$(_MQ)"; }
 
-        # Direct execution: .midterm/mtcli.sh query ".error"
+        # Direct execution: .tlbx/tlbx_cli.sh query ".error"
         if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
           _cmd="${1:-}"
           shift 2>/dev/null
@@ -893,7 +893,7 @@ public static class MtcliScriptWriter
     private static string GeneratePowerShellScript(int port, string token) =>
         $$"""
         # tlbx CLI helpers — auto-generated, do not edit.
-        # Dot-source: . .midterm\mtcli.ps1   |   Run: pwsh .midterm\mtcli.ps1 <cmd> [args]
+        # Dot-source: . .tlbx\tlbx_cli.ps1   |   Run: pwsh .tlbx\tlbx_cli.ps1 <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
         # It only works on this machine's tlbx instance. Treat it like a local session secret.
@@ -920,7 +920,7 @@ public static class MtcliScriptWriter
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
         function script:_MSID { $env:MT_SESSION_ID }
-        function script:_MSource { if ($env:MT_AGENT_NAME) { $env:MT_AGENT_NAME } else { "mtcli" } }
+        function script:_MSource { if ($env:MT_AGENT_NAME) { $env:MT_AGENT_NAME } else { "tlbx_cli" } }
         function script:_MPwshQuote {
             param([string]$Value)
             if ($null -eq $Value) { return "" }
@@ -1623,7 +1623,7 @@ public static class MtcliScriptWriter
             $forward += "Right"
             Mt-SendKeys @forward
         }
-        # Mt-Inject [SESSION_ID]  — ensure .midterm + mtcli helpers in the target cwd
+        # Mt-Inject [SESSION_ID]  — ensure .tlbx + tlbx_cli helpers in the target cwd
         function Mt-Inject {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
@@ -1969,7 +1969,7 @@ public static class MtcliScriptWriter
         Set-Alias -Name mt_mobile -Value Mt-Mobile
         Set-Alias -Name mt_status -Value Mt-Status
 
-        # Direct execution: pwsh .midterm\mtcli.ps1 query ".error"
+        # Direct execution: pwsh .tlbx\tlbx_cli.ps1 query ".error"
         if ($args.Count -gt 0) {
             $cmd = $args[0]
             $cmdArgs = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }

@@ -115,7 +115,7 @@ public class StubSessionHandler : ISessionHandler
         Task.FromResult<IResult>(Results.Ok());
 
     public IResult InjectGuidance(string id) =>
-        Results.Json(new InjectGuidanceResponse { MidtermDir = ".midterm" });
+        Results.Json(new InjectGuidanceResponse { TlbxDir = ".tlbx" });
 
     public IResult SetBookmark(string id, SetBookmarkRequest request) =>
         Results.Ok();

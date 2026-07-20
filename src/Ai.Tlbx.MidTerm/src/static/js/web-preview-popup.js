@@ -1289,13 +1289,13 @@
   }
 
   async function handleAgentHint() {
-    var guidanceFile = '.midterm/AGENTS.md';
+    var guidanceFile = '.tlbx/AGENTS.md';
 
     if (owningSession && typeof owningSession.foregroundName === 'string') {
       guidanceFile =
         owningSession.foregroundName.toLowerCase() === 'claude'
-          ? '.midterm/CLAUDE.md'
-          : '.midterm/AGENTS.md';
+          ? '.tlbx/CLAUDE.md'
+          : '.tlbx/AGENTS.md';
     }
 
     await sendSessionText(
