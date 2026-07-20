@@ -62,12 +62,12 @@ import { showAlert, showTextPrompt } from './utils/dialog';
 import { dom, newlyCreatedSessions, sessionTerminals } from './state';
 import {
   $activeSessionId,
-  $isMainBrowser,
   $currentSettings,
   $sessionList,
   clearPendingRename,
   getSession,
   removeSession,
+  hasTerminalSizeControl,
   setPendingRename,
   setSession,
 } from './stores';
@@ -245,7 +245,7 @@ export function createSessionActionHandlers({
       if (state) {
         refreshTerminalPresentation(sessionId, state);
         if (activeTab === 'terminal') {
-          if ($isMainBrowser.get()) {
+          if (hasTerminalSizeControl(sessionId)) {
             fitSessionToScreen(sessionId);
           } else {
             applyTerminalScalingSync(state);

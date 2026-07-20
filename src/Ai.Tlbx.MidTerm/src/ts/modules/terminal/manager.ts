@@ -18,7 +18,12 @@ import {
   MAX_WEBGL_CONTEXTS,
   terminalsWithWebgl,
 } from '../../state';
-import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '../../stores';
+import {
+  $activeSessionId,
+  $currentSettings,
+  $sessions,
+  hasTerminalSizeControl,
+} from '../../stores';
 import { parseOutputFrame } from '../../utils';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
@@ -1155,7 +1160,7 @@ export function createTerminalForSession(
 
       // Double-rAF: let the resize paint before measuring for scaling
       requestAnimationFrame(() => {
-        if ($isMainBrowser.get()) {
+        if (hasTerminalSizeControl(sessionId)) {
           const layoutPane = container.closest<HTMLElement>('.layout-leaf');
           if (layoutPane) {
             fitTerminalToContainer(sessionId, layoutPane);

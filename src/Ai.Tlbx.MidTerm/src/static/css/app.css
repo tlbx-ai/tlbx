@@ -1473,6 +1473,23 @@ body::before {
   min-width: 0;
 }
 
+.session-size-control-indicator {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-left: auto;
+  border: 1px solid var(--text-secondary);
+  border-radius: 50%;
+  opacity: 0.52;
+}
+
+.session-size-control-indicator.owned {
+  border-color: var(--accent-blue);
+  background: var(--accent-blue);
+  box-shadow: 0 0 0 2px var(--accent-blue-10);
+  opacity: 0.9;
+}
+
 .session-role-badge {
   flex: 0 0 auto;
   padding: 1px 6px;
@@ -4644,18 +4661,21 @@ body::before {
   position: absolute;
   bottom: 8px;
   right: 8px;
-  padding: 4px 8px;
-  background-color: var(--btn-secondary);
-  opacity: 0.9;
-  color: var(--text-secondary);
+  max-width: min(620px, calc(100% - 16px));
+  padding: 7px 8px;
+  background-color: var(--bg-dropdown-opaque);
+  opacity: 0.96;
+  color: var(--text-primary);
   font-size: var(--fs-xs);
   border-radius: 4px;
-  border: none;
+  border: 1px solid var(--border-color);
   cursor: pointer;
   z-index: 25;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
+  text-align: left;
+  box-shadow: 0 4px 14px var(--shadow-color);
   transition:
     background-color 0.15s ease,
     opacity 0.15s ease;
@@ -4667,6 +4687,45 @@ body::before {
   color: var(--text-primary);
 }
 
+.scaled-overlay:disabled {
+  cursor: wait;
+}
+
+.scaled-overlay-copy,
+.scaled-overlay-action {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.scaled-overlay-copy {
+  color: var(--text-secondary);
+}
+
+.scaled-overlay-copy strong,
+.scaled-overlay-action strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.scaled-overlay-action {
+  margin-left: 4px;
+  padding: 4px 8px;
+  border-radius: 3px;
+  background: var(--accent-blue);
+  color: var(--text-on-accent);
+}
+
+.scaled-overlay-action strong,
+.scaled-overlay-action span {
+  color: inherit;
+}
+
+.scaled-overlay.claiming .scaled-overlay-action {
+  opacity: 0.65;
+}
+
 .scaled-overlay .icon {
   font-size: var(--fs-md);
 }
@@ -4674,7 +4733,7 @@ body::before {
 @media (max-width: 768px), (hover: none) and (pointer: coarse) and (max-width: 1024px) {
   .terminal-container.scaled .scaled-overlay {
     inset: 50% 16px auto;
-    min-height: 52px;
+    min-height: 64px;
     justify-content: center;
     padding: 12px 14px;
     transform: translateY(-50%);
@@ -4685,6 +4744,13 @@ body::before {
     opacity: 0.98;
     text-align: center;
     white-space: normal;
+    flex-wrap: wrap;
+  }
+
+  .terminal-container.scaled .scaled-overlay-action {
+    flex: 1 0 100%;
+    margin-left: 0;
+    text-align: center;
   }
 }
 

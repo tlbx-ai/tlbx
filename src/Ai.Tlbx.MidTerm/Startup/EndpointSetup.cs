@@ -776,6 +776,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         ShareGrantService shareGrantService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
+        TerminalSizeControlService terminalSizeControlService,
         SessionLayoutStateService sessionLayoutStateService,
         ManagerBarQueueService managerBarQueueService,
         GitWatcherService gitWatcher,
@@ -786,7 +787,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         BrowserUiBridge? browserUiBridge = null)
     {
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
-        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, appServerControlRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
+        var stateHandler = new StateWebSocketHandler(sessionManager, sessionSupervisor, appServerControlRuntime, updateService, settingsService, authService, shareGrantService, shutdownService, mainBrowserService, terminalSizeControlService, sessionLayoutStateService, managerBarQueueService, tmuxLayoutBridge, browserUiBridge);
         var appServerControlHandler = new AppServerControlWebSocketHandler(sessionManager, sessionSupervisor, app.Services.GetRequiredService<SessionAppServerControlRuntimeService>(), app.Services.GetRequiredService<SessionCodexHandoffService>(), app.Services.GetRequiredService<AiCliProfileService>(), authService, shutdownService);
         var settingsHandler = new SettingsWebSocketHandler(settingsService, updateService, authService, shutdownService);
         var gitHandler = new GitWebSocketHandler(gitWatcher, settingsService, authService, shutdownService, sessionManager);
@@ -798,6 +799,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             authService,
             shutdownService);
         var hubMuxHandler = app.Services.GetRequiredService<HubMuxWebSocketHandler>();
+        var hubStateHandler = app.Services.GetRequiredService<HubStateWebSocketHandler>();
 
         app.Use(async (context, next) =>
         {
@@ -866,6 +868,12 @@ Start-Service -Name $serviceName -ErrorAction Stop
             if (path == "/ws/hub/mux")
             {
                 await hubMuxHandler.HandleAsync(context);
+                return;
+            }
+
+            if (path == "/ws/hub/state")
+            {
+                await hubStateHandler.HandleAsync(context);
                 return;
             }
 

@@ -497,18 +497,6 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     },
   ),
   controlEntry(
-    'disableAutoMainBrowserPromotion',
-    'setting-disable-auto-main-browser-promotion',
-    'checkbox',
-    true,
-    {
-      editable: true,
-      storage: 'settings.json',
-      validation: 'boolean',
-      applyMode: 'lazy',
-    },
-  ),
-  controlEntry(
     'keepSystemAwakeWithActiveSessions',
     'setting-keep-system-awake',
     'checkbox',

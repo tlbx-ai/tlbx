@@ -6,7 +6,7 @@
  */
 
 import type { LayoutNode, LayoutSplit, LayoutLeaf } from '../../types';
-import { $layout, $focusedSessionId, $activeSessionId, $isMainBrowser } from '../../stores';
+import { $layout, $focusedSessionId, $activeSessionId, hasTerminalSizeControl } from '../../stores';
 import {
   dom,
   sessionTerminals,
@@ -96,7 +96,7 @@ export function renderLayout(root: LayoutNode | null): void {
       if (state) {
         state.container.classList.remove('hidden');
         requestAnimationFrame(() => {
-          if ($isMainBrowser.get()) {
+          if (hasTerminalSizeControl(activeId)) {
             fitSessionToScreen(activeId);
           } else {
             applyTerminalScalingSync(state);
@@ -127,11 +127,7 @@ export function renderLayout(root: LayoutNode | null): void {
     if (suppressLayoutAutoFit) {
       setSuppressLayoutAutoFit(false);
     }
-    if ($isMainBrowser.get()) {
-      fitTerminalsInLayout();
-    } else {
-      scaleTerminalsInLayout();
-    }
+    fitTerminalsInLayout();
   });
 }
 
@@ -290,22 +286,6 @@ function fitTerminalsInLayout(): void {
  * Apply CSS scaling only (no resize) for all terminals in layout.
  * Used when restoring layout from storage — terminals keep their server dimensions.
  */
-function scaleTerminalsInLayout(): void {
-  if (!layoutRoot) return;
-
-  const panes = layoutRoot.querySelectorAll('.layout-leaf');
-  panes.forEach((pane) => {
-    const sessionId = (pane as HTMLElement).dataset.sessionId;
-    if (!sessionId) return;
-
-    const state = sessionTerminals.get(sessionId);
-    if (state?.opened && getActiveTab(sessionId) === 'terminal') {
-      state.container.classList.remove('hidden');
-      applyTerminalScalingSync(state);
-    }
-  });
-}
-
 /**
  * Update focus indicator on layout panes.
  */

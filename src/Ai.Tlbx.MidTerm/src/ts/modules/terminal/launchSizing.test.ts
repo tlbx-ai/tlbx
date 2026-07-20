@@ -1,18 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const calculateOptimalDimensionsSpy = vi.fn();
-let isMainBrowser = false;
 const terminalsArea = {} as HTMLElement;
 
 vi.mock('../../state', () => ({
   dom: {
     terminalsArea,
-  },
-}));
-
-vi.mock('../../stores', () => ({
-  $isMainBrowser: {
-    get: () => isMainBrowser,
   },
 }));
 
@@ -34,7 +27,6 @@ describe('resolveLaunchDimensions', () => {
   const originalCrypto = globalThis.crypto;
 
   beforeEach(() => {
-    isMainBrowser = false;
     calculateOptimalDimensionsSpy.mockReset();
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,
@@ -51,17 +43,16 @@ describe('resolveLaunchDimensions', () => {
     });
   });
 
-  it('keeps follower-created sessions on configured defaults', async () => {
+  it('uses configured defaults when viewport measurement is unavailable', async () => {
     const { resolveLaunchDimensions } = await import('./launchSizing');
 
     const dims = await resolveLaunchDimensions({ defaultCols: 120, defaultRows: 30 }, 'launcher');
 
     expect(dims).toEqual({ cols: 120, rows: 30 });
-    expect(calculateOptimalDimensionsSpy).not.toHaveBeenCalled();
+    expect(calculateOptimalDimensionsSpy).toHaveBeenCalledOnce();
   });
 
-  it('uses the leading browser viewport for launch sizing', async () => {
-    isMainBrowser = true;
+  it('uses the creating browser viewport for launch sizing', async () => {
     calculateOptimalDimensionsSpy.mockResolvedValue({ cols: 81, rows: 24 });
     const { resolveLaunchDimensions } = await import('./launchSizing');
 
@@ -72,7 +63,6 @@ describe('resolveLaunchDimensions', () => {
   });
 
   it('accepts exact minimum viewport dimensions instead of falling back to defaults', async () => {
-    isMainBrowser = true;
     calculateOptimalDimensionsSpy.mockResolvedValue({ cols: 10, rows: 5 });
     const { resolveLaunchDimensions } = await import('./launchSizing');
 

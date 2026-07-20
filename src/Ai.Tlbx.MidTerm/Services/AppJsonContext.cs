@@ -345,6 +345,9 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(WsCommandResponse))]
 [JsonSerializable(typeof(WsSessionCreatedData))]
 [JsonSerializable(typeof(StateUpdate))]
+[JsonSerializable(typeof(TerminalSizeControlStatus))]
+[JsonSerializable(typeof(List<TerminalSizeControlStatus>))]
+[JsonSerializable(typeof(TerminalSizeControlCommandResult))]
 [JsonSerializable(typeof(SettingsWsMessage))]
 [JsonSerializable(typeof(MainBrowserStatusMessage))]
 [JsonSerializable(typeof(BrowserSessionStatus))]
@@ -356,7 +359,6 @@ namespace Ai.Tlbx.MidTerm.Services;
 public partial class AppJsonContext : JsonSerializerContext
 {
 }
-
 
 
 

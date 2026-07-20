@@ -72,7 +72,6 @@ public sealed partial class MidTermSettingsPublic
     public bool ScrollbackProtection { get; set; } = false;
     public bool MobileKineticTerminalScroll { get; set; } = true;
     public bool MobileDenseTerminalMode { get; set; } = false;
-    public bool DisableAutoMainBrowserPromotion { get; set; } = true;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
     public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
     public bool TryResumeNonAiAgentProcesses { get; set; } = false;

@@ -1,5 +1,4 @@
-import { $isMainBrowser } from '../../stores';
-import { autoResizeAllTerminalsImmediate, rescaleAllTerminals } from './scaling';
+import { autoResizeAllTerminalsImmediate } from './scaling';
 import {
   isMobileTerminalViewport,
   observeMobileVerticalViewportChange,
@@ -204,11 +203,7 @@ export function setupVisualViewport(): void {
       return;
     }
 
-    if ($isMainBrowser.get()) {
-      autoResizeAllTerminalsImmediate();
-    } else {
-      rescaleAllTerminals();
-    }
+    autoResizeAllTerminalsImmediate();
   };
 
   vv.addEventListener('resize', update);

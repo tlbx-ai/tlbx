@@ -13,6 +13,7 @@ import {
   $currentSettings,
   $sessionList,
   $settingsOpen,
+  $terminalSizeControls,
   getSession,
   setSession,
 } from '../../stores';
@@ -199,6 +200,9 @@ export function initializeSessionList(): void {
   });
   window.addEventListener('resize', closePopovers);
   window.addEventListener('orientationchange', closePopovers);
+  $terminalSizeControls.subscribe(() => {
+    renderSessionList();
+  });
   void refreshSidebarSpacesTree(true);
 }
 
@@ -916,6 +920,7 @@ function createSidebarSessionNode(
     subtitle.textContent = displayInfo.secondary;
     titleRow.appendChild(subtitle);
   }
+  syncTerminalSizeControlIndicator(titleRow, entry);
 
   info.appendChild(titleRow);
   const topic = createSessionTopicElement(entry.session);
@@ -949,6 +954,11 @@ function patchSidebarSessionNode(
     canReorderSidebarSession(entry, reorderScope),
   );
   syncSidebarSessionItemDisplayText(item, entry.session);
+
+  const titleRow = item.querySelector<HTMLElement>('.session-title-row');
+  if (titleRow) {
+    syncTerminalSizeControlIndicator(titleRow, entry);
+  }
 
   const processInfo = item.querySelector<HTMLElement>('.session-process-info');
   if (processInfo) {
@@ -1043,6 +1053,32 @@ function syncSidebarSessionItemDisplayText(item: HTMLElement, session: Session):
   syncSidebarSessionTopic(item, session.topic);
 
   return true;
+}
+
+function syncTerminalSizeControlIndicator(titleRow: HTMLElement, entry: SidebarSessionRef): void {
+  let indicator = titleRow.querySelector<HTMLElement>('.session-size-control-indicator');
+  const status = $terminalSizeControls.get()[entry.id];
+
+  if (!status || entry.session.appServerControlOnly) {
+    indicator?.remove();
+    return;
+  }
+
+  if (!indicator) {
+    indicator = document.createElement('span');
+    indicator.className = 'session-size-control-indicator';
+    indicator.setAttribute('role', 'img');
+    titleRow.appendChild(indicator);
+  }
+
+  const label = status.isOwner
+    ? t('terminal.sizeControlledHere')
+    : status.hasOwner
+      ? t('terminal.sizeControlledElsewhere')
+      : t('terminal.sizeControlUnassigned');
+  indicator.className = `session-size-control-indicator ${status.isOwner ? 'owned' : 'remote'}`;
+  indicator.title = label;
+  indicator.setAttribute('aria-label', label);
 }
 
 function createSessionTopicElement(session: Session): HTMLDivElement | null {

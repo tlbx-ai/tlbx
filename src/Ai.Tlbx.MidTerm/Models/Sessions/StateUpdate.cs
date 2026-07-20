@@ -11,4 +11,5 @@ public sealed class StateUpdate
     public UpdateInfo? Update { get; init; }
     public SessionLayoutState? Layout { get; init; }
     public List<ManagerBarQueueEntryDto>? ManagerBarQueue { get; init; }
+    public List<TerminalSizeControlStatus>? TerminalSizeControls { get; init; }
 }

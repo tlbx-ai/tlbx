@@ -648,13 +648,34 @@ public sealed class HubService
         CancellationToken ct = default)
     {
         var machine = GetRequiredMachine(machineId);
-        await ConfigureRemoteWebSocketAsync(machine, socket, requireTrusted: true, ct);
+        await ConfigureRemoteWebSocketAsync(
+            machine,
+            socket,
+            requireTrusted: true,
+            forwardedClientId: null,
+            ct: ct);
+    }
+
+    public async Task ConfigureRemoteWebSocketAsync(
+        string machineId,
+        ClientWebSocket socket,
+        string forwardedClientId,
+        CancellationToken ct = default)
+    {
+        var machine = GetRequiredMachine(machineId);
+        await ConfigureRemoteWebSocketAsync(
+            machine,
+            socket,
+            requireTrusted: true,
+            forwardedClientId: forwardedClientId,
+            ct: ct);
     }
 
     private async Task ConfigureRemoteWebSocketAsync(
         HubMachineSettings machine,
         ClientWebSocket socket,
         bool requireTrusted,
+        string? forwardedClientId,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(machine.BaseUrl))
@@ -676,15 +697,32 @@ public sealed class HubService
         {
             socket.Options.SetRequestHeader("Authorization", $"Bearer {machine.ApiKey.Trim()}");
         }
-        else if (!string.IsNullOrWhiteSpace(preflight.CookieHeader))
+
+        var cookieHeader = preflight.CookieHeader;
+        if (!string.IsNullOrWhiteSpace(forwardedClientId))
         {
-            socket.Options.SetRequestHeader("Cookie", preflight.CookieHeader);
+            cookieHeader = UpsertCookie(cookieHeader, "mt-client-id", forwardedClientId);
+        }
+        if (!string.IsNullOrWhiteSpace(cookieHeader))
+        {
+            socket.Options.SetRequestHeader("Cookie", cookieHeader);
         }
 
         if (!string.IsNullOrWhiteSpace(capturedFingerprint))
         {
             await PersistCapturedFingerprintAsync(machine.Id, capturedFingerprint);
         }
+    }
+
+    internal static string UpsertCookie(string cookieHeader, string name, string value)
+    {
+        var prefix = name + "=";
+        var cookies = cookieHeader
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(cookie => !cookie.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        cookies.Add($"{name}={value}");
+        return string.Join("; ", cookies);
     }
 
     private HubMachineSettings GetRequiredMachine(string id)

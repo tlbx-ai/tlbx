@@ -1,11 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { $isMainBrowser } from '../../stores';
+import { $isMainBrowser, $terminalSizeControls } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
 import { applyTerminalScalingSync } from './scaling';
 import { sendResize } from '../comms';
 
+const commMocks = vi.hoisted(() => ({
+  requestTerminalSizeControl: vi.fn(),
+}));
+
 vi.mock('../comms', () => ({
-  claimMainBrowser: vi.fn(),
+  requestTerminalSizeControl: commMocks.requestTerminalSizeControl,
   sendResize: vi.fn(),
 }));
 
@@ -33,6 +37,7 @@ type FakeElement = {
   type?: string;
   title?: string;
   innerHTML?: string;
+  disabled?: boolean;
   parentElement?: FakeElement | null;
   style: Record<string, string>;
   classList: {
@@ -45,6 +50,7 @@ type FakeElement = {
   remove: () => void;
   setAttribute: (name: string, value: string) => void;
   addEventListener: (type: string, handler: () => void) => void;
+  click?: () => void;
   closest: <T>(selector: string) => T | null;
   getElementsByClassName?: (className: string) => { item: (index: number) => FakeElement | null };
   getBoundingClientRect: () => { width: number; height: number };
@@ -84,6 +90,9 @@ function createElementByClassName(className = ''): FakeElement {
     },
     addEventListener(type, handler) {
       listeners.set(type, handler);
+    },
+    click() {
+      listeners.get('click')?.();
     },
     closest: () => null,
     getBoundingClientRect: () => ({ width: 0, height: 0 }),
@@ -221,6 +230,7 @@ describe('terminal scaling badge thresholds', () => {
   beforeEach(() => {
     sessionTerminals.clear();
     $isMainBrowser.set(false);
+    setSizeControl(false);
     dom.terminalsArea = {
       getBoundingClientRect: () => ({ width: 818, height: 488 }),
     } as HTMLElement;
@@ -245,6 +255,7 @@ describe('terminal scaling badge thresholds', () => {
 
   afterEach(() => {
     sessionTerminals.clear();
+    $terminalSizeControls.set({});
     dom.terminalsArea = null;
     globalThis.document = originalDocument;
     globalThis.localStorage = originalLocalStorage;
@@ -257,8 +268,9 @@ describe('terminal scaling badge thresholds', () => {
 
     applyTerminalScalingSync(harness.state as never);
 
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.scaledContent');
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.makeReferenceScaleBrowser');
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.sizeControlledElsewhere');
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.continueHere');
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.scaledViewExplanation');
     expect(harness.xterm.style.transform).toContain('scale(');
     expect(harness.xterm.style.transformOrigin).toBe('top left');
     expect(harness.getGapFillers()).toHaveLength(3);
@@ -271,8 +283,8 @@ describe('terminal scaling badge thresholds', () => {
 
     applyTerminalScalingSync(harness.state as never);
 
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.sizedForSmallerScreen');
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.makeReferenceScaleBrowser');
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.sizeControlledElsewhere');
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.continueHere');
     expect(harness.xterm.style.transform ?? '').toBe('');
   });
 
@@ -281,13 +293,52 @@ describe('terminal scaling badge thresholds', () => {
 
     applyTerminalScalingSync(harness.state as never);
 
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.makeReferenceScaleBrowser');
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.sizeControlledElsewhere');
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.continueHereHint');
     expect(harness.xterm.style.transform ?? '').toBe('');
+  });
+
+  it('immediately starts an explicit forced takeover from the follower notice', async () => {
+    let resolveClaim: ((value: unknown) => void) | undefined;
+    commMocks.requestTerminalSizeControl.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveClaim = resolve;
+      }),
+    );
+    const harness = createTerminalHarness(81, 24);
+    applyTerminalScalingSync(harness.state as never);
+    const overlay = harness.getOverlay();
+
+    overlay?.click?.();
+
+    expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', true);
+    expect(overlay?.disabled).toBe(true);
+    expect(overlay?.classList.contains('claiming')).toBe(true);
+
+    resolveClaim?.({
+      status: {
+        sessionId: 's1',
+        isOwner: true,
+        hasOwner: true,
+        ownerOnline: true,
+        canTakeOverAutomatically: true,
+        epoch: 2,
+      },
+      ownershipChanged: true,
+      resizeApplied: false,
+      cols: 0,
+      rows: 0,
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(overlay?.disabled).toBe(false);
+    expect(overlay?.classList.contains('claiming')).toBe(false);
   });
 
   it('fills natural-fit main-browser gaps from the rendered terminal grid', () => {
     const harness = createTerminalHarness(81, 24, { width: 818, height: 488 });
-    $isMainBrowser.set(true);
+    setSizeControl(true);
 
     applyTerminalScalingSync(harness.state as never);
 
@@ -303,7 +354,7 @@ describe('terminal scaling badge thresholds', () => {
   it('keeps passive scaling free of resize side effects after the browser becomes main', () => {
     const harness = createTerminalHarness(80, 24);
     sessionTerminals.set('s1', harness.state as never);
-    $isMainBrowser.set(true);
+    setSizeControl(true);
 
     applyTerminalScalingSync(harness.state as never);
 
@@ -313,3 +364,16 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.xterm.style.transform ?? '').toBe('');
   });
 });
+
+function setSizeControl(isOwner: boolean): void {
+  $terminalSizeControls.set({
+    s1: {
+      sessionId: 's1',
+      isOwner,
+      hasOwner: true,
+      ownerOnline: true,
+      canTakeOverAutomatically: isOwner,
+      epoch: 1,
+    },
+  });
+}

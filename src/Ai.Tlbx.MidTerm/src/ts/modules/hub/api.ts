@@ -12,6 +12,7 @@ import type {
   HubUpdateRolloutRequest,
   HubUpdateRolloutResponse,
 } from './types';
+import { requestHubTerminalSizeControl } from './sizeControlChannel';
 
 interface CreateHistoryResponse {
   id: string;
@@ -100,7 +101,11 @@ export async function createRemoteSession(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(request ?? {}),
   });
-  return parseJson<SessionInfoDto>(response);
+  const session = await parseJson<SessionInfoDto>(response);
+  await requestHubTerminalSizeControl(`hub:${machineId}:${session.id}`, true).catch(
+    () => undefined,
+  );
+  return session;
 }
 
 export async function deleteRemoteSession(machineId: string, sessionId: string): Promise<void> {

@@ -371,6 +371,7 @@ public class Program
         var codexHandoff = app.Services.GetRequiredService<SessionCodexHandoffService>();
         var providerResumeCatalog = app.Services.GetRequiredService<ProviderResumeCatalogService>();
         var agentVibe = app.Services.GetRequiredService<SessionAgentVibeService>();
+        var terminalSizeControlService = app.Services.GetRequiredService<TerminalSizeControlService>();
         SessionApiEndpoints.MapSessionEndpoints(
             app,
             sessionManager,
@@ -389,7 +390,8 @@ public class Program
             aiCliProfileService,
             workerSessionRegistry,
             muxManager,
-            inputHistoryService);
+            inputHistoryService,
+            terminalSizeControlService);
         SpaceEndpoints.MapSpaceEndpoints(
             app,
             spaceService,
@@ -397,7 +399,8 @@ public class Program
             agentFeed,
             sessionSupervisor,
             appServerControlRuntime,
-            workerSessionRegistry);
+            workerSessionRegistry,
+            terminalSizeControlService);
         SessionLayoutEndpoints.MapSessionLayoutEndpoints(app, sessionManager, layoutStateService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
@@ -450,6 +453,7 @@ public class Program
             shareGrantService,
             shutdownService,
             mainBrowserService,
+            terminalSizeControlService,
             layoutStateService,
             managerBarQueueService,
             gitWatcher,

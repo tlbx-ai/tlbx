@@ -25,6 +25,16 @@ public sealed class HubServiceTests : IAsyncDisposable
         "midterm-hub-tests",
         Guid.NewGuid().ToString("N"));
 
+    [Theory]
+    [InlineData("mt-session=auth", "mt-session=auth; mt-client-id=hub-instance")]
+    [InlineData("mt-client-id=old; mt-session=auth", "mt-session=auth; mt-client-id=hub-instance")]
+    public void UpsertCookie_PreservesAuthenticationAndReplacesForwardedBrowser(
+        string existing,
+        string expected)
+    {
+        Assert.Equal(expected, HubService.UpsertCookie(existing, "mt-client-id", "hub-instance"));
+    }
+
     [Fact]
     public async Task GetMachineStateAsync_UpdatesPlaceholderNameFromRemoteHostname()
     {

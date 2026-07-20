@@ -1,5 +1,4 @@
 import { dom } from '../../state';
-import { $isMainBrowser } from '../../stores';
 import {
   getConfiguredTerminalFontFamily,
   normalizeTerminalFontWeight,
@@ -29,7 +28,7 @@ function resolveDefaultLaunchDimensions(settings: LaunchSizingSettings | null | 
 }
 
 function canMeasureLaunchDimensions(): boolean {
-  return $isMainBrowser.get() && !!dom.terminalsArea;
+  return !!dom.terminalsArea;
 }
 
 export async function resolveLaunchDimensions(

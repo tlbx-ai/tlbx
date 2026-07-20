@@ -1,5 +1,6 @@
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.Spaces;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,7 +15,8 @@ public static class SpaceEndpoints
         SessionAgentFeedService agentFeed,
         SessionSupervisorService sessionSupervisor,
         SessionAppServerControlRuntimeService appServerControlRuntime,
-        WorkerSessionRegistryService workerSessionRegistry)
+        WorkerSessionRegistryService workerSessionRegistry,
+        TerminalSizeControlService terminalSizeControlService)
     {
         app.MapGet("/api/spaces", async (bool? includeWorkspaces, bool? pinnedOnly, CancellationToken ct) =>
         {
@@ -121,7 +123,12 @@ public static class SpaceEndpoints
             }
         });
 
-        app.MapPost("/api/spaces/{id}/workspaces/{key}/launch", async (string id, string key, SpaceLaunchRequest request, CancellationToken ct) =>
+        app.MapPost("/api/spaces/{id}/workspaces/{key}/launch", async (
+            string id,
+            string key,
+            SpaceLaunchRequest request,
+            HttpRequest httpRequest,
+            CancellationToken ct) =>
         {
             var workspacePath = await spaceService.ResolveWorkspacePathAsync(id, key, ct).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(workspacePath))
@@ -150,6 +157,11 @@ public static class SpaceEndpoints
 
                 var sessionId = creation.Session!.Id;
                 ApplySessionSpaceMetadata(sessionManager, sessionId, id, workspacePath, surface);
+                var browserId = BrowserIdentity.TryBuildFromBrowserRequest(httpRequest);
+                if (browserId is not null)
+                {
+                    terminalSizeControlService.AssignNewSession(sessionId, browserId);
+                }
                 return Results.Json(
                     BuildSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionId),
                     AppJsonContext.Default.SessionInfoDto);

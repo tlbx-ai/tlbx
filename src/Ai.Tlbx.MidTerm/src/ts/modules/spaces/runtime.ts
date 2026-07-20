@@ -2,6 +2,8 @@ import type { LaunchEntry, Session, ShellType, SpaceWorkspaceDto } from '../../a
 import { t } from '../i18n';
 import { showAlert, showConfirm } from '../../utils/dialog';
 import { launchHubSpaceWorkspace, launchLocalSpaceWorkspace } from './spacesApi';
+import { requestHubTerminalSizeControl } from '../hub/sizeControlChannel';
+import { toHubCompositeId } from '../hub/runtime';
 
 export type SpaceSurface = 'terminal' | 'codex' | 'claude' | 'grok';
 
@@ -52,6 +54,11 @@ export async function launchSpaceWorkspace(
         rows,
         shell,
       });
+      if (surface === 'terminal') {
+        await requestHubTerminalSizeControl(toHubCompositeId(machineId, session.id), true).catch(
+          () => undefined,
+        );
+      }
       await runtimeOptions.onOpenRemoteSession(machineId, session.id, surface);
       return true;
     }

@@ -19,6 +19,7 @@ using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Mvc;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -72,7 +73,8 @@ public static partial class SessionApiEndpoints
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry,
         TtyHostMuxConnectionManager muxManager,
-        InputHistoryService inputHistory)
+        InputHistoryService inputHistory,
+        TerminalSizeControlService terminalSizeControlService)
     {
         void RecordPromptHistory(string sessionId, AppServerControlTurnRequest turn, string source, string? surface = null)
         {
@@ -214,7 +216,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
-        app.MapPost("/api/sessions", async (CreateSessionRequest? request, CancellationToken ct) =>
+        app.MapPost("/api/sessions", async (HttpRequest httpRequest, CreateSessionRequest? request, CancellationToken ct) =>
         {
             var cols = request?.Cols ?? 120;
             var rows = request?.Rows ?? 30;
@@ -243,6 +245,11 @@ public static partial class SessionApiEndpoints
                 string.IsNullOrWhiteSpace(request?.SpaceId)
                     ? SessionLaunchOrigins.AdHoc
                     : SessionLaunchOrigins.Space);
+            var browserId = BrowserIdentity.TryBuildFromBrowserRequest(httpRequest);
+            if (browserId is not null)
+            {
+                terminalSizeControlService.AssignNewSession(sessionInfo.Id, browserId);
+            }
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
@@ -419,6 +426,7 @@ public static partial class SessionApiEndpoints
 
         app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, CancellationToken ct) =>
         {
+            TerminalSizeLimits.ThrowIfInvalid(request.Cols, request.Rows);
             var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, ct);
             if (!success)
             {

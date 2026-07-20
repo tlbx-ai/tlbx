@@ -5269,7 +5269,6 @@
           "scrollbackProtection",
           "mobileKineticTerminalScroll",
           "mobileDenseTerminalMode",
-          "disableAutoMainBrowserPromotion",
           "keepSystemAwakeWithActiveSessions",
           "resumeMode",
           "tryResumeNonAiAgentProcesses",
@@ -5506,9 +5505,6 @@
           "mobileDenseTerminalMode": {
             "type": "boolean"
           },
-          "disableAutoMainBrowserPromotion": {
-            "type": "boolean"
-          },
           "keepSystemAwakeWithActiveSessions": {
             "type": "boolean"
           },
@@ -5686,12 +5682,6 @@
           "rows": {
             "type": "integer",
             "format": "int32"
-          },
-          "viewerId": {
-            "type": [
-              "null",
-              "string"
-            ]
           }
         }
       },
@@ -6618,7 +6608,8 @@
           "sessions",
           "update",
           "layout",
-          "managerBarQueue"
+          "managerBarQueue",
+          "terminalSizeControls"
         ],
         "type": "object",
         "properties": {
@@ -6659,6 +6650,15 @@
             ],
             "items": {
               "$ref": "#/components/schemas/ManagerBarQueueEntryDto"
+            }
+          },
+          "terminalSizeControls": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TerminalSizeControlStatus"
             }
           }
         }
@@ -6907,6 +6907,38 @@
           "fullReplay",
           "quickResume"
         ]
+      },
+      "TerminalSizeControlStatus": {
+        "required": [
+          "sessionId",
+          "isOwner",
+          "hasOwner",
+          "ownerOnline",
+          "canTakeOverAutomatically",
+          "epoch"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string"
+          },
+          "isOwner": {
+            "type": "boolean"
+          },
+          "hasOwner": {
+            "type": "boolean"
+          },
+          "ownerOnline": {
+            "type": "boolean"
+          },
+          "canTakeOverAutomatically": {
+            "type": "boolean"
+          },
+          "epoch": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       },
       "TerminalTransportDiagnosticsDto": {
         "required": [

@@ -33,6 +33,7 @@ public sealed class StateWebSocketHandler
     private readonly ShareGrantService _shareGrantService;
     private readonly ShutdownService _shutdownService;
     private readonly MainBrowserService _mainBrowserService;
+    private readonly TerminalSizeControlService _terminalSizeControlService;
     private readonly SessionLayoutStateService _sessionLayoutStateService;
     private readonly ManagerBarQueueService _managerBarQueueService;
     private readonly TmuxLayoutBridge? _tmuxLayoutBridge;
@@ -48,6 +49,7 @@ public sealed class StateWebSocketHandler
         ShareGrantService shareGrantService,
         ShutdownService shutdownService,
         MainBrowserService mainBrowserService,
+        TerminalSizeControlService terminalSizeControlService,
         SessionLayoutStateService sessionLayoutStateService,
         ManagerBarQueueService managerBarQueueService,
         TmuxLayoutBridge? tmuxLayoutBridge = null,
@@ -62,6 +64,7 @@ public sealed class StateWebSocketHandler
         _shareGrantService = shareGrantService;
         _shutdownService = shutdownService;
         _mainBrowserService = mainBrowserService;
+        _terminalSizeControlService = terminalSizeControlService;
         _sessionLayoutStateService = sessionLayoutStateService;
         _managerBarQueueService = managerBarQueueService;
         _tmuxLayoutBridge = tmuxLayoutBridge;
@@ -92,6 +95,11 @@ public sealed class StateWebSocketHandler
                 return;
             }
         }
+        var isSizeControlOnly = shareAccess is null &&
+            string.Equals(
+                context.Request.Query["sizeControlOnly"].FirstOrDefault(),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
 
         using var ws = await context.WebSockets.AcceptWebSocketAsync();
         using var authLease = isShareConnection
@@ -108,6 +116,8 @@ public sealed class StateWebSocketHandler
         var stateSendPending = false;
         var stateSendInFlight = false;
         Task? stateSendTask = null;
+        var connectionToken = new object();
+        var browserId = BuildBrowserConnectionId(context.Request);
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
@@ -143,13 +153,16 @@ public sealed class StateWebSocketHandler
             }
             var state = new StateUpdate
             {
-                Sessions = sessionList,
-                Update = shareAccess is null ? lastUpdate : null,
-                Layout = shareAccess is null
+                Sessions = isSizeControlOnly ? null : sessionList,
+                Update = shareAccess is null && !isSizeControlOnly ? lastUpdate : null,
+                Layout = shareAccess is null && !isSizeControlOnly
                     ? _sessionLayoutStateService.GetSnapshot(sessionList.Sessions.Select(s => s.Id))
                     : null,
-                ManagerBarQueue = shareAccess is null
+                ManagerBarQueue = shareAccess is null && !isSizeControlOnly
                     ? _managerBarQueueService.GetSnapshot(sessionList.Sessions.Select(s => s.Id)).ToList()
+                    : [],
+                TerminalSizeControls = shareAccess is null
+                    ? _terminalSizeControlService.GetStatuses(browserId, sessionList.Sessions.Select(s => s.Id))
                     : []
             };
             await SendJsonAsync(state, AppJsonContext.Default.StateUpdate);
@@ -163,6 +176,8 @@ public sealed class StateWebSocketHandler
                 session.Supervisor = _sessionSupervisor.Describe(session);
                 session.HasAppServerControlHistory = _appServerControlRuntime.HasHistory(session.Id);
             }
+
+            _terminalSizeControlService.PruneSessions(response.Sessions.Select(s => s.Id));
 
             return response;
         }
@@ -274,9 +289,6 @@ public sealed class StateWebSocketHandler
             RequestCoalescedStateSend();
         }
 
-        var connectionToken = new object();
-        var browserId = BuildBrowserConnectionId(context.Request);
-
         async Task SendMainBrowserStatusAsync()
         {
             var status = new MainBrowserStatusMessage
@@ -291,6 +303,11 @@ public sealed class StateWebSocketHandler
         void OnMainBrowserChanged()
         {
             _ = SendMainBrowserStatusAsync();
+        }
+
+        void OnTerminalSizeControlChanged()
+        {
+            RequestCoalescedStateSend();
         }
 
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
@@ -322,7 +339,7 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, TmuxJsonContext.Default.TmuxSwapInstruction);
         }
 
-        if (shareAccess is null && _tmuxLayoutBridge is not null)
+        if (shareAccess is null && !isSizeControlOnly && _tmuxLayoutBridge is not null)
         {
             _tmuxLayoutBridge.OnDockRequested += OnDockRequested;
             _tmuxLayoutBridge.OnFocusRequested += OnFocusRequested;
@@ -390,7 +407,7 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        if (shareAccess is null)
+        if (shareAccess is null && !isSizeControlOnly)
         {
             _browserUiBridge?.RegisterListener(
                 connectionId: browserUiListenerId,
@@ -440,13 +457,18 @@ public sealed class StateWebSocketHandler
                 }, null, delay, Timeout.InfiniteTimeSpan);
             }
 
-            lastUpdate = shareAccess is null ? _updateService.LatestUpdate : null;
+            lastUpdate = shareAccess is null && !isSizeControlOnly ? _updateService.LatestUpdate : null;
             await SendStateAsync();
             if (shareAccess is null)
             {
-                _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
-                _mainBrowserService.Register(browserId, connectionToken);
-                await SendMainBrowserStatusAsync();
+                _terminalSizeControlService.OnChanged += OnTerminalSizeControlChanged;
+                _terminalSizeControlService.RegisterBrowser(browserId, connectionToken);
+                if (!isSizeControlOnly)
+                {
+                    _mainBrowserService.OnMainBrowserChanged += OnMainBrowserChanged;
+                    _mainBrowserService.Register(browserId, connectionToken);
+                    await SendMainBrowserStatusAsync();
+                }
             }
 
             var buffer = new byte[8192];
@@ -514,18 +536,23 @@ public sealed class StateWebSocketHandler
             _managerBarQueueService.OnChanged -= OnManagerBarQueueChanged;
             if (shareAccess is null)
             {
-                _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
-                _mainBrowserService.Unregister(browserId, connectionToken);
+                _terminalSizeControlService.OnChanged -= OnTerminalSizeControlChanged;
+                _terminalSizeControlService.UnregisterBrowser(browserId, connectionToken);
+                if (!isSizeControlOnly)
+                {
+                    _mainBrowserService.OnMainBrowserChanged -= OnMainBrowserChanged;
+                    _mainBrowserService.Unregister(browserId, connectionToken);
+                }
             }
 
-            if (shareAccess is null && _tmuxLayoutBridge is not null)
+            if (shareAccess is null && !isSizeControlOnly && _tmuxLayoutBridge is not null)
             {
                 _tmuxLayoutBridge.OnDockRequested -= OnDockRequested;
                 _tmuxLayoutBridge.OnFocusRequested -= OnFocusRequested;
                 _tmuxLayoutBridge.OnSwapRequested -= OnSwapRequested;
             }
 
-            if (shareAccess is null && _browserUiBridge is not null)
+            if (shareAccess is null && !isSizeControlOnly && _browserUiBridge is not null)
             {
                 _browserUiBridge.UnregisterListener(browserUiListenerId);
             }
@@ -591,7 +618,7 @@ public sealed class StateWebSocketHandler
             switch (cmd.Action)
             {
                 case "session.create":
-                    await HandleSessionCreateAsync(cmd, sendResponse, ct);
+                    await HandleSessionCreateAsync(cmd, sendResponse, browserId, ct);
                     break;
 
                 case "session.close":
@@ -630,6 +657,14 @@ public sealed class StateWebSocketHandler
                     await sendResponse(cmd.Id, true, null, null);
                     break;
 
+                case "terminal.requestSizeControl":
+                    await HandleTerminalSizeControlRequestAsync(cmd, sendResponse, browserId, ct);
+                    break;
+
+                case "terminal.resize":
+                    await HandleTerminalResizeAsync(cmd, sendResponse, browserId, ct);
+                    break;
+
                 default:
                     await sendResponse(cmd.Id, false, null, $"Unknown action: {cmd.Action}");
                     break;
@@ -645,6 +680,7 @@ public sealed class StateWebSocketHandler
     private async Task HandleSessionCreateAsync(
         WsCommand cmd,
         Func<string, bool, object?, string?, Task> sendResponse,
+        string browserId,
         CancellationToken ct)
     {
         var payload = cmd.Payload;
@@ -668,6 +704,7 @@ public sealed class StateWebSocketHandler
 
         var session = creation.Session!;
         _sessionManager.SetLaunchOrigin(session.Id, SessionLaunchOrigins.AdHoc);
+        _terminalSizeControlService.AssignNewSession(session.Id, browserId);
         var data = new WsSessionCreatedData
         {
             Id = session.Id,
@@ -676,6 +713,66 @@ public sealed class StateWebSocketHandler
         };
 
         await sendResponse(cmd.Id, true, data, null);
+    }
+
+    private async Task HandleTerminalSizeControlRequestAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        string browserId,
+        CancellationToken ct)
+    {
+        var sessionId = cmd.Payload?.SessionId;
+        if (string.IsNullOrWhiteSpace(sessionId) || _sessionManager.GetSession(sessionId) is null)
+        {
+            await sendResponse(cmd.Id, false, null, "Unknown terminal session");
+            return;
+        }
+
+        var result = await _terminalSizeControlService.RequestControlAsync(
+            sessionId,
+            browserId,
+            cmd.Payload?.Force == true,
+            ct);
+        await sendResponse(cmd.Id, true, result, null);
+    }
+
+    private async Task HandleTerminalResizeAsync(
+        WsCommand cmd,
+        Func<string, bool, object?, string?, Task> sendResponse,
+        string browserId,
+        CancellationToken ct)
+    {
+        var sessionId = cmd.Payload?.SessionId;
+        var cols = cmd.Payload?.Cols;
+        var rows = cmd.Payload?.Rows;
+        var expectedEpoch = cmd.Payload?.ExpectedEpoch;
+        if (string.IsNullOrWhiteSpace(sessionId) || cols is null || rows is null || expectedEpoch is null)
+        {
+            await sendResponse(cmd.Id, false, null, "sessionId, cols, rows, and expectedEpoch are required");
+            return;
+        }
+
+        var result = await _terminalSizeControlService.ResizeAsync(
+            sessionId,
+            browserId,
+            expectedEpoch.Value,
+            cols.Value,
+            rows.Value,
+            resizeCt => _sessionManager.ResizeSessionAsync(sessionId, cols.Value, rows.Value, resizeCt),
+            ct);
+        if (!result.Status.IsOwner || result.Status.Epoch != expectedEpoch.Value)
+        {
+            await sendResponse(cmd.Id, true, result, null);
+            return;
+        }
+
+        if (!result.ResizeApplied)
+        {
+            await sendResponse(cmd.Id, false, result, "Terminal resize failed");
+            return;
+        }
+
+        await sendResponse(cmd.Id, true, result, null);
     }
 
     private async Task HandleSessionCloseAsync(
@@ -749,14 +846,6 @@ public sealed class StateWebSocketHandler
 
     private static string BuildBrowserConnectionId(HttpRequest request)
     {
-        var clientId = request.Cookies["mt-client-id"];
-        var tabId = request.Query["tabId"].FirstOrDefault();
-
-        if (string.IsNullOrWhiteSpace(clientId))
-        {
-            clientId = Guid.NewGuid().ToString("N");
-        }
-
-        return BrowserIdentity.Build(clientId, tabId) ?? clientId;
+        return BrowserIdentity.BuildFromRequest(request);
     }
 }

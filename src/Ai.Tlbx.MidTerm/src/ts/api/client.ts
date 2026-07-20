@@ -57,6 +57,7 @@ import {
   resolveAppServerControlUserInputWs,
   submitAppServerControlTurnWs,
 } from './appServerControlWebSocket';
+import { getOrCreateTabId } from '../utils/cookies';
 
 const client = createClient<paths>({ baseUrl: '' });
 
@@ -219,6 +220,7 @@ async function postJsonWithProblem<TResponse>(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-MidTerm-Tab-Id': getOrCreateTabId(),
     },
     body: JSON.stringify(body ?? {}),
   });
@@ -379,17 +381,6 @@ export async function getProviderResumeCandidates(
 export async function deleteSession(id: string): ClientDeleteResult<'/api/sessions/{id}'> {
   return client.DELETE('/api/sessions/{id}', {
     params: { path: { id } },
-  });
-}
-
-export async function resizeSession(
-  id: string,
-  cols: number,
-  rows: number,
-): ClientPostResult<'/api/sessions/{id}/resize'> {
-  return client.POST('/api/sessions/{id}/resize', {
-    params: { path: { id } },
-    body: { cols, rows },
   });
 }
 

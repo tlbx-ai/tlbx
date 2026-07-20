@@ -463,7 +463,7 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
   });
 
-  it('does not resize a visible main-browser terminal from a state snapshot', async () => {
+  it('applies authoritative server dimensions even to the owning browser', async () => {
     const { stores } = await loadHarness();
     stores.$isMainBrowser.set(true);
     const container = { classList: { contains: vi.fn(() => false) } };
@@ -490,10 +490,10 @@ describe('stateChannel browser-ui handling', () => {
       } as any,
     ]);
 
-    expect(resize).not.toHaveBeenCalled();
-    expect(mocks.applyTerminalScaling).not.toHaveBeenCalled();
-    expect(state.sessionTerminals.get('session-a')?.serverCols).toBe(120);
-    expect(state.sessionTerminals.get('session-a')?.serverRows).toBe(30);
+    expect(resize).toHaveBeenCalledWith(100, 24);
+    expect(mocks.applyTerminalScaling).toHaveBeenCalledOnce();
+    expect(state.sessionTerminals.get('session-a')?.serverCols).toBe(100);
+    expect(state.sessionTerminals.get('session-a')?.serverRows).toBe(24);
   });
 
   it('does not rerender session chrome for identical state snapshots', async () => {

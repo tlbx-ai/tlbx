@@ -144,6 +144,7 @@ function createFitHarness() {
 
   const children: FakeElement[] = [];
   const container = {
+    id: 'terminal-s1',
     style: {},
     clientWidth: 818,
     clientHeight: 488,
@@ -246,7 +247,7 @@ describe('fitSessionToScreen', () => {
     fitSessionToScreen('s1');
 
     expect(mocks.remeasureTerminalCells).not.toHaveBeenCalled();
-    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
     expect(focusActiveTerminal).toHaveBeenCalledTimes(1);
   });
@@ -258,7 +259,7 @@ describe('fitSessionToScreen', () => {
 
     fitSessionToScreen('s1');
 
-    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
     expect(focusActiveTerminal).not.toHaveBeenCalled();
   });
@@ -276,8 +277,7 @@ describe('fitSessionToScreen', () => {
 
     fitSessionToScreen('s1');
 
-    expect(harness.terminal.resize).toHaveBeenCalledTimes(1);
-    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
 
@@ -301,7 +301,7 @@ describe('fitSessionToScreen', () => {
     scheduleForegroundResizeRecovery();
 
     expect(recoverTerminalRendererAfterForeground).toHaveBeenCalledWith('s1', harness.state);
-    expect(harness.terminal.resize).toHaveBeenCalledWith(81, 24);
+    expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
   });
 
@@ -327,6 +327,7 @@ describe('fitSessionToScreen', () => {
       offsetHeight: 480,
     };
     const container = {
+      id: 'terminal-s1',
       clientWidth: 800,
       clientHeight: 480,
       classList: createClassList(),

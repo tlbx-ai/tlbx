@@ -6,13 +6,8 @@
  * The web preview dock sits as the outermost (rightmost) panel.
  */
 
-import {
-  $activeSessionId,
-  $webPreviewDocked,
-  $webPreviewViewport,
-  $isMainBrowser,
-} from '../../stores';
-import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
+import { $activeSessionId, $webPreviewDocked, $webPreviewViewport } from '../../stores';
+import { autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
 import {
   hideIframe,
@@ -50,11 +45,7 @@ function clampDockWidth(width: number, panel: HTMLElement): number {
 }
 
 function handleDockLayoutChange(): void {
-  if ($isMainBrowser.get()) {
-    autoResizeAllTerminalsImmediate();
-  } else {
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
-  }
+  autoResizeAllTerminalsImmediate();
 }
 
 function refreshDockReservations(): void {

@@ -16,7 +16,7 @@ import { syncTerminalWebglState } from '../terminal/manager';
 import { syncTerminalLigatureState } from '../terminal/ligatures';
 import { shouldUseWebglRenderer } from '../terminal/webglSupport';
 import { escapeHtml } from '../../utils';
-import { $currentSettings, $isMainBrowser } from '../../stores';
+import { $currentSettings, hasTerminalSizeControl } from '../../stores';
 
 export { hiddenSessionIds } from '../../state';
 
@@ -116,12 +116,11 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
 
   requestAnimationFrame(() => {
     try {
+      if (!hasTerminalSizeControl(hiddenSessionId)) return;
       fitAddon.fit();
       const dims = fitAddon.proposeDimensions();
-      if ($isMainBrowser.get() && dims && dims.cols > 0 && dims.rows > 0) {
+      if (dims && dims.cols > 0 && dims.rows > 0) {
         sendResize(hiddenSessionId, dims.cols, dims.rows);
-        termState.serverCols = dims.cols;
-        termState.serverRows = dims.rows;
       }
     } catch {
       // fitAddon may fail if terminal not fully rendered
@@ -130,12 +129,11 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
 
   const resizeObserver = new ResizeObserver(() => {
     try {
+      if (!hasTerminalSizeControl(hiddenSessionId)) return;
       fitAddon.fit();
       const dims = fitAddon.proposeDimensions();
-      if ($isMainBrowser.get() && dims && dims.cols > 0 && dims.rows > 0) {
+      if (dims && dims.cols > 0 && dims.rows > 0) {
         sendResize(hiddenSessionId, dims.cols, dims.rows);
-        termState.serverCols = dims.cols;
-        termState.serverRows = dims.rows;
       }
     } catch {
       // ignore

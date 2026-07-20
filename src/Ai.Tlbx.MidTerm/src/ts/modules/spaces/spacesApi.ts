@@ -9,6 +9,7 @@ import type {
   SpaceUpdateWorkspaceRequest,
   LaunchEntry,
 } from '../../api/types';
+import { getOrCreateTabId } from '../../utils/cookies';
 
 interface FetchSpacesOptions {
   includeWorkspaces?: boolean;
@@ -101,7 +102,10 @@ export async function launchLocalSpaceWorkspace(
       `/api/spaces/${encodeURIComponent(spaceId)}/workspaces/${encodeURIComponent(workspaceKey)}/launch`,
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-MidTerm-Tab-Id': getOrCreateTabId(),
+        },
         body: JSON.stringify(request),
       },
     ),
