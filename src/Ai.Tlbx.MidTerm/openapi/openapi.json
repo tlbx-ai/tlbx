@@ -6914,7 +6914,9 @@
           "isOwner",
           "hasOwner",
           "ownerOnline",
+          "ownerInSameBrowserProfile",
           "canTakeOverAutomatically",
+          "ownerLabel",
           "epoch"
         ],
         "type": "object",
@@ -6931,8 +6933,17 @@
           "ownerOnline": {
             "type": "boolean"
           },
+          "ownerInSameBrowserProfile": {
+            "type": "boolean"
+          },
           "canTakeOverAutomatically": {
             "type": "boolean"
+          },
+          "ownerLabel": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "epoch": {
             "type": "integer",

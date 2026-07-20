@@ -94,6 +94,7 @@
   "terminal.scaledViewExplanation": "This view is scaled so everything remains visible.",
   "terminal.continueHere": "Continue working here",
   "terminal.continueHereHint": "Size will be optimized for this browser",
+  "terminal.takeControlFrom": "Take size control from",
   "sidebar.rename": "Rename",
   "sidebar.updateAvailable": "Update Available",
   "sidebar.quickUpdate": "Quick Update",

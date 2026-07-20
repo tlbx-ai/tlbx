@@ -53,15 +53,16 @@ public sealed class HubStateWebSocketHandler
         using var localSocket = await context.WebSockets.AcceptWebSocketAsync();
         using var remoteSocket = new ClientWebSocket();
         var localBrowserId = BrowserIdentity.BuildFromRequest(context.Request);
+        var browserLabel = BrowserIdentity.GetDeviceLabel(context.Request);
 
         try
         {
             await _hubService.ConfigureRemoteWebSocketAsync(
                 machineId,
                 remoteSocket,
-                $"hub-{_instanceIdentity.InstanceId}",
+                $"hub-{_instanceIdentity.InstanceId}-{BrowserIdentity.GetClientPart(localBrowserId)}",
                 _shutdownService.Token);
-            var remoteUri = BuildRemoteStateUri(machine.BaseUrl, localBrowserId);
+            var remoteUri = BuildRemoteStateUri(machine.BaseUrl, localBrowserId, browserLabel);
             await remoteSocket.ConnectAsync(remoteUri, _shutdownService.Token);
         }
         catch (Exception ex)
@@ -80,13 +81,19 @@ public sealed class HubStateWebSocketHandler
         await TryCloseAsync(localSocket);
     }
 
-    private static Uri BuildRemoteStateUri(string baseUrl, string browserId)
+    private static Uri BuildRemoteStateUri(string baseUrl, string browserId, string? browserLabel)
     {
+        var query = $"tabId={Uri.EscapeDataString(browserId)}&sizeControlOnly=true";
+        if (!string.IsNullOrWhiteSpace(browserLabel))
+        {
+            query += $"&deviceLabel={Uri.EscapeDataString(browserLabel)}";
+        }
+
         var builder = new UriBuilder(baseUrl)
         {
             Scheme = new Uri(baseUrl).Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ? "ws" : "wss",
             Path = "/ws/state",
-            Query = $"tabId={Uri.EscapeDataString(browserId)}&sizeControlOnly=true"
+            Query = query
         };
         return builder.Uri;
     }

@@ -100,7 +100,9 @@ export interface TerminalSizeControlStatus {
   isOwner: boolean;
   hasOwner: boolean;
   ownerOnline: boolean;
+  ownerInSameBrowserProfile?: boolean;
   canTakeOverAutomatically: boolean;
+  ownerLabel?: string | null;
   epoch: number;
 }
 

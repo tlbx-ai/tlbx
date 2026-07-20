@@ -24,6 +24,7 @@
   "terminal.scaledViewExplanation": "Esta visualização é escalada para manter tudo visível.",
   "terminal.continueHere": "Continuar trabalhando aqui",
   "terminal.continueHereHint": "O tamanho será otimizado para este navegador",
+  "terminal.takeControlFrom": "Assumir o controle do tamanho de",
   "sidebar.rename": "Renomear",
   "sidebar.updateAvailable": "Atualização Disponível",
   "sidebar.quickUpdate": "Atualização Rápida",

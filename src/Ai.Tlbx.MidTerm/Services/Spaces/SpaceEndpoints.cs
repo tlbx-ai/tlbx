@@ -160,7 +160,10 @@ public static class SpaceEndpoints
                 var browserId = BrowserIdentity.TryBuildFromBrowserRequest(httpRequest);
                 if (browserId is not null)
                 {
-                    terminalSizeControlService.AssignNewSession(sessionId, browserId);
+                    terminalSizeControlService.AssignNewSession(
+                        sessionId,
+                        browserId,
+                        BrowserIdentity.GetDeviceLabel(httpRequest));
                 }
                 return Results.Json(
                     BuildSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionId),

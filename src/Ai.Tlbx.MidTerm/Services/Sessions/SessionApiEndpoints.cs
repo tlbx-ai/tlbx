@@ -248,7 +248,10 @@ public static partial class SessionApiEndpoints
             var browserId = BrowserIdentity.TryBuildFromBrowserRequest(httpRequest);
             if (browserId is not null)
             {
-                terminalSizeControlService.AssignNewSession(sessionInfo.Id, browserId);
+                terminalSizeControlService.AssignNewSession(
+                    sessionInfo.Id,
+                    browserId,
+                    BrowserIdentity.GetDeviceLabel(httpRequest));
             }
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });

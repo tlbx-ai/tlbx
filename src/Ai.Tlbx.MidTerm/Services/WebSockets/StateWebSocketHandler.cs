@@ -118,6 +118,7 @@ public sealed class StateWebSocketHandler
         Task? stateSendTask = null;
         var connectionToken = new object();
         var browserId = BuildBrowserConnectionId(context.Request);
+        var browserLabel = BrowserIdentity.GetDeviceLabel(context.Request);
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
@@ -496,7 +497,7 @@ public sealed class StateWebSocketHandler
                             var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
                             messageBuffer.Clear();
 
-                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, connectionToken, shareAccess, shutdownToken);
+                            await HandleCommandAsync(messageJson, SendCommandResponseAsync, browserId, browserLabel, connectionToken, shareAccess, shutdownToken);
                         }
                     }
                 }
@@ -588,6 +589,7 @@ public sealed class StateWebSocketHandler
         string json,
         Func<string, bool, object?, string?, Task> sendResponse,
         string browserId,
+        string? browserLabel,
         object connectionToken,
         ShareAccessContext? shareAccess,
         CancellationToken ct)
@@ -618,7 +620,7 @@ public sealed class StateWebSocketHandler
             switch (cmd.Action)
             {
                 case "session.create":
-                    await HandleSessionCreateAsync(cmd, sendResponse, browserId, ct);
+                    await HandleSessionCreateAsync(cmd, sendResponse, browserId, browserLabel, ct);
                     break;
 
                 case "session.close":
@@ -658,7 +660,7 @@ public sealed class StateWebSocketHandler
                     break;
 
                 case "terminal.requestSizeControl":
-                    await HandleTerminalSizeControlRequestAsync(cmd, sendResponse, browserId, ct);
+                    await HandleTerminalSizeControlRequestAsync(cmd, sendResponse, browserId, browserLabel, ct);
                     break;
 
                 case "terminal.resize":
@@ -681,6 +683,7 @@ public sealed class StateWebSocketHandler
         WsCommand cmd,
         Func<string, bool, object?, string?, Task> sendResponse,
         string browserId,
+        string? browserLabel,
         CancellationToken ct)
     {
         var payload = cmd.Payload;
@@ -704,7 +707,7 @@ public sealed class StateWebSocketHandler
 
         var session = creation.Session!;
         _sessionManager.SetLaunchOrigin(session.Id, SessionLaunchOrigins.AdHoc);
-        _terminalSizeControlService.AssignNewSession(session.Id, browserId);
+        _terminalSizeControlService.AssignNewSession(session.Id, browserId, browserLabel);
         var data = new WsSessionCreatedData
         {
             Id = session.Id,
@@ -719,6 +722,7 @@ public sealed class StateWebSocketHandler
         WsCommand cmd,
         Func<string, bool, object?, string?, Task> sendResponse,
         string browserId,
+        string? browserLabel,
         CancellationToken ct)
     {
         var sessionId = cmd.Payload?.SessionId;
@@ -732,6 +736,7 @@ public sealed class StateWebSocketHandler
             sessionId,
             browserId,
             cmd.Payload?.Force == true,
+            browserLabel,
             ct);
         await sendResponse(cmd.Id, true, result, null);
     }

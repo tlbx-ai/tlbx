@@ -196,12 +196,14 @@ The model is:
 1. The backend persists an owner browser-tab identity and a monotonically increasing ownership epoch for every terminal session.
 2. Only that owner may resize the PTY, and every browser resize command must present the current epoch. Stale or unauthorized commands are acknowledged without changing the PTY.
 3. New sessions start at the creating browser's measured viewport and are assigned to that browser tab.
-4. Followers always apply server dimensions to their local xterm and CSS-scale the result to fit their viewport.
+4. Followers always apply server dimensions to their local xterm and CSS-scale oversized terminals down to fit. Smaller terminals stay at scale `1`; their naturally empty pixel area carries the takeover affordance and the sanitized device/browser label of the current owner.
 5. An explicit “continue here” action always transfers ownership immediately, increments the epoch, and resizes to the new viewport.
 6. Genuine terminal input renews the owner's lease. Input from a follower may take over only after the owner has been connected but idle for five minutes, or offline and without input for thirty seconds.
-7. Passive presence never counts as work: page load, focus, visibility, reconnect, device class, viewport changes, and an open tablet do not transfer ownership.
+7. On its first ownership snapshot, a visible terminal may automatically claim when the backend already reports the lease as eligible. This is a one-shot arrival decision, not a later-running inactivity timer, so a tablet opened beside an actively used PC remains passive.
+8. A reopened tab in the same browser profile immediately inherits an offline predecessor. An online sibling tab remains a follower even after the normal lease becomes eligible, unless the user explicitly takes control.
+9. Tab identity combines the persistent browser-profile cookie with a tab-local ID. A `BroadcastChannel` probe rekeys copied `sessionStorage` IDs before WebSockets connect, covering duplicated-tab behavior without collapsing two tabs onto one owner.
 
-This creates a one-way handoff when work actually moves to another browser without allowing two open browsers to fight. Once control moves, input from the former owner cannot immediately take it back because the new owner's fresh lease is protected.
+This creates a one-way handoff when work actually moves to another browser without allowing two open browsers to fight. Once control moves, input from the former owner cannot immediately take it back because the new owner's fresh lease is protected. A browser opened after a commute sees an already-expired work lease and fits immediately; an iPad opened beside recent PC work sees a protected lease and remains scaled until its explicit takeover button is used.
 
 Connected-host sessions use the same authority on the remote MidTerm instance that owns the PTY. The Hub bridges a size-control-only state channel and rewrites the remote session ID for the local UI; it does not decide ownership or resize the terminal independently. This also prevents a browser connected directly to the remote machine from fighting with a browser viewing that session through Hub.
 The engineering goal is therefore threefold:

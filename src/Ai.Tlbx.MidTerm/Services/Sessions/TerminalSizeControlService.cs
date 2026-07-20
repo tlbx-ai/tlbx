@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
@@ -106,7 +107,7 @@ public sealed class TerminalSizeControlService
         }
     }
 
-    public void AssignNewSession(string sessionId, string browserId)
+    public void AssignNewSession(string sessionId, string browserId, string? browserLabel = null)
     {
         if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(browserId))
         {
@@ -121,6 +122,7 @@ public sealed class TerminalSizeControlService
             _ownership[sessionId] = new OwnershipRecord
             {
                 BrowserId = browserId,
+                BrowserLabel = browserLabel,
                 Epoch = nextEpoch,
                 LastInteractionUtc = _timeProvider.GetUtcNow()
             };
@@ -134,6 +136,7 @@ public sealed class TerminalSizeControlService
         string sessionId,
         string browserId,
         bool force,
+        string? browserLabel = null,
         CancellationToken ct = default)
     {
         var gate = _sessionGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
@@ -149,13 +152,18 @@ public sealed class TerminalSizeControlService
                     string.Equals(current.BrowserId, browserId, StringComparison.Ordinal))
                 {
                     current.LastInteractionUtc = now;
+                    if (!string.IsNullOrWhiteSpace(browserLabel))
+                    {
+                        current.BrowserLabel = browserLabel;
+                    }
                     PersistLocked();
                 }
-                else if (force || CanTakeOverAutomaticallyLocked(current, now))
+                else if (force || CanTakeOverAutomaticallyLocked(current, browserId, now))
                 {
                     _ownership[sessionId] = new OwnershipRecord
                     {
                         BrowserId = browserId,
+                        BrowserLabel = browserLabel,
                         Epoch = (current?.Epoch ?? 0) + 1,
                         LastInteractionUtc = now
                     };
@@ -266,20 +274,32 @@ public sealed class TerminalSizeControlService
             IsOwner = isOwner,
             HasOwner = owner is not null,
             OwnerOnline = owner is not null && IsBrowserOnlineLocked(owner.BrowserId),
-            CanTakeOverAutomatically = isOwner || CanTakeOverAutomaticallyLocked(owner, now),
+            OwnerInSameBrowserProfile = owner is not null &&
+                BrowserIdentity.AreSameBrowser(owner.BrowserId, browserId),
+            CanTakeOverAutomatically = isOwner || CanTakeOverAutomaticallyLocked(owner, browserId, now),
+            OwnerLabel = owner?.BrowserLabel,
             Epoch = owner?.Epoch ?? 0
         };
     }
 
-    private bool CanTakeOverAutomaticallyLocked(OwnershipRecord? owner, DateTimeOffset now)
+    private bool CanTakeOverAutomaticallyLocked(
+        OwnershipRecord? owner,
+        string requestingBrowserId,
+        DateTimeOffset now)
     {
         if (owner is null)
         {
             return true;
         }
 
+        var ownerOnline = IsBrowserOnlineLocked(owner.BrowserId);
+        if (!ownerOnline && BrowserIdentity.AreSameBrowser(owner.BrowserId, requestingBrowserId))
+        {
+            return true;
+        }
+
         var idleFor = now - owner.LastInteractionUtc;
-        return IsBrowserOnlineLocked(owner.BrowserId)
+        return ownerOnline
             ? idleFor >= ConnectedIdleTakeoverDelay
             : idleFor >= OfflineTakeoverDelay;
     }
@@ -358,6 +378,7 @@ public sealed class TerminalSizeControlService
     internal sealed class OwnershipRecord
     {
         public string BrowserId { get; set; } = string.Empty;
+        public string? BrowserLabel { get; set; }
         public long Epoch { get; set; }
         public DateTimeOffset LastInteractionUtc { get; set; }
     }

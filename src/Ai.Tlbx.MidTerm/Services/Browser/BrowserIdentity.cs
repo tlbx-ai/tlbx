@@ -3,6 +3,8 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 internal static class BrowserIdentity
 {
     public const string TabIdHeader = "X-MidTerm-Tab-Id";
+    public const string DeviceLabelHeader = "X-MidTerm-Device-Label";
+    private const int MaxDeviceLabelLength = 80;
 
     public static string? Build(string? clientId, string? tabId)
     {
@@ -57,5 +59,31 @@ internal static class BrowserIdentity
         return string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(tabId)
             ? null
             : Build(clientId, tabId);
+    }
+
+    public static string? GetDeviceLabel(HttpRequest request)
+    {
+        var label = request.Query["deviceLabel"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            label = request.Headers[DeviceLabelHeader].FirstOrDefault();
+        }
+
+        return SanitizeDeviceLabel(label);
+    }
+
+    private static string? SanitizeDeviceLabel(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return null;
+        }
+
+        var sanitized = new string(label
+            .Where(static character => !char.IsControl(character))
+            .Take(MaxDeviceLabelLength)
+            .ToArray())
+            .Trim();
+        return sanitized.Length == 0 ? null : sanitized;
     }
 }

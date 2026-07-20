@@ -24,6 +24,7 @@
   "terminal.scaledViewExplanation": "すべてが見えるように、この表示は縮小されています。",
   "terminal.continueHere": "ここで作業を続ける",
   "terminal.continueHereHint": "サイズをこのブラウザに最適化します",
+  "terminal.takeControlFrom": "サイズ制御を引き継ぐ:",
   "sidebar.rename": "名前を変更",
   "sidebar.updateAvailable": "アップデートあり",
   "sidebar.quickUpdate": "クイックアップデート",

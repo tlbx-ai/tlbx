@@ -4715,7 +4715,9 @@ export interface components {
       isOwner: boolean;
       hasOwner: boolean;
       ownerOnline: boolean;
+      ownerInSameBrowserProfile: boolean;
       canTakeOverAutomatically: boolean;
+      ownerLabel: null | string;
       /** Format: int64 */
       epoch: number;
     };

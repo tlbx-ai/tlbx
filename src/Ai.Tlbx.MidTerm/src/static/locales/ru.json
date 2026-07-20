@@ -24,6 +24,7 @@
   "terminal.scaledViewExplanation": "Этот вид масштабируется, чтобы всё оставалось видимым.",
   "terminal.continueHere": "Продолжить работу здесь",
   "terminal.continueHereHint": "Размер будет оптимизирован для этого браузера",
+  "terminal.takeControlFrom": "Перехватить управление размером у",
   "sidebar.rename": "Переименовать",
   "sidebar.updateAvailable": "Доступно обновление",
   "sidebar.quickUpdate": "Быстрое обновление",

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { $isMainBrowser, $terminalSizeControls } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
 import { applyTerminalScalingSync } from './scaling';
+import { claimEligibleVisibleTerminalSizes } from './sizeControlAutomation';
 import { sendResize } from '../comms';
 
 const commMocks = vi.hoisted(() => ({
@@ -54,6 +55,8 @@ type FakeElement = {
   closest: <T>(selector: string) => T | null;
   getElementsByClassName?: (className: string) => { item: (index: number) => FakeElement | null };
   getBoundingClientRect: () => { width: number; height: number };
+  getClientRects?: () => Array<{ width: number; height: number }>;
+  isConnected?: boolean;
   clientWidth?: number;
   clientHeight?: number;
   offsetWidth?: number;
@@ -195,6 +198,8 @@ function createTerminalHarness(
     addEventListener(): void {},
     closest: () => null,
     getBoundingClientRect: () => ({ width: 818, height: 488 }),
+    getClientRects: () => [{ width: 818, height: 488 }],
+    isConnected: true,
   } as FakeElement;
 
   const state = {
@@ -298,6 +303,73 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.xterm.style.transform ?? '').toBe('');
   });
 
+  it('names the browser device that currently owns the terminal size', () => {
+    const harness = createTerminalHarness(81, 24);
+    setSizeControl(false, true, 'Windows PC · Chrome');
+
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.getOverlay()?.innerHTML).toContain('terminal.takeControlFrom');
+    expect(harness.getOverlay()?.innerHTML).toContain('Windows PC · Chrome');
+    expect(harness.getOverlay()?.innerHTML).not.toContain('terminal.continueHereHint');
+  });
+
+  it('escapes the server-projected owner label before rendering it', () => {
+    const harness = createTerminalHarness(81, 24);
+    setSizeControl(false, false, '<img src=x>');
+
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.getOverlay()?.innerHTML).toContain('&lt;img src=x&gt;');
+    expect(harness.getOverlay()?.innerHTML).not.toContain('<img src=x>');
+  });
+
+  it('places the takeover action in a sufficiently wide empty terminal gap', () => {
+    const harness = createTerminalHarness(40, 10);
+    setSizeControl(false, false, 'iPad · Safari');
+
+    applyTerminalScalingSync(harness.state as never);
+
+    expect(harness.getOverlay()?.classList.contains('terminal-gap-right')).toBe(true);
+    expect(harness.xterm.style.transform ?? '').toBe('');
+  });
+
+  it('automatically claims an already eligible visible terminal without forcing', async () => {
+    const harness = createTerminalHarness(81, 24);
+    sessionTerminals.set('s1', harness.state as never);
+    setSizeControl(false, true, 'Work PC · Chrome');
+    commMocks.requestTerminalSizeControl.mockResolvedValueOnce({
+      status: {
+        sessionId: 's1',
+        isOwner: true,
+        hasOwner: true,
+        ownerOnline: true,
+        canTakeOverAutomatically: true,
+        ownerLabel: 'Home PC · Chrome',
+        epoch: 2,
+      },
+      ownershipChanged: true,
+      resizeApplied: false,
+      cols: 0,
+      rows: 0,
+    });
+
+    claimEligibleVisibleTerminalSizes();
+
+    expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', false);
+    await Promise.resolve();
+  });
+
+  it('does not automatically steal from an online sibling tab in the same browser', () => {
+    const harness = createTerminalHarness(81, 24);
+    sessionTerminals.set('s1', harness.state as never);
+    setSizeControl(false, true, 'Windows PC · Chrome', 42, true);
+
+    claimEligibleVisibleTerminalSizes();
+
+    expect(commMocks.requestTerminalSizeControl).not.toHaveBeenCalled();
+  });
+
   it('immediately starts an explicit forced takeover from the follower notice', async () => {
     let resolveClaim: ((value: unknown) => void) | undefined;
     commMocks.requestTerminalSizeControl.mockReturnValueOnce(
@@ -365,15 +437,23 @@ describe('terminal scaling badge thresholds', () => {
   });
 });
 
-function setSizeControl(isOwner: boolean): void {
+function setSizeControl(
+  isOwner: boolean,
+  canTakeOverAutomatically = isOwner,
+  ownerLabel?: string,
+  epoch = 1,
+  ownerInSameBrowserProfile = false,
+): void {
   $terminalSizeControls.set({
     s1: {
       sessionId: 's1',
       isOwner,
       hasOwner: true,
       ownerOnline: true,
-      canTakeOverAutomatically: isOwner,
-      epoch: 1,
+      ownerInSameBrowserProfile,
+      canTakeOverAutomatically,
+      ownerLabel,
+      epoch,
     },
   });
 }

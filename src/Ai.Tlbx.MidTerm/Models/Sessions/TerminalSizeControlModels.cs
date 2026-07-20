@@ -6,7 +6,9 @@ public sealed class TerminalSizeControlStatus
     public bool IsOwner { get; set; }
     public bool HasOwner { get; set; }
     public bool OwnerOnline { get; set; }
+    public bool OwnerInSameBrowserProfile { get; set; }
     public bool CanTakeOverAutomatically { get; set; }
+    public string? OwnerLabel { get; set; }
     public long Epoch { get; set; }
 }
 

@@ -13,7 +13,6 @@ import {
   MIN_TERMINAL_ROWS,
   MAX_TERMINAL_COLS,
   MAX_TERMINAL_ROWS,
-  icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
 import {
@@ -21,7 +20,6 @@ import {
   $currentSettings,
   $terminalSizeControls,
   $sessions,
-  getTerminalSizeControl,
   hasTerminalSizeControl,
   getSession,
 } from '../../stores';
@@ -45,12 +43,16 @@ import {
   normalizeTerminalFontWeight,
   normalizeTerminalLetterSpacing,
 } from './fontConfig';
-import { requestTerminalSizeControl, sendResize } from '../comms';
+import { sendResize } from '../comms';
 import { t } from '../i18n';
-import { createLogger } from '../logging';
 import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
 import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';
+import {
+  claimEligibleVisibleTerminalSizes,
+  configureTerminalSizeControlAutomation,
+} from './sizeControlAutomation';
+import { createScalingOverlay, positionScalingOverlay } from './sizeControlOverlay';
 import {
   isMobileTerminalViewport,
   observeMobileVerticalViewportChange,
@@ -61,7 +63,6 @@ import {
 } from './mobileVerticalStability';
 
 const SCALE_TOLERANCE = 0.97;
-const log = createLogger('terminalScaling');
 const MAX_TRANSIENT_FIT_RETRIES = 2;
 const MOBILE_DENSE_MIN_COLS = 100;
 type MeasurementSource = 'existing-terminal' | 'calibration' | 'font-probe' | 'xterm-internal';
@@ -805,7 +806,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   let overlay = container.querySelector<HTMLButtonElement>('.scaled-overlay');
   const ensureOverlay = (): HTMLButtonElement => {
     if (overlay) return overlay;
-    overlay = createScalingOverlay(container, ownsSize);
+    overlay = createScalingOverlay(container, ownsSize, fitOwnedTerminalToCurrentContainer);
     return overlay;
   };
   const resetScaleState = (): void => {
@@ -1049,44 +1050,6 @@ function applyNaturalFitTerminalState(args: {
   clearOverlay();
 }
 
-function createScalingOverlay(container: HTMLElement, ownsSize: boolean): HTMLButtonElement {
-  const overlay = document.createElement('button');
-  overlay.className = 'scaled-overlay';
-  overlay.type = 'button';
-  overlay.addEventListener('click', () => {
-    void handleScalingOverlayClick(overlay, container);
-  });
-  container.appendChild(overlay);
-  positionScalingOverlay(overlay, ownsSize, overlay.innerText);
-  return overlay;
-}
-
-async function handleScalingOverlayClick(
-  overlay: HTMLButtonElement,
-  container: HTMLElement,
-): Promise<void> {
-  const sessionId = getTerminalSessionId(container);
-  if (!sessionId) return;
-  if (hasTerminalSizeControl(sessionId)) {
-    fitOwnedTerminalToCurrentContainer(sessionId, container);
-    return;
-  }
-
-  overlay.classList.add('claiming');
-  overlay.disabled = true;
-  try {
-    const result = await requestTerminalSizeControl(sessionId, true);
-    if (result.status.isOwner) {
-      fitOwnedTerminalToCurrentContainer(sessionId, container);
-    }
-  } catch (error: unknown) {
-    log.warn(() => `Failed to claim terminal size control: ${String(error)}`);
-  } finally {
-    overlay.classList.remove('claiming');
-    overlay.disabled = false;
-  }
-}
-
 function getTerminalSessionId(container: HTMLElement): string | null {
   const prefix = 'terminal-';
   return container.id.startsWith(prefix) ? container.id.slice(prefix.length) || null : null;
@@ -1099,32 +1062,6 @@ function fitOwnedTerminalToCurrentContainer(sessionId: string, container: HTMLEl
   } else {
     fitSessionToScreen(sessionId);
   }
-}
-
-function positionScalingOverlay(
-  overlay: HTMLButtonElement,
-  ownsSize: boolean,
-  label: string,
-): void {
-  const title = ownsSize ? t('terminal.resizeToThisViewport') : t('terminal.continueHere');
-  const sessionId = overlay.parentElement ? getTerminalSessionId(overlay.parentElement) : null;
-  const ownership = sessionId ? getTerminalSizeControl(sessionId) : undefined;
-  const followerTitle = ownership?.hasOwner
-    ? t('terminal.sizeControlledElsewhere')
-    : t('terminal.sizeControlUnassigned');
-  overlay.title = title;
-  overlay.setAttribute('aria-label', title);
-  overlay.innerHTML = ownsSize
-    ? `${icon('resize')} <span>${label}</span>`
-    : `${icon('resize')}<span class="scaled-overlay-copy"><strong>${followerTitle}</strong><span>${label}</span></span><span class="scaled-overlay-action"><strong>${t('terminal.continueHere')}</strong><span>${t('terminal.continueHereHint')}</span></span>`;
-
-  const connBadge = document.getElementById('connection-status');
-  const connVisible =
-    connBadge &&
-    (connBadge.classList.contains('disconnected') ||
-      connBadge.classList.contains('reconnecting') ||
-      connBadge.classList.contains('connecting'));
-  overlay.style.bottom = connVisible ? '36px' : '8px';
 }
 
 function resetTerminalScaleState(container: HTMLElement, xterm: HTMLElement): void {
@@ -1432,6 +1369,11 @@ function applyPeriodicTerminalResizeDiff(
  * Per-session owner: auto-resize. Follower: CSS scale only.
  */
 export function setupResizeObserver(): void {
+  configureTerminalSizeControlAutomation((sessionId) => {
+    const state = sessionTerminals.get(sessionId);
+    if (state) fitOwnedTerminalToCurrentContainer(sessionId, state.container);
+  });
+
   window.addEventListener('resize', () => {
     if (observeMobileVerticalViewportChange()) {
       return;
@@ -1449,6 +1391,7 @@ export function setupResizeObserver(): void {
       return;
     }
     scheduleForegroundResizeRecovery();
+    claimEligibleVisibleTerminalSizes(true);
   };
 
   document.addEventListener('visibilitychange', () => {
@@ -1465,6 +1408,12 @@ export function setupResizeObserver(): void {
       rememberCurrentMobileViewportSnapshot();
       ensureTerminalContainerResizeObserver();
       autoResizeAllTerminalsImmediate();
+      claimEligibleVisibleTerminalSizes();
+    });
+  });
+  $activeSessionId.subscribe(() => {
+    requestAnimationFrame(() => {
+      claimEligibleVisibleTerminalSizes(true);
     });
   });
 }

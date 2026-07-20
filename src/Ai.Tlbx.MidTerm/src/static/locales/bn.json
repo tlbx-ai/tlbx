@@ -24,6 +24,7 @@
   "terminal.scaledViewExplanation": "সবকিছু দৃশ্যমান রাখতে এই ভিউটি স্কেল করা হয়েছে।",
   "terminal.continueHere": "এখানে কাজ চালিয়ে যান",
   "terminal.continueHereHint": "আকার এই ব্রাউজারের জন্য মানানসই করা হবে",
+  "terminal.takeControlFrom": "আকারের নিয়ন্ত্রণ নিন",
   "sidebar.rename": "নাম পরিবর্তন",
   "sidebar.updateAvailable": "আপডেট উপলব্ধ",
   "sidebar.quickUpdate": "দ্রুত আপডেট",
