@@ -571,6 +571,22 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     }
 
     [Fact]
+    public void Ensure_DoesNotTreatLegacyUserSettingsAsWorkspaceMetadata()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var legacyDir = Path.Combine(_tempDir, TlbxDirectory.LegacyDirectoryName);
+        Directory.CreateDirectory(legacyDir);
+        File.WriteAllText(Path.Combine(legacyDir, "settings.json"), "{}");
+
+        var result = TlbxDirectory.Ensure(_tempDir);
+
+        Assert.True(Directory.Exists(legacyDir));
+        Assert.True(File.Exists(Path.Combine(legacyDir, "settings.json")));
+        Assert.Equal(Path.Combine(_tempDir, TlbxDirectory.DirectoryName), result);
+        Assert.True(Directory.Exists(result));
+    }
+
+    [Fact]
     public void TryEnsureForCwd_ReturnsNullWhenDirectoryIsMissing()
     {
         var missingPath = Path.Combine(_tempDir, "missing");

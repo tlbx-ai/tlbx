@@ -57,7 +57,7 @@ import {
   resolveAppServerControlUserInputWs,
   submitAppServerControlTurnWs,
 } from './appServerControlWebSocket';
-import { getBrowserDeviceLabel, getOrCreateTabId } from '../utils/cookies';
+import { getBrowserDeviceHeaderValue, getOrCreateTabId } from '../utils/cookies';
 
 const client = createClient<paths>({ baseUrl: '' });
 const API_RECONNECT_DELAYS_MS = [0, 150, 400, 900];
@@ -222,7 +222,7 @@ async function postJsonWithProblem<TResponse>(
     headers: {
       'Content-Type': 'application/json',
       'X-MidTerm-Tab-Id': getOrCreateTabId(),
-      'X-MidTerm-Device-Label': getBrowserDeviceLabel(),
+      'X-MidTerm-Device-Label': getBrowserDeviceHeaderValue(),
     },
     body: JSON.stringify(body ?? {}),
   });

@@ -135,6 +135,14 @@ export function getBrowserDeviceLabel(): string {
   return browser ? `${device} · ${browser}` : device;
 }
 
+/**
+ * HTTP header values must remain ASCII-safe. The backend decodes this value
+ * before exposing the human-readable device label.
+ */
+export function getBrowserDeviceHeaderValue(): string {
+  return encodeURIComponent(getBrowserDeviceLabel());
+}
+
 function detectDeviceLabel(userAgent: string, maxTouchPoints: number): string {
   if (/iPad/i.test(userAgent) || (/Macintosh/i.test(userAgent) && maxTouchPoints > 1)) {
     return 'iPad';

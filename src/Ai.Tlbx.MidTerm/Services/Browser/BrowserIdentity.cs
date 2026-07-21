@@ -67,9 +67,27 @@ internal static class BrowserIdentity
         if (string.IsNullOrWhiteSpace(label))
         {
             label = request.Headers[DeviceLabelHeader].FirstOrDefault();
+            label = DecodeDeviceLabelHeader(label);
         }
 
         return SanitizeDeviceLabel(label);
+    }
+
+    private static string? DecodeDeviceLabelHeader(string? label)
+    {
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return label;
+        }
+
+        try
+        {
+            return Uri.UnescapeDataString(label);
+        }
+        catch (UriFormatException)
+        {
+            return label;
+        }
     }
 
     private static string? SanitizeDeviceLabel(string? label)

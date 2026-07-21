@@ -110,8 +110,9 @@ describe('browser tab identity', () => {
     vi.stubGlobal('sessionStorage', createStorage());
     vi.stubGlobal('crypto', { randomUUID: () => 'unused' });
 
-    const { getBrowserDeviceLabel } = await import('./cookies');
+    const { getBrowserDeviceHeaderValue, getBrowserDeviceLabel } = await import('./cookies');
 
     expect(getBrowserDeviceLabel()).toBe('iPad · Safari');
+    expect(getBrowserDeviceHeaderValue()).toBe('iPad%20%C2%B7%20Safari');
   });
 });

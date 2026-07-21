@@ -1,4 +1,5 @@
 using System.Globalization;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services.Browser;
 
 namespace Ai.Tlbx.MidTerm.Services;
@@ -57,14 +58,31 @@ public static class TlbxDirectory
         if (!Directory.Exists(legacyDir))
             return tlbxDir;
 
-        if (!Directory.Exists(tlbxDir))
+        // ~/.midterm is also the legacy user-mode settings directory. It can be
+        // actively used by this process and is not a workspace artifact. Moving
+        // it while launching a session both fails on Windows and risks mixing
+        // settings, secrets, and logs into the generated workspace directory.
+        if (File.Exists(Path.Combine(legacyDir, "settings.json")))
+            return tlbxDir;
+
+        try
         {
-            Directory.Move(legacyDir, tlbxDir);
+            if (!Directory.Exists(tlbxDir))
+            {
+                Directory.Move(legacyDir, tlbxDir);
+                return tlbxDir;
+            }
+
+            MergeLegacyDirectory(legacyDir, tlbxDir);
             return tlbxDir;
         }
-
-        MergeLegacyDirectory(legacyDir, tlbxDir);
-        return tlbxDir;
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Workspace metadata migration is best-effort. A locked legacy file
+            // must never prevent the terminal session itself from being created.
+            Log.Warn(() => $"Could not migrate '{legacyDir}' to '{tlbxDir}': {ex.Message}");
+            return tlbxDir;
+        }
     }
 
     private static void MergeLegacyDirectory(string sourceDir, string destinationDir)
