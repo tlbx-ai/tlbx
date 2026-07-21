@@ -289,7 +289,7 @@ function syncBackgroundKenBurnsEffect(
 
   root.style.setProperty(
     '--app-background-animation',
-    `midterm-app-background-ken-burns ${computeBackgroundKenBurnsDurationSeconds(scale, speedPxPerSecond).toFixed(3)}s linear infinite`,
+    `tlbx-app-background-ken-burns ${computeBackgroundKenBurnsDurationSeconds(scale, speedPxPerSecond).toFixed(3)}s linear infinite`,
   );
 }
 

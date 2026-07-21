@@ -328,7 +328,7 @@ async function fetchRawBuffer(sessionId: string): Promise<RawBufferResult> {
 function buildTerminalBufferDumpFilename(sessionId: string, now: Date): string {
   const safeSessionId = sessionId.replace(/[^a-z0-9._-]+/gi, '_').replace(/^_+|_+$/g, '');
   const stamp = now.toISOString().replace(/[:.]/g, '-');
-  return `midterm-terminal-buffer-${safeSessionId || 'session'}-${stamp}.txt`;
+  return `tlbx-terminal-buffer-${safeSessionId || 'session'}-${stamp}.txt`;
 }
 
 function triggerTextDownload(filename: string, text: string): void {

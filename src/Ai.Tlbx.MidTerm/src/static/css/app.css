@@ -638,7 +638,7 @@ body::before {
   pointer-events: none;
 }
 
-@keyframes midterm-app-background-ken-burns {
+@keyframes tlbx-app-background-ken-burns {
   0% {
     transform: translate3d(
         calc(var(--app-background-ken-burns-pan-x, 0%) * -1),
