@@ -192,13 +192,14 @@ import {
   setProcessState,
 } from './stores';
 import type { Session } from './types';
-import { bindClick, getOrCreateClientId } from './utils';
+import { bindClick, getOrCreateClientId, initializeTabIdentity } from './utils';
 import { showAlert } from './utils/dialog';
 import { createSessionActionHandlers } from './sessionActions';
 import { getSessionLaunchErrorMessage, showSessionLaunchFailure } from './sessionLaunchErrors';
 import {
   createSession as apiCreateSession,
   bootstrapWorker,
+  waitForApiReachability,
   setSessionBookmark,
   setSessionNotes,
 } from './api/client';
@@ -403,6 +404,7 @@ async function init(): Promise<void> {
 
   registerCallbacks();
   getOrCreateClientId(); // Ensure mt-client-id cookie exists before WS upgrade
+  await initializeTabIdentity();
   bindTerminalVisibilitySync();
   connectStateWebSocket();
   connectMuxWebSocket();
@@ -489,6 +491,7 @@ async function initShared(): Promise<void> {
   const fontPromise = preloadTerminalFont();
   setFontsReadyPromise(fontPromise);
   void fontPromise.then(() => initCalibrationTerminal());
+  await initializeTabIdentity();
 
   setSelectSessionCallback(selectSession);
   setShowBellCallback(showBellNotification);
@@ -797,6 +800,13 @@ async function createSession(): Promise<void> {
   }
 
   if (!selection) return;
+
+  try {
+    await waitForApiReachability();
+  } catch (error: unknown) {
+    showSessionLaunchFailure(error);
+    return;
+  }
 
   const { cols, rows } = await resolveNewSessionDimensions();
   const tempId = createPendingSession(cols, rows);

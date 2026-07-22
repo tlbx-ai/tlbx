@@ -13,7 +13,6 @@ import {
   MUX_MIN_COMPATIBLE_VERSION,
   MUX_TYPE_OUTPUT,
   MUX_TYPE_INPUT,
-  MUX_TYPE_RESIZE,
   MUX_TYPE_RESYNC,
   MUX_TYPE_BUFFER_REQUEST,
   MUX_TYPE_COMPRESSED_OUTPUT,
@@ -98,7 +97,13 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput, sendHubResize } from '../hub/channel';
-import { $currentSettings, $isMainBrowser } from '../../stores';
+import {
+  $currentSettings,
+  $isMainBrowser,
+  getTerminalSizeControl,
+  hasTerminalSizeControl,
+} from '../../stores';
+import { reportTerminalSizeInteraction, resizeTerminalWithControl } from './stateChannel';
 import {
   muxWs,
   sessionTerminals,
@@ -991,12 +996,6 @@ function applyTerminalResizeIfNeeded(
     return;
   }
 
-  if ($isMainBrowser.get() && !state.container.classList.contains('hidden')) {
-    state.serverCols = cols;
-    state.serverRows = rows;
-    return;
-  }
-
   try {
     state.terminal.resize(cols, rows);
     state.serverCols = cols;
@@ -1565,6 +1564,8 @@ function sendFrame(frame: Uint8Array): void {
 }
 
 export function sendInput(sessionId: string, data: string): void {
+  reportTerminalSizeInteraction(sessionId);
+
   if (isHubSessionId(sessionId)) {
     sendHubInput(sessionId, data);
     return;
@@ -1626,33 +1627,85 @@ function flushPendingInput(): void {
   }
 }
 
+interface PendingTerminalResize {
+  cols: number;
+  rows: number;
+}
+
+interface TerminalResizeQueue {
+  inFlight: boolean;
+  pending: PendingTerminalResize | null;
+}
+
+const terminalResizeQueues = new Map<string, TerminalResizeQueue>();
+
 export function sendResize(sessionId: string, cols: number, rows: number): void {
-  if (!$isMainBrowser.get()) {
+  if (isHubSessionId(sessionId) && !getTerminalSizeControl(sessionId)) {
+    // Rolling-update fallback for a remote host that predates per-session size ownership.
+    if ($isMainBrowser.get()) {
+      sendHubResize(sessionId, cols, rows);
+    }
     return;
   }
 
-  if (isHubSessionId(sessionId)) {
-    sendHubResize(sessionId, cols, rows);
+  if (!hasTerminalSizeControl(sessionId)) {
     return;
   }
 
-  printableInputCoalescer.flush(sessionId);
+  let queue = terminalResizeQueues.get(sessionId);
+  if (!queue) {
+    queue = { inFlight: false, pending: null };
+    terminalResizeQueues.set(sessionId, queue);
+  }
+  queue.pending = { cols, rows };
+  if (!queue.inFlight) {
+    void processTerminalResizeQueue(sessionId, queue);
+  }
+}
 
-  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) return;
+async function processTerminalResizeQueue(
+  sessionId: string,
+  queue: TerminalResizeQueue,
+): Promise<void> {
+  queue.inFlight = true;
+  try {
+    while (queue.pending) {
+      const request = queue.pending;
+      queue.pending = null;
+      const ownership = getTerminalSizeControl(sessionId);
+      if (!ownership?.isOwner) {
+        break;
+      }
 
-  const frame = new Uint8Array(MUX_HEADER_SIZE + 4);
-  frame[0] = MUX_TYPE_RESIZE;
-  encodeSessionId(frame, 1, sessionId);
-  frame[MUX_HEADER_SIZE] = cols & 0xff;
-  frame[MUX_HEADER_SIZE + 1] = (cols >> 8) & 0xff;
-  frame[MUX_HEADER_SIZE + 2] = rows & 0xff;
-  frame[MUX_HEADER_SIZE + 3] = (rows >> 8) & 0xff;
-  sendFrame(frame);
+      try {
+        const result = await resizeTerminalWithControl(
+          sessionId,
+          request.cols,
+          request.rows,
+          ownership.epoch,
+        );
+        const state = sessionTerminals.get(sessionId);
+        if (!state) continue;
 
-  const state = sessionTerminals.get(sessionId);
-  if (state) {
-    state.serverCols = cols;
-    state.serverRows = rows;
+        if (result.resizeApplied) {
+          state.serverCols = result.cols;
+          state.serverRows = result.rows;
+          if (state.terminal.cols !== result.cols || state.terminal.rows !== result.rows) {
+            state.terminal.resize(result.cols, result.rows);
+          }
+        }
+        applyTerminalScaling(sessionId, state);
+      } catch (error) {
+        log.warn(() => `Terminal resize rejected: ${String(error)}`);
+      }
+    }
+  } finally {
+    queue.inFlight = false;
+    if (queue.pending) {
+      void processTerminalResizeQueue(sessionId, queue);
+    } else {
+      terminalResizeQueues.delete(sessionId);
+    }
   }
 }
 

@@ -142,6 +142,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<ClipboardService>();
         builder.Services.AddSingleton<SystemSleepInhibitorService>();
         builder.Services.AddSingleton<SessionControlStateService>();
+        builder.Services.AddSingleton<TerminalSizeControlService>();
         builder.Services.AddSingleton<SessionUpdateStateService>();
         builder.Services.AddSingleton<SessionLayoutStateService>();
         builder.Services.AddSingleton<SessionTelemetryService>();
@@ -182,6 +183,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<ShutdownService>();
         builder.Services.AddSingleton<HubService>();
         builder.Services.AddSingleton<HubMuxWebSocketHandler>();
+        builder.Services.AddSingleton<HubStateWebSocketHandler>();
         builder.Services.AddSingleton(sp =>
         {
             return BrowserPreviewOriginService.Create(runtimeOptions.Port, runtimeOptions.BindAddress);

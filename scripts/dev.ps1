@@ -237,7 +237,7 @@ function Start-EsbuildWatch {
         "--sourcemap=linked",
         "--outfile=$outFile",
         "--target=es2020",
-        "--watch"
+        "--watch=forever"
     )
 
     $process = Start-Process -FilePath $esbuildBin `

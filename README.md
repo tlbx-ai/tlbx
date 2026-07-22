@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — your coding agents, your machines, any browser" width="100%">
+  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — terminal browser multiplexer, say toolbox — your coding agents, your machines, any browser" width="100%">
 </p>
+
+<p align="center"><b>t</b>ermina<b>l</b>&nbsp;<b>b</b>rowser&nbsp;multiple<b>x</b>er&nbsp;&nbsp;·&nbsp;&nbsp;say &ldquo;toolbox&rdquo;</p>
 
 <p align="center">
   <a href="https://tlbx.ai"><strong>Website</strong></a>
@@ -26,7 +28,7 @@ tlbx is a self-hosted browser control station for remote AI coding agents. Run C
 
 > **tlbx is the new name of MidTerm.** Existing installs update in place. The `mt`, `mthost`, and `mtagenthost` executables, service identities, settings, session data, and release asset names remain compatible.
 
-The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running.
+The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running. It's a general terminal too—pwsh, bash, or zsh and any PTY app, not just agents.
 
 **Your machines are browser tabs. Your agents keep working when you leave.**
 
@@ -34,6 +36,30 @@ Technical guides: **[remote AI agents](https://tlbx.ai/remote-ai-agents)** · **
 
 <p align="center">
   <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a tlbx browser tab beside another tlbx host" width="100%">
+</p>
+
+## Real sessions
+
+Codex, Claude Code, and OpenCode working the same project in adjacent tlbx sessions—each a real PTY, all steered from one browser tab.
+
+<p align="center">
+  <img src="docs/marketing/readme/codex-session.webp" alt="A Codex session in tlbx showing a diff, a git-diff tool call, and its run summary while validating a POST route" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/marketing/readme/opencode-session.webp" alt="An OpenCode session in tlbx adding a GET /api/status route and running the test suite green, with Codex and Claude Code sessions in the sidebar" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/marketing/readme/console-and-app.webp" alt="A tlbx dev server session beside the docked Dev Browser showing the live app it serves" width="100%">
+</p>
+
+## Any shell, any terminal app
+
+tlbx is a general terminal first. Run **pwsh, bash, or zsh** on Windows, macOS, and Linux hosts—and any program that speaks to a real PTY: `btop`, `vim`, `lazygit`, database shells, build watchers. Split sessions into tmux-style pane layouts and keep them all in one browser tab.
+
+<p align="center">
+  <img src="docs/marketing/readme/any-terminal.webp" alt="btop system monitor running full-screen in a tlbx terminal session, with CPU, memory, disk, network and process panels" width="100%">
 </p>
 
 ## Agent CLI ergonomics

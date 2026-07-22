@@ -317,7 +317,7 @@ describe('backgroundAppearance', () => {
     expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-x')).toBe('19.200%');
     expect(rootStyle.getPropertyValue('--app-background-ken-burns-pan-y')).toBe('12.800%');
     expect(rootStyle.getPropertyValue('--app-background-animation')).toMatch(
-      /^midterm-app-background-ken-burns \d+\.\d{3}s linear infinite$/,
+      /^tlbx-app-background-ken-burns \d+\.\d{3}s linear infinite$/,
     );
     expect(rootStyle.getPropertyValue('--bg-primary-opaque')).toBe('#EAE2D8');
     expect(rootStyle.getPropertyValue('--bg-settings-opaque')).toBe('#FEFCF9');

@@ -6,19 +6,19 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
-public sealed class MtcliScriptWriterTests : IDisposable
+public sealed class TlbxCliScriptWriterTests : IDisposable
 {
-    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "midterm-mtcli-tests", Guid.NewGuid().ToString("N"));
+    private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
     public void WriteScripts_WritesApplyUpdateHelpers()
     {
         Directory.CreateDirectory(_tempDir);
 
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
 
-        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
-        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
 
         Assert.Contains("mt_apply_update()", shell, StringComparison.Ordinal);
         Assert.Contains("$_MT/api/update/apply", shell, StringComparison.Ordinal);
@@ -40,10 +40,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDir);
 
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
 
-        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
-        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
 
         Assert.Contains("set MT_API_KEY", shell, StringComparison.Ordinal);
         Assert.Contains("Authorization: Bearer $MT_API_KEY", shell, StringComparison.Ordinal);
@@ -64,10 +64,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDir);
 
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
 
-        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
-        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
 
         Assert.Contains("MT_SESSION_ID", shell, StringComparison.Ordinal);
         Assert.Contains("MT_PREVIEW_NAME", shell, StringComparison.Ordinal);
@@ -159,10 +159,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDir);
 
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
 
-        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
-        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
 
         Assert.Contains("mt_redraw()", shell, StringComparison.Ordinal);
         Assert.Contains("mt_tail()", shell, StringComparison.Ordinal);
@@ -260,9 +260,9 @@ public sealed class MtcliScriptWriterTests : IDisposable
         }
 
         Directory.CreateDirectory(_tempDir);
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
 
-        var scriptPath = ToBashPath(Path.Combine(_tempDir, "mtcli.sh"));
+        var scriptPath = ToBashPath(Path.Combine(_tempDir, "tlbx_cli.sh"));
         var startInfo = new ProcessStartInfo(bashPath)
         {
             RedirectStandardOutput = true,
@@ -303,7 +303,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         }
 
         Directory.CreateDirectory(_tempDir);
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
         var childPath = Path.Combine(_tempDir, "isolated-child.sh");
         File.WriteAllText(childPath,
             "sleep 0.15\n" +
@@ -323,7 +323,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         startInfo.ArgumentList.Add("-c");
         startInfo.ArgumentList.Add("source \"$1\"; mt_run_isolated \"$2\" \"$3\" \"$4\" \"$5\" \"$6\"");
         startInfo.ArgumentList.Add("midterm-test");
-        startInfo.ArgumentList.Add(ToBashPath(Path.Combine(_tempDir, "mtcli.sh")));
+        startInfo.ArgumentList.Add(ToBashPath(Path.Combine(_tempDir, "tlbx_cli.sh")));
         startInfo.ArgumentList.Add(ToBashPath(bashPath));
         startInfo.ArgumentList.Add(ToBashPath(childPath));
         startInfo.ArgumentList.Add("two words");
@@ -366,7 +366,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         }
 
         Directory.CreateDirectory(_tempDir);
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
         var childPath = Path.Combine(_tempDir, "isolated-child.ps1");
         File.WriteAllText(childPath,
             "param([Parameter(ValueFromRemainingArguments=$true)][string[]]$InputArgs)\n" +
@@ -384,7 +384,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
         };
         startInfo.ArgumentList.Add("-NoProfile");
         startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(Path.Combine(_tempDir, "mtcli.ps1"));
+        startInfo.ArgumentList.Add(Path.Combine(_tempDir, "tlbx_cli.ps1"));
         startInfo.ArgumentList.Add("mt_run_isolated");
         startInfo.ArgumentList.Add(powershellPath);
         startInfo.ArgumentList.Add("-NoProfile");
@@ -426,10 +426,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDir);
 
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
 
-        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
-        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
 
         Assert.Contains("_normalized_cmd=\"${_cmd#mt_}\"", shell, StringComparison.Ordinal);
         Assert.Contains("_normalized_cmd=\"${_cmd#mt-}\"", shell, StringComparison.Ordinal);
@@ -446,10 +446,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDir);
 
-        MtcliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
 
-        var shell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.sh"));
-        var powershell = File.ReadAllText(Path.Combine(_tempDir, "mtcli.ps1"));
+        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
+        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
 
         Assert.Contains("mt_status()     { _MREQUIRECTX \"mt_status\" || return $?; _MSTATUS", shell, StringComparison.Ordinal);
         Assert.Contains("open_out=$(_MJR -d", shell, StringComparison.Ordinal);
@@ -476,11 +476,11 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDir);
 
-        MidtermDirectory.Ensure(_tempDir);
+        TlbxDirectory.Ensure(_tempDir);
 
-        var agentsPath = Path.Combine(_tempDir, MidtermDirectory.DirectoryName, "AGENTS.md");
+        var agentsPath = Path.Combine(_tempDir, TlbxDirectory.DirectoryName, "AGENTS.md");
         var agents = File.ReadAllText(agentsPath);
-        var claudePath = Path.Combine(_tempDir, MidtermDirectory.DirectoryName, "CLAUDE.md");
+        var claudePath = Path.Combine(_tempDir, TlbxDirectory.DirectoryName, "CLAUDE.md");
         var claude = File.ReadAllText(claudePath);
 
         Assert.Contains("guidance-version:", agents, StringComparison.Ordinal);
@@ -514,10 +514,10 @@ public sealed class MtcliScriptWriterTests : IDisposable
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
         Assert.Contains("mt_supervise", agents, StringComparison.Ordinal);
         Assert.Contains("mt_run_isolated", agents, StringComparison.Ordinal);
-        Assert.Contains(".midterm/runs/<run-id>/", agents, StringComparison.Ordinal);
+        Assert.Contains(".tlbx/runs/<run-id>/", agents, StringComparison.Ordinal);
         Assert.Contains("mt_run_isolated", claude, StringComparison.Ordinal);
         Assert.Contains("separate argv tokens", claude, StringComparison.Ordinal);
-        Assert.Contains(".midterm/runs/<run-id>/", claude, StringComparison.Ordinal);
+        Assert.Contains(".tlbx/runs/<run-id>/", claude, StringComparison.Ordinal);
         Assert.Contains("mt_preview_reset", agents, StringComparison.Ordinal);
         Assert.Contains("status` and `mt_status` both resolve", agents, StringComparison.Ordinal);
         Assert.Contains("atomically", agents, StringComparison.Ordinal);
@@ -529,10 +529,61 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         Directory.CreateDirectory(_tempDir);
 
-        MidtermDirectory.Ensure(_tempDir);
+        TlbxDirectory.Ensure(_tempDir);
 
         Assert.False(File.Exists(Path.Combine(_tempDir, "AGENTS.md")));
         Assert.False(File.Exists(Path.Combine(_tempDir, "CLAUDE.md")));
+    }
+
+    [Fact]
+    public void Ensure_MigratesLegacyDirectoryOnFirstEncounter()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var legacyDir = Path.Combine(_tempDir, TlbxDirectory.LegacyDirectoryName);
+        Directory.CreateDirectory(Path.Combine(legacyDir, "uploads"));
+        File.WriteAllText(Path.Combine(legacyDir, "uploads", "artifact.txt"), "legacy");
+
+        var result = TlbxDirectory.Ensure(_tempDir);
+
+        Assert.Equal(Path.Combine(_tempDir, TlbxDirectory.DirectoryName), result);
+        Assert.False(Directory.Exists(legacyDir));
+        Assert.Equal("legacy", File.ReadAllText(Path.Combine(result, "uploads", "artifact.txt")));
+    }
+
+    [Fact]
+    public void Ensure_MergesBothDirectoriesWithoutOverwritingLegacyConflicts()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var legacyDir = Path.Combine(_tempDir, TlbxDirectory.LegacyDirectoryName);
+        var tlbxDir = Path.Combine(_tempDir, TlbxDirectory.DirectoryName);
+        Directory.CreateDirectory(legacyDir);
+        Directory.CreateDirectory(tlbxDir);
+        File.WriteAllText(Path.Combine(legacyDir, "artifact.txt"), "legacy");
+        File.WriteAllText(Path.Combine(tlbxDir, "artifact.txt"), "current");
+
+        TlbxDirectory.Ensure(_tempDir);
+
+        Assert.False(Directory.Exists(legacyDir));
+        Assert.Equal("current", File.ReadAllText(Path.Combine(tlbxDir, "artifact.txt")));
+        Assert.Equal(
+            "legacy",
+            File.ReadAllText(Path.Combine(tlbxDir, "artifact.txt.legacy-midterm")));
+    }
+
+    [Fact]
+    public void Ensure_DoesNotTreatLegacyUserSettingsAsWorkspaceMetadata()
+    {
+        Directory.CreateDirectory(_tempDir);
+        var legacyDir = Path.Combine(_tempDir, TlbxDirectory.LegacyDirectoryName);
+        Directory.CreateDirectory(legacyDir);
+        File.WriteAllText(Path.Combine(legacyDir, "settings.json"), "{}");
+
+        var result = TlbxDirectory.Ensure(_tempDir);
+
+        Assert.True(Directory.Exists(legacyDir));
+        Assert.True(File.Exists(Path.Combine(legacyDir, "settings.json")));
+        Assert.Equal(Path.Combine(_tempDir, TlbxDirectory.DirectoryName), result);
+        Assert.True(Directory.Exists(result));
     }
 
     [Fact]
@@ -540,7 +591,7 @@ public sealed class MtcliScriptWriterTests : IDisposable
     {
         var missingPath = Path.Combine(_tempDir, "missing");
 
-        var result = MidtermDirectory.TryEnsureForCwd(missingPath);
+        var result = TlbxDirectory.TryEnsureForCwd(missingPath);
 
         Assert.Null(result);
     }

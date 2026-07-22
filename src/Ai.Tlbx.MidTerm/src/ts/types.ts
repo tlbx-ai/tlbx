@@ -95,6 +95,25 @@ export interface BrowserSessionStatus {
   activeSurface: string | null;
 }
 
+export interface TerminalSizeControlStatus {
+  sessionId: string;
+  isOwner: boolean;
+  hasOwner: boolean;
+  ownerOnline: boolean;
+  ownerInSameBrowserProfile?: boolean;
+  canTakeOverAutomatically: boolean;
+  ownerLabel?: string | null;
+  epoch: number;
+}
+
+export interface TerminalSizeControlCommandResult {
+  status: TerminalSizeControlStatus;
+  ownershipChanged: boolean;
+  resizeApplied: boolean;
+  cols: number;
+  rows: number;
+}
+
 /** Terminal state for a session */
 export interface TerminalState {
   terminal: Terminal;
@@ -171,6 +190,26 @@ export type WsCommand =
         activeSessionId?: string | null;
         activeSurface?: string | null;
       };
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'terminal.requestSizeControl';
+      payload: {
+        sessionId: string;
+        force: boolean;
+      };
+    }
+  | {
+      type: 'command';
+      id: string;
+      action: 'terminal.resize';
+      payload: {
+        sessionId: string;
+        cols: number;
+        rows: number;
+        expectedEpoch: number;
+      };
     };
 
 export type WsCommandAction = WsCommand['action'];
@@ -189,6 +228,16 @@ interface WsCommandPayloadMap {
     isActive: boolean;
     activeSessionId?: string | null;
     activeSurface?: string | null;
+  };
+  'terminal.requestSizeControl': {
+    sessionId: string;
+    force: boolean;
+  };
+  'terminal.resize': {
+    sessionId: string;
+    cols: number;
+    rows: number;
+    expectedEpoch: number;
   };
 }
 

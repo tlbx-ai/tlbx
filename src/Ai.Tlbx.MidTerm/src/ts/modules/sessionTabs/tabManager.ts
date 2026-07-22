@@ -17,7 +17,12 @@ import {
   updateCwd,
   updateGitIndicator,
 } from './tabBar';
-import { $activeSessionId, $isMainBrowser, $processStates, $sessionList } from '../../stores';
+import {
+  $activeSessionId,
+  $processStates,
+  $sessionList,
+  hasTerminalSizeControl,
+} from '../../stores';
 import { sessionTerminals } from '../../state';
 import type { GitRepoBinding, GitStatusResponse } from '../git/types';
 import type { Session } from '../../types';
@@ -355,15 +360,15 @@ export function switchTab(
         if (isSessionInLayout(sessionId)) {
           const terminalPanel = termState.container.parentElement;
           if (terminalPanel instanceof HTMLElement) {
-            if ($isMainBrowser.get()) {
+            if (hasTerminalSizeControl(sessionId)) {
               fitTerminalToContainer(sessionId, terminalPanel);
             } else {
               applyTerminalScalingSync(termState);
             }
           }
-        } else if ($isMainBrowser.get()) {
+        } else if (hasTerminalSizeControl(sessionId)) {
           // Standalone terminal tab re-entry may reveal a hidden terminal that was
-          // opened earlier. Only the leading browser may sync that viewport size.
+          // opened earlier. Only this session's size owner may sync that viewport size.
           fitSessionToScreen(sessionId);
         } else {
           applyTerminalScalingSync(termState);

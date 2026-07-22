@@ -1,5 +1,4 @@
-import { $isMainBrowser } from '../../stores';
-import { autoResizeAllTerminalsImmediate, rescaleAllTerminalsImmediate } from './scaling';
+import { autoResizeAllTerminalsImmediate } from './scaling';
 import { setMobileVerticalStability } from './mobileVerticalStability';
 
 const DEFAULT_KEYBOARD_RATIO = 0.42;
@@ -303,9 +302,5 @@ function calculateKeyboardHeight(): number {
 
 function dispatchViewportSimulationChange(): void {
   window.dispatchEvent(new Event('midterm:visual-viewport-changed'));
-  if ($isMainBrowser.get()) {
-    autoResizeAllTerminalsImmediate();
-  } else {
-    requestAnimationFrame(rescaleAllTerminalsImmediate);
-  }
+  autoResizeAllTerminalsImmediate();
 }

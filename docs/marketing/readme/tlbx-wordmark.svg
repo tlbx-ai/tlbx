@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1600" height="520" viewBox="0 0 1600 520" role="img" aria-labelledby="title desc">
-  <title id="title">tlbx — your coding agents, your machines, any browser</title>
-  <desc id="desc">The tlbx toolbox mark beside its central use: run coding agents on the machines that own the work and steer them from any browser.</desc>
+  <title id="title">tlbx — terminal browser multiplexer, say “toolbox”</title>
+  <desc id="desc">The tlbx toolbox mark beside the name reading: tlbx stands for terminal browser multiplexer and is spoken like toolbox. Run coding agents on the machines that own the work and steer them from any browser.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#030508"/>
@@ -44,8 +44,8 @@
 
     <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
       <text x="650" y="242" fill="#f7faff" font-size="132" font-weight="700" letter-spacing="10">tlbx</text>
-      <text x="658" y="307" fill="#80b6f2" font-size="26" font-weight="700" letter-spacing="4">YOUR AGENTS. YOUR MACHINES. ANY BROWSER.</text>
-      <text x="658" y="372" fill="#dbe5f5" font-size="24">Run them there · steer them from anywhere</text>
+      <text x="658" y="300" font-size="30" font-weight="700" letter-spacing="2" fill="#8fa0b8" xml:space="preserve"><tspan fill="#69b7ff">t</tspan><tspan>ermina</tspan><tspan fill="#69b7ff">l</tspan><tspan> </tspan><tspan fill="#69b7ff">b</tspan><tspan>rowser multiple</tspan><tspan fill="#69b7ff">x</tspan><tspan>er</tspan><tspan fill="#6f7582">  ·  say “toolbox”</tspan></text>
+      <text x="658" y="360" fill="#80b6f2" font-size="26" font-weight="700" letter-spacing="4">YOUR AGENTS. YOUR MACHINES. ANY BROWSER.</text>
     </g>
 
     <g transform="translate(658 421)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="16" font-weight="700" letter-spacing="1.5">

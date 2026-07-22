@@ -28,8 +28,8 @@ const defaults = {
   pupilCoreRadius: 4.6,
   pupilGlowRadius: 7.4,
   compactPupilCoreRadius: 9,
-  topbarPupilCoreRadius: 10.5,
-  topbarPupilGlowRadius: 14,
+  topbarPupilCoreRadius: 16,
+  topbarPupilGlowRadius: 30,
   ink: '#f7f8fb',
   background: '#05070b',
   accent: '#69b7ff',
@@ -230,19 +230,6 @@ function markMarkup(config, { compact = false, pupilVariant = compact ? 'topbar'
     ${gMarkup(config, g, compact)}`;
 }
 
-// The 16px mark is an optical reduction, not a miniature tracing. Keep only
-// the box projection, lid seam, and blue signal. The eye, front fold, and side
-// G return at topbar size where they have enough pixels to read cleanly.
-function faviconMarkMarkup() {
-  return `<g fill="none" stroke="var(--tlbx-ink)" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M 1.5 5.5 L 8.5 2.5 L 14.5 5 L 14.5 11.5 L 6.5 14 L 1.5 11 Z"/>
-      <path d="M 1.5 5.5 L 6.5 7.75 L 14.5 5"/>
-      <path d="M 6.5 7.75 L 6.5 14"/>
-    </g>
-    <circle cx="10.5" cy="5.45" r="0.88" fill="var(--tlbx-background)"/>
-    <circle cx="10.5" cy="5.45" r="0.65" fill="var(--tlbx-accent)"/>`;
-}
-
 function svgDocument(config, options = {}) {
   const {
     compact = false,
@@ -264,25 +251,28 @@ function svgDocument(config, options = {}) {
         : '';
   const markTransform = foreground
     ? 'translate(96 96) scale(.8)'
-    : compact && pupilVariant !== 'favicon'
+    : compact
     ? `translate(${config.compactOffsetX} ${config.compactOffsetY}) scale(${config.compactScale})`
     : tile !== false && !compact
       ? 'translate(20 20) scale(.9)'
       : '';
   const transformAttribute = markTransform ? ` transform="${markTransform}"` : '';
-
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="${viewBox}" role="img" aria-labelledby="title desc" style="--tlbx-ink:${config.ink};--tlbx-background:${config.background};--tlbx-accent:${config.accent}">
-  <title id="title">${title}</title>
-  <desc id="desc">A long isometric toolbox with a closed lid, eye, front chevron, and G-shaped side handle.</desc>
-  <defs>
-    <radialGradient id="tlbx-pupil-glow">
+  const description =
+    'A long isometric toolbox with a closed lid, eye, front chevron, and G-shaped side handle.';
+  const defsMarkup = `<radialGradient id="tlbx-pupil-glow">
       <stop offset="0" stop-color="var(--tlbx-accent)" stop-opacity="0.72"/>
       <stop offset="0.48" stop-color="var(--tlbx-accent)" stop-opacity="0.28"/>
       <stop offset="1" stop-color="var(--tlbx-accent)" stop-opacity="0"/>
-    </radialGradient>
+    </radialGradient>`;
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="${viewBox}" role="img" aria-labelledby="title desc" style="--tlbx-ink:${config.ink};--tlbx-background:${config.background};--tlbx-accent:${config.accent}">
+  <title id="title">${title}</title>
+  <desc id="desc">${description}</desc>
+  <defs>
+    ${defsMarkup}
   </defs>
 ${tileMarkup}  <g${transformAttribute}>
-    ${pupilVariant === 'favicon' ? faviconMarkMarkup() : markMarkup(config, { compact, pupilVariant })}
+    ${markMarkup(config, { compact, pupilVariant })}
   </g>
 </svg>
 `;
@@ -304,7 +294,7 @@ const outputs = [
     svgDocument(config, {
       compact: true,
       tile: 'rounded',
-      pupilVariant: 'favicon',
+      pupilVariant: 'topbar',
       title: 'tlbx favicon',
     }),
   ],
@@ -317,7 +307,7 @@ const outputs = [
     svgDocument(config, {
       compact: true,
       tile: 'full',
-      pupilVariant: 'favicon',
+      pupilVariant: 'topbar',
       title: 'tlbx small app icon',
     }),
   ],
@@ -338,7 +328,7 @@ if (config.websiteRoot) {
       svgDocument(config, {
         compact: true,
         tile: 'rounded',
-        pupilVariant: 'favicon',
+        pupilVariant: 'topbar',
         title: 'tlbx favicon',
       }),
     ],

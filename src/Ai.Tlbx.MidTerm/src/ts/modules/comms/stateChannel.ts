@@ -8,6 +8,8 @@
 
 import type {
   BrowserSessionStatus,
+  TerminalSizeControlCommandResult,
+  TerminalSizeControlStatus,
   DockPosition,
   LayoutNode,
   ManagerBarQueueEntry,
@@ -102,6 +104,7 @@ interface StateUpdateMessage {
   update?: UpdateInfo | null;
   layout?: LayoutStateMessage | null;
   managerBarQueue?: ManagerBarQueueEntry[];
+  terminalSizeControls?: TerminalSizeControlStatus[];
 }
 
 interface CommandResponseMessage {
@@ -150,7 +153,10 @@ import {
   $isMainBrowser,
   $showMainBrowserButton,
   $webPreviewUrl,
+  getTerminalSizeControl,
   getSession,
+  setTerminalSizeControl,
+  setTerminalSizeControls,
   setSessions,
   setManagerBarQueue,
   getParentSessionId,
@@ -163,6 +169,11 @@ import {
   markLayoutPersistenceReady,
   swapLayoutSessions,
 } from '../layout/layoutStore';
+import { isHubSessionId } from '../hub/runtime';
+import {
+  requestHubTerminalSizeControl,
+  resizeHubTerminalWithControl,
+} from '../hub/sizeControlChannel';
 
 // Track if we've hydrated layout state yet (server snapshot or fallback restore).
 let layoutHydrated = false;
@@ -275,6 +286,9 @@ function handleStateSocketMessage(data: StateWsMessage): void {
   }
 
   const sessionList = data.sessions?.sessions ?? [];
+  if (data.terminalSizeControls !== undefined) {
+    setTerminalSizeControls(data.terminalSizeControls);
+  }
   handleStateUpdate(sessionList, data.layout);
   if (data.managerBarQueue !== undefined) {
     setManagerBarQueue(data.managerBarQueue);
@@ -371,10 +385,6 @@ function syncSessionTerminalState(session: Session & { id: string }): void {
     const dimensionsChanged =
       state.serverCols !== session.cols || state.serverRows !== session.rows;
     if (dimensionsChanged) {
-      if ($isMainBrowser.get() && !state.container.classList.contains('hidden')) {
-        return;
-      }
-
       state.serverCols = session.cols;
       state.serverRows = session.rows;
       state.terminal.resize(session.cols, session.rows);
@@ -531,6 +541,14 @@ export function sendCommand<T = unknown>(
   payload: WsCommandPayload<'browser.setActivity'>,
 ): Promise<T>;
 export function sendCommand<T = unknown>(
+  action: 'terminal.requestSizeControl',
+  payload: WsCommandPayload<'terminal.requestSizeControl'>,
+): Promise<T>;
+export function sendCommand<T = unknown>(
+  action: 'terminal.resize',
+  payload: WsCommandPayload<'terminal.resize'>,
+): Promise<T>;
+export function sendCommand<T = unknown>(
   action: 'session.rename',
   payload: WsCommandPayload<'session.rename'>,
 ): Promise<T>;
@@ -543,7 +561,9 @@ export async function sendCommand<T = unknown>(
   payload?:
     | WsCommandPayload<'session.rename'>
     | WsCommandPayload<'session.reorder'>
-    | WsCommandPayload<'browser.setActivity'>,
+    | WsCommandPayload<'browser.setActivity'>
+    | WsCommandPayload<'terminal.requestSizeControl'>
+    | WsCommandPayload<'terminal.resize'>,
 ): Promise<T> {
   const ws = stateWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -567,6 +587,22 @@ export async function sendCommand<T = unknown>(
         id,
         action,
         payload: payload as WsCommandPayload<'browser.setActivity'>,
+      };
+      break;
+    case 'terminal.requestSizeControl':
+      command = {
+        type: 'command',
+        id,
+        action,
+        payload: payload as WsCommandPayload<'terminal.requestSizeControl'>,
+      };
+      break;
+    case 'terminal.resize':
+      command = {
+        type: 'command',
+        id,
+        action,
+        payload: payload as WsCommandPayload<'terminal.resize'>,
       };
       break;
     case 'session.rename':
@@ -809,6 +845,67 @@ export function claimMainBrowser(): void {
   });
 }
 
+const terminalInteractionReportAt = new Map<string, number>();
+const OWNER_INTERACTION_REPORT_INTERVAL_MS = 15000;
+const FOLLOWER_INTERACTION_REPORT_INTERVAL_MS = 1000;
+
+function applyTerminalSizeControlResult(result: TerminalSizeControlCommandResult): void {
+  setTerminalSizeControl(result.status);
+}
+
+export async function requestTerminalSizeControl(
+  sessionId: string,
+  force: boolean,
+): Promise<TerminalSizeControlCommandResult> {
+  if (isHubSessionId(sessionId)) {
+    return requestHubTerminalSizeControl(sessionId, force);
+  }
+
+  const result = await sendCommand<TerminalSizeControlCommandResult>(
+    'terminal.requestSizeControl',
+    { sessionId, force },
+  );
+  applyTerminalSizeControlResult(result);
+  return result;
+}
+
+export function reportTerminalSizeInteraction(sessionId: string): void {
+  if (!sessionId || isSharedSessionRoute() || !isStateConnected()) return;
+  const now = performance.now();
+  const status = getTerminalSizeControl(sessionId);
+  const interval = status?.isOwner
+    ? OWNER_INTERACTION_REPORT_INTERVAL_MS
+    : FOLLOWER_INTERACTION_REPORT_INTERVAL_MS;
+  const last = terminalInteractionReportAt.get(sessionId) ?? Number.NEGATIVE_INFINITY;
+  if (now - last < interval) return;
+  terminalInteractionReportAt.set(sessionId, now);
+
+  requestTerminalSizeControl(sessionId, false).catch((e: unknown) => {
+    terminalInteractionReportAt.delete(sessionId);
+    log.warn(() => `Failed to report terminal size activity: ${String(e)}`);
+  });
+}
+
+export async function resizeTerminalWithControl(
+  sessionId: string,
+  cols: number,
+  rows: number,
+  expectedEpoch: number,
+): Promise<TerminalSizeControlCommandResult> {
+  if (isHubSessionId(sessionId)) {
+    return resizeHubTerminalWithControl(sessionId, cols, rows, expectedEpoch);
+  }
+
+  const result = await sendCommand<TerminalSizeControlCommandResult>('terminal.resize', {
+    sessionId,
+    cols,
+    rows,
+    expectedEpoch,
+  });
+  applyTerminalSizeControlResult(result);
+  return result;
+}
+
 function getCurrentBrowserActivity(): boolean {
   if (typeof document === 'undefined') {
     return true;
@@ -881,5 +978,6 @@ export function resetStateChannelRuntimeForTests(): void {
   lastUpdateInfoSignature = '';
   selectSession = () => {};
   lastReportedBrowserActivity = undefined;
+  terminalInteractionReportAt.clear();
   closeWebSocket(stateWs, setStateWs);
 }

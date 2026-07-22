@@ -25,6 +25,7 @@ import {
   loadBinaryPreviewPage,
   resolveFilePreviewKind,
 } from '../fileViewer/shared';
+import { createImageView } from '../fileViewer/imageView';
 
 const log = createLogger('filePreview');
 
@@ -165,7 +166,7 @@ export function renderPreview(
   if (previewKind === 'image') {
     const { shell, body, actions } = createPreviewShell(entry);
     appendPreviewFileActions(actions, entry, sessionId);
-    body.innerHTML = `<div class="preview-image-container"><img class="preview-image" src="${escapeHtml(viewUrl)}" alt="${escapeHtml(entry.name)}" /></div>`;
+    body.appendChild(createImageView(viewUrl, entry.name));
     container.appendChild(shell);
     return;
   }

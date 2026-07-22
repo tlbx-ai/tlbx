@@ -189,24 +189,28 @@ tlbx tracks foreground cwd, process, command line, and terminal title. That data
 
 ### Terminal Resize Principle
 
-tlbx intentionally does **not** auto-resize existing sessions just because another client connected or a page reloaded.
-tlbx also treats terminal size ownership as a **manual** decision, not something the system should guess.
+Each PTY has exactly one authoritative `cols`/`rows` pair, so tlbx assigns size control **per terminal session**. Connecting, focusing, revealing, or resizing a browser never changes ownership by itself.
 
 The model is:
 
-1. One browser is the explicit leading browser for terminal sizing.
-2. Only the leading browser may send authoritative server-side `cols`/`rows`.
-3. New sessions are created at the best size for the leading browser's viewport, never from a follower's viewport.
-4. Existing sessions keep their server-side dimensions until the leading browser explicitly changes them.
-5. Secondary browsers CSS-scale terminals locally instead of sending resize commands.
-6. Users explicitly claim size ownership from another browser when they want a different screen to become authoritative.
-7. Disconnects, reconnects, inactivity, focus changes, visibility changes, or device changes must not automatically transfer size ownership.
+1. The backend persists an owner browser-tab identity and a monotonically increasing ownership epoch for every terminal session.
+2. Only that owner may resize the PTY, and every browser resize command must present the current epoch. Stale or unauthorized commands are acknowledged without changing the PTY.
+3. New sessions start at the creating browser's measured viewport and are assigned to that browser tab.
+4. Followers always apply server dimensions to their local xterm and CSS-scale oversized terminals down to fit. Smaller terminals stay at scale `1`; their naturally empty pixel area carries the takeover affordance and the sanitized device/browser label of the current owner.
+5. An explicit “continue here” action always transfers ownership immediately, increments the epoch, and resizes to the new viewport.
+6. Genuine terminal input renews the owner's lease. Input from a follower may take over only after the owner has been connected but idle for five minutes, or offline and without input for thirty seconds.
+7. On its first ownership snapshot, a visible terminal may automatically claim when the backend already reports the lease as eligible. This is a one-shot arrival decision, not a later-running inactivity timer, so a tablet opened beside an actively used PC remains passive.
+8. A reopened tab in the same browser profile immediately inherits an offline predecessor. An online sibling tab remains a follower even after the normal lease becomes eligible, unless the user explicitly takes control.
+9. Tab identity combines the persistent browser-profile cookie with a tab-local ID. A `BroadcastChannel` probe rekeys copied `sessionStorage` IDs before WebSockets connect, covering duplicated-tab behavior without collapsing two tabs onto one owner.
 
-This is what makes multi-device usage predictable instead of having one client constantly break another client's layout.
-The engineering goal is therefore twofold:
+This creates a one-way handoff when work actually moves to another browser without allowing two open browsers to fight. Once control moves, input from the former owner cannot immediately take it back because the new owner's fresh lease is protected. A browser opened after a commute sees an already-expired work lease and fits immediately; an iPad opened beside recent PC work sees a protected lease and remains scaled until its explicit takeover button is used.
 
-- keep the leading browser's sizing path reliable for all relevant UI changes such as window resizes, panel open/close, layout changes, session switches, and new session creation
-- keep follower browsers strictly non-authoritative even when they render a different viewport more cleanly
+Connected-host sessions use the same authority on the remote MidTerm instance that owns the PTY. The Hub bridges a size-control-only state channel and rewrites the remote session ID for the local UI; it does not decide ownership or resize the terminal independently. This also prevents a browser connected directly to the remote machine from fighting with a browser viewing that session through Hub.
+The engineering goal is therefore threefold:
+
+- keep the owning browser's sizing path reliable for window, panel, layout, session, and viewport changes
+- keep follower browsers strictly non-authoritative even if frontend state is stale or malicious
+- make current ownership and the explicit takeover effect visible without turning passive browser presence into an ownership signal
 
 ### Host Reconnect and Updates
 
@@ -547,7 +551,7 @@ tlbx uses a mix of server-side and browser-side storage:
 | Split layout                 | server-side `session-layout.json`            |
 | Sidebar width/collapse       | cookies                                       |
 | Smart Input/chat/touch prefs | browser `localStorage`                        |
-| Preview snapshots            | `.midterm/snapshot_*` under the working tree  |
+| Preview snapshots            | `.tlbx/snapshot_*` under the working tree  |
 | Terminal input history       | server-side `input-history.json`              |
 | Agent control plane          | server-side `control-plane.json`              |
 

@@ -19,6 +19,7 @@ using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Tmux;
 using Ai.Tlbx.MidTerm.Services.Updates;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Mvc;
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -72,7 +73,8 @@ public static partial class SessionApiEndpoints
         AiCliProfileService aiCliProfileService,
         WorkerSessionRegistryService workerSessionRegistry,
         TtyHostMuxConnectionManager muxManager,
-        InputHistoryService inputHistory)
+        InputHistoryService inputHistory,
+        TerminalSizeControlService terminalSizeControlService)
     {
         void RecordPromptHistory(string sessionId, AppServerControlTurnRequest turn, string source, string? surface = null)
         {
@@ -214,7 +216,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionAttentionResponse);
         });
 
-        app.MapPost("/api/sessions", async (CreateSessionRequest? request, CancellationToken ct) =>
+        app.MapPost("/api/sessions", async (HttpRequest httpRequest, CreateSessionRequest? request, CancellationToken ct) =>
         {
             var cols = request?.Cols ?? 120;
             var rows = request?.Rows ?? 30;
@@ -243,6 +245,14 @@ public static partial class SessionApiEndpoints
                 string.IsNullOrWhiteSpace(request?.SpaceId)
                     ? SessionLaunchOrigins.AdHoc
                     : SessionLaunchOrigins.Space);
+            var browserId = BrowserIdentity.TryBuildFromBrowserRequest(httpRequest);
+            if (browserId is not null)
+            {
+                terminalSizeControlService.AssignNewSession(
+                    sessionInfo.Id,
+                    browserId,
+                    BrowserIdentity.GetDeviceLabel(httpRequest));
+            }
             return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, sessionInfo.Id), AppJsonContext.Default.SessionInfoDto);
         });
 
@@ -308,14 +318,14 @@ public static partial class SessionApiEndpoints
                     : request.LaunchCommand.Trim();
 
             var guidanceInjected = false;
-            string? midtermDir = null;
+            string? tlbxDir = null;
             var targetDirectory = workerSession.CurrentDirectory ?? request.WorkingDirectory;
             if (request.InjectGuidance &&
                 !string.IsNullOrWhiteSpace(targetDirectory) &&
                 Directory.Exists(targetDirectory))
             {
-                midtermDir = MidtermDirectory.TryEnsureForCwd(targetDirectory);
-                guidanceInjected = midtermDir is not null;
+                tlbxDir = TlbxDirectory.TryEnsureForCwd(targetDirectory);
+                guidanceInjected = tlbxDir is not null;
             }
 
             if (!string.IsNullOrWhiteSpace(launchCommand))
@@ -372,7 +382,7 @@ public static partial class SessionApiEndpoints
                 LaunchCommand = launchCommand,
                 SlashCommands = slashCommands,
                 GuidanceInjected = guidanceInjected,
-                MidtermDir = midtermDir
+                TlbxDir = tlbxDir
             }, AppJsonContext.Default.WorkerBootstrapResponse);
         });
 
@@ -419,6 +429,7 @@ public static partial class SessionApiEndpoints
 
         app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, CancellationToken ct) =>
         {
+            TerminalSizeLimits.ThrowIfInvalid(request.Cols, request.Rows);
             var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, ct);
             if (!success)
             {
@@ -825,13 +836,13 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest("Session has no valid working directory");
             }
 
-            var midtermDir = MidtermDirectory.Ensure(cwd);
+            var tlbxDir = TlbxDirectory.Ensure(cwd);
 
             return Results.Json(new InjectGuidanceResponse
             {
-                MidtermDir = midtermDir,
-                MtcliShellPath = Path.Combine(midtermDir, "mtcli.sh"),
-                MtcliPowerShellPath = Path.Combine(midtermDir, "mtcli.ps1"),
+                TlbxDir = tlbxDir,
+                TlbxCliShellPath = Path.Combine(tlbxDir, "tlbx_cli.sh"),
+                TlbxCliPowerShellPath = Path.Combine(tlbxDir, "tlbx_cli.ps1"),
                 ClaudeMdUpdated = false,
                 AgentsMdUpdated = false,
             }, AppJsonContext.Default.InjectGuidanceResponse);
@@ -1512,7 +1523,7 @@ public static partial class SessionApiEndpoints
         {
             try
             {
-                return MidtermDirectory.EnsureSubdirectory(cwd, "uploads");
+                return TlbxDirectory.EnsureSubdirectory(cwd, "uploads");
             }
             catch
             {

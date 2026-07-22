@@ -95,7 +95,7 @@ describe('smartInputMetrics', () => {
 
     expect(textarea.style.height).toBe('102px');
     expect(textarea.style.minHeight).toBe('102px');
-    expect(textarea.dataset.midtermCollapsedHeightPx).toBe('44');
+    expect(textarea.dataset.tlbxCollapsedHeightPx).toBe('44');
     expect(getCollapsedSmartInputTextareaHeight(textarea)).toBe(44);
     expect(textarea.style.overflowY).toBe('hidden');
     expect(

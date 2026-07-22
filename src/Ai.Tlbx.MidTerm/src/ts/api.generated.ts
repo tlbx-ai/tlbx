@@ -4173,9 +4173,9 @@ export interface components {
     /** Format: binary */
     IFormFile: string;
     InjectGuidanceResponse: {
-      midtermDir: string;
-      mtcliShellPath: string;
-      mtcliPowerShellPath: string;
+      tlbxDir: string;
+      tlbxCliShellPath: string;
+      tlbxCliPowerShellPath: string;
       claudeMdUpdated: boolean;
       agentsMdUpdated: boolean;
     };
@@ -4358,7 +4358,6 @@ export interface components {
       scrollbackProtection: boolean;
       mobileKineticTerminalScroll: boolean;
       mobileDenseTerminalMode: boolean;
-      disableAutoMainBrowserPromotion: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
       resumeMode: components['schemas']['TerminalResumeModeSetting'];
       tryResumeNonAiAgentProcesses: boolean;
@@ -4409,7 +4408,6 @@ export interface components {
       cols: number;
       /** Format: int32 */
       rows: number;
-      viewerId?: null | string;
     };
     ResizeResponse: {
       accepted: boolean;
@@ -4640,6 +4638,7 @@ export interface components {
       update: null | components['schemas']['UpdateInfo'];
       layout: null | components['schemas']['SessionLayoutState'];
       managerBarQueue: null | components['schemas']['ManagerBarQueueEntryDto'][];
+      terminalSizeControls: null | components['schemas']['TerminalSizeControlStatus'][];
     };
     SystemHealth: {
       healthy: boolean;
@@ -4711,6 +4710,17 @@ export interface components {
     TerminalEnterModeSetting: 'default' | 'shiftEnterLineFeed';
     /** @enum {unknown} */
     TerminalResumeModeSetting: 'fullReplay' | 'quickResume';
+    TerminalSizeControlStatus: {
+      sessionId: string;
+      isOwner: boolean;
+      hasOwner: boolean;
+      ownerOnline: boolean;
+      ownerInSameBrowserProfile: boolean;
+      canTakeOverAutomatically: boolean;
+      ownerLabel: null | string;
+      /** Format: int64 */
+      epoch: number;
+    };
     TerminalTransportDiagnosticsDto: {
       sourceSeq: string;
       muxReceivedSeq: string;
@@ -4923,7 +4933,7 @@ export interface components {
       launchCommand: null | string;
       slashCommands: string[];
       guidanceInjected: boolean;
-      midtermDir: null | string;
+      tlbxDir: null | string;
     };
   };
   responses: never;

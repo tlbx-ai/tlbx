@@ -6,10 +6,10 @@
  */
 
 import { dom } from '../../state';
-import { $sidebarOpen, $sidebarCollapsed, $isMainBrowser } from '../../stores';
+import { $sidebarOpen, $sidebarCollapsed } from '../../stores';
 import { getCookie, setCookie } from '../../utils';
 import { updateMobileTitle } from './sessionList';
-import { rescaleAllTerminalsImmediate, autoResizeAllTerminalsImmediate } from '../terminal/scaling';
+import { autoResizeAllTerminalsImmediate } from '../terminal/scaling';
 
 // =============================================================================
 // Cookie Constants
@@ -54,10 +54,7 @@ export function collapseSidebar(): void {
   if (dom.app) dom.app.classList.add('sidebar-collapsed');
   setCookie(SIDEBAR_COLLAPSED_COOKIE, 'true');
   updateMobileTitle();
-  const handler = $isMainBrowser.get()
-    ? autoResizeAllTerminalsImmediate
-    : rescaleAllTerminalsImmediate;
-  requestAnimationFrame(handler);
+  requestAnimationFrame(autoResizeAllTerminalsImmediate);
 }
 
 /**
@@ -67,10 +64,7 @@ export function expandSidebar(): void {
   $sidebarCollapsed.set(false);
   if (dom.app) dom.app.classList.remove('sidebar-collapsed');
   setCookie(SIDEBAR_COLLAPSED_COOKIE, 'false');
-  const handler = $isMainBrowser.get()
-    ? autoResizeAllTerminalsImmediate
-    : rescaleAllTerminalsImmediate;
-  requestAnimationFrame(handler);
+  requestAnimationFrame(autoResizeAllTerminalsImmediate);
 }
 
 // =============================================================================
@@ -140,10 +134,7 @@ export function setupSidebarResize(): void {
     document.body.style.cursor = '';
     document.body.style.userSelect = '';
     setCookie(SIDEBAR_WIDTH_COOKIE, String(sidebarEl.offsetWidth));
-    const handler = $isMainBrowser.get()
-      ? autoResizeAllTerminalsImmediate
-      : rescaleAllTerminalsImmediate;
-    requestAnimationFrame(handler);
+    requestAnimationFrame(autoResizeAllTerminalsImmediate);
   }
 
   // Mouse events

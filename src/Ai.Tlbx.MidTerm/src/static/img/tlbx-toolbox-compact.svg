@@ -18,8 +18,8 @@
     </g>
     <path d="M 231.935 145.055 Q 266.09 84.77 300.245 120.485 Q 266.09 180.77 231.935 145.055 Z" fill="var(--tlbx-ink)"/>
     <circle cx="266.09" cy="132.77" r="16" fill="var(--tlbx-background)"/>
-    <circle cx="266.09" cy="132.77" r="14" fill="url(#tlbx-pupil-glow)"/>
-    <circle cx="266.09" cy="132.77" r="10.5" fill="var(--tlbx-accent)"/>
+    <circle cx="266.09" cy="132.77" r="30" fill="url(#tlbx-pupil-glow)"/>
+    <circle cx="266.09" cy="132.77" r="16" fill="var(--tlbx-accent)"/>
     <path d="M 103.35 242.097 C 89.85 220.272 64.2 204.32 45.3 212.105 C 27.75 217.887 31.8 238.88 48 252.65 C 65.55 272.517 91.2 280.37 103.35 269.097 L 103.35 255.597 L 79.05 243.042" fill="none" stroke="var(--tlbx-ink)" stroke-width="22" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
 </svg>

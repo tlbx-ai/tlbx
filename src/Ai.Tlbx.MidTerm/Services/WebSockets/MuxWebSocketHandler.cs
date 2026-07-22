@@ -585,12 +585,8 @@ public sealed class MuxWebSocketHandler
                 break;
 
             case MuxProtocol.TypeResize:
-                if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess))
-                {
-                    return;
-                }
-                var (cols, rows) = MuxProtocol.ParseResizePayload(payload);
-                await _muxManager.HandleResizeAsync(sessionId, cols, rows);
+                // Browser terminal dimensions are authorized and acknowledged through the
+                // state channel. Mux clients intentionally cannot bypass size ownership.
                 break;
 
             case MuxProtocol.TypeBufferRequest:

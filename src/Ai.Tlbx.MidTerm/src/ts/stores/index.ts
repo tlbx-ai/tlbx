@@ -15,6 +15,7 @@
 import { atom, map, computed } from 'nanostores';
 import type {
   BrowserSessionStatus,
+  TerminalSizeControlStatus,
   Session,
   MidTermSettingsPublic,
   UpdateInfo,
@@ -448,7 +449,7 @@ export const $focusedSessionId = atom<string | null>(null);
 // Main Browser Store
 // =============================================================================
 
-/** Whether this browser is the "main" browser that auto-resizes terminals (server-driven) */
+/** Legacy authority for browser automation and pre-ownership Hub fallback, not current PTY sizing. */
 export const $isMainBrowser = atom<boolean>(false);
 
 /** Whether the main browser button should be visible (server has seen 2+ unique clients) */
@@ -456,3 +457,63 @@ export const $showMainBrowserButton = atom<boolean>(false);
 
 /** Connected browser sessions and their server-observed active tlbx session */
 export const $browserSessions = atom<BrowserSessionStatus[]>([]);
+
+/** Per-terminal size ownership, projected for this browser tab by the server. */
+export const $terminalSizeControls = atom<Record<string, TerminalSizeControlStatus>>({});
+
+const terminalSizeControlSources = new Map<string, Record<string, TerminalSizeControlStatus>>();
+
+function publishTerminalSizeControls(): void {
+  const combined: Record<string, TerminalSizeControlStatus> = {};
+  terminalSizeControlSources.forEach((statuses) => {
+    Object.assign(combined, statuses);
+  });
+  $terminalSizeControls.set(combined);
+}
+
+export function setTerminalSizeControls(statuses: TerminalSizeControlStatus[]): void {
+  const next: Record<string, TerminalSizeControlStatus> = {};
+  statuses.forEach((status) => {
+    if (status.sessionId) {
+      next[status.sessionId] = status;
+    }
+  });
+  terminalSizeControlSources.set('local', next);
+  publishTerminalSizeControls();
+}
+
+export function setTerminalSizeControlsForSource(
+  source: string,
+  statuses: TerminalSizeControlStatus[],
+): void {
+  const next: Record<string, TerminalSizeControlStatus> = {};
+  statuses.forEach((status) => {
+    if (status.sessionId) next[status.sessionId] = status;
+  });
+  terminalSizeControlSources.set(source, next);
+  publishTerminalSizeControls();
+}
+
+export function removeTerminalSizeControlSource(source: string): void {
+  if (terminalSizeControlSources.delete(source)) publishTerminalSizeControls();
+}
+
+export function setTerminalSizeControl(status: TerminalSizeControlStatus): void {
+  if (!status.sessionId) return;
+  const hubMatch = /^hub:([^:]+):/.exec(status.sessionId);
+  const source = hubMatch ? `hub:${hubMatch[1]}` : 'local';
+  terminalSizeControlSources.set(source, {
+    ...(terminalSizeControlSources.get(source) ?? {}),
+    [status.sessionId]: status,
+  });
+  publishTerminalSizeControls();
+}
+
+export function getTerminalSizeControl(sessionId: string): TerminalSizeControlStatus | undefined {
+  return $terminalSizeControls.get()[sessionId];
+}
+
+export function hasTerminalSizeControl(sessionId: string): boolean {
+  const status = getTerminalSizeControl(sessionId);
+  return status?.isOwner ?? $isMainBrowser.get();
+}

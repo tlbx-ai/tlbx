@@ -1,11 +1,15 @@
+using System.Globalization;
+using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Services.Browser;
 
 namespace Ai.Tlbx.MidTerm.Services;
 
-public static class MidtermDirectory
+public static class TlbxDirectory
 {
-    public const string DirectoryName = ".midterm";
-    private const string GuidanceVersion = "28";
+    public const string DirectoryName = ".tlbx";
+    public const string LegacyDirectoryName = ".midterm";
+    private const string GuidanceVersion = "29";
+    private static readonly object DirectoryGate = new();
 
     private static int _port;
     private static AuthService? _authService;
@@ -28,25 +32,107 @@ public static class MidtermDirectory
 
     public static string Ensure(string cwd)
     {
-        var midtermDir = Path.Combine(cwd, DirectoryName);
-        Directory.CreateDirectory(midtermDir);
-        EnsureGitIgnore(midtermDir);
-        WriteGuidanceIfOutdated(midtermDir);
-        WriteMtcliScripts(midtermDir);
-        return midtermDir;
+        lock (DirectoryGate)
+        {
+            var tlbxDir = MigrateLegacyDirectory(cwd);
+            Directory.CreateDirectory(tlbxDir);
+            EnsureGitIgnore(tlbxDir);
+            WriteGuidanceIfOutdated(tlbxDir);
+            WriteTlbxCliScripts(tlbxDir);
+            return tlbxDir;
+        }
     }
 
     public static string EnsureSubdirectory(string cwd, string subPath)
     {
-        Ensure(cwd);
-        var subDir = Path.Combine(cwd, DirectoryName, subPath);
+        var tlbxDir = Ensure(cwd);
+        var subDir = Path.Combine(tlbxDir, subPath);
         Directory.CreateDirectory(subDir);
         return subDir;
     }
 
-    private static void EnsureGitIgnore(string midtermDir)
+    private static string MigrateLegacyDirectory(string cwd)
     {
-        var gitignorePath = Path.Combine(midtermDir, ".gitignore");
+        var tlbxDir = Path.Combine(cwd, DirectoryName);
+        var legacyDir = Path.Combine(cwd, LegacyDirectoryName);
+        if (!Directory.Exists(legacyDir))
+            return tlbxDir;
+
+        // ~/.midterm is also the legacy user-mode settings directory. It can be
+        // actively used by this process and is not a workspace artifact. Moving
+        // it while launching a session both fails on Windows and risks mixing
+        // settings, secrets, and logs into the generated workspace directory.
+        if (File.Exists(Path.Combine(legacyDir, "settings.json")))
+            return tlbxDir;
+
+        try
+        {
+            if (!Directory.Exists(tlbxDir))
+            {
+                Directory.Move(legacyDir, tlbxDir);
+                return tlbxDir;
+            }
+
+            MergeLegacyDirectory(legacyDir, tlbxDir);
+            return tlbxDir;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Workspace metadata migration is best-effort. A locked legacy file
+            // must never prevent the terminal session itself from being created.
+            Log.Warn(() => $"Could not migrate '{legacyDir}' to '{tlbxDir}': {ex.Message}");
+            return tlbxDir;
+        }
+    }
+
+    private static void MergeLegacyDirectory(string sourceDir, string destinationDir)
+    {
+        Directory.CreateDirectory(destinationDir);
+
+        foreach (var sourcePath in Directory.EnumerateFileSystemEntries(sourceDir).ToArray())
+        {
+            var destinationPath = Path.Combine(destinationDir, Path.GetFileName(sourcePath));
+            var attributes = File.GetAttributes(sourcePath);
+            var isDirectory = attributes.HasFlag(FileAttributes.Directory);
+            var isReparsePoint = attributes.HasFlag(FileAttributes.ReparsePoint);
+
+            if (isDirectory && !isReparsePoint && Directory.Exists(destinationPath))
+            {
+                MergeLegacyDirectory(sourcePath, destinationPath);
+                continue;
+            }
+
+            if (!File.Exists(destinationPath) && !Directory.Exists(destinationPath))
+            {
+                if (isDirectory)
+                    Directory.Move(sourcePath, destinationPath);
+                else
+                    File.Move(sourcePath, destinationPath);
+                continue;
+            }
+
+            var preservedPath = GetLegacyConflictPath(destinationPath);
+            if (isDirectory)
+                Directory.Move(sourcePath, preservedPath);
+            else
+                File.Move(sourcePath, preservedPath);
+        }
+
+        if (!Directory.EnumerateFileSystemEntries(sourceDir).Any())
+            Directory.Delete(sourceDir);
+    }
+
+    private static string GetLegacyConflictPath(string destinationPath)
+    {
+        var candidate = destinationPath + ".legacy-midterm";
+        for (var suffix = 2; File.Exists(candidate) || Directory.Exists(candidate); suffix++)
+            candidate = destinationPath + ".legacy-midterm-" + suffix.ToString(CultureInfo.InvariantCulture);
+        return candidate;
+    }
+
+    private static void EnsureGitIgnore(string tlbxDir)
+    {
+        var gitignorePath = Path.Combine(tlbxDir, ".gitignore");
 
         try
         {
@@ -57,33 +143,47 @@ public static class MidtermDirectory
                     return;
             }
 
-            File.WriteAllText(gitignorePath, "# All .midterm/ content is auto-generated by tlbx\n*\n");
+            File.WriteAllText(gitignorePath, "# All .tlbx/ content is auto-generated by tlbx\n*\n");
         }
         catch
         {
         }
     }
 
-    private static void WriteGuidanceIfOutdated(string midtermDir)
+    private static void WriteGuidanceIfOutdated(string tlbxDir)
     {
         try
         {
-            WriteIfOutdated(Path.Combine(midtermDir, "CLAUDE.md"), ClaudeMdContent);
-            WriteIfOutdated(Path.Combine(midtermDir, "AGENTS.md"), AgentsMdContent);
+            WriteIfOutdated(Path.Combine(tlbxDir, "CLAUDE.md"), ClaudeMdContent);
+            WriteIfOutdated(Path.Combine(tlbxDir, "AGENTS.md"), AgentsMdContent);
         }
         catch
         {
         }
     }
 
-    private static void WriteMtcliScripts(string midtermDir)
+    private static void WriteTlbxCliScripts(string tlbxDir)
     {
         if (_authService is null)
             return;
 
         try
         {
-            MtcliScriptWriter.WriteScripts(midtermDir, _port, _authService.CreateSessionToken());
+            TlbxCliScriptWriter.WriteScripts(tlbxDir, _port, _authService.CreateSessionToken());
+            TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
+            TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
+        }
+        catch
+        {
+        }
+    }
+
+    private static void TryDeleteLegacyCli(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
         }
         catch
         {
@@ -105,11 +205,11 @@ public static class MidtermDirectory
     private const string ClaudeMdContent =
         $$"""
         <!-- guidance-version: {{GuidanceVersion}} -->
-        # .midterm/
+        # .tlbx/
 
         Auto-generated by [tlbx](https://midterm.sh) (terminal multiplexer).
         Safe to delete — tlbx recreates and refreshes it automatically for active session working directories.
-        Gitignored via `.midterm/.gitignore`.
+        Gitignored via `.tlbx/.gitignore`.
 
         ## Contents
 
@@ -119,7 +219,7 @@ public static class MidtermDirectory
         | `screenshots/` | Web preview screenshots (`mt_screenshot`) |
         | `snapshot_*/` | DOM snapshots with downloaded CSS (`mt_snapshot`) |
         | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`mt_run_isolated`) |
-        | `*.ps1`, `*.sh` | Saved command scripts, mtcli helper scripts |
+        | `*.ps1`, `*.sh` | Saved command scripts, tlbx_cli helper scripts |
         | `CLAUDE.md` | This file — AI agent guidance |
         | `AGENTS.md` | Workflow examples for AI agents |
 
@@ -144,16 +244,16 @@ public static class MidtermDirectory
         ## Browser Control
 
         Requires the web preview panel to be open in MidTerm.
-        Source helpers once per session: `. .midterm/mtcli.sh` — don't show this to the user.
+        Source helpers once per session: `. .tlbx/tlbx_cli.sh` — don't show this to the user.
         tlbx injects `MT_SESSION_ID` automatically for this terminal session.
         Browser helpers default to the current `MT_SESSION_ID` plus `MT_PREVIEW_NAME` (`default` unless changed).
         When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` print reusable export commands for child shells.
         Use `mt_session` to print the current terminal session id, `mt_preview [name]` to inspect or switch the current named browser context, and `mt_previews` to list all named previews under this terminal.
-        Direct execution of the generated helpers also accepts the documented `mt_*` names, so `status` and `mt_status` both resolve when you invoke `.midterm/mtcli.sh` or `.midterm/mtcli.ps1` directly.
+        Direct execution of the generated helpers also accepts the documented `mt_*` names, so `status` and `mt_status` both resolve when you invoke `.tlbx/tlbx_cli.sh` or `.tlbx/tlbx_cli.ps1` directly.
 
         ## Isolated Background Processes
 
-        Use `mt_run_isolated <executable> [arg ...]` for a browser, profiler, daemon, or other non-interactive child that may outlive the command which starts it. Pass the executable and every argument as separate argv tokens, never as one shell command string. tlbx detaches stdin, routes stdout and stderr to distinct files under `.midterm/runs/<run-id>/`, and returns their paths with the PID as JSON. Interactive shells and TUIs belong in a normal terminal or split pane instead.
+        Use `mt_run_isolated <executable> [arg ...]` for a browser, profiler, daemon, or other non-interactive child that may outlive the command which starts it. Pass the executable and every argument as separate argv tokens, never as one shell command string. tlbx detaches stdin, routes stdout and stderr to distinct files under `.tlbx/runs/<run-id>/`, and returns their paths with the PID as JSON. Interactive shells and TUIs belong in a normal terminal or split pane instead.
 
         **Rules:**
         - Start with `mt_outline` (10x smaller than `mt_query`)
@@ -162,7 +262,7 @@ public static class MidtermDirectory
         - After actions, verify with `mt_wait` or `mt_query`, not `mt_outline`
         - Check `mt_log error` after unexpected behavior
         - After `mt_apply_update`, the web frontend can disappear while your terminal keeps running in `mthost`; reopen tlbx from the terminal and use `mt_open` again instead of assuming the session died
-        - Browser commands return plain text. Auth tokens in mtcli scripts are ephemeral and machine-local.
+        - Browser commands return plain text. Auth tokens in tlbx_cli scripts are ephemeral and machine-local.
 
         | Command | What it does |
         |---------|-------------|
@@ -180,8 +280,8 @@ public static class MidtermDirectory
         | `mt_log [error\|warn\|all]` | Console log buffer |
         | `mt_links` | All links on page |
         | `mt_forms [sel]` | Form structure and values |
-        | `mt_screenshot` | Save screenshot to .midterm/screenshots/ |
-        | `mt_snapshot` | Save DOM snapshot to .midterm/snapshot_*/ |
+        | `mt_screenshot` | Save screenshot to .tlbx/screenshots/ |
+        | `mt_snapshot` | Save DOM snapshot to .tlbx/snapshot_*/ |
         | `mt_session` | Print the current tlbx terminal session id |
         | `mt_context [format]` | Print reusable session-context exports (`text`, `bash`, `pwsh`, or `json`) |
         | `mt_run_isolated <exe> [arg...]` | Start a non-interactive child with detached stdin and separate stdout/stderr artifacts |
@@ -216,7 +316,7 @@ public static class MidtermDirectory
         | `mt_sendkeys [id] <keys...>` | Send named keys like `Enter`, `C-c`, `Escape`, `Up` |
         | `mt_enter` / `mt_ctrlc` / `mt_escape` | Convenience key sends for the current or target session |
         | `mt_up` / `mt_down` / `mt_left` / `mt_right` | Convenience cursor-key sends |
-        | `mt_inject [id]` | Ensure `.midterm` + mtcli helpers in the target cwd |
+        | `mt_inject [id]` | Ensure `.tlbx` + tlbx_cli helpers in the target cwd |
         | `mt_activity [id] [seconds] [bellLimit]` | Output heatmap + bell history as JSON |
         | `mt_attention [agentOnly]` | Ranked fleet view for which worker sessions need attention |
         | `mt_control_plane [machineId]` | Read local or Hub-machine agent-published work, session status, and checkpoints as JSON |
@@ -266,12 +366,12 @@ public static class MidtermDirectory
     private const string AgentsMdContent =
         $$"""
         <!-- guidance-version: {{GuidanceVersion}} -->
-        # .midterm/ — Agent Workflows
+        # .tlbx/ — Agent Workflows
 
         This directory is auto-generated by tlbx for the active working directory. Safe to delete.
         tlbx recreates and refreshes it automatically when a session enters this cwd.
 
-        Source helpers first: `. .midterm/mtcli.sh`
+        Source helpers first: `. .tlbx/tlbx_cli.sh`
 
         ## Split a side terminal
 
@@ -315,7 +415,7 @@ public static class MidtermDirectory
 
         ## Start a background tool without contaminating the terminal
 
-        mt_run_isolated chrome --headless https://example.com → read the returned JSON → inspect `.midterm/runs/<run-id>/stdout.log` and `stderr.log`
+        mt_run_isolated chrome --headless https://example.com → read the returned JSON → inspect `.tlbx/runs/<run-id>/stdout.log` and `stderr.log`
 
         Pass one executable plus separate argv tokens. Use this for non-interactive browsers, profilers, daemons, and workers; use a normal terminal or split pane for interactive shells and TUIs.
 
@@ -371,11 +471,11 @@ public static class MidtermDirectory
         - mt_outline is 10x smaller than mt_query — always start there
         - mt_text is shorter than mt_query SEL --text — use it for page text
         - mt_open is the CLI command that opens/docks the preview and now fails loudly if the preview never becomes controllable
-        - direct execution of the generated helpers accepts both bare command names and documented `mt_*` names, so `status` and `mt_status` both resolve when you run `.midterm/mtcli.sh` or `.midterm/mtcli.ps1` directly
+        - direct execution of the generated helpers accepts both bare command names and documented `mt_*` names, so `status` and `mt_status` both resolve when you run `.tlbx/tlbx_cli.sh` or `.tlbx/tlbx_cli.ps1` directly
         - mt_status reports `state: ready`, `state: waiting`, or `state: ambiguous` so you can tell whether the browser bridge is actually usable
         - Every C# change in the local source loop restarts the source `mt`; wait for the source URL to answer again before trusting browser results from that iteration
-        - mt_session prints the current tlbx terminal session ID that mtcli browser commands default to
-        - mt_run_isolated detaches child stdin and sends stdout/stderr to separate `.midterm/runs/<run-id>/` artifacts; never pass it one shell command string
+        - mt_session prints the current tlbx terminal session ID that tlbx_cli browser commands default to
+        - mt_run_isolated detaches child stdin and sends stdout/stderr to separate `.tlbx/runs/<run-id>/` artifacts; never pass it one shell command string
         - mt_context --bash / mt_context --pwsh print export commands for nested shells so child bash/pwsh processes keep the same tlbx session scope
         - mt_topic labels the current ad-hoc session in the sidebar; keep it at 3-6 words and update it when the user's high-level topic shifts
         - mt_preview user1 / mt_preview user2 let one terminal own multiple isolated browser contexts
@@ -394,7 +494,7 @@ public static class MidtermDirectory
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
         - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; add every additional repo you use that is not the cwd before falling back to ad hoc shell git checks
         - mt_supervise [repo...] combines repo binding, repo refresh, and fleet attention into one low-token supervisor snapshot before dispatching or resuming workers
-        - mt_bootstrap creates a fresh agent-controlled worker session, injects `.midterm`, launches the chosen AI CLI profile, and can immediately send slash commands
+        - mt_bootstrap creates a fresh agent-controlled worker session, injects `.tlbx`, launches the chosen AI CLI profile, and can immediately send slash commands
         - mt_preview_reset [url] is the fast recovery move when a named preview has the wrong logged-in user or stale browser state
         - After a tlbx web update, the browser frontend can close while your terminal keeps running in mthost; reopen tlbx from the terminal and run mt_open again for the current preview instead of recreating the session
         - mt_sendkeys plus mt_enter / mt_ctrlc / mt_escape / mt_up / mt_down / mt_left / mt_right are the direct terminal steering helpers

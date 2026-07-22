@@ -13,14 +13,14 @@ import {
   MIN_TERMINAL_ROWS,
   MAX_TERMINAL_COLS,
   MAX_TERMINAL_ROWS,
-  icon,
 } from '../../constants';
 import { sessionTerminals, fontsReadyPromise, dom } from '../../state';
 import {
   $activeSessionId,
   $currentSettings,
-  $isMainBrowser,
+  $terminalSizeControls,
   $sessions,
+  hasTerminalSizeControl,
   getSession,
 } from '../../stores';
 import { throttle } from '../../utils';
@@ -43,11 +43,15 @@ import {
   normalizeTerminalFontWeight,
   normalizeTerminalLetterSpacing,
 } from './fontConfig';
-import { claimMainBrowser, sendResize } from '../comms';
+import { sendResize } from '../comms';
 import { t } from '../i18n';
-import { isDevMode } from '../sidebar/voiceSection';
 import { getTabBarHeight } from '../sessionTabs';
 import { clearTerminalGapFillers, updateTerminalGapFillers } from './terminalGapFillers';
+import {
+  claimEligibleVisibleTerminalSizes,
+  configureTerminalSizeControlAutomation,
+} from './sizeControlAutomation';
+import { createScalingOverlay, positionScalingOverlay } from './sizeControlOverlay';
 import {
   isMobileTerminalViewport,
   observeMobileVerticalViewportChange,
@@ -615,28 +619,12 @@ function removeScalingOverlay(container: HTMLElement): void {
   if (overlay) overlay.remove();
 }
 
-function buildScaledOverlayLabel(
-  container: HTMLElement,
-  state: TerminalState,
-  scale: number,
-): string {
+function buildScaledOverlayLabel(container: HTMLElement, scale: number): string {
   const pct = Math.round(scale * 100);
-  const screen = container.querySelector<HTMLElement>('.xterm-screen');
-  let diagHtml = '';
-  if (isDevMode() && screen) {
-    const cols = state.terminal.cols;
-    const rows = state.terminal.rows;
-    const cellW = (screen.offsetWidth / cols).toFixed(2);
-    const cellH = (screen.offsetHeight / rows).toFixed(2);
-    const termPx = `${screen.offsetWidth}×${screen.offsetHeight}`;
-    const containerPx = `${container.clientWidth}×${container.clientHeight}`;
-    const scaleTxt = scale.toPrecision(5);
-    diagHtml = `<br><span style="font-size:9pt">Cell: ${cellW}×${cellH}  Term: ${cols}×${rows}  Px: ${termPx}  Container: ${containerPx}  Scale: ${scaleTxt}</span>`;
-  }
-  const overlayLabel = $isMainBrowser.get()
+  const sessionId = getTerminalSessionId(container);
+  return sessionId && hasTerminalSizeControl(sessionId)
     ? `${t('terminal.scaledTo')} ${pct}%`
-    : `${t('terminal.scaledContent')} (${pct}%) - ${t('terminal.makeReferenceScaleBrowser')}`;
-  return `${overlayLabel}${diagHtml}`;
+    : `${t('terminal.scaledViewExplanation')} (${pct}%)`;
 }
 
 /**
@@ -672,13 +660,8 @@ function resizeTerminalToFit(
   cols: number,
   rows: number,
 ): void {
-  try {
-    if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
-      state.terminal.resize(cols, rows);
-      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
-    }
-  } catch {
-    // Resize may fail if terminal is disposed
+  if (state.serverCols !== cols || state.serverRows !== rows) {
+    sendResize(sessionId, cols, rows);
   }
 }
 
@@ -690,7 +673,7 @@ function fitSessionToScreenInternal(sessionId: string, retriesRemaining: number)
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
-  if (!$isMainBrowser.get()) {
+  if (!hasTerminalSizeControl(sessionId)) {
     applyTerminalScaling(sessionId, state);
     return;
   }
@@ -764,7 +747,7 @@ function fitTerminalToContainerInternal(
   const state = sessionTerminals.get(sessionId);
   if (!state || !state.opened) return;
 
-  if (!$isMainBrowser.get()) {
+  if (!hasTerminalSizeControl(sessionId)) {
     applyTerminalScaling(sessionId, state);
     return;
   }
@@ -778,16 +761,8 @@ function fitTerminalToContainerInternal(
   const { cols, rows } = fit;
   const rowsToApply = shouldPreserveMobileTerminalRows(state, cols) ? state.terminal.rows : rows;
 
-  // Resize terminal and notify server
-  try {
-    if (state.terminal.cols !== cols || state.terminal.rows !== rowsToApply) {
-      state.terminal.resize(cols, rowsToApply);
-      state.serverCols = cols;
-      state.serverRows = rowsToApply;
-      sendResize(sessionId, state.terminal.cols, state.terminal.rows);
-    }
-  } catch {
-    // Resize may fail if terminal is disposed
+  if (state.serverCols !== cols || state.serverRows !== rowsToApply) {
+    sendResize(sessionId, cols, rowsToApply);
   }
 
   if (isMobileDenseTerminalModeEnabled()) {
@@ -807,12 +782,12 @@ function fitTerminalToContainerInternal(
 export function applyTerminalScalingSync(state: TerminalState): void {
   const context = createTerminalScalingContext(state);
   if (!context) return;
-  const { container, xterm, isMainBrowser, scale, hasOptimalSizeMismatch } = context;
+  const { container, xterm, ownsSize, scale, hasOptimalSizeMismatch } = context;
 
   let overlay = container.querySelector<HTMLButtonElement>('.scaled-overlay');
   const ensureOverlay = (): HTMLButtonElement => {
     if (overlay) return overlay;
-    overlay = createScalingOverlay(container, isMainBrowser);
+    overlay = createScalingOverlay(container, ownsSize, fitOwnedTerminalToCurrentContainer);
     return overlay;
   };
   const resetScaleState = (): void => {
@@ -820,16 +795,15 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   };
   const showOverlay = (label: string): void => {
     const el = ensureOverlay();
-    positionScalingOverlay(el, isMainBrowser, label);
+    positionScalingOverlay(el, ownsSize, label);
   };
 
   if (scale < 1) {
     applyScaledDownTerminalState({
       container,
       xterm,
-      state,
       scale,
-      isMainBrowser,
+      ownsSize,
       hasOptimalSizeMismatch,
       showOverlay,
       resetScaleState,
@@ -841,7 +815,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
     applyUndersizedTerminalState({
       container,
       xterm,
-      isMainBrowser,
+      ownsSize,
       viewportMismatchTooSmall: context.viewportMismatchTooSmall,
       showOverlay,
       resetScaleState,
@@ -855,7 +829,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
   }
 
   applyNaturalFitTerminalState({
-    isMainBrowser,
+    ownsSize,
     showOverlay,
     resetScaleState,
     clearOverlay: () => {
@@ -863,7 +837,7 @@ export function applyTerminalScalingSync(state: TerminalState): void {
       overlay = null;
     },
   });
-  if (isMainBrowser) updateTerminalGapFillers(container, xterm, 1);
+  if (ownsSize) updateTerminalGapFillers(container, xterm, 1);
 }
 
 interface TerminalScalingContext {
@@ -871,7 +845,7 @@ interface TerminalScalingContext {
   xterm: HTMLElement;
   state: TerminalState;
   scale: number;
-  isMainBrowser: boolean;
+  ownsSize: boolean;
   hasOptimalSizeMismatch: boolean;
   viewportMismatchTooSmall: boolean;
   shouldApplyUndersizedState: boolean;
@@ -891,6 +865,7 @@ function createTerminalScalingContext(state: TerminalState): TerminalScalingCont
     return null;
   }
 
+  const sessionId = getTerminalSessionId(container);
   return {
     container,
     xterm,
@@ -902,7 +877,7 @@ function createTerminalScalingContext(state: TerminalState): TerminalScalingCont
       measurements.termHeight,
       hasOptimalSizeMismatch,
     ),
-    isMainBrowser: $isMainBrowser.get(),
+    ownsSize: sessionId ? hasTerminalSizeControl(sessionId) : false,
     hasOptimalSizeMismatch,
     viewportMismatchTooSmall: Boolean(viewportMismatch?.isTooSmall),
     shouldApplyUndersizedState: shouldApplyUndersizedTerminalState(
@@ -973,16 +948,15 @@ function shouldApplyUndersizedTerminalState(
 function applyScaledDownTerminalState(args: {
   container: HTMLElement;
   xterm: HTMLElement;
-  state: TerminalState;
   scale: number;
-  isMainBrowser: boolean;
+  ownsSize: boolean;
   hasOptimalSizeMismatch: boolean;
   showOverlay: (label: string) => void;
   resetScaleState: () => void;
 }): void {
-  const { container, xterm, state, scale, isMainBrowser, showOverlay, resetScaleState } = args;
-  const scaleMainBrowser = isMainBrowser && isMobileDenseTerminalModeEnabled();
-  if (isMainBrowser && !scaleMainBrowser) {
+  const { container, xterm, scale, ownsSize, showOverlay, resetScaleState } = args;
+  const scaleOwner = ownsSize && isMobileDenseTerminalModeEnabled();
+  if (ownsSize && !scaleOwner) {
     resetScaleState();
     removeScalingOverlay(container);
     return;
@@ -992,8 +966,8 @@ function applyScaledDownTerminalState(args: {
   xterm.style.transformOrigin = 'top left';
   container.classList.add('scaled');
   updateTerminalGapFillers(container, xterm, scale);
-  if (!scaleMainBrowser) {
-    showOverlay(buildScaledOverlayLabel(container, state, scale));
+  if (!scaleOwner) {
+    showOverlay(buildScaledOverlayLabel(container, scale));
   } else {
     removeScalingOverlay(container);
   }
@@ -1002,7 +976,7 @@ function applyScaledDownTerminalState(args: {
 function applyUndersizedTerminalState(args: {
   container: HTMLElement;
   xterm: HTMLElement;
-  isMainBrowser: boolean;
+  ownsSize: boolean;
   viewportMismatchTooSmall: boolean;
   showOverlay: (label: string) => void;
   resetScaleState: () => void;
@@ -1012,7 +986,7 @@ function applyUndersizedTerminalState(args: {
   const {
     container,
     xterm,
-    isMainBrowser,
+    ownsSize,
     viewportMismatchTooSmall,
     showOverlay,
     resetScaleState,
@@ -1023,83 +997,52 @@ function applyUndersizedTerminalState(args: {
   updateTerminalGapFillers(container, xterm, 1);
 
   if (viewportMismatchTooSmall) {
-    if (isMainBrowser) {
+    if (ownsSize) {
       removeScalingOverlay(container);
       return;
     }
-    const overlayLabel = $isMainBrowser.get()
-      ? t('terminal.sizedForSmallerScreen')
-      : `${t('terminal.sizedForSmallerScreen')} - ${t('terminal.makeReferenceScaleBrowser')}`;
-    showOverlay(overlayLabel);
+    showOverlay(t('terminal.scaledViewExplanation'));
     return;
   }
 
-  if (!isMainBrowser) {
-    showOverlay(t('terminal.makeReferenceScaleBrowser'));
+  if (!ownsSize) {
+    showOverlay(t('terminal.scaledViewExplanation'));
   } else if (overlay) {
     clearOverlay();
   }
 }
 
 function applyNaturalFitTerminalState(args: {
-  isMainBrowser: boolean;
+  ownsSize: boolean;
   showOverlay: (label: string) => void;
   resetScaleState: () => void;
   clearOverlay: () => void;
 }): void {
-  const { isMainBrowser, showOverlay, resetScaleState, clearOverlay } = args;
+  const { ownsSize, showOverlay, resetScaleState, clearOverlay } = args;
   resetScaleState();
 
-  if (!isMainBrowser) {
-    showOverlay(t('terminal.makeReferenceScaleBrowser'));
+  if (!ownsSize) {
+    showOverlay(t('terminal.scaledViewExplanation'));
     return;
   }
 
   clearOverlay();
 }
 
-function createScalingOverlay(container: HTMLElement, isMainBrowser: boolean): HTMLButtonElement {
-  const overlay = document.createElement('button');
-  overlay.className = 'scaled-overlay';
-  overlay.type = 'button';
-  overlay.addEventListener('click', () => {
-    if (!$isMainBrowser.get()) {
-      claimMainBrowser();
-      return;
-    }
-    const sessionId = container.id.replace('terminal-', '');
-    if (!sessionId) return;
-    const layoutPane = container.closest<HTMLElement>('.layout-leaf');
-    if (layoutPane) {
-      fitTerminalToContainer(sessionId, layoutPane);
-    } else {
-      fitSessionToScreen(sessionId);
-    }
-  });
-  container.appendChild(overlay);
-  positionScalingOverlay(overlay, isMainBrowser, overlay.innerText);
-  return overlay;
+function getTerminalSessionId(container: HTMLElement): string | null {
+  const prefix = 'terminal-';
+  return container.id.startsWith(prefix) ? container.id.slice(prefix.length) || null : null;
 }
 
-function positionScalingOverlay(
-  overlay: HTMLButtonElement,
-  isMainBrowser: boolean,
-  label: string,
-): void {
-  const title = isMainBrowser
-    ? t('terminal.resizeToThisViewport')
-    : t('terminal.makeReferenceScaleBrowser');
-  overlay.title = title;
-  overlay.setAttribute('aria-label', title);
-  overlay.innerHTML = `${icon('resize')} ${label}`;
+function fitOwnedTerminalToCurrentContainer(sessionId: string, container: HTMLElement): void {
+  const layoutPane = container.closest<HTMLElement>('.layout-leaf');
+  if (layoutPane) {
+    fitTerminalToContainer(sessionId, layoutPane);
+  } else {
+    fitSessionToScreen(sessionId);
+  }
 
-  const connBadge = document.getElementById('connection-status');
-  const connVisible =
-    connBadge &&
-    (connBadge.classList.contains('disconnected') ||
-      connBadge.classList.contains('reconnecting') ||
-      connBadge.classList.contains('connecting'));
-  overlay.style.bottom = connVisible ? '36px' : '8px';
+  requestAnimationFrame(() => sessionTerminals.get(sessionId)?.terminal.focus());
 }
 
 function resetTerminalScaleState(container: HTMLElement, xterm: HTMLElement): void {
@@ -1161,6 +1104,11 @@ function autoResizeAllTerminalsInternal(): void {
   sessionTerminals.forEach((state, sessionId) => {
     if (!state.opened) return;
 
+    if (!hasTerminalSizeControl(sessionId)) {
+      applyTerminalScaling(sessionId, state);
+      return;
+    }
+
     // Never auto-resize while the user is reading scrollback. Keep the server-side
     // size stable and only refresh CSS scaling for the current container.
     if (isTerminalViewingScrollback(state)) {
@@ -1178,14 +1126,14 @@ function autoResizeAllTerminalsInternal(): void {
 }
 
 let autoResizeTimer: number | undefined;
-let mainBrowserContainerResizeObserver: ResizeObserver | null = null;
-let observedMainBrowserContainer: HTMLElement | null = null;
+let terminalContainerResizeObserver: ResizeObserver | null = null;
+let observedTerminalContainer: HTMLElement | null = null;
 let footerReserveResizeQueued = false;
 const pendingTerminalScaleStates = new WeakSet<TerminalState>();
 
 /**
  * Auto-resize all terminals (debounced 300ms, for window resize events).
- * Only active when $isMainBrowser is true.
+ * Each owned session is resized; follower sessions are scaled locally.
  */
 export function autoResizeAllTerminals(): void {
   if (autoResizeTimer !== undefined) {
@@ -1199,13 +1147,13 @@ export function autoResizeAllTerminals(): void {
 
 /**
  * Auto-resize all terminals immediately (for sidebar/layout changes).
- * Only active when $isMainBrowser is true.
+ * Each owned session is resized; follower sessions are scaled locally.
  */
 export function autoResizeAllTerminalsImmediate(): void {
   autoResizeAllTerminalsInternal();
 }
 
-function ensureMainBrowserContainerResizeObserver(): void {
+function ensureTerminalContainerResizeObserver(): void {
   if (typeof ResizeObserver === 'undefined') {
     return;
   }
@@ -1215,36 +1163,28 @@ function ensureMainBrowserContainerResizeObserver(): void {
     return;
   }
 
-  if (!mainBrowserContainerResizeObserver) {
-    mainBrowserContainerResizeObserver = new ResizeObserver(() => {
-      if ($isMainBrowser.get()) {
-        scheduleMainBrowserResize();
-      }
+  if (!terminalContainerResizeObserver) {
+    terminalContainerResizeObserver = new ResizeObserver(() => {
+      scheduleTerminalResize();
     });
   }
 
-  if (observedMainBrowserContainer === container) {
+  if (observedTerminalContainer === container) {
     return;
   }
 
-  mainBrowserContainerResizeObserver.disconnect();
-  mainBrowserContainerResizeObserver.observe(container);
-  observedMainBrowserContainer = container;
-}
-
-function disconnectMainBrowserContainerResizeObserver(): void {
-  mainBrowserContainerResizeObserver?.disconnect();
-  observedMainBrowserContainer = null;
+  terminalContainerResizeObserver.disconnect();
+  terminalContainerResizeObserver.observe(container);
+  observedTerminalContainer = container;
 }
 
 let _mainResizeScheduled = false;
 
-function scheduleMainBrowserResize(): void {
+function scheduleTerminalResize(): void {
   if (_mainResizeScheduled) return;
   _mainResizeScheduled = true;
   requestAnimationFrame(() => {
     _mainResizeScheduled = false;
-    if (!$isMainBrowser.get()) return;
     if (observeMobileVerticalViewportChange()) {
       syncMobileVerticalStableTerminals();
       return;
@@ -1266,12 +1206,7 @@ function scheduleFooterReserveResize(): void {
       return;
     }
 
-    if ($isMainBrowser.get()) {
-      autoResizeAllTerminalsImmediate();
-      return;
-    }
-
-    rescaleAllTerminalsImmediate();
+    autoResizeAllTerminalsImmediate();
   });
 }
 
@@ -1283,8 +1218,7 @@ export function scheduleForegroundResizeRecovery(): void {
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       foregroundResizeRecoveryScheduled = false;
-      if (!$isMainBrowser.get()) return;
-      ensureMainBrowserContainerResizeObserver();
+      ensureTerminalContainerResizeObserver();
       sessionTerminals.forEach((state, sessionId) => {
         if (!state.opened || !isTerminalVisible(state)) return;
         terminalManager.recoverTerminalRendererAfterForeground(sessionId, state);
@@ -1312,11 +1246,7 @@ export function handleDockLayoutChange(): void {
       return;
     }
 
-    if ($isMainBrowser.get()) {
-      autoResizeAllTerminalsImmediate();
-    } else {
-      rescaleAllTerminalsImmediate();
-    }
+    autoResizeAllTerminalsImmediate();
   });
 }
 
@@ -1353,6 +1283,11 @@ function applyPeriodicTerminalResizeCheck(
   sessions: ReturnType<typeof $sessions.get>,
 ): string | null {
   if (!state.opened) return null;
+
+  if (!hasTerminalSizeControl(sessionId)) {
+    applyTerminalScaling(sessionId, state);
+    return null;
+  }
 
   if (isTerminalViewingScrollback(state)) {
     applyTerminalScaling(sessionId, state);
@@ -1400,14 +1335,7 @@ function applyPeriodicTerminalResizeDiff(
   }
 
   const rowsToApply = shouldPreserveMobileTerminalRows(state, optimalCols) ? termRows : optimalRows;
-  try {
-    state.terminal.resize(optimalCols, rowsToApply);
-    state.serverCols = optimalCols;
-    state.serverRows = rowsToApply;
-    sendResize(sessionId, optimalCols, rowsToApply);
-  } catch {
-    // terminal may be disposed
-  }
+  sendResize(sessionId, optimalCols, rowsToApply);
   requestAnimationFrame(() => {
     applyTerminalScalingSync(state);
   });
@@ -1419,19 +1347,20 @@ function applyPeriodicTerminalResizeDiff(
 
 /**
  * Set up resize observer to recalculate scaling when window resizes.
- * Main browser: auto-resize terminals. Follower: CSS scale only.
+ * Per-session owner: auto-resize. Follower: CSS scale only.
  */
 export function setupResizeObserver(): void {
+  configureTerminalSizeControlAutomation((sessionId) => {
+    const state = sessionTerminals.get(sessionId);
+    if (state) fitOwnedTerminalToCurrentContainer(sessionId, state.container);
+  });
+
   window.addEventListener('resize', () => {
     if (observeMobileVerticalViewportChange()) {
       return;
     }
 
-    if ($isMainBrowser.get()) {
-      autoResizeAllTerminals();
-    } else {
-      rescaleAllTerminals();
-    }
+    autoResizeAllTerminals();
   });
 
   window.addEventListener(ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT, () => {
@@ -1443,6 +1372,7 @@ export function setupResizeObserver(): void {
       return;
     }
     scheduleForegroundResizeRecovery();
+    claimEligibleVisibleTerminalSizes(true);
   };
 
   document.addEventListener('visibilitychange', () => {
@@ -1453,16 +1383,18 @@ export function setupResizeObserver(): void {
   window.addEventListener('focus', handleForegroundRecovery);
   window.addEventListener('pageshow', handleForegroundRecovery);
 
-  $isMainBrowser.subscribe((isMain) => {
-    if (isMain) {
-      requestAnimationFrame(() => {
-        rememberCurrentMobileViewportSnapshot();
-        ensureMainBrowserContainerResizeObserver();
-        autoResizeAllTerminalsImmediate();
-      });
-    } else {
-      disconnectMainBrowserContainerResizeObserver();
-      requestAnimationFrame(rescaleAllTerminalsImmediate);
-    }
+  ensureTerminalContainerResizeObserver();
+  $terminalSizeControls.subscribe(() => {
+    requestAnimationFrame(() => {
+      rememberCurrentMobileViewportSnapshot();
+      ensureTerminalContainerResizeObserver();
+      autoResizeAllTerminalsImmediate();
+      claimEligibleVisibleTerminalSizes();
+    });
+  });
+  $activeSessionId.subscribe(() => {
+    requestAnimationFrame(() => {
+      claimEligibleVisibleTerminalSizes(true);
+    });
   });
 }

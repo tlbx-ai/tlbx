@@ -70,7 +70,7 @@ public static partial class WebPreviewEndpoints
                 return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
             }
 
-            WriteMtcliToActiveSessions(sessionManager);
+            WriteTlbxCliToActiveSessions(sessionManager);
 
             var response = BuildTargetResponse(service, request.SessionId, request.PreviewName);
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
@@ -196,7 +196,7 @@ public static partial class WebPreviewEndpoints
                 return Results.BadRequest("Session has no valid working directory");
 
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            var snapshotDir = MidtermDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
+            var snapshotDir = TlbxDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
             var cssDir = Path.Combine(snapshotDir, "css");
             Directory.CreateDirectory(cssDir);
 
@@ -380,7 +380,7 @@ public static partial class WebPreviewEndpoints
         };
     }
 
-    private static void WriteMtcliToActiveSessions(TtyHostSessionManager sessionManager)
+    private static void WriteTlbxCliToActiveSessions(TtyHostSessionManager sessionManager)
     {
         var sessions = sessionManager.GetAllSessions();
         foreach (var session in sessions)
@@ -388,7 +388,7 @@ public static partial class WebPreviewEndpoints
             var cwd = session.CurrentDirectory;
             if (!string.IsNullOrEmpty(cwd) && Directory.Exists(cwd))
             {
-                MidtermDirectory.Ensure(cwd);
+                TlbxDirectory.Ensure(cwd);
             }
         }
     }

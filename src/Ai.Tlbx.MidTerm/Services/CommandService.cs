@@ -20,7 +20,7 @@ public sealed class CommandService
 
     private static string GetScriptsDir(string basePath)
     {
-        return Path.Combine(basePath, ".midterm");
+        return TlbxDirectory.Ensure(basePath);
     }
 
     public static string MapExtensionToShellType(string extension)
@@ -88,7 +88,7 @@ public sealed class CommandService
 
     public ScriptDefinition CreateScript(string workingDirectory, string name, string extension, string content)
     {
-        var dir = MidtermDirectory.Ensure(workingDirectory);
+        var dir = TlbxDirectory.Ensure(workingDirectory);
 
         var filename = $"{name}{extension}";
         var filePath = Path.Combine(dir, filename);
@@ -198,7 +198,7 @@ public sealed class CommandService
 
     private static string BuildExecutionCommand(string filename, string extension)
     {
-        var scriptPath = $".midterm/{filename}";
+        var scriptPath = $"{TlbxDirectory.DirectoryName}/{filename}";
         return extension.ToLowerInvariant() switch
         {
             ".ps1" => $"& './{scriptPath}'",

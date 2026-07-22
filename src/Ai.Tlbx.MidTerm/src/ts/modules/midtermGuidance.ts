@@ -2,7 +2,7 @@
  * tlbx Guidance Helpers
  *
  * Resolves which guidance file and prompt text a terminal should receive
- * after tlbx creates the local .midterm/ directory.
+ * after tlbx creates the local .tlbx/ directory.
  */
 
 function normalizeExecutableName(value: string | null | undefined): string {
@@ -29,16 +29,14 @@ function normalizeExecutableName(value: string | null | undefined): string {
  * Return the agent guidance file that matches the foreground process.
  */
 export function getAgentGuidanceFile(processName: string | null | undefined): string {
-  return normalizeExecutableName(processName) === 'claude'
-    ? '.midterm/CLAUDE.md'
-    : '.midterm/AGENTS.md';
+  return normalizeExecutableName(processName) === 'claude' ? '.tlbx/CLAUDE.md' : '.tlbx/AGENTS.md';
 }
 
 /**
  * Return the i18n key for the prompt pasted after guidance injection.
  */
 export function getInjectGuidancePromptKey(processName: string | null | undefined): string {
-  return getAgentGuidanceFile(processName) === '.midterm/CLAUDE.md'
+  return getAgentGuidanceFile(processName) === '.tlbx/CLAUDE.md'
     ? 'session.injectGuidancePrompt.claude'
     : 'session.injectGuidancePrompt.default';
 }

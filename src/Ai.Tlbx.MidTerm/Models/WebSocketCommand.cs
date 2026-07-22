@@ -37,6 +37,10 @@ public sealed class WsCommandPayload
     public string? ActiveSessionId { get; init; }
     public string? ActiveSurface { get; init; }
 
+    // terminal.requestSizeControl, terminal.resize
+    public bool? Force { get; init; }
+    public long? ExpectedEpoch { get; init; }
+
     // settings.save - full settings object
     public Settings.MidTermSettingsPublic? Settings { get; init; }
 }

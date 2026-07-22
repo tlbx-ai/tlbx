@@ -92,6 +92,7 @@ vi.mock('../../stores', () => ({
     get: () => sessionListMock,
     subscribe: vi.fn(),
   },
+  hasTerminalSizeControl: () => isMainBrowser,
 }));
 
 vi.mock('../i18n', () => ({

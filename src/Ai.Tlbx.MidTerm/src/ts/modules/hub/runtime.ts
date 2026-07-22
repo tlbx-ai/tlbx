@@ -1,6 +1,7 @@
 import type { Session } from '../../api/types';
 import type { HubMachineState, HubSessionRecord } from './types';
 import { getHubState } from './api';
+import { syncHubSizeControlMachines } from './sizeControlChannel';
 
 let machines: HubMachineState[] = [];
 const sessionRecords = new Map<string, HubSessionRecord>();
@@ -53,6 +54,7 @@ export async function refreshHubState(): Promise<void> {
   const state = await getHubState();
   machines = state.machines;
   rebuildSessionRecords();
+  syncHubSizeControlMachines(machines);
   notify();
 }
 

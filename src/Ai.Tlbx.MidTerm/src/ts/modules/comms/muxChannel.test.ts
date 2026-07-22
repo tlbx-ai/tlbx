@@ -44,6 +44,8 @@ vi.mock('../share', () => ({
 
 vi.mock('./stateChannel', () => ({
   handleStateUpdate: vi.fn(),
+  reportTerminalSizeInteraction: vi.fn(),
+  resizeTerminalWithControl: vi.fn(),
 }));
 
 vi.mock('../../api/client', () => ({

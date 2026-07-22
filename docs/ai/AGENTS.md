@@ -237,9 +237,9 @@ tlbx includes a reverse proxy for previewing local dev servers (or any website) 
 
 - Implemented under `Services/WebPreview/` plus the frontend `web/` module
 - Handles cookie bridging, URL rewriting, external resource proxying, and WebSocket proxying
-- DOM snapshots save into `<cwd>/.midterm/snapshot_*/`
+- DOM snapshots save into `<cwd>/.tlbx/snapshot_*/`
 - **Before modifying any web preview proxy code, read `docs/devbrowser.md` first. After changes, update that document to reflect the new state.**
-- For browser-control workflows inside a tlbx terminal, see `.midterm/AGENTS.md`
+- For browser-control workflows inside a tlbx terminal, see `.tlbx/AGENTS.md`
 
 ## Code Style (C#)
 

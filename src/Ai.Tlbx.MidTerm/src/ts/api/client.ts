@@ -57,8 +57,10 @@ import {
   resolveAppServerControlUserInputWs,
   submitAppServerControlTurnWs,
 } from './appServerControlWebSocket';
+import { getBrowserDeviceHeaderValue, getOrCreateTabId } from '../utils/cookies';
 
 const client = createClient<paths>({ baseUrl: '' });
+const API_RECONNECT_DELAYS_MS = [0, 150, 400, 900];
 
 type ClientGetPath = PathsWithMethod<paths, 'get'>;
 type ClientPostPath = PathsWithMethod<paths, 'post'>;
@@ -219,6 +221,8 @@ async function postJsonWithProblem<TResponse>(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'X-MidTerm-Tab-Id': getOrCreateTabId(),
+      'X-MidTerm-Device-Label': getBrowserDeviceHeaderValue(),
     },
     body: JSON.stringify(body ?? {}),
   });
@@ -232,6 +236,27 @@ async function postJsonWithProblem<TResponse>(
     data: text ? (parse ? parse(text) : (JSON.parse(text) as TResponse)) : undefined,
     response,
   };
+}
+
+/**
+ * Wait for the same-origin API before issuing a non-idempotent launch request.
+ * The health probes are safe to retry; the actual session POST still runs once.
+ */
+export async function waitForApiReachability(): Promise<void> {
+  for (const delayMs of API_RECONNECT_DELAYS_MS) {
+    if (delayMs > 0) {
+      await new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
+    }
+
+    try {
+      await fetch('/api/version', { cache: 'no-store' });
+      return;
+    } catch {
+      // A later health probe may succeed after a brief service or network interruption.
+    }
+  }
+
+  throw new Error('tlbx is still reconnecting. Try again or reload this page.');
 }
 
 async function fetchAppServerControlJson<T>(
@@ -379,17 +404,6 @@ export async function getProviderResumeCandidates(
 export async function deleteSession(id: string): ClientDeleteResult<'/api/sessions/{id}'> {
   return client.DELETE('/api/sessions/{id}', {
     params: { path: { id } },
-  });
-}
-
-export async function resizeSession(
-  id: string,
-  cols: number,
-  rows: number,
-): ClientPostResult<'/api/sessions/{id}/resize'> {
-  return client.POST('/api/sessions/{id}/resize', {
-    params: { path: { id } },
-    body: { cols, rows },
   });
 }
 

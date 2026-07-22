@@ -25,21 +25,21 @@
     <meta name="apple-mobile-web-app-title" content="tlbx" />
     <script src="/js/appRefreshBootstrap.js?v=__MIDTERM_ASSET_VERSION__"></script>
     <style>
-      html.midterm-app-refreshing,
-      html.midterm-app-refreshing body {
+      html.tlbx-app-refreshing,
+      html.tlbx-app-refreshing body {
         background: #0d0e14;
       }
 
-      html.midterm-app-refreshing body {
+      html.tlbx-app-refreshing body {
         margin: 0;
         overflow: hidden;
       }
 
-      html.midterm-app-refreshing body > * {
+      html.tlbx-app-refreshing body > * {
         visibility: hidden;
       }
 
-      html.midterm-app-refreshing body::before {
+      html.tlbx-app-refreshing body::before {
         content: 'Updating tlbx...';
         position: fixed;
         inset: 0;
@@ -53,7 +53,7 @@
         letter-spacing: 0.02em;
       }
 
-      html.midterm-app-refreshing body::after {
+      html.tlbx-app-refreshing body::after {
         content: '';
         position: fixed;
         left: 50%;
@@ -2409,30 +2409,6 @@
                     </p>
                   </div>
 
-                  <div class="settings-section">
-                    <h3 data-i18n="settings.sessionsStartup.browserOwnership">
-                      Browser Ownership
-                    </h3>
-                    <div class="setting-row">
-                      <label
-                        for="setting-disable-auto-main-browser-promotion"
-                        data-i18n="settings.behavior.disableAutoMainBrowserPromotion"
-                        >Disable auto-promotion to main browser</label
-                      >
-                      <input
-                        type="checkbox"
-                        id="setting-disable-auto-main-browser-promotion"
-                      />
-                    </div>
-                    <p
-                      class="setting-hint"
-                      data-i18n="settings.behavior.disableAutoMainBrowserPromotionHint"
-                    >
-                      Prevents a different browser from taking over as main just because it was the
-                      only active tab for a while. Use the terminal badge to claim main browser
-                      explicitly when you want to resize from that device.
-                    </p>
-                  </div>
                 </section>
 
                 <section class="settings-panel hidden" data-panel="security" id="security-section">

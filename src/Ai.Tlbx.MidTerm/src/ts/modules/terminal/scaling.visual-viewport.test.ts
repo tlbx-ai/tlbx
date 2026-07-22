@@ -89,6 +89,7 @@ function createHarness() {
 
   const containerClasses = new Set<string>();
   const container = {
+    id: 'terminal-s1',
     style: {},
     clientWidth: 818,
     clientHeight: 488,

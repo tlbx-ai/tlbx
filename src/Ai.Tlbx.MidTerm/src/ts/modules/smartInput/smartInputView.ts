@@ -434,7 +434,7 @@ export function setAppServerControlQuickSettingsDropdownOptions(
   const nextSignature = options
     .map((option) => `${option.value}\u0000${option.label}\u0000${option.description ?? ''}`)
     .join('\u0001');
-  if (select.dataset.midtermOptionsSignature === nextSignature) {
+  if (select.dataset.tlbxOptionsSignature === nextSignature) {
     return;
   }
 
@@ -455,7 +455,7 @@ export function setAppServerControlQuickSettingsDropdownOptions(
     select.value = previousValue;
   }
 
-  select.dataset.midtermOptionsSignature = nextSignature;
+  select.dataset.tlbxOptionsSignature = nextSignature;
   select.dispatchEvent(new Event('midterm:options'));
 }
 

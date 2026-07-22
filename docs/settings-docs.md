@@ -164,9 +164,6 @@ Notes:
 - `Session Runtime`
   `Session Resume Mode` — `resumeMode`, `settings.json`, Server-only. Chooses `fullReplay` vs `quickResume` behavior for hidden session catch-up.
   `Keep computer awake while sessions exist` — `keepSystemAwakeWithActiveSessions`, `settings.json`, Server-only.
-- `Browser Ownership`
-  `Disable auto-promotion to main browser` — `disableAutoMainBrowserPromotion`, `settings.json`, Next event. Prevents another browser/device from automatically taking over main-browser ownership for terminal size authority.
-
 ### Security & Access
 
 - `Authentication`

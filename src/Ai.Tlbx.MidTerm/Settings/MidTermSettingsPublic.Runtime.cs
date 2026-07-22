@@ -107,7 +107,6 @@ public sealed partial class MidTermSettingsPublic
             ScrollbackProtection = settings.ScrollbackProtection,
             MobileKineticTerminalScroll = settings.MobileKineticTerminalScroll,
             MobileDenseTerminalMode = settings.MobileDenseTerminalMode,
-            DisableAutoMainBrowserPromotion = settings.DisableAutoMainBrowserPromotion,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
             ResumeMode = settings.ResumeMode,
             TryResumeNonAiAgentProcesses = settings.TryResumeNonAiAgentProcesses,
@@ -230,7 +229,6 @@ public sealed partial class MidTermSettingsPublic
         settings.ScrollbackProtection = ScrollbackProtection;
         settings.MobileKineticTerminalScroll = MobileKineticTerminalScroll;
         settings.MobileDenseTerminalMode = MobileDenseTerminalMode;
-        settings.DisableAutoMainBrowserPromotion = DisableAutoMainBrowserPromotion;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
         settings.ResumeMode = ResumeMode;
         settings.TryResumeNonAiAgentProcesses = TryResumeNonAiAgentProcesses;

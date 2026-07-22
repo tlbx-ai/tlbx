@@ -4,7 +4,7 @@
  * Helper functions for WebSocket connection management.
  */
 
-import { getOrCreateTabId } from './cookies';
+import { getBrowserDeviceLabel, getOrCreateTabId } from './cookies';
 
 function getEmbeddedWebPreviewPrefix(): string {
   const path = location.pathname || '';
@@ -21,6 +21,7 @@ export function createWsUrl(path: string): string {
   const proxyPrefix = getEmbeddedWebPreviewPrefix();
   const url = new URL(`${protocol}//${location.host}${proxyPrefix}${normalizedPath}`);
   url.searchParams.set('tabId', getOrCreateTabId());
+  url.searchParams.set('deviceLabel', getBrowserDeviceLabel());
   return url.toString();
 }
 

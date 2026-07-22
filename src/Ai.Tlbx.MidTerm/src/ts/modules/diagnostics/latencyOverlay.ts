@@ -18,7 +18,7 @@ import {
   setInputLatencyTraceConsumerEnabled,
 } from '../comms/muxChannel';
 import type { InputLatencyTraceSnapshot } from '../comms/muxChannel';
-import { $activeSessionId, $isMainBrowser } from '../../stores';
+import { $activeSessionId, hasTerminalSizeControl } from '../../stores';
 import { sessionTerminals } from '../../state';
 import { TERMINAL_PADDING } from '../../constants';
 import { getLastPeriodicCheckResult } from '../terminal/scaling';
@@ -51,7 +51,7 @@ interface MetricElements {
   cellPx: HTMLSpanElement;
   xtermPx: HTMLSpanElement;
   resizeTimer: HTMLSpanElement;
-  mainBrowser: HTMLSpanElement;
+  sizeOwner: HTMLSpanElement;
 }
 
 let metricEls: MetricElements | null = null;
@@ -121,7 +121,7 @@ function ensureOverlay(): void {
     { label: 'Cell', id: 'cellPx' },
     { label: 'XTrm', id: 'xtermPx' },
     { label: 'RTmr', id: 'resizeTimer' },
-    { label: 'Main', id: 'mainBrowser' },
+    { label: 'Own', id: 'sizeOwner' },
   ] as const;
 
   const els: Partial<MetricElements> = {};
@@ -349,9 +349,10 @@ function updateResizeTimerStatus(): void {
   const isSkipped = result.startsWith('skipped');
   applyColor(metricEls.resizeTimer, isNoChange ? 'good' : isSkipped ? 'warn' : 'bad');
 
-  const isMain = $isMainBrowser.get();
-  metricEls.mainBrowser.textContent = isMain ? 'yes' : 'no';
-  applyColor(metricEls.mainBrowser, isMain ? 'good' : 'warn');
+  const activeSessionId = $activeSessionId.get();
+  const isMain = activeSessionId ? hasTerminalSizeControl(activeSessionId) : false;
+  metricEls.sizeOwner.textContent = isMain ? 'yes' : 'no';
+  applyColor(metricEls.sizeOwner, isMain ? 'good' : 'warn');
 }
 
 function handleOutputRtt(sessionId: string, rtt: number): void {

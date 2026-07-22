@@ -958,7 +958,7 @@ public static class BrowserEndpoints
 
         if (command == "screenshot" && result.Result is not null)
         {
-            var screenshotsDir = MidtermDirectory.EnsureSubdirectory(cwd, "screenshots");
+            var screenshotsDir = TlbxDirectory.EnsureSubdirectory(cwd, "screenshots");
 
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
             var filePath = Path.Combine(screenshotsDir, $"screenshot_{ts}.png");
@@ -983,7 +983,7 @@ public static class BrowserEndpoints
         if (command == "snapshot" && result.Result is not null)
         {
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            var snapshotDir = MidtermDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
+            var snapshotDir = TlbxDirectory.EnsureSubdirectory(cwd, $"snapshot_{ts}");
 
             try
             {

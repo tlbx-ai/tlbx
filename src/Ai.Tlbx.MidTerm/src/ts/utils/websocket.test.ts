@@ -24,6 +24,12 @@ describe('createWsUrl', () => {
     vi.stubGlobal('crypto', {
       randomUUID: vi.fn(() => 'tab-123'),
     });
+    vi.stubGlobal('navigator', {
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36',
+      platform: 'Win32',
+      maxTouchPoints: 0,
+    });
   });
 
   afterEach(() => {
@@ -42,6 +48,7 @@ describe('createWsUrl', () => {
     expect(parsed.pathname).toBe('/ws/state');
     expect(parsed.searchParams.get('existing')).toBe('1');
     expect(parsed.searchParams.get('tabId')).toBe('tab-123');
+    expect(parsed.searchParams.get('deviceLabel')).toBe('Windows PC · Chrome');
     expect(createWsUrl('/ws/state').includes('tabId=tab-123')).toBe(true);
   });
 
