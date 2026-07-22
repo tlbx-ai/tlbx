@@ -58,8 +58,8 @@ public sealed class TtyHostSpawnerTests : IDisposable
     }
 
     [Theory]
-    [InlineData(@"ATURIS\johannes.schmidt", "johannes.schmidt")]
-    [InlineData("johannes.schmidt@aturis.local", "johannes.schmidt")]
+    [InlineData(@"CONTOSO\johannes.schmidt", "johannes.schmidt")]
+    [InlineData("johannes.schmidt@contoso.local", "johannes.schmidt")]
     [InlineData("johannes.schmidt", "johannes.schmidt")]
     [SupportedOSPlatform("windows")]
     public void IsMatchingWindowsUsername_NormalizesConfiguredIdentityFormats(string configuredUser, string sessionUser)

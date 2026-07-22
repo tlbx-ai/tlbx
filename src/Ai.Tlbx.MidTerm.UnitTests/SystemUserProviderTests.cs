@@ -8,8 +8,8 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class SystemUserProviderTests
 {
     [Theory]
-    [InlineData(@"ATURIS\johannes.schmidt", "johannes.schmidt")]
-    [InlineData("johannes.schmidt@aturis.local", "johannes.schmidt")]
+    [InlineData(@"CONTOSO\johannes.schmidt", "johannes.schmidt")]
+    [InlineData("johannes.schmidt@contoso.local", "johannes.schmidt")]
     [InlineData("johannes.schmidt", "johannes.schmidt")]
     public void NormalizeWindowsUsername_StripsDomainPrefixes(string raw, string expected)
     {
@@ -21,16 +21,16 @@ public sealed class SystemUserProviderTests
     {
         var users = new Dictionary<string, UserInfo>(StringComparer.OrdinalIgnoreCase);
 
-        SystemUserProvider.AddWindowsUser(users, @"ATURIS\johannes.schmidt", "S-1-5-21-123");
-        SystemUserProvider.AddWindowsUser(users, @"aturis\JOHANNES.SCHMIDT");
+        SystemUserProvider.AddWindowsUser(users, @"CONTOSO\johannes.schmidt", "S-1-5-21-123");
+        SystemUserProvider.AddWindowsUser(users, @"contoso\JOHANNES.SCHMIDT");
 
         var entry = Assert.Single(users);
-        Assert.Equal(@"ATURIS\johannes.schmidt", entry.Value.Username);
+        Assert.Equal(@"CONTOSO\johannes.schmidt", entry.Value.Username);
         Assert.Equal("S-1-5-21-123", entry.Value.Sid);
     }
 
     [Theory]
-    [InlineData("ATURIS", "Johannes Schmidt", @"ATURIS\Johannes Schmidt")]
+    [InlineData("CONTOSO", "Johannes Schmidt", @"CONTOSO\Johannes Schmidt")]
     [InlineData(null, "adm.js", "adm.js")]
     [SupportedOSPlatform("windows")]
     public void BuildWindowsAccountName_CombinesDomainAndUsername(string? domain, string username, string expected)
