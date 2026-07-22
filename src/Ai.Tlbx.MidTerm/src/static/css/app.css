@@ -10539,12 +10539,83 @@ body.shared-session-mode .session-tab-bar {
 }
 
 /* File viewer: Image */
-.file-viewer-image {
-  max-width: 100%;
-  max-height: calc(85vh - 100px);
-  display: block;
-  margin: 0 auto;
-  object-fit: contain;
+.file-viewer-image-stage {
+  position: relative;
+  width: 100%;
+  overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
+  cursor: grab;
+}
+
+.file-viewer-image-stage.is-panning {
+  cursor: grabbing;
+}
+
+.file-viewer-image-stage > .file-viewer-image {
+  position: absolute;
+  top: 0;
+  left: 0;
+  max-width: none;
+  max-height: none;
+  transform-origin: 0 0;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.file-viewer-image-pixelated {
+  image-rendering: pixelated;
+}
+
+.file-viewer-zoom-hud {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--overlay-bg-dark);
+  backdrop-filter: blur(4px);
+}
+
+.file-viewer-zoom-btn,
+.file-viewer-zoom-level {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  min-width: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.file-viewer-zoom-btn:hover,
+.file-viewer-zoom-level:hover {
+  background: var(--btn-secondary-hover);
+  color: var(--text-primary);
+}
+
+.file-viewer-zoom-level {
+  padding: 0 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (pointer: coarse) {
+  .file-viewer-zoom-btn,
+  .file-viewer-zoom-level {
+    height: 44px;
+    min-width: 44px;
+  }
 }
 
 /* File viewer: Video */
@@ -10672,19 +10743,22 @@ body.shared-session-mode .session-tab-bar {
 
 .file-viewer-body > .file-viewer-editor-shell,
 .file-viewer-body > .file-viewer-readonly-shell,
-.file-viewer-body > .file-viewer-code-stack {
+.file-viewer-body > .file-viewer-code-stack,
+.file-viewer-body > .file-viewer-image-stage {
   height: calc(85vh - 80px);
 }
 
 .file-viewer-dock-body > .file-viewer-editor-shell,
 .file-viewer-dock-body > .file-viewer-readonly-shell,
-.file-viewer-dock-body > .file-viewer-code-stack {
+.file-viewer-dock-body > .file-viewer-code-stack,
+.file-viewer-dock-body > .file-viewer-image-stage {
   height: 100%;
 }
 
 .file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-editor-shell,
 .file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-readonly-shell,
-.file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-code-stack {
+.file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-code-stack,
+.file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-image-stage {
   height: calc(100vh - 80px);
 }
 
@@ -10815,10 +10889,6 @@ body.shared-session-mode .session-tab-bar {
 
 .file-viewer-modal-content:fullscreen .file-viewer-body {
   max-height: calc(100vh - 60px);
-}
-
-.file-viewer-modal-content:fullscreen .file-viewer-image {
-  max-height: calc(100vh - 80px);
 }
 
 .file-viewer-modal-content:fullscreen .file-viewer-video {
@@ -15855,26 +15925,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] {
 
 .preview-text-body > .file-viewer-editor-shell,
 .preview-text-body > .file-viewer-readonly-shell,
-.preview-text-body > .file-viewer-code-stack {
+.preview-text-body > .file-viewer-code-stack,
+.preview-text-body > .file-viewer-image-stage {
   height: 100%;
 }
 
 .preview-textarea {
   min-height: 0;
-}
-
-.preview-image-container {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 16px;
-}
-
-.preview-image {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
 }
 
 .preview-video {

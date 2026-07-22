@@ -195,6 +195,14 @@ const sharedMocks = vi.hoisted(() => ({
   loadBinaryPreviewPageMock: vi.fn(),
 }));
 
+const imageViewMocks = vi.hoisted(() => ({
+  createImageViewMock: vi.fn(() => ({
+    tagName: 'DIV',
+    className: 'file-viewer-image-stage',
+    children: [],
+  })),
+}));
+
 vi.mock('../logging', () => ({
   createLogger: () => ({
     info: vi.fn(),
@@ -226,6 +234,10 @@ vi.mock('../fileViewer/shared', () => ({
   downloadFile: sharedMocks.downloadFileMock,
   loadBinaryPreviewPage: sharedMocks.loadBinaryPreviewPageMock,
   resolveFilePreviewKind: sharedMocks.resolveFilePreviewKindMock,
+}));
+
+vi.mock('../fileViewer/imageView', () => ({
+  createImageView: imageViewMocks.createImageViewMock,
 }));
 
 async function flushPromises(): Promise<void> {
@@ -441,7 +453,11 @@ describe('filePreview', () => {
     renderPreview(container as unknown as HTMLElement, entry, 'session-1');
 
     expect(container.querySelector('.preview-toolbar-name')?.textContent).toBe('diagram.png');
-    expect(container.querySelector('.preview-text-body')?.innerHTML).toContain('preview-image');
+    expect(container.querySelector('.file-viewer-image-stage')).not.toBeNull();
+    expect(imageViewMocks.createImageViewMock).toHaveBeenCalledWith(
+      '/api/files/view?path=Q%3A%5Crepos%5CMidTerm%5Cdiagram.png&sessionId=session-1',
+      'diagram.png',
+    );
     expect(container.querySelector('.preview-toolbar-action-btn')).not.toBeNull();
   });
 });

@@ -39,6 +39,7 @@ import {
   loadBinaryPreviewPage,
   resolveFilePreviewKind,
 } from './shared';
+import { createImageView } from './imageView';
 
 const log = createLogger('fileViewer');
 
@@ -502,7 +503,8 @@ async function renderFile(path: string, info: FilePathInfo, container: Element):
 
   if (previewKind === 'image') {
     updateSaveButtonVisibility(false);
-    container.innerHTML = `<img class="file-viewer-image" src="${viewUrl}" alt="${escapeHtml(getFileName(path))}" />`;
+    container.innerHTML = '';
+    container.appendChild(createImageView(viewUrl, getFileName(path)));
   } else if (previewKind === 'video') {
     updateSaveButtonVisibility(false);
     const video = document.createElement('video');
