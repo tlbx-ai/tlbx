@@ -7,8 +7,8 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class UserValidationServiceTests
 {
     [Theory]
-    [InlineData(@"ATURIS\Johannes Schmidt")]
-    [InlineData("johannes.schmidt@aturis.local")]
+    [InlineData(@"CONTOSO\Johannes Schmidt")]
+    [InlineData("johannes.schmidt@contoso.local")]
     [InlineData("adm.js")]
     [SupportedOSPlatform("windows")]
     public void IsValidWindowsUsernameFormat_AllowsWindowsAccountForms(string accountName)

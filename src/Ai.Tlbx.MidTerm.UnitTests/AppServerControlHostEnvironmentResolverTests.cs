@@ -89,7 +89,7 @@ public sealed class AppServerControlHostEnvironmentResolverTests
         }
 
         var profileDirectory = AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectory(
-            @"ATURIS\johan",
+            @"CONTOSO\johan",
             userSid: null);
 
         Assert.NotNull(profileDirectory);
@@ -105,7 +105,7 @@ public sealed class AppServerControlHostEnvironmentResolverTests
         }
 
         var profileDirectory = AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectory(
-            @"ATURIS\johannes.schmidt",
+            @"CONTOSO\johannes.schmidt",
             userSid: null);
 
         Assert.NotNull(profileDirectory);
