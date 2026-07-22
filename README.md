@@ -34,10 +34,6 @@ The browser is the control surface, not the runtime: close it, change devices, o
 
 Technical guides: **[remote AI agents](https://tlbx.ai/remote-ai-agents)** · **[Claude Code + Codex](https://tlbx.ai/claude-code-codex-browser)** · **[features](https://tlbx.ai/features)** · **[architecture](https://tlbx.ai/architecture)** · **[install](https://tlbx.ai/install)**
 
-<p align="center">
-  <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a tlbx browser tab beside another tlbx host" width="100%">
-</p>
-
 ## Real sessions
 
 Codex, Claude Code, and OpenCode working the same project in adjacent tlbx sessions—each a real PTY, all steered from one browser tab.
@@ -73,10 +69,6 @@ tlbx runs any terminal-native tool in a real PTY, but it is shaped around long-r
 - **Let agents operate tlbx:** generated `mt` helpers expose history, capabilities, direct multi-session dispatch, ordered events, and the control plane as stable JSON.
 - **Verify the result:** open the app beside the agent; inspect DOM, console/proxy logs, responsive layouts, and screenshots.
 - **Leave and return:** sessions survive browser disconnects, device changes, and travel.
-
-<p align="center">
-  <img src="docs/marketing/readme/agent-control-room.svg" alt="Codex, Claude Code, Grok Build, OpenCode, Copilot CLI, and Antigravity CLI sessions controlled concurrently in tlbx" width="100%">
-</p>
 
 ## Not SSH in a browser
 
