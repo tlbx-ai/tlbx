@@ -35,7 +35,6 @@ function getRunDir(): string {
 test('capture real agent stills', async ({ page }) => {
   const ids = {
     codex: process.env.STILL_CODEX ?? '',
-    claude: process.env.STILL_CLAUDE ?? '',
     opencode: process.env.STILL_OPENCODE ?? '',
     server: process.env.STILL_SERVER ?? '',
   };
@@ -60,11 +59,8 @@ test('capture real agent stills', async ({ page }) => {
   await selectSession(ids.codex);
   await page.screenshot({ path: path.join(runDir, 'workspace-overview.png') });
 
-  await selectSession(ids.claude);
-  await page.screenshot({ path: path.join(runDir, 'agent-sessions.png') });
-
   await selectSession(ids.opencode);
-  await page.screenshot({ path: path.join(runDir, 'opencode-session.png') });
+  await page.screenshot({ path: path.join(runDir, 'agent-sessions.png') });
 
   await selectSession(ids.server);
   const browserButton = page.locator('[data-action="web"]:visible, #btn-mobile-web:visible').first();
