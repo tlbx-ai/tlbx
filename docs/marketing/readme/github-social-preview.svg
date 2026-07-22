@@ -38,7 +38,7 @@
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
     <text x="530" y="282" fill="#f7faff" font-size="116" font-weight="700" letter-spacing="9">tlbx</text>
     <text x="538" y="350" fill="#80b6f2" font-size="22" font-weight="700" letter-spacing="3.2">YOUR AGENTS. YOUR MACHINES. ANY BROWSER.</text>
-    <text x="538" y="407" fill="#dbe5f5" font-size="22">Run them there · steer them from anywhere</text>
+    <text x="538" y="407" fill="#dbe5f5" font-size="22">Run them on your machines · steer them from anywhere</text>
   </g>
   <g transform="translate(538 470)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" font-weight="700" letter-spacing="1.2">
     <circle cx="7" cy="-5" r="6" fill="#77f2a1"/><text x="25" y="0" fill="#9ca9be">ANY CLI AGENT</text>

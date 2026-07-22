@@ -6,14 +6,15 @@
     <linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#141d2d"/><stop offset="1" stop-color="#0d1420"/></linearGradient>
     <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse"><path d="M48 0H0V48" fill="none" stroke="#80b6f2" stroke-opacity="0.045"/></pattern>
     <filter id="glow" x="-200%" y="-200%" width="500%" height="500%"><feGaussianBlur stdDeviation="8" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
-    <symbol id="tlbxSmallMark" viewBox="0 0 16 16">
-      <g fill="none" stroke="#f7f8fb" stroke-width="0.85" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M1.5 5.5 8.5 2.5 14.5 5V11.5L6.5 14 1.5 11Z"/>
-        <path d="M1.5 5.5 6.5 7.75 14.5 5M6.5 7.75V14M6.5 7.75 10.25 10.25 14.5 5.15"/>
+    <symbol id="tlbxSmallMark" viewBox="0 0 400 400">
+      <g fill="none" stroke="#f7f8fb" stroke-width="15" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 98 265 7 385 69 385 299 132 390 12 328Z"/>
+        <path d="M12 98 132 160 385 69M12 140 132 202 385 111M132 160V390M132 202 266.09 277.97 385 111"/>
       </g>
-      <path d="M9.15 5.55Q10.5 4.25 11.85 5.3Q10.5 6.6 9.15 5.55Z" fill="#f7f8fb"/>
-      <circle cx="10.5" cy="5.5" r="0.76" fill="#05070b"/>
-      <circle cx="10.5" cy="5.5" r="0.56" fill="#69b7ff"/>
+      <path d="M240.79 141.87Q266.09 108.77 291.39 123.67Q266.09 156.77 240.79 141.87Z" fill="#f7f8fb"/>
+      <circle cx="266.09" cy="132.77" r="12" fill="#05070b"/>
+      <circle cx="266.09" cy="132.77" r="6.5" fill="#69b7ff"/>
+      <path d="M94.6 241.077C84.6 224.91 65.6 213.093 51.6 218.86C38.6 223.143 41.6 238.693 53.6 248.893C66.6 263.61 85.6 269.427 94.6 261.077V251.077L76.6 241.777" fill="none" stroke="#f7f8fb" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
     </symbol>
   </defs>
   <rect width="1600" height="720" rx="28" fill="url(#bg)"/>
@@ -22,7 +23,7 @@
 
   <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
   <text x="800" y="62" fill="#80b6f2" font-size="17" text-anchor="middle" font-weight="700" letter-spacing="3">CODEX · CLAUDE CODE · GROK BUILD · OPENCODE</text>
-  <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">Run them there. Steer them from anywhere.</text>
+  <text x="800" y="104" fill="#f7faff" font-size="32" text-anchor="middle" font-weight="700">Run your coding agents on your machines. Steer them from anywhere.</text>
 
     <g transform="translate(70 142)">
       <rect width="1460" height="474" rx="20" fill="#080c13" stroke="#3a4963" stroke-width="2"/>
@@ -96,7 +97,7 @@
       <text x="1167" y="372" fill="#07101d" font-size="11" text-anchor="middle" font-weight="700">OPEN DEV BROWSER</text>
     </g>
 
-    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">Your machines are tabs. Your agents keep running.</text>
+    <text x="800" y="665" fill="#f7faff" font-size="24" text-anchor="middle" font-weight="700">Your machines are browser tabs. Your agents keep working when you leave.</text>
     <text x="800" y="697" fill="#8f9caf" font-size="14" text-anchor="middle">OpenCode · Antigravity CLI · Copilot CLI · any terminal-native agent</text>
   </g>
 </svg>
