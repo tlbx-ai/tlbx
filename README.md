@@ -38,6 +38,22 @@ Technical guides: **[remote AI agents](https://tlbx.ai/remote-ai-agents)** · **
   <img src="docs/marketing/readme/browser-next-to-work.svg" alt="Codex, Claude Code, and Grok Build running concurrently on a home workstation controlled from a tlbx browser tab beside another tlbx host" width="100%">
 </p>
 
+## Real sessions
+
+Codex, Claude Code, and OpenCode working the same project in adjacent tlbx sessions—each a real PTY, all steered from one browser tab.
+
+<p align="center">
+  <img src="docs/marketing/readme/codex-session.webp" alt="A Codex session in tlbx showing a diff, a git-diff tool call, and its run summary while validating a POST route" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/marketing/readme/opencode-session.webp" alt="An OpenCode session in tlbx adding a GET /api/status route and running the test suite green, with Codex and Claude Code sessions in the sidebar" width="100%">
+</p>
+
+<p align="center">
+  <img src="docs/marketing/readme/console-and-app.webp" alt="A tlbx dev server session beside the docked Dev Browser showing the live app it serves" width="100%">
+</p>
+
 ## Agent CLI ergonomics
 
 tlbx runs any terminal-native tool in a real PTY, but it is shaped around long-running coding agents:
