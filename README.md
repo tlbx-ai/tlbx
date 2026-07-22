@@ -28,7 +28,7 @@ tlbx is a self-hosted browser control station for remote AI coding agents. Run C
 
 > **tlbx is the new name of MidTerm.** Existing installs update in place. The `mt`, `mthost`, and `mtagenthost` executables, service identities, settings, session data, and release asset names remain compatible.
 
-The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running.
+The browser is the control surface, not the runtime: close it, change devices, or travel, and the agents, PTYs, tests, and servers keep running. It's a general terminal too—pwsh, bash, or zsh and any PTY app, not just agents.
 
 **Your machines are browser tabs. Your agents keep working when you leave.**
 
@@ -52,6 +52,14 @@ Codex, Claude Code, and OpenCode working the same project in adjacent tlbx sessi
 
 <p align="center">
   <img src="docs/marketing/readme/console-and-app.webp" alt="A tlbx dev server session beside the docked Dev Browser showing the live app it serves" width="100%">
+</p>
+
+## Any shell, any terminal app
+
+tlbx is a general terminal first. Run **pwsh, bash, or zsh** on Windows, macOS, and Linux hosts—and any program that speaks to a real PTY: `btop`, `vim`, `lazygit`, database shells, build watchers. Split sessions into tmux-style pane layouts and keep them all in one browser tab.
+
+<p align="center">
+  <img src="docs/marketing/readme/any-terminal.webp" alt="btop system monitor running full-screen in a tlbx terminal session, with CPU, memory, disk, network and process panels" width="100%">
 </p>
 
 ## Agent CLI ergonomics
