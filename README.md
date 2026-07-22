@@ -1,6 +1,8 @@
 <p align="center">
-  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — your coding agents, your machines, any browser" width="100%">
+  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — terminal browser multiplexer, say toolbox — your coding agents, your machines, any browser" width="100%">
 </p>
+
+<p align="center"><b>t</b>ermina<b>l</b>&nbsp;<b>b</b>rowser&nbsp;multiple<b>x</b>er&nbsp;&nbsp;·&nbsp;&nbsp;say &ldquo;toolbox&rdquo;</p>
 
 <p align="center">
   <a href="https://tlbx.ai"><strong>Website</strong></a>
