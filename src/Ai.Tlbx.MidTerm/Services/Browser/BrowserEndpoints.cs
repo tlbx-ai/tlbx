@@ -629,8 +629,7 @@ public static class BrowserEndpoints
                 "mt_mobile open|status|rotate|keyboard|background|foreground|reload|screenshot|close",
                 "mt_topic <text>",
                 "mt_wake [id] <delay> <prompt>",
-                "mt_repo list|add|remove|refresh",
-                "mt_supervise [repo...]"
+                "mt_repo list|add|remove|refresh"
             ],
             DiagnosticCommands =
             [
@@ -657,7 +656,6 @@ public static class BrowserEndpoints
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so tlbx shows it in the IDE bar and sidebar.",
-                "Use mt_supervise at the start of multi-agent work to bind known repos, refresh repo status, and get one fleet attention snapshot.",
                 "Docked preview screenshots use in-page html2canvas; an open Chrome mobile device uses native CDP capture instead.",
                 "Chrome mobile device control runs in the optional extension on the owning browser machine, so the tlbx server may remain remote."
             ]

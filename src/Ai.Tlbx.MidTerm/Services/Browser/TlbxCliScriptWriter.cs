@@ -375,26 +375,6 @@ public static class TlbxCliScriptWriter
               ;;
           esac
         }
-        # mt_supervise [REPO_PATH ...]  — one-shot supervisor snapshot: optional repo bind, repo status, fleet attention
-        mt_supervise() {
-          _MREQUIRECTX "mt_supervise" || return $?
-          local repo label
-          if [ $# -gt 0 ]; then
-            for repo in "$@"; do
-              [ -n "$repo" ] || continue
-              label="$(basename "$repo")"
-              mt_repo add "$repo" target "$label" >/dev/null 2>&1 || true
-            done
-          fi
-          mt_repo refresh >/dev/null 2>&1 || true
-          printf 'tlbx supervisor snapshot\n'
-          printf 'session: %s\n' "$(_MSID)"
-          printf 'preview: %s\n\n' "$(_MPREVIEW)"
-          printf 'repos:\n'
-          mt_repo status || true
-          printf '\nfleet attention:\n'
-          mt_attention false || true
-        }
         # mt_inspect [--screenshot]  — compact page/status/proxy diagnostic bundle
         mt_inspect() { _MREQUIRECTX "mt_inspect" || return $?; _MBB inspect "$@"; }
         # mt_clearcookies  — clear all cookies (browser-side + server-side jar)
@@ -1356,26 +1336,6 @@ public static class TlbxCliScriptWriter
                 default { throw "Usage: Mt-Repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" }
             }
         }
-        # Mt-Supervise [REPO_PATH ...]  — one-shot supervisor snapshot: optional repo bind, repo status, fleet attention
-        function Mt-Supervise {
-            param([Parameter(ValueFromRemainingArguments=$true)][string[]]$RepoPaths)
-            _MRequireSessionContext "mt_supervise"
-            foreach ($repo in @($RepoPaths)) {
-                if ([string]::IsNullOrWhiteSpace($repo)) { continue }
-                $label = Split-Path -Leaf $repo
-                try { Mt-Repo add $repo target $label | Out-Null } catch {}
-            }
-            try { Mt-Repo refresh | Out-Null } catch {}
-            Write-Output "tlbx supervisor snapshot"
-            Write-Output "session: $(_MSID)"
-            Write-Output "preview: $(_MPreview)"
-            Write-Output ""
-            Write-Output "repos:"
-            try { Mt-Repo status } catch { Write-Output $_.Exception.Message }
-            Write-Output ""
-            Write-Output "fleet attention:"
-            try { Mt-Attention $false } catch { Write-Output $_.Exception.Message }
-        }
         # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
         function Mt-Inspect { param([switch]$Screenshot) _MRequireSessionContext "mt_inspect"; if ($Screenshot) { _MBB inspect --screenshot } else { _MBB inspect } }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
@@ -1911,7 +1871,6 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_capabilities -Value Mt-Capabilities
         Set-Alias -Name mt_topic -Value Mt-Topic
         Set-Alias -Name mt_repo -Value Mt-Repo
-        Set-Alias -Name mt_supervise -Value Mt-Supervise
         Set-Alias -Name mt_inspect -Value Mt-Inspect
         Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
         Set-Alias -Name mt_clearstate -Value Mt-ClearState

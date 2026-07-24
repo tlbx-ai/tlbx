@@ -191,7 +191,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("api/input-history?sessionId=", shell, StringComparison.Ordinal);
         Assert.Contains("[ -n \"$sid\" ] || { echo \"Session id required.\"", shell, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap()", shell, StringComparison.Ordinal);
-        Assert.Contains("mt_supervise()", shell, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt_supervise", shell, StringComparison.Ordinal);
         Assert.Contains("mt_ctrlc()", shell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Redraw", powershell, StringComparison.Ordinal);
         Assert.Contains("Get-Command nohup -CommandType Application", powershell, StringComparison.Ordinal);
@@ -221,7 +221,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("function Mt-InputHistoryReplay", powershell, StringComparison.Ordinal);
         Assert.Contains("if (-not $SessionId) { Write-Error \"Session id required.\"", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Bootstrap", powershell, StringComparison.Ordinal);
-        Assert.Contains("function Mt-Supervise", powershell, StringComparison.Ordinal);
+        Assert.DoesNotContain("Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("function Mt-Ctrlc", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_open -Value Mt-Open", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_redraw -Value Mt-Redraw", powershell, StringComparison.Ordinal);
@@ -232,7 +232,6 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_agent_capabilities -Value Mt-AgentCapabilities", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_dispatch -Value Mt-Dispatch", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_publish_status -Value Mt-PublishStatus", powershell, StringComparison.Ordinal);
-        Assert.Contains("Set-Alias -Name mt_supervise -Value Mt-Supervise", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_status -Value Mt-Status", powershell, StringComparison.Ordinal);
         Assert.Contains("ValueFromRemainingArguments", powershell, StringComparison.Ordinal);
         Assert.Contains("/buffer/tail?lines=", shell, StringComparison.Ordinal);
@@ -247,8 +246,6 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("/api/input-history", shell, StringComparison.Ordinal);
         Assert.Contains("/api/workers/bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("/activity?seconds=", powershell, StringComparison.Ordinal);
-        Assert.Contains("tlbx supervisor snapshot", shell, StringComparison.Ordinal);
-        Assert.Contains("fleet attention:", powershell, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -520,7 +517,14 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("mt_events", agents, StringComparison.Ordinal);
         Assert.Contains("outlet for agents, not another agent", agents, StringComparison.Ordinal);
         Assert.Contains("mt_bootstrap", agents, StringComparison.Ordinal);
-        Assert.Contains("mt_supervise", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("mt_supervise", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_claim_preview", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_claim_main_browser", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_forcereload", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_proxylog_summary", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_mobile", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_inspect", agents, StringComparison.Ordinal);
+        Assert.Contains("mt_capabilities", agents, StringComparison.Ordinal);
         Assert.Contains("mt_run_isolated", agents, StringComparison.Ordinal);
         Assert.Contains(".tlbx/runs/<run-id>/", agents, StringComparison.Ordinal);
         Assert.Contains("mt_run_isolated", claude, StringComparison.Ordinal);

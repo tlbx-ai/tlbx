@@ -300,11 +300,14 @@ public static class TlbxDirectory
         | `mt_topic <text>` | Set the current ad-hoc session topic shown in the sidebar (`mt_topic --clear` clears it) |
         | `mt_preview [name]` | Print or switch the current named preview (`default`, `user1`, `user2`, ...) |
         | `mt_previews` | List named previews for the current terminal session |
+        | `mt_claim_preview` | Explicitly assign the current named preview to the connected tlbx browser |
+        | `mt_claim_main_browser [browserId]` | Make the selected browser the leading browser for terminal sizing |
         | `mt_navigate <url>` | Set the current named web preview target |
         | `mt_url` | Upstream page URL (not proxy URL) |
         | `mt_open <url>` | Open URL in the current named preview and dock panel |
         | `mt_close_preview` | Close web preview panel |
         | `mt_reload` | Soft-reload preview |
+        | `mt_forcereload` | Force a fresh content reload with cache busting |
         | `mt_hardreload` | Clear cookies + reload (fresh session) |
         | `mt_preview_reset [url]` | Best-effort preview recovery: clear cookies + browser storage + hard reload |
         | `mt_target` | Current named preview target |
@@ -312,6 +315,7 @@ public static class TlbxDirectory
         | `mt_clearcookies` | Clear all proxy cookies (jar + disk) |
         | `mt_clearstate` | Clear the current preview's cookies, storage, cache, and service workers |
         | `mt_proxylog [limit]` | Last N proxy requests (default 100) |
+        | `mt_proxylog_summary [limit]` | Compact proxy request status/error summary |
         | `mt_repo list\|status\|add\|remove\|refresh` | Session-scoped multi-repo Git tracking for the IDE bar and `/api/git` |
         | `mt_apply_update [source]` | Apply pending update and wait for server |
         | `mt_sessions` | List terminal sessions |
@@ -343,14 +347,16 @@ public static class TlbxDirectory
         | `mt_input_history_replay <entryId> [targetId]` | Replay an exact prompt or paste into the original or target session |
         | `mt_input_history_delete <entryId>` | Delete one input-history entry |
         | `mt_input_history_clear [id]` | Clear deterministic input history for a session |
-        | `mt_supervise [repo...]` | One-shot supervisor snapshot: optional repo binding, refreshed repo status, and fleet attention |
         | `mt_bootstrap <name> <cwd> <profile> [slashCommand...]` | Create a fresh agent-controlled worker session with guidance + AI CLI bootstrap |
         | `mt_new_session [shell] [cwd]` | Create a new terminal session |
         | `mt_split [-h]` | Split terminal (adjacent pane via tmux) |
         | `mt_detach` | Detach web preview to popup window |
         | `mt_dock` | Dock web preview back from popup |
         | `mt_viewport W H` | Set iframe viewport size (0 0 to reset) |
+        | `mt_mobile [action] [profile]` | Control the local Chrome device attached to the owning tlbx tab (Mobile Device Bridge; default action `status`, profile `pixel-8`) |
         | `mt_status` | Browser connection status |
+        | `mt_inspect [--screenshot]` | Compact page/status/proxy diagnostic bundle |
+        | `mt_capabilities [--json]` | Compact command/capability discovery for the browser bridge |
 
         ## Workflow
 
@@ -410,7 +416,6 @@ public static class TlbxDirectory
 
         mt_attention → mt_tail SESSION_ID 80 → mt_prompt SESSION_ID "status update?" → mt_activity SESSION_ID
         mt_bootstrap "api worker" "~/repos/api" codex approvals
-        mt_supervise "~/repos/app" "~/repos/tools" → check repos + fleet before dispatching more work
 
         ### Reuse exact Terminal input
 
@@ -463,7 +468,6 @@ public static class TlbxDirectory
         | `mt_repo remove <repoRoot>` | Remove an extra repo binding; the primary cwd repo stays automatic |
 
         `mt_repo` bindings are session-scoped and ad hoc. This keeps tlbx showing both repo states side by side in the IDE bar and a compact extra repo line under the sidebar cwd. The cwd repo remains automatic; `mt_repo remove REPO_ROOT` only removes extra bindings.
-        `mt_supervise` is the low-friction start-of-shift command for multi-agent work: pass every repo you expect to touch, and it will bind them, refresh Git status, and print the current fleet attention snapshot.
 
         ## Tips
 
@@ -492,8 +496,9 @@ public static class TlbxDirectory
         - mt_events is an ordered event feed derived only from explicit control-plane mutations; use its latestSequence cursor instead of parsing terminal output for completion or attention
         - mt_attention gives you a ranked fleet view of which agent-controlled sessions need attention first
         - mt_repo list/add/remove/refresh is the discoverable CLI for session-scoped multi-repo Git tracking; add every additional repo you use that is not the cwd before falling back to ad hoc shell git checks
-        - mt_supervise [repo...] combines repo binding, repo refresh, and fleet attention into one low-token supervisor snapshot before dispatching or resuming workers
         - mt_bootstrap creates a fresh agent-controlled worker session, injects `.tlbx`, launches the chosen AI CLI profile, and can immediately send slash commands
+        - mt_inspect bundles page, status, and proxy diagnostics into one compact first-look call; mt_proxylog_summary compresses proxy traffic the same way
+        - mt_capabilities lists what the browser bridge of this tlbx build actually supports — check it before assuming a command exists
         - mt_preview_reset [url] is the fast recovery move when a named preview has the wrong logged-in user or stale browser state
         - After a tlbx web update, the browser frontend can close while your terminal keeps running in mthost; reopen tlbx from the terminal and run mt_open again for the current preview instead of recreating the session
         - mt_sendkeys plus mt_enter / mt_ctrlc / mt_escape / mt_up / mt_down / mt_left / mt_right are the direct terminal steering helpers
