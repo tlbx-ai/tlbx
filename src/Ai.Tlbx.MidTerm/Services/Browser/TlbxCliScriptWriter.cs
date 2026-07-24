@@ -387,7 +387,7 @@ public static class TlbxCliScriptWriter
             done
           fi
           mt_repo refresh >/dev/null 2>&1 || true
-          printf 'midterm supervisor snapshot\n'
+          printf 'tlbx supervisor snapshot\n'
           printf 'session: %s\n' "$(_MSID)"
           printf 'preview: %s\n\n' "$(_MPREVIEW)"
           printf 'repos:\n'
@@ -1366,7 +1366,7 @@ public static class TlbxCliScriptWriter
                 try { Mt-Repo add $repo target $label | Out-Null } catch {}
             }
             try { Mt-Repo refresh | Out-Null } catch {}
-            Write-Output "midterm supervisor snapshot"
+            Write-Output "tlbx supervisor snapshot"
             Write-Output "session: $(_MSID)"
             Write-Output "preview: $(_MPreview)"
             Write-Output ""
@@ -1915,6 +1915,7 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_inspect -Value Mt-Inspect
         Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
         Set-Alias -Name mt_clearstate -Value Mt-ClearState
+        Set-Alias -Name mt_close_preview -Value Mt-ClosePreview
         Set-Alias -Name mt_hardreload -Value Mt-HardReload
         Set-Alias -Name mt_preview_reset -Value Mt-PreviewReset
         Set-Alias -Name mt_proxylog -Value Mt-ProxyLog

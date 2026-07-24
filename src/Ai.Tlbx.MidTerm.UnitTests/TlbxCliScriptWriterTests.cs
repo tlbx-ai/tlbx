@@ -140,6 +140,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Set-Alias -Name mt_context -Value Mt-Context", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_session -Value Mt-Session", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_preview -Value Mt-Preview", powershell, StringComparison.Ordinal);
+        Assert.Contains("Set-Alias -Name mt_close_preview -Value Mt-ClosePreview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser", powershell, StringComparison.Ordinal);
         Assert.Contains("Set-Alias -Name mt_capabilities -Value Mt-Capabilities", powershell, StringComparison.Ordinal);
@@ -246,7 +247,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("/api/input-history", shell, StringComparison.Ordinal);
         Assert.Contains("/api/workers/bootstrap", powershell, StringComparison.Ordinal);
         Assert.Contains("/activity?seconds=", powershell, StringComparison.Ordinal);
-        Assert.Contains("midterm supervisor snapshot", shell, StringComparison.Ordinal);
+        Assert.Contains("tlbx supervisor snapshot", shell, StringComparison.Ordinal);
         Assert.Contains("fleet attention:", powershell, StringComparison.Ordinal);
     }
 
@@ -483,7 +484,14 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         var claudePath = Path.Combine(_tempDir, TlbxDirectory.DirectoryName, "CLAUDE.md");
         var claude = File.ReadAllText(claudePath);
 
-        Assert.Contains("guidance-version:", agents, StringComparison.Ordinal);
+        Assert.Equal(agents, claude);
+        Assert.Contains("tlbx-guidance:", agents, StringComparison.Ordinal);
+        Assert.Contains("https://tlbx.ai", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("midterm.sh", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("MidTerm", agents, StringComparison.Ordinal);
+        Assert.DoesNotContain("Q:/repos/", agents, StringComparison.Ordinal);
+        Assert.Contains(". .tlbx/tlbx_cli.ps1", agents, StringComparison.Ordinal);
+        Assert.Contains(". .tlbx/tlbx_cli.sh", agents, StringComparison.Ordinal);
         Assert.Contains("mt_apply_update", agents, StringComparison.Ordinal);
         Assert.Contains("continue with the new build", agents, StringComparison.Ordinal);
         Assert.Contains("mt_open` both sets the target", agents, StringComparison.Ordinal);
