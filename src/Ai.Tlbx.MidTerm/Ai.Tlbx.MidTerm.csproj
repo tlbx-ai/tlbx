@@ -77,6 +77,7 @@
   <!-- SQLite (action graphs). All platforms — NuGet evaluates PackageReference
        conditions RID-less, so putting these in a RID-conditional group has no effect. -->
   <ItemGroup>
+    <PackageReference Include="Acornima" Version="1.8.0" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.11" />
     <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="$(SkiaSharpVersion)" />

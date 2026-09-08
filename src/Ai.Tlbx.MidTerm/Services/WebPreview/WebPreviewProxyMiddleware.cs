@@ -259,6 +259,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(u.startsWith("/")&&!u.startsWith(PP+"/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return ar(PP+u);
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
+                if(window.__mtTargetOrigin&&h.origin===window.__mtTargetOrigin)return ar(PP+h.pathname+h.search+h.hash);
                 if(h.host===location.host&&!h.pathname.startsWith(PP+"/"))return ar(h.protocol+"//"+ h.host+PP+h.pathname+h.search+h.hash);
                 if(h.host!==location.host){
                   return ar(E+encodeURIComponent(u));
@@ -398,6 +399,22 @@ public sealed partial class WebPreviewProxyMiddleware
             else if(path===P)path="/";
             return (window.__mtTargetOrigin||"")+path+location.search+location.hash;
           }
+          // Application Location is upstream-facing; the bridge keeps the native proxy URL.
+          var mtLocationView={};
+          ["href","origin","protocol","host","hostname","port","pathname","search","hash"].forEach(function(key){
+            Object.defineProperty(mtLocationView,key,{enumerable:true,get:function(){
+              return new URL(curU())[key];
+            },set:key==="origin"?undefined:function(value){
+              var next=key==="href"?new URL(String(value),curU()):new URL(curU());
+              if(key!=="href")next[key]=value;location.assign(r(next.href));
+            }});
+          });
+          mtLocationView.assign=function(url){location.assign(r(new URL(String(url),curU()).href));};
+          mtLocationView.replace=function(url){location.replace(r(new URL(String(url),curU()).href));};
+          mtLocationView.reload=function(){location.reload();};
+          mtLocationView.toString=function(){return curU();};
+          mtLocationView[Symbol.toPrimitive]=function(){return curU();};
+          window.__mtPreviewLocation=function(value){return value===window.location?mtLocationView:value;};
           function postMt(type,extra){
             var msg=mtMsg(type,extra);
             if(!msg)return;
@@ -1696,6 +1713,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Rewrite inline ESM specifiers before the browser resolves them.
         html = RewriteRootRelativeModuleSpecifiers(html, routePrefix, reloadToken);
+        html = WebPreviewLocationRewriter.RewriteInlineScripts(html);
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
@@ -1895,6 +1913,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var routePrefix = _service.BuildProxyPrefix(routeKey);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
         script = RewriteRootRelativeModuleSpecifiers(script, routePrefix, reloadToken);
+        script = WebPreviewLocationRewriter.Rewrite(script);
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");
