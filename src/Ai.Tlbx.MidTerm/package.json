@@ -56,7 +56,7 @@
     }
   },
   "dependencies": {
-    "@xterm/addon-fit": "0.12.0-beta.292",
+    "@xterm/addon-fit": "0.12.0-beta.301",
     "@xterm/addon-image": "0.10.0-beta.292",
     "@xterm/addon-search": "0.17.0-beta.292",
     "@xterm/addon-unicode11": "0.10.0-beta.292",
