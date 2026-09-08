@@ -461,9 +461,8 @@ function buildHistoryClusterToken(cluster: ArtifactClusterInfo | null): string {
 
 function buildAssistantPreviewToken(
   entry: AppServerControlHistoryEntry,
-  state: SessionAppServerControlViewState | undefined,
+  _state: SessionAppServerControlViewState | undefined,
 ): string {
-  void state;
   return (entry.imagePreviews ?? []).map((preview) => preview.resolvedPath).join('|');
 }
 
@@ -503,10 +502,8 @@ function clampHistoryAbsoluteIndex(index: number, historyCount: number): number 
 
 function readHistoryViewportMetrics(
   container: HTMLDivElement,
-  state?: SessionAppServerControlViewState,
+  _state?: SessionAppServerControlViewState,
 ): HistoryViewportMetrics {
-  void state;
-
   return {
     scrollTop: container.scrollTop,
     clientHeight: container.clientHeight,
@@ -516,10 +513,8 @@ function readHistoryViewportMetrics(
 
 function readHistoryScrollMetrics(
   container: HTMLDivElement,
-  state?: SessionAppServerControlViewState,
+  _state?: SessionAppServerControlViewState,
 ): HistoryScrollMetrics {
-  void state;
-
   return {
     scrollTop: container.scrollTop,
     clientHeight: container.clientHeight,
@@ -1707,8 +1702,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   function captureHistoryViewportAnchor(
     state: SessionAppServerControlViewState,
     key:
-      | 'pendingHistoryPrependAnchor'
-      | 'pendingHistoryLayoutAnchor' = 'pendingHistoryPrependAnchor',
+      'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor' = 'pendingHistoryPrependAnchor',
   ): boolean {
     const viewport = state.historyViewport;
     if (!viewport) {

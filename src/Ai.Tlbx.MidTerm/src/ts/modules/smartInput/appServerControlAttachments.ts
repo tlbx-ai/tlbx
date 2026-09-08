@@ -39,8 +39,7 @@ export interface ClipboardReadImageItem {
 }
 
 export type AppServerControlComposerPastePart =
-  | { kind: 'image'; file: File }
-  | { kind: 'text'; text: string };
+  { kind: 'image'; file: File } | { kind: 'text'; text: string };
 
 type ClipboardReadImageProvider = () => Promise<readonly ClipboardReadImageItem[]>;
 

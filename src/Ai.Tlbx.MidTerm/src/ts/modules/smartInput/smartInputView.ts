@@ -655,10 +655,10 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
   window.addEventListener('resize', updateMenuPlacement);
   document.addEventListener('scroll', updateMenuPlacement, true);
 
-  select.addEventListener('midterm:options', rebuildMenu as EventListener);
-  select.addEventListener('midterm:disabled', syncDisabledState as EventListener);
+  select.addEventListener('midterm:options', rebuildMenu);
+  select.addEventListener('midterm:disabled', syncDisabledState);
   select.addEventListener('change', syncSelection);
-  select.addEventListener('midterm:sync', syncSelection as EventListener);
+  select.addEventListener('midterm:sync', syncSelection);
   syncSelection();
   syncDisabledState();
 

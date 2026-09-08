@@ -212,8 +212,7 @@ function resolveRememberedProviderModel(
   legacyModel: string | null,
 ): string | null {
   const currentSettingsStore = getOptionalStoreExport('$currentSettings') as
-    | CurrentSettingsStoreLike
-    | undefined;
+    CurrentSettingsStoreLike | undefined;
   const currentSettings =
     currentSettingsStore && typeof currentSettingsStore.get === 'function'
       ? currentSettingsStore.get()
@@ -236,8 +235,7 @@ function persistRememberedProviderModel(provider: string | null, model: string |
   }
 
   const currentSettingsStore = getOptionalStoreExport('$currentSettings') as
-    | CurrentSettingsStoreLike
-    | undefined;
+    CurrentSettingsStoreLike | undefined;
   if (
     !currentSettingsStore ||
     typeof currentSettingsStore.get !== 'function' ||
@@ -292,8 +290,7 @@ function resolveSessionProvider(sessionId: string | null | undefined): string | 
   }
 
   const getSession = getOptionalStoreExport('getSession') as
-    | ((sessionId: string) => AppServerControlSessionProviderHint | null)
-    | undefined;
+    ((sessionId: string) => AppServerControlSessionProviderHint | null) | undefined;
   const session = getSession?.(sessionId);
   const hinted =
     typeof session?.profileHint === 'string' && session.profileHint.trim().length > 0
@@ -309,8 +306,7 @@ function resolveSessionProvider(sessionId: string | null | undefined): string | 
 
 function resolveDefaultPermissionMode(provider: string | null): AppServerControlPermissionMode {
   const currentSettingsStore = getOptionalStoreExport('$currentSettings') as
-    | { get?: () => MidTermSettingsPublic | null }
-    | undefined;
+    { get?: () => MidTermSettingsPublic | null } | undefined;
   const settings =
     currentSettingsStore && typeof currentSettingsStore.get === 'function'
       ? currentSettingsStore.get()

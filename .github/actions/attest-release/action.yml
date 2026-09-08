@@ -14,7 +14,7 @@ runs:
   using: composite
   steps:
     - name: Generate SPDX SBOM
-      uses: anchore/sbom-action@aa0e114b2e19480f157109b9922bda359bd98b90 # v0.20.8
+      uses: anchore/sbom-action@43a17d6e7add2b5535efe4dcae9952337c479a93 # v0.20.11
       with:
         path: ${{ inputs.scan-path }}
         format: spdx-json

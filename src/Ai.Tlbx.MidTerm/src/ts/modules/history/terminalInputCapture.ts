@@ -44,7 +44,7 @@ export class TerminalInputBuffer {
   }
 
   public applyData(data: string): void {
-    for (let index = 0; index < data.length; ) {
+    for (let index = 0; index < data.length;) {
       const sequenceLength = this.applyEscapeSequence(data, index);
       if (sequenceLength > 0) {
         index += sequenceLength;

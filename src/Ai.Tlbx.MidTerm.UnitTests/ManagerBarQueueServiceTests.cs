@@ -429,7 +429,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         Assert.NotNull(first);
         Assert.NotNull(second);
-        Assert.NotEqual(first!.QueueId, second!.QueueId);
+        Assert.NotEqual(first!.QueueId, second!.QueueId, StringComparer.Ordinal);
         Assert.Equal(2, service.GetSnapshot(["session-1"]).Count);
     }
 

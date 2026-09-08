@@ -113,7 +113,7 @@ public sealed class AuthServiceTests : IDisposable
         var hash1 = _authService.HashPassword(password);
         var hash2 = _authService.HashPassword(password);
 
-        Assert.NotEqual(hash1, hash2);
+        Assert.NotEqual(hash1, hash2, StringComparer.Ordinal);
     }
 
     [Fact]

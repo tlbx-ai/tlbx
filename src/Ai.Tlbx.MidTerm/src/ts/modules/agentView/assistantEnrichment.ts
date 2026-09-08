@@ -146,11 +146,11 @@ function parseLineInfoSuffix(
 }
 
 function createHtmlElementFactory(documentRef: Document): HtmlElementFactory {
-  return documentRef as HtmlElementFactory;
+  return documentRef;
 }
 
 function createHtmlQueryRoot(root: ParentNode): HtmlQueryRoot {
-  return root as HtmlQueryRoot;
+  return root;
 }
 
 function queryAll<E extends Element = Element>(root: ParentNode, selectors: string): E[] {

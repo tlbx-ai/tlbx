@@ -60,7 +60,7 @@ public sealed class MuxInboundDispatcherTests
             await dispatcher.EnqueueAsync("recovery:a", _ => { calls.Enqueue("weaker"); return Task.CompletedTask; }, mergePriority: weaker);
         release.TrySetResult();
         await followup.Task.WaitAsync(TimeSpan.FromSeconds(2));
-        Assert.Equal(new[] { "strongest" }, calls);
+        Assert.Equal(new[] { "strongest" }, calls, StringComparer.Ordinal);
     }
 
     [Fact]

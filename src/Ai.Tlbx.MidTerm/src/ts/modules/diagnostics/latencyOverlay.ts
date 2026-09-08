@@ -323,8 +323,7 @@ function updateCursorState(sessionId: string): void {
   // DECTCEM cursor visibility — read directly from xterm.js internal state
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const core = (state.terminal as Record<string, any>)._core as
-    | { coreService?: { decPrivateModes?: { cursorHidden?: boolean } } }
-    | undefined;
+    { coreService?: { decPrivateModes?: { cursorHidden?: boolean } } } | undefined;
   const cursorHidden = core?.coreService?.decPrivateModes?.cursorHidden ?? false;
   metricEls.cursorVisible.textContent = cursorHidden ? 'HIDDEN' : 'visible';
   applyColor(metricEls.cursorVisible, cursorHidden ? 'bad' : 'good');

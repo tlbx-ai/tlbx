@@ -345,7 +345,7 @@ export async function uploadFile(
 
     const result: unknown = await response.json();
     if (typeof result === 'object' && result !== null && 'path' in result) {
-      const maybePath = (result as { path: unknown }).path;
+      const maybePath = result.path;
       return typeof maybePath === 'string' ? maybePath : null;
     }
     return null;

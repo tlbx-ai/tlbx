@@ -40,7 +40,7 @@ public sealed class MtAgentHostRealAcpSmokeTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("acp-v1", hello.Providers);
+            Assert.Contains("acp-v1", hello.Providers, StringComparer.Ordinal);
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "attach-real-acp",

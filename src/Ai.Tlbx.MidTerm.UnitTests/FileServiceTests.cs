@@ -131,8 +131,8 @@ public sealed class FileServiceTests : IDisposable
     {
         var variants = FileService.GetSlashVariants("src/main.ts").ToList();
 
-        Assert.Contains("src/main.ts", variants);
-        Assert.Contains(@"src\main.ts", variants);
+        Assert.Contains("src/main.ts", variants, StringComparer.Ordinal);
+        Assert.Contains(@"src\main.ts", variants, StringComparer.Ordinal);
         Assert.Equal(2, variants.Count);
     }
 
@@ -141,8 +141,8 @@ public sealed class FileServiceTests : IDisposable
     {
         var variants = FileService.GetSlashVariants(@"src\main.ts").ToList();
 
-        Assert.Contains(@"src\main.ts", variants);
-        Assert.Contains("src/main.ts", variants);
+        Assert.Contains(@"src\main.ts", variants, StringComparer.Ordinal);
+        Assert.Contains("src/main.ts", variants, StringComparer.Ordinal);
         Assert.Equal(2, variants.Count);
     }
 

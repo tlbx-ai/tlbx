@@ -233,8 +233,8 @@ public sealed class AiCliCommandLocatorTests
         {
             var directories = AiCliCommandLocator.GetUserCommandDirectories(root);
 
-            Assert.Contains(Path.Combine(root, ".local", "bin"), directories);
-            Assert.Contains(Path.Combine(root, "bin"), directories);
+            Assert.Contains(Path.Combine(root, ".local", "bin"), directories, StringComparer.Ordinal);
+            Assert.Contains(Path.Combine(root, "bin"), directories, StringComparer.Ordinal);
         }
         finally
         {
@@ -259,10 +259,10 @@ public sealed class AiCliCommandLocatorTests
         var path = AiCliCommandLocator.BuildFallbackPath("/Users/tester");
         var entries = path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
-        Assert.Contains("/Users/tester/.local/bin", entries);
-        Assert.Contains("/Users/tester/bin", entries);
-        Assert.Contains("/opt/homebrew/bin", entries);
-        Assert.Contains("/usr/local/bin", entries);
-        Assert.Contains("/usr/bin", entries);
+        Assert.Contains("/Users/tester/.local/bin", entries, StringComparer.Ordinal);
+        Assert.Contains("/Users/tester/bin", entries, StringComparer.Ordinal);
+        Assert.Contains("/opt/homebrew/bin", entries, StringComparer.Ordinal);
+        Assert.Contains("/usr/local/bin", entries, StringComparer.Ordinal);
+        Assert.Contains("/usr/bin", entries, StringComparer.Ordinal);
     }
 }

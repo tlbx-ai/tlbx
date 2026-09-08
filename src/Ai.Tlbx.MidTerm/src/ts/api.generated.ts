@@ -4882,11 +4882,7 @@ export interface components {
     };
     /** @enum {unknown} */
     TabTitleModeSetting:
-      | 'hostname'
-      | 'static'
-      | 'sessionName'
-      | 'terminalTitle'
-      | 'foregroundProcess';
+      'hostname' | 'static' | 'sessionName' | 'terminalTitle' | 'foregroundProcess';
     TerminalColorSchemeDefinition: {
       name: string;
       background: string;

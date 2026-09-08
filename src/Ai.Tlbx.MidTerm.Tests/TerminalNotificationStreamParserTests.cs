@@ -108,7 +108,7 @@ public sealed class TerminalNotificationStreamParserTests
         _ = telemetry.GetActivity("session", 10, 10);
 
         Assert.Equal(2, received.Count);
-        Assert.Equal(["osc9", "bel"], received.Select(item => item.Protocol));
+        Assert.Equal(["osc9", "bel"], received.Select(item => item.Protocol), StringComparer.Ordinal);
         Assert.Equal(1, snapshot.TotalBellCount);
     }
 

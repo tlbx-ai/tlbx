@@ -312,7 +312,7 @@ export function normalizeSnapshotHistoryKind(kind: string | null | undefined): H
     case 'diff':
     case 'system':
     case 'notice':
-      return normalized as HistoryKind;
+      return normalized;
     default:
       return 'system';
   }

@@ -23,6 +23,7 @@ export function animateBookmarkSaveSuccess(sessionId: string): void {
   );
   for (const pinButton of pinButtons) {
     pinButton.classList.remove('save-success');
+    // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- Reading the layout property intentionally forces synchronous layout.
     void pinButton.offsetWidth;
     pinButton.classList.add('save-success');
     window.setTimeout(() => {

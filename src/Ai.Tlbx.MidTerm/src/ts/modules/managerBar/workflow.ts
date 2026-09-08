@@ -1,10 +1,6 @@
 export type ManagerActionType = 'single' | 'chain';
 export type ManagerTriggerKind =
-  | 'fireAndForget'
-  | 'onCooldown'
-  | 'repeatCount'
-  | 'repeatInterval'
-  | 'schedule';
+  'fireAndForget' | 'onCooldown' | 'repeatCount' | 'repeatInterval' | 'schedule';
 export type ManagerRepeatUnit = 'seconds' | 'minutes' | 'hours' | 'days';
 export type ManagerScheduleRepeat = 'daily' | 'weekdays' | 'weekends';
 

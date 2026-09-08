@@ -68,7 +68,7 @@ public sealed class ShareGrantServiceTests : IDisposable
         var persisted = grants[0];
         Assert.Equal(grant.GrantId, persisted.GetProperty("grantId").GetString());
         Assert.Equal("session-1", persisted.GetProperty("sessionId").GetString());
-        Assert.NotEqual(string.Empty, persisted.GetProperty("secretHash").GetString());
+        Assert.NotEqual(string.Empty, persisted.GetProperty("secretHash").GetString(), StringComparer.Ordinal);
     }
 
     [Fact]
@@ -119,8 +119,8 @@ public sealed class ShareGrantServiceTests : IDisposable
         var first = _service.CreateGrant("session-1", ShareAccessMode.ViewOnly);
         var second = _service.CreateGrant("session-1", ShareAccessMode.FullControl);
 
-        Assert.Contains(first.GrantId, revokedGrantIds);
-        Assert.DoesNotContain(second.GrantId, revokedGrantIds);
+        Assert.Contains(first.GrantId, revokedGrantIds, StringComparer.Ordinal);
+        Assert.DoesNotContain(second.GrantId, revokedGrantIds, StringComparer.Ordinal);
         Assert.False(_service.TryClaim(first.GrantId, first.Secret, out _, out _));
         Assert.True(_service.TryClaim(second.GrantId, second.Secret, out var access, out _));
         Assert.Equal(ShareAccessMode.FullControl, access.Mode);

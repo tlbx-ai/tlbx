@@ -12,7 +12,6 @@ import {
   patchHistoryEntry as apiPatchHistoryEntry,
   type LaunchEntry,
   type CreateHistoryRequest,
-  type HistoryPatchRequest,
 } from '../../api/client';
 
 // Re-export types for consumers
@@ -43,7 +42,7 @@ export async function createHistoryEntry(request: CreateHistoryRequest): Promise
 }
 
 export async function renameHistoryEntry(id: string, label: string): Promise<boolean> {
-  const { response } = await apiPatchHistoryEntry(id, { label } as HistoryPatchRequest);
+  const { response } = await apiPatchHistoryEntry(id, { label });
   return response.ok;
 }
 

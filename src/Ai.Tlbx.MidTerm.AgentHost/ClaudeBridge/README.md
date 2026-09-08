@@ -17,4 +17,4 @@ npm ci --omit=optional
 npm run build
 ```
 
-The SDK version is intentionally pinned to the version used by the reference t3code integration. Optional platform CLI packages are omitted because tlbx always supplies the locally installed Claude Code executable.
+The SDK and bridge dependencies are pinned to the versions verified by tlbx's provider integration tests. Optional platform CLI packages are omitted because tlbx always supplies the locally installed Claude Code executable.

@@ -21,8 +21,7 @@ export function syncWebglTerminalCellBackgroundAlpha(
     return;
   }
 
-  (window as MidTermWindow).__MIDTERM_XTERM_WEBGL_CELL_BG_ALPHA__ =
-    getWebglTerminalCellBackgroundAlpha(settings);
+  window.__MIDTERM_XTERM_WEBGL_CELL_BG_ALPHA__ = getWebglTerminalCellBackgroundAlpha(settings);
 }
 
 export function getWindowWebglTerminalCellBackgroundAlpha(win: Window | null | undefined): number {

@@ -1245,15 +1245,11 @@ export function buildActivationHistoryEntries(
   }));
 }
 
-export function formatHistoryMeta(kind: HistoryKind, statusLabel: string, value: string): string {
-  void kind;
-  void statusLabel;
+export function formatHistoryMeta(_kind: HistoryKind, _statusLabel: string, value: string): string {
   return formatAbsoluteTime(value);
 }
 
-export function shouldHideStatusInMeta(kind: HistoryKind, statusLabel: string): boolean {
-  void kind;
-  void statusLabel;
+export function shouldHideStatusInMeta(_kind: HistoryKind, _statusLabel: string): boolean {
   return true;
 }
 

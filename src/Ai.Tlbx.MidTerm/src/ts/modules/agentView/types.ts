@@ -126,15 +126,7 @@ export interface AssistantMarkdownCacheEntry {
 }
 
 export type HistoryKind =
-  | 'user'
-  | 'assistant'
-  | 'reasoning'
-  | 'tool'
-  | 'request'
-  | 'plan'
-  | 'diff'
-  | 'system'
-  | 'notice';
+  'user' | 'assistant' | 'reasoning' | 'tool' | 'request' | 'plan' | 'diff' | 'system' | 'notice';
 
 export type HistoryTone = 'info' | 'positive' | 'warning' | 'attention';
 export type AppServerControlHistoryActionId = 'retry-appServerControl';

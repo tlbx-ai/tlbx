@@ -65,7 +65,7 @@ public sealed class ShellConfigurationsTests
 
         Assert.Equal("xterm-direct", env["TERM"]);
         Assert.Equal("0", env["CLAUDE_CODE_TMUX_TRUECOLOR"]);
-        Assert.DoesNotContain(TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable, env.Keys);
+        Assert.DoesNotContain(TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable, env.Keys, StringComparer.Ordinal);
     }
 
     private sealed class EnvironmentVariableScope : IDisposable

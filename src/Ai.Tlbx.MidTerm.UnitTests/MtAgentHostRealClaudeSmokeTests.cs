@@ -35,7 +35,7 @@ public sealed class MtAgentHostRealClaudeSmokeTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("claude-agent-sdk", hello.Providers);
+            Assert.Contains("claude-agent-sdk", hello.Providers, StringComparer.Ordinal);
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
                 CommandId = "attach-real-claude",

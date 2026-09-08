@@ -22,8 +22,8 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("turn.steer", hello.Capabilities);
-            Assert.Contains("thread.compact", hello.Capabilities);
+            Assert.Contains("turn.steer", hello.Capabilities, StringComparer.Ordinal);
+            Assert.Contains("thread.compact", hello.Capabilities, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -149,7 +149,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -265,7 +265,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -377,7 +377,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -408,11 +408,11 @@ public sealed class MtAgentHostCodexIntegrationTests
 
             Assert.Equal(["-c", "fast_default_opt_out=false", "--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
-            Assert.Contains("initialize", capture.Methods);
-            Assert.Contains("initialized", capture.Methods);
+            Assert.Contains("initialize", capture.Methods, StringComparer.Ordinal);
+            Assert.Contains("initialized", capture.Methods, StringComparer.Ordinal);
             Assert.Equal(2, capture.Methods.Count(static method => method == "model/list"));
-            Assert.Contains("thread/start", capture.Methods);
-            Assert.DoesNotContain("thread/resume", capture.Methods);
+            Assert.Contains("thread/start", capture.Methods, StringComparer.Ordinal);
+            Assert.DoesNotContain("thread/resume", capture.Methods, StringComparer.Ordinal);
             Assert.Equal("midterm", capture.InitializeClientName);
             Assert.Equal("tlbx App Server Controller", capture.InitializeClientTitle);
             Assert.False(string.IsNullOrWhiteSpace(capture.InitializeClientVersion));
@@ -622,7 +622,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -779,7 +779,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -865,7 +865,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -949,7 +949,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -1043,7 +1043,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -1134,7 +1134,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -1230,7 +1230,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -1464,7 +1464,7 @@ public sealed class MtAgentHostCodexIntegrationTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {

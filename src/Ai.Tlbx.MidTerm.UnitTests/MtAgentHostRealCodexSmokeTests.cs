@@ -33,7 +33,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -141,7 +141,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
 
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -263,7 +263,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {
@@ -396,7 +396,7 @@ public sealed class MtAgentHostRealCodexSmokeTests
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
             Assert.Equal(AppServerControlHostProtocol.CurrentVersion, hello.ProtocolVersion);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {

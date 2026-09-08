@@ -60,6 +60,7 @@ export function remeasureTerminalCells(state: Pick<TerminalState, 'terminal' | '
   const privateTerminal = state.terminal as TerminalWithPrivateCore;
 
   // Force layout so xterm remeasures against the current container geometry.
+  // eslint-disable-next-line @typescript-eslint/no-meaningless-void-operator -- Reading the layout property intentionally forces synchronous layout.
   void state.container.offsetWidth;
 
   try {
