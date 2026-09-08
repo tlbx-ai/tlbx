@@ -18,8 +18,8 @@ $publishDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm/bin/$Configuration/net10.
 $exePath = Join-Path $publishDir $exeName
 
 if (-not $SkipPublish) {
-    # The release preflight builds the frontend in a temp snapshot, so the repo wwwroot
-    # is usually in debug layout here — build the publish-mode frontend ourselves.
+    # Standalone probes may start without publish-mode frontend assets.
+    # Build them when the release preflight has not already prepared wwwroot.
     if (-not (Test-Path $wwwrootProbe)) {
         $version = (Get-Content (Join-Path $RepoRoot 'src/version.json') -Raw | ConvertFrom-Json).web
         Write-Host "Building publish-mode frontend ($version) for smoke probe..." -ForegroundColor Cyan

@@ -413,10 +413,10 @@ if ($isPtyBreaking) {
     Write-Host "  Host runtimes: release archives may still ship them, but running installs stay on their current mthost + mtagenthost" -ForegroundColor DarkGray
 }
 
-# Clean frontend preflight (fresh npm install + frontend build in a clean snapshot)
+# Frontend preflight (fresh npm install + frontend build in the selected checkout)
 # before we commit or tag anything.
 Write-Host ""
-Write-Host "Running clean frontend preflight..." -ForegroundColor Cyan
+Write-Host "Running frontend preflight in the current checkout..." -ForegroundColor Cyan
 $frontendPreflightScript = Join-Path $PSScriptRoot "release-frontend-preflight.ps1"
 try {
     & $frontendPreflightScript -Version $newVersion
