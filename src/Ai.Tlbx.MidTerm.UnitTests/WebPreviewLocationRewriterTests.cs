@@ -59,6 +59,14 @@ public sealed class WebPreviewLocationRewriterTests
         Assert.Equal(source, WebPreviewLocationRewriter.Rewrite(source));
     }
 
+    [Theory]
+    [InlineData("function read(window){return window?.location.pathname}")]
+    [InlineData("location.ancestorOrigins; location.constructor; location[property]")]
+    public void LeavesOptionalChainShortCircuitAndOtherNativeMembersUntouched(string source)
+    {
+        Assert.Equal(source, WebPreviewLocationRewriter.Rewrite(source));
+    }
+
     [Fact]
     public void OnlyRewritesExecutableInlineScripts()
     {

@@ -33,7 +33,7 @@ internal static partial class WebPreviewLocationRewriter
         pending.Push(root);
         while (pending.TryPop(out var node))
         {
-            if (node is MemberExpression member && IsLocationObject(member.Object))
+            if (node is MemberExpression member && IsLocationObject(member.Object) && CanAdapt(member))
             {
                 ranges[member.Object.Start] = member.Object.End;
             }
@@ -54,6 +54,21 @@ internal static partial class WebPreviewLocationRewriter
             offset = end;
         }
         return result.Append(source, offset, source.Length - offset).ToString();
+    }
+
+    private static bool CanAdapt(MemberExpression member)
+    {
+        // Wrapping the middle of an optional chain would lose its short-circuit.
+        if (member.Object is MemberExpression { Optional: true } && !member.Optional) return false;
+        var property = member.Property switch
+        {
+            Identifier identifier when !member.Computed => identifier.Name,
+            StringLiteral literal when member.Computed => literal.Value,
+            _ => null
+        };
+        // Leave other native Location members and dynamic property access untouched.
+        return property is "href" or "origin" or "protocol" or "host" or "hostname" or "port"
+            or "pathname" or "search" or "hash" or "assign" or "replace" or "reload" or "toString";
     }
 
     private static bool IsLocationObject(Expression expression) => expression switch
