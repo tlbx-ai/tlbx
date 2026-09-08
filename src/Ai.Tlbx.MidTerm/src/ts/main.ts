@@ -10,7 +10,6 @@ import { initTrustPage } from './modules/trust';
 import { initThemeFromBrowserCache } from './modules/theming';
 import { initAuthSessionLifetime } from './modules/auth/sessionLifetime';
 import { createLogger, initLogConcerns } from './modules/logging';
-import { ASSET_VERSION } from './constants';
 import {
   connectStateWebSocket,
   connectMuxWebSocket,
@@ -346,6 +345,9 @@ async function init(): Promise<void> {
   initBackButtonGuard();
 
   cacheDOMElements();
+  // Chrome can offer installation while translations or other startup work is
+  // still loading. Capture that one-shot event before the first await.
+  initPwaInstall();
   await initI18n();
   initUpdateUi();
   initUpdateRuntime();
@@ -489,8 +491,6 @@ async function init(): Promise<void> {
   initDiagnosticsPanel();
   bindHubSettings();
 
-  initPwaInstall();
-
   let serviceWorker: ServiceWorkerContainer | undefined;
   try {
     serviceWorker = navigator.serviceWorker;
@@ -499,9 +499,9 @@ async function init(): Promise<void> {
   }
 
   if (serviceWorker?.register) {
-    serviceWorker
-      .register(`/sw.js?v=${encodeURIComponent(ASSET_VERSION)}`, { scope: '/' })
-      .catch(() => {});
+    serviceWorker.register('/sw.js', { scope: '/' }).catch((error: unknown) => {
+      log.warn(() => `PWA service worker registration failed: ${String(error)}`);
+    });
   }
 
   log.info(() => 'tlbx frontend initialized');

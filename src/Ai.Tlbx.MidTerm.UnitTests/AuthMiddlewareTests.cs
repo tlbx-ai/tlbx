@@ -16,6 +16,7 @@ public class AuthMiddlewareTests
     [InlineData("/favicon.svg")]
     [InlineData("/favicon.ico")]
     [InlineData("/site.webmanifest")]
+    [InlineData("/sw.js")]
     [InlineData("/android-chrome-192x192.png")]
     [InlineData("/android-chrome-512x512.png")]
     [InlineData("/apple-touch-icon.png")]
@@ -56,6 +57,8 @@ public class AuthMiddlewareTests
     [InlineData("/api/security/api-keys.woff2")]
     [InlineData("/api/sessions/not-a-real-id.woff")]
     [InlineData("/api/commands/file.webmanifest")]
+    [InlineData("/api/sw.js")]
+    [InlineData("/sw.js/private")]
     [InlineData("/favicon/android-chrome-192x192.png")]
     [InlineData("/uploads/private.png")]
     [InlineData("/ws/state")]
@@ -75,6 +78,9 @@ public class AuthMiddlewareTests
     [InlineData("GET", "/api/shutdown", false)]
     [InlineData("POST", "/api/shutdown", false)]
     [InlineData("POST", "/api/certificate/info", false)]
+    [InlineData("GET", "/sw.js", true)]
+    [InlineData("HEAD", "/sw.js", true)]
+    [InlineData("POST", "/sw.js", false)]
     public void PublicAccess_RequiresAnExplicitMethodAndPath(string method, string path, bool expected)
     {
         var context = new DefaultHttpContext();

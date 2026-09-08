@@ -31,7 +31,10 @@ export function initPwaInstall(): void {
 
   function setButtonLabel(key: string): void {
     btnEl.dataset.i18n = key;
-    btnEl.textContent = t(key);
+    const label = t(key);
+    // Startup captures installation before translations load. Keep the HTML
+    // fallback until initI18n translates the updated data-i18n attribute.
+    if (label !== key) btnEl.textContent = label;
   }
 
   if (isRunningAsInstalledPwa()) {
