@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "Terminal-Link öffnen?",
+  "terminalLinks.message": "Dieser Link wird in einem neuen Tab geöffnet.",
+  "terminalLinks.rememberHint": "„Nie wieder anzeigen“ öffnet diesen Link ebenfalls. Unter Einstellungen → Sicherheit kannst du Bestätigungen wieder aktivieren.",
+  "terminalLinks.neverAgain": "Nie wieder anzeigen",
+  "terminalLinks.open": "In neuem Tab öffnen",
+  "terminalLinks.settingsTitle": "Terminal-Links",
+  "terminalLinks.settingLabel": "Vor dem Öffnen von Terminal-Links bestätigen",
+  "terminalLinks.settingHint": "Gilt für diesen Browser. Links öffnen sich immer in einem neuen Tab.",
   "sidebar.newTerminal": "Neue Session",
   "sidebar.settings": "Einstellungen",
   "sidebar.loadBookmarked": "Lesezeichen",

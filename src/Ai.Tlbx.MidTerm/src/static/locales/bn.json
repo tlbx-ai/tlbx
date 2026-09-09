@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "টার্মিনালের লিংক খুলবেন?",
+  "terminalLinks.message": "এই লিংকটি নতুন ট্যাবে খুলবে।",
+  "terminalLinks.rememberHint": "“আর দেখাবেন না” চাপলেও এই লিংক খুলবে। সেটিংস → নিরাপত্তা থেকে নিশ্চিতকরণ আবার চালু করতে পারবেন।",
+  "terminalLinks.neverAgain": "আর দেখাবেন না",
+  "terminalLinks.open": "নতুন ট্যাবে খুলুন",
+  "terminalLinks.settingsTitle": "টার্মিনালের লিংক",
+  "terminalLinks.settingLabel": "টার্মিনালের লিংক খোলার আগে নিশ্চিত করুন",
+  "terminalLinks.settingHint": "এই ব্রাউজারে প্রযোজ্য। লিংক সবসময় নতুন ট্যাবে খোলে।",
   "sidebar.newTerminal": "নতুন সেশন",
   "sidebar.settings": "সেটিংস",
   "sidebar.loadBookmarked": "বুকমার্ক",

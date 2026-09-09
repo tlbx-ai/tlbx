@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "ターミナルのリンクを開きますか？",
+  "terminalLinks.message": "このリンクは新しいタブで開きます。",
+  "terminalLinks.rememberHint": "「今後表示しない」でもリンクが開きます。設定 → セキュリティで確認を再び有効にできます。",
+  "terminalLinks.neverAgain": "今後表示しない",
+  "terminalLinks.open": "新しいタブで開く",
+  "terminalLinks.settingsTitle": "ターミナルのリンク",
+  "terminalLinks.settingLabel": "ターミナルのリンクを開く前に確認する",
+  "terminalLinks.settingHint": "このブラウザーに適用されます。リンクは常に新しいタブで開きます。",
   "sidebar.newTerminal": "新しいセッション",
   "sidebar.settings": "設定",
   "sidebar.loadBookmarked": "ブックマーク",

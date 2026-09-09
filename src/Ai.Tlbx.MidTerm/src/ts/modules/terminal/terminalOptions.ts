@@ -15,6 +15,7 @@ import {
   normalizeTerminalLetterSpacing,
 } from './fontConfig';
 import { getEffectiveTerminalFontSize } from './fontSize';
+import { activateTerminalLink } from './linkConfirmation';
 
 type TerminalFontWeight = NonNullable<ITerminalOptions['fontWeight']>;
 
@@ -128,5 +129,6 @@ export function getTerminalOptions(): ITerminalOptions {
   return {
     ...resolveTerminalTypographyOptions(currentSettings),
     ...resolveGeneralTerminalOptions(currentSettings),
+    linkHandler: { activate: activateTerminalLink },
   };
 }

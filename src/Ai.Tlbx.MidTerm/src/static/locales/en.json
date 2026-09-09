@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "Open terminal link?",
+  "terminalLinks.message": "This link will open in a new tab.",
+  "terminalLinks.rememberHint": "Never show again also opens this link. You can restore confirmations in Settings → Security.",
+  "terminalLinks.neverAgain": "Never show again",
+  "terminalLinks.open": "Open in new tab",
+  "terminalLinks.settingsTitle": "Terminal links",
+  "terminalLinks.settingLabel": "Confirm before opening terminal links",
+  "terminalLinks.settingHint": "Applies to this browser. Links always open in a new tab.",
   "sidebar.newTerminal": "New Session",
   "sidebar.settings": "Settings",
   "sidebar.loadBookmarked": "Bookmarks",

@@ -7247,6 +7247,28 @@ body::before {
   white-space: pre-line;
 }
 
+.terminal-link-content {
+  max-width: 560px;
+}
+
+.terminal-link-destination {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-elevated-opaque);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}
+
+.terminal-link-content .modal-footer {
+  flex-wrap: wrap;
+}
+
+.terminal-link-content a.btn-primary {
+  text-decoration: none;
+}
+
 .dialog-details {
   margin-top: 14px;
   border: 1px solid var(--border-subtle);

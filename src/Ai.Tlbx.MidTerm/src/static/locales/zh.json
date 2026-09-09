@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "打开终端链接？",
+  "terminalLinks.message": "此链接将在新标签页中打开。",
+  "terminalLinks.rememberHint": "“不再显示”也会打开此链接。你可以在设置 → 安全中重新启用确认。",
+  "terminalLinks.neverAgain": "不再显示",
+  "terminalLinks.open": "在新标签页中打开",
+  "terminalLinks.settingsTitle": "终端链接",
+  "terminalLinks.settingLabel": "打开终端链接前确认",
+  "terminalLinks.settingHint": "仅适用于此浏览器。链接始终在新标签页中打开。",
   "sidebar.newTerminal": "新建会话",
   "sidebar.settings": "设置",
   "sidebar.loadBookmarked": "书签",

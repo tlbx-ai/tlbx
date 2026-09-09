@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "Ouvrir le lien du terminal ?",
+  "terminalLinks.message": "Ce lien s’ouvrira dans un nouvel onglet.",
+  "terminalLinks.rememberHint": "« Ne plus afficher » ouvre aussi ce lien. Vous pouvez réactiver les confirmations dans Paramètres → Sécurité.",
+  "terminalLinks.neverAgain": "Ne plus afficher",
+  "terminalLinks.open": "Ouvrir dans un nouvel onglet",
+  "terminalLinks.settingsTitle": "Liens du terminal",
+  "terminalLinks.settingLabel": "Confirmer avant d’ouvrir les liens du terminal",
+  "terminalLinks.settingHint": "S’applique à ce navigateur. Les liens s’ouvrent toujours dans un nouvel onglet.",
   "sidebar.newTerminal": "Nouvelle session",
   "sidebar.settings": "Paramètres",
   "sidebar.loadBookmarked": "Favoris",

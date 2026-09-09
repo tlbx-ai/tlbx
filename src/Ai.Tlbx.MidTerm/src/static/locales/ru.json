@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "Открыть ссылку терминала?",
+  "terminalLinks.message": "Ссылка откроется в новой вкладке.",
+  "terminalLinks.rememberHint": "«Больше не показывать» также открывает эту ссылку. Подтверждения можно снова включить в разделе Настройки → Безопасность.",
+  "terminalLinks.neverAgain": "Больше не показывать",
+  "terminalLinks.open": "Открыть в новой вкладке",
+  "terminalLinks.settingsTitle": "Ссылки терминала",
+  "terminalLinks.settingLabel": "Подтверждать открытие ссылок терминала",
+  "terminalLinks.settingHint": "Применяется к этому браузеру. Ссылки всегда открываются в новой вкладке.",
   "sidebar.newTerminal": "Новая сессия",
   "sidebar.settings": "Настройки",
   "sidebar.loadBookmarked": "Закладки",

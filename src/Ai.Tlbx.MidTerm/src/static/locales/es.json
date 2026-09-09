@@ -1,4 +1,12 @@
 {
+  "terminalLinks.title": "¿Abrir enlace del terminal?",
+  "terminalLinks.message": "Este enlace se abrirá en una pestaña nueva.",
+  "terminalLinks.rememberHint": "«No volver a mostrar» también abre este enlace. Puedes reactivar las confirmaciones en Ajustes → Seguridad.",
+  "terminalLinks.neverAgain": "No volver a mostrar",
+  "terminalLinks.open": "Abrir en una pestaña nueva",
+  "terminalLinks.settingsTitle": "Enlaces del terminal",
+  "terminalLinks.settingLabel": "Confirmar antes de abrir enlaces del terminal",
+  "terminalLinks.settingHint": "Se aplica a este navegador. Los enlaces siempre se abren en una pestaña nueva.",
   "sidebar.newTerminal": "Nueva sesión",
   "sidebar.settings": "Configuración",
   "sidebar.loadBookmarked": "Marcadores",
