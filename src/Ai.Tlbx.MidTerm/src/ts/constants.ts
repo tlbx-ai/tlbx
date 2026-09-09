@@ -73,7 +73,8 @@ export const THEMES: Record<string, TerminalTheme> = {
     foreground: '#F2F2F2',
     cursor: '#F2F2F2',
     cursorAccent: '#0C0C0C',
-    selectionBackground: '#2D3044',
+    // Explicit alpha avoids xterm reducing opaque selection colors to 30% opacity.
+    selectionBackground: '#7BA2F780',
     scrollbarSliderBackground: 'rgba(58, 62, 82, 0.5)',
     scrollbarSliderHoverBackground: 'rgba(123, 162, 247, 0.5)',
     scrollbarSliderActiveBackground: 'rgba(123, 162, 247, 0.7)',
