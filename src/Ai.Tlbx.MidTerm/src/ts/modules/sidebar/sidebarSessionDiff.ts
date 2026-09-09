@@ -20,23 +20,6 @@ function normalizeSignatureValue(value: unknown): string {
   return '';
 }
 
-function getSupervisorSignature(session: Session): string {
-  const supervisor = session.supervisor;
-  if (!supervisor) {
-    return '';
-  }
-
-  return [
-    supervisor.profile,
-    supervisor.state,
-    supervisor.needsAttention,
-    supervisor.attentionScore,
-    supervisor.attentionReason,
-  ]
-    .map(normalizeSignatureValue)
-    .join(FIELD_SEPARATOR);
-}
-
 function getAgentAttachPointSignature(session: Session): string {
   const attachPoint = session.agentAttachPoint;
   if (!attachPoint) {
@@ -80,7 +63,6 @@ function getSidebarStructuralSignature(session: Session): string {
     session.appServerControlResumeThreadId,
     session.hasAppServerControlHistory,
     getAgentAttachPointSignature(session),
-    getSupervisorSignature(session),
   ]
     .map(normalizeSignatureValue)
     .join(FIELD_SEPARATOR);
@@ -129,6 +111,8 @@ export function getSidebarFastPathSessionUpdates(
     if (!previousSession || !currentSession) {
       return null;
     }
+
+    if (previousSession === currentSession) continue;
 
     if (
       getSidebarStructuralSignature(previousSession) !==

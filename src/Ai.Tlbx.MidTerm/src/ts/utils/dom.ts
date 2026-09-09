@@ -7,10 +7,16 @@
 /**
  * Escape HTML special characters to prevent XSS
  */
+const HTML_ENTITIES: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
 export function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+  return text.replace(/[&<>"']/g, (character) => HTML_ENTITIES[character] ?? character);
 }
 
 /**

@@ -7,6 +7,7 @@
  */
 
 import { $sessionList } from '../../stores';
+import type { Session } from '../../types';
 
 const DRAW_THRESHOLD = 0.003;
 const CANVAS_CSS_H = 36;
@@ -42,9 +43,11 @@ interface SessionHeat {
   transitionStartedAtMs: number;
   transitionDurationMs: number;
   fallTimerId: number | null;
+  fallDueAtMs: number;
 }
 
 const sessions = new Map<string, SessionHeat>();
+let lastSnapshots = new Map<string, Session>();
 let unsubscribeSessionList: (() => void) | null = null;
 
 function clampHeat(heat: number): number {
@@ -176,6 +179,8 @@ function setDisplayedHeatTarget(
   nowMs: number,
   immediate: boolean = false,
 ): void {
+  // Sustained output must not restart the same CSS transition on every frame.
+  if (!immediate && state.transitionToHeat === nextHeat) return;
   const currentHeat = immediate ? nextHeat : getDisplayedHeatAt(state, nowMs);
   const durationMs = immediate ? 0 : computeTransitionDurationMs(currentHeat, nextHeat);
 
@@ -203,6 +208,7 @@ function getOrCreateSessionHeat(sessionId: string): SessionHeat {
       transitionStartedAtMs: getNowMs(),
       transitionDurationMs: 0,
       fallTimerId: null,
+      fallDueAtMs: 0,
     };
     sessions.set(sessionId, state);
   }
@@ -230,18 +236,23 @@ function startFall(sessionId: string): void {
 
   state.fallTimerId = null;
   const nowMs = getNowMs();
+  if (state.fallDueAtMs > nowMs) {
+    armFallTimer(sessionId, state, state.fallDueAtMs - nowMs);
+    return;
+  }
   setDisplayedHeatTarget(state, 0, nowMs);
 }
 
-function scheduleFall(sessionId: string, state: SessionHeat): void {
-  clearFallTimer(state);
-  if (document.hidden) {
-    return;
-  }
-
+function armFallTimer(sessionId: string, state: SessionHeat, delayMs: number): void {
   state.fallTimerId = window.setTimeout(() => {
     startFall(sessionId);
-  }, RISE_TRANSITION_MS);
+  }, delayMs);
+}
+
+function scheduleFall(sessionId: string, state: SessionHeat): void {
+  if (document.hidden) return;
+  state.fallDueAtMs = getNowMs() + RISE_TRANSITION_MS;
+  if (state.fallTimerId === null) armFallTimer(sessionId, state, RISE_TRANSITION_MS);
 }
 
 function applyHeat(
@@ -284,10 +295,19 @@ function applyHeat(
   }
 }
 
+function sameSnapshotHeat(previous: Session, session: Session): boolean {
+  return (
+    previous.supervisor?.currentHeat === session.supervisor?.currentHeat &&
+    previous.supervisor?.lastOutputAt === session.supervisor?.lastOutputAt
+  );
+}
+
 function syncHeatFromSessionList(): void {
-  const activeIds = new Set<string>();
+  const nextSnapshots = new Map<string, Session>();
   for (const session of $sessionList.get()) {
-    activeIds.add(session.id);
+    nextSnapshots.set(session.id, session);
+    const previous = lastSnapshots.get(session.id);
+    if (previous && sameSnapshotHeat(previous, session)) continue;
     applyHeat(
       session.id,
       session.supervisor?.currentHeat ?? 0,
@@ -295,11 +315,14 @@ function syncHeatFromSessionList(): void {
     );
   }
 
-  for (const sessionId of sessions.keys()) {
-    if (!activeIds.has(sessionId)) {
-      applyHeat(sessionId, 0);
+  for (const sessionId of lastSnapshots.keys()) {
+    if (!nextSnapshots.has(sessionId)) {
+      const state = sessions.get(sessionId);
+      if (state) clearFallTimer(state);
+      sessions.delete(sessionId);
     }
   }
+  lastSnapshots = nextSnapshots;
 }
 
 buildColorLUT();
@@ -407,4 +430,5 @@ export function destroyHeatIndicator(): void {
   unsubscribeSessionList = null;
 
   sessions.clear();
+  lastSnapshots.clear();
 }

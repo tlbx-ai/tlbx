@@ -192,6 +192,26 @@ describe('heatIndicator', () => {
     expect(getSessionHeat('session-1')).toBe(0);
   });
 
+  it('coalesces a burst into one rise and extends the quiet deadline without timer churn', async () => {
+    const element = createHeatElementMock();
+    registerHeatCanvas('session-1', element as unknown as HTMLElement);
+    recordBytes('session-1', 24);
+    element.style.setProperty.mockClear();
+    const timerCalls = vi.mocked(window.setTimeout).mock.calls.length;
+    for (let i = 0; i < 100; i++) {
+      advanceTime(1);
+      recordBytes('session-1', 24);
+    }
+    expect(element.style.setProperty).not.toHaveBeenCalled();
+    expect(vi.mocked(window.setTimeout).mock.calls.length).toBe(timerCalls);
+    await advanceTimeout(120);
+    expect(timeoutCallbacks.size).toBe(1);
+    expect(element.style.setProperty).not.toHaveBeenCalled();
+    await advanceTimeout(100);
+    expect(timeoutCallbacks.size).toBe(0);
+    expect(element.style.setProperty).toHaveBeenCalled();
+  });
+
   it('heats to red from mux output events', () => {
     const element = createHeatElementMock();
     registerHeatCanvas('session-1', element as unknown as HTMLElement);
@@ -204,10 +224,7 @@ describe('heatIndicator', () => {
     advanceTime(300);
 
     expect(getDisplayedSessionHeat('session-1')).toBeGreaterThan(0.9);
-    expect(element.style.setProperty).toHaveBeenCalledWith(
-      '--session-heat-transition-ms',
-      '220ms',
-    );
+    expect(element.style.setProperty).toHaveBeenCalledWith('--session-heat-transition-ms', '220ms');
   });
 
   it('decays slowly enough to preserve a visible session hierarchy', async () => {

@@ -719,8 +719,9 @@ export function setTabVisible(bar: HTMLDivElement, tabId: SessionTabId, visible:
     return;
   }
 
-  btn.hidden = !visible;
-  btn.style.display = visible ? '' : 'none';
+  if (btn.hidden !== !visible) btn.hidden = !visible;
+  const display = visible ? '' : 'none';
+  if (btn.style.display !== display) btn.style.display = display;
 }
 
 export function setTabLabel(bar: HTMLDivElement, tabId: SessionTabId, label: string): void {
@@ -730,12 +731,12 @@ export function setTabLabel(bar: HTMLDivElement, tabId: SessionTabId, label: str
   }
 
   const labelNode = btn.querySelector<HTMLElement>('.session-tab-label');
-  if (labelNode) {
+  if (labelNode && labelNode.textContent !== label) {
     labelNode.textContent = label;
   }
 
-  btn.title = label;
-  btn.setAttribute('aria-label', label);
+  if (btn.title !== label) btn.title = label;
+  if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
 }
 
 export function isTabVisible(bar: HTMLDivElement, tabId: SessionTabId): boolean {
@@ -762,8 +763,9 @@ export function setActionVisible(
     return;
   }
 
-  btn.hidden = !visible;
-  btn.style.display = visible ? '' : 'none';
+  if (btn.hidden !== !visible) btn.hidden = !visible;
+  const display = visible ? '' : 'none';
+  if (btn.style.display !== display) btn.style.display = display;
 }
 
 export function updateCwd(bar: HTMLDivElement, cwd: string): void {

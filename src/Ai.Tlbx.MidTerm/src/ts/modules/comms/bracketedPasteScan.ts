@@ -1,42 +1,33 @@
-const BRACKETED_PASTE_MODE_SEQUENCE_LENGTH = 8;
-const BRACKETED_PASTE_MODE_TAIL_LENGTH = BRACKETED_PASTE_MODE_SEQUENCE_LENGTH - 1;
-const bracketedPasteScanTail = new Map<string, Uint8Array>();
+// Retain only the matched prefix length across frames, never a copy of output.
+const PREFIX = new Uint8Array([0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]);
+const matchedPrefixes = new Map<string, number>();
 
 export function clearBracketedPasteScanState(sessionId?: string): void {
-  if (sessionId !== undefined) {
-    bracketedPasteScanTail.delete(sessionId);
-    return;
-  }
-  bracketedPasteScanTail.clear();
+  if (sessionId !== undefined) matchedPrefixes.delete(sessionId);
+  else matchedPrefixes.clear();
 }
 
 export function scanBracketedPasteMode(data: Uint8Array, sessionId: string): boolean | null {
-  const priorTail = bracketedPasteScanTail.get(sessionId);
-  const scanData =
-    priorTail && priorTail.length > 0 ? new Uint8Array(priorTail.length + data.length) : data;
-  if (scanData !== data && priorTail) {
-    scanData.set(priorTail, 0);
-    scanData.set(data, priorTail.length);
-  }
-
+  let matched = matchedPrefixes.get(sessionId) ?? 0;
   let latestMode: boolean | null = null;
-  for (let i = 0, end = scanData.length - BRACKETED_PASTE_MODE_SEQUENCE_LENGTH; i <= end; i++) {
-    if (
-      scanData[i] === 0x1b &&
-      scanData[i + 1] === 0x5b &&
-      scanData[i + 2] === 0x3f &&
-      scanData[i + 3] === 0x32 &&
-      scanData[i + 4] === 0x30 &&
-      scanData[i + 5] === 0x30 &&
-      scanData[i + 6] === 0x34
-    ) {
-      const mode = scanData[i + 7];
-      if (mode === 0x68) latestMode = true;
-      else if (mode === 0x6c) latestMode = false;
-      i += 7;
+  for (let i = 0; i < data.length; i++) {
+    if (matched === 0) {
+      const start = data.indexOf(0x1b, i);
+      if (start < 0) break;
+      i = start;
+    }
+    const byte = data[i];
+    if (matched === PREFIX.length) {
+      if (byte === 0x68) latestMode = true;
+      else if (byte === 0x6c) latestMode = false;
+      matched = byte === 0x1b ? 1 : 0;
+    } else if (byte === PREFIX[matched]) {
+      matched++;
+    } else {
+      matched = byte === 0x1b ? 1 : 0;
     }
   }
-
-  bracketedPasteScanTail.set(sessionId, scanData.slice(-BRACKETED_PASTE_MODE_TAIL_LENGTH));
+  if (matched > 0) matchedPrefixes.set(sessionId, matched);
+  else matchedPrefixes.delete(sessionId);
   return latestMode;
 }

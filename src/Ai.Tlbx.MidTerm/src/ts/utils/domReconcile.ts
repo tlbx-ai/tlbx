@@ -115,9 +115,10 @@ export function reconcileKeyedChildren<T, TElement extends HTMLElement = HTMLEle
     }
   });
 
+  const desiredElementSet = new Set(desiredElements);
   for (const child of Array.from(parent.children) as TElement[]) {
     const key = getElementKey(child);
-    if (!key || !desiredKeys.has(key) || !desiredElements.includes(child)) {
+    if (!key || !desiredKeys.has(key) || !desiredElementSet.has(child)) {
       removeElement(child, view.destroy);
     }
   }

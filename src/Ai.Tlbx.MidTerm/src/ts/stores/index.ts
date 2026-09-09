@@ -325,10 +325,14 @@ export function setSessions(sessionList: Session[]): boolean {
     }
 
     const entry: Session = { ...session, name, _order: session.order };
-    sessionsMap[id] = entry;
+    const previous = currentSessions[id];
+    sessionsMap[id] = previous && areJsonLikeEqual(previous, entry) ? previous : entry;
   });
 
-  if (areJsonLikeRecordsEqual(currentSessions, sessionsMap)) {
+  if (
+    Object.keys(currentSessions).length === Object.keys(sessionsMap).length &&
+    Object.keys(sessionsMap).every((id) => currentSessions[id] === sessionsMap[id])
+  ) {
     return false;
   }
 
