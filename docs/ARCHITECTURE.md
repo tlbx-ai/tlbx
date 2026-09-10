@@ -160,6 +160,14 @@ explicit missing range if that cursor fell outside scrollback. Buffer requests t
 return the complete requested delta return a bounded tail with a different start cursor;
 that mismatch is the authoritative reset decision.
 
+Cursor resumes request the complete retained delta; a viewport byte cap must not turn
+retained changes into artificial data loss. When an initial frame or resume range has
+aged out, alternate-screen and synchronized normal-screen TUIs require a foreground
+redraw as part of recovery. Codex's inline animated composer is one such normal-screen
+TUI: its recent sparkle frames alone cannot reconstruct the static prompt or history.
+The redraw uses the existing canonical-size pulse and ordered recovery transaction;
+contiguous resumes keep their existing screen and do not request a repaint.
+
 Every mux socket has one `PrioritizedWebSocketWriter`. It is the sole WebSocket write owner,
 uses a bounded 2,048-frame / 8 MiB queue, applies a send timeout, and schedules complete frames in
 this order: control, active live output, visible live output, recovery, background live

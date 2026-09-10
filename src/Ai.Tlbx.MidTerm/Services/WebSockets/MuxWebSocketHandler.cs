@@ -388,7 +388,7 @@ public sealed class MuxWebSocketHandler
                 if (!await RecoverSessionAsync(
                         client,
                         sessionInfo,
-                        ResolveReplayMaxBytes(sessionInfo, replayRows, quickResumeEnabled),
+                        ResolveReplayMaxBytes(sessionInfo, replayRows, quickResumeEnabled, sinceSequence),
                         TerminalReplayReason.ReconnectTailReplay,
                         sinceSequence,
                         forceTerminalReset: false,
@@ -484,16 +484,17 @@ public sealed class MuxWebSocketHandler
                     return new MuxClient.RecoveryResult(false, 0, 0, false);
                 }
 
-                if (RequiresAlternateScreenRedraw(sinceSequence, snapshot))
+                if (RequiresScreenRedraw(sinceSequence, snapshot))
                 {
-                    Log.Verbose(() => $"[MuxHandler] Refreshing truncated alternate-screen replay for {session.Id}");
+                    Log.Verbose(() => $"[MuxHandler] Refreshing truncated screen replay for {session.Id}");
                     try
                     {
                         if (await _sessionManager.RedrawSessionAsync(session.Id, recoveryCt).ConfigureAwait(false))
                         {
-                            // A resize acknowledgement means the foreground process has observed both
-                            // the pulse and the canonical geometry. Capture the complete retained ring
-                            // again so its newly emitted full frame follows any truncated older delta.
+                            // Capture the complete retained ring again so the repaint follows any
+                            // truncated older delta. The resize acknowledgement confirms PTY geometry,
+                            // not application rendering; later repaint bytes remain ordered behind
+                            // this recovery by MuxClient and are delivered when recovery completes.
                             // Replaying that fresh frame after reset reconstructs static TUI cell
                             // backgrounds which cannot be inferred from an arbitrary byte-safe tail.
                             var redrawnSnapshot = await _sessionManager.GetBufferAsync(
@@ -516,7 +517,7 @@ public sealed class MuxWebSocketHandler
                     {
                         // Redraw is a semantic replay upgrade. Preserve the previous parser-safe
                         // recovery as a fallback if the foreground process cannot be pulsed.
-                        Log.Warn(() => $"[MuxHandler] Alternate-screen redraw failed for {session.Id}: {ex.Message}");
+                        Log.Warn(() => $"[MuxHandler] Screen redraw failed for {session.Id}: {ex.Message}");
                     }
                 }
 
@@ -568,11 +569,15 @@ public sealed class MuxWebSocketHandler
             ct);
     }
 
-    internal static bool RequiresAlternateScreenRedraw(
+    internal static bool RequiresScreenRedraw(
         ulong? sinceSequence,
         TtyHostBufferSnapshot snapshot)
     {
-        if (!snapshot.TerminalState.AlternateScreenActive)
+        // Synchronized inline TUIs (including Codex's animated composer) use the
+        // normal screen. Their retained frames can contain only cell differences,
+        // just like alternate-screen TUIs. Parser-safe bytes are not a full screen.
+        if (!snapshot.TerminalState.AlternateScreenActive
+            && snapshot.Data.AsSpan().IndexOf("\x1b[?2026h"u8) < 0)
         {
             return false;
         }
@@ -858,7 +863,7 @@ public sealed class MuxWebSocketHandler
             await RecoverSessionAsync(
                 client,
                 session,
-                ResolveReplayMaxBytes(session, replayRows, quickResume),
+                ResolveReplayMaxBytes(session, replayRows, quickResume, sinceSequence),
                 quickResume ? TerminalReplayReason.QuickResumeTailReplay : TerminalReplayReason.BufferRefreshTailReplay,
                 sinceSequence,
                 forceTerminalReset: !quickResume,
@@ -886,22 +891,31 @@ public sealed class MuxWebSocketHandler
             ct: ct);
     }
 
-    private int? ResolveReplayMaxBytes(SessionInfo session, int? replayRows, bool quickResume)
+    private int? ResolveReplayMaxBytes(SessionInfo session, int? replayRows, bool quickResume, ulong? sinceSequence)
     {
         var configuredScrollbackBytes = Math.Clamp(
             _settingsService.Load().ScrollbackBytes,
             MidTermSettings.MinScrollbackBytes,
             MidTermSettings.MaxScrollbackBytes);
 
-        return ResolveReplayMaxBytes(session, replayRows, quickResume, configuredScrollbackBytes);
+        return ResolveReplayMaxBytes(session, replayRows, quickResume, configuredScrollbackBytes, sinceSequence);
     }
 
     internal static int? ResolveReplayMaxBytes(
         SessionInfo session,
         int? replayRows,
         bool quickResume,
-        int configuredScrollbackBytes)
+        int configuredScrollbackBytes,
+        ulong? sinceSequence = null)
     {
+        // A resume cursor refers to a screen the browser already has. Return all
+        // retained changes (still bounded by the host ring), rather than creating
+        // artificial data loss by capping an otherwise contiguous delta to a viewport.
+        if (sinceSequence.HasValue)
+        {
+            return null;
+        }
+
         configuredScrollbackBytes = Math.Clamp(
             configuredScrollbackBytes,
             MidTermSettings.MinScrollbackBytes,
