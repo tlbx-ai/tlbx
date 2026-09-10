@@ -370,6 +370,7 @@
   "trust.errorLoading": "Erreur lors du chargement des informations du certificat",
   "update.checking": "Vérification...",
   "update.fullUpdate": "Mise à jour complète",
+  "update.requestTimeout": "La demande de mise à jour a expiré. Le serveur est peut-être encore en cours de mise à jour. Consultez le journal de mise à jour et rechargez la page avant de réessayer.",
   "update.fullUpdateConfirm": "Installer la dernière version du canal sélectionné, avec tous les composants d’exécution ? Cela fonctionne même si vous êtes déjà à jour. Le serveur et toutes les sessions de terminal et d’agents redémarreront ; certaines sessions devront peut-être être reprises manuellement.",
   "update.updating": "Mise à jour...",
   "update.restarting": "Redémarrage...",

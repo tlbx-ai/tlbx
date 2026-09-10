@@ -373,6 +373,7 @@
   "trust.errorLoading": "加载证书信息时出错",
   "update.checking": "检查中...",
   "update.fullUpdate": "完整更新",
+  "update.requestTimeout": "更新请求超时。服务器可能仍在更新。请先检查更新日志并重新加载页面，然后再重试。",
   "update.fullUpdateConfirm": "安装所选通道的最新版本（包括所有运行时组件）？即使已是最新版本也可执行。服务器以及所有终端和代理会话将重新启动；部分会话可能需要手动恢复。",
   "update.updating": "更新中...",
   "update.restarting": "重启中...",

@@ -370,6 +370,7 @@
   "trust.errorLoading": "Erro ao carregar informações do certificado",
   "update.checking": "Verificando...",
   "update.fullUpdate": "Atualização completa",
+  "update.requestTimeout": "O pedido de atualização excedeu o tempo limite. O servidor pode ainda estar a atualizar. Consulte o registo de atualização e recarregue a página antes de tentar novamente.",
   "update.fullUpdateConfirm": "Instalar a versão mais recente do canal selecionado, incluindo todos os componentes de execução? Isso também funciona se você já estiver atualizado. O servidor e todas as sessões de terminal e agentes serão reiniciados; algumas sessões poderão precisar ser retomadas manualmente.",
   "update.updating": "Atualizando...",
   "update.restarting": "Reiniciando...",

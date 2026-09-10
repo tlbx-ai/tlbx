@@ -370,6 +370,7 @@
   "trust.errorLoading": "Error al cargar la información del certificado",
   "update.checking": "Verificando...",
   "update.fullUpdate": "Actualización completa",
+  "update.requestTimeout": "La solicitud de actualización agotó el tiempo de espera. Es posible que el servidor siga actualizándose. Revisa el registro de actualización y recarga la página antes de volver a intentarlo.",
   "update.fullUpdateConfirm": "¿Instalar la última versión del canal seleccionado, incluidos todos los componentes de ejecución? También funciona si ya estás al día. El servidor y todas las sesiones de terminal y agentes se reiniciarán; algunas sesiones podrían requerir reanudación manual.",
   "update.updating": "Actualizando...",
   "update.restarting": "Reiniciando...",
