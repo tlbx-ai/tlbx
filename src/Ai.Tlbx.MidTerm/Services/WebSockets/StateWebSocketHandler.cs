@@ -124,6 +124,7 @@ public sealed class StateWebSocketHandler
         var stateSendGate = new object();
         var stateSendPending = false;
         var stateSendInFlight = false;
+        long? lastStateSendAtMs = null;
         Task? stateSendTask = null;
         var stateDeliveryActive = 1;
         var connectionToken = new object();
@@ -245,7 +246,24 @@ public sealed class StateWebSocketHandler
             {
                 while (!stateSendToken.IsCancellationRequested)
                 {
+                    // A fast socket can otherwise serialize every notification in a
+                    // burst. Bound metadata work to one frame without delaying input
+                    // or explicit command replies, which have their own send paths.
+                    const int stateFrameIntervalMs = 16;
+                    if (lastStateSendAtMs is { } lastSent)
+                    {
+                        var remaining = stateFrameIntervalMs - (Environment.TickCount64 - lastSent);
+                        if (remaining > 0)
+                            await Task.Delay((int)remaining, stateSendToken).ConfigureAwait(false);
+                    }
+                    lock (stateSendGate)
+                    {
+                        // Notifications received during the wait are included in the
+                        // snapshot below; only newer changes require a follow-up.
+                        stateSendPending = false;
+                    }
                     await SendStateWithRetryAsync().ConfigureAwait(false);
+                    lastStateSendAtMs = Environment.TickCount64;
 
                     lock (stateSendGate)
                     {
