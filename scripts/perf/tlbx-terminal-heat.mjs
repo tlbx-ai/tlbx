@@ -166,6 +166,16 @@ try {
   assert.equal(gone.opacity, 0);
   assert.equal(gone.heat, 0);
   assert.equal(gone.running, 0);
+  for (let tick = 0; tick < 5; tick++) {
+    await fs.writeFile(trigger, `one-second-${tick}`);
+    await wait(1000);
+    const steady = await read(a);
+    assert(
+      steady.red > 0.999 && steady.blue < 0.001,
+      "One-second updates must remain solid red",
+    );
+  }
+  summary.oneSecondUpdatesStayRed = true;
   await fs.writeFile(trigger, "stream");
   await wait(1000);
   const streamStart = Date.now();

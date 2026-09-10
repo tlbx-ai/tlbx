@@ -1362,7 +1362,8 @@ body::before {
 }
 
 @keyframes heat-red-a {
-  0% {
+  0%,
+  6.666667% {
     opacity: 1;
   }
   16.666667%,
@@ -1371,7 +1372,8 @@ body::before {
   }
 }
 @keyframes heat-red-b {
-  0% {
+  0%,
+  6.666667% {
     opacity: 1;
   }
   16.666667%,
@@ -1380,7 +1382,8 @@ body::before {
   }
 }
 @keyframes heat-blue-a {
-  0% {
+  0%,
+  6.666667% {
     opacity: 0;
   }
   16.666667% {
@@ -1392,7 +1395,8 @@ body::before {
   }
 }
 @keyframes heat-blue-b {
-  0% {
+  0%,
+  6.666667% {
     opacity: 0;
   }
   16.666667% {
