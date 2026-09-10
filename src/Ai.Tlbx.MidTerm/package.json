@@ -47,7 +47,7 @@
     "swagger-ui-dist": "^5.32.12",
     "typescript": "^5.9.3",
     "typescript-eslint": "8.57.0",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "js-yaml": "^4.3.1",
