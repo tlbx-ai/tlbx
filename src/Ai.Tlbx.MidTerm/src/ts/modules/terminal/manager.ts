@@ -67,6 +67,7 @@ import {
 } from './enterModifierLatch';
 import * as enterOverrideSuppress from './enterOverrideSuppress';
 import { bindTerminalInteractionHandlers } from './interactionBindings';
+import { onTerminalScrollbackExit } from './scrollback';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
 import { activateTerminalLink } from './linkConfirmation';
 import {
@@ -1634,6 +1635,17 @@ export function setupTerminalEvents(
   }
 
   // Wire up events - onData replaces the early handler
+  if (termState) {
+    disposables.push(
+      onTerminalScrollbackExit(termState, () => {
+        if (sessionTerminals.get(sessionId) !== termState || !isTerminalVisible(termState)) return;
+        const pane = container.closest<HTMLElement>('.layout-leaf');
+        if (pane) fitTerminalToContainer(sessionId, pane);
+        else fitSessionToScreen(sessionId);
+      }),
+    );
+  }
+
   disposables.push(
     terminal.onData((data: string) => {
       const state = sessionTerminals.get(sessionId);

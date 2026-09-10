@@ -22,7 +22,9 @@ export interface TerminalPresentationCommitPlan {
 export function commitTerminalPresentationDom(plan: TerminalPresentationCommitPlan): void {
   const { container, xterm, snapshot } = plan;
   const ownsSize = snapshot.role === 'owner';
-  const shouldScale = plan.mode === 'scaled-down' && (!ownsSize || plan.scaleOwner);
+  // Owners can retain a larger grid while reading scrollback or awaiting resize.
+  // Keep that entire grid visible until the canonical dimensions catch up.
+  const shouldScale = plan.mode === 'scaled-down';
 
   if (shouldScale) {
     xterm.style.transform = `scale(${snapshot.passiveScale})`;
