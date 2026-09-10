@@ -1,6 +1,6 @@
 {
-  "web": "10.15.16-dev",
-  "pty": "10.15.16-dev",
+  "web": "10.15.17-dev",
+  "pty": "10.15.17-dev",
   "protocol": 1,
-  "minCompatiblePty": "10.15.16-dev"
+  "minCompatiblePty": "10.15.17-dev"
 }
