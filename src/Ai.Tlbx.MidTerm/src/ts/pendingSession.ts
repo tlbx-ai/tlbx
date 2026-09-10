@@ -46,6 +46,8 @@ export function createPendingSession(
       lastOutputAt: null,
       lastBellAt: null,
       currentHeat: 0,
+      lastTextOutputAt: null,
+      textActivityAgeMs: null,
     },
     order: Date.now(),
     parentSessionId: null,

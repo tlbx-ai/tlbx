@@ -14,4 +14,4 @@ export * from './sidebarUpdater';
 export * from './sessionDrag';
 export { syncSidebarNavButtons } from './sidebarNav';
 export { initTrafficIndicator } from './trafficIndicator';
-export { initHeatIndicator, recordBytes, suppressAllHeat } from './heatIndicator';
+export { initHeatIndicator } from './heatIndicator';

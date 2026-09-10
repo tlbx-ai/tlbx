@@ -195,7 +195,15 @@ tlbx tracks foreground cwd, process, command line, and terminal title. That data
 - history/bookmark labeling
 - session heat and activity presentation
 
-Terminal heat counts Unicode letters, numbers, combining marks and punctuation in the live output stream. A per-session streaming parser excludes terminal commands, whitespace and graphical symbols (including Braille sparkle and emoji), including across fragmented UTF-8 and escape sequences. It does not deduplicate repainted text or infer application work: text-based animations can still generate heat. Raw byte metrics and last-output timestamps retain their transport meaning, including for queue cooldown safety.
+Explicit terminal close keeps the session registered until its host has actually exited. IPC close and exit waits are bounded; a stalled host can be terminated only after its session identity and original process start time have been verified. Failed termination returns an error and preserves the visible session for retry. The browser removes the row only after a successful close response. This also applies to hosts reattached after web-only updates.
+
+Terminal heat indicates recent text output, independently of transport traffic, agent busy state and automation readiness. The server records `LastTextOutputAt` when the per-session streaming Unicode parser sees letters, numbers, combining marks or punctuation. Whitespace, graphical symbols (including Braille sparkle and emoji) and terminal commands do not update this clock. Repainted text and punctuation-based animations still count; there is no screen comparison or provider heuristic.
+
+State snapshots carry the text timestamp plus its server-computed age. A small `terminal-text-activity` State WebSocket message immediately reports the first text after inactivity, limited to four messages per second per session during sustained output. The sender coalesces outstanding work by session; hidden clients reconcile from a fresh state snapshot on return. No text means no heat messages or cooldown timers. The timestamp orders updates, while age avoids client/server clock skew. The notification interval can make the final cooldown start up to 250 ms before the last text byte.
+
+The browser never heats from Mux bytes or replay. It starts a finite CSS opacity crossfade: red immediately, blue at three seconds, grey at ten seconds. There is no Heat JavaScript frame loop or timeout. New surfaces and visibility restoration seek to the current age; repeated or stale snapshots do not restart the animation. Sidebar and PiP read the same text clock (PiP's live label covers the first second, its warm reading the ten-second cooldown).
+
+Automation and supervisor working-state rules remain separate: `CurrentHeat` and raw `LastOutputAt` retain their existing runtime/transport safety meaning for the Command Bay queue. Decorative output can therefore prevent automatic queue dispatch even after the visual indicator is grey; visual inactivity is not permission to submit another prompt.
 
 ### Terminal Resize Principle
 

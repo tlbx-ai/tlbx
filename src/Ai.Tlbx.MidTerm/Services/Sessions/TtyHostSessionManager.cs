@@ -882,18 +882,19 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private async Task<bool> CloseSessionCoreAsync(string sessionId, CancellationToken ct)
     {
-        if (!_clients.TryRemove(sessionId, out var client))
+        if (!_clients.TryGetValue(sessionId, out var client))
         {
             return false;
         }
 
+        if (!await client.CloseAsync(ct).ConfigureAwait(false)) return false;
+        _clients.TryRemove(sessionId, out _);
         _registry.RemoveSessionState(sessionId);
         _ownershipRegistry.Remove(sessionId);
         _transportState.TryRemove(sessionId, out _);
         _redrawDimensionOverrides.TryRemove(sessionId, out _);
         _metadataGates.TryRemove(sessionId, out _);
 
-        await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
         TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
 

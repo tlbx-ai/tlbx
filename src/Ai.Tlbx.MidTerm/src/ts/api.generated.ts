@@ -4803,6 +4803,10 @@ export interface components {
       lastBellAt: null | string;
       /** Format: double */
       currentHeat: number;
+      /** Format: date-time */
+      lastTextOutputAt: null | string;
+      /** Format: double */
+      textActivityAgeMs: null | number;
     };
     SetBookmarkRequest: {
       bookmarkId: string;

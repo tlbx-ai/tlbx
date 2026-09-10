@@ -489,11 +489,15 @@ public static partial class SessionApiEndpoints
 
         app.MapDelete("/api/sessions/{id}", async (string id, CancellationToken ct) =>
         {
-            workerSessionRegistry.Forget(id);
-            agentFeed.Forget(id);
             var closed = await sessionManager.CloseSessionAsync(id, ct);
+            if (!closed && sessionManager.GetSessionList(includeHidden: true).Sessions.Any(session => session.Id == id))
+            {
+                return Results.Problem("The terminal host could not be closed. The session is still available; retry closing it.", statusCode: StatusCodes.Status409Conflict);
+            }
             if (closed)
             {
+                workerSessionRegistry.Forget(id);
+                agentFeed.Forget(id);
                 await sessionCloseCleanup.ReclaimAfterUserTriggeredCloseAsync(id);
             }
             return Results.Ok();

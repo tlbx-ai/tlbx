@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Buffers;
 using System.Globalization;
 using System.Net.Sockets;
@@ -30,6 +31,8 @@ public sealed class TtyHostClient : IAsyncDisposable
 #endif
     private readonly string _sessionId;
     private readonly int _hostPid;
+    private readonly DateTime? _hostStartedAt;
+    private bool _hostIdentityVerified;
     private readonly string _endpoint;
     private readonly string? _instanceId;
     private readonly string? _ownerToken;
@@ -111,6 +114,9 @@ public sealed class TtyHostClient : IAsyncDisposable
     {
         _sessionId = sessionId;
         _hostPid = hostPid;
+        try { using var host = Process.GetProcessById(hostPid); _hostStartedAt = host.StartTime; }
+        catch (ArgumentException) { }
+        catch (System.ComponentModel.Win32Exception) { }
         _instanceId = instanceId;
         _ownerToken = ownerToken;
         _initialHandshakeTimeoutMs = Math.Max(1, initialHandshakeTimeoutMs);
@@ -254,6 +260,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         if (info is not null)
         {
             _terminalReplayStateVersion = info.TerminalReplayStateVersion;
+            _hostIdentityVerified = string.Equals(info.Id, _sessionId, StringComparison.Ordinal);
         }
 
         return info;
@@ -534,21 +541,66 @@ public sealed class TtyHostClient : IAsyncDisposable
 
     public async Task<bool> CloseAsync(CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         _intentionalDisconnect = true;
-
-        if (!IsConnected) return true;
-
         try
         {
-            var msg = TtyHostProtocol.CreateClose();
-            var response = await SendRequestAsync(msg, TtyHostMessageType.CloseAck, ct).ConfigureAwait(false);
-            return response is not null;
+            // Bound the entire request, including the request-lock wait. A dead
+            // pre-update connection must not prevent a user from closing its host.
+            if (IsConnected)
+            {
+                using var requestDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                try
+                {
+                    await SendRequestAsync(TtyHostProtocol.CreateClose(), TtyHostMessageType.CloseAck, requestDeadline.Token).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is OperationCanceledException or IOException or ObjectDisposedException)
+                {
+                    Log.Verbose(() => $"Close request for {_sessionId}: {ex.GetType().Name}");
+                }
+            }
+
+            using var host = GetOriginalHostProcess();
+            if (host is null) return true;
+            if (!_hostIdentityVerified || _hostStartedAt is null || _hostPid == Environment.ProcessId) return false;
+            // A CloseAck may precede exit. Allow normal shutdown before enforcing
+            // the explicit close against the same process identity, including children.
+            using var exitDeadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            try { await host.WaitForExitAsync(exitDeadline.Token).ConfigureAwait(false); return true; }
+            catch (OperationCanceledException) { }
+            host.Kill(entireProcessTree: true);
+            using var killDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await host.WaitForExitAsync(killDeadline.Token).ConfigureAwait(false);
+            return true;
         }
         catch (Exception ex)
         {
             Log.Exception(ex, $"TtyHostClient.CloseAsync({_sessionId})");
-            return true;
+            return false;
         }
+        finally
+        {
+            if (IsOriginalHostRunning()) _intentionalDisconnect = false;
+        }
+    }
+
+    private Process? GetOriginalHostProcess()
+    {
+        Process host;
+        try { host = Process.GetProcessById(_hostPid); }
+        catch (ArgumentException) { return null; }
+        if (host.HasExited || (_hostStartedAt is { } started && host.StartTime != started))
+        {
+            host.Dispose();
+            return null;
+        }
+        return host;
+    }
+
+    private bool IsOriginalHostRunning()
+    {
+        try { using var host = GetOriginalHostProcess(); return host is not null; }
+        catch { return true; }
     }
 
     private async Task<byte[]?> SendRequestAsync(
@@ -560,7 +612,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         await _requestLock.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            var tcs = new TaskCompletionSource<(TtyHostMessageType type, byte[] payload)>();
+            var tcs = new TaskCompletionSource<(TtyHostMessageType type, byte[] payload)>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             lock (_responseLock)
             {
@@ -1200,6 +1252,7 @@ public sealed class TtyHostClient : IAsyncDisposable
         _intentionalDisconnect = true;
 
         _cts?.Cancel();
+        DisconnectCurrentStream();
 
         lock (_responseLock)
         {

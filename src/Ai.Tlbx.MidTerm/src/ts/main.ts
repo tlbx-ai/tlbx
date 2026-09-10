@@ -21,8 +21,6 @@ import {
   requestBufferRefresh,
   updateTerminalVisibility,
   setupBrowserLifecycleRecovery,
-  setSessionBytesCallback,
-  setSuppressHeatCallback,
   reportBrowserActivity,
   getBrowserTransportSnapshot,
 } from './modules/comms';
@@ -63,8 +61,6 @@ import {
   initSessionDrag,
   initTrafficIndicator,
   initHeatIndicator,
-  recordBytes,
-  suppressAllHeat,
   renderSessionList,
   syncSidebarNavButtons,
   updateEmptyState,
@@ -353,9 +349,7 @@ async function init(): Promise<void> {
   initUpdateRuntime();
   initAppShellStatePersistence();
   initTrafficIndicator();
-  setSessionBytesCallback(recordBytes);
   initTerminalRecovery();
-  setSuppressHeatCallback(suppressAllHeat);
   initHeatIndicator();
   initBadges();
   initFileViewer();

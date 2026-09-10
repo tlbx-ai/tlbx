@@ -1,3 +1,4 @@
+import { recordTextActivity } from '../sidebar/heatIndicator';
 /**
  * State Channel Module
  *
@@ -128,7 +129,14 @@ interface TerminalNotificationMessage extends TerminalNotificationSignal {
   sessionId: string;
 }
 
-type DirectStateMessage = BrowserUiMessage | TerminalNotificationMessage;
+interface TerminalTextActivityMessage {
+  type: 'terminal-text-activity';
+  sessionId: string;
+  lastTextOutputAt: string | null;
+  textActivityAgeMs: number | null;
+}
+type DirectStateMessage =
+  BrowserUiMessage | TerminalNotificationMessage | TerminalTextActivityMessage;
 
 type StateWsMessage =
   | TmuxDockMessage
@@ -137,6 +145,7 @@ type StateWsMessage =
   | MainBrowserStatusMessage
   | BrowserUiMessage
   | TerminalNotificationMessage
+  | TerminalTextActivityMessage
   | StateUpdateMessage
   | CommandResponseMessage;
 
@@ -304,6 +313,10 @@ function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMess
     return true;
   }
 
+  if (data.type === 'terminal-text-activity') {
+    recordTextActivity(data.sessionId, data.lastTextOutputAt, data.textActivityAgeMs);
+    return true;
+  }
   if (data.type === 'terminal-notification') {
     handleTerminalNotification(data.sessionId, {
       protocol: data.protocol,

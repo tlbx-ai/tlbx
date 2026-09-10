@@ -461,9 +461,18 @@ export async function getProviderResumeCandidates(
 }
 
 export async function deleteSession(id: string): ClientDeleteResult<'/api/sessions/{id}'> {
-  return client.DELETE('/api/sessions/{id}', {
+  const result = await client.DELETE('/api/sessions/{id}', {
     params: { path: { id } },
   });
+  if (!result.response.ok) {
+    const problem = result.error as { title?: string; detail?: string } | undefined;
+    throw new ApiProblemError({
+      status: result.response.status,
+      title: problem?.title ?? 'Failed to close session',
+      detail: problem?.detail ?? 'The session could not be closed. Please retry.',
+    });
+  }
+  return result;
 }
 
 export async function redrawSession(id: string): Promise<void> {

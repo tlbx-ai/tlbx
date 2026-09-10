@@ -815,6 +815,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
         var stateHandler = new StateWebSocketHandler(
             sessionManager,
+            app.Services.GetRequiredService<SessionTelemetryService>(),
             app.Services.GetRequiredService<SessionCloseCleanupService>(),
             sessionSupervisor,
             appServerControlRuntime,
