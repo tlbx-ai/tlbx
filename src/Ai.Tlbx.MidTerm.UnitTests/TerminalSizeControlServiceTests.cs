@@ -332,6 +332,47 @@ public sealed class TerminalSizeControlServiceTests
     }
 
     [Fact]
+    public async Task TypingDoesNotWaitForResizeAcknowledgement()
+    {
+        using var fixture = new Fixture();
+        fixture.Service.RegisterBrowser("desktop:tab", new object());
+        var owner = await fixture.Service.RequestControlAsync("session-1", "desktop:tab", true);
+        var acknowledge = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+#pragma warning disable IDISP013 // Intentionally held pending, then awaited in finally before fixture disposal.
+        var resizing = fixture.Service.ResizeAsync("session-1", "desktop:tab", owner.Status.Epoch,
+            100, 30, _ => acknowledge.Task);
+#pragma warning restore IDISP013
+        try
+        {
+            Assert.False(resizing.IsCompleted);
+            var ownerInput = fixture.Service.RecordInputAsync("session-1", "desktop:tab");
+            Assert.True(ownerInput.IsCompletedSuccessfully);
+            Assert.True(ownerInput.Result.Status.IsOwner);
+            var followerInput = fixture.Service.RecordInputAsync("session-1", "ipad:tab");
+            Assert.True(followerInput.IsCompletedSuccessfully);
+            Assert.False(followerInput.Result.Status.IsOwner);
+        }
+        finally
+        {
+            acknowledge.SetResult(true);
+            await resizing;
+        }
+    }
+
+    [Fact]
+    public async Task PassiveReplacementTabInheritsOnlyItsOwnOfflineProfile()
+    {
+        using var fixture = new Fixture();
+        var connection = new object();
+        fixture.Service.RegisterBrowser("desktop:old", connection);
+        await fixture.Service.RequestControlAsync("session-1", "desktop:old", true);
+        Assert.False((await fixture.Service.RequestControlAsync("session-1", "desktop:new", false)).Status.IsOwner);
+        fixture.Service.UnregisterBrowser("desktop:old", connection);
+        Assert.False((await fixture.Service.RequestControlAsync("session-1", "ipad:new", false)).Status.IsOwner);
+        Assert.True((await fixture.Service.RequestControlAsync("session-1", "desktop:new", false)).Status.IsOwner);
+    }
+
+    [Fact]
     public async Task PassiveIpadNeverTakesDesktopAfterExpiryOrReconnect()
     {
         using var fixture = new Fixture();

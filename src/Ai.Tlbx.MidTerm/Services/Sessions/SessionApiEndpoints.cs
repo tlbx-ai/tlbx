@@ -639,7 +639,7 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -683,6 +683,9 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
             agentFeed.NotePrompt(id, resolvedProfile, request);
@@ -1015,7 +1018,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(new FileUploadResponse { Path = responsePath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
 
-        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file, HttpContext context, CancellationToken ct) =>
         {
             var session = sessionManager.GetSession(id);
             if (session is null)
@@ -1043,6 +1046,9 @@ public static partial class SessionApiEndpoints
                 return Results.Problem("Failed to set clipboard");
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 }, ct);
 
             inputHistory.RecordUpload(

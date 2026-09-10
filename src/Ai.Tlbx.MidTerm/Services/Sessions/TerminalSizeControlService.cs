@@ -178,7 +178,44 @@ public sealed class TerminalSizeControlService : IDisposable
     // Terminal replies, API automation and passive control requests are not activity.
     public Task<TerminalSizeControlCommandResult> RecordInputAsync(
         string sessionId, string browserId, string? browserLabel = null, CancellationToken ct = default)
-        => UpdateControlAsync(sessionId, browserId, false, true, browserLabel, null, ct);
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (_lock)
+        {
+            var now = _timeProvider.GetUtcNow();
+            if (_ownership.TryGetValue(sessionId, out var owner))
+            {
+                if (string.Equals(owner.BrowserId, browserId, StringComparison.Ordinal))
+                {
+                    RecordOwnerInputLocked(owner, now);
+                    return Task.FromResult(new TerminalSizeControlCommandResult
+                    {
+                        Status = BuildStatusLocked(sessionId, browserId, now)
+                    });
+                }
+                if (!CanTakeOverAutomaticallyLocked(owner, browserId, now))
+                {
+                    return Task.FromResult(new TerminalSizeControlCommandResult
+                    {
+                        Status = BuildStatusLocked(sessionId, browserId, now)
+                    });
+                }
+            }
+        }
+        // Only a transfer needs serialization with an in-flight resize. Ordinary
+        // typing must never wait for the PTY to acknowledge a resize.
+        return UpdateControlAsync(sessionId, browserId, false, true, browserLabel, null, ct);
+    }
+
+    private void RecordOwnerInputLocked(OwnershipRecord owner, DateTimeOffset now)
+    {
+        owner.LastInteractionUtc = now;
+        if (now - _lastInputPersistUtc >= TimeSpan.FromSeconds(15))
+        {
+            PersistLocked();
+            _lastInputPersistUtc = now;
+        }
+    }
 
     private async Task<TerminalSizeControlCommandResult> UpdateControlAsync(
         string sessionId, string browserId, bool force, bool isInput,
@@ -198,13 +235,7 @@ public sealed class TerminalSizeControlService : IDisposable
                 {
                     if (isInput)
                     {
-                        // Keep exact activity in memory without writing the ownership file on every key.
-                        current.LastInteractionUtc = now;
-                        if (now - _lastInputPersistUtc >= TimeSpan.FromSeconds(15))
-                        {
-                            PersistLocked();
-                            _lastInputPersistUtc = now;
-                        }
+                        RecordOwnerInputLocked(current, now);
                     }
                 }
                 else if (
