@@ -349,9 +349,7 @@ export function createSessionActionHandlers({
         if ($activeSessionId.get() === sessionId) {
           $activeSessionId.set(null);
           const firstSession = $sessionList.get()[0];
-          if (firstSession?.id) {
-            selectSession(firstSession.id, { closeSettingsPanel: false });
-          }
+          if (firstSession?.id) selectSession(firstSession.id, { closeSettingsPanel: false });
         }
       })
       .catch(async (error: unknown) => {
