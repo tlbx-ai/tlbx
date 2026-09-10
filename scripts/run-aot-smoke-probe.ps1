@@ -57,9 +57,14 @@ Copy-Item -LiteralPath $exePath -Destination (Join-Path $standaloneDir $exeName)
 $exePath = Join-Path $standaloneDir $exeName
 $stdoutLog = Join-Path $settingsDir "probe-stdout.log"
 $stderrLog = Join-Path $settingsDir "probe-stderr.log"
-$port = Get-Random -Minimum 21000 -Maximum 29000
+# Ask the OS for an available port instead of guessing inside a busy dev range.
+$portReservation = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+$portReservation.Start()
+try { $port = ([Net.IPEndPoint]$portReservation.LocalEndpoint).Port }
+finally { $portReservation.Stop() }
 
 Write-Host "Booting $exeName on port $port (settings: $settingsDir)..." -ForegroundColor Cyan
+$previousSettingsDir = $env:MIDTERM_SETTINGS_DIR
 $env:MIDTERM_SETTINGS_DIR = $settingsDir
 $proc = $null
 try {
@@ -162,14 +167,19 @@ try {
     Write-Host "AOT smoke probe PASSED." -ForegroundColor Green
 }
 finally {
-    Remove-Item Env:\MIDTERM_SETTINGS_DIR -ErrorAction SilentlyContinue
+    $env:MIDTERM_SETTINGS_DIR = $previousSettingsDir
     if ($proc -and -not $proc.HasExited) {
         try { $proc.Kill($true) } catch {}
         $proc.WaitForExit(5000) | Out-Null
     }
     Start-Sleep -Milliseconds 500
-    $artifactDir = Join-Path $RepoRoot '.dev/aot-smoke'
+    $artifactDir = Join-Path $RepoRoot ('.artifacts/aot-smoke/' + (Split-Path $settingsDir -Leaf))
     New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
     Get-ChildItem -LiteralPath $settingsDir -Filter '*.log' | Copy-Item -Destination $artifactDir -Force
-    try { Remove-Item -LiteralPath $settingsDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
+    Write-Host "AOT smoke logs: $artifactDir"
+    $resolvedSettingsDir = [IO.Path]::GetFullPath($settingsDir)
+    $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
+    if (-not $resolvedSettingsDir.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or
+        (Split-Path $resolvedSettingsDir -Leaf) -notlike 'mt-aot-probe-*') { throw 'Unsafe AOT probe cleanup path.' }
+    try { Remove-Item -LiteralPath $resolvedSettingsDir -Recurse -Force -ErrorAction SilentlyContinue } catch {}
 }
