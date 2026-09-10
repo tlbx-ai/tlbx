@@ -8,6 +8,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(TimingSensitiveCollection.Name)]
 public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 {
     private readonly string _stateDir;
@@ -527,7 +528,8 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             repeatCount: 2);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(2));
-        await Task.Delay(700);
+        await WaitForQueueStateAsync(() =>
+            service.GetSnapshot(["session-1"]).SingleOrDefault()?.CompletedCycles == 1);
 
         Assert.Equal(["recurring status"], runtime.SentPrompts);
         var rearmed = Assert.Single(service.GetSnapshot(["session-1"]));
@@ -535,7 +537,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         Assert.NotNull(rearmed.NextRunAt);
 
         _timeProvider.Advance(TimeSpan.FromSeconds(3));
-        await Task.Delay(700);
+        await WaitForQueueStateAsync(() => service.GetSnapshot(["session-1"]).Count == 0);
 
         Assert.Equal(["recurring status", "recurring status"], runtime.SentPrompts);
         Assert.Empty(service.GetSnapshot(["session-1"]));
@@ -628,6 +630,15 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
 
         Assert.Single(runtime.SentTurns);
         Assert.Equal("queued turn", runtime.SentTurns[0].Text);
+    }
+
+    private static async Task WaitForQueueStateAsync(Func<bool> condition)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
     }
 
     public async ValueTask DisposeAsync()

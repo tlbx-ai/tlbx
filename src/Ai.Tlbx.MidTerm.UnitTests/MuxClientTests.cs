@@ -7,6 +7,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(TimingSensitiveCollection.Name)]
 public sealed class MuxClientTests
 {
     [Fact]

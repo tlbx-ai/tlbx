@@ -5,6 +5,7 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+[Collection(TimingSensitiveCollection.Name)]
 public class BrowserCommandServiceTests
 {
     [Fact]
@@ -712,16 +713,18 @@ public class BrowserCommandServiceTests
 
         Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
         var notBefore = DateTimeOffset.UtcNow.AddMilliseconds(20);
+        // Establish the timestamp boundary before starting the operation's timeout.
+        await Task.Delay(50);
 
         var waitingTask = service.WaitForControllableAsync(
             "https://example.com/",
             sessionId: "session-a",
             previewName: "default",
             requireClientConnectedAfterUtc: notBefore,
-            timeout: TimeSpan.FromSeconds(1),
+            timeout: TimeSpan.FromSeconds(10),
             pollInterval: TimeSpan.FromMilliseconds(10));
 
-        await Task.Delay(50);
+        Assert.False(waitingTask.IsCompleted);
         Assert.True(service.TryRegisterClient("c2", "session-a", "default", "preview-a", _ => { }));
 
         var status = await waitingTask;
