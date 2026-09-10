@@ -23,7 +23,6 @@ export interface EnterOverrideInput {
 }
 
 const META_ENTER = '\x1b\r';
-const CODEX_PASTE_BURST_NEWLINE = ' \r\x7f';
 
 function containsCodexToken(value: string): boolean {
   return /(^|[\\/\s"'])codex(?:\.cmd|\.exe|\.js)?(?:$|[\s"'./\\-])/.test(value);
@@ -74,9 +73,6 @@ export function describeTerminalEnterOverrideBytes(value: string): string {
   if (value === META_ENTER) {
     return 'ESC+CR';
   }
-  if (value === CODEX_PASTE_BURST_NEWLINE) {
-    return 'codex-paste-burst-LF';
-  }
 
   return `bytes=${JSON.stringify(value)}`;
 }
@@ -112,10 +108,9 @@ function isEnterKey(input: EnterOverrideInput): boolean {
 /**
  * Returns the raw terminal bytes to send when tlbx overrides Enter.
  *
- * Codex on Windows treats multiline paste bursts differently from isolated
- * Enter bytes. The space/Enter/Backspace sequence starts Codex's paste-burst
- * detector, lets Enter become a newline inside that burst, then removes the
- * temporary space. Net effect in the composer: only a line break.
+ * Send Alt+Enter for a deliberate line break, including in Codex on Windows.
+ * Do not synthesize a paste burst: Codex 0.154.0 turns the former
+ * space/Enter/Backspace workaround into a space instead of a line break.
  */
 export function getTerminalEnterOverride(
   input: EnterOverrideInput,
@@ -132,10 +127,6 @@ export function getTerminalEnterOverride(
     !input.metaKey &&
     (input.ctrlKey || input.shiftKey || (target === 'codex' && input.altKey))
   ) {
-    if (target === 'codex') {
-      return CODEX_PASTE_BURST_NEWLINE;
-    }
-
     return META_ENTER;
   }
 

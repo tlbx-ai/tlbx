@@ -74,23 +74,23 @@ describe('getTerminalEnterOverride', () => {
     ).toBe('\x1b\r');
   });
 
-  it('maps modified Enter to a Codex paste-burst newline sequence', () => {
+  it('maps modified Enter to explicit Alt+Enter in Codex without synthetic paste characters', () => {
     expect(
       getTerminalEnterOverride(key('Enter', { shiftKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe(' \r\x7f');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(key('Enter', { ctrlKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe(' \r\x7f');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(key('Enter', { altKey: true }), 'shiftEnterLineFeed', 'codex'),
-    ).toBe(' \r\x7f');
+    ).toBe('\x1b\r');
     expect(
       getTerminalEnterOverride(
         key('Enter', { ctrlKey: true, shiftKey: true }),
         'shiftEnterLineFeed',
         'codex',
       ),
-    ).toBe(' \r\x7f');
+    ).toBe('\x1b\r');
     expect(getTerminalEnterOverride(key('Enter'), 'shiftEnterLineFeed', 'codex')).toBeNull();
   });
 
