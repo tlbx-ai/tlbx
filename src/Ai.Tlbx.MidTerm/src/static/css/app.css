@@ -300,6 +300,9 @@
 
 /* Midnight Harbor Theme Variables */
 :root {
+  --terminal-heat-cold: #646872;
+  --terminal-heat-hot: #dc1c1c;
+  --terminal-heat-warm: #5cc6ff;
   /* Real device geometry; overridable in the desktop preview for acceptance. */
   --safe-area-inset-top: env(safe-area-inset-top, 0px);
   --safe-area-inset-right: env(safe-area-inset-right, 0px);
@@ -1331,7 +1334,7 @@ body::before {
   opacity: 0.9;
   position: relative;
   overflow: hidden;
-  background: #646872;
+  background: var(--terminal-heat-cold);
 }
 
 .heat-canvas::before,
@@ -1348,12 +1351,12 @@ body::before {
 }
 
 .heat-canvas::before {
-  background: #dc1c1c;
+  background: var(--terminal-heat-hot);
   animation-name: var(--heat-red, none);
 }
 
 .heat-canvas::after {
-  background: #5cc6ff;
+  background: var(--terminal-heat-warm);
   animation-name: var(--heat-blue, none);
 }
 
