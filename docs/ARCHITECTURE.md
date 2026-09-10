@@ -160,6 +160,14 @@ explicit missing range if that cursor fell outside scrollback. Buffer requests t
 return the complete requested delta return a bounded tail with a different start cursor;
 that mismatch is the authoritative reset decision.
 
+Cursor resumes request the complete retained delta; a viewport byte cap must not turn
+retained changes into artificial data loss. When an initial frame or resume range has
+aged out, alternate-screen and synchronized normal-screen TUIs require a foreground
+redraw as part of recovery. Codex's inline animated composer is one such normal-screen
+TUI: its recent sparkle frames alone cannot reconstruct the static prompt or history.
+The redraw uses the existing canonical-size pulse and ordered recovery transaction;
+contiguous resumes keep their existing screen and do not request a repaint.
+
 Every mux socket has one `PrioritizedWebSocketWriter`. It is the sole WebSocket write owner,
 uses a bounded 2,048-frame / 8 MiB queue, applies a send timeout, and schedules complete frames in
 this order: control, active live output, visible live output, recovery, background live
@@ -186,6 +194,15 @@ tlbx tracks foreground cwd, process, command line, and terminal title. That data
 - tab-title modes
 - history/bookmark labeling
 - session heat and activity presentation
+
+Explicit terminal close keeps the session registered until its host has actually exited. IPC close and exit waits are bounded; a stalled host can be terminated only after its session identity and original process start time have been verified. Failed termination returns an error and preserves the visible session for retry. The browser removes the row only after a successful close response. This also applies to hosts reattached after web-only updates.
+
+Terminal heat is one continuous text-activity signal: `clamp(1 - age / 30s, 0, 1)` (100% to 0%). `CurrentHeat` in telemetry/activity/supervisor snapshots uses this same decay. Raw `LastOutputAt` and byte counters remain transport diagnostics. The queue observes `LastTextOutputAt` for rearming and settling; decorative bytes cannot hold a cold queue. The existing 25% threshold is reached after 22.5 seconds without text changes. Explicit Agent Controller busy state can still hold its runtime heat at one.
+
+The streaming Unicode parser ignores colors, terminal commands, whitespace and graphic symbols, and tracks bounded text cells when PTY dimensions are available. Synchronized output compares final cells with their pre-frame values. Explicit whole-screen clears also compare ordered retained text so moving the same content upwards during a redraw does not invent activity. This is text activity bookkeeping, not a full visual terminal emulator: uncommon terminal modes and unusual Unicode cell widths are outside its rendering contract. Plain log output on new lines still counts, including identical lines. Screen state is process-local; a fresh web server must observe text before it can recognize subsequent redraws of it.
+
+State snapshots carry the text timestamp and server-computed age; coalesced `terminal-text-activity` messages are bounded to four per second. The browser derives the same continuous value and uses finite CSS opacity animations: red held for the first 2 seconds after each text change (steady for once-per-second output), blue at 5 seconds, grey at 15 seconds, fully transparent at 30 seconds. No JS heat loop or cooldown timer is needed. A hidden or reconnected browser resumes from actual age, not raw Mux bytes. Short background returns reuse healthy status/settings connections, while paused transports and long-suspension recovery retain their existing recovery path. Repeated acknowledged PTY dimensions are no-ops; an explicit redraw still uses its deliberate size pulse.
+
 
 ### Terminal Resize Principle
 

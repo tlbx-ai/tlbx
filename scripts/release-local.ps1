@@ -4,6 +4,10 @@
     Creates a local release by bumping version (4th component), committing, and pushing.
     Does NOT create a git tag (no GitHub Actions trigger).
 
+.PARAMETER TestCategories
+    REQUIRED: assets, frontend, server, runtime, installers, dependencies, build; or all alone.
+    Stable releases require all. Mobile apps are verified and released independently.
+
 .PARAMETER ReleaseNotes
     MANDATORY: Array of detailed changelog entries for this release.
     These accumulate across local releases to provide fodder for public releases.
@@ -34,15 +38,20 @@
     .\release-local.ps1 -ReleaseNotes @(
         "Removed blocking FlushAsync from IPC writes to fix input latency",
         "Sessions no longer lag when mthost is busy processing output"
-    ) -mthostUpdate no
+    ) -mthostUpdate no -TestCategories frontend
 
 .EXAMPLE
     .\release-local.ps1 -ReleaseNotes @(
         "Fixed PTY handle leak on session close"
-    ) -mthostUpdate yes
+    ) -mthostUpdate yes -TestCategories all
 #>
 
 param(
+    [Parameter(Mandatory=$true, HelpMessage="Choose the affected test clusters explicitly, or all.")]
+    [ValidateNotNullOrEmpty()]
+    [ValidateSet('assets','frontend','server','runtime','installers','dependencies','build','all')]
+    [string[]]$TestCategories,
+
     [Parameter(Mandatory=$true, HelpMessage="REQUIRED: Array of detailed changelog entries. Each entry should explain what changed and why.")]
     [ValidateNotNullOrEmpty()]
     [string[]]$ReleaseNotes,
@@ -53,6 +62,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/release-test-clusters.ps1"
+$selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories)
+Show-ReleaseTestPlan -Categories $selectedCategories
 
 # Validate ReleaseNotes has meaningful content
 if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[0].Length -lt 20)) {
@@ -182,6 +194,9 @@ Write-Host "Updating version files..." -ForegroundColor Gray
 $versionJson.web = $localWebVersion
 if ($mthostUpdate -eq "yes") {
     $versionJson.pty = $localPtyVersion
+    if ($versionJson.PSObject.Properties['webOnly']) { $versionJson.PSObject.Properties.Remove('webOnly') }
+} else {
+    $versionJson | Add-Member -NotePropertyName webOnly -NotePropertyValue $true -Force
 }
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 Write-Host "  Updated: version.json" -ForegroundColor DarkGray
@@ -191,67 +206,12 @@ Write-Host "  Updated: version.json" -ForegroundColor DarkGray
 # ===========================================
 Write-Host ""
 Write-Host "Building frontend..." -ForegroundColor Gray
-Push-Location "$PSScriptRoot\..\src\Ai.Tlbx.MidTerm"
-pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Publish -Version $localWebVersion
-if ($LASTEXITCODE -ne 0) { throw "Frontend build failed" }
-Pop-Location
+& "$PSScriptRoot/release-frontend-preflight.ps1" -Version $localWebVersion -SkipVerify
+& "$PSScriptRoot/run-release-tests.ps1" -TestCategories $selectedCategories -FrontendInstalled
 
-# ===========================================
-# PHASE 5: AOT publish (parallel)
-# ===========================================
-Write-Host "Publishing mt.exe, mthost.exe, mtagenthost.exe, and mttmux.exe..." -ForegroundColor Gray
-
-$repoRoot = "$PSScriptRoot\.."
-$mtJob = Start-Job -ScriptBlock {
-    param($rid, $path, $envPath)
-    $env:PATH = $envPath
-    Set-Location $path
-    # Version is read from version.json by the csproj at build time
-    dotnet publish src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj -c Release -r $rid "-p:IsPublishing=true" --verbosity quiet 2>&1
-    $LASTEXITCODE
-} -ArgumentList $RID, $repoRoot, $env:PATH
-
-$mthostJob = Start-Job -ScriptBlock {
-    param($rid, $path, $envPath)
-    $env:PATH = $envPath
-    Set-Location $path
-    # Version is read from version.json by the csproj at build time
-    dotnet publish src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj -c Release -r $rid "-p:IsPublishing=true" --verbosity quiet 2>&1
-    $LASTEXITCODE
-} -ArgumentList $RID, $repoRoot, $env:PATH
-
-$mtagenthostJob = Start-Job -ScriptBlock {
-    param($rid, $path, $envPath)
-    $env:PATH = $envPath
-    Set-Location $path
-    dotnet publish src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj -c Release -r $rid "-p:IsPublishing=true" --verbosity quiet 2>&1
-    $LASTEXITCODE
-} -ArgumentList $RID, $repoRoot, $env:PATH
-
-$mttmuxJob = Start-Job -ScriptBlock {
-    param($rid, $path, $envPath)
-    $env:PATH = $envPath
-    Set-Location $path
-    dotnet publish src/Ai.Tlbx.MidTerm.TmuxShim/Ai.Tlbx.MidTerm.TmuxShim.csproj -c Release -r $rid "-p:IsPublishing=true" --verbosity quiet 2>&1
-    $LASTEXITCODE
-} -ArgumentList $RID, $repoRoot, $env:PATH
-
-$mtResult = Receive-Job -Job $mtJob -Wait
-$mthostResult = Receive-Job -Job $mthostJob -Wait
-$mtagenthostResult = Receive-Job -Job $mtagenthostJob -Wait
-$mttmuxResult = Receive-Job -Job $mttmuxJob -Wait
-Remove-Job -Job $mtJob, $mthostJob, $mtagenthostJob, $mttmuxJob
-
-# Check if publish succeeded by verifying output file exists
-# (MSBuild uses _REINVOKE_SUCCESS_ error to stop outer build after nested build completes, so exit code is unreliable)
-$mtExe = "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe"
-$mthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$RID/publish/mthost.exe"
-$mtagenthostExe = "$repoRoot/src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$RID/publish/mtagenthost.exe"
-$mttmuxExe = "$repoRoot/src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$RID/publish/mttmux.exe"
-if (-not (Test-Path $mtExe)) { throw "mt publish failed - output not found: $mtExe" }
-if (-not (Test-Path $mthostExe)) { throw "mthost publish failed - output not found: $mthostExe" }
-if (-not (Test-Path $mtagenthostExe)) { throw "mtagenthost publish failed - output not found: $mtagenthostExe" }
-if (-not (Test-Path $mttmuxExe)) { throw "mttmux publish failed - output not found: $mttmuxExe" }
+# Use the same checked publish path as CI, including host reuse where eligible.
+$repoRoot = Split-Path $PSScriptRoot -Parent
+& "$PSScriptRoot/publish-runtime-set.ps1" -Rid $RID -Configuration Release
 
 # ===========================================
 # PHASE 6: Copy to output

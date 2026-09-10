@@ -1,6 +1,5 @@
 import { isTerminalVisible } from './modules/terminal/presentationRefresh';
 import { createLogger } from './modules/logging';
-import { suppressAllHeat } from './modules/sidebar';
 import { closeSettings } from './modules/settings';
 import {
   createTerminalForSession,
@@ -178,7 +177,6 @@ export function createSessionActionHandlers({
     detachHubChannel();
     hideStandaloneTerminalContainers();
     $activeSessionId.set(sessionId);
-    suppressAllHeat(1500);
 
     const state = createTerminalForSession(sessionId, sessionInfo);
     const tabState = ensureSessionWrapper(sessionId);
@@ -213,7 +211,6 @@ export function createSessionActionHandlers({
       return false;
     }
 
-    suppressAllHeat(1500);
     if (focusTerminal) {
       focusLayoutSession(sessionId);
     } else {
@@ -233,7 +230,6 @@ export function createSessionActionHandlers({
     if (focusAlreadyVisibleSession(sessionId, focusTerminal)) return;
     hideStandaloneTerminalContainers();
     $activeSessionId.set(sessionId);
-    suppressAllHeat(1500);
     sendActiveSessionHint(sessionId);
 
     const sessionInfo = getSession(sessionId);
@@ -309,6 +305,8 @@ export function createSessionActionHandlers({
     selectStandaloneSession(sessionId, focusTerminal);
   }
 
+  const closingSessions = new Set<string>();
+
   function deleteSession(sessionId: string): void {
     if (isHubSessionId(sessionId)) {
       const record = getHubSessionRecord(sessionId);
@@ -333,28 +331,34 @@ export function createSessionActionHandlers({
       return;
     }
 
-    handleSessionClosed(sessionId);
-    removeSessionDockState(sessionId);
-    removeSmartInputSessionState(sessionId);
-    destroyAgentView(sessionId);
-    destroyFileBrowser(sessionId);
-    destroyGitSession(sessionId);
-    destroyCommandsSession(sessionId);
-    destroySessionWrapper(sessionId);
-    destroyTerminalForSession(sessionId);
-    removeSession(sessionId);
+    if (closingSessions.has(sessionId)) return;
+    closingSessions.add(sessionId);
+    void apiDeleteSession(sessionId)
+      .then(() => {
+        handleSessionClosed(sessionId);
+        removeSessionDockState(sessionId);
+        removeSmartInputSessionState(sessionId);
+        destroyAgentView(sessionId);
+        destroyFileBrowser(sessionId);
+        destroyGitSession(sessionId);
+        destroyCommandsSession(sessionId);
+        destroySessionWrapper(sessionId);
+        destroyTerminalForSession(sessionId);
+        removeSession(sessionId);
 
-    if ($activeSessionId.get() === sessionId) {
-      $activeSessionId.set(null);
-      const firstSession = $sessionList.get()[0];
-      if (firstSession?.id) {
-        selectSession(firstSession.id, { closeSettingsPanel: false });
-      }
-    }
-
-    apiDeleteSession(sessionId).catch((e: unknown) => {
-      log.error(() => `Failed to delete session ${sessionId}: ${String(e)}`);
-    });
+        if ($activeSessionId.get() === sessionId) {
+          $activeSessionId.set(null);
+          const firstSession = $sessionList.get()[0];
+          if (firstSession?.id) selectSession(firstSession.id, { closeSettingsPanel: false });
+        }
+      })
+      .catch(async (error: unknown) => {
+        log.error(() => `Failed to close session ${sessionId}: ${String(error)}`);
+        await showAlert(error instanceof Error ? error.message : String(error), {
+          title: t('session.close'),
+        });
+      })
+      .finally(() => closingSessions.delete(sessionId));
   }
 
   async function enableMidtermFeatures(sessionId: string): Promise<void> {

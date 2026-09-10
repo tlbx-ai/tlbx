@@ -75,7 +75,7 @@ public class StubSystemHandler : ISystemHandler
     public Task<IResult> CheckUpdateAsync() =>
         Task.FromResult<IResult>(Results.Json(new UpdateInfo { Available = false }));
 
-    public Task<IResult> ApplyUpdateAsync(string? source) =>
+    public Task<IResult> ApplyUpdateAsync(string? source, bool forceFull = false) =>
         Task.FromResult<IResult>(Results.Ok("Update started."));
 
     public IResult GetUpdateResult(bool clear) =>

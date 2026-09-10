@@ -381,14 +381,8 @@ function scheduleScanIdleFlush(sessionId: string): void {
     }
   };
 
-  const idleScheduler = (
-    window as typeof window & {
-      requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
-    }
-  ).requestIdleCallback;
-
-  if (typeof idleScheduler === 'function') {
-    current.idleHandle = idleScheduler(
+  if (typeof window.requestIdleCallback === 'function') {
+    current.idleHandle = window.requestIdleCallback(
       () => {
         flush();
       },
@@ -434,7 +428,7 @@ async function getRegisterFilePathsFn(): Promise<RegisterFilePathsFn> {
   if (!registerFilePathsPromise) {
     registerFilePathsPromise = import('../../api/client')
       .then((module) => {
-        registerFilePathsFn = module.registerFilePaths as RegisterFilePathsFn;
+        registerFilePathsFn = module.registerFilePaths;
         return registerFilePathsFn;
       })
       .finally(() => {
@@ -486,11 +480,8 @@ export function clearPathAllowlist(sessionId: string): void {
     window.clearTimeout(scanState.timer);
   }
   if (scanState && scanState.idleHandle !== null) {
-    const idleCanceller = (
-      window as typeof window & { cancelIdleCallback?: (handle: number) => void }
-    ).cancelIdleCallback;
-    if (typeof idleCanceller === 'function') {
-      idleCanceller(scanState.idleHandle);
+    if (typeof window.cancelIdleCallback === 'function') {
+      window.cancelIdleCallback(scanState.idleHandle);
     } else {
       window.clearTimeout(scanState.idleHandle);
     }

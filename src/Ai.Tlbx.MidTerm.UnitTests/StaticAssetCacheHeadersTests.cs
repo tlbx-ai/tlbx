@@ -36,7 +36,7 @@ public class StaticAssetCacheHeadersTests
         var first = StaticAssetCacheHeaders.CreateETag("/js/terminal.min.js", fileInfo);
         var second = StaticAssetCacheHeaders.CreateETag("/js/webAudioAccess.js", fileInfo);
 
-        Assert.NotEqual(first, second);
+        Assert.NotEqual(first, second, StringComparer.Ordinal);
     }
 
     [Theory]

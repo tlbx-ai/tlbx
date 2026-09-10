@@ -60,7 +60,7 @@ export const TERMINAL_COLOR_SCHEME_FIELDS = [
   { key: 'foreground', label: 'Foreground', group: 'Core', input: 'color' },
   { key: 'cursor', label: 'Cursor', group: 'Core', input: 'color' },
   { key: 'cursorAccent', label: 'Cursor Accent', group: 'Core', input: 'color' },
-  { key: 'selectionBackground', label: 'Selection', group: 'Core', input: 'color' },
+  { key: 'selectionBackground', label: 'Selection', group: 'Core', input: 'text' },
   { key: 'black', label: 'Black', group: 'Standard ANSI', input: 'color' },
   { key: 'red', label: 'Red', group: 'Standard ANSI', input: 'color' },
   { key: 'green', label: 'Green', group: 'Standard ANSI', input: 'color' },

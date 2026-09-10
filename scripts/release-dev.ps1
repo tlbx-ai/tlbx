@@ -16,6 +16,10 @@
 .PARAMETER ReleaseTitle
     A concise title for this release (one line, no version number).
 
+.PARAMETER TestCategories
+    REQUIRED: assets, frontend, server, runtime, installers, dependencies, build; or all alone.
+    Stable releases require all. Mobile apps are verified and released independently.
+
 .PARAMETER ReleaseNotes
     MANDATORY: Array of detailed changelog entries for this release.
 
@@ -47,10 +51,15 @@
 .EXAMPLE
     .\release-dev.ps1 -Bump patch -ReleaseTitle "Test new feature" -ReleaseNotes @(
         "Added experimental feature X for testing"
-    ) -mthostUpdate no
+    ) -mthostUpdate no -TestCategories frontend
 #>
 
 param(
+    [Parameter(Mandatory=$true, HelpMessage="Choose the affected test clusters explicitly, or all.")]
+    [ValidateNotNullOrEmpty()]
+    [ValidateSet('assets','frontend','server','runtime','installers','dependencies','build','all')]
+    [string[]]$TestCategories,
+
     [Parameter(Mandatory=$true)]
     [ValidateSet("major", "minor", "patch")]
     [string]$Bump,
@@ -69,6 +78,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/release-test-clusters.ps1"
+$selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories)
+Show-ReleaseTestPlan -Categories $selectedCategories
 $recentTagRefreshCount = 5
 
 function Get-WebVersionFromGitRef {
@@ -207,7 +219,7 @@ if ($currentBranch -ne "dev") {
     Write-Host "Current branch: $currentBranch" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "For stable releases, switch to main and use:" -ForegroundColor Cyan
-    Write-Host "  .\release.ps1 -Bump patch -ReleaseTitle '...' -ReleaseNotes @(...) -mthostUpdate no" -ForegroundColor White
+    Write-Host "  .\release.ps1 -Bump patch -ReleaseTitle '...' -ReleaseNotes @(...) -mthostUpdate no -TestCategories all" -ForegroundColor White
     Write-Host ""
     exit 1
 }
@@ -268,6 +280,8 @@ $versionJsonPath = "$PSScriptRoot\..\src\version.json"
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $currentVersion = $versionJson.web
+Assert-ReleaseRuntimeSelection -PtyVersion $versionJson.pty -mthostUpdate $mthostUpdate
+Show-ReleaseTestPlan -Categories $selectedCategories -BaseVersion $currentVersion
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 
 # Dev versions must be >= main's version. Use the higher of dev/main as the base.
@@ -319,6 +333,8 @@ if ($isPtyBreaking) {
 $versionJson.web = $newVersion
 if ($isPtyBreaking) {
     $versionJson.pty = $newVersion
+    # Older updaters use this floor for web-only releases that follow this refresh.
+    $versionJson.minCompatiblePty = $newVersion
     if ($versionJson.PSObject.Properties["webOnly"]) {
         $versionJson.PSObject.Properties.Remove("webOnly")
     }
@@ -353,13 +369,13 @@ if ($isPtyBreaking) {
     Write-Host "  Host runtimes: release archives may still ship them, but running installs stay on their current mthost + mtagenthost" -ForegroundColor DarkGray
 }
 
-# Clean frontend preflight (fresh npm install + frontend build in a clean snapshot)
+# Frontend preflight (fresh npm install + frontend build in the selected checkout)
 # before we commit or tag anything.
 Write-Host ""
-Write-Host "Running clean frontend preflight..." -ForegroundColor Cyan
+Write-Host "Running frontend preflight in the current checkout..." -ForegroundColor Cyan
 $frontendPreflightScript = Join-Path $PSScriptRoot "release-frontend-preflight.ps1"
 try {
-    & $frontendPreflightScript -Version $newVersion -DevRelease
+    & $frontendPreflightScript -Version $newVersion -DevRelease -SkipVerify
     Write-Host "Frontend preflight succeeded." -ForegroundColor Green
 }
 catch {
@@ -370,46 +386,9 @@ catch {
     exit 1
 }
 
-# Pre-release build verification (catches ESLint, TypeScript, C# errors before committing)
-Write-Host ""
-Write-Host "Running supply-chain audit gate..." -ForegroundColor Cyan
-$dotnetTestSuiteScript = Join-Path $PSScriptRoot "run-dotnet-test-suite.ps1"
-$runtimeBuildVerificationScript = Join-Path $PSScriptRoot "run-runtime-build-verification.ps1"
+# Explicitly selected checks; frontend dependencies were installed by preflight.
 try {
-    & (Join-Path $PSScriptRoot "audit-supply-chain.ps1")
-    Write-Host "Supply-chain audit gate succeeded." -ForegroundColor Green
-
-    Write-Host ""
-    Write-Host "Preparing publish frontend for runtime verification..." -ForegroundColor Cyan
-    $frontendRoot = Join-Path $PSScriptRoot "../src/Ai.Tlbx.MidTerm"
-    Push-Location $frontendRoot
-    try {
-        & pwsh -NoProfile -ExecutionPolicy Bypass -File frontend-build.ps1 -Version $newVersion -Publish -DevRelease -SkipVerify
-        if ($LASTEXITCODE -ne 0) {
-            throw "Frontend publish build failed for runtime verification"
-        }
-    }
-    finally {
-        Pop-Location
-    }
-    Write-Host "Runtime verification frontend succeeded." -ForegroundColor Green
-
-    Write-Host ""
-    Write-Host "Running .NET test suite..." -ForegroundColor Cyan
-    & $dotnetTestSuiteScript -Configuration Release -WarnAsError
-    Write-Host ".NET tests succeeded." -ForegroundColor Green
-
-    Write-Host ""
-    Write-Host "Running runtime build verification..." -ForegroundColor Cyan
-    & $runtimeBuildVerificationScript -Configuration Release -WarnAsError
-    Write-Host "Runtime build verification succeeded." -ForegroundColor Green
-
-    if ($IsWindows) {
-        Write-Host ""
-        Write-Host "Running Native AOT smoke probe..." -ForegroundColor Cyan
-        & (Join-Path $PSScriptRoot "run-aot-smoke-probe.ps1") -Configuration Release -Rid win-x64
-        Write-Host "Native AOT smoke probe succeeded." -ForegroundColor Green
-    }
+    & (Join-Path $PSScriptRoot "run-release-tests.ps1") -TestCategories $selectedCategories -FrontendInstalled
 }
 catch {
     Write-Host ""

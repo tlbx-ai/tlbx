@@ -489,24 +489,39 @@ public static partial class SessionApiEndpoints
 
         app.MapDelete("/api/sessions/{id}", async (string id, CancellationToken ct) =>
         {
-            workerSessionRegistry.Forget(id);
-            agentFeed.Forget(id);
             var closed = await sessionManager.CloseSessionAsync(id, ct);
+            if (!closed && sessionManager.GetSessionList(includeHidden: true).Sessions.Any(session => session.Id == id))
+            {
+                return Results.Problem("The terminal host could not be closed. The session is still available; retry closing it.", statusCode: StatusCodes.Status409Conflict);
+            }
             if (closed)
             {
+                workerSessionRegistry.Forget(id);
+                agentFeed.Forget(id);
                 await sessionCloseCleanup.ReclaimAfterUserTriggeredCloseAsync(id);
             }
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, HttpContext context, CancellationToken ct) =>
         {
             TerminalSizeLimits.ThrowIfInvalid(request.Cols, request.Rows);
-            var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, ct);
-            if (!success)
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            var browserId = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            bool success;
+            if (browserId is not null && request.ExpectedEpoch is { } epoch)
             {
-                return Results.NotFound();
+                var result = await terminalSizeControlService.ResizeAsync(id, browserId, epoch,
+                    request.Cols, request.Rows,
+                    resizeCt => sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, resizeCt), ct);
+                success = result.ResizeApplied;
             }
+            else
+            {
+                success = await terminalSizeControlService.ResizeUnownedAsync(id, request.Cols, request.Rows,
+                    resizeCt => sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, resizeCt), ct);
+            }
+            if (!success) return Results.Conflict("Terminal size is owned by a browser; current owner and epoch are required.");
             return Results.Json(new ResizeResponse
             {
                 Accepted = true,
@@ -553,7 +568,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionStateResponse);
         });
 
-        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -565,11 +580,14 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (data.Length > 0 && inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/paste", async (string id, SessionPasteRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/paste", async (string id, SessionPasteRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -581,6 +599,9 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (data.Length > 0 && inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await SendPasteInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, request.BracketedPaste, ct);
             if (!string.Equals(request.HistorySource, InputHistorySources.UploadPath, StringComparison.Ordinal))
             {
@@ -598,7 +619,7 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -610,12 +631,15 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (data.Length > 0 && inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             agentFeed.NoteKeyInput(id, request);
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/prompt", async (string id, SessionPromptRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -659,6 +683,9 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await ExecutePromptPlanAsync(sessionManager, sessionTelemetry, id, plan, ct);
             var resolvedProfile = aiCliProfileService.NormalizeProfile(request.Profile, session);
             agentFeed.NotePrompt(id, resolvedProfile, request);
@@ -991,7 +1018,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(new FileUploadResponse { Path = responsePath }, AppJsonContext.Default.FileUploadResponse);
         }).DisableAntiforgery();
 
-        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/paste-clipboard-image", async (string id, IFormFile file, HttpContext context, CancellationToken ct) =>
         {
             var session = sessionManager.GetSession(id);
             if (session is null)
@@ -1019,6 +1046,9 @@ public static partial class SessionApiEndpoints
                 return Results.Problem("Failed to set clipboard");
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await sessionManager.SendInputAsync(id, new byte[] { 0x1b, 0x76 }, ct);
 
             inputHistory.RecordUpload(

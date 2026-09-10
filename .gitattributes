@@ -1,6 +1,9 @@
 # Force LF line endings everywhere (all modern editors handle this fine)
 * text=auto eol=lf
 
+# Preserve whitespace inside the upstream SDK's bundled runtime template literals.
+src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge/dist/claude-agent-sdk-bridge.mjs whitespace=-blank-at-eol
+
 # Binary files
 *.woff binary
 *.woff2 binary

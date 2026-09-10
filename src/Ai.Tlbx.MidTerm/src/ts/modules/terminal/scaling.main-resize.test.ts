@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { $activeSessionId, $currentSettings, $isMainBrowser, $sessions } from '../../stores';
+import { $activeSessionId, $currentSettings, $terminalSizeControls, $sessions } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
 import {
   applyTerminalScaling,
@@ -198,7 +198,16 @@ describe('fitSessionToScreen', () => {
     mocks.recoverTerminalRendererAfterForeground.mockClear();
     vi.mocked(sendResize).mockReset();
     vi.mocked(focusActiveTerminal).mockReset();
-    $isMainBrowser.set(true);
+    $terminalSizeControls.set({
+      s1: {
+        sessionId: 's1',
+        isOwner: true,
+        hasOwner: true,
+        ownerOnline: true,
+        canTakeOverAutomatically: true,
+        epoch: 1,
+      },
+    });
     $currentSettings.set({
       fontSize: 14,
       fontFamily: 'Cascadia Code',

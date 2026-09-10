@@ -4,7 +4,6 @@ import {
   MUX_TYPE_COMPRESSED_OUTPUT,
   MUX_TYPE_INPUT,
   MUX_TYPE_OUTPUT,
-  MUX_TYPE_RESIZE,
   MUX_TYPE_RESYNC,
 } from '../../constants';
 import { createWsUrl, parseCompressedOutputFrame, parseOutputFrame } from '../../utils';
@@ -17,7 +16,7 @@ let hubSocket: WebSocket | null = null;
 let activeCompositeId: string | null = null;
 let hubSuspendedForBrowserBackground = false;
 let hubReconnectTimer: number | null = null;
-const pendingHubInputs: Array<{ sessionId: string; data: string }> = [];
+const pendingHubInputs: Array<{ sessionId: string; data: string; userInput: boolean }> = [];
 const MAX_PENDING_HUB_INPUTS = 100;
 const HUB_RECONNECT_DELAY_MS = 1000;
 
@@ -155,7 +154,8 @@ export function attachHubChannel(compositeId: string): void {
     if (hubSocket !== ws || activeCompositeId !== compositeId) return;
     const queued = pendingHubInputs.splice(0);
     queued.forEach((input) => {
-      if (input.sessionId === compositeId) sendHubInputFrame(input.sessionId, input.data);
+      if (input.sessionId === compositeId)
+        sendHubInputFrame(input.sessionId, input.data, input.userInput);
     });
   };
   ws.onmessage = (event) => {
@@ -182,7 +182,7 @@ function sendFrame(frame: Uint8Array): void {
   hubSocket.send(frame);
 }
 
-function sendHubInputFrame(sessionId: string, data: string): void {
+function sendHubInputFrame(sessionId: string, data: string, userInput = true): void {
   const record = getHubSessionRecord(sessionId);
   if (!record) {
     return;
@@ -190,20 +190,20 @@ function sendHubInputFrame(sessionId: string, data: string): void {
 
   const payload = new TextEncoder().encode(data);
   const frame = new Uint8Array(MUX_HEADER_SIZE + payload.length);
-  frame[0] = MUX_TYPE_INPUT;
+  frame[0] = userInput ? MUX_TYPE_INPUT : 0x02;
   encodeSessionId(frame, 1, record.remoteSessionId);
   frame.set(payload, MUX_HEADER_SIZE);
   sendFrame(frame);
 }
 
-export function sendHubInput(sessionId: string, data: string): void {
+export function sendHubInput(sessionId: string, data: string, userInput = true): void {
   if (hubSocket?.readyState === WebSocket.OPEN && activeCompositeId === sessionId) {
-    sendHubInputFrame(sessionId, data);
+    sendHubInputFrame(sessionId, data, userInput);
     return;
   }
 
   if (pendingHubInputs.length >= MAX_PENDING_HUB_INPUTS) pendingHubInputs.shift();
-  pendingHubInputs.push({ sessionId, data });
+  pendingHubInputs.push({ sessionId, data, userInput });
   if (!hubSuspendedForBrowserBackground) attachHubChannel(sessionId);
 }
 
@@ -217,22 +217,6 @@ export function suspendHubChannelForBrowserBackground(): void {
 export function recoverHubChannelAfterBrowserResume(): void {
   hubSuspendedForBrowserBackground = false;
   if (activeCompositeId !== null) attachHubChannel(activeCompositeId);
-}
-
-export function sendHubResize(sessionId: string, cols: number, rows: number): void {
-  const record = getHubSessionRecord(sessionId);
-  if (!record) {
-    return;
-  }
-
-  const frame = new Uint8Array(MUX_HEADER_SIZE + 4);
-  frame[0] = MUX_TYPE_RESIZE;
-  encodeSessionId(frame, 1, record.remoteSessionId);
-  frame[MUX_HEADER_SIZE] = cols & 0xff;
-  frame[MUX_HEADER_SIZE + 1] = (cols >> 8) & 0xff;
-  frame[MUX_HEADER_SIZE + 2] = rows & 0xff;
-  frame[MUX_HEADER_SIZE + 3] = (rows >> 8) & 0xff;
-  sendFrame(frame);
 }
 
 export function requestHubBufferRefresh(sessionId: string): void {

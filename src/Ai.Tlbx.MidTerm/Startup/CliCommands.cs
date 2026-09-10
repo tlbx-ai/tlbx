@@ -44,6 +44,12 @@ public static class CliCommands
 
         if (args.Contains("--update", StringComparer.Ordinal) || args.Contains("--apply-update", StringComparer.Ordinal))
         {
+            if (UpdateService.IsSharedRuntimeHost(UpdateService.GetCurrentBinaryPath()))
+            {
+                Console.Error.WriteLine(UpdateService.SourceUpdateMessage);
+                return true;
+            }
+
             using var updateService = new UpdateService();
             Console.WriteLine("Checking for updates...");
             var update = updateService.CheckForUpdateAsync().GetAwaiter().GetResult();
@@ -55,7 +61,7 @@ public static class CliCommands
             }
 
             Console.WriteLine($"Downloading {update.LatestVersion}...");
-            var extractedDir = updateService.DownloadUpdateAsync().GetAwaiter().GetResult();
+            var extractedDir = updateService.DownloadUpdateAsync(update).GetAwaiter().GetResult();
 
             if (string.IsNullOrEmpty(extractedDir))
             {

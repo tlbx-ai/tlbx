@@ -5,6 +5,7 @@
  * Handles xterm.js terminal lifecycle, creation, destruction,
  * and event binding for terminal sessions.
  */
+import { onTerminalInput } from './terminalInputOrigin';
 import type { Session, TerminalState } from '../../types';
 import { sendSessionPasteInput } from '../../api/client';
 import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
@@ -37,6 +38,7 @@ import {
   restartStalledSessionRecovery,
   sendCommand,
   sendInput,
+  sendTerminalResponse,
   getBrowserTransportSnapshot,
   writeOutputFrame as writeMuxOutputFrame,
 } from '../comms';
@@ -67,8 +69,9 @@ import {
 } from './enterModifierLatch';
 import * as enterOverrideSuppress from './enterOverrideSuppress';
 import { bindTerminalInteractionHandlers } from './interactionBindings';
+import { onTerminalScrollbackExit } from './scrollback';
 import { shouldReclaimTerminalFocusOnMouseUp } from './focusReclaim';
-import { openTerminalWebLinkInNewTab } from './webLinks';
+import { activateTerminalLink } from './linkConfirmation';
 import {
   runWithGuaranteedTerminalReplay,
   shouldRequestInitialTerminalReplay,
@@ -1454,11 +1457,18 @@ export function createTerminalForSession(
 
         // Register onData immediately to avoid losing keystrokes during font/rAF delay
         // Other event handlers are set up later in setupTerminalEvents
-        state.earlyDataDisposable = terminal.onData((data: string) => {
-          resumeMobileStableTerminalCursorFollowing(state);
-          captureTerminalInputData(sessionId, data);
-          sendInput(sessionId, data);
-        });
+        state.earlyDataDisposable = onTerminalInput(
+          terminal,
+          (data: string, userInput: boolean) => {
+            if (!userInput) {
+              sendTerminalResponse(sessionId, data);
+              return;
+            }
+            resumeMobileStableTerminalCursorFollowing(state);
+            captureTerminalInputData(sessionId, data);
+            sendInput(sessionId, data);
+          },
+        );
 
         // Load WebGL addon for GPU-accelerated rendering (with context limit)
         // Browser limits ~6-8 simultaneous WebGL contexts, so we track usage
@@ -1501,7 +1511,7 @@ export function createTerminalForSession(
 
         // Load Web-Links addon for clickable URLs
         try {
-          const webLinksAddon = new WebLinksAddon(openTerminalWebLinkInNewTab);
+          const webLinksAddon = new WebLinksAddon(activateTerminalLink);
           terminal.loadAddon(webLinksAddon);
         } catch {
           // Web-Links addon failed to load
@@ -1634,8 +1644,23 @@ export function setupTerminalEvents(
   }
 
   // Wire up events - onData replaces the early handler
+  if (termState) {
+    disposables.push(
+      onTerminalScrollbackExit(termState, () => {
+        if (sessionTerminals.get(sessionId) !== termState || !isTerminalVisible(termState)) return;
+        const pane = container.closest<HTMLElement>('.layout-leaf');
+        if (pane) fitTerminalToContainer(sessionId, pane);
+        else fitSessionToScreen(sessionId);
+      }),
+    );
+  }
+
   disposables.push(
-    terminal.onData((data: string) => {
+    onTerminalInput(terminal, (data: string, userInput: boolean) => {
+      if (!userInput) {
+        sendTerminalResponse(sessionId, data);
+        return;
+      }
       const state = sessionTerminals.get(sessionId);
       if (state) {
         resumeMobileStableTerminalCursorFollowing(state);

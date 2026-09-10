@@ -196,7 +196,7 @@ describe('themes', () => {
     expect(theme.background).toBe('#0C0C0C');
     expect(theme.cursor).toBe('#F2F2F2');
     expect(theme.cursorAccent).toBe('#0C0C0C');
-    expect(theme.selectionBackground).toBe('#2D3044');
+    expect(theme.selectionBackground).toBe('#7BA2F780');
     expect(theme.scrollbarSliderBackground).toBe('rgba(58, 62, 82, 0.5)');
     expect(theme.foreground).toBe('#f5f5f5');
     expect(theme.black).toBe('#0C0C0C');

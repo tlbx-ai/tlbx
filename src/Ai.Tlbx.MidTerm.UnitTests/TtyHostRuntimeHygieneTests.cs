@@ -22,7 +22,7 @@ public sealed class TtyHostRuntimeHygieneTests
         Assert.True(TtyHostProgram.EnqueueFrame(channel.Writer, "first"u8, cts.Token));
 
         var blockedWrite = Task.Run(() =>
-            TtyHostProgram.EnqueueFrame(channel.Writer, "second"u8, cts.Token));
+            TtyHostProgram.EnqueueFrame(channel.Writer, "second"u8, cts.Token), CancellationToken.None);
         var earlyCompletion = await Task.WhenAny(blockedWrite, Task.Delay(100, cts.Token));
         Assert.NotSame(blockedWrite, earlyCompletion);
 
@@ -61,7 +61,7 @@ public sealed class TtyHostRuntimeHygieneTests
         Assert.True(TtyHostProgram.EnqueueFrame(channel.Writer, "held"u8, CancellationToken.None));
 
         var blockedWrite = Task.Run(() =>
-            TtyHostProgram.EnqueueFrame(channel.Writer, "cancelled"u8, cts.Token));
+            TtyHostProgram.EnqueueFrame(channel.Writer, "cancelled"u8, cts.Token), CancellationToken.None);
         await Task.Delay(50, cts.Token);
         Assert.False(blockedWrite.IsCompleted);
         cts.Cancel();

@@ -150,8 +150,15 @@ static string ReadImageSummary(JsonElement root)
 
 static string? ReadOption(IReadOnlyList<string> values, string name)
 {
-    for (var index = 0; index < values.Count - 1; index++)
-        if (string.Equals(values[index], name, StringComparison.Ordinal)) return values[index + 1];
+    var inlinePrefix = name + "=";
+    for (var index = 0; index < values.Count; index++)
+    {
+        // The Agent SDK also emits CLI options as --resume=value and --session-id=value.
+        if (values[index].StartsWith(inlinePrefix, StringComparison.Ordinal))
+            return values[index][inlinePrefix.Length..];
+        if (string.Equals(values[index], name, StringComparison.Ordinal) && index + 1 < values.Count)
+            return values[index + 1];
+    }
     return null;
 }
 

@@ -73,7 +73,7 @@ function scheduleTrafficSample(): void {
 export function initTrafficIndicator(): void {
   const wsTraffic = document.getElementById('ws-traffic');
   if (!wsTraffic) return;
-  el = wsTraffic as HTMLSpanElement;
+  el = wsTraffic;
 
   unsubscribeTraffic = onWsTraffic(scheduleTrafficSample);
 

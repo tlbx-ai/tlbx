@@ -209,10 +209,7 @@ function applyTerminalSettingsToState(args: {
  */
 export function setElementValue(id: string, value: string | number): void {
   const el = document.getElementById(id) as
-    | HTMLInputElement
-    | HTMLSelectElement
-    | HTMLTextAreaElement
-    | null;
+    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
   if (!el) {
     return;
   }
@@ -253,10 +250,7 @@ export function setElementChecked(id: string, checked: boolean): void {
  */
 export function getElementValue(id: string, defaultValue: string): string {
   const el = document.getElementById(id) as
-    | HTMLInputElement
-    | HTMLSelectElement
-    | HTMLTextAreaElement
-    | null;
+    HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null;
   return el ? el.value : defaultValue;
 }
 

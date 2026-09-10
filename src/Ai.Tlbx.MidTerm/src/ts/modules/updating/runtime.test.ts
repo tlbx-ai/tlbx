@@ -137,4 +137,21 @@ describe('update runtime', () => {
 
     expect(mocks.reloadAppShell).not.toHaveBeenCalled();
   });
+
+  it('waits for a real restart when reinstalling without a new version number', async () => {
+    mocks.fetch.mockResolvedValue({ ok: true } as Response);
+    const runtime = await import('./runtime');
+    runtime.beginServerRestartLifecycle('update', { updateType: 'full' });
+    await flushAsyncWork();
+    expect(mocks.reloadAppShell).not.toHaveBeenCalled();
+
+    const poll = mocks.setInterval.mock.calls.at(-1)?.[0] as () => Promise<void>;
+    mocks.fetch.mockRejectedValueOnce(new Error('server restarting'));
+    await poll();
+    await flushAsyncWork();
+    expect(mocks.reloadAppShell).not.toHaveBeenCalled();
+    await poll();
+    await flushAsyncWork();
+    expect(mocks.reloadAppShell).toHaveBeenCalledTimes(1);
+  });
 });

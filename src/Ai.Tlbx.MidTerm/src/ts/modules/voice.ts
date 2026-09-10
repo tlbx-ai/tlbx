@@ -166,8 +166,8 @@ function updateSpeedDisplay(): void {
  */
 export async function checkMicrophonePermissionStatus(): Promise<'granted' | 'prompt' | 'denied'> {
   try {
-    const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
-    return result.state as 'granted' | 'prompt' | 'denied';
+    const result = await navigator.permissions.query({ name: 'microphone' });
+    return result.state;
   } catch {
     return 'prompt';
   }

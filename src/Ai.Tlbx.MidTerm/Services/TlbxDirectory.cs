@@ -272,7 +272,8 @@ public static class TlbxDirectory
         **Rules:**
         - Start with `mt_outline` (10x smaller than `mt_query`)
         - Use `mt_query SELECTOR --text` for text-only output
-        - Batch JS reads: `mt_exec "JSON.stringify({a: expr1, b: expr2})"`
+        - Batch JS reads: `mt_exec "({a: expr1, b: expr2})"`. Objects and arrays return JSON; promises are awaited and rejected promises report errors.
+        - Use DOM reads for exact text/state. Docked screenshots reconstruct the page and may differ for CSS masks, popovers, or other complex graphics; compare the actual browser before judging a visual defect.
         - After actions, verify with `mt_wait` or `mt_query`, not `mt_outline`
         - Check `mt_log error` after unexpected behavior
         - After `mt_apply_update`, the web frontend can disappear while your terminal keeps running in `mthost`; reopen tlbx from the terminal and use `mt_open` again instead of assuming the session died

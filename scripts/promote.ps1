@@ -15,32 +15,44 @@
     Optional. A concise title for this release (one line, no version number).
     If omitted, uses the most recent dev release title.
 
+.PARAMETER TestCategories
+    REQUIRED: assets, frontend, server, runtime, installers, dependencies, build; or all alone.
+    Stable releases require all. Mobile apps are verified and released independently.
+
 .PARAMETER ReleaseNotes
     Optional. Array of detailed changelog entries. If omitted, automatically
     gathered from all dev tag annotations since the last stable release.
 
 .EXAMPLE
     # Auto-gather all changelog items (recommended)
-    .\promote.ps1
+    .\promote.ps1 -TestCategories all
 
 .EXAMPLE
     # Override title, still auto-gather notes
-    .\promote.ps1 -ReleaseTitle "Major UI overhaul"
+    .\promote.ps1 -TestCategories all -ReleaseTitle "Major UI overhaul"
 
 .EXAMPLE
     # Fully manual (legacy behavior)
-    .\promote.ps1 -ReleaseTitle "Version management improvements" -ReleaseNotes @(
+    .\promote.ps1 -TestCategories all -ReleaseTitle "Version management improvements" -ReleaseNotes @(
         "Centralized version management: src/version.json is now single source of truth",
         "Fixed update failures where wrong version was baked into binaries"
     )
 #>
 
 param(
+    [Parameter(Mandatory=$true, HelpMessage="Choose the affected test clusters explicitly, or all.")]
+    [ValidateNotNullOrEmpty()]
+    [ValidateSet('assets','frontend','server','runtime','installers','dependencies','build','all')]
+    [string[]]$TestCategories,
+
     [string]$ReleaseTitle,
     [string[]]$ReleaseNotes
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/release-test-clusters.ps1"
+$selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories -Stable)
+Show-ReleaseTestPlan -Categories $selectedCategories
 $githubPrBodyMaxChars = 65536
 $githubReleaseNotesMaxChars = 125000
 $githubBodySafetyMarginChars = 512
@@ -303,6 +315,10 @@ if ($tagBodyResult.OmittedCount -gt 0) {
 }
 
 $commitMsg += $tagBodyResult.Text
+
+# Validate before the irreversible promotion steps. Hosted stable checks still own the final tag.
+& "$PSScriptRoot/release-frontend-preflight.ps1" -Version $stableVersion -SkipVerify
+& "$PSScriptRoot/run-release-tests.ps1" -TestCategories $selectedCategories -FrontendInstalled
 
 # Create PR from dev to main
 Write-Host "Creating PR from dev to main..." -ForegroundColor Gray

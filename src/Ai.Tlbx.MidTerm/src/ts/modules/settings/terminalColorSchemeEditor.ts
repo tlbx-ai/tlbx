@@ -370,7 +370,7 @@ function saveTerminalColorSchemeEditor(persistSettingsSnapshot: PersistSettingsS
     select.value = definition.name;
   }
   loadTerminalColorSchemeEditorFromSource(nextSettings, definition.name);
-  persistSettingsSnapshot(current, nextSettings, nextSettings as MidTermSettingsUpdate);
+  persistSettingsSnapshot(current, nextSettings, nextSettings);
 }
 
 function deleteTerminalColorSchemeEditorScheme(
@@ -397,7 +397,7 @@ function deleteTerminalColorSchemeEditorScheme(
 
   syncTerminalColorSchemeOptions(nextSettings);
   loadTerminalColorSchemeEditorFromSource(nextSettings, nextSettings.theme);
-  persistSettingsSnapshot(current, nextSettings, nextSettings as MidTermSettingsUpdate);
+  persistSettingsSnapshot(current, nextSettings, nextSettings);
 }
 
 export function bindTerminalColorSchemeEditor(

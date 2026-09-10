@@ -91,6 +91,22 @@ These shims exist specifically so tlbx-in-tlbx and similar apps can still bootst
 
 ## Browser Bridge Targeting
 
+### Agent inspection and capture
+
+`mt_exec` awaits promises and returns objects/arrays as JSON. Batch related reads in one call, for example:
+
+```powershell
+mt_exec 'document.fonts.ready.then(() => ({title: document.title, links: document.links.length}))'
+```
+
+Rejected promises are command failures, not successful `[object Promise]` results. Use `mt_preview <name>` to select the same named page for subsequent `mt_click`, `mt_query`, and `mt_screenshot` calls.
+
+Docked screenshots use html2canvas to reconstruct the full document. Capture avoids repeatedly copying inherited CSS design tokens; standard computed values already contain resolved colors and dimensions. This is still a DOM reconstruction, not a compositor screenshot: CSS masks and custom-element popovers can differ from the correctly rendered page. Use DOM inspection for exact state and text, and native Chrome device capture when pixel fidelity is required (requires the connected Chrome bridge).
+
+Browser tabs preserve their DOM identity during state updates. Arrow keys, Home, and End select and focus tabs; only the selected tab enters the tab sequence.
+
+### Preview identity
+
 Browser automation is now scoped per named preview session instead of "whichever iframe connected last":
 
 - `/ws/browser` accepts preview-scoped connections with `previewId` / `token`

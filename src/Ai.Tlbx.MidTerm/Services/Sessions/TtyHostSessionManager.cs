@@ -882,18 +882,19 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private async Task<bool> CloseSessionCoreAsync(string sessionId, CancellationToken ct)
     {
-        if (!_clients.TryRemove(sessionId, out var client))
+        if (!_clients.TryGetValue(sessionId, out var client))
         {
             return false;
         }
 
+        if (!await client.CloseAsync(ct).ConfigureAwait(false)) return false;
+        _clients.TryRemove(sessionId, out _);
         _registry.RemoveSessionState(sessionId);
         _ownershipRegistry.Remove(sessionId);
         _transportState.TryRemove(sessionId, out _);
         _redrawDimensionOverrides.TryRemove(sessionId, out _);
         _metadataGates.TryRemove(sessionId, out _);
 
-        await client.CloseAsync(ct).ConfigureAwait(false);
         await client.DisposeAsync().ConfigureAwait(false);
         TtyHostSpawner.CleanupMacOsGuiLaunchAgent(sessionId);
 
@@ -920,6 +921,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 removeResizeGate = true;
                 return false;
             }
+
+            // Focus and ownership refreshes often repeat the already acknowledged
+            // geometry. Do not wake the PTY or broadcast another state update.
+            if (client.IsConnected && _sessionCache.TryGetValue(sessionId, out var current) &&
+                current.Cols == cols && current.Rows == rows) return true;
 
             var success = await client.ResizeAsync(cols, rows, ct).ConfigureAwait(false);
 

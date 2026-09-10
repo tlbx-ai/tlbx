@@ -2,7 +2,8 @@
 
 param(
     [string]$Configuration = "Release",
-    [switch]$WarnAsError
+    [switch]$WarnAsError,
+    [ValidateSet('server', 'all')][string]$Suite = 'all'
 )
 
 $ErrorActionPreference = "Stop"
@@ -25,6 +26,10 @@ $projects = @(
         ExtraArgs = @("-p:ContinuousIntegrationBuild=true")
     }
 )
+
+if ($Suite -eq 'server') {
+    $projects = @($projects | Where-Object Name -ne 'Ai.Tlbx.MidTerm.AgentHost.UnitTests')
+}
 
 Push-Location $RepoRoot
 try {

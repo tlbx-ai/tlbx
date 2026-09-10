@@ -2647,16 +2647,13 @@ function bindAppServerControlTurnLifecycle(): void {
 
   window.addEventListener(
     APP_SERVER_CONTROL_TURN_SUBMITTED_EVENT,
-    handleAppServerControlTurnSubmitted as EventListener,
+    handleAppServerControlTurnSubmitted,
   );
   window.addEventListener(
     APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT,
-    handleAppServerControlTurnAccepted as EventListener,
+    handleAppServerControlTurnAccepted,
   );
-  window.addEventListener(
-    APP_SERVER_CONTROL_TURN_FAILED_EVENT,
-    handleAppServerControlTurnFailed as EventListener,
-  );
+  window.addEventListener(APP_SERVER_CONTROL_TURN_FAILED_EVENT, handleAppServerControlTurnFailed);
   appServerControlTurnLifecycleBound = true;
 }
 

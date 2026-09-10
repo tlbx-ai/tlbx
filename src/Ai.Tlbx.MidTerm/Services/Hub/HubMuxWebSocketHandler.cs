@@ -1,4 +1,6 @@
 using System.Globalization;
+using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Hosting;
 using System.Net.WebSockets;
 using Ai.Tlbx.MidTerm.Services.WebSockets;
 
@@ -9,15 +11,17 @@ public sealed class HubMuxWebSocketHandler
     private readonly HubService _hubService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
+    private readonly MidTermInstanceIdentity _instanceIdentity;
 
     public HubMuxWebSocketHandler(
         HubService hubService,
         AuthService authService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService, MidTermInstanceIdentity instanceIdentity)
     {
         _hubService = hubService;
         _authService = authService;
         _shutdownService = shutdownService;
+        _instanceIdentity = instanceIdentity;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -48,7 +52,9 @@ public sealed class HubMuxWebSocketHandler
 
         try
         {
-            await _hubService.ConfigureRemoteWebSocketAsync(machineId, remoteSocket, _shutdownService.Token);
+            var browserId = BrowserIdentity.BuildFromRequest(context.Request);
+            await _hubService.ConfigureRemoteWebSocketAsync(machineId, remoteSocket,
+                $"hub-{_instanceIdentity.InstanceId}-{BrowserIdentity.GetClientPart(browserId)}", _shutdownService.Token);
             var resumeSequence = ulong.TryParse(
                 context.Request.Query["resumeSequence"].ToString(),
                 NumberStyles.None,
@@ -56,7 +62,9 @@ public sealed class HubMuxWebSocketHandler
                 out var parsedResumeSequence)
                 ? parsedResumeSequence
                 : (ulong?)null;
-            var remoteUri = BuildRemoteMuxUri(machine.BaseUrl, sessionId, resumeSequence);
+            var remoteUri = new Uri(BuildRemoteMuxUri(machine.BaseUrl, sessionId, resumeSequence).AbsoluteUri
+                + "&tabId=" + Uri.EscapeDataString(browserId)
+                + "&deviceLabel=" + Uri.EscapeDataString(BrowserIdentity.GetDeviceLabel(context.Request) ?? ""));
             await remoteSocket.ConnectAsync(remoteUri, _shutdownService.Token);
         }
         catch (Exception ex)

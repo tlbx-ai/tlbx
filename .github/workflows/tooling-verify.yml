@@ -1,0 +1,35 @@
+name: Tooling dependency verification
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '51 4 * * 1'
+  push:
+    branches: [dev, main]
+    paths:
+      - 'docs/marketing/ScreenshotAutomation/**'
+      - 'src/npx-launcher/**'
+      - 'scripts/audit-supply-chain.ps1'
+      - '.github/workflows/tooling-verify.yml'
+  pull_request:
+    paths:
+      - 'docs/marketing/ScreenshotAutomation/**'
+      - 'src/npx-launcher/**'
+      - 'scripts/audit-supply-chain.ps1'
+      - '.github/workflows/tooling-verify.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.14.0'
+      - name: Pin npm
+        run: npm install --global npm@11.18.0 --ignore-scripts
+      - name: Verify tooling dependencies and launcher
+        shell: pwsh
+        run: ./scripts/audit-supply-chain.ps1 -Scope tooling

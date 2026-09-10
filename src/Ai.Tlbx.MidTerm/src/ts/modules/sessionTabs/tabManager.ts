@@ -452,10 +452,16 @@ export function initSessionTabs(): void {
     }
   });
 
+  let previousSessions = new Map<string, Session>();
   $sessionList.subscribe((sessions) => {
+    const next = new Map<string, Session>();
     for (const session of sessions) {
-      syncSessionTabCapabilities(session.id, session);
+      next.set(session.id, session);
+      if (previousSessions.get(session.id) !== session) {
+        syncSessionTabCapabilities(session.id, session);
+      }
     }
+    previousSessions = next;
   });
 
   log.info(() => 'Session tabs initialized');

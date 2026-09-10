@@ -253,7 +253,7 @@ public class Program
             };
             var tmuxSessionCommands = new SessionCommands(sessionManager, tmuxPaneMapper, tmuxFormatter);
             var tmuxIoCommands = new IoCommands(sessionManager, tmuxTargetResolver, tmuxFormatter);
-            var tmuxPaneCommands = new PaneCommands(sessionManager, tmuxPaneMapper, tmuxTargetResolver, tmuxLayoutBridge);
+            var tmuxPaneCommands = new PaneCommands(sessionManager, tmuxPaneMapper, tmuxTargetResolver, tmuxLayoutBridge, app.Services.GetRequiredService<TerminalSizeControlService>());
             var tmuxWindowCommands = new WindowCommands(sessionManager, tmuxTargetResolver, tmuxLayoutBridge, tmuxPaneCommands);
             var tmuxConfigCommands = new ConfigCommands();
             var tmuxMiscCommands = new MiscCommands(tmuxPaneCommands);
@@ -309,9 +309,9 @@ public class Program
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
-        sessionManager.OnOutput += (sessionId, _, _, _, data) =>
+        sessionManager.OnOutput += (sessionId, _, cols, rows, data) =>
         {
-            sessionTelemetry.RecordOutput(sessionId, data.Span);
+            sessionTelemetry.RecordOutput(sessionId, data.Span, cols, rows);
         };
 
         sessionManager.OnSessionClosed += sessionId =>

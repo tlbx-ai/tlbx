@@ -5,22 +5,10 @@ import type {
 import type { AppServerControlAttachmentReference } from '../../api/types';
 
 export type AppServerControlDebugScenarioName =
-  | 'mixed'
-  | 'tables'
-  | 'long'
-  | 'massive'
-  | 'workflow';
+  'mixed' | 'tables' | 'long' | 'massive' | 'workflow';
 
 type HistoryKind =
-  | 'user'
-  | 'assistant'
-  | 'reasoning'
-  | 'tool'
-  | 'request'
-  | 'plan'
-  | 'diff'
-  | 'system'
-  | 'notice';
+  'user' | 'assistant' | 'reasoning' | 'tool' | 'request' | 'plan' | 'diff' | 'system' | 'notice';
 
 type DebugScenarioItemFactory = (
   itemId: string,

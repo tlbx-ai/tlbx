@@ -6,6 +6,7 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Share;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
@@ -28,6 +29,7 @@ public sealed class MuxWebSocketHandler
     private readonly AuthService _authService;
     private readonly ShareGrantService _shareGrantService;
     private readonly ShutdownService _shutdownService;
+    private readonly TerminalSizeControlService _sizeControl;
 
     public MuxWebSocketHandler(
         TtyHostSessionManager sessionManager,
@@ -35,7 +37,7 @@ public sealed class MuxWebSocketHandler
         SettingsService settingsService,
         AuthService authService,
         ShareGrantService shareGrantService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService, TerminalSizeControlService sizeControl)
     {
         _sessionManager = sessionManager;
         _muxManager = muxManager;
@@ -43,6 +45,7 @@ public sealed class MuxWebSocketHandler
         _authService = authService;
         _shareGrantService = shareGrantService;
         _shutdownService = shutdownService;
+        _sizeControl = sizeControl;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -173,7 +176,8 @@ public sealed class MuxWebSocketHandler
                     initialResumeCursors,
                     deferredReplayCts.Token);
             }
-            await ProcessMessagesAsync(ws, clientId, client, shareAccess);
+            await ProcessMessagesAsync(ws, clientId, client, shareAccess,
+                BrowserIdentity.BuildFromRequest(context.Request), BrowserIdentity.GetDeviceLabel(context.Request));
         }
         finally
         {
@@ -388,7 +392,7 @@ public sealed class MuxWebSocketHandler
                 if (!await RecoverSessionAsync(
                         client,
                         sessionInfo,
-                        ResolveReplayMaxBytes(sessionInfo, replayRows, quickResumeEnabled),
+                        ResolveReplayMaxBytes(sessionInfo, replayRows, quickResumeEnabled, sinceSequence),
                         TerminalReplayReason.ReconnectTailReplay,
                         sinceSequence,
                         forceTerminalReset: false,
@@ -484,16 +488,17 @@ public sealed class MuxWebSocketHandler
                     return new MuxClient.RecoveryResult(false, 0, 0, false);
                 }
 
-                if (RequiresAlternateScreenRedraw(sinceSequence, snapshot))
+                if (RequiresScreenRedraw(sinceSequence, snapshot))
                 {
-                    Log.Verbose(() => $"[MuxHandler] Refreshing truncated alternate-screen replay for {session.Id}");
+                    Log.Verbose(() => $"[MuxHandler] Refreshing truncated screen replay for {session.Id}");
                     try
                     {
                         if (await _sessionManager.RedrawSessionAsync(session.Id, recoveryCt).ConfigureAwait(false))
                         {
-                            // A resize acknowledgement means the foreground process has observed both
-                            // the pulse and the canonical geometry. Capture the complete retained ring
-                            // again so its newly emitted full frame follows any truncated older delta.
+                            // Capture the complete retained ring again so the repaint follows any
+                            // truncated older delta. The resize acknowledgement confirms PTY geometry,
+                            // not application rendering; later repaint bytes remain ordered behind
+                            // this recovery by MuxClient and are delivered when recovery completes.
                             // Replaying that fresh frame after reset reconstructs static TUI cell
                             // backgrounds which cannot be inferred from an arbitrary byte-safe tail.
                             var redrawnSnapshot = await _sessionManager.GetBufferAsync(
@@ -516,7 +521,7 @@ public sealed class MuxWebSocketHandler
                     {
                         // Redraw is a semantic replay upgrade. Preserve the previous parser-safe
                         // recovery as a fallback if the foreground process cannot be pulsed.
-                        Log.Warn(() => $"[MuxHandler] Alternate-screen redraw failed for {session.Id}: {ex.Message}");
+                        Log.Warn(() => $"[MuxHandler] Screen redraw failed for {session.Id}: {ex.Message}");
                     }
                 }
 
@@ -568,11 +573,15 @@ public sealed class MuxWebSocketHandler
             ct);
     }
 
-    internal static bool RequiresAlternateScreenRedraw(
+    internal static bool RequiresScreenRedraw(
         ulong? sinceSequence,
         TtyHostBufferSnapshot snapshot)
     {
-        if (!snapshot.TerminalState.AlternateScreenActive)
+        // Synchronized inline TUIs (including Codex's animated composer) use the
+        // normal screen. Their retained frames can contain only cell differences,
+        // just like alternate-screen TUIs. Parser-safe bytes are not a full screen.
+        if (!snapshot.TerminalState.AlternateScreenActive
+            && snapshot.Data.AsSpan().IndexOf("\x1b[?2026h"u8) < 0)
         {
             return false;
         }
@@ -589,7 +598,7 @@ public sealed class MuxWebSocketHandler
         WebSocket ws,
         string clientId,
         MuxClient client,
-        ShareAccessContext? shareAccess)
+        ShareAccessContext? shareAccess, string browserId, string? browserLabel)
     {
         var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
         var shutdownToken = _shutdownService.Token;
@@ -643,22 +652,22 @@ public sealed class MuxWebSocketHandler
                     if (!MuxProtocol.TryParseFrame(data.Span, out var type, out var sessionId, out _) ||
                         (shareAccess is not null && !string.Equals(sessionId, shareAccess.SessionId, StringComparison.Ordinal)))
                         continue;
-                    if (type is MuxProtocol.TypeTerminalInput or MuxProtocol.TypeInputTraceMarker or MuxProtocol.TypePing)
+                    if (type is MuxProtocol.TypeUserInput or MuxProtocol.TypeTerminalInput or MuxProtocol.TypeInputTraceMarker or MuxProtocol.TypePing)
                     {
                         // The receive buffer is reused immediately. Each admitted
                         // lane owns its bytes until the IPC operation has completed.
-                        if (type == MuxProtocol.TypeTerminalInput)
+                        if (type is MuxProtocol.TypeUserInput or MuxProtocol.TypeTerminalInput)
                         {
                             if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess)) continue;
                             client.SetActiveSession(sessionId);
                         }
                         var owned = data.ToArray();
                         await inbound.EnqueueAsync($"input:{sessionId}",
-                            ct => ProcessFrameAsync(owned, client, shareAccess, inbound, ct), owned.Length);
+                            ct => ProcessFrameAsync(owned, client, shareAccess, browserId, browserLabel, inbound, ct), owned.Length);
                     }
                     else
                     {
-                        await ProcessFrameAsync(data, client, shareAccess, inbound, shutdownToken);
+                        await ProcessFrameAsync(data, client, shareAccess, browserId, browserLabel, inbound, shutdownToken);
                     }
                 }
 
@@ -719,6 +728,7 @@ public sealed class MuxWebSocketHandler
         ReadOnlyMemory<byte> data,
         MuxClient client,
         ShareAccessContext? shareAccess,
+        string browserId, string? browserLabel,
         MuxInboundDispatcher inbound,
         CancellationToken ct)
     {
@@ -735,6 +745,7 @@ public sealed class MuxWebSocketHandler
 
         switch (type)
         {
+            case MuxProtocol.TypeUserInput:
             case MuxProtocol.TypeTerminalInput:
                 if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess))
                 {
@@ -744,6 +755,11 @@ public sealed class MuxWebSocketHandler
                 if (payloadMemory.Length < 20)
                 {
                     Log.Verbose(() => $"[WS-INPUT] {sessionId}: {BitConverter.ToString(payloadMemory.ToArray())}");
+                }
+                if (type == MuxProtocol.TypeUserInput && shareAccess is null && !payloadMemory.IsEmpty
+                    && _sessionManager.GetSession(sessionId) is not null)
+                {
+                    await _sizeControl.RecordInputAsync(sessionId, browserId, browserLabel, ct);
                 }
                 await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory, ct);
                 break;
@@ -858,7 +874,7 @@ public sealed class MuxWebSocketHandler
             await RecoverSessionAsync(
                 client,
                 session,
-                ResolveReplayMaxBytes(session, replayRows, quickResume),
+                ResolveReplayMaxBytes(session, replayRows, quickResume, sinceSequence),
                 quickResume ? TerminalReplayReason.QuickResumeTailReplay : TerminalReplayReason.BufferRefreshTailReplay,
                 sinceSequence,
                 forceTerminalReset: !quickResume,
@@ -886,22 +902,31 @@ public sealed class MuxWebSocketHandler
             ct: ct);
     }
 
-    private int? ResolveReplayMaxBytes(SessionInfo session, int? replayRows, bool quickResume)
+    private int? ResolveReplayMaxBytes(SessionInfo session, int? replayRows, bool quickResume, ulong? sinceSequence)
     {
         var configuredScrollbackBytes = Math.Clamp(
             _settingsService.Load().ScrollbackBytes,
             MidTermSettings.MinScrollbackBytes,
             MidTermSettings.MaxScrollbackBytes);
 
-        return ResolveReplayMaxBytes(session, replayRows, quickResume, configuredScrollbackBytes);
+        return ResolveReplayMaxBytes(session, replayRows, quickResume, configuredScrollbackBytes, sinceSequence);
     }
 
     internal static int? ResolveReplayMaxBytes(
         SessionInfo session,
         int? replayRows,
         bool quickResume,
-        int configuredScrollbackBytes)
+        int configuredScrollbackBytes,
+        ulong? sinceSequence = null)
     {
+        // A resume cursor refers to a screen the browser already has. Return all
+        // retained changes (still bounded by the host ring), rather than creating
+        // artificial data loss by capping an otherwise contiguous delta to a viewport.
+        if (sinceSequence.HasValue)
+        {
+            return null;
+        }
+
         configuredScrollbackBytes = Math.Clamp(
             configuredScrollbackBytes,
             MidTermSettings.MinScrollbackBytes,

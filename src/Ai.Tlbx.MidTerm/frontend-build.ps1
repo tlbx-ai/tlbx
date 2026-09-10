@@ -33,6 +33,8 @@ $MobileDeviceBridgeSource = Join-Path $PSScriptRoot "src/mobile-device-bridge"
 $OutFile = Join-Path $WwwRoot "js/terminal.min.js"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $NodeModulesRoot = Join-Path $PSScriptRoot "node_modules"
+# Resolve the locked project-local bundler independently of the caller's directory.
+$esbuildCommand = Join-Path $NodeModulesRoot $(if ($IsWindows) { ".bin/esbuild.cmd" } else { ".bin/esbuild" })
 $AssetVersionPlaceholder = "__MIDTERM_ASSET_VERSION__"
 
 if ($StaticOnly -and $Publish) {
@@ -48,11 +50,6 @@ if (Test-Path $WwwRoot) {
 # ===========================================
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
     Write-Error "Node.js is required but was not found in PATH. Install Node.js 24.x and run npm ci."
-    exit 1
-}
-
-if (-not (Get-Command npx -ErrorAction SilentlyContinue)) {
-    Write-Error "npx is required but was not found in PATH. Install Node.js/npm and run npm ci."
     exit 1
 }
 
@@ -262,7 +259,7 @@ $defineVersionArg = "--define:BUILD_VERSION='$Version'"
 $defineAssetVersionArg = "--define:BUILD_ASSET_VERSION='$AssetVersion'"
 $esbuildArgs = @($mainTs, "--bundle", "--minify", "--outfile=$OutFile", "--target=es2020", $defineVersionArg, $defineAssetVersionArg)
 if ($sourcemapArg) { $esbuildArgs += $sourcemapArg }
-& npx esbuild @esbuildArgs
+& $esbuildCommand @esbuildArgs
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "esbuild failed"
@@ -467,7 +464,8 @@ Get-ChildItem -Path "$cssSource\*" -Include @('*.css') | ForEach-Object {
     $srcSize = $_.Length
 
     # Minify with esbuild
-    $null = & npx esbuild $_.FullName --minify --outfile=$dstPath 2>&1
+    $null = & $esbuildCommand $_.FullName --minify --outfile=$dstPath 2>&1
+    if ($LASTEXITCODE -ne 0) { Write-Error "CSS esbuild failed for $($_.Name)"; exit $LASTEXITCODE }
     $minifiedContent = [System.IO.File]::ReadAllText($dstPath).Replace($AssetVersionPlaceholder, $AssetVersion)
     [System.IO.File]::WriteAllText($dstPath, $minifiedContent, [System.Text.Encoding]::UTF8)
     $minSize = [System.Text.Encoding]::UTF8.GetByteCount($minifiedContent)

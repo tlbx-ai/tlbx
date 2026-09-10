@@ -7,7 +7,7 @@ public sealed class TerminalColorSchemeDefinition
     public string Foreground { get; set; } = "#F2F2F2";
     public string Cursor { get; set; } = "#F2F2F2";
     public string CursorAccent { get; set; } = "#0C0C0C";
-    public string SelectionBackground { get; set; } = "#2D3044";
+    public string SelectionBackground { get; set; } = "#7BA2F780";
     public string ScrollbarSliderBackground { get; set; } = "rgba(58, 62, 82, 0.5)";
     public string ScrollbarSliderHoverBackground { get; set; } = "rgba(123, 162, 247, 0.5)";
     public string ScrollbarSliderActiveBackground { get; set; } = "rgba(123, 162, 247, 0.7)";
@@ -48,7 +48,7 @@ public sealed class TerminalColorSchemeDefinition
             Foreground = NormalizeRequiredString(scheme.Foreground, "#F2F2F2"),
             Cursor = NormalizeRequiredString(scheme.Cursor, "#F2F2F2"),
             CursorAccent = NormalizeRequiredString(scheme.CursorAccent, "#0C0C0C"),
-            SelectionBackground = NormalizeRequiredString(scheme.SelectionBackground, "#2D3044"),
+            SelectionBackground = NormalizeRequiredString(scheme.SelectionBackground, "#7BA2F780"),
             ScrollbarSliderBackground = NormalizeRequiredString(scheme.ScrollbarSliderBackground, "rgba(58, 62, 82, 0.5)"),
             ScrollbarSliderHoverBackground = NormalizeRequiredString(scheme.ScrollbarSliderHoverBackground, "rgba(123, 162, 247, 0.5)"),
             ScrollbarSliderActiveBackground = NormalizeRequiredString(scheme.ScrollbarSliderActiveBackground, "rgba(123, 162, 247, 0.7)"),

@@ -526,7 +526,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             return Results.Json(update, AppJsonContext.Default.UpdateInfo);
         });
 
-        app.MapPost("/api/update/apply", async (string? source, bool detached = false) =>
+        app.MapPost("/api/update/apply", async (string? source, bool detached = false, bool forceFull = false) =>
         {
             if (detached)
             {
@@ -534,7 +534,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 {
                     try
                     {
-                        var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source)
+                        var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source, forceFull)
                             .ConfigureAwait(false);
                         if (!success)
                         {
@@ -549,7 +549,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 return Results.Accepted(value: "Update scheduled");
             }
 
-            var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source);
+            var (success, message) = await updateService.ApplyUpdateAsync(settingsService, source, forceFull);
             if (!success)
             {
                 return source == "local" || message.Contains("No update", StringComparison.Ordinal)
@@ -812,9 +812,10 @@ Start-Service -Name $serviceName -ErrorAction Stop
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
-        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
+        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService, terminalSizeControlService);
         var stateHandler = new StateWebSocketHandler(
             sessionManager,
+            app.Services.GetRequiredService<SessionTelemetryService>(),
             app.Services.GetRequiredService<SessionCloseCleanupService>(),
             sessionSupervisor,
             appServerControlRuntime,

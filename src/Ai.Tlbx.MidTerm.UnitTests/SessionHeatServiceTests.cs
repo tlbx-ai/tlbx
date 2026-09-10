@@ -45,7 +45,7 @@ public sealed class SessionHeatServiceTests
     [Fact]
     public void GetSnapshot_PreservesTerminalHeatWhenAppServerControlIsCold()
     {
-        var telemetry = new SessionTelemetryService();
+        var telemetry = new SessionTelemetryService(new Microsoft.Extensions.Time.Testing.FakeTimeProvider());
         telemetry.RecordOutput("terminal-hot", System.Text.Encoding.UTF8.GetBytes("output"));
         var service = new SessionHeatService(telemetry, new FakeAppServerControlHeatSource(SessionAppServerControlHeatSnapshot.Cold));
 

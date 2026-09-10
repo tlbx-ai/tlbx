@@ -69,7 +69,7 @@ export async function launchSpaceWorkspace(
       rows,
       shell,
     });
-    await runtimeOptions.onOpenLocalSession(session as Session, surface);
+    await runtimeOptions.onOpenLocalSession(session, surface);
     return true;
   } catch (error) {
     await showAlert(error instanceof Error ? error.message : String(error), {

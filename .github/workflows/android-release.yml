@@ -51,7 +51,7 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # v4
+        uses: gradle/actions/setup-gradle@748248ddd2a24f49513d8f472f81c3a07d4d50e1 # v4
 
       - name: Decode keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > $RUNNER_TEMP/upload.jks
@@ -65,6 +65,10 @@ jobs:
       - name: Ensure Gradle wrapper is executable
         working-directory: src/connectors/android
         run: chmod +x ./gradlew
+
+      - name: Audit Android dependencies
+        shell: pwsh
+        run: ./scripts/audit-supply-chain.ps1 -Scope android
 
       - name: Build signed APK + AAB
         working-directory: src/connectors/android

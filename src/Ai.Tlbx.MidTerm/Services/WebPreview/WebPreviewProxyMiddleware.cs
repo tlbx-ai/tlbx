@@ -259,6 +259,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(u.startsWith("/")&&!u.startsWith(PP+"/")&&!u.startsWith(P+"/")&&!u.startsWith("//"))return ar(PP+u);
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
+                if(window.__mtTargetOrigin&&h.origin===window.__mtTargetOrigin)return ar(PP+h.pathname+h.search+h.hash);
                 if(h.host===location.host&&!h.pathname.startsWith(PP+"/"))return ar(h.protocol+"//"+ h.host+PP+h.pathname+h.search+h.hash);
                 if(h.host!==location.host){
                   return ar(E+encodeURIComponent(u));
@@ -398,6 +399,22 @@ public sealed partial class WebPreviewProxyMiddleware
             else if(path===P)path="/";
             return (window.__mtTargetOrigin||"")+path+location.search+location.hash;
           }
+          // Application Location is upstream-facing; the bridge keeps the native proxy URL.
+          var mtLocationView={};
+          ["href","origin","protocol","host","hostname","port","pathname","search","hash"].forEach(function(key){
+            Object.defineProperty(mtLocationView,key,{enumerable:true,get:function(){
+              return new URL(curU())[key];
+            },set:key==="origin"?undefined:function(value){
+              var next=key==="href"?new URL(String(value),curU()):new URL(curU());
+              if(key!=="href")next[key]=value;location.assign(r(next.href));
+            }});
+          });
+          mtLocationView.assign=function(url){location.assign(r(new URL(String(url),curU()).href));};
+          mtLocationView.replace=function(url){location.replace(r(new URL(String(url),curU()).href));};
+          mtLocationView.reload=function(){location.reload();};
+          mtLocationView.toString=function(){return curU();};
+          mtLocationView[Symbol.toPrimitive]=function(){return curU();};
+          window.__mtPreviewLocation=function(value){return value===window.location?mtLocationView:value;};
           function postMt(type,extra){
             var msg=mtMsg(type,extra);
             if(!msg)return;
@@ -549,12 +566,26 @@ public sealed partial class WebPreviewProxyMiddleware
               }
             }
           }
-          function createNormalizedStyleReader(styles){
+          function createNormalizedStyleReader(styles,captureProperties){
             if(!styles||typeof styles!=="object")return styles;
             if(typeof Proxy!=="function")return styles;
             try{
+              // html2canvas copies every enumerated property onto cloned SVG and
+              // custom elements. Computed standard properties already resolve var(),
+              // so copying thousands of inherited design tokens adds no visual value.
+              // Keep direct custom-property reads available to the page itself.
+              if(!captureProperties){
+                captureProperties=[];
+                for(var index=0;index<styles.length;index++){
+                  var name=styles.item(index);
+                  if(name.indexOf("--")!==0)captureProperties.push(name);
+                }
+              }
               return new Proxy(styles,{
                 get:function(target,prop){
+                  if(prop==="length")return captureProperties.length;
+                  if(typeof prop==="string"&&/^\d+$/.test(prop))return captureProperties[Number(prop)];
+                  if(prop===Symbol.iterator)return captureProperties[Symbol.iterator].bind(captureProperties);
                   if(prop==="getPropertyValue"){
                     return function(name){
                       return normalizeCssColorFunctions(target.getPropertyValue(name));
@@ -572,7 +603,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   }
                   if(prop==="item"){
                     return function(index){
-                      return target.item(index);
+                      return captureProperties[index]||"";
                     };
                   }
                   var value=target[prop];
@@ -587,8 +618,11 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!view||typeof view.getComputedStyle!=="function")return function(){};
             var current=view.getComputedStyle;
             if(current&&current.__mtColorNormalized)return function(){};
+            // Standard computed-property names are identical for this browser realm.
+            // Discover them once, not once for every element and pseudo-element.
+            var captureProperties=Array.from(createNormalizedStyleReader(current.call(view,view.document.documentElement)));
             var wrapped=function(){
-              return createNormalizedStyleReader(current.apply(this,arguments));
+              return createNormalizedStyleReader(current.apply(this,arguments),captureProperties);
             };
             try{wrapped.__mtColorNormalized=true;}catch(e){}
             try{
@@ -794,8 +828,14 @@ public sealed partial class WebPreviewProxyMiddleware
                 case"exec":{
                   if(!msg.value){res.success=false;res.error="js code required";break;}
                   var rv=eval(msg.value);
-                  res.result=rv===undefined?"undefined":String(rv);
-                  break;}
+                  Promise.resolve(rv).then(function(value){
+                    res.result=value===undefined?"undefined":typeof value==="object"?JSON.stringify(value):String(value);
+                  }).catch(function(error){
+                    res.success=false;res.error=(error&&error.message)||String(error);
+                  }).finally(function(){
+                    if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
+                  });
+                  return;}
                 case"wait":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   var to=(msg.timeout||5)*1000,start=Date.now();
@@ -1673,6 +1713,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Rewrite inline ESM specifiers before the browser resolves them.
         html = RewriteRootRelativeModuleSpecifiers(html, routePrefix, reloadToken);
+        html = WebPreviewLocationRewriter.RewriteInlineScripts(html);
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
@@ -1872,6 +1913,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var routePrefix = _service.BuildProxyPrefix(routeKey);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
         script = RewriteRootRelativeModuleSpecifiers(script, routePrefix, reloadToken);
+        script = WebPreviewLocationRewriter.Rewrite(script);
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");

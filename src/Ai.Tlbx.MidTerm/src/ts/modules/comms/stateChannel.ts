@@ -1,3 +1,4 @@
+import { recordTextActivity } from '../sidebar/heatIndicator';
 /**
  * State Channel Module
  *
@@ -128,7 +129,14 @@ interface TerminalNotificationMessage extends TerminalNotificationSignal {
   sessionId: string;
 }
 
-type DirectStateMessage = BrowserUiMessage | TerminalNotificationMessage;
+interface TerminalTextActivityMessage {
+  type: 'terminal-text-activity';
+  sessionId: string;
+  lastTextOutputAt: string | null;
+  textActivityAgeMs: number | null;
+}
+type DirectStateMessage =
+  BrowserUiMessage | TerminalNotificationMessage | TerminalTextActivityMessage;
 
 type StateWsMessage =
   | TmuxDockMessage
@@ -137,6 +145,7 @@ type StateWsMessage =
   | MainBrowserStatusMessage
   | BrowserUiMessage
   | TerminalNotificationMessage
+  | TerminalTextActivityMessage
   | StateUpdateMessage
   | CommandResponseMessage;
 
@@ -180,7 +189,6 @@ import {
   $isMainBrowser,
   $showMainBrowserButton,
   $webPreviewUrl,
-  getTerminalSizeControl,
   getSession,
   setTerminalSizeControl,
   setTerminalSizeControls,
@@ -304,6 +312,10 @@ function handleDirectStateMessage(data: StateWsMessage): data is DirectStateMess
     return true;
   }
 
+  if (data.type === 'terminal-text-activity') {
+    recordTextActivity(data.sessionId, data.lastTextOutputAt, data.textActivityAgeMs);
+    return true;
+  }
   if (data.type === 'terminal-notification') {
     handleTerminalNotification(data.sessionId, {
       protocol: data.protocol,
@@ -1052,10 +1064,6 @@ export function claimMainBrowser(): void {
   });
 }
 
-const terminalInteractionReportAt = new Map<string, number>();
-const OWNER_INTERACTION_REPORT_INTERVAL_MS = 15000;
-const FOLLOWER_INTERACTION_REPORT_INTERVAL_MS = 1000;
-
 function applyTerminalSizeControlResult(result: TerminalSizeControlCommandResult): void {
   setTerminalSizeControl(result.status);
 }
@@ -1075,23 +1083,6 @@ export async function requestTerminalSizeControl(
   );
   applyTerminalSizeControlResult(result);
   return result;
-}
-
-export function reportTerminalSizeInteraction(sessionId: string): void {
-  if (!sessionId || isSharedSessionRoute() || !isStateConnected()) return;
-  const now = performance.now();
-  const status = getTerminalSizeControl(sessionId);
-  const interval = status?.isOwner
-    ? OWNER_INTERACTION_REPORT_INTERVAL_MS
-    : FOLLOWER_INTERACTION_REPORT_INTERVAL_MS;
-  const last = terminalInteractionReportAt.get(sessionId) ?? Number.NEGATIVE_INFINITY;
-  if (now - last < interval) return;
-  terminalInteractionReportAt.set(sessionId, now);
-
-  requestTerminalSizeControl(sessionId, false).catch((e: unknown) => {
-    terminalInteractionReportAt.delete(sessionId);
-    log.warn(() => `Failed to report terminal size activity: ${String(e)}`);
-  });
 }
 
 export async function resizeTerminalWithControl(
@@ -1232,6 +1223,5 @@ export function resetStateChannelRuntimeForTests(): void {
   selectSession = () => {};
   handleTerminalNotification = () => {};
   lastReportedBrowserActivity = undefined;
-  terminalInteractionReportAt.clear();
   closeWebSocket(stateWs, setStateWs);
 }

@@ -300,6 +300,9 @@
 
 /* Midnight Harbor Theme Variables */
 :root {
+  --terminal-heat-cold: #646872;
+  --terminal-heat-hot: #dc1c1c;
+  --terminal-heat-warm: #5cc6ff;
   /* Real device geometry; overridable in the desktop preview for acceptance. */
   --safe-area-inset-top: env(safe-area-inset-top, 0px);
   --safe-area-inset-right: env(safe-area-inset-right, 0px);
@@ -1328,29 +1331,100 @@ body::before {
   flex-shrink: 0;
   border-radius: 2px;
   margin-right: 6px;
-  opacity: 0.9;
+  opacity: 0;
+  animation: var(--heat-fade, none) 30s linear var(--heat-age, 0ms) forwards;
   position: relative;
   overflow: hidden;
-  --session-heat-gradient: transparent;
-  --session-heat-opacity: 0;
-  --session-heat-scale: 0;
-  --session-heat-transition-ms: 0ms;
-  --session-heat-transition-easing: linear;
+  background: var(--terminal-heat-cold);
 }
 
-.heat-canvas::before {
+.heat-canvas::before,
+.heat-canvas::after {
   content: '';
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--session-heat-gradient);
-  opacity: var(--session-heat-opacity);
-  transform: scaleY(var(--session-heat-scale));
-  transform-origin: center center;
-  transition:
-    opacity var(--session-heat-transition-ms) var(--session-heat-transition-easing),
-    transform var(--session-heat-transition-ms) var(--session-heat-transition-easing),
-    background 0.15s linear;
+  opacity: 0;
+  animation-duration: 30s;
+  animation-delay: var(--heat-age, 0ms);
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.heat-canvas::before {
+  background: var(--terminal-heat-hot);
+  animation-name: var(--heat-red, none);
+}
+
+.heat-canvas::after {
+  background: var(--terminal-heat-warm);
+  animation-name: var(--heat-blue, none);
+}
+
+@keyframes heat-red-a {
+  0%,
+  6.666667% {
+    opacity: 1;
+  }
+  16.666667%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes heat-red-b {
+  0%,
+  6.666667% {
+    opacity: 1;
+  }
+  16.666667%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes heat-blue-a {
+  0%,
+  6.666667% {
+    opacity: 0;
+  }
+  16.666667% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes heat-blue-b {
+  0%,
+  6.666667% {
+    opacity: 0;
+  }
+  16.666667% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes heat-fade-a {
+  0%,
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes heat-fade-b {
+  0%,
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .session-item:active {
@@ -7247,6 +7321,28 @@ body::before {
   white-space: pre-line;
 }
 
+.terminal-link-content {
+  max-width: 560px;
+}
+
+.terminal-link-destination {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-elevated-opaque);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  font-family: monospace;
+}
+
+.terminal-link-content .modal-footer {
+  flex-wrap: wrap;
+}
+
+.terminal-link-content a.btn-primary {
+  text-decoration: none;
+}
+
 .dialog-details {
   margin-top: 14px;
   border: 1px solid var(--border-subtle);
@@ -11406,15 +11502,11 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-tab-strip {
   display: flex;
   align-items: flex-end;
-  gap: 8px;
+  gap: 6px;
   min-height: 40px;
-  padding: 6px 8px 0;
+  padding: 4px 6px 0;
   border-bottom: 1px solid var(--border-color);
-  background: linear-gradient(
-    180deg,
-    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)),
-    var(--web-preview-pane-background, var(--workspace-pane-background))
-  );
+  background: var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background));
 }
 
 .web-preview-tabs {
@@ -11432,18 +11524,15 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab-shell {
-  border: 1px solid var(--border-color);
-  border-bottom-color: transparent;
-  background: color-mix(
-    in srgb,
-    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 92%,
-    var(--command-bay-ui-reactive-surface, var(--btn-secondary))
-  );
+  border: 1px solid transparent;
+  background: transparent;
   color: var(--command-bay-muted, var(--text-secondary));
-  border-radius: 8px 8px 0 0;
+  border-radius: 6px 6px 0 0;
   display: inline-flex;
   align-items: stretch;
-  min-width: 0;
+  min-width: 88px;
+  max-width: 220px;
+  flex: 0 0 auto;
   position: relative;
   top: 1px;
   transition:
@@ -11461,18 +11550,11 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-tab-shell.active {
-  border-color: var(--accent-gold);
-  border-bottom-color: var(
-    --web-preview-pane-chrome-background,
-    var(--workspace-pane-chrome-background)
-  );
-  background: color-mix(
-    in srgb,
-    var(--web-preview-pane-chrome-background, var(--workspace-pane-chrome-background)) 78%,
-    var(--accent-gold-10)
-  );
+  border-color: var(--border-color);
+  border-bottom-color: var(--text-accent);
+  background: var(--web-preview-pane-background, var(--workspace-pane-background));
   color: var(--command-bay-text, var(--text-primary));
-  box-shadow: inset 0 1px 0 var(--accent-gold-25);
+  box-shadow: inset 0 -1px 0 var(--text-accent);
 }
 
 .web-preview-tab-shell.detached {
@@ -11487,8 +11569,8 @@ body.shared-session-mode .session-tab-bar {
   border: 0;
   background: transparent;
   color: inherit;
-  padding: 7px 10px 8px 12px;
-  font-size: var(--command-bay-font-size, var(--fs-sm));
+  padding: 8px 8px 8px 10px;
+  font-size: var(--fs-sm);
   line-height: 1.3;
   cursor: pointer;
   white-space: nowrap;
@@ -11538,9 +11620,9 @@ body.shared-session-mode .session-tab-bar {
   min-width: 30px;
   height: 30px;
   padding: 0 8px;
-  border: 1px solid var(--command-bay-border, transparent);
-  border-radius: var(--command-bay-pill-radius, 8px);
-  background: var(--command-bay-ui-reactive-surface, var(--btn-secondary));
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
   color: var(--command-bay-action-ink, var(--text-secondary));
   cursor: pointer;
   font-family: var(--font-ui);
@@ -11559,8 +11641,9 @@ body.shared-session-mode .session-tab-bar {
 .web-preview-dock-url-bar .btn-icon > svg,
 .web-preview-detached-placeholder .btn-icon > svg {
   display: block;
-  width: 21px;
-  height: 21px;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
 }
 
 .web-preview-dock-actions .btn-icon:hover,
@@ -11598,11 +11681,14 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-dock-url-bar input {
   flex: 1;
+  min-width: 0;
+  height: 32px;
+  box-sizing: border-box;
   background: var(--text-input-background, var(--bg-input));
   color: var(--text-primary);
   border: 1px solid var(--border-color);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: 6px;
+  padding: 6px 10px;
   font-size: var(--fs-sm);
   font-family: var(--font-mono);
   outline: none;
@@ -11610,6 +11696,7 @@ body.shared-session-mode .session-tab-bar {
 
 .web-preview-dock-url-bar input:focus {
   border-color: var(--text-accent);
+  box-shadow: 0 0 0 1px var(--text-accent);
 }
 
 .web-preview-dock-url-bar .btn-icon {

@@ -34,7 +34,7 @@ public interface ISystemHandler
     IResult ReloadSettings();
     IResult GetPaths();
     Task<IResult> CheckUpdateAsync();
-    Task<IResult> ApplyUpdateAsync(string? source);
+    Task<IResult> ApplyUpdateAsync(string? source, bool forceFull = false);
     IResult GetUpdateResult(bool clear);
     IResult DeleteUpdateResult();
     IResult GetUpdateLog();

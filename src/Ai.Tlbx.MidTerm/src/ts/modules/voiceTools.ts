@@ -3047,34 +3047,32 @@ const voiceToolHandlers: Record<
   (args: Record<string, unknown>) => Promise<unknown>
 > = {
   state_of_things: () => Promise.resolve(handleStateOfThings()),
-  session_overview: (args) => handleSessionOverview(args as unknown as SessionOverviewArgs),
-  conversation_continuity: (args) =>
-    handleConversationContinuity(args as unknown as ConversationContinuityArgs),
+  session_overview: (args) => handleSessionOverview(args),
+  conversation_continuity: (args) => handleConversationContinuity(args),
   focus_context: (args) => Promise.resolve(handleFocusContext(args as unknown as FocusContextArgs)),
   campaign_goal: (args) => Promise.resolve(handleCampaignGoal(args as unknown as CampaignGoalArgs)),
-  campaign_status: (args) => handleCampaignStatus(args as unknown as CampaignStatusArgs),
-  campaign_report: (args) => handleCampaignReport(args as unknown as CampaignReportArgs),
+  campaign_status: (args) => handleCampaignStatus(args),
+  campaign_report: (args) => handleCampaignReport(args),
   app_shell: (args) => Promise.resolve(handleAppShell(args as unknown as AppShellArgs)),
   make_input: (args) => handleMakeInput(args as unknown as MakeInputArgs),
   read_scrollback: (args) =>
     Promise.resolve(handleReadScrollback(args as unknown as ReadScrollbackArgs)),
   interactive_read: (args) => handleInteractiveRead(args as unknown as InteractiveReadArgs),
-  create_session: (args) => handleCreateSession(args as unknown as CreateSessionArgs),
+  create_session: (args) => handleCreateSession(args),
   select_session: (args) =>
     Promise.resolve(handleSelectSession(args as unknown as SelectSessionArgs)),
   send_prompt: (args) => handleSendPrompt(args as unknown as SendPromptArgs),
   agent_turn: (args) => handleAgentTurn(args as unknown as AgentTurnArgs),
   campaign_dispatch: (args) => handleCampaignDispatch(args as unknown as CampaignDispatchArgs),
-  session_activity: (args) => handleSessionActivity(args as unknown as SessionActivityArgs),
+  session_activity: (args) => handleSessionActivity(args),
   session_turn_summary: (args) =>
     handleSessionTurnSummary(args as unknown as SessionTurnSummaryArgs),
   wait_for_turn_completion: (args) =>
     handleWaitForTurnCompletion(args as unknown as WaitForTurnCompletionArgs),
   dev_browser_open: (args) => handleDevBrowserOpen(args as unknown as DevBrowserOpenArgs),
-  dev_browser_status: (args) => handleDevBrowserStatus(args as unknown as DevBrowserStatusArgs),
+  dev_browser_status: (args) => handleDevBrowserStatus(args),
   dev_browser_command: (args) => handleDevBrowserCommand(args as unknown as DevBrowserCommandArgs),
-  dev_browser_screenshot: (args) =>
-    handleDevBrowserScreenshot(args as unknown as DevBrowserScreenshotArgs),
+  dev_browser_screenshot: (args) => handleDevBrowserScreenshot(args),
   repo_monitor: (args) => handleRepoMonitor(args as unknown as RepoMonitorArgs),
   layout_control: (args) =>
     Promise.resolve(handleLayoutControl(args as unknown as LayoutControlArgs)),

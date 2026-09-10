@@ -143,8 +143,7 @@ function getXtermCellDimensions(
   const core = terminal as Record<string, any>;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
   const dims = core._core?._renderService?.dimensions?.css?.cell as
-    | { width: number; height: number }
-    | undefined;
+    { width: number; height: number } | undefined;
   if (!dims || dims.width < 1 || dims.height < 1) return null;
   return { cellWidth: dims.width, cellHeight: dims.height };
 }

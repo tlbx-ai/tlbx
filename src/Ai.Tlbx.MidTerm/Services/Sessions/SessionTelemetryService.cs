@@ -6,6 +6,13 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionTelemetryService
 {
+    private readonly TimeProvider _timeProvider;
+
+    public SessionTelemetryService(TimeProvider? timeProvider = null)
+    {
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
     private const int MaxBucketCount = 900;
     private const int MaxBellEventCount = 200;
 
@@ -32,24 +39,38 @@ public sealed class SessionTelemetryService
         public int TotalBellCount { get; set; }
         public DateTimeOffset? LastInputAt { get; set; }
         public DateTimeOffset? LastOutputAt { get; set; }
+        public DateTimeOffset? LastTextOutputAt { get; set; }
+        public DateTimeOffset? LastTextNotificationAt { get; set; }
         public DateTimeOffset? LastBellAt { get; set; }
+        public TerminalTextActivityParser TextActivityParser { get; } = new();
         public TerminalNotificationStreamParser NotificationParser { get; } = new();
     }
 
     private readonly ConcurrentDictionary<string, SessionTelemetryState> _sessions = new(StringComparer.Ordinal);
 
     public event Action<TerminalNotificationMessage>? TerminalNotificationReceived;
+    public event Action<string>? TextActivity;
 
-    public void RecordOutput(string sessionId, ReadOnlySpan<byte> data)
+    public void RecordOutput(string sessionId, ReadOnlySpan<byte> data, int cols = 0, int rows = 0)
     {
         var state = _sessions.GetOrAdd(sessionId, _ => new SessionTelemetryState());
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
         var unixSecond = now.ToUnixTimeSeconds();
-        var heatUnits = TerminalOutputSanitizer.CountVisibleTextUnits(data);
         IReadOnlyList<TerminalNotificationMessage> notifications;
+        var notifyTextActivity = false;
 
         lock (state.SyncRoot)
         {
+            var heatUnits = state.TextActivityParser.CountTextUnits(data, cols, rows);
+            if (heatUnits > 0)
+            {
+                state.LastTextOutputAt = now;
+                if (state.LastTextNotificationAt is not { } previous || now - previous >= TimeSpan.FromMilliseconds(250))
+                {
+                    state.LastTextNotificationAt = now;
+                    notifyTextActivity = true;
+                }
+            }
             notifications = state.NotificationParser.Parse(sessionId, data);
             var bellCount = notifications.Count(notification => notification.Protocol == "bel");
             state.TotalOutputBytes += data.Length;
@@ -69,6 +90,8 @@ public sealed class SessionTelemetryService
             }
         }
 
+        if (notifyTextActivity) TextActivity?.Invoke(sessionId);
+
         foreach (var notification in notifications)
         {
             TerminalNotificationReceived?.Invoke(notification);
@@ -78,7 +101,7 @@ public sealed class SessionTelemetryService
     public void RecordInput(string sessionId, int byteCount)
     {
         var state = _sessions.GetOrAdd(sessionId, _ => new SessionTelemetryState());
-        var now = DateTimeOffset.UtcNow;
+        var now = _timeProvider.GetUtcNow();
 
         lock (state.SyncRoot)
         {
@@ -116,7 +139,8 @@ public sealed class SessionTelemetryService
     {
         seconds = Math.Clamp(seconds, 10, MaxBucketCount);
         bellLimit = Math.Clamp(bellLimit, 1, MaxBellEventCount);
-        var nowSecond = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var now = _timeProvider.GetUtcNow();
+        var nowSecond = now.ToUnixTimeSeconds();
         var startSecond = nowSecond - seconds + 1;
 
         var response = new SessionActivityResponse
@@ -170,9 +194,7 @@ public sealed class SessionTelemetryService
             response.CurrentBytesPerSecond = response.Heatmap.Count > 0
                 ? response.Heatmap[^1].Bytes
                 : 0;
-            response.CurrentHeat = response.Heatmap.Count > 0
-                ? response.Heatmap[^1].Heat
-                : 0;
+            response.CurrentHeat = TerminalHeat.FromTextOutput(state.LastTextOutputAt, _timeProvider.GetUtcNow());
 
             foreach (var bell in state.BellRecords.TakeLast(bellLimit))
             {
@@ -190,7 +212,8 @@ public sealed class SessionTelemetryService
     public SessionTelemetrySnapshot GetSnapshot(string sessionId, int seconds = 120)
     {
         seconds = Math.Clamp(seconds, 10, MaxBucketCount);
-        var nowSecond = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var now = _timeProvider.GetUtcNow();
+        var nowSecond = now.ToUnixTimeSeconds();
         var startSecond = nowSecond - seconds + 1;
 
         if (!_sessions.TryGetValue(sessionId, out var state))
@@ -204,7 +227,6 @@ public sealed class SessionTelemetryService
             TrimBells(state);
 
             var currentBytes = 0;
-            var currentHeatUnits = 0;
             foreach (var bucket in state.Buckets)
             {
                 if (bucket.UnixSecond < startSecond)
@@ -215,7 +237,6 @@ public sealed class SessionTelemetryService
                 if (bucket.UnixSecond == nowSecond)
                 {
                     currentBytes = bucket.Bytes;
-                    currentHeatUnits = bucket.HeatUnits;
                 }
             }
 
@@ -226,9 +247,10 @@ public sealed class SessionTelemetryService
                 TotalBellCount = state.TotalBellCount,
                 LastInputAt = state.LastInputAt,
                 LastOutputAt = state.LastOutputAt,
+                LastTextOutputAt = state.LastTextOutputAt,
                 LastBellAt = state.LastBellAt,
                 CurrentBytesPerSecond = currentBytes,
-                CurrentHeat = CalculateHeat(currentHeatUnits)
+                CurrentHeat = TerminalHeat.FromTextOutput(state.LastTextOutputAt, now)
             };
         }
     }
@@ -270,8 +292,8 @@ public sealed class SessionTelemetryService
 
     private static double CalculateHeat(int heatUnits)
     {
-        // Heat should reflect fresh visible terminal output, not pure control
-        // traffic that redraws state without producing new terminal content.
+        // Heat counts Unicode text (letters, numbers, marks and punctuation).
+        // Whitespace, graphical symbols and terminal commands do not raise heat.
         return heatUnits > 0 ? 1 : 0;
     }
 

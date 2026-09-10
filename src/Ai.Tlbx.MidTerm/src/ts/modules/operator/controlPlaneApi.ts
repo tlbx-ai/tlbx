@@ -1,10 +1,5 @@
 export type ControlPlaneWorkItemState =
-  | 'open'
-  | 'active'
-  | 'waiting'
-  | 'blocked'
-  | 'done'
-  | 'dismissed';
+  'open' | 'active' | 'waiting' | 'blocked' | 'done' | 'dismissed';
 
 export type ControlPlaneSessionState = 'working' | 'waiting' | 'needsInput' | 'blocked' | 'done';
 

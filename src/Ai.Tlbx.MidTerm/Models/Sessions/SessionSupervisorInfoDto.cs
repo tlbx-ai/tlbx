@@ -11,4 +11,6 @@ public sealed class SessionSupervisorInfoDto
     public DateTimeOffset? LastOutputAt { get; set; }
     public DateTimeOffset? LastBellAt { get; set; }
     public double CurrentHeat { get; set; }
+    public DateTimeOffset? LastTextOutputAt { get; set; }
+    public double? TextActivityAgeMs { get; set; }
 }

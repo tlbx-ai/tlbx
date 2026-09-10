@@ -41,6 +41,7 @@ public sealed partial class UpdateService : IDisposable
     private readonly VersionManifest _installedManifest;
     private UpdateInfo? _latestUpdate;
     private bool _disposed;
+    private int _updateInProgress;
 
     public UpdateInfo? LatestUpdate => _latestUpdate;
     public string CurrentVersion => _currentVersion;
@@ -99,6 +100,9 @@ public sealed partial class UpdateService : IDisposable
                     var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
                     if (manifest is not null)
                     {
+                        // Older web-only updaters copied the target manifest while
+                        // preserving an older binary. Use the actual installed host.
+                        manifest.Pty = TtyHostSpawner.GetTtyHostVersion() ?? manifest.Pty;
                         return manifest;
                     }
                 }
@@ -119,7 +123,7 @@ public sealed partial class UpdateService : IDisposable
         };
     }
 
-    private static UpdateType DetermineUpdateType(VersionManifest installed, VersionManifest release)
+    internal static UpdateType DetermineUpdateType(VersionManifest installed, VersionManifest release)
     {
         // Protocol change = always full update
         if (release.Protocol != installed.Protocol)
@@ -127,12 +131,10 @@ public sealed partial class UpdateService : IDisposable
             return UpdateType.Full;
         }
 
-        // PTY version change normally requires a full update. For a signed web-only
-        // release, however, the release's compatibility floor is authoritative:
-        // preserve any installed host that satisfies it even when upstream release
-        // metadata renamed or advanced the advertised PTY version accidentally.
-        if (!string.Equals(release.Pty, installed.Pty, StringComparison.OrdinalIgnoreCase) &&
-            (!release.WebOnly || !IsInstalledPtyCompatibleWithWebOnlyRelease(installed.Pty, release.MinCompatiblePty)))
+        // The target PTY version carries every intervening runtime refresh forward.
+        // Compatibility alone must never let a web-only release skip host fixes.
+        if (CompareVersions(release.Pty, installed.Pty) != 0 &&
+            (!release.WebOnly || !IsSamePromotedPtyVersion(installed.Pty, release.Pty)))
         {
             return UpdateType.Full;
         }
@@ -146,14 +148,13 @@ public sealed partial class UpdateService : IDisposable
         return UpdateType.None;
     }
 
-    internal static bool IsInstalledPtyCompatibleWithWebOnlyRelease(string installedPty, string minCompatiblePty)
+    private static bool IsSamePromotedPtyVersion(string installedPty, string releasePty)
     {
-        if (string.IsNullOrWhiteSpace(installedPty) || string.IsNullOrWhiteSpace(minCompatiblePty))
-        {
-            return false;
-        }
-
-        return CompareVersions(installedPty.Trim(), minCompatiblePty.Trim()) >= 0;
+        // Stable promotion only removes the dev suffix; it does not change the host.
+        var installed = installedPty.Split('+')[0];
+        var release = releasePty.Split('+')[0];
+        return string.Equals(installed + "-dev", release, StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(release + "-dev", installed, StringComparison.OrdinalIgnoreCase);
     }
 
     public string AddUpdateListener(Action<UpdateInfo> callback)
@@ -179,7 +180,7 @@ public sealed partial class UpdateService : IDisposable
         _ = CheckForUpdateAsync();
     }
 
-    public async Task<UpdateInfo?> CheckForUpdateAsync()
+    public async Task<UpdateInfo?> CheckForUpdateAsync(bool forceFull = false)
     {
         try
         {
@@ -194,7 +195,7 @@ public sealed partial class UpdateService : IDisposable
             Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}, asset={assetName}");
 
             var releaseCatalog = await FetchReleasesAsync(updateChannel, _currentVersion);
-            var selection = SelectBestRelease(releaseCatalog.Releases, updateChannel, _currentVersion, assetName);
+            var selection = SelectBestRelease(releaseCatalog.Releases, updateChannel, _currentVersion, assetName, allowReinstall: true);
             if (selection is null)
             {
                 return TryCreateLocalOnlyUpdate(devEnv);
@@ -206,11 +207,15 @@ public sealed partial class UpdateService : IDisposable
             Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"[UpdateCheck] latest={latestVersion}, comparison={comparison}, downgrade={selection.IsDowngrade}"));
 
             var releaseManifest = await FetchReleaseManifestAsync(release.TagName!, releaseCatalog.Repository);
-            var updateType = DetermineUpdateType(_installedManifest, releaseManifest);
+            var updateType = forceFull ? UpdateType.Full : DetermineUpdateType(_installedManifest, releaseManifest);
+            if (!forceFull && comparison == 0 && updateType != UpdateType.Full)
+            {
+                return TryCreateLocalOnlyUpdate(devEnv);
+            }
 
             var localUpdate = devEnv is not null ? CheckLocalUpdate() : null;
 
-            _latestUpdate = new UpdateInfo
+            var updateInfo = new UpdateInfo
             {
                 Available = true,
                 CurrentVersion = _currentVersion,
@@ -226,8 +231,12 @@ public sealed partial class UpdateService : IDisposable
                 IsDowngrade = selection.IsDowngrade
             };
 
-            NotifyListeners(_latestUpdate);
-            return _latestUpdate;
+            if (!forceFull)
+            {
+                _latestUpdate = updateInfo;
+                NotifyListeners(updateInfo);
+            }
+            return updateInfo;
         }
         catch (Exception ex)
         {
@@ -416,12 +425,14 @@ public sealed partial class UpdateService : IDisposable
         IEnumerable<GitHubRelease> releases,
         string updateChannel,
         string currentVersion,
-        string assetName)
+        string assetName,
+        bool allowReinstall = false)
     {
         var isDevChannel = string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase);
         var allowStableDowngrade = !isDevChannel && HasPrerelease(currentVersion);
 
         ReleaseSelection? bestUpgrade = null;
+        ReleaseSelection? currentRelease = null;
         ReleaseSelection? bestDowngrade = null;
 
         foreach (var release in releases)
@@ -444,6 +455,10 @@ public sealed partial class UpdateService : IDisposable
             };
 
             var comparison = CompareVersions(release.TagName!.TrimStart('v'), currentVersion);
+            if (comparison == 0 && allowReinstall)
+            {
+                currentRelease = candidate;
+            }
             if (comparison > 0)
             {
                 if (IsBetterReleaseCandidate(candidate, bestUpgrade))
@@ -461,7 +476,7 @@ public sealed partial class UpdateService : IDisposable
             }
         }
 
-        return bestUpgrade ?? bestDowngrade;
+        return bestUpgrade ?? currentRelease ?? bestDowngrade;
     }
 
     private static bool IsBetterReleaseCandidate(ReleaseSelection candidate, ReleaseSelection? currentBest)
@@ -663,9 +678,9 @@ public sealed partial class UpdateService : IDisposable
         return LocalReleasePath;
     }
 
-    public async Task<string?> DownloadUpdateAsync(string? downloadUrl = null)
+    public async Task<string?> DownloadUpdateAsync(UpdateInfo update)
     {
-        var url = downloadUrl ?? _latestUpdate?.DownloadUrl;
+        var url = update.DownloadUrl;
         if (string.IsNullOrEmpty(url))
         {
             return null;
@@ -676,7 +691,7 @@ public sealed partial class UpdateService : IDisposable
             var tempDir = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}");
             Directory.CreateDirectory(tempDir);
 
-            var assetName = _latestUpdate?.AssetName ?? GetAssetNameForPlatform();
+            var assetName = update.AssetName ?? GetAssetNameForPlatform();
             var downloadPath = Path.Combine(tempDir, assetName);
 
             using (var response = await _httpClient.GetAsync(url))
@@ -708,7 +723,7 @@ public sealed partial class UpdateService : IDisposable
 
             var manifestJson = await File.ReadAllTextAsync(manifestPath);
             var manifest = JsonSerializer.Deserialize<VersionManifest>(manifestJson, VersionManifestContext.Default.VersionManifest);
-            var expectedVersion = _latestUpdate?.LatestVersion;
+            var expectedVersion = update.LatestVersion;
             var expectedChannel = string.IsNullOrWhiteSpace(expectedVersion)
                 ? null
                 : HasPrerelease(expectedVersion) ? "dev" : "stable";
@@ -944,6 +959,13 @@ public sealed partial class UpdateService : IDisposable
         return Environment.ProcessPath ?? AppContext.BaseDirectory;
     }
 
+    internal static bool IsSharedRuntimeHost(string executablePath)
+    {
+        return string.Equals(Path.GetFileNameWithoutExtension(executablePath), "dotnet", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal const string SourceUpdateMessage = "This source instance runs through dotnet and cannot install binary updates. Rebuild it with scripts/dev.ps1, or update a packaged tlbx installation.";
+
     private void NotifyListeners(UpdateInfo update)
     {
         foreach (var listener in _updateListeners.Values)
@@ -958,11 +980,38 @@ public sealed partial class UpdateService : IDisposable
         }
     }
 
-    public async Task<(bool Success, string Message)> ApplyUpdateAsync(SettingsService settingsService, string? source)
+    public async Task<(bool Success, string Message)> ApplyUpdateAsync(SettingsService settingsService, string? source, bool forceFull = false)
     {
+        if (Interlocked.CompareExchange(ref _updateInProgress, 1, 0) != 0)
+        {
+            return (false, "An update is already in progress. Check the update log before retrying.");
+        }
+
+        var success = false;
+        try
+        {
+            var result = await ApplyUpdateCoreAsync(settingsService, source, forceFull).ConfigureAwait(false);
+            success = result.Success;
+            return result;
+        }
+        finally
+        {
+            // Keep ownership through the detached installer handoff until this server exits.
+            if (!success) Interlocked.Exchange(ref _updateInProgress, 0);
+        }
+    }
+
+    private async Task<(bool Success, string Message)> ApplyUpdateCoreAsync(SettingsService settingsService, string? source, bool forceFull)
+    {
+        // A source server must never replace or stop the shared .NET host.
+        if (IsSharedRuntimeHost(GetCurrentBinaryPath()))
+        {
+            return (false, SourceUpdateMessage);
+        }
+
         var artifacts = GetUpdateArtifacts(settingsService);
         ResetUpdateArtifacts(artifacts);
-        AppendUpdateLog(artifacts.LogPath, $"Preparing update request (source={source ?? "github"})");
+        AppendUpdateLog(artifacts.LogPath, $"Preparing update request (source={source ?? "github"}, forceFull={forceFull})");
 
         string? extractedDir;
         UpdateType updateType;
@@ -984,19 +1033,27 @@ public sealed partial class UpdateService : IDisposable
         {
             // Never apply a timer/UI snapshot here. A release can finish publishing
             // after the last background check but before the user presses Update.
-            var update = await CheckForUpdateAsync().ConfigureAwait(false);
+            var update = await CheckForUpdateAsync(forceFull).ConfigureAwait(false);
             if (update is null || !update.Available)
             {
                 return FailUpdate(artifacts, "No update available");
             }
 
-            extractedDir = await DownloadUpdateAsync();
+            extractedDir = await DownloadUpdateAsync(update);
             if (string.IsNullOrEmpty(extractedDir))
             {
                 return FailUpdate(artifacts, "Failed to download update");
             }
 
-            updateType = update.Type;
+            // Re-evaluate the authenticated payload, not just discovery metadata.
+            var manifestJson = await File.ReadAllTextAsync(Path.Combine(extractedDir, "version.json"));
+            var manifest = JsonSerializer.Deserialize(manifestJson, VersionManifestContext.Default.VersionManifest)!;
+            updateType = DetermineUpdateType(_installedManifest, manifest);
+        }
+
+        if (forceFull)
+        {
+            updateType = UpdateType.Full;
         }
 
         AppendUpdateLog(artifacts.LogPath, $"Downloaded update payload to {extractedDir}");
@@ -1157,6 +1214,7 @@ public sealed partial class UpdateService : IDisposable
                 AppendUpdateLog(artifacts.LogPath, $"Update execution failed: {ex.Message}", "ERROR");
                 WriteUpdateResult(artifacts, success: false, "Failed to execute update script", ex.Message);
                 Log.Error(() => $"Update execution failed: {ex.Message}");
+                Interlocked.Exchange(ref _updateInProgress, 0);
             }
         });
 
@@ -1315,6 +1373,8 @@ public sealed partial class UpdateService : IDisposable
             }
 
             StageUpdateFile(extractedDir, stagingDir, "version.json", artifacts, required: true, makeExecutable: false);
+            // The effective type can be Full even when the signed release is web-only.
+            File.WriteAllText(Path.Combine(stagingDir, "update-type"), updateType == UpdateType.WebOnly ? "webOnly" : "full");
 
             if (deleteSourceAfter)
             {
@@ -1820,8 +1880,7 @@ RESULT_EOF
 }}
 
 staged_update_is_web_only() {{
-    local manifest_path=""$STAGING/version.json""
-    [[ -f ""$manifest_path"" ]] && grep -Eq '""webOnly""[[:space:]]*:[[:space:]]*true' ""$manifest_path""
+    [[ -f ""$STAGING/update-type"" ]] && [[ ""$(cat ""$STAGING/update-type"")"" == ""webOnly"" ]]
 }}
 
 resolve_agenthost_target() {{

@@ -481,7 +481,7 @@ export function boostTerminalTextColor(color: string, boost: number): string {
 
 function applyTextLightnessBoostToTheme(theme: TerminalTheme, boost: number): TerminalTheme {
   if (boost <= 0) return theme;
-  const out = { ...theme } as TerminalTheme;
+  const out = { ...theme };
   for (const key of TEXT_LIGHTNESS_KEYS) {
     const val = out[key];
     if (typeof val === 'string' && val.trim().length > 0) {

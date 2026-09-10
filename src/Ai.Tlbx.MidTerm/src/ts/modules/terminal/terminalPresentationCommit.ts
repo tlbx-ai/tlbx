@@ -22,6 +22,8 @@ export interface TerminalPresentationCommitPlan {
 export function commitTerminalPresentationDom(plan: TerminalPresentationCommitPlan): void {
   const { container, xterm, snapshot } = plan;
   const ownsSize = snapshot.role === 'owner';
+  // A desktop owner keeps natural cell size while reading history or waiting
+  // for its resize acknowledgement. A height change must not shrink its width.
   const shouldScale = plan.mode === 'scaled-down' && (!ownsSize || plan.scaleOwner);
 
   if (shouldScale) {

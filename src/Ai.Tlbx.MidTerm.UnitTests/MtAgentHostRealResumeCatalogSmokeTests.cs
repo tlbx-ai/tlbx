@@ -46,7 +46,7 @@ public sealed partial class MtAgentHostRealResumeCatalogSmokeTests
         try
         {
             var hello = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
-            Assert.Contains("codex", hello.Providers);
+            Assert.Contains("codex", hello.Providers, StringComparer.Ordinal);
 
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new AppServerControlHostCommandEnvelope
             {

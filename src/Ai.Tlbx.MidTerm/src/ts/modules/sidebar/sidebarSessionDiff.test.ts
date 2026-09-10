@@ -51,6 +51,19 @@ describe('sidebar session diff', () => {
     expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toEqual([current]);
   });
 
+  it('does not rebuild the workspace tree for supervisor activity alone', () => {
+    const previous = session({});
+    const current = session({
+      supervisor: {
+        ...previous.supervisor,
+        state: 'busy-turn',
+        attentionScore: 20,
+        needsAttention: true,
+      } as Session['supervisor'],
+    });
+    expect(getSidebarFastPathSessionUpdates({ s1: previous }, { s1: current })).toEqual([]);
+  });
+
   it('ignores terminal-size-only updates because they do not affect sidebar rows', () => {
     const previous = session({ cols: 120, rows: 30 });
     const current = session({ cols: 100, rows: 24 });

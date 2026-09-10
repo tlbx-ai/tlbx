@@ -855,12 +855,7 @@ export interface SessionTurnSummaryArgs {
 
 /** Compact lifecycle status for a tlbx agent turn */
 export type SessionTurnStatus =
-  | 'complete'
-  | 'busy'
-  | 'needs_user'
-  | 'blocked'
-  | 'shell'
-  | 'unknown';
+  'complete' | 'busy' | 'needs_user' | 'blocked' | 'shell' | 'unknown';
 
 /** Args for wait_for_turn_completion tool */
 export interface WaitForTurnCompletionArgs {

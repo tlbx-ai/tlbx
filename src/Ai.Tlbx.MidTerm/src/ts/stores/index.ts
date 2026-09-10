@@ -325,10 +325,14 @@ export function setSessions(sessionList: Session[]): boolean {
     }
 
     const entry: Session = { ...session, name, _order: session.order };
-    sessionsMap[id] = entry;
+    const previous = currentSessions[id];
+    sessionsMap[id] = previous && areJsonLikeEqual(previous, entry) ? previous : entry;
   });
 
-  if (areJsonLikeRecordsEqual(currentSessions, sessionsMap)) {
+  if (
+    Object.keys(currentSessions).length === Object.keys(sessionsMap).length &&
+    Object.keys(sessionsMap).every((id) => currentSessions[id] === sessionsMap[id])
+  ) {
     return false;
   }
 
@@ -497,7 +501,8 @@ export function setTerminalSizeControls(statuses: TerminalSizeControlStatus[]): 
   const next: Record<string, TerminalSizeControlStatus> = {};
   statuses.forEach((status) => {
     if (status.sessionId) {
-      next[status.sessionId] = status;
+      const existing = $terminalSizeControls.get()[status.sessionId];
+      next[status.sessionId] = existing && existing.epoch > status.epoch ? existing : status;
     }
   });
   terminalSizeControlSources.set('local', next);
@@ -510,7 +515,10 @@ export function setTerminalSizeControlsForSource(
 ): void {
   const next: Record<string, TerminalSizeControlStatus> = {};
   statuses.forEach((status) => {
-    if (status.sessionId) next[status.sessionId] = status;
+    if (status.sessionId) {
+      const existing = $terminalSizeControls.get()[status.sessionId];
+      next[status.sessionId] = existing && existing.epoch > status.epoch ? existing : status;
+    }
   });
   terminalSizeControlSources.set(source, next);
   publishTerminalSizeControls();
@@ -541,5 +549,5 @@ export function getTerminalSizeControl(sessionId: string): TerminalSizeControlSt
 
 export function hasTerminalSizeControl(sessionId: string): boolean {
   const status = getTerminalSizeControl(sessionId);
-  return status?.isOwner ?? $isMainBrowser.get();
+  return status?.isOwner ?? false;
 }

@@ -15,11 +15,11 @@
   </PropertyGroup>
 
   <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;BeforeCompile">
-    <Exec Command="node -p &quot;require('./src/version.json').web&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/../.." ConsoleToMsBuild="true">
-      <Output TaskParameter="ConsoleOutput" PropertyName="WebVersion" />
+    <Exec Command="node -p &quot;require('./src/version.json').pty&quot;" WorkingDirectory="$(MSBuildProjectDirectory)/../.." ConsoleToMsBuild="true">
+      <Output TaskParameter="ConsoleOutput" PropertyName="PtyVersion" />
     </Exec>
     <PropertyGroup>
-      <Version>$(WebVersion)</Version>
+      <Version>$(PtyVersion)</Version>
     </PropertyGroup>
   </Target>
 

@@ -19,7 +19,7 @@ type WindowWithHandler = Window &
   };
 
 function getWindowWithHandler(): WindowWithHandler {
-  return window as WindowWithHandler;
+  return window;
 }
 
 function readHistoryState(): Record<string, unknown> {

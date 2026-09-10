@@ -8,7 +8,7 @@ using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-public sealed class TerminalSizeControlService
+public sealed class TerminalSizeControlService : IDisposable
 {
     public static readonly TimeSpan OfflineTakeoverDelay = TimeSpan.FromSeconds(30);
     public static readonly TimeSpan ConnectedOwnerProtectionDelay = TimeSpan.FromMinutes(5);
@@ -19,6 +19,8 @@ public sealed class TerminalSizeControlService
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionGates = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider;
     private readonly string _statePath;
+    private DateTimeOffset _lastInputPersistUtc;
+    private Task _persistenceTask = Task.CompletedTask;
 
     public TerminalSizeControlService(SettingsService settingsService)
         : this(settingsService.SettingsDirectory, TimeProvider.System)
@@ -163,13 +165,61 @@ public sealed class TerminalSizeControlService
         OnChanged?.Invoke();
     }
 
-    public async Task<TerminalSizeControlCommandResult> RequestControlAsync(
+    public Task<TerminalSizeControlCommandResult> RequestControlAsync(
         string sessionId,
         string browserId,
         bool force,
         string? browserLabel = null,
         long? expectedEpoch = null,
         CancellationToken ct = default)
+        => UpdateControlAsync(sessionId, browserId, force, false, browserLabel, expectedEpoch, ct);
+
+    // Called only with actual browser-authored input at the server input boundary.
+    // Terminal replies, API automation and passive control requests are not activity.
+    public Task<TerminalSizeControlCommandResult> RecordInputAsync(
+        string sessionId, string browserId, string? browserLabel = null, CancellationToken ct = default)
+    {
+        ct.ThrowIfCancellationRequested();
+        lock (_lock)
+        {
+            var now = _timeProvider.GetUtcNow();
+            if (_ownership.TryGetValue(sessionId, out var owner))
+            {
+                if (string.Equals(owner.BrowserId, browserId, StringComparison.Ordinal))
+                {
+                    RecordOwnerInputLocked(owner, now);
+                    return Task.FromResult(new TerminalSizeControlCommandResult
+                    {
+                        Status = BuildStatusLocked(sessionId, browserId, now)
+                    });
+                }
+                if (!CanTakeOverAutomaticallyLocked(owner, browserId, now))
+                {
+                    return Task.FromResult(new TerminalSizeControlCommandResult
+                    {
+                        Status = BuildStatusLocked(sessionId, browserId, now)
+                    });
+                }
+            }
+        }
+        // Only a transfer needs serialization with an in-flight resize. Ordinary
+        // typing must never wait for the PTY to acknowledge a resize.
+        return UpdateControlAsync(sessionId, browserId, false, true, browserLabel, null, ct);
+    }
+
+    private void RecordOwnerInputLocked(OwnershipRecord owner, DateTimeOffset now)
+    {
+        owner.LastInteractionUtc = now;
+        if (now - _lastInputPersistUtc >= TimeSpan.FromSeconds(15))
+        {
+            PersistLocked();
+            _lastInputPersistUtc = now;
+        }
+    }
+
+    private async Task<TerminalSizeControlCommandResult> UpdateControlAsync(
+        string sessionId, string browserId, bool force, bool isInput,
+        string? browserLabel, long? expectedEpoch, CancellationToken ct)
     {
         var gate = _sessionGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -183,17 +233,16 @@ public sealed class TerminalSizeControlService
                 if (_ownership.TryGetValue(sessionId, out var current) &&
                     string.Equals(current.BrowserId, browserId, StringComparison.Ordinal))
                 {
-                    current.LastInteractionUtc = now;
-                    current.DisconnectedAtUtc = IsBrowserOnlineLocked(browserId) ? null : now;
-                    if (!string.IsNullOrWhiteSpace(browserLabel))
+                    if (isInput)
                     {
-                        current.BrowserLabel = browserLabel;
+                        RecordOwnerInputLocked(current, now);
                     }
-                    PersistLocked();
                 }
                 else if (
                     (force && (expectedEpoch is null || expectedEpoch.Value == (current?.Epoch ?? 0))) ||
-                    (!force && CanTakeOverAutomaticallyLocked(current, browserId, now)))
+                    (!force && (isInput
+                        ? CanTakeOverAutomaticallyLocked(current, browserId, now)
+                        : CanInheritLocked(current, browserId))))
                 {
                     _ownership[sessionId] = new OwnershipRecord
                     {
@@ -270,6 +319,29 @@ public sealed class TerminalSizeControlService
             gate.Release();
         }
     }
+
+    // Headless API/tmux callers have no browser lease. They may size only unowned sessions.
+    public async Task<bool> ResizeUnownedAsync(
+        string sessionId, int cols, int rows, Func<CancellationToken, Task<bool>> resize,
+        CancellationToken ct = default)
+    {
+        TerminalSizeLimits.ThrowIfInvalid(cols, rows);
+        var gate = _sessionGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            lock (_lock)
+            {
+                if (_ownership.ContainsKey(sessionId)) return false;
+            }
+            return await resize(ct).ConfigureAwait(false);
+        }
+        finally { gate.Release(); }
+    }
+
+    private bool CanInheritLocked(OwnershipRecord? owner, string browserId)
+        => owner is null || (!IsBrowserOnlineLocked(owner.BrowserId)
+            && BrowserIdentity.AreSameBrowser(owner.BrowserId, browserId));
 
     public void PruneSessions(IEnumerable<string> validSessionIds)
     {
@@ -394,36 +466,54 @@ public sealed class TerminalSizeControlService
 
     private void PersistLocked()
     {
+        // Snapshot while holding the state lock; serialize and write in order off the input path.
+        var state = new TerminalSizeControlPersistedState
+        {
+            Sessions = _ownership.ToDictionary(pair => pair.Key, pair => new OwnershipRecord
+            {
+                BrowserId = pair.Value.BrowserId,
+                BrowserLabel = pair.Value.BrowserLabel,
+                Epoch = pair.Value.Epoch,
+                LastInteractionUtc = pair.Value.LastInteractionUtc,
+                DisconnectedAtUtc = pair.Value.DisconnectedAtUtc
+            }, StringComparer.Ordinal)
+        };
+        _persistenceTask = _persistenceTask.ContinueWith(_ => Save(state),
+            CancellationToken.None, TaskContinuationOptions.None, TaskScheduler.Default);
+    }
+
+    private void Save(TerminalSizeControlPersistedState state)
+    {
         try
         {
             var directory = Path.GetDirectoryName(_statePath);
-            if (!string.IsNullOrWhiteSpace(directory))
+            if (!string.IsNullOrWhiteSpace(directory)) Directory.CreateDirectory(directory);
+            if (state.Sessions.Count == 0)
             {
-                Directory.CreateDirectory(directory);
-            }
-
-            if (_ownership.Count == 0)
-            {
-                if (File.Exists(_statePath))
-                {
-                    File.Delete(_statePath);
-                }
+                File.Delete(_statePath);
                 return;
             }
-
-            var state = new TerminalSizeControlPersistedState
-            {
-                Sessions = new Dictionary<string, OwnershipRecord>(_ownership, StringComparer.Ordinal)
-            };
-            var json = JsonSerializer.Serialize(
-                state,
+            var json = JsonSerializer.Serialize(state,
                 TerminalSizeControlJsonContext.Default.TerminalSizeControlPersistedState);
-            File.WriteAllText(_statePath, json);
+            var temporaryPath = _statePath + ".tmp";
+            File.WriteAllText(temporaryPath, json);
+            File.Move(temporaryPath, _statePath, overwrite: true);
         }
         catch (Exception ex)
         {
             Log.Warn(() => $"Failed to save terminal size ownership: {ex.Message}");
         }
+    }
+
+    public void Dispose()
+    {
+        Task pending;
+        lock (_lock)
+        {
+            PersistLocked();
+            pending = _persistenceTask;
+        }
+        pending.GetAwaiter().GetResult();
     }
 
     internal sealed class OwnershipRecord

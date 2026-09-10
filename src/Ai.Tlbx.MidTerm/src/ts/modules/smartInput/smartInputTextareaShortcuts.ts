@@ -9,9 +9,7 @@ export interface SmartInputTextareaShortcutEvent {
 }
 
 export type SmartInputShiftTabAction =
-  | 'toggle-appServerControl-plan-mode'
-  | 'forward-to-terminal'
-  | null;
+  'toggle-appServerControl-plan-mode' | 'forward-to-terminal' | null;
 
 export function resolveSmartInputShiftTabAction(
   event: SmartInputTextareaShortcutEvent,

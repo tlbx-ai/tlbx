@@ -16,7 +16,7 @@ public sealed class MidTermInstanceIdentityTests : IDisposable
         var second = MidTermInstanceIdentity.Load(_tempDir, 3000);
 
         Assert.Equal(first.SettingsGuardName, second.SettingsGuardName);
-        Assert.NotEqual(first.PortGuardName, second.PortGuardName);
+        Assert.NotEqual(first.PortGuardName, second.PortGuardName, StringComparer.Ordinal);
     }
 
     public void Dispose()

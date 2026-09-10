@@ -150,6 +150,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<SessionActivityHeatSample>))]
 [JsonSerializable(typeof(SessionBellEvent))]
 [JsonSerializable(typeof(List<SessionBellEvent>))]
+[JsonSerializable(typeof(TerminalTextActivityMessage))]
 [JsonSerializable(typeof(TerminalNotificationMessage))]
 [JsonSerializable(typeof(TerminalNotificationRequest))]
 [JsonSerializable(typeof(AgentSessionVibeResponse))]

@@ -71,29 +71,4 @@ public sealed class TerminalOutputSanitizerTests
         Assert.Equal(1, result);
     }
 
-    [Fact]
-    public void CountVisibleTextUnits_IgnoresAnsiOnlyTraffic()
-    {
-        ReadOnlySpan<byte> data =
-        [
-            0x1B, 0x5B, (byte)'?', (byte)'2', (byte)'5', (byte)'h',
-            0x1B, 0x5B, (byte)'?', (byte)'1', (byte)'2', (byte)'l',
-            0x1B, 0x5D, (byte)'0', (byte)';', (byte)'p', (byte)'w', (byte)'s', (byte)'h', 0x07,
-            0x0D
-        ];
-
-        var result = TerminalOutputSanitizer.CountVisibleTextUnits(data);
-
-        Assert.Equal(0, result);
-    }
-
-    [Fact]
-    public void CountVisibleTextUnits_CountsPrintableContentOutsideEscapeSequences()
-    {
-        ReadOnlySpan<byte> data = Encoding.UTF8.GetBytes("\u001b[31mhello\u001b[0m\r\n世界");
-
-        var result = TerminalOutputSanitizer.CountVisibleTextUnits(data);
-
-        Assert.Equal(8, result);
-    }
 }

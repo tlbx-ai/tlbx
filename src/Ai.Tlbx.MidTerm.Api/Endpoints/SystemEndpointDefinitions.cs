@@ -100,8 +100,8 @@ public static class SystemEndpointDefinitions
             await handler.CheckUpdateAsync())
             .Produces<UpdateInfo>(StatusCodes.Status200OK, "application/json");
 
-        app.MapPost("/api/update/apply", async (ISystemHandler handler, string? source) =>
-            await handler.ApplyUpdateAsync(source))
+        app.MapPost("/api/update/apply", async (ISystemHandler handler, string? source, bool forceFull = false) =>
+            await handler.ApplyUpdateAsync(source, forceFull))
             .Produces(StatusCodes.Status200OK);
 
         app.MapGet("/api/update/result", (ISystemHandler handler, bool clear = false) =>

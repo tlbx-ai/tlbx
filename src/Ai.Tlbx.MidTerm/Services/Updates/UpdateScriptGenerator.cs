@@ -52,6 +52,11 @@ public static class UpdateScriptGenerator
         UpdateType updateType = UpdateType.Full,
         bool deleteSourceAfter = true)
     {
+        if (UpdateService.IsSharedRuntimeHost(currentBinaryPath))
+        {
+            throw new InvalidOperationException(UpdateService.SourceUpdateMessage);
+        }
+
         if (OperatingSystem.IsWindows())
         {
             return GenerateWindowsScript(extractedDir, currentBinaryPath, settingsDirectory, serviceIdentity, updateType, deleteSourceAfter);

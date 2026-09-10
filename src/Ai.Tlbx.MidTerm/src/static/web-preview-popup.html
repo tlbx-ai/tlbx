@@ -1,197 +1,323 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
+  <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Browser — tlbx</title>
     <meta name="application-name" content="tlbx" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=__MIDTERM_ASSET_VERSION__" />
-    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__" />
+    <link
+      rel="alternate icon"
+      type="image/x-icon"
+      href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__"
+    />
     <link rel="stylesheet" href="/css/app.css?v=__MIDTERM_ASSET_VERSION__" />
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body::before,
-        body::after {
-            content: none !important;
-        }
-        html,
-        body {
-            font-family: var(--font-ui);
-            background: var(--bg-primary);
-            color: var(--text-primary);
-            overflow: hidden;
-            width: 100%;
-            height: 100%;
-        }
-        body {
-            display: flex;
-            flex-direction: column;
-        }
-        .web-preview-popup-shell {
-            position: static;
-            inset: auto;
-            top: auto;
-            right: auto;
-            bottom: auto;
-            width: auto;
-            height: 100%;
-            border-left: none;
-            background: var(--bg-sidebar);
-        }
-        .web-preview-popup-shell .web-preview-dock-title {
-            min-width: 0;
-        }
-        .web-preview-popup-shell .web-preview-session-identity {
-            display: flex;
-            flex-direction: column;
-            min-width: 0;
-            gap: 1px;
-        }
-        .web-preview-popup-shell .web-preview-dock-title-text {
-            display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .web-preview-popup-shell .web-preview-session-subtitle {
-            display: block;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            color: var(--text-secondary);
-            font-size: var(--fs-xs);
-            font-weight: 500;
-        }
-        .web-preview-popup-shell .web-preview-session-subtitle.hidden {
-            display: none;
-        }
-        .web-preview-popup-shell .web-preview-dock-actions {
-            flex-wrap: wrap;
-            justify-content: flex-end;
-        }
-        .web-preview-popup-shell #web-preview-iframe-host {
-            height: 100%;
-        }
-        .web-preview-popup-shell .web-preview-empty-state {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 12px;
-            color: var(--text-secondary);
-            font-size: var(--fs-md);
-            text-align: center;
-            padding: 20px;
-        }
-        .web-preview-popup-shell .web-preview-empty-state.hidden {
-            display: none;
-        }
-        .web-preview-popup-shell .web-preview-empty-state strong {
-            color: var(--text-primary);
-            font-weight: 600;
-        }
-        .web-preview-device-status {
-            flex: 0 0 auto;
-            max-width: 150px;
-            padding: 3px 7px;
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            color: var(--text-secondary);
-            background: var(--bg-secondary);
-            font-size: var(--fs-xs);
-            line-height: 1.2;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-        .web-preview-device-status.hidden {
-            display: none;
-        }
-        body.web-preview-popup-mobile-mode .web-preview-device-status {
-            color: var(--text-accent);
-            border-color: color-mix(in srgb, var(--text-accent) 52%, var(--border-color) 48%);
-            background: color-mix(in srgb, var(--text-accent) 12%, var(--bg-secondary) 88%);
-        }
-        body.web-preview-popup-mobile-mode .web-preview-dock-body.viewport-constrained {
-            align-items: center;
-            justify-content: center;
-            padding: 14px;
-            background:
-                linear-gradient(90deg, color-mix(in srgb, var(--border-color) 26%, transparent) 1px, transparent 1px),
-                linear-gradient(color-mix(in srgb, var(--border-color) 20%, transparent) 1px, transparent 1px),
-                var(--bg-primary);
-            background-size: 24px 24px;
-        }
-        body.web-preview-popup-mobile-mode .web-preview-dock-body.viewport-constrained #preview-frame {
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            box-shadow: 0 10px 28px var(--shadow-color);
-            overflow: hidden;
-        }
-        body.web-preview-popup-real-mobile .web-preview-dock-body {
-            padding: 0;
-        }
-        body.web-preview-popup-real-mobile .web-preview-dock-body.viewport-constrained #preview-frame {
-            border: 0;
-            border-radius: 0;
-            box-shadow: none;
-        }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body::before,
+      body::after {
+        content: none !important;
+      }
+      html,
+      body {
+        font-family: var(--font-ui);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        overflow: hidden;
+        width: 100%;
+        height: 100%;
+      }
+      body {
+        display: flex;
+        flex-direction: column;
+      }
+      .web-preview-popup-shell {
+        position: static;
+        inset: auto;
+        top: auto;
+        right: auto;
+        bottom: auto;
+        width: auto;
+        height: 100%;
+        border-left: none;
+        background: var(--bg-sidebar);
+      }
+      .web-preview-popup-shell .web-preview-dock-title {
+        min-width: 0;
+      }
+      .web-preview-popup-shell .web-preview-session-identity {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        gap: 1px;
+      }
+      .web-preview-popup-shell .web-preview-dock-title-text {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .web-preview-popup-shell .web-preview-session-subtitle {
+        display: block;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--text-secondary);
+        font-size: var(--fs-xs);
+        font-weight: 500;
+      }
+      .web-preview-popup-shell .web-preview-session-subtitle.hidden {
+        display: none;
+      }
+      .web-preview-popup-shell .web-preview-dock-actions {
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+      .web-preview-popup-shell #web-preview-iframe-host {
+        height: 100%;
+      }
+      .web-preview-popup-shell .web-preview-empty-state {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        color: var(--text-secondary);
+        font-size: var(--fs-md);
+        text-align: center;
+        padding: 20px;
+      }
+      .web-preview-popup-shell .web-preview-empty-state.hidden {
+        display: none;
+      }
+      .web-preview-popup-shell .web-preview-empty-state strong {
+        color: var(--text-primary);
+        font-weight: 600;
+      }
+      .web-preview-device-status {
+        flex: 0 0 auto;
+        max-width: 150px;
+        padding: 3px 7px;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-secondary);
+        background: var(--bg-secondary);
+        font-size: var(--fs-xs);
+        line-height: 1.2;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .web-preview-device-status.hidden {
+        display: none;
+      }
+      body.web-preview-popup-mobile-mode .web-preview-device-status {
+        color: var(--text-accent);
+        border-color: color-mix(in srgb, var(--text-accent) 52%, var(--border-color) 48%);
+        background: color-mix(in srgb, var(--text-accent) 12%, var(--bg-secondary) 88%);
+      }
+      body.web-preview-popup-mobile-mode .web-preview-dock-body.viewport-constrained {
+        align-items: center;
+        justify-content: center;
+        padding: 14px;
+        background:
+          linear-gradient(
+            90deg,
+            color-mix(in srgb, var(--border-color) 26%, transparent) 1px,
+            transparent 1px
+          ),
+          linear-gradient(
+            color-mix(in srgb, var(--border-color) 20%, transparent) 1px,
+            transparent 1px
+          ),
+          var(--bg-primary);
+        background-size: 24px 24px;
+      }
+      body.web-preview-popup-mobile-mode
+        .web-preview-dock-body.viewport-constrained
+        #preview-frame {
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        box-shadow: 0 10px 28px var(--shadow-color);
+        overflow: hidden;
+      }
+      body.web-preview-popup-real-mobile .web-preview-dock-body {
+        padding: 0;
+      }
+      body.web-preview-popup-real-mobile
+        .web-preview-dock-body.viewport-constrained
+        #preview-frame {
+        border: 0;
+        border-radius: 0;
+        box-shadow: none;
+      }
     </style>
-</head>
-<body>
+  </head>
+  <body>
     <aside class="web-preview-dock web-preview-popup-shell">
-        <div class="web-preview-dock-header">
-            <span class="web-preview-dock-title">
-                <span class="web-preview-session-identity">
-                    <span class="web-preview-dock-title-text">Web Preview</span>
-                    <span class="web-preview-session-subtitle hidden" id="web-preview-session-subtitle"></span>
-                </span>
-            </span>
-            <div class="web-preview-dock-actions">
-                <button class="btn-icon" id="web-preview-agent-hint" title="Hint agent">&#x1F916;</button>
-                <button class="btn-icon" id="web-preview-screenshot" title="Screenshot to terminal">&#x1f4f7;</button>
-                <button class="btn-icon" id="web-preview-clear-cookies" title="Clear cookies">&#x1f36a;</button>
-                <button class="btn-icon" id="web-preview-clear-state" title="Clear state">&#x1f5d1;</button>
-                <button class="btn-icon" id="web-preview-refresh" title="Refresh">&#x21bb;</button>
-                <button class="btn-icon" id="web-preview-dock-back" title="Dock back">&#x21A9;</button>
-                <button class="btn-icon" id="web-preview-close" title="Close">&times;</button>
-            </div>
-        </div>
-        <div class="web-preview-tabs" id="web-preview-tabs"></div>
-        <div class="web-preview-dock-url-bar">
-            <input type="url" id="web-preview-url-input" placeholder="type URL here" spellcheck="false" />
+      <div class="web-preview-dock-header">
+        <span class="web-preview-dock-title">
+          <span class="web-preview-session-identity">
+            <span class="web-preview-dock-title-text">Web Preview</span>
             <span
-                id="web-preview-status-indicator"
-                class="web-preview-status-indicator hidden"
-                tabindex="0"
-                role="img"
-                aria-hidden="true"
-                title=""
-                >!</span
-            >
-            <span
-                id="web-preview-device-status"
-                class="web-preview-device-status hidden"
-                title=""
+              class="web-preview-session-subtitle hidden"
+              id="web-preview-session-subtitle"
             ></span>
-            <button class="btn-icon" id="web-preview-go" title="Go">&#8594;</button>
+          </span>
+        </span>
+        <div class="web-preview-dock-actions">
+          <button class="btn-icon" id="web-preview-agent-hint" title="Hint agent">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m5 7 4 5-4 5M12 17h7" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="web-preview-screenshot" title="Screenshot to terminal">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M8 5 6 8H3v12h18V8h-3l-2-3Z" />
+              <circle cx="12" cy="13" r="3" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="web-preview-clear-cookies" title="Clear cookies">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="9" />
+              <path d="M8 8h.01M15 9h.01M10 15h.01M16 15h.01" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="web-preview-clear-state" title="Clear state">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="web-preview-refresh" title="Refresh">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20 7v5h-5M4 17v-5h5" />
+              <path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="web-preview-dock-back" title="Dock back">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M3 3h18v18H3zM14 3v18M11 12H5m3-3-3 3 3 3" />
+            </svg>
+          </button>
+          <button class="btn-icon" id="web-preview-close" title="Close">
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.7"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="m6 6 12 12M18 6 6 18" />
+            </svg>
+          </button>
         </div>
-        <div
-            class="web-preview-action-message hidden"
-            id="web-preview-action-message"
-            role="status"
-            aria-live="polite"
-        ></div>
-        <div class="web-preview-dock-body" id="preview-host">
-            <div id="web-preview-iframe-host"></div>
-            <div class="web-preview-empty-state hidden" id="web-preview-empty-state">
-                <strong>No preview target</strong>
-                <span>Enter a URL to preview in this detached window.</span>
-            </div>
+      </div>
+      <div class="web-preview-tabs" id="web-preview-tabs"></div>
+      <div class="web-preview-dock-url-bar">
+        <input
+          type="url"
+          id="web-preview-url-input"
+          placeholder="type URL here"
+          spellcheck="false"
+        />
+        <span
+          id="web-preview-status-indicator"
+          class="web-preview-status-indicator hidden"
+          tabindex="0"
+          role="img"
+          aria-hidden="true"
+          title=""
+          >!</span
+        >
+        <span
+          id="web-preview-device-status"
+          class="web-preview-device-status hidden"
+          title=""
+        ></span>
+        <button class="btn-icon" id="web-preview-go" title="Go">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M4 12h16m-6-6 6 6-6 6" />
+          </svg>
+        </button>
+      </div>
+      <div
+        class="web-preview-action-message hidden"
+        id="web-preview-action-message"
+        role="status"
+        aria-live="polite"
+      ></div>
+      <div class="web-preview-dock-body" id="preview-host">
+        <div id="web-preview-iframe-host"></div>
+        <div class="web-preview-empty-state hidden" id="web-preview-empty-state">
+          <strong>No preview target</strong>
+          <span>Enter a URL to preview in this detached window.</span>
         </div>
+      </div>
     </aside>
 
     <script src="/js/web-preview-popup.js?v=__MIDTERM_ASSET_VERSION__"></script>
-</body>
+  </body>
 </html>

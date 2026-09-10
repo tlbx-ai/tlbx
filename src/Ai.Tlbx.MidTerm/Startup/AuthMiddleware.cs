@@ -178,6 +178,7 @@ public static class AuthMiddleware
                path == "/favicon.svg" ||
                path == "/favicon.ico" ||
                path == "/site.webmanifest" ||
+               path == "/sw.js" ||
                path == "/android-chrome-192x192.png" ||
                path == "/android-chrome-512x512.png" ||
                path == "/apple-touch-icon.png" ||

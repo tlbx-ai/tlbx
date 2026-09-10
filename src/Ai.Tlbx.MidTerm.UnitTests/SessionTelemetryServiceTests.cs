@@ -8,7 +8,7 @@ public sealed class SessionTelemetryServiceTests
     [Fact]
     public void RecordOutput_TracksHeatmapAndBellHistory()
     {
-        var service = new SessionTelemetryService();
+        var service = new SessionTelemetryService(new Microsoft.Extensions.Time.Testing.FakeTimeProvider());
 
         service.RecordOutput("sess1234", "hello"u8.ToArray());
         service.RecordOutput("sess1234", [0x07]);
@@ -26,7 +26,7 @@ public sealed class SessionTelemetryServiceTests
     [Fact]
     public void RecordOutput_SetsCurrentHeatToFullForAnyFreshOutput()
     {
-        var service = new SessionTelemetryService();
+        var service = new SessionTelemetryService(new Microsoft.Extensions.Time.Testing.FakeTimeProvider());
 
         service.RecordOutput("sess1234", "."u8.ToArray());
 
@@ -41,7 +41,7 @@ public sealed class SessionTelemetryServiceTests
     [Fact]
     public void RecordOutput_DoesNotCreateHeatFromControlOnlyTraffic()
     {
-        var service = new SessionTelemetryService();
+        var service = new SessionTelemetryService(new Microsoft.Extensions.Time.Testing.FakeTimeProvider());
 
         service.RecordOutput("sess1234", [0x1B, 0x5B, (byte)'?', (byte)'2', (byte)'5', (byte)'h', 0x0D]);
 
@@ -57,7 +57,7 @@ public sealed class SessionTelemetryServiceTests
     [Fact]
     public void ClearSession_RemovesStoredActivity()
     {
-        var service = new SessionTelemetryService();
+        var service = new SessionTelemetryService(new Microsoft.Extensions.Time.Testing.FakeTimeProvider());
 
         service.RecordOutput("sess1234", "hello"u8.ToArray());
         service.ClearSession("sess1234");

@@ -5,8 +5,7 @@ import { sessionTerminals } from '../../state';
 import { $activeSessionId } from '../../stores';
 
 type RawBufferResult =
-  | { ok: true; snapshot: SessionBufferTextResponse }
-  | { ok: false; error: string };
+  { ok: true; snapshot: SessionBufferTextResponse } | { ok: false; error: string };
 
 type XtermBuffer = Terminal['buffer']['active'];
 

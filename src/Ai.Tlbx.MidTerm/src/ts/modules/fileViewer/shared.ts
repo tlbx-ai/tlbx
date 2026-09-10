@@ -209,7 +209,7 @@ function getClipboardApi(): Clipboard | null {
     return null;
   }
 
-  return (navigator as Navigator & { clipboard?: Clipboard }).clipboard as Clipboard | null;
+  return (navigator as Navigator & { clipboard?: Clipboard }).clipboard;
 }
 
 async function writeTextToClipboard(text: string): Promise<boolean> {

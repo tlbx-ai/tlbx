@@ -26,55 +26,28 @@ interface CursorVisibilityMatch {
   endExclusive: number;
 }
 
-function isCursorVisibilityFinalByte(value: number | undefined): value is 0x68 | 0x6c {
-  return value === 0x68 || value === 0x6c;
-}
-
-function matchCursorVisibilitySequence(
-  data: Uint8Array,
-  index: number,
-  prefix: readonly number[],
-): CursorVisibilityMatch | null {
-  const finalIndex = index + prefix.length;
-  if (finalIndex >= data.length) {
-    return null;
-  }
-
-  for (let offset = 0; offset < prefix.length; offset += 1) {
-    if (data[index + offset] !== prefix[offset]) {
-      return null;
-    }
-  }
-
-  const final = data[finalIndex];
-  if (!isCursorVisibilityFinalByte(final)) {
-    return null;
-  }
-
-  return {
-    visible: final === 0x68,
-    endExclusive: finalIndex + 1,
-  };
-}
-
 function tryMatchCursorVisibilityControl(
   data: Uint8Array,
   index: number,
 ): CursorVisibilityMatch | null {
-  const prefixes = [
-    [0x1b, 0x5b, 0x3f, 0x32, 0x35],
-    [0x9b, 0x3f, 0x32, 0x35],
-    [0xc2, 0x9b, 0x3f, 0x32, 0x35],
-  ] as const;
-
-  for (const prefix of prefixes) {
-    const match = matchCursorVisibilitySequence(data, index, prefix);
-    if (match) {
-      return match;
-    }
+  const first = data[index];
+  let parameter: number;
+  if (first === 0x1b && data[index + 1] === 0x5b) {
+    parameter = index + 2;
+  } else if (first === 0x9b) {
+    parameter = index + 1;
+  } else if (first === 0xc2 && data[index + 1] === 0x9b) {
+    parameter = index + 2;
+  } else {
+    return null;
   }
-
-  return null;
+  if (data[parameter] !== 0x3f || data[parameter + 1] !== 0x32 || data[parameter + 2] !== 0x35) {
+    return null;
+  }
+  const final = data[parameter + 3];
+  return final === 0x68 || final === 0x6c
+    ? { visible: final === 0x68, endExclusive: parameter + 4 }
+    : null;
 }
 
 export function shouldPreserveTerminalCursorControl(): boolean {
@@ -88,10 +61,13 @@ export function processCursorVisibilityControls(
 ): CursorVisibilityControlResult {
   let remoteCursorVisible: boolean | null = null;
   let hadCursorVisibilityControl = false;
-  let filtered: number[] | null = null;
+  let filtered: Uint8Array | null = null;
+  let written = 0;
   let copyStart = 0;
 
   for (let i = 0; i < data.length; i++) {
+    const byte = data[i];
+    if (byte !== 0x1b && byte !== 0x9b && byte !== 0xc2) continue;
     const match = tryMatchCursorVisibilityControl(data, i);
     if (match === null) {
       continue;
@@ -101,10 +77,9 @@ export function processCursorVisibilityControls(
     remoteCursorVisible = match.visible;
 
     if (suppress) {
-      filtered ??= [];
-      for (let j = copyStart; j < i; j++) {
-        filtered.push(data[j] as number);
-      }
+      filtered ??= new Uint8Array(data.length);
+      filtered.set(data.subarray(copyStart, i), written);
+      written += i - copyStart;
       copyStart = match.endExclusive;
     }
 
@@ -119,12 +94,11 @@ export function processCursorVisibilityControls(
     };
   }
 
-  for (let i = copyStart; i < data.length; i++) {
-    filtered.push(data[i] as number);
-  }
+  filtered.set(data.subarray(copyStart), written);
+  written += data.length - copyStart;
 
   return {
-    data: Uint8Array.from(filtered),
+    data: filtered.subarray(0, written),
     remoteCursorVisible: remoteCursorVisible,
     hadCursorVisibilityControl: true,
   };

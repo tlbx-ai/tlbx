@@ -1518,7 +1518,7 @@ public sealed class SessionAppServerControlHistoryServiceTests
         Assert.Equal("command_execution", toolEntry.ItemType);
         Assert.Contains("git status --short --branch", toolEntry.Body, StringComparison.Ordinal);
         Assert.Contains("## dev...origin/dev", toolEntry.Body, StringComparison.Ordinal);
-        Assert.DoesNotContain("tool:command_output", snapshot.History.Select(entry => entry.EntryId));
+        Assert.DoesNotContain("tool:command_output", snapshot.History.Select(entry => entry.EntryId), StringComparer.Ordinal);
     }
 
     [Fact]

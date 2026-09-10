@@ -21,10 +21,8 @@ function canTakeOverInCurrentBrowser(): boolean {
   return typeof document.hasFocus !== 'function' || document.hasFocus();
 }
 
-/**
- * Claim only terminals that are already eligible when this visible browser
- * first observes their ownership epoch. This deliberately creates no timer
- * that could make a passive tablet take over several minutes later.
+/** Initialize unowned terminals or inherit an offline tab in this browser profile.
+ * Passive monitoring never takes another device's lease, even when it is idle/offline.
  */
 export function claimEligibleVisibleTerminalSizes(reconsiderCurrentView = false): void {
   if (!canTakeOverInCurrentBrowser()) return;
@@ -42,7 +40,7 @@ export function claimEligibleVisibleTerminalSizes(reconsiderCurrentView = false)
     observedEpochs.set(sessionId, status.epoch);
     if (!reconsiderCurrentView && observedEpoch === status.epoch) return;
     if (
-      !status.canTakeOverAutomatically ||
+      (status.hasOwner && !(status.ownerInSameBrowserProfile && !status.ownerOnline)) ||
       (status.ownerOnline && status.ownerInSameBrowserProfile) ||
       takeoversInFlight.has(sessionId)
     ) {

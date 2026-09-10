@@ -11,7 +11,11 @@
 
     <!-- Favicons -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=__MIDTERM_ASSET_VERSION__" />
-    <link rel="alternate icon" type="image/x-icon" href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__" />
+    <link
+      rel="alternate icon"
+      type="image/x-icon"
+      href="/favicon.ico?v=__MIDTERM_ASSET_VERSION__"
+    />
     <link
       rel="apple-touch-icon"
       sizes="192x192"
@@ -616,9 +620,7 @@
                 title="History"
               >
                 <span class="mobile-actions-symbol" aria-hidden="true">↶</span>
-                <span class="mobile-actions-label" data-i18n="sidebar.inputHistory"
-                  >History</span
-                >
+                <span class="mobile-actions-label" data-i18n="sidebar.inputHistory">History</span>
               </button>
               <button
                 class="mobile-actions-item topbar-btn topbar-action topbar-ide-action"
@@ -729,7 +731,9 @@
               <section class="operator-section" aria-labelledby="operator-sessions-title">
                 <header class="operator-section-header">
                   <h2 id="operator-sessions-title" data-i18n="operator.sessions">Sessions</h2>
-                  <span data-i18n="operator.sessionsHint">Process facts · agent publications · open work</span>
+                  <span data-i18n="operator.sessionsHint"
+                    >Process facts · agent publications · open work</span
+                  >
                 </header>
                 <div class="operator-session-head" aria-hidden="true">
                   <span data-i18n="operator.session">Session</span>
@@ -742,14 +746,20 @@
               <section class="operator-section" aria-labelledby="operator-work-title">
                 <header class="operator-section-header">
                   <h2 id="operator-work-title" data-i18n="operator.workQueue">Work queue</h2>
-                  <span data-i18n="operator.workHint">Todos, mail, coding tasks, and next steps published by agents</span>
+                  <span data-i18n="operator.workHint"
+                    >Todos, mail, coding tasks, and next steps published by agents</span
+                  >
                 </header>
                 <div id="operator-work-items" class="operator-work-list"></div>
               </section>
               <section class="operator-section" aria-labelledby="operator-checkpoints-title">
                 <header class="operator-section-header">
-                  <h2 id="operator-checkpoints-title" data-i18n="operator.checkpoints">Checkpoints</h2>
-                  <span data-i18n="operator.checkpointsHint">Recent explicit progress and verification facts</span>
+                  <h2 id="operator-checkpoints-title" data-i18n="operator.checkpoints">
+                    Checkpoints
+                  </h2>
+                  <span data-i18n="operator.checkpointsHint"
+                    >Recent explicit progress and verification facts</span
+                  >
                 </header>
                 <div id="operator-checkpoints" class="operator-checkpoint-list"></div>
               </section>
@@ -894,7 +904,11 @@
                   <svg id="action-graphs-edges" class="action-graphs-edges"></svg>
                   <div id="action-graphs-nodes" class="action-graphs-nodes"></div>
                 </div>
-                <p id="action-graphs-empty" class="action-graphs-empty hidden" data-i18n="actionGraphs.empty">
+                <p
+                  id="action-graphs-empty"
+                  class="action-graphs-empty hidden"
+                  data-i18n="actionGraphs.empty"
+                >
                   No graphs yet. Agents create them through the .tlbx/tlbx_graphs helpers.
                 </p>
                 <div class="ag-canvas-hud">
@@ -914,7 +928,11 @@
             </div>
           </section>
           <div id="empty-state" class="empty-state">
-            <img src="/img/tlbx-toolbox.svg?v=__MIDTERM_ASSET_VERSION__" alt="" class="empty-state-logo" />
+            <img
+              src="/img/tlbx-toolbox.svg?v=__MIDTERM_ASSET_VERSION__"
+              alt=""
+              class="empty-state-logo"
+            />
             <p data-i18n="terminal.noTerminals">No terminals open</p>
             <button id="btn-create-terminal" data-i18n="terminal.createTerminal">
               Create Terminal
@@ -1106,6 +1124,13 @@
                           Check for Updates
                         </button>
                         <button
+                          id="btn-full-update"
+                          class="btn-secondary"
+                          data-i18n="update.fullUpdate"
+                        >
+                          Full Update
+                        </button>
+                        <button
                           id="btn-show-changelog"
                           class="btn-secondary"
                           data-i18n="settings.general.changelog"
@@ -1180,7 +1205,9 @@
                   </div>
 
                   <div class="settings-section">
-                    <h3 data-i18n="settings.general.releaseIntegrity">Security &amp; Release Integrity</h3>
+                    <h3 data-i18n="settings.general.releaseIntegrity">
+                      Security &amp; Release Integrity
+                    </h3>
                     <p class="setting-hint" data-i18n="settings.general.releaseIntegrityHint">
                       tlbx verifies signed update metadata and packaged-file hashes. Public releases
                       also include platform-specific SPDX SBOMs and GitHub attestations.
@@ -1205,7 +1232,9 @@
                         target="_blank"
                         rel="noopener"
                       >
-                        <strong data-i18n="settings.general.releaseEvidence">Release evidence</strong>
+                        <strong data-i18n="settings.general.releaseEvidence"
+                          >Release evidence</strong
+                        >
                         <span data-i18n="settings.general.releaseEvidenceHint"
                           >Archives, SBOMs and attestations</span
                         >
@@ -1794,7 +1823,10 @@
                         >Notification Priority</label
                       >
                       <select id="setting-notification-priority">
-                        <option value="normal" data-i18n="settings.options.notificationPriorityNormal">
+                        <option
+                          value="normal"
+                          data-i18n="settings.options.notificationPriorityNormal"
+                        >
                           Normal
                         </option>
                         <option
@@ -1897,7 +1929,10 @@
                         >Message Font</label
                       >
                       <select id="setting-agent-message-font-family">
-                        <option value="default" data-i18n="settings.options.agentMessageFontDefault">
+                        <option
+                          value="default"
+                          data-i18n="settings.options.agentMessageFontDefault"
+                        >
                           Default
                         </option>
                         <option value="sans" data-i18n="settings.options.agentMessageFontSans">
@@ -1983,7 +2018,6 @@
                       ></textarea>
                     </div>
                   </div>
-
                 </section>
 
                 <section class="settings-panel hidden" data-panel="workflow">
@@ -2210,8 +2244,8 @@
                         </div>
                         <div id="background-image-name" class="background-image-name"></div>
                         <div class="setting-hint" data-i18n="settings.appearance.backgroundHint">
-                          PNG, JPG or WebP, up to 10 MB / 64 megapixels. Saved as WebP at 85% quality,
-                          up to 2048 pixels on the longest side.
+                          PNG, JPG or WebP, up to 10 MB / 64 megapixels. Saved as WebP at 85%
+                          quality, up to 2048 pixels on the longest side.
                         </div>
                       </div>
                     </div>
@@ -2395,8 +2429,8 @@
                       class="setting-hint"
                       data-i18n="settings.behavior.tryResumeNonAiAgentProcessesHint"
                     >
-                      Full updates try to restore sessions. Some may still need manual resume;
-                      this option may relaunch ordinary foreground processes.
+                      Full updates try to restore sessions. Some may still need manual resume; this
+                      option may relaunch ordinary foreground processes.
                     </p>
                     <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
@@ -2427,9 +2461,7 @@
                       into remote hosts that run real tmux. Requires restart.
                     </p>
                     <div class="setting-row">
-                      <label
-                        for="setting-action-graphs"
-                        data-i18n="settings.behavior.actionGraphs"
+                      <label for="setting-action-graphs" data-i18n="settings.behavior.actionGraphs"
                         >Action Graphs</label
                       >
                       <input type="checkbox" id="setting-action-graphs" />
@@ -2451,11 +2483,23 @@
                       use the general default working directory.
                     </p>
                   </div>
-
                 </section>
 
                 <section class="settings-panel hidden" data-panel="security" id="security-section">
                   <h2 data-i18n="settings.securityAccess.title">Security &amp; Access</h2>
+
+                  <div class="settings-section">
+                    <h3 data-i18n="terminalLinks.settingsTitle">Terminal links</h3>
+                    <div class="setting-row">
+                      <label for="terminal-link-confirmation" data-i18n="terminalLinks.settingLabel"
+                        >Confirm before opening terminal links</label
+                      >
+                      <input id="terminal-link-confirmation" type="checkbox" />
+                    </div>
+                    <p class="setting-description" data-i18n="terminalLinks.settingHint">
+                      Applies to this browser. Links always open in a new tab.
+                    </p>
+                  </div>
 
                   <div class="settings-section">
                     <h3 data-i18n="settings.security.authentication">Authentication</h3>
@@ -2588,8 +2632,8 @@
                       </button>
                     </div>
                     <p class="setting-hint" data-i18n="settings.security.regenerateHint">
-                      Delete and recreate the HTTPS certificate. tlbx will restart and browsers
-                      will need to re-trust the new certificate.
+                      Delete and recreate the HTTPS certificate. tlbx will restart and browsers will
+                      need to re-trust the new certificate.
                     </p>
                   </div>
 
@@ -2633,8 +2677,8 @@
                       id="settings-firewall-note"
                       data-i18n="settings.security.firewallHint"
                     >
-                      Windows Firewall can allow other PCs on your network to reach the current
-                      tlbx HTTPS port.
+                      Windows Firewall can allow other PCs on your network to reach the current tlbx
+                      HTTPS port.
                     </p>
                   </div>
                 </section>
@@ -2645,9 +2689,9 @@
                   <div class="settings-section">
                     <h3 data-i18n="settings.hub.title">tlbx Hub</h3>
                     <p class="setting-hint" data-i18n="settings.hub.description">
-                      Connect your other tlbx hosts here so you can manage agents across your
-                      Mac, Linux PC, Raspberry Pi, or server from one frontend. Add each host URL
-                      and its credentials to get started.
+                      Connect your other tlbx hosts here so you can manage agents across your Mac,
+                      Linux PC, Raspberry Pi, or server from one frontend. Add each host URL and its
+                      credentials to get started.
                     </p>
                     <div class="hub-toolbar">
                       <div>
@@ -2757,9 +2801,7 @@
                 </section>
 
                 <section class="settings-panel hidden" data-panel="advanced">
-                  <h2 data-i18n="settings.advancedDiagnostics.title">
-                    Advanced &amp; Diagnostics
-                  </h2>
+                  <h2 data-i18n="settings.advancedDiagnostics.title">Advanced &amp; Diagnostics</h2>
 
                   <div class="settings-section">
                     <h3 data-i18n="settings.diagnostics.latency">Latency</h3>
@@ -2790,10 +2832,7 @@
                         data-i18n="settings.diagnostics.enableInputLatencyTracing"
                         >Enable input latency tracing</label
                       >
-                      <input
-                        type="checkbox"
-                        id="setting-terminal-latency-diagnostics-enabled"
-                      />
+                      <input type="checkbox" id="setting-terminal-latency-diagnostics-enabled" />
                     </div>
                     <div class="diag-latency-graph-row">
                       <div class="diag-latency-graph-header">
@@ -2863,7 +2902,9 @@
                       <code class="path-value" id="diag-source-seq">-</code>
                     </div>
                     <div class="setting-row">
-                      <label data-i18n="settings.diagnostics.muxReceivedSeq">Mux Received Seq</label>
+                      <label data-i18n="settings.diagnostics.muxReceivedSeq"
+                        >Mux Received Seq</label
+                      >
                       <code class="path-value" id="diag-mux-received-seq">-</code>
                     </div>
                     <div class="setting-row">
@@ -3184,7 +3225,17 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 data-i18n-title="webPreview.agentHint"
                 title="Hint agent"
               >
-                <span class="web-preview-button-glyph">&#x1F916;</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m5 7 4 5-4 5M12 17h7" />
+                </svg>
               </button>
               <button
                 class="btn-icon"
@@ -3192,7 +3243,18 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 data-i18n-title="webPreview.detach"
                 title="Pop out"
               >
-                <span class="web-preview-button-glyph">&#x2197;</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M14 3h7v7M21 3l-9 9" />
+                  <path d="M10 5H3v16h16v-7" />
+                </svg>
               </button>
               <button
                 class="btn-icon"
@@ -3220,7 +3282,17 @@ Enable terminal key log to capture Enter and modifier events.</pre
                 </svg>
               </button>
               <button class="btn-icon" id="web-preview-close" title="Close">
-                <span class="web-preview-button-glyph">&times;</span>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="m6 6 12 12M18 6 6 18" />
+                </svg>
               </button>
             </div>
           </div>
@@ -3238,7 +3310,18 @@ Enable terminal key log to capture Enter and modifier events.</pre
               title="Screenshot to terminal"
               aria-label="Screenshot current preview tab to terminal"
             >
-              <span class="web-preview-button-glyph">&#x1f4f7;</span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M8 5 6 8H3v12h18V8h-3l-2-3Z" />
+                <circle cx="12" cy="13" r="3" />
+              </svg>
             </button>
             <button
               class="btn-icon"
@@ -3246,7 +3329,18 @@ Enable terminal key log to capture Enter and modifier events.</pre
               data-i18n-title="webPreview.refresh"
               title="Refresh"
             >
-              <span class="web-preview-button-glyph">&#x21bb;</span>
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M20 7v5h-5M4 17v-5h5" />
+                <path d="M6 7a7 7 0 0 1 12-1l2 6M4 12l2 6a7 7 0 0 0 12-1" />
+              </svg>
             </button>
             <button
               class="btn-icon"
@@ -3417,8 +3511,18 @@ Enable terminal key log to capture Enter and modifier events.</pre
                   title="Clear cookies"
                   role="menuitem"
                 >
-                  <span class="web-preview-menu-icon">&#x1f36a;</span>
-                  <span>Clear cookies</span>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M8 8h.01M15 9h.01M10 15h.01M16 15h.01" />
+                  </svg>
                 </button>
                 <button
                   class="web-preview-menu-item"
@@ -3427,21 +3531,31 @@ Enable terminal key log to capture Enter and modifier events.</pre
                   title="Clear state"
                   role="menuitem"
                 >
-                  <span class="web-preview-menu-icon">&#x1f5d1;</span>
-                  <span>Clear state</span>
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7M14 10v7" />
+                  </svg>
                 </button>
               </div>
             </div>
             <button class="btn-icon" id="web-preview-go" title="Go" aria-label="Go">
               <svg
                 viewBox="0 0 24 24"
-                width="21"
-                height="21"
-                fill="currentColor"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
                 aria-hidden="true"
-                focusable="false"
               >
-                <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                <path d="M4 12h16m-6-6 6 6-6 6" />
               </svg>
             </button>
           </div>
@@ -3459,7 +3573,17 @@ Enable terminal key log to capture Enter and modifier events.</pre
               >Preview is open in a separate window</span
             >
             <button class="btn-icon" id="web-preview-dock-back" data-i18n="webPreview.dockBack">
-              Dock back
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M3 3h18v18H3zM14 3v18M11 12H5m3-3-3 3 3 3" />
+              </svg>
             </button>
           </div>
         </aside>

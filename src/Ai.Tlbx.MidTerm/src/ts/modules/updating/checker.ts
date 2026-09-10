@@ -9,6 +9,7 @@ import type { UpdateInfo, UpdateResult, UpdateType } from '../../api/types';
 import { $frontendRefreshState, $updateInfo, $currentSettings } from '../../stores';
 import { createLogger } from '../logging';
 import { escapeHtml } from '../../utils';
+import { showAlert, showConfirm } from '../../utils/dialog';
 import { t } from '../i18n';
 import {
   applyUpdate as apiApplyUpdate,
@@ -168,6 +169,7 @@ export function renderUpdatePanel(): void {
   }
 
   renderAvailableUpdatePanel(panel, info);
+  syncUpdateButtons();
   renderUpdateFooterHint();
 }
 
@@ -254,40 +256,71 @@ export function dismissUpdateNotification(): void {
 /**
  * Apply the available update and restart the server
  */
-export function applyUpdate(): void {
-  const info = $updateInfo.get();
-  if (!info || !info.available) return;
+let updateRequestPending = false;
 
-  const panel = document.getElementById('update-panel');
-  const btn = panel?.querySelector('.update-btn') as HTMLButtonElement | null;
-
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = t('update.updating');
+function syncUpdateButtons(): void {
+  for (const button of document.querySelectorAll<HTMLButtonElement>(
+    '#update-panel .update-btn, #update-cards .btn-update, #btn-full-update',
+  )) {
+    button.disabled = updateRequestPending;
+    button.textContent = updateRequestPending
+      ? t('update.updating')
+      : button.id === 'btn-full-update'
+        ? t('update.fullUpdate')
+        : t('sidebar.updateRestart');
   }
+}
 
-  setPendingChangelogFlag();
+function updateFailureDetails(error: unknown, response: Response): string {
+  // The API client has already consumed the response body.
+  if (typeof error === 'string') return error;
+  const problem = error as { detail?: string; title?: string } | undefined;
+  return problem?.detail || problem?.title || `HTTP ${response.status} ${response.statusText}`;
+}
 
-  apiApplyUpdate()
-    .then(({ response }) => {
-      if (response.ok) {
-        if (btn) btn.textContent = t('update.restarting');
-        waitForServerAndReload(info.type, info.latestVersion);
-      } else {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = t('sidebar.updateRestart');
-        }
-        log.error(() => 'Update failed');
-      }
-    })
-    .catch((e: unknown) => {
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = t('sidebar.updateRestart');
-      }
-      log.error(() => `Update error: ${String(e)}`);
-    });
+async function runUpdate(source?: string, forceFull = false): Promise<void> {
+  if (updateRequestPending) return;
+  updateRequestPending = true;
+  syncUpdateButtons();
+  try {
+    if (
+      forceFull &&
+      !(await showConfirm(t('update.fullUpdateConfirm'), {
+        title: t('update.fullUpdate'),
+        confirmLabel: t('sidebar.updateRestart'),
+      }))
+    )
+      return;
+
+    const { response, error } = await apiApplyUpdate(source, forceFull);
+    if (!response.ok) {
+      throw new Error(updateFailureDetails(error, response));
+    }
+    setPendingChangelogFlag();
+    const info = $updateInfo.get();
+    const target = source === 'local' ? info?.localUpdate : info;
+    waitForServerAndReload(forceFull ? 'full' : (target?.type ?? null));
+  } catch (error: unknown) {
+    log.error(() => `Update failed: ${String(error)}`);
+    const details =
+      error instanceof Error && error.name === 'TimeoutError'
+        ? t('update.requestTimeout')
+        : String(error);
+    await showAlert(t('update.failed'), { details });
+  } finally {
+    updateRequestPending = false;
+    syncUpdateButtons();
+  }
+}
+
+export function applyUpdate(): Promise<void> {
+  // The server refreshes discovery; a stale browser snapshot must not swallow clicks.
+  return runUpdate();
+}
+
+/** Reinstall the newest release in the selected channel, including both host runtimes. */
+export function applyFullUpdate(): Promise<void> {
+  return runUpdate(undefined, true);
 }
 
 /**
@@ -367,7 +400,7 @@ function createGitHubUpdateCard(update: UpdateInfo | null): UpdateCardOptions | 
     title: 'GitHub Release',
     version: update.latestVersion,
     sessionsPreserved: update.sessionsPreserved,
-    onApply: applyUpdate,
+    onApply: () => void applyUpdate(),
   };
 }
 
@@ -381,7 +414,7 @@ function createLocalUpdateCard(update: UpdateInfo | null): UpdateCardOptions | n
     title: 'Local Build',
     version: update.localUpdate.version,
     sessionsPreserved: update.localUpdate.sessionsPreserved,
-    onApply: applyLocalUpdate,
+    onApply: () => void applyLocalUpdate(),
   };
 }
 
@@ -413,6 +446,7 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
   setNoUpdatesStatusVisibility(statusNone, true);
   appendUpdateCard(container, gitHubCard);
   appendUpdateCard(container, localCard);
+  syncUpdateButtons();
 }
 
 interface UpdateCardOptions {
@@ -449,8 +483,6 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
 
   const btn = card.querySelector('.btn-update') as HTMLButtonElement;
   btn.addEventListener('click', () => {
-    btn.disabled = true;
-    btn.textContent = t('update.applying');
     opts.onApply();
   });
 
@@ -460,32 +492,8 @@ function createUpdateCard(opts: UpdateCardOptions): HTMLElement {
 /**
  * Apply local update from C:\temp\mtlocalrelease
  */
-export function applyLocalUpdate(): void {
-  setPendingChangelogFlag();
-  apiApplyUpdate('local')
-    .then(({ response }) => {
-      const btn = document.querySelector<HTMLButtonElement>('#update-card-local .btn-update');
-      const updateType = $updateInfo.get()?.localUpdate?.type ?? null;
-      const expectedServerVersion = $updateInfo.get()?.localUpdate?.version ?? null;
-      if (response.ok) {
-        if (btn) btn.textContent = 'Restarting...';
-        waitForServerAndReload(updateType, expectedServerVersion);
-      } else {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = 'Apply';
-        }
-        log.error(() => 'Local update failed');
-      }
-    })
-    .catch((e: unknown) => {
-      const btn = document.querySelector<HTMLButtonElement>('#update-card-local .btn-update');
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Apply';
-      }
-      log.error(() => `Local update error: ${String(e)}`);
-    });
+export function applyLocalUpdate(): Promise<void> {
+  return runUpdate('local');
 }
 
 /**
@@ -503,7 +511,7 @@ export function handlePrimaryUpdateAction(): void {
     return;
   }
 
-  applyUpdate();
+  void applyUpdate();
 }
 
 const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';
@@ -512,7 +520,11 @@ const CHANGELOG_SHOWN_KEY = 'mt-changelog-shown-version';
 function setPendingChangelogFlag(): void {
   const settings = $currentSettings.get();
   if (settings?.showChangelogAfterUpdate !== false) {
-    localStorage.setItem(PENDING_CHANGELOG_KEY, '1');
+    try {
+      localStorage.setItem(PENDING_CHANGELOG_KEY, '1');
+    } catch {
+      // Optional changelog storage must never prevent update/restart recovery.
+    }
   }
 }
 

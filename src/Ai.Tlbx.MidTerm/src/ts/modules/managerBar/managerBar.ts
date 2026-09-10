@@ -1435,9 +1435,7 @@ function saveButtons(buttons: NormalizedManagerButton[]): void {
 
   $currentSettings.set({ ...settings, managerBarButtons: buttons });
 
-  updateSettings({ ...settings, managerBarButtons: buttons } as Parameters<
-    typeof updateSettings
-  >[0])
+  updateSettings({ ...settings, managerBarButtons: buttons })
     .then(({ response }) => {
       if (!response.ok) {
         log.error(() => `Failed to save manager bar buttons: ${response.status}`);

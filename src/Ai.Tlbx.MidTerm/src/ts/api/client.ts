@@ -461,9 +461,18 @@ export async function getProviderResumeCandidates(
 }
 
 export async function deleteSession(id: string): ClientDeleteResult<'/api/sessions/{id}'> {
-  return client.DELETE('/api/sessions/{id}', {
+  const result = await client.DELETE('/api/sessions/{id}', {
     params: { path: { id } },
   });
+  if (!result.response.ok) {
+    const problem = result.error as { title?: string; detail?: string } | undefined;
+    throw new ApiProblemError({
+      status: result.response.status,
+      title: problem?.title ?? 'Failed to close session',
+      detail: problem?.detail ?? 'The session could not be closed. Please retry.',
+    });
+  }
+  return result;
 }
 
 export async function redrawSession(id: string): Promise<void> {
@@ -945,9 +954,13 @@ export async function checkUpdate(): ClientGetResult<'/api/update/check'> {
   return client.GET('/api/update/check');
 }
 
-export async function applyUpdate(source?: string): ClientPostResult<'/api/update/apply'> {
+export async function applyUpdate(
+  source?: string,
+  forceFull = false,
+): ClientPostResult<'/api/update/apply'> {
   return client.POST('/api/update/apply', {
-    params: { query: source ? { source } : {} },
+    signal: AbortSignal.timeout(300_000),
+    params: { query: { ...(source ? { source } : {}), ...(forceFull ? { forceFull } : {}) } },
   });
 }
 

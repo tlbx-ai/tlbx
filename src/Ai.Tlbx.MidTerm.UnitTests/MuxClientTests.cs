@@ -447,6 +447,20 @@ public sealed class MuxClientTests
     }
 
     [Fact]
+    public void ResolveReplayMaxBytes_DoesNotTruncateRetainedCursorDeltas()
+    {
+        var session = new SessionInfo { Cols = 120, Rows = 40, ShellType = "pwsh" };
+        var maxBytes = MuxWebSocketHandler.ResolveReplayMaxBytes(
+            session,
+            replayRows: 40,
+            quickResume: true,
+            configuredScrollbackBytes: 2 * 1024 * 1024,
+            sinceSequence: 12345);
+
+        Assert.Null(maxBytes);
+    }
+
+    [Fact]
     public void AlternateScreenReplay_RequestsRedrawWhenFullRingLostInitialFrame()
     {
         var snapshot = new TtyHostBufferSnapshot
@@ -456,7 +470,7 @@ public sealed class MuxClientTests
             Data = [1, 2, 3]
         };
 
-        Assert.True(MuxWebSocketHandler.RequiresAlternateScreenRedraw(null, snapshot));
+        Assert.True(MuxWebSocketHandler.RequiresScreenRedraw(null, snapshot));
     }
 
     [Fact]
@@ -469,8 +483,8 @@ public sealed class MuxClientTests
             Data = [1, 2, 3]
         };
 
-        Assert.True(MuxWebSocketHandler.RequiresAlternateScreenRedraw(1_900_000, snapshot));
-        Assert.False(MuxWebSocketHandler.RequiresAlternateScreenRedraw(2_000_000, snapshot));
+        Assert.True(MuxWebSocketHandler.RequiresScreenRedraw(1_900_000, snapshot));
+        Assert.False(MuxWebSocketHandler.RequiresScreenRedraw(2_000_000, snapshot));
     }
 
     [Fact]
@@ -489,8 +503,40 @@ public sealed class MuxClientTests
             Data = [1, 2, 3]
         };
 
-        Assert.False(MuxWebSocketHandler.RequiresAlternateScreenRedraw(null, completeAlternateScreen));
-        Assert.False(MuxWebSocketHandler.RequiresAlternateScreenRedraw(null, lineBasedTail));
+        Assert.False(MuxWebSocketHandler.RequiresScreenRedraw(null, completeAlternateScreen));
+        Assert.False(MuxWebSocketHandler.RequiresScreenRedraw(null, lineBasedTail));
+    }
+
+    [Fact]
+    public void InlineAnimatedReplay_RequestsRedrawAfterSparkleEvictsStaticScreen()
+    {
+        // Real Codex composer frames are cursor-addressed Braille/color deltas in
+        // the NORMAL buffer. There is no alternate-screen entry and no newline.
+        var snapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 2_000_000,
+            TerminalState = TerminalReplayState.Default,
+            Data = Encoding.UTF8.GetBytes("\x1b[?2026h\x1b[48;1H\x1b[38;2;90;90;90m⠁\x1b[?2026l")
+        };
+
+        Assert.True(MuxWebSocketHandler.RequiresScreenRedraw(null, snapshot));
+        Assert.True(MuxWebSocketHandler.RequiresScreenRedraw(1_900_000, snapshot));
+        // A browser retaining its screen can apply a contiguous sparkle delta.
+        Assert.False(MuxWebSocketHandler.RequiresScreenRedraw(2_000_000, snapshot));
+    }
+
+    [Fact]
+    public void InlineAnimatedReplay_DoesNotRedrawWhenInitialScreenIsRetained()
+    {
+        var snapshot = new TtyHostBufferSnapshot
+        {
+            SequenceStart = 0,
+            TerminalState = TerminalReplayState.Default,
+            Data = Encoding.UTF8.GetBytes("Static conversation\r\n\x1b[?2026h⠁\x1b[?2026l")
+        };
+
+        Assert.False(MuxWebSocketHandler.RequiresScreenRedraw(null, snapshot));
+        Assert.False(MuxWebSocketHandler.RequiresScreenRedraw(0, snapshot));
     }
 
     [Fact]

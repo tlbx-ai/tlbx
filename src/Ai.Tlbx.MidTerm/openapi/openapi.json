@@ -3015,6 +3015,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "forceFull",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": false
+            }
           }
         ],
         "responses": {
@@ -6045,6 +6053,13 @@
           "rows": {
             "type": "integer",
             "format": "int32"
+          },
+          "expectedEpoch": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -6771,7 +6786,9 @@
           "lastInputAt",
           "lastOutputAt",
           "lastBellAt",
-          "currentHeat"
+          "currentHeat",
+          "lastTextOutputAt",
+          "textActivityAgeMs"
         ],
         "type": "object",
         "properties": {
@@ -6817,6 +6834,20 @@
           },
           "currentHeat": {
             "type": "number",
+            "format": "double"
+          },
+          "lastTextOutputAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "textActivityAgeMs": {
+            "type": [
+              "null",
+              "number"
+            ],
             "format": "double"
           }
         }

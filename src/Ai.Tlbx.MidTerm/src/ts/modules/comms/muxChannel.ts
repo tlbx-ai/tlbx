@@ -98,14 +98,9 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { createAlternateScreenReplayPrefix } from '../terminal/replayState';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
-import { requestHubBufferRefresh, sendHubInput, sendHubResize } from '../hub/channel';
-import {
-  $currentSettings,
-  $isMainBrowser,
-  getTerminalSizeControl,
-  hasTerminalSizeControl,
-} from '../../stores';
-import { reportTerminalSizeInteraction, resizeTerminalWithControl } from './stateChannel';
+import { requestHubBufferRefresh, sendHubInput } from '../hub/channel';
+import { $currentSettings, getTerminalSizeControl, hasTerminalSizeControl } from '../../stores';
+import { resizeTerminalWithControl } from './stateChannel';
 import {
   muxWs,
   sessionTerminals,
@@ -130,28 +125,8 @@ const log = createLogger('mux');
 const muxReconnect = new ReconnectController();
 const textEncoder = new TextEncoder();
 
-// Per-session byte activity callback (used by heat indicator)
-type SessionBytesCallback = (sessionId: string, bytes: number) => void;
-let _sessionBytesCallback: SessionBytesCallback | null = null;
-
-export function setSessionBytesCallback(cb: SessionBytesCallback): void {
-  _sessionBytesCallback = cb;
-}
-
-// Heat suppression callback (avoids circular sidebar↔comms dependency)
-type SuppressHeatCallback = (durationMs: number) => void;
-let _suppressHeatCallback: SuppressHeatCallback | null = null;
-
-export function setSuppressHeatCallback(cb: SuppressHeatCallback): void {
-  _suppressHeatCallback = cb;
-}
-
 let syncCompleteTimeout: number | null = null;
 let syncCompletePending = false;
-const REPLAY_HEAT_QUIET_MS = 750;
-const RESYNC_HEAT_SUPPRESS_MS = 3000;
-const ACTIVE_HINT_REPLAY_MAX_MS = 2500;
-const BUFFER_REPLAY_MAX_MS = 12000;
 
 interface BrowserTransportSnapshot {
   receivedSeq: bigint;
@@ -181,7 +156,6 @@ interface ActiveSessionRecovery {
   releaseBarrier: () => void;
 }
 
-const replaySuppressedSessions = new Map<string, { quietUntilMs: number; hardUntilMs: number }>();
 const pendingBufferRefreshes = new Map<
   string,
   { mode: 'fullReplay' | 'quickResume'; recoveryCause: string }
@@ -214,35 +188,6 @@ function forEachLocalTerminal(callback: (state: TerminalState, sessionId: string
   });
 }
 
-function beginReplayHeatSuppression(sessionId: string, maxDurationMs = BUFFER_REPLAY_MAX_MS): void {
-  const now = Date.now();
-  replaySuppressedSessions.set(sessionId, {
-    quietUntilMs: now + REPLAY_HEAT_QUIET_MS,
-    hardUntilMs: now + maxDurationMs,
-  });
-}
-
-function shouldRecordHeat(sessionId: string, bytes: number): boolean {
-  if (bytes <= 0) return false;
-
-  const now = Date.now();
-  const suppression = replaySuppressedSessions.get(sessionId);
-  if (suppression !== undefined) {
-    if (now <= suppression.quietUntilMs && now <= suppression.hardUntilMs) {
-      replaySuppressedSessions.set(sessionId, {
-        quietUntilMs: Math.min(now + REPLAY_HEAT_QUIET_MS, suppression.hardUntilMs),
-        hardUntilMs: suppression.hardUntilMs,
-      });
-      return false;
-    }
-    replaySuppressedSessions.delete(sessionId);
-  }
-
-  return true;
-}
-
-// \x1b[?2004 as bytes: [0x1b, 0x5b, 0x3f, 0x32, 0x30, 0x30, 0x34]
-// Followed by 0x68 ('h') = enable, 0x6c ('l') = disable.
 function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
   const mode = scanBracketedPasteMode(data, sessionId);
   if (mode !== null) bracketedPasteState.set(sessionId, mode);
@@ -560,7 +505,6 @@ export function forgetMuxSession(sessionId: string): void {
   pendingOutputFrames.delete(sessionId);
   pendingTerminalReplayModes.delete(sessionId);
   sessionsNeedingResync.delete(sessionId);
-  replaySuppressedSessions.delete(sessionId);
   browserTransportSnapshots.delete(sessionId);
   discardSessionRecovery(sessionId);
   recoveryRequestsInFlight.delete(sessionId);
@@ -1285,7 +1229,6 @@ function finishInitialSyncWhenRecoveriesAreParsed(): void {
     clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = null;
   }
-  _suppressHeatCallback?.(0);
   setBellNotificationsSuppressed(false);
 }
 
@@ -1319,8 +1262,6 @@ function handleMuxRecoveryBeginFrame(
   sessionsNeedingResync.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
   bracketedPasteState.delete(sessionId);
-  beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
-  _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
 
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.lastReplayReason = resolveMuxDataLossReason(reasonCode);
@@ -1461,14 +1402,6 @@ function handleMuxResyncFrame(type: number, sessionId: string): boolean {
       ? `Resync: clearing terminal ${sessionId}`
       : 'Resync: clearing terminals for buffer refresh',
   );
-  _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
-  if (sessionId) {
-    beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
-  } else {
-    forEachLocalTerminal((_, localSessionId) => {
-      beginReplayHeatSuppression(localSessionId, BUFFER_REPLAY_MAX_MS);
-    });
-  }
   forEachLocalTerminal((state, localSessionId) => {
     if (sessionId && localSessionId !== sessionId) {
       return;
@@ -1522,11 +1455,6 @@ function handleMuxOutputFrame(type: number, sessionId: string, payload: Uint8Arr
 
   armOutputRttMeasurement(sessionId);
   recordInputTraceOutputReceived(sessionId, payload);
-  const hdrBytes = type === MUX_TYPE_COMPRESSED_OUTPUT ? 16 : 12;
-  const termDataBytes = Math.max(0, payload.length - hdrBytes);
-  if (shouldRecordHeat(sessionId, termDataBytes)) {
-    _sessionBytesCallback?.(sessionId, termDataBytes);
-  }
   if (payload.length >= 4) {
     queueOutputFrame(sessionId, payload, type === MUX_TYPE_COMPRESSED_OUTPUT);
   }
@@ -1607,14 +1535,12 @@ function retireMuxConnectionState(): void {
   discardAllSessionRecoveries();
   recoveryRequestsInFlight.clear();
   recoveryFollowupCauses.clear();
-  replaySuppressedSessions.clear();
   lastHintedSessionId = null;
   syncCompletePending = false;
   if (syncCompleteTimeout !== null) {
     clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = null;
   }
-  _suppressHeatCallback?.(0);
   setBellNotificationsSuppressed(false);
   clearInputLatencyTraceInFlight();
 }
@@ -1669,13 +1595,11 @@ export function connectMuxWebSocket(): void {
     muxReconnect.reset();
     syncCompletePending = false;
 
-    // Suppress bell and heat until server sends SyncComplete (10s safety timeout)
+    // Suppress bell until server sends SyncComplete (10s safety timeout)
     setBellNotificationsSuppressed(true);
-    _suppressHeatCallback?.(Number.MAX_SAFE_INTEGER);
     if (syncCompleteTimeout !== null) clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = window.setTimeout(() => {
       syncCompletePending = false;
-      _suppressHeatCallback?.(0);
       setBellNotificationsSuppressed(false);
       syncCompleteTimeout = null;
     }, 10000);
@@ -1693,7 +1617,6 @@ export function connectMuxWebSocket(): void {
       log.info(() => `Reconnected - refreshing ${localTerminalCount} terminals`);
       pendingOutputFrames.clear();
       sessionsNeedingResync.clear();
-      replaySuppressedSessions.clear();
       clearQueuedOutput();
       forEachLocalTerminal((_, sessionId) => {
         const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
@@ -1801,9 +1724,17 @@ function sendFrame(frame: Uint8Array): void {
   muxWs.send(frame);
 }
 
-export function sendInput(sessionId: string, data: string): void {
-  reportTerminalSizeInteraction(sessionId);
+export function sendTerminalResponse(sessionId: string, data: string): void {
+  if (isHubSessionId(sessionId)) {
+    sendHubInput(sessionId, data, false);
+    return;
+  }
+  sendFrame(
+    createMuxInputFrame(MUX_HEADER_SIZE, 0x02, sessionId, data, encodeSessionId, textEncoder),
+  );
+}
 
+export function sendInput(sessionId: string, data: string): void {
   if (isHubSessionId(sessionId)) {
     sendHubInput(sessionId, data);
     return;
@@ -1850,7 +1781,6 @@ function sendInputNow(sessionId: string, data: string, inputAtMs: number): void 
   );
 
   if (shouldSendActiveHint) {
-    _suppressHeatCallback?.(1500);
     sendActiveSessionHint(sessionId);
     lastHintedSessionId = sessionId;
   }
@@ -1878,14 +1808,6 @@ interface TerminalResizeQueue {
 const terminalResizeQueues = new Map<string, TerminalResizeQueue>();
 
 export function sendResize(sessionId: string, cols: number, rows: number): void {
-  if (isHubSessionId(sessionId) && !getTerminalSizeControl(sessionId)) {
-    // Rolling-update fallback for a remote host that predates per-session size ownership.
-    if ($isMainBrowser.get()) {
-      sendHubResize(sessionId, cols, rows);
-    }
-    return;
-  }
-
   if (!hasTerminalSizeControl(sessionId)) {
     return;
   }
@@ -1964,8 +1886,6 @@ export function requestBufferRefresh(
     return;
   }
 
-  beginReplayHeatSuppression(sessionId, BUFFER_REPLAY_MAX_MS);
-  _suppressHeatCallback?.(RESYNC_HEAT_SUPPRESS_MS);
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   if (recoveryRequestsInFlight.has(sessionId) || activeSessionRecoveries.has(sessionId)) {
     snapshot.recoveryCoalesced += 1;
@@ -2064,10 +1984,6 @@ export function sendActiveSessionHint(sessionId: string | null): void {
 
   if (sessionId) {
     printableInputCoalescer.flush(sessionId);
-  }
-
-  if (sessionId) {
-    beginReplayHeatSuppression(sessionId, ACTIVE_HINT_REPLAY_MAX_MS);
   }
 
   const frame = new Uint8Array(MUX_HEADER_SIZE);
@@ -2230,11 +2146,9 @@ export function resetMuxChannelRuntimeForTests(): void {
   }
   syncCompletePending = false;
 
-  _sessionBytesCallback = null;
   terminalParseStallHandler = null;
   outputDrainStartedAt = null;
   outputDrainYield = null;
-  _suppressHeatCallback = null;
   pongCallback = null;
   lastOutputRtt = null;
   lastFlushDelayMs = null;
@@ -2243,7 +2157,6 @@ export function resetMuxChannelRuntimeForTests(): void {
   currentVisibleSessionIds = [];
   currentBackgroundSessionIds = [];
   muxSuspendedForBrowserBackground = false;
-  replaySuppressedSessions.clear();
   browserTransportSnapshots.clear();
   discardAllSessionRecoveries();
   recoveryRequestsInFlight.clear();

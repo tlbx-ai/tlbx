@@ -36,7 +36,7 @@ import {
   stripInternalPreviewQueryParams,
 } from './previewProxyUrl';
 import { openTopLevelPreview, resolveTopLevelProxyUrl } from './webTopLevelHandoff';
-import { buildPreviewTabLabel, shouldRenderPreviewTab } from './webPreviewTabLabel';
+import { renderBrowserPreviewTabs } from './webPreviewTabs';
 import {
   getActiveDockedClient,
   getActivePreview,
@@ -44,7 +44,6 @@ import {
   getActiveUrl,
   getSessionDockedClient,
   getSessionPreview,
-  listSessionPreviews,
   setActiveMode,
   setActiveUrl,
   setSessionDockedClient,
@@ -120,56 +119,13 @@ export function renderPreviewTabs(): void {
 
   const sessionId = $activeSessionId.get();
   const selectedPreviewName = getActivePreviewName();
-  previewTabs.replaceChildren();
-
-  if (!sessionId) {
-    return;
-  }
-
-  const previews = listSessionPreviews(sessionId);
-  for (const preview of previews) {
-    if (!shouldRenderPreviewTab(preview, selectedPreviewName, previews.length)) {
-      continue;
-    }
-    const tab = document.createElement('div');
-    tab.className = 'web-preview-tab-shell';
-    tab.dataset.previewName = preview.previewName;
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = 'web-preview-tab';
-    if (preview.previewName === selectedPreviewName) {
-      tab.classList.add('active');
-    }
-    if (preview.mode === 'detached') {
-      tab.classList.add('detached');
-    }
-    if (!preview.url) {
-      tab.classList.add('empty');
-    }
-    const label = buildPreviewTabLabel(preview.url);
-    button.textContent = label;
-    button.title = preview.url?.trim() || label;
-    button.setAttribute('aria-label', `Preview tab ${label}`);
-    button.addEventListener('click', () => {
-      previewTabSelectHandler?.(preview.previewName);
-    });
-    tab.appendChild(button);
-
-    const closeButton = document.createElement('button');
-    closeButton.type = 'button';
-    closeButton.className = 'web-preview-tab-close';
-    closeButton.textContent = '×';
-    closeButton.title = `Close ${label}`;
-    closeButton.setAttribute('aria-label', `Close preview tab ${label}`);
-    closeButton.addEventListener('click', (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      previewTabCloseHandler?.(preview.previewName);
-    });
-    tab.appendChild(closeButton);
-
-    previewTabs.appendChild(tab);
-  }
+  renderBrowserPreviewTabs(
+    previewTabs,
+    sessionId,
+    selectedPreviewName,
+    (name) => previewTabSelectHandler?.(name),
+    (name) => previewTabCloseHandler?.(name),
+  );
 
   updateScreenshotButtonState();
 }
@@ -1150,8 +1106,6 @@ function setScreenshotButtonBusy(active: boolean): void {
     return;
   }
 
-  const idleGlyph = screenshotButton.dataset.idleGlyph ?? screenshotButton.innerHTML;
-  screenshotButton.dataset.idleGlyph = idleGlyph;
   const idleTitle = screenshotButton.dataset.idleTitle ?? screenshotButton.title;
   screenshotButton.dataset.idleTitle = idleTitle;
 
@@ -1159,14 +1113,12 @@ function setScreenshotButtonBusy(active: boolean): void {
     screenshotButton.disabled = true;
     screenshotButton.setAttribute('aria-busy', 'true');
     screenshotButton.classList.add('web-preview-action-working');
-    screenshotButton.innerHTML = '<span class="web-preview-button-glyph">&#x21bb;</span>';
     screenshotButton.title = 'Capturing screenshot...';
     return;
   }
 
   screenshotButton.setAttribute('aria-busy', 'false');
   screenshotButton.classList.remove('web-preview-action-working');
-  screenshotButton.innerHTML = idleGlyph;
   screenshotButton.title = idleTitle;
   updateScreenshotButtonState();
 }

@@ -135,7 +135,7 @@ public sealed class BoundedSessionOutputQueueTests
         Assert.True(queue.TryEnqueue("kept", "two"));
         Assert.True(queue.TryEnqueue("closed", "three"));
 
-        Assert.Equal(new[] { "one", "three" }, queue.RemoveSession("closed"));
+        Assert.Equal(new[] { "one", "three" }, queue.RemoveSession("closed"), StringComparer.Ordinal);
         Assert.Equal(1, queue.Count);
         Assert.Equal(3, queue.QueuedBytes);
         Assert.Equal("two", await ReadAsync(queue, new HashSet<string>(StringComparer.Ordinal)));

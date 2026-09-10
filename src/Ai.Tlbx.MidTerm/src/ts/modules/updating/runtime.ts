@@ -16,6 +16,7 @@ interface RestartLifecycleState {
   pollTimer: number | null;
   timeoutTimer: number | null;
   httpReady: boolean;
+  restartObserved: boolean;
   versionReady: boolean;
   reloadScheduled: boolean;
   completionTimer: number | null;
@@ -102,7 +103,7 @@ function canAutoReload(): boolean {
     return lifecycle.versionReady;
   }
 
-  return lifecycle.httpReady;
+  return lifecycle.restartObserved && lifecycle.httpReady;
 }
 
 function scheduleReload(): void {
@@ -156,6 +157,10 @@ function finishIfRecovered(): void {
     return;
   }
 
+  if (lifecycle.kind === 'update' && !lifecycle.expectedServerVersion) {
+    return;
+  }
+
   const socketsReady = $stateWsConnected.get() && $muxWsConnected.get();
   if (!socketsReady) {
     return;
@@ -197,6 +202,8 @@ async function pollServerHealth(): Promise<void> {
       lifecycle.expectedServerVersion ? fetchServerVersion() : Promise.resolve<string | null>(null),
     ]);
     if (!healthResponse.ok) {
+      lifecycle.restartObserved = true;
+      lifecycle.httpReady = false;
       return;
     }
 
@@ -218,6 +225,8 @@ async function pollServerHealth(): Promise<void> {
 
     finishIfRecovered();
   } catch {
+    lifecycle.restartObserved = true;
+    lifecycle.httpReady = false;
     // Server is still down or the new process is not ready yet.
   }
 }
@@ -225,6 +234,11 @@ async function pollServerHealth(): Promise<void> {
 function syncLifecycleFromConnections(): void {
   if (!lifecycle || lifecycle.reloadScheduled) {
     return;
+  }
+
+  if (!$stateWsConnected.get() || !$muxWsConnected.get()) {
+    lifecycle.restartObserved = true;
+    lifecycle.httpReady = false;
   }
 
   if (lifecycle.httpReady) {
@@ -273,6 +287,7 @@ export function beginServerRestartLifecycle(
     pollTimer: null,
     timeoutTimer: null,
     httpReady: false,
+    restartObserved: false,
     versionReady: expectedServerVersion === null,
     reloadScheduled: false,
     completionTimer: null,

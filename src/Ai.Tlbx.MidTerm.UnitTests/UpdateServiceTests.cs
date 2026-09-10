@@ -59,6 +59,24 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Theory]
+    [InlineData("dotnet", true)]
+    [InlineData("dotnet.exe", true)]
+    [InlineData("mt", false)]
+    [InlineData("mt.exe", false)]
+    public void IsSharedRuntimeHost_PreventsReplacingTheDotnetInstallation(string executable, bool expected)
+    {
+        Assert.Equal(expected, UpdateService.IsSharedRuntimeHost(Path.Combine(_tempDir, executable)));
+    }
+
+    [Fact]
+    public void GenerateUpdateScript_RejectsSharedRuntimeBeforeCreatingArtifacts()
+    {
+        Assert.Throws<InvalidOperationException>(() => UpdateScriptGenerator.GenerateUpdateScript(
+            _tempDir, Path.Combine(_tempDir, "dotnet.exe"), _tempDir));
+        Assert.Empty(Directory.GetFiles(_tempDir));
+    }
+
+    [Theory]
     [InlineData(UpdateType.Full, "Continuing requested Full update")]
     [InlineData(UpdateType.WebOnly, "Continuing Web-only update")]
     public async Task CaptureSessionUpdateStateBestEffortAsync_DoesNotBlockRequestedUpdate(
@@ -90,6 +108,55 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.NotNull(selection);
         Assert.Equal("v6.10.32-dev.1", selection!.Release.TagName);
         Assert.False(selection.IsDowngrade);
+    }
+
+    [Fact]
+    public void SelectBestRelease_ReinstallIncludesCurrentVersionOnlyWhenRequested()
+    {
+        var releases = new[] { CreateRelease("v10.15.1-dev", prerelease: true, WindowsAssetName) };
+        Assert.Null(UpdateService.SelectBestRelease(releases, "dev", "10.15.1-dev", WindowsAssetName));
+        var selection = UpdateService.SelectBestRelease(releases, "dev", "10.15.1-dev", WindowsAssetName, allowReinstall: true);
+        Assert.Equal("v10.15.1-dev", selection?.Release.TagName);
+    }
+
+    [Fact]
+    public void SelectBestRelease_ReinstallPrefersNewerReleaseAndHonorsChannelAndPlatform()
+    {
+        var releases = new[]
+        {
+            CreateRelease("v10.15.0", prerelease: false, WindowsAssetName),
+            CreateRelease("v10.15.1", prerelease: false, WindowsAssetName),
+            CreateRelease("v10.15.2-dev", prerelease: true, WindowsAssetName),
+            CreateRelease("v10.16.0", prerelease: false, "mt-linux-x64.tar.gz")
+        };
+        var selection = UpdateService.SelectBestRelease(releases, "stable", "10.15.0", WindowsAssetName, allowReinstall: true);
+        Assert.Equal("v10.15.1", selection?.Release.TagName);
+    }
+
+    [Theory]
+    [InlineData("10.9.1", "10.12.2", 1, 1, UpdateType.Full)]
+    [InlineData("10.12.2", "10.12.2", 1, 1, UpdateType.WebOnly)]
+    [InlineData("10.12.2-dev", "10.12.2", 1, 1, UpdateType.WebOnly)]
+    [InlineData("10.12.2+build", "10.12.2", 1, 1, UpdateType.WebOnly)]
+    [InlineData("10.12.2", "10.12.2", 1, 2, UpdateType.Full)]
+    public void DetermineUpdateType_TargetRuntimeCarriesSkippedFullUpdates(
+        string installedPty, string targetPty, int installedProtocol, int targetProtocol, UpdateType expected)
+    {
+        var installed = new VersionManifest { Web = "10.10.2", Pty = installedPty, Protocol = installedProtocol };
+        var release = new VersionManifest
+        {
+            Web = "10.15.1", Pty = targetPty, Protocol = targetProtocol,
+            WebOnly = true, MinCompatiblePty = "2.0.0"
+        };
+        Assert.Equal(expected, UpdateService.DetermineUpdateType(installed, release));
+    }
+
+    [Fact]
+    public void DetermineUpdateType_CurrentWebVersionWithOlderHostStillRequiresFull()
+    {
+        var installed = new VersionManifest { Web = "10.15.1", Pty = "10.9.1", Protocol = 1 };
+        var release = new VersionManifest { Web = "10.15.1", Pty = "10.12.2", Protocol = 1, WebOnly = true, MinCompatiblePty = "2.0.0" };
+        Assert.Equal(UpdateType.Full, UpdateService.DetermineUpdateType(installed, release));
     }
 
     [Fact]
@@ -272,23 +339,8 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Equal(UpdateType.WebOnly, localUpdate!.Type);
     }
 
-    [Theory]
-    [InlineData("10.9.2-dev", "2.0.0", true)]
-    [InlineData("10.9.2", "10.9.2", true)]
-    [InlineData("10.9.2-dev", "10.9.2", false)]
-    [InlineData("10.9.1", "10.9.2", false)]
-    [InlineData("", "2.0.0", false)]
-    [InlineData("10.9.2", "", false)]
-    public void IsInstalledPtyCompatibleWithWebOnlyRelease_UsesSignedCompatibilityFloor(
-        string installed,
-        string minimum,
-        bool expected)
-    {
-        Assert.Equal(expected, UpdateService.IsInstalledPtyCompatibleWithWebOnlyRelease(installed, minimum));
-    }
-
     [Fact]
-    public void TryReadLocalUpdateInfo_WebOnlyManifestWithDifferentPtyVersionPreservesCompatibleHost()
+    public void TryReadLocalUpdateInfo_WebOnlyManifestAfterSkippedRuntimeUpdateRequiresFull()
     {
         var localReleaseDir = Path.Combine(_tempDir, "localrelease");
         Directory.CreateDirectory(localReleaseDir);
@@ -316,7 +368,7 @@ public sealed class UpdateServiceTests : IDisposable
         var localUpdate = UpdateService.TryReadLocalUpdateInfo(localReleaseDir, installed, "10.9.9-dev");
 
         Assert.NotNull(localUpdate);
-        Assert.Equal(UpdateType.WebOnly, localUpdate!.Type);
+        Assert.Equal(UpdateType.Full, localUpdate!.Type);
     }
 
     [Fact]
@@ -579,7 +631,7 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
-    public void GetMacOsLauncherScriptContents_UsesStagedManifestToGateHostBinaries()
+    public void GetMacOsLauncherScriptContents_UsesEffectiveUpdateTypeToGateHostBinaries()
     {
         var settingsDir = Path.Combine(_tempDir, "settings");
         var logPath = Path.Combine(_tempDir, "update.log");
@@ -587,7 +639,8 @@ public sealed class UpdateServiceTests : IDisposable
         var script = UpdateService.GetMacOsLauncherScriptContents(settingsDir, logPath);
 
         Assert.Contains("staged_update_is_web_only()", script, StringComparison.Ordinal);
-        Assert.Contains("grep -Eq '\"webOnly\"[[:space:]]*:[[:space:]]*true' \"$manifest_path\"", script, StringComparison.Ordinal);
+        Assert.Contains("$(cat \"$STAGING/update-type\")", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("$STAGING/version.json\"\n    [[", script, StringComparison.Ordinal);
         Assert.Contains("STAGED_IS_WEB_ONLY=false", script, StringComparison.Ordinal);
         Assert.Contains("Staged update type:", script, StringComparison.Ordinal);
         Assert.Contains("CONFIG_AGENTHOST=", script, StringComparison.Ordinal);

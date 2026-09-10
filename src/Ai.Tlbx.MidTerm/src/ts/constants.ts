@@ -39,7 +39,7 @@ export const MUX_MIN_COMPATIBLE_VERSION = 1;
 
 /** Mux protocol message types */
 export const MUX_TYPE_OUTPUT = 0x01; // Server -> Client: Terminal output (includes dimensions)
-export const MUX_TYPE_INPUT = 0x02; // Client -> Server: Terminal input
+export const MUX_TYPE_INPUT = 0x14; // Client -> Server: Terminal input
 export const MUX_TYPE_RESIZE = 0x03; // Client -> Server: Terminal resize
 export const MUX_TYPE_RESYNC = 0x05; // Server -> Client: Clear terminals, buffer refresh follows
 export const MUX_TYPE_BUFFER_REQUEST = 0x06; // Client -> Server: Request buffer refresh
@@ -73,7 +73,8 @@ export const THEMES: Record<string, TerminalTheme> = {
     foreground: '#F2F2F2',
     cursor: '#F2F2F2',
     cursorAccent: '#0C0C0C',
-    selectionBackground: '#2D3044',
+    // Explicit alpha avoids xterm reducing opaque selection colors to 30% opacity.
+    selectionBackground: '#7BA2F780',
     scrollbarSliderBackground: 'rgba(58, 62, 82, 0.5)',
     scrollbarSliderHoverBackground: 'rgba(123, 162, 247, 0.5)',
     scrollbarSliderActiveBackground: 'rgba(123, 162, 247, 0.7)',

@@ -26,6 +26,7 @@ import { showAlert, showConfirm } from '../../utils/dialog';
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { beginServerRestartLifecycle } from '../updating';
+import { bindTerminalLinkSecuritySetting } from '../terminal/linkConfirmation';
 
 const log = createLogger('settings');
 let releaseBackButtonLayer: (() => void) | null = null;
@@ -71,6 +72,7 @@ export function openSettings(): void {
   if (dom.settingsView) dom.settingsView.classList.remove('hidden');
 
   initSettingsTabs();
+  bindTerminalLinkSecuritySetting();
   void fetchSettings();
   fetchSystemStatus();
   fetchCertificateInfo();

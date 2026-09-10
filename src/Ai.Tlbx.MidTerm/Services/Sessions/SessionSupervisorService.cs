@@ -52,7 +52,9 @@ public sealed class SessionSupervisorService
             LastInputAt = telemetry.LastInputAt,
             LastOutputAt = telemetry.LastOutputAt,
             LastBellAt = telemetry.LastBellAt,
-            CurrentHeat = telemetry.CurrentHeat
+            CurrentHeat = telemetry.CurrentHeat,
+            LastTextOutputAt = telemetry.LastTextOutputAt,
+            TextActivityAgeMs = telemetry.LastTextOutputAt is { } textAt ? Math.Max(0, (now - textAt).TotalMilliseconds) : null
         };
     }
 

@@ -1,11 +1,7 @@
 /* eslint-disable max-lines -- Existing large sidebar owner; keyed reconciliation keeps DOM identity without a broader module split. */
 import type { LaunchEntry, Session, SpaceSummaryDto, SpaceWorkspaceDto } from '../../api/types';
 import type { SessionSelectionOptions } from '../../sessionActions';
-import {
-  patchHistoryEntry,
-  setSessionNotes as apiSetSessionNotes,
-  type HistoryPatchRequest,
-} from '../../api/client';
+import { patchHistoryEntry, setSessionNotes as apiSetSessionNotes } from '../../api/client';
 import { icon, MOBILE_BREAKPOINT } from '../../constants';
 import { dom } from '../../state';
 import {
@@ -1612,7 +1608,7 @@ function updateSessionNotes(sessionId: string, notes: string | null): void {
           if (currentSession.bookmarkId) {
             patchHistoryEntry(currentSession.bookmarkId, {
               notes: updatedSession.notes ?? '',
-            } as HistoryPatchRequest).catch(() => {});
+            }).catch(() => {});
           }
         }
       })

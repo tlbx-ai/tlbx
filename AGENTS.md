@@ -5,6 +5,15 @@ If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 ## Release Authority
 
+Every release invocation must explicitly pass `-TestCategories`: one or more of
+`assets`, `frontend`, `server`, `runtime`, `installers`, `dependencies`, `build`,
+or `all` alone. Review the complete changes since the previous release before
+choosing; never reflexively append `all` or a narrow category. Shared code,
+protocol, dependency and build changes need the corresponding broader coverage.
+Stable releases/promotions require `all`. See `docs/BUILD-RELEASE.md` for cluster
+contents. The choice is independent of `-mthostUpdate`: changed host runtimes
+still need `yes`, even when the build can fall back from reuse to compilation.
+
 Release requests authorize the complete matching script workflow in the current turn. Do not run unrelated release, tag, publish, promote, or merge-to-main workflows outside the requested path.
 
 Development happens on `dev`. `main` is only for stable integration/promotion. If a task requires switching branches, do it automatically, complete the requested work, and return to `dev` after main/stable integration is finished.
@@ -12,8 +21,8 @@ Development happens on `dev`. `main` is only for stable integration/promotion. I
 - Midterm is programmed in c# and typescript -> all major data processing/protocol logic/business logic shall be handled in c#, the typescript frontend shall be held as lean as possible.
 - Use best practices for maintainable memory efficient code that uses the newest available .net features >= .net 10
 - We do not have a big team continuously revisiting code quality, and we cannot afford to come back later to clean up avoidable leftovers. If a feature change or refactor supersedes logic, helpers, types, config, branches, or APIs, remove that dead code in the same change. Do not leave cleanup debt behind on the assumption that someone will revisit it later.
-- always search if somthing exist first before implementing new features/api surfaces 
-- Midterm is in production, it is used by large teams and needs to be stable and performant 
+- always search if somthing exist first before implementing new features/api surfaces
+- Midterm is in production, it is used by large teams and needs to be stable and performant
 - For keyed UI lists/trees, use `src/Ai.Tlbx.MidTerm/src/ts/utils/domReconcile.ts`; content-only hot updates must preserve DOM node identity and full rebuilds are only for structural add/remove/move/filter changes.
 
 Rules:
@@ -41,10 +50,10 @@ Rules:
 ## Terminal Size Ownership
 
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
-- Only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Followers render the canonical PTY size and CSS-scale locally.
+- For owned sessions, only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Headless REST/tmux resize is permitted only while the session is unowned. Followers render the canonical PTY size and CSS-scale locally.
 - A user can explicitly take control at any time. The takeover must apply immediately and clearly explain that the terminal will be optimized for this browser.
-- A visible browser may automatically take over once when its first authoritative status already says the current lease is eligible. Do not arm background timers that let a passive phone/tablet claim later; focus, visibility, reconnect, and viewport changes alone must not renew or steal a protected lease.
-- A connected owner is protected for five minutes after its last terminal input. An offline owner becomes eligible after thirty seconds without terminal input. This prevents ping-pong while allowing work to move naturally between locations.
+- Passive views never take another browser profile's ownership, even after expiry. Visibility, focus, reconnect, session selection and viewport changes do not claim or renew leases. Only actual browser input may take an eligible lease; explicit takeover remains immediate. An unowned session or an offline predecessor in the same browser profile may be inherited without input.
+- A connected owner is protected for five minutes after its last server-observed browser user input. Terminal protocol replies and headless automation do not renew browser activity. An offline owner becomes eligible after thirty seconds without terminal input. This prevents ping-pong while allowing work to move naturally between locations.
 - A replacement tab in the same browser profile may immediately inherit from its offline predecessor. An online sibling tab never auto-steals, and copied `sessionStorage` tab IDs must be collision-checked before WebSockets connect.
 - New sessions belong to the browser tab that created them and use that tab's measured viewport. Persist ownership across server restarts and reject stale or unauthorized resize commands in the backend.
 - Ownership status may expose only a short sanitized device/browser label for orientation. Followers do not scale above `1`; use the naturally empty terminal area for the takeover affordance and name the current controlling device there.

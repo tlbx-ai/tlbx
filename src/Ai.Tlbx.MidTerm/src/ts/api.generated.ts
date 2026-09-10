@@ -3793,6 +3793,7 @@ export interface paths {
       parameters: {
         query?: {
           source?: string;
+          forceFull?: boolean;
         };
         header?: never;
         path?: never;
@@ -4615,6 +4616,8 @@ export interface components {
       cols: number;
       /** Format: int32 */
       rows: number;
+      /** Format: int64 */
+      expectedEpoch?: null | number;
     };
     ResizeResponse: {
       accepted: boolean;
@@ -4802,6 +4805,10 @@ export interface components {
       lastBellAt: null | string;
       /** Format: double */
       currentHeat: number;
+      /** Format: date-time */
+      lastTextOutputAt: null | string;
+      /** Format: double */
+      textActivityAgeMs: null | number;
     };
     SetBookmarkRequest: {
       bookmarkId: string;
@@ -4881,11 +4888,7 @@ export interface components {
     };
     /** @enum {unknown} */
     TabTitleModeSetting:
-      | 'hostname'
-      | 'static'
-      | 'sessionName'
-      | 'terminalTitle'
-      | 'foregroundProcess';
+      'hostname' | 'static' | 'sessionName' | 'terminalTitle' | 'foregroundProcess';
     TerminalColorSchemeDefinition: {
       name: string;
       background: string;

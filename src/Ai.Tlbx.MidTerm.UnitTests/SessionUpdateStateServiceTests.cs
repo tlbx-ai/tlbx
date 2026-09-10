@@ -86,12 +86,12 @@ public sealed class SessionUpdateStateServiceTests
         };
         registry.MarkHidden("hidden");
 
-        Assert.Equal(["visible"], registry.GetSessionList().Sessions.Select(static session => session.Id));
+        Assert.Equal(["visible"], registry.GetSessionList().Sessions.Select(static session => session.Id), StringComparer.Ordinal);
         Assert.Equal(
             ["hidden", "visible"],
             registry.GetSessionList(includeHidden: true).Sessions
                 .Select(static session => session.Id)
-                .Order(StringComparer.Ordinal));
+                .Order(StringComparer.Ordinal), StringComparer.Ordinal);
     }
 
     [Fact]

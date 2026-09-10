@@ -25,6 +25,7 @@ namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 public sealed class StateWebSocketHandler
 {
     private readonly TtyHostSessionManager _sessionManager;
+    private readonly SessionTelemetryService _telemetry;
     private readonly SessionCloseCleanupService _sessionCloseCleanup;
     private readonly SessionSupervisorService _sessionSupervisor;
     private readonly SessionAppServerControlRuntimeService _appServerControlRuntime;
@@ -43,6 +44,7 @@ public sealed class StateWebSocketHandler
 
     public StateWebSocketHandler(
         TtyHostSessionManager sessionManager,
+        SessionTelemetryService telemetry,
         SessionCloseCleanupService sessionCloseCleanup,
         SessionSupervisorService sessionSupervisor,
         SessionAppServerControlRuntimeService appServerControlRuntime,
@@ -60,6 +62,7 @@ public sealed class StateWebSocketHandler
         BrowserUiBridge? browserUiBridge = null)
     {
         _sessionManager = sessionManager;
+        _telemetry = telemetry;
         _sessionCloseCleanup = sessionCloseCleanup;
         _sessionSupervisor = sessionSupervisor;
         _appServerControlRuntime = appServerControlRuntime;
@@ -121,6 +124,7 @@ public sealed class StateWebSocketHandler
         var stateSendGate = new object();
         var stateSendPending = false;
         var stateSendInFlight = false;
+        long? lastStateSendAtMs = null;
         Task? stateSendTask = null;
         var stateDeliveryActive = 1;
         var connectionToken = new object();
@@ -130,12 +134,14 @@ public sealed class StateWebSocketHandler
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
             if (ws.State != WebSocketState.Open) return;
-            await sendLock.WaitAsync(shutdownToken);
+            var acquired = false;
             try
             {
+                await sendLock.WaitAsync(stateSendToken);
+                acquired = true;
                 if (ws.State != WebSocketState.Open) return;
                 var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken);
+                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, stateSendToken);
             }
             catch (WebSocketException) { }
             catch (ObjectDisposedException) { }
@@ -146,7 +152,7 @@ public sealed class StateWebSocketHandler
             }
             finally
             {
-                sendLock.Release();
+                if (acquired) sendLock.Release();
             }
         }
 
@@ -240,7 +246,24 @@ public sealed class StateWebSocketHandler
             {
                 while (!stateSendToken.IsCancellationRequested)
                 {
+                    // A fast socket can otherwise serialize every notification in a
+                    // burst. Bound metadata work to one frame without delaying input
+                    // or explicit command replies, which have their own send paths.
+                    const int stateFrameIntervalMs = 16;
+                    if (lastStateSendAtMs is { } lastSent)
+                    {
+                        var remaining = stateFrameIntervalMs - (Environment.TickCount64 - lastSent);
+                        if (remaining > 0)
+                            await Task.Delay((int)remaining, stateSendToken).ConfigureAwait(false);
+                    }
+                    lock (stateSendGate)
+                    {
+                        // Notifications received during the wait are included in the
+                        // snapshot below; only newer changes require a follow-up.
+                        stateSendPending = false;
+                    }
                     await SendStateWithRetryAsync().ConfigureAwait(false);
+                    lastStateSendAtMs = Environment.TickCount64;
 
                     lock (stateSendGate)
                     {
@@ -349,6 +372,55 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(notification, AppJsonContext.Default.TerminalNotificationMessage);
         }
 
+        var textSendGate = new Lock();
+        var pendingTextSessions = new HashSet<string>(StringComparer.Ordinal);
+        Task? textSendTask = null;
+        bool textSending = false;
+
+        async Task DrainTextActivityAsync()
+        {
+            try
+            {
+                while (!stateSendToken.IsCancellationRequested)
+                {
+                    string sessionId;
+                    lock (textSendGate)
+                    {
+                        if (pendingTextSessions.Count == 0)
+                        {
+                            textSending = false;
+                            return;
+                        }
+                        sessionId = pendingTextSessions.First();
+                        pendingTextSessions.Remove(sessionId);
+                    }
+                    if (Volatile.Read(ref stateDeliveryActive) == 0) continue;
+                    var snapshot = _telemetry.GetSnapshot(sessionId);
+                    await SendJsonAsync(new TerminalTextActivityMessage
+                    {
+                        SessionId = sessionId,
+                        LastTextOutputAt = snapshot.LastTextOutputAt,
+                        TextActivityAgeMs = snapshot.LastTextOutputAt is { } at ? Math.Max(0, (DateTimeOffset.UtcNow - at).TotalMilliseconds) : null
+                    }, AppJsonContext.Default.TerminalTextActivityMessage);
+                }
+            }
+            catch (OperationCanceledException) { }
+        }
+
+        void OnTextActivity(string sessionId)
+        {
+            if (isSizeControlOnly || Volatile.Read(ref stateDeliveryActive) == 0 || stateSendToken.IsCancellationRequested ||
+                (shareAccess is not null && !string.Equals(sessionId, shareAccess.SessionId, StringComparison.Ordinal))) return;
+            lock (textSendGate)
+            {
+                pendingTextSessions.Add(sessionId);
+                if (textSending) return;
+                textSending = true;
+                textSendTask = Task.Run(DrainTextActivityAsync, CancellationToken.None);
+            }
+        }
+
+        _telemetry.TextActivity += OnTextActivity;
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         _sessionLayoutStateService.OnChanged += OnLayoutChanged;
@@ -598,7 +670,14 @@ public sealed class StateWebSocketHandler
         }
         finally
         {
+            _telemetry.TextActivity -= OnTextActivity;
             stateSendCts.Cancel();
+            Task? pendingTextTask;
+            lock (textSendGate) { pendingTextTask = textSendTask; pendingTextSessions.Clear(); }
+            if (pendingTextTask is not null)
+            {
+                try { await pendingTextTask; } catch (OperationCanceledException) { }
+            }
             Task? pendingStateSendTask;
             lock (stateSendGate)
             {

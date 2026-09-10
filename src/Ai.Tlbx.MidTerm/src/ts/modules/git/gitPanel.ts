@@ -18,6 +18,8 @@ import { buildCommitCommandSuggestions, buildFileCommandSuggestions } from './gi
 import { submitSessionText } from '../input/submit';
 import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
+import { areJsonLikeEqual } from '../../stores';
+import { syncGitPanelDom } from './gitPanelDom';
 
 type SectionId = 'conflicts' | 'staged' | 'changes' | 'untracked';
 type PanelSectionId = SectionId | 'commits';
@@ -54,6 +56,8 @@ interface GitPanelState {
   historyEntries: GitLogEntry[];
   historyCount: number;
   hasMoreHistory: boolean;
+  inspectorSelection?: GitSelection;
+  inspectorHtml?: string;
 }
 
 interface TreeNode {
@@ -66,16 +70,24 @@ interface TreeNode {
 
 const panelStates = new Map<string, GitPanelState>();
 const HISTORY_PAGE_SIZE = 20;
+// Only one panel may own a shared dock body, including while fetches are pending.
+const activePanels = new WeakMap<HTMLElement, GitPanelState>();
+const boundPanelContainers = new WeakSet<HTMLElement>();
+
+export function suspendGitPanel(container: HTMLElement): void {
+  activePanels.delete(container);
+}
 
 export function createGitPanel(container: HTMLElement, sessionId: string, repoRoot?: string): void {
   const state = createPanelState(container, sessionId, repoRoot);
   panelStates.set(getPanelKey(sessionId, repoRoot), state);
+  activePanels.set(container, state);
   renderPanel(state);
 }
 
 export function updateGitStatus(sessionId: string, status: GitStatusResponse): void {
   const state = panelStates.get(getPanelKey(sessionId, status.repoRoot));
-  if (!state) return;
+  if (!state || areJsonLikeEqual(state.status, status)) return;
   state.status = status;
   syncHistoryFromStatus(state, status);
   syncSelectionAfterStatus(state);
@@ -104,8 +116,12 @@ export async function renderGitPanelInto(
     state.repoRoot = repoRoot;
   }
 
+  activePanels.set(container, state);
+  // Paint cached state now and do not overwrite a newer pushed status with a slow fetch.
+  renderPanel(state);
+  const previousStatus = state.status;
   const status = await fetchGitStatus(sessionId, repoRoot);
-  if (status) {
+  if (status && state.status === previousStatus) {
     state.status = status;
     syncHistoryFromStatus(state, status);
     syncSelectionAfterStatus(state);
@@ -140,6 +156,9 @@ export async function showCommitInGitPanel(
 export function destroyGitPanel(sessionId: string): void {
   for (const key of panelStates.keys()) {
     if (key === sessionId || key.startsWith(`${sessionId}|`)) {
+      const state = panelStates.get(key);
+      if (state && activePanels.get(state.container) === state)
+        activePanels.delete(state.container);
       panelStates.delete(key);
     }
   }
@@ -418,15 +437,19 @@ function renderSummary(status: GitStatusResponse): string {
 
 function renderPanel(state: GitPanelState): void {
   const { status, container } = state;
+  if (activePanels.get(container) !== state) return;
 
   if (!hasGitRepoStatus(status)) {
     state.selection = null;
-    container.innerHTML = `
+    syncGitPanelDom(
+      container,
+      `
       <div class="git-panel">
         <div class="git-panel-content">
           ${renderPanelFill(t('git.notARepo'), t('git.notARepoHint'), 'git-panel-empty')}
         </div>
-      </div>`;
+      </div>`,
+    );
     return;
   }
 
@@ -496,11 +519,17 @@ function renderPanel(state: GitPanelState): void {
   }
 
   html += '</div></div>';
-  html += renderInspector(state);
+  if (state.inspectorHtml === undefined || state.inspectorSelection !== state.selection) {
+    state.inspectorHtml = renderInspector(state);
+    state.inspectorSelection = state.selection;
+  }
+  html += '<div class="git-panel-inspector"></div>';
   html += '</div>';
 
-  container.innerHTML = html;
-  bindPanelEvents(state);
+  syncGitPanelDom(container, html);
+  const inspector = container.querySelector<HTMLElement>('.git-panel-inspector');
+  if (inspector) syncGitPanelDom(inspector, state.inspectorHtml);
+  bindPanelEvents(container);
 }
 
 function renderSection(
@@ -524,7 +553,7 @@ function renderSection(
       `</span>`;
   }
 
-  let html = `<div class="git-section${isExpanded ? ' git-section-expanded' : ''}${fill ? ' git-section-fill' : ''}">
+  let html = `<div data-section="${sectionId}" class="git-section${isExpanded ? ' git-section-expanded' : ''}${fill ? ' git-section-fill' : ''}">
     <button class="git-section-header" data-action="toggle-section" data-section="${sectionId}" type="button">
       <span class="git-section-chevron">${isExpanded ? '\u25BE' : '\u25B8'}</span>
       <span class="git-section-title">${escapeHtml(title)}</span>
@@ -596,12 +625,10 @@ function renderInspector(state: GitPanelState): string {
     body = renderCommitInspector(selection);
   }
 
-  return `<div class="git-panel-inspector">
-    <div class="git-inspector-header">
+  return `<div class="git-inspector-header">
       <button class="git-inspector-back" data-action="clear-selection" type="button">Back</button>
     </div>
-    <div class="git-inspector-body">${body}</div>
-  </div>`;
+    <div class="git-inspector-body">${body}</div>`;
 }
 
 function renderFileInspector(selection: GitFileSelection): string {
@@ -752,72 +779,64 @@ function createFallbackDiffFile(selection: GitFileSelection): GitDiffFileView {
   };
 }
 
-function bindPanelEvents(state: GitPanelState): void {
-  const { container } = state;
+function bindPanelEvents(container: HTMLElement): void {
+  if (boundPanelContainers.has(container)) return;
+  boundPanelContainers.add(container);
+  container.addEventListener('click', (event) => {
+    const state = activePanels.get(container);
+    const element =
+      event.target instanceof Element ? event.target.closest<HTMLElement>('[data-action]') : null;
+    if (!state || !element || !container.contains(element)) return;
+    handlePanelAction(state, element.dataset);
+  });
+}
 
-  container.querySelectorAll<HTMLElement>('[data-action="toggle-section"]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const section = el.dataset.section as PanelSectionId;
-      if (state.expandedSections.has(section)) {
-        state.expandedSections.delete(section);
-      } else {
-        state.expandedSections.add(section);
-      }
+function handlePanelAction(state: GitPanelState, data: DOMStringMap): void {
+  switch (data.action) {
+    case 'toggle-section': {
+      const section = data.section as PanelSectionId;
+      if (state.expandedSections.has(section)) state.expandedSections.delete(section);
+      else state.expandedSections.add(section);
       renderPanel(state);
-    });
-  });
-
-  container.querySelectorAll<HTMLElement>('[data-action="open-file"]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const path = el.dataset.path;
-      const scope = el.dataset.scope as FileScope | undefined;
-      const status = el.dataset.status;
-      if (!path || !scope || !status) return;
-      void openFileSelection(state, {
-        path,
-        scope,
-        status,
-        originalPath: el.dataset.originalPath,
-      });
-    });
-  });
-
-  container.querySelectorAll<HTMLElement>('[data-action="open-commit"]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const hash = el.dataset.hash;
-      if (!hash) return;
-      void openCommitSelection(state, hash);
-    });
-  });
-
-  container.querySelectorAll<HTMLElement>('[data-action="load-more-history"]').forEach((el) => {
-    el.addEventListener('click', () => {
+      break;
+    }
+    case 'open-file':
+      if (data.path && data.scope && data.status) {
+        void openFileSelection(state, {
+          path: data.path,
+          scope: data.scope as FileScope,
+          status: data.status,
+          originalPath: data.originalPath,
+        });
+      }
+      break;
+    case 'open-commit':
+      if (data.hash) void openCommitSelection(state, data.hash);
+      break;
+    case 'load-more-history':
       void loadMoreHistory(state);
-    });
-  });
-
-  container.querySelectorAll<HTMLElement>('[data-action="copy-command"]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const command = el.dataset.command;
-      if (!command || typeof navigator.clipboard === 'undefined') return;
-      void navigator.clipboard.writeText(command).catch(() => {});
-    });
-  });
-
-  container.querySelectorAll<HTMLElement>('[data-action="send-command"]').forEach((el) => {
-    el.addEventListener('click', () => {
-      const command = el.dataset.command;
-      if (!command) return;
-      void submitSessionText(state.sessionId, command).catch(() => {});
-    });
-  });
-
-  container.querySelectorAll<HTMLElement>('[data-action="clear-selection"]').forEach((el) => {
-    el.addEventListener('click', () => {
+      break;
+    case 'copy-command':
+    case 'send-command':
+      runPanelCommand(state, data);
+      break;
+    case 'clear-selection':
       state.selection = null;
       renderPanel(state);
-    });
-  });
+      break;
+    case undefined:
+    default:
+      break;
+  }
+}
+
+function runPanelCommand(state: GitPanelState, data: DOMStringMap): void {
+  if (!data.command) return;
+  if (data.action === 'send-command') {
+    void submitSessionText(state.sessionId, data.command).catch(() => {});
+  } else if (typeof navigator.clipboard !== 'undefined') {
+    void navigator.clipboard.writeText(data.command).catch(() => {});
+  }
 }
 
 async function openFileSelection(

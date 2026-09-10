@@ -13,7 +13,12 @@ import {
 } from '../../stores';
 import { handleDockLayoutChange } from '../terminal/scaling';
 import { setActionButtonActive } from '../sessionTabs';
-import { refreshGitPanel, renderGitPanelInto, showCommitInGitPanel } from './gitPanel';
+import {
+  refreshGitPanel,
+  renderGitPanelInto,
+  showCommitInGitPanel,
+  suspendGitPanel,
+} from './gitPanel';
 import { subscribeToSession } from './gitChannel';
 import { closeCommandsDock } from '../commands/dock';
 import { adjustInnerDockPositions, updateAllDockMargins } from '../web';
@@ -82,7 +87,6 @@ export function openGitDock(sessionId: string, repoRoot?: string): void {
 
   const body = dockPanel.querySelector<HTMLElement>('.git-dock-body');
   if (body) {
-    body.innerHTML = '';
     subscribeToSession(sessionId);
     void renderGitPanelInto(body, sessionId, repoRoot);
   }
@@ -93,14 +97,13 @@ export function openGitDock(sessionId: string, repoRoot?: string): void {
 
   activeUnsub?.();
   activeUnsub = $activeSessionId.subscribe((newId) => {
-    if (!$gitPanelDocked.get() || !newId) return;
+    if (!$gitPanelDocked.get() || !newId || newId === currentDockSessionId) return;
     currentDockSessionId = newId;
     currentDockRepoRoot = undefined;
     const dockBody = document
       .getElementById('git-dock')
       ?.querySelector('.git-dock-body') as HTMLElement | null;
     if (dockBody) {
-      dockBody.innerHTML = '';
       subscribeToSession(newId);
       void renderGitPanelInto(dockBody, newId);
     }
@@ -131,6 +134,8 @@ export function closeGitDock(): void {
   const app = document.getElementById('app');
 
   if (dockPanel) {
+    const body = dockPanel.querySelector<HTMLElement>('.git-dock-body');
+    if (body) suspendGitPanel(body);
     dockPanel.classList.add('hidden');
     dockPanel.style.width = '';
   }
