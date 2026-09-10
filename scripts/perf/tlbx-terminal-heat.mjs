@@ -96,12 +96,18 @@ const read = (id) =>
       red: +getComputedStyle(el, "::before").opacity,
       blue: +getComputedStyle(el, "::after").opacity,
       base: getComputedStyle(el).backgroundColor,
+      opacity: +getComputedStyle(el).opacity,
       running: el
         .getAnimations({ subtree: true })
         .filter((a) => a.playState === "running").length,
     }));
 const checkpoint = async (id, label) => {
   const state = await read(id);
+  const activity = await api(
+    "get",
+    `/api/sessions/${id}/activity?seconds=45&bellLimit=1`,
+  );
+  state.heat = activity.currentHeat;
   summary.checkpoints.push({ label, ...state });
   await page.screenshot({ path: path.join(artifacts, `${label}.png`) });
   return state;
@@ -130,7 +136,7 @@ try {
   const a = await create(`pwsh -NoProfile -File "${emitter}"`);
   const b = await create();
   await select(a);
-  await wait(12_000);
+  await wait(32_000);
   assert.equal((await checkpoint(a, "initial-cold")).red, 0);
   await fs.writeFile(trigger, "short");
   await page.waitForFunction(
@@ -145,13 +151,21 @@ try {
   );
   assert((await checkpoint(a, "short-red")).red > 0.7);
   assert.equal((await read(b)).red, 0);
-  await wait(3000);
-  assert((await checkpoint(a, "three-seconds-blue")).blue > 0.85);
-  await wait(7400);
-  const cold = await checkpoint(a, "ten-seconds-grey");
+  await wait(5000);
+  const blue = await checkpoint(a, "five-seconds-blue");
+  assert(blue.blue > 0.85);
+  assert(blue.heat > 0.78 && blue.heat < 0.85);
+  await wait(10400);
+  const cold = await checkpoint(a, "fifteen-seconds-grey");
   assert.equal(cold.red, 0);
   assert.equal(cold.blue, 0);
-  assert.equal(cold.running, 0);
+  assert(cold.opacity > 0.8);
+  assert(cold.heat > 0.43 && cold.heat < 0.51);
+  await wait(15_000);
+  const gone = await checkpoint(a, "thirty-seconds-gone");
+  assert.equal(gone.opacity, 0);
+  assert.equal(gone.heat, 0);
+  assert.equal(gone.running, 0);
   await fs.writeFile(trigger, "stream");
   await wait(1000);
   const streamStart = Date.now();
@@ -164,7 +178,7 @@ try {
   ).length;
   assert(summary.streamMessages <= 22);
   await fs.writeFile(trigger, "stopped");
-  await wait(11_000);
+  await wait(31_000);
   await select(b);
   await select(a);
   assert.equal((await checkpoint(a, "session-switch-cold")).running, 0);
@@ -183,7 +197,7 @@ try {
     document.dispatchEvent(new Event("visibilitychange"));
   });
   await client.send("Page.setWebLifecycleState", { state: "frozen" });
-  await wait(12_000);
+  await wait(32_000);
   await client.send("Page.setWebLifecycleState", { state: "active" });
   await page.evaluate(() => {
     delete document.visibilityState;
@@ -209,7 +223,28 @@ try {
     /[\u2801-\u28ff]/u.test(await terminalText(codex)),
     "Real Codex sparkle must be visible",
   );
-  await wait(12_000);
+  await wait(32_000);
+  await api("post", `/api/sessions/${codex}/redraw`);
+  await wait(1500);
+  const afterRedraw = await api(
+    "get",
+    `/api/sessions/${codex}/activity?seconds=45&bellLimit=1`,
+  );
+  assert.equal(afterRedraw.currentHeat, 0, "Repaint must stay cold");
+  assert.equal((await checkpoint(codex, "explicit-redraw-cold")).opacity, 0);
+  summary.redrawCold = true;
+  const other = await context.newPage();
+  await other.goto("about:blank");
+  await other.bringToFront();
+  await wait(500);
+  await page.bringToFront();
+  await wait(1500);
+  await other.close();
+  assert.equal(
+    (await read(codex)).opacity,
+    0,
+    "Short background return must stay cold",
+  );
   await client.send("Performance.enable");
   await client.send("Profiler.enable");
   await client.send("Profiler.start");

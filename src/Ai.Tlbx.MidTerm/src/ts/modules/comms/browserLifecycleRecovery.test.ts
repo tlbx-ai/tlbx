@@ -157,7 +157,7 @@ describe('browserLifecycleRecovery', () => {
     expect(options.applyScrollbackProtection).toHaveBeenCalledTimes(1);
   });
 
-  it('replaces browser-owned transports immediately after a short real background interval', () => {
+  it('reuses healthy status and settings transports after a short background interval', () => {
     const options = setup();
     setVisibility('hidden');
     emitDocument('visibilitychange');
@@ -168,13 +168,13 @@ describe('browserLifecycleRecovery', () => {
     emitWindow('focus');
     vi.advanceTimersByTime(0);
 
-    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
-    expect(options.reconnectSettingsAfterLongResume).toHaveBeenCalledTimes(1);
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
+    expect(options.reconnectSettingsAfterLongResume).not.toHaveBeenCalled();
     expect(options.recoverAppServerControlAfterResume).toHaveBeenCalledTimes(1);
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
       ['sess1234'],
-      { forceReconnect: true },
+      { forceReconnect: false },
     );
   });
 
@@ -195,11 +195,11 @@ describe('browserLifecycleRecovery', () => {
     emitDocument('resume');
     vi.advanceTimersByTime(0);
 
-    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
       ['sess1234'],
-      { forceReconnect: true },
+      { forceReconnect: false },
     );
     expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
   });
@@ -215,11 +215,11 @@ describe('browserLifecycleRecovery', () => {
     emitWindow('pageshow');
     vi.advanceTimersByTime(0);
 
-    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
       ['sess1234'],
-      { forceReconnect: true },
+      { forceReconnect: false },
     );
     expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(1);
   });
@@ -253,7 +253,7 @@ describe('browserLifecycleRecovery', () => {
     }
 
     expect(mocks.suspendMuxForBrowserBackground).toHaveBeenCalledTimes(3);
-    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(3);
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledTimes(4);
     expect(options.recoverTerminalPresentationAfterResume).toHaveBeenCalledTimes(4);
   });
@@ -266,11 +266,11 @@ describe('browserLifecycleRecovery', () => {
     setVisibility('visible');
     vi.advanceTimersByTime(1100);
 
-    expect(mocks.connectStateWebSocket).toHaveBeenCalledTimes(1);
+    expect(mocks.connectStateWebSocket).not.toHaveBeenCalled();
     expect(mocks.recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledWith(
       'sess1234',
       ['sess1234'],
-      { forceReconnect: true },
+      { forceReconnect: false },
     );
   });
 

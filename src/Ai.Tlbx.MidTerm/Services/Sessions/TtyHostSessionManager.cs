@@ -922,6 +922,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                 return false;
             }
 
+            // Focus and ownership refreshes often repeat the already acknowledged
+            // geometry. Do not wake the PTY or broadcast another state update.
+            if (client.IsConnected && _sessionCache.TryGetValue(sessionId, out var current) &&
+                current.Cols == cols && current.Rows == rows) return true;
+
             var success = await client.ResizeAsync(cols, rows, ct).ConfigureAwait(false);
 
             if (success && _sessionCache.TryGetValue(sessionId, out var info))

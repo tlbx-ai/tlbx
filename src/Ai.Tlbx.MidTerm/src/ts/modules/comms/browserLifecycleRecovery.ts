@@ -50,15 +50,15 @@ export function setupBrowserLifecycleRecovery(
     forceReconnect: boolean,
     resumedFromBackground: boolean,
   ): void => {
-    const replaceBrowserTransports = forceReconnect || resumedFromBackground;
+    const replaceBrowserTransports = forceReconnect;
     if (replaceBrowserTransports || !$stateWsConnected.get()) {
       connectStateWebSocket();
     } else {
       reportBrowserActivity(true);
     }
 
-    if (replaceBrowserTransports) {
-      options.reconnectSettingsAfterLongResume?.();
+    if (replaceBrowserTransports) options.reconnectSettingsAfterLongResume?.();
+    if (replaceBrowserTransports || resumedFromBackground) {
       options.recoverAppServerControlAfterResume?.();
       options.recoverAncillaryTransportAfterResume?.();
     }

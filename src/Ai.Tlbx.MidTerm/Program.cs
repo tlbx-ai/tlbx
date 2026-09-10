@@ -309,9 +309,9 @@ public class Program
             _ = gitWatcher.RegisterSessionAsync(sessionId, cwd);
         };
 
-        sessionManager.OnOutput += (sessionId, _, _, _, data) =>
+        sessionManager.OnOutput += (sessionId, _, cols, rows, data) =>
         {
-            sessionTelemetry.RecordOutput(sessionId, data.Span);
+            sessionTelemetry.RecordOutput(sessionId, data.Span, cols, rows);
         };
 
         sessionManager.OnSessionClosed += sessionId =>

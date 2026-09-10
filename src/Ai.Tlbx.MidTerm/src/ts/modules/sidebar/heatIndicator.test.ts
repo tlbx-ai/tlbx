@@ -33,7 +33,7 @@ describe('server text activity cooldown', () => {
   it('lets a fresh snapshot correct a buffered event without reheating it', () => {
     recordTextActivity('a', '2026-09-10T12:00:00Z', 0);
     expect(getDisplayedSessionHeat('a')).toBe(1);
-    recordTextActivity('a', '2026-09-10T12:00:00Z', 12_000);
+    recordTextActivity('a', '2026-09-10T12:00:00Z', 32_000);
     expect(getDisplayedSessionHeat('a')).toBe(0);
     recordTextActivity('a', '2026-09-10T12:00:00Z', 0);
     expect(getDisplayedSessionHeat('a')).toBe(0);
@@ -42,15 +42,15 @@ describe('server text activity cooldown', () => {
     recordTextActivity('a', '2026-09-10T12:00:00Z', 0);
     expect(getDisplayedSessionHeat('a')).toBe(1);
     expect(getDisplayedSessionHeat('b')).toBe(0);
-    now += 3000;
-    expect(getDisplayedSessionHeat('a')).toBeCloseTo(0.4);
-    now += 7000;
+    now += 5000;
+    expect(getDisplayedSessionHeat('a')).toBeCloseTo(5 / 6);
+    now += 25_000;
     expect(getDisplayedSessionHeat('a')).toBe(0);
   });
   it('uses server age across clock skew and ignores stale or identical snapshots', () => {
-    recordTextActivity('a', '2030-01-01T00:00:00Z', 3000);
-    expect(getDisplayedSessionHeat('a')).toBeCloseTo(0.4);
-    now += 7000;
+    recordTextActivity('a', '2030-01-01T00:00:00Z', 5000);
+    expect(getDisplayedSessionHeat('a')).toBeCloseTo(5 / 6);
+    now += 25_000;
     recordTextActivity('a', '2030-01-01T00:00:00Z', 0);
     recordTextActivity('a', '2029-01-01T00:00:00Z', 0);
     expect(getDisplayedSessionHeat('a')).toBe(0);

@@ -21,6 +21,17 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
     }
 
     [Fact]
+    public async Task DecorativeTrafficDoesNotBlockColdTerminalQueue()
+    {
+        var runtime = new FakeRuntime(["session-1"]) { CurrentHeat = 0, RawLastOutputAt = _timeProvider.GetUtcNow() };
+        await using var service = new ManagerBarQueueService(_stateDir, runtime, _timeProvider);
+        var (accepted, entry) = await service.SubmitPromptAsync("session-1", new AppServerControlTurnRequest { Text = "status" });
+        Assert.True(accepted);
+        Assert.Null(entry);
+        Assert.Equal(["status"], runtime.SentPrompts);
+    }
+
+    [Fact]
     public async Task Enqueue_PersistsAcrossRestart()
     {
         var runtime = new FakeRuntime(["session-1"]);
@@ -662,6 +673,7 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
         private readonly HashSet<string> _sessionIds;
         public double CurrentHeat { get; set; }
         public DateTimeOffset? LastOutputAt { get; set; }
+        public DateTimeOffset? RawLastOutputAt { get; set; }
         public bool UsesTurnQueueValue { get; set; }
         public bool TurnQueueReady { get; set; } = true;
         public int SendFailuresRemaining { get; set; }
@@ -688,7 +700,8 @@ public sealed class ManagerBarQueueServiceTests : IAsyncDisposable
             return new SessionHeatSnapshot
             {
                 CurrentHeat = CurrentHeat,
-                LastOutputAt = LastOutputAt
+                LastOutputAt = RawLastOutputAt ?? LastOutputAt,
+                LastTextOutputAt = LastOutputAt
             };
         }
 

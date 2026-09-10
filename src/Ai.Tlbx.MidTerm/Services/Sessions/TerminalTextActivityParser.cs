@@ -12,9 +12,16 @@ public sealed class TerminalTextActivityParser
     private readonly byte[] _utf8 = new byte[4];
     private int _utf8Count;
     private int _utf8Length;
+    private TerminalTextScreen? _screen;
+    private readonly int[] _parameters = new int[32];
+    private int _parameterIndex;
+    private bool _privateMode;
 
-    public int CountTextUnits(ReadOnlySpan<byte> data)
+    private int Put(Rune rune) => _screen?.Put(rune, IsText(rune)) ?? (IsText(rune) ? 1 : 0);
+
+    public int CountTextUnits(ReadOnlySpan<byte> data, int cols = 0, int rows = 0)
     {
+        if (cols > 0 && rows > 0) { _screen ??= new TerminalTextScreen(); _screen.Resize(cols, rows); }
         var count = 0;
         foreach (var value in data)
         {
@@ -44,6 +51,9 @@ public sealed class TerminalTextActivityParser
             }
             if (_state == State.Escape)
             {
+                if (value == (byte)'[') { Array.Clear(_parameters); _parameterIndex = 0; _privateMode = false; }
+                else if (value is (byte)'7' or (byte)'8') _screen?.Command(value == (byte)'7' ? 's' : 'u', [], false);
+                else if (value == (byte)'D') _screen?.Put(new Rune(10), false);
                 _state = value switch
                 {
                     (byte)'[' => State.Csi,
@@ -55,8 +65,17 @@ public sealed class TerminalTextActivityParser
             }
             if (_state == State.Csi || _state == State.EscapeIntermediate)
             {
+                if (_state == State.Csi)
+                {
+                    if (value == (byte)'?') _privateMode = true;
+                    else if (value is >= (byte)'0' and <= (byte)'9') _parameters[_parameterIndex] = Math.Min(65535, _parameters[_parameterIndex] * 10 + value - '0');
+                    else if (value == (byte)';') _parameterIndex = Math.Min(_parameters.Length - 1, _parameterIndex + 1);
+                }
                 if (value >= (_state == State.Csi ? 0x40 : 0x30) && value <= 0x7e)
+                {
+                    if (_state == State.Csi && _screen is not null) count += _screen.Command((char)value, _parameters.AsSpan(0, _parameterIndex + 1), _privateMode);
                     _state = State.Ground;
+                }
                 continue;
             }
             if (_utf8Count > 0)
@@ -66,8 +85,7 @@ public sealed class TerminalTextActivityParser
                     _utf8[_utf8Count++] = value;
                     if (_utf8Count == _utf8Length)
                     {
-                        if (Rune.DecodeFromUtf8(_utf8.AsSpan(0, _utf8Count), out var rune, out _) == System.Buffers.OperationStatus.Done
-                            && IsText(rune)) count++;
+                        if (Rune.DecodeFromUtf8(_utf8.AsSpan(0, _utf8Count), out var rune, out _) == System.Buffers.OperationStatus.Done) count += Put(rune);
                         _utf8Count = 0;
                     }
                     continue;
@@ -76,7 +94,7 @@ public sealed class TerminalTextActivityParser
             }
             if (value < 0x80)
             {
-                if (IsText(new Rune(value))) count++;
+                count += Put(new Rune(value));
             }
             else if (value is >= 0xc2 and <= 0xf4)
             {

@@ -51,7 +51,7 @@ public sealed class SessionTelemetryService
     public event Action<TerminalNotificationMessage>? TerminalNotificationReceived;
     public event Action<string>? TextActivity;
 
-    public void RecordOutput(string sessionId, ReadOnlySpan<byte> data)
+    public void RecordOutput(string sessionId, ReadOnlySpan<byte> data, int cols = 0, int rows = 0)
     {
         var state = _sessions.GetOrAdd(sessionId, _ => new SessionTelemetryState());
         var now = _timeProvider.GetUtcNow();
@@ -61,7 +61,7 @@ public sealed class SessionTelemetryService
 
         lock (state.SyncRoot)
         {
-            var heatUnits = state.TextActivityParser.CountTextUnits(data);
+            var heatUnits = state.TextActivityParser.CountTextUnits(data, cols, rows);
             if (heatUnits > 0)
             {
                 state.LastTextOutputAt = now;
@@ -139,7 +139,8 @@ public sealed class SessionTelemetryService
     {
         seconds = Math.Clamp(seconds, 10, MaxBucketCount);
         bellLimit = Math.Clamp(bellLimit, 1, MaxBellEventCount);
-        var nowSecond = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
+        var now = _timeProvider.GetUtcNow();
+        var nowSecond = now.ToUnixTimeSeconds();
         var startSecond = nowSecond - seconds + 1;
 
         var response = new SessionActivityResponse
@@ -193,9 +194,7 @@ public sealed class SessionTelemetryService
             response.CurrentBytesPerSecond = response.Heatmap.Count > 0
                 ? response.Heatmap[^1].Bytes
                 : 0;
-            response.CurrentHeat = response.Heatmap.Count > 0
-                ? response.Heatmap[^1].Heat
-                : 0;
+            response.CurrentHeat = TerminalHeat.FromTextOutput(state.LastTextOutputAt, _timeProvider.GetUtcNow());
 
             foreach (var bell in state.BellRecords.TakeLast(bellLimit))
             {
@@ -213,7 +212,8 @@ public sealed class SessionTelemetryService
     public SessionTelemetrySnapshot GetSnapshot(string sessionId, int seconds = 120)
     {
         seconds = Math.Clamp(seconds, 10, MaxBucketCount);
-        var nowSecond = _timeProvider.GetUtcNow().ToUnixTimeSeconds();
+        var now = _timeProvider.GetUtcNow();
+        var nowSecond = now.ToUnixTimeSeconds();
         var startSecond = nowSecond - seconds + 1;
 
         if (!_sessions.TryGetValue(sessionId, out var state))
@@ -227,7 +227,6 @@ public sealed class SessionTelemetryService
             TrimBells(state);
 
             var currentBytes = 0;
-            var currentHeatUnits = 0;
             foreach (var bucket in state.Buckets)
             {
                 if (bucket.UnixSecond < startSecond)
@@ -238,7 +237,6 @@ public sealed class SessionTelemetryService
                 if (bucket.UnixSecond == nowSecond)
                 {
                     currentBytes = bucket.Bytes;
-                    currentHeatUnits = bucket.HeatUnits;
                 }
             }
 
@@ -252,7 +250,7 @@ public sealed class SessionTelemetryService
                 LastTextOutputAt = state.LastTextOutputAt,
                 LastBellAt = state.LastBellAt,
                 CurrentBytesPerSecond = currentBytes,
-                CurrentHeat = CalculateHeat(currentHeatUnits)
+                CurrentHeat = TerminalHeat.FromTextOutput(state.LastTextOutputAt, now)
             };
         }
     }

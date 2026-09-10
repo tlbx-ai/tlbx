@@ -34,7 +34,7 @@ public sealed class SessionHeatService
             TotalBellCount = telemetry.TotalBellCount,
             LastInputAt = telemetry.LastInputAt,
             LastOutputAt = lastOutputAt,
-            LastTextOutputAt = telemetry.LastTextOutputAt,
+            LastTextOutputAt = appServerControlHeat.CurrentHeat > 0 ? lastOutputAt : telemetry.LastTextOutputAt,
             LastBellAt = telemetry.LastBellAt,
             CurrentBytesPerSecond = telemetry.CurrentBytesPerSecond,
             CurrentHeat = currentHeat

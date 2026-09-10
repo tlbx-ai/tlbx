@@ -2,7 +2,7 @@
  * transport bytes, replay and application busy state never rearm it. */
 import { $sessionList } from '../../stores';
 
-const COOL_MS = 10_000;
+const COOL_MS = 30_000;
 interface HeatState {
   stamp: string | null;
   activityAt: number | null;
@@ -29,6 +29,7 @@ function render(state: HeatState): void {
   state.cycle = !state.cycle;
   const suffix = state.cycle ? 'a' : 'b';
   state.element.style.setProperty('--heat-age', `${-age}ms`);
+  state.element.style.setProperty('--heat-fade', active ? `heat-fade-${suffix}` : 'none');
   state.element.style.setProperty('--heat-red', active ? `heat-red-${suffix}` : 'none');
   state.element.style.setProperty('--heat-blue', active ? `heat-blue-${suffix}` : 'none');
 }
@@ -81,11 +82,10 @@ export function getDisplayedSessionHeat(id: string): number {
   if (!state) return 0;
   const age = ageOf(state);
   if (age >= COOL_MS) return 0;
-  return age <= 3000 ? 1 - (0.6 * age) / 3000 : (0.4 * (COOL_MS - age)) / 7000;
+  return 1 - age / COOL_MS;
 }
 export function getSessionHeat(id: string): number {
-  const state = sessions.get(id);
-  return state && ageOf(state) < 1000 ? 1 : 0;
+  return getDisplayedSessionHeat(id);
 }
 function resume(): void {
   sessions.forEach(render);

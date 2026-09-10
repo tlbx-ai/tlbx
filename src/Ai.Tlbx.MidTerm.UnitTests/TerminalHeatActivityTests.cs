@@ -10,6 +10,50 @@ public sealed class TerminalHeatActivityTests
         public override DateTimeOffset GetUtcNow() => Now;
     }
     [Fact]
+    public void RepeatedSynchronizedLogLinesStillHeatWhenViewportScrolls()
+    {
+        var parser = new TerminalTextActivityParser();
+        Assert.True(parser.CountTextUnits("\u001b[?2026hA\r\nA\u001b[?2026l"u8, 80, 2) > 0);
+        Assert.True(parser.CountTextUnits("\u001b[?2026h\r\nA\u001b[?2026l"u8, 80, 2) > 0);
+    }
+
+    [Fact]
+    public void RepaintAfterExternalClearAndVerticalShiftIsColdAcrossChunks()
+    {
+        var parser = new TerminalTextActivityParser();
+        Assert.True(parser.CountTextUnits("old shell\r\n\u001b[?2026hHello\r\nPrompt\u001b[?2026l"u8, 80, 24) > 0);
+        Assert.Equal(0, parser.CountTextUnits("\u001b[H\u001b[2J"u8, 80, 24));
+        Assert.Equal(0, parser.CountTextUnits("\u001b[?2026hHello\r\nPro"u8, 80, 24));
+        Assert.Equal(0, parser.CountTextUnits("mpt\u001b[?2026l"u8, 80, 24));
+        Assert.True(parser.CountTextUnits("\u001b[H\u001b[2J\u001b[?2026hHello\r\nNew result\u001b[?2026l"u8, 80, 24) > 0);
+    }
+
+    [Fact]
+    public void HeatDecaysContinuouslyAndDecorationsDoNotRearmIt()
+    {
+        var clock = new Clock(); var service = new SessionTelemetryService(clock);
+        service.RecordOutput("a", "hello"u8);
+        foreach (var seconds in new[] { 0.0, 0.125, 5, 15, 22.5, 30, 60 })
+        {
+            clock.Now = new DateTimeOffset(2026, 9, 10, 12, 0, 0, TimeSpan.Zero).AddSeconds(seconds);
+            service.RecordOutput("a", "⠁"u8);
+            Assert.Equal(Math.Max(0, 1 - seconds / 30), service.GetSnapshot("a").CurrentHeat, 6);
+            Assert.Equal(service.GetSnapshot("a").CurrentHeat, service.GetActivity("a", 120, 10).CurrentHeat, 6);
+        }
+    }
+
+    [Fact]
+    public void SynchronizedRepaintIsColdButChangedTextAndRepeatedLogLinesAreHot()
+    {
+        var parser = new TerminalTextActivityParser();
+        Assert.True(parser.CountTextUnits("\u001b[?2026h\u001b[HHello\u001b[?2026l"u8, 80, 24) > 0);
+        Assert.Equal(0, parser.CountTextUnits("\u001b[?2026h\u001b[2J\u001b[HHello\u001b[?2026l"u8, 80, 24));
+        Assert.True(parser.CountTextUnits("\u001b[?2026h\u001b[HWorld\u001b[?2026l"u8, 80, 24) > 0);
+        Assert.True(parser.CountTextUnits("\r\nSame log line\r\n"u8, 80, 24) > 0);
+        Assert.True(parser.CountTextUnits("Same log line\r\n"u8, 80, 24) > 0);
+    }
+
+    [Fact]
     public void TextClockAndTransportClockAreSeparateAndNotificationsAreBounded()
     {
         var clock = new Clock();

@@ -616,7 +616,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return false;
         }
 
-        if (entry.AwaitingHeatRise && HasObservedOutputSinceLastDispatch(entry, heat.LastOutputAt))
+        if (entry.AwaitingHeatRise && HasObservedOutputSinceLastDispatch(entry, heat.LastTextOutputAt))
         {
             entry.AwaitingHeatRise = false;
         }
@@ -632,7 +632,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private static bool IsTerminalCooldownReady(SessionHeatSnapshot heat, DateTimeOffset now)
     {
         return heat.CurrentHeat <= CooldownHeatThreshold &&
-               !HasRecentOutput(heat.LastOutputAt, now);
+               !HasRecentOutput(heat.LastTextOutputAt, now);
     }
 
     private static bool HasRecentOutput(DateTimeOffset? lastOutputAt, DateTimeOffset now)

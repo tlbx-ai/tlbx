@@ -1331,7 +1331,8 @@ body::before {
   flex-shrink: 0;
   border-radius: 2px;
   margin-right: 6px;
-  opacity: 0.9;
+  opacity: 0;
+  animation: var(--heat-fade, none) 30s linear var(--heat-age, 0ms) forwards;
   position: relative;
   overflow: hidden;
   background: var(--terminal-heat-cold);
@@ -1344,7 +1345,7 @@ body::before {
   inset: 0;
   border-radius: inherit;
   opacity: 0;
-  animation-duration: 10s;
+  animation-duration: 30s;
   animation-delay: var(--heat-age, 0ms);
   animation-timing-function: linear;
   animation-fill-mode: forwards;
@@ -1364,7 +1365,7 @@ body::before {
   0% {
     opacity: 1;
   }
-  30%,
+  16.666667%,
   100% {
     opacity: 0;
   }
@@ -1373,7 +1374,7 @@ body::before {
   0% {
     opacity: 1;
   }
-  30%,
+  16.666667%,
   100% {
     opacity: 0;
   }
@@ -1382,9 +1383,10 @@ body::before {
   0% {
     opacity: 0;
   }
-  30% {
+  16.666667% {
     opacity: 1;
   }
+  50%,
   100% {
     opacity: 0;
   }
@@ -1393,8 +1395,28 @@ body::before {
   0% {
     opacity: 0;
   }
-  30% {
+  16.666667% {
     opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes heat-fade-a {
+  0%,
+  50% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes heat-fade-b {
+  0%,
+  50% {
+    opacity: 0.9;
   }
   100% {
     opacity: 0;
