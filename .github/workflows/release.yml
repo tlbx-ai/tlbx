@@ -726,14 +726,21 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Verify local .NET SDK on self-hosted Windows runner
+      - name: Set up pinned .NET SDK on self-hosted Windows runner
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.temp }}/dotnet-sdk
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Verify selected .NET SDK
         shell: pwsh
         run: |
-          $sdks = dotnet --list-sdks
-          if (-not ($sdks | Select-String '^10\.0\.')) {
-            throw "Required .NET 10 SDK not found on self-hosted runner."
+          $selectedSdk = dotnet --version
+          if ($LASTEXITCODE -ne 0 -or $selectedSdk -ne $env:DOTNET_VERSION) {
+            throw "Required .NET SDK $env:DOTNET_VERSION was not selected (actual: $selectedSdk)."
           }
-          dotnet --version
+          Write-Host "Using .NET SDK $selectedSdk"
 
       - name: Download frontend
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
