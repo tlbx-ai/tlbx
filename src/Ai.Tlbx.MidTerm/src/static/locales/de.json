@@ -395,6 +395,7 @@
   "trust.errorLoading": "Fehler beim Laden der Zertifikatsinformationen",
   "update.checking": "Überprüfen...",
   "update.fullUpdate": "Vollständiges Update",
+  "update.requestTimeout": "Die Update-Anfrage hat zu lange gedauert. Der Server aktualisiert möglicherweise noch. Prüfe das Update-Log und lade die Seite vor einem erneuten Versuch neu.",
   "update.fullUpdateConfirm": "Das neueste Release im gewählten Kanal einschließlich aller Laufzeitkomponenten installieren? Das funktioniert auch, wenn du bereits auf dem neuesten Stand bist. Der Server und alle Terminal- und Agent-Sitzungen werden neu gestartet; manche Sitzungen müssen eventuell manuell fortgesetzt werden.",
   "update.updating": "Aktualisierung läuft...",
   "update.restarting": "Neustart läuft...",

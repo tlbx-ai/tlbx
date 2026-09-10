@@ -959,6 +959,7 @@ export async function applyUpdate(
   forceFull = false,
 ): ClientPostResult<'/api/update/apply'> {
   return client.POST('/api/update/apply', {
+    signal: AbortSignal.timeout(300_000),
     params: { query: { ...(source ? { source } : {}), ...(forceFull ? { forceFull } : {}) } },
   });
 }

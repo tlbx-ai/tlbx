@@ -17,16 +17,17 @@ vi.mock('../navigation/backButtonGuard', () => ({}));
 vi.mock('./runtime', () => ({ ...mocks }));
 
 import { $updateInfo } from '../../stores';
-import { applyFullUpdate } from './checker';
+import { applyFullUpdate, applyUpdate, applyLocalUpdate } from './checker';
 
 describe('full update action', () => {
-  const button = { disabled: false, textContent: '' };
+  const button = { id: 'btn-full-update', disabled: false, textContent: '' };
+  const cardButton = { id: '', disabled: false, textContent: '' };
 
   beforeEach(() => {
     vi.clearAllMocks();
     button.disabled = false;
     $updateInfo.set(null);
-    vi.stubGlobal('document', { getElementById: () => button });
+    vi.stubGlobal('document', { querySelectorAll: () => [button, cardButton] });
     vi.stubGlobal('localStorage', { setItem: vi.fn() });
     mocks.showConfirm.mockResolvedValue(true);
     mocks.applyUpdate.mockResolvedValue({ response: { ok: true } });
@@ -51,7 +52,8 @@ describe('full update action', () => {
 
   it('shows the server failure and allows retry without announcing a restart', async () => {
     mocks.applyUpdate.mockResolvedValue({
-      response: { ok: false, text: async () => 'Download failed' },
+      response: { ok: false, status: 500 },
+      error: { detail: 'Download failed' },
     });
     await applyFullUpdate();
     expect(mocks.showAlert).toHaveBeenCalledWith('update.failed', {
@@ -59,5 +61,56 @@ describe('full update action', () => {
     });
     expect(mocks.beginServerRestartLifecycle).not.toHaveBeenCalled();
     expect(button.disabled).toBe(false);
+  });
+  it('applies even when browser discovery is missing', async () => {
+    await applyUpdate();
+    expect(mocks.applyUpdate).toHaveBeenCalledWith(undefined, false);
+    expect(mocks.beginServerRestartLifecycle).toHaveBeenCalled();
+  });
+  it('restores every button after a rejected request and permits retry', async () => {
+    mocks.applyUpdate.mockRejectedValueOnce(new Error('Network unavailable'));
+    await applyUpdate();
+    expect(mocks.showAlert).toHaveBeenCalledWith('update.failed', {
+      details: 'Error: Network unavailable',
+    });
+    expect(cardButton.disabled).toBe(false);
+    await applyUpdate();
+    expect(mocks.applyUpdate).toHaveBeenCalledTimes(2);
+  });
+  it('prevents concurrent requests across different update buttons', async () => {
+    let resolve!: (value: unknown) => void;
+    mocks.applyUpdate.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = applyUpdate();
+    expect(cardButton.disabled).toBe(true);
+    await applyLocalUpdate();
+    await applyFullUpdate();
+    expect(mocks.applyUpdate).toHaveBeenCalledTimes(1);
+    resolve({ response: { ok: true } });
+    await pending;
+  });
+  it('continues restart recovery when browser storage is blocked', async () => {
+    vi.stubGlobal('localStorage', {
+      setItem: () => {
+        throw new Error('Storage denied');
+      },
+    });
+    await applyUpdate();
+    expect(mocks.beginServerRestartLifecycle).toHaveBeenCalled();
+    expect(mocks.showAlert).not.toHaveBeenCalled();
+  });
+  it('shows a local update server error and restores the buttons', async () => {
+    mocks.applyUpdate.mockResolvedValue({
+      response: { ok: false },
+      error: 'No local update available',
+    });
+    await applyLocalUpdate();
+    expect(mocks.showAlert).toHaveBeenCalledWith('update.failed', {
+      details: 'Error: No local update available',
+    });
+    expect(cardButton.disabled).toBe(false);
   });
 });

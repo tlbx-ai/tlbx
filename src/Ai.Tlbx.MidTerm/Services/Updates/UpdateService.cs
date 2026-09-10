@@ -41,6 +41,7 @@ public sealed partial class UpdateService : IDisposable
     private readonly VersionManifest _installedManifest;
     private UpdateInfo? _latestUpdate;
     private bool _disposed;
+    private int _updateInProgress;
 
     public UpdateInfo? LatestUpdate => _latestUpdate;
     public string CurrentVersion => _currentVersion;
@@ -981,6 +982,27 @@ public sealed partial class UpdateService : IDisposable
 
     public async Task<(bool Success, string Message)> ApplyUpdateAsync(SettingsService settingsService, string? source, bool forceFull = false)
     {
+        if (Interlocked.CompareExchange(ref _updateInProgress, 1, 0) != 0)
+        {
+            return (false, "An update is already in progress. Check the update log before retrying.");
+        }
+
+        var success = false;
+        try
+        {
+            var result = await ApplyUpdateCoreAsync(settingsService, source, forceFull).ConfigureAwait(false);
+            success = result.Success;
+            return result;
+        }
+        finally
+        {
+            // Keep ownership through the detached installer handoff until this server exits.
+            if (!success) Interlocked.Exchange(ref _updateInProgress, 0);
+        }
+    }
+
+    private async Task<(bool Success, string Message)> ApplyUpdateCoreAsync(SettingsService settingsService, string? source, bool forceFull)
+    {
         // A source server must never replace or stop the shared .NET host.
         if (IsSharedRuntimeHost(GetCurrentBinaryPath()))
         {
@@ -1192,6 +1214,7 @@ public sealed partial class UpdateService : IDisposable
                 AppendUpdateLog(artifacts.LogPath, $"Update execution failed: {ex.Message}", "ERROR");
                 WriteUpdateResult(artifacts, success: false, "Failed to execute update script", ex.Message);
                 Log.Error(() => $"Update execution failed: {ex.Message}");
+                Interlocked.Exchange(ref _updateInProgress, 0);
             }
         });
 
