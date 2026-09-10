@@ -5,7 +5,8 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$Version,
 
-    [switch]$DevRelease
+    [switch]$DevRelease,
+    [switch]$SkipVerify
 )
 
 $ErrorActionPreference = "Stop"
@@ -23,6 +24,7 @@ if (-not (Test-Path $frontendBuildScript -PathType Leaf)) {
 $buildArgs = @{
     Publish = $true
     Version = $Version
+    SkipVerify = $SkipVerify
 }
 if ($DevRelease) {
     $buildArgs.DevRelease = $true

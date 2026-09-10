@@ -66,6 +66,10 @@ jobs:
         working-directory: src/connectors/android
         run: chmod +x ./gradlew
 
+      - name: Audit Android dependencies
+        shell: pwsh
+        run: ./scripts/audit-supply-chain.ps1 -Scope android
+
       - name: Build signed APK + AAB
         working-directory: src/connectors/android
         env:

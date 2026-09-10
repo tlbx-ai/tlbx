@@ -7,7 +7,8 @@
 
 [CmdletBinding()]
 param(
-    [switch]$SkipGradle
+    [ValidateSet('server','android','tooling','all')][string]$Scope = 'server',
+    [switch]$FrontendInstalled
 )
 
 $ErrorActionPreference = "Stop"
@@ -78,75 +79,87 @@ if (@($mutableActions).Count -gt 0) {
     throw "Mutable GitHub Action references found:`n$($mutableActions -join "`n")"
 }
 
-Write-Host "Supply-chain gate: npm advisories and registry signatures" -ForegroundColor Cyan
-$requiredNpmVersion = "11.18.0"
-$actualNpmVersion = (& npm --version).Trim()
-if ($LASTEXITCODE -ne 0 -or $actualNpmVersion -ne $requiredNpmVersion) {
-    throw "npm $requiredNpmVersion is required for strict lifecycle-script allowlisting; found $actualNpmVersion."
-}
-$npmWorkspaces = @(
-    (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm"),
-    (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge"),
-    (Join-Path $repoRoot "docs/marketing/ScreenshotAutomation")
-)
-foreach ($workspace in $npmWorkspaces) {
-    $ciArguments = if ($workspace.EndsWith("ClaudeBridge", [StringComparison]::OrdinalIgnoreCase)) {
-        @("ci", "--omit=optional")
-    } else {
-        @("ci")
+if ($Scope -in @('server','tooling','all')) {
+    Write-Host "Supply-chain gate: npm advisories and registry signatures" -ForegroundColor Cyan
+    $requiredNpmVersion = "11.18.0"
+    $actualNpmVersion = (& npm --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or $actualNpmVersion -ne $requiredNpmVersion) {
+        throw "npm $requiredNpmVersion is required for strict lifecycle-script allowlisting; found $actualNpmVersion."
     }
-    Invoke-Checked -FilePath "npm" -ArgumentList $ciArguments -WorkingDirectory $workspace
-    # The registry's bulk advisory endpoint can be slow or transiently return
-    # 503 for the Claude SDK graph. Keep the audit fail-closed while allowing a
-    # complete response and a bounded retry of this idempotent remote check.
-    Invoke-NpmAdvisoryAudit -WorkingDirectory $workspace
-    Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "signatures") -WorkingDirectory $workspace
-}
-Invoke-Checked -FilePath "npm" -ArgumentList @("run", "build") -WorkingDirectory (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge")
-Invoke-Checked -FilePath "git" -ArgumentList @("diff", "--exit-code", "--", "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge/dist/claude-agent-sdk-bridge.mjs") -WorkingDirectory $repoRoot
-Invoke-Checked -FilePath "npm" -ArgumentList @("test") -WorkingDirectory (Join-Path $repoRoot "src/npx-launcher")
-
-Write-Host "Supply-chain gate: locked NuGet projects and advisories" -ForegroundColor Cyan
-$projectFiles = @(& git -C $repoRoot ls-files "*.csproj")
-if ($LASTEXITCODE -ne 0 -or $projectFiles.Count -eq 0) {
-    throw "Could not enumerate tracked .NET projects."
-}
-$nugetFindings = @()
-foreach ($relativeProject in $projectFiles) {
-    $projectPath = Join-Path $repoRoot $relativeProject
-    Invoke-Checked -FilePath "dotnet" -ArgumentList @("restore", $projectPath, "--locked-mode") -WorkingDirectory $repoRoot
-
-    $auditOutput = & dotnet list $projectPath package --vulnerable --include-transitive --format json --no-restore
-    if ($LASTEXITCODE -ne 0) {
-        throw "NuGet vulnerability audit failed for $relativeProject."
+    $npmWorkspaces = @()
+    if ($Scope -in @('server','all')) {
+        $npmWorkspaces += Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm'
+        $npmWorkspaces += Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge'
     }
-    $audit = $auditOutput | ConvertFrom-Json
-    foreach ($project in @($audit.projects)) {
-        foreach ($framework in @($project.frameworks)) {
-            $packages = @()
-            if ($null -ne $framework.topLevelPackages) {
-                $packages += @($framework.topLevelPackages)
-            }
-            if ($null -ne $framework.transitivePackages) {
-                $packages += @($framework.transitivePackages)
-            }
+    if ($Scope -in @('tooling','all')) {
+        $npmWorkspaces += Join-Path $repoRoot 'docs/marketing/ScreenshotAutomation'
+    }
+    foreach ($workspace in $npmWorkspaces) {
+        $ciArguments = if ($workspace.EndsWith("ClaudeBridge", [StringComparison]::OrdinalIgnoreCase)) {
+            @("ci", "--omit=optional")
+        } else {
+            @("ci")
+        }
+        if (-not ($FrontendInstalled -and $workspace -eq (Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm'))) {
+            Invoke-Checked -FilePath "npm" -ArgumentList $ciArguments -WorkingDirectory $workspace
+        }
+        # The registry's bulk advisory endpoint can be slow or transiently return
+        # 503 for the Claude SDK graph. Keep the audit fail-closed while allowing a
+        # complete response and a bounded retry of this idempotent remote check.
+        Invoke-NpmAdvisoryAudit -WorkingDirectory $workspace
+        Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "signatures") -WorkingDirectory $workspace
+    }
+}
+if ($Scope -in @('server','all')) {
+    Invoke-Checked -FilePath "npm" -ArgumentList @("run", "build") -WorkingDirectory (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge")
+    Invoke-Checked -FilePath "git" -ArgumentList @("diff", "--exit-code", "--", "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge/dist/claude-agent-sdk-bridge.mjs") -WorkingDirectory $repoRoot
+}
+if ($Scope -in @('tooling','all')) {
+    Invoke-Checked -FilePath "npm" -ArgumentList @("test") -WorkingDirectory (Join-Path $repoRoot "src/npx-launcher")
+}
+if ($Scope -in @('server','all')) {
 
-            foreach ($package in $packages) {
-                if ($null -eq $package) {
-                    continue
+    Write-Host "Supply-chain gate: locked NuGet projects and advisories" -ForegroundColor Cyan
+    $projectFiles = @(& git -C $repoRoot ls-files "*.csproj")
+    if ($LASTEXITCODE -ne 0 -or $projectFiles.Count -eq 0) {
+        throw "Could not enumerate tracked .NET projects."
+    }
+    $nugetFindings = @()
+    foreach ($relativeProject in $projectFiles) {
+        $projectPath = Join-Path $repoRoot $relativeProject
+        Invoke-Checked -FilePath "dotnet" -ArgumentList @("restore", $projectPath, "--locked-mode") -WorkingDirectory $repoRoot
+
+        $auditOutput = & dotnet list $projectPath package --vulnerable --include-transitive --format json --no-restore
+        if ($LASTEXITCODE -ne 0) {
+            throw "NuGet vulnerability audit failed for $relativeProject."
+        }
+        $audit = $auditOutput | ConvertFrom-Json
+        foreach ($project in @($audit.projects)) {
+            foreach ($framework in @($project.frameworks)) {
+                $packages = @()
+                if ($null -ne $framework.topLevelPackages) {
+                    $packages += @($framework.topLevelPackages)
                 }
-                foreach ($vulnerability in @($package.vulnerabilities | Where-Object { $null -ne $_ })) {
-                    $nugetFindings += "$relativeProject $($package.id) $($package.resolvedVersion) $($vulnerability.severity) $($vulnerability.advisoryurl)"
+                if ($null -ne $framework.transitivePackages) {
+                    $packages += @($framework.transitivePackages)
+                }
+
+                foreach ($package in $packages) {
+                    if ($null -eq $package) {
+                        continue
+                    }
+                    foreach ($vulnerability in @($package.vulnerabilities | Where-Object { $null -ne $_ })) {
+                        $nugetFindings += "$relativeProject $($package.id) $($package.resolvedVersion) $($vulnerability.severity) $($vulnerability.advisoryurl)"
+                    }
                 }
             }
         }
     }
+    if ($nugetFindings.Count -gt 0) {
+        throw "Known NuGet vulnerabilities found:`n$($nugetFindings -join "`n")"
+    }
 }
-if ($nugetFindings.Count -gt 0) {
-    throw "Known NuGet vulnerabilities found:`n$($nugetFindings -join "`n")"
-}
-
-if (-not $SkipGradle) {
+if ($Scope -in @('android','all')) {
     Write-Host "Supply-chain gate: locked and verified Android release graph" -ForegroundColor Cyan
     $androidRoot = Join-Path $repoRoot "src/connectors/android"
     $wrapperProperties = Get-Content -LiteralPath (Join-Path $androidRoot "gradle/wrapper/gradle-wrapper.properties") -Raw
@@ -159,13 +172,15 @@ if (-not $SkipGradle) {
         throw "Gradle dependency verification metadata or lock state is missing."
     }
 
-    $gradleExecutable = if ($IsWindows) { ".\gradlew.bat" } else { "./gradlew" }
-    Invoke-Checked -FilePath $gradleExecutable -ArgumentList @(
+    $gradleExecutable = if ($IsWindows) { ".\gradlew.bat" } else { "bash" }
+    $gradleArguments = @(
         ":app:dependencies",
         "--configuration", "releaseRuntimeClasspath",
         "--no-daemon",
         "--console", "plain"
-    ) -WorkingDirectory $androidRoot
+    )
+    if (-not $IsWindows) { $gradleArguments = @('./gradlew') + $gradleArguments }
+    Invoke-Checked -FilePath $gradleExecutable -ArgumentList $gradleArguments -WorkingDirectory $androidRoot
 
     $releasePackages = @{}
     foreach ($line in Get-Content -LiteralPath $lockFile) {

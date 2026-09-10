@@ -10,6 +10,17 @@ param(
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+. "$PSScriptRoot/runtime-reuse.ps1"
+$version = Get-Content (Join-Path $RepoRoot 'src/version.json') -Raw | ConvertFrom-Json
+$sdkVersion = (& dotnet --version).Trim()
+if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the .NET SDK version.' }
+$fingerprint = Get-RuntimeInputFingerprint $RepoRoot $Rid $Configuration $version.pty $sdkVersion
+$hostsReused = Restore-ReleasedHostRuntimes $RepoRoot $Rid $Configuration $version $fingerprint
+$metadataDir = Join-Path $RepoRoot ".artifacts/runtime-inputs/$Rid"
+New-Item -ItemType Directory -Force $metadataDir | Out-Null
+@{ schema = 1; fingerprint = $fingerprint; rid = $Rid; pty = $version.pty; sdk = $sdkVersion } |
+    ConvertTo-Json | Set-Content (Join-Path $metadataDir 'runtime-inputs.json')
+if ($env:GITHUB_ENV) { "TLBX_HOSTS_REUSED=$($hostsReused.ToString().ToLowerInvariant())" | Add-Content $env:GITHUB_ENV }
 $logRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("midterm-publish-" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 
@@ -45,6 +56,7 @@ if (-not $Rid.StartsWith("win-", [System.StringComparison]::OrdinalIgnoreCase)) 
 }
 
 $processes = @()
+if ($hostsReused) { $projects = @($projects | Where-Object Name -eq 'mt') }
 Push-Location $RepoRoot
 try {
     foreach ($project in $projects) {

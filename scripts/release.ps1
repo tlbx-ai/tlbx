@@ -20,6 +20,10 @@
     Good: "Bulletproof self-update with rollback support"
     Bad:  "v5.3.3: Fix bug" (version prefix is redundant)
 
+.PARAMETER TestCategories
+    REQUIRED: assets, frontend, server, runtime, installers, dependencies, build; or all alone.
+    Stable releases require all. Mobile apps are verified and released independently.
+
 .PARAMETER ReleaseNotes
     MANDATORY: Array of detailed changelog entries for this release.
     These are user-facing release notes shown in the changelog UI.
@@ -62,7 +66,7 @@
         "Fixed bug where settings panel would close when checking for updates",
         "Update button now correctly shows 'Update & Restart' text",
         "Added session preservation warning in settings panel"
-    ) -mthostUpdate no
+    ) -mthostUpdate no -TestCategories all
 
 .EXAMPLE
     .\release.ps1 -Bump minor -ReleaseTitle "Bulletproof self-update with rollback support" -ReleaseNotes @(
@@ -72,17 +76,22 @@
         "Copy verification ensures files are correctly written before proceeding",
         "Detailed logging to update.log for troubleshooting failed updates",
         "Toast notifications show update success or failure with error details"
-    ) -mthostUpdate no
+    ) -mthostUpdate no -TestCategories all
 
 .EXAMPLE
     .\release.ps1 -Bump patch -ReleaseTitle "Fix PTY handle leak on session close" -ReleaseNotes @(
         "Fixed memory leak where PTY handles were not released when closing sessions",
         "Improved cleanup sequence ensures all resources are freed",
         "Affects the low-level host runtimes - terminals and AppServerControl runtimes restart during update"
-    ) -mthostUpdate yes
+    ) -mthostUpdate yes -TestCategories all
 #>
 
 param(
+    [Parameter(Mandatory=$true, HelpMessage="Choose the affected test clusters explicitly, or all.")]
+    [ValidateNotNullOrEmpty()]
+    [ValidateSet('assets','frontend','server','runtime','installers','dependencies','build','all')]
+    [string[]]$TestCategories,
+
     [Parameter(Mandatory=$true)]
     [ValidateSet("major", "minor", "patch")]
     [string]$Bump,
@@ -101,6 +110,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+. "$PSScriptRoot/release-test-clusters.ps1"
+$selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories -Stable)
+Show-ReleaseTestPlan -Categories $selectedCategories
 $recentTagRefreshCount = 5
 
 function Get-WebVersionFromGitRef {
@@ -239,7 +251,7 @@ if ($currentBranch -ne "main") {
     Write-Host "Current branch: $currentBranch" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "For dev/prerelease builds, use:" -ForegroundColor Cyan
-    Write-Host "  .\release-dev.ps1 -Bump patch -ReleaseTitle '...' -ReleaseNotes @(...) -mthostUpdate no" -ForegroundColor White
+    Write-Host "  .\release-dev.ps1 -Bump patch -ReleaseTitle '...' -ReleaseNotes @(...) -mthostUpdate no -TestCategories all" -ForegroundColor White
     Write-Host ""
     exit 1
 }
@@ -338,6 +350,8 @@ $versionJsonPath = "$PSScriptRoot\..\src\version.json"
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $currentVersion = $versionJson.web
+Assert-ReleaseRuntimeSelection -PtyVersion $versionJson.pty -mthostUpdate $mthostUpdate
+Show-ReleaseTestPlan -Categories $selectedCategories -BaseVersion $currentVersion
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 
 # Parse and bump version (strip -dev suffix and 4th component if present)
@@ -419,7 +433,7 @@ Write-Host ""
 Write-Host "Running frontend preflight in the current checkout..." -ForegroundColor Cyan
 $frontendPreflightScript = Join-Path $PSScriptRoot "release-frontend-preflight.ps1"
 try {
-    & $frontendPreflightScript -Version $newVersion
+    & $frontendPreflightScript -Version $newVersion -SkipVerify
     Write-Host "Frontend preflight succeeded." -ForegroundColor Green
 }
 catch {
@@ -430,19 +444,9 @@ catch {
     exit 1
 }
 
-# Build verification (catches C# compile issues before committing)
-Write-Host ""
-Write-Host "Running .NET test suite..." -ForegroundColor Cyan
-$dotnetTestSuiteScript = Join-Path $PSScriptRoot "run-dotnet-test-suite.ps1"
-$runtimeBuildVerificationScript = Join-Path $PSScriptRoot "run-runtime-build-verification.ps1"
+# Explicitly selected checks; frontend dependencies were installed by preflight.
 try {
-    & $dotnetTestSuiteScript -Configuration Release -WarnAsError
-    Write-Host ".NET tests succeeded." -ForegroundColor Green
-
-    Write-Host ""
-    Write-Host "Running runtime build verification..." -ForegroundColor Cyan
-    & $runtimeBuildVerificationScript -Configuration Release -WarnAsError
-    Write-Host "Runtime build verification succeeded." -ForegroundColor Green
+    & (Join-Path $PSScriptRoot "run-release-tests.ps1") -TestCategories $selectedCategories -FrontendInstalled
 }
 catch {
     Write-Host ""

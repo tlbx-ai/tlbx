@@ -145,23 +145,12 @@ jobs:
         with:
           node-version: '24.14.0'
 
-      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
-        with:
-          distribution: temurin
-          java-version: '17.0.20+8'
-
       - name: Pin npm with strict lifecycle allowlisting support
         run: npm install --global "npm@$NPM_VERSION" --ignore-scripts
 
-      - name: Restore locked npm workspaces
+      - name: Audit shipped server dependencies
         shell: pwsh
-        run: |
-          npm ci --prefix src/Ai.Tlbx.MidTerm --no-audit --no-fund
-          npm ci --prefix docs/marketing/ScreenshotAutomation --no-audit --no-fund
-
-      - name: Audit complete locked dependency chain
-        shell: pwsh
-        run: ./scripts/audit-supply-chain.ps1
+        run: ./scripts/audit-supply-chain.ps1 -Scope server
 
   # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────
   frontend:
@@ -290,8 +279,10 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost + mttmux
+      - name: Build server and reuse verified unchanged hosts
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Import Apple Developer ID certificate
@@ -322,6 +313,7 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
+          cp .artifacts/runtime-inputs/${{ matrix.rid }}/runtime-inputs.json staging/${{ matrix.rid }}/
           if [[ "${{ matrix.rid }}" == win-* ]]; then
             cp src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/${{ matrix.rid }}/publish/mttmux.exe staging/${{ matrix.rid }}/
           fi
@@ -342,7 +334,7 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
+            if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" && -f staging/${{ matrix.rid }}/mthost ]]; then
               codesign --force \
                 --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
                 --options runtime \
@@ -350,11 +342,13 @@ jobs:
                 staging/${{ matrix.rid }}/mthost
               codesign --verify --strict staging/${{ matrix.rid }}/mthost
             fi
-            codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-              --options runtime \
-              --timestamp \
-              staging/${{ matrix.rid }}/mtagenthost
+            if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" ]]; then
+              codesign --force \
+                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --options runtime \
+                --timestamp \
+                staging/${{ matrix.rid }}/mtagenthost
+            fi
             codesign --verify --strict staging/${{ matrix.rid }}/mtagenthost
           fi
 
@@ -470,8 +464,10 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost + mttmux
+      - name: Build server and reuse verified unchanged hosts
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Import Apple Developer ID certificate
@@ -502,6 +498,7 @@ jobs:
           mkdir -p staging/${{ matrix.rid }}
           cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
+          cp .artifacts/runtime-inputs/${{ matrix.rid }}/runtime-inputs.json staging/${{ matrix.rid }}/
           mthost_tfm="net10.0"
           [[ "${{ matrix.rid }}" == win-* ]] && mthost_tfm="net10.0-windows10.0.19041.0"
           if [[ -f src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/${mthost_tfm}/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} ]]; then
@@ -519,7 +516,7 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
-            if [[ -f staging/${{ matrix.rid }}/mthost ]]; then
+            if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" && -f staging/${{ matrix.rid }}/mthost ]]; then
               codesign --force \
                 --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
                 --options runtime \
@@ -527,11 +524,13 @@ jobs:
                 staging/${{ matrix.rid }}/mthost
               codesign --verify --strict staging/${{ matrix.rid }}/mthost
             fi
-            codesign --force \
-              --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
-              --options runtime \
-              --timestamp \
-              staging/${{ matrix.rid }}/mtagenthost
+            if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" ]]; then
+              codesign --force \
+                --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
+                --options runtime \
+                --timestamp \
+                staging/${{ matrix.rid }}/mtagenthost
+            fi
             codesign --verify --strict staging/${{ matrix.rid }}/mtagenthost
           fi
 
@@ -634,8 +633,10 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost + mttmux
+      - name: Build server and reuse verified unchanged hosts
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Stage artifacts
@@ -646,6 +647,7 @@ jobs:
           Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
           Copy-Item src/version.json "staging/$rid/"
+          Copy-Item ".artifacts/runtime-inputs/$rid/runtime-inputs.json" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm/src/static/THIRD-PARTY-LICENSES.txt" "staging/$rid/"
           $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {
@@ -739,8 +741,10 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build mt + mthost + mtagenthost + mttmux
+      - name: Build server and reuse verified unchanged hosts
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
 
       - name: Stage artifacts
@@ -751,6 +755,7 @@ jobs:
           Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
           Copy-Item src/version.json "staging/$rid/"
+          Copy-Item ".artifacts/runtime-inputs/$rid/runtime-inputs.json" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm/src/static/THIRD-PARTY-LICENSES.txt" "staging/$rid/"
           $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {

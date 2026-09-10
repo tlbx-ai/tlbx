@@ -2,6 +2,14 @@ name: Mobile app verification
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '41 4 * * 1'
+  pull_request:
+    paths:
+      - '.github/workflows/mobile-verify.yml'
+      - 'src/connectors/**'
+      - 'scripts/audit-supply-chain.ps1'
+      - 'scripts/get-mobile-changes.ps1'
   push:
     branches:
       - dev
@@ -9,12 +17,34 @@ on:
       - '.github/workflows/mobile-verify.yml'
       - 'src/connectors/android/**'
       - 'src/connectors/ios/**'
+      - 'src/connectors/shared-assets/**'
+      - 'src/connectors/build-number'
+      - 'scripts/audit-supply-chain.ps1'
+      - 'scripts/get-mobile-changes.ps1'
 
 permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      android: ${{ steps.paths.outputs.android }}
+      ios: ${{ steps.paths.outputs.ios }}
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: paths
+        shell: pwsh
+        env:
+          DIFF_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          DIFF_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: ./scripts/get-mobile-changes.ps1
   android:
+    needs: changes
+    if: needs.changes.outputs.android == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
@@ -29,6 +59,10 @@ jobs:
       - name: Install Android 16 SDK
         run: sdkmanager 'platforms;android-36' 'build-tools;36.0.0'
 
+      - name: Audit Android dependencies
+        shell: pwsh
+        run: ./scripts/audit-supply-chain.ps1 -Scope android
+
       - name: Verify Android debug build and lint
         working-directory: src/connectors/android
         run: |
@@ -36,6 +70,8 @@ jobs:
           ./gradlew assembleDebug lintDebug --no-daemon --console=plain
 
   ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
