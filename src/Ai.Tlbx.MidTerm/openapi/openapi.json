@@ -6053,6 +6053,13 @@
           "rows": {
             "type": "integer",
             "format": "int32"
+          },
+          "expectedEpoch": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
           }
         }
       },

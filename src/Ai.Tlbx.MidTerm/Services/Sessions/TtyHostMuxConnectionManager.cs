@@ -762,11 +762,6 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         await client.TrySendAsync(pong);
     }
 
-    public async Task HandleResizeAsync(string sessionId, int cols, int rows)
-    {
-        await _sessionManager.ResizeSessionAsync(sessionId, cols, rows, _cts?.Token ?? CancellationToken.None).ConfigureAwait(false);
-    }
-
     public void BroadcastTerminalOutput(string sessionId, ReadOnlyMemory<byte> data)
     {
         _outputLifecycleGate.EnterReadLock();

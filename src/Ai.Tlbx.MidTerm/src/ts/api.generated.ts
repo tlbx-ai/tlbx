@@ -4616,6 +4616,8 @@ export interface components {
       cols: number;
       /** Format: int32 */
       rows: number;
+      /** Format: int64 */
+      expectedEpoch?: null | number;
     };
     ResizeResponse: {
       accepted: boolean;

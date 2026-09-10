@@ -295,6 +295,13 @@ describe('terminal scaling badge thresholds', () => {
     vi.clearAllMocks();
   });
 
+  it('keeps desktop owner text at natural size while a larger canonical grid is retained', () => {
+    const harness = createTerminalHarness(180, 80);
+    setSizeControl(true);
+    applyTerminalScalingSync(harness.state as never);
+    expect(harness.xterm.style.transform ?? '').toBe('');
+  });
+
   it('shows the follower badge on a one-column oversized mismatch', () => {
     const harness = createTerminalHarness(82, 24);
 
@@ -409,30 +416,13 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.xterm.style.transform ?? '').toBe('');
   });
 
-  it('automatically claims an already eligible visible terminal without forcing', async () => {
+  it('never claims another idle device even when reconsidering the visible terminal', async () => {
     const harness = createTerminalHarness(81, 24);
     sessionTerminals.set('s1', harness.state as never);
     $activeSessionId.set('s1');
     setSizeControl(false, true, 'Work PC · Chrome');
-    commMocks.requestTerminalSizeControl.mockResolvedValueOnce({
-      status: {
-        sessionId: 's1',
-        isOwner: true,
-        hasOwner: true,
-        ownerOnline: true,
-        canTakeOverAutomatically: true,
-        ownerLabel: 'Home PC · Chrome',
-        epoch: 2,
-      },
-      ownershipChanged: true,
-      resizeApplied: false,
-      cols: 0,
-      rows: 0,
-    });
-
-    claimEligibleVisibleTerminalSizes();
-
-    expect(commMocks.requestTerminalSizeControl).toHaveBeenCalledWith('s1', false);
+    claimEligibleVisibleTerminalSizes(true);
+    expect(commMocks.requestTerminalSizeControl).not.toHaveBeenCalled();
     await Promise.resolve();
   });
 

@@ -13,17 +13,19 @@ public sealed class PaneCommands
     private readonly TmuxPaneMapper _paneMapper;
     private readonly TmuxTargetResolver _targetResolver;
     private readonly TmuxLayoutBridge _layoutBridge;
+    private readonly TerminalSizeControlService _sizeControl;
 
     public PaneCommands(
         TtyHostSessionManager sessionManager,
         TmuxPaneMapper paneMapper,
         TmuxTargetResolver targetResolver,
-        TmuxLayoutBridge layoutBridge)
+        TmuxLayoutBridge layoutBridge, TerminalSizeControlService sizeControl)
     {
         _sessionManager = sessionManager;
         _paneMapper = paneMapper;
         _targetResolver = targetResolver;
         _layoutBridge = layoutBridge;
+        _sizeControl = sizeControl;
     }
 
     /// <summary>
@@ -166,7 +168,9 @@ public sealed class PaneCommands
         var cols = widthStr is not null && int.TryParse(widthStr, CultureInfo.InvariantCulture, out var w) ? w : session?.Cols ?? 80;
         var rows = heightStr is not null && int.TryParse(heightStr, CultureInfo.InvariantCulture, out var h) ? h : session?.Rows ?? 24;
 
-        await _sessionManager.ResizeSessionAsync(sessionId, cols, rows, ct).ConfigureAwait(false);
+        var resized = await _sizeControl.ResizeUnownedAsync(sessionId, cols, rows,
+            resizeCt => _sessionManager.ResizeSessionAsync(sessionId, cols, rows, resizeCt), ct).ConfigureAwait(false);
+        if (!resized) return TmuxResult.Fail("terminal size is controlled by its browser owner\n");
         return TmuxResult.Ok();
     }
 

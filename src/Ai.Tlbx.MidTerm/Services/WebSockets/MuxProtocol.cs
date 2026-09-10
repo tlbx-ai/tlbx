@@ -31,7 +31,8 @@ public static class MuxProtocol
     public const int CloseProtocolError = 4400;
 
     public const byte TypeTerminalOutput = 0x01;
-    public const byte TypeTerminalInput = 0x02;
+    public const byte TypeTerminalInput = 0x02; // Terminal-generated replies (no ownership activity)
+    public const byte TypeUserInput = 0x14;
     public const byte TypeResize = 0x03;
     public const byte TypeSessionState = 0x04;
     public const byte TypeResync = 0x05; // Server -> Client: clear all terminals, buffer refresh follows

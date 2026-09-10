@@ -50,10 +50,10 @@ Rules:
 ## Terminal Size Ownership
 
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
-- Only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Followers render the canonical PTY size and CSS-scale locally.
+- For owned sessions, only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Headless REST/tmux resize is permitted only while the session is unowned. Followers render the canonical PTY size and CSS-scale locally.
 - A user can explicitly take control at any time. The takeover must apply immediately and clearly explain that the terminal will be optimized for this browser.
-- A visible browser may automatically take over once when its first authoritative status already says the current lease is eligible. Do not arm background timers that let a passive phone/tablet claim later; focus, visibility, reconnect, and viewport changes alone must not renew or steal a protected lease.
-- A connected owner is protected for five minutes after its last terminal input. An offline owner becomes eligible after thirty seconds without terminal input. This prevents ping-pong while allowing work to move naturally between locations.
+- Passive views never take another browser profile's ownership, even after expiry. Visibility, focus, reconnect, session selection and viewport changes do not claim or renew leases. Only actual browser input may take an eligible lease; explicit takeover remains immediate. An unowned session or an offline predecessor in the same browser profile may be inherited without input.
+- A connected owner is protected for five minutes after its last server-observed browser user input. Terminal protocol replies and headless automation do not renew browser activity. An offline owner becomes eligible after thirty seconds without terminal input. This prevents ping-pong while allowing work to move naturally between locations.
 - A replacement tab in the same browser profile may immediately inherit from its offline predecessor. An online sibling tab never auto-steals, and copied `sessionStorage` tab IDs must be collision-checked before WebSockets connect.
 - New sessions belong to the browser tab that created them and use that tab's measured viewport. Persist ownership across server restarts and reject stale or unauthorized resize commands in the backend.
 - Ownership status may expose only a short sanitized device/browser label for orientation. Followers do not scale above `1`; use the naturally empty terminal area for the takeover affordance and name the current controlling device there.

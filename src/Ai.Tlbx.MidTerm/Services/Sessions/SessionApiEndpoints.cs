@@ -503,14 +503,25 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/resize", async (string id, ResizeRequest request, HttpContext context, CancellationToken ct) =>
         {
             TerminalSizeLimits.ThrowIfInvalid(request.Cols, request.Rows);
-            var success = await sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, ct);
-            if (!success)
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            var browserId = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            bool success;
+            if (browserId is not null && request.ExpectedEpoch is { } epoch)
             {
-                return Results.NotFound();
+                var result = await terminalSizeControlService.ResizeAsync(id, browserId, epoch,
+                    request.Cols, request.Rows,
+                    resizeCt => sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, resizeCt), ct);
+                success = result.ResizeApplied;
             }
+            else
+            {
+                success = await terminalSizeControlService.ResizeUnownedAsync(id, request.Cols, request.Rows,
+                    resizeCt => sessionManager.ResizeSessionAsync(id, request.Cols, request.Rows, resizeCt), ct);
+            }
+            if (!success) return Results.Conflict("Terminal size is owned by a browser; current owner and epoch are required.");
             return Results.Json(new ResizeResponse
             {
                 Accepted = true,
@@ -557,7 +568,7 @@ public static partial class SessionApiEndpoints
             return Results.Json(response, AppJsonContext.Default.SessionStateResponse);
         });
 
-        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/text", async (string id, SessionInputRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -569,11 +580,14 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (data.Length > 0 && inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/paste", async (string id, SessionPasteRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/paste", async (string id, SessionPasteRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -585,6 +599,9 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (data.Length > 0 && inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await SendPasteInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, request.BracketedPaste, ct);
             if (!string.Equals(request.HistorySource, InputHistorySources.UploadPath, StringComparison.Ordinal))
             {
@@ -602,7 +619,7 @@ public static partial class SessionApiEndpoints
             return Results.Ok();
         });
 
-        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, CancellationToken ct) =>
+        app.MapPost("/api/sessions/{id}/input/keys", async (string id, SessionKeyInputRequest request, HttpContext context, CancellationToken ct) =>
         {
             if (sessionManager.GetSession(id) is null)
             {
@@ -614,6 +631,9 @@ public static partial class SessionApiEndpoints
                 return Results.BadRequest(error);
             }
 
+            var inputBrowser = BrowserIdentity.TryBuildFromBrowserRequest(context.Request);
+            if (data.Length > 0 && inputBrowser is not null)
+                await terminalSizeControlService.RecordInputAsync(id, inputBrowser, BrowserIdentity.GetDeviceLabel(context.Request), ct);
             await SendInputAndRecordAsync(sessionManager, sessionTelemetry, id, data, ct);
             agentFeed.NoteKeyInput(id, request);
             return Results.Ok();

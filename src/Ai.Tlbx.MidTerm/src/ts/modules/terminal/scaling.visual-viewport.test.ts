@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { $currentSettings, $isMainBrowser } from '../../stores';
+import { $currentSettings, $terminalSizeControls } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
 import { setupVisualViewport } from './visualViewport';
 import { sendResize } from '../comms';
@@ -177,7 +177,16 @@ describe('setupVisualViewport', () => {
     sessionTerminals.clear();
     vi.mocked(sendResize).mockReset();
     mocks.remeasureTerminalCells.mockClear();
-    $isMainBrowser.set(true);
+    $terminalSizeControls.set({
+      s1: {
+        sessionId: 's1',
+        isOwner: true,
+        hasOwner: true,
+        ownerOnline: true,
+        canTakeOverAutomatically: true,
+        epoch: 1,
+      },
+    });
     $currentSettings.set({
       fontSize: 14,
       fontFamily: 'Cascadia Code',

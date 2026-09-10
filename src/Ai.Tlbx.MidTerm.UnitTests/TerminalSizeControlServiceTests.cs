@@ -10,7 +10,7 @@ public sealed class TerminalSizeControlServiceTests
     {
         using var fixture = new Fixture();
 
-        var result = await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", false);
+        var result = await fixture.Service.RecordInputAsync("session-1", "browser-a:tab-1");
 
         Assert.True(result.OwnershipChanged);
         Assert.True(result.Status.IsOwner);
@@ -25,7 +25,7 @@ public sealed class TerminalSizeControlServiceTests
         fixture.Service.RegisterBrowser("browser-a:tab-1", ownerConnection);
         await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
 
-        var result = await fixture.Service.RequestControlAsync("session-1", "browser-b:tab-2", false);
+        var result = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2");
 
         Assert.False(result.OwnershipChanged);
         Assert.False(result.Status.IsOwner);
@@ -41,7 +41,7 @@ public sealed class TerminalSizeControlServiceTests
         await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
         fixture.Time.Advance(TerminalSizeControlService.ConnectedOwnerProtectionDelay);
 
-        var result = await fixture.Service.RequestControlAsync("session-1", "browser-b:tab-2", false);
+        var result = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2");
 
         Assert.True(result.OwnershipChanged);
         Assert.True(result.Status.IsOwner);
@@ -57,10 +57,9 @@ public sealed class TerminalSizeControlServiceTests
         await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
         fixture.Time.Advance(TerminalSizeControlService.ConnectedOwnerProtectionDelay);
 
-        var result = await fixture.Service.RequestControlAsync(
+        var result = await fixture.Service.RecordInputAsync(
             "session-1",
-            "browser-a:tab-2",
-            false);
+            "browser-a:tab-2");
 
         Assert.False(result.OwnershipChanged);
         Assert.False(result.Status.IsOwner);
@@ -78,11 +77,11 @@ public sealed class TerminalSizeControlServiceTests
         fixture.Service.UnregisterBrowser("browser-a:tab-1", ownerConnection);
 
         fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay - TimeSpan.FromSeconds(1));
-        var early = await fixture.Service.RequestControlAsync("session-1", "browser-b:tab-2", false);
+        var early = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2");
         Assert.False(early.OwnershipChanged);
 
         fixture.Time.Advance(TimeSpan.FromSeconds(1));
-        var eligible = await fixture.Service.RequestControlAsync("session-1", "browser-b:tab-2", false);
+        var eligible = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2");
 
         Assert.True(eligible.OwnershipChanged);
         Assert.True(eligible.Status.IsOwner);
@@ -98,15 +97,13 @@ public sealed class TerminalSizeControlServiceTests
         fixture.Time.Advance(TimeSpan.FromHours(1));
         fixture.Service.UnregisterBrowser("browser-a:tab-1", ownerConnection);
 
-        var immediate = await fixture.Service.RequestControlAsync(
+        var immediate = await fixture.Service.RecordInputAsync(
             "session-1",
-            "browser-b:tab-2",
-            false);
+            "browser-b:tab-2");
         fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay);
-        var afterGrace = await fixture.Service.RequestControlAsync(
+        var afterGrace = await fixture.Service.RecordInputAsync(
             "session-1",
-            "browser-b:tab-2",
-            false);
+            "browser-b:tab-2");
 
         Assert.False(immediate.OwnershipChanged);
         Assert.True(afterGrace.OwnershipChanged);
@@ -122,15 +119,13 @@ public sealed class TerminalSizeControlServiceTests
         fixture.Time.Advance(TimeSpan.FromHours(1));
         fixture.RestartService();
 
-        var immediate = await fixture.Service.RequestControlAsync(
+        var immediate = await fixture.Service.RecordInputAsync(
             "session-1",
-            "browser-b:tab-2",
-            false);
+            "browser-b:tab-2");
         fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay);
-        var afterGrace = await fixture.Service.RequestControlAsync(
+        var afterGrace = await fixture.Service.RecordInputAsync(
             "session-1",
-            "browser-b:tab-2",
-            false);
+            "browser-b:tab-2");
 
         Assert.False(immediate.OwnershipChanged);
         Assert.True(afterGrace.OwnershipChanged);
@@ -149,10 +144,9 @@ public sealed class TerminalSizeControlServiceTests
             "Windows PC · Chrome");
         fixture.Service.UnregisterBrowser("browser-a:tab-1", ownerConnection);
 
-        var result = await fixture.Service.RequestControlAsync(
+        var result = await fixture.Service.RecordInputAsync(
             "session-1",
             "browser-a:tab-2",
-            false,
             "Windows PC · Chrome");
 
         Assert.True(result.OwnershipChanged);
@@ -243,10 +237,9 @@ public sealed class TerminalSizeControlServiceTests
             "session-1",
             "browser-b:tab-2",
             true);
-        var oldOwnerInput = await fixture.Service.RequestControlAsync(
+        var oldOwnerInput = await fixture.Service.RecordInputAsync(
             "session-1",
-            "browser-a:tab-1",
-            false);
+            "browser-a:tab-1");
 
         Assert.True(handoff.Status.IsOwner);
         Assert.False(oldOwnerInput.OwnershipChanged);
@@ -261,13 +254,12 @@ public sealed class TerminalSizeControlServiceTests
         fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
         await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true);
         fixture.Time.Advance(TimeSpan.FromMinutes(4));
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", false);
+        await fixture.Service.RecordInputAsync("session-1", "browser-a:tab-1");
         fixture.Time.Advance(TimeSpan.FromMinutes(2));
 
-        var result = await fixture.Service.RequestControlAsync(
+        var result = await fixture.Service.RecordInputAsync(
             "session-1",
-            "browser-b:tab-2",
-            false);
+            "browser-b:tab-2");
 
         Assert.False(result.OwnershipChanged);
         Assert.False(result.Status.IsOwner);
@@ -339,6 +331,52 @@ public sealed class TerminalSizeControlServiceTests
             _ => Task.FromResult(true)));
     }
 
+    [Fact]
+    public async Task PassiveIpadNeverTakesDesktopAfterExpiryOrReconnect()
+    {
+        using var fixture = new Fixture();
+        var desktop = new object();
+        fixture.Service.RegisterBrowser("desktop:tab", desktop);
+        fixture.Service.RegisterBrowser("ipad:tab", new object());
+        var owner = await fixture.Service.RequestControlAsync("session-1", "desktop:tab", true);
+        fixture.Time.Advance(TimeSpan.FromHours(1));
+        var online = await fixture.Service.RequestControlAsync("session-1", "ipad:tab", false);
+        Assert.False(online.Status.IsOwner);
+        fixture.Service.UnregisterBrowser("desktop:tab", desktop);
+        fixture.Time.Advance(TimeSpan.FromHours(1));
+        var offline = await fixture.Service.RequestControlAsync("session-1", "ipad:tab", false);
+        Assert.False(offline.Status.IsOwner);
+        fixture.Service.RegisterBrowser("desktop:tab", desktop);
+        Assert.True(fixture.Service.GetStatus("session-1", "desktop:tab").IsOwner);
+        Assert.Equal(owner.Status.Epoch, offline.Status.Epoch);
+        var input = await fixture.Service.RecordInputAsync("session-1", "ipad:tab");
+        Assert.True(input.Status.IsOwner);
+    }
+
+    [Fact]
+    public async Task PassiveOwnerRequestDoesNotRenewProtection()
+    {
+        using var fixture = new Fixture();
+        fixture.Service.RegisterBrowser("desktop:tab", new object());
+        await fixture.Service.RequestControlAsync("session-1", "desktop:tab", true);
+        fixture.Time.Advance(TimeSpan.FromMinutes(4));
+        await fixture.Service.RequestControlAsync("session-1", "desktop:tab", false);
+        fixture.Time.Advance(TimeSpan.FromMinutes(1));
+        Assert.True((await fixture.Service.RecordInputAsync("session-1", "ipad:tab")).Status.IsOwner);
+    }
+
+    [Fact]
+    public async Task HeadlessResizeCannotChangeBrowserOwnedSize()
+    {
+        using var fixture = new Fixture();
+        var calls = 0;
+        Task<bool> Resize(CancellationToken _) { calls++; return Task.FromResult(true); }
+        Assert.True(await fixture.Service.ResizeUnownedAsync("session-1", 100, 30, Resize));
+        await fixture.Service.RequestControlAsync("session-1", "desktop:tab", true);
+        Assert.False(await fixture.Service.ResizeUnownedAsync("session-1", 80, 24, Resize));
+        Assert.Equal(1, calls);
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), $"midterm-size-control-{Guid.NewGuid():N}");
@@ -355,11 +393,13 @@ public sealed class TerminalSizeControlServiceTests
 
         public void RestartService()
         {
+            Service.Dispose();
             Service = new TerminalSizeControlService(_directory, Time);
         }
 
         public void Dispose()
         {
+            Service.Dispose();
             Directory.Delete(_directory, recursive: true);
         }
     }

@@ -6,6 +6,7 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Services.Share;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
@@ -28,6 +29,7 @@ public sealed class MuxWebSocketHandler
     private readonly AuthService _authService;
     private readonly ShareGrantService _shareGrantService;
     private readonly ShutdownService _shutdownService;
+    private readonly TerminalSizeControlService _sizeControl;
 
     public MuxWebSocketHandler(
         TtyHostSessionManager sessionManager,
@@ -35,7 +37,7 @@ public sealed class MuxWebSocketHandler
         SettingsService settingsService,
         AuthService authService,
         ShareGrantService shareGrantService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService, TerminalSizeControlService sizeControl)
     {
         _sessionManager = sessionManager;
         _muxManager = muxManager;
@@ -43,6 +45,7 @@ public sealed class MuxWebSocketHandler
         _authService = authService;
         _shareGrantService = shareGrantService;
         _shutdownService = shutdownService;
+        _sizeControl = sizeControl;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -173,7 +176,8 @@ public sealed class MuxWebSocketHandler
                     initialResumeCursors,
                     deferredReplayCts.Token);
             }
-            await ProcessMessagesAsync(ws, clientId, client, shareAccess);
+            await ProcessMessagesAsync(ws, clientId, client, shareAccess,
+                BrowserIdentity.BuildFromRequest(context.Request), BrowserIdentity.GetDeviceLabel(context.Request));
         }
         finally
         {
@@ -594,7 +598,7 @@ public sealed class MuxWebSocketHandler
         WebSocket ws,
         string clientId,
         MuxClient client,
-        ShareAccessContext? shareAccess)
+        ShareAccessContext? shareAccess, string browserId, string? browserLabel)
     {
         var receiveBuffer = new byte[MuxProtocol.MaxFrameSize];
         var shutdownToken = _shutdownService.Token;
@@ -648,22 +652,22 @@ public sealed class MuxWebSocketHandler
                     if (!MuxProtocol.TryParseFrame(data.Span, out var type, out var sessionId, out _) ||
                         (shareAccess is not null && !string.Equals(sessionId, shareAccess.SessionId, StringComparison.Ordinal)))
                         continue;
-                    if (type is MuxProtocol.TypeTerminalInput or MuxProtocol.TypeInputTraceMarker or MuxProtocol.TypePing)
+                    if (type is MuxProtocol.TypeUserInput or MuxProtocol.TypeTerminalInput or MuxProtocol.TypeInputTraceMarker or MuxProtocol.TypePing)
                     {
                         // The receive buffer is reused immediately. Each admitted
                         // lane owns its bytes until the IPC operation has completed.
-                        if (type == MuxProtocol.TypeTerminalInput)
+                        if (type is MuxProtocol.TypeUserInput or MuxProtocol.TypeTerminalInput)
                         {
                             if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess)) continue;
                             client.SetActiveSession(sessionId);
                         }
                         var owned = data.ToArray();
                         await inbound.EnqueueAsync($"input:{sessionId}",
-                            ct => ProcessFrameAsync(owned, client, shareAccess, inbound, ct), owned.Length);
+                            ct => ProcessFrameAsync(owned, client, shareAccess, browserId, browserLabel, inbound, ct), owned.Length);
                     }
                     else
                     {
-                        await ProcessFrameAsync(data, client, shareAccess, inbound, shutdownToken);
+                        await ProcessFrameAsync(data, client, shareAccess, browserId, browserLabel, inbound, shutdownToken);
                     }
                 }
 
@@ -724,6 +728,7 @@ public sealed class MuxWebSocketHandler
         ReadOnlyMemory<byte> data,
         MuxClient client,
         ShareAccessContext? shareAccess,
+        string browserId, string? browserLabel,
         MuxInboundDispatcher inbound,
         CancellationToken ct)
     {
@@ -740,6 +745,7 @@ public sealed class MuxWebSocketHandler
 
         switch (type)
         {
+            case MuxProtocol.TypeUserInput:
             case MuxProtocol.TypeTerminalInput:
                 if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess))
                 {
@@ -749,6 +755,11 @@ public sealed class MuxWebSocketHandler
                 if (payloadMemory.Length < 20)
                 {
                     Log.Verbose(() => $"[WS-INPUT] {sessionId}: {BitConverter.ToString(payloadMemory.ToArray())}");
+                }
+                if (type == MuxProtocol.TypeUserInput && shareAccess is null && !payloadMemory.IsEmpty
+                    && _sessionManager.GetSession(sessionId) is not null)
+                {
+                    await _sizeControl.RecordInputAsync(sessionId, browserId, browserLabel, ct);
                 }
                 await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory, ct);
                 break;

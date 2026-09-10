@@ -812,7 +812,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
         TmuxLayoutBridge? tmuxLayoutBridge = null,
         BrowserUiBridge? browserUiBridge = null)
     {
-        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService);
+        var muxHandler = new MuxWebSocketHandler(sessionManager, muxManager, settingsService, authService, shareGrantService, shutdownService, terminalSizeControlService);
         var stateHandler = new StateWebSocketHandler(
             sessionManager,
             app.Services.GetRequiredService<SessionTelemetryService>(),

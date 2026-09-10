@@ -98,14 +98,9 @@ import { applyTerminalScaling } from '../terminal/scaling';
 import { createAlternateScreenReplayPrefix } from '../terminal/replayState';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
-import { requestHubBufferRefresh, sendHubInput, sendHubResize } from '../hub/channel';
-import {
-  $currentSettings,
-  $isMainBrowser,
-  getTerminalSizeControl,
-  hasTerminalSizeControl,
-} from '../../stores';
-import { reportTerminalSizeInteraction, resizeTerminalWithControl } from './stateChannel';
+import { requestHubBufferRefresh, sendHubInput } from '../hub/channel';
+import { $currentSettings, getTerminalSizeControl, hasTerminalSizeControl } from '../../stores';
+import { resizeTerminalWithControl } from './stateChannel';
 import {
   muxWs,
   sessionTerminals,
@@ -1729,9 +1724,17 @@ function sendFrame(frame: Uint8Array): void {
   muxWs.send(frame);
 }
 
-export function sendInput(sessionId: string, data: string): void {
-  reportTerminalSizeInteraction(sessionId);
+export function sendTerminalResponse(sessionId: string, data: string): void {
+  if (isHubSessionId(sessionId)) {
+    sendHubInput(sessionId, data, false);
+    return;
+  }
+  sendFrame(
+    createMuxInputFrame(MUX_HEADER_SIZE, 0x02, sessionId, data, encodeSessionId, textEncoder),
+  );
+}
 
+export function sendInput(sessionId: string, data: string): void {
   if (isHubSessionId(sessionId)) {
     sendHubInput(sessionId, data);
     return;
@@ -1805,14 +1808,6 @@ interface TerminalResizeQueue {
 const terminalResizeQueues = new Map<string, TerminalResizeQueue>();
 
 export function sendResize(sessionId: string, cols: number, rows: number): void {
-  if (isHubSessionId(sessionId) && !getTerminalSizeControl(sessionId)) {
-    // Rolling-update fallback for a remote host that predates per-session size ownership.
-    if ($isMainBrowser.get()) {
-      sendHubResize(sessionId, cols, rows);
-    }
-    return;
-  }
-
   if (!hasTerminalSizeControl(sessionId)) {
     return;
   }
