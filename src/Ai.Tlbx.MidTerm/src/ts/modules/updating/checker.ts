@@ -271,6 +271,13 @@ function syncUpdateButtons(): void {
   }
 }
 
+function updateFailureDetails(error: unknown, response: Response): string {
+  // The API client has already consumed the response body.
+  if (typeof error === 'string') return error;
+  const problem = error as { detail?: string; title?: string } | undefined;
+  return problem?.detail || problem?.title || `HTTP ${response.status} ${response.statusText}`;
+}
+
 async function runUpdate(source?: string, forceFull = false): Promise<void> {
   if (updateRequestPending) return;
   updateRequestPending = true;
@@ -287,13 +294,7 @@ async function runUpdate(source?: string, forceFull = false): Promise<void> {
 
     const { response, error } = await apiApplyUpdate(source, forceFull);
     if (!response.ok) {
-      // The API client has already consumed the response body.
-      const problem = error as { detail?: string; title?: string } | undefined;
-      throw new Error(
-        typeof error === 'string'
-          ? error
-          : problem?.detail || problem?.title || `HTTP ${response.status} ${response.statusText}`,
-      );
+      throw new Error(updateFailureDetails(error, response));
     }
     setPendingChangelogFlag();
     const info = $updateInfo.get();
@@ -399,7 +400,7 @@ function createGitHubUpdateCard(update: UpdateInfo | null): UpdateCardOptions | 
     title: 'GitHub Release',
     version: update.latestVersion,
     sessionsPreserved: update.sessionsPreserved,
-    onApply: applyUpdate,
+    onApply: () => void applyUpdate(),
   };
 }
 
@@ -413,7 +414,7 @@ function createLocalUpdateCard(update: UpdateInfo | null): UpdateCardOptions | n
     title: 'Local Build',
     version: update.localUpdate.version,
     sessionsPreserved: update.localUpdate.sessionsPreserved,
-    onApply: applyLocalUpdate,
+    onApply: () => void applyLocalUpdate(),
   };
 }
 
@@ -510,7 +511,7 @@ export function handlePrimaryUpdateAction(): void {
     return;
   }
 
-  applyUpdate();
+  void applyUpdate();
 }
 
 const PENDING_CHANGELOG_KEY = 'mt-pending-changelog';
