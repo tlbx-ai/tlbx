@@ -33,6 +33,7 @@ public sealed class SessionTelemetryService
         public DateTimeOffset? LastInputAt { get; set; }
         public DateTimeOffset? LastOutputAt { get; set; }
         public DateTimeOffset? LastBellAt { get; set; }
+        public TerminalTextActivityParser TextActivityParser { get; } = new();
         public TerminalNotificationStreamParser NotificationParser { get; } = new();
     }
 
@@ -45,11 +46,11 @@ public sealed class SessionTelemetryService
         var state = _sessions.GetOrAdd(sessionId, _ => new SessionTelemetryState());
         var now = DateTimeOffset.UtcNow;
         var unixSecond = now.ToUnixTimeSeconds();
-        var heatUnits = TerminalOutputSanitizer.CountVisibleTextUnits(data);
         IReadOnlyList<TerminalNotificationMessage> notifications;
 
         lock (state.SyncRoot)
         {
+            var heatUnits = state.TextActivityParser.CountTextUnits(data);
             notifications = state.NotificationParser.Parse(sessionId, data);
             var bellCount = notifications.Count(notification => notification.Protocol == "bel");
             state.TotalOutputBytes += data.Length;
@@ -270,8 +271,8 @@ public sealed class SessionTelemetryService
 
     private static double CalculateHeat(int heatUnits)
     {
-        // Heat should reflect fresh visible terminal output, not pure control
-        // traffic that redraws state without producing new terminal content.
+        // Heat counts Unicode text (letters, numbers, marks and punctuation).
+        // Whitespace, graphical symbols and terminal commands do not raise heat.
         return heatUnits > 0 ? 1 : 0;
     }
 

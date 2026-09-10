@@ -195,6 +195,8 @@ tlbx tracks foreground cwd, process, command line, and terminal title. That data
 - history/bookmark labeling
 - session heat and activity presentation
 
+Terminal heat counts Unicode letters, numbers, combining marks and punctuation in the live output stream. A per-session streaming parser excludes terminal commands, whitespace and graphical symbols (including Braille sparkle and emoji), including across fragmented UTF-8 and escape sequences. It does not deduplicate repainted text or infer application work: text-based animations can still generate heat. Raw byte metrics and last-output timestamps retain their transport meaning, including for queue cooldown safety.
+
 ### Terminal Resize Principle
 
 Each PTY has exactly one authoritative `cols`/`rows` pair, so tlbx assigns size control **per terminal session**. Connecting, focusing, revealing, or resizing a browser never changes ownership by itself.
