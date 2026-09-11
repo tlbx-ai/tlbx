@@ -47,6 +47,19 @@ public sealed class TerminalColorQueryGuardTests
     }
 
     [Fact]
+    public void WindowsStartupReply_AfterShortProbeWindow_IsSuppressed()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        var time = new FakeTimeProvider();
+        var guard = new TerminalColorQueryGuard(time);
+        guard.ObservePtyOutput("\x1b]10;?;?\x1b\\"u8);
+        time.Advance(TimeSpan.FromMilliseconds(75));
+
+        Assert.Empty(guard.FilterClientInput(
+            "\x1b]10;rgb:f2f2/f2f2/f2f2\x1b\\\x1b]11;rgb:0c0c/0c0c/0c0c\x1b\\"u8)!);
+    }
+
+    [Fact]
     public void StackedForegroundAndBackgroundQueries_AreTrackedSeparately()
     {
         var time = new FakeTimeProvider();
