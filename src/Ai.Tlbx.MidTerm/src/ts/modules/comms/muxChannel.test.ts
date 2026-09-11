@@ -3,6 +3,7 @@ import * as constants from '../../constants';
 import * as state from '../../state';
 import * as stores from '../../stores';
 import {
+  probeMuxWebSocket,
   connectMuxWebSocket,
   decodeSessionId,
   encodeSessionId,
@@ -65,7 +66,7 @@ vi.mock('../../utils', async (importOriginal) => {
   };
 });
 
-class MockWebSocket {
+class MockWebSocket extends EventTarget {
   public static readonly CONNECTING = 0;
   public static readonly OPEN = 1;
   public static readonly CLOSING = 2;
@@ -85,6 +86,7 @@ class MockWebSocket {
   });
 
   public constructor(url: string) {
+    super();
     this.url = url;
     MockWebSocket.instances.push(this);
   }
@@ -303,6 +305,29 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
 }
 
 describe('muxChannel', () => {
+  it('probes a healthy mux without replacing it and removes the listener', async () => {
+    const { ws: socket } = await loadHarness([0]);
+    const remove = vi.spyOn(socket, 'removeEventListener');
+    const result = probeMuxWebSocket();
+    socket.dispatchEvent(new MessageEvent('message', { data: new ArrayBuffer(0) }));
+    expect(await result).toBe(true);
+    expect(socket.close).not.toHaveBeenCalled();
+    expect(remove).toHaveBeenCalledTimes(1);
+  });
+
+  it('detects a silent stale-open mux and ignores results for replaced sockets', async () => {
+    vi.useFakeTimers();
+    await loadHarness([0]);
+    const result = probeMuxWebSocket();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await result).toBe(false);
+    const retired = probeMuxWebSocket();
+    connectMuxWebSocket();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await retired).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('resumes only bytes handed to xterm when a reconnect interrupts a batched drain', async () => {
     const harness = await loadHarness(new Array(128).fill(0));
     attachFakeTerminal(harness.sessionTerminals, 'sess1234');

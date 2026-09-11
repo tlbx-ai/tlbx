@@ -181,6 +181,8 @@
   "settings.behavior.notificationPriority": "सूचना प्राथमिकता",
   "settings.behavior.notificationPriorityHint": "महत्वपूर्ण मोड परेशान न करें के दौरान डिलीवरी का अनुरोध करने के लिए Windows की मूल अत्यावश्यक सूचना का उपयोग करता है। अनुमति Windows नियंत्रित करता है; मूल डिलीवरी उपलब्ध न होने पर tlbx स्थायी ब्राउज़र सूचना का उपयोग करता है।",
   "settings.behavior.copyOnSelect": "चयन पर कॉपी",
+  "settings.behavior.stayActiveInBackground": "बैकग्राउंड में सक्रिय रहें",
+  "settings.behavior.stayActiveInBackgroundHint": "जल्दी वापस आने के लिए बैकग्राउंड में भी अपडेट प्राप्त करता रहता है। अधिक CPU, नेटवर्क और बैटरी का उपयोग होता है। ब्राउज़र फिर भी टैब को रोक सकता है।",
   "settings.behavior.rightClickPaste": "राइट-क्लिक पेस्ट",
   "settings.behavior.clipboardShortcuts": "कॉपी/पेस्ट शॉर्टकट",
   "settings.behavior.terminalEnterMode": "Shift+Enter = बिना भेजे नई पंक्ति",

@@ -181,6 +181,8 @@
   "settings.behavior.notificationPriority": "বিজ্ঞপ্তির অগ্রাধিকার",
   "settings.behavior.notificationPriorityHint": "গুরুত্বপূর্ণ মোড বিরক্ত করবেন না চলাকালে ডেলিভারির অনুরোধ করতে Windows-এর নেটিভ জরুরি বিজ্ঞপ্তি ব্যবহার করে। অনুমতি Windows নিয়ন্ত্রণ করে; নেটিভ ডেলিভারি না থাকলে tlbx স্থায়ী ব্রাউজার বিজ্ঞপ্তি ব্যবহার করে।",
   "settings.behavior.copyOnSelect": "সিলেক্টে কপি",
+  "settings.behavior.stayActiveInBackground": "ব্যাকগ্রাউন্ডে সক্রিয় থাকুন",
+  "settings.behavior.stayActiveInBackgroundHint": "দ্রুত ফিরে আসার জন্য ব্যাকগ্রাউন্ডেও আপডেট পেতে থাকে। বেশি CPU, নেটওয়ার্ক ও ব্যাটারি ব্যবহার করে। ব্রাউজার তবুও ট্যাব স্থগিত করতে পারে।",
   "settings.behavior.rightClickPaste": "রাইট-ক্লিক পেস্ট",
   "settings.behavior.clipboardShortcuts": "কপি/পেস্ট শর্টকাট",
   "settings.behavior.terminalEnterMode": "Shift+Enter = পাঠানো ছাড়াই নতুন লাইন",

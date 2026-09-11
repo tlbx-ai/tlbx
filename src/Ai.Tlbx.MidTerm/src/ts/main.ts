@@ -728,6 +728,11 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
     applyScrollbackProtection,
     recoverTerminalPresentationAfterResume: scheduleForegroundResizeRecovery,
     keepTerminalOutputActiveWhileHidden: isMobilePiPActive,
+    stayActiveInBackground: () => $currentSettings.get()?.stayActiveInBackground === true,
+    subscribeBackgroundActivity: (listener) =>
+      $currentSettings.listen((settings, previous) => {
+        if (settings?.stayActiveInBackground !== previous?.stayActiveInBackground) listener();
+      }),
     suspendAdditionalTerminalTransport: suspendHubChannelForBrowserBackground,
     recoverAdditionalTerminalTransport: recoverHubChannelAfterBrowserResume,
     suspendAppServerControlForBackground: suspendAppServerControlForBrowserBackground,

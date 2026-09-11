@@ -1133,17 +1133,12 @@ export function recoverTerminalRendererAfterForeground(
     return;
   }
 
-  // This was tlbx's reliable pre-v10.2.11 behavior: never trust a WebGL
-  // framebuffer across a browser-background lifecycle. Recreate only the
-  // visible terminal's renderer and use xterm's buffer as the source of truth.
-  // Unlike the old path, preserve the shared glyph atlas so foreground recovery
-  // does not invalidate every other terminal's cached glyphs.
+  // A hidden tab usually has a healthy renderer with a pending paint. Keep its
+  // GPU context and glyph cache; context-loss and no-frame recovery replace it
+  // only when needed. Reattach after the emergency DOM fallback on a later return.
   foregroundDomRendererRecovery.delete(state);
-  if (state.hasWebgl) {
-    detachWebglAddon(sessionId, state);
-  }
   const wantsWebgl = shouldUseWebglRenderer(settings) && hasWebglPriority(sessionId, state);
-  if (wantsWebgl && !attachWebglAddon(sessionId, state)) {
+  if (wantsWebgl && !state.hasWebgl && !attachWebglAddon(sessionId, state)) {
     scheduleWebglReattach(sessionId, state, WEBGL_REATTACH_BASE_DELAY_MS);
   }
   syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);

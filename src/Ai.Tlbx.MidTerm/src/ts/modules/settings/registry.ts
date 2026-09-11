@@ -424,6 +424,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'lazy',
   }),
+  controlEntry('stayActiveInBackground', 'setting-stay-active-in-background', 'checkbox', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
   controlEntry('rightClickPaste', 'setting-right-click-paste', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

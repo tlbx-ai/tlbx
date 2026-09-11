@@ -5624,6 +5624,7 @@
           "notificationPriority",
           "copyOnSelect",
           "rightClickPaste",
+          "stayActiveInBackground",
           "clipboardShortcuts",
           "terminalEnterMode",
           "scrollbackProtection",
@@ -5844,6 +5845,9 @@
             "type": "boolean"
           },
           "rightClickPaste": {
+            "type": "boolean"
+          },
+          "stayActiveInBackground": {
             "type": "boolean"
           },
           "clipboardShortcuts": {

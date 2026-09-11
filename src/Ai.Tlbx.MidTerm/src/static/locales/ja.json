@@ -181,6 +181,8 @@
   "settings.behavior.notificationPriority": "通知の優先度",
   "settings.behavior.notificationPriorityHint": "重要では、Windows のネイティブ緊急通知を使用して「応答不可」中の配信を要求します。許可は Windows が管理し、ネイティブ配信を利用できない場合は tlbx が固定表示のブラウザー通知にフォールバックします。",
   "settings.behavior.copyOnSelect": "選択時コピー",
+  "settings.behavior.stayActiveInBackground": "バックグラウンドでも動作を続ける",
+  "settings.behavior.stayActiveInBackgroundHint": "バックグラウンドでも更新を受信し、すばやく復帰できます。CPU、通信量、バッテリーの消費が増えます。ブラウザーがタブを一時停止する場合があります。",
   "settings.behavior.rightClickPaste": "右クリックで貼り付け",
   "settings.behavior.clipboardShortcuts": "コピー/ペーストショートカット",
   "settings.behavior.terminalEnterMode": "Shift+Enter = 送信せずに改行",

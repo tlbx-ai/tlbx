@@ -181,6 +181,8 @@
   "settings.behavior.notificationPriority": "Priorité des notifications",
   "settings.behavior.notificationPriorityHint": "Important utilise une notification urgente native de Windows pour demander la livraison pendant Ne pas déranger. Windows contrôle l’autorisation ; tlbx utilise une notification persistante du navigateur si la livraison native est indisponible.",
   "settings.behavior.copyOnSelect": "Copier lors de la Sélection",
+  "settings.behavior.stayActiveInBackground": "Rester actif en arrière-plan",
+  "settings.behavior.stayActiveInBackgroundHint": "Continue à recevoir les mises à jour en arrière-plan pour un retour plus rapide. Utilise davantage de processeur, de réseau et de batterie. Le navigateur peut toujours suspendre l’onglet.",
   "settings.behavior.rightClickPaste": "Clic Droit pour Coller",
   "settings.behavior.clipboardShortcuts": "Raccourcis Copier/Coller",
   "settings.behavior.terminalEnterMode": "Shift+Enter = nouvelle ligne sans envoi",

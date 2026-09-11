@@ -816,7 +816,8 @@ public sealed class StateWebSocketHandler
                     break;
 
                 case "browser.setActivity":
-                    setStateDeliveryActive(cmd.Payload?.IsVisible != false);
+                    // Background delivery is independent of focus and terminal ownership.
+                    setStateDeliveryActive(cmd.Payload?.IsVisible != false || _settingsService.Load().StayActiveInBackground);
                     _mainBrowserService.UpdateActivity(
                         browserId,
                         connectionToken,

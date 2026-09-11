@@ -466,6 +466,8 @@
   "settings.behavior.notificationPriority": "Notification Priority",
   "settings.behavior.notificationPriorityHint": "Important uses a native Windows urgent notification to request delivery through Do Not Disturb. Windows controls permission; tlbx falls back to a persistent browser notification when native delivery is unavailable.",
   "settings.behavior.copyOnSelect": "Copy on Select",
+  "settings.behavior.stayActiveInBackground": "Stay active in background",
+  "settings.behavior.stayActiveInBackgroundHint": "Keeps receiving updates while this tab is in the background for a faster return. Uses more CPU, network and battery. Your browser may still suspend the tab.",
   "settings.behavior.rightClickPaste": "Right-Click Paste",
   "settings.behavior.clipboardShortcuts": "Copy/Paste Shortcuts",
   "settings.behavior.terminalEnterMode": "Modified Enter = newline in Terminal",

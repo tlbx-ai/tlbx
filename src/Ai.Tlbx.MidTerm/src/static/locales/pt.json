@@ -181,6 +181,8 @@
   "settings.behavior.notificationPriority": "Prioridade da notificação",
   "settings.behavior.notificationPriorityHint": "Importante usa uma notificação urgente nativa do Windows para solicitar entrega durante Não incomodar. O Windows controla a permissão; o tlbx usa uma notificação persistente do navegador quando a entrega nativa não está disponível.",
   "settings.behavior.copyOnSelect": "Copiar ao Selecionar",
+  "settings.behavior.stayActiveInBackground": "Manter ativo em segundo plano",
+  "settings.behavior.stayActiveInBackgroundHint": "Continua recebendo atualizações em segundo plano para um retorno mais rápido. Usa mais CPU, rede e bateria. O navegador ainda pode suspender a aba.",
   "settings.behavior.rightClickPaste": "Colar com Botão Direito",
   "settings.behavior.clipboardShortcuts": "Atalhos Copiar/Colar",
   "settings.behavior.terminalEnterMode": "Shift+Enter = nova linha sem enviar",

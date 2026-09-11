@@ -100,6 +100,7 @@ public sealed partial class MidTermSettingsPublic
             NotificationPriority = settings.NotificationPriority,
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
+            StayActiveInBackground = settings.StayActiveInBackground,
             ClipboardShortcuts = settings.ClipboardShortcuts,
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
@@ -222,6 +223,7 @@ public sealed partial class MidTermSettingsPublic
         settings.NotificationPriority = NotificationPriority;
         settings.CopyOnSelect = CopyOnSelect;
         settings.RightClickPaste = RightClickPaste;
+        settings.StayActiveInBackground = StayActiveInBackground;
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;

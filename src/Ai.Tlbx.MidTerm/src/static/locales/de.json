@@ -181,6 +181,8 @@
   "settings.behavior.notificationPriority": "Benachrichtigungspriorität",
   "settings.behavior.notificationPriorityHint": "Wichtig verwendet unter Windows eine native dringliche Benachrichtigung, um trotz Bitte nicht stören zugestellt zu werden. Windows verwaltet die Berechtigung; ist die native Zustellung nicht verfügbar, verwendet tlbx eine dauerhafte Browser-Benachrichtigung.",
   "settings.behavior.copyOnSelect": "Beim Auswählen kopieren",
+  "settings.behavior.stayActiveInBackground": "Im Hintergrund aktiv bleiben",
+  "settings.behavior.stayActiveInBackgroundHint": "Empfängt auch im Hintergrund Updates, damit du schneller zurückkehren kannst. Benötigt mehr CPU, Netzwerk und Akku. Der Browser kann den Tab weiterhin pausieren.",
   "settings.behavior.rightClickPaste": "Rechtsklick zum Einfügen",
   "settings.behavior.clipboardShortcuts": "Kopieren/Einfügen-Tastenkombinationen",
   "settings.behavior.terminalEnterMode": "Shift+Enter = Neue Zeile ohne Senden",

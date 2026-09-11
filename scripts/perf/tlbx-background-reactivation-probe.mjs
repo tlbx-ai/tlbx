@@ -295,6 +295,9 @@ async function runCycle({
   frozen,
   backgroundMs,
 }) {
+  // Playwright enables focus emulation; it must not turn a hidden-page test
+  // into a synthetic foreground test. The summary requires real visibility.
+  await client.send("Emulation.setFocusEmulationEnabled", { enabled: false });
   const rendererBefore = await readRendererState(page);
   const browserWindow = await client.send("Browser.getWindowForTarget");
   await client.send("Browser.setWindowBounds", {
@@ -343,11 +346,11 @@ async function runCycle({
     wheel,
     rendererBefore,
     rendererAfter,
-    rendererRecreated:
+    rendererPreserved:
       !rendererBefore.hasWebgl ||
       (rendererAfter.hasWebgl &&
-        rendererAfter.addonId !== rendererBefore.addonId &&
-        rendererAfter.canvasId !== rendererBefore.canvasId),
+        rendererAfter.addonId === rendererBefore.addonId &&
+        rendererAfter.canvasId === rendererBefore.canvasId),
     bufferPreserved:
       rendererAfter.bufferLength === rendererBefore.bufferLength &&
       rendererAfter.baseY === rendererBefore.baseY &&
@@ -357,7 +360,7 @@ async function runCycle({
   console.log(
     `CYCLE lane=${lane} index=${index} frozen=${frozen} ` +
       `twoRafOk=${twoRaf.ok} twoRafMs=${twoRaf.wallMs} ` +
-      `rendererRecreated=${result.rendererRecreated} bufferPreserved=${result.bufferPreserved} ` +
+      `rendererPreserved=${result.rendererPreserved} bufferPreserved=${result.bufferPreserved} ` +
       `nodes=${after.dom.nodes} listeners=${after.dom.jsEventListeners} ` +
       `longTasks=${after.browser.longTaskCount} maxLongTaskMs=${after.browser.maxLongTaskMs}`,
   );
@@ -419,8 +422,8 @@ async function runStalledRafRecovery(page) {
       before.hasWebgl &&
       afterWatchdog.hasWebgl &&
       afterLaterFocus.hasWebgl &&
-      afterWatchdog.addonId !== before.addonId &&
-      afterLaterFocus.addonId !== afterWatchdog.addonId,
+      afterWatchdog.addonId === before.addonId &&
+      afterLaterFocus.addonId === afterWatchdog.addonId,
   };
   console.log(
     `STALL_RECOVERY deterministic=${result.deterministicRecovery} ` +
@@ -620,7 +623,8 @@ try {
     ok:
       cycles.every(
         (cycle) =>
-          cycle.twoRaf.ok && cycle.rendererRecreated && cycle.bufferPreserved,
+          cycle.hiddenBeforeFreeze === "hidden" &&
+          cycle.twoRaf.ok && cycle.rendererPreserved && cycle.bufferPreserved,
       ) &&
       (!stallRecovery ||
         (stallRecovery.deterministicRecovery && stallRecovery.markerRendered)) &&

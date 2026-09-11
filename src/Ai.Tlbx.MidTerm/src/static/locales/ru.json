@@ -181,6 +181,8 @@
   "settings.behavior.notificationPriority": "Приоритет уведомлений",
   "settings.behavior.notificationPriorityHint": "Важный режим использует системное срочное уведомление Windows для запроса доставки во время режима «Не беспокоить». Разрешение контролирует Windows; если системная доставка недоступна, tlbx использует постоянное уведомление браузера.",
   "settings.behavior.copyOnSelect": "Копировать при выделении",
+  "settings.behavior.stayActiveInBackground": "Оставаться активным в фоне",
+  "settings.behavior.stayActiveInBackgroundHint": "Продолжает получать обновления в фоне для быстрого возврата. Использует больше ресурсов процессора, сети и батареи. Браузер всё равно может приостановить вкладку.",
   "settings.behavior.rightClickPaste": "Вставка правой кнопкой мыши",
   "settings.behavior.clipboardShortcuts": "Горячие клавиши копирования/вставки",
   "settings.behavior.terminalEnterMode": "Shift+Enter = новая строка без отправки",

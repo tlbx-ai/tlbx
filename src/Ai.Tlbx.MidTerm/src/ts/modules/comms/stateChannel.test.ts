@@ -594,6 +594,29 @@ describe('stateChannel browser-ui handling', () => {
     expect(mocks.checkVersionAndReload).toHaveBeenCalledTimes(1);
   });
 
+  it('checks socket health with a bounded activity reply without claiming ownership', async () => {
+    const { ws } = await loadHarness();
+    vi.useFakeTimers();
+    vi.stubGlobal('document', { visibilityState: 'visible', hidden: false, hasFocus: () => false });
+    vi.stubGlobal('window', { setTimeout: globalThis.setTimeout });
+    const { probeStateWebSocket } = await stateChannelModulePromise;
+    const healthy = probeStateWebSocket();
+    const command = JSON.parse(ws.send.mock.calls.at(-1)![0]);
+    expect(command.action).toBe('browser.setActivity');
+    expect(command.payload.isActive).toBe(false);
+    ws.onmessage?.({
+      data: JSON.stringify({ type: 'response', id: command.id, success: true }),
+    } as MessageEvent<string>);
+    expect(await healthy).toBe(true);
+    const stale = probeStateWebSocket();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(await stale).toBe(false);
+    const retired = probeStateWebSocket();
+    connectStateWebSocket();
+    expect(await retired).toBe(true);
+    vi.useRealTimers();
+  });
+
   it('reports page visibility separately from browser focus activity', async () => {
     const { ws } = await loadHarness();
     vi.stubGlobal('document', {

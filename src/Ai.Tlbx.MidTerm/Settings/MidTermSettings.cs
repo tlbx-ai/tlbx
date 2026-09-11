@@ -86,6 +86,7 @@ public sealed class MidTermSettings
     public NotificationPrioritySetting NotificationPriority { get; set; } = NotificationPrioritySetting.Normal;
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
+    public bool StayActiveInBackground { get; set; }
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;

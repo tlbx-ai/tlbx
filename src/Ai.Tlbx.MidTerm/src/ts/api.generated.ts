@@ -4557,6 +4557,7 @@ export interface components {
       notificationPriority: components['schemas']['NotificationPrioritySetting'];
       copyOnSelect: boolean;
       rightClickPaste: boolean;
+      stayActiveInBackground: boolean;
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;

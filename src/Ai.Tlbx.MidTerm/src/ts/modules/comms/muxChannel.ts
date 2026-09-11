@@ -207,7 +207,39 @@ async function refreshSessionList(): Promise<void> {
   }
 }
 
-let pongCallback: ((mode: number, rtt: number) => void) | null = null;
+let pongCallback: ((mode: number, rtt: number, timestamp: number) => void) | null = null;
+
+/** A resume probe is independent of the latency panel's outstanding ping. */
+export function probeMuxWebSocket(): Promise<boolean> {
+  const socket = muxWs;
+  if (socket?.readyState === WebSocket.CONNECTING) return Promise.resolve(true);
+  if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const finish = (healthy: boolean): void => {
+      clearTimeout(timeout);
+      socket.removeEventListener('message', received);
+      resolve(healthy || muxWs !== socket);
+    };
+    // Any fresh server frame proves this connection is alive, even if output
+    // arrives before the ping reply. Painting is not part of transport health.
+    const received = (): void => {
+      finish(true);
+    };
+    const timeout = setTimeout(() => {
+      finish(false);
+    }, 2000);
+    socket.addEventListener('message', received, { once: true });
+    const frame = new Uint8Array(MUX_HEADER_SIZE + 9);
+    frame[0] = MUX_TYPE_PING;
+    encodeSessionId(frame, 1, $activeSessionId.get() ?? '00000000');
+    new DataView(frame.buffer).setFloat64(MUX_HEADER_SIZE + 1, performance.now(), true);
+    try {
+      socket.send(frame);
+    } catch {
+      finish(false);
+    }
+  });
+}
 
 export function sendPing(sessionId: string, mode: 0 | 1): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -233,8 +265,8 @@ export function sendPing(sessionId: string, mode: 0 | 1): Promise<number> {
       reject(new Error('Ping timeout'));
     }, 5000);
 
-    pongCallback = (pongMode, rtt) => {
-      if (pongMode === mode) {
+    pongCallback = (pongMode, rtt, echoedTimestamp) => {
+      if (pongMode === mode && echoedTimestamp === timestamp) {
         clearTimeout(timeout);
         pongCallback = null;
         resolve(rtt);
@@ -1496,7 +1528,7 @@ function handleMuxPongFrame(type: number, payload: Uint8Array): boolean {
       lastFlushDelayMs = pdv.getUint16(9, true);
       lastServerIoRttMs = pdv.getUint16(11, true);
     }
-    pongCallback(pongMode, rtt);
+    pongCallback(pongMode, rtt, timestamp);
   }
 
   return true;

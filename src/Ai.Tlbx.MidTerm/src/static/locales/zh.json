@@ -184,6 +184,8 @@
   "settings.behavior.notificationPriority": "通知优先级",
   "settings.behavior.notificationPriorityHint": "“重要”会使用 Windows 原生紧急通知，请求在“请勿打扰”期间送达。权限由 Windows 控制；原生送达不可用时，tlbx 会回退到常驻浏览器通知。",
   "settings.behavior.copyOnSelect": "选择时复制",
+  "settings.behavior.stayActiveInBackground": "在后台保持活动",
+  "settings.behavior.stayActiveInBackgroundHint": "在标签页处于后台时继续接收更新，以便更快返回。会使用更多 CPU、网络和电量。浏览器仍可能暂停此标签页。",
   "settings.behavior.rightClickPaste": "右键粘贴",
   "settings.behavior.clipboardShortcuts": "复制/粘贴快捷键",
   "settings.behavior.terminalEnterMode": "Shift+Enter = 不发送，仅换行",
