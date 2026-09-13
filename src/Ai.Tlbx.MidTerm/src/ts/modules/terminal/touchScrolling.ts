@@ -16,6 +16,7 @@ import type { Terminal } from '@xterm/xterm';
 import { isTouchDevice, hasPrecisePointer } from '../touchController/detection';
 import { sendInput } from '../comms/muxChannel';
 import { $currentSettings } from '../../stores';
+import { createMobileCursorPlacement } from './mobileCursorPlacement';
 
 const LONG_PRESS_MS = 500;
 const MOVE_THRESHOLD = 10;
@@ -32,6 +33,7 @@ const VELOCITY_SAMPLE_SMOOTHING = 0.7;
 type TouchMode = 'idle' | 'pending' | 'scrolling' | 'selecting' | 'horizontal';
 
 interface TouchScrollState {
+  cursorPlacement?: ReturnType<typeof createMobileCursorPlacement>;
   overlay: HTMLDivElement;
   viewport: HTMLElement;
   screen: HTMLElement;
@@ -49,6 +51,7 @@ interface TouchScrollState {
   scrollAccumulator: number;
   cellHeight: number;
   handlers: {
+    focusout: (e: FocusEvent) => void;
     touchstart: (e: TouchEvent) => void;
     touchmove: (e: TouchEvent) => void;
     touchend: (e: TouchEvent) => void;
@@ -98,6 +101,11 @@ export function initTouchScrolling(
     scrollAccumulator: 0,
     cellHeight: 0,
     handlers: {
+      focusout: (e) => {
+        if (!(e.relatedTarget instanceof Node) || !container.contains(e.relatedTarget)) {
+          touchState.cursorPlacement?.cancel();
+        }
+      },
       touchstart: (e) => {
         handleTouchStart(sessionId, e);
       },
@@ -115,6 +123,7 @@ export function initTouchScrolling(
   };
 
   overlay.addEventListener('touchstart', touchState.handlers.touchstart, { passive: false });
+  container.addEventListener('focusout', touchState.handlers.focusout);
   overlay.addEventListener('touchmove', touchState.handlers.touchmove, { passive: false });
   overlay.addEventListener('touchend', touchState.handlers.touchend, { passive: false });
   overlay.addEventListener('touchcancel', touchState.handlers.touchcancel, { passive: true });
@@ -129,6 +138,8 @@ export function teardownTouchScrolling(sessionId: string): void {
   cancelLongPress(s);
   cancelKineticScroll(s);
   removeDocumentListener(s);
+  s.cursorPlacement?.dispose();
+  s.overlay.parentElement?.removeEventListener('focusout', s.handlers.focusout);
 
   s.overlay.removeEventListener('touchstart', s.handlers.touchstart);
   s.overlay.removeEventListener('touchmove', s.handlers.touchmove);
@@ -200,11 +211,13 @@ function handleTouchMove(sessionId: string, e: TouchEvent): void {
       // Vertical movement dominant — enter scroll mode
       cancelLongPress(s);
       s.mode = 'scrolling';
+      s.cursorPlacement?.cancel();
       e.preventDefault();
     } else if (absDx > MOVE_THRESHOLD && absDx > absDy * 1.5) {
       // Horizontal movement dominant — track for swipe detection
       cancelLongPress(s);
       s.mode = 'horizontal';
+      s.cursorPlacement?.cancel();
       return;
     }
   }
@@ -243,7 +256,7 @@ function handleTouchEnd(sessionId: string, e: TouchEvent): void {
       if (duration < TAP_MAX_DURATION) {
         e.preventDefault();
         s.terminal.focus();
-        dispatchSyntheticClick(s, touch.clientX, touch.clientY);
+        dispatchSyntheticClick(sessionId, s, touch.clientX, touch.clientY);
       }
     }
     s.mode = 'idle';
@@ -283,6 +296,7 @@ function handleTouchCancel(sessionId: string, e: TouchEvent): void {
   cancelLongPress(s);
   cancelKineticScroll(s);
   s.mode = 'idle';
+  s.cursorPlacement?.cancel();
 }
 
 function isMobileKineticTerminalScrollEnabled(): boolean {
@@ -290,6 +304,7 @@ function isMobileKineticTerminalScrollEnabled(): boolean {
 }
 
 function enterSelectionMode(s: TouchScrollState, clientX: number, clientY: number): void {
+  s.cursorPlacement?.cancel();
   s.mode = 'selecting';
   s.longPressTimer = null;
 
@@ -435,17 +450,62 @@ function removeDocumentListener(s: TouchScrollState): void {
   }
 }
 
-function dispatchSyntheticClick(s: TouchScrollState, clientX: number, clientY: number): void {
+function dispatchSyntheticClick(
+  sessionId: string,
+  s: TouchScrollState,
+  clientX: number,
+  clientY: number,
+): void {
+  if (s.terminal.modes.mouseTrackingMode === 'none') {
+    const rect = s.screen.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const x = Math.floor(((clientX - rect.left) / rect.width) * s.terminal.cols);
+    const y = Math.floor(((clientY - rect.top) / rect.height) * s.terminal.rows);
+    if (x < 0 || x >= s.terminal.cols || y < 0 || y >= s.terminal.rows) return;
+    if (s.terminal.buffer.active.viewportY !== s.terminal.buffer.active.baseY) return;
+    s.cursorPlacement ??= createMobileCursorPlacement(
+      sessionId,
+      s.terminal,
+      (data) => {
+        sendInput(sessionId, data);
+      },
+      () => s.overlay.parentElement?.contains(document.activeElement) === true,
+    );
+    const target = { x, y: s.terminal.buffer.active.viewportY + y };
+    s.cursorPlacement.request(target, () => {
+      const current = s.screen.getBoundingClientRect();
+      dispatchXtermClick(
+        s,
+        current.left + ((target.x + 0.5) / s.terminal.cols) * current.width,
+        current.top +
+          ((target.y - s.terminal.buffer.active.viewportY + 0.5) / s.terminal.rows) *
+            current.height,
+        true,
+      );
+    });
+    return;
+  }
+  s.cursorPlacement?.cancel();
+  dispatchXtermClick(s, clientX, clientY, false);
+}
+
+function dispatchXtermClick(
+  s: TouchScrollState,
+  clientX: number,
+  clientY: number,
+  altKey: boolean,
+): void {
   const opts: MouseEventInit = {
     bubbles: true,
     cancelable: true,
     clientX,
     clientY,
     button: 0,
+    detail: 1,
     // xterm's Alt+click already translates cell coordinates into cursor keys,
     // respects application cursor mode and avoids moving through scrollback.
     // Mouse-aware applications must receive an unmodified click instead.
-    altKey: s.terminal.modes.mouseTrackingMode === 'none',
+    altKey,
   };
 
   // Briefly let events through to xterm

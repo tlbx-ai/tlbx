@@ -1,5 +1,6 @@
 /// <reference lib="es2022.intl" />
 import { hasPrecisePointer, isTouchDevice } from '../touchController/detection';
+import { cancelMobileCursorPlacement } from './mobileCursorPlacement';
 
 const resets = new Map<string, () => void>();
 const segmenter =
@@ -13,6 +14,7 @@ export function usesMobileTerminalTextInput(): boolean {
 
 /** Input from paste, touch controls, history navigation, or another producer ends this tail. */
 export function resetMobileTerminalTextInput(sessionId: string): void {
+  cancelMobileCursorPlacement(sessionId);
   resets.get(sessionId)?.();
 }
 

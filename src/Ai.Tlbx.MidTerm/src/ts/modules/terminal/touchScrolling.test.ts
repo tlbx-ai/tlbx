@@ -164,14 +164,25 @@ describe('touch release momentum lifecycle', () => {
         ) {}
       },
     );
-    const screen = { clientHeight: 200, dispatchEvent: vi.fn() };
+    const screen = {
+      clientHeight: 200,
+      dispatchEvent: vi.fn(),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 }),
+    };
     const terminal = {
       rows: 10,
+      cols: 20,
+      buffer: { active: { baseY: 0, viewportY: 0, cursorX: 0, cursorY: 0 } },
+      onWriteParsed: () => ({ dispose: vi.fn() }),
       scrollLines: vi.fn(),
       focus: vi.fn(),
       modes: { mouseTrackingMode: 'none' },
     };
-    const container = { querySelector: () => screen, appendChild: vi.fn() };
+    const container = {
+      querySelector: () => screen,
+      appendChild: vi.fn(),
+      addEventListener: vi.fn(),
+    };
     initTouchScrolling('fling', terminal as never, container as never);
     const touch = (type: string, y: number) => {
       now += 16;

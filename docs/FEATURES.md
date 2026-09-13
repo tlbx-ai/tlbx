@@ -155,6 +155,11 @@ remain available.
   determines where movement stops. Desktop users can use Alt+click directly.
   Mouse-aware TUIs still receive ordinary clicks. Scrollback taps do not move
   the prompt cursor, and dragging and long-press selection keep their gestures.
+  After a movement reply, tlbx corrects a remaining horizontal offset on the
+  reached row, including TUIs that wrap text before the terminal's right edge.
+  Rapid follow-up taps wait for the preceding movement reply. Typing, paste,
+  scrolling, focus or terminal geometry changes cancel pending corrections;
+  ignored moves expire, and correction attempts are bounded.
 
 - Responsive desktop, tablet, and phone UI with installable PWA support.
 - Touch-sized navigation, special keys, modifiers, arrows, paste, files,
