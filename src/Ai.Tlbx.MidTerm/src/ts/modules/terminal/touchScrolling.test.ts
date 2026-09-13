@@ -155,8 +155,23 @@ describe('touch release momentum lifecycle', () => {
       return frameId;
     });
     vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
-    const terminal = { rows: 10, scrollLines: vi.fn(), focus: vi.fn() };
-    const container = { querySelector: () => ({ clientHeight: 200 }), appendChild: vi.fn() };
+    vi.stubGlobal(
+      'MouseEvent',
+      class {
+        constructor(
+          public type: string,
+          public options: MouseEventInit,
+        ) {}
+      },
+    );
+    const screen = { clientHeight: 200, dispatchEvent: vi.fn() };
+    const terminal = {
+      rows: 10,
+      scrollLines: vi.fn(),
+      focus: vi.fn(),
+      modes: { mouseTrackingMode: 'none' },
+    };
+    const container = { querySelector: () => screen, appendChild: vi.fn() };
     initTouchScrolling('fling', terminal as never, container as never);
     const touch = (type: string, y: number) => {
       now += 16;
@@ -174,8 +189,44 @@ describe('touch release momentum lifecycle', () => {
       frames.clear();
       pending.forEach((callback) => callback(now));
     };
-    return { touch, frame, frames, terminal };
+    return { touch, frame, frames, terminal, screen };
   }
+
+  it('turns a quick tap into xterm Alt+click cursor placement', () => {
+    const g = gesture();
+    g.touch('touchstart', 120);
+    g.touch('touchend', 120);
+    expect(g.terminal.focus).toHaveBeenCalledOnce();
+    expect(g.screen.dispatchEvent.mock.calls.map(([e]) => [e.type, e.options.altKey])).toEqual([
+      ['mousedown', true],
+      ['mouseup', true],
+    ]);
+  });
+
+  it.each(['x10', 'vt200', 'drag', 'any'])(
+    'preserves unmodified clicks for %s mouse tracking',
+    (mode) => {
+      const g = gesture();
+      g.terminal.modes.mouseTrackingMode = mode;
+      g.touch('touchstart', 120);
+      g.touch('touchend', 120);
+      expect(g.screen.dispatchEvent.mock.calls.map(([e]) => e.options.altKey)).toEqual([
+        false,
+        false,
+      ]);
+    },
+  );
+
+  it('does not place the cursor after a scroll or cancelled gesture', () => {
+    const g = gesture();
+    g.touch('touchstart', 200);
+    g.touch('touchmove', 120);
+    g.touch('touchend', 120);
+    g.touch('touchstart', 120);
+    g.touch('touchcancel', 120);
+    g.touch('touchend', 120);
+    expect(g.screen.dispatchEvent).not.toHaveBeenCalled();
+  });
 
   it.each([1, -1])(
     'keeps scrolling after release in direction %s, then comes to rest',

@@ -4,7 +4,7 @@
  * Fixes mobile touch behavior on xterm.js terminals.
  * Default: single-finger drag scrolls the terminal viewport.
  * Long-press (500ms): switches to xterm text selection mode.
- * Quick tap: focuses terminal / sends mouse click for TUI interaction.
+ * Quick tap: focuses terminal and moves the cursor, or clicks mouse-aware TUIs.
  * Horizontal swipe: sends Ctrl+A (start) / Ctrl+E (end of line).
  *
  * Uses a transparent overlay (z-index: 20, above xterm internals) with
@@ -236,7 +236,7 @@ function handleTouchEnd(sessionId: string, e: TouchEvent): void {
   cancelLongPress(s);
 
   if (mode === 'pending') {
-    // Quick tap — focus terminal and dispatch click for TUI support
+    // Quick tap — use xterm's cursor placement unless the TUI owns mouse input.
     const touch = e.changedTouches[0];
     if (touch) {
       const duration = Date.now() - s.startTime;
@@ -442,6 +442,10 @@ function dispatchSyntheticClick(s: TouchScrollState, clientX: number, clientY: n
     clientX,
     clientY,
     button: 0,
+    // xterm's Alt+click already translates cell coordinates into cursor keys,
+    // respects application cursor mode and avoids moving through scrollback.
+    // Mouse-aware applications must receive an unmodified click instead.
+    altKey: s.terminal.modes.mouseTrackingMode === 'none',
   };
 
   // Briefly let events through to xterm
