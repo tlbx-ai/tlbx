@@ -20305,3 +20305,188 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     display: none;
   }
 }
+
+/* Search stays quiet until explicitly opened. The dialog does not resize PTYs. */
+.command-search-trigger {
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  width: 36px;
+  height: 36px;
+  font-size: 24px;
+  cursor: pointer;
+}
+.command-search-trigger:hover,
+.command-search-trigger:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+}
+#btn-command-search-compact {
+  display: none;
+  position: fixed;
+  top: 2px;
+  right: 12px;
+  z-index: 110;
+}
+.terminal-page.sidebar-collapsed #btn-command-search-compact {
+  display: block;
+}
+.command-palette {
+  position: fixed;
+  inset: 12vh auto auto 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0;
+  width: min(620px, calc(100vw - 32px));
+  max-height: min(560px, 72dvh);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.command-palette::backdrop {
+  background: transparent;
+}
+.command-palette-input {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+}
+.command-palette input {
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 8px 0;
+}
+.command-palette button {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+#command-results {
+  overflow-y: auto;
+  max-height: min(470px, 56dvh);
+  padding: 6px;
+}
+#command-results > p {
+  padding: 16px;
+  color: var(--text-secondary);
+}
+.command-result {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.command-result[aria-selected="true"],
+.command-result:hover {
+  background: var(--bg-tertiary);
+}
+.command-result[aria-selected="true"] {
+  outline: 1px solid var(--accent-blue);
+  outline-offset: -1px;
+}
+.command-result small {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-search-bar {
+  position: relative;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-settings-opaque, var(--bg-primary));
+}
+.settings-search-bar input,
+#hotkey-search {
+  width: 100%;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+}
+.settings-view:has(.settings-search-bar) .settings-layout {
+  height: calc(100% - 66px);
+}
+#settings-search-results:not(:empty) {
+  position: absolute;
+  top: 100%;
+  left: 20px;
+  right: 20px;
+  z-index: 2;
+  max-height: 45dvh;
+  overflow: auto;
+  padding: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+}
+.settings-search-result {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.settings-search-result:hover,
+.settings-search-result:focus-visible {
+  background: var(--bg-tertiary);
+}
+.hotkey-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) minmax(120px, auto) auto auto;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+.hotkey-row button {
+  padding: 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  cursor: pointer;
+}
+#hotkey-status {
+  min-height: 1.5em;
+  color: var(--text-secondary);
+}
+@media (width <= 768px) {
+  #btn-command-search-compact {
+    display: block;
+    right: 8px;
+    width: 44px;
+    height: 44px;
+  }
+  .command-palette {
+    top: 8px;
+    max-height: calc(100dvh - 16px);
+  }
+  .command-result,
+  .command-palette button {
+    min-height: 44px;
+  }
+  .hotkey-row {
+    grid-template-columns: 1fr auto auto;
+  }
+  .hotkey-row > span {
+    grid-column: 1 / -1;
+  }
+}

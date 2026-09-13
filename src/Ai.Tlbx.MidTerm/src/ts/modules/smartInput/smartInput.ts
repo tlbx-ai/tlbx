@@ -1050,8 +1050,6 @@ export function initSmartInput(): void {
   });
 
   bindSmartInputGlobalKeyBindings({
-    beginRecording,
-    canUseVoice: canUseSmartInputVoiceSupport,
     closeFooterTransientUi,
     endRecording,
     getInterruptibleAppServerControlSessionId: () => {
@@ -1066,7 +1064,6 @@ export function initSmartInput(): void {
 
       return sessionId;
     },
-    hasVisibleInput: () => getAdaptiveFooterLayoutState().showInput,
     isRecording: () => isRecording,
     onAppServerControlEscape: (sessionId) => {
       void handleAppServerControlEscape(sessionId);
@@ -2854,4 +2851,18 @@ function updateFooterReservedHeight(): void {
     lastReservedFooterHeightPx,
     setLastReservedFooterHeightPx,
   });
+}
+
+/** Explicit user action; modifier keys alone must never start a microphone. */
+export function toggleSmartInputVoiceRecording(): void {
+  if (isRecording) {
+    endRecording();
+    return;
+  }
+  if (getAdaptiveFooterLayoutState().showInput && canUseSmartInputVoiceSupport()) beginRecording();
+}
+export function canToggleSmartInputVoiceRecording(): boolean {
+  return (
+    isRecording || (getAdaptiveFooterLayoutState().showInput && canUseSmartInputVoiceSupport())
+  );
 }

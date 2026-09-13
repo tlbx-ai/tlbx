@@ -465,6 +465,7 @@ export interface FocusContextResult {
 }
 
 export type VoiceSettingsTab =
+  | 'hotkeys'
   | 'updates'
   | 'sessions'
   | 'appearance'

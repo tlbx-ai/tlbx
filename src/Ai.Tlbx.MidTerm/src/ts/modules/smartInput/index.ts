@@ -8,6 +8,8 @@
 
 export {
   initSmartInput,
+  toggleSmartInputVoiceRecording,
+  canToggleSmartInputVoiceRecording,
   showSmartInput,
   hideSmartInput,
   isSmartInputMode,
