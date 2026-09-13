@@ -357,10 +357,10 @@ export function computeKineticScrollStep(
 }
 
 function startKineticScroll(s: TouchScrollState): void {
-  cancelKineticScroll(s);
-
   const clampedVelocity =
     Math.sign(s.velocityY) * Math.min(Math.abs(s.velocityY), KINETIC_MAX_VELOCITY_PX_PER_MS);
+  // Preserve the release velocity before cancellation clears gesture state.
+  cancelKineticScroll(s);
   if (Math.abs(clampedVelocity) < KINETIC_MIN_VELOCITY_PX_PER_MS) {
     s.velocityY = 0;
     return;
