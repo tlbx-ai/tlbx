@@ -31,6 +31,14 @@ describes the current product boundary in the source repository.
 
 ## Search and keyboard shortcuts
 
+Mobile terminal input keeps a short-lived editable text buffer for the on-screen
+keyboard. Suggestions and spelling corrections replace the recently typed suffix
+instead of appending a second copy of the word. Normal typing remains immediate;
+composition updates are reconciled with the text already sent to the terminal.
+Navigation, submission, paste, and focus changes discard this context. Corrections
+that require guessing a remote cursor position or Unicode deletion behavior are
+rejected with a hint to edit manually or use the input composer.
+
 - A small search button opens a central palette with session, command, and
   settings results. It stays closed during normal typing and does not resize
   the terminal when opened. Escape closes it and restores focus.

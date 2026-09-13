@@ -5,6 +5,7 @@
  */
 
 import type { TerminalState } from '../../types';
+import { resetMobileTerminalTextInput } from '../terminal/mobileTextInput';
 import { handleAuthenticatedWebSocketClose } from '../auth/sessionLifetime';
 import { createLogger } from '../logging';
 import {
@@ -1767,6 +1768,7 @@ export function sendTerminalResponse(sessionId: string, data: string): void {
 }
 
 export function sendInput(sessionId: string, data: string): void {
+  resetMobileTerminalTextInput(sessionId);
   if (isHubSessionId(sessionId)) {
     sendHubInput(sessionId, data);
     return;

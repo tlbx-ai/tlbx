@@ -1,4 +1,6 @@
 import type { Terminal } from '@xterm/xterm';
+import { bindMobileTerminalTextInput, resetMobileTerminalTextInput } from './mobileTextInput';
+import { showAlert } from '../../utils/dialog';
 import { $currentSettings } from '../../stores';
 import { getClipboardStyle } from '../../utils';
 import { sendInput } from '../comms';
@@ -16,7 +18,7 @@ import {
   sanitizeCopyContent,
   sanitizePasteContent,
 } from './fileDrop';
-import { getForegroundInfo } from '../process';
+import { getForegroundInfo, getProcessState } from '../process';
 import { evaluateTerminalKeyAudit, isModifierKeyOnlyEvent, isThirdLevelShift } from './keyAudit';
 import {
   classifyTerminalEnterIntent,
@@ -84,6 +86,40 @@ export function bindTerminalInteractionHandlers({
   updateSessionEnterModifierLatch,
 }: TerminalInteractionBindingArgs): TerminalInteractionBindings {
   const disposables: Array<{ dispose: () => void }> = [];
+  const inputProxy = container.querySelector<HTMLTextAreaElement>('.tlbx-terminal-input-proxy');
+  if (inputProxy) {
+    disposables.push(
+      bindMobileTerminalTextInput({
+        sessionId,
+        container,
+        textarea: inputProxy,
+        send: (data) => {
+          captureTerminalInputData(sessionId, data);
+          sendInput(sessionId, data);
+        },
+        enter: () => {
+          const event = new KeyboardEvent('keydown', {
+            key: 'Enter',
+            code: 'Enter',
+            cancelable: true,
+          });
+          if (!tryHandleTerminalEnterOverride(sessionId, event, container, 'mobile-input-enter')) {
+            expectTerminalSubmission(sessionId);
+            sendInput(sessionId, '\r');
+          }
+        },
+        paste: (text) => {
+          void pasteToTerminal(sessionId, sanitizePasteContent(text));
+        },
+        context: () => `${terminal.buffer.active.type}:${getProcessState(sessionId).foregroundPid}`,
+        unsupportedEdit: () => {
+          void showAlert(
+            'This correction could not be applied safely. Use Backspace or the input composer to edit this text.',
+          );
+        },
+      }),
+    );
+  }
   const enterOverrideHandler = (event: KeyboardEvent) => {
     tryHandleTerminalEnterOverride(sessionId, event, container, 'container-enter');
   };
@@ -520,6 +556,7 @@ export function bindTerminalInteractionHandlers({
   });
 
   const pasteHandler = (event: ClipboardEvent) => {
+    resetMobileTerminalTextInput(sessionId);
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();

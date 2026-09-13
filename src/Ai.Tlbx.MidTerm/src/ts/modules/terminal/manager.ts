@@ -6,6 +6,7 @@
  * and event binding for terminal sessions.
  */
 import { onTerminalInput } from './terminalInputOrigin';
+import { resetMobileTerminalTextInput, usesMobileTerminalTextInput } from './mobileTextInput';
 import type { Session, TerminalState } from '../../types';
 import { sendSessionPasteInput } from '../../api/client';
 import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
@@ -751,7 +752,7 @@ function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement |
     return activeElement;
   }
 
-  if (isTerminalKeyAuditEnabled()) {
+  if (isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput()) {
     return getOwnedTerminalInputProxy(container) ?? getOwnedXtermTextarea(container);
   }
 
@@ -868,12 +869,12 @@ function tryHandleTerminalEnterOverride(
 }
 
 function focusTerminalInput(state: TerminalState): void {
-  if (isTerminalKeyAuditEnabled()) {
+  if (isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput()) {
     const proxy = state.inputProxy ?? getOwnedTerminalInputProxy(state.container);
     if (proxy) {
       setTerminalVisualFocus(state, true);
       proxy.focus({ preventScroll: true });
-      proxy.value = '';
+      if (!usesMobileTerminalTextInput()) proxy.value = '';
       syncTerminalCursorActivity(state, true);
       refreshCursorBlink(state.terminal);
       return;
@@ -1394,9 +1395,9 @@ export function createTerminalForSession(
         inputProxy.className = 'tlbx-terminal-input-proxy';
         inputProxy.tabIndex = -1;
         inputProxy.setAttribute('aria-label', 'Terminal input');
-        inputProxy.setAttribute('autocorrect', 'off');
+        inputProxy.setAttribute('autocorrect', usesMobileTerminalTextInput() ? 'on' : 'off');
         inputProxy.autocapitalize = 'off';
-        inputProxy.spellcheck = false;
+        inputProxy.spellcheck = usesMobileTerminalTextInput();
         Object.assign(inputProxy.style, {
           position: 'absolute',
           inset: '0',
@@ -1428,7 +1429,10 @@ export function createTerminalForSession(
               return;
             }
 
-            if (isTerminalKeyAuditEnabled() && state.inputProxy) {
+            if (
+              (isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput()) &&
+              state.inputProxy
+            ) {
               (xtermTextarea as HTMLTextAreaElement).blur();
               state.inputProxy.focus({ preventScroll: true });
             }
@@ -1735,7 +1739,8 @@ export function setupTerminalEvents(
   const isMac = isMacPlatform();
   const isWindows = isWindowsPlatform();
   const macOptionIsMeta = terminal.options.macOptionIsMeta === true;
-  const isKeyAuditActive = (): boolean => isTerminalKeyAuditEnabled();
+  const isKeyAuditActive = (): boolean =>
+    isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput();
   const {
     contextMenuHandler,
     disposables: interactionDisposables,
@@ -1915,6 +1920,7 @@ export async function pasteToTerminal(
   isFilePath: boolean = false,
   historySource?: string,
 ): Promise<void> {
+  resetMobileTerminalTextInput(sessionId);
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 
