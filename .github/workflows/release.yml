@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      pull-requests: read
     outputs:
       is_dev: ${{ contains(github.ref_name, '-dev') }}
     steps:
@@ -33,6 +34,13 @@ jobs:
           fetch-depth: 1
           fetch-tags: false
           persist-credentials: false
+
+      - name: Verify tag belongs to a merged release PR
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/verify-release-merge.ps1 -Tag $env:RELEASE_TAG
 
       - name: Fetch tag annotation
         run: git fetch origin tag ${{ github.ref_name }} --no-tags --force

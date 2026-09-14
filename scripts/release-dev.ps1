@@ -1,10 +1,10 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Creates a dev/prerelease by bumping version, committing, tagging, and pushing.
+    Prepares a task-branch PR, merges after required checks, and tags the merged dev commit.
 
 .DESCRIPTION
-    Similar to release.ps1 but creates prerelease tags (v6.10.30-dev) on the dev branch.
+    Creates a PR into dev; never pushes directly to dev or main. Re-running resumes the prepared PR.
     The script refuses to reuse a version that already exists as a tag or in fetched version
     history, and it re-checks remote state immediately before commit/tag to avoid races during
     long-running preflight verification.
@@ -74,13 +74,26 @@ param(
 
     [Parameter(Mandatory=$true)]
     [ValidateSet("yes", "no")]
-    [string]$mthostUpdate
+    [string]$mthostUpdate,
+
+    [switch]$PrepareOnly,
+    [switch]$Reprepare
 )
 
 $ErrorActionPreference = "Stop"
+Set-Location (Split-Path $PSScriptRoot -Parent)
+. "$PSScriptRoot/release-pr.ps1"
 . "$PSScriptRoot/release-test-clusters.ps1"
 $selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories)
 Show-ReleaseTestPlan -Categories $selectedCategories
+$currentBranch = Assert-ReleaseTaskBranch
+$pending = Get-ReleaseState $currentBranch
+if ($pending) {
+    if ($pending.Base -ne 'dev') { throw 'This branch has a stable release in progress; resume promote.ps1.' }
+    if (-not $Reprepare) { Complete-TlbxRelease $pending -PrepareOnly:$PrepareOnly; return }
+    Reset-ReleasePreparation $pending
+}
+Assert-ReleaseClean
 $recentTagRefreshCount = 5
 
 function Get-WebVersionFromGitRef {
@@ -210,20 +223,6 @@ function Refresh-RemoteState {
     }
 }
 
-# Ensure we're on dev branch
-$currentBranch = git branch --show-current
-if ($currentBranch -ne "dev") {
-    Write-Host ""
-    Write-Host "ERROR: release-dev.ps1 must be run from the dev branch." -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Current branch: $currentBranch" -ForegroundColor Yellow
-    Write-Host ""
-    Write-Host "For stable releases, switch to main and use:" -ForegroundColor Cyan
-    Write-Host "  .\release.ps1 -Bump patch -ReleaseTitle '...' -ReleaseNotes @(...) -mthostUpdate no -TestCategories all" -ForegroundColor White
-    Write-Host ""
-    exit 1
-}
-
 # Validate ReleaseTitle doesn't contain version prefix
 if ($ReleaseTitle -match "^v?\d+\.\d+") {
     Write-Host ""
@@ -238,40 +237,10 @@ if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[
     exit 1
 }
 
-# Ensure we're up to date with remote
-Write-Host "Checking remote status..." -ForegroundColor Cyan
-try {
-    Refresh-RemoteState -BranchRefs @("dev", "main") -RecentTagCount $recentTagRefreshCount
-}
-catch {
-    Write-Host "Warning: Could not fetch from remote" -ForegroundColor Yellow
-}
-
-$localCommit = git rev-parse HEAD 2>$null
-$remoteCommit = git rev-parse origin/dev 2>$null
-$baseCommit = git merge-base HEAD origin/dev 2>$null
-
-if ($localCommit -ne $remoteCommit) {
-    if ($baseCommit -eq $localCommit) {
-        Write-Host "Local branch is behind remote. Pulling changes..." -ForegroundColor Yellow
-        git pull origin dev 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host ""
-            Write-Host "ERROR: Git pull failed - likely a merge conflict." -ForegroundColor Red
-            exit 1
-        }
-        Write-Host "Pull successful." -ForegroundColor Green
-    } elseif ($baseCommit -eq $remoteCommit) {
-        Write-Host "Local branch is ahead of remote (will push new commits)." -ForegroundColor Gray
-    } else {
-        Write-Host ""
-        Write-Host "ERROR: Local and remote branches have diverged." -ForegroundColor Red
-        Write-Host "Please resolve manually with: git pull origin dev" -ForegroundColor Yellow
-        exit 1
-    }
-}
-
-$releaseRemoteCommit = git rev-parse origin/dev 2>$null
+# Fail closed if fetching fails. Preparation is tied to an exact integration base.
+Refresh-RemoteState -BranchRefs @("dev", "main") -RecentTagCount $recentTagRefreshCount
+$releaseRemoteCommit = Invoke-ReleaseGit rev-parse origin/dev
+Invoke-ReleaseGit merge-base --is-ancestor origin/dev HEAD | Out-Null
 
 # Files to update
 $versionJsonPath = "$PSScriptRoot\..\src\version.json"
@@ -287,7 +256,7 @@ Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 # Dev versions must be >= main's version. Use the higher of dev/main as the base.
 $devBase = $currentVersion -replace '-dev(\.\d+)?$', ''
 try {
-    $mainJson = git show main:src/version.json 2>$null | ConvertFrom-Json
+    $mainJson = git show origin/main:src/version.json 2>$null | ConvertFrom-Json
     $mainBase = $mainJson.web -replace '-dev(\.\d+)?$', ''
     if ([version]$mainBase -gt [version]$devBase) {
         Write-Host "  Using main's version ($mainBase) as base (ahead of dev's $devBase)" -ForegroundColor Yellow
@@ -398,35 +367,11 @@ catch {
     exit 1
 }
 
-# Git operations
-Write-Host ""
-Write-Host "Committing and tagging..." -ForegroundColor Cyan
-
+# Recheck the integration base before saving the verified release preparation.
 Refresh-RemoteState -BranchRefs @("dev", "main") -RecentTagCount $recentTagRefreshCount
-
 Assert-RemoteDidNotChange -RemoteRef "origin/dev" -ExpectedCommit $releaseRemoteCommit
 Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/dev", "origin/main")
-
-git add -A
-if ($LASTEXITCODE -ne 0) { throw "git add failed" }
-
-$commitMsg = "$ReleaseTitle`n`n"
-foreach ($note in $ReleaseNotes) {
-    $commitMsg += "- $note`n"
-}
-
-$commitMsg | git commit -F -
-if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
-
-$commitMsg | git tag -a "v$newVersion" -F -
-if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
-
-git push origin dev
-if ($LASTEXITCODE -ne 0) { throw "git push dev failed" }
-
-git push origin "v$newVersion"
-if ($LASTEXITCODE -ne 0) { throw "git push tag failed" }
-
-Write-Host ""
-Write-Host "Released v$newVersion (prerelease)" -ForegroundColor Green
-Write-Host "Monitor build: https://github.com/tlbx-ai/tlbx/actions" -ForegroundColor Cyan
+$commitMsg = "$ReleaseTitle`n`n" + (($ReleaseNotes | ForEach-Object { "- $_" }) -join "`n")
+$body = "$commitMsg`n`nRelease: v$newVersion (dev).`nVerified locally: $($selectedCategories -join ', ').`nRuntime refresh: $mthostUpdate."
+$state = Start-ReleasePr -Branch $currentBranch -Base dev -Version $newVersion -Title $ReleaseTitle -Message $commitMsg -Body $body -ExpectedBase $releaseRemoteCommit
+Complete-TlbxRelease $state -PrepareOnly:$PrepareOnly

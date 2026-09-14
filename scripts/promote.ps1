@@ -7,9 +7,9 @@
     This script automates the promotion of a dev release to stable:
     1. Verifies we're on dev branch with a -dev version
     2. Auto-gathers changelog from all dev tag annotations since the last stable release
-    3. Creates and merges a PR from dev to main
-    4. Updates src/version.json to remove -dev suffix
-    5. Creates a git tag and pushes to trigger GitHub Actions build
+    3. Freezes the candidate on chore/promote-X-Y-Z and prepares stable metadata
+    4. Verifies and merges its PR into main, then tags the exact merge commit
+    5. Synchronizes main back into dev through a PR
 
 .PARAMETER ReleaseTitle
     Optional. A concise title for this release (one line, no version number).
@@ -46,13 +46,34 @@ param(
     [string[]]$TestCategories,
 
     [string]$ReleaseTitle,
-    [string[]]$ReleaseNotes
+    [string[]]$ReleaseNotes,
+    [switch]$PrepareOnly,
+    [switch]$Reprepare
 )
 
 $ErrorActionPreference = "Stop"
+Set-Location (Split-Path $PSScriptRoot -Parent)
+. "$PSScriptRoot/release-pr.ps1"
 . "$PSScriptRoot/release-test-clusters.ps1"
 $selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories -Stable)
 Show-ReleaseTestPlan -Categories $selectedCategories
+$currentBranch = Invoke-ReleaseGit branch --show-current
+$pending = Get-ReleaseState $currentBranch
+if ($pending) {
+    if ($pending.Base -ne 'main') { throw 'This branch has a dev release in progress; finish and retire it first.' }
+    if (-not $Reprepare) { Complete-TlbxRelease $pending -PrepareOnly:$PrepareOnly; return }
+    Reset-ReleasePreparation $pending
+}
+Assert-ReleaseClean
+Invoke-ReleaseGit fetch origin --tags | Out-Host
+if ($currentBranch -eq 'dev') {
+    Invoke-ReleaseGit merge --ff-only origin/dev | Out-Host
+} elseif ($currentBranch -notmatch '^chore/promote-[0-9]+-[0-9]+-[0-9]+$') {
+    throw 'Run promotion from clean updated dev, or resume its chore/promote-X-Y-Z branch.'
+}
+$promotionBase = Invoke-ReleaseGit rev-parse origin/main
+$candidate = Invoke-ReleaseGit rev-parse origin/dev
+Invoke-ReleaseGit merge-base --is-ancestor origin/main HEAD | Out-Null
 $githubPrBodyMaxChars = 65536
 $githubReleaseNotesMaxChars = 125000
 $githubBodySafetyMarginChars = 512
@@ -144,20 +165,11 @@ function Join-RecentBlocksWithinLimit {
     }
 }
 
-# Ensure we're on dev branch
-$currentBranch = git branch --show-current
-if ($currentBranch -ne "dev") {
-    Write-Host ""
-    Write-Host "ERROR: promote.ps1 must be run from the dev branch." -ForegroundColor Red
-    Write-Host "Current branch: $currentBranch" -ForegroundColor Yellow
-    Write-Host ""
-    exit 1
-}
-
 # Read current version
 $versionJsonPath = "$PSScriptRoot\..\src\version.json"
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $devVersion = $versionJson.web
+if ($Reprepare -and $pending) { $devVersion = "$($pending.Version)-dev" }
 
 # Verify it's a dev version
 if ($devVersion -notmatch '-dev$') {
@@ -184,19 +196,11 @@ Write-Host "  Stable version: $stableVersion" -ForegroundColor Green
 Write-Host "  Last stable:    $lastStableTag" -ForegroundColor Gray
 Write-Host ""
 
-# Ensure dev is up to date
-Write-Host "Syncing with remote..." -ForegroundColor Gray
-git fetch origin 2>$null
-git pull origin dev 2>&1 | Out-Null
-
-# Check for uncommitted changes
-$status = git status --porcelain
-if ($status) {
-    Write-Host ""
-    Write-Host "ERROR: Uncommitted changes in working directory." -ForegroundColor Red
-    Write-Host "Commit or stash changes before promoting." -ForegroundColor Yellow
-    Write-Host ""
-    exit 1
+# Freeze the promotion on a short-lived branch; later dev merges cannot enter it.
+if ($currentBranch -eq 'dev') {
+    if ((Invoke-ReleaseGit rev-parse HEAD) -ne $candidate) { throw 'dev has unpublished local commits; integrate them through a task PR first.' }
+    $currentBranch = 'chore/promote-' + $stableVersion.Replace('.', '-')
+    Invoke-ReleaseGit switch -c $currentBranch | Out-Host
 }
 
 # --- Auto-gather changelog from dev tags since last stable release ---
@@ -204,7 +208,7 @@ if ($status) {
 Write-Host "Gathering changelog from dev releases since $lastStableTag..." -ForegroundColor Gray
 
 # Get all dev tags sorted by version, filter to those newer than last stable
-$allDevTags = git tag --sort=version:refname | Where-Object { $_ -match '-dev$' }
+$allDevTags = git tag --merged HEAD --sort=version:refname | Where-Object { $_ -match '-dev$' }
 $devTagsInRange = @()
 foreach ($tag in $allDevTags) {
     $baseVer = $tag -replace '^v', '' -replace '-dev(\.\d+)?$', ''
@@ -316,98 +320,16 @@ if ($tagBodyResult.OmittedCount -gt 0) {
 
 $commitMsg += $tagBodyResult.Text
 
-# Validate before the irreversible promotion steps. Hosted stable checks still own the final tag.
-& "$PSScriptRoot/release-frontend-preflight.ps1" -Version $stableVersion -SkipVerify
-& "$PSScriptRoot/run-release-tests.ps1" -TestCategories $selectedCategories -FrontendInstalled
-
-# Create PR from dev to main
-Write-Host "Creating PR from dev to main..." -ForegroundColor Gray
-
-$prBodyPath = [System.IO.Path]::GetTempFileName()
-$prOutputPath = [System.IO.Path]::GetTempFileName()
-$prListOutputPath = [System.IO.Path]::GetTempFileName()
-$prUrl = ""
-
-try {
-    Set-Content -LiteralPath $prBodyPath -Value $prBody -Encoding utf8
-    gh pr create --base main --head dev --title $ReleaseTitle --body-file $prBodyPath *> $prOutputPath
-    $prCreateOutput = (Get-Content -LiteralPath $prOutputPath -Raw).Trim()
-    if ($LASTEXITCODE -ne 0) {
-        # PR might already exist
-        if ($prCreateOutput -match "already exists") {
-            Write-Host "  PR already exists, finding it..." -ForegroundColor Yellow
-            gh pr list --head dev --base main --json url --jq '.[0].url' *> $prListOutputPath
-            if ($LASTEXITCODE -ne 0) {
-                $prListOutput = (Get-Content -LiteralPath $prListOutputPath -Raw).Trim()
-                Write-Host "ERROR: Failed to locate existing PR: $prListOutput" -ForegroundColor Red
-                exit 1
-            }
-
-            $prUrl = (Get-Content -LiteralPath $prListOutputPath -Raw).Trim()
-        } else {
-            Write-Host "ERROR: Failed to create PR: $prCreateOutput" -ForegroundColor Red
-            exit 1
-        }
-    } else {
-        $prUrl = $prCreateOutput
-    }
-}
-finally {
-    Remove-Item -LiteralPath $prBodyPath, $prOutputPath, $prListOutputPath -ErrorAction SilentlyContinue
-}
-
-if ([string]::IsNullOrWhiteSpace($prUrl)) {
-    Write-Host "ERROR: Failed to resolve promote PR URL." -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "  PR: $prUrl" -ForegroundColor Gray
-
-# Merge the PR
-Write-Host "Merging PR..." -ForegroundColor Gray
-gh pr merge --merge --delete-branch=false 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Failed to merge PR. Check GitHub for details." -ForegroundColor Red
-    exit 1
-}
-
-# Switch to main and pull
-Write-Host "Switching to main..." -ForegroundColor Gray
-git checkout main 2>&1 | Out-Null
-git pull origin main 2>&1 | Out-Null
-
-# Update version.json to stable version
-Write-Host "Updating version to $stableVersion..." -ForegroundColor Gray
-$versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
+# Stable metadata and generated assets belong in the promotion PR itself.
 $versionJson.web = $stableVersion
 $versionJson.pty = $versionJson.pty -replace '-dev(\.\d+)?$', ''
 $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
-$syncNpxLauncherScript = Join-Path $PSScriptRoot "sync-npx-launcher-version.mjs"
-node $syncNpxLauncherScript $stableVersion
-if ($LASTEXITCODE -ne 0) { throw "Failed to sync npx launcher version" }
-
-# Commit, tag, and push
-Write-Host "Committing and tagging v$stableVersion..." -ForegroundColor Gray
-git add -A
-$commitMsg | git commit -F -
-if ($LASTEXITCODE -ne 0) { throw "git commit failed" }
-
-$commitMsg | git tag -a "v$stableVersion" -F -
-if ($LASTEXITCODE -ne 0) { throw "git tag failed" }
-
-git push origin main
-if ($LASTEXITCODE -ne 0) { throw "git push main failed" }
-
-git push origin "v$stableVersion"
-if ($LASTEXITCODE -ne 0) { throw "git push tag failed" }
-
-# Switch back to dev and sync
-Write-Host "Syncing dev with main..." -ForegroundColor Gray
-git checkout dev 2>&1 | Out-Null
-git merge main -m "Merge main v$stableVersion into dev" 2>&1 | Out-Null
-git push origin dev 2>&1 | Out-Null
-
-Write-Host ""
-Write-Host "Promoted v$stableVersion ($($changelog.Count) dev releases, $($ReleaseNotes.Count) changelog entries)" -ForegroundColor Green
-Write-Host "Monitor build: https://github.com/tlbx-ai/tlbx/actions" -ForegroundColor Cyan
-Write-Host ""
+node (Join-Path $PSScriptRoot 'sync-npx-launcher-version.mjs') $stableVersion
+if ($LASTEXITCODE -ne 0) { throw 'Failed to sync launcher version.' }
+& "$PSScriptRoot/release-frontend-preflight.ps1" -Version $stableVersion -SkipVerify
+& "$PSScriptRoot/run-release-tests.ps1" -TestCategories $selectedCategories -FrontendInstalled
+Invoke-ReleaseGit fetch origin main | Out-Host
+if ((Invoke-ReleaseGit rev-parse origin/main) -ne $promotionBase) { throw 'main changed during preparation; synchronize before retrying.' }
+$prBody += "`n`nCandidate dev commit: $candidate. Verified locally: all server release clusters."
+$state = Start-ReleasePr -Branch $currentBranch -Base main -Version $stableVersion -Title $ReleaseTitle -Message $commitMsg -Body $prBody -ExpectedBase $promotionBase
+Complete-TlbxRelease $state -PrepareOnly:$PrepareOnly

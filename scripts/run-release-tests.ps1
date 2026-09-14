@@ -43,6 +43,7 @@ try {
     }
     if ($categories -contains 'build') {
         & "$PSScriptRoot/test-release-build-system.ps1"
+        & "$PSScriptRoot/test-release-pr.ps1"
         & "$PSScriptRoot/run-runtime-build-verification.ps1" -Configuration $Configuration -WarnAsError
         if ($IsWindows) {
             & "$PSScriptRoot/run-aot-smoke-probe.ps1" -Configuration $Configuration -Rid win-x64
