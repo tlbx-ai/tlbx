@@ -193,6 +193,7 @@ import {
   setTerminalSizeControl,
   setTerminalSizeControls,
   setSessions,
+  filterClosingSessions,
   setManagerBarQueue,
   getParentSessionId,
 } from '../../stores';
@@ -577,6 +578,7 @@ export function handleStateUpdate(
   newSessions: Session[],
   layoutState?: LayoutStateMessage | null,
 ): void {
+  newSessions = filterClosingSessions(newSessions);
   const serverSessionIds = new Set(newSessions.map((session) => session.id));
   const optimisticSessions = [...pendingSessions]
     .filter((sessionId) => !serverSessionIds.has(sessionId))

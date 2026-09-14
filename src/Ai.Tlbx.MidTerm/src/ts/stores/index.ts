@@ -53,6 +53,30 @@ export const $actionGraphsOpen = atom(false);
  */
 const pendingRenames = new Map<string, string>();
 
+/** Locally closed sessions stay hidden until an authoritative snapshot omits them. */
+const pendingSessionCloses = new Set<string>();
+
+export function markSessionClosing(sessionId: string): void {
+  pendingSessionCloses.add(sessionId);
+}
+
+export function cancelSessionClosing(sessionId: string): void {
+  pendingSessionCloses.delete(sessionId);
+}
+
+export function isSessionClosing(sessionId: string): boolean {
+  return pendingSessionCloses.has(sessionId);
+}
+
+export function filterClosingSessions(sessionList: Session[]): Session[] {
+  if (pendingSessionCloses.size === 0) return sessionList;
+  const serverIds = new Set(sessionList.map((session) => session.id));
+  for (const id of pendingSessionCloses) {
+    if (!serverIds.has(id)) pendingSessionCloses.delete(id);
+  }
+  return sessionList.filter((session) => !pendingSessionCloses.has(session.id));
+}
+
 /**
  * Mark a rename as pending (before optimistic update).
  * The pending name will be preserved until server confirms it.
@@ -279,7 +303,7 @@ export function getSession(sessionId: string): Session | undefined {
  */
 export function setSession(session: Session): void {
   const id = session.id;
-  if (!id) return;
+  if (!id || isSessionClosing(id)) return;
   const existing = $sessions.get()[id];
   const order = session._order ?? existing?._order ?? Date.now();
   $sessions.setKey(id, { ...session, _order: order });
@@ -306,7 +330,7 @@ export function setSessions(sessionList: Session[]): boolean {
   const sessionsMap: Record<string, Session> = {};
   sessionList.forEach((session) => {
     const id = session.id;
-    if (!id) {
+    if (!id || isSessionClosing(id)) {
       return;
     }
 

@@ -67,6 +67,8 @@ import {
   $currentSettings,
   $sessionList,
   clearPendingRename,
+  markSessionClosing,
+  cancelSessionClosing,
   getSession,
   removeSession,
   hasTerminalSizeControl,
@@ -334,26 +336,34 @@ export function createSessionActionHandlers({
 
     if (closingSessions.has(sessionId)) return;
     closingSessions.add(sessionId);
-    void apiDeleteSession(sessionId)
-      .then(() => {
-        handleSessionClosed(sessionId);
-        removeSessionDockState(sessionId);
-        removeSmartInputSessionState(sessionId);
-        destroyAgentView(sessionId);
-        destroyFileBrowser(sessionId);
-        destroyGitSession(sessionId);
-        destroyCommandsSession(sessionId);
-        destroySessionWrapper(sessionId);
-        destroyTerminalForSession(sessionId);
-        removeSession(sessionId);
+    const closedSession = getSession(sessionId);
+    markSessionClosing(sessionId);
+    handleSessionClosed(sessionId);
+    removeSessionDockState(sessionId);
+    removeSmartInputSessionState(sessionId);
+    destroyAgentView(sessionId);
+    destroyFileBrowser(sessionId);
+    destroyGitSession(sessionId);
+    destroyCommandsSession(sessionId);
+    destroySessionWrapper(sessionId);
+    destroyTerminalForSession(sessionId);
+    removeSession(sessionId);
 
-        if ($activeSessionId.get() === sessionId) {
-          $activeSessionId.set(null);
-          const firstSession = $sessionList.get()[0];
-          if (firstSession?.id) selectSession(firstSession.id, { closeSettingsPanel: false });
-        }
-      })
+    if ($activeSessionId.get() === sessionId) {
+      $activeSessionId.set(null);
+      const firstSession = $sessionList.get()[0];
+      if (firstSession?.id) selectSession(firstSession.id, { closeSettingsPanel: false });
+    }
+    void apiDeleteSession(sessionId)
+      .catch(() => apiDeleteSession(sessionId))
       .catch(async (error: unknown) => {
+        cancelSessionClosing(sessionId);
+        if (closedSession) {
+          setSession(closedSession);
+          if (!closedSession.appServerControlOnly) {
+            createTerminalForSession(sessionId, closedSession);
+          }
+        }
         log.error(() => `Failed to close session ${sessionId}: ${String(error)}`);
         await showAlert(error instanceof Error ? error.message : String(error), {
           title: t('session.close'),

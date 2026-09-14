@@ -975,6 +975,24 @@ describe('stateChannel browser-ui handling', () => {
     expect(stores.getSession('existing-session')).toBeDefined();
   });
 
+  it('does not recreate an optimistically closed terminal from an in-flight snapshot', async () => {
+    const { stores } = await loadHarness();
+    const session = { id: 'closing', cols: 120, rows: 30, appServerControlOnly: false } as any;
+    stores.setSession(session);
+    stores.markSessionClosing(session.id);
+    stores.removeSession(session.id);
+    mocks.createTerminalForSession.mockClear();
+
+    handleStateUpdate([session]);
+    handleStateUpdate([session]);
+
+    expect(stores.getSession(session.id)).toBeUndefined();
+    expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
+    expect(stores.isSessionClosing(session.id)).toBe(true);
+    handleStateUpdate([]);
+    expect(stores.isSessionClosing(session.id)).toBe(false);
+  });
+
   it('applies server layout snapshots from state updates', async () => {
     await loadHarness();
 
