@@ -14,6 +14,19 @@ runs:
   using: composite
   steps:
     - name: Generate SPDX SBOM
+      id: sbom
+      continue-on-error: true
+      uses: anchore/sbom-action@43a17d6e7add2b5535efe4dcae9952337c479a93 # v0.20.11
+      with:
+        path: ${{ inputs.scan-path }}
+        format: spdx-json
+        output-file: ${{ inputs.sbom-path }}
+        upload-artifact: false
+
+    # Retry transient tool-download failures without rerunning compilation/signing.
+    # The final attempt remains a hard gate; checksums and attestations are unchanged.
+    - name: Retry SPDX SBOM generation
+      if: steps.sbom.outcome == 'failure'
       uses: anchore/sbom-action@43a17d6e7add2b5535efe4dcae9952337c479a93 # v0.20.11
       with:
         path: ${{ inputs.scan-path }}

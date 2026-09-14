@@ -19,7 +19,7 @@ code, dependencies and build configuration; the dev release prints that diff.
 
 | Category | Checks | Choose for |
 |---|---|---|
-| `assets` | TypeScript typecheck and TS/CSS lint | CSS, HTML, text, static assets; also inspect the affected UI |
+| `assets` | TypeScript typecheck, TS/CSS lint and theme/CSS audits | CSS, HTML, text, static assets; also inspect the affected UI |
 | `frontend` | Typecheck, lint, full frontend tests including Kitty graphics | TypeScript behavior and browser contracts |
 | `server` | Server unit and integration suites | Server C# and REST APIs |
 | `runtime` | All three .NET suites, including AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
@@ -68,8 +68,16 @@ release; it resumes the saved request. This is printed in the release summary.
 If the target branch advances, preparation stops. Merge the target into the task
 branch and resolve conflicts, commit the result, then use `-Reprepare` with the
 release arguments to rerun verification and update the same open PR. Explicit
-re-preparation may allocate a newer dev version; ordinary retries never do.
+re-preparation retains the saved dev candidate version while it is unmerged and
+untagged. Failed preparation retains its state so another correction cannot
+silently allocate a second version. Both paths reuse the same PR.
 Do not re-prepare a merged/closed PR or reuse a retired task branch name.
+
+Live milestones and the PR URL are flushed to stderr and appended to
+`.git/tlbx-release-progress.log`, independent of buffered build output. Dev and
+stable releases remain draft until all six platform archives and their six
+SBOMs pass the publication gate. SBOM generation retries once on failure; a
+second failure still blocks publication. No checksum or attestation is skipped.
 
 For stable releases, invoke `promote.ps1 -TestCategories all` from clean updated
 dev. It freezes the accepted candidate on `chore/promote-X-Y-Z`, includes stable

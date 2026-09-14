@@ -49,6 +49,10 @@ function global:gh {
             if ($f.ChangeHead) { $copy.headRefOid='unverified' }
             ConvertTo-Json -InputObject $copy -Depth 6 -Compress
         }
+        'edit' {
+            $f.Pr = @($f.Prs | Where-Object number -EQ ([int]$a[2]))[0]
+            $f.Pr.headRefOid = git --git-dir=$($f.Remote) rev-parse "refs/heads/$($f.Pr.headRefName)"
+        }
         'checks' {
             if ($f.FailChecks) { '[{"name":"fixture","bucket":"fail"}]'; $global:LASTEXITCODE=1 }
             else { '[{"name":"fixture","bucket":"pass"}]' }
@@ -76,7 +80,7 @@ try {
     Invoke-ReleaseGit config user.name Test
     Invoke-ReleaseGit config user.email test@example.test
     New-Item -ItemType Directory src | Out-Null
-    '{"web":"1.0.0-dev","pty":"1.0.0-dev"}' | Set-Content src/version.json
+    '{"web":"1.0.0-dev","pty":"1.0.0-dev","minCompatiblePty":"1.0.0-dev"}' | Set-Content src/version.json
     Invoke-ReleaseGit add -A
     Invoke-ReleaseGit commit -m Initial | Out-Null
     Invoke-ReleaseGit push origin dev | Out-Null
@@ -84,7 +88,7 @@ try {
     Assert-Rejected { Assert-ReleaseTaskBranch } 'Protected dev accepted as task branch.'
     Invoke-ReleaseGit switch -c fix/pr-fixture | Out-Null
     Assert-Test ((Assert-ReleaseTaskBranch) -eq 'fix/pr-fixture') 'Valid task branch rejected.'
-    '{"web":"1.0.1-dev","pty":"1.0.0-dev"}' | Set-Content src/version.json
+    '{"web":"1.0.1-dev","pty":"1.0.0-dev","minCompatiblePty":"1.0.0-dev"}' | Set-Content src/version.json
     Assert-Rejected { Assert-ReleaseClean } 'Dirty checkout accepted.'
     $state = Start-ReleasePr -Branch fix/pr-fixture -Base dev -Version 1.0.1-dev -Title 'Fixture release' -Message "Fixture release`n`n- Test PR release behavior." -Body 'Fixture' -ExpectedBase $base
     $head = Invoke-ReleaseGit rev-parse HEAD
@@ -128,7 +132,7 @@ try {
     Invoke-ReleaseGit switch dev | Out-Null
     Invoke-ReleaseGit pull --ff-only origin dev | Out-Null
     New-Item -ItemType Directory scripts | Out-Null
-    Copy-Item "$sourceScripts/promote.ps1", "$sourceScripts/release-pr.ps1", "$sourceScripts/release-test-clusters.ps1", "$sourceScripts/verify-release-merge.ps1" scripts/
+    Copy-Item "$sourceScripts/promote.ps1", "$sourceScripts/release-dev.ps1", "$sourceScripts/release-pr.ps1", "$sourceScripts/release-test-clusters.ps1", "$sourceScripts/verify-release-merge.ps1" scripts/
     '$global:TlbxFixturePreflight = $args -join " "' | Set-Content scripts/release-frontend-preflight.ps1
     'param([string[]]$TestCategories, [switch]$FrontendInstalled) $global:TlbxFixtureTests = $TestCategories -join " "' | Set-Content scripts/run-release-tests.ps1
     function global:node { $global:LASTEXITCODE=0 }
@@ -170,6 +174,40 @@ try {
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.2 } 'Release gate accepted a mismatched version.'
     Invoke-ReleaseGit switch --detach $promotion.Head | Out-Null
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.1 } 'Release gate accepted the unmerged task commit.'
+    Invoke-ReleaseGit switch -c fix/reprepare-fixture origin/dev | Out-Null
+    $devArgs = @{Bump='patch'; ReleaseTitle='Verify candidate retry'; ReleaseNotes=@('Retain the candidate while correcting the same release PR.'); mthostUpdate='yes'; TestCategories=@('assets'); PrepareOnly=$true}
+    & ./scripts/release-dev.ps1 @devArgs
+    $candidate = Get-ReleaseState fix/reprepare-fixture
+    $creates = $global:TlbxPrFixture.Creates
+    'Corrected implementation' | Set-Content correction.txt
+    Invoke-ReleaseGit add correction.txt
+    Invoke-ReleaseGit commit -m Correction | Out-Null
+    # Failure during re-verification must retain the original candidate request.
+    'param([string[]]$TestCategories, [switch]$FrontendInstalled) if($global:TlbxFixtureFailVerification){throw "fixture verification failure"}' | Set-Content scripts/run-release-tests.ps1
+    Invoke-ReleaseGit add scripts/run-release-tests.ps1
+    Invoke-ReleaseGit commit -m 'Inject controllable verification failure' | Out-Null
+    $global:TlbxFixtureFailVerification=$true
+    Assert-Rejected { & ./scripts/release-dev.ps1 @devArgs -Reprepare } 'Failed re-verification was accepted.'
+    Assert-Test ((Get-ReleaseState fix/reprepare-fixture).Version -eq $candidate.Version) 'Failed re-preparation lost its candidate.'
+    $global:TlbxFixtureFailVerification=$false
+    & ./scripts/release-dev.ps1 @devArgs -Reprepare
+    $corrected = Get-ReleaseState fix/reprepare-fixture
+    Assert-Test ($corrected.Version -eq $candidate.Version -and $corrected.Pr -eq $candidate.Pr) 'Correction allocated another version or PR.'
+    Assert-Test ($global:TlbxPrFixture.Creates -eq $creates) 'Correction created a duplicate PR.'
+    Assert-Test ($corrected.Head -eq (Invoke-ReleaseGit rev-parse HEAD)) 'Corrected release did not track its exact head.'
+    & ./scripts/release-dev.ps1 @devArgs -Reprepare
+    Assert-Test ((Get-ReleaseState fix/reprepare-fixture).Head -eq $corrected.Head) 'Unchanged re-preparation created an unnecessary commit.'
+    $interrupted = Get-ReleaseState fix/reprepare-fixture
+    $interrupted.Head=''
+    Save-ReleaseState $interrupted
+    Complete-TlbxRelease $interrupted -PrepareOnly
+    Assert-Test ((Get-ReleaseState fix/reprepare-fixture).Head -eq $corrected.Head) 'Interrupted unchanged preparation did not recover.'
+    Assert-Test (Test-Path (Join-Path (Invoke-ReleaseGit rev-parse --absolute-git-dir) 'tlbx-release-progress.log')) 'Flushed progress journal missing.'
+    Invoke-ReleaseGit tag "v$($candidate.Version)" | Out-Null
+    Assert-Rejected { & ./scripts/release-dev.ps1 @devArgs -Reprepare } 'Re-preparation reused a tagged version.'
+    Invoke-ReleaseGit tag -d "v$($candidate.Version)" | Out-Null
+    Complete-TlbxRelease (Get-ReleaseState fix/reprepare-fixture)
+    Assert-Rejected { & ./scripts/release-dev.ps1 @devArgs -Reprepare } 'Re-preparation accepted a merged PR.'
     foreach ($name in @('release-pr','release-dev','release-local','promote','release','finish-task','verify-release-merge')) {
         $tokens=$null;$errors=$null
         [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot "$name.ps1"),[ref]$tokens,[ref]$errors) | Out-Null
@@ -181,6 +219,7 @@ try {
     Remove-Item Function:\gh -ErrorAction SilentlyContinue
     Remove-Item Function:\node -ErrorAction SilentlyContinue
     Remove-Variable TlbxPrFixture -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable TlbxFixtureFailVerification -Scope Global -ErrorAction SilentlyContinue
     $resolved = [IO.Path]::GetFullPath($root)
     $tempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
     if (-not $resolved.StartsWith($tempRoot, [StringComparison]::OrdinalIgnoreCase) -or (Split-Path $resolved -Leaf) -notlike 'tlbx-pr-tests-*') { throw 'Unsafe fixture cleanup path.' }

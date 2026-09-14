@@ -88,10 +88,12 @@ $selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategor
 Show-ReleaseTestPlan -Categories $selectedCategories
 $currentBranch = Assert-ReleaseTaskBranch
 $pending = Get-ReleaseState $currentBranch
+$retainedCandidate = $null
 if ($pending) {
     if ($pending.Base -ne 'dev') { throw 'This branch has a stable release in progress; resume promote.ps1.' }
     if (-not $Reprepare) { Complete-TlbxRelease $pending -PrepareOnly:$PrepareOnly; return }
     Reset-ReleasePreparation $pending
+    $retainedCandidate = $pending
 }
 Assert-ReleaseClean
 $recentTagRefreshCount = 5
@@ -131,7 +133,8 @@ function Test-WebVersionExistsInHistory {
     )
 
     $pattern = '"web"\s*:\s*"' + [regex]::Escape($Version) + '"'
-    $hits = @(git log --all --format="%H" --pickaxe-regex -G $pattern -- src/version.json 2>$null)
+    $hits = @(git log --all --format="%H" -G $pattern -- src/version.json)
+    if ($LASTEXITCODE -ne 0) { throw 'Could not inspect version history.' }
     return $hits.Count -gt 0
 }
 
@@ -140,10 +143,21 @@ function Assert-VersionIsAvailable {
         [Parameter(Mandatory=$true)]
         [string]$Version,
 
-        [string[]]$RefsToCheck = @()
+        [string[]]$RefsToCheck = @(),
+        $PreparedState = $null
     )
 
     $tagName = "v$Version"
+    if ($PreparedState) {
+        if ($Version -ne $PreparedState.Version -or (Get-WebVersionFromGitRef HEAD) -ne $Version) {
+            throw 'The prepared candidate version changed. Restore its version metadata before re-preparing.'
+        }
+        Invoke-ReleaseGit merge-base --is-ancestor $PreparedState.Head HEAD | Out-Null
+        if (Invoke-ReleaseGit ls-remote --tags origin "refs/tags/$tagName") {
+            throw "Prepared version $Version is already published/tagged."
+        }
+        $RefsToCheck = @($RefsToCheck | Where-Object { $_ -ne 'HEAD' })
+    }
     if (Test-GitTagExists -TagName $tagName) {
         throw "Target version '$Version' is already tagged as '$tagName'."
     }
@@ -155,7 +169,11 @@ function Assert-VersionIsAvailable {
         }
     }
 
-    if (Test-WebVersionExistsInHistory -Version $Version) {
+    $existsInHistory = if ($PreparedState) {
+        $pattern = '"web"\s*:\s*"' + [regex]::Escape($Version) + '"'
+        @(Invoke-ReleaseGit log origin/dev origin/main --format=%H -G $pattern '--' src/version.json).Count -gt 0
+    } else { Test-WebVersionExistsInHistory -Version $Version }
+    if ($existsInHistory) {
         throw "Target version '$Version' already appears in fetched src/version.json history. Choose a new version instead of reusing it."
     }
 }
@@ -278,11 +296,11 @@ switch ($Bump) {
     "patch" { $patch++ }
 }
 
-$newVersion = "$major.$minor.$patch-dev"
+$newVersion = if ($retainedCandidate) { $retainedCandidate.Version } else { "$major.$minor.$patch-dev" }
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
 try {
-    Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/dev", "origin/main")
+    Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/dev", "origin/main") -PreparedState $retainedCandidate
 } catch {
     Write-Host ""
     Write-Host "ERROR: Unsafe prerelease version selection." -ForegroundColor Red
@@ -342,6 +360,7 @@ if ($isPtyBreaking) {
 # before we commit or tag anything.
 Write-Host ""
 Write-Host "Running frontend preflight in the current checkout..." -ForegroundColor Cyan
+Write-ReleaseProgress "Preparing $newVersion on $currentBranch; frontend packaging. Live progress: .git/tlbx-release-progress.log"
 $frontendPreflightScript = Join-Path $PSScriptRoot "release-frontend-preflight.ps1"
 try {
     & $frontendPreflightScript -Version $newVersion -DevRelease -SkipVerify
@@ -357,6 +376,7 @@ catch {
 
 # Explicitly selected checks; frontend dependencies were installed by preflight.
 try {
+    Write-ReleaseProgress "Verifying ${newVersion}: $($selectedCategories -join ', ')"
     & (Join-Path $PSScriptRoot "run-release-tests.ps1") -TestCategories $selectedCategories -FrontendInstalled
 }
 catch {
@@ -370,7 +390,7 @@ catch {
 # Recheck the integration base before saving the verified release preparation.
 Refresh-RemoteState -BranchRefs @("dev", "main") -RecentTagCount $recentTagRefreshCount
 Assert-RemoteDidNotChange -RemoteRef "origin/dev" -ExpectedCommit $releaseRemoteCommit
-Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/dev", "origin/main")
+Assert-VersionIsAvailable -Version $newVersion -RefsToCheck @("HEAD", "origin/dev", "origin/main") -PreparedState $retainedCandidate
 $commitMsg = "$ReleaseTitle`n`n" + (($ReleaseNotes | ForEach-Object { "- $_" }) -join "`n")
 $body = "$commitMsg`n`nRelease: v$newVersion (dev).`nVerified locally: $($selectedCategories -join ', ').`nRuntime refresh: $mthostUpdate."
 $state = Start-ReleasePr -Branch $currentBranch -Base dev -Version $newVersion -Title $ReleaseTitle -Message $commitMsg -Body $body -ExpectedBase $releaseRemoteCommit

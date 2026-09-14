@@ -55,7 +55,7 @@ jobs:
           RELEASE_STATE=(--draft)
           if [[ "${{ github.ref_name }}" == *"-dev"* ]]; then
             IS_DEV=true
-            RELEASE_STATE=(--prerelease)
+            RELEASE_STATE=(--draft --prerelease)
           fi
           MAX_RELEASE_BODY=124000
           RELEASE_TAG="${{ github.ref_name }}"
@@ -117,12 +117,10 @@ jobs:
           trap 'rm -f "$RELEASE_NOTES_FILE"' EXIT
           printf '%s' "$RELEASE_NOTES" > "$RELEASE_NOTES_FILE"
           if gh release view ${{ github.ref_name }} >/dev/null 2>&1; then
-            if [[ "$IS_DEV" != "true" ]]; then
-              IS_DRAFT=$(gh release view ${{ github.ref_name }} --json isDraft --jq '.isDraft')
-              if [[ "$IS_DRAFT" != "true" ]]; then
-                echo "::error::Stable release ${{ github.ref_name }} is already published; refusing to move it back to draft."
-                exit 1
-              fi
+            IS_DRAFT=$(gh release view ${{ github.ref_name }} --json isDraft --jq '.isDraft')
+            if [[ "$IS_DRAFT" != "true" ]]; then
+              echo "::error::Release ${{ github.ref_name }} is already published; refusing to move it back to draft."
+              exit 1
             fi
             gh release edit ${{ github.ref_name }} \
               "${RELEASE_STATE[@]}" \
@@ -902,13 +900,16 @@ jobs:
           npm publish --access public --provenance --tag latest
 
   publish-release:
-    needs: [prepare, build, build-windows]
-    if: needs.prepare.outputs.is_dev != 'true'
+    needs: [prepare, build, build-windows, build-dev, build-windows-dev]
+    if: >-
+      always() && needs.prepare.result == 'success' &&
+      ((needs.prepare.outputs.is_dev == 'true' && needs.build-dev.result == 'success' && needs.build-windows-dev.result == 'success') ||
+       (needs.prepare.outputs.is_dev != 'true' && needs.build.result == 'success' && needs.build-windows.result == 'success'))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - name: Validate exact stable release assets
+      - name: Validate exact release assets
         id: validate
         shell: bash
         env:
@@ -949,9 +950,9 @@ jobs:
           if release.get("tagName") != expected_tag:
               raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}, got {release.get('tagName')!r}")
           if release.get("isDraft") is not True:
-              raise SystemExit("Stable release must still be a draft before publication.")
-          if release.get("isPrerelease") is not False:
-              raise SystemExit("Stable release must not be marked as a prerelease.")
+              raise SystemExit("Release must still be a draft before publication.")
+          if release.get("isPrerelease") is not ("-dev" in expected_tag):
+              raise SystemExit("Release prerelease flag does not match its tag.")
 
           assets = release.get("assets") or []
           actual_names = {asset.get("name") for asset in assets}
@@ -959,7 +960,7 @@ jobs:
           unexpected = sorted(actual_names - expected_assets)
           if len(assets) != len(expected_assets) or missing or unexpected:
               raise SystemExit(
-                  "Stable asset set mismatch: "
+                  "Release asset set mismatch: "
                   f"expected={sorted(expected_assets)}, missing={missing}, unexpected={unexpected}"
               )
 
@@ -969,7 +970,7 @@ jobs:
               if not isinstance(asset.get("size"), int) or asset["size"] <= 0
           )
           if empty:
-              raise SystemExit(f"Stable assets must be nonzero: {empty}")
+              raise SystemExit(f"Release assets must be nonzero: {empty}")
 
           release_id = release.get("databaseId")
           if not isinstance(release_id, int) or release_id <= 0:
@@ -980,19 +981,22 @@ jobs:
           )
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Publish validated stable release
+      - name: Publish validated release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           RELEASE_ID: ${{ steps.validate.outputs.release_id }}
+          IS_DEV: ${{ needs.prepare.outputs.is_dev }}
         run: |
+          MAKE_LATEST=true
+          if [[ "$IS_DEV" == "true" ]]; then MAKE_LATEST=false; fi
           gh api \
             --method PATCH \
             "repos/$REPOSITORY/releases/$RELEASE_ID" \
             -F draft=false \
-            -F prerelease=false \
-            -f make_latest=true \
+            -F prerelease="$IS_DEV" \
+            -f make_latest="$MAKE_LATEST" \
             > /dev/null
 
   prune-artifacts:

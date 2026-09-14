@@ -14,6 +14,7 @@ import { showAlert } from '../../utils/dialog';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { bindingProblem, matchesSearch, normalizeBinding } from './keybindings';
 import { hasTransientUi, isVisible } from './uiContext';
+import { directionalSession, type SessionDirection } from './sessionNavigation';
 
 interface Command {
   id: string;
@@ -168,6 +169,38 @@ export function initShortcuts(deps: Dependencies): void {
     const target = list[(index + direction + list.length) % list.length];
     if (target) deps.selectSession(target.id);
   };
+  const moveDirection = (direction: SessionDirection): void => {
+    const panes = Array.from(document.querySelectorAll<HTMLElement>('.layout-leaf'))
+      .filter(isVisible)
+      .map((pane) => {
+        const { left, top, width, height } = pane.getBoundingClientRect();
+        return { id: pane.dataset.sessionId ?? '', left, top, width, height };
+      });
+    const active = activeId();
+    if (active && panes.some((pane) => pane.id === active)) {
+      const target = directionalSession(panes, active, direction);
+      if (target) focusLayoutSession(target);
+    } else {
+      move(direction === 'up' || direction === 'left' ? -1 : 1);
+    }
+  };
+  for (const [direction, key, en, de] of [
+    ['up', 'W', 'Switch session up', 'Session nach oben wechseln'],
+    ['left', 'A', 'Switch session left', 'Session nach links wechseln'],
+    ['down', 'S', 'Switch session down', 'Session nach unten wechseln'],
+    ['right', 'D', 'Switch session right', 'Session nach rechts wechseln'],
+  ] as const) {
+    cmd(
+      `session.${direction}`,
+      en,
+      de,
+      () => {
+        moveDirection(direction);
+      },
+      hasSession,
+      `Ctrl+Alt+${key}`,
+    );
+  }
   cmd(
     'next',
     'Next session',
@@ -448,19 +481,13 @@ export function initShortcuts(deps: Dependencies): void {
         recordBinding(event);
         return;
       }
-      if (event.defaultPrevented || event.isComposing || event.repeat || palette.open) return;
+      if (event.defaultPrevented || event.isComposing || palette.open) return;
       const key = normalizeBinding(event);
       if (!key) return;
       const command = commands.find((entry) => binding(entry) === key);
       if (!command) return;
       if (hasTransientUi()) return;
-      if (key === 'F2') {
-        handleInlineRename(event, deps);
-        return;
-      }
-      if (command.available && !command.available()) return;
-      consume(event);
-      execute(command.run);
+      runBoundCommand(event, key, command, deps);
     },
     true,
   );
@@ -481,6 +508,26 @@ export function initShortcuts(deps: Dependencies): void {
       }
     }
   });
+}
+
+function runBoundCommand(
+  event: KeyboardEvent,
+  key: string,
+  command: Command,
+  deps: Dependencies,
+): void {
+  if (key === 'F2') {
+    if (event.repeat) {
+      consume(event);
+      return;
+    }
+    handleInlineRename(event, deps);
+    return;
+  }
+  if (command.available && !command.available()) return;
+  consume(event);
+  if (event.repeat && !command.id.startsWith('session.')) return;
+  execute(command.run);
 }
 
 function execute(run: () => void | Promise<void>): void {

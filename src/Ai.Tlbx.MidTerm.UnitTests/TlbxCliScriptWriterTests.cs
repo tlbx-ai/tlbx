@@ -12,6 +12,35 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
 
     [Fact]
+    public void SourceInstance_PreservesSupervisorHelpersAndKeepsItsOwnCredentials()
+    {
+        Directory.CreateDirectory(_tempDir);
+        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2000, "supervisor-token", false);
+        var names = new[] { "tlbx_cli.ps1", "tlbx_cli.sh", "tlbx_graphs.ps1", "tlbx_graphs.sh" };
+        var originals = names.ToDictionary(name => name, name => File.ReadAllText(Path.Combine(_tempDir, name)), StringComparer.Ordinal);
+        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2100, "source-token", true);
+        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2100, "refreshed-source-token", true);
+        foreach (var name in names)
+        {
+            Assert.Equal(originals[name], File.ReadAllText(Path.Combine(_tempDir, name)));
+            var source = File.ReadAllText(Path.Combine(_tempDir, "instances", "2100", name));
+            Assert.Contains("2100", source, StringComparison.Ordinal);
+            Assert.Contains("refreshed-source-token", source, StringComparison.Ordinal);
+            Assert.DoesNotContain("supervisor-token", source, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void SourceInstance_CanBootstrapANewWorkingDirectory()
+    {
+        Directory.CreateDirectory(_tempDir);
+        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2100, "source-token", true);
+        Assert.Contains("source-token", File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1")), StringComparison.Ordinal);
+        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2000, "supervisor-token", false);
+        Assert.Contains("supervisor-token", File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1")), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WriteScripts_WritesApplyUpdateHelpers()
     {
         Directory.CreateDirectory(_tempDir);
