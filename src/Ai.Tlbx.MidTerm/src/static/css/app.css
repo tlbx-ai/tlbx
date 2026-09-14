@@ -20340,7 +20340,7 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
   width: min(620px, calc(100vw - 32px));
   max-height: min(560px, 72dvh);
   color: var(--text-primary);
-  background: var(--bg-primary-opaque, #0d0e14);
+  background: var(--bg-primary-opaque, var(--bg-elevated-opaque));
   border: 1px solid var(--border-color);
   border-radius: 8px;
   overflow: hidden;
