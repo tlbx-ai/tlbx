@@ -12,7 +12,7 @@ import { showSearch } from '../terminal/search';
 import { dockSession, undockSession, getLayoutSessionIds, focusLayoutSession } from '../layout';
 import { showAlert } from '../../utils/dialog';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
-import { bindingProblem, matchesSearch, normalizeBinding } from './keybindings';
+import { bindingProblem, matchesSearch, ShortcutModifiers } from './keybindings';
 import { hasTransientUi, isVisible } from './uiContext';
 import { directionalSession, type SessionDirection } from './sessionNavigation';
 
@@ -57,6 +57,7 @@ let lastSessions: string[] = [];
 let launchPending = false;
 let settingsSearch: HTMLInputElement;
 let settingsResults: HTMLElement;
+const shortcutModifiers = new ShortcutModifiers();
 
 function binding(command: Command | undefined): string | null {
   if (!command) return null;
@@ -472,6 +473,7 @@ export function initShortcuts(deps: Dependencies): void {
   window.addEventListener(
     'keydown',
     (event) => {
+      shortcutModifiers.keyDown(event);
       const hotkeyList = document.getElementById('hotkey-list');
       if (recording && (!hotkeyList || !isVisible(hotkeyList))) {
         recording = null;
@@ -482,7 +484,7 @@ export function initShortcuts(deps: Dependencies): void {
         return;
       }
       if (event.defaultPrevented || event.isComposing || palette.open) return;
-      const key = normalizeBinding(event);
+      const key = shortcutModifiers.normalize(event);
       if (!key) return;
       const command = commands.find((entry) => binding(entry) === key);
       if (!command) return;
@@ -491,7 +493,18 @@ export function initShortcuts(deps: Dependencies): void {
     },
     true,
   );
+  window.addEventListener(
+    'keyup',
+    (event) => {
+      shortcutModifiers.keyUp(event);
+    },
+    true,
+  );
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) shortcutModifiers.clear();
+  });
   window.addEventListener('blur', () => {
+    shortcutModifiers.clear();
     if (recording) {
       recording = null;
       renderHotkeys();
@@ -904,7 +917,7 @@ function recordBinding(event: KeyboardEvent): void {
     renderHotkeys();
     return;
   }
-  const candidate = normalizeBinding(event);
+  const candidate = shortcutModifiers.normalize(event);
   if (!candidate) return;
   const error = bindingProblem(candidate);
   const duplicate = commands.find((c) => c.id !== recording && binding(c) === candidate);

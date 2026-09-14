@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { bindingProblem, matchesSearch, normalizeBinding, type KeyStroke } from './keybindings';
+import {
+  bindingProblem,
+  matchesSearch,
+  normalizeBinding,
+  ShortcutModifiers,
+  type KeyStroke,
+} from './keybindings';
 
 const stroke = (key: string, extra: Partial<KeyStroke> = {}): KeyStroke => ({
   key,
@@ -75,5 +81,66 @@ describe('browser-safe shortcuts', () => {
     expect(matchesSearch('session andern', 'Session ändern', 'Q:\\repos\\tlbx')).toBe(true);
     expect(matchesSearch('tlbx terminal', 'Terminal', 'Q:\\repos\\tlbx-2')).toBe(true);
     expect(matchesSearch('missing', 'Terminal', 'Q:\\repos\\tlbx-2')).toBe(false);
+  });
+});
+
+describe('right Control with AltGr session navigation', () => {
+  const altGr = (key: string, extra: Partial<KeyStroke> = {}): KeyStroke =>
+    stroke(key.toLowerCase(), {
+      code: `Key${key}`,
+      ctrlKey: true,
+      altKey: true,
+      getModifierState: (name) => name === 'AltGraph',
+      ...extra,
+    });
+  const control = (code = 'ControlRight'): KeyStroke => stroke('Control', { code, ctrlKey: true });
+
+  it.each(['W', 'A', 'S', 'D'])('requires physical right Control for AltGr+%s', (key) => {
+    const modifiers = new ShortcutModifiers();
+    modifiers.keyDown(control('ControlLeft')); // Windows synthetic AltGr Control
+    modifiers.keyDown(stroke('AltGraph', { code: 'AltRight', ctrlKey: true, altKey: true }));
+    expect(modifiers.normalize(altGr(key))).toBeNull();
+    modifiers.keyDown(control());
+    expect(modifiers.normalize(altGr(key))).toBe(`Ctrl+Alt+${key}`);
+    expect(modifiers.normalize(altGr(key, { repeat: true }))).toBe(`Ctrl+Alt+${key}`);
+    modifiers.keyUp(control());
+    expect(modifiers.normalize(altGr(key))).toBeNull();
+  });
+
+  it('accepts Control before AltGr and keeps it after AltGr release', () => {
+    const modifiers = new ShortcutModifiers();
+    modifiers.keyDown(control());
+    modifiers.keyDown(stroke('AltGraph', { code: 'AltRight', ctrlKey: true, altKey: true }));
+    expect(modifiers.normalize(altGr('W'))).toBe('Ctrl+Alt+W');
+    modifiers.keyUp(stroke('AltGraph', { code: 'AltRight', ctrlKey: true }));
+    expect(modifiers.normalize(altGr('D'))).toBe('Ctrl+Alt+D');
+  });
+
+  it('preserves AltGr text, composition and extra modifiers even with right Control', () => {
+    const modifiers = new ShortcutModifiers();
+    modifiers.keyDown(control());
+    for (const event of [
+      altGr('Q', { key: '@' }),
+      altGr('E', { key: '�' }),
+      altGr('W', { isComposing: true }),
+      altGr('W', { key: 'Dead' }),
+      altGr('W', { shiftKey: true }),
+      altGr('W', { metaKey: true }),
+    ]) {
+      expect(modifiers.normalize(event)).toBeNull();
+    }
+  });
+
+  it('clears stale Control on blur/reset or when modifier flags show it released', () => {
+    const modifiers = new ShortcutModifiers();
+    modifiers.keyDown(control());
+    modifiers.clear();
+    expect(modifiers.normalize(altGr('W'))).toBeNull();
+    modifiers.keyDown(control());
+    modifiers.keyDown(stroke('a'));
+    expect(modifiers.normalize(altGr('W'))).toBeNull();
+    modifiers.keyDown(control());
+    modifiers.keyUp(stroke('a'));
+    expect(modifiers.normalize(altGr('W'))).toBeNull();
   });
 });

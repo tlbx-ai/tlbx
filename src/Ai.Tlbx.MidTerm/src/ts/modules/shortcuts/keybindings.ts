@@ -24,9 +24,36 @@ function physicalDirectionKey(event: KeyStroke): string | undefined {
   return undefined;
 }
 
-export function normalizeBinding(event: KeyStroke): string | null {
-  if (event.isComposing || event.key === 'Dead' || event.getModifierState?.('AltGraph'))
-    return null;
+export class ShortcutModifiers {
+  private rightControl = false;
+
+  keyDown(event: KeyStroke): void {
+    if (!event.ctrlKey) this.clear();
+    if (event.code === 'ControlRight') this.rightControl = true;
+  }
+
+  keyUp(event: KeyStroke): void {
+    if (event.code === 'ControlRight' || !event.ctrlKey) this.clear();
+  }
+
+  clear(): void {
+    this.rightControl = false;
+  }
+
+  normalize(event: KeyStroke): string | null {
+    return normalizeBinding(event, this.rightControl);
+  }
+}
+
+function isAltGrTyping(event: KeyStroke, rightControl: boolean): boolean {
+  return !!event.getModifierState?.('AltGraph') && !(rightControl && physicalDirectionKey(event));
+}
+
+export function normalizeBinding(event: KeyStroke, rightControl = false): string | null {
+  if (event.isComposing || event.key === 'Dead') return null;
+  // Windows AltGr can synthesize ControlLeft. Only a separately observed
+  // ControlRight may opt WASD into commands while AltGraph is active.
+  if (isAltGrTyping(event, rightControl)) return null;
   if (['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'Unidentified'].includes(event.key))
     return null;
   const directionalKey = physicalDirectionKey(event);
