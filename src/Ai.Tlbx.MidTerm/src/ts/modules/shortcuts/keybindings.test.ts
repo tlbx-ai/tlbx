@@ -37,6 +37,10 @@ describe('browser-safe shortcuts', () => {
     'Ctrl+Shift+ArrowRight',
     'Ctrl+Shift+Enter',
     'F2',
+    'Ctrl+Alt+W',
+    'Ctrl+Alt+A',
+    'Ctrl+Alt+S',
+    'Ctrl+Alt+D',
   ])('supports explicit application binding %s', (binding) =>
     expect(bindingProblem(binding)).toBeNull(),
   );
@@ -50,6 +54,15 @@ describe('browser-safe shortcuts', () => {
     ).toBeNull();
   });
   it('normalizes semantic keys and platform modifiers consistently', () => {
+    expect(normalizeBinding(stroke('∑', { code: 'KeyW', ctrlKey: true, altKey: true }))).toBe(
+      'Ctrl+Alt+W',
+    );
+    expect(normalizeBinding(stroke('w', { code: 'KeyW' }))).toBe('W');
+    expect(
+      normalizeBinding(
+        stroke('w', { code: 'KeyW', ctrlKey: true, altKey: true, getModifierState: () => true }),
+      ),
+    ).toBeNull();
     expect(normalizeBinding(stroke(' ', { ctrlKey: true, shiftKey: true }))).toBe(
       'Ctrl+Shift+Space',
     );

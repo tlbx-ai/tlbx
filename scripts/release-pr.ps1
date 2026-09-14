@@ -1,6 +1,16 @@
 # GitHub workflow for this repository only. Dot-source; no work on import.
 $script:TlbxReleaseRepo = 'tlbx-ai/tlbx'
 
+function Write-ReleaseProgress {
+    param([string]$Message)
+    $line = "[$([DateTime]::UtcNow.ToString('HH:mm:ss')) UTC] $Message"
+    # A separate flushed journal stays readable even when a parent buffers stdout.
+    $dir = Invoke-ReleaseGit rev-parse --absolute-git-dir
+    [IO.File]::AppendAllText((Join-Path $dir 'tlbx-release-progress.log'), "$line`n")
+    [Console]::Error.WriteLine($line)
+    [Console]::Error.Flush()
+}
+
 function Invoke-ReleaseGit {
     $result = & git @args
     if ($LASTEXITCODE -ne 0) { throw "git $($args -join ' ') failed." }
@@ -58,7 +68,7 @@ function Reset-ReleasePreparation {
     Assert-ReleaseClean
     # Keep the prior evidence for diagnosis; the next preparation runs every selected check.
     $path = Get-ReleaseStatePath $State.Branch
-    Move-Item -LiteralPath $path -Destination "$path.$([DateTime]::UtcNow.ToString('yyyyMMddHHmmssfff')).previous"
+    Copy-Item -LiteralPath $path -Destination "$path.$([DateTime]::UtcNow.ToString('yyyyMMddHHmmssfff')).previous"
 }
 
 function Start-ReleasePr {
@@ -72,8 +82,11 @@ function Start-ReleasePr {
     }
     # Save before committing so interruption cannot silently allocate a second version.
     Save-ReleaseState $state
-    $Message | & git commit -F - | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw 'Release commit failed. Prepared state was retained.' }
+    & git diff --cached --quiet
+    if ($LASTEXITCODE -eq 1) {
+        $Message | & git commit -F - | Out-Host
+        if ($LASTEXITCODE -ne 0) { throw 'Release commit failed. Prepared state was retained.' }
+    } elseif ($LASTEXITCODE -ne 0) { throw 'Could not inspect prepared release changes.' }
     $state.Head = Invoke-ReleaseGit rev-parse HEAD
     Save-ReleaseState $state
     return $state
@@ -116,7 +129,7 @@ function Complete-ReleasePrMerge {
         # An empty set is not proof that protection/check registration is ready.
         if ($checks.Count -gt 0 -and @($checks | Where-Object bucket -NE 'pass').Count -eq 0) { break }
         if ([DateTime]::UtcNow -ge $deadline) { throw "Checks are still pending: $($pr.url). Re-run this release command later." }
-        Write-Host "Waiting for required checks: $($pr.url)"
+        Write-ReleaseProgress "Waiting for required checks: $($pr.url)"
         Start-Sleep -Seconds 30
     }
     Invoke-ReleaseGit fetch origin "refs/heads/${Base}:refs/remotes/origin/$Base" | Out-Host
@@ -203,8 +216,11 @@ function Complete-TlbxRelease {
     if (-not $State.Head) {
         $head = Invoke-ReleaseGit rev-parse HEAD
         if ($head -eq $State.StartHead -and (Invoke-ReleaseGit write-tree) -eq $State.Tree) {
-            $State.Message | & git commit -F - | Out-Host
-            if ($LASTEXITCODE -ne 0) { throw 'Could not finish the prepared release commit.' }
+            & git diff --cached --quiet
+            if ($LASTEXITCODE -eq 1) {
+                $State.Message | & git commit -F - | Out-Host
+                if ($LASTEXITCODE -ne 0) { throw 'Could not finish the prepared release commit.' }
+            } elseif ($LASTEXITCODE -ne 0) { throw 'Could not inspect interrupted release changes.' }
         } elseif ((Invoke-ReleaseGit rev-parse 'HEAD^') -ne $State.StartHead -or (Invoke-ReleaseGit rev-parse 'HEAD^{tree}') -ne $State.Tree) {
             throw 'Interrupted preparation no longer matches this checkout. Inspect the retained release state.'
         }
@@ -220,7 +236,7 @@ function Complete-TlbxRelease {
         $State.Pr = Get-OrCreateReleasePr -Branch $State.Branch -Base $State.Base -Title $State.Title -Body $State.Body
         Save-ReleaseState $State
     }
-    Write-Host "Release PR: https://github.com/$script:TlbxReleaseRepo/pull/$($State.Pr)"
+    Write-ReleaseProgress "Release PR: https://github.com/$script:TlbxReleaseRepo/pull/$($State.Pr)"
     if ($PrepareOnly) { Write-Host 'Prepared only. Re-run without -PrepareOnly to merge and tag after checks pass.'; return }
     $State.Merge = Complete-ReleasePrMerge -Number $State.Pr -Head $State.Head -Base $State.Base -ExpectedBase $State.ExpectedBase
     Save-ReleaseState $State

@@ -27,3 +27,5 @@ jobs:
         run: |
           ./scripts/test-release-build-system.ps1
           ./scripts/test-release-pr.ps1
+          python ./scripts/test-release-publication.py
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication tests failed.' }

@@ -1,6 +1,7 @@
 /** Browser-side bindings never reserve browser navigation or ordinary terminal editing keys. */
 export interface KeyStroke {
   key: string;
+  code?: string;
   ctrlKey: boolean;
   altKey: boolean;
   shiftKey: boolean;
@@ -10,13 +11,28 @@ export interface KeyStroke {
   getModifierState?(key: string): boolean;
 }
 
+function physicalDirectionKey(event: KeyStroke): string | undefined {
+  if (
+    event.ctrlKey &&
+    event.altKey &&
+    !event.shiftKey &&
+    !event.metaKey &&
+    /^Key[WASD]$/.test(event.code ?? '')
+  ) {
+    return event.code?.slice(3);
+  }
+  return undefined;
+}
+
 export function normalizeBinding(event: KeyStroke): string | null {
   if (event.isComposing || event.key === 'Dead' || event.getModifierState?.('AltGraph'))
     return null;
   if (['Control', 'Shift', 'Alt', 'Meta', 'AltGraph', 'Unidentified'].includes(event.key))
     return null;
+  const directionalKey = physicalDirectionKey(event);
   const key =
-    event.key === ' ' ? 'Space' : event.key.length === 1 ? event.key.toUpperCase() : event.key;
+    directionalKey ??
+    (event.key === ' ' ? 'Space' : event.key.length === 1 ? event.key.toUpperCase() : event.key);
   return [
     event.ctrlKey && 'Ctrl',
     event.altKey && 'Alt',
@@ -35,6 +51,7 @@ export function bindingProblem(binding: string): 'browser' | 'modifier' | null {
   const primary = parts.includes('Ctrl') || parts.includes('Meta');
   const shift = parts.includes('Shift');
   const alt = parts.includes('Alt');
+  if (/^Ctrl\+Alt\+[WASD]$/.test(binding)) return null;
   if (key === 'F2' && parts.length === 1) return null;
   if (key.startsWith('F') && /^F\d+$/.test(key)) return 'browser';
   if (!primary || !shift || alt) return 'modifier';
