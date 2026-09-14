@@ -170,7 +170,7 @@ try {
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.2 } 'Release gate accepted a mismatched version.'
     Invoke-ReleaseGit switch --detach $promotion.Head | Out-Null
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.1 } 'Release gate accepted the unmerged task commit.'
-    foreach ($name in @('release-pr','release-dev','promote','release','finish-task','verify-release-merge')) {
+    foreach ($name in @('release-pr','release-dev','release-local','promote','release','finish-task','verify-release-merge')) {
         $tokens=$null;$errors=$null
         [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot "$name.ps1"),[ref]$tokens,[ref]$errors) | Out-Null
         Assert-Test ($errors.Count -eq 0) "PowerShell parse errors in $name."

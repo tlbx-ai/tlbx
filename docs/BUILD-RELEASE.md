@@ -82,6 +82,8 @@ IDs are expected: dev must contain main's ancestry, including stable metadata.
 If synchronization conflicts with newer dev work, resolve and commit on its retained synchronization branch, return to the
 promotion branch, and rerun the promotion command. No bypass or force push.
 `release.ps1` is an alias for promotion; the old direct-main bump path is removed.
+`release-local.ps1` also requires a task branch and files a PR into dev; it
+produces local artifacts without automatically merging or publishing a tag.
 
 GitHub automatically deletes merged remote task branches; main/dev remain
 protected. After successful release CI and assets, run `scripts/finish-task.ps1`
