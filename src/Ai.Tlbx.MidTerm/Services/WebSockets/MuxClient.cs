@@ -987,7 +987,7 @@ public sealed class MuxClient : IAsyncDisposable
             var queuedDelay = Stopwatch.GetElapsedTime(activeBuffer.QueuedAtTicks, nowTicks);
             if (activeBuffer.DroppedBytes > 0
                 || activeBuffer.TotalBytes >= ForegroundFlushThresholdBytes
-                || queuedDelay >= ActiveFlushInterval)
+                || GetActiveFlushDelay(activeBuffer.LastFlushTicks, nowTicks) == TimeSpan.Zero)
             {
                 if (activeBuffer.TotalBytes > 0)
                 {
@@ -1064,7 +1064,7 @@ public sealed class MuxClient : IAsyncDisposable
             }
 
             var remaining = string.Equals(sessionId, activeId, StringComparison.Ordinal)
-                ? ActiveFlushInterval - Stopwatch.GetElapsedTime(buffer.QueuedAtTicks, nowTicks)
+                ? GetActiveFlushDelay(buffer.LastFlushTicks, nowTicks)
                 : (_visibleSessionIds.Contains(sessionId) ? VisibleFlushInterval : BackgroundFlushInterval)
                     - Stopwatch.GetElapsedTime(buffer.LastFlushTicks, nowTicks);
             if (remaining <= TimeSpan.Zero)
@@ -1079,6 +1079,14 @@ public sealed class MuxClient : IAsyncDisposable
         }
 
         return nextDelay;
+    }
+
+    internal static TimeSpan GetActiveFlushDelay(long lastFlushTicks, long nowTicks)
+    {
+        // Rate-limit a continuous stream without adding a fresh batching wait
+        // to every isolated keystroke echo after the terminal has been idle.
+        var remaining = ActiveFlushInterval - Stopwatch.GetElapsedTime(lastFlushTicks, nowTicks);
+        return remaining > TimeSpan.Zero ? remaining : TimeSpan.Zero;
     }
 
     private async Task FlushBufferAsync(

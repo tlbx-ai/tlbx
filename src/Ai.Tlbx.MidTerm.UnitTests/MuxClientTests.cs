@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.WebSockets;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
@@ -10,6 +11,23 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(TimingSensitiveCollection.Name)]
 public sealed class MuxClientTests
 {
+    [Theory]
+    [InlineData(0, 12)]
+    [InlineData(5, 7)]
+    [InlineData(12, 0)]
+    [InlineData(80, 0)]
+    [InlineData(420, 0)]
+    public void ActiveEcho_UsesRemainingStreamBudgetInsteadOfStartingANewWait(
+        int millisecondsSinceFlush, int expectedDelayMs)
+    {
+        var lastFlush = Stopwatch.Frequency;
+        var now = lastFlush + millisecondsSinceFlush * Stopwatch.Frequency / 1000;
+
+        var delay = MuxClient.GetActiveFlushDelay(lastFlush, now);
+
+        Assert.Equal(expectedDelayMs, delay.TotalMilliseconds, precision: 3);
+    }
+
     [Fact]
     public async Task HintedClient_DeliversActiveVisibleAndSubscribedBackgroundSessions()
     {
