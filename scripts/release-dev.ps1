@@ -227,14 +227,14 @@ function Refresh-RemoteState {
 if ($ReleaseTitle -match "^v?\d+\.\d+") {
     Write-Host ""
     Write-Host "ERROR: ReleaseTitle should NOT include a version number." -ForegroundColor Red
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # Validate ReleaseNotes has meaningful content
 if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[0].Length -lt 20)) {
     Write-Host ""
     Write-Host "ERROR: ReleaseNotes must contain meaningful changelog entries." -ForegroundColor Red
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # Fail closed if fetching fails. Preparation is tied to an exact integration base.
@@ -287,7 +287,7 @@ try {
     Write-Host ""
     Write-Host "ERROR: Unsafe prerelease version selection." -ForegroundColor Red
     Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # Determine release type
@@ -352,7 +352,7 @@ catch {
     Write-Host "ERROR: Frontend preflight failed — aborting release before any git changes." -ForegroundColor Red
     Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
     git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # Explicitly selected checks; frontend dependencies were installed by preflight.
@@ -364,7 +364,7 @@ catch {
     Write-Host "ERROR: Release verification failed — aborting release before any git changes." -ForegroundColor Red
     Write-Host "  $($_.Exception.Message)" -ForegroundColor Yellow
     git checkout -- $versionJsonPath "$PSScriptRoot\..\src\npx-launcher\package.json" 2>$null
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # Recheck the integration base before saving the verified release preparation.

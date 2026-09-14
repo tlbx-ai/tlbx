@@ -177,7 +177,7 @@ if ($devVersion -notmatch '-dev$') {
     Write-Host "ERROR: Current version '$devVersion' is not a dev version." -ForegroundColor Red
     Write-Host "Only versions ending in -dev can be promoted." -ForegroundColor Yellow
     Write-Host ""
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # Calculate stable version
@@ -225,7 +225,7 @@ if ($devTagsInRange.Count -eq 0) {
     Write-Host ""
     Write-Host "ERROR: No dev tags found since $lastStableTag. Nothing to promote." -ForegroundColor Red
     Write-Host ""
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # Parse each tag's annotation
@@ -274,7 +274,7 @@ if ($ReleaseNotes.Count -eq 0) {
     Write-Host "ERROR: No changelog entries found. Dev tags may have empty annotations." -ForegroundColor Red
     Write-Host "Provide -ReleaseNotes manually." -ForegroundColor Yellow
     Write-Host ""
-    exit 1
+    throw 'Release preparation failed; see details above.'
 }
 
 # --- Build PR body (markdown, grouped by dev release) ---
