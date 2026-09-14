@@ -8,14 +8,12 @@ on:
       - '.github/workflows/**'
       - 'src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj'
   pull_request:
-    paths:
-      - 'scripts/**'
-      - '.github/workflows/**'
-      - 'src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj'
+    branches: [dev, main]
 permissions:
   contents: read
 jobs:
   verify:
+    name: Release workflow (${{ matrix.os }})
     strategy:
       matrix:
         os: [ubuntu-24.04, windows-2025]
@@ -26,4 +24,6 @@ jobs:
           persist-credentials: false
       - name: Verify test selection and runtime reuse contracts
         shell: pwsh
-        run: ./scripts/test-release-build-system.ps1
+        run: |
+          ./scripts/test-release-build-system.ps1
+          ./scripts/test-release-pr.ps1

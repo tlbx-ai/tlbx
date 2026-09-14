@@ -16,7 +16,16 @@ still need `yes`, even when the build can fall back from reuse to compilation.
 
 Release requests authorize the complete matching script workflow in the current turn. Do not run unrelated release, tag, publish, promote, or merge-to-main workflows outside the requested path.
 
-Development happens on `dev`. `main` is only for stable integration/promotion. If a task requires switching branches, do it automatically, complete the requested work, and return to `dev` after main/stable integration is finished.
+## Repository branch workflow
+
+These rules apply only to tlbx-ai/tlbx. The tlbx terminal product remains workflow agnostic.
+- Before editing, select a clean unoccupied checkout, fetch origin, and create a task branch from updated `origin/dev`.
+- Branch names: `feat/<short-kebab-description>`, `fix/<short-kebab-description>`, or `chore/<short-kebab-description>`; lowercase ASCII words separated by hyphens. One coherent task per branch.
+- Routine task branches in an already selected checkout are authorized without another confirmation. New worktrees/additional checkouts still require explicit authorization.
+- `dev` and `main` are protected integration branches. Never push directly, force-push them, bypass PR checks, or weaken protection to finish a release.
+- Push useful work and open a draft PR early. Keep its next step clear; explicitly mark parked or abandoned work instead of leaving unexplained WIP branches.
+- On completion, verify release CI/assets, then run `scripts/finish-task.ps1` in the exclusively owned checkout. It only retires a clean branch whose exact tip is merged into dev. GitHub deletes merged remote task branches automatically. If cleanup cannot run safely, report the branch and what prevents retirement. Never discard unmerged work or another session's edits.
+- Keep the permanent numbered checkout; return it to updated `dev`. No stable promotion is implied by a dev release.
 
 - Midterm is programmed in c# and typescript -> all major data processing/protocol logic/business logic shall be handled in c#, the typescript frontend shall be held as lean as possible.
 - Use best practices for maintainable memory efficient code that uses the newest available .net features >= .net 10
@@ -27,16 +36,14 @@ Development happens on `dev`. `main` is only for stable integration/promotion. I
 
 Rules:
 
-- "Cut a dev/prerelease" authorizes the full `scripts/release-dev.ps1` cycle: version bump, verification, commit, annotated prerelease tag, push to `dev`, push tag, and the CI/artifact publishing triggered by that push.
+- "Cut a dev/prerelease" authorizes the full `scripts/release-dev.ps1` cycle: version bump and verification on the task branch, push/create or reuse its PR into `dev`, wait for required checks, merge without bypass, tag the exact merged commit, and verify CI/artifacts.
 - If the user says "patch release", "minor release", or "major release" without specifying stable/main/promote, default to the full dev/prerelease path with `scripts/release-dev.ps1`.
-- "Stable release", "main release", and "promote" all mean the stable promotion path from `dev` to `main`. Use `scripts/promote.ps1`, not `scripts/release.ps1`, unless the user explicitly asks for a direct main-branch release script.
-- "Promote current dev to stable" authorizes the complete `scripts/promote.ps1` workflow: create/find the PR, merge `dev` to `main`, update the stable version, commit, tag, push `main`, push tag, merge `main` back into `dev`, and push `dev`.
-- `scripts/release.ps1` is the direct main-branch stable release script. Treat it as exceptional and only use it when the user explicitly asks for a direct stable release from `main`.
+- "Stable release", "main release", and "promote" all mean the stable promotion path from `dev` to `main`. Use `scripts/promote.ps1`; `scripts/release.ps1` is an alias for the same protected promotion path.
+- "Promote current dev to stable" authorizes the complete `scripts/promote.ps1` workflow: create `chore/promote-X-Y-Z` from the accepted dev candidate, include stable version/generated changes, verify all clusters, create/find and merge its PR into `main`, tag the exact merged commit, and merge a `main` to `dev` synchronization PR. Always preserve ancestry with merge commits between integration branches.
 - Dev/prerelease path: use `scripts/release-dev.ps1`.
 - Stable promotion path: use `scripts/promote.ps1`.
-- Direct stable release path: use `scripts/release.ps1` only when explicitly requested.
 - Never promote to stable, merge to `main`, or run `scripts/promote.ps1` unless the user explicitly asks for stable/main/promote. A dev/prerelease request never implies stable promotion.
-- Release scripts are allowed to create and push release tags and release commits as part of their authorized full cycle.
+- Release scripts may push task branches and annotated tags as part of the authorized cycle. Re-run the same command to resume an interrupted PR/merge/tag; use `-PrepareOnly` when only preparing a review. Never label a submitted tag as a successful release before CI/assets succeed.
 - For MidTerm fixes, implement and verify the change, then cut a dev patch release with `scripts/release-dev.ps1` unless no good solution was found, verification is uncertain, or Johannes explicitly says not to release yet.
 - Before running a release script, inspect `git status`. Fix normal worktree issues yourself, including committing intended changes or removing accidental generated leftovers. If the tree contains outlandish or unrelated changes whose ownership or intent is unclear, stop and ask before releasing.
 - Choose `-mthostUpdate yes` when the protocol between `mt`, `mthost`, or `mtagenthost` changes, or when `mthost`/`mtagenthost` internals changed in a way that must ship to running installs. Choose `-mthostUpdate no` for web/frontend-only changes. If uncertain, ask before releasing.
@@ -50,10 +57,10 @@ Rules:
 ## Terminal Size Ownership
 
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
-- Only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Followers render the canonical PTY size and CSS-scale locally.
+- For owned sessions, only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Headless REST/tmux resize is permitted only while the session is unowned. Followers render the canonical PTY size and CSS-scale locally.
 - A user can explicitly take control at any time. The takeover must apply immediately and clearly explain that the terminal will be optimized for this browser.
-- A visible browser may automatically take over once when its first authoritative status already says the current lease is eligible. Do not arm background timers that let a passive phone/tablet claim later; focus, visibility, reconnect, and viewport changes alone must not renew or steal a protected lease.
-- A connected owner is protected for five minutes after its last terminal input. An offline owner becomes eligible after thirty seconds without terminal input. This prevents ping-pong while allowing work to move naturally between locations.
+- Passive views never take another browser profile's ownership, even after expiry. Visibility, focus, reconnect, session selection and viewport changes do not claim or renew leases. Only actual browser input may take an eligible lease; explicit takeover remains immediate. An unowned session or an offline predecessor in the same browser profile may be inherited without input.
+- A connected owner is protected for five minutes after its last server-observed browser user input. Terminal protocol replies and headless automation do not renew browser activity. An offline owner becomes eligible after thirty seconds without terminal input. This prevents ping-pong while allowing work to move naturally between locations.
 - A replacement tab in the same browser profile may immediately inherit from its offline predecessor. An online sibling tab never auto-steals, and copied `sessionStorage` tab IDs must be collision-checked before WebSockets connect.
 - New sessions belong to the browser tab that created them and use that tab's measured viewport. Persist ownership across server restarts and reject stale or unauthorized resize commands in the backend.
 - Ownership status may expose only a short sanitized device/browser label for orientation. Followers do not scale above `1`; use the naturally empty terminal area for the takeover affordance and name the current controlling device there.

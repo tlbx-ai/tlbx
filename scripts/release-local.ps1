@@ -1,7 +1,7 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Creates a local release by bumping version (4th component), committing, and pushing.
+    Creates a local release by bumping version (4th component), committing, and submitting a task-branch PR.
     Does NOT create a git tag (no GitHub Actions trigger).
 
 .PARAMETER TestCategories
@@ -62,6 +62,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Set-Location (Split-Path $PSScriptRoot -Parent)
+. "$PSScriptRoot/release-pr.ps1"
+$currentBranch = Assert-ReleaseTaskBranch
+Assert-ReleaseClean
 . "$PSScriptRoot/release-test-clusters.ps1"
 $selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories)
 Show-ReleaseTestPlan -Categories $selectedCategories
@@ -82,7 +86,7 @@ if ($ReleaseNotes.Count -lt 1 -or ($ReleaseNotes.Count -eq 1 -and $ReleaseNotes[
     Write-Host '      "Sessions no longer lag when mthost is busy processing output"' -ForegroundColor White
     Write-Host '  )' -ForegroundColor White
     Write-Host ""
-    exit 1
+    throw 'Local release preparation failed; see details above.'
 }
 
 $OutputDir = "C:\temp\mtlocalrelease"
@@ -104,34 +108,10 @@ Write-Host "  =====================" -ForegroundColor Cyan
 Write-Host ""
 
 # ===========================================
-# PHASE 1: Git sync (like release.ps1)
+# PHASE 1: Verify task branch starts from current dev
 # ===========================================
-Write-Host "Checking remote status..." -ForegroundColor Gray
-git fetch origin 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "Warning: Could not fetch from remote" -ForegroundColor Yellow
-}
-
-$localCommit = git rev-parse HEAD 2>$null
-$remoteCommit = git rev-parse origin/main 2>$null
-$baseCommit = git merge-base HEAD origin/main 2>$null
-
-if ($localCommit -ne $remoteCommit) {
-    if ($baseCommit -eq $localCommit) {
-        Write-Host "Local branch is behind remote. Pulling changes..." -ForegroundColor Yellow
-        git pull origin main 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "ERROR: Git pull failed. Resolve manually." -ForegroundColor Red
-            exit 1
-        }
-        Write-Host "Pull successful." -ForegroundColor Green
-    } elseif ($baseCommit -eq $remoteCommit) {
-        Write-Host "Local branch is ahead of remote (will push)." -ForegroundColor Gray
-    } else {
-        Write-Host "ERROR: Branches have diverged. Run: git pull origin main" -ForegroundColor Red
-        exit 1
-    }
-}
+Invoke-ReleaseGit fetch origin dev | Out-Host
+Invoke-ReleaseGit merge-base --is-ancestor origin/dev HEAD | Out-Null
 
 # ===========================================
 # PHASE 2: Compute local version (4th component)
@@ -251,11 +231,12 @@ foreach ($note in $ReleaseNotes) {
 
 $commitMsg | git commit -F -
 if ($LASTEXITCODE -ne 0) {
-    Write-Host "  No changes to commit (or commit failed)" -ForegroundColor Yellow
+    throw 'Local release commit failed.'
 } else {
-    git push origin main
+    git push --set-upstream origin "HEAD:refs/heads/$currentBranch"
     if ($LASTEXITCODE -ne 0) { throw "git push failed" }
-    Write-Host "  Pushed to origin/main" -ForegroundColor DarkGray
+    $pr = Get-OrCreateReleasePr -Branch $currentBranch -Base dev -Title "Local build: $($ReleaseNotes[0])" -Body $commitMsg
+    Write-Host "  Local build PR: https://github.com/tlbx-ai/tlbx/pull/$pr (not merged or publicly released)"
 }
 
 # ===========================================
