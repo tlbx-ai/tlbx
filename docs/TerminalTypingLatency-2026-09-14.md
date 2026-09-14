@@ -17,6 +17,8 @@ The installed build's median keydown-to-render times were 34.7 ms for PowerShell
 
 The currently connected Tailscale peer had a direct path and five consecutive diagnostic round trips of 34, 35, 34, 36, and 35 ms. These are network probes, not measurements inside the user's browser or proof that intermittent network stalls cannot occur.
 
+A later 30-probe series measured median 35 ms, p95 76 ms, and maximum 88 ms; it also did not capture a 300 ms spike. See `.tlbx/typing-latency/network-summary.json`.
+
 The input handler handed isolated keys to the socket in roughly 0.1–0.2 ms. The trace attributed the avoidable delay to the final Mux client output stage, rather than input translation, named-pipe input, or PTY writes. Existing server trace durations use `Environment.TickCount64`, which is coarse on this Windows host; individual 0/15/31 ms readings must not be interpreted as precise sub-millisecond measurements.
 
 ## Change and controlled source comparison
@@ -37,7 +39,9 @@ The controlled raw echo isolates the transport gain: median output arrival impro
 ## Verification and remaining boundary
 
 - 50 focused transport tests passed, including deadline budget cases, queue ordering, bounded scheduling, and shutdown behavior.
+- The `v10.16.11-dev` release preflight passed frontend packaging, all 29 server integration tests, and all 1,097 server unit tests with the explicit `server` test category. Implementation: `48ee89df`; release commit: `3622875a`. This is a web-only update.
 - Additional load run: 10,000 lines emitted before typing, a filled 2,000-line source scrollback, and a second visible terminal emitting 200-character lines every 20 ms. The 221 captured character-to-render measurements were all below 86 ms. Ten PowerShell burst characters crossed a wrapped line, beyond the probe's current-line capture, so their latency is unmeasured. Final receive/submitted/rendered cursors agreed at 1,209,171 bytes, with zero data-loss events or recovery gaps.
 - That load profile recorded 72, 526, and 77 ms long tasks during initial page/setup activity, before measured typing began. This demonstrates that startup can block the browser, but does not establish the cause of the reported ongoing typing delay. No later long task was recorded during the typing phases.
 - Browser artifacts live under `.tlbx/typing-latency/`: `baseline-bursts`, `source-original`, `source-fixed`, and the additional `source-fixed-load` run. Each completed run contains `summary.json`, `metrics.json`, `cpu-profile.json`, and `terminal.png`. The probe and analysis script are alongside them. Initial runs without verified terminal focus are invalid for latency conclusions and excluded.
 - The actual remote browser's event-loop delay, GPU/compositor timing, long-running Codex history, and physical input/display timing were not captured. The reported >300 ms symptom remains open until it is observed with these boundaries instrumented.
+- An additional local measurement-server/browser-preview launch intended to inspect the connected browser was rejected by automatic approval review with the response `blocked by policy`; that measurement did not run.
