@@ -81,7 +81,7 @@ function Start-ReleasePr {
 
 function Get-OrCreateReleasePr {
     param([string]$Branch, [string]$Base, [string]$Title, [string]$Body)
-    $prs = @(Invoke-ReleaseGh pr list --repo $script:TlbxReleaseRepo --head $Branch --base $Base --state all --json number,state,headRefOid | ConvertFrom-Json)
+    $prs = @(Invoke-ReleaseGh pr list --repo $script:TlbxReleaseRepo --head $Branch --base $Base --state all --json 'number,state,headRefOid' | ConvertFrom-Json)
     $head = Invoke-ReleaseGit rev-parse HEAD
     $match = @($prs | Where-Object { $_.state -eq 'OPEN' -or ($_.state -eq 'MERGED' -and $_.headRefOid -eq $head) })
     if ($match.Count -gt 1) { throw "Multiple PRs match $Branch -> $Base; inspect them before continuing." }
@@ -104,11 +104,11 @@ function Complete-ReleasePrMerge {
     param([int]$Number, [string]$Head, [string]$Base, [string]$ExpectedBase)
     $deadline = [DateTime]::UtcNow.AddMinutes(45)
     while ($true) {
-        $pr = Invoke-ReleaseGh pr view $Number --repo $script:TlbxReleaseRepo --json state,isDraft,headRefOid,baseRefName,mergeCommit,url | ConvertFrom-Json
+        $pr = Invoke-ReleaseGh pr view $Number --repo $script:TlbxReleaseRepo --json 'state,isDraft,headRefOid,baseRefName,mergeCommit,url' | ConvertFrom-Json
         if ($pr.headRefOid -ne $Head -or $pr.baseRefName -ne $Base) { throw "PR #$Number changed head or target. Refusing to merge unverified work." }
         if ($pr.state -eq 'MERGED') { return $pr.mergeCommit.oid }
         if ($pr.state -ne 'OPEN' -or $pr.isDraft) { throw "PR #$Number is closed or draft; resolve it before resuming." }
-        $checksText = & gh pr checks $Number --repo $script:TlbxReleaseRepo --required --json name,bucket
+        $checksText = & gh pr checks $Number --repo $script:TlbxReleaseRepo --required --json 'name,bucket'
         $checksExit = $LASTEXITCODE
         if ($checksExit -notin @(0,1,8)) { throw "Could not read required checks for PR #$Number." }
         $checks = @(([regex]::Replace(($checksText -join "`n"), '\x1b\[[0-?]*[ -/]*[@-~]', '')) | ConvertFrom-Json)
@@ -124,7 +124,7 @@ function Complete-ReleasePrMerge {
         throw "origin/$Base advanced after preparation. Merge the new base into the task branch, then prepare again; never publish an unreviewed combination. See docs/BUILD-RELEASE.md."
     }
     Invoke-ReleaseGh pr merge $Number --repo $script:TlbxReleaseRepo --merge --match-head-commit $Head | Out-Host
-    $pr = Invoke-ReleaseGh pr view $Number --repo $script:TlbxReleaseRepo --json state,mergeCommit | ConvertFrom-Json
+    $pr = Invoke-ReleaseGh pr view $Number --repo $script:TlbxReleaseRepo --json 'state,mergeCommit' | ConvertFrom-Json
     if ($pr.state -ne 'MERGED' -or -not $pr.mergeCommit.oid) { throw "PR #$Number has not merged; no tag was created." }
     return $pr.mergeCommit.oid
 }

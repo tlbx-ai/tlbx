@@ -17,6 +17,7 @@ function Assert-Rejected([scriptblock]$Action, [string]$Message) {
 $global:TlbxPrFixture = @{ Pr=$null; Prs=@(); Creates=0; Merges=0; FailChecks=$false; ChangeHead=$false; Remote=$remote }
 function global:gh {
     $a = @($args); $f = $global:TlbxPrFixture; $global:LASTEXITCODE=0
+    if (@($a | Where-Object { $_ -is [array] }).Count) { throw 'Nested command arguments would become System.Object[] at the native gh boundary.' }
     if ($a[0] -eq 'api') {
         $matches = @($f.Prs | Where-Object state -EQ 'MERGED' | ForEach-Object {
             @{number=$_.number;merged_at='2026-01-01';merge_commit_sha=$_.mergeCommit.oid;base=@{ref=$_.baseRefName}}
@@ -145,12 +146,21 @@ try {
     Assert-Test ($promotion.Version -eq '1.0.1') 'Promotion prepared an incorrect stable version.'
     Assert-Test ($global:TlbxFixturePreflight -match '1.0.1' -and $global:TlbxFixtureTests -match 'runtime') 'Promotion skipped stable verification.'
     Assert-Test ((Get-Content src/version.json -Raw | ConvertFrom-Json).web -eq '1.0.1') 'Stable metadata was not in the PR.'
+    # Development may advance after the promotion candidate has been frozen.
+    Invoke-ReleaseGit switch dev | Out-Null
+    'Later development stays on dev.' | Set-Content new-dev.txt
+    Invoke-ReleaseGit add new-dev.txt
+    Invoke-ReleaseGit commit -m 'Later dev work' | Out-Null
+    Invoke-ReleaseGit push origin dev | Out-Null
+    Invoke-ReleaseGit switch chore/promote-1-0-1 | Out-Null
     & ./scripts/promote.ps1 -TestCategories all
     $promotion = Get-ReleaseState chore/promote-1-0-1
     Assert-Test ((Invoke-ReleaseGit rev-parse 'v1.0.1^{}') -eq $promotion.Merge) 'Stable tag was not on the main merge commit.'
     Invoke-ReleaseGit fetch origin dev main | Out-Null
     Invoke-ReleaseGit merge-base --is-ancestor origin/main origin/dev | Out-Null
-    Assert-Test ((Invoke-ReleaseGit rev-parse 'origin/main^{tree}') -eq (Invoke-ReleaseGit rev-parse 'origin/dev^{tree}')) 'Stable synchronization changed content.'
+    Assert-Test ((Invoke-ReleaseGit show origin/dev:new-dev.txt) -eq 'Later development stays on dev.') 'Stable synchronization lost newer dev work.'
+    $null = & git cat-file -e origin/main:new-dev.txt 2>$null
+    Assert-Test ($LASTEXITCODE -ne 0) 'Promotion accidentally included later dev work.'
     $mergeCount = $global:TlbxPrFixture.Merges
     & ./scripts/promote.ps1 -TestCategories all
     Assert-Test ($global:TlbxPrFixture.Merges -eq $mergeCount) 'Stable retry duplicated a promotion or sync PR.'

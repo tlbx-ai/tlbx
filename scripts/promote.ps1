@@ -72,7 +72,7 @@ if ($currentBranch -eq 'dev') {
     throw 'Run promotion from clean updated dev, or resume its chore/promote-X-Y-Z branch.'
 }
 $promotionBase = Invoke-ReleaseGit rev-parse origin/main
-$candidate = Invoke-ReleaseGit rev-parse origin/dev
+$candidate = if ($currentBranch -eq 'dev') { Invoke-ReleaseGit rev-parse origin/dev } else { Invoke-ReleaseGit merge-base HEAD origin/dev }
 Invoke-ReleaseGit merge-base --is-ancestor origin/main HEAD | Out-Null
 $githubPrBodyMaxChars = 65536
 $githubReleaseNotesMaxChars = 125000
