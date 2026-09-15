@@ -29,12 +29,12 @@ public sealed class BrowserSizeOwnershipTests : IDisposable
         _size.AssignNewSession("session", "home:tab");
         Assert.True(bridge.RequestClaim("session", "default", out _));
         Assert.True(bridge.RequestOpen("session", "default", "https://example.com", true, out _));
-        Assert.Equal(new[] { "home:tab" }, opened);
+        Assert.Equal(new[] { "home:tab" }, opened, StringComparer.Ordinal);
         Assert.Equal("home:tab", owners.ResolveOwnerBrowserId("session", "default", ["work:tab"]));
 
         _size.AssignNewSession("session", "work:tab");
         Assert.True(bridge.RequestOpen("session", "default", "https://example.com", true, out _));
-        Assert.Equal(new[] { "home:tab", "work:tab" }, opened);
+        Assert.Equal(new[] { "home:tab", "work:tab" }, opened, StringComparer.Ordinal);
         _size.AssignNewSession("other", "home:sibling");
         Assert.True(bridge.RequestOpen("other", "default", "https://example.com", true, out _));
         Assert.Equal("home:sibling", opened[^1]);

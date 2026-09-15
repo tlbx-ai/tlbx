@@ -25,7 +25,7 @@ public class WebPreviewProxyMiddlewareTests
         if (html.Contains("top.location", StringComparison.Ordinal))
             Assert.True(result.IndexOf(injection, StringComparison.Ordinal) < result.IndexOf("top.location", StringComparison.Ordinal));
         if (html.StartsWith("<!doctype", StringComparison.OrdinalIgnoreCase))
-            Assert.StartsWith(html[..15], result);
+            Assert.StartsWith(html[..15], result, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -49,7 +49,7 @@ public class WebPreviewProxyMiddlewareTests
         const string html = "<iframe src=\"/webpreview/r/_ext?u=https%3A%2F%2Fchat.example.net%2Fwidget\"></iframe><img src=\"/webpreview/r/logo.png\">";
         var result = WebPreviewProxyMiddleware.MarkSubframeSources(html);
         Assert.Contains("widget&amp;__mtSubframe=1", result, StringComparison.Ordinal);
-        Assert.EndsWith("<img src=\"/webpreview/r/logo.png\">", result);
+        Assert.EndsWith("<img src=\"/webpreview/r/logo.png\">", result, StringComparison.Ordinal);
         Assert.Equal("?keep=1", WebPreviewProxyMiddleware.StripPreviewBootstrapQuery("?keep=1&__mtSubframe=1"));
     }
 
