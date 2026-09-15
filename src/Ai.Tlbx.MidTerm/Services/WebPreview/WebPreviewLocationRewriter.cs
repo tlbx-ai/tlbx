@@ -76,15 +76,26 @@ internal static partial class WebPreviewLocationRewriter
         Identifier { Name: "location" } => true,
         MemberExpression
         {
-            Object: Identifier { Name: "window" or "self" or "globalThis" or "document" },
+            Object: Identifier { Name: "window" or "self" or "globalThis" or "document" or "top" or "parent" },
             Computed: false,
             Property: Identifier { Name: "location" }
         } => true,
         MemberExpression
         {
-            Object: Identifier { Name: "window" or "self" or "globalThis" or "document" },
+            Object: Identifier { Name: "window" or "self" or "globalThis" or "document" or "top" or "parent" },
             Computed: true,
             Property: StringLiteral { Value: "location" }
+        } => true,
+        MemberExpression
+        {
+            Object: MemberExpression
+            {
+                Object: Identifier { Name: "window" or "self" or "globalThis" },
+                Computed: false,
+                Property: Identifier { Name: "top" or "parent" }
+            },
+            Computed: false,
+            Property: Identifier { Name: "location" }
         } => true,
         _ => false
     };

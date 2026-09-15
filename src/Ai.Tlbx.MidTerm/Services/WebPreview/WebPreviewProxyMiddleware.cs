@@ -20,6 +20,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string PreviewBootstrapTokenQueryParam = "__mtPreviewToken";
     private const string PreviewTargetRevisionQueryParam = "__mtTargetRevision";
     private const string PreviewReloadTokenQueryParam = "__mtReloadToken";
+    private const string PreviewSubframeQueryParam = "__mtSubframe";
     private const string InternalProxyRequestHeaderName = "X-MidTerm-Internal-Proxy";
     private const string InternalProxyRequestHeaderValue = "1";
     private const int WsBufferSize = 8192;
@@ -35,6 +36,8 @@ public sealed partial class WebPreviewProxyMiddleware
           if(window.__mtProxy)return;window.__mtProxy=1;
           // Save the real parent for navigation and cookie bridge notifications.
           var _realParent=window.parent;
+          var mtNestedPreview=new URLSearchParams(location.search).get("__mtSubframe")==="1";
+          try{mtNestedPreview=mtNestedPreview||!!_realParent.__mtProxy;}catch(e){}
           var mtCtx=null;
           function mtReadCookie(name){
             try{
@@ -56,6 +59,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return null;
           }
           function mtPersistPreviewContext(){
+            if(mtNestedPreview)return;
             if(!mtCtx||!mtCtx.previewId||!mtCtx.previewToken)return;
             try{window.name=JSON.stringify(mtCtx);}catch(e){}
             try{
@@ -96,6 +100,7 @@ public sealed partial class WebPreviewProxyMiddleware
           mtPersistPreviewContext();
           mtStripBootstrapQuery();
           function mtMsg(type,extra){
+            if(mtNestedPreview)return null;
             if(!mtCtx)return null;
             var msg=extra||{};
             msg.type=type;
@@ -133,16 +138,22 @@ public sealed partial class WebPreviewProxyMiddleware
           try{queueMicrotask(syncProxyBase);}catch(e){setTimeout(syncProxyBase,0);}
           document.addEventListener("DOMContentLoaded",syncProxyBase);
           function ar(u){
-            if(!mtReloadToken||typeof u!=="string")return u;
+            if((!mtReloadToken&&!mtNestedPreview)||typeof u!=="string")return u;
             try{
               var parsed=new URL(u,location.href);
               if(parsed.pathname===PP||parsed.pathname.indexOf(PP+"/")===0){
-                parsed.searchParams.set("__mtReloadToken",mtReloadToken);
+                if(mtReloadToken)parsed.searchParams.set("__mtReloadToken",mtReloadToken);
+                if(mtNestedPreview)parsed.searchParams.set("__mtSubframe","1");
                 if(/^(?:https?:|wss?:)/i.test(u))return parsed.toString();
                 return parsed.pathname+parsed.search+parsed.hash;
               }
             }catch(e){}
             return u;
+          }
+          function frameUrl(u){
+            var rewritten=r(u);
+            if(typeof rewritten!=="string"||/^(?:data:|blob:|about:|javascript:|#)/i.test(rewritten))return rewritten;
+            try{var url=new URL(rewritten,location.href);url.searchParams.set("__mtSubframe","1");return url.href;}catch(e){return rewritten;}
           }
           function dprop(target,name,getter){
             if(!target)return false;
@@ -253,6 +264,10 @@ public sealed partial class WebPreviewProxyMiddleware
             if(typeof u!=="string")return u;
             if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
             if(u.startsWith("//"))return r(location.protocol+u);
+            if(window.__mtExternalDocument){
+              if(u.startsWith(PP+"/")||u.startsWith(location.origin+PP+"/"))return ar(u);
+              try{return ar(E+encodeURIComponent(new URL(u,window.__mtDocumentUrl).href));}catch(e){}
+            }
             if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
               try{return r(new URL(u,document.baseURI).toString());}catch(e){}
             }
@@ -317,7 +332,7 @@ public sealed partial class WebPreviewProxyMiddleware
           ["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLEmbedElement","HTMLVideoElement","HTMLAudioElement","HTMLInputElement","HTMLTrackElement"].forEach(function(n){
             var p=window[n]&&window[n].prototype;if(!p)return;
             var d=Object.getOwnPropertyDescriptor(p,"src");if(!d||!d.set)return;
-            Object.defineProperty(p,"src",{set:function(v){d.set.call(this,r(v));},get:d.get,configurable:true,enumerable:true});
+            Object.defineProperty(p,"src",{set:function(v){d.set.call(this,n==="HTMLIFrameElement"?frameUrl(v):r(v));},get:d.get,configurable:true,enumerable:true});
           });
           // .href on link elements (stylesheets, preloads)
           var ld=Object.getOwnPropertyDescriptor(HTMLLinkElement.prototype,"href");
@@ -354,7 +369,8 @@ public sealed partial class WebPreviewProxyMiddleware
           Element.prototype.setAttribute=function(n,v){
             if(/^integrity$/i.test(n))return;
             if(typeof v==="string"){
-              if(/^(src|href|action|poster|data|formaction)$/i.test(n))v=r(v);
+              if(/^src$/i.test(n)&&this.tagName==="IFRAME")v=frameUrl(v);
+              else if(/^(src|href|action|poster|data|formaction)$/i.test(n))v=r(v);
               else if(/^(srcset|imagesrcset)$/i.test(n))v=rss(v);
               if(/^(src|href|action|poster|data|formaction|srcset|imagesrcset)$/i.test(n)){
                 try{if(this.hasAttribute&&this.hasAttribute("integrity"))this.removeAttribute("integrity");}catch(e){}
@@ -400,21 +416,38 @@ public sealed partial class WebPreviewProxyMiddleware
             return (window.__mtTargetOrigin||"")+path+location.search+location.hash;
           }
           // Application Location is upstream-facing; the bridge keeps the native proxy URL.
+          function mtNavigationUrl(value){
+            var text=String(value);
+            // HTML rewriting may already have converted an inline redirect.
+            if(text.indexOf(P+"/")===0||text.indexOf(location.origin+P+"/")===0)return r(text);
+            return r(new URL(text,curU()).href);
+          }
           var mtLocationView={};
           ["href","origin","protocol","host","hostname","port","pathname","search","hash"].forEach(function(key){
             Object.defineProperty(mtLocationView,key,{enumerable:true,get:function(){
               return new URL(curU())[key];
             },set:key==="origin"?undefined:function(value){
-              var next=key==="href"?new URL(String(value),curU()):new URL(curU());
-              if(key!=="href")next[key]=value;location.assign(r(next.href));
+              if(key==="href"){location.assign(mtNavigationUrl(value));return;}
+              var next=new URL(curU());next[key]=value;location.assign(r(next.href));
             }});
           });
-          mtLocationView.assign=function(url){location.assign(r(new URL(String(url),curU()).href));};
-          mtLocationView.replace=function(url){location.replace(r(new URL(String(url),curU()).href));};
+          mtLocationView.assign=function(url){location.assign(mtNavigationUrl(url));};
+          mtLocationView.replace=function(url){location.replace(mtNavigationUrl(url));};
           mtLocationView.reload=function(){location.reload();};
           mtLocationView.toString=function(){return curU();};
           mtLocationView[Symbol.toPrimitive]=function(){return curU();};
-          window.__mtPreviewLocation=function(value){return value===window.location?mtLocationView:value;};
+          window.__mtPreviewLocation=function(value){
+            if(value===window.location)return mtLocationView;
+            try{
+              if(value===window.top.location||value===window.parent.location){
+                // An application's top-level navigation belongs to its preview,
+                // never to the surrounding tlbx control page.
+                try{if(window.parent.__mtProxy)return window.parent.__mtPreviewLocation(window.parent.location);}catch(e){}
+                return mtLocationView;
+              }
+            }catch(e){}
+            return value;
+          };
           function postMt(type,extra){
             var msg=mtMsg(type,extra);
             if(!msg)return;
@@ -639,7 +672,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!el.getAttribute)return;
             ["src","href","action","data","formaction","poster"].forEach(function(attr){
               var v=el.getAttribute(attr);
-              if(v){var rv=r(v);if(rv!==v)sa.call(el,attr,rv);}
+              if(v){var rv=attr==="src"&&el.tagName==="IFRAME"?frameUrl(v):r(v);if(rv!==v)sa.call(el,attr,rv);}
             });
             try{
               if(el.hasAttribute&&el.hasAttribute("integrity"))el.removeAttribute("integrity");
@@ -1101,6 +1134,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
           });
           function connectBws(){
+            if(mtNestedPreview)return;
             try{
               if(bws&&(bws.readyState===0||bws.readyState===1))return;
               var proto=location.protocol==="https:"?"wss:":"ws:";
@@ -1669,6 +1703,12 @@ public sealed partial class WebPreviewProxyMiddleware
         // but root-relative URLs (/path/to/file) need explicit rewriting.
         var routePrefix = _service.BuildProxyPrefix(routeKey);
         var targetAuthority = targetUri.Authority;
+        var isExternalDocument = Uri.TryCreate(finalUrl, UriKind.Absolute, out var documentUri)
+            && !documentUri.Authority.Equals(targetAuthority, StringComparison.OrdinalIgnoreCase);
+        if (isExternalDocument)
+        {
+            html = RewriteExternalDocumentAttributes(html, documentUri!, routePrefix);
+        }
         html = RootRelativeAttrRegex().Replace(html, m => RewriteRootRelativeAttributeUrl(m, routePrefix, reloadToken));
         html = RewriteSrcsetAttributes(html, routePrefix, targetUri.Scheme, targetAuthority, reloadToken);
         html = RootRelativeCssUrlRegex().Replace(html, m => RewriteRootRelativeCssUrl(m, routePrefix, reloadToken));
@@ -1717,8 +1757,10 @@ public sealed partial class WebPreviewProxyMiddleware
 
         // Inject <base href> for truly relative URLs, plus a script that patches
         // fetch/XHR to rewrite root-relative URLs at runtime (safer than regex on JS source).
-        var targetOrigin = targetUri.GetLeftPart(UriPartial.Authority);
-        var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
+        var targetOrigin = (documentUri ?? targetUri).GetLeftPart(UriPartial.Authority);
+        var originScript = $"<script>window.__mtTargetOrigin=\"{JsonEncodedText.Encode(targetOrigin)}\";"
+            + $"window.__mtDocumentUrl=\"{JsonEncodedText.Encode(finalUrl ?? targetUri.ToString())}\";"
+            + $"window.__mtExternalDocument={(isExternalDocument ? "true" : "false")};</script>";
         var redirectedProxyPath = BuildRedirectedProxyPath(
             routePrefix,
             targetUri,
@@ -1728,10 +1770,9 @@ public sealed partial class WebPreviewProxyMiddleware
         var redirectPathScript = redirectedProxyPath is null
             ? ""
             : $"<script>history.replaceState(history.state,\"\",\"{JsonEncodedText.Encode(redirectedProxyPath)}\");</script>";
-        html = HeadTagRegex().Replace(
-            html,
-            $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix) + redirectPathScript,
-            1);
+        html = MarkSubframeSources(html);
+        html = InjectHeadContent(html,
+            $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix) + redirectPathScript);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
@@ -1739,6 +1780,35 @@ public sealed partial class WebPreviewProxyMiddleware
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html, context.RequestAborted);
     }
+
+    internal static string InjectHeadContent(string html, string injection)
+    {
+        var head = HeadTagRegex().Match(html);
+        if (head.Success) return html.Insert(head.Index + head.Length, injection);
+        // A script-only login redirect is valid HTML too. Install the adapter
+        // before any upstream script while preserving the document's doctype.
+        var prefix = HtmlDocumentPrefixRegex().Match(html);
+        return html.Insert(prefix.Success ? prefix.Length : 0, "<head>" + injection + "</head>");
+    }
+
+    internal static string MarkSubframeSources(string html) => IframeSourceRegex().Replace(html, match =>
+    {
+        var url = WebUtility.HtmlDecode(match.Groups[2].Value);
+        if (!url.Contains("/webpreview/", StringComparison.Ordinal)) return match.Value;
+        var marked = QueryHelpers.AddQueryString(url, PreviewSubframeQueryParam, "1");
+        return match.Groups[1].Value + WebUtility.HtmlEncode(marked) + match.Groups[3].Value;
+    });
+
+    internal static string RewriteExternalDocumentAttributes(string html, Uri documentUri, string routePrefix) =>
+        DocumentUrlAttributeRegex().Replace(html, match =>
+        {
+            var value = WebUtility.HtmlDecode(match.Groups[2].Value);
+            if (value.StartsWith('#') || value.StartsWith(routePrefix + "/", StringComparison.Ordinal)
+                || !Uri.TryCreate(documentUri, value, out var url) || url.Scheme is not ("http" or "https"))
+                return match.Value;
+            var proxied = routePrefix + "/_ext?u=" + Uri.EscapeDataString(url.ToString());
+            return match.Groups[1].Value + WebUtility.HtmlEncode(proxied) + match.Groups[3].Value;
+        });
 
     private static string ComputeBaseHref(string routePrefix, string? finalUrl)
     {
@@ -2551,7 +2621,7 @@ public sealed partial class WebPreviewProxyMiddleware
             : targetUri;
     }
 
-    private static bool ShouldAdoptCanonicalTarget(
+    internal static bool ShouldAdoptCanonicalTarget(
         HttpRequest request,
         HttpResponseMessage upstreamResponse,
         string? finalUrl,
@@ -2559,6 +2629,8 @@ public sealed partial class WebPreviewProxyMiddleware
         out Uri canonicalUri)
     {
         canonicalUri = null!;
+
+        if (request.Query[PreviewSubframeQueryParam] == "1") return false;
 
         if (string.IsNullOrWhiteSpace(finalUrl))
             return false;
@@ -2915,7 +2987,8 @@ public sealed partial class WebPreviewProxyMiddleware
         if (!parsed.ContainsKey(PreviewBootstrapIdQueryParam)
             && !parsed.ContainsKey(PreviewBootstrapTokenQueryParam)
             && !parsed.ContainsKey(PreviewTargetRevisionQueryParam)
-            && !parsed.ContainsKey(PreviewReloadTokenQueryParam))
+            && !parsed.ContainsKey(PreviewReloadTokenQueryParam)
+            && !parsed.ContainsKey(PreviewSubframeQueryParam))
         {
             return queryString ?? "";
         }
@@ -2926,7 +2999,8 @@ public sealed partial class WebPreviewProxyMiddleware
             if (entry.Key.Equals(PreviewBootstrapIdQueryParam, StringComparison.Ordinal)
                 || entry.Key.Equals(PreviewBootstrapTokenQueryParam, StringComparison.Ordinal)
                 || entry.Key.Equals(PreviewTargetRevisionQueryParam, StringComparison.Ordinal)
-                || entry.Key.Equals(PreviewReloadTokenQueryParam, StringComparison.Ordinal))
+                || entry.Key.Equals(PreviewReloadTokenQueryParam, StringComparison.Ordinal)
+                || entry.Key.Equals(PreviewSubframeQueryParam, StringComparison.Ordinal))
             {
                 continue;
             }
@@ -3064,6 +3138,15 @@ public sealed partial class WebPreviewProxyMiddleware
 
     [GeneratedRegex(@"<head(\s[^>]*)?>", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex HeadTagRegex();
+
+    [GeneratedRegex(@"\A\s*(?:<!doctype\b[^>]*>\s*)?(?:<html\b[^>]*>\s*)?", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex HtmlDocumentPrefixRegex();
+
+    [GeneratedRegex("(<iframe\\b[^>]*?\\bsrc\\s*=\\s*[\"'])([^\"']*)([\"'])", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex IframeSourceRegex();
+
+    [GeneratedRegex("(\\b(?:src|href|action|poster|formaction)\\s*=\\s*[\"'])([^\"']*)([\"'])", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex DocumentUrlAttributeRegex();
 
     // Matches existing <base ...> tags (self-closing or not) to remove before injecting ours
     [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase, 1000)]
