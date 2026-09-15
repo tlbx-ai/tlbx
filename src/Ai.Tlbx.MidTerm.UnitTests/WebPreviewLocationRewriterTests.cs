@@ -53,7 +53,7 @@ public sealed class WebPreviewLocationRewriterTests
     {
         const string html = "<script language=\"javascript\">top.location.href='https://login.example.com/session?returl=member';</script>";
         var result = WebPreviewLocationRewriter.RewriteInlineScripts(html);
-        Assert.Contains("(top.location)).href='https://login.example.com/session?returl=member'", result);
+        Assert.Contains("(top.location)).href='https://login.example.com/session?returl=member'", result, StringComparison.Ordinal);
     }
 
     [Fact]

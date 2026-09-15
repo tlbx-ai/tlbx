@@ -20,7 +20,7 @@ public class WebPreviewProxyMiddlewareTests
     {
         const string injection = "<script>bridge()</script>";
         var result = WebPreviewProxyMiddleware.InjectHeadContent(html, injection);
-        Assert.Contains("<head>" + injection, result);
+        Assert.Contains("<head>" + injection, result, StringComparison.Ordinal);
         Assert.True(result.IndexOf(injection, StringComparison.Ordinal) < result.IndexOf("</head>", StringComparison.Ordinal));
         if (html.Contains("top.location", StringComparison.Ordinal))
             Assert.True(result.IndexOf(injection, StringComparison.Ordinal) < result.IndexOf("top.location", StringComparison.Ordinal));
@@ -48,7 +48,7 @@ public class WebPreviewProxyMiddlewareTests
     {
         const string html = "<iframe src=\"/webpreview/r/_ext?u=https%3A%2F%2Fchat.example.net%2Fwidget\"></iframe><img src=\"/webpreview/r/logo.png\">";
         var result = WebPreviewProxyMiddleware.MarkSubframeSources(html);
-        Assert.Contains("widget&amp;__mtSubframe=1", result);
+        Assert.Contains("widget&amp;__mtSubframe=1", result, StringComparison.Ordinal);
         Assert.EndsWith("<img src=\"/webpreview/r/logo.png\">", result);
         Assert.Equal("?keep=1", WebPreviewProxyMiddleware.StripPreviewBootstrapQuery("?keep=1&__mtSubframe=1"));
     }
@@ -58,10 +58,10 @@ public class WebPreviewProxyMiddlewareTests
     {
         const string html = "<script src='js/app.js'></script><link href='/style.css'><form action='submit'><a href='#help'>Help</a></form>";
         var result = WebPreviewProxyMiddleware.RewriteExternalDocumentAttributes(html, new Uri("https://chat.example.net/widget/index.html"), "/webpreview/r");
-        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fwidget%2Fjs%2Fapp.js", result);
-        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fstyle.css", result);
-        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fwidget%2Fsubmit", result);
-        Assert.Contains("<a href='#help'>", result);
+        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fwidget%2Fjs%2Fapp.js", result, StringComparison.Ordinal);
+        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fstyle.css", result, StringComparison.Ordinal);
+        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fwidget%2Fsubmit", result, StringComparison.Ordinal);
+        Assert.Contains("<a href='#help'>", result, StringComparison.Ordinal);
     }
 
     [Fact]

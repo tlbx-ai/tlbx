@@ -56,6 +56,8 @@ Rules:
 
 ## Terminal Size Ownership
 
+- Session-scoped browser automation follows the exact terminal size-owner tab. Global main-browser selection and stale preview claims must not route automation to a passive tab; an offline size owner requires reconnect or an explicit size takeover.
+
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
 - For owned sessions, only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Headless REST/tmux resize is permitted only while the session is unowned. Followers render the canonical PTY size and CSS-scale locally.
 - A user can explicitly take control at any time. The takeover must apply immediately and clearly explain that the terminal will be optimized for this browser.

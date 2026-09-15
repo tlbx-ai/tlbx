@@ -537,6 +537,9 @@ public sealed class BrowserCommandService
         }
 
         var matches = FilterClients(clients, sessionId, previewName, previewId);
+        var sizeOwner = _previewOwnerService?.GetSizeOwnerBrowserId(sessionId);
+        if (sizeOwner is not null && string.IsNullOrWhiteSpace(previewId))
+            matches = matches.Where(client => string.Equals(client.BrowserId, sizeOwner, StringComparison.Ordinal)).ToArray();
         var resolvedOwnerBrowserId = string.IsNullOrWhiteSpace(previewId)
             ? _previewOwnerService?.ResolveOwnerBrowserId(
                 sessionId,
@@ -1006,6 +1009,9 @@ public sealed class BrowserCommandService
                 return false;
             }
 
+            var sizeOwner = _previewOwnerService?.GetSizeOwnerBrowserId(request.SessionId);
+            if (sizeOwner is not null)
+                matches = matches.Where(client => string.Equals(client.BrowserId, sizeOwner, StringComparison.Ordinal)).ToArray();
             var scopedMatches = matches;
             var ownerBrowserId = _previewOwnerService?.ResolveOwnerBrowserId(
                 request.SessionId,

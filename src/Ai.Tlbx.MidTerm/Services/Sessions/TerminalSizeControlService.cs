@@ -113,6 +113,14 @@ public sealed class TerminalSizeControlService : IDisposable
         }
     }
 
+    public string? GetOwnerBrowserId(string sessionId)
+    {
+        lock (_lock)
+        {
+            return _ownership.GetValueOrDefault(sessionId)?.BrowserId;
+        }
+    }
+
     public TerminalSizeControlStatus GetStatus(string sessionId, string browserId)
     {
         lock (_lock)
