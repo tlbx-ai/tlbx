@@ -12,6 +12,58 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public class WebPreviewProxyMiddlewareTests
 {
+    [Theory]
+    [InlineData("<script>top.location.href='/login'</script>")]
+    [InlineData("<!doctype html><html><script>top.location.href='/login'</script></html>")]
+    [InlineData("<!DOCTYPE html><html><head></head><body></body></html>")]
+    public void InjectHeadContent_InstallsBridgeBeforeUpstreamScripts(string html)
+    {
+        const string injection = "<script>bridge()</script>";
+        var result = WebPreviewProxyMiddleware.InjectHeadContent(html, injection);
+        Assert.Contains("<head>" + injection, result);
+        Assert.True(result.IndexOf(injection, StringComparison.Ordinal) < result.IndexOf("</head>", StringComparison.Ordinal));
+        if (html.Contains("top.location", StringComparison.Ordinal))
+            Assert.True(result.IndexOf(injection, StringComparison.Ordinal) < result.IndexOf("top.location", StringComparison.Ordinal));
+        if (html.StartsWith("<!doctype", StringComparison.OrdinalIgnoreCase))
+            Assert.StartsWith(html[..15], result);
+    }
+
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public void CanonicalTarget_ChangesForPreviewNavigationButNotEmbeddedFrames(bool subframe, bool expected)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "GET";
+        context.Request.Headers["Sec-Fetch-Dest"] = "iframe";
+        context.Request.Headers["Sec-Fetch-Mode"] = "navigate";
+        context.Request.QueryString = new QueryString(subframe ? "?__mtSubframe=1" : "");
+        using var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("<html></html>", Encoding.UTF8, "text/html") };
+        Assert.Equal(expected, WebPreviewProxyMiddleware.ShouldAdoptCanonicalTarget(
+            context.Request, response, "https://chat.example.net/widget", "shop.example.com", out _));
+    }
+
+    [Fact]
+    public void EmbeddedFrameSources_AreMarkedWithoutChangingOtherResources()
+    {
+        const string html = "<iframe src=\"/webpreview/r/_ext?u=https%3A%2F%2Fchat.example.net%2Fwidget\"></iframe><img src=\"/webpreview/r/logo.png\">";
+        var result = WebPreviewProxyMiddleware.MarkSubframeSources(html);
+        Assert.Contains("widget&amp;__mtSubframe=1", result);
+        Assert.EndsWith("<img src=\"/webpreview/r/logo.png\">", result);
+        Assert.Equal("?keep=1", WebPreviewProxyMiddleware.StripPreviewBootstrapQuery("?keep=1&__mtSubframe=1"));
+    }
+
+    [Fact]
+    public void ExternalDocument_ResolvesItsOwnRelativeAssetsAndFormTargets()
+    {
+        const string html = "<script src='js/app.js'></script><link href='/style.css'><form action='submit'><a href='#help'>Help</a></form>";
+        var result = WebPreviewProxyMiddleware.RewriteExternalDocumentAttributes(html, new Uri("https://chat.example.net/widget/index.html"), "/webpreview/r");
+        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fwidget%2Fjs%2Fapp.js", result);
+        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fstyle.css", result);
+        Assert.Contains("https%3A%2F%2Fchat.example.net%2Fwidget%2Fsubmit", result);
+        Assert.Contains("<a href='#help'>", result);
+    }
+
     [Fact]
     public async Task ScopedPreview_UnknownRoute_CannotFallThroughToControlEndpoints()
     {

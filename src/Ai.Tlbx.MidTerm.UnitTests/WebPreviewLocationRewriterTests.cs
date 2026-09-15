@@ -12,6 +12,9 @@ public sealed class WebPreviewLocationRewriterTests
     [InlineData("self.location.origin")]
     [InlineData("globalThis['location'].search")]
     [InlineData("window?.location?.hash")]
+    [InlineData("top.location.href")]
+    [InlineData("parent.location.replace")]
+    [InlineData("window.top.location.href")]
     public void AdaptsLocationObjectWithoutChangingPropertyAccess(string expression)
     {
         var rewritten = WebPreviewLocationRewriter.Rewrite("const value=" + expression);
@@ -43,6 +46,14 @@ public sealed class WebPreviewLocationRewriterTests
         Assert.Contains("(location)).href='/admin'", rewritten, StringComparison.Ordinal);
         Assert.Contains("(location)).port === '5178'", rewritten, StringComparison.Ordinal);
         Assert.Contains("(window.location)).replace('/login')", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AdaptsScriptOnlyLoginRedirectWithoutChangingItsDestination()
+    {
+        const string html = "<script language=\"javascript\">top.location.href='https://login.example.com/session?returl=member';</script>";
+        var result = WebPreviewLocationRewriter.RewriteInlineScripts(html);
+        Assert.Contains("(top.location)).href='https://login.example.com/session?returl=member'", result);
     }
 
     [Fact]
