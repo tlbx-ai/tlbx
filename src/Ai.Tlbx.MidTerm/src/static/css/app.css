@@ -5853,6 +5853,11 @@ body::before {
   justify-content: flex-end;
 }
 
+.performance-log-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .terminal-buffer-dump-actions .btn-secondary {
   flex-shrink: 0;
 }

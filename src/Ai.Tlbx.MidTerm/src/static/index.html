@@ -2861,6 +2861,33 @@
                       ></div>
                     </div>
                     <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.performanceLog">Performance log</label>
+                      <div class="path-value-row performance-log-actions">
+                        <button
+                          id="btn-performance-log-start"
+                          type="button"
+                          class="btn-secondary"
+                          data-i18n="settings.diagnostics.performanceLogStart"
+                        >Start</button>
+                        <button
+                          id="btn-performance-log-stop"
+                          type="button"
+                          class="btn-secondary"
+                          data-i18n="settings.diagnostics.performanceLogStop"
+                        >Stop</button>
+                        <button
+                          id="btn-performance-log-download"
+                          type="button"
+                          class="btn-secondary"
+                          data-i18n="settings.diagnostics.performanceLogDownload"
+                        >Download JSON</button>
+                        <code id="diag-performance-log-status" class="path-value" aria-live="polite">-</code>
+                      </div>
+                    </div>
+                    <p class="diag-help-text" data-i18n="settings.diagnostics.performanceLogHint">
+                      Records timing and transport counters without terminal text. Pauses while the tab is hidden.
+                    </p>
+                    <div class="setting-row">
                       <label
                         for="setting-terminal-input-coalescing-ms"
                         data-i18n="settings.diagnostics.inputCoalescingMs"
