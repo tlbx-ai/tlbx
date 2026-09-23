@@ -1281,6 +1281,9 @@ export function setupGlobalFocusReclaim(): void {
   }
 
   document.addEventListener('mouseup', (e) => {
+    if (e.defaultPrevented) {
+      return;
+    }
     const target =
       e.target instanceof HTMLElement
         ? e.target
