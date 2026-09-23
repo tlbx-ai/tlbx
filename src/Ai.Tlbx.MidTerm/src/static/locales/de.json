@@ -411,6 +411,8 @@
   "update.updating": "Aktualisierung läuft...",
   "update.restarting": "Neustart läuft...",
   "update.failed": "Prüfung auf Updates fehlgeschlagen",
+  "update.applyFailed": "Update konnte nicht installiert werden",
+  "update.noLongerAvailable": "Das angebotene Update ist auf diesem Server nicht mehr verfügbar. Lade die Seite neu und prüfe erneut.",
   "update.githubRelease": "GitHub Release",
   "update.localBuild": "Lokaler Build",
   "update.apply": "Anwenden",

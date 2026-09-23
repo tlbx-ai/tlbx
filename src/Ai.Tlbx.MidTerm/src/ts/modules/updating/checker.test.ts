@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   applyUpdate: vi.fn(),
+  checkUpdate: vi.fn(),
   showConfirm: vi.fn(),
   showAlert: vi.fn(),
   beginServerRestartLifecycle: vi.fn(),
@@ -27,10 +28,14 @@ describe('full update action', () => {
     vi.clearAllMocks();
     button.disabled = false;
     $updateInfo.set(null);
-    vi.stubGlobal('document', { querySelectorAll: () => [button, cardButton] });
+    vi.stubGlobal('document', {
+      querySelectorAll: () => [button, cardButton],
+      getElementById: () => null,
+    });
     vi.stubGlobal('localStorage', { setItem: vi.fn() });
     mocks.showConfirm.mockResolvedValue(true);
     mocks.applyUpdate.mockResolvedValue({ response: { ok: true } });
+    mocks.checkUpdate.mockResolvedValue({ data: null });
   });
 
   it('can reinstall when no newer update is available', async () => {
@@ -56,8 +61,8 @@ describe('full update action', () => {
       error: { detail: 'Download failed' },
     });
     await applyFullUpdate();
-    expect(mocks.showAlert).toHaveBeenCalledWith('update.failed', {
-      details: 'Error: Download failed',
+    expect(mocks.showAlert).toHaveBeenCalledWith('update.applyFailed', {
+      details: 'Download failed',
     });
     expect(mocks.beginServerRestartLifecycle).not.toHaveBeenCalled();
     expect(button.disabled).toBe(false);
@@ -70,8 +75,8 @@ describe('full update action', () => {
   it('restores every button after a rejected request and permits retry', async () => {
     mocks.applyUpdate.mockRejectedValueOnce(new Error('Network unavailable'));
     await applyUpdate();
-    expect(mocks.showAlert).toHaveBeenCalledWith('update.failed', {
-      details: 'Error: Network unavailable',
+    expect(mocks.showAlert).toHaveBeenCalledWith('update.applyFailed', {
+      details: 'Network unavailable',
     });
     expect(cardButton.disabled).toBe(false);
     await applyUpdate();
@@ -108,9 +113,65 @@ describe('full update action', () => {
       error: 'No local update available',
     });
     await applyLocalUpdate();
-    expect(mocks.showAlert).toHaveBeenCalledWith('update.failed', {
-      details: 'Error: No local update available',
+    expect(mocks.showAlert).toHaveBeenCalledWith('update.applyFailed', {
+      details: 'No local update available',
     });
     expect(cardButton.disabled).toBe(false);
+  });
+
+  it('refreshes a stale tab when the update finished before its click was handled', async () => {
+    $updateInfo.set({
+      available: true,
+      currentVersion: '10.16.21-dev',
+      latestVersion: '10.16.22-dev',
+      type: 'webOnly',
+    } as never);
+    mocks.applyUpdate.mockResolvedValue({
+      response: { ok: false, status: 400 },
+      error: 'No update available',
+    });
+    mocks.checkUpdate.mockResolvedValue({
+      data: {
+        available: false,
+        currentVersion: '10.16.22-dev',
+        latestVersion: '10.16.22-dev',
+      },
+    });
+
+    await applyUpdate();
+
+    expect(mocks.showAlert).not.toHaveBeenCalled();
+    expect(mocks.beginServerRestartLifecycle).toHaveBeenCalledWith('update', {
+      updateType: 'webOnly',
+      expectedServerVersion: '10.16.22-dev',
+    });
+    expect($updateInfo.get()?.available).toBe(false);
+  });
+
+  it('still reports an unavailable update when the server remains on the old version', async () => {
+    $updateInfo.set({
+      available: true,
+      currentVersion: '10.16.21-dev',
+      latestVersion: '10.16.22-dev',
+      type: 'webOnly',
+    } as never);
+    mocks.applyUpdate.mockResolvedValue({
+      response: { ok: false, status: 400 },
+      error: 'No update available',
+    });
+    mocks.checkUpdate.mockResolvedValue({
+      data: {
+        available: false,
+        currentVersion: '10.16.21-dev',
+        latestVersion: '10.16.21-dev',
+      },
+    });
+
+    await applyUpdate();
+
+    expect(mocks.showAlert).toHaveBeenCalledWith('update.applyFailed', {
+      details: 'update.noLongerAvailable',
+    });
+    expect(mocks.beginServerRestartLifecycle).not.toHaveBeenCalled();
   });
 });
