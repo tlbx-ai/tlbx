@@ -45,6 +45,30 @@ describe('terminal link confirmation preference', () => {
     expect(openTerminalWebLinkInNewTab).toHaveBeenCalledOnce();
   });
 
+  it('lets xterm receive mouseup when link confirmation opens', () => {
+    const overlay = {
+      className: '',
+      innerHTML: '',
+      addEventListener: vi.fn(),
+      querySelector: vi.fn(() => ({ focus: vi.fn() })),
+    };
+    vi.stubGlobal('document', {
+      activeElement: null,
+      createElement: vi.fn(() => overlay),
+      body: { append: vi.fn() },
+      addEventListener: vi.fn(),
+    });
+    const event = {
+      preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
+    } as unknown as MouseEvent;
+
+    activateTerminalLink(event, 'https://example.com/path');
+
+    expect(event.preventDefault).toHaveBeenCalledOnce();
+    expect(event.stopPropagation).not.toHaveBeenCalled();
+  });
+
   it('keeps confirmation enabled when browser storage cannot be read', () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {

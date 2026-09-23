@@ -28,7 +28,7 @@ describe('terminal web links', () => {
       openTerminalWebLinkInNewTab(event, 'https://example.com/path?q=midterm', ownerDocument),
     ).toBe(true);
     expect(event.preventDefault).toHaveBeenCalledOnce();
-    expect(event.stopPropagation).toHaveBeenCalledOnce();
+    expect(event.stopPropagation).not.toHaveBeenCalled();
     expect(link).toMatchObject({
       href: 'https://example.com/path?q=midterm',
       target: '_blank',

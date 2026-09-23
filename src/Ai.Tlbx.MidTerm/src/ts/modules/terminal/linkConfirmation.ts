@@ -46,7 +46,7 @@ export function activateTerminalLink(event: MouseEvent, uri: string): void {
     return;
   }
   event.preventDefault();
-  event.stopPropagation();
+  // xterm must still receive mouseup at document level to end its selection.
   closeActiveDialog?.();
   showTerminalLinkDialog(url.href);
 }
