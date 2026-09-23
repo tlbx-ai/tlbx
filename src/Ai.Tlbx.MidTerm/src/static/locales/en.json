@@ -988,6 +988,8 @@
   "update.updating": "Updating...",
   "update.restarting": "Restarting...",
   "update.failed": "Failed to check for updates",
+  "update.applyFailed": "Could not install update",
+  "update.noLongerAvailable": "The offered update is no longer available on this server. Reload the page and check again.",
   "update.githubRelease": "GitHub Release",
   "update.localBuild": "Local Build",
   "update.apply": "Apply",

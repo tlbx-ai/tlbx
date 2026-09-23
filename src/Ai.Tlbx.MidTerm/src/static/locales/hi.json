@@ -377,6 +377,8 @@
   "update.updating": "अपडेट हो रहा है...",
   "update.restarting": "पुनरारंभ हो रहा है...",
   "update.failed": "अपडेट जांचने में विफल",
+  "update.applyFailed": "अपडेट इंस्टॉल नहीं हो सका",
+  "update.noLongerAvailable": "प्रस्तावित अपडेट अब इस सर्वर पर उपलब्ध नहीं है। पेज फिर से लोड करें और दोबारा जांचें।",
   "update.githubRelease": "GitHub रिलीज़",
   "update.localBuild": "लोकल बिल्ड",
   "update.apply": "लागू करें",

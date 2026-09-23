@@ -278,6 +278,43 @@ function updateFailureDetails(error: unknown, response: Response): string {
   return problem?.detail || problem?.title || `HTTP ${response.status} ${response.statusText}`;
 }
 
+async function recoverAlreadyInstalledUpdate(target: UpdateInfo | null): Promise<boolean> {
+  if (!target?.available || target.currentVersion === target.latestVersion) return false;
+
+  try {
+    const { data } = await checkUpdate();
+    if (!data) return false;
+
+    $updateInfo.set(data);
+    renderUpdateCards(data);
+    if (data.currentVersion !== target.latestVersion) return false;
+
+    setPendingChangelogFlag();
+    waitForServerAndReload(target.type, target.latestVersion);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function recoverFromStaleUpdateResponse(
+  source: string | undefined,
+  forceFull: boolean,
+  response: Response,
+  failure: string,
+  info: UpdateInfo | null,
+): Promise<boolean> {
+  if (source || forceFull || response.status !== 400 || !failure.includes('No update available')) {
+    return false;
+  }
+  return recoverAlreadyInstalledUpdate(info);
+}
+
+function applyFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.name === 'TimeoutError') return t('update.requestTimeout');
+  return error instanceof Error ? error.message : String(error);
+}
+
 async function runUpdate(source?: string, forceFull = false): Promise<void> {
   if (updateRequestPending) return;
   updateRequestPending = true;
@@ -292,21 +329,23 @@ async function runUpdate(source?: string, forceFull = false): Promise<void> {
     )
       return;
 
-    const { response, error } = await apiApplyUpdate(source, forceFull);
-    if (!response.ok) {
-      throw new Error(updateFailureDetails(error, response));
-    }
-    setPendingChangelogFlag();
     const info = $updateInfo.get();
     const target = source === 'local' ? info?.localUpdate : info;
+    const { response, error } = await apiApplyUpdate(source, forceFull);
+    if (!response.ok) {
+      const failure = updateFailureDetails(error, response);
+      if (await recoverFromStaleUpdateResponse(source, forceFull, response, failure, info)) {
+        return;
+      }
+      throw new Error(
+        failure.includes('No update available') ? t('update.noLongerAvailable') : failure,
+      );
+    }
+    setPendingChangelogFlag();
     waitForServerAndReload(forceFull ? 'full' : (target?.type ?? null));
   } catch (error: unknown) {
     log.error(() => `Update failed: ${String(error)}`);
-    const details =
-      error instanceof Error && error.name === 'TimeoutError'
-        ? t('update.requestTimeout')
-        : String(error);
-    await showAlert(t('update.failed'), { details });
+    await showAlert(t('update.applyFailed'), { details: applyFailureMessage(error) });
   } finally {
     updateRequestPending = false;
     syncUpdateButtons();

@@ -377,6 +377,8 @@
   "update.updating": "Mise à jour...",
   "update.restarting": "Redémarrage...",
   "update.failed": "Échec de la vérification des mises à jour",
+  "update.applyFailed": "Impossible d’installer la mise à jour",
+  "update.noLongerAvailable": "La mise à jour proposée n’est plus disponible sur ce serveur. Rechargez la page et vérifiez à nouveau.",
   "update.githubRelease": "Version GitHub",
   "update.localBuild": "Build Local",
   "update.apply": "Appliquer",

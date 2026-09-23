@@ -380,6 +380,8 @@
   "update.updating": "更新中...",
   "update.restarting": "重启中...",
   "update.failed": "检查更新失败",
+  "update.applyFailed": "无法安装更新",
+  "update.noLongerAvailable": "此服务器不再提供所显示的更新。请重新加载页面后再次检查。",
   "update.githubRelease": "GitHub 发布",
   "update.localBuild": "本地构建",
   "update.apply": "应用",
