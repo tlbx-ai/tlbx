@@ -6,4 +6,5 @@ public sealed class CertificateInfoResponse
     public DateTime? NotBefore { get; init; }
     public DateTime? NotAfter { get; init; }
     public bool IsFallbackCertificate { get; init; }
+    public bool IsCertificateAuthority { get; init; }
 }

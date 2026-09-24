@@ -4205,6 +4205,7 @@ export interface components {
       /** Format: date-time */
       notAfter: null | string;
       isFallbackCertificate: boolean;
+      isCertificateAuthority: boolean;
     };
     ChangePasswordRequest: {
       currentPassword?: null | string;
