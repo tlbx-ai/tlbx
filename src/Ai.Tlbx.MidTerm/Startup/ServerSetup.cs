@@ -248,6 +248,15 @@ public static class ServerSetup
         var useCompressedFiles = true;
 #endif
 
+        var manifestFile = fileProvider.GetFileInfo("site.webmanifest");
+        string? manifest = null;
+        if (manifestFile.Exists)
+        {
+            using var manifestStream = manifestFile.CreateReadStream();
+            using var manifestReader = new StreamReader(manifestStream);
+            manifest = PwaManifest.WithServerName(manifestReader.ReadToEnd(), Environment.MachineName);
+        }
+
         // Rewrite clean URLs and consolidate icon requests
         app.Use(async (context, next) =>
         {
@@ -272,6 +281,23 @@ public static class ServerSetup
         });
 
         app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+
+        app.Use(async (context, next) =>
+        {
+            if (manifest is null || context.Request.Path != "/site.webmanifest"
+                || (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method)))
+            {
+                await next();
+                return;
+            }
+
+            context.Response.ContentType = "application/manifest+json; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+            if (HttpMethods.IsGet(context.Request.Method))
+            {
+                await context.Response.WriteAsync(manifest, context.RequestAborted);
+            }
+        });
 
         app.Use(async (context, next) =>
         {
