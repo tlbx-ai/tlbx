@@ -4583,6 +4583,7 @@ export interface components {
       terminalLatencyDiagnosticsEnabled: boolean;
       /** Format: int32 */
       terminalInputCoalescingMs: number;
+      codexLocalEchoEnabled: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
       updateChannel: null | string;

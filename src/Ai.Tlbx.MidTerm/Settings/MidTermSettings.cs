@@ -154,6 +154,9 @@ public sealed class MidTermSettings
     // Printable input coalescing window in milliseconds. 0 disables coalescing.
     public int TerminalInputCoalescingMs { get; set; } = 0;
 
+    // Opt-in, visual-only preview for printable input in Codex terminal sessions.
+    public bool CodexLocalEchoEnabled { get; set; } = false;
+
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;
 

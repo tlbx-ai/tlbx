@@ -306,6 +306,7 @@
   "settings.diagnostics.performanceLogPaused": "Im Hintergrund pausiert",
   "settings.diagnostics.performanceLogStopped": "Bereit zum Herunterladen",
   "settings.diagnostics.inputCoalescingMs": "Eingabe-Coalescing-Fenster (ms, 0 aus)",
+  "settings.diagnostics.codexLocalEcho": "Codex-Terminal-Eingabevorschau (experimentell)",
   "settings.diagnostics.showGitDebugOverlay": "Git-Debug-Overlay anzeigen",
   "settings.diagnostics.showOverlay": "Overlay auf Terminal anzeigen",
   "settings.diagnostics.terminalBufferDump": "Terminal-Puffer-Dump",

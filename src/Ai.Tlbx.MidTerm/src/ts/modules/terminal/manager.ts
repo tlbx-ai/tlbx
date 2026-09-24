@@ -6,6 +6,7 @@
  * and event binding for terminal sessions.
  */
 import { onTerminalInput } from './terminalInputOrigin';
+import { createCodexLocalEcho, type CodexLocalEcho } from './codexLocalEcho';
 import { resetMobileTerminalTextInput, usesMobileTerminalTextInput } from './mobileTextInput';
 import type { Session, TerminalState } from '../../types';
 import { sendSessionPasteInput } from '../../api/client';
@@ -1657,6 +1658,9 @@ export function setupTerminalEvents(
     );
   }
 
+  let codexLocalEcho: CodexLocalEcho | null = null;
+  disposables.push({ dispose: () => codexLocalEcho?.dispose() });
+
   disposables.push(
     onTerminalInput(terminal, (data: string, userInput: boolean) => {
       if (!userInput) {
@@ -1666,6 +1670,24 @@ export function setupTerminalEvents(
       const state = sessionTerminals.get(sessionId);
       if (state) {
         resumeMobileStableTerminalCursorFollowing(state);
+      }
+      if (
+        $currentSettings.get()?.codexLocalEchoEnabled === true &&
+        getForegroundInfo(sessionId).processIdentity === 'codex' &&
+        state === termState &&
+        state !== undefined &&
+        isTerminalVisible(state)
+      ) {
+        codexLocalEcho ??= createCodexLocalEcho(
+          terminal,
+          container,
+          () =>
+            $currentSettings.get()?.codexLocalEchoEnabled === true &&
+            getForegroundInfo(sessionId).processIdentity === 'codex',
+        );
+        codexLocalEcho.onInput(data);
+      } else {
+        codexLocalEcho?.clear();
       }
       captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);

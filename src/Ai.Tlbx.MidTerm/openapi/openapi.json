@@ -5652,6 +5652,7 @@
           "devMode",
           "terminalLatencyDiagnosticsEnabled",
           "terminalInputCoalescingMs",
+          "codexLocalEchoEnabled",
           "showChangelogAfterUpdate",
           "showUpdateNotification",
           "updateChannel",
@@ -5923,6 +5924,9 @@
           "terminalInputCoalescingMs": {
             "type": "integer",
             "format": "int32"
+          },
+          "codexLocalEchoEnabled": {
+            "type": "boolean"
           },
           "showChangelogAfterUpdate": {
             "type": "boolean"
