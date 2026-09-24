@@ -89,6 +89,7 @@ public sealed partial class MidTermSettingsPublic
     public bool DevMode { get; set; } = false;
     public bool TerminalLatencyDiagnosticsEnabled { get; set; } = false;
     public int TerminalInputCoalescingMs { get; set; } = 0;
+    public bool CodexLocalEchoEnabled { get; set; } = false;
     public bool ShowChangelogAfterUpdate { get; set; } = true;
     public bool ShowUpdateNotification { get; set; } = true;
     public string? UpdateChannel { get; set; }

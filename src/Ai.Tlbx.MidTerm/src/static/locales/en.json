@@ -597,6 +597,7 @@
   "settings.diagnostics.performanceLogPaused": "Paused in background",
   "settings.diagnostics.performanceLogStopped": "Ready to download",
   "settings.diagnostics.inputCoalescingMs": "Input coalescing window (ms, 0 off)",
+  "settings.diagnostics.codexLocalEcho": "Codex terminal typing preview (experimental)",
   "settings.diagnostics.showOverlay": "Show overlay on terminal",
   "settings.diagnostics.terminalBufferDump": "Terminal buffer dump",
   "settings.diagnostics.downloadTerminalBufferDump": "Download dump",

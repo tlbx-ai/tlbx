@@ -617,6 +617,12 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'integer milliseconds, 0-200',
     applyMode: 'immediate',
   }),
+  controlEntry('codexLocalEchoEnabled', 'setting-codex-local-echo-enabled', 'checkbox', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
   controlEntry('showChangelogAfterUpdate', 'setting-changelog-after-update', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

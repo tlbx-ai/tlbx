@@ -125,6 +125,7 @@ public sealed partial class MidTermSettingsPublic
             DevMode = settings.DevMode,
             TerminalLatencyDiagnosticsEnabled = settings.TerminalLatencyDiagnosticsEnabled,
             TerminalInputCoalescingMs = settings.TerminalInputCoalescingMs,
+            CodexLocalEchoEnabled = settings.CodexLocalEchoEnabled,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             ShowUpdateNotification = settings.ShowUpdateNotification,
             UpdateChannel = settings.UpdateChannel,
@@ -249,6 +250,7 @@ public sealed partial class MidTermSettingsPublic
         settings.DevMode = DevMode;
         settings.TerminalLatencyDiagnosticsEnabled = TerminalLatencyDiagnosticsEnabled;
         settings.TerminalInputCoalescingMs = TerminalInputCoalescingMs;
+        settings.CodexLocalEchoEnabled = CodexLocalEchoEnabled;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
         settings.ShowUpdateNotification = ShowUpdateNotification;
         if (UpdateChannel is "stable" or "dev")
