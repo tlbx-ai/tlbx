@@ -55,7 +55,6 @@ export async function initTrustPage(): Promise<void> {
 
   // Download buttons
   bindDownload('btn-install-ios', '/api/certificate/download/mobileconfig');
-  bindDownload('btn-install-android', '/api/certificate/download/crt');
   bindDownload('btn-download-pem-desktop', '/api/certificate/download/pem');
   bindDownload('btn-download-pem-macos', '/api/certificate/download/pem');
   bindDownload('btn-download-pem-linux', '/api/certificate/download/pem');

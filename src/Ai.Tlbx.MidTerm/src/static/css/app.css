@@ -8931,6 +8931,7 @@ body.shared-session-mode .session-tab-bar {
 
 .install-btn {
   display: inline-block;
+  text-decoration: none;
   padding: 12px 24px;
   background-color: var(--btn-primary);
   color: var(--bg-primary);

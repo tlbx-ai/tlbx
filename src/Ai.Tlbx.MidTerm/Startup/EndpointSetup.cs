@@ -428,7 +428,7 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(derBytes, "application/x-x509-ca-cert", "tlbx.crt");
+            return Results.File(derBytes, "application/x-x509-ca-cert", "tlbx-ca.crt");
         });
 
         app.MapGet("/api/certificate/download/mobileconfig", (HttpContext context) =>
