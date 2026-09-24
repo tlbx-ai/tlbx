@@ -4341,7 +4341,8 @@
           "fingerprint",
           "notBefore",
           "notAfter",
-          "isFallbackCertificate"
+          "isFallbackCertificate",
+          "isCertificateAuthority"
         ],
         "type": "object",
         "properties": {
@@ -4366,6 +4367,9 @@
             "format": "date-time"
           },
           "isFallbackCertificate": {
+            "type": "boolean"
+          },
+          "isCertificateAuthority": {
             "type": "boolean"
           }
         }

@@ -109,6 +109,15 @@ function bindDownload(id: string, url: string): void {
   }
 }
 
+function updateAndroidCaAvailability(isCertificateAuthority: boolean): void {
+  if (isCertificateAuthority) return;
+
+  const download = document.getElementById('btn-install-android');
+  download?.removeAttribute('href');
+  download?.setAttribute('aria-disabled', 'true');
+  document.getElementById('android-ca-warning')?.removeAttribute('hidden');
+}
+
 async function loadCertificateInfo(): Promise<void> {
   try {
     const { getCertificateInfo } = await import('../api/client');
@@ -116,6 +125,7 @@ async function loadCertificateInfo(): Promise<void> {
     if (!response.ok || !data?.fingerprint) throw new Error('Certificate unavailable');
 
     const info = data;
+    updateAndroidCaAvailability(info.isCertificateAuthority);
 
     // Display fingerprint
     const fpEl = document.getElementById('fingerprint');

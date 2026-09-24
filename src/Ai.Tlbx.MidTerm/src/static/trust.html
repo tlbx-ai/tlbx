@@ -74,6 +74,12 @@
                     <a class="install-btn" id="btn-install-android" href="/api/certificate/download/crt" download="tlbx-ca.crt" data-i18n="trust.downloadCertificate">
                         Download Certificate
                     </a>
+                    <div id="android-ca-warning" class="warning-box" hidden>
+                        <strong>This server's HTTPS certificate cannot be installed as an Android CA.</strong>
+                        It was created without the CA extension. On the tlbx host, open
+                        <strong>Settings &rarr; Security &rarr; Regenerate Certificate</strong>.
+                        This restarts tlbx and changes its certificate fingerprint; connected devices must trust the new certificate again.
+                    </div>
                     <ol class="install-steps">
                         <li>Download <code>tlbx-ca.crt</code> above. Do not open the file from Chrome or Downloads.</li>
                         <li>Open Android <strong>Settings</strong> and search for <strong>Install a certificate</strong> (often under Security &rarr; More security settings &rarr; Encryption &amp; credentials).</li>
