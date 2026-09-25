@@ -822,6 +822,12 @@ compute_sha256() {
     fi
 }
 
+extract_signed_checksum_entries() {
+    # The signed payload has one outer closing brace after checksums. Stop at
+    # the checksums brace so it cannot become part of the final file entry.
+    sed -nE 's/.*"checksums":\{([^}]*)\}.*/\1/p' "$1" | tr ',' '\n'
+}
+
 verify_signed_release() {
     local extract_dir="$1"
     local manifest_path="$extract_dir/version.json"
@@ -892,7 +898,7 @@ TLBX_RELEASE_PUBLIC_KEY
     fi
 
     local checksum_entries
-    checksum_entries=$(sed -nE 's/.*"checksums":\{(.*)\}.*/\1/p' "$payload_file" | tr ',' '\n')
+    checksum_entries=$(extract_signed_checksum_entries "$payload_file")
     if [ -z "$checksum_entries" ]; then
         echo -e "${RED}Signed release checksums are missing.${NC}" >&2
         return 1

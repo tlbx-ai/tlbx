@@ -9,9 +9,9 @@ using Ai.Tlbx.MidTerm.Common.Logging;
 namespace Ai.Tlbx.MidTerm.Services.Secrets;
 
 /// <summary>
-/// Stores secrets in the macOS Data Protection Keychain using modern SecItem* APIs.
-/// Unlike the legacy SecKeychain* APIs, these do not trigger
-/// "would like to access data from other apps" TCC dialogs.
+/// Stores secrets in the macOS file-based Keychain using SecItem* APIs.
+/// The Data Protection Keychain requires entitlements unavailable to the
+/// standalone, Developer ID-signed mt command-line tool.
 /// </summary>
 [SupportedOSPlatform("macos")]
 public sealed class MacOsSecretStorage : ISecretStorage
@@ -91,7 +91,6 @@ public sealed class MacOsSecretStorage : ISecretStorage
             passwordData = CFDataCreate(IntPtr.Zero, passwordBytes, passwordBytes.Length);
             addDict = CreateQuery(key);
             CFDictionarySetValue(addDict, kSecValueData, passwordData);
-            CFDictionarySetValue(addDict, kSecUseDataProtectionKeychain, kCFBooleanTrue);
 
             var status = SecItemAdd(addDict, IntPtr.Zero);
 
@@ -149,8 +148,8 @@ public sealed class MacOsSecretStorage : ISecretStorage
     }
 
     /// <summary>
-    /// Builds a base query dictionary with kSecClass, kSecAttrService, kSecAttrAccount,
-    /// and kSecUseDataProtectionKeychain set.
+    /// Builds a query with class, service, and account attributes in the
+    /// default macOS Keychain for standalone CLI compatibility.
     /// </summary>
     private IntPtr CreateQuery(string account)
     {
@@ -167,7 +166,6 @@ public sealed class MacOsSecretStorage : ISecretStorage
             CFDictionarySetValue(dict, kSecClass, kSecClassGenericPassword);
             CFDictionarySetValue(dict, kSecAttrService, cfService);
             CFDictionarySetValue(dict, kSecAttrAccount, cfAccount);
-            CFDictionarySetValue(dict, kSecUseDataProtectionKeychain, kCFBooleanTrue);
         }
         finally
         {
@@ -203,7 +201,6 @@ public sealed class MacOsSecretStorage : ISecretStorage
     private static readonly IntPtr kSecReturnData = GetIndirectConstant(SecurityLib, "kSecReturnData");
     private static readonly IntPtr kSecMatchLimit = GetIndirectConstant(SecurityLib, "kSecMatchLimit");
     private static readonly IntPtr kSecMatchLimitOne = GetIndirectConstant(SecurityLib, "kSecMatchLimitOne");
-    private static readonly IntPtr kSecUseDataProtectionKeychain = GetIndirectConstant(SecurityLib, "kSecUseDataProtectionKeychain");
 
     #endregion
 

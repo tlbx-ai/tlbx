@@ -340,6 +340,10 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
+            # Exercise the signed standalone CLI against the runner's Keychain.
+            printf 'tlbx-release-keychain-smoke\n' | staging/${{ matrix.rid }}/mt \
+              --settings-dir "$RUNNER_TEMP/tlbx-keychain-smoke-${{ matrix.rid }}" \
+              --write-secret password_hash
             if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" && -f staging/${{ matrix.rid }}/mthost ]]; then
               codesign --force \
                 --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
@@ -522,6 +526,9 @@ jobs:
               --timestamp \
               staging/${{ matrix.rid }}/mt
             codesign --verify --strict staging/${{ matrix.rid }}/mt
+            printf 'tlbx-release-keychain-smoke\n' | staging/${{ matrix.rid }}/mt \
+              --settings-dir "$RUNNER_TEMP/tlbx-keychain-smoke-${{ matrix.rid }}" \
+              --write-secret password_hash
             if [[ "${TLBX_HOSTS_REUSED:-false}" != "true" && -f staging/${{ matrix.rid }}/mthost ]]; then
               codesign --force \
                 --sign "Developer ID Application: Johannes Schmidt (FK7G5C74WH)" \
