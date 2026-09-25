@@ -15,7 +15,9 @@ export function usesMobileTerminalTextInput(): boolean {
 /** Input from paste, touch controls, history navigation, or another producer ends this tail. */
 export function resetMobileTerminalTextInput(sessionId: string): void {
   cancelMobileCursorPlacement(sessionId);
-  resets.get(sessionId)?.();
+  if (!resets.has(sessionId)) return;
+  const reset = resets.get(sessionId);
+  if (typeof reset === 'function') reset();
 }
 
 /** Replace only a suffix we authored, while the remote cursor is still at its end. */
