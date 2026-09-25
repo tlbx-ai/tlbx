@@ -55,7 +55,6 @@ export async function initTrustPage(): Promise<void> {
 
   // Download buttons
   bindDownload('btn-install-ios', '/api/certificate/download/mobileconfig');
-  bindDownload('btn-install-android', '/api/certificate/download/crt');
   bindDownload('btn-download-pem-desktop', '/api/certificate/download/pem');
   bindDownload('btn-download-pem-macos', '/api/certificate/download/pem');
   bindDownload('btn-download-pem-linux', '/api/certificate/download/pem');
@@ -110,6 +109,15 @@ function bindDownload(id: string, url: string): void {
   }
 }
 
+function updateAndroidCaAvailability(isCertificateAuthority: boolean): void {
+  if (isCertificateAuthority) return;
+
+  const download = document.getElementById('btn-install-android');
+  download?.removeAttribute('href');
+  download?.setAttribute('aria-disabled', 'true');
+  document.getElementById('android-ca-warning')?.removeAttribute('hidden');
+}
+
 async function loadCertificateInfo(): Promise<void> {
   try {
     const { getCertificateInfo } = await import('../api/client');
@@ -117,6 +125,7 @@ async function loadCertificateInfo(): Promise<void> {
     if (!response.ok || !data?.fingerprint) throw new Error('Certificate unavailable');
 
     const info = data;
+    updateAndroidCaAvailability(info.isCertificateAuthority);
 
     // Display fingerprint
     const fpEl = document.getElementById('fingerprint');

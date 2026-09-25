@@ -65,6 +65,22 @@ function buildHorizontalLayout(): LayoutNode {
   };
 }
 
+it('does not reintroduce a closing pane or focus it from a newer server layout', async () => {
+  const { stores, layoutStore } = await loadHarness();
+  stores.markSessionClosing('session-a');
+  try {
+    layoutStore.applyServerLayoutState({
+      revision: 10,
+      root: buildHorizontalLayout(),
+      focusedSessionId: 'session-a',
+    });
+    expect(stores.$layout.get().root).toEqual({ type: 'leaf', sessionId: 'session-b' });
+    expect(stores.$activeSessionId.get()).toBe('session-b');
+  } finally {
+    stores.cancelSessionClosing('session-a');
+  }
+});
+
 function buildVerticalLayout(): LayoutNode {
   return {
     type: 'split',

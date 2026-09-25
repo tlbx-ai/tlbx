@@ -29,6 +29,8 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw 'Frontend typecheck failed.' }
                 & npm run lint
                 if ($LASTEXITCODE -ne 0) { throw 'Frontend lint failed.' }
+                & npm exec '--' vitest run src/ts/modules/theming
+                if ($LASTEXITCODE -ne 0) { throw 'Theme and CSS audits failed.' }
             }
         } finally { Pop-Location }
     }
@@ -43,6 +45,9 @@ try {
     }
     if ($categories -contains 'build') {
         & "$PSScriptRoot/test-release-build-system.ps1"
+        & "$PSScriptRoot/test-release-pr.ps1"
+        & python "$PSScriptRoot/test-release-publication.py"
+        if ($LASTEXITCODE -ne 0) { throw 'Release publication tests failed.' }
         & "$PSScriptRoot/run-runtime-build-verification.ps1" -Configuration $Configuration -WarnAsError
         if ($IsWindows) {
             & "$PSScriptRoot/run-aot-smoke-probe.ps1" -Configuration $Configuration -Rid win-x64

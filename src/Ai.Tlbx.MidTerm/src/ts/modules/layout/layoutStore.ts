@@ -6,7 +6,13 @@
  */
 
 import type { LayoutNode, LayoutLeaf, LayoutDirection, DockPosition } from '../../types';
-import { $layout, $focusedSessionId, $activeSessionId, getSession } from '../../stores';
+import {
+  $layout,
+  $focusedSessionId,
+  $activeSessionId,
+  getSession,
+  isSessionClosing,
+} from '../../stores';
 import { sessionTerminals, setSuppressLayoutAutoFit } from '../../state';
 import { createTerminalForSession } from '../terminal/manager';
 import { resolveSessionSurfaceMode } from '../sessionSurface';
@@ -464,16 +470,19 @@ function collectSessionIdsFromNode(node: LayoutNode | null, ids: string[]): void
  * Filter layout tree to only include valid sessions.
  * Returns null if fewer than 2 sessions remain.
  */
-function filterLayoutToValidSessions(node: LayoutNode | null): LayoutNode | null {
+function filterLayoutToValidSessions(
+  node: LayoutNode | null,
+  keepSession: (id: string) => boolean = (id) => !!getSession(id),
+): LayoutNode | null {
   if (!node) return null;
 
   if (node.type === 'leaf') {
-    return getSession(node.sessionId) ? node : null;
+    return keepSession(node.sessionId) ? node : null;
   }
 
   const validChildren: LayoutNode[] = [];
   for (const child of node.children) {
-    const filtered = filterLayoutToValidSessions(child);
+    const filtered = filterLayoutToValidSessions(child, keepSession);
     if (filtered) {
       validChildren.push(filtered);
     }
@@ -541,7 +550,7 @@ export function applyServerLayoutState(snapshot: LayoutSnapshot | null | undefin
   const currentSnapshotKey = serializeLayoutSnapshot(getCurrentLayoutSnapshot());
   const normalized: LayoutSnapshot = {
     revision: normalizedRevision,
-    root: snapshot?.root ?? null,
+    root: filterLayoutToValidSessions(snapshot?.root ?? null, (id) => !isSessionClosing(id)),
     focusedSessionId: snapshot?.focusedSessionId ?? null,
   };
   const nextSnapshotKey = serializeLayoutSnapshot(normalized);

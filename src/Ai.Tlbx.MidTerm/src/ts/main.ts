@@ -6,6 +6,7 @@
  */
 
 import { initLoginPage } from './modules/login';
+import { initShortcuts } from './modules/shortcuts';
 import { initTrustPage } from './modules/trust';
 import { initThemeFromBrowserCache } from './modules/theming';
 import { initAuthSessionLifetime } from './modules/auth/sessionLifetime';
@@ -455,6 +456,14 @@ async function init(): Promise<void> {
   setupResizeObserver();
   setupVisualViewport();
   initTouchController();
+  initShortcuts({
+    createSession,
+    selectSession,
+    renameSession: promptRenameSession,
+    inlineRename: startInlineRename,
+    bookmarkSession: pinSessionToHistory,
+    toggleSidebar,
+  });
   initSmartInput();
   initDevSoftKeyboardSimulator();
   initManagerBar();
@@ -728,6 +737,11 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
     applyScrollbackProtection,
     recoverTerminalPresentationAfterResume: scheduleForegroundResizeRecovery,
     keepTerminalOutputActiveWhileHidden: isMobilePiPActive,
+    stayActiveInBackground: () => $currentSettings.get()?.stayActiveInBackground === true,
+    subscribeBackgroundActivity: (listener) =>
+      $currentSettings.listen((settings, previous) => {
+        if (settings?.stayActiveInBackground !== previous?.stayActiveInBackground) listener();
+      }),
     suspendAdditionalTerminalTransport: suspendHubChannelForBrowserBackground,
     recoverAdditionalTerminalTransport: recoverHubChannelAfterBrowserResume,
     suspendAppServerControlForBackground: suspendAppServerControlForBrowserBackground,
@@ -1334,12 +1348,5 @@ function bindEvents(): void {
   bindClick('btn-spaces', () => {
     closeHistoryDropdown();
     toggleSpacesDropdown();
-  });
-  // Global keyboard shortcut: Alt+T to create new terminal
-  document.addEventListener('keydown', (e) => {
-    if (e.altKey && !e.ctrlKey && !e.shiftKey && !e.metaKey && e.key.toLowerCase() === 't') {
-      e.preventDefault();
-      void createSession();
-    }
   });
 }

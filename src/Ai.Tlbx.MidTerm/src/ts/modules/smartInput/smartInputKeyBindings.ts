@@ -1,10 +1,9 @@
+import { hasTransientUi } from '../shortcuts/uiContext';
+
 export interface SmartInputGlobalKeyBindingArgs {
-  beginRecording(): void;
-  canUseVoice(): boolean;
   closeFooterTransientUi(): boolean;
   endRecording(): void;
   getInterruptibleAppServerControlSessionId(): string | null;
-  hasVisibleInput(): boolean;
   isRecording(): boolean;
   onAppServerControlEscape(sessionId: string): void;
 }
@@ -13,6 +12,19 @@ export function bindSmartInputGlobalKeyBindings(args: SmartInputGlobalKeyBinding
   document.addEventListener(
     'keydown',
     (event) => {
+      if (
+        !isBareEscapeKey(event) ||
+        event.isComposing ||
+        event.repeat ||
+        event.defaultPrevented ||
+        hasTransientUi()
+      )
+        return;
+      if (args.closeFooterTransientUi()) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       const appServerControlSessionId = args.getInterruptibleAppServerControlSessionId();
       if (!appServerControlSessionId) {
         return;
@@ -26,26 +38,8 @@ export function bindSmartInputGlobalKeyBindings(args: SmartInputGlobalKeyBinding
     true,
   );
 
-  document.addEventListener('keydown', (event) => {
-    if (event.code === 'ControlRight') {
-      if (!args.hasVisibleInput()) return;
-      if (!args.canUseVoice()) return;
-      if (args.isRecording()) return;
-      event.preventDefault();
-      args.beginRecording();
-      return;
-    }
-
-    if (isBareEscapeKey(event) && args.closeFooterTransientUi()) {
-      event.preventDefault();
-    }
-  });
-
-  document.addEventListener('keyup', (event) => {
-    if (event.code !== 'ControlRight') return;
-    if (!args.isRecording()) return;
-    event.preventDefault();
-    args.endRecording();
+  window.addEventListener('blur', () => {
+    if (args.isRecording()) args.endRecording();
   });
 }
 

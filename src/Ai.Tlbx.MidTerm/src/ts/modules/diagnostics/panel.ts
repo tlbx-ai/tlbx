@@ -31,6 +31,14 @@ import { t } from '../i18n';
 import { showConfirm } from '../../utils/dialog';
 import { createLogger } from '../logging';
 import { beginServerRestartLifecycle, reloadAppShell } from '../updating';
+import {
+  downloadPerformanceLog,
+  getPerformanceLogEventCount,
+  getPerformanceLogState,
+  setPerformanceLogStateListener,
+  startPerformanceLog,
+  stopPerformanceLog,
+} from './performanceLog';
 
 const log = createLogger('diagnostics');
 type TerminalTransportDiagnostics = NonNullable<SessionStateResponse['terminalTransport']>;
@@ -50,7 +58,46 @@ export function initDiagnosticsPanel(): void {
   bindTerminalKeyLogControls();
   bindBrowserSessionTree();
   bindInputLatencyGraph();
+  bindPerformanceLogControls();
   syncInputLatencyTracingConsumer();
+}
+
+function bindPerformanceLogControls(): void {
+  const start = document.getElementById('btn-performance-log-start') as HTMLButtonElement | null;
+  const stop = document.getElementById('btn-performance-log-stop') as HTMLButtonElement | null;
+  const download = document.getElementById(
+    'btn-performance-log-download',
+  ) as HTMLButtonElement | null;
+  const status = document.getElementById('diag-performance-log-status');
+  if (!start || !stop || !download || !status) return;
+
+  const render = (): void => {
+    const state = getPerformanceLogState();
+    start.disabled = state === 'recording' || state === 'paused';
+    stop.disabled = state !== 'recording' && state !== 'paused';
+    download.disabled = state === 'idle';
+    const key =
+      state === 'recording'
+        ? 'performanceLogRecording'
+        : state === 'paused'
+          ? 'performanceLogPaused'
+          : state === 'stopped'
+            ? 'performanceLogStopped'
+            : 'performanceLogIdle';
+    status.textContent = `${t(`settings.diagnostics.${key}`)}${state === 'stopped' ? ` (${getPerformanceLogEventCount()})` : ''}`;
+  };
+
+  start.addEventListener('click', () => {
+    startPerformanceLog();
+  });
+  stop.addEventListener('click', () => {
+    stopPerformanceLog();
+  });
+  download.addEventListener('click', () => {
+    downloadPerformanceLog();
+  });
+  setPerformanceLogStateListener(render);
+  render();
 }
 
 export function startLatencyMeasurement(): void {

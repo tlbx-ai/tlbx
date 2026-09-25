@@ -193,6 +193,7 @@ import {
   setTerminalSizeControl,
   setTerminalSizeControls,
   setSessions,
+  filterClosingSessions,
   setManagerBarQueue,
   getParentSessionId,
 } from '../../stores';
@@ -577,6 +578,7 @@ export function handleStateUpdate(
   newSessions: Session[],
   layoutState?: LayoutStateMessage | null,
 ): void {
+  newSessions = filterClosingSessions(newSessions);
   const serverSessionIds = new Set(newSessions.map((session) => session.id));
   const optimisticSessions = [...pendingSessions]
     .filter((sessionId) => !serverSessionIds.has(sessionId))
@@ -659,6 +661,7 @@ export function sendCommand<T = unknown>(
 export function sendCommand<T = unknown>(
   action: 'browser.setActivity',
   payload: WsCommandPayload<'browser.setActivity'>,
+  timeoutMs?: number,
 ): Promise<T>;
 export function sendCommand<T = unknown>(
   action: 'terminal.requestSizeControl',
@@ -684,6 +687,7 @@ export async function sendCommand<T = unknown>(
     | WsCommandPayload<'browser.setActivity'>
     | WsCommandPayload<'terminal.requestSizeControl'>
     | WsCommandPayload<'terminal.resize'>,
+  timeoutMs = COMMAND_TIMEOUT_MS,
 ): Promise<T> {
   const ws = stateWs;
   if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -747,7 +751,7 @@ export async function sendCommand<T = unknown>(
     const timeout = window.setTimeout(() => {
       pendingCommands.delete(id);
       reject(new Error(`Command timed out: ${action}`));
-    }, COMMAND_TIMEOUT_MS);
+    }, timeoutMs);
 
     pendingCommands.set(id, {
       resolve: resolve as (data: unknown) => void,
@@ -1159,6 +1163,28 @@ let lastReportedBrowserActivity:
       activeSurface: string | null;
     }
   | undefined;
+
+/** Verify the existing socket with a reply, without taking terminal ownership. */
+export async function probeStateWebSocket(): Promise<boolean> {
+  const socket = stateWs;
+  if (isSharedSessionRoute() || socket?.readyState === WebSocket.CONNECTING) return true;
+  try {
+    await sendCommand(
+      'browser.setActivity',
+      {
+        isActive: getCurrentBrowserActivity(),
+        isVisible: getCurrentBrowserVisibility(),
+        activeSessionId: $activeSessionId.get(),
+        activeSurface: getCurrentActiveSurface(),
+      },
+      2000,
+    );
+    return true;
+  } catch {
+    // A result for a retired connection must never replace its successor.
+    return stateWs !== socket;
+  }
+}
 
 export function reportBrowserActivity(
   isActive: boolean = getCurrentBrowserActivity(),

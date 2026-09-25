@@ -95,8 +95,14 @@ internal sealed class LogWriter : IDisposable
 
                     var completedTask = await Task.WhenAny(waitTask, delayTask).ConfigureAwait(false);
 
-                    if (completedTask == waitTask && await waitTask.ConfigureAwait(false))
+                    if (completedTask == waitTask)
                     {
+                        if (!await waitTask.ConfigureAwait(false))
+                        {
+                            // Completion means no more entries can arrive. Exit through
+                            // finally to flush the remaining buffer before Dispose returns.
+                            break;
+                        }
                         hasData = _queue.Reader.TryRead(out firstEntry);
                     }
                 }

@@ -4205,6 +4205,7 @@ export interface components {
       /** Format: date-time */
       notAfter: null | string;
       isFallbackCertificate: boolean;
+      isCertificateAuthority: boolean;
     };
     ChangePasswordRequest: {
       currentPassword?: null | string;
@@ -4557,6 +4558,7 @@ export interface components {
       notificationPriority: components['schemas']['NotificationPrioritySetting'];
       copyOnSelect: boolean;
       rightClickPaste: boolean;
+      stayActiveInBackground: boolean;
       clipboardShortcuts: components['schemas']['ClipboardShortcutsSetting'];
       terminalEnterMode: components['schemas']['TerminalEnterModeSetting'];
       scrollbackProtection: boolean;
@@ -4581,6 +4583,7 @@ export interface components {
       terminalLatencyDiagnosticsEnabled: boolean;
       /** Format: int32 */
       terminalInputCoalescingMs: number;
+      codexLocalEchoEnabled: boolean;
       showChangelogAfterUpdate: boolean;
       showUpdateNotification: boolean;
       updateChannel: null | string;

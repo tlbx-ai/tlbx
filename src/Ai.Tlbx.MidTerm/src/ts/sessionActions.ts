@@ -1,3 +1,4 @@
+import { openInlineSessionRename } from './modules/sidebar/inlineRename';
 import { isTerminalVisible } from './modules/terminal/presentationRefresh';
 import { createLogger } from './modules/logging';
 import { closeSettings } from './modules/settings';
@@ -66,6 +67,8 @@ import {
   $currentSettings,
   $sessionList,
   clearPendingRename,
+  markSessionClosing,
+  cancelSessionClosing,
   getSession,
   removeSession,
   hasTerminalSizeControl,
@@ -333,26 +336,34 @@ export function createSessionActionHandlers({
 
     if (closingSessions.has(sessionId)) return;
     closingSessions.add(sessionId);
-    void apiDeleteSession(sessionId)
-      .then(() => {
-        handleSessionClosed(sessionId);
-        removeSessionDockState(sessionId);
-        removeSmartInputSessionState(sessionId);
-        destroyAgentView(sessionId);
-        destroyFileBrowser(sessionId);
-        destroyGitSession(sessionId);
-        destroyCommandsSession(sessionId);
-        destroySessionWrapper(sessionId);
-        destroyTerminalForSession(sessionId);
-        removeSession(sessionId);
+    const closedSession = getSession(sessionId);
+    markSessionClosing(sessionId);
+    handleSessionClosed(sessionId);
+    removeSessionDockState(sessionId);
+    removeSmartInputSessionState(sessionId);
+    destroyAgentView(sessionId);
+    destroyFileBrowser(sessionId);
+    destroyGitSession(sessionId);
+    destroyCommandsSession(sessionId);
+    destroySessionWrapper(sessionId);
+    destroyTerminalForSession(sessionId);
+    removeSession(sessionId);
 
-        if ($activeSessionId.get() === sessionId) {
-          $activeSessionId.set(null);
-          const firstSession = $sessionList.get()[0];
-          if (firstSession?.id) selectSession(firstSession.id, { closeSettingsPanel: false });
-        }
-      })
+    if ($activeSessionId.get() === sessionId) {
+      $activeSessionId.set(null);
+      const firstSession = $sessionList.get()[0];
+      if (firstSession?.id) selectSession(firstSession.id, { closeSettingsPanel: false });
+    }
+    void apiDeleteSession(sessionId)
+      .catch(() => apiDeleteSession(sessionId))
       .catch(async (error: unknown) => {
+        cancelSessionClosing(sessionId);
+        if (closedSession) {
+          setSession(closedSession);
+          if (!closedSession.appServerControlOnly) {
+            createTerminalForSession(sessionId, closedSession);
+          }
+        }
         log.error(() => `Failed to close session ${sessionId}: ${String(error)}`);
         await showAlert(error instanceof Error ? error.message : String(error), {
           title: t('session.close'),
@@ -435,42 +446,37 @@ export function createSessionActionHandlers({
   }
 
   function renameSession(sessionId: string, newName: string | null): void {
+    void persistSessionName(sessionId, newName).catch((error: unknown) => {
+      log.error(() => `Failed to rename session ${sessionId}: ${String(error)}`);
+      void showAlert(String(error));
+    });
+  }
+
+  async function persistSessionName(sessionId: string, newName: string | null): Promise<void> {
+    const trimmedName = (newName || '').trim();
     if (isHubSessionId(sessionId)) {
       const record = getHubSessionRecord(sessionId);
-      if (!record) return;
-
-      const trimmedName = (newName || '').trim();
-      renameRemoteSession(record.machineId, record.remoteSessionId, { name: trimmedName })
-        .then(() => refreshHubState())
-        .catch((e: unknown) => {
-          log.error(() => `Failed to rename remote session ${sessionId}: ${String(e)}`);
-        });
+      if (!record) throw new Error('Session no longer exists');
+      await renameRemoteSession(record.machineId, record.remoteSessionId, { name: trimmedName });
+      await refreshHubState();
       return;
     }
-
     const session = getSession(sessionId);
-    if (!session) return;
-
-    const trimmedName = (newName || '').trim();
+    if (!session) throw new Error('Session no longer exists');
     const nameToSend = trimmedName === '' || trimmedName === session.shellType ? '' : trimmedName;
-    const previousName = session.name;
-    const wasManuallyNamed = session.manuallyNamed;
-
     setPendingRename(sessionId, nameToSend);
     setSession({ ...session, name: nameToSend, manuallyNamed: true });
-
-    apiRenameSession(sessionId, nameToSend)
-      .then(() => {
-        void patchPinnedHistoryLabelIfMatchingTuple(sessionId, nameToSend);
-      })
-      .catch((e: unknown) => {
-        clearPendingRename(sessionId);
-        const currentSession = getSession(sessionId);
-        if (currentSession) {
-          setSession({ ...currentSession, name: previousName, manuallyNamed: wasManuallyNamed });
-        }
-        log.error(() => `Failed to rename session ${sessionId}: ${String(e)}`);
-      });
+    try {
+      const result = await apiRenameSession(sessionId, nameToSend);
+      if (!result.response.ok) throw new Error(`Rename failed (${result.response.status})`);
+      void patchPinnedHistoryLabelIfMatchingTuple(sessionId, nameToSend);
+    } catch (error) {
+      clearPendingRename(sessionId);
+      const current = getSession(sessionId);
+      if (current)
+        setSession({ ...current, name: session.name, manuallyNamed: session.manuallyNamed });
+      throw error;
+    }
   }
 
   function getSessionFamilyIds(sessionId: string): string[] {
@@ -517,59 +523,12 @@ export function createSessionActionHandlers({
   }
 
   function startInlineRename(sessionId: string): void {
-    const item = dom.sessionList?.querySelector(`[data-session-id="${sessionId}"]`);
-    if (!item) return;
-
-    const renameAnchor =
-      item.querySelector('.session-title') ||
-      item.querySelector('.process-title') ||
-      item.querySelector('.session-title-row');
-    if (!renameAnchor) return;
-
+    const item = dom.sessionList?.querySelector(`[data-session-id="${CSS.escape(sessionId)}"]`);
     const session = getSession(sessionId);
-    const currentName = session ? session.name || session.shellType : '';
-    const rect = renameAnchor.getBoundingClientRect();
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.className = 'session-rename-input';
-    input.value = currentName;
-    input.style.position = 'fixed';
-    input.style.left = `${rect.left}px`;
-    input.style.top = `${rect.top}px`;
-    input.style.width = `${rect.width + 20}px`;
-    input.style.height = `${rect.height}px`;
-    input.style.zIndex = '10000';
-    document.body.appendChild(input);
-
-    let committed = false;
-    const finishRename = (): void => {
-      if (committed) return;
-      committed = true;
-      const newName = input.value;
-      input.remove();
-      renameSession(sessionId, newName);
-    };
-
-    const cancelRename = (): void => {
-      if (committed) return;
-      committed = true;
-      input.remove();
-    };
-
-    input.addEventListener('blur', finishRename);
-    input.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        input.blur();
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        cancelRename();
-      }
-    });
-
-    input.focus();
-    input.select();
+    if (item && session)
+      openInlineSessionRename(item, session.name || session.shellType, (name) =>
+        persistSessionName(sessionId, name),
+      );
   }
 
   async function promptRenameSession(sessionId: string): Promise<void> {

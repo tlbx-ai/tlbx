@@ -4,6 +4,31 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class TerminalHeatActivityTests
 {
+    [Fact]
+    public void NestedSynchronizedPaintKeepsTheOriginalTextComparison()
+    {
+        var parser = new TerminalTextActivityParser();
+        parser.CountTextUnits("A"u8, 8, 3);
+        Assert.Equal(0, parser.CountTextUnits("\u001b[?2026h\u001b[HB\u001b[?2026h"u8, 8, 3));
+        Assert.Equal(1, parser.CountTextUnits("\u001b[?2026l"u8, 8, 3));
+        Assert.Equal(0, parser.CountTextUnits("\u001b[?2026h\u001b[HX\u001b[HA\u001b[HB\u001b[?2026l"u8, 8, 3));
+    }
+
+    [Theory]
+    [InlineData("\u001b[2;3r\u001b[S", "A", "C", "")]
+    [InlineData("\u001b[2;3r\u001b[T", "A", "", "B")]
+    [InlineData("\u001b[2;1H\u001b[L", "A", "", "B")]
+    [InlineData("\u001b[2;1H\u001b[M", "A", "C", "")]
+    public void ScrollAndLineEditsPreserveCellsOutsideTheirRegion(string command, string first, string second, string third)
+    {
+        var parser = new TerminalTextActivityParser();
+        parser.CountTextUnits("A\r\nB\r\nC"u8, 8, 3);
+        parser.CountTextUnits(System.Text.Encoding.UTF8.GetBytes(command), 8, 3);
+        var repaint = $"\u001b[?2026h\u001b[1;1H{first}\u001b[2;1H{second}\u001b[3;1H{third}\u001b[?2026l";
+        Assert.Equal(0, parser.CountTextUnits(System.Text.Encoding.UTF8.GetBytes(repaint), 8, 3));
+        Assert.Equal(1, parser.CountTextUnits("\u001b[?2026h\u001b[1;1HZ\u001b[?2026l"u8, 8, 3));
+    }
+
     private sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now { get; set; } = new(2026, 9, 10, 12, 0, 0, TimeSpan.Zero);

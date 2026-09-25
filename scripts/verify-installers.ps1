@@ -29,6 +29,32 @@ foreach ($relativePath in $powerShellScripts) {
     }
 }
 
+$uninstallerSource = Get-Content (Join-Path $repoRoot "uninstall.ps1") -Raw
+$uninstallerAst = [System.Management.Automation.Language.Parser]::ParseInput($uninstallerSource, [ref]$tokens, [ref]$errors)
+$resolveOriginalContext = $uninstallerAst.Find({
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -eq "Resolve-OriginalContext"
+}, $true).Extent.Text
+Invoke-Expression $resolveOriginalContext
+$savedTemp = $env:TEMP
+$savedTmp = $env:TMP
+try {
+    $env:TEMP = $null
+    $env:TMP = $null
+    $script:OriginalUserProfile = Join-Path ([IO.Path]::GetTempPath()) "tlbx-uninstall-context-test"
+    $script:OriginalLocalAppData = $null
+    $script:OriginalTempRoot = $null
+    Resolve-OriginalContext
+    if ([string]::IsNullOrWhiteSpace($script:OriginalTempRoot) -or
+        $script:OriginalLocalAppData -ne (Join-Path $script:OriginalUserProfile "AppData\Local")) {
+        throw "Uninstaller cannot resolve a safe user and temp path without TEMP/TMP."
+    }
+} finally {
+    $env:TEMP = $savedTemp
+    $env:TMP = $savedTmp
+}
+
 $bash = Get-Command bash -ErrorAction SilentlyContinue
 if ($bash) {
     Push-Location $repoRoot
@@ -82,6 +108,29 @@ is_tailscale_ipv4 100.127.255.254
         $readinessOutput = $readinessSmoke | & $bash.Source -s 2>&1
         if ($LASTEXITCODE -ne 0) {
             throw "install.sh readiness URL smoke test failed: $($readinessOutput -join [Environment]::NewLine)"
+        }
+
+        $signedChecksumsSmoke = @'
+set -e
+eval "$(awk '/^extract_signed_checksum_entries\(\) \{/{emit=1} /^verify_signed_release\(\) \{/{emit=0} emit' ./install.sh)"
+tmp="$(mktemp)"
+trap 'rm -f "$tmp"' EXIT
+hash="$(printf '%064d' 0)"
+printf '{"checksums":{"mt":"%s","mtagenthost":"%s","mthost":"%s"}}\n' "$hash" "$hash" "$hash" > "$tmp"
+entries="$(extract_signed_checksum_entries "$tmp")"
+test "$(printf '%s\n' "$entries" | wc -l | tr -d ' ')" = 3
+test "$(printf '%s\n' "$entries" | tail -1 | tr -d '\r')" = "\"mthost\":\"$hash\""
+'@
+        $signedChecksumsScript = ".verify-signed-checksums-$([Guid]::NewGuid().ToString('N')).sh"
+        try {
+            [IO.File]::WriteAllText((Join-Path $repoRoot $signedChecksumsScript),
+                $signedChecksumsSmoke.Replace("`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+            $signedChecksumsOutput = & $bash.Source "./$signedChecksumsScript" 2>&1
+        } finally {
+            Remove-Item -LiteralPath (Join-Path $repoRoot $signedChecksumsScript) -ErrorAction SilentlyContinue
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "install.sh signed checksum extraction smoke test failed: $($signedChecksumsOutput -join [Environment]::NewLine)"
         }
     } finally {
         Pop-Location

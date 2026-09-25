@@ -428,7 +428,13 @@ Start-Service -Name $serviceName -ErrorAction Stop
             {
                 return Results.NotFound("Certificate not available");
             }
-            return Results.File(derBytes, "application/x-x509-ca-cert", "tlbx.crt");
+            if (!certService.IsCertificateAuthority)
+            {
+                return Results.Problem(
+                    "The installed HTTPS certificate is not a CA certificate. Regenerate it in tlbx Settings > Security before installing it on Android.",
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            return Results.File(derBytes, "application/x-x509-ca-cert", "tlbx-ca.crt");
         });
 
         app.MapGet("/api/certificate/download/mobileconfig", (HttpContext context) =>

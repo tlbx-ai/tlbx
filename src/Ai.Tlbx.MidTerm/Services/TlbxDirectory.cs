@@ -173,14 +173,36 @@ public static class TlbxDirectory
         try
         {
             var token = _authService.CreateSessionToken();
-            TlbxCliScriptWriter.WriteScripts(tlbxDir, _port, token);
-            TlbxGraphsScriptWriter.WriteScripts(tlbxDir, _port, token);
-            TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
-            TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
+            WriteInstanceCliScripts(tlbxDir, _port, token,
+                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev");
         }
         catch (Exception ex)
         {
             Log.Warn(() => $"Could not write tlbx CLI helpers in '{tlbxDir}': {ex.Message}");
+        }
+    }
+
+    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev)
+    {
+        if (sourceDev)
+        {
+            // A source test may use the same cwd as the installed supervisor.
+            // Keep its fallback URL/credential pair together without replacing the supervisor's.
+            var instanceDir = Path.Combine(tlbxDir, "instances", port.ToString(CultureInfo.InvariantCulture));
+            Directory.CreateDirectory(instanceDir);
+            TlbxCliScriptWriter.WriteScripts(instanceDir, port, token);
+            TlbxGraphsScriptWriter.WriteScripts(instanceDir, port, token);
+            if (File.Exists(Path.Combine(tlbxDir, "tlbx_cli.ps1")) ||
+                File.Exists(Path.Combine(tlbxDir, "tlbx_cli.sh")))
+                return;
+        }
+
+        TlbxCliScriptWriter.WriteScripts(tlbxDir, port, token);
+        TlbxGraphsScriptWriter.WriteScripts(tlbxDir, port, token);
+        if (!sourceDev)
+        {
+            TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
+            TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
         }
     }
 

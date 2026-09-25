@@ -8,6 +8,23 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MidTermSettingsPublicTests
 {
     [Fact]
+    public void StayActiveInBackground_PatchAndSerializationRoundTrip()
+    {
+        var settings = new MidTermSettings();
+        Assert.False(settings.StayActiveInBackground);
+        var current = MidTermSettingsPublic.FromSettings(settings);
+        using var patch = JsonDocument.Parse("""{"stayActiveInBackground":true}""");
+        MidTermSettingsPatch.Merge(current, patch.RootElement).ApplyTo(settings);
+        Assert.True(settings.StayActiveInBackground);
+        var json = JsonSerializer.Serialize(settings, SettingsJsonContext.Default.MidTermSettings);
+        var restored = JsonSerializer.Deserialize(json, SettingsJsonContext.Default.MidTermSettings)!;
+        Assert.True(MidTermSettingsPublic.FromSettings(restored).StayActiveInBackground);
+        using var disable = JsonDocument.Parse("""{"stayActiveInBackground":false}""");
+        MidTermSettingsPatch.Merge(MidTermSettingsPublic.FromSettings(restored), disable.RootElement).ApplyTo(restored);
+        Assert.False(restored.StayActiveInBackground);
+    }
+
+    [Fact]
     public void SettingsReplacement_RejectsPartialDocument()
     {
         var current = MidTermSettingsPublic.FromSettings(new MidTermSettings { UpdateChannel = "stable" });

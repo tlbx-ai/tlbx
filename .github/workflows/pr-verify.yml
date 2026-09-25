@@ -1,0 +1,60 @@
+name: Pull request verification
+on:
+  pull_request:
+    branches: [dev, main]
+permissions:
+  contents: read
+concurrency:
+  group: pr-verify-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+jobs:
+  frontend:
+    name: PR frontend
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24.14.0'
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.303'
+      - run: npm install --global npm@11.18.0 --ignore-scripts
+      - run: npm ci --include=dev --no-audit --no-fund
+        working-directory: src/Ai.Tlbx.MidTerm
+      - run: npm run verify
+        working-directory: src/Ai.Tlbx.MidTerm
+      - name: Package the embedded frontend used by server tests
+        shell: pwsh
+        run: |
+          $version = (Get-Content src/version.json | ConvertFrom-Json).web
+          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 -Publish -Version $version -SkipVerify -DevRelease:($version -match '-dev')
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pr-frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
+          retention-days: 1
+  server:
+    name: PR server
+    needs: frontend
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5
+        with:
+          dotnet-version: '10.0.303'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: pr-frontend
+          path: src/Ai.Tlbx.MidTerm/wwwroot/
+      - name: Server and host contracts
+        shell: pwsh
+        run: ./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError

@@ -600,6 +600,7 @@ public sealed class SettingsService
         current.NotificationPriority = old.NotificationPriority;
         current.CopyOnSelect = old.CopyOnSelect;
         current.RightClickPaste = old.RightClickPaste;
+        current.StayActiveInBackground = old.StayActiveInBackground;
         current.ClipboardShortcuts = old.ClipboardShortcuts;
         current.TerminalEnterMode = old.TerminalEnterMode;
         current.ScrollbackProtection = old.ScrollbackProtection;

@@ -86,6 +86,7 @@ public sealed class MidTermSettings
     public NotificationPrioritySetting NotificationPriority { get; set; } = NotificationPrioritySetting.Normal;
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
+    public bool StayActiveInBackground { get; set; }
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
@@ -152,6 +153,9 @@ public sealed class MidTermSettings
 
     // Printable input coalescing window in milliseconds. 0 disables coalescing.
     public int TerminalInputCoalescingMs { get; set; } = 0;
+
+    // Opt-in, visual-only preview for printable input in Codex terminal sessions.
+    public bool CodexLocalEchoEnabled { get; set; } = false;
 
     // Show changelog automatically after a successful update
     public bool ShowChangelogAfterUpdate { get; set; } = true;

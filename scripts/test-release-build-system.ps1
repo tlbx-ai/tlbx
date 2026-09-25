@@ -50,7 +50,7 @@ try {
         ('$global:TlbxBuildTestCalls.Add("' + $name + ' $args")') | Set-Content "$fixture/scripts/$name.ps1"
     }
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories assets -FrontendInstalled
-    Assert-Check (($global:TlbxBuildTestCalls -join '|') -eq 'npm run typecheck|npm run lint') 'Assets cluster invoked unrelated tests or reinstalled dependencies.'
+    Assert-Check (($global:TlbxBuildTestCalls -join '|') -eq 'npm run typecheck|npm run lint|npm exec -- vitest run src/ts/modules/theming') 'Assets cluster must include theme/CSS audits without reinstalling dependencies.'
     $global:TlbxBuildTestCalls.Clear()
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories frontend,server -FrontendInstalled
     Assert-Check ($global:TlbxBuildTestCalls.Count -eq 2 -and $global:TlbxBuildTestCalls[0] -eq 'npm run verify' -and $global:TlbxBuildTestCalls[1] -match '-Suite server') 'Frontend/server dispatch failed.'

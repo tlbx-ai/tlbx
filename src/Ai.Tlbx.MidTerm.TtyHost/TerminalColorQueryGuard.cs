@@ -9,7 +9,12 @@ namespace Ai.Tlbx.MidTerm.TtyHost;
 /// </summary>
 internal sealed class TerminalColorQueryGuard(TimeProvider? timeProvider = null)
 {
-    private static readonly TimeSpan MaximumResponseAge = TimeSpan.FromSeconds(1);
+    // Windows TUIs can stop reading OSC replies after a 100 ms startup probe
+    // (Codex 0.154.0). Leave time for the ConPTY input hop: a reply arriving
+    // later must not become editable text after the application's probe ends.
+    private static readonly TimeSpan MaximumResponseAge = OperatingSystem.IsWindows()
+        ? TimeSpan.FromMilliseconds(50)
+        : TimeSpan.FromSeconds(1);
     private const int MaximumOscBytes = 1024;
     private const byte Escape = 0x1b;
     private const byte Bell = 0x07;

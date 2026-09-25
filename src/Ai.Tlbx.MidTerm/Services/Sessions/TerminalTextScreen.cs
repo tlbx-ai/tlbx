@@ -14,7 +14,7 @@ internal sealed class TerminalTextScreen
     private bool _sync;
     private bool _frameScrolled;
     private string? _beforeClear;
-    private readonly Dictionary<int, int> _before = [];
+    private int[] _before = [];
     private readonly HashSet<int> _written = [];
 
     public void Resize(int cols, int rows)
@@ -27,7 +27,7 @@ internal sealed class TerminalTextScreen
             Array.Copy(_cells, y * _cols, next, y * cols, Math.Min(cols, _cols));
         _cells = next; _cols = cols; _rows = rows; _top = 0; _bottom = rows - 1;
         _x = Math.Min(_x, cols - 1); _y = Math.Min(_y, rows - 1);
-        _before.Clear(); _written.Clear();
+        _before = (int[])next.Clone(); _written.Clear();
     }
 
     public int Put(Rune rune, bool text)
@@ -74,12 +74,18 @@ internal sealed class TerminalTextScreen
         {
             foreach (var mode in p)
             {
-                if (mode == 2026 && final == 'h') _sync = true;
+                if (mode == 2026 && final == 'h' && !_sync)
+                {
+                    // Snapshot once per paint, not once per changed/scrolled cell.
+                    // This keeps scrolling output on the bulk-copy path as well.
+                    Array.Copy(_cells, _before, _cells.Length);
+                    _sync = true;
+                }
                 if (mode == 2026 && final == 'l')
                 {
                     var count = 0;
                     foreach (var index in _written)
-                        if (_cells[index] != 0 && (_frameScrolled || (_before.TryGetValue(index, out var old) && _cells[index] != old))) count++;
+                        if (_cells[index] != 0 && (_frameScrolled || _cells[index] != _before[index])) count++;
                     if (_beforeClear is { } previous)
                     {
                         // A full repaint can move retained text vertically (e.g. a
@@ -89,12 +95,12 @@ internal sealed class TerminalTextScreen
                         if (previous.EndsWith(current, StringComparison.Ordinal)) count = 0;
                         _beforeClear = null;
                     }
-                    _before.Clear(); _written.Clear(); _sync = false; _frameScrolled = false;
+                    _written.Clear(); _sync = false; _frameScrolled = false;
                     return count;
                 }
                 if (mode is 47 or 1047 or 1049 && final is 'h' or 'l')
                 {
-                    Array.Clear(_cells); _before.Clear(); _written.Clear(); _x = _y = 0;
+                    Array.Clear(_cells); Array.Clear(_before); _written.Clear(); _x = _y = 0;
                 }
             }
             return 0;
@@ -150,16 +156,19 @@ internal sealed class TerminalTextScreen
     private void Set(int index, int value)
     {
         if (_cells[index] == value) return;
-        if (_sync) _before.TryAdd(index, _cells[index]);
         _cells[index] = value;
     }
-    private void Clear(int start, int end) { for (var i = start; i < end; i++) Set(i, 0); }
+    private void Clear(int start, int end)
+    {
+        Array.Clear(_cells, start, end - start);
+    }
     private void LineFeed() { if (_y == _bottom) Scroll(_top, _bottom, 1); else _y = Math.Min(_rows - 1, _y + 1); }
     private void Scroll(int top, int bottom, int lines)
     {
         if (_sync && lines > 0) _frameScrolled = true;
         var start = top * _cols; var end = (bottom + 1) * _cols; var shift = Math.Abs(lines) * _cols;
-        if (lines > 0) { for (var i = start; i < end - shift; i++) Set(i, _cells[i + shift]); Clear(end - shift, end); }
-        else { for (var i = end - 1; i >= start + shift; i--) Set(i, _cells[i - shift]); Clear(start, start + shift); }
+        // Array.Copy handles the overlapping scroll region in either direction.
+        if (lines > 0) { Array.Copy(_cells, start + shift, _cells, start, end - start - shift); Clear(end - shift, end); }
+        else { Array.Copy(_cells, start, _cells, start + shift, end - start - shift); Clear(start, start + shift); }
     }
 }

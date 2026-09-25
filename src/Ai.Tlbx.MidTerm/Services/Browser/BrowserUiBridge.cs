@@ -594,10 +594,15 @@ public sealed class BrowserUiBridge
             listeners = _listeners.Values.ToArray();
         }
 
-        var target = SelectClaimListener(listeners);
+        var sizeOwner = _previewOwnerService.GetSizeOwnerBrowserId(sessionId);
+        var target = sizeOwner is null
+            ? SelectClaimListener(listeners)
+            : listeners.FirstOrDefault(listener => string.Equals(listener.BrowserId, sizeOwner, StringComparison.Ordinal));
         if (target is null || string.IsNullOrWhiteSpace(target.BrowserId))
         {
-            error = listeners.Length > 1
+            error = sizeOwner is not null
+                ? "The terminal size owner's browser is not connected. Reopen that tab's preview or take terminal size control in this tab."
+                : listeners.Length > 1
                 ? "Multiple tlbx browser UIs are connected, but none is the leading browser. Claim leading-browser ownership in the intended tab, then retry mt_claim_preview."
                 : "A tlbx browser UI is connected, but it did not report a browser identity. Reload the tlbx tab, then retry mt_claim_preview.";
             return false;
@@ -664,6 +669,20 @@ public sealed class BrowserUiBridge
             }
 
             listeners = _listeners.Values.ToArray();
+        }
+
+        var sizeOwner = _previewOwnerService?.GetSizeOwnerBrowserId(sessionId);
+        if (sizeOwner is not null)
+        {
+            // Size ownership is per session and exact tab. Never redirect commands
+            // to a passive sibling or another PC when that owner is offline.
+            var sizeListener = listeners.FirstOrDefault(listener =>
+                string.Equals(listener.BrowserId, sizeOwner, StringComparison.Ordinal));
+            target = sizeListener!;
+            error = sizeListener is null
+                ? "The terminal size owner's browser is not connected. Reopen that tab's preview or take terminal size control in this tab."
+                : "";
+            return sizeListener is not null;
         }
 
         var currentOwnerBrowserId = _previewOwnerService?.GetOwnerBrowserId(sessionId, previewName);

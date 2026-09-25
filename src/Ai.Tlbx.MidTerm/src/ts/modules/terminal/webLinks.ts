@@ -21,7 +21,8 @@ export function openTerminalWebLinkInNewTab(
   }
 
   event.preventDefault();
-  event.stopPropagation();
+  // xterm's selection service listens for mouseup on document. Let this event
+  // bubble so a link click cannot leave its drag selection active.
 
   const link = ownerDocument.createElement('a');
   link.href = url.href;

@@ -29,6 +29,34 @@ describes the current product boundary in the source repository.
   and work state, watch several repositories, and validate browser results from
   the same controlled environment.
 
+## Search and keyboard shortcuts
+
+Mobile terminal input keeps a short-lived editable text buffer for the on-screen
+keyboard. Suggestions and spelling corrections replace the recently typed suffix
+instead of appending a second copy of the word. Normal typing remains immediate;
+composition updates are reconciled with the text already sent to the terminal.
+Navigation, submission, paste, and focus changes discard this context. Corrections
+that require guessing a remote cursor position or Unicode deletion behavior are
+rejected with a hint to edit manually or use the input composer.
+
+- A small search button opens a central palette with session, command, and
+  settings results. It stays closed during normal typing and does not resize
+  the terminal when opened. Escape closes it and restores focus.
+- Open it with `Ctrl+Shift+Space` (`Cmd+Shift+Space` on macOS). Search session
+  names or directories, switch to the last session, open the session-type
+  launcher, or find available terminal, layout, preview, and settings actions.
+- Focus a sidebar session and press `F2` to rename it. Enter saves; Escape
+  cancels. A failed save keeps the entered name available for correction.
+- Settings search finds controls across tabs and takes focus to the original
+  control. The Keyboard shortcuts tab lets users assign, remove, or reset
+  command bindings. Preferences stay in that browser, separately per platform.
+- Bindings are deliberately limited to combinations without known browser
+  reservations: Ctrl/Cmd+Shift with Space, Enter, or arrow keys, plus scoped F2
+  for rename. Duplicate bindings are rejected. OS shortcuts and extensions may
+  still take priority; every command remains reachable through the search UI.
+- A modifier key alone never starts microphone recording. Voice input remains
+  available through its explicit control and the command palette.
+
 ## Two explicit session surfaces
 
 Terminal and Agent Controller Session are separate execution models.
@@ -121,6 +149,17 @@ remain available.
   emulation on the browser machine while tlbx and the app may run elsewhere.
 
 ## Mobile and multi-client behavior
+
+- Quick terminal taps use xterm's Alt+click cursor placement when mouse tracking
+  is off. xterm sends cursor keys toward the tapped cell; the running application
+  determines where movement stops. Desktop users can use Alt+click directly.
+  Mouse-aware TUIs still receive ordinary clicks. Scrollback taps do not move
+  the prompt cursor, and dragging and long-press selection keep their gestures.
+  After a movement reply, tlbx corrects a remaining horizontal offset on the
+  reached row, including TUIs that wrap text before the terminal's right edge.
+  Rapid follow-up taps wait for the preceding movement reply. Typing, paste,
+  scrolling, focus or terminal geometry changes cancel pending corrections;
+  ignored moves expire, and correction attempts are bounded.
 
 - Responsive desktop, tablet, and phone UI with installable PWA support.
 - Touch-sized navigation, special keys, modifiers, arrows, paste, files,

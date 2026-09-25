@@ -23,6 +23,7 @@ public sealed class CertificateInfoService
     public DateTime? NotBefore { get; private set; }
     public DateTime? NotAfter { get; private set; }
     public bool IsFallbackCertificate { get; private set; }
+    public bool IsCertificateAuthority { get; private set; }
     public string[] DnsNames { get; private set; } = [];
     public string[] IpAddresses { get; private set; } = [];
 
@@ -40,6 +41,9 @@ public sealed class CertificateInfoService
         NotBefore = cert.NotBefore.ToUniversalTime();
         NotAfter = cert.NotAfter.ToUniversalTime();
         IsFallbackCertificate = isFallback;
+        IsCertificateAuthority = cert.Extensions
+            .OfType<X509BasicConstraintsExtension>()
+            .Any(extension => extension.CertificateAuthority);
 
         // Extract SANs
         (DnsNames, IpAddresses) = ExtractSubjectAlternativeNames(cert);
@@ -52,7 +56,8 @@ public sealed class CertificateInfoService
             Fingerprint = Fingerprint,
             NotBefore = NotBefore,
             NotAfter = NotAfter,
-            IsFallbackCertificate = IsFallbackCertificate
+            IsFallbackCertificate = IsFallbackCertificate,
+            IsCertificateAuthority = IsCertificateAuthority
         };
     }
 

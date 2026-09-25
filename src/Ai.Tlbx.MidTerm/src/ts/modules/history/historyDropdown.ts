@@ -25,6 +25,8 @@ const log = createLogger('history-dropdown');
 let dropdownEl: HTMLElement | null = null;
 let isOpen = false;
 let cachedEntries: LaunchEntry[] = [];
+let hasLoadedHistory = false;
+let historyLoad: Promise<void> | null = null;
 let onSpawnSession: ((entry: LaunchEntry) => void) | null = null;
 let onRenameEntry: ((entryId: string, newLabel: string) => void) | null = null;
 
@@ -67,7 +69,6 @@ export function refreshHistory(): void {
   void loadHistory().then(() => {
     if (isOpen) {
       positionDropdown();
-      renderDropdownContent();
     }
   });
 }
@@ -87,18 +88,16 @@ export function toggleHistoryDropdown(): void {
  * Open the history dropdown.
  */
 export function openHistoryDropdown(): void {
-  if (!dropdownEl) return;
+  if (!dropdownEl || isOpen) return;
 
-  void loadHistory().then(() => {
-    positionDropdown();
-    renderDropdownContent();
-    dropdownEl?.classList.add('visible');
-    isOpen = true;
+  positionDropdown();
+  dropdownEl.classList.add('visible');
+  isOpen = true;
+  void loadHistory();
 
-    setTimeout(() => {
-      document.addEventListener('click', handleOutsideClick);
-    }, 0);
-  });
+  setTimeout(() => {
+    if (isOpen) document.addEventListener('click', handleOutsideClick);
+  }, 0);
 }
 
 /**
@@ -112,13 +111,21 @@ export function closeHistoryDropdown(): void {
   document.removeEventListener('click', handleOutsideClick);
 }
 
-async function loadHistory(): Promise<void> {
-  try {
-    cachedEntries = await fetchHistory();
-  } catch (e) {
-    log.warn(() => `Failed to load history: ${String(e)}`);
-    cachedEntries = [];
-  }
+function loadHistory(): Promise<void> {
+  if (historyLoad) return historyLoad;
+  historyLoad = (async () => {
+    try {
+      cachedEntries = await fetchHistory();
+    } catch (e) {
+      log.warn(() => `Failed to load history: ${String(e)}`);
+    } finally {
+      hasLoadedHistory = true;
+      renderDropdownContent();
+    }
+  })().finally(() => {
+    historyLoad = null;
+  });
+  return historyLoad;
 }
 
 function createDropdownElement(): void {
@@ -127,7 +134,7 @@ function createDropdownElement(): void {
   dropdownEl.innerHTML = `
     <div class="history-dropdown-header">${t('sidebar.loadBookmarked')}</div>
     <div class="history-dropdown-content"></div>
-    <div class="history-dropdown-empty">${t('history.noHistory')}</div>
+    <div class="history-dropdown-empty">${t('settings.general.loading')}</div>
   `;
 
   const sidebar = document.getElementById('sidebar');
@@ -172,6 +179,7 @@ function renderDropdownContent(): void {
   if (pinnedEntries.length === 0 && recentEntries.length === 0) {
     content.classList.add('hidden');
     empty.classList.remove('hidden');
+    empty.textContent = t(hasLoadedHistory ? 'history.noHistory' : 'settings.general.loading');
     return;
   }
 

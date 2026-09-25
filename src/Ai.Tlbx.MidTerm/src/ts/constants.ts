@@ -321,6 +321,7 @@ export const DEFAULT_SETTINGS = {
   notificationPriority: 'normal' as const,
   copyOnSelect: false,
   rightClickPaste: true,
+  stayActiveInBackground: false,
   clipboardShortcuts: 'auto' as const,
   terminalEnterMode: 'shiftEnterLineFeed' as const,
 };

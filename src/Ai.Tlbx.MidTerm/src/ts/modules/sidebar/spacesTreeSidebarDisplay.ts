@@ -16,6 +16,7 @@ export function syncSidebarSessionStructuralClasses(
   // The keyed row owns transient interaction classes (menu/drag). Update only
   // the structural classes derived from session state so hot patches preserve them.
   item.classList.add('session-item', 'two-line', 'spaces-tree-session-item');
+  item.tabIndex = 0;
   item.classList.toggle('active', state.active);
   item.classList.toggle('spaces-tree-session-item-reorderable', state.reorderable);
   item.classList.toggle('tmux-child', state.child);

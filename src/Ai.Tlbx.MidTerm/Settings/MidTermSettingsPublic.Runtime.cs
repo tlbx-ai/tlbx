@@ -100,6 +100,7 @@ public sealed partial class MidTermSettingsPublic
             NotificationPriority = settings.NotificationPriority,
             CopyOnSelect = settings.CopyOnSelect,
             RightClickPaste = settings.RightClickPaste,
+            StayActiveInBackground = settings.StayActiveInBackground,
             ClipboardShortcuts = settings.ClipboardShortcuts,
             TerminalEnterMode = settings.TerminalEnterMode,
             ScrollbackProtection = settings.ScrollbackProtection,
@@ -124,6 +125,7 @@ public sealed partial class MidTermSettingsPublic
             DevMode = settings.DevMode,
             TerminalLatencyDiagnosticsEnabled = settings.TerminalLatencyDiagnosticsEnabled,
             TerminalInputCoalescingMs = settings.TerminalInputCoalescingMs,
+            CodexLocalEchoEnabled = settings.CodexLocalEchoEnabled,
             ShowChangelogAfterUpdate = settings.ShowChangelogAfterUpdate,
             ShowUpdateNotification = settings.ShowUpdateNotification,
             UpdateChannel = settings.UpdateChannel,
@@ -222,6 +224,7 @@ public sealed partial class MidTermSettingsPublic
         settings.NotificationPriority = NotificationPriority;
         settings.CopyOnSelect = CopyOnSelect;
         settings.RightClickPaste = RightClickPaste;
+        settings.StayActiveInBackground = StayActiveInBackground;
         settings.ClipboardShortcuts = ClipboardShortcuts;
         settings.TerminalEnterMode = TerminalEnterMode;
         settings.ScrollbackProtection = ScrollbackProtection;
@@ -247,6 +250,7 @@ public sealed partial class MidTermSettingsPublic
         settings.DevMode = DevMode;
         settings.TerminalLatencyDiagnosticsEnabled = TerminalLatencyDiagnosticsEnabled;
         settings.TerminalInputCoalescingMs = TerminalInputCoalescingMs;
+        settings.CodexLocalEchoEnabled = CodexLocalEchoEnabled;
         settings.ShowChangelogAfterUpdate = ShowChangelogAfterUpdate;
         settings.ShowUpdateNotification = ShowUpdateNotification;
         if (UpdateChannel is "stable" or "dev")

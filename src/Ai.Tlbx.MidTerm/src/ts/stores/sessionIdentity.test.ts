@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { $sessions, setSessions } from './index';
+import {
+  $sessions,
+  setSessions,
+  setSession,
+  removeSession,
+  markSessionClosing,
+  cancelSessionClosing,
+  filterClosingSessions,
+} from './index';
 import type { Session } from '../types';
 
 describe('session snapshot identity', () => {
@@ -18,5 +26,23 @@ describe('session snapshot identity', () => {
     expect(setSessions([{ ...b }])).toBe(true);
     expect($sessions.get().b).toBe(original.b);
     expect($sessions.get().a).toBeUndefined();
+  });
+
+  it('ignores late session updates while closing and permits recovery after a failed close', () => {
+    const session = { id: 'closing-update', name: 'Shell' } as Session;
+    setSession(session);
+    markSessionClosing(session.id);
+    removeSession(session.id);
+    try {
+      setSession({ ...session, name: 'Late rename' });
+      setSessions([session]);
+      expect($sessions.get()[session.id]).toBeUndefined();
+      expect(filterClosingSessions([session])).toEqual([]);
+      cancelSessionClosing(session.id);
+      setSession(session);
+      expect($sessions.get()[session.id]?.name).toBe('Shell');
+    } finally {
+      cancelSessionClosing(session.id);
+    }
   });
 });

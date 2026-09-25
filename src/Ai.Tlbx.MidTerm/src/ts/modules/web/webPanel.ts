@@ -162,13 +162,6 @@ export function initWebPanel(): void {
       restoreCurrentUrlToInput();
     }
   });
-  window.addEventListener('keydown', (e: KeyboardEvent) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l' && urlInput) {
-      e.preventDefault();
-      urlInput.focus();
-      urlInput.select();
-    }
-  });
   refreshBtn?.addEventListener('click', (e: MouseEvent) => {
     const hard = e.shiftKey || e.ctrlKey || e.altKey;
     void handleRefresh(hard ? 'hard' : 'force');

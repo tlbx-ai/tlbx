@@ -214,8 +214,9 @@ export function suspendHubChannelForBrowserBackground(): void {
   closeHubSocket();
 }
 
-export function recoverHubChannelAfterBrowserResume(): void {
+export function recoverHubChannelAfterBrowserResume(forceReconnect = false): void {
   hubSuspendedForBrowserBackground = false;
+  if (forceReconnect) closeHubSocket();
   if (activeCompositeId !== null) attachHubChannel(activeCompositeId);
 }
 

@@ -21,7 +21,7 @@
       sizes="192x192"
       href="/android-chrome-192x192.png?v=__MIDTERM_ASSET_VERSION__"
     />
-    <link rel="manifest" href="/site.webmanifest?v=__MIDTERM_ASSET_VERSION__" />
+    <link rel="manifest" href="/site.webmanifest" />
     <meta name="theme-color" content="#0d0e14" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
@@ -937,9 +937,6 @@
             <button id="btn-create-terminal" data-i18n="terminal.createTerminal">
               Create Terminal
             </button>
-            <p class="empty-state-hint">
-              Press <kbd>Alt</kbd>+<kbd>T</kbd> to create a new terminal
-            </p>
           </div>
           <div id="settings-view" class="settings-view hidden">
             <div class="settings-layout">
@@ -2433,6 +2430,22 @@
                       option may relaunch ordinary foreground processes.
                     </p>
                     <div class="setting-row">
+                      <label
+                        for="setting-stay-active-in-background"
+                        data-i18n="settings.behavior.stayActiveInBackground"
+                        >Stay active in background</label
+                      >
+                      <input type="checkbox" id="setting-stay-active-in-background" />
+                    </div>
+                    <p
+                      class="setting-hint"
+                      data-i18n="settings.behavior.stayActiveInBackgroundHint"
+                    >
+                      Keeps receiving updates while this tab is in the background for a faster
+                      return. Uses more CPU, network and battery. Your browser may still suspend the
+                      tab.
+                    </p>
+                    <div class="setting-row">
                       <label for="setting-keep-system-awake" data-i18n="settings.behavior.keepAwake"
                         >Keep computer awake while sessions exist</label
                       >
@@ -2848,6 +2861,33 @@
                       ></div>
                     </div>
                     <div class="setting-row">
+                      <label data-i18n="settings.diagnostics.performanceLog">Performance log</label>
+                      <div class="path-value-row performance-log-actions">
+                        <button
+                          id="btn-performance-log-start"
+                          type="button"
+                          class="btn-secondary"
+                          data-i18n="settings.diagnostics.performanceLogStart"
+                        >Start</button>
+                        <button
+                          id="btn-performance-log-stop"
+                          type="button"
+                          class="btn-secondary"
+                          data-i18n="settings.diagnostics.performanceLogStop"
+                        >Stop</button>
+                        <button
+                          id="btn-performance-log-download"
+                          type="button"
+                          class="btn-secondary"
+                          data-i18n="settings.diagnostics.performanceLogDownload"
+                        >Download JSON</button>
+                        <code id="diag-performance-log-status" class="path-value" aria-live="polite">-</code>
+                      </div>
+                    </div>
+                    <p class="diag-help-text" data-i18n="settings.diagnostics.performanceLogHint">
+                      Records timing and transport counters without terminal text. Pauses while the tab is hidden.
+                    </p>
+                    <div class="setting-row">
                       <label
                         for="setting-terminal-input-coalescing-ms"
                         data-i18n="settings.diagnostics.inputCoalescingMs"
@@ -2860,6 +2900,14 @@
                         max="200"
                         step="10"
                       />
+                    </div>
+                    <div class="setting-row">
+                      <label
+                        for="setting-codex-local-echo-enabled"
+                        data-i18n="settings.diagnostics.codexLocalEcho"
+                        >Codex terminal typing preview (experimental)</label
+                      >
+                      <input type="checkbox" id="setting-codex-local-echo-enabled" />
                     </div>
                     <div class="setting-row">
                       <label for="diag-overlay-toggle" data-i18n="settings.diagnostics.showOverlay"

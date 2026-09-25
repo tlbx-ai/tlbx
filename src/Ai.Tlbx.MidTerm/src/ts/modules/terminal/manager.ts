@@ -6,6 +6,8 @@
  * and event binding for terminal sessions.
  */
 import { onTerminalInput } from './terminalInputOrigin';
+import { createCodexLocalEcho, type CodexLocalEcho } from './codexLocalEcho';
+import { resetMobileTerminalTextInput, usesMobileTerminalTextInput } from './mobileTextInput';
 import type { Session, TerminalState } from '../../types';
 import { sendSessionPasteInput } from '../../api/client';
 import { syncEffectiveXtermThemeDomOverrides } from '../theming/themes';
@@ -751,7 +753,7 @@ function getOwnedTerminalInput(container: HTMLDivElement): HTMLTextAreaElement |
     return activeElement;
   }
 
-  if (isTerminalKeyAuditEnabled()) {
+  if (isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput()) {
     return getOwnedTerminalInputProxy(container) ?? getOwnedXtermTextarea(container);
   }
 
@@ -868,12 +870,12 @@ function tryHandleTerminalEnterOverride(
 }
 
 function focusTerminalInput(state: TerminalState): void {
-  if (isTerminalKeyAuditEnabled()) {
+  if (isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput()) {
     const proxy = state.inputProxy ?? getOwnedTerminalInputProxy(state.container);
     if (proxy) {
       setTerminalVisualFocus(state, true);
       proxy.focus({ preventScroll: true });
-      proxy.value = '';
+      if (!usesMobileTerminalTextInput()) proxy.value = '';
       syncTerminalCursorActivity(state, true);
       refreshCursorBlink(state.terminal);
       return;
@@ -1133,17 +1135,12 @@ export function recoverTerminalRendererAfterForeground(
     return;
   }
 
-  // This was tlbx's reliable pre-v10.2.11 behavior: never trust a WebGL
-  // framebuffer across a browser-background lifecycle. Recreate only the
-  // visible terminal's renderer and use xterm's buffer as the source of truth.
-  // Unlike the old path, preserve the shared glyph atlas so foreground recovery
-  // does not invalidate every other terminal's cached glyphs.
+  // A hidden tab usually has a healthy renderer with a pending paint. Keep its
+  // GPU context and glyph cache; context-loss and no-frame recovery replace it
+  // only when needed. Reattach after the emergency DOM fallback on a later return.
   foregroundDomRendererRecovery.delete(state);
-  if (state.hasWebgl) {
-    detachWebglAddon(sessionId, state);
-  }
   const wantsWebgl = shouldUseWebglRenderer(settings) && hasWebglPriority(sessionId, state);
-  if (wantsWebgl && !attachWebglAddon(sessionId, state)) {
+  if (wantsWebgl && !state.hasWebgl && !attachWebglAddon(sessionId, state)) {
     scheduleWebglReattach(sessionId, state, WEBGL_REATTACH_BASE_DELAY_MS);
   }
   syncTerminalLigatureState(state, settings?.terminalLigaturesEnabled ?? true);
@@ -1285,6 +1282,9 @@ export function setupGlobalFocusReclaim(): void {
   }
 
   document.addEventListener('mouseup', (e) => {
+    if (e.defaultPrevented) {
+      return;
+    }
     const target =
       e.target instanceof HTMLElement
         ? e.target
@@ -1399,9 +1399,9 @@ export function createTerminalForSession(
         inputProxy.className = 'tlbx-terminal-input-proxy';
         inputProxy.tabIndex = -1;
         inputProxy.setAttribute('aria-label', 'Terminal input');
-        inputProxy.setAttribute('autocorrect', 'off');
+        inputProxy.setAttribute('autocorrect', usesMobileTerminalTextInput() ? 'on' : 'off');
         inputProxy.autocapitalize = 'off';
-        inputProxy.spellcheck = false;
+        inputProxy.spellcheck = usesMobileTerminalTextInput();
         Object.assign(inputProxy.style, {
           position: 'absolute',
           inset: '0',
@@ -1433,7 +1433,10 @@ export function createTerminalForSession(
               return;
             }
 
-            if (isTerminalKeyAuditEnabled() && state.inputProxy) {
+            if (
+              (isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput()) &&
+              state.inputProxy
+            ) {
               (xtermTextarea as HTMLTextAreaElement).blur();
               state.inputProxy.focus({ preventScroll: true });
             }
@@ -1655,6 +1658,9 @@ export function setupTerminalEvents(
     );
   }
 
+  let codexLocalEcho: CodexLocalEcho | null = null;
+  disposables.push({ dispose: () => codexLocalEcho?.dispose() });
+
   disposables.push(
     onTerminalInput(terminal, (data: string, userInput: boolean) => {
       if (!userInput) {
@@ -1664,6 +1670,24 @@ export function setupTerminalEvents(
       const state = sessionTerminals.get(sessionId);
       if (state) {
         resumeMobileStableTerminalCursorFollowing(state);
+      }
+      if (
+        $currentSettings.get()?.codexLocalEchoEnabled === true &&
+        getForegroundInfo(sessionId).processIdentity === 'codex' &&
+        state === termState &&
+        state !== undefined &&
+        isTerminalVisible(state)
+      ) {
+        codexLocalEcho ??= createCodexLocalEcho(
+          terminal,
+          container,
+          () =>
+            $currentSettings.get()?.codexLocalEchoEnabled === true &&
+            getForegroundInfo(sessionId).processIdentity === 'codex',
+        );
+        codexLocalEcho.onInput(data);
+      } else {
+        codexLocalEcho?.clear();
       }
       captureTerminalInputData(sessionId, data);
       sendInput(sessionId, data);
@@ -1740,7 +1764,8 @@ export function setupTerminalEvents(
   const isMac = isMacPlatform();
   const isWindows = isWindowsPlatform();
   const macOptionIsMeta = terminal.options.macOptionIsMeta === true;
-  const isKeyAuditActive = (): boolean => isTerminalKeyAuditEnabled();
+  const isKeyAuditActive = (): boolean =>
+    isTerminalKeyAuditEnabled() || usesMobileTerminalTextInput();
   const {
     contextMenuHandler,
     disposables: interactionDisposables,
@@ -1920,6 +1945,7 @@ export async function pasteToTerminal(
   isFilePath: boolean = false,
   historySource?: string,
 ): Promise<void> {
+  resetMobileTerminalTextInput(sessionId);
   const state = sessionTerminals.get(sessionId);
   if (!state) return;
 

@@ -65,6 +65,7 @@ public sealed partial class MidTermSettingsPublic
     public NotificationPrioritySetting NotificationPriority { get; set; } = NotificationPrioritySetting.Normal;
     public bool CopyOnSelect { get; set; } = false;
     public bool RightClickPaste { get; set; } = true;
+    public bool StayActiveInBackground { get; set; }
     public ClipboardShortcutsSetting ClipboardShortcuts { get; set; } = ClipboardShortcutsSetting.Auto;
     public TerminalEnterModeSetting TerminalEnterMode { get; set; } = TerminalEnterModeSetting.ShiftEnterLineFeed;
     public bool ScrollbackProtection { get; set; } = false;
@@ -88,6 +89,7 @@ public sealed partial class MidTermSettingsPublic
     public bool DevMode { get; set; } = false;
     public bool TerminalLatencyDiagnosticsEnabled { get; set; } = false;
     public int TerminalInputCoalescingMs { get; set; } = 0;
+    public bool CodexLocalEchoEnabled { get; set; } = false;
     public bool ShowChangelogAfterUpdate { get; set; } = true;
     public bool ShowUpdateNotification { get; set; } = true;
     public string? UpdateChannel { get; set; }

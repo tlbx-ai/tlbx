@@ -113,6 +113,11 @@ function Resolve-OriginalContext
         $script:OriginalUserProfile = $env:USERPROFILE
     }
 
+    if ([string]::IsNullOrWhiteSpace($script:OriginalUserProfile))
+    {
+        throw "Cannot determine the original user profile for uninstall."
+    }
+
     if (-not $OriginalLocalAppData)
     {
         $script:OriginalLocalAppData = Join-Path $script:OriginalUserProfile "AppData\Local"
@@ -120,7 +125,9 @@ function Resolve-OriginalContext
 
     if (-not $OriginalTempRoot)
     {
-        $script:OriginalTempRoot = $env:TEMP
+        $script:OriginalTempRoot = if (-not [string]::IsNullOrWhiteSpace($env:TEMP)) { $env:TEMP }
+            elseif (-not [string]::IsNullOrWhiteSpace($env:TMP)) { $env:TMP }
+            else { [System.IO.Path]::GetTempPath() }
     }
 }
 
@@ -452,7 +459,7 @@ if ($serviceTraces)
         Write-Host "  Requesting administrator privileges to remove the tlbx service, trusted certs, firewall rule, and system files..." -ForegroundColor Yellow
 
         $scriptUrl = "https://get.tlbx.ai/uninstall.ps1"
-        $tempScript = Join-Path $env:TEMP "mt-uninstall-elevated.ps1"
+        $tempScript = Join-Path $OriginalTempRoot "mt-uninstall-elevated.ps1"
         Invoke-CompatibleWebRequest -Uri $scriptUrl -OutFile $tempScript
 
         $psExe = Get-WindowsPowerShellPath

@@ -1,7 +1,19 @@
+using Ai.Tlbx.MidTerm.Services.Sessions;
+
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public sealed class BrowserPreviewOwnerService
 {
+    private readonly TerminalSizeControlService? _sizeControl;
+
+    public BrowserPreviewOwnerService(TerminalSizeControlService? sizeControl = null)
+    {
+        _sizeControl = sizeControl;
+    }
+
+    public string? GetSizeOwnerBrowserId(string? sessionId) =>
+        string.IsNullOrWhiteSpace(sessionId) ? null : _sizeControl?.GetOwnerBrowserId(sessionId);
+
     private readonly Lock _lock = new();
     private readonly Dictionary<PreviewKey, string> _owners = new();
 
@@ -11,6 +23,9 @@ public sealed class BrowserPreviewOwnerService
         {
             return null;
         }
+
+        var sizeOwner = GetSizeOwnerBrowserId(sessionId);
+        if (sizeOwner is not null) return sizeOwner;
 
         var key = PreviewKey.Create(sessionId, previewName);
         lock (_lock)
@@ -28,6 +43,9 @@ public sealed class BrowserPreviewOwnerService
         {
             return null;
         }
+
+        var sizeOwner = GetSizeOwnerBrowserId(sessionId);
+        if (sizeOwner is not null) return sizeOwner;
 
         var key = PreviewKey.Create(sessionId, previewName);
         var distinctCandidates = connectedBrowserIds

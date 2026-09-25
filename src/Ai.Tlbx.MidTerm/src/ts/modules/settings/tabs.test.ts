@@ -35,6 +35,7 @@ describe('settings tab migration', () => {
       'security',
       'connected-hosts',
       'advanced',
+      'hotkeys',
     ]) {
       expect(normalizeStoredSettingsTab(tab)).toBe(tab);
     }

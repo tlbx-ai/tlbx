@@ -1,4 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+const { settings } = vi.hoisted(() => ({
+  settings: vi.fn(() => ({ mobileKineticTerminalScroll: true })),
+}));
+vi.mock('../../stores', () => ({ $currentSettings: { get: settings } }));
 
 vi.mock('../touchController/detection', () => ({
   hasPrecisePointer: () => false,
@@ -10,6 +15,8 @@ vi.mock('../comms/muxChannel', () => ({
 }));
 
 import {
+  initTouchScrolling,
+  teardownTouchScrolling,
   computeKineticScrollStep,
   panMobileStableTerminalShellScroll,
   scrollViewport,
@@ -115,5 +122,161 @@ describe('mobile terminal touch scrolling', () => {
     expect(step.active).toBe(false);
     expect(step.deltaY).toBe(0);
     expect(step.nextVelocityY).toBe(0);
+  });
+});
+
+describe('touch release momentum lifecycle', () => {
+  afterEach(() => {
+    teardownTouchScrolling('fling');
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    settings.mockReturnValue({ mobileKineticTerminalScroll: true });
+  });
+
+  function gesture() {
+    let now = 1000;
+    let frameId = 0;
+    const frames = new Map<number, FrameRequestCallback>();
+    const listeners = new Map<string, (event: TouchEvent) => void>();
+    const overlay = {
+      style: {},
+      parentElement: null,
+      addEventListener: (type: string, handler: (event: TouchEvent) => void) =>
+        listeners.set(type, handler),
+      removeEventListener: (type: string) => listeners.delete(type),
+      remove: vi.fn(),
+    };
+    vi.stubGlobal('document', { createElement: () => overlay });
+    vi.stubGlobal('window', { setTimeout: () => 1, clearTimeout: vi.fn() });
+    vi.spyOn(Date, 'now').mockImplementation(() => now);
+    vi.spyOn(performance, 'now').mockImplementation(() => now);
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      frames.set(++frameId, callback);
+      return frameId;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+    vi.stubGlobal(
+      'MouseEvent',
+      class {
+        constructor(
+          public type: string,
+          public options: MouseEventInit,
+        ) {}
+      },
+    );
+    const screen = {
+      clientHeight: 200,
+      dispatchEvent: vi.fn(),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 200 }),
+    };
+    const terminal = {
+      rows: 10,
+      cols: 20,
+      buffer: { active: { baseY: 0, viewportY: 0, cursorX: 0, cursorY: 0 } },
+      onWriteParsed: () => ({ dispose: vi.fn() }),
+      scrollLines: vi.fn(),
+      focus: vi.fn(),
+      modes: { mouseTrackingMode: 'none' },
+    };
+    const container = {
+      querySelector: () => screen,
+      appendChild: vi.fn(),
+      addEventListener: vi.fn(),
+    };
+    initTouchScrolling('fling', terminal as never, container as never);
+    const touch = (type: string, y: number) => {
+      now += 16;
+      const point = { clientX: 50, clientY: y };
+      listeners.get(type)?.({
+        touches: type === 'touchend' ? [] : [point],
+        changedTouches: [point],
+        preventDefault: vi.fn(),
+        stopPropagation: vi.fn(),
+      } as unknown as TouchEvent);
+    };
+    const frame = () => {
+      now += 16;
+      const pending = [...frames.values()];
+      frames.clear();
+      pending.forEach((callback) => callback(now));
+    };
+    return { touch, frame, frames, terminal, screen };
+  }
+
+  it('turns a quick tap into xterm Alt+click cursor placement', () => {
+    const g = gesture();
+    g.touch('touchstart', 120);
+    g.touch('touchend', 120);
+    expect(g.terminal.focus).toHaveBeenCalledOnce();
+    expect(g.screen.dispatchEvent.mock.calls.map(([e]) => [e.type, e.options.altKey])).toEqual([
+      ['mousedown', true],
+      ['mouseup', true],
+    ]);
+  });
+
+  it.each(['x10', 'vt200', 'drag', 'any'])(
+    'preserves unmodified clicks for %s mouse tracking',
+    (mode) => {
+      const g = gesture();
+      g.terminal.modes.mouseTrackingMode = mode;
+      g.touch('touchstart', 120);
+      g.touch('touchend', 120);
+      expect(g.screen.dispatchEvent.mock.calls.map(([e]) => e.options.altKey)).toEqual([
+        false,
+        false,
+      ]);
+    },
+  );
+
+  it('does not place the cursor after a scroll or cancelled gesture', () => {
+    const g = gesture();
+    g.touch('touchstart', 200);
+    g.touch('touchmove', 120);
+    g.touch('touchend', 120);
+    g.touch('touchstart', 120);
+    g.touch('touchcancel', 120);
+    g.touch('touchend', 120);
+    expect(g.screen.dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it.each([1, -1])(
+    'keeps scrolling after release in direction %s, then comes to rest',
+    (direction) => {
+      const g = gesture();
+      g.touch('touchstart', 200);
+      g.touch('touchmove', 200 - direction * 80);
+      g.touch('touchend', 200 - direction * 80);
+      g.terminal.scrollLines.mockClear();
+      expect(g.frames.size).toBe(1);
+      g.frame();
+      expect(g.terminal.scrollLines).toHaveBeenCalled();
+      expect(Math.sign(g.terminal.scrollLines.mock.calls[0]![0])).toBe(direction);
+      for (let i = 0; i < 500 && g.frames.size; i++) g.frame();
+      expect(g.frames.size).toBe(0);
+    },
+  );
+
+  it.each(['touchstart', 'touchcancel', 'teardown'])('stops momentum on %s', (action) => {
+    const g = gesture();
+    g.touch('touchstart', 200);
+    g.touch('touchmove', 120);
+    g.touch('touchend', 120);
+    expect(g.frames.size).toBe(1);
+    if (action === 'teardown') teardownTouchScrolling('fling');
+    else g.touch(action, 120);
+    g.terminal.scrollLines.mockClear();
+    g.frame();
+    expect(g.frames.size).toBe(0);
+    expect(g.terminal.scrollLines).not.toHaveBeenCalled();
+  });
+
+  it('respects the disabled momentum setting while retaining drag scrolling', () => {
+    settings.mockReturnValue({ mobileKineticTerminalScroll: false });
+    const g = gesture();
+    g.touch('touchstart', 200);
+    g.touch('touchmove', 120);
+    expect(g.terminal.scrollLines).toHaveBeenCalled();
+    g.touch('touchend', 120);
+    expect(g.frames.size).toBe(0);
   });
 });
