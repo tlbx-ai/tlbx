@@ -13,7 +13,9 @@ interface Request {
 const cancellations = new Map<string, () => void>();
 
 export function cancelMobileCursorPlacement(sessionId: string): void {
-  cancellations.get(sessionId)?.();
+  if (!cancellations.has(sessionId)) return;
+  const cancel = cancellations.get(sessionId);
+  if (typeof cancel === 'function') cancel();
 }
 
 /** Reconcile xterm's full-width Alt+click estimate with the application's reply. */
