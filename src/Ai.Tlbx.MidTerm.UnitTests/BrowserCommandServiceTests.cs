@@ -345,6 +345,34 @@ public class BrowserCommandServiceTests
         Assert.Equal("still-connected", kept.Result);
     }
 
+    [Theory]
+    [InlineData("tab-a", 1, true)]
+    [InlineData("tab-b", 1, false)]
+    [InlineData("tab-a", 2, false)]
+    public async Task Wait_ReattachesOnlyToSameOwnerAndTarget(string nextBrowser, long nextRevision, bool expectedSuccess)
+    {
+        var service = new BrowserCommandService();
+        service.TryRegisterClient("old", "session-a", "default", "preview", _ => { },
+            browserId: "tab-a", targetRevision: 1);
+        var waiting = service.ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "wait", SessionId = "session-a", PreviewName = "default", Selector = "pre", Timeout = 2
+        }, CancellationToken.None);
+
+        service.UnregisterClient("old");
+        var dispatches = 0;
+        service.TryRegisterClient("new", "session-a", "default", "preview", msg =>
+        {
+            dispatches++;
+            service.ReceiveResult(new BrowserWsResult { Id = msg.Id, Success = true, Result = "found", PreviewId = "preview" }, "new");
+        }, browserId: nextBrowser, targetRevision: nextRevision);
+
+        var result = await waiting;
+        Assert.Equal(expectedSuccess, result.Success);
+        Assert.Equal(expectedSuccess ? 1 : 0, dispatches);
+        if (!expectedSuccess) Assert.Contains("changed", result.Error, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task ExecuteCommandAsync_WithMatchingSessionAndPreviewName_RoutesToCorrectNamedPreview()
     {

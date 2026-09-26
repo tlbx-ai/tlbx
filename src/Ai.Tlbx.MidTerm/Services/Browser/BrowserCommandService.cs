@@ -99,13 +99,17 @@ public sealed class BrowserCommandService
 
     public async Task<BrowserWsResult> ExecuteCommandAsync(BrowserCommandRequest request, CancellationToken ct)
     {
-        return await ExecuteCommandOnceAsync(request, DateTime.UtcNow + BridgeAttachGrace, ct).ConfigureAwait(false);
+        var grace = request.Command == "wait"
+            ? TimeSpan.FromSeconds(ResolveTimeoutSeconds(request)) : BridgeAttachGrace;
+        return await ExecuteCommandOnceAsync(request, DateTime.UtcNow + grace, ct).ConfigureAwait(false);
     }
 
     private async Task<BrowserWsResult> ExecuteCommandOnceAsync(
         BrowserCommandRequest request,
         DateTime deadline,
-        CancellationToken ct)
+        CancellationToken ct,
+        BrowserClient? expectedClient = null,
+        long? expectedGeneration = null)
     {
         var (client, error) = await ResolveClientWithAttachGraceAsync(request, deadline, ct).ConfigureAwait(false);
         if (client is null)
@@ -118,6 +122,10 @@ public sealed class BrowserCommandService
         }
 
         var generation = _previewOwnerService?.GetGeneration(client.SessionId, client.PreviewName) ?? 0;
+        if (expectedClient is not null && (generation != expectedGeneration
+                || client.BrowserId != expectedClient.BrowserId
+                || client.TargetRevision != expectedClient.TargetRevision))
+            return new BrowserWsResult { Error = "Preview ownership or target changed while waiting for navigation." };
         if (_previewOwnerService is not null && !_previewOwnerService.IsCurrent(client.SessionId, client.PreviewName, client.BrowserId, generation))
             return new BrowserWsResult { Error = "Preview ownership changed before dispatch. Retry the command." };
         var id = Guid.NewGuid().ToString("N")[..12];
@@ -165,7 +173,10 @@ public sealed class BrowserCommandService
 
         var timeoutSeconds = ResolveTimeoutSeconds(request);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        var timeout = TimeSpan.FromSeconds(timeoutSeconds);
+        if (request.Command == "wait")
+            timeout = TimeSpan.FromMilliseconds(Math.Max(1, Math.Min(timeout.TotalMilliseconds, (deadline - DateTime.UtcNow).TotalMilliseconds)));
+        cts.CancelAfter(timeout);
 
         try
         {
@@ -174,6 +185,11 @@ public sealed class BrowserCommandService
                     && !_previewOwnerService.IsCurrent(client.SessionId, client.PreviewName, client.BrowserId, generation))
                 || !IsCurrentTarget(client))
                 return new BrowserWsResult { Error = "Preview ownership or target changed while the command was in flight. Its outcome is unknown; inspect the current preview before retrying an action." };
+            // Waiting for a selector is read-only. A document navigation can close its
+            // bridge after dispatch; continue on the same owner/target within one deadline.
+            // Never retry a dispatched action or arbitrary JavaScript.
+            if (request.Command == "wait" && result.Error == BridgeDisconnectedError && DateTime.UtcNow < deadline)
+                return await ExecuteCommandOnceAsync(request, deadline, ct, client, generation).ConfigureAwait(false);
             BrowserLog.Result(request.Command, result.Success, result.Result ?? result.Error ?? "");
             return result;
         }

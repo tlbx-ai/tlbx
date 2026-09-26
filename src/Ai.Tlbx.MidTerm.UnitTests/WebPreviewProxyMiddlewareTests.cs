@@ -259,9 +259,32 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Contains("addEventListener(\"loadend\",onDone)", script, StringComparison.Ordinal);
         Assert.Contains("cookieRefreshTimer", script, StringComparison.Ordinal);
         Assert.Contains("if(_realParent===window)", script, StringComparison.Ordinal);
-        Assert.Contains("fetch(cu,fo)", script, StringComparison.Ordinal);
+        Assert.Contains("F.call(window,cu,fo)", script, StringComparison.Ordinal);
         Assert.Contains("dprop(navigator,\"cookieEnabled\",function(){return true;});", script, StringComparison.Ordinal);
-        Assert.Contains("if(ncs)ncs(v)", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("if(ncs)ncs(v)", script, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("theme=dark", "var cc=\"theme=dark\"")]
+    [InlineData("", "var cc=\"\"")]
+    public void GetUrlRewriteScript_InitializesCookieSnapshot(string header, string expected)
+    {
+        var method = typeof(WebPreviewProxyMiddleware).GetMethod(
+            "GetUrlRewriteScript", BindingFlags.NonPublic | BindingFlags.Static);
+        var script = Assert.IsType<string>(method?.Invoke(null, ["/webpreview/test", header]));
+        Assert.Contains(expected, script, StringComparison.Ordinal);
+        Assert.DoesNotContain("__MT_INITIAL_COOKIES__", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetUrlRewriteScript_CookieSnapshotCannotCloseInjectedScript()
+    {
+        var method = typeof(WebPreviewProxyMiddleware).GetMethod(
+            "GetUrlRewriteScript", BindingFlags.NonPublic | BindingFlags.Static);
+        var script = Assert.IsType<string>(method?.Invoke(null,
+            ["/webpreview/test", "value=</script><script>alert(1)</script>\""]));
+        Assert.DoesNotContain("value=</script>", script, StringComparison.Ordinal);
+        Assert.Contains("\\u003C/script\\u003E", script, StringComparison.Ordinal);
     }
 
     [Fact]
