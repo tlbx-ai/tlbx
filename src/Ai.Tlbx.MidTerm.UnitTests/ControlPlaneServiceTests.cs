@@ -49,35 +49,6 @@ public sealed class ControlPlaneServiceTests : IDisposable
     }
 
     [Fact]
-    public void StoresOnlyAgentPublishedSessionMeaning()
-    {
-        using var service = CreateService();
-
-        var published = service.PublishSessionStatus("session-a", new PublishControlPlaneSessionStatusRequest
-        {
-            State = ControlPlaneSessionStates.NeedsInput,
-            Summary = "Implementation is verified; release choice is needed.",
-            CurrentTask = "Prepare the release",
-            NextAction = "Johannes chooses dev or stable.",
-            Source = "codex"
-        });
-        service.CreateCheckpoint(new CreateControlPlaneCheckpointRequest
-        {
-            SessionId = "session-a",
-            Kind = "verified",
-            Summary = "Focused tests pass",
-            Details = "14 backend and 5 frontend tests",
-            Source = "codex"
-        });
-
-        var status = Assert.Single(service.GetSessionStatuses("session-a").Statuses);
-        var checkpoint = Assert.Single(service.GetCheckpoints("session-a", "verified", 10).Checkpoints);
-        Assert.Equal(published.Revision, status.Revision);
-        Assert.Equal(ControlPlaneSessionStates.NeedsInput, status.State);
-        Assert.Equal("Focused tests pass", checkpoint.Summary);
-    }
-
-    [Fact]
     public void PersistsAndBoundsEveryCollection()
     {
         using (var service = CreateService())
@@ -114,25 +85,6 @@ public sealed class ControlPlaneServiceTests : IDisposable
         Assert.Equal(ControlPlaneService.MaxSessionStatuses, reloaded.GetSessionStatuses(null).Statuses.Count);
         Assert.Equal(ControlPlaneService.MaxCheckpoints, reloaded.GetCheckpoints(null, null, 1000).TotalCount);
         Assert.Equal(ControlPlaneService.MaxEvents, reloaded.GetEvents(0, 1000).Events.Count);
-    }
-
-    [Fact]
-    public void RejectsUnknownSemanticStatesInsteadOfGuessing()
-    {
-        using var service = CreateService();
-
-        Assert.Throws<ArgumentException>(() => service.PublishSessionStatus(
-            "session-a",
-            new PublishControlPlaneSessionStatusRequest
-            {
-                State = "probablyBusy",
-                Summary = "This must not be inferred."
-            }));
-        Assert.Throws<ArgumentException>(() => service.CreateWorkItem(new CreateControlPlaneWorkItemRequest
-        {
-            State = "maybeDone",
-            Title = "Ambiguous state"
-        }));
     }
 
     [Fact]

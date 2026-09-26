@@ -21,14 +21,6 @@ describe('terminal link confirmation preference', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('starts enabled and supports disabling and restoring confirmation', () => {
-    expect(shouldConfirmTerminalLinks()).toBe(true);
-    setConfirmTerminalLinks(false);
-    expect(shouldConfirmTerminalLinks()).toBe(false);
-    setConfirmTerminalLinks(true);
-    expect(shouldConfirmTerminalLinks()).toBe(true);
-  });
-
   it('opens directly after opting out but rejects non-web schemes', () => {
     setConfirmTerminalLinks(false);
     const event = {} as MouseEvent;

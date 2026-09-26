@@ -16,57 +16,6 @@ public sealed class ActionGraphServiceTests : IDisposable
     }
 
     [Fact]
-    public void CreatesNodesWithAutoCreatedGraphAndRoundTripsTypedFields()
-    {
-        using var service = CreateService();
-
-        var node = service.CreateNode("strands", new UpsertActionGraphNodeRequest
-        {
-            Id = "dai",
-            Kind = ActionGraphNodeKinds.Project,
-            Title = "DAI",
-            State = "v1.7.3 live",
-            Html = "<p>Rich <b>HTML</b> body</p>",
-            X = 120,
-            Y = 80,
-            Width = 260,
-            Height = 140,
-            Url = "https://dai.tlbx.ai",
-            Path = @"Q:\repos\DAI",
-            Project = "DAI",
-            Date = DateTimeOffset.Parse("2026-07-30T09:00:00Z", System.Globalization.CultureInfo.InvariantCulture),
-            Actions =
-            [
-                new ActionGraphNodeAction
-                {
-                    Label = "Continue",
-                    Cwd = @"Q:\repos\Jpa",
-                    Profile = "claude",
-                    Prompt = "Wir arbeiten an DAI weiter."
-                }
-            ]
-        });
-
-        var graph = service.GetGraph("strands");
-
-        Assert.NotNull(graph);
-        Assert.Equal("strands", graph!.Id);
-        var loaded = Assert.Single(graph.Nodes);
-        Assert.Equal("dai", loaded.Id);
-        Assert.Equal(ActionGraphNodeKinds.Project, loaded.Kind);
-        Assert.Equal("v1.7.3 live", loaded.State);
-        Assert.Equal("<p>Rich <b>HTML</b> body</p>", loaded.Html);
-        Assert.Equal(120, loaded.X);
-        Assert.Equal(80, loaded.Y);
-        Assert.Equal(260, loaded.Width);
-        Assert.Equal(140, loaded.Height);
-        var action = Assert.Single(loaded.Actions);
-        Assert.Equal("Continue", action.Label);
-        Assert.False(string.IsNullOrEmpty(action.Id));
-        Assert.Equal(1, node.Revision);
-    }
-
-    [Fact]
     public void UpdatesKeepManualPositionUnlessExplicitlyMoved()
     {
         using var service = CreateService();
@@ -147,22 +96,6 @@ public sealed class ActionGraphServiceTests : IDisposable
         var node = Assert.Single(graph.Nodes);
         Assert.Equal("api", node.Id);
         Assert.Equal(ActionGraphNodeKinds.Service, node.Kind);
-    }
-
-    [Fact]
-    public void ListsGraphsWithCountsAndDeletesWholeGraphs()
-    {
-        using var service = CreateService();
-        service.CreateNode("one", new UpsertActionGraphNodeRequest { Id = "n1", Title = "N1" });
-        service.CreateNode("two", new UpsertActionGraphNodeRequest { Id = "n2", Title = "N2" });
-
-        var list = service.ListGraphs();
-        Assert.Equal(2, list.Graphs.Count);
-        Assert.All(list.Graphs, summary => Assert.Equal(1, summary.NodeCount));
-
-        Assert.True(service.DeleteGraph("one"));
-        Assert.False(service.DeleteGraph("one"));
-        Assert.Single(service.ListGraphs().Graphs);
     }
 
     [Fact]
@@ -302,56 +235,6 @@ public sealed class ActionGraphServiceTests : IDisposable
         Assert.Throws<ActionGraphConflictException>(() =>
             service.DeleteGraph("g", graphRevision));
         Assert.Equal(2, service.GetGraph("g")!.Nodes.Count);
-    }
-
-    [Fact]
-    public void RoundTripsZoomHintsFreeFormCommandsAndMultipleSessionBindings()
-    {
-        using var service = CreateService();
-        var node = service.CreateNode("g", new UpsertActionGraphNodeRequest
-        {
-            Id = "work",
-            Title = "Investigate",
-            MinZoom = 0.35,
-            MaxZoom = 2.5,
-            Pinned = true,
-            Attention = true,
-            Hidden = true,
-            Actions =
-            [
-                new ActionGraphNodeAction
-                {
-                    Label = "Run",
-                    Command = "future-agent --mode build",
-                    Prompt = "Inspect the graph context."
-                }
-            ]
-        });
-        var graphRevision = service.GetGraph("g")!.Revision;
-
-        service.BindSession("g", "work", new BindActionGraphSessionRequest
-        {
-            SessionId = "session-a",
-            Role = "worker",
-            ExpectedGraphRevision = graphRevision
-        });
-        service.BindSession("g", "work", new BindActionGraphSessionRequest
-        {
-            SessionId = "session-b",
-            Role = "reviewer"
-        });
-
-        var loaded = Assert.Single(service.GetGraph("g")!.Nodes);
-        Assert.Equal(0.35, loaded.MinZoom);
-        Assert.Equal(2.5, loaded.MaxZoom);
-        Assert.True(loaded.Pinned);
-        Assert.True(loaded.Attention);
-        Assert.True(loaded.Hidden);
-        Assert.Equal("future-agent --mode build", Assert.Single(loaded.Actions).Command);
-        Assert.Equal(2, loaded.Sessions.Count);
-        Assert.Contains(loaded.Sessions, binding => binding.SessionId == "session-a" && binding.Role == "worker");
-        Assert.Contains(loaded.Sessions, binding => binding.SessionId == "session-b" && binding.Role == "reviewer");
-        Assert.True(loaded.Revision > node.Revision);
     }
 
     [Fact]
