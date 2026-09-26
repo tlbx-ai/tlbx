@@ -14,4 +14,6 @@ public sealed class BrowserCommandRequest
     public double? DeltaX { get; init; }
     public double? DeltaY { get; init; }
     public int? Steps { get; init; }
+    public bool FullPage { get; init; }
+    public bool WaitForNavigation { get; init; }
 }

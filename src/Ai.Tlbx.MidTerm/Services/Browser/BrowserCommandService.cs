@@ -9,6 +9,7 @@ public sealed class BrowserCommandService
     private const int DefaultCommandTimeoutSeconds = 10;
     private const int DefaultScreenshotTimeoutSeconds = 30;
     private readonly Lock _clientGate = new();
+    private TaskCompletionSource _clientChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly ConcurrentDictionary<string, PendingCommand> _pending = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, BrowserClient> _clients = new(StringComparer.Ordinal);
     private readonly MainBrowserService? _mainBrowserService;
@@ -80,6 +81,8 @@ public sealed class BrowserCommandService
             CancelPendingForClient(replacedConnectionId);
         }
 
+        SignalClientChanged();
+
         return true;
     }
 
@@ -94,14 +97,100 @@ public sealed class BrowserCommandService
         if (client is not null)
         {
             CancelPendingForClient(client.ConnectionId);
+            SignalClientChanged();
         }
     }
+
+    private void SignalClientChanged() =>
+        Interlocked.Exchange(ref _clientChanged, new(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
 
     public async Task<BrowserWsResult> ExecuteCommandAsync(BrowserCommandRequest request, CancellationToken ct)
     {
         var grace = request.Command == "wait"
             ? TimeSpan.FromSeconds(ResolveTimeoutSeconds(request)) : BridgeAttachGrace;
         return await ExecuteCommandOnceAsync(request, DateTime.UtcNow + grace, ct).ConfigureAwait(false);
+    }
+
+    public async Task<BrowserBatchResponse> ExecuteBatchAsync(BrowserBatchRequest request, CancellationToken ct)
+    {
+        var result = new BrowserBatchResponse();
+        var timeoutSeconds = request.Timeout ?? 60;
+        if (string.IsNullOrWhiteSpace(request.SessionId) || request.Commands is null
+            || request.Commands.Count is < 1 or > 32 || timeoutSeconds is < 1 or > 120)
+        {
+            result.Error = "A batch requires sessionId, 1–32 commands, and a timeout of 1–120 seconds.";
+            return result;
+        }
+        if (request.Commands.Any(c => c is null || c.Command is not
+            ("query" or "click" or "fill" or "exec" or "wait" or "screenshot" or "scroll" or "wheel"
+            or "navigate" or "reload" or "outline" or "attrs" or "css" or "log" or "links" or "submit" or "forms" or "url")))
+        {
+            result.Error = "Unsupported batch command. Nested batches and ownership changes are not allowed.";
+            return result;
+        }
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        var owner = _previewOwnerService?.ResolveOwnerBrowserId(request.SessionId, request.PreviewName);
+        var generation = _previewOwnerService?.GetGeneration(request.SessionId, request.PreviewName);
+        var revision = _webPreviewService?.GetPreviewSession(request.SessionId, request.PreviewName)?.TargetRevision;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+        for (var i = 0; i < request.Commands.Count; i++)
+        {
+            var command = request.Commands[i];
+            var stepStartedAt = DateTimeOffset.UtcNow;
+            var stepClock = System.Diagnostics.Stopwatch.StartNew();
+            BrowserWsResult step;
+            if ((_previewOwnerService is not null && !_previewOwnerService.IsCurrent(request.SessionId, request.PreviewName, owner, generation ?? 0))
+                || _webPreviewService?.GetPreviewSession(request.SessionId, request.PreviewName)?.TargetRevision != revision)
+            {
+                step = new BrowserWsResult { Error = "Preview ownership or target changed; remaining batch steps were not run." };
+            }
+            else
+            {
+                try
+                {
+                    deadline.Token.ThrowIfCancellationRequested();
+                    step = await ExecuteCommandAsync(new BrowserCommandRequest
+                    {
+                        Command = command.Command, Selector = command.Selector, Value = command.Value,
+                        MaxDepth = command.MaxDepth, TextOnly = command.TextOnly, Timeout = command.Timeout,
+                        DeltaX = command.DeltaX, DeltaY = command.DeltaY, Steps = command.Steps, FullPage = command.FullPage,
+                        SessionId = request.SessionId, PreviewName = request.PreviewName
+                    }, deadline.Token).ConfigureAwait(false);
+                    if (step.Success && (command.WaitForNavigation || command.Command is "navigate" or "reload"))
+                    {
+                        var status = await WaitForControllableAsync(
+                            _webPreviewService?.GetPreviewSession(request.SessionId, request.PreviewName)?.Url,
+                            request.SessionId, request.PreviewName,
+                            timeout: TimeSpan.FromSeconds(command.Timeout ?? 15),
+                            requireClientConnectedAfterUtc: stepStartedAt,
+                            cancellationToken: deadline.Token,
+                            requiredTargetRevision: revision).ConfigureAwait(false);
+                        if (!status.Controllable)
+                            step = new BrowserWsResult { Error = "Navigation was dispatched, but the new document did not become controllable. Remaining steps were not run; do not replay the action." };
+                    }
+                }
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                {
+                    step = new BrowserWsResult { Error = "Batch deadline exceeded. The current step may have executed; inspect state before retrying. Remaining steps were not run." };
+                }
+            }
+            result.Results.Add(new BrowserBatchStepResult
+            {
+                Index = i, Command = command.Command, Success = step.Success, Result = step.Result,
+                Error = step.Error, MatchCount = step.MatchCount, DurationMs = stepClock.Elapsed.TotalMilliseconds
+            });
+            if (!step.Success)
+            {
+                result.FailedIndex = i;
+                result.Error = step.Error;
+                break;
+            }
+        }
+        result.Success = result.Results.Count == request.Commands.Count && result.FailedIndex is null;
+        result.DurationMs = clock.Elapsed.TotalMilliseconds;
+        return result;
     }
 
     private async Task<BrowserWsResult> ExecuteCommandOnceAsync(
@@ -149,6 +238,7 @@ public sealed class BrowserCommandService
             DeltaX = request.DeltaX,
             DeltaY = request.DeltaY,
             Steps = request.Steps,
+            FullPage = request.FullPage,
             SessionId = client.SessionId,
             PreviewName = client.PreviewName,
             PreviewId = client.PreviewId
@@ -217,6 +307,7 @@ public sealed class BrowserCommandService
             client.IsVisible = state.Visible;
             client.HasFocus = state.Focus;
             client.IsTopLevel = state.TopLevel;
+            SignalClientChanged();
         }
     }
 
@@ -466,6 +557,7 @@ public sealed class BrowserCommandService
 
         while (true)
         {
+            var changed = Volatile.Read(ref _clientChanged).Task;
             var connectedUiClientCount = connectedUiClientCountProvider?.Invoke() ?? 0;
             var snapshot = GetStatusSnapshot(
                 targetUrl,
@@ -501,7 +593,10 @@ public sealed class BrowserCommandService
                 };
             }
 
-            await Task.Delay(effectivePollInterval, cancellationToken);
+            // Wake immediately when a document bridge attaches. Keep polling only as
+            // a fallback for owner/UI changes that do not touch a browser client.
+            try { await changed.WaitAsync(effectivePollInterval, cancellationToken); }
+            catch (TimeoutException) { }
         }
     }
 
@@ -518,7 +613,7 @@ public sealed class BrowserCommandService
         var resolved = TryResolveClient(new BrowserCommandRequest
         {
             SessionId = sessionId, PreviewName = previewName, PreviewId = previewId, Command = "status"
-        }, out var client, out var error);
+        }, out var client, out var error, clients);
         var ownerConnected = _previewOwnerService?.IsConnected(owner) == true;
         var ambiguous = !resolved && (error.StartsWith("Multiple", StringComparison.Ordinal));
         var hasTarget = !string.IsNullOrWhiteSpace(targetUrl);
@@ -803,11 +898,13 @@ public sealed class BrowserCommandService
     private bool TryResolveClient(
         BrowserCommandRequest request,
         out BrowserClient client,
-        out string error)
+        out string error,
+        BrowserClient[]? snapshot = null)
     {
         error = "";
         client = null!;
-        var matches = FilterClients(_clients.Values.ToArray(), request.SessionId, request.PreviewName, request.PreviewId);
+        // Status fields and resolution must observe the same attachment set.
+        var matches = FilterClients(snapshot ?? _clients.Values.ToArray(), request.SessionId, request.PreviewName, request.PreviewId);
         if (HasStatusScope(request.SessionId, request.PreviewName, request.PreviewId))
         {
             // Explicit preview IDs still obey the session/preview's exact-tab execution owner.

@@ -1390,6 +1390,35 @@
         }
       }
     },
+    "/api/browser/batch": {
+      "post": {
+        "tags": [
+          "Ai.Tlbx.MidTerm.OpenApi"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrowserBatchRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrowserBatchResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/browser/command": {
       "post": {
         "tags": [
@@ -3953,6 +3982,127 @@
           }
         }
       },
+      "BrowserBatchRequest": {
+        "required": [
+          "commands"
+        ],
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "previewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "commands": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BrowserCommandRequest"
+            }
+          },
+          "timeout": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "BrowserBatchResponse": {
+        "required": [
+          "success",
+          "failedIndex",
+          "error",
+          "durationMs",
+          "results"
+        ],
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "failedIndex": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "durationMs": {
+            "type": "number",
+            "format": "double"
+          },
+          "results": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BrowserBatchStepResult"
+            }
+          }
+        }
+      },
+      "BrowserBatchStepResult": {
+        "required": [
+          "index",
+          "command",
+          "success",
+          "result",
+          "error",
+          "matchCount",
+          "durationMs"
+        ],
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "command": {
+            "type": "string"
+          },
+          "success": {
+            "type": "boolean"
+          },
+          "result": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "error": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "matchCount": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "durationMs": {
+            "type": "number",
+            "format": "double"
+          }
+        }
+      },
       "BrowserClientInfo": {
         "required": [
           "sessionId",
@@ -4020,7 +4170,9 @@
       "BrowserCommandRequest": {
         "required": [
           "command",
-          "textOnly"
+          "textOnly",
+          "fullPage",
+          "waitForNavigation"
         ],
         "type": "object",
         "properties": {
@@ -4094,6 +4246,12 @@
               "integer"
             ],
             "format": "int32"
+          },
+          "fullPage": {
+            "type": "boolean"
+          },
+          "waitForNavigation": {
+            "type": "boolean"
           }
         }
       },

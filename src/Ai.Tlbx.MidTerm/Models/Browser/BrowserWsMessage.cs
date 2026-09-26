@@ -12,6 +12,7 @@ public sealed class BrowserWsMessage
     public double? DeltaX { get; init; }
     public double? DeltaY { get; init; }
     public int? Steps { get; init; }
+    public bool FullPage { get; init; }
     public string? SessionId { get; init; }
     public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }

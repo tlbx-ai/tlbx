@@ -275,8 +275,8 @@ public static class BrowserEndpoints
                         // An ACK only means the UI handled the instruction. Verify the actual bridge.
                         var probe = await commandService.ExecuteCommandAsync(new BrowserCommandRequest
                         {
-                            Command = "url", SessionId = sessionId, PreviewName = previewName,
-                            PreviewId = status.DefaultClient?.PreviewId, Timeout = 5
+                            Command = "ready", SessionId = sessionId, PreviewName = previewName,
+                            PreviewId = status.DefaultClient?.PreviewId, Timeout = 15
                         }, cancellationToken);
                         if (!probe.Success) return Results.Text(probe.Error + "\n", statusCode: 409);
                         if (previewOwnerService.GetGeneration(sessionId, previewName) != generation
@@ -569,6 +569,19 @@ public static class BrowserEndpoints
             return ToJsonResult(result);
         });
 
+        app.MapPost("/api/browser/batch", async (BrowserBatchRequest request, HttpContext ctx) =>
+        {
+            var result = await commandService.ExecuteBatchAsync(request, ctx.RequestAborted);
+            foreach (var step in result.Results.Where(s => s.Success && s.Command == "screenshot"))
+            {
+                var path = await SaveResultToDiskAsync("screenshot", new BrowserWsResult { Success = true, Result = step.Result },
+                    new BrowserCommandRequest { SessionId = request.SessionId, PreviewName = request.PreviewName }, sessionManager, webPreviewService);
+                if (path is not null) step.Result = path;
+            }
+            // Keep partial results inspectable, including the failed step. Never replay a batch.
+            return Results.Json(result, AppJsonContext.Default.BrowserBatchResponse);
+        });
+
         app.MapPost("/api/browser/command", async (BrowserCommandRequest request, HttpContext ctx) =>
         {
             if (string.IsNullOrWhiteSpace(request.Command))
@@ -773,7 +786,8 @@ public static class BrowserEndpoints
                 "mt_log error",
                 "mt_forms",
                 "mt_links",
-                "mt_screenshot"
+                "mt_screenshot",
+                "mt_batch <commands>"
             ],
             RecoveryCommands =
             [
@@ -791,7 +805,7 @@ public static class BrowserEndpoints
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so tlbx shows it in the IDE bar and sidebar.",
-                "Docked preview screenshots use in-page html2canvas; an open Chrome mobile device uses native CDP capture instead.",
+                "Docked screenshots capture the viewport by default; use --full-page for the slower full document. Rendering uses html2canvas; Chrome mobile devices use native CDP capture.",
                 "Chrome mobile device control runs in the optional extension on the owning browser machine, so the tlbx server may remain remote."
             ]
         };
@@ -992,6 +1006,7 @@ public static class BrowserEndpoints
             "screenshot" => new BrowserCommandRequest
             {
                 Command = "screenshot",
+                FullPage = HasFlag(args, "--full-page"),
                 SessionId = GetFlagValue(args, "--session")
             },
             "snapshot" => new BrowserCommandRequest
@@ -1003,7 +1018,7 @@ public static class BrowserEndpoints
             {
                 Command = "wait",
                 Selector = GetPositional(args, 1),
-                Timeout = GetIntFlag(args, "--timeout") ?? 5
+                Timeout = GetIntFlag(args, "--timeout") ?? 15
             },
             "navigate" => new BrowserCommandRequest
             {
@@ -1070,6 +1085,7 @@ public static class BrowserEndpoints
                 DeltaX = request.DeltaX,
                 DeltaY = request.DeltaY,
                 Steps = request.Steps,
+                FullPage = request.FullPage,
                 SessionId = GetFlagValue(args, "--session"),
                 PreviewName = GetFlagValue(args, "--preview"),
                 PreviewId = request.PreviewId
@@ -1104,7 +1120,7 @@ public static class BrowserEndpoints
             var screenshotsDir = TlbxDirectory.EnsureSubdirectory(cwd, "screenshots");
 
             var ts = DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-            var filePath = Path.Combine(screenshotsDir, $"screenshot_{ts}.png");
+            var filePath = Path.Combine(screenshotsDir, $"screenshot_{ts}_{Guid.NewGuid():N}.png");
 
             try
             {
@@ -1159,7 +1175,8 @@ public static class BrowserEndpoints
             PreviewId = request.PreviewId,
             DeltaX = request.DeltaX,
             DeltaY = request.DeltaY,
-            Steps = request.Steps
+            Steps = request.Steps,
+            FullPage = request.FullPage
         };
 
     private static IResult ToJsonResult(BrowserWsResult result)

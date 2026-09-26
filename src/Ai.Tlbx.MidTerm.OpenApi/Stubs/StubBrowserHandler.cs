@@ -7,6 +7,9 @@ namespace Ai.Tlbx.MidTerm.OpenApi.Stubs;
 
 public sealed class StubBrowserHandler : IBrowserHandler
 {
+    public Task<IResult> ExecuteBatchAsync(BrowserBatchRequest request, HttpContext ctx) =>
+        Task.FromResult<IResult>(Results.Json(new BrowserBatchResponse { Success = true }));
+
     public IResult GetStatus(string? sessionId, string? previewName) =>
         Results.Json(new BrowserStatusResponse());
 

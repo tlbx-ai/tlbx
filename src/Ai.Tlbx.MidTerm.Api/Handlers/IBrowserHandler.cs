@@ -14,4 +14,5 @@ public interface IBrowserHandler
     IResult Open(WebPreviewTargetRequest request);
     IResult ClaimMain(BrowserCommandRequest request);
     Task<IResult> ExecuteCommandAsync(BrowserCommandRequest request, HttpContext ctx);
+    Task<IResult> ExecuteBatchAsync(BrowserBatchRequest request, HttpContext ctx);
 }
