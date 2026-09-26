@@ -15,11 +15,17 @@ function readPreviews(): SavedPreview[] {
     const value: unknown = JSON.parse(sessionStorage.getItem(storageKey) ?? '[]');
     return Array.isArray(value)
       ? value.filter(
-          (p: SavedPreview) =>
-            p &&
+          (p: unknown): p is SavedPreview =>
+            typeof p === 'object' &&
+            p !== null &&
+            'sessionId' in p &&
+            'previewName' in p &&
+            'url' in p &&
+            'targetRevision' in p &&
             typeof p.sessionId === 'string' &&
             typeof p.previewName === 'string' &&
             typeof p.url === 'string' &&
+            typeof p.targetRevision === 'number' &&
             Number.isFinite(p.targetRevision),
         )
       : [];

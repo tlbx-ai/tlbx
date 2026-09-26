@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const source = readFileSync(
   new URL('../../../../Services/WebPreview/WebPreviewProxyMiddleware.cs', import.meta.url),
@@ -12,6 +12,31 @@ const helpers = source.slice(
 const wrap = new Function(`${helpers}; return createNormalizedStyleReader;`)();
 
 describe('browser capture computed styles', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('converts and caches nested modern colors in gradients without changing layout values', () => {
+    const paint = vi.fn();
+    vi.stubGlobal('CSS', { supports: () => true });
+    vi.stubGlobal('document', {
+      createElement: () => ({
+        getContext: () => ({
+          clearRect: vi.fn(),
+          fillRect: paint,
+          fillStyle: '',
+          getImageData: () => ({ data: [20, 40, 60, 128] }),
+        }),
+      }),
+    });
+    const normalize = new Function(`${helpers}; return normalizeCssColorFunctions;`)();
+    const color = 'color-mix(in oklch, oklch(0.5 0.1 20), blue)';
+    expect(normalize(`linear-gradient(${color}, oklch(0.8 0.1 40))`)).toBe(
+      'linear-gradient(rgba(20, 40, 60, 0.502), rgba(20, 40, 60, 0.502))',
+    );
+    expect(normalize(color)).toBe('rgba(20, 40, 60, 0.502)');
+    expect(paint).toHaveBeenCalledTimes(2);
+    expect(normalize('calc(100% - 2px)')).toBe('calc(100% - 2px)');
+  });
+
   it('copies resolved properties without duplicating inherited design tokens', () => {
     const names = ['color', 'width', ...Array.from({ length: 2000 }, (_, i) => `--token-${i}`)];
     const values: Record<string, string> = {

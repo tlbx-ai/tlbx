@@ -93,9 +93,9 @@ export function initWebPreview(): void {
           if (!preview?.active || preview.targetRevision !== saved.targetRevision) return;
           setSessionNavigationUrl(id, saved.previewName, saved.url);
           await syncBackgroundWebPreview(id, saved.previewName);
-        }).catch((error: unknown) =>
-          createLogger('web').warn(() => `Preview recovery failed: ${String(error)}`),
-        );
+        }).catch((error: unknown) => {
+          createLogger('web').warn(() => `Preview recovery failed: ${String(error)}`);
+        });
       }
     }
     knownSessionIds = ids;
