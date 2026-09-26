@@ -613,7 +613,7 @@ public sealed class BrowserCommandService
         var resolved = TryResolveClient(new BrowserCommandRequest
         {
             SessionId = sessionId, PreviewName = previewName, PreviewId = previewId, Command = "status"
-        }, out var client, out var error);
+        }, out var client, out var error, clients);
         var ownerConnected = _previewOwnerService?.IsConnected(owner) == true;
         var ambiguous = !resolved && (error.StartsWith("Multiple", StringComparison.Ordinal));
         var hasTarget = !string.IsNullOrWhiteSpace(targetUrl);
@@ -898,11 +898,13 @@ public sealed class BrowserCommandService
     private bool TryResolveClient(
         BrowserCommandRequest request,
         out BrowserClient client,
-        out string error)
+        out string error,
+        BrowserClient[]? snapshot = null)
     {
         error = "";
         client = null!;
-        var matches = FilterClients(_clients.Values.ToArray(), request.SessionId, request.PreviewName, request.PreviewId);
+        // Status fields and resolution must observe the same attachment set.
+        var matches = FilterClients(snapshot ?? _clients.Values.ToArray(), request.SessionId, request.PreviewName, request.PreviewId);
         if (HasStatusScope(request.SessionId, request.PreviewName, request.PreviewId))
         {
             // Explicit preview IDs still obey the session/preview's exact-tab execution owner.

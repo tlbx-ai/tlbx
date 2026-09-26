@@ -7,6 +7,43 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class BrowserBatchTests
 {
     [Fact]
+    public async Task StatusRemainsConsistentDuringConcurrentAttachments()
+    {
+        var service = new BrowserCommandService();
+        using var stop = new CancellationTokenSource();
+        using var start = new Barrier(2);
+        var writer = Task.Factory.StartNew(() =>
+        {
+            start.SignalAndWait(stop.Token);
+            while (!stop.IsCancellationRequested)
+            {
+                service.TryRegisterClient("c", "s", "default", "p", _ => { }, isVisible: true);
+                service.UnregisterClient("c");
+            }
+        }, CancellationToken.None, TaskCreationOptions.LongRunning, TaskScheduler.Default);
+        try
+        {
+            start.SignalAndWait(stop.Token);
+            for (var i = 0; i < 20_000; i++)
+            {
+                var status = service.GetStatus("https://example.com", "s", "default");
+                Assert.Equal(status.Connected, status.Controllable);
+                Assert.Equal(status.ConnectedClientCount, status.Clients.Length);
+                if (status.Controllable)
+                {
+                    Assert.NotNull(status.DefaultClient);
+                    Assert.Contains(status.Clients, c => c.PreviewId == status.DefaultClient.PreviewId);
+                }
+            }
+        }
+        finally
+        {
+            stop.Cancel();
+            await writer;
+        }
+    }
+
+    [Fact]
     public async Task JsonRequestWithoutTimeoutUsesDefaultBudget()
     {
         var request = System.Text.Json.JsonSerializer.Deserialize(
