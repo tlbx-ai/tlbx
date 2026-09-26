@@ -23,21 +23,26 @@ public sealed class TtyHostClientCloseTests
             UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true
         })!;
-        var stdout = host.StandardOutput.ReadToEndAsync();
-        var stderr = host.StandardError.ReadToEndAsync();
+        using var outputLifetime = new CancellationTokenSource();
+        var stdout = host.StandardOutput.ReadToEndAsync(outputLifetime.Token);
+        var stderr = host.StandardError.ReadToEndAsync(outputLifetime.Token);
         try
         {
             await using var client = new TtyHostClient("verified", host.Id);
             typeof(TtyHostClient).GetMethod("RememberHostCapabilities", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .Invoke(client, [new SessionInfo { Id = "verified" }]);
-            Assert.True(await client.CloseAsync().WaitAsync(TimeSpan.FromSeconds(5)));
+            Assert.True(await client.CloseAsync(outputLifetime.Token).WaitAsync(TimeSpan.FromSeconds(5), outputLifetime.Token));
             Assert.True(host.HasExited);
         }
         finally
         {
             if (!host.HasExited) host.Kill(entireProcessTree: true);
-            await host.WaitForExitAsync();
-            await Task.WhenAll(stdout, stderr);
+            await host.WaitForExitAsync(outputLifetime.Token);
+            // A Windows console helper can retain an inherited pipe handle after
+            // the verified child exits. Its lifetime must not keep this test alive.
+            outputLifetime.Cancel();
+            try { await Task.WhenAll(stdout, stderr); }
+            catch (OperationCanceledException) { }
         }
     }
 }
