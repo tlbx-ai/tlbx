@@ -264,9 +264,11 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
         using var scope = _factory.Services.CreateScope();
         var manager = scope.ServiceProvider.GetRequiredService<TtyHostSessionManager>();
         const string sessionId = "codex-s1";
+        var longName = new string('x', 9000) + "終";
         SeedSession(manager, new SessionInfo
         {
             Id = sessionId,
+            Name = longName,
             Pid = 42,
             HostPid = 43,
             ShellType = "Pwsh",
@@ -282,15 +284,11 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
         {
             using var ws = await ConnectWebSocketAsync("/ws/state");
 
-            var buffer = new byte[8192];
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-            var result = await ws.ReceiveAsync(buffer, cts.Token);
-
-            Assert.Equal(WebSocketMessageType.Text, result.MessageType);
-            var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            var json = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
             var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(json, AppJsonContext.Default.StateUpdate);
 
             var session = Assert.Single(state!.Sessions!.Sessions, s => s.Id == sessionId);
+            Assert.Equal(longName, session.Name);
             Assert.NotNull(session.Supervisor);
             Assert.Equal("codex", session.Supervisor!.Profile);
         }
@@ -497,19 +495,26 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
     private static async Task<string?> TryReceiveTextMessageAsync(WebSocket ws, TimeSpan timeout)
     {
         var buffer = new byte[8192];
+        using var message = new MemoryStream();
         using var cts = new CancellationTokenSource(timeout);
         try
         {
-            var result = await ws.ReceiveAsync(buffer, cts.Token);
-            if (result.MessageType != WebSocketMessageType.Text)
+            while (true)
             {
-                return null;
+                var result = await ws.ReceiveAsync(buffer, cts.Token);
+                if (result.MessageType != WebSocketMessageType.Text)
+                {
+                    Assert.Equal(0, message.Length);
+                    return null;
+                }
+                message.Write(buffer, 0, result.Count);
+                if (result.EndOfMessage)
+                    return Encoding.UTF8.GetString(message.GetBuffer(), 0, checked((int)message.Length));
             }
-
-            return Encoding.UTF8.GetString(buffer, 0, result.Count);
         }
         catch (OperationCanceledException)
         {
+            Assert.Equal(0, message.Length);
             return null;
         }
     }
@@ -544,4 +549,3 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
         return (T)property.GetValue(instance)!;
     }
 }
-
