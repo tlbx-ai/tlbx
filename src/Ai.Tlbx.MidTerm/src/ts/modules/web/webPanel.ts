@@ -6,6 +6,7 @@
 
 import { $webPreviewUrl, $activeSessionId } from '../../stores';
 import { applyStoredViewportToFrame } from './webViewport';
+import { rememberPreview } from './webPreviewRecovery';
 import {
   fetchPreviewCookie,
   resolvePreviewMessageTarget,
@@ -853,6 +854,12 @@ async function renderPreviewFrame(
       currentUrl,
       currentTargetRevision,
     );
+    rememberPreview({
+      sessionId,
+      previewName,
+      url: currentUrl,
+      targetRevision: currentTargetRevision,
+    });
     if (visible) {
       setVisiblePreviewFrame(frameKey);
       loadedUrl = currentUrl;
@@ -968,6 +975,12 @@ function updateUrlBarFromIframe(
     }
     const sanitized = sanitizePreviewDisplayUrl(displayUrl);
     setSessionNavigationUrl(target.sessionId, target.previewName, sanitized);
+    rememberPreview({
+      sessionId: target.sessionId,
+      previewName: target.previewName,
+      url: sanitized,
+      targetRevision: target.preview.targetRevision,
+    });
     if (isStillActivePreviewSession(target.sessionId, target.previewName)) {
       loadedUrl = sanitized;
       $webPreviewUrl.set(sanitized);

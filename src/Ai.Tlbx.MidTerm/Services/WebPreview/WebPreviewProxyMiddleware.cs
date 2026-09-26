@@ -915,7 +915,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"navigate":{
                   if(!msg.value){res.success=false;res.error="url required";break;}
-                  location.href=msg.value;res.result="navigating";
+                  location.href=mtNavigationUrl(msg.value);res.result="navigating";
                   break;}
                 case"reload":{
                   if((msg.value||"")==="force"){
@@ -1676,7 +1676,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + targetUri.AbsolutePath;
             if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
             {
-                _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+                _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true, preserveTargetRevision: true);
             }
         }
 
@@ -2076,7 +2076,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + "/";
                 if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
                 {
-                    _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+                    _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true, preserveTargetRevision: true);
                 }
             }
 

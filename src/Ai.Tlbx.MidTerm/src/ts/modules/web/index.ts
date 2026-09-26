@@ -5,6 +5,8 @@
  */
 
 import { setWebClickHandler } from '../sessionTabs';
+import { forgetPreview, restoreSessionPreviews } from './webPreviewRecovery';
+import { createLogger } from '../logging';
 import { $activeSessionId, $webPreviewDetached, $webPreviewUrl, $sessionList } from '../../stores';
 import {
   toggleWebPreviewDock,
@@ -41,6 +43,7 @@ import {
   removeSessionPreview,
   removeSessionState,
   setSessionMode,
+  setSessionNavigationUrl,
   setSessionSelectedPreviewName,
   syncSessionPreviews,
 } from './webSessionState';
@@ -74,9 +77,25 @@ export function initWebPreview(): void {
     const ids = new Set(sessions.map((s) => s.id).filter(Boolean));
     for (const oldId of knownSessionIds) {
       if (!ids.has(oldId)) {
+        forgetPreview(oldId);
         closeDetachedIfOwnedBy(oldId);
         destroyMissingPreviewFrames(oldId, []);
         removeSessionState(oldId);
+      }
+    }
+    for (const id of ids) {
+      if (!knownSessionIds.has(id)) {
+        void restoreSessionPreviews(id, async (saved) => {
+          const previews = await listWebPreviewSessions(id);
+          if (!previews || !$sessionList.get().some((s) => s.id === id)) return;
+          syncSessionPreviews(id, previews);
+          const preview = getSessionPreview(id, saved.previewName);
+          if (!preview?.active || preview.targetRevision !== saved.targetRevision) return;
+          setSessionNavigationUrl(id, saved.previewName, saved.url);
+          await syncBackgroundWebPreview(id, saved.previewName);
+        }).catch((error: unknown) =>
+          createLogger('web').warn(() => `Preview recovery failed: ${String(error)}`),
+        );
       }
     }
     knownSessionIds = ids;
@@ -157,7 +176,12 @@ export async function syncBackgroundWebPreview(
     return;
   }
 
-  await loadBackgroundPreview(sessionId, previewName, preview.url, preview.targetRevision);
+  await loadBackgroundPreview(
+    sessionId,
+    previewName,
+    preview.navigationUrl ?? preview.url,
+    preview.targetRevision,
+  );
 }
 
 /** Select a named preview for the active session and show it in the dock. */
@@ -208,6 +232,7 @@ export async function closePreviewFromServer(
 }
 
 async function removePreviewFromUi(sessionId: string, previewName: string): Promise<void> {
+  forgetPreview(sessionId, previewName);
   closeDetachedPreview(sessionId, previewName);
   destroyPreviewFrame(sessionId, previewName);
   removeSessionPreview(sessionId, previewName);

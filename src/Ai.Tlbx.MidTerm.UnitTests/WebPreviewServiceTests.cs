@@ -10,6 +10,19 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class WebPreviewServiceTests
 {
     [Fact]
+    public void CanonicalNavigation_PreservesRevisionWhileExplicitReplacementInvalidatesIt()
+    {
+        var service = new WebPreviewService(serverPort: 2000);
+        Assert.True(service.SetTarget("session-1", "docs", "https://example.com/start"));
+        var revision = service.GetPreviewSession("session-1", "docs")!.TargetRevision;
+        Assert.True(service.SetTarget("session-1", "docs", "https://other.example/", preserveCookies: true, preserveTargetRevision: true));
+        Assert.Equal(revision, service.GetPreviewSession("session-1", "docs")!.TargetRevision);
+        Assert.Equal("https://other.example/", service.GetPreviewSession("session-1", "docs")!.Url);
+        Assert.True(service.SetTarget("session-1", "docs", "https://third.example/"));
+        Assert.True(service.GetPreviewSession("session-1", "docs")!.TargetRevision > revision);
+    }
+
+    [Fact]
     public void SetTarget_PathWithTrailingSlash_PreservesTrailingSlash()
     {
         var service = new WebPreviewService(serverPort: 2000);
