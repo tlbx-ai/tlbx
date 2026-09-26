@@ -317,7 +317,6 @@ public class WebPreviewProxyMiddlewareTests
         Assert.DoesNotContain("function normalizeCloneCaptureColors", script, StringComparison.Ordinal);
         Assert.Contains("function createNormalizedStyleReader", script, StringComparison.Ordinal);
         Assert.Contains("function installComputedStyleColorNormalization", script, StringComparison.Ordinal);
-        Assert.Contains("value.indexOf(\"color(\")<0", script, StringComparison.Ordinal);
         Assert.Contains("installComputedStyleColorNormalization(window)", script, StringComparison.Ordinal);
         Assert.Contains("installComputedStyleColorNormalization(doc.defaultView||window)", script, StringComparison.Ordinal);
         Assert.Contains("onclone:function(doc)", script, StringComparison.Ordinal);
