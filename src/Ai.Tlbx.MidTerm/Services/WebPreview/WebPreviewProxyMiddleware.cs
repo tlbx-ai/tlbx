@@ -584,9 +584,10 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!isFinite(num))return 1;
             return Math.max(0,Math.min(1,num));
           }
+          var captureColorContext=null,captureColorCache=new Map();
           function normalizeCssColorFunctions(value){
-            if(typeof value!=="string"||value.indexOf("color(")<0)return value;
-            return value.replace(/color\(\s*srgb\s+([^\s)\/]+)\s+([^\s)\/]+)\s+([^\s)\/]+)(?:\s*\/\s*([^)]+?))?\s*\)/gi,function(_,r,g,b,a){
+            if(typeof value!=="string"||!/(?:oklch|oklab|lch|lab|color|color-mix)\(/i.test(value))return value;
+            value=value.replace(/color\(\s*srgb\s+([^\s)\/]+)\s+([^\s)\/]+)\s+([^\s)\/]+)(?:\s*\/\s*([^)]+?))?\s*\)/gi,function(_,r,g,b,a){
               var rr=parseSrgbChannel(r),gg=parseSrgbChannel(g),bb=parseSrgbChannel(b);
               if(rr===null||gg===null||bb===null)return _;
               var aa=parseSrgbAlpha(a);
@@ -594,6 +595,27 @@ public sealed partial class WebPreviewProxyMiddleware
               var alphaText=(Math.round(aa*1000)/1000).toString();
               return "rgba("+rr+", "+gg+", "+bb+", "+alphaText+")";
             });
+            // Let the browser convert modern color spaces to sRGB for html2canvas.
+            // Cache each color; gradients/shadows can contain multiple or nested functions.
+            var pattern=/(?:oklch|oklab|lch|lab|color-mix|color)\(/gi,match,output="",cursor=0;
+            while((match=pattern.exec(value))!==null){
+              var end=pattern.lastIndex,depth=1;
+              while(end<value.length&&depth){var c=value.charAt(end++);if(c==="(")depth++;else if(c===")")depth--;}
+              if(depth)break;
+              var token=value.slice(match.index,end),converted=captureColorCache.get(token);
+              if(!converted){
+                try{
+                  if(!CSS.supports("color",token))throw new Error("Invalid color");
+                  if(!captureColorContext){var canvas=document.createElement("canvas");canvas.width=canvas.height=1;captureColorContext=canvas.getContext("2d",{willReadFrequently:true});}
+                  var ctx=captureColorContext;ctx.clearRect(0,0,1,1);ctx.fillStyle=token;ctx.fillRect(0,0,1,1);
+                  var pixel=ctx.getImageData(0,0,1,1).data;
+                  converted="rgba("+pixel[0]+", "+pixel[1]+", "+pixel[2]+", "+(Math.round(pixel[3]/255*1000)/1000)+")";
+                  captureColorCache.set(token,converted);
+                }catch(e){converted=token;}
+              }
+              output+=value.slice(cursor,match.index)+converted;cursor=end;pattern.lastIndex=end;
+            }
+            return output+value.slice(cursor);
           }
           function createNormalizedStyleReader(styles,captureProperties){
             if(!styles||typeof styles!=="object")return styles;
@@ -915,7 +937,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"navigate":{
                   if(!msg.value){res.success=false;res.error="url required";break;}
-                  location.href=msg.value;res.result="navigating";
+                  location.href=mtNavigationUrl(msg.value);res.result="navigating";
                   break;}
                 case"reload":{
                   if((msg.value||"")==="force"){
@@ -1676,7 +1698,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + targetUri.AbsolutePath;
             if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
             {
-                _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+                _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true, preserveTargetRevision: true);
             }
         }
 
@@ -2076,7 +2098,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 var canonicalTarget = canonicalUri.GetLeftPart(UriPartial.Authority) + "/";
                 if (_service.GetPreviewSessionByRouteKey(routeKey) is { SessionId: var sessionId, PreviewName: var previewName })
                 {
-                    _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true);
+                    _service.SetTarget(sessionId, previewName, canonicalTarget, preserveCookies: true, preserveTargetRevision: true);
                 }
             }
 

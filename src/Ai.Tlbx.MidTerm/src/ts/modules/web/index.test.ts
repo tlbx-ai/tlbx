@@ -54,6 +54,7 @@ import {
   getSessionSelectedPreviewName,
   removeSessionState,
   setSessionDockedClient,
+  setSessionNavigationUrl,
   setSessionSelectedPreviewName,
   upsertSessionPreview,
 } from './webSessionState';
@@ -231,5 +232,27 @@ describe('syncActiveWebPreview', () => {
       4,
     );
     removeSessionState(backgroundSessionId);
+  });
+
+  it('preserves the navigated page when a background preview is synchronized again', async () => {
+    const id = 'session-background-navigation';
+    upsertSessionPreview({
+      sessionId: id,
+      previewName,
+      routeKey: 'route',
+      url: 'https://example.org/start',
+      active: true,
+      targetRevision: 2,
+    });
+    setSessionNavigationUrl(id, previewName, 'https://example.org/next');
+    await syncBackgroundWebPreview(id, previewName);
+    expect(mockedLoadBackgroundPreview).toHaveBeenCalledWith(
+      id,
+      previewName,
+      'https://example.org/next',
+      2,
+    );
+    expect($activeSessionId.get()).toBe(sessionId);
+    removeSessionState(id);
   });
 });

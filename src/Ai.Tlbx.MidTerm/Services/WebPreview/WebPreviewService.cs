@@ -203,7 +203,7 @@ public sealed class WebPreviewService
         return _previews.Values.Any(state => state.TargetUri is not null);
     }
 
-    public bool SetTarget(string sessionId, string? previewName, string url, bool preserveCookies = false)
+    public bool SetTarget(string sessionId, string? previewName, string url, bool preserveCookies = false, bool preserveTargetRevision = false)
     {
         if (string.IsNullOrWhiteSpace(url))
         {
@@ -248,7 +248,9 @@ public sealed class WebPreviewService
 
         state.TargetUri = uri;
         state.TargetUrl = uri.ToString();
-        state.TargetRevision++;
+        // Natural navigation keeps the document's bridge identity. Explicit target
+        // replacement still invalidates older commands and preview clients.
+        if (!preserveTargetRevision) state.TargetRevision++;
         LoadCookiesFromDisk(state, uri);
         return true;
     }
