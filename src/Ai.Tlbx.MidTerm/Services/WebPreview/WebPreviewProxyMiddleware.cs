@@ -312,13 +312,20 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!p||typeof p.then!=="function"){qrc();return p;}
             return p.then(function(v){qrc();return v;},function(err){qrc();throw err;});
           }
+          function proxyFetch(self,u,o){
+            if(typeof u==="string")return wrapCookieRefresh(F.call(self,r(u),o));
+            if(u&&typeof u==="object"&&u.url){try{return wrapCookieRefresh(rfq(self,u,o));}catch(e){}}
+            return wrapCookieRefresh(F.call(self,u,o));
+          }
           window.fetch=function(u,o){
-            if(typeof u==="string")return wrapCookieRefresh(F.call(this,r(u),o));
-            if(u&&typeof u==="object"&&u.url){try{return wrapCookieRefresh(rfq(this,u,o));}catch(e){}}
-            return wrapCookieRefresh(F.call(this,u,o));
+            var self=this;
+            return cookieWrites?cookieWriteQueue.then(function(){return proxyFetch(self,u,o);}):proxyFetch(self,u,o);
           };
           var X=XMLHttpRequest.prototype.open;
-          XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);return X.apply(this,a);};
+          var synchronousXhrs=new WeakSet(),xhrSendVersions=new WeakMap();
+          XMLHttpRequest.prototype.open=function(m,u){var a=[].slice.call(arguments);a[1]=r(u);xhrSendVersions.set(this,(xhrSendVersions.get(this)||0)+1);if(a[2]===false)synchronousXhrs.add(this);else synchronousXhrs.delete(this);return X.apply(this,a);};
+          var XA=XMLHttpRequest.prototype.abort;
+          XMLHttpRequest.prototype.abort=function(){xhrSendVersions.set(this,(xhrSendVersions.get(this)||0)+1);return XA.apply(this,arguments);};
           var XS=XMLHttpRequest.prototype.send;
           XMLHttpRequest.prototype.send=function(){
             var xhr=this,done=false;
@@ -329,7 +336,13 @@ public sealed partial class WebPreviewProxyMiddleware
               try{xhr.removeEventListener("loadend",onDone);}catch(e){}
             }
             try{xhr.addEventListener("loadend",onDone);}catch(e){}
-            try{return XS.apply(xhr,arguments);}catch(err){onDone();throw err;}
+            var sendArgs=arguments;
+            if(cookieWrites&&!synchronousXhrs.has(xhr)){
+              var sendVersion=xhrSendVersions.get(xhr);
+              cookieWriteQueue.then(function(){if(xhrSendVersions.get(xhr)!==sendVersion){onDone();return;}try{XS.apply(xhr,sendArgs);}catch(err){onDone();xhr.dispatchEvent(new Event("error"));}});
+              return;
+            }
+            try{return XS.apply(xhr,sendArgs);}catch(err){onDone();throw err;}
           };
           if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){var ok=sb(r(u),d);if(ok)qrc();return ok;};}
           // === Element property setters ===
@@ -483,7 +496,8 @@ public sealed partial class WebPreviewProxyMiddleware
           window.addEventListener("hashchange",ntfy);
           setTimeout(ntfyNow,0);
           // === Cookie bridge ===
-          var cc="",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
+          var cc=/*__MT_INITIAL_COOKIES__*/"",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
+          var cookieWriteQueue=Promise.resolve(),cookieWrites=0,cookieWriteVersion=0;
           window.addEventListener("message",function(ev){
             var d=ev.data;
             if(!d||d.type!=="mt-cookie-response")return;
@@ -493,19 +507,20 @@ public sealed partial class WebPreviewProxyMiddleware
             delete cookiePending[d.requestId];
             done(d.error?null:d);
           });
-          function reqCookie(action,raw){
+          function reqCookie(action,raw,upstreamUrl){
             return new Promise(function(resolve){
-              var msg=mtMsg("mt-cookie-request",{requestId:"c"+(++cookieSeq),action:action,raw:raw||"",upstreamUrl:curU()});
+              upstreamUrl=upstreamUrl||curU();
+              var msg=mtMsg("mt-cookie-request",{requestId:"c"+(++cookieSeq),action:action,raw:raw||"",upstreamUrl:upstreamUrl});
               if(!msg){resolve(null);return;}
               if(_realParent===window){
                 try{
-                  var cu=PP+"/_cookies?u="+encodeURIComponent(curU());
+                  var cu=PP+"/_cookies?u="+encodeURIComponent(upstreamUrl);
                   var fo={method:action==="set"?"POST":"GET"};
                   if(action==="set"){
                     fo.headers={"Content-Type":"application/json"};
                     fo.body=JSON.stringify({raw:raw||""});
                   }
-                  fetch(cu,fo).then(function(r){return r.ok?r.json():null;}).then(resolve).catch(function(){resolve(null);});
+                  F.call(window,cu,fo).then(function(r){return r.ok?r.json():null;}).then(resolve).catch(function(){resolve(null);});
                   return;
                 }catch(e){}
               }
@@ -519,7 +534,7 @@ public sealed partial class WebPreviewProxyMiddleware
               },5000);
             });
           }
-          function rc(){return reqCookie("get").then(function(j){cc=j&&j.header?j.header:"";}).catch(function(){});}
+          function rc(){var version=cookieWriteVersion;return reqCookie("get").then(function(j){if(!cookieWrites&&version===cookieWriteVersion&&j)cc=j.header||"";}).catch(function(){});}
           function qrc(){
             if(cookieRefreshTimer)return;
             cookieRefreshTimer=setTimeout(function(){
@@ -531,14 +546,12 @@ public sealed partial class WebPreviewProxyMiddleware
           try{
             var d=Object.getOwnPropertyDescriptor(Document.prototype,"cookie")||Object.getOwnPropertyDescriptor(HTMLDocument.prototype,"cookie");
             if(d&&d.configurable){
-              var ncg=typeof d.get==="function"?d.get.bind(document):null,ncs=typeof d.set==="function"?d.set.bind(document):null;
               Object.defineProperty(document,"cookie",{configurable:true,get:function(){return cc;},set:function(v){
                 if(typeof v!=="string")return;
-                try{if(ncs)ncs(v);}catch(e){}
                 var n=v.split(";")[0]||"";if(n){var i=n.indexOf("="),k=i>0?n.slice(0,i).trim():"";if(k){var p=cc?cc.split(/;\s*/):[];var nx=[];for(var z=0;z<p.length;z++){if(!p[z].startsWith(k+"="))nx.push(p[z]);}nx.push(n.trim());cc=nx.join("; ");}}
-                reqCookie("set",v).then(function(j){if(j&&typeof j.header==="string")cc=j.header;}).catch(function(){});
+                var version=++cookieWriteVersion,url=curU();cookieWrites++;
+                cookieWriteQueue=cookieWriteQueue.then(function(){return reqCookie("set",v,url);}).then(function(j){if(version===cookieWriteVersion&&j&&typeof j.header==="string")cc=j.header;}).catch(function(){}).then(function(){cookieWrites--;});
               }});
-              setTimeout(function(){try{var nc=ncg?ncg():"";if(nc&&!cc)cc=nc;}catch(e){}},0);
             }
           }catch(e){}
           // === MutationObserver: catch dynamically added elements ===
@@ -1175,12 +1188,15 @@ public sealed partial class WebPreviewProxyMiddleware
         })();</script>
         """;
 
-    private static string GetUrlRewriteScript(string routePrefix)
+    private static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "")
     {
         return UrlRewriteScript.Replace(
             "var P=\"/webpreview\"",
             $"var P=\"{routePrefix}\"",
-            StringComparison.Ordinal);
+            StringComparison.Ordinal).Replace(
+                "/*__MT_INITIAL_COOKIES__*/\"\"",
+                $"\"{JsonEncodedText.Encode(initialCookieHeader)}\"",
+                StringComparison.Ordinal);
     }
 
 
@@ -1780,7 +1796,8 @@ public sealed partial class WebPreviewProxyMiddleware
             : $"<script>history.replaceState(history.state,\"\",\"{JsonEncodedText.Encode(redirectedProxyPath)}\");</script>";
         html = MarkSubframeSources(html);
         html = InjectHeadContent(html,
-            $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix) + redirectPathScript);
+            $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix,
+                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "") + redirectPathScript);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
