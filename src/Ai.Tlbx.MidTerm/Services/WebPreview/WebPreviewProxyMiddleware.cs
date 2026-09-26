@@ -267,7 +267,8 @@ public sealed partial class WebPreviewProxyMiddleware
           // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
           function r(u){
             if(typeof u!=="string")return u;
-            if(u.startsWith("data:")||u.startsWith("blob:")||u.startsWith("about:")||u.startsWith("javascript:")||u.startsWith("#"))return u;
+            // Non-network schemes must not recurse through relative URL resolution.
+            if(u.startsWith("#")||(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:|^wss?:/i.test(u)))return u;
             if(u.startsWith("//"))return r(location.protocol+u);
             if(window.__mtExternalDocument){
               if(u.startsWith(PP+"/")||u.startsWith(location.origin+PP+"/"))return ar(u);

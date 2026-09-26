@@ -35,6 +35,10 @@ public static class BrowserEndpointDefinitions
             handler.Open(request))
             .Produces(StatusCodes.Status200OK);
 
+        app.MapPost("/api/browser/batch", async (BrowserBatchRequest request, HttpContext ctx, IBrowserHandler handler) =>
+            await handler.ExecuteBatchAsync(request, ctx))
+            .Produces<BrowserBatchResponse>(StatusCodes.Status200OK, "application/json");
+
         app.MapPost("/api/browser/command", async (BrowserCommandRequest request, HttpContext ctx, IBrowserHandler handler) =>
             await handler.ExecuteCommandAsync(request, ctx))
             .Produces<BrowserCommandResponse>(StatusCodes.Status200OK, "application/json");
