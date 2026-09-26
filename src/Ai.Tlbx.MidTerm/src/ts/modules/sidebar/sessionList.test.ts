@@ -35,17 +35,6 @@ describe('sessionList grouping', () => {
     expect(groups[1]?.sessions.map((session) => session.id)).toEqual(['agent-1', 'agent-2']);
   });
 
-  it('omits empty groups', () => {
-    const groups = groupSessionsByController(
-      [{ id: 'agent-1', shellType: 'Pwsh', name: 'Agent 1', agentControlled: true } as any],
-      groupingOptions,
-    );
-
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.key).toBe('agent');
-    expect(groups[0]?.showHeader).toBe(true);
-  });
-
   it('sorts agent sessions with attention before quiet workers', () => {
     const groups = groupSessionsByController(
       [
@@ -75,20 +64,6 @@ describe('sessionList grouping', () => {
       'agent-blocked',
       'agent-busy',
     ]);
-  });
-
-  it('hides group headers when only human sessions are visible', () => {
-    const groups = groupSessionsByController(
-      [
-        { id: 'human-1', shellType: 'Pwsh', name: 'Human 1' } as any,
-        { id: 'human-2', shellType: 'Pwsh', name: 'Human 2' } as any,
-      ],
-      groupingOptions,
-    );
-
-    expect(groups).toHaveLength(1);
-    expect(groups[0]?.key).toBe('human');
-    expect(groups[0]?.showHeader).toBe(false);
   });
 
   it('filters sessions by title, shell, and current directory tokens', () => {

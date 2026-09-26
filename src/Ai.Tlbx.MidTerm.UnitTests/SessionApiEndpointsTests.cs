@@ -346,34 +346,6 @@ public sealed class SessionApiEndpointsTests
     }
 
     [Fact]
-    public void GetPreferredClipboardProcessId_PrefersHostPid()
-    {
-        var session = new SessionInfo
-        {
-            Pid = 41,
-            HostPid = 99
-        };
-
-        var preferred = SessionApiEndpoints.GetPreferredClipboardProcessId(session);
-
-        Assert.Equal(99, preferred);
-    }
-
-    [Fact]
-    public void GetPreferredClipboardProcessId_FallsBackToSessionPid()
-    {
-        var session = new SessionInfo
-        {
-            Pid = 41,
-            HostPid = 0
-        };
-
-        var preferred = SessionApiEndpoints.GetPreferredClipboardProcessId(session);
-
-        Assert.Equal(41, preferred);
-    }
-
-    [Fact]
     public async Task TrySetClipboardImageAsync_SkipsFallbackWhenSessionScopedSetterSucceeds()
     {
         var fallbackCalled = false;

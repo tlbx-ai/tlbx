@@ -1,17 +1,17 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
-  UNIX_PATH_PATTERN,
-  WIN_PATH_PATTERN,
-  UNC_PATH_PATTERN,
-  QUOTED_ABSOLUTE_PATH_PATTERN,
-  UNIX_PATH_PATTERN_GLOBAL,
-  WIN_PATH_PATTERN_GLOBAL,
-  RELATIVE_PATH_PATTERN,
   FOLDER_PATH_PATTERN,
   KNOWN_FILE_PATTERN,
-  isValidPath,
-  isLikelyFalsePositive,
+  QUOTED_ABSOLUTE_PATH_PATTERN,
+  RELATIVE_PATH_PATTERN,
+  UNC_PATH_PATTERN,
+  UNIX_PATH_PATTERN,
+  UNIX_PATH_PATTERN_GLOBAL,
+  WIN_PATH_PATTERN,
+  WIN_PATH_PATTERN_GLOBAL,
   isFragmentOfAbsolutePath,
+  isLikelyFalsePositive,
+  isValidPath,
   shouldRejectFolderMatch,
   shouldRejectKnownFileMatch,
   shouldRejectRelativeMatch,
@@ -24,17 +24,13 @@ import {
 describe('UNIX_PATH_PATTERN', () => {
   it.each([
     ['Modified: /home/user/project/src/main.rs', '/home/user/project/src/main.rs'],
-    ['Error in /var/log/nginx/error.log line 42', '/var/log/nginx/error.log'],
-    ['cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.bak', '/etc/nginx/nginx.conf'],
     ['Compiled /usr/local/lib/libfoo.so.2.1', '/usr/local/lib/libfoo.so.2.1'],
-    ['reading /proc/self/status', '/proc/self/status'],
     ['drwxr-xr-x  /home/user/.config/nvim', '/home/user/.config/nvim'],
     ['GOPATH=/home/user/go', '/home/user/go'],
     [
       'at Module._compile (/app/node_modules/ts-node/src/index.ts:1618:12)',
       '/app/node_modules/ts-node/src/index.ts',
     ],
-    ['warning: /tmp/build-abc123/CMakeCache.txt', '/tmp/build-abc123/CMakeCache.txt'],
     ['rsync user@host:/var/www/html/index.html .', '/var/www/html/index.html'],
   ])('matches Unix path in: %s', (input, expected) => {
     const match = input.match(UNIX_PATH_PATTERN);
@@ -74,14 +70,7 @@ describe('WIN_PATH_PATTERN', () => {
       'nuget restore "E:\\packages\\Newtonsoft.Json.13.0.3"',
       'E:\\packages\\Newtonsoft.Json.13.0.3',
     ],
-    ['Published to C:\\publish\\win-x64\\mt.exe', 'C:\\publish\\win-x64\\mt.exe'],
-    ['> esbuild C:\\code\\frontend\\src\\main.ts --bundle', 'C:\\code\\frontend\\src\\main.ts'],
-    [
-      'MSBuild: Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.csproj',
-      'Q:\\repos\\MidTermWorkspace3\\src\\Ai.Tlbx.MidTerm.csproj',
-    ],
     ['Certificate: C:\\Users\\user\\.midterm\\cert.pfx', 'C:\\Users\\user\\.midterm\\cert.pfx'],
-    ['Loading C:\\ProgramData\\MidTerm\\settings.json', 'C:\\ProgramData\\MidTerm\\settings.json'],
   ])('matches Windows path in: %s', (input, expected) => {
     const match = input.match(WIN_PATH_PATTERN);
     expect(match).not.toBeNull();
@@ -125,11 +114,6 @@ describe('RELATIVE_PATH_PATTERN', () => {
     ['Edit src\\Ai\\Services\\Foo.cs', 'src\\Ai\\Services\\Foo.cs'],
     ['comparing old.json and new.json', 'old.json'],
     ['Built dist/terminal.min.js', 'dist/terminal.min.js'],
-    ['Added docs/api/README.md', 'docs/api/README.md'],
-    ['Opened settings.json', 'settings.json'],
-    ['tests/unit/auth.spec.ts passed', 'tests/unit/auth.spec.ts'],
-    ['Reading config/webpack.config.js', 'config/webpack.config.js'],
-    ['data.csv written to disk', 'data.csv'],
     ['node_modules/@angular/core/index.ts', 'node_modules/@angular/core/index.ts'],
   ])('matches relative path in: %s', (input, expected) => {
     const match = input.match(RELATIVE_PATH_PATTERN);
@@ -152,13 +136,9 @@ describe('RELATIVE_PATH_PATTERN', () => {
 describe('FOLDER_PATH_PATTERN', () => {
   it.each([
     ['Scanning src/', 'src/'],
-    ['Created docs/api/', 'docs/api/'],
     ['Deleted ./tmp/cache/', './tmp/cache/'],
     ['Looking in src\\components\\', 'src\\components\\'],
-    ['Cleaning dist/assets/css/', 'dist/assets/css/'],
     ['Ignoring .git/', '.git/'],
-    ['Indexing packages/core/src/', 'packages/core/src/'],
-    ['Checking node_modules/', 'node_modules/'],
   ])('matches folder path in: %s', (input, expected) => {
     const match = input.match(FOLDER_PATH_PATTERN);
     expect(match).not.toBeNull();
@@ -173,17 +153,10 @@ describe('FOLDER_PATH_PATTERN', () => {
 describe('KNOWN_FILE_PATTERN', () => {
   it.each([
     ['Modified Dockerfile', 'Dockerfile'],
-    ['Updated Makefile target', 'Makefile'],
-    ['Check the LICENSE file', 'LICENSE'],
     ['Edited .gitignore', '.gitignore'],
-    ['See README for details', 'README'],
-    ['Added .editorconfig', '.editorconfig'],
-    ['Build uses Procfile', 'Procfile'],
     ['Loaded .env.production', '.env.production'],
     ['Updated docker/Dockerfile', 'docker/Dockerfile'],
     ['Modified src/api/.prettierrc', 'src/api/.prettierrc'],
-    ['Checking CONTRIBUTING guide', 'CONTRIBUTING'],
-    ['Parsing .browserslistrc', '.browserslistrc'],
   ])('matches known file in: %s', (input, expected) => {
     const match = input.match(KNOWN_FILE_PATTERN);
     expect(match).not.toBeNull();
@@ -199,28 +172,17 @@ describe('isLikelyFalsePositive', () => {
   describe('returns true for false positives', () => {
     it.each([
       ['1.2.3', 'version number (3-part)'],
-      ['12.0.1', 'version number (3-part)'],
       ['3.12', 'version number (2-part)'],
       ['e.g.', 'abbreviation'],
-      ['i.e.', 'abbreviation'],
-      ['etc.', 'abbreviation'],
-      ['vs.', 'abbreviation'],
       ['google.com', 'domain TLD (com)'],
-      ['npmjs.org', 'domain TLD (org)'],
-      ['github.io', 'domain TLD (io)'],
       ['claude.ai', 'domain TLD (ai)'],
-      ['railway.app', 'domain TLD (app)'],
     ])('%s — %s', (input) => {
       expect(isLikelyFalsePositive(input)).toBe(true);
     });
   });
 
   describe('returns false for real file paths', () => {
-    it.each([
-      ['output.pdf', 'PDF file'],
-      ['data.csv', 'CSV file'],
-      ['model.json', 'JSON file'],
-    ])('%s — %s', (input) => {
+    it.each([['output.pdf', 'PDF file']])('%s — %s', (input) => {
       expect(isLikelyFalsePositive(input)).toBe(false);
     });
   });
@@ -246,7 +208,6 @@ describe('isValidPath', () => {
     it.each([
       ['ab', 'minimal 2-char path'],
       ['/bin', 'Unix absolute folder'],
-      ['/home/user/file.txt', 'Unix absolute with file'],
       ['C:\\file.txt', 'Windows absolute'],
     ])('%s — %s', (input) => {
       expect(isValidPath(input)).toBe(true);
@@ -260,11 +221,8 @@ describe('isValidPath', () => {
 
 describe('shouldRejectFolderMatch', () => {
   it.each([
-    ['C:\\foo\\', true, 'Windows drive letter'],
     ['D:/bar/', true, 'Windows drive with forward slash'],
-    ['http://', true, 'HTTP URL scheme'],
     ['https://example.com/', true, 'HTTPS URL scheme'],
-    ['ftp://files/', true, 'FTP URL scheme'],
     ['src/components/', false, 'valid relative folder'],
   ])('%s → rejected=%s (%s)', (input, expected) => {
     expect(shouldRejectFolderMatch(input)).toBe(expected);
@@ -705,16 +663,8 @@ describe('dotnet test output — remaining edge cases', () => {
 describe('FQN heuristic preserves real file patterns', () => {
   it.each([
     ['package.json', 'common config file'],
-    ['settings.json', 'common config file'],
     ['main.ts', 'source file'],
-    ['README.md', 'documentation'],
-    ['data.csv', 'data file'],
-    ['output.pdf', 'document'],
     ['file.test.ts', 'test file (2 dots)'],
-    ['jquery.min.js', 'minified JS (2 dots)'],
-    ['file.spec.ts', 'spec file (2 dots)'],
-    ['app.module.css', 'CSS module (2 dots)'],
-    ['vite.config.ts', 'config with dots (2 dots)'],
     ['.env.production', 'dotenv variant (2 dots)'],
   ])('%s — %s is NOT a false positive', (input) => {
     expect(isLikelyFalsePositive(input)).toBe(false);

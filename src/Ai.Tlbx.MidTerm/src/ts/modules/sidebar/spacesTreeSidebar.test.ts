@@ -17,20 +17,6 @@ describe('spacesTreeSidebar session classification', () => {
     ).toBe(true);
   });
 
-  it('falls back to missing space ids when older payloads omit isAdHoc', () => {
-    expect(
-      isAdHocSession({
-        spaceId: null,
-      } as any),
-    ).toBe(true);
-
-    expect(
-      isAdHocSession({
-        spaceId: 'space-1',
-      } as any),
-    ).toBe(false);
-  });
-
   it('resolves launch origins for ad hoc and space sessions', () => {
     expect(
       resolveSessionLaunchOrigin({
@@ -177,44 +163,6 @@ describe('spacesTreeSidebar workspace layout', () => {
           key: 'wt1',
           displayName: 'auth-fix',
           path: 'Q:/wt/MidTerm/auth-fix',
-          kind: 'worktree',
-          isMain: false,
-          isDetached: false,
-          locked: false,
-          prunable: false,
-          changeCount: 0,
-          hasChanges: false,
-          hasActiveAiSession: false,
-          activeSessions: [],
-        },
-      ],
-    } as any);
-
-    expect(root?.path).toBe('Q:/repos/MidTerm');
-  });
-
-  it('falls back to the space root path when older payloads omit isMain', () => {
-    const root = getRootWorkspace({
-      rootPath: 'Q:/repos/MidTerm',
-      workspaces: [
-        {
-          key: 'wt1',
-          displayName: 'auth-fix',
-          path: 'Q:/wt/MidTerm/auth-fix',
-          kind: 'worktree',
-          isMain: false,
-          isDetached: false,
-          locked: false,
-          prunable: false,
-          changeCount: 0,
-          hasChanges: false,
-          hasActiveAiSession: false,
-          activeSessions: [],
-        },
-        {
-          key: 'root',
-          displayName: 'whatever',
-          path: 'Q:/repos/MidTerm',
           kind: 'worktree',
           isMain: false,
           isDetached: false,

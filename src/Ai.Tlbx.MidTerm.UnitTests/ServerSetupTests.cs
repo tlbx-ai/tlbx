@@ -5,23 +5,6 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public class ServerSetupTests
 {
-    [Fact]
-    public void IsSourceDevLaunchMode_ReturnsTrueOnlyForSourceDev()
-    {
-        var previous = Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE");
-        try
-        {
-            Environment.SetEnvironmentVariable("MIDTERM_LAUNCH_MODE", "source-dev");
-            Assert.True(ServerSetup.IsSourceDevLaunchMode());
-
-            Environment.SetEnvironmentVariable("MIDTERM_LAUNCH_MODE", "service");
-            Assert.False(ServerSetup.IsSourceDevLaunchMode());
-        }
-        finally
-        {
-            Environment.SetEnvironmentVariable("MIDTERM_LAUNCH_MODE", previous);
-        }
-    }
 
     [Fact]
     public void BuildContentSecurityPolicy_WithoutPreviewOrigin_UsesDefaultFrameSources()

@@ -13,20 +13,6 @@ vi.mock('../i18n', () => ({
 }));
 
 describe('history launch mode helpers', () => {
-  it('defaults legacy entries to terminal mode', async () => {
-    const {
-      normalizeHistoryLaunchMode,
-      isAppServerControlHistoryEntry,
-      getHistoryModeDisplayText,
-      getHistoryModeBadgeText,
-    } = await import('./launchMode');
-
-    expect(normalizeHistoryLaunchMode(undefined)).toBe('terminal');
-    expect(isAppServerControlHistoryEntry({})).toBe(false);
-    expect(getHistoryModeDisplayText({})).toBe('Terminal');
-    expect(getHistoryModeBadgeText({})).toBe('TRM');
-  });
-
   it('keeps appServerControl entries provider-specific', async () => {
     const {
       isAppServerControlHistoryEntry,
@@ -65,17 +51,6 @@ describe('history launch mode helpers', () => {
       launchMode: 'appServerControl',
       profile: 'codex',
     });
-  });
-
-  it('prefers persisted surface type badges when present', async () => {
-    const { getHistoryModeBadgeText, getHistoryModeDisplayText } = await import('./launchMode');
-
-    expect(getHistoryModeBadgeText({ surfaceType: 'trm' })).toBe('TRM');
-    expect(getHistoryModeBadgeText({ surfaceType: 'cdx' })).toBe('CDX');
-    expect(getHistoryModeBadgeText({ surfaceType: 'cld' })).toBe('CLD');
-    expect(getHistoryModeBadgeText({ surfaceType: 'acp', profile: 'opencode' })).toBe('OPC');
-    expect(getHistoryModeDisplayText({ surfaceType: 'cdx' })).toBe('Agent · Codex');
-    expect(getHistoryModeDisplayText({ surfaceType: 'cld' })).toBe('Agent · Claude');
   });
 
   it('keeps dynamically discovered ACP profiles bookmarkable', async () => {

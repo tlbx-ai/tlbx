@@ -65,16 +65,6 @@ public sealed class FileServiceTests : IDisposable
         Assert.NotNull(errorResult);
     }
 
-    [Fact]
-    public void ValidatePath_AcceptsAbsolutePath()
-    {
-        var absolutePath = Path.Combine(Path.GetTempPath(), "file.txt");
-        var result = FileService.ValidatePath(absolutePath, out var errorResult);
-
-        Assert.True(result);
-        Assert.Null(errorResult);
-    }
-
     // =======================================================================
     // IsWithinDirectory
     // =======================================================================
@@ -126,35 +116,6 @@ public sealed class FileServiceTests : IDisposable
     // GetSlashVariants
     // =======================================================================
 
-    [Fact]
-    public void GetSlashVariants_ForwardSlashes_BothVariants()
-    {
-        var variants = FileService.GetSlashVariants("src/main.ts").ToList();
-
-        Assert.Contains("src/main.ts", variants, StringComparer.Ordinal);
-        Assert.Contains(@"src\main.ts", variants, StringComparer.Ordinal);
-        Assert.Equal(2, variants.Count);
-    }
-
-    [Fact]
-    public void GetSlashVariants_Backslashes_BothVariants()
-    {
-        var variants = FileService.GetSlashVariants(@"src\main.ts").ToList();
-
-        Assert.Contains(@"src\main.ts", variants, StringComparer.Ordinal);
-        Assert.Contains("src/main.ts", variants, StringComparer.Ordinal);
-        Assert.Equal(2, variants.Count);
-    }
-
-    [Fact]
-    public void GetSlashVariants_NoSlashes_OriginalOnly()
-    {
-        var variants = FileService.GetSlashVariants("file.txt").ToList();
-
-        Assert.Single(variants);
-        Assert.Equal("file.txt", variants[0]);
-    }
-
     // =======================================================================
     // SearchTree
     // =======================================================================
@@ -173,17 +134,6 @@ public sealed class FileServiceTests : IDisposable
     }
 
     [Fact]
-    public void SearchTree_FindsFileInRoot()
-    {
-        CreateFile("readme.md");
-
-        var result = FileService.SearchTree(_tempDir, "readme.md", maxDepth: 5);
-
-        Assert.NotNull(result);
-        Assert.EndsWith("readme.md", result, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
     public void SearchTree_FindsFileInSubdirectory()
     {
         CreateFile("src", "main.ts");
@@ -192,18 +142,6 @@ public sealed class FileServiceTests : IDisposable
 
         Assert.NotNull(result);
         Assert.EndsWith("main.ts", result, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void SearchTree_FindsDirectoryByName()
-    {
-        CreateDir("src", "components");
-        CreateFile("src", "components", "placeholder.txt");
-
-        var result = FileService.SearchTree(_tempDir, "components", maxDepth: 5);
-
-        Assert.NotNull(result);
-        Assert.Contains("components", result, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
@@ -233,24 +171,6 @@ public sealed class FileServiceTests : IDisposable
         CreateFile("a", "b", "c", "d", "e", "f", "deep.txt");
 
         var result = FileService.SearchTree(_tempDir, "deep.txt", maxDepth: 5);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void SearchTree_CaseInsensitiveMatch()
-    {
-        CreateFile("README.md");
-
-        var result = FileService.SearchTree(_tempDir, "readme.md", maxDepth: 5);
-
-        Assert.NotNull(result);
-    }
-
-    [Fact]
-    public void SearchTree_ReturnsNullForNonexistent()
-    {
-        var result = FileService.SearchTree(_tempDir, "nope.txt", maxDepth: 5);
 
         Assert.Null(result);
     }

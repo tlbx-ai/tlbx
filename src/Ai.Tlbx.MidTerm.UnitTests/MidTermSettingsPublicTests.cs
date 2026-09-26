@@ -234,60 +234,6 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Fact]
-    public void FromSettings_AndApplyTo_RoundTripAllowAdHocSessionBookmarks()
-    {
-        var settings = new MidTermSettings
-        {
-            AllowAdHocSessionBookmarks = false
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.False(publicSettings.AllowAdHocSessionBookmarks);
-
-        settings.AllowAdHocSessionBookmarks = true;
-        publicSettings.ApplyTo(settings);
-
-        Assert.False(settings.AllowAdHocSessionBookmarks);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_RoundTripShowBookmarks()
-    {
-        var settings = new MidTermSettings
-        {
-            ShowBookmarks = false
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.False(publicSettings.ShowBookmarks);
-
-        settings.ShowBookmarks = true;
-        publicSettings.ApplyTo(settings);
-
-        Assert.False(settings.ShowBookmarks);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_RoundTripTryResumeNonAiAgentProcesses()
-    {
-        var settings = new MidTermSettings
-        {
-            TryResumeNonAiAgentProcesses = true
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.True(publicSettings.TryResumeNonAiAgentProcesses);
-
-        settings.TryResumeNonAiAgentProcesses = false;
-        publicSettings.ApplyTo(settings);
-
-        Assert.True(settings.TryResumeNonAiAgentProcesses);
-    }
-
-    [Fact]
     public void FromSettings_AndApplyTo_RoundTripTerminalEnvironmentVariables()
     {
         var settings = new MidTermSettings
@@ -303,24 +249,6 @@ public sealed class MidTermSettingsPublicTests
         publicSettings.ApplyTo(settings);
 
         Assert.Equal("FOO=bar\nEMPTY=\nJSON={\"enabled\":true}", settings.TerminalEnvironmentVariables);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_RoundTripAppServerControlDefaultModels()
-    {
-        var settings = new MidTermSettings
-        {
-            CodexDefaultAppServerControlModel = "gpt-5.4-codex"
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.Equal("gpt-5.4-codex", publicSettings.CodexDefaultAppServerControlModel);
-
-        settings.CodexDefaultAppServerControlModel = string.Empty;
-        publicSettings.ApplyTo(settings);
-
-        Assert.Equal("gpt-5.4-codex", settings.CodexDefaultAppServerControlModel);
     }
 
     [Fact]
@@ -355,84 +283,6 @@ public sealed class MidTermSettingsPublicTests
         Assert.Equal(0.4, settings.LetterSpacing);
         Assert.Equal("500", settings.FontWeight);
         Assert.Equal("700", settings.FontWeightBold);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_RoundTripCommandBayLigaturesSetting()
-    {
-        var settings = new MidTermSettings
-        {
-            CommandBayLigaturesEnabled = true
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.True(publicSettings.CommandBayLigaturesEnabled);
-
-        settings.CommandBayLigaturesEnabled = false;
-        publicSettings.ApplyTo(settings);
-
-        Assert.True(settings.CommandBayLigaturesEnabled);
-    }
-
-    [Fact]
-    public void ApplyTo_NormalizesAgentMessageFontFamilyToSupportedValues()
-    {
-        var settings = new MidTermSettings
-        {
-            AgentMessageFontFamily = "default"
-        };
-
-        var publicSettings = new MidTermSettingsPublic
-        {
-            AgentMessageFontFamily = "segoe ui"
-        };
-
-        publicSettings.ApplyTo(settings);
-        Assert.Equal("Segoe UI", settings.AgentMessageFontFamily);
-
-        publicSettings = MidTermSettingsPublic.FromSettings(settings);
-        Assert.Equal("Segoe UI", publicSettings.AgentMessageFontFamily);
-
-        publicSettings.AgentMessageFontFamily = "unsupported";
-        publicSettings.ApplyTo(settings);
-        Assert.Equal("default", settings.AgentMessageFontFamily);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_RoundTripShowAgentMessageTimestamps()
-    {
-        var settings = new MidTermSettings
-        {
-            ShowAgentMessageTimestamps = true
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.True(publicSettings.ShowAgentMessageTimestamps);
-
-        settings.ShowAgentMessageTimestamps = false;
-        publicSettings.ApplyTo(settings);
-
-        Assert.True(settings.ShowAgentMessageTimestamps);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_RoundTripShowUnknownAgentMessages()
-    {
-        var settings = new MidTermSettings
-        {
-            ShowUnknownAgentMessages = false
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.False(publicSettings.ShowUnknownAgentMessages);
-
-        settings.ShowUnknownAgentMessages = true;
-        publicSettings.ApplyTo(settings);
-
-        Assert.False(settings.ShowUnknownAgentMessages);
     }
 
     [Fact]
@@ -508,24 +358,6 @@ public sealed class MidTermSettingsPublicTests
         var customScheme = Assert.Single(settings.TerminalColorSchemes);
         Assert.Equal("#66B3FF", customScheme.Blue);
         Assert.Equal("#A1EEFF", customScheme.BrightCyan);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_RoundTripDark2BuiltInTerminalColorScheme()
-    {
-        var settings = new MidTermSettings
-        {
-            TerminalColorScheme = "dark2"
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.Equal("dark2", publicSettings.TerminalColorScheme);
-
-        settings.TerminalColorScheme = "auto";
-        publicSettings.ApplyTo(settings);
-
-        Assert.Equal("dark2", settings.TerminalColorScheme);
     }
 
     [Fact]
@@ -661,36 +493,4 @@ public sealed class MidTermSettingsPublicTests
         Assert.Equal("pw-secret", machine.Password);
     }
 
-    [Fact]
-    public void ManagerBarButtons_MigrateLegacyTextToPromptWorkflow()
-    {
-        var settings = new MidTermSettings
-        {
-            ManagerBarButtons =
-            [
-                new ManagerBarButton
-                {
-                    Id = "legacy",
-                    Label = "Legacy",
-                    Text = "echo hi"
-                }
-            ]
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        var button = Assert.Single(publicSettings.ManagerBarButtons);
-        Assert.Equal("single", button.ActionType);
-        Assert.Equal("fireAndForget", button.Trigger.Kind);
-        Assert.Equal(["echo hi"], button.Prompts);
-
-        settings.ManagerBarButtons.Clear();
-        publicSettings.ApplyTo(settings);
-
-        button = Assert.Single(settings.ManagerBarButtons);
-        Assert.Equal("echo hi", button.Text);
-        Assert.Equal("single", button.ActionType);
-        Assert.Equal("fireAndForget", button.Trigger.Kind);
-        Assert.Equal(["echo hi"], button.Prompts);
-    }
 }

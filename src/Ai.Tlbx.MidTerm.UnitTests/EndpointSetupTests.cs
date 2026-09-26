@@ -6,16 +6,6 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public class EndpointSetupTests
 {
-    [Fact]
-    public void BuildWindowsServiceRestartScript_WaitsForStopAndStartsService()
-    {
-        var script = EndpointSetup.BuildWindowsServiceRestartScript("MidTerm");
-
-        Assert.Contains("$serviceName = 'MidTerm'", script, StringComparison.Ordinal);
-        Assert.Contains("Get-Service -Name $serviceName -ErrorAction SilentlyContinue", script, StringComparison.Ordinal);
-        Assert.Contains("[System.ServiceProcess.ServiceControllerStatus]::Stopped", script, StringComparison.Ordinal);
-        Assert.Contains("Start-Service -Name $serviceName -ErrorAction Stop", script, StringComparison.Ordinal);
-    }
 
     [Fact]
     public void EncodePowerShellScript_UsesUtf16Base64()

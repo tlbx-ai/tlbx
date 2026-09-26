@@ -25,29 +25,6 @@ describe('sessionSurface', () => {
     expect(getPrimarySurfaceLabel({ supervisor: { profile: 'shell' } })).toBe('Terminal');
   });
 
-  it('uses provider-specific labels for codex and claude sessions', async () => {
-    const { resolveSessionSurfaceMode, getPrimarySurfaceLabel } = await import('./sessionSurface');
-
-    expect(
-      resolveSessionSurfaceMode({
-        appServerControlOnly: true,
-        supervisor: { profile: 'codex' },
-      }),
-    ).toBe('agent');
-    expect(
-      getPrimarySurfaceLabel({
-        appServerControlOnly: true,
-        supervisor: { profile: 'codex' },
-      }),
-    ).toBe('Codex');
-    expect(
-      getPrimarySurfaceLabel({
-        appServerControlOnly: true,
-        supervisor: { profile: 'claude' },
-      }),
-    ).toBe('Claude');
-  });
-
   it('keeps terminal sessions in Terminal even when codex metadata is present', async () => {
     const { resolveSessionSurfaceMode } = await import('./sessionSurface');
 

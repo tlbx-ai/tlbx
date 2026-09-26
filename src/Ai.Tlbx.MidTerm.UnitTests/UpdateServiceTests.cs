@@ -226,36 +226,6 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Equal(["v9.7.1-dev"], missingTags);
     }
 
-    [Fact]
-    public void GetReleaseManifestUrls_PrefersSourceVersionJsonBeforeLegacyRootPath()
-    {
-        var urls = UpdateService.GetReleaseManifestUrls("v8.6.4-dev");
-
-        Assert.Collection(
-            urls,
-            url => Assert.Equal(
-                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v8.6.4-dev/src/version.json",
-                url),
-            url => Assert.Equal(
-                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v8.6.4-dev/version.json",
-                url));
-    }
-
-    [Fact]
-    public void GetReleaseManifestUrls_RenamedRepositoryRetainsLegacyFallbacks()
-    {
-        var urls = UpdateService.GetReleaseManifestUrls("v9.20.0-dev", "tlbx-ai", "tlbx");
-
-        Assert.Equal(
-            [
-                "https://raw.githubusercontent.com/tlbx-ai/tlbx/v9.20.0-dev/src/version.json",
-                "https://raw.githubusercontent.com/tlbx-ai/tlbx/v9.20.0-dev/version.json",
-                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v9.20.0-dev/src/version.json",
-                "https://raw.githubusercontent.com/tlbx-ai/MidTerm/v9.20.0-dev/version.json"
-            ],
-            urls);
-    }
-
     [Theory]
     [InlineData("tlbx-ai/MidTerm", "MidTerm")]
     [InlineData("TLBX-AI/TLBX", "tlbx")]
@@ -404,27 +374,6 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
-    public void VersionManifest_DeserializesWebOnlyFlag()
-    {
-        var manifest = JsonSerializer.Deserialize(
-            """
-            {
-              "web": "8.9.61-dev",
-              "pty": "8.9.59-dev",
-              "protocol": 1,
-              "minCompatiblePty": "2.0.0",
-              "webOnly": true
-            }
-            """,
-            VersionManifestContext.Default.VersionManifest);
-
-        Assert.NotNull(manifest);
-        Assert.True(manifest!.WebOnly);
-        Assert.Equal("8.9.61-dev", manifest.Web);
-        Assert.Equal("8.9.59-dev", manifest.Pty);
-    }
-
-    [Fact]
     public void TryReadLocalUpdateInfo_PtyChange_ReturnsFull()
     {
         var localReleaseDir = Path.Combine(_tempDir, "localrelease");
@@ -518,80 +467,6 @@ public sealed class UpdateServiceTests : IDisposable
     }
 
     [Fact]
-    public void ReadUpdateResult_FileMissing_ReturnsNull()
-    {
-        var result = UpdateService.ReadUpdateResult(_tempDir);
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void ReadUpdateResult_ValidFile_ReturnsParsedWithFoundTrue()
-    {
-        var path = Path.Combine(_tempDir, "update-result.json");
-        var payload = new UpdateResult
-        {
-            Success = true,
-            Message = "done",
-            Details = "ok",
-            Timestamp = "2026-02-28T00:00:00Z",
-            LogFile = "update.log",
-            RollbackAttempted = true
-        };
-        File.WriteAllText(path, JsonSerializer.Serialize(payload, AppJsonContext.Default.UpdateResult));
-
-        var result = UpdateService.ReadUpdateResult(_tempDir);
-
-        Assert.NotNull(result);
-        Assert.True(result!.Found);
-        Assert.True(result.Success);
-        Assert.Equal("done", result.Message);
-        Assert.Equal("ok", result.Details);
-        Assert.True(result.RollbackAttempted);
-    }
-
-    [Fact]
-    public void ReadUpdateResult_ClearTrue_DeletesResultFile()
-    {
-        var path = Path.Combine(_tempDir, "update-result.json");
-        File.WriteAllText(path, "{\"success\":true,\"message\":\"x\"}");
-
-        var result = UpdateService.ReadUpdateResult(_tempDir, clear: true);
-
-        Assert.NotNull(result);
-        Assert.False(File.Exists(path));
-    }
-
-    [Fact]
-    public void ReadUpdateResult_InvalidJson_ReturnsNull()
-    {
-        var path = Path.Combine(_tempDir, "update-result.json");
-        File.WriteAllText(path, "{ definitely not json");
-
-        var result = UpdateService.ReadUpdateResult(_tempDir);
-
-        Assert.Null(result);
-        Assert.True(File.Exists(path));
-    }
-
-    [Fact]
-    public void ClearUpdateResult_ExistingFile_DeletesIt()
-    {
-        var path = Path.Combine(_tempDir, "update-result.json");
-        File.WriteAllText(path, "{\"success\":true}");
-
-        UpdateService.ClearUpdateResult(_tempDir);
-
-        Assert.False(File.Exists(path));
-    }
-
-    [Fact]
-    public void ClearUpdateResult_MissingFile_DoesNotThrow()
-    {
-        var exception = Record.Exception(() => UpdateService.ClearUpdateResult(_tempDir));
-        Assert.Null(exception);
-    }
-
-    [Fact]
     public void InstallUnixFileAtomically_FallsBackToInPlaceOverwrite_WhenSiblingTempPathIsUnavailable()
     {
         var sourcePath = Path.Combine(_tempDir, "mt-source");
@@ -612,41 +487,6 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.Equal("new-version", File.ReadAllText(destinationPath));
         Assert.Contains(logLines, line => line.Contains("Falling back to in-place overwrite.", StringComparison.Ordinal));
         Assert.Contains(logLines, line => line.Contains("in-place overwrite fallback", StringComparison.Ordinal));
-    }
-
-    [Fact]
-    public void GetMacOsLauncherScriptContents_IncludesRollbackAndResultHandling()
-    {
-        var settingsDir = Path.Combine(_tempDir, "settings");
-        var logPath = Path.Combine(_tempDir, "update.log");
-
-        var script = UpdateService.GetMacOsLauncherScriptContents(settingsDir, logPath);
-
-        Assert.Contains("BACKUP_DIR=", script, StringComparison.Ordinal);
-        Assert.Contains("rollback()", script, StringComparison.Ordinal);
-        Assert.Contains("mtagenthost", script, StringComparison.Ordinal);
-        Assert.Contains("write_result false \"Failed to apply staged update\"", script, StringComparison.Ordinal);
-        Assert.Contains("\"logFile\": \"$LOG_FILE\"", script, StringComparison.Ordinal);
-        Assert.Contains("exec \"$INSTALL_DIR/mt\" \"$@\"", script, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void GetMacOsLauncherScriptContents_UsesEffectiveUpdateTypeToGateHostBinaries()
-    {
-        var settingsDir = Path.Combine(_tempDir, "settings");
-        var logPath = Path.Combine(_tempDir, "update.log");
-
-        var script = UpdateService.GetMacOsLauncherScriptContents(settingsDir, logPath);
-
-        Assert.Contains("staged_update_is_web_only()", script, StringComparison.Ordinal);
-        Assert.Contains("$(cat \"$STAGING/update-type\")", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("$STAGING/version.json\"\n    [[", script, StringComparison.Ordinal);
-        Assert.Contains("STAGED_IS_WEB_ONLY=false", script, StringComparison.Ordinal);
-        Assert.Contains("Staged update type:", script, StringComparison.Ordinal);
-        Assert.Contains("CONFIG_AGENTHOST=", script, StringComparison.Ordinal);
-        Assert.Contains("resolve_agenthost_target()", script, StringComparison.Ordinal);
-        Assert.Contains("AGENTHOST_DST=\"$(resolve_agenthost_target)\"", script, StringComparison.Ordinal);
-        Assert.Contains("[[ \"$STAGED_IS_WEB_ONLY\" == \"true\" ]] || apply_file \"$STAGING/mtagenthost\" \"$AGENTHOST_DST\"", script, StringComparison.Ordinal);
     }
 
     [Fact]

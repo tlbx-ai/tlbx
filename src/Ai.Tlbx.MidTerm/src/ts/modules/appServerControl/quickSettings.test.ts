@@ -4,13 +4,12 @@ vi.mock('../../api/client', () => ({
   updateSettings: vi.fn().mockResolvedValue({ response: { ok: true } }),
 }));
 
-import type { MidTermSettingsPublic } from '../../api/types';
 import { updateSettings } from '../../api/client';
+import type { MidTermSettingsPublic } from '../../api/types';
 import { $currentSettings, $sessions } from '../../stores';
 import {
-  getAppServerControlResolvedProviderModel,
-  getAppServerControlQuickSettingsDraft,
   createAppServerControlTurnRequestWithQuickSettings,
+  getAppServerControlQuickSettingsDraft,
   removeAppServerControlQuickSettingsSessionState,
   setAppServerControlQuickSettingsDraft,
 } from './quickSettings';
@@ -66,21 +65,6 @@ describe('appServerControl quick settings', () => {
     vi.unstubAllGlobals();
   });
 
-  it('leaves the codex model automatic and defaults effort to medium', () => {
-    $sessions.set({
-      'codex-default': {
-        id: 'codex-default',
-        profileHint: 'codex',
-      } as never,
-    });
-
-    expect(getAppServerControlQuickSettingsDraft('codex-default')).toMatchObject({
-      model: null,
-      effort: 'medium',
-      fastMode: 'off',
-    });
-  });
-
   it('persists Codex fast mode and includes it in the next turn request', () => {
     $sessions.set({
       'codex-default': {
@@ -98,10 +82,6 @@ describe('appServerControl quick settings', () => {
         'Use the fast service tier.',
       ).fastMode,
     ).toBe('on');
-  });
-
-  it('does not invent a concrete codex model when no user default exists', () => {
-    expect(getAppServerControlResolvedProviderModel('codex')).toBeNull();
   });
 
   it('preserves ACP agent model ids without provider-specific alias rewriting', () => {

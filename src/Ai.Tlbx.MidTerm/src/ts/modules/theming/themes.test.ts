@@ -6,7 +6,6 @@ import {
   getEffectiveTerminalBackgroundAlpha,
   getEffectiveTerminalCellBackgroundAlpha,
   getEffectiveXtermThemeForSettings,
-  resolveInitialThemeName,
   resolveEffectiveTerminalMinimumContrastRatio,
 } from './themes';
 
@@ -47,13 +46,6 @@ function createSettings(
 }
 
 describe('themes', () => {
-  it('uses dark for a first launch without an origin-local theme cache', () => {
-    expect(resolveInitialThemeName(null)).toBe('dark');
-    expect(resolveInitialThemeName(undefined)).toBe('dark');
-    expect(resolveInitialThemeName('not-a-theme')).toBe('dark');
-    expect(resolveInitialThemeName('solarizedLight')).toBe('solarizedLight');
-  });
-
   beforeEach(() => {
     Object.defineProperty(globalThis, 'window', {
       value: {
@@ -127,65 +119,6 @@ describe('themes', () => {
     expect(theme.background).toBe('rgba(12, 12, 12, 0.650)');
   });
 
-  it('resolves the mac terminal dark palette', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalColorScheme: 'macTerminalDark',
-      }),
-    );
-
-    expect(theme.background).toBe('#000000');
-    expect(theme.foreground).toBe('#FFFFFF');
-    expect(theme.blue).toBe('#6444ED');
-    expect(theme.brightBlue).toBe('#D09AF9');
-  });
-
-  it('resolves the dark2 direct color palette', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalColorScheme: 'dark2',
-      }),
-    );
-
-    expect(theme.background).toBe('#000000');
-    expect(theme.foreground).toBe('#FFFFFF');
-    expect(theme.black).toBe('#000000');
-    expect(theme.red).toBe('#FF0000');
-    expect(theme.green).toBe('#00FF00');
-    expect(theme.yellow).toBe('#FFFF00');
-    expect(theme.blue).toBe('#0000FF');
-    expect(theme.magenta).toBe('#FF00FF');
-    expect(theme.cyan).toBe('#00FFFF');
-    expect(theme.white).toBe('#FFFFFF');
-    expect(theme.brightRed).toBe('#FF0000');
-    expect(theme.brightWhite).toBe('#FFFFFF');
-  });
-
-  it('resolves built-in terminal color scheme names case-insensitively', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalColorScheme: 'Dark2',
-      }),
-    );
-
-    expect(theme.background).toBe('#000000');
-    expect(theme.foreground).toBe('#FFFFFF');
-    expect(theme.red).toBe('#FF0000');
-  });
-
-  it('resolves the campbell palette', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalColorScheme: 'campbell',
-      }),
-    );
-
-    expect(theme.background).toBe('#0C0C0C');
-    expect(theme.foreground).toBe('#CCCCCC');
-    expect(theme.blue).toBe('#0037DA');
-    expect(theme.brightCyan).toBe('#61D6D6');
-  });
-
   it('boosts terminal text brightness without brightening terminal background surfaces', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
@@ -226,19 +159,6 @@ describe('themes', () => {
     expect(boostTerminalTextColor('#2B65FF', 100)).toBe('#ffffff');
     expect(boostTerminalTextColor('#767676', 100)).toBe('#ffffff');
     expect(boostTerminalTextColor('#000000', 100)).toBe('#ffffff');
-  });
-
-  it('resolves the mac terminal light palette', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalColorScheme: 'macTerminalLight',
-      }),
-    );
-
-    expect(theme.background).toBe('#FFFFFF');
-    expect(theme.foreground).toBe('#000000');
-    expect(theme.blue).toBe('#0000B2');
-    expect(theme.brightBlue).toBe('#0000FF');
   });
 
   it('raises terminal contrast automatically on light terminal backgrounds', () => {

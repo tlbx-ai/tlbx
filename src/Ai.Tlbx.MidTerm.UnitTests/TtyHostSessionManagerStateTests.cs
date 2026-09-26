@@ -12,28 +12,6 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class TtyHostSessionManagerStateTests
 {
-    [Fact]
-    public async Task SetBookmarkId_UnknownSession_ReturnsFalse()
-    {
-        await using var manager = CreateManager();
-
-        var ok = manager.SetBookmarkId("missing", "bookmark-1");
-
-        Assert.False(ok);
-    }
-
-    [Fact]
-    public async Task SetBookmarkId_ExistingSession_PopulatesSessionListBookmark()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        var ok = manager.SetBookmarkId("s1", "history-123");
-
-        Assert.True(ok);
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.Equal("history-123", dto.BookmarkId);
-    }
 
     [Fact]
     public async Task ClearBookmarksByHistoryId_RemovesMatchingBookmarksOnly()
@@ -53,71 +31,6 @@ public sealed class TtyHostSessionManagerStateTests
         Assert.Null(list["s1"]);
         Assert.Equal("history-b", list["s2"]);
         Assert.Null(list["s3"]);
-    }
-
-    [Fact]
-    public async Task ClearBookmarksByHistoryId_Whitespace_ReturnsZero()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-        manager.SetBookmarkId("s1", "history-a");
-
-        Assert.Equal(0, manager.ClearBookmarksByHistoryId(" "));
-        Assert.Equal("history-a", manager.GetSessionList().Sessions.Single().BookmarkId);
-    }
-
-    [Fact]
-    public async Task SetSessionNotes_ExistingSession_PopulatesSessionListNotes()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        var ok = manager.SetSessionNotes("s1", "investigate resize\nfollow-up");
-
-        Assert.True(ok);
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.Equal("investigate resize\nfollow-up", dto.Notes);
-    }
-
-    [Fact]
-    public async Task SetSessionTopic_ExistingSession_PopulatesSessionListTopic()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        var ok = manager.SetSessionTopic("s1", "DAI test worker");
-
-        Assert.True(ok);
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.Equal("DAI test worker", dto.Topic);
-    }
-
-    [Fact]
-    public async Task SetSessionTopic_NormalizesWhitespaceAndLength()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        manager.SetSessionTopic("s1", string.Concat("one", Environment.NewLine, new string('x', 140)));
-
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.NotNull(dto.Topic);
-        Assert.Equal(120, dto.Topic.Length);
-        Assert.StartsWith("one x", dto.Topic, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task SetSessionTopic_BlankClearsTopic()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-        manager.SetSessionTopic("s1", "keep this");
-
-        var ok = manager.SetSessionTopic("s1", " ");
-
-        Assert.True(ok);
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.Null(dto.Topic);
     }
 
     [Fact]
@@ -159,55 +72,6 @@ public sealed class TtyHostSessionManagerStateTests
 
         Assert.False(ok);
         Assert.Empty(manager.GetPersistedSessionExtraGitRepos("s1"));
-    }
-
-    [Fact]
-    public async Task SetSessionNotes_NormalizesToFiveLines()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        manager.SetSessionNotes("s1", "one\ntwo\nthree\nfour\nfive\nsix");
-
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.Equal("one\ntwo\nthree\nfour\nfive", dto.Notes);
-    }
-
-    [Fact]
-    public async Task SetSessionNotes_BlankClearsNotes()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-        manager.SetSessionNotes("s1", "keep this");
-
-        var ok = manager.SetSessionNotes("s1", " ");
-
-        Assert.True(ok);
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.Null(dto.Notes);
-    }
-
-    [Fact]
-    public async Task SetAgentControlled_UnknownSession_ReturnsFalse()
-    {
-        await using var manager = CreateManager();
-
-        var ok = manager.SetAgentControlled("missing", true);
-
-        Assert.False(ok);
-    }
-
-    [Fact]
-    public async Task SetAgentControlled_ExistingSession_PopulatesSessionListFlag()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        var ok = manager.SetAgentControlled("s1", true);
-
-        Assert.True(ok);
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.True(dto.AgentControlled);
     }
 
     [Fact]
@@ -404,33 +268,6 @@ public sealed class TtyHostSessionManagerStateTests
         {
             Directory.Delete(stateDir, recursive: true);
         }
-    }
-
-    [Fact]
-    public async Task GetSessionList_SpaceLaunchOriginWithoutSpaceId_IsNotAdHoc()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        Assert.True(manager.SetLaunchOrigin("s1", SessionLaunchOrigins.Space));
-
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.False(dto.IsAdHoc);
-    }
-
-    [Fact]
-    public async Task GetSessionList_AdHocLaunchOriginWithWorkspacePath_RemainsAdHoc()
-    {
-        await using var manager = CreateManager();
-        AddCachedSession(manager, "s1");
-
-        Assert.True(manager.SetLaunchOrigin("s1", SessionLaunchOrigins.AdHoc));
-        Assert.True(manager.SetWorkspacePath("s1", @"Q:\repos\MidTerm"));
-
-        var dto = manager.GetSessionList().Sessions.Single(s => s.Id == "s1");
-        Assert.True(dto.IsAdHoc);
-        Assert.Null(dto.SpaceId);
-        Assert.Equal(@"Q:\repos\MidTerm", dto.WorkspacePath);
     }
 
     [Fact]

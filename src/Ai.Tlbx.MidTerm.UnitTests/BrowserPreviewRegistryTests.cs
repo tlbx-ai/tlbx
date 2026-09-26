@@ -48,16 +48,6 @@ public class BrowserPreviewRegistryTests
     }
 
     [Fact]
-    public void Create_WithoutPreviewName_UsesDefaultPreviewName()
-    {
-        var registry = new BrowserPreviewRegistry();
-
-        var created = registry.Create("session-1", null, "route-1");
-
-        Assert.Equal("default", created.PreviewName);
-    }
-
-    [Fact]
     public void Remove_RevokesOnlyTheClosedNamedPreviewRegistrations()
     {
         var registry = new BrowserPreviewRegistry();

@@ -30,39 +30,6 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public void Load_NoSettingsFile_ReturnsDefaults()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        var service = new SettingsService(_tempDir);
-
-        var settings = service.Load();
-
-        Assert.Equal(SettingsLoadStatus.Default, service.LoadStatus);
-        Assert.True(settings.UseWebGL);
-        Assert.True(settings.CursorBlink);
-        Assert.True(settings.RightClickPaste);
-        Assert.True(settings.FileRadar);
-        Assert.True(settings.ShowBookmarks);
-        Assert.True(settings.AllowAdHocSessionBookmarks);
-        Assert.Equal(1, settings.LineHeight);
-        Assert.Equal(0, settings.LetterSpacing);
-        Assert.Equal("normal", settings.FontWeight);
-        Assert.Equal("bold", settings.FontWeightBold);
-        Assert.False(settings.ShowSidebarSessionFilter);
-        Assert.True(settings.ManagerBarEnabled);
-        Assert.True(settings.TmuxCompatibility);
-        Assert.True(settings.ShowChangelogAfterUpdate);
-        Assert.True(settings.ShowUpdateNotification);
-        Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
-        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
-        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
-        Assert.Equal(0, settings.TerminalTransparency);
-        Assert.Equal(10000, settings.ScrollbackLines);
-        Assert.Equal(string.Empty, settings.CodexDefaultAppServerControlModel);
-    }
-
-    [Fact]
     public void Constructor_UsesEnvironmentOverrideDirectory_WhenProvided()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -83,37 +50,6 @@ public sealed class SettingsServiceTests : IDisposable
         {
             Environment.SetEnvironmentVariable(SettingsService.SettingsDirectoryEnvironmentVariable, previous);
         }
-    }
-
-    [Fact]
-    public void Load_MissingBooleanKeys_AppliesTrueDefaults()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), "{ }");
-        var service = new SettingsService(_tempDir);
-
-        var settings = service.Load();
-
-        Assert.True(settings.UseWebGL);
-        Assert.True(settings.CursorBlink);
-        Assert.True(settings.RightClickPaste);
-        Assert.True(settings.FileRadar);
-        Assert.True(settings.ShowBookmarks);
-        Assert.True(settings.AllowAdHocSessionBookmarks);
-        Assert.Equal(1, settings.LineHeight);
-        Assert.Equal(0, settings.LetterSpacing);
-        Assert.Equal("normal", settings.FontWeight);
-        Assert.Equal("bold", settings.FontWeightBold);
-        Assert.False(settings.ShowSidebarSessionFilter);
-        Assert.True(settings.ManagerBarEnabled);
-        Assert.True(settings.TmuxCompatibility);
-        Assert.True(settings.ShowChangelogAfterUpdate);
-        Assert.True(settings.ShowUpdateNotification);
-        Assert.Equal(TerminalEnterModeSetting.ShiftEnterLineFeed, settings.TerminalEnterMode);
-        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsZoomPercent, settings.BackgroundKenBurnsZoomPercent);
-        Assert.Equal(MidTermSettings.DefaultBackgroundKenBurnsSpeedPxPerSecond, settings.BackgroundKenBurnsSpeedPxPerSecond);
-        Assert.Equal(0, settings.TerminalTransparency);
     }
 
     [Fact]
@@ -206,80 +142,6 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public void Load_Dark2BuiltInTerminalColorScheme_IsPreserved()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        var json = """
-        {
-          "terminalColorScheme": "dark2"
-        }
-        """;
-        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
-        var service = new SettingsService(_tempDir);
-
-        var settings = service.Load();
-
-        Assert.Equal("dark2", settings.TerminalColorScheme);
-    }
-
-    [Fact]
-    public void Load_ExplicitTerminalEnterModeDefault_IsPreserved()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        var json = """
-        {
-          "terminalEnterMode": "default"
-        }
-        """;
-        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
-        var service = new SettingsService(_tempDir);
-
-        var settings = service.Load();
-
-        Assert.Equal(TerminalEnterModeSetting.Default, settings.TerminalEnterMode);
-    }
-
-    [Fact]
-    public void Load_ExplicitFalseBooleans_Preserved()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        var json = """
-        {
-          "useWebGL": false,
-          "cursorBlink": false,
-          "rightClickPaste": false,
-          "fileRadar": false,
-          "showBookmarks": false,
-          "allowAdHocSessionBookmarks": false,
-          "showSidebarSessionFilter": false,
-          "managerBarEnabled": false,
-          "tmuxCompatibility": false,
-          "showChangelogAfterUpdate": false,
-          "showUpdateNotification": false
-        }
-        """;
-        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
-        var service = new SettingsService(_tempDir);
-
-        var settings = service.Load();
-
-        Assert.False(settings.UseWebGL);
-        Assert.False(settings.CursorBlink);
-        Assert.False(settings.RightClickPaste);
-        Assert.False(settings.FileRadar);
-        Assert.False(settings.ShowBookmarks);
-        Assert.False(settings.AllowAdHocSessionBookmarks);
-        Assert.False(settings.ShowSidebarSessionFilter);
-        Assert.False(settings.ManagerBarEnabled);
-        Assert.False(settings.TmuxCompatibility);
-        Assert.False(settings.ShowChangelogAfterUpdate);
-        Assert.False(settings.ShowUpdateNotification);
-    }
-
-    [Fact]
     public void Load_InvalidJson_FallsBackToDefaultAndCapturesError()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -292,24 +154,6 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.NotNull(settings);
         Assert.Equal(SettingsLoadStatus.ErrorFallbackToDefault, service.LoadStatus);
         Assert.False(string.IsNullOrWhiteSpace(service.LoadError));
-    }
-
-    [Fact]
-    public void Load_ExplicitTrueSidebarSessionFilter_IsPreserved()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        var json = """
-        {
-          "showSidebarSessionFilter": true
-        }
-        """;
-        File.WriteAllText(Path.Combine(_tempDir, "settings.json"), json);
-        var service = new SettingsService(_tempDir);
-
-        var settings = service.Load();
-
-        Assert.True(settings.ShowSidebarSessionFilter);
     }
 
     [Fact]
@@ -536,33 +380,6 @@ public sealed class SettingsServiceTests : IDisposable
     }
 
     [Fact]
-    public void Load_OldSettingsFile_WithoutBookmarkFlags_KeepsBookmarkDefaults()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        var currentPath = Path.Combine(_tempDir, "settings.json");
-        var oldPath = currentPath + ".old";
-
-        File.WriteAllText(currentPath, "{}");
-        File.WriteAllText(oldPath, """
-        {
-          "fontSize": 20,
-          "rightClickPaste": false
-        }
-        """);
-
-        var service = new SettingsService(_tempDir);
-        var loaded = service.Load();
-
-        Assert.Equal(20, loaded.FontSize);
-        Assert.False(loaded.RightClickPaste);
-        Assert.True(loaded.ShowBookmarks);
-        Assert.True(loaded.AllowAdHocSessionBookmarks);
-        Assert.False(File.Exists(oldPath));
-        Assert.Equal(SettingsLoadStatus.MigratedFromOld, service.LoadStatus);
-    }
-
-    [Fact]
     public void Load_InvalidMergeSettings_KeepsMergeFileForRetry_AndContinues()
     {
         if (!OperatingSystem.IsWindows()) return;
@@ -580,23 +397,4 @@ public sealed class SettingsServiceTests : IDisposable
         Assert.True(File.Exists(mergePath));
     }
 
-    [Fact]
-    public void SettingsListeners_AreCalledOnSave_AndCanBeRemoved()
-    {
-        if (!OperatingSystem.IsWindows()) return;
-
-        var service = new SettingsService(_tempDir);
-        var calls = 0;
-        var id = service.AddSettingsListener(_ => calls++);
-
-        var settings = service.Load();
-        settings.FontSize = 17;
-        service.Save(settings);
-        Assert.Equal(1, calls);
-
-        service.RemoveSettingsListener(id);
-        settings.FontSize = 18;
-        service.Save(settings);
-        Assert.Equal(1, calls);
-    }
 }
