@@ -11,6 +11,7 @@ export interface WebPreviewState {
   previewName: string;
   routeKey: string | null;
   url: string | null;
+  navigationUrl: string | null;
   active: boolean;
   targetRevision: number;
   mode: WebPreviewMode;
@@ -32,6 +33,7 @@ function buildPreviewState(previewName: string): WebPreviewState {
     previewName,
     routeKey: null,
     url: null,
+    navigationUrl: null,
     active: false,
     targetRevision: 0,
     mode: 'hidden',
@@ -159,6 +161,7 @@ export function upsertSessionPreview(
   const routeKey = preview.routeKey.trim() ? preview.routeKey : null;
   if (state.routeKey !== routeKey || state.targetRevision != preview.targetRevision) {
     state.dockedClient = null;
+    state.navigationUrl = null;
   }
   state.routeKey = routeKey;
   state.url = preview.url ?? null;
@@ -190,6 +193,7 @@ export function syncSessionPreviews(
       if (!seen.has(name)) {
         preview.routeKey = null;
         preview.url = null;
+        preview.navigationUrl = null;
         preview.active = false;
         preview.targetRevision = 0;
         preview.dockedClient = null;
@@ -229,7 +233,8 @@ export function removeSessionPreview(sessionId: string, previewName?: string | n
 
 /** Get the web preview URL for the active selected preview. */
 export function getActiveUrl(): string | null {
-  return getActivePreview()?.url ?? null;
+  const preview = getActivePreview();
+  return preview?.navigationUrl ?? preview?.url ?? null;
 }
 
 /** Set the web preview URL for the active selected preview. */
@@ -241,10 +246,16 @@ export function setActiveUrl(url: string | null): void {
   setSessionUrl(sessionId, getSessionSelectedPreviewName(sessionId), url);
 }
 
+/** Track in-document navigation separately from the configured load target/revision. */
+export function setSessionNavigationUrl(sessionId: string, previewName: string, url: string): void {
+  ensurePreviewState(sessionId, previewName).navigationUrl = url;
+}
+
 /** Set the web preview URL for a specific named preview. */
 export function setSessionUrl(sessionId: string, previewName: string, url: string | null): void {
   const preview = ensurePreviewState(sessionId, previewName);
   preview.url = url;
+  preview.navigationUrl = null;
   preview.active = !!url;
 }
 

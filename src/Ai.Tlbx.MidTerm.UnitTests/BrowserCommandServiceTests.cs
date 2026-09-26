@@ -9,6 +9,22 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class BrowserCommandServiceTests
 {
     [Fact]
+    public async Task VisibilityUpdatePreservesPendingCommandAndConnectionIdentity()
+    {
+        var service = new BrowserCommandService();
+        BrowserWsMessage? message = null;
+        service.TryRegisterClient("c", "s", "default", "p", msg => message = msg, isVisible: true);
+        var command = service.ExecuteCommandAsync(new() { SessionId = "s", Command = "exec" }, default);
+        service.UpdateClientState("c", new() { Type = "browser-state", Visible = false });
+        Assert.False(service.GetStatus("https://example.com", "s").DefaultClient?.IsVisible);
+        service.ReceiveResult(new() { Id = message!.Id, PreviewId = "p", Success = true }, "different-connection");
+        Assert.False(command.IsCompleted);
+        service.ReceiveResult(new() { Id = message.Id, PreviewId = "p", Success = true }, "c");
+        Assert.True((await command).Success);
+        Assert.Equal(1, service.ConnectedClientCount);
+    }
+
+    [Fact]
     public void ResolveTimeoutSeconds_UsesLongerDefaultForScreenshots()
     {
         var screenshotTimeout = BrowserCommandService.ResolveTimeoutSeconds(new BrowserCommandRequest
@@ -179,7 +195,7 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public async Task ExecuteCommandAsync_WithHiddenNewerClient_PrefersVisibleClient()
+    public async Task ExecuteCommandAsync_WithTwoScopedFrames_RejectsAmbiguityRegardlessOfVisibility()
     {
         var service = new BrowserCommandService();
         BrowserWsMessage? captured = null;
@@ -218,16 +234,16 @@ public class BrowserCommandServiceTests
             PreviewName = "default"
         }, CancellationToken.None);
 
-        Assert.True(result.Success);
-        Assert.Equal("visible-ok", result.Result);
-        Assert.NotNull(captured);
-        Assert.Equal("preview-visible", captured!.PreviewId);
+        Assert.False(result.Success);
+        Assert.Contains("Multiple", result.Error, StringComparison.Ordinal);
+        Assert.Null(captured);
     }
 
     [Fact]
     public async Task ExecuteCommandAsync_WithScopedOwner_RoutesToOwnedBrowser()
     {
         var ownerService = new BrowserPreviewOwnerService();
+        ownerService.RegisterUi("ui-owner", "browser-owner");
         ownerService.Claim("session-a", "default", "browser-owner");
         var service = new BrowserCommandService(previewOwnerService: ownerService);
         BrowserWsMessage? captured = null;
@@ -275,7 +291,7 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public async Task UnregisterClient_RetriesPendingCommandAgainstSuccessorAndKeepsOtherPreviews()
+    public async Task UnregisterClient_DoesNotReplayDispatchedActionAndKeepsOtherPreviews()
     {
         var service = new BrowserCommandService();
         BrowserWsMessage? keptMessage = null;
@@ -288,7 +304,7 @@ public class BrowserCommandServiceTests
 
         var retriedTask = service.ExecuteCommandAsync(new BrowserCommandRequest
         {
-            Command = "url",
+            Command = "click",
             SessionId = "session-a"
         }, CancellationToken.None);
 
@@ -298,7 +314,7 @@ public class BrowserCommandServiceTests
             SessionId = "session-b"
         }, CancellationToken.None);
 
-        // Reload/navigation kills the resolved bridge mid-command; the successor frame must answer the retry.
+        // Losing the response cannot authorize replaying a potentially completed action.
         service.UnregisterClient("c1");
         Assert.True(service.TryRegisterClient("c1-successor", "session-a", "user1", "preview-a2", msg =>
         {
@@ -312,8 +328,8 @@ public class BrowserCommandServiceTests
         }));
 
         var retried = await retriedTask;
-        Assert.True(retried.Success);
-        Assert.Equal("successor-ok", retried.Result);
+        Assert.False(retried.Success);
+        Assert.Contains("disconnected", retried.Error, StringComparison.Ordinal);
 
         Assert.NotNull(keptMessage);
         service.ReceiveResult(new BrowserWsResult
@@ -521,7 +537,7 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public void GetStatus_WithOfflineOwnerAndMainPreviewClient_ReclaimsMainBrowser()
+    public void GetStatus_WithOfflineOwnerAndMainPreviewClient_PreservesOwner()
     {
         var mainBrowser = new MainBrowserService();
         var ownerService = new BrowserPreviewOwnerService();
@@ -557,13 +573,13 @@ public class BrowserCommandServiceTests
             connectedUiClientCount: 2);
 
         Assert.True(status.Connected);
-        Assert.True(status.Controllable);
-        Assert.Equal("ready", status.State);
-        Assert.Equal("ready", status.BridgePhase);
-        Assert.True(status.OwnerConnected);
-        Assert.Equal("browser-main:tab-1", status.OwnerBrowserId);
-        Assert.Equal("preview-main", status.DefaultClient?.PreviewId);
-        Assert.Equal("browser-main:tab-1", ownerService.GetOwnerBrowserId("session-a", "default"));
+        Assert.False(status.Controllable);
+        Assert.Equal("waiting", status.State);
+        Assert.Equal("owner-offline", status.BridgePhase);
+        Assert.False(status.OwnerConnected);
+        Assert.Equal("stale-browser", status.OwnerBrowserId);
+        Assert.Null(status.DefaultClient);
+        Assert.Equal("stale-browser", ownerService.GetOwnerBrowserId("session-a", "default"));
     }
 
     [Fact]
@@ -626,7 +642,7 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public async Task ExecuteCommandAsync_WithCookieOwnerAndTabScopedPreviewClient_RoutesByStableClientPart()
+    public async Task ExecuteCommandAsync_WithCookieOwner_DoesNotRouteToSiblingTab()
     {
         var ownerService = new BrowserPreviewOwnerService();
         ownerService.Claim("session-a", "default", "browser-a");
@@ -658,10 +674,9 @@ public class BrowserCommandServiceTests
             PreviewName = "default"
         }, CancellationToken.None);
 
-        Assert.True(result.Success);
-        Assert.Equal("ok", result.Result);
-        Assert.NotNull(captured);
-        Assert.Equal("preview-a", captured!.PreviewId);
+        Assert.False(result.Success);
+        Assert.Contains("exact tab", result.Error, StringComparison.Ordinal);
+        Assert.Null(captured);
     }
 
     [Fact]
@@ -760,6 +775,7 @@ public class BrowserCommandServiceTests
         await Task.Delay(40);
         Assert.False(waitingTask.IsCompleted);
 
+        service.UnregisterClient("hidden");
         Assert.True(service.TryRegisterClient(
             "visible",
             "session-a",

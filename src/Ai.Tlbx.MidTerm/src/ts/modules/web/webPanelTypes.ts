@@ -5,6 +5,7 @@ export interface UploadResponse {
 }
 
 export interface PreviewBridgeMessage {
+  targetRevision?: number;
   previewId?: string;
   previewToken?: string;
   sessionId?: string;

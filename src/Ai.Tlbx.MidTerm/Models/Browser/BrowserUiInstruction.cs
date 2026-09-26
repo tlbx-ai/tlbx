@@ -20,6 +20,7 @@ public sealed class BrowserUiInstruction
 
 public sealed class BrowserUiCommandResult
 {
+    public long OwnershipGeneration { get; init; }
     public string RequestId { get; init; } = "";
     public string Command { get; init; } = "";
     public bool Success { get; init; }

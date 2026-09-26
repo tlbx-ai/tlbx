@@ -36,7 +36,7 @@ vi.mock('./webSessionState', () => ({
   setSessionSelectedPreviewName: vi.fn(
     (_sessionId: string, previewName?: string) => previewName ?? 'default',
   ),
-  setSessionUrl: vi.fn(),
+  setSessionNavigationUrl: vi.fn(),
 }));
 
 import { $activeSessionId, $webPreviewDetached } from '../../stores';

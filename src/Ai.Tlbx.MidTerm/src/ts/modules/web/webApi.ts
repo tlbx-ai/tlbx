@@ -29,6 +29,7 @@ export interface WebPreviewTargetResponse {
 }
 
 export interface BrowserPreviewClientResponse {
+  ownershipGeneration?: number;
   sessionId: string | null;
   previewName: string;
   routeKey: string;
@@ -64,6 +65,7 @@ export interface BrowserStatusResponse {
   targetUrl?: string | null;
   ownerBrowserId?: string | null;
   ownerConnected: boolean;
+  ownershipGeneration?: number;
   defaultClient?: BrowserClientInfo | null;
   clients: BrowserClientInfo[];
 }

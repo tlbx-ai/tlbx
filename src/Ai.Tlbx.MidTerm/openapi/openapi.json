@@ -3959,6 +3959,7 @@
           "previewName",
           "previewId",
           "browserId",
+          "targetRevision",
           "connectedAtUtc",
           "isMainBrowser",
           "isVisible",
@@ -3990,6 +3991,13 @@
               "null",
               "string"
             ]
+          },
+          "targetRevision": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
           },
           "connectedAtUtc": {
             "type": "string",
@@ -4150,6 +4158,7 @@
           "sessionId",
           "previewName",
           "routeKey",
+          "ownershipGeneration",
           "previewId",
           "previewToken",
           "origin"
@@ -4167,6 +4176,10 @@
           },
           "routeKey": {
             "type": "string"
+          },
+          "ownershipGeneration": {
+            "type": "integer",
+            "format": "int64"
           },
           "previewId": {
             "type": "string"
@@ -4200,6 +4213,7 @@
           "targetUrl",
           "ownerBrowserId",
           "ownerConnected",
+          "ownershipGeneration",
           "defaultClient",
           "clients"
         ],
@@ -4270,6 +4284,10 @@
           },
           "ownerConnected": {
             "type": "boolean"
+          },
+          "ownershipGeneration": {
+            "type": "integer",
+            "format": "int64"
           },
           "defaultClient": {
             "oneOf": [
@@ -8022,6 +8040,12 @@
         "properties": {
           "sessionId": {
             "type": "string"
+          },
+          "browserId": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "previewName": {
             "type": [

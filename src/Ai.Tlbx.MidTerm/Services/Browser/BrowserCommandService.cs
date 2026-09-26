@@ -13,13 +13,16 @@ public sealed class BrowserCommandService
     private readonly ConcurrentDictionary<string, BrowserClient> _clients = new(StringComparer.Ordinal);
     private readonly MainBrowserService? _mainBrowserService;
     private readonly BrowserPreviewOwnerService? _previewOwnerService;
+    private readonly WebPreview.WebPreviewService? _webPreviewService;
 
     public BrowserCommandService(
         MainBrowserService? mainBrowserService = null,
-        BrowserPreviewOwnerService? previewOwnerService = null)
+        BrowserPreviewOwnerService? previewOwnerService = null,
+        WebPreview.WebPreviewService? webPreviewService = null)
     {
         _mainBrowserService = mainBrowserService;
         _previewOwnerService = previewOwnerService;
+        _webPreviewService = webPreviewService;
     }
 
     public bool HasConnectedClient => !_clients.IsEmpty;
@@ -35,7 +38,9 @@ public sealed class BrowserCommandService
         string? browserId = null,
         bool isVisible = false,
         bool hasFocus = false,
-        bool isTopLevel = false)
+        bool isTopLevel = false,
+        long? targetRevision = null,
+        long? ownershipGeneration = null)
     {
         var replacedConnectionIds = Array.Empty<string>();
         lock (_clientGate)
@@ -63,6 +68,8 @@ public sealed class BrowserCommandService
                 IsVisible = isVisible,
                 HasFocus = hasFocus,
                 IsTopLevel = isTopLevel,
+                TargetRevision = targetRevision,
+                OwnershipGeneration = ownershipGeneration,
                 Listener = listener,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
@@ -92,22 +99,7 @@ public sealed class BrowserCommandService
 
     public async Task<BrowserWsResult> ExecuteCommandAsync(BrowserCommandRequest request, CancellationToken ct)
     {
-        var deadline = DateTime.UtcNow + BridgeAttachGrace;
-        while (true)
-        {
-            var result = await ExecuteCommandOnceAsync(request, deadline, ct).ConfigureAwait(false);
-            if (!result.Success
-                && string.Equals(result.Error, BridgeDisconnectedError, StringComparison.Ordinal)
-                && DateTime.UtcNow < deadline
-                && !ct.IsCancellationRequested)
-            {
-                // Reload and navigation tear the resolved bridge down mid-command; the caller
-                // intends the successor frame, so retry against it within the grace window.
-                continue;
-            }
-
-            return result;
-        }
+        return await ExecuteCommandOnceAsync(request, DateTime.UtcNow + BridgeAttachGrace, ct).ConfigureAwait(false);
     }
 
     private async Task<BrowserWsResult> ExecuteCommandOnceAsync(
@@ -125,6 +117,9 @@ public sealed class BrowserCommandService
             };
         }
 
+        var generation = _previewOwnerService?.GetGeneration(client.SessionId, client.PreviewName) ?? 0;
+        if (_previewOwnerService is not null && !_previewOwnerService.IsCurrent(client.SessionId, client.PreviewName, client.BrowserId, generation))
+            return new BrowserWsResult { Error = "Preview ownership changed before dispatch. Retry the command." };
         var id = Guid.NewGuid().ToString("N")[..12];
         var tcs = new TaskCompletionSource<BrowserWsResult>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[id] = new PendingCommand
@@ -175,6 +170,10 @@ public sealed class BrowserCommandService
         try
         {
             var result = await tcs.Task.WaitAsync(cts.Token);
+            if ((_previewOwnerService is not null
+                    && !_previewOwnerService.IsCurrent(client.SessionId, client.PreviewName, client.BrowserId, generation))
+                || !IsCurrentTarget(client))
+                return new BrowserWsResult { Error = "Preview ownership or target changed while the command was in flight. Its outcome is unknown; inspect the current preview before retrying an action." };
             BrowserLog.Result(request.Command, result.Success, result.Result ?? result.Error ?? "");
             return result;
         }
@@ -195,8 +194,20 @@ public sealed class BrowserCommandService
         }
     }
 
-    public void ReceiveResult(BrowserWsResult result)
+    public void UpdateClientState(string connectionId, BrowserWsResult state)
     {
+        if (_clients.TryGetValue(connectionId, out var client))
+        {
+            client.IsVisible = state.Visible;
+            client.HasFocus = state.Focus;
+            client.IsTopLevel = state.TopLevel;
+        }
+    }
+
+    public void ReceiveResult(BrowserWsResult result, string? connectionId = null)
+    {
+        if (connectionId is not null && _pending.TryGetValue(result.Id, out var expected)
+            && !string.Equals(connectionId, expected.ConnectionId, StringComparison.Ordinal)) return;
         if (!_pending.TryRemove(result.Id, out var pending))
         {
             return;
@@ -265,6 +276,7 @@ public sealed class BrowserCommandService
             $"target configured: {(status.HasTarget ? "yes" : "no")}",
             $"target: {status.TargetUrl ?? "(none)"}",
             $"control owner: {status.OwnerBrowserId ?? "(none)"}",
+            string.Create(CultureInfo.InvariantCulture, $"ownership generation: {status.OwnershipGeneration}"),
             $"owner connected: {(status.OwnerConnected ? "yes" : "no")}",
             string.Create(CultureInfo.InvariantCulture, $"ui clients: {status.ConnectedUiClientCount}"),
             string.Create(CultureInfo.InvariantCulture, $"matching browser clients: {status.ConnectedClientCount}"),
@@ -308,7 +320,7 @@ public sealed class BrowserCommandService
 
         if (status.Controllable && status.DefaultClient?.IsVisible == false)
         {
-            lines.Add("hint: The selected preview bridge is controllable, but it is attached from a hidden frame. Re-run mt_open so tlbx docks and refreshes the visible dev browser frame.");
+            lines.Add("hint: The selected preview bridge is controllable, but it is attached from a hidden frame. It remains available across session switches; a suspended or closed owning browser cannot execute commands.");
         }
 
         if (status.State == "waiting" && !string.IsNullOrWhiteSpace(status.OwnerBrowserId) && !status.OwnerConnected)
@@ -428,6 +440,7 @@ public sealed class BrowserCommandService
         Func<int>? connectedUiClientCountProvider = null,
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
+        long? requiredTargetRevision = null,
         CancellationToken cancellationToken = default)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(8);
@@ -452,14 +465,24 @@ public sealed class BrowserCommandService
             var hasVisibleClient = !requireVisibleClient
                 || latest.DefaultClient?.IsVisible == true;
 
-            if (latest.Controllable && hasFreshClient && hasVisibleClient)
+            var hasRevision = requiredTargetRevision is null || latest.DefaultClient?.TargetRevision == requiredTargetRevision;
+            if (latest.Controllable && hasFreshClient && hasVisibleClient && hasRevision)
             {
                 return latest;
             }
 
             if (DateTimeOffset.UtcNow >= deadline)
             {
-                return latest;
+                // A stale/hidden attachment must never return a ready snapshot on timeout.
+                return new BrowserStatusResponse
+                {
+                    State = "waiting", BridgePhase = "preview-not-ready", HasTarget = latest.HasTarget,
+                    HasUiClient = latest.HasUiClient, IsScoped = latest.IsScoped,
+                    TargetUrl = targetUrl, OwnerBrowserId = latest.OwnerBrowserId,
+                    OwnerConnected = latest.OwnerConnected, DefaultClient = latest.DefaultClient,
+                    StatusMessage = "The exact preview revision did not become ready before the deadline. Retry mt_open or reconnect its owner.",
+                    ConnectedUiClientCount = connectedUiClientCount
+                };
             }
 
             await Task.Delay(effectivePollInterval, cancellationToken);
@@ -473,197 +496,37 @@ public sealed class BrowserCommandService
         string? previewId,
         int connectedUiClientCount)
     {
-        var clients = _clients.Values
-            .OrderByDescending(c => c.ConnectedAtUtc)
-            .ToArray();
-        var isScoped = HasStatusScope(sessionId, previewName, previewId);
-        var hasTarget = !string.IsNullOrWhiteSpace(targetUrl);
-        var hasUiClient = connectedUiClientCount > 0;
-        var scopeDescription = BuildScopeDescription(sessionId, previewName, previewId);
-        var ownerBrowserId = string.IsNullOrWhiteSpace(previewId)
-            ? _previewOwnerService?.GetOwnerBrowserId(sessionId, previewName)
-            : null;
-
-        if (clients.Length == 0)
-        {
-            var message = BuildUnavailableStatusMessage(
-                sessionId,
-                previewName,
-                previewId,
-                ownerBrowserId,
-                hasTarget,
-                hasUiClient);
-            return new BrowserStatusSnapshot
-            {
-                IsScoped = isScoped,
-                Response = new BrowserStatusResponse
-                {
-                    Connected = false,
-                    Controllable = false,
-                    HasTarget = hasTarget,
-                    HasUiClient = hasUiClient,
-                    IsScoped = isScoped,
-                    State = ResolveState(
-                        connected: false,
-                        controllable: false,
-                        hasTarget: hasTarget,
-                        hasUiClient: hasUiClient,
-                        ambiguous: false),
-                    BridgePhase = ResolveBridgePhase(
-                        connected: false,
-                        controllable: false,
-                        hasTarget: hasTarget,
-                        hasUiClient: hasUiClient,
-                        ambiguous: false,
-                        ownerBrowserId: ownerBrowserId,
-                        ownerConnected: false),
-                    ScopeDescription = scopeDescription,
-                    StatusMessage = message,
-                    RecoveryHint = BuildRecoveryHint(
-                        hasTarget: hasTarget,
-                        hasUiClient: hasUiClient,
-                        connected: false,
-                        ambiguous: false,
-                        ownerBrowserId: ownerBrowserId,
-                        ownerConnected: false),
-                    ConnectedClientCount = 0,
-                    TotalConnectedClientCount = 0,
-                    ConnectedUiClientCount = connectedUiClientCount,
-                    TargetUrl = targetUrl,
-                    OwnerBrowserId = ownerBrowserId,
-                    OwnerConnected = false
-                }
-            };
-        }
-
+        var clients = _clients.Values.ToArray();
         var matches = FilterClients(clients, sessionId, previewName, previewId);
-        var sizeOwner = _previewOwnerService?.GetSizeOwnerBrowserId(sessionId);
-        if (sizeOwner is not null && string.IsNullOrWhiteSpace(previewId))
-            matches = matches.Where(client => string.Equals(client.BrowserId, sizeOwner, StringComparison.Ordinal)).ToArray();
-        var resolvedOwnerBrowserId = string.IsNullOrWhiteSpace(previewId)
-            ? _previewOwnerService?.ResolveOwnerBrowserId(
-                sessionId,
-                previewName,
-                matches.Select(client => client.BrowserId))
-            : null;
-        ownerBrowserId = resolvedOwnerBrowserId ?? ownerBrowserId;
-        var ownerConnected = !string.IsNullOrWhiteSpace(ownerBrowserId)
-            && matches.Any(client => BrowserIdentity.AreSameBrowser(client.BrowserId, ownerBrowserId));
-        var mainBrowserId = _mainBrowserService?.GetMainBrowserId();
-        if (!ownerConnected
-            && !string.IsNullOrWhiteSpace(ownerBrowserId)
-            && TrySelectMainBrowserClient(matches, mainBrowserId, out var mainOwnedClient)
-            && !string.IsNullOrWhiteSpace(mainOwnedClient.BrowserId))
+        var owner = _previewOwnerService?.ResolveOwnerBrowserId(sessionId, previewName);
+        var resolved = TryResolveClient(new BrowserCommandRequest
         {
-            _previewOwnerService?.Claim(sessionId, previewName, mainOwnedClient.BrowserId);
-            ownerBrowserId = mainOwnedClient.BrowserId;
-            ownerConnected = true;
-        }
-
-        if (matches.Length == 0)
-        {
-            var message = BuildUnavailableStatusMessage(
-                sessionId,
-                previewName,
-                previewId,
-                ownerBrowserId,
-                hasTarget,
-                hasUiClient);
-            return new BrowserStatusSnapshot
-            {
-                IsScoped = isScoped,
-                Response = new BrowserStatusResponse
-                {
-                    Connected = false,
-                    Controllable = false,
-                    HasTarget = hasTarget,
-                    HasUiClient = hasUiClient,
-                    IsScoped = isScoped,
-                    State = ResolveState(
-                        connected: false,
-                        controllable: false,
-                        hasTarget: hasTarget,
-                        hasUiClient: hasUiClient,
-                        ambiguous: false),
-                    BridgePhase = ResolveBridgePhase(
-                        connected: false,
-                        controllable: false,
-                        hasTarget: hasTarget,
-                        hasUiClient: hasUiClient,
-                        ambiguous: false,
-                        ownerBrowserId: ownerBrowserId,
-                        ownerConnected: false),
-                    ScopeDescription = scopeDescription,
-                    StatusMessage = message,
-                    RecoveryHint = BuildRecoveryHint(
-                        hasTarget: hasTarget,
-                        hasUiClient: hasUiClient,
-                        connected: false,
-                        ambiguous: false,
-                        ownerBrowserId: ownerBrowserId,
-                        ownerConnected: false),
-                    ConnectedClientCount = 0,
-                    TotalConnectedClientCount = clients.Length,
-                    ConnectedUiClientCount = connectedUiClientCount,
-                    TargetUrl = targetUrl,
-                    OwnerBrowserId = ownerBrowserId,
-                    OwnerConnected = false
-                }
-            };
-        }
-
-        var resolutionCandidates = SelectResolutionCandidates(matches, ownerBrowserId);
-        var resolved = TryResolveDefaultClient(resolutionCandidates, out var client);
-        var isAmbiguous = !resolved && string.IsNullOrWhiteSpace(ownerBrowserId);
-        var statusMessage = resolved
-            ? null
-            : !string.IsNullOrWhiteSpace(ownerBrowserId)
-                ? BuildOwnerUnavailableStatusMessage(sessionId, previewName, ownerBrowserId)
-                : BuildAmbiguousStatusMessage(sessionId, previewName, previewId);
+            SessionId = sessionId, PreviewName = previewName, PreviewId = previewId, Command = "status"
+        }, out var client, out var error);
+        var ownerConnected = _previewOwnerService?.IsConnected(owner) == true;
+        var ambiguous = !resolved && (error.StartsWith("Multiple", StringComparison.Ordinal));
+        var hasTarget = !string.IsNullOrWhiteSpace(targetUrl);
+        var hasUi = connectedUiClientCount > 0;
         return new BrowserStatusSnapshot
         {
-            IsScoped = isScoped,
+            IsScoped = HasStatusScope(sessionId, previewName, previewId),
             DefaultClientConnectedAtUtc = resolved ? client.ConnectedAtUtc : null,
             Response = new BrowserStatusResponse
             {
-                Connected = true,
-                Controllable = resolved,
-                HasTarget = hasTarget,
-                HasUiClient = hasUiClient,
-                IsScoped = isScoped,
-                State = ResolveState(
-                    connected: true,
-                    controllable: resolved,
-                    hasTarget: hasTarget,
-                    hasUiClient: hasUiClient,
-                    ambiguous: isAmbiguous),
-                BridgePhase = ResolveBridgePhase(
-                    connected: true,
-                    controllable: resolved,
-                    hasTarget: hasTarget,
-                    hasUiClient: hasUiClient,
-                    ambiguous: isAmbiguous,
-                    ownerBrowserId: ownerBrowserId,
-                    ownerConnected: ownerConnected),
-                ScopeDescription = scopeDescription,
-                StatusMessage = statusMessage,
-                RecoveryHint = BuildRecoveryHint(
-                    hasTarget: hasTarget,
-                    hasUiClient: hasUiClient,
-                    connected: true,
-                    ambiguous: isAmbiguous,
-                    ownerBrowserId: ownerBrowserId,
-                    ownerConnected: ownerConnected),
-                ConnectedClientCount = matches.Length,
-                TotalConnectedClientCount = clients.Length,
-                ConnectedUiClientCount = connectedUiClientCount,
-                TargetUrl = targetUrl,
-                OwnerBrowserId = ownerBrowserId,
-                OwnerConnected = ownerConnected,
-                DefaultClient = resolved ? CreateClientInfo(client, mainBrowserId) : null,
-                Clients = matches
-                    .Select(c => CreateClientInfo(c, mainBrowserId))
-                    .ToArray()
+                Connected = matches.Length > 0, Controllable = resolved,
+                HasTarget = hasTarget, HasUiClient = hasUi,
+                IsScoped = HasStatusScope(sessionId, previewName, previewId),
+                State = ResolveState(matches.Length > 0, resolved, hasTarget, hasUi, ambiguous),
+                BridgePhase = ResolveBridgePhase(matches.Length > 0, resolved, hasTarget, hasUi, ambiguous, owner, ownerConnected),
+                ScopeDescription = BuildScopeDescription(sessionId, previewName, previewId),
+                StatusMessage = resolved ? null : error,
+                RecoveryHint = resolved ? null : BuildRecoveryHint(hasTarget, hasUi, matches.Length > 0, ambiguous, owner, ownerConnected),
+                ConnectedClientCount = matches.Length, TotalConnectedClientCount = clients.Length,
+                ConnectedUiClientCount = connectedUiClientCount, TargetUrl = targetUrl,
+                OwnerBrowserId = owner, OwnerConnected = ownerConnected,
+                OwnershipGeneration = _previewOwnerService?.GetGeneration(sessionId, previewName) ?? 0,
+                DefaultClient = resolved ? CreateClientInfo(client, _mainBrowserService?.GetMainBrowserId()) : null,
+                Clients = matches.Select(c => CreateClientInfo(c, _mainBrowserService?.GetMainBrowserId())).ToArray()
             }
         };
     }
@@ -722,38 +585,6 @@ public sealed class BrowserCommandService
         return "(global)";
     }
 
-    private static string BuildUnavailableStatusMessage(
-        string? sessionId,
-        string? previewName,
-        string? previewId,
-        string? ownerBrowserId,
-        bool hasTarget,
-        bool hasUiClient)
-    {
-        if (!string.IsNullOrWhiteSpace(ownerBrowserId))
-        {
-            return BuildOwnerUnavailableStatusMessage(sessionId, previewName, ownerBrowserId);
-        }
-
-        var reason = BuildDisconnectedReason(sessionId, previewName, previewId);
-        if (hasTarget && hasUiClient)
-        {
-            return $"Target is configured, but no browser preview is attached yet. {reason}";
-        }
-
-        if (hasTarget)
-        {
-            return $"Target is configured, but no tlbx browser UI is currently attached to /ws/state, so the dev browser cannot work yet. {reason}";
-        }
-
-        if (hasUiClient)
-        {
-            return $"A tlbx UI is connected, but no matching browser preview is attached. {reason}";
-        }
-
-        return reason;
-    }
-
     private static string BuildDisconnectedReason(string? sessionId, string? previewName, string? previewId)
     {
         if (!string.IsNullOrWhiteSpace(previewId))
@@ -791,15 +622,7 @@ public sealed class BrowserCommandService
             return $"Multiple browser clients are attached for session '{sessionId}'.";
         }
 
-        return "Multiple browser previews are connected. Narrow the scope so tlbx can select one deterministically.";
-    }
-
-    private static string BuildOwnerUnavailableStatusMessage(
-        string? sessionId,
-        string? previewName,
-        string ownerBrowserId)
-    {
-        return $"Preview '{previewName ?? WebPreview.WebPreviewService.DefaultPreviewName}' in session '{sessionId ?? "(any)"}' is owned by browser '{ownerBrowserId}', but that browser is not currently attached.";
+        return "Multiple browser previews are connected. Narrow the scope with --session and --preview so tlbx can select one deterministically.";
     }
 
     private static string ResolveState(
@@ -889,7 +712,7 @@ public sealed class BrowserCommandService
 
         if (!string.IsNullOrWhiteSpace(ownerBrowserId) && !ownerConnected)
         {
-            return "Run mt_claim_preview to explicitly assign this preview to the connected tlbx browser, then retry mt_open or mt_reload.";
+            return "List /api/browser/ui-clients, then run mt_claim_preview --browser <browserId> to explicitly hand off this preview and retry mt_open.";
         }
 
         if (ambiguous)
@@ -968,106 +791,52 @@ public sealed class BrowserCommandService
     {
         error = "";
         client = null!;
-
-        var clients = _clients.Values.ToArray();
-        if (clients.Length == 0)
+        var matches = FilterClients(_clients.Values.ToArray(), request.SessionId, request.PreviewName, request.PreviewId);
+        if (HasStatusScope(request.SessionId, request.PreviewName, request.PreviewId))
         {
-            error = "No browser connected. The dev browser cannot work until a live tlbx browser tab is attached to /ws/state.";
-            return false;
-        }
-
-        BrowserClient[] matches;
-        if (!string.IsNullOrWhiteSpace(request.PreviewId))
-        {
-            matches = clients
-                .Where(c => string.Equals(c.PreviewId, request.PreviewId, StringComparison.Ordinal))
-                .OrderByDescending(c => c.ConnectedAtUtc)
-                .ToArray();
-
-            if (matches.Length == 0)
+            // Explicit preview IDs still obey the session/preview's exact-tab execution owner.
+            var sessionId = request.SessionId ?? (matches.Length == 1 ? matches[0].SessionId : null);
+            var previewName = request.PreviewName ?? (matches.Length == 1 ? matches[0].PreviewName : null);
+            var owner = _previewOwnerService?.ResolveOwnerBrowserId(sessionId, previewName);
+            if (owner is not null)
             {
-                error = $"No browser preview connected for preview '{request.PreviewId}'.";
+                if (!_previewOwnerService!.IsConnected(owner))
+                {
+                    error = BrowserPreviewOwnerService.UnavailableMessage(sessionId, previewName, owner);
+                    return false;
+                }
+                matches = SelectResolutionCandidates(matches, owner)
+                    .Where(c => c.OwnershipGeneration is null || c.OwnershipGeneration == _previewOwnerService.GetGeneration(sessionId, previewName)).ToArray();
+            }
+            else if (_previewOwnerService is not null && !string.IsNullOrWhiteSpace(sessionId))
+            {
+                error = _previewOwnerService.GetConnectedBrowserIds().Length == 0
+                    ? "No browser UI connected. Open a tlbx tab and retry mt_open."
+                    : BrowserPreviewOwnerService.UnavailableMessage(sessionId, previewName, null);
                 return false;
             }
-        }
-        else if (!string.IsNullOrWhiteSpace(request.SessionId) || !string.IsNullOrWhiteSpace(request.PreviewName))
-        {
-            matches = clients
-                .Where(c =>
-                    (string.IsNullOrWhiteSpace(request.SessionId)
-                        || string.Equals(c.SessionId, request.SessionId, StringComparison.Ordinal))
-                    && (string.IsNullOrWhiteSpace(request.PreviewName)
-                        || string.Equals(c.PreviewName, request.PreviewName, StringComparison.OrdinalIgnoreCase)))
-                .OrderByDescending(c => c.ConnectedAtUtc)
-                .ToArray();
-
-            if (matches.Length == 0)
+            matches = matches.Where(IsCurrentTarget).ToArray();
+            if (matches.Length != 1)
             {
-                error = !string.IsNullOrWhiteSpace(request.PreviewName)
-                    ? $"No browser preview connected for preview '{request.PreviewName}' in session '{request.SessionId ?? "(any)"}'."
-                    : $"No browser preview connected for session '{request.SessionId}'.";
+                error = matches.Length == 0
+                    ? BuildDisconnectedReason(sessionId, previewName, request.PreviewId)
+                    : BuildAmbiguousStatusMessage(sessionId, previewName, request.PreviewId);
                 return false;
             }
-
-            var sizeOwner = _previewOwnerService?.GetSizeOwnerBrowserId(request.SessionId);
-            if (sizeOwner is not null)
-                matches = matches.Where(client => string.Equals(client.BrowserId, sizeOwner, StringComparison.Ordinal)).ToArray();
-            var scopedMatches = matches;
-            var ownerBrowserId = _previewOwnerService?.ResolveOwnerBrowserId(
-                request.SessionId,
-                request.PreviewName,
-                scopedMatches.Select(client => client.BrowserId));
-            matches = SelectResolutionCandidates(scopedMatches, ownerBrowserId);
-            if (matches.Length == 0
-                && !string.IsNullOrWhiteSpace(ownerBrowserId)
-                && TrySelectMainBrowserClient(
-                    scopedMatches,
-                    _mainBrowserService?.GetMainBrowserId(),
-                    out var mainOwnedClient)
-                && !string.IsNullOrWhiteSpace(mainOwnedClient.BrowserId))
-            {
-                _previewOwnerService?.Claim(request.SessionId, request.PreviewName, mainOwnedClient.BrowserId);
-                ownerBrowserId = mainOwnedClient.BrowserId;
-                matches = SelectResolutionCandidates(scopedMatches, ownerBrowserId);
-            }
-
-            if (matches.Length == 0 && !string.IsNullOrWhiteSpace(ownerBrowserId))
-            {
-                error = BuildOwnerUnavailableStatusMessage(
-                    request.SessionId,
-                    request.PreviewName,
-                    ownerBrowserId);
-                return false;
-            }
+            client = matches[0];
+            return true;
         }
-        else
-        {
-            matches = clients
-                .OrderByDescending(c => c.ConnectedAtUtc)
-                .ToArray();
-        }
+        if (TryResolveDefaultClient(matches, out client)) return true;
+        error = matches.Length == 0 ? "No browser connected. Open a tlbx tab and retry mt_open."
+            : BuildAmbiguousStatusMessage(null, null, null);
+        return false;
+    }
 
-        matches = PreferInteractive(matches);
-        matches = PreferPreviewScoped(matches);
-        matches = PreferMainBrowser(matches);
-
-        if (matches.Length > 1)
-        {
-            if (TryResolveDefaultClient(matches, out client))
-            {
-                return true;
-            }
-
-            error = string.IsNullOrWhiteSpace(request.SessionId)
-                ? "Multiple browser previews are connected. Re-run the command with --session <id>."
-                : !string.IsNullOrWhiteSpace(request.PreviewName)
-                    ? $"Multiple browser previews are connected for preview '{request.PreviewName}' in session '{request.SessionId}'."
-                    : $"Multiple browser previews are connected for session '{request.SessionId}'.";
-            return false;
-        }
-
-        client = matches[0];
-        return true;
+    private bool IsCurrentTarget(BrowserClient client)
+    {
+        if (_webPreviewService is null || string.IsNullOrWhiteSpace(client.SessionId)) return true;
+        var target = _webPreviewService.GetPreviewSession(client.SessionId, client.PreviewName);
+        return target?.Url is not null && client.TargetRevision == target.TargetRevision;
     }
 
     private static BrowserClient[] PreferInteractive(BrowserClient[] clients)
@@ -1091,7 +860,7 @@ public sealed class BrowserCommandService
         }
 
         var ownerClients = clients
-            .Where(client => BrowserIdentity.AreSameBrowser(client.BrowserId, ownerBrowserId))
+            .Where(client => string.Equals(client.BrowserId, ownerBrowserId, StringComparison.Ordinal))
             .ToArray();
         return ownerClients.Length > 0 ? ownerClients : [];
     }
@@ -1164,7 +933,8 @@ public sealed class BrowserCommandService
                 && BrowserIdentity.AreSameBrowser(client.BrowserId, mainBrowserId),
             IsVisible = client.IsVisible,
             HasFocus = client.HasFocus,
-            IsTopLevel = client.IsTopLevel
+            IsTopLevel = client.IsTopLevel,
+            TargetRevision = client.TargetRevision
         };
     }
 
@@ -1189,32 +959,6 @@ public sealed class BrowserCommandService
         return score;
     }
 
-    private static bool TrySelectMainBrowserClient(
-        BrowserClient[] clients,
-        string? mainBrowserId,
-        out BrowserClient client)
-    {
-        client = null!;
-        if (string.IsNullOrWhiteSpace(mainBrowserId))
-        {
-            return false;
-        }
-
-        var mainClients = clients
-            .Where(c => BrowserIdentity.AreSameBrowser(c.BrowserId, mainBrowserId))
-            .ToArray();
-        if (mainClients.Length == 0)
-        {
-            return false;
-        }
-
-        client = mainClients
-            .OrderByDescending(c => string.Equals(c.BrowserId, mainBrowserId, StringComparison.Ordinal))
-            .ThenByDescending(c => c.ConnectedAtUtc)
-            .First();
-        return true;
-    }
-
     private sealed class BrowserClient
     {
         public string ConnectionId { get; init; } = "";
@@ -1222,9 +966,11 @@ public sealed class BrowserCommandService
         public string? PreviewName { get; init; }
         public string? PreviewId { get; init; }
         public string? BrowserId { get; init; }
-        public bool IsVisible { get; init; }
-        public bool HasFocus { get; init; }
-        public bool IsTopLevel { get; init; }
+        public bool IsVisible { get; set; }
+        public bool HasFocus { get; set; }
+        public bool IsTopLevel { get; set; }
+        public long? TargetRevision { get; init; }
+        public long? OwnershipGeneration { get; init; }
         public required Action<BrowserWsMessage> Listener { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
     }

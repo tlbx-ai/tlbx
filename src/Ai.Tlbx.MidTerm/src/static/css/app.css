@@ -11477,6 +11477,17 @@ body.shared-session-mode .session-tab-bar {
   display: none;
 }
 
+/* Keep automation documents laid out without moving/reloading their iframes. */
+#web-preview-dock.hidden:has(.web-preview-iframe) {
+  display: flex;
+  position: fixed;
+  inset: 0 auto auto -100000px;
+  width: 1280px;
+  max-width: none;
+  height: 800px;
+  pointer-events: none;
+}
+
 .web-preview-dock-resize-grip {
   position: absolute;
   top: 0;
@@ -12040,6 +12051,9 @@ body.shared-session-mode .session-tab-bar {
 }
 
 .web-preview-iframe.hidden {
+  display: block;
+  width: var(--preview-background-width, 1280px);
+  height: var(--preview-background-height, 720px);
   opacity: 0;
   pointer-events: none;
 }

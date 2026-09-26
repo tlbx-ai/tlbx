@@ -200,7 +200,7 @@ public sealed class BrowserUiBridgeTests
     }
 
     [Fact]
-    public async Task RequestAgentWheelAsync_UsesTheBrowserThatActuallyShowsTheAcpSession()
+    public async Task RequestAgentWheelAsync_UsesExplicitOwnerWithoutTryingOtherTabs()
     {
         var bridge = new BrowserUiBridge(new MainBrowserService());
         var dispatched = 0;
@@ -242,10 +242,11 @@ public sealed class BrowserUiBridgeTests
                 });
             });
 
+        Assert.True(bridge.RequestClaim("session-a", "default", out _, "browser-a:tab-visible"));
         var result = await bridge.RequestAgentWheelAsync("session-a", -320, 1, default);
 
         Assert.True(result.Success);
-        Assert.Equal(2, dispatched);
+        Assert.Equal(1, dispatched);
     }
 
     [Fact]
@@ -262,7 +263,7 @@ public sealed class BrowserUiBridgeTests
     }
 
     [Fact]
-    public void RequestOpen_PrefersMainBrowserNewestListener()
+    public void RequestOpen_RejectsAmbiguousUiEvenWithGlobalMain()
     {
         var mainBrowser = new MainBrowserService();
         var bridge = new BrowserUiBridge(mainBrowser);
@@ -278,9 +279,9 @@ public sealed class BrowserUiBridgeTests
 
         var ok = bridge.RequestOpen(null, null, "https://example.com", true, out var error);
 
-        Assert.True(ok);
-        Assert.Equal("", error);
-        Assert.Equal("https://example.com", openedUrl);
+        Assert.False(ok);
+        Assert.Contains("--browser", error, StringComparison.Ordinal);
+        Assert.Null(openedUrl);
     }
 
     [Fact]
@@ -303,7 +304,7 @@ public sealed class BrowserUiBridgeTests
     }
 
     [Fact]
-    public void RequestOpen_WithoutPreviewOwner_ClaimsSelectedBrowser()
+    public void RequestOpen_WithoutPreviewOwner_RequiresExplicitSelection()
     {
         var mainBrowser = new MainBrowserService();
         var ownerService = new BrowserPreviewOwnerService();
@@ -318,9 +319,9 @@ public sealed class BrowserUiBridgeTests
 
         var ok = bridge.RequestOpen("session-a", "default", "https://example.com", true, out var error);
 
-        Assert.True(ok);
-        Assert.Equal("", error);
-        Assert.Equal("browser-a", ownerService.GetOwnerBrowserId("session-a", "default"));
+        Assert.False(ok);
+        Assert.Contains("--browser", error, StringComparison.Ordinal);
+        Assert.Null(ownerService.GetOwnerBrowserId("session-a", "default"));
     }
 
     [Fact]
@@ -352,7 +353,7 @@ public sealed class BrowserUiBridgeTests
         bridge.RegisterListener("l1", "browser-a:tab-1", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
         bridge.RegisterListener("l2", "browser-b:tab-2", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
 
-        var ok = bridge.RequestClaimMain("browser-b", out var claimedBrowserId, out var error);
+        var ok = bridge.RequestClaimMain("browser-b:tab-2", out var claimedBrowserId, out var error);
 
         Assert.True(ok);
         Assert.Equal("", error);
@@ -378,7 +379,7 @@ public sealed class BrowserUiBridgeTests
     }
 
     [Fact]
-    public void RequestOpen_WithOfflineOwner_ReclaimsConnectedMainBrowser()
+    public void RequestOpen_WithOfflineOwner_DoesNotReclaimMainBrowser()
     {
         var mainBrowser = new MainBrowserService();
         var ownerService = new BrowserPreviewOwnerService();
@@ -406,14 +407,14 @@ public sealed class BrowserUiBridgeTests
 
         var ok = bridge.RequestOpen("session-a", "default", "https://example.com", false, out var error);
 
-        Assert.True(ok);
-        Assert.Equal("", error);
-        Assert.Equal("https://example.com", openedUrl);
-        Assert.Equal("browser-main:tab-1", ownerService.GetOwnerBrowserId("session-a", "default"));
+        Assert.False(ok);
+        Assert.Contains("--browser", error, StringComparison.Ordinal);
+        Assert.Null(openedUrl);
+        Assert.Equal("stale-browser", ownerService.GetOwnerBrowserId("session-a", "default"));
     }
 
     [Fact]
-    public void RequestOpen_MatchesOwnerByStableClientPartDuringUpgrade()
+    public void RequestOpen_RequiresExactTabIdentity()
     {
         var mainBrowser = new MainBrowserService();
         var ownerService = new BrowserPreviewOwnerService();
@@ -431,9 +432,9 @@ public sealed class BrowserUiBridgeTests
 
         var ok = bridge.RequestOpen("session-a", "default", "https://example.com", false, out var error);
 
-        Assert.True(ok);
-        Assert.Equal("", error);
-        Assert.Equal("https://example.com", openedUrl);
+        Assert.False(ok);
+        Assert.Contains("exact tab", error, StringComparison.Ordinal);
+        Assert.Null(openedUrl);
     }
 
     [Fact]
@@ -450,7 +451,7 @@ public sealed class BrowserUiBridgeTests
         var ok = bridge.RequestOpen("session-a", "default", "https://example.com", false, out var error);
 
         Assert.False(ok);
-        Assert.Contains("leading browser", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("--browser", error, StringComparison.OrdinalIgnoreCase);
         Assert.Equal("stale-browser", ownerService.GetOwnerBrowserId("session-a", "default"));
     }
 }

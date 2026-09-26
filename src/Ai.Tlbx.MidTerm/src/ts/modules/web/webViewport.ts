@@ -20,6 +20,8 @@ function getFrameViewport(frame: HTMLIFrameElement): { width: number; height: nu
  */
 export function applyStoredViewportToFrame(frame: HTMLIFrameElement): void {
   const viewport = getFrameViewport(frame);
+  frame.style.setProperty('--preview-background-width', `${viewport?.width ?? 1280}px`);
+  frame.style.setProperty('--preview-background-height', `${viewport?.height ?? 720}px`);
   if (!viewport) {
     frame.style.width = '';
     frame.style.height = '';

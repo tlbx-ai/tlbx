@@ -89,21 +89,20 @@ public static class BrowserEndpoints
             var browserId = BrowserIdentity.Build(
                 ctx.Request.Cookies["mt-client-id"],
                 request.TabId ?? ctx.Request.Query["tabId"].FirstOrDefault());
+            previewOwnerService.ResolveOwnerBrowserId(preview.SessionId, preview.PreviewName);
             var created = previewRegistry.Create(
                 preview.SessionId,
                 preview.PreviewName,
                 preview.RouteKey,
-                browserId);
-            previewOwnerService.ClaimIfMissing(
-                preview.SessionId,
-                preview.PreviewName,
-                browserId);
+                browserId,
+                previewOwnerService.GetGeneration(preview.SessionId, preview.PreviewName));
             var response = new BrowserPreviewClientResponse
             {
                 SessionId = created.SessionId,
                 PreviewName = created.PreviewName,
                 RouteKey = created.RouteKey,
                 PreviewId = created.PreviewId,
+                OwnershipGeneration = created.OwnershipGeneration,
                 PreviewToken = created.PreviewToken,
                 Origin = previewOriginService.GetOrigin(ctx.Request)
             };
@@ -119,6 +118,8 @@ public static class BrowserEndpoints
         BrowserPreviewRegistry previewRegistry,
         BrowserPreviewOwnerService previewOwnerService)
     {
+        app.MapGet("/api/browser/ui-clients", () => Results.Json(uiBridge.GetConnectedBrowserIds(), AppJsonContext.Default.StringArray));
+
         app.MapPost("/api/browser/agent-wheel", async (
             Models.Browser.AgentHistoryWheelRequest request,
             HttpContext ctx) =>
@@ -219,7 +220,7 @@ public static class BrowserEndpoints
             var sessionId = NormalizeOptional(request.SessionId);
             var previewName = NormalizeOptional(request.PreviewName);
             var url = request.Url ?? "";
-            var activateSession = request.ActivateSession ?? true;
+            var activateSession = request.ActivateSession ?? false;
             if (string.IsNullOrWhiteSpace(sessionId))
             {
                 return Results.BadRequest("sessionId required");
@@ -237,6 +238,8 @@ public static class BrowserEndpoints
                     }
 
                     var targetRevision = webPreviewService.GetPreviewSession(sessionId, previewName)?.TargetRevision;
+                    previewOwnerService.ResolveOwnerBrowserId(sessionId, previewName);
+
                     var openResult = await uiBridge.RequestOpenWhenAvailableAsync(
                         sessionId,
                         previewName,
@@ -249,6 +252,7 @@ public static class BrowserEndpoints
                         return Results.Text(openResult.Error + "\n", statusCode: 409);
                     }
 
+                    var generation = openResult.OwnershipGeneration;
                     var status = await commandService.WaitForControllableAsync(
                         url,
                         sessionId,
@@ -256,17 +260,32 @@ public static class BrowserEndpoints
                         requireClientConnectedAfterUtc: commandStartedAt,
                         requireVisibleClient: activateSession,
                         connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
-                        cancellationToken: cancellationToken);
+                        cancellationToken: cancellationToken,
+                        requiredTargetRevision: targetRevision);
                     var statusText = commandService.GetStatusText(
                         url,
                         sessionId,
                         previewName,
                         connectedUiClientCount: uiBridge.ConnectedBrowserCount);
                     var ready = status.Controllable
+                        && previewOwnerService.GetGeneration(sessionId, previewName) == generation
                         && (!activateSession || status.DefaultClient?.IsVisible == true);
+                    if (ready)
+                    {
+                        // An ACK only means the UI handled the instruction. Verify the actual bridge.
+                        var probe = await commandService.ExecuteCommandAsync(new BrowserCommandRequest
+                        {
+                            Command = "url", SessionId = sessionId, PreviewName = previewName,
+                            PreviewId = status.DefaultClient?.PreviewId, Timeout = 5
+                        }, cancellationToken);
+                        if (!probe.Success) return Results.Text(probe.Error + "\n", statusCode: 409);
+                        if (previewOwnerService.GetGeneration(sessionId, previewName) != generation
+                            || webPreviewService.GetPreviewSession(sessionId, previewName)?.TargetRevision != targetRevision)
+                            return Results.Text("The preview target changed before open completed. Retry mt_open.\n", statusCode: 409);
+                    }
                     return ready
                         ? Results.Text(statusText)
-                        : Results.Text(statusText, statusCode: 409);
+                        : Results.Text("Open failed: " + (status.StatusMessage ?? "Preview ownership or visibility changed before readiness.") + "\n" + statusText, statusCode: 409);
                 },
                 cancellationToken);
         });
@@ -389,7 +408,7 @@ public static class BrowserEndpoints
                     return Results.Text("sessionId required\n", statusCode: 400);
                 }
 
-                return uiBridge.RequestClaim(sessionId, previewName, out var error)
+                return uiBridge.RequestClaim(sessionId, previewName, out var error, GetFlagValue(args, "--browser"))
                     ? Results.Text($"claimed preview '{previewName ?? WebPreviewService.DefaultPreviewName}' in session '{sessionId}'\n")
                     : Results.Text(error + "\n", statusCode: 409);
             }
@@ -535,7 +554,7 @@ public static class BrowserEndpoints
             return uiBridge.RequestClaim(
                 NormalizeOptional(request.SessionId),
                 NormalizeOptional(request.PreviewName),
-                out var error)
+                out var error, request.BrowserId)
                 ? Results.Ok()
                 : Results.Text(error + "\n", statusCode: 409);
         });

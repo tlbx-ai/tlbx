@@ -413,7 +413,7 @@ public static class TlbxCliScriptWriter
         mt_cookies()    { _MREQUIRECTX "mt_cookies" || return $?; _MC "$_MT/api/webpreview/cookies$(_MQ)"; }
         mt_previews()   { _MREQUIRECTX "mt_previews" || return $?; _MC "$_MT/api/webpreview/previews?sessionId=$(_MURLENC "$(_MSID)")"; }
         # mt_claim_preview  — explicitly assign this named preview to the connected tlbx browser
-        mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim; }
+        mt_claim_preview() { _MREQUIRECTX "mt_claim_preview" || return $?; _MBB claim "$@"; }
         # mt_claim_main_browser [browser-id]  — make the selected preview/browser the leading browser for terminal sizing
         mt_claim_main_browser() {
           _MREQUIRECTX "mt_claim_main_browser" || return $?
@@ -1627,7 +1627,7 @@ public static class TlbxCliScriptWriter
         function Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
         function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClaimPreview  — explicitly assign this named preview to the connected tlbx browser
-        function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim }
+        function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim @args }
         # Mt-ClaimMainBrowser [-BrowserId ID]  — make the selected preview/browser the leading browser for terminal sizing
         function Mt-ClaimMainBrowser {
             param([string]$BrowserId)

@@ -4117,6 +4117,8 @@ export interface components {
       previewName: null | string;
       previewId: null | string;
       browserId: null | string;
+      /** Format: int64 */
+      targetRevision: null | number;
       /** Format: date-time */
       connectedAtUtc: string;
       isMainBrowser: boolean;
@@ -4159,6 +4161,8 @@ export interface components {
       sessionId: null | string;
       previewName: string;
       routeKey: string;
+      /** Format: int64 */
+      ownershipGeneration: number;
       previewId: string;
       previewToken: string;
       origin: null | string;
@@ -4183,6 +4187,8 @@ export interface components {
       targetUrl: null | string;
       ownerBrowserId: null | string;
       ownerConnected: boolean;
+      /** Format: int64 */
+      ownershipGeneration: number;
       defaultClient: null | components['schemas']['BrowserClientInfo'];
       clients: components['schemas']['BrowserClientInfo'][];
     };
@@ -5100,6 +5106,7 @@ export interface components {
     };
     WebPreviewSessionRequest: {
       sessionId: string;
+      browserId?: null | string;
       previewName?: null | string;
     };
     WebPreviewSnapshotRequest: {

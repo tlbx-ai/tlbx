@@ -15,7 +15,8 @@ public sealed class BrowserPreviewRegistry
         string? sessionId,
         string? previewName,
         string? routeKey,
-        string? browserId = null)
+        string? browserId = null,
+        long ownershipGeneration = 0)
     {
         CleanupExpired();
 
@@ -27,6 +28,7 @@ public sealed class BrowserPreviewRegistry
             PreviewId = Guid.NewGuid().ToString("N"),
             PreviewToken = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24)),
             BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
+            OwnershipGeneration = ownershipGeneration,
             ExpiresAtUtc = DateTimeOffset.UtcNow.Add(PreviewLifetime)
         };
 
@@ -38,6 +40,7 @@ public sealed class BrowserPreviewRegistry
             PreviewName = preview.PreviewName,
             RouteKey = preview.RouteKey,
             PreviewId = preview.PreviewId,
+            OwnershipGeneration = preview.OwnershipGeneration,
             PreviewToken = preview.PreviewToken
         };
     }
@@ -66,6 +69,7 @@ public sealed class BrowserPreviewRegistry
             PreviewName = registered.PreviewName,
             RouteKey = registered.RouteKey,
             PreviewId = registered.PreviewId,
+            OwnershipGeneration = registered.OwnershipGeneration,
             PreviewToken = registered.PreviewToken,
             BrowserId = registered.BrowserId
         };
@@ -118,6 +122,7 @@ public sealed class BrowserPreviewRegistry
         public string? SessionId { get; init; }
         public string PreviewName { get; init; } = WebPreview.WebPreviewService.DefaultPreviewName;
         public string RouteKey { get; init; } = "";
+        public long OwnershipGeneration { get; init; }
         public string PreviewId { get; init; } = "";
         public string PreviewToken { get; init; } = "";
         public string? BrowserId { get; init; }
