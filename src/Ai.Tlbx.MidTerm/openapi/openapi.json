@@ -4020,7 +4020,8 @@
       "BrowserCommandRequest": {
         "required": [
           "command",
-          "textOnly"
+          "textOnly",
+          "fullPage"
         ],
         "type": "object",
         "properties": {
@@ -4094,6 +4095,9 @@
               "integer"
             ],
             "format": "int32"
+          },
+          "fullPage": {
+            "type": "boolean"
           }
         }
       },

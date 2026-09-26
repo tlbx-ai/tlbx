@@ -298,6 +298,7 @@ public static class TlbxDirectory
         - Start with `mt_outline` (10x smaller than `mt_query`)
         - Use `mt_query SELECTOR --text` for text-only output
         - Batch JS reads: `mt_exec "({a: expr1, b: expr2})"`. Objects and arrays return JSON; promises are awaited and rejected promises report errors.
+        - Batch actions: PowerShell `mt_batch @(@{command='fill';selector='#name';value='test'},@{command='query';selector='#name'})`; bash `mt_batch '[{"command":"query","selector":"h1"},{"command":"screenshot"}]'`. Results include per-step duration and `failedIndex`. Never replay a failed batch blindly. For a click/submit that loads a new document, set `waitForNavigation=true`; use a following `wait` for SPA state changes.
         - Use DOM reads for exact text/state. Docked screenshots reconstruct the page and may differ for CSS masks, popovers, or other complex graphics; compare the actual browser before judging a visual defect.
         - After actions, verify with `mt_wait` or `mt_query`, not `mt_outline`
         - Check `mt_log error` after unexpected behavior
@@ -317,11 +318,12 @@ public static class TlbxDirectory
         | `mt_scroll [sel] [deltaY\|top\|bottom] [deltaX]` | Scroll page or a scrollable container |
         | `mt_wheel [sel] [up\|down\|deltaY] [steps]` | Send mouse-wheel-style input and return measured scroll position/progress |
         | `mt_exec <js>` | Execute JS in page context |
-        | `mt_wait <sel> [timeout]` | Wait for element (default 5s) |
+        | `mt_wait <sel> [timeout]` | Wait for element (default 15s; returns immediately when found) |
         | `mt_log [error\|warn\|all]` | Console log buffer |
         | `mt_links` | All links on page |
         | `mt_forms [sel]` | Form structure and values |
-        | `mt_screenshot` | Save screenshot to .tlbx/screenshots/ |
+        | `mt_screenshot [-FullPage / --full-page]` | Save a viewport screenshot; full-page capture is explicit and slower |
+        | `mt_batch <commands>` | Run 1–32 ordered browser commands in one HTTP request; stops on first error and returns partial results |
         | `mt_snapshot` | Save DOM snapshot to .tlbx/snapshot_*/ |
         | `mt_session` | Print the current tlbx terminal session id |
         | `mt_context [format]` | Print reusable session-context exports (`text`, `bash`, `pwsh`, or `json`) |

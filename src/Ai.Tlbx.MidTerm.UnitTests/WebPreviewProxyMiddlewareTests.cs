@@ -314,14 +314,14 @@ public class WebPreviewProxyMiddlewareTests
         var script = Assert.IsType<string>(field?.GetRawConstantValue());
 
         Assert.Contains("function normalizeCssColorFunctions", script, StringComparison.Ordinal);
-        Assert.Contains("function normalizeCloneCaptureColors", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("function normalizeCloneCaptureColors", script, StringComparison.Ordinal);
         Assert.Contains("function createNormalizedStyleReader", script, StringComparison.Ordinal);
         Assert.Contains("function installComputedStyleColorNormalization", script, StringComparison.Ordinal);
         Assert.Contains("value.indexOf(\"color(\")<0", script, StringComparison.Ordinal);
         Assert.Contains("installComputedStyleColorNormalization(window)", script, StringComparison.Ordinal);
         Assert.Contains("installComputedStyleColorNormalization(doc.defaultView||window)", script, StringComparison.Ordinal);
         Assert.Contains("onclone:function(doc)", script, StringComparison.Ordinal);
-        Assert.Contains("normalizeCloneCaptureColors(doc.documentElement,(doc.defaultView||window))", script, StringComparison.Ordinal);
+        Assert.Contains("width:fullPage?undefined:window.innerWidth", script, StringComparison.Ordinal);
     }
 
     [Fact]

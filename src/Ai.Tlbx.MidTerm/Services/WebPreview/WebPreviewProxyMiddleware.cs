@@ -594,29 +594,6 @@ public sealed partial class WebPreviewProxyMiddleware
               return "rgba("+rr+", "+gg+", "+bb+", "+alphaText+")";
             });
           }
-          function normalizeCloneCaptureColors(root,view){
-            if(!root||!view||!view.getComputedStyle)return;
-            var nodes=[root];
-            if(root.querySelectorAll){
-              var all=root.querySelectorAll("*");
-              for(var i=0;i<all.length;i++)nodes.push(all[i]);
-            }
-            for(var n=0;n<nodes.length;n++){
-              var node=nodes[n];
-              if(!node||!node.style)continue;
-              var styles;
-              try{styles=view.getComputedStyle(node);}catch(e){continue;}
-              if(!styles)continue;
-              for(var i=0;i<styles.length;i++){
-                var prop=styles[i],value=styles.getPropertyValue(prop);
-                if(typeof value!=="string"||value.indexOf("color(")<0)continue;
-                var normalized=normalizeCssColorFunctions(value);
-                if(normalized!==value){
-                  try{node.style.setProperty(prop,normalized);}catch(e){}
-                }
-              }
-            }
-          }
           function createNormalizedStyleReader(styles,captureProperties){
             if(!styles||typeof styles!=="object")return styles;
             if(typeof Proxy!=="function")return styles;
@@ -898,15 +875,29 @@ public sealed partial class WebPreviewProxyMiddleware
                   })();return;}
                 case"screenshot":{
                   var restoreComputedStyles=installComputedStyleColorNormalization(window);
+                  var fullPage=msg.fullPage===true;
+                  var captureX=window.scrollX,captureY=window.scrollY;
                   ensureH2c().then(function(){
                     return window.html2canvas(document.documentElement,{
                       useCORS:true,
                       logging:false,
                       scale:1,
+                      x:fullPage?0:captureX,
+                      y:fullPage?0:captureY,
+                      width:fullPage?undefined:window.innerWidth,
+                      height:fullPage?undefined:window.innerHeight,
+                      imageTimeout:1500,
+                      ignoreElements:function(el){
+                        if(fullPage||!el.getBoundingClientRect)return false;
+                        // Prune only below the viewport: removing earlier flow content
+                        // would shift the visible layout in the clone.
+                        if(/^(HTML|HEAD|BODY|STYLE|LINK|SCRIPT)$/.test(el.tagName))return false;
+                        var rect=el.getBoundingClientRect();
+                        return rect.top>=window.innerHeight&&rect.height>0;
+                      },
                       onclone:function(doc){
                         try{
                           installComputedStyleColorNormalization(doc.defaultView||window);
-                          normalizeCloneCaptureColors(doc.documentElement,(doc.defaultView||window));
                         }catch(e){}
                       }
                     });
@@ -1066,6 +1057,16 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result=parts.join("\n---\n");
                   break;}
                 case"url":{
+                  res.result=curU();
+                  break;}
+                case"ready":{
+                  if(document.readyState==="loading"){
+                    document.addEventListener("DOMContentLoaded",function(){
+                      res.result=curU();
+                      if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
+                    },{once:true});
+                    return;
+                  }
                   res.result=curU();
                   break;}
                 case"clearcookies":{

@@ -356,6 +356,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 
 // --- Browser ---
 [JsonSerializable(typeof(BrowserCommandRequest))]
+[JsonSerializable(typeof(BrowserBatchRequest))]
+[JsonSerializable(typeof(BrowserBatchResponse))]
 [JsonSerializable(typeof(BrowserCommandResponse))]
 [JsonSerializable(typeof(BrowserCapabilitiesResponse))]
 [JsonSerializable(typeof(BrowserStatusResponse))]

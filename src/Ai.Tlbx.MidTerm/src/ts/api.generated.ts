@@ -4144,6 +4144,7 @@ export interface components {
       deltaY?: null | number;
       /** Format: int32 */
       steps?: null | number;
+      fullPage: boolean;
     };
     BrowserCommandResponse: {
       success: boolean;
