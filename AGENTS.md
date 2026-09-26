@@ -56,7 +56,7 @@ Rules:
 
 ## Terminal Size Ownership
 
-- Session-scoped browser automation follows the exact terminal size-owner tab. Global main-browser selection and stale preview claims must not route automation to a passive tab; an offline size owner requires reconnect or an explicit size takeover.
+- Browser execution ownership is sticky per session and named preview, using an exact browser tab identity independently of terminal size. Initialize from a connected size-owner tab or the sole connected UI; otherwise require explicit selection. An established offline preview owner never moves automatically. Commands, UI dispatch and status share that owner. Use `mt_claim_preview --browser <browserId>` (candidates: `/api/browser/ui-clients`) for explicit handoff; global main-browser selection and newest-connection heuristics must not route scoped commands.
 
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
 - For owned sessions, only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Headless REST/tmux resize is permitted only while the session is unowned. Followers render the canonical PTY size and CSS-scale locally.

@@ -18,6 +18,7 @@ public sealed class BrowserStatusResponse
     public string? TargetUrl { get; init; }
     public string? OwnerBrowserId { get; init; }
     public bool OwnerConnected { get; init; }
+    public long OwnershipGeneration { get; init; }
     public BrowserClientInfo? DefaultClient { get; init; }
     public BrowserClientInfo[] Clients { get; init; } = [];
 }
@@ -28,6 +29,7 @@ public sealed class BrowserClientInfo
     public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }
     public string? BrowserId { get; init; }
+    public long? TargetRevision { get; init; }
     public DateTimeOffset ConnectedAtUtc { get; init; }
     public bool IsMainBrowser { get; init; }
     public bool IsVisible { get; init; }

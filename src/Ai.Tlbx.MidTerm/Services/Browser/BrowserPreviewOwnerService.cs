@@ -11,11 +11,58 @@ public sealed class BrowserPreviewOwnerService
         _sizeControl = sizeControl;
     }
 
-    public string? GetSizeOwnerBrowserId(string? sessionId) =>
+    private string? GetSizeOwnerBrowserId(string? sessionId) =>
         string.IsNullOrWhiteSpace(sessionId) ? null : _sizeControl?.GetOwnerBrowserId(sessionId);
 
     private readonly Lock _lock = new();
     private readonly Dictionary<PreviewKey, string> _owners = new();
+    private readonly Dictionary<PreviewKey, long> _generations = new();
+    private long _generation;
+
+    public long GetGeneration(string? sessionId, string? previewName)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return 0;
+        lock (_lock) return _generations.GetValueOrDefault(PreviewKey.Create(sessionId, previewName));
+    }
+
+    public bool IsCurrent(string? sessionId, string? previewName, string? browserId, long generation)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId)) return true;
+        lock (_lock)
+        {
+            var key = PreviewKey.Create(sessionId, previewName);
+            return _generations.GetValueOrDefault(key) == generation
+                && string.Equals(_owners.GetValueOrDefault(key), browserId, StringComparison.Ordinal);
+        }
+    }
+    private readonly Dictionary<string, string> _uiConnections = new(StringComparer.Ordinal);
+
+    public void RegisterUi(string connectionId, string browserId)
+    {
+        lock (_lock) _uiConnections[connectionId] = browserId;
+    }
+
+    public void UnregisterUi(string connectionId)
+    {
+        lock (_lock) _uiConnections.Remove(connectionId);
+    }
+
+    public string[] GetConnectedBrowserIds()
+    {
+        lock (_lock) return _uiConnections.Values.Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+    }
+
+    public bool IsConnected(string? browserId) => browserId is not null
+        && GetConnectedBrowserIds().Contains(browserId, StringComparer.Ordinal);
+
+    public string? ResolveOwnerBrowserId(string? sessionId, string? previewName) =>
+        ResolveOwnerBrowserId(sessionId, previewName, GetConnectedBrowserIds());
+
+    public static string UnavailableMessage(string? sessionId, string? previewName, string? owner) =>
+        owner is null
+            ? "Multiple tlbx browser UIs are connected. List /api/browser/ui-clients and explicitly select a tab with mt_claim_preview --browser <browserId>."
+            : $"Preview '{previewName ?? "default"}' in session '{sessionId}' is owned by browser '{owner}', but that exact tab is not connected. Reconnect it or explicitly hand off with mt_claim_preview --browser <browserId> (list /api/browser/ui-clients).";
 
     public string? GetOwnerBrowserId(string? sessionId, string? previewName)
     {
@@ -23,9 +70,6 @@ public sealed class BrowserPreviewOwnerService
         {
             return null;
         }
-
-        var sizeOwner = GetSizeOwnerBrowserId(sessionId);
-        if (sizeOwner is not null) return sizeOwner;
 
         var key = PreviewKey.Create(sessionId, previewName);
         lock (_lock)
@@ -44,9 +88,6 @@ public sealed class BrowserPreviewOwnerService
             return null;
         }
 
-        var sizeOwner = GetSizeOwnerBrowserId(sessionId);
-        if (sizeOwner is not null) return sizeOwner;
-
         var key = PreviewKey.Create(sessionId, previewName);
         var distinctCandidates = connectedBrowserIds
             .Where(id => !string.IsNullOrWhiteSpace(id))
@@ -58,41 +99,26 @@ public sealed class BrowserPreviewOwnerService
         {
             if (_owners.TryGetValue(key, out var currentOwner))
             {
-                if (distinctCandidates.Any(candidate => BrowserIdentity.AreSameBrowser(candidate, currentOwner)))
-                {
-                    return currentOwner;
-                }
-
-                if (distinctCandidates.Length == 1)
-                {
-                    _owners[key] = distinctCandidates[0];
-                    return distinctCandidates[0];
-                }
-
                 return currentOwner;
+            }
+
+            // Size ownership is only an initialization hint for a connected exact tab.
+            var sizeOwner = GetSizeOwnerBrowserId(sessionId);
+            if (sizeOwner is not null && distinctCandidates.Contains(sizeOwner, StringComparer.Ordinal))
+            {
+                _owners[key] = sizeOwner;
+                _generations[key] = ++_generation;
+                return sizeOwner;
             }
 
             if (distinctCandidates.Length == 1)
             {
                 _owners[key] = distinctCandidates[0];
+                _generations[key] = ++_generation;
                 return distinctCandidates[0];
             }
 
             return null;
-        }
-    }
-
-    public void ClaimIfMissing(string? sessionId, string? previewName, string? browserId)
-    {
-        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(browserId))
-        {
-            return;
-        }
-
-        var key = PreviewKey.Create(sessionId, previewName);
-        lock (_lock)
-        {
-            _owners.TryAdd(key, browserId);
         }
     }
 
@@ -107,18 +133,8 @@ public sealed class BrowserPreviewOwnerService
         lock (_lock)
         {
             _owners[key] = browserId;
+            _generations[key] = ++_generation;
         }
-    }
-
-    public bool TryClaim(string? sessionId, string? previewName, string? browserId)
-    {
-        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(browserId))
-        {
-            return false;
-        }
-
-        Claim(sessionId, previewName, browserId);
-        return true;
     }
 
     public bool Release(string? sessionId, string? previewName)
@@ -130,7 +146,9 @@ public sealed class BrowserPreviewOwnerService
 
         lock (_lock)
         {
-            return _owners.Remove(PreviewKey.Create(sessionId, previewName));
+            var key = PreviewKey.Create(sessionId, previewName);
+            _generations.Remove(key);
+            return _owners.Remove(key);
         }
     }
 
@@ -144,6 +162,7 @@ public sealed class BrowserPreviewOwnerService
             foreach (var key in keys)
             {
                 _owners.Remove(key);
+                _generations.Remove(key);
             }
 
             return keys.Length;
@@ -158,7 +177,7 @@ public sealed class BrowserPreviewOwnerService
                 sessionId,
                 string.IsNullOrWhiteSpace(previewName)
                     ? WebPreview.WebPreviewService.DefaultPreviewName
-                    : previewName);
+                    : WebPreview.WebPreviewService.NormalizePreviewName(previewName));
         }
     }
 }

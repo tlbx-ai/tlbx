@@ -97,6 +97,10 @@ public sealed partial class WebPreviewProxyMiddleware
           if(!mtCtx){
             mtCtx=mtReadBootstrapContext();
           }
+          if(mtCtx){
+            var revisionParam=new URLSearchParams(location.search).get("__mtTargetRevision");
+            if(revisionParam!==null)mtCtx.targetRevision=Number(revisionParam);
+          }
           mtPersistPreviewContext();
           mtStripBootstrapQuery();
           function mtMsg(type,extra){
@@ -105,6 +109,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var msg=extra||{};
             msg.type=type;
             if(mtCtx.sessionId)msg.sessionId=mtCtx.sessionId;
+            if(mtCtx.targetRevision!==undefined)msg.targetRevision=mtCtx.targetRevision;
             if(mtCtx.previewId)msg.previewId=mtCtx.previewId;
             if(mtCtx.previewToken)msg.previewToken=mtCtx.previewToken;
             return msg;
@@ -838,7 +843,7 @@ public sealed partial class WebPreviewProxyMiddleware
                         if(!accepted){cancelled++;}
                         else if(typeof el.scrollBy==="function")el.scrollBy({top:dy,left:dx,behavior:"instant"});
                         else{el.scrollTop+=dy;el.scrollLeft+=dx;}
-                        await new Promise(function(resolve){requestAnimationFrame(function(){requestAnimationFrame(resolve);});});
+                        await new Promise(function(resolve){setTimeout(resolve,16);});
                         samples.push(metrics());
                       }
                       res.result=JSON.stringify({
@@ -1119,10 +1124,12 @@ public sealed partial class WebPreviewProxyMiddleware
             var nextKey=curBwsStateKey();
             if(!force&&nextKey===bwsStateKey)return;
             bwsStateKey=nextKey;
-            if(bws&&(bws.readyState===0||bws.readyState===1)){
-              try{bws.close();}catch(e){}
+            if(bws&&bws.readyState===1){
+              var state=curBwsState();state.type="browser-state";
+              bws.send(JSON.stringify(state));
               return;
             }
+            if(bws&&bws.readyState===0)return;
             schedBwsReconnect(50);
           }
           window.addEventListener("message",function(e){
@@ -1148,12 +1155,13 @@ public sealed partial class WebPreviewProxyMiddleware
               }
               if(mtCtx&&mtCtx.previewId&&mtCtx.previewToken){
                 wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"previewId="+encodeURIComponent(mtCtx.previewId)+"&token="+encodeURIComponent(mtCtx.previewToken);
+                if(mtCtx.targetRevision!==undefined)wsUrl+="&targetRevision="+encodeURIComponent(mtCtx.targetRevision);
                 if(mtCtx.sessionId)wsUrl+="&sessionId="+encodeURIComponent(mtCtx.sessionId);
               }
               wsUrl=withBwsState(wsUrl);
               var stateKey=curBwsStateKey();
               bws=new OWS(wsUrl);
-              bws.onopen=function(){bwsReady=true;bwsStateKey=stateKey;};
+              bws.onopen=function(){bwsReady=true;bwsStateKey=stateKey;refreshBwsState(true);};
               bws.onmessage=function(e){try{handleBCmd(JSON.parse(e.data));}catch(ex){}};
               bws.onclose=function(){bwsReady=false;bws=null;schedBwsReconnect(3000);};
               bws.onerror=function(){};
@@ -1683,9 +1691,9 @@ public sealed partial class WebPreviewProxyMiddleware
         }
     }
 
-    private async Task ProxyHtmlResponseAsync(HttpContext context, string routeKey, Uri targetUri, HttpResponseMessage upstreamResponse, string? finalUrl)
+    private async Task ProxyHtmlResponseAsync(HttpContext context, string routeKey, Uri targetUri, HttpResponseMessage upstreamResponse, string? finalUrl, string? documentHtml = null)
     {
-        var html = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+        var html = documentHtml ?? await DecompressTextAsync(upstreamResponse, context.RequestAborted);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
         // Capture this before URL rewriting removes or changes the upstream base tag.
@@ -2401,6 +2409,19 @@ public sealed partial class WebPreviewProxyMiddleware
 
             await ProxyHtmlResponseAsync(context, routeKey, targetUri, upstreamResponse, finalUrl);
         }
+        else if (ShouldRenderTextDocument(context.Request, upstreamResponse))
+        {
+            var targetUri = _service.GetTargetUriByRouteKey(routeKey);
+            if (targetUri is null)
+            {
+                context.Response.StatusCode = StatusCodes.Status502BadGateway;
+                return;
+            }
+
+            var text = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+            await ProxyHtmlResponseAsync(context, routeKey, targetUri, upstreamResponse, finalUrl,
+                RenderTextDocument(text));
+        }
         else if (contentType is "text/css")
         {
             await ProxyCssResponseAsync(context, routeKey, upstreamResponse);
@@ -2415,6 +2436,31 @@ public sealed partial class WebPreviewProxyMiddleware
             await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
     }
+
+    internal static bool ShouldRenderTextDocument(HttpRequest request, HttpResponseMessage response)
+    {
+        // Only browser document navigations get a readable, controllable viewer.
+        // API calls, script loads and downloads retain their original bytes/type.
+        if (!string.Equals(request.Headers["Sec-Fetch-Mode"], "navigate", StringComparison.OrdinalIgnoreCase))
+            return false;
+        var destination = request.Headers["Sec-Fetch-Dest"].ToString();
+        if (destination is not ("document" or "iframe" or "frame"))
+            return false;
+        if (string.Equals(response.Content.Headers.ContentDisposition?.DispositionType, "attachment", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        return string.Equals(mediaType, "text/plain", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "text/json", StringComparison.OrdinalIgnoreCase)
+            || (mediaType?.StartsWith("application/", StringComparison.OrdinalIgnoreCase) == true
+                && mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
+    }
+
+    internal static string RenderTextDocument(string text) =>
+        "<!doctype html><html><head><meta charset=\"utf-8\"><title>Response</title>"
+        + "<style>body{margin:16px}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>"
+        + "</head><body><pre>" + WebUtility.HtmlEncode(text) + "</pre></body></html>";
 
     private async Task ProxyFileAsync(HttpContext context, string routeKey, Uri targetUri, string path)
     {

@@ -37,5 +37,13 @@ export function shouldRemountPreviewFrame(
     return true;
   }
 
-  return (frame.name || '') !== previewClientIdentity;
+  try {
+    const actual = JSON.parse(frame.name || '{}') as Record<string, unknown>;
+    const expected = JSON.parse(previewClientIdentity) as Record<string, unknown>;
+    return ['previewId', 'previewToken', 'routeKey', 'sessionId', 'previewName'].some(
+      (key) => actual[key] !== expected[key],
+    );
+  } catch {
+    return true;
+  }
 }

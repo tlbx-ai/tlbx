@@ -237,17 +237,12 @@ export function hideWebPreviewDockForDetach(): void {
   handleDockLayoutChange();
 }
 
-/** Fully hide the web preview: close dock, unload iframe, clear target, and clean up detach state. */
+/** Hide the dock during session selection without clearing an established preview target. */
 export function applyWebPreviewHiddenState(): void {
   const previousWidth = getWebPreviewDockWidth();
-  const activeId = $activeSessionId.get();
-  const activePreviewName = getActivePreviewName();
   $webPreviewDocked.set(false);
   setActionButtonActive('web', false);
   hideIframe();
-  if (activeId) {
-    void clearWebPreviewTarget(activeId, activePreviewName);
-  }
 
   const dockPanel = document.getElementById('web-preview-dock');
   if (dockPanel) {

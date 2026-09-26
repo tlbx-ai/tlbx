@@ -19,7 +19,7 @@ import {
   setSessionDockedClient,
   setSessionMode,
   setSessionSelectedPreviewName,
-  setSessionUrl,
+  setSessionNavigationUrl,
 } from './webSessionState';
 import { createBrowserPreviewClient } from './webApi';
 import { isDevMode } from '../sidebar/voiceSection';
@@ -75,7 +75,7 @@ function handleMessage(
   const targetPreviewName = previewName ?? 'default';
 
   if (type === 'navigation' && sessionId && typeof url === 'string') {
-    setSessionUrl(sessionId, targetPreviewName, url);
+    setSessionNavigationUrl(sessionId, targetPreviewName, url);
     if (sessionId === $activeSessionId.get() && targetPreviewName === getActivePreviewName()) {
       $webPreviewUrl.set(url);
     }
@@ -249,7 +249,16 @@ export async function detachPreview(
   popups.set(key, popup);
 
   const ch = new BroadcastChannel(channelName(targetSessionId, targetPreviewName));
-  ch.onmessage = handleMessage;
+  ch.onmessage = (
+    event: MessageEvent<{ type: string; sessionId?: string; previewName?: string; url?: string }>,
+  ) => {
+    if (
+      event.data.sessionId !== targetSessionId ||
+      (event.data.previewName ?? 'default') !== targetPreviewName
+    )
+      return;
+    handleMessage(event);
+  };
   channels.set(key, ch);
 
   setSessionMode(targetSessionId, targetPreviewName, 'detached');

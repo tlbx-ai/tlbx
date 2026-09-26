@@ -1,4 +1,5 @@
 using System.Net.WebSockets;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -75,7 +76,9 @@ public sealed class BrowserWebSocketHandler
                 browserId,
                 isVisible,
                 hasFocus,
-                isTopLevel))
+                isTopLevel,
+                long.TryParse(context.Request.Query["targetRevision"].FirstOrDefault(), CultureInfo.InvariantCulture, out var revision) ? revision : null,
+                previewClient?.OwnershipGeneration))
         {
             BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
             await ws.CloseAsync(
@@ -147,7 +150,10 @@ public sealed class BrowserWebSocketHandler
                                 var wsResult = JsonSerializer.Deserialize(json, AppJsonContext.Default.BrowserWsResult);
                                 if (wsResult is not null)
                                 {
-                                    _commandService.ReceiveResult(wsResult);
+                                    if (wsResult.Type == "browser-state")
+                                        _commandService.UpdateClientState(connectionId, wsResult);
+                                    else
+                                        _commandService.ReceiveResult(wsResult, connectionId);
                                 }
                             }
                             catch (JsonException ex)

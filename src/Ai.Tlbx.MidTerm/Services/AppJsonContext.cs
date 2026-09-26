@@ -27,6 +27,7 @@ using Ai.Tlbx.MidTerm.Services.Security;
 namespace Ai.Tlbx.MidTerm.Services;
 
 // --- Agent control plane ---
+[JsonSerializable(typeof(string[]))]
 [JsonSerializable(typeof(ControlPlaneWorkItem))]
 [JsonSerializable(typeof(ControlPlaneWorkItemListResponse))]
 [JsonSerializable(typeof(CreateControlPlaneWorkItemRequest))]

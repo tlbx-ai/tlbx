@@ -280,7 +280,10 @@ public static class TlbxDirectory
 
         ## Browser Control
 
-        Requires the web preview panel to be open in tlbx.
+        Requires a connected tlbx UI tab. `mt_open <url>` creates a background preview without switching the active terminal; the preview dock need not be visible.
+        Execution ownership is per terminal and named preview, independent of terminal sizing after initialization. A connected size-owner tab or the sole connected UI initializes ownership. Established owners remain sticky, even offline.
+        If ownership is ambiguous or the owner is offline, list exact connected tab IDs with `GET /api/browser/ui-clients`, then run `mt_claim_preview --browser <browserId>` and `mt_open <url>` to hand off explicitly.
+        Handoffs advance the ownership generation; stale in-flight replies fail. A command whose response was lost may have executed: inspect state before retrying an action.
         tlbx injects `MT_SESSION_ID` automatically for this terminal session.
         Browser helpers default to the current `MT_SESSION_ID` plus `MT_PREVIEW_NAME` (`default` unless changed).
         When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` print reusable export commands for child shells.
@@ -326,7 +329,7 @@ public static class TlbxDirectory
         | `mt_topic <text>` | Set the current ad-hoc session topic shown in the sidebar (`mt_topic --clear` clears it) |
         | `mt_preview [name]` | Print or switch the current named preview (`default`, `user1`, `user2`, ...) |
         | `mt_previews` | List named previews for the current terminal session |
-        | `mt_claim_preview` | Explicitly assign the current named preview to the connected tlbx browser |
+        | `mt_claim_preview [--browser <browserId>]` | Explicitly hand off this preview to an exact connected UI tab; the ID may be omitted only with one UI |
         | `mt_claim_main_browser [browserId]` | Make the selected browser the leading browser for terminal sizing |
         | `mt_navigate <url>` | Set the current named web preview target |
         | `mt_url` | Upstream page URL (not proxy URL) |
@@ -591,7 +594,7 @@ public static class TlbxDirectory
         - If mt_status still shows `state: waiting` after mt_open, treat that as a tlbx browser-attachment bug and inspect mt_proxylog plus mt_log error
         - If mt_status shows `ui clients: 0`, the owning tlbx browser tab is gone; reopen the outer tlbx UI before debugging the preview target itself
         - Browser command failures now print the server error body instead of silently returning nothing
-        - If mt_status reports multiple clients, tlbx prefers the focused/visible preview client first, then falls back to the main browser's newest preview connection
+        - Scoped browser commands and status use the same exact preview owner. Focus, visibility, global main-browser selection and newer connections never redirect them; use `mt_claim_preview --browser <browserId>` for handoff.
         - If mt_open returns "No tlbx browser UI is connected", there is no live browser tab attached to /ws/state
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
         """;

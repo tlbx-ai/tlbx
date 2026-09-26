@@ -10,14 +10,14 @@ public sealed class BrowserUiBridge
     private readonly Dictionary<string, TaskCompletionSource<BrowserUiCommandResult>> _pendingUiCommands = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TargetOperationGate> _targetOperationGates = new(StringComparer.Ordinal);
     private readonly MainBrowserService _mainBrowserService;
-    private readonly BrowserPreviewOwnerService? _previewOwnerService;
+    private readonly BrowserPreviewOwnerService _previewOwnerService;
 
     public BrowserUiBridge(
         MainBrowserService mainBrowserService,
         BrowserPreviewOwnerService? previewOwnerService = null)
     {
         _mainBrowserService = mainBrowserService;
-        _previewOwnerService = previewOwnerService;
+        _previewOwnerService = previewOwnerService ?? new BrowserPreviewOwnerService();
     }
 
     public int ConnectedBrowserCount
@@ -88,6 +88,7 @@ public sealed class BrowserUiBridge
     {
         lock (_lock)
         {
+            _previewOwnerService.RegisterUi(connectionId, browserId);
             _listeners[connectionId] = new ListenerRegistration
             {
                 ConnectionId = connectionId,
@@ -117,6 +118,7 @@ public sealed class BrowserUiBridge
     {
         lock (_lock)
         {
+            _previewOwnerService.RegisterUi(connectionId, browserId);
             _listeners[connectionId] = new ListenerRegistration
             {
                 ConnectionId = connectionId,
@@ -149,86 +151,32 @@ public sealed class BrowserUiBridge
             return new AgentHistoryWheelResult { Error = "sessionId required" };
         }
 
-        ListenerRegistration[] targets;
-        lock (_lock)
+        if (!TryGetTargetListener(sessionId, "default", out var target, out var error))
+            return new AgentHistoryWheelResult { SessionId = sessionId, Error = error };
+        if (target.AgentWheel is null)
+            return new AgentHistoryWheelResult { SessionId = sessionId, Error = "The owning tlbx UI does not support ACP wheel control. Reload it and retry." };
+        var generation = _previewOwnerService.GetGeneration(sessionId, "default");
+        var requestId = Guid.NewGuid().ToString("N");
+        var completion = new TaskCompletionSource<AgentHistoryWheelResult>(TaskCreationOptions.RunContinuationsAsynchronously);
+        lock (_lock) _pendingAgentWheels[requestId] = completion;
+        try
         {
-            targets = _listeners.Values
-                .Where(listener => listener.AgentWheel is not null)
-                .OrderByDescending(listener => listener.ConnectedAtUtc)
-                .ToArray();
+            target.AgentWheel(requestId, sessionId, deltaY, Math.Clamp(steps, 1, 100));
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ResolveAgentWheelAttemptTimeout(steps));
+            var result = await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+            if (!_previewOwnerService.IsCurrent(sessionId, "default", target.BrowserId, generation))
+                return new AgentHistoryWheelResult { SessionId = sessionId, Error = "Preview ownership changed while the wheel command was in flight. Inspect before retrying." };
+            return result;
         }
-
-        if (targets.Length == 0)
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return new AgentHistoryWheelResult
-            {
-                SessionId = sessionId,
-                Error = ConnectedBrowserCount == 0
-                    ? "No tlbx browser UI is connected. Open the tlbx browser tab containing the ACP session and retry."
-                    : "The connected tlbx browser UI does not support ACP wheel control. Reload it and retry."
-            };
+            return new AgentHistoryWheelResult { SessionId = sessionId, Error = "Timed out waiting for the owning tlbx UI to complete the wheel command. Inspect before retrying." };
         }
-
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(15));
-        AgentHistoryWheelResult? lastFailure = null;
-        foreach (var target in targets)
+        finally
         {
-            var requestId = Guid.NewGuid().ToString("N");
-            var completion = new TaskCompletionSource<AgentHistoryWheelResult>(
-                TaskCreationOptions.RunContinuationsAsynchronously);
-            lock (_lock)
-            {
-                _pendingAgentWheels[requestId] = completion;
-            }
-
-            try
-            {
-                target.AgentWheel!(requestId, sessionId, deltaY, Math.Clamp(steps, 1, 100));
-                using var attemptTimeout = CancellationTokenSource.CreateLinkedTokenSource(
-                    timeout.Token);
-                attemptTimeout.CancelAfter(ResolveAgentWheelAttemptTimeout(steps));
-                var result = await completion.Task.WaitAsync(attemptTimeout.Token).ConfigureAwait(false);
-                if (result.Success)
-                {
-                    return result;
-                }
-
-                lastFailure = result;
-            }
-            catch (OperationCanceledException) when (
-                !cancellationToken.IsCancellationRequested && !timeout.IsCancellationRequested)
-            {
-                lastFailure = new AgentHistoryWheelResult
-                {
-                    RequestId = requestId,
-                    SessionId = sessionId,
-                    Error = "The tlbx browser UI did not answer the ACP wheel command; trying another connected UI."
-                };
-            }
-            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-            {
-                return new AgentHistoryWheelResult
-                {
-                    RequestId = requestId,
-                    SessionId = sessionId,
-                    Error = "Timed out waiting for a tlbx browser UI to complete the ACP wheel command."
-                };
-            }
-            finally
-            {
-                lock (_lock)
-                {
-                    _pendingAgentWheels.Remove(requestId);
-                }
-            }
+            lock (_lock) _pendingAgentWheels.Remove(requestId);
         }
-
-        return lastFailure ?? new AgentHistoryWheelResult
-        {
-            SessionId = sessionId,
-            Error = "No connected tlbx browser UI could find the requested ACP history."
-        };
     }
 
     private static TimeSpan ResolveAgentWheelAttemptTimeout(int steps)
@@ -253,6 +201,7 @@ public sealed class BrowserUiBridge
         lock (_lock)
         {
             _listeners.Remove(connectionId);
+            _previewOwnerService.UnregisterUi(connectionId);
         }
     }
 
@@ -434,6 +383,9 @@ public sealed class BrowserUiBridge
         if (!TryGetTargetListener(sessionId, previewName, out var target, out var error))
             return new BrowserUiCommandResult { Command = command, Error = error };
 
+        var generation = _previewOwnerService.GetGeneration(sessionId, previewName);
+        if (!_previewOwnerService.IsCurrent(sessionId, previewName, target.BrowserId, generation))
+            return new BrowserUiCommandResult { Command = command, Error = "Preview ownership changed before dispatch. Retry the command." };
         var requestId = Guid.NewGuid().ToString("N");
         var completion = new TaskCompletionSource<BrowserUiCommandResult>(
             TaskCreationOptions.RunContinuationsAsynchronously);
@@ -447,7 +399,10 @@ public sealed class BrowserUiBridge
             dispatch(target, requestId);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(10));
-            return await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+            var result = await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
+            if (!_previewOwnerService.IsCurrent(sessionId, previewName, target.BrowserId, generation))
+                return new BrowserUiCommandResult { Command = command, Error = "Preview ownership changed while the UI command was in flight. Inspect the current preview before retrying." };
+            return new BrowserUiCommandResult { RequestId = requestId, Command = command, Success = result.Success, Error = result.Error, OwnershipGeneration = generation };
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -488,7 +443,7 @@ public sealed class BrowserUiBridge
         return targets.Length;
     }
 
-    public async Task<(bool Success, string Error)> RequestOpenWhenAvailableAsync(
+    public async Task<(bool Success, string Error, long OwnershipGeneration)> RequestOpenWhenAvailableAsync(
         string? sessionId,
         string? previewName,
         string url,
@@ -513,18 +468,18 @@ public sealed class BrowserUiBridge
                 cancellationToken).ConfigureAwait(false);
             if (result.Success)
             {
-                return (true, "");
+                return (true, "", result.OwnershipGeneration);
             }
 
             lastError = result.Error ?? "The tlbx browser UI could not complete the open command.";
             if (ConnectedBrowserCount > 0)
             {
-                return (false, lastError);
+                return (false, lastError, 0);
             }
 
             if (DateTimeOffset.UtcNow >= deadline)
             {
-                return (false, lastError);
+                return (false, lastError, 0);
             }
 
             await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
@@ -567,48 +522,28 @@ public sealed class BrowserUiBridge
             "reload" or "screenshot" or "close";
     }
 
-    public bool RequestClaim(string? sessionId, string? previewName, out string error)
+    public string[] GetConnectedBrowserIds() => _previewOwnerService.GetConnectedBrowserIds();
+
+    public bool RequestClaim(string? sessionId, string? previewName, out string error, string? browserId = null)
     {
         error = "";
-        if (_previewOwnerService is null)
-        {
-            error = "Preview ownership is not available in this tlbx instance.";
-            return false;
-        }
-
         if (string.IsNullOrWhiteSpace(sessionId))
         {
             error = "sessionId required";
             return false;
         }
-
-        ListenerRegistration[] listeners;
-        lock (_lock)
+        var candidates = GetConnectedBrowserIds();
+        var selected = string.IsNullOrWhiteSpace(browserId)
+            ? candidates.Length == 1 ? candidates[0] : null
+            : candidates.FirstOrDefault(id => string.Equals(id, browserId.Trim(), StringComparison.Ordinal));
+        if (selected is null)
         {
-            if (_listeners.Count == 0)
-            {
-                error = "No tlbx browser UI is connected. Open the owning tlbx browser tab first; the preview target alone cannot drive /ws/state.";
-                return false;
-            }
-
-            listeners = _listeners.Values.ToArray();
-        }
-
-        var sizeOwner = _previewOwnerService.GetSizeOwnerBrowserId(sessionId);
-        var target = sizeOwner is null
-            ? SelectClaimListener(listeners)
-            : listeners.FirstOrDefault(listener => string.Equals(listener.BrowserId, sizeOwner, StringComparison.Ordinal));
-        if (target is null || string.IsNullOrWhiteSpace(target.BrowserId))
-        {
-            error = sizeOwner is not null
-                ? "The terminal size owner's browser is not connected. Reopen that tab's preview or take terminal size control in this tab."
-                : listeners.Length > 1
-                ? "Multiple tlbx browser UIs are connected, but none is the leading browser. Claim leading-browser ownership in the intended tab, then retry mt_claim_preview."
-                : "A tlbx browser UI is connected, but it did not report a browser identity. Reload the tlbx tab, then retry mt_claim_preview.";
+            error = candidates.Length == 0 ? "No tlbx browser UI is connected. Open a tlbx tab and retry."
+                : browserId is not null ? $"No connected tlbx browser UI matches exact tab '{browserId}'. List /api/browser/ui-clients."
+                : BrowserPreviewOwnerService.UnavailableMessage(sessionId, previewName, null);
             return false;
         }
-
-        _previewOwnerService.Claim(sessionId, previewName, target.BrowserId);
+        _previewOwnerService.Claim(sessionId, previewName, selected);
         return true;
     }
 
@@ -671,64 +606,18 @@ public sealed class BrowserUiBridge
             listeners = _listeners.Values.ToArray();
         }
 
-        var sizeOwner = _previewOwnerService?.GetSizeOwnerBrowserId(sessionId);
-        if (sizeOwner is not null)
+        var owner = _previewOwnerService.ResolveOwnerBrowserId(sessionId, previewName);
+        // Unscoped operations are safe only when there is a single exact UI tab.
+        if (string.IsNullOrWhiteSpace(sessionId))
         {
-            // Size ownership is per session and exact tab. Never redirect commands
-            // to a passive sibling or another PC when that owner is offline.
-            var sizeListener = listeners.FirstOrDefault(listener =>
-                string.Equals(listener.BrowserId, sizeOwner, StringComparison.Ordinal));
-            target = sizeListener!;
-            error = sizeListener is null
-                ? "The terminal size owner's browser is not connected. Reopen that tab's preview or take terminal size control in this tab."
-                : "";
-            return sizeListener is not null;
+            var ids = GetConnectedBrowserIds();
+            owner = ids.Length == 1 ? ids[0] : null;
         }
-
-        var currentOwnerBrowserId = _previewOwnerService?.GetOwnerBrowserId(sessionId, previewName);
-        if (!string.IsNullOrWhiteSpace(currentOwnerBrowserId))
-        {
-            var ownerListener = SelectListenerByBrowserId(listeners, currentOwnerBrowserId);
-            if (ownerListener is not null)
-            {
-                target = ownerListener;
-                error = "";
-                return true;
-            }
-
-            var replacement = SelectClaimListener(listeners);
-            if (replacement is not null && !string.IsNullOrWhiteSpace(replacement.BrowserId))
-            {
-                _previewOwnerService?.Claim(sessionId, previewName, replacement.BrowserId);
-                target = replacement;
-                error = "";
-                return true;
-            }
-
-            error = $"Preview '{previewName ?? WebPreview.WebPreviewService.DefaultPreviewName}' in session '{sessionId ?? "(any)"}' is owned by browser '{currentOwnerBrowserId}', but that tlbx browser is not currently attached to /ws/state and no connected leading browser can reclaim it deterministically.";
-            target = null!;
-            return false;
-        }
-
-        var candidates = listeners.AsEnumerable();
-        var mainBrowserId = _mainBrowserService.GetMainBrowserId();
-        if (!string.IsNullOrWhiteSpace(mainBrowserId))
-        {
-            var mainCandidates = candidates
-                .Where(listener => BrowserIdentity.AreSameBrowser(listener.BrowserId, mainBrowserId))
-                .ToArray();
-            if (mainCandidates.Length > 0)
-            {
-                candidates = mainCandidates;
-            }
-        }
-
-        target = candidates
-            .OrderByDescending(listener => listener.ConnectedAtUtc)
-            .First();
-        _previewOwnerService?.Claim(sessionId, previewName, target.BrowserId);
-        error = "";
-        return true;
+        var selected = owner is null ? null : SelectListenerByBrowserId(listeners, owner);
+        target = selected!;
+        error = selected is null
+            ? BrowserPreviewOwnerService.UnavailableMessage(sessionId, previewName, owner) : "";
+        return selected is not null;
     }
 
     private ListenerRegistration? SelectClaimListener(ListenerRegistration[] listeners)
@@ -782,10 +671,7 @@ public sealed class BrowserUiBridge
             return exact;
         }
 
-        return listeners
-            .Where(listener => BrowserIdentity.AreSameBrowser(listener.BrowserId, browserId))
-            .OrderByDescending(listener => listener.ConnectedAtUtc)
-            .FirstOrDefault();
+        return null;
     }
 
     private sealed class ListenerRegistration

@@ -116,7 +116,7 @@ export async function syncActiveWebPreview(): Promise<void> {
   const preview = getSessionPreview(sessionId, previewName);
   const detached = isDetachedOpenForSession(sessionId, previewName);
 
-  $webPreviewUrl.set(preview?.url ?? null);
+  $webPreviewUrl.set(preview?.navigationUrl ?? preview?.url ?? null);
 
   if (!preview || preview.mode === 'hidden') {
     $webPreviewDetached.set(false);
