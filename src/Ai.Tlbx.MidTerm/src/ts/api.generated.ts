@@ -1698,6 +1698,45 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/browser/batch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path?: never;
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          'application/json': components['schemas']['BrowserBatchRequest'];
+        };
+      };
+      responses: {
+        /** @description OK */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            'application/json': components['schemas']['BrowserBatchResponse'];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/browser/command': {
     parameters: {
       query?: never;
@@ -4112,6 +4151,34 @@ export interface components {
       gitVersion: null | string;
       codeSigned: boolean;
     };
+    BrowserBatchRequest: {
+      sessionId?: null | string;
+      previewName?: null | string;
+      commands: components['schemas']['BrowserCommandRequest'][];
+      /** Format: int32 */
+      timeout?: null | number;
+    };
+    BrowserBatchResponse: {
+      success: boolean;
+      /** Format: int32 */
+      failedIndex: null | number;
+      error: null | string;
+      /** Format: double */
+      durationMs: number;
+      results: null | components['schemas']['BrowserBatchStepResult'][];
+    };
+    BrowserBatchStepResult: {
+      /** Format: int32 */
+      index: number;
+      command: string;
+      success: boolean;
+      result: null | string;
+      error: null | string;
+      /** Format: int32 */
+      matchCount: null | number;
+      /** Format: double */
+      durationMs: number;
+    };
     BrowserClientInfo: {
       sessionId: null | string;
       previewName: null | string;
@@ -4144,6 +4211,8 @@ export interface components {
       deltaY?: null | number;
       /** Format: int32 */
       steps?: null | number;
+      fullPage: boolean;
+      waitForNavigation: boolean;
     };
     BrowserCommandResponse: {
       success: boolean;

@@ -276,12 +276,19 @@ public static class TlbxCliScriptWriter
           if [ -z "$code" ] && [ ! -t 0 ]; then code=$(cat); fi
           _MBB exec "$code"
         }
-        # mt_wait SELECTOR [TIMEOUT]  — wait for element (default 5s)
+        # mt_wait SELECTOR [TIMEOUT]  — wait for element (default 15s)
         mt_wait() {
-          local t=${2:-5}
+          local t=${2:-15}
           _MBB wait "$1" --timeout "$t"
         }
-        mt_screenshot() { _MBB screenshot; }
+        mt_screenshot() { _MBB screenshot "$@"; }
+        # One HTTP request, ordered steps, stops on the first error; never retries actions.
+        mt_batch() {
+          _MREQUIRECTX "mt_batch" || return $?
+          [ $# -ge 1 ] || { echo 'usage: mt_batch JSON_COMMAND_ARRAY [timeout_seconds]' >&2; return 1; }
+          local timeout_seconds="${2:-60}"
+          _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"previewName\":\"$(_ME "$(_MPREVIEW)")\",\"commands\":$1,\"timeout\":$timeout_seconds}" "$_MT/api/browser/batch"
+        }
         mt_snapshot()   { _MBB snapshot; }
         # mt_outline [DEPTH]  — page structure tree (default depth 4)
         mt_outline() { local d=${1:-4}; _MBB outline "$d"; }
@@ -372,12 +379,6 @@ public static class TlbxCliScriptWriter
             return $code
           }
           [ -n "$open_out" ] && printf '%s\n' "$open_out"
-          status=$(_MWAITCONTROLLABLE 25) || {
-            local code=$?
-            [ -n "$status" ] && printf '%s\n' "$status" >&2
-            echo "mt_open failed: preview did not become controllable." >&2
-            return $code
-          }
         }
         # mt_close_preview  — close the current preview; named previews are removed entirely
         mt_close_preview() {
@@ -1135,7 +1136,7 @@ public static class TlbxCliScriptWriter
         }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
-        function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Compress }
+        function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Depth 8 -Compress }
         function script:_MSID { $env:MT_SESSION_ID }
         function script:_MSource { if ($env:MT_AGENT_NAME) { $env:MT_AGENT_NAME } else { "tlbx_cli" } }
         function script:_MPwshQuote {
@@ -1484,12 +1485,20 @@ public static class TlbxCliScriptWriter
                 _MBB exec $Code
             }
         }
-        # Mt-Wait -Selector CSS_SELECTOR [-Timeout N]  — wait for element (default 5s)
+        # Mt-Wait -Selector CSS_SELECTOR [-Timeout N]  — wait for element (default 15s)
         function Mt-Wait {
-            param([string]$Selector, [int]$Timeout = 5)
+            param([string]$Selector, [int]$Timeout = 15)
             _MBB wait $Selector --timeout $Timeout
         }
-        function Mt-Screenshot { _MBB screenshot }
+        function Mt-Screenshot {
+            param([switch]$FullPage)
+            if ($FullPage) { _MBB screenshot --full-page } else { _MBB screenshot }
+        }
+        function Mt-Batch {
+            param([Parameter(Mandatory)][object[]]$Commands, [int]$Timeout = 60)
+            _MRequireSessionContext "mt_batch"
+            _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); commands=@($Commands); timeout=$Timeout}) "$script:_MT/api/browser/batch"
+        }
         function Mt-Snapshot   { _MBB snapshot }
         # Mt-Outline [-Depth N]  — page structure tree (default depth 4)
         function Mt-Outline { param([int]$Depth = 4) _MBB outline $Depth }
@@ -1567,14 +1576,6 @@ public static class TlbxCliScriptWriter
             $openResponse = _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); url=$Url; activateSession=[bool]$Activate}) "$script:_MT/api/browser/open"
             if ($openResponse) {
                 $openResponse
-            }
-            $status = _MWaitForControllableStatus
-            if (-not $status.Ready) {
-                if ($status.Output) {
-                    throw $status.Output
-                }
-
-                throw "mt_open failed: preview did not become controllable."
             }
         }
         # Mt-ClosePreview  — close the current preview; named previews are removed entirely
@@ -2312,6 +2313,7 @@ public static class TlbxCliScriptWriter
         Set-Alias -Name mt_exec -Value Mt-Exec
         Set-Alias -Name mt_wait -Value Mt-Wait
         Set-Alias -Name mt_screenshot -Value Mt-Screenshot
+        Set-Alias -Name mt_batch -Value Mt-Batch
         Set-Alias -Name mt_snapshot -Value Mt-Snapshot
         Set-Alias -Name mt_outline -Value Mt-Outline
         Set-Alias -Name mt_attrs -Value Mt-Attrs
