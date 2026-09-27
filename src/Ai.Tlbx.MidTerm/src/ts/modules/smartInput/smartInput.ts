@@ -1329,6 +1329,15 @@ function createDockedDOM(): void {
     onPhotoInputChange: (files) => {
       void handleSmartInputSelectedFiles(files);
     },
+    onEscapeClick: () => {
+      const sessionId = $activeSessionId.get();
+      if (!sessionId) return;
+      if (isAppServerControlActiveSession(sessionId)) {
+        void handleAppServerControlEscape(sessionId);
+      } else {
+        sendInput(sessionId, '\x1b');
+      }
+    },
     onSendClick: () => {
       if (suppressNextSendClick) {
         suppressNextSendClick = false;

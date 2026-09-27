@@ -160,14 +160,25 @@ describe('touch release momentum lifecycle', () => {
     return { touch, frame, frames, terminal, screen };
   }
 
-  it('turns a quick tap into xterm Alt+click cursor placement', () => {
+  it('focuses on repeated taps without generating cursor keys from terminal cells', () => {
     const g = gesture();
+    for (const y of [120, 80, 120]) {
+      g.touch('touchstart', y);
+      g.touch('touchend', y);
+    }
+    expect(g.terminal.focus).toHaveBeenCalledTimes(3);
+    expect(g.screen.dispatchEvent).not.toHaveBeenCalled();
+  });
+
+  it('preserves ordinary clicks for mouse-aware terminal applications', () => {
+    const g = gesture();
+    g.terminal.modes.mouseTrackingMode = 'vt200';
     g.touch('touchstart', 120);
     g.touch('touchend', 120);
     expect(g.terminal.focus).toHaveBeenCalledOnce();
     expect(g.screen.dispatchEvent.mock.calls.map(([e]) => [e.type, e.options.altKey])).toEqual([
-      ['mousedown', true],
-      ['mouseup', true],
+      ['mousedown', false],
+      ['mouseup', false],
     ]);
   });
 
