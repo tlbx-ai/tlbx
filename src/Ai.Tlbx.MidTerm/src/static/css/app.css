@@ -4074,7 +4074,7 @@ body::before {
     overflow: hidden;
   }
 
-  body.mobile-terminal-vertical-stable .terminal-container.mobile-terminal-vertical-stable {
+  body.mobile-terminal-vertical-stable .terminal-container.mobile-terminal-vertical-stable:not(.scaled) {
     overflow: hidden auto;
     overscroll-behavior: contain;
     touch-action: pan-y;
@@ -4685,7 +4685,9 @@ body::before {
 
 /* Scaled terminal: anchor the visual terminal at the top-left, then fill exposed gaps explicitly. */
 .terminal-container.scaled {
-  overflow: hidden;
+  /* Scaling leaves an unscaled layout box. Neither cursor reveal nor touch/focus
+     may scroll that invisible overflow and move the terminal or controls away. */
+  overflow: clip;
   align-items: flex-start;
   justify-content: flex-start;
 }
