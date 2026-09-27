@@ -292,6 +292,10 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
     throw new Error('Mock WebSocket was not created');
   }
 
+  const initialSync = new Uint8Array(constants.MUX_HEADER_SIZE);
+  initialSync[0] = constants.MUX_TYPE_SYNC_COMPLETE;
+  ws.onmessage?.({ data: initialSync.buffer } as MessageEvent<ArrayBuffer>);
+
   return {
     decodeSessionId,
     encodeSessionId,
@@ -312,18 +316,18 @@ describe('muxChannel', () => {
     socket.dispatchEvent(new MessageEvent('message', { data: new ArrayBuffer(0) }));
     expect(await result).toBe(true);
     expect(socket.close).not.toHaveBeenCalled();
-    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith('message', expect.any(Function));
   });
 
   it('detects a silent stale-open mux and ignores results for replaced sockets', async () => {
     vi.useFakeTimers();
     await loadHarness([0]);
     const result = probeMuxWebSocket();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await result).toBe(false);
     const retired = probeMuxWebSocket();
     connectMuxWebSocket();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await retired).toBe(true);
     vi.useRealTimers();
   });
@@ -438,6 +442,8 @@ describe('muxChannel', () => {
       backgroundColor: 'rgb(0, 0, 0)',
     }));
     vi.stubGlobal('document', {
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
       createElement: () => ({
         className: '',
         style: {},
@@ -1214,7 +1220,7 @@ describe('muxChannel', () => {
     expect(getBrowserTransportSnapshot(sessionId)?.receivedSeq).toBe(11n);
 
     harness.ws.send.mockClear();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
 
     const backgroundDeltaRequest = harness.ws.send.mock.calls
       .map((call) => call[0] as Uint8Array)

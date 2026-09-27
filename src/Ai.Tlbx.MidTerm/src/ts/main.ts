@@ -1,3 +1,4 @@
+import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
 /**
  * tlbx Terminal Client
  *
@@ -733,7 +734,6 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
   setupBrowserLifecycleRecovery({
     getVisibleTerminalSessionIds,
     syncMuxTerminalVisibility,
-    focusActiveTerminal,
     applyScrollbackProtection,
     recoverTerminalPresentationAfterResume: scheduleForegroundResizeRecovery,
     keepTerminalOutputActiveWhileHidden: isMobilePiPActive,
@@ -751,7 +751,7 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
       ? { recoverAppServerControlAfterResume: recoverAppServerControlAfterBrowserResume }
       : {}),
     ...(includeSettingsChannel
-      ? { reconnectSettingsAfterLongResume: connectSettingsWebSocket }
+      ? { recoverSettingsAfterResume: recoverSettingsAfterBrowserResume }
       : {}),
   });
 }

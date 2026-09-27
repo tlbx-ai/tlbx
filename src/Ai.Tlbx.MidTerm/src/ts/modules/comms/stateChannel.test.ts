@@ -152,7 +152,7 @@ vi.mock('../../utils/versionCheck', () => ({
   checkVersionAndReload: mocks.checkVersionAndReload,
 }));
 
-class MockWebSocket {
+class MockWebSocket extends EventTarget {
   public static readonly CONNECTING = 0;
   public static readonly OPEN = 1;
   public static readonly CLOSING = 2;
@@ -168,9 +168,11 @@ class MockWebSocket {
   public send = vi.fn();
   public close = vi.fn(() => {
     this.readyState = MockWebSocket.CLOSED;
+    this.dispatchEvent(new Event('close'));
   });
 
   public constructor(url: string) {
+    super();
     this.url = url;
     MockWebSocket.instances.push(this);
   }
@@ -263,6 +265,14 @@ describe('stateChannel browser-ui handling', () => {
   });
 
   beforeEach(() => {
+    vi.stubGlobal(
+      'document',
+      Object.assign(new EventTarget(), {
+        visibilityState: 'visible',
+        hidden: false,
+        hasFocus: () => false,
+      }),
+    );
     vi.useRealTimers();
   });
 
@@ -541,7 +551,14 @@ describe('stateChannel browser-ui handling', () => {
   it('checks socket health with a bounded activity reply without claiming ownership', async () => {
     const { ws } = await loadHarness();
     vi.useFakeTimers();
-    vi.stubGlobal('document', { visibilityState: 'visible', hidden: false, hasFocus: () => false });
+    vi.stubGlobal(
+      'document',
+      Object.assign(new EventTarget(), {
+        visibilityState: 'visible',
+        hidden: false,
+        hasFocus: () => false,
+      }),
+    );
     vi.stubGlobal('window', { setTimeout: globalThis.setTimeout });
     const { probeStateWebSocket } = await stateChannelModulePromise;
     const healthy = probeStateWebSocket();
@@ -553,7 +570,7 @@ describe('stateChannel browser-ui handling', () => {
     } as MessageEvent<string>);
     expect(await healthy).toBe(true);
     const stale = probeStateWebSocket();
-    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(1000);
     expect(await stale).toBe(false);
     const retired = probeStateWebSocket();
     connectStateWebSocket();

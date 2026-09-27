@@ -1,3 +1,4 @@
+import { SocketReadiness, RESUME_PROBE_TIMEOUT_MS } from './socketReadiness';
 import { recordTextActivity } from '../sidebar/heatIndicator';
 /**
  * State Channel Module
@@ -151,6 +152,7 @@ type StateWsMessage =
 
 const log = createLogger('state');
 const stateReconnect = new ReconnectController();
+const stateReadiness = new SocketReadiness();
 import {
   stateWs,
   sessionTerminals,
@@ -418,7 +420,6 @@ export function connectStateWebSocket(): void {
     stateReconnect.reset();
     const isReconnect = stateWsHasConnected;
     stateWsHasConnected = true;
-    $stateWsConnected.set(true);
     reportBrowserActivity(getCurrentBrowserActivity(), true);
     if (isReconnect) {
       void checkVersionAndReload();
@@ -430,6 +431,7 @@ export function connectStateWebSocket(): void {
     try {
       const data = JSON.parse(event.data as string) as StateWsMessage;
       handleStateSocketMessage(data);
+      if ('sessions' in data) $stateWsConnected.set(true);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       log.error(() => `Error parsing state: ${message}`);
@@ -454,6 +456,12 @@ export function connectStateWebSocket(): void {
     if (stateWs !== ws) return;
     log.error(() => `WebSocket error: ${e.type}`);
   };
+  stateReadiness.watch(
+    ws,
+    () => stateWs === ws,
+    () => $stateWsConnected.get(),
+    connectStateWebSocket,
+  );
 }
 
 function removeClosedSessions(validSessions: readonly (Session & { id: string })[]): void {
@@ -1167,7 +1175,7 @@ let lastReportedBrowserActivity:
 /** Verify the existing socket with a reply, without taking terminal ownership. */
 export async function probeStateWebSocket(): Promise<boolean> {
   const socket = stateWs;
-  if (isSharedSessionRoute() || socket?.readyState === WebSocket.CONNECTING) return true;
+  if (isSharedSessionRoute()) return true;
   try {
     await sendCommand(
       'browser.setActivity',
@@ -1177,7 +1185,7 @@ export async function probeStateWebSocket(): Promise<boolean> {
         activeSessionId: $activeSessionId.get(),
         activeSurface: getCurrentActiveSurface(),
       },
-      2000,
+      RESUME_PROBE_TIMEOUT_MS,
     );
     return true;
   } catch {

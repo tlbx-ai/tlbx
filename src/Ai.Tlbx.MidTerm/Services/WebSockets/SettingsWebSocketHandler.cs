@@ -122,6 +122,17 @@ public sealed class SettingsWebSocketHandler
                     {
                         break;
                     }
+                    // A foreground client requests a fresh snapshot to prove that
+                    // this settings connection survived browser suspension.
+                    if (result.MessageType == WebSocketMessageType.Text &&
+                        result.EndOfMessage && result.Count == 1 && buffer[0] == (byte)'?')
+                    {
+                        await SendMessageAsync(new SettingsWsMessage
+                        {
+                            Type = "settings",
+                            Settings = MidTermSettingsPublic.FromSettings(_settingsService.Load())
+                        });
+                    }
                 }
                 catch (OperationCanceledException)
                 {
