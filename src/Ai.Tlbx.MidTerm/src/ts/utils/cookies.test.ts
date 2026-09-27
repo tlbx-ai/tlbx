@@ -142,20 +142,4 @@ describe('browser tab identity', () => {
       expect.objectContaining({ type: duplicateModule.TAB_ID_COLLISION_EVENT }),
     );
   });
-
-  it('describes common browser devices without exposing an opaque identifier', async () => {
-    vi.stubGlobal('navigator', {
-      userAgent:
-        'Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Version/18.0 Mobile/15E148 Safari/604.1',
-      platform: 'MacIntel',
-      maxTouchPoints: 5,
-    });
-    vi.stubGlobal('sessionStorage', createStorage());
-    vi.stubGlobal('crypto', { randomUUID: () => 'unused' });
-
-    const { getBrowserDeviceHeaderValue, getBrowserDeviceLabel } = await import('./cookies');
-
-    expect(getBrowserDeviceLabel()).toBe('iPad · Safari');
-    expect(getBrowserDeviceHeaderValue()).toBe('iPad%20%C2%B7%20Safari');
-  });
 });

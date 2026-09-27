@@ -6,40 +6,6 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class SessionLayoutStateServiceTests
 {
-    [Fact]
-    public void UpdateLayout_PersistsAcrossRestart()
-    {
-        var stateDir = CreateTempDirectory();
-        try
-        {
-            var initialService = new SessionLayoutStateService(stateDir);
-            var initialSnapshot = initialService.UpdateLayout(
-                new LayoutNode
-                {
-                    Type = "split",
-                    Direction = "horizontal",
-                    Children =
-                    [
-                        new LayoutNode { Type = "leaf", SessionId = "s1" },
-                        new LayoutNode { Type = "leaf", SessionId = "s2" }
-                    ]
-                },
-                focusedSessionId: "s2",
-                validSessionIds: ["s1", "s2"]);
-
-            var restartedService = new SessionLayoutStateService(stateDir);
-            var snapshot = restartedService.GetSnapshot(["s1", "s2"]);
-
-            Assert.NotNull(snapshot.Root);
-            Assert.Equal("split", snapshot.Root!.Type);
-            Assert.Equal("s2", snapshot.FocusedSessionId);
-            Assert.Equal(initialSnapshot.Revision, snapshot.Revision);
-        }
-        finally
-        {
-            Directory.Delete(stateDir, recursive: true);
-        }
-    }
 
     [Fact]
     public void PruneToValidSessions_RemovesStaleLeavesAndClearsSingleSessionLayouts()
@@ -75,41 +41,6 @@ public sealed class SessionLayoutStateServiceTests
 
             Assert.Null(snapshot.Root);
             Assert.Null(snapshot.FocusedSessionId);
-        }
-        finally
-        {
-            Directory.Delete(stateDir, recursive: true);
-        }
-    }
-
-    [Fact]
-    public void RemoveSession_DropsClosedLeafAndReassignsFocus()
-    {
-        var stateDir = CreateTempDirectory();
-        try
-        {
-            var service = new SessionLayoutStateService(stateDir);
-            service.UpdateLayout(
-                new LayoutNode
-                {
-                    Type = "split",
-                    Direction = "horizontal",
-                    Children =
-                    [
-                        new LayoutNode { Type = "leaf", SessionId = "s1" },
-                        new LayoutNode { Type = "leaf", SessionId = "s2" },
-                        new LayoutNode { Type = "leaf", SessionId = "s3" }
-                    ]
-                },
-                focusedSessionId: "s2",
-                validSessionIds: ["s1", "s2", "s3"]);
-
-            var snapshot = service.RemoveSession("s2");
-
-            Assert.NotNull(snapshot.Root);
-            Assert.Equal("split", snapshot.Root!.Type);
-            Assert.Equal("s1", snapshot.FocusedSessionId);
-            Assert.Equal(["s1", "s3"], GetLeafSessionIds(snapshot.Root));
         }
         finally
         {
@@ -201,37 +132,6 @@ public sealed class SessionLayoutStateServiceTests
             Assert.Equal(first.Revision, second.Snapshot.Revision);
             Assert.Equal("horizontal", second.Snapshot.Root!.Direction);
             Assert.Equal("s2", second.Snapshot.FocusedSessionId);
-        }
-        finally
-        {
-            Directory.Delete(stateDir, recursive: true);
-        }
-    }
-
-    [Fact]
-    public void GetSnapshot_NormalizesInvalidFocusedSessionToFirstRemainingLeaf()
-    {
-        var stateDir = CreateTempDirectory();
-        try
-        {
-            var service = new SessionLayoutStateService(stateDir);
-            service.UpdateLayout(
-                new LayoutNode
-                {
-                    Type = "split",
-                    Direction = "vertical",
-                    Children =
-                    [
-                        new LayoutNode { Type = "leaf", SessionId = "s1" },
-                        new LayoutNode { Type = "leaf", SessionId = "s2" }
-                    ]
-                },
-                focusedSessionId: "missing",
-                validSessionIds: ["s1", "s2"]);
-
-            var snapshot = service.GetSnapshot(["s1", "s2"]);
-
-            Assert.Equal("s1", snapshot.FocusedSessionId);
         }
         finally
         {

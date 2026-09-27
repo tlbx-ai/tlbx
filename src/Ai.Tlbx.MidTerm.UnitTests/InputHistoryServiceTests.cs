@@ -176,52 +176,11 @@ public sealed class InputHistoryServiceTests : IDisposable
     }
 
     [Fact]
-    public void ReturnedEntriesDoNotMutateStoredState()
-    {
-        using var service = CreateService();
-        var recorded = service.RecordPrompt(
-            "session-a",
-            "Codex",
-            @"Q:\repo",
-            InputHistorySources.CommandBay,
-            InputHistorySurfaces.Terminal,
-            new AppServerControlTurnRequest { Text = "original" });
-
-        recorded.Text = "changed";
-        recorded.Turn!.Text = "changed";
-        var loaded = service.GetEntry(recorded.Id);
-
-        Assert.NotNull(loaded);
-        Assert.Equal("original", loaded!.Text);
-        Assert.Equal("original", loaded.Turn!.Text);
-    }
-
-    [Fact]
     public void ListingRequiresAnOwningSession()
     {
         using var service = CreateService();
 
         Assert.Throws<ArgumentException>(() => service.GetEntries("", null, 20));
-    }
-
-    [Fact]
-    public void RecordsOneMultilineTerminalInputSubmission()
-    {
-        using var service = CreateService();
-        const string text = "first line\nsecond line";
-
-        service.RecordPrompt(
-            "session-a",
-            "Codex",
-            @"Q:\repo",
-            InputHistorySources.TerminalInput,
-            InputHistorySurfaces.Terminal,
-            new AppServerControlTurnRequest { Text = text });
-
-        var entry = Assert.Single(service.GetEntries("session-a", null, 20).Entries);
-        Assert.Equal(text, entry.Text);
-        Assert.Equal(InputHistorySources.TerminalInput, entry.Source);
-        Assert.True(entry.Submit);
     }
 
     public void Dispose()

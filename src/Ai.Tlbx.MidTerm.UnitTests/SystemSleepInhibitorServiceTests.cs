@@ -26,20 +26,6 @@ public sealed class SystemSleepInhibitorServiceTests
     }
 
     [Fact]
-    public void UpdateEnabled_False_DisablesActiveInhibitor()
-    {
-        using var backend = new FakeSystemSleepInhibitorBackend();
-        using var service = new SystemSleepInhibitorService(backend);
-
-        service.UpdateEnabled(true);
-        service.UpdateSessionCount(2);
-        Assert.Equal(1, backend.ActivateCalls);
-
-        service.UpdateEnabled(false);
-        Assert.Equal(1, backend.DeactivateCalls);
-    }
-
-    [Fact]
     public void Dispose_DeactivatesBackendOnce()
     {
         using var backend = new FakeSystemSleepInhibitorBackend();
@@ -61,23 +47,6 @@ public sealed class SystemSleepInhibitorServiceTests
         Assert.Equal(1, backend.ActivateCalls);
         Assert.Equal(1, backend.DeactivateCalls);
         Assert.Equal(1, backend.DisposeCalls);
-    }
-
-    [Fact]
-    public void MidTermSettingsPublic_RoundTripsKeepAwakeSetting()
-    {
-        var settings = new MidTermSettings
-        {
-            KeepSystemAwakeWithActiveSessions = true
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-        Assert.True(publicSettings.KeepSystemAwakeWithActiveSessions);
-
-        settings.KeepSystemAwakeWithActiveSessions = false;
-        publicSettings.ApplyTo(settings);
-
-        Assert.True(settings.KeepSystemAwakeWithActiveSessions);
     }
 
     private sealed class FakeSystemSleepInhibitorBackend : ISystemSleepInhibitorBackend

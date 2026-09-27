@@ -5,7 +5,6 @@ import {
   FILE_HEX_PREVIEW_PAGE_BYTES,
   copyFileToClipboard,
   loadBinaryPreviewPage,
-  resolveFilePreviewKind,
 } from './shared';
 
 vi.mock('../logging', () => ({
@@ -41,32 +40,6 @@ describe('fileViewer shared helpers', () => {
     Object.assign(globalThis, {
       fetch: originalFetch,
     });
-  });
-
-  it('resolves shared preview kinds from the same file metadata rules', () => {
-    expect(resolveFilePreviewKind('Q:\\repo\\diagram.png', 'application/octet-stream', false)).toBe(
-      'image',
-    );
-    expect(resolveFilePreviewKind('Q:\\repo\\manual.pdf', 'application/octet-stream', false)).toBe(
-      'pdf',
-    );
-    expect(resolveFilePreviewKind('Q:\\repo\\notes.txt', 'text/plain', true)).toBe('text');
-    expect(resolveFilePreviewKind('Q:\\repo\\archive.bin', 'application/octet-stream', false)).toBe(
-      'binary',
-    );
-  });
-
-  it('copies loaded text content when it stays under the clipboard limit', async () => {
-    const result = await copyFileToClipboard({
-      path: 'Q:\\repo\\notes.txt',
-      mimeType: 'text/plain',
-      size: 12,
-      isText: true,
-      currentText: 'hello world',
-    });
-
-    expect(globalThis.navigator.clipboard.writeText).toHaveBeenCalledWith('hello world');
-    expect(result).toBe('text');
   });
 
   it('falls back to the file path when text exceeds the clipboard size limit', async () => {

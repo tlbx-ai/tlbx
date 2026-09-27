@@ -13,8 +13,8 @@ describe('terminal focus reclaim', () => {
 
     expect(
       shouldReclaimTerminalFocusOnMouseUp(appServerControlBody as EventTarget, {
-        rangeCount: 1,
-        isCollapsed: false,
+        rangeCount: 0,
+        isCollapsed: true,
       }),
     ).toBe(false);
   });

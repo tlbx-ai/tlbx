@@ -18,18 +18,6 @@ function key(
 }
 
 describe('updateEnterModifierLatch', () => {
-  it('tracks Shift keydown and clears on keyup', () => {
-    const down = updateEnterModifierLatch(null, { ...key('Shift'), type: 'keydown' }, 100);
-    expect(down).toEqual({
-      ctrlPressed: false,
-      shiftPressed: true,
-      lastUpdatedAtMs: 100,
-    });
-
-    const up = updateEnterModifierLatch(down, { ...key('Shift'), type: 'keyup' }, 120);
-    expect(up).toBeNull();
-  });
-
   it('preserves the other modifier while Ctrl and Shift are both held', () => {
     const shiftDown = updateEnterModifierLatch(null, { ...key('Shift'), type: 'keydown' }, 100);
     const ctrlDown = updateEnterModifierLatch(

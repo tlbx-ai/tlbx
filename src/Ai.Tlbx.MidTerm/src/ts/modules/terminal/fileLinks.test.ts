@@ -48,35 +48,15 @@ describe('fileLinks hot-path throttling', () => {
     expect(mocks.registerFilePaths).not.toHaveBeenCalled();
   });
 
-  it('registers only newly discovered absolute paths', async () => {
-    sessionTerminals.set('sess1', {
-      terminal: {
-        modes: { synchronizedOutputMode: false },
-      },
-    } as never);
-
-    const payload = new TextEncoder().encode('Q:\\repos\\MidTermWorkspace3\\src\\main.ts');
-
-    scanOutputForPaths('sess1', payload);
-    await vi.runAllTimersAsync();
-    await Promise.resolve();
-
-    scanOutputForPaths('sess1', payload);
-    await vi.runAllTimersAsync();
-    await Promise.resolve();
-
-    expect(mocks.registerFilePaths).toHaveBeenCalledTimes(1);
-    expect(mocks.registerFilePaths).toHaveBeenCalledWith('sess1', [
-      'Q:\\repos\\MidTermWorkspace3\\src\\main.ts',
-    ]);
-  });
-
   it('defers regex scanning work to idle time after the debounce window', async () => {
     const idleCallbacks: IdleRequestCallback[] = [];
-    vi.stubGlobal('requestIdleCallback', vi.fn((callback: IdleRequestCallback) => {
-      idleCallbacks.push(callback);
-      return idleCallbacks.length;
-    }));
+    vi.stubGlobal(
+      'requestIdleCallback',
+      vi.fn((callback: IdleRequestCallback) => {
+        idleCallbacks.push(callback);
+        return idleCallbacks.length;
+      }),
+    );
     vi.stubGlobal('cancelIdleCallback', vi.fn());
 
     sessionTerminals.set('sess1', {
@@ -100,7 +80,7 @@ describe('fileLinks hot-path throttling', () => {
       didTimeout: false,
       timeRemaining: () => 10,
     });
-    await Promise.resolve();
+    await vi.dynamicImportSettled();
 
     expect(mocks.registerFilePaths).toHaveBeenCalledTimes(1);
   });

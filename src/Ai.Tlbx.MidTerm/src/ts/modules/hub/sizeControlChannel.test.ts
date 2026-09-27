@@ -43,9 +43,8 @@ class MockWebSocket {
 describe('Hub size-control channel', () => {
   it('projects remote ownership and sends commands to the terminal host', async () => {
     vi.stubGlobal('WebSocket', MockWebSocket);
-    const { requestHubTerminalSizeControl, syncHubSizeControlMachines } = await import(
-      './sizeControlChannel'
-    );
+    const { requestHubTerminalSizeControl, syncHubSizeControlMachines } =
+      await import('./sizeControlChannel');
 
     syncHubSizeControlMachines([
       {

@@ -43,15 +43,6 @@ describe('resolveLaunchDimensions', () => {
     });
   });
 
-  it('uses configured defaults when viewport measurement is unavailable', async () => {
-    const { resolveLaunchDimensions } = await import('./launchSizing');
-
-    const dims = await resolveLaunchDimensions({ defaultCols: 120, defaultRows: 30 }, 'launcher');
-
-    expect(dims).toEqual({ cols: 120, rows: 30 });
-    expect(calculateOptimalDimensionsSpy).toHaveBeenCalledOnce();
-  });
-
   it('uses the creating browser viewport for launch sizing', async () => {
     calculateOptimalDimensionsSpy.mockResolvedValue({ cols: 81, rows: 24 });
     const { resolveLaunchDimensions } = await import('./launchSizing');

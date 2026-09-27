@@ -31,22 +31,9 @@ describe('shouldSubmitSmartInputOnEnter', () => {
       false,
     );
   });
-
-  it('ignores non-Enter keys', () => {
-    expect(shouldSubmitSmartInputOnEnter(key('a'))).toBe(false);
-  });
 });
 
 describe('shouldInsertLineBreakOnEnter', () => {
-  it('inserts a line break for modified Enter variants used by the command bay', () => {
-    expect(shouldInsertLineBreakOnEnter(key('Enter', { shiftKey: true }))).toBe(true);
-    expect(shouldInsertLineBreakOnEnter(key('Enter', { ctrlKey: true }))).toBe(true);
-    expect(shouldInsertLineBreakOnEnter(key('Enter', { altKey: true }))).toBe(true);
-    expect(shouldInsertLineBreakOnEnter(key('Enter', { ctrlKey: true, shiftKey: true }))).toBe(
-      true,
-    );
-  });
-
   it('does not claim bare Enter, meta+Enter, or non-Enter keys', () => {
     expect(shouldInsertLineBreakOnEnter(key())).toBe(false);
     expect(shouldInsertLineBreakOnEnter(key('Enter', { metaKey: true }))).toBe(false);

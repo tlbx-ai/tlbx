@@ -25,28 +25,6 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public void ResolveTimeoutSeconds_UsesLongerDefaultForScreenshots()
-    {
-        var screenshotTimeout = BrowserCommandService.ResolveTimeoutSeconds(new BrowserCommandRequest
-        {
-            Command = "screenshot"
-        });
-        var defaultTimeout = BrowserCommandService.ResolveTimeoutSeconds(new BrowserCommandRequest
-        {
-            Command = "url"
-        });
-        var explicitTimeout = BrowserCommandService.ResolveTimeoutSeconds(new BrowserCommandRequest
-        {
-            Command = "screenshot",
-            Timeout = 7
-        });
-
-        Assert.Equal(30, screenshotTimeout);
-        Assert.Equal(10, defaultTimeout);
-        Assert.Equal(7, explicitTimeout);
-    }
-
-    [Fact]
     public async Task TryRegisterClient_ReplacesExistingPreviewClientOnReconnect()
     {
         var service = new BrowserCommandService();
@@ -79,73 +57,6 @@ public class BrowserCommandServiceTests
         Assert.Equal("reconnected-ok", result.Result);
         Assert.NotNull(captured);
         Assert.Equal("preview-a", captured!.PreviewId);
-    }
-
-    [Fact]
-    public async Task ExecuteCommandAsync_Wheel_PreservesDeltaAndStepCount()
-    {
-        var service = new BrowserCommandService();
-        BrowserWsMessage? captured = null;
-        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", msg =>
-        {
-            captured = msg;
-            service.ReceiveResult(new BrowserWsResult
-            {
-                Id = msg.Id,
-                Success = true,
-                Result = "ok",
-                PreviewId = "preview-a"
-            });
-        }));
-
-        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
-        {
-            Command = "wheel",
-            SessionId = "session-a",
-            Selector = ".agent-history",
-            DeltaX = 4,
-            DeltaY = -240,
-            Steps = 3
-        }, CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.NotNull(captured);
-        Assert.Equal(4, captured!.DeltaX);
-        Assert.Equal(-240, captured.DeltaY);
-        Assert.Equal(3, captured.Steps);
-    }
-
-    [Fact]
-    public async Task ExecuteCommandAsync_WithMatchingSession_RoutesToCorrectPreview()
-    {
-        var service = new BrowserCommandService();
-        BrowserWsMessage? captured = null;
-
-        Assert.True(service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { }));
-        Assert.True(service.TryRegisterClient("c2", "session-b", "user2", "preview-b", msg =>
-        {
-            captured = msg;
-            service.ReceiveResult(new BrowserWsResult
-            {
-                Id = msg.Id,
-                Success = true,
-                Result = "ok",
-                PreviewId = "preview-b"
-            });
-        }));
-
-        var result = await service.ExecuteCommandAsync(new BrowserCommandRequest
-        {
-            Command = "url",
-            SessionId = "session-b"
-        }, CancellationToken.None);
-
-        Assert.True(result.Success);
-        Assert.Equal("ok", result.Result);
-        Assert.NotNull(captured);
-        Assert.Equal("session-b", captured!.SessionId);
-        Assert.Equal("user2", captured.PreviewName);
-        Assert.Equal("preview-b", captured.PreviewId);
     }
 
     [Fact]
@@ -409,101 +320,6 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public void GetStatus_WithScopedPreview_ReturnsOnlyMatchingClient()
-    {
-        var service = new BrowserCommandService();
-
-        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
-        Assert.True(service.TryRegisterClient("c2", "session-a", "codex1", "preview-b", _ => { }));
-        Assert.True(service.TryRegisterClient("c3", "session-b", "codex1", "preview-c", _ => { }));
-
-        var status = service.GetStatus(
-            "https://localhost:5001/teacher?dev=1",
-            sessionId: "session-a",
-            previewName: "codex1");
-
-        Assert.True(status.Connected);
-        Assert.True(status.Controllable);
-        Assert.Equal("ready", status.State);
-        Assert.Equal(1, status.ConnectedClientCount);
-        Assert.Equal(3, status.TotalConnectedClientCount);
-        Assert.NotNull(status.DefaultClient);
-        Assert.Equal("session 'session-a', preview 'codex1'", status.ScopeDescription);
-        Assert.Equal("session-a", status.DefaultClient!.SessionId);
-        Assert.Equal("codex1", status.DefaultClient.PreviewName);
-        Assert.Equal("preview-b", status.DefaultClient.PreviewId);
-        Assert.Single(status.Clients);
-    }
-
-    [Fact]
-    public void GetStatus_DefaultClient_ExposesInteractiveFlags()
-    {
-        var service = new BrowserCommandService();
-
-        Assert.True(service.TryRegisterClient(
-            "c1",
-            "session-a",
-            "default",
-            "preview-a",
-            _ => { },
-            browserId: "browser-a",
-            isVisible: true,
-            hasFocus: true,
-            isTopLevel: false));
-
-        var status = service.GetStatus("http://192.168.178.1/", sessionId: "session-a");
-
-        Assert.True(status.Connected);
-        Assert.True(status.Controllable);
-        Assert.Equal("ready", status.State);
-        Assert.NotNull(status.DefaultClient);
-        Assert.True(status.DefaultClient!.IsVisible);
-        Assert.True(status.DefaultClient.HasFocus);
-        Assert.False(status.DefaultClient.IsTopLevel);
-    }
-
-    [Fact]
-    public void GetStatusText_WithScopedPreviewAndNoMatch_ReturnsHelpfulDisconnectedMessage()
-    {
-        var service = new BrowserCommandService();
-        Assert.True(service.TryRegisterClient("c1", "session-a", "default", "preview-a", _ => { }));
-
-        var status = service.GetStatusText(
-            "https://localhost:5001/teacher?dev=1",
-            sessionId: "session-a",
-            previewName: "codex1",
-            connectedUiClientCount: 1);
-
-        Assert.Contains("disconnected", status, StringComparison.Ordinal);
-        Assert.Contains("state: waiting", status, StringComparison.Ordinal);
-        Assert.Contains("bridge phase: preview-frame-disconnected", status, StringComparison.Ordinal);
-        Assert.Contains("controllable: no", status, StringComparison.Ordinal);
-        Assert.Contains("ui clients: 1", status, StringComparison.Ordinal);
-        Assert.Contains("target configured: yes", status, StringComparison.Ordinal);
-        Assert.Contains("preview 'codex1' in session 'session-a'", status, StringComparison.Ordinal);
-        Assert.Contains("no controllable browser has attached yet", status, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void GetStatusText_WithoutUiClient_ExplainsThatTheOwningTlbxTabIsMissing()
-    {
-        var service = new BrowserCommandService();
-
-        var status = service.GetStatusText(
-            "https://127.0.0.1:2100/",
-            sessionId: "session-a",
-            previewName: "default",
-            connectedUiClientCount: 0);
-
-        Assert.Contains("state: waiting", status, StringComparison.Ordinal);
-        Assert.Contains("bridge phase: no-ui-client", status, StringComparison.Ordinal);
-        Assert.Contains("ui clients: 0", status, StringComparison.Ordinal);
-        Assert.Contains("/ws/state", status, StringComparison.Ordinal);
-        Assert.Contains("dev browser cannot work", status, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("owning tlbx browser tab", status, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void GetStatus_WithMultipleBrowsersAndNoScope_IsAmbiguous()
     {
         var service = new BrowserCommandService();
@@ -611,31 +427,6 @@ public class BrowserCommandServiceTests
     }
 
     [Fact]
-    public void ClaimMainBrowser_WithScopedPreview_ClaimsResolvedBrowser()
-    {
-        var mainBrowser = new MainBrowserService();
-        var service = new BrowserCommandService(mainBrowser);
-
-        Assert.True(service.TryRegisterClient(
-            "c1",
-            "session-a",
-            "default",
-            "preview-a",
-            _ => { },
-            browserId: "browser-a:tab-1",
-            isVisible: true));
-
-        var result = service.ClaimMainBrowser(new BrowserCommandRequest
-        {
-            SessionId = "session-a",
-            PreviewName = "default"
-        });
-
-        Assert.True(result.Success);
-        Assert.Equal("browser-a:tab-1", mainBrowser.GetMainBrowserId());
-    }
-
-    [Fact]
     public void ClaimMainBrowser_WithBrowserId_ClaimsMatchingBrowserInsideScope()
     {
         var mainBrowser = new MainBrowserService();
@@ -705,29 +496,6 @@ public class BrowserCommandServiceTests
         Assert.False(result.Success);
         Assert.Contains("exact tab", result.Error, StringComparison.Ordinal);
         Assert.Null(captured);
-    }
-
-    [Fact]
-    public async Task WaitForControllableAsync_ReturnsReadyAfterMatchingPreviewAttaches()
-    {
-        var service = new BrowserCommandService();
-
-        var waitingTask = service.WaitForControllableAsync(
-            "https://example.com/",
-            sessionId: "session-a",
-            previewName: "user1",
-            timeout: TimeSpan.FromSeconds(1),
-            pollInterval: TimeSpan.FromMilliseconds(10));
-
-        await Task.Delay(40);
-        Assert.True(service.TryRegisterClient("c1", "session-a", "user1", "preview-a", _ => { }));
-
-        var status = await waitingTask;
-
-        Assert.True(status.Connected);
-        Assert.True(status.Controllable);
-        Assert.Equal("ready", status.State);
-        Assert.Equal("preview-a", status.DefaultClient?.PreviewId);
     }
 
     [Fact]

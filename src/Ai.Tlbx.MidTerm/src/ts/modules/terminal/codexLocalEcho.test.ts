@@ -21,7 +21,8 @@ function fixture() {
   const resized = eventSource();
   const scrolled = eventSource();
   const listeners = new Map<string, Listener>();
-  const overlays: Array<{ textContent: string; removed: boolean; style: Record<string, string> }> = [];
+  const overlays: Array<{ textContent: string; removed: boolean; style: Record<string, string> }> =
+    [];
   const screen = {
     offsetWidth: 800,
     offsetHeight: 480,
@@ -73,7 +74,12 @@ function fixture() {
     rows: 24,
     buffer: { active },
     modes: { mouseTrackingMode: 'none' },
-    options: { theme: { foreground: '#fff' }, fontFamily: 'monospace', fontSize: 14, fontWeight: 400 },
+    options: {
+      theme: { foreground: '#fff' },
+      fontFamily: 'monospace',
+      fontSize: 14,
+      fontWeight: 400,
+    },
     hasSelection: () => false,
     onWriteParsed: parsed.register,
     onRender: rendered.register,
@@ -139,7 +145,9 @@ describe('Codex terminal local echo', () => {
     echo.onInput('a');
     echo.onInput('b');
     expect(f.overlays[0]?.textContent).toBe('ab');
-    expect(f.overlays[0]?.style.backgroundColor).toBe('var(--terminal-canvas-background, var(--bg-terminal))');
+    expect(f.overlays[0]?.style.backgroundColor).toBe(
+      'var(--terminal-canvas-background, var(--bg-terminal))',
+    );
     echo.clear();
     f.setLineText('Password: ');
     echo.onInput('b');

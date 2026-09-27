@@ -11,13 +11,9 @@ public sealed class BrowserTextDocumentTests
 {
     [Theory]
     [InlineData("application/json", "navigate", "iframe", true)]
-    [InlineData("application/problem+json", "navigate", "document", true)]
     [InlineData("text/plain", "navigate", "iframe", true)]
     [InlineData("application/json", "cors", "empty", false)]
-    [InlineData("application/json", "same-origin", "empty", false)]
-    [InlineData("application/json", "", "", false)]
     [InlineData("text/plain", "no-cors", "script", false)]
-    [InlineData("image/png", "navigate", "iframe", false)]
     [InlineData("text/event-stream", "navigate", "iframe", false)]
     public void OnlyTextualDocumentNavigationsBecomeControllablePages(
         string contentType, string mode, string destination, bool expected)

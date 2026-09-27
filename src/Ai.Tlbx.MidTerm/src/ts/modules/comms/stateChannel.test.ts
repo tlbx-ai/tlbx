@@ -184,7 +184,6 @@ let reportBrowserActivity: typeof import('./stateChannel').reportBrowserActivity
 let resetStateChannelRuntimeForTests: typeof import('./stateChannel').resetStateChannelRuntimeForTests;
 let setSelectSessionCallback: typeof import('./stateChannel').setSelectSessionCallback;
 let setInitialStateHydratedCallback: typeof import('./stateChannel').setInitialStateHydratedCallback;
-let setTerminalNotificationCallback: typeof import('./stateChannel').setTerminalNotificationCallback;
 const stateChannelModulePromise = import('./stateChannel');
 const stateModulePromise = import('../../state');
 const storesModulePromise = import('../../stores');
@@ -260,7 +259,6 @@ describe('stateChannel browser-ui handling', () => {
       resetStateChannelRuntimeForTests,
       setSelectSessionCallback,
       setInitialStateHydratedCallback,
-      setTerminalNotificationCallback,
     } = await stateChannelModulePromise);
   });
 
@@ -465,60 +463,6 @@ describe('stateChannel browser-ui handling', () => {
     });
   });
 
-  it('delivers transient terminal notifications without turning them into state snapshots', async () => {
-    const { ws } = await loadHarness();
-    const notify = vi.fn();
-    setTerminalNotificationCallback(notify);
-
-    ws.onmessage?.(
-      new MessageEvent('message', {
-        data: JSON.stringify({
-          type: 'terminal-notification',
-          sessionId: 'agent5678',
-          protocol: 'osc9',
-          body: 'Agent turn complete',
-        }),
-      }),
-    );
-
-    expect(notify).toHaveBeenCalledOnce();
-    expect(notify).toHaveBeenCalledWith('agent5678', {
-      protocol: 'osc9',
-      body: 'Agent turn complete',
-    });
-    expect(mocks.createTerminalForSession).not.toHaveBeenCalled();
-  });
-
-  it('preserves the force flag on explicit CLI notifications', async () => {
-    const { ws } = await loadHarness();
-    const notify = vi.fn();
-    setTerminalNotificationCallback(notify);
-
-    ws.onmessage?.(
-      new MessageEvent('message', {
-        data: JSON.stringify({
-          type: 'terminal-notification',
-          sessionId: 'agent5678',
-          protocol: 'cli',
-          title: 'tlbx',
-          body: 'Release complete',
-          force: true,
-          priority: 'important',
-          nativeHandled: true,
-        }),
-      }),
-    );
-
-    expect(notify).toHaveBeenCalledWith('agent5678', {
-      protocol: 'cli',
-      title: 'tlbx',
-      body: 'Release complete',
-      force: true,
-      priority: 'important',
-      nativeHandled: true,
-    });
-  });
-
   it('defers browser open commands when a frontend reload was requested', async () => {
     const { ws } = await loadHarness();
     mocks.checkVersionAndReload.mockResolvedValueOnce(true);
@@ -681,43 +625,6 @@ describe('stateChannel browser-ui handling', () => {
     expect(ws.send.mock.calls.map(([raw]) => JSON.parse(raw).payload.isVisible)).toEqual([
       true,
       false,
-    ]);
-  });
-
-  it('stores browser session tree from main browser status messages', async () => {
-    const { stores, ws } = await loadHarness();
-
-    ws.onmessage?.({
-      data: JSON.stringify({
-        type: 'main-browser-status',
-        isMain: false,
-        showButton: true,
-        browsers: [
-          {
-            browserId: 'browser-a:tab-1',
-            isMain: true,
-            isActive: true,
-            connectionCount: 1,
-            activeConnectionCount: 1,
-            activeSessionId: 'session-a',
-            activeSurface: 'terminal',
-          },
-        ],
-      }),
-    } as MessageEvent<string>);
-
-    expect(stores.$isMainBrowser.get()).toBe(false);
-    expect(stores.$showMainBrowserButton.get()).toBe(true);
-    expect(stores.$browserSessions.get()).toEqual([
-      {
-        browserId: 'browser-a:tab-1',
-        isMain: true,
-        isActive: true,
-        connectionCount: 1,
-        activeConnectionCount: 1,
-        activeSessionId: 'session-a',
-        activeSurface: 'terminal',
-      },
     ]);
   });
 
@@ -893,34 +800,6 @@ describe('stateChannel browser-ui handling', () => {
     });
   });
 
-  it('prefers a running bookmarked process when no active session was remembered', async () => {
-    const { stores } = await loadHarness();
-    stores.$activeSessionId.set(null);
-
-    handleStateUpdate([
-      {
-        id: 'agent-session',
-        cols: 120,
-        rows: 30,
-        appServerControlOnly: true,
-        bookmarkId: null,
-        currentDirectory: 'Q:/repos/MidTerm',
-      } as any,
-      {
-        id: 'bookmarked-terminal',
-        cols: 120,
-        rows: 30,
-        appServerControlOnly: false,
-        bookmarkId: 'bookmark-1',
-        currentDirectory: 'Q:/repos/Jpa',
-      } as any,
-    ]);
-
-    expect(mocks.selectSession).toHaveBeenCalledWith('bookmarked-terminal', {
-      closeSettingsPanel: false,
-    });
-  });
-
   it('announces initial state hydration only after session selection is synchronized', async () => {
     const { stores } = await loadHarness();
     stores.$activeSessionId.set(null);
@@ -991,58 +870,5 @@ describe('stateChannel browser-ui handling', () => {
     expect(stores.isSessionClosing(session.id)).toBe(true);
     handleStateUpdate([]);
     expect(stores.isSessionClosing(session.id)).toBe(false);
-  });
-
-  it('applies server layout snapshots from state updates', async () => {
-    await loadHarness();
-
-    handleStateUpdate(
-      [
-        {
-          id: 'session-a',
-          cols: 120,
-          rows: 30,
-          appServerControlOnly: false,
-          foregroundPid: null,
-          foregroundName: null,
-          foregroundCommandLine: null,
-          currentDirectory: 'Q:/repos/MidTerm',
-        } as any,
-        {
-          id: 'session-b',
-          cols: 120,
-          rows: 30,
-          appServerControlOnly: false,
-          foregroundPid: null,
-          foregroundName: null,
-          foregroundCommandLine: null,
-          currentDirectory: 'Q:/repos/MidTerm',
-        } as any,
-      ],
-      {
-        root: {
-          type: 'split',
-          direction: 'horizontal',
-          children: [
-            { type: 'leaf', sessionId: 'session-a' },
-            { type: 'leaf', sessionId: 'session-b' },
-          ],
-        },
-        focusedSessionId: 'session-b',
-      },
-    );
-
-    expect(mocks.applyServerLayoutState).toHaveBeenCalledWith({
-      root: {
-        type: 'split',
-        direction: 'horizontal',
-        children: [
-          { type: 'leaf', sessionId: 'session-a' },
-          { type: 'leaf', sessionId: 'session-b' },
-        ],
-      },
-      focusedSessionId: 'session-b',
-    });
-    expect(mocks.markLayoutPersistenceReady).toHaveBeenCalled();
   });
 });

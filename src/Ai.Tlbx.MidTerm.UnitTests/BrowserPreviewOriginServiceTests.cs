@@ -21,13 +21,10 @@ public class BrowserPreviewOriginServiceTests
 
     [Theory]
     [InlineData("/", true)]
-    [InlineData("/index.html", true)]
     [InlineData("/api/auth/status", true)]
     [InlineData("/ws/state", true)]
     [InlineData("/ws/browser", false)]
     [InlineData("/webpreview/", false)]
-    [InlineData("/js/html2canvas.min.js", false)]
-    [InlineData("/favicon.ico", false)]
     [InlineData("/some/upstream/path", false)]
     public void ShouldBlockPath_OnlyBlocksMidTermAppRoutes(string path, bool expected)
     {

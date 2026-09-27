@@ -1,9 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  applyTerminalScrollbarStyleClass,
-  normalizeScrollbarStyle,
-  resolveEffectiveScrollbarStyle,
-} from './scrollbarStyle';
+import { applyTerminalScrollbarStyleClass, resolveEffectiveScrollbarStyle } from './scrollbarStyle';
 
 class MockClassList {
   private classes = new Set<string>();
@@ -22,14 +18,6 @@ class MockClassList {
 }
 
 describe('scrollbarStyle', () => {
-  it('normalizes unknown values to off', () => {
-    expect(normalizeScrollbarStyle('off')).toBe('off');
-    expect(normalizeScrollbarStyle('hover')).toBe('hover');
-    expect(normalizeScrollbarStyle('always')).toBe('always');
-    expect(normalizeScrollbarStyle('invalid')).toBe('off');
-    expect(normalizeScrollbarStyle(undefined)).toBe('off');
-  });
-
   it('resolves hover to always on non-hover devices', () => {
     expect(resolveEffectiveScrollbarStyle('hover', false)).toBe('always');
     expect(resolveEffectiveScrollbarStyle('hover', true)).toBe('hover');

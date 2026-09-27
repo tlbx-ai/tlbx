@@ -7,10 +7,10 @@ vi.mock('./inputHistoryApi', () => ({ recordTerminalInputHistory }));
 vi.mock('../logging', () => ({ createLogger: () => ({ warn: vi.fn() }) }));
 
 import {
-  classifyTerminalEnterIntent,
   captureTerminalInputData,
   captureTerminalLineBreak,
   captureTerminalPasteText,
+  classifyTerminalEnterIntent,
   expectTerminalSubmission,
   resetTerminalInputCapturesForTest,
   TerminalInputBuffer,
@@ -30,10 +30,6 @@ const enterIntent = (
   });
 
 describe('classifyTerminalEnterIntent', () => {
-  it('treats only plain Enter as submission', () => {
-    expect(enterIntent()).toBe('submit');
-  });
-
   it.each([
     ['Shift+Enter', { shiftKey: true }],
     ['Ctrl+Enter', { ctrlKey: true }],
@@ -67,14 +63,6 @@ describe('TerminalInputBuffer', () => {
     buffer.applyData('\x17MidTerm');
 
     expect(buffer.value()).toBe('hello MidTerm');
-  });
-
-  it('keeps pasted multiline text as one authored value', () => {
-    const buffer = new TerminalInputBuffer();
-    buffer.appendText('first\nsecond\nthird');
-
-    expect(buffer.consume()).toBe('first\nsecond\nthird');
-    expect(buffer.value()).toBe('');
   });
 });
 

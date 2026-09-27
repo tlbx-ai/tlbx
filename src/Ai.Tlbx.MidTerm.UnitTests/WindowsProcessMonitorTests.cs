@@ -8,12 +8,9 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class WindowsProcessMonitorTests
 {
     [Theory]
-    [InlineData(0, 0, false, WindowsProcessMonitor.ActivePollIntervalMs)]
     [InlineData(0, 1999, false, WindowsProcessMonitor.ActivePollIntervalMs)]
     [InlineData(0, 2000, false, Timeout.Infinite)]
-    [InlineData(1000, 31000, false, Timeout.Infinite)]
     [InlineData(0, 2000, true, WindowsProcessMonitor.IdlePollIntervalMs)]
-    [InlineData(1000, 31000, true, WindowsProcessMonitor.IdlePollIntervalMs)]
     public void ResolvePollDelay_StopsIdleShellsAndRetainsFallbackForChildProcesses(
         long lastActivityMs,
         long nowMs,

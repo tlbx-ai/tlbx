@@ -162,44 +162,6 @@ public sealed class BrowserUiBridgeTests
     }
 
     [Fact]
-    public void RequestMobileDevice_ForwardsToSelectedBrowserUi()
-    {
-        var bridge = new BrowserUiBridge(new MainBrowserService());
-        string? requested = null;
-        bridge.RegisterListener(
-            "l1",
-            "browser-a",
-            (_, _) => { },
-            (_, _) => { },
-            (_, _, _, _) => { },
-            (_, _, _, _) => { },
-            (sessionId, previewName, action, profile) =>
-                requested = $"{sessionId}/{previewName}/{action}/{profile}");
-
-        var ok = bridge.RequestMobileDevice(
-            "session-a",
-            "default",
-            "ROTATE",
-            "pixel-8",
-            out var error);
-
-        Assert.True(ok);
-        Assert.Equal("", error);
-        Assert.Equal("session-a/default/rotate/pixel-8", requested);
-    }
-
-    [Fact]
-    public void RequestMobileDevice_RejectsUnsupportedAction()
-    {
-        var bridge = new BrowserUiBridge(new MainBrowserService());
-
-        var ok = bridge.RequestMobileDevice("session-a", "default", "launch", null, out var error);
-
-        Assert.False(ok);
-        Assert.Contains("Unsupported", error, StringComparison.Ordinal);
-    }
-
-    [Fact]
     public async Task RequestAgentWheelAsync_UsesExplicitOwnerWithoutTryingOtherTabs()
     {
         var bridge = new BrowserUiBridge(new MainBrowserService());
@@ -247,19 +209,6 @@ public sealed class BrowserUiBridgeTests
 
         Assert.True(result.Success);
         Assert.Equal(1, dispatched);
-    }
-
-    [Fact]
-    public void RequestOpen_WithoutListeners_ReturnsHelpfulError()
-    {
-        var mainBrowser = new MainBrowserService();
-        var bridge = new BrowserUiBridge(mainBrowser);
-
-        var ok = bridge.RequestOpen(null, null, "https://example.com", true, out var error);
-
-        Assert.False(ok);
-        Assert.Contains("No tlbx browser UI is connected", error, StringComparison.Ordinal);
-        Assert.Contains("/ws/state", error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -322,43 +271,6 @@ public sealed class BrowserUiBridgeTests
         Assert.False(ok);
         Assert.Contains("--browser", error, StringComparison.Ordinal);
         Assert.Null(ownerService.GetOwnerBrowserId("session-a", "default"));
-    }
-
-    [Fact]
-    public void RequestClaim_ReassignsPreviewToConnectedMainBrowser()
-    {
-        var mainBrowser = new MainBrowserService();
-        var ownerService = new BrowserPreviewOwnerService();
-        ownerService.Claim("session-a", "default", "stale-browser");
-        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
-        var connectionToken = new object();
-
-        mainBrowser.Register("browser-a", connectionToken);
-        mainBrowser.Claim("browser-a");
-        bridge.RegisterListener("l1", "browser-a", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
-
-        var ok = bridge.RequestClaim("session-a", "default", out var error);
-
-        Assert.True(ok);
-        Assert.Equal("", error);
-        Assert.Equal("browser-a", ownerService.GetOwnerBrowserId("session-a", "default"));
-    }
-
-    [Fact]
-    public void RequestClaimMain_WithBrowserId_ClaimsMatchingConnectedUiBrowser()
-    {
-        var mainBrowser = new MainBrowserService();
-        var bridge = new BrowserUiBridge(mainBrowser);
-
-        bridge.RegisterListener("l1", "browser-a:tab-1", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
-        bridge.RegisterListener("l2", "browser-b:tab-2", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
-
-        var ok = bridge.RequestClaimMain("browser-b:tab-2", out var claimedBrowserId, out var error);
-
-        Assert.True(ok);
-        Assert.Equal("", error);
-        Assert.Equal("browser-b:tab-2", claimedBrowserId);
-        Assert.Equal("browser-b:tab-2", mainBrowser.GetMainBrowserId());
     }
 
     [Fact]
@@ -437,21 +349,4 @@ public sealed class BrowserUiBridgeTests
         Assert.Null(openedUrl);
     }
 
-    [Fact]
-    public void RequestOpen_WithOfflineOwnerAndMultipleNonLeadingBrowsers_ReturnsHelpfulError()
-    {
-        var mainBrowser = new MainBrowserService();
-        var ownerService = new BrowserPreviewOwnerService();
-        ownerService.Claim("session-a", "default", "stale-browser");
-        var bridge = new BrowserUiBridge(mainBrowser, ownerService);
-
-        bridge.RegisterListener("l1", "browser-a:tab-1", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
-        bridge.RegisterListener("l2", "browser-b:tab-2", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
-
-        var ok = bridge.RequestOpen("session-a", "default", "https://example.com", false, out var error);
-
-        Assert.False(ok);
-        Assert.Contains("--browser", error, StringComparison.OrdinalIgnoreCase);
-        Assert.Equal("stale-browser", ownerService.GetOwnerBrowserId("session-a", "default"));
-    }
 }

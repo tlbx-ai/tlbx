@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  getPerformanceLogState,
-  startPerformanceLog,
-  stopPerformanceLog,
-} from './performanceLog';
+import { getPerformanceLogState, startPerformanceLog, stopPerformanceLog } from './performanceLog';
 
 const mocks = vi.hoisted(() => ({
   traceListener: null as ((sessionId: string, trace: Record<string, number>) => void) | null,

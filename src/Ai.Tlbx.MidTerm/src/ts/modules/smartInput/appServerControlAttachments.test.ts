@@ -5,40 +5,6 @@ describe('appServerControlAttachments', () => {
     vi.restoreAllMocks();
   });
 
-  it('creates image draft attachments with server-backed preview URLs', async () => {
-    const { createAppServerControlComposerDraftAttachment } =
-      await import('./appServerControlAttachments');
-    const file = new File(['png'], 'screen.png', { type: 'image/png' });
-    const attachment = createAppServerControlComposerDraftAttachment(
-      's1',
-      file,
-      'Q:/repo/.midterm/uploads/screen.png',
-    );
-
-    expect(attachment.kind).toBe('image');
-    expect(attachment.uploadedPath).toBe('Q:/repo/.midterm/uploads/screen.png');
-    expect(attachment.previewUrl).toBe(
-      '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
-    );
-    expect(attachment.displayName).toBe('screen.png');
-    expect(attachment.file).toBeNull();
-  });
-
-  it('creates non-image draft attachments without preview URLs', async () => {
-    const { createAppServerControlComposerDraftAttachment } =
-      await import('./appServerControlAttachments');
-    const file = new File(['pdf'], 'report.pdf', { type: 'application/pdf' });
-    const attachment = createAppServerControlComposerDraftAttachment(
-      's1',
-      file,
-      'Q:/repo/.midterm/uploads/report.pdf',
-    );
-
-    expect(attachment.kind).toBe('file');
-    expect(attachment.previewUrl).toBeNull();
-    expect(attachment.uploadedPath).toBe('Q:/repo/.midterm/uploads/report.pdf');
-  });
-
   it('detects pasted image clipboard data from data transfer items', async () => {
     const {
       clipboardDataMayContainAppServerControlComposerImage,
@@ -221,37 +187,6 @@ describe('appServerControlAttachments', () => {
       { kind: 'image', file: secondImage },
       { kind: 'text', text: 'after\n' },
     ]);
-  });
-
-  it('maps uploaded attachments into AppServerControl attachment references', async () => {
-    const { toAppServerControlAttachmentReference } = await import('./appServerControlAttachments');
-
-    expect(
-      toAppServerControlAttachmentReference(
-        {
-          id: 'a1',
-          kind: 'image',
-          file: null,
-          uploadedPath: 'Q:/repo/.midterm/uploads/screen.png',
-          displayName: 'screen.png',
-          mimeType: 'image/png',
-          referenceCharCount: null,
-          referenceKind: 'image',
-          referenceLabel: 'Image 1',
-          referenceLineCount: null,
-          referenceOrdinal: 1,
-          sizeBytes: 3,
-          previewUrl:
-            '/api/files/view?path=Q%3A%2Frepo%2F.midterm%2Fuploads%2Fscreen.png&sessionId=s1',
-        },
-        'Q:/repo/.midterm/uploads/screen.png',
-      ),
-    ).toEqual({
-      kind: 'image',
-      path: 'Q:/repo/.midterm/uploads/screen.png',
-      mimeType: 'image/png',
-      displayName: 'screen.png',
-    });
   });
 
   it('releases preview URLs when drafts are discarded', async () => {

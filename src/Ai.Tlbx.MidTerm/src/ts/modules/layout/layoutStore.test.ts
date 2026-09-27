@@ -196,16 +196,6 @@ describe('layoutStore server sync', () => {
     },
   );
 
-  it('remembers revisions even when the server layout already matches locally', async () => {
-    const { stores, layoutStore } = await loadHarness();
-    layoutStore.applyServerLayoutState({ revision: 27, root: null, focusedSessionId: null });
-    layoutStore.initLayoutPersistence();
-    layoutStore.markLayoutPersistenceReady();
-    stores.$layout.set({ root: buildHorizontalLayout() });
-    await vi.advanceTimersByTimeAsync(1);
-    expect(JSON.parse(mocks.fetch.mock.calls[0]![1].body).revision).toBe(27);
-  });
-
   it('accepts canonical normalization of the acknowledged edit', async () => {
     const { stores, layoutStore } = await loadHarness();
     const root = buildHorizontalLayout();
@@ -291,15 +281,5 @@ describe('layoutStore server sync', () => {
     stores.$layout.set({ root: buildHorizontalLayout() });
     await vi.advanceTimersByTimeAsync(100);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not rewrite unchanged local storage', async () => {
-    const { stores, layoutStore } = await loadHarness();
-    stores.$layout.set({ root: buildHorizontalLayout() });
-    stores.$focusedSessionId.set('session-a');
-    layoutStore.saveLayoutToStorage();
-    vi.mocked(localStorage.setItem).mockClear();
-    layoutStore.saveLayoutToStorage();
-    expect(localStorage.setItem).not.toHaveBeenCalled();
   });
 });

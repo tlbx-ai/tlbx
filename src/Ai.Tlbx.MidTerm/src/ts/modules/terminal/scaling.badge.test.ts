@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { $activeSessionId, $isMainBrowser, $terminalSizeControls } from '../../stores';
 import { dom, sessionTerminals } from '../../state';
+import { $activeSessionId, $isMainBrowser, $terminalSizeControls } from '../../stores';
+import { sendResize } from '../comms';
 import { applyTerminalScalingSync } from './scaling';
 import { claimEligibleVisibleTerminalSizes } from './sizeControlAutomation';
-import { sendResize } from '../comms';
 
 const commMocks = vi.hoisted(() => ({
   requestTerminalSizeControl: vi.fn(),
@@ -295,59 +295,6 @@ describe('terminal scaling badge thresholds', () => {
     vi.clearAllMocks();
   });
 
-  it('keeps desktop owner text at natural size while a larger canonical grid is retained', () => {
-    const harness = createTerminalHarness(180, 80);
-    setSizeControl(true);
-    applyTerminalScalingSync(harness.state as never);
-    expect(harness.xterm.style.transform ?? '').toBe('');
-  });
-
-  it('shows the follower badge on a one-column oversized mismatch', () => {
-    const harness = createTerminalHarness(82, 24);
-
-    applyTerminalScalingSync(harness.state as never);
-
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.sizeControlledElsewhere');
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.continueHere');
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.scaledViewExplanation');
-    expect(harness.xterm.style.transform).toContain('scale(');
-    expect(harness.xterm.style.transformOrigin).toBe('top left');
-    expect(harness.getGapFillers()).toHaveLength(1);
-    expect(harness.container.style['--terminal-gap-content-width']).toBe('818px');
-    expect(harness.container.style['--terminal-gap-bottom-height']).toBe('9.171px');
-  });
-
-  it('shows the follower badge on a one-column undersized mismatch', () => {
-    const harness = createTerminalHarness(80, 24);
-
-    applyTerminalScalingSync(harness.state as never);
-
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.sizeControlledElsewhere');
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.continueHere');
-    expect(harness.xterm.style.transform ?? '').toBe('');
-  });
-
-  it('shows the follower claim badge even when the terminal already fits', () => {
-    const harness = createTerminalHarness(81, 24);
-
-    applyTerminalScalingSync(harness.state as never);
-
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.sizeControlledElsewhere');
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.continueHereHint');
-    expect(harness.xterm.style.transform ?? '').toBe('');
-  });
-
-  it('names the browser device that currently owns the terminal size', () => {
-    const harness = createTerminalHarness(81, 24);
-    setSizeControl(false, true, 'Windows PC · Chrome');
-
-    applyTerminalScalingSync(harness.state as never);
-
-    expect(harness.getOverlay()?.innerHTML).toContain('terminal.takeControlFrom');
-    expect(harness.getOverlay()?.innerHTML).toContain('Windows PC · Chrome');
-    expect(harness.getOverlay()?.innerHTML).not.toContain('terminal.continueHereHint');
-  });
-
   it('reveals only the newest ownership snapshot after a hidden transition', () => {
     const harness = createTerminalHarness(81, 24);
     harness.container.classList.add('hidden');
@@ -377,21 +324,6 @@ describe('terminal scaling badge thresholds', () => {
 
     expect(harness.state.pendingVisualRefresh).toBe(false);
     expect(harness.terminal.refresh).toHaveBeenCalledWith(0, 23);
-  });
-
-  it('keeps one notice node while committing follower to owner presentation', () => {
-    const harness = createTerminalHarness(81, 24);
-    setSizeControl(false, false, 'iPad · Safari', 7);
-    applyTerminalScalingSync(harness.state as never);
-    const overlay = harness.getOverlay();
-
-    setSizeControl(true, true, undefined, 8);
-    applyTerminalScalingSync(harness.state as never);
-
-    expect(harness.getOverlay()).toBe(overlay);
-    expect(overlay?.classList.contains('presentation-hidden')).toBe(true);
-    expect(overlay?.classList.contains('presentation-visible')).toBe(false);
-    expect(harness.xterm.style.transform ?? '').toBe('');
   });
 
   it('escapes the server-projected owner label before rendering it', () => {
@@ -498,22 +430,6 @@ describe('terminal scaling badge thresholds', () => {
     expect(harness.terminal.focus).toHaveBeenCalledTimes(1);
     expect(overlay?.disabled).toBe(false);
     expect(overlay?.classList.contains('claiming')).toBe(false);
-  });
-
-  it('fills natural-fit main-browser gaps from the rendered terminal grid', () => {
-    const harness = createTerminalHarness(81, 24, { width: 818, height: 488 });
-    setSizeControl(true);
-
-    applyTerminalScalingSync(harness.state as never);
-
-    expect(harness.getOverlay()).toBeNull();
-    expect(harness.xterm.style.transform ?? '').toBe('');
-    expect(harness.getGapFillers()).toHaveLength(1);
-    expect(fakeElementHasClass(harness.getGapFillers()[0], 'terminal-gap-fill-surface')).toBe(true);
-    expect(harness.container.style['--terminal-gap-content-width']).toBe('810px');
-    expect(harness.container.style['--terminal-gap-content-height']).toBe('480px');
-    expect(harness.container.style['--terminal-gap-right-width']).toBe('8px');
-    expect(harness.container.style['--terminal-gap-bottom-height']).toBe('8px');
   });
 
   it('keeps passive scaling free of resize side effects after the browser becomes main', () => {

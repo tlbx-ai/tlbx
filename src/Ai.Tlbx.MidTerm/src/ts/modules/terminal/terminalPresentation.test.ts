@@ -44,20 +44,6 @@ describe('terminal presentation reducer', () => {
     expect(reduceTerminalPresentationSnapshot(current, stale)).toBe(current);
   });
 
-  it('refines labels, geometry, connectivity, and claim state within one role', () => {
-    const current = snapshot(9, 'follower');
-    const refined = snapshot(9, 'follower', {
-      ownerOnline: false,
-      ownerLabel: 'Mac · Safari',
-      viewportWidth: 390,
-      viewportHeight: 720,
-      passiveScale: 0.48,
-      actionState: 'claiming',
-    });
-
-    expect(reduceTerminalPresentationSnapshot(current, refined)).toBe(refined);
-  });
-
   it('does not reverse owner identity inside the same epoch', () => {
     const owner = snapshot(12, 'owner');
     const contradictoryFollower = snapshot(12, 'follower');

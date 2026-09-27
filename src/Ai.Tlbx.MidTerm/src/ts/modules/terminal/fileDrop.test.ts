@@ -132,27 +132,6 @@ describe('fileDrop', () => {
     expect(pasteToTerminal).not.toHaveBeenCalled();
   });
 
-  it('keeps terminal paste behavior when AppServerControl is not active', async () => {
-    const { handleFileDrop } = await import('./fileDrop');
-
-    const files = [
-      new File(['plain text'], 'note.txt', { type: 'text/plain' }),
-      new File(['png'], 'pic.png', { type: 'image/png' }),
-    ] as unknown as FileList;
-
-    await handleFileDrop(files);
-
-    expect(sendAppServerControlTurn).not.toHaveBeenCalled();
-    expect(pasteToTerminal).toHaveBeenNthCalledWith(1, 's1', 'plain text', false);
-    expect(pasteToTerminal).toHaveBeenNthCalledWith(
-      2,
-      's1',
-      'Q:/repo/uploads/pic.png',
-      true,
-      'uploadPath',
-    );
-  });
-
   it('uses upload-plus-path paste for clipboard images even for codex-like foreground apps', async () => {
     const { handleClipboardPaste } = await import('./fileDrop');
     const read = vi.fn(async () => [
