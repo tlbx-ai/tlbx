@@ -206,10 +206,13 @@ export const $webPreviewViewport = atom<{ width: number; height: number } | null
 // Connection State Stores
 // =============================================================================
 
-/** State WebSocket connected flag */
+/** Foreground recovery has not yet completed its data and paint barrier. */
+export const $browserResuming = atom<boolean>(false);
+
+/** State WebSocket initial state received */
 export const $stateWsConnected = atom<boolean>(false);
 
-/** Mux WebSocket connected flag */
+/** Mux initial replay parsed */
 export const $muxWsConnected = atom<boolean>(false);
 
 /** Data loss detected for a session (output queue overflow) */
@@ -227,8 +230,9 @@ export const $muxHasConnected = atom<boolean>(false);
  * Replaces updateConnectionStatus() function.
  */
 export const $connectionStatus = computed(
-  [$stateWsConnected, $muxWsConnected],
-  (stateConnected, muxConnected): 'connected' | 'disconnected' | 'reconnecting' => {
+  [$stateWsConnected, $muxWsConnected, $browserResuming],
+  (stateConnected, muxConnected, resuming): 'connected' | 'disconnected' | 'reconnecting' => {
+    if (resuming) return 'reconnecting';
     if (stateConnected && muxConnected) return 'connected';
     if (!stateConnected && !muxConnected) return 'disconnected';
     return 'reconnecting';

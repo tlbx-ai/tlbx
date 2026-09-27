@@ -17,9 +17,11 @@ import {
 } from '../../stores';
 import { applyReceivedSettings } from '../settings/persistence';
 import { handleUpdateInfo } from '../updating/checker';
+import { RESUME_PROBE_TIMEOUT_MS, SocketReadiness } from './socketReadiness';
 
 const log = createLogger('settings-ws');
 const settingsReconnect = new ReconnectController();
+const settingsReadiness = new SocketReadiness();
 
 /** Message wrapper from server */
 interface SettingsWsMessage {
@@ -47,7 +49,6 @@ export function connectSettingsWebSocket(): void {
   ws.onopen = () => {
     if (settingsWs !== ws) return;
     settingsReconnect.reset();
-    $settingsWsConnected.set(true);
     log.info(() => 'Settings WebSocket connected');
   };
 
@@ -56,6 +57,7 @@ export function connectSettingsWebSocket(): void {
     try {
       const message = JSON.parse(event.data as string) as SettingsWsMessage;
       handleMessage(message);
+      if (message.type === 'settings' && message.settings) $settingsWsConnected.set(true);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       log.error(() => `Error parsing settings message: ${message}`);
@@ -83,6 +85,48 @@ export function connectSettingsWebSocket(): void {
       ws.close();
     }
   };
+  settingsReadiness.watch(
+    ws,
+    () => settingsWs === ws,
+    () => $settingsWsConnected.get(),
+    connectSettingsWebSocket,
+  );
+}
+
+/** Refresh settings over the existing channel; only replace it if it fails. */
+export function recoverSettingsAfterBrowserResume(forceReconnect: boolean): void {
+  const socket = settingsWs;
+  if (forceReconnect || !socket || socket.readyState === WebSocket.CLOSED) {
+    connectSettingsWebSocket();
+    return;
+  }
+  // Initial synchronization already has its own deadline.
+  if (!$settingsWsConnected.get()) return;
+  const finish = (): void => {
+    clearTimeout(timeout);
+    socket.removeEventListener('message', received);
+    socket.removeEventListener('close', finish);
+  };
+  const received = (event: MessageEvent): void => {
+    try {
+      const message = JSON.parse(event.data as string) as SettingsWsMessage;
+      if (message.type === 'settings' && message.settings) finish();
+    } catch {
+      /* The normal handler reports malformed messages. */
+    }
+  };
+  const timeout = setTimeout(() => {
+    finish();
+    if (settingsWs === socket && document.visibilityState !== 'hidden') connectSettingsWebSocket();
+  }, RESUME_PROBE_TIMEOUT_MS);
+  socket.addEventListener('message', received);
+  socket.addEventListener('close', finish, { once: true });
+  try {
+    socket.send('?');
+  } catch {
+    finish();
+    connectSettingsWebSocket();
+  }
 }
 
 function handleMessage(message: SettingsWsMessage): void {

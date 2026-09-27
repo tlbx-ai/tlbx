@@ -1109,6 +1109,8 @@ function scheduleFooterReserveResize(): void {
 let foregroundResizeRecoveryScheduled = false;
 let foregroundResizeRecoveryTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
 let foregroundResizeRecoveryGeneration = 0;
+let foregroundResizeRecoveryPromise: Promise<void> | null = null;
+let finishForegroundResizeRecoveryPromise: (() => void) | null = null;
 let foregroundResizeRecoveryRetryCount = 0;
 let foregroundResizeRecoveryNeedsEmergencyFallback = false;
 const FOREGROUND_RESIZE_RECOVERY_TIMEOUT_MS = 250;
@@ -1142,6 +1144,11 @@ function finishForegroundResizeRecovery(generation: number): void {
     foregroundResizeRecoveryTimeout = null;
   }
   runForegroundResizeRecoveryPass();
+  const complete = finishForegroundResizeRecoveryPromise;
+  finishForegroundResizeRecoveryPromise = null;
+  foregroundResizeRecoveryPromise = null;
+  // The recovery pass may have replaced the renderer. Give its paint a frame.
+  requestAnimationFrame(() => requestAnimationFrame(() => complete?.()));
 }
 
 function requestForegroundResizeRecoveryFrame(generation: number): void {
@@ -1181,8 +1188,11 @@ function retryForegroundResizeRecovery(generation: number): void {
   }, FOREGROUND_RESIZE_RECOVERY_RETRY_MS);
 }
 
-export function scheduleForegroundResizeRecovery(): void {
-  if (foregroundResizeRecoveryScheduled) return;
+export function scheduleForegroundResizeRecovery(): Promise<void> {
+  if (foregroundResizeRecoveryPromise) return foregroundResizeRecoveryPromise;
+  foregroundResizeRecoveryPromise = new Promise<void>((resolve) => {
+    finishForegroundResizeRecoveryPromise = resolve;
+  });
   foregroundResizeRecoveryScheduled = true;
   foregroundResizeRecoveryRetryCount = 0;
   foregroundResizeRecoveryNeedsEmergencyFallback = false;
@@ -1191,6 +1201,7 @@ export function scheduleForegroundResizeRecovery(): void {
   foregroundResizeRecoveryTimeout = globalThis.setTimeout(() => {
     retryForegroundResizeRecovery(generation);
   }, FOREGROUND_RESIZE_RECOVERY_TIMEOUT_MS);
+  return foregroundResizeRecoveryPromise;
 }
 
 /**
@@ -1333,7 +1344,7 @@ export function setupResizeObserver(): void {
   });
 
   setupTerminalForegroundRecovery(() => {
-    scheduleForegroundResizeRecovery();
+    void scheduleForegroundResizeRecovery();
     claimEligibleVisibleTerminalSizes(true);
   });
 

@@ -1,3 +1,8 @@
+import {
+  SocketReadiness,
+  RESUME_PROBE_TIMEOUT_MS,
+  SOCKET_PROGRESS_TIMEOUT_MS,
+} from './socketReadiness';
 /* eslint-disable max-lines -- Mux transport remains the protocol coordinator; hot-path helpers are split out as they become stable. */
 /**
  * Mux WebSocket terminal I/O. Output ordering is strict per session, not global;
@@ -124,6 +129,7 @@ import {
 
 const log = createLogger('mux');
 const muxReconnect = new ReconnectController();
+const muxReadiness = new SocketReadiness();
 const textEncoder = new TextEncoder();
 
 let syncCompleteTimeout: number | null = null;
@@ -213,7 +219,6 @@ let pongCallback: ((mode: number, rtt: number, timestamp: number) => void) | nul
 /** A resume probe is independent of the latency panel's outstanding ping. */
 export function probeMuxWebSocket(): Promise<boolean> {
   const socket = muxWs;
-  if (socket?.readyState === WebSocket.CONNECTING) return Promise.resolve(true);
   if (!socket || socket.readyState !== WebSocket.OPEN) return Promise.resolve(false);
   return new Promise((resolve) => {
     const finish = (healthy: boolean): void => {
@@ -228,7 +233,7 @@ export function probeMuxWebSocket(): Promise<boolean> {
     };
     const timeout = setTimeout(() => {
       finish(false);
-    }, 2000);
+    }, RESUME_PROBE_TIMEOUT_MS);
     socket.addEventListener('message', received, { once: true });
     const frame = new Uint8Array(MUX_HEADER_SIZE + 9);
     frame[0] = MUX_TYPE_PING;
@@ -1258,6 +1263,7 @@ function finishInitialSyncWhenRecoveriesAreParsed(): void {
   }
 
   syncCompletePending = false;
+  $muxWsConnected.set(true);
   if (syncCompleteTimeout !== null) {
     clearTimeout(syncCompleteTimeout);
     syncCompleteTimeout = null;
@@ -1641,7 +1647,6 @@ export function connectMuxWebSocket(): void {
     const localTerminalCount = countLocalTerminals(sessionTerminals, isHubSessionId);
     const isReconnect = $muxHasConnected.get() && localTerminalCount > 0;
 
-    $muxWsConnected.set(true);
     $muxHasConnected.set(true);
 
     // On reconnect, check if server version changed (update applied) and reload
@@ -1746,6 +1751,14 @@ export function connectMuxWebSocket(): void {
     if (muxWs !== ws) return;
     log.error(() => `WebSocket error: ${e.type}`);
   };
+  muxReadiness.watch(
+    ws,
+    () => muxWs === ws,
+    () => $muxWsConnected.get(),
+    connectMuxWebSocket,
+    // Let the existing five-second xterm parse-stall repair finish first.
+    () => (activeSessionRecoveries.size > 0 ? 6000 : SOCKET_PROGRESS_TIMEOUT_MS),
+  );
 }
 
 /**

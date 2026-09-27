@@ -6,11 +6,12 @@ const mocks = vi.hoisted(() => ({
   currentSettingsSet: vi.fn(),
   updateInfoSet: vi.fn(),
   settingsConnectedSet: vi.fn(),
+  connected: false,
   applyReceivedSettings: vi.fn(),
   handleUpdateInfo: vi.fn(),
 }));
 
-class FakeWebSocket {
+class FakeWebSocket extends EventTarget {
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 3;
@@ -22,12 +23,16 @@ class FakeWebSocket {
   onclose: ((event: CloseEvent) => void) | null = null;
   onerror: ((event: Event) => void) | null = null;
 
+  send = vi.fn();
+
   constructor(readonly url: string) {
+    super();
     FakeWebSocket.instances.push(this);
   }
 
   close(): void {
     this.readyState = FakeWebSocket.CLOSED;
+    this.dispatchEvent(new Event('close'));
   }
 }
 
@@ -59,8 +64,11 @@ vi.mock('../../stores', () => ({
     set: (value: unknown) => mocks.updateInfoSet(value),
   },
   $settingsWsConnected: {
-    set: (value: unknown) => mocks.settingsConnectedSet(value),
-    get: () => false,
+    set: (value: boolean) => {
+      mocks.connected = value;
+      mocks.settingsConnectedSet(value);
+    },
+    get: () => mocks.connected,
   },
   areJsonLikeEqual: (left: unknown, right: unknown) =>
     JSON.stringify(left) === JSON.stringify(right),
@@ -82,20 +90,26 @@ vi.mock('../updating/checker', () => ({
   handleUpdateInfo: (update: unknown) => mocks.handleUpdateInfo(update),
 }));
 
+let recoverSettingsAfterBrowserResume: typeof import('./settingsChannel').recoverSettingsAfterBrowserResume;
 let connectSettingsWebSocket: typeof import('./settingsChannel').connectSettingsWebSocket;
 
 describe('settingsChannel', () => {
   beforeAll(async () => {
-    ({ connectSettingsWebSocket } = await import('./settingsChannel'));
+    ({ connectSettingsWebSocket, recoverSettingsAfterBrowserResume } =
+      await import('./settingsChannel'));
   });
 
   beforeEach(() => {
+    vi.useFakeTimers();
     vi.clearAllMocks();
+    mocks.connected = false;
+    vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
     FakeWebSocket.instances = [];
     vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
   });
 
@@ -107,6 +121,23 @@ describe('settingsChannel', () => {
     socket.onopen?.();
     return socket;
   }
+
+  it('keeps a replying settings connection and replaces a silent one on resume', async () => {
+    const socket = connect();
+    const snapshot = JSON.stringify({ type: 'settings', settings: mocks.currentSettings });
+    expect(mocks.connected).toBe(false);
+    socket.onmessage?.({ data: snapshot } as MessageEvent<string>);
+    expect(mocks.connected).toBe(true);
+    recoverSettingsAfterBrowserResume(false);
+    expect(socket.send).toHaveBeenCalledWith('?');
+    socket.dispatchEvent(new MessageEvent('message', { data: snapshot }));
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    recoverSettingsAfterBrowserResume(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(mocks.connected).toBe(false);
+  });
 
   it('ignores the unchanged initial settings snapshot after a resume reconnect', () => {
     const socket = connect();

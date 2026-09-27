@@ -1,4 +1,9 @@
-import { $activeSessionId, $connectionStatus, $stateWsConnected } from '../../stores';
+import {
+  $activeSessionId,
+  $browserResuming,
+  $stateWsConnected,
+  $muxWsConnected,
+} from '../../stores';
 import { MOBILE_PIP_ACTIVE_CHANGED_EVENT } from '../../constants';
 import { connectStateWebSocket, reportBrowserActivity, probeStateWebSocket } from './stateChannel';
 import {
@@ -10,15 +15,14 @@ import {
 interface BrowserLifecycleRecoveryOptions {
   getVisibleTerminalSessionIds: () => string[];
   syncMuxTerminalVisibility: () => void;
-  focusActiveTerminal: () => void;
   applyScrollbackProtection: () => void;
-  recoverTerminalPresentationAfterResume: () => void;
+  recoverTerminalPresentationAfterResume: () => void | Promise<void>;
   keepTerminalOutputActiveWhileHidden: () => boolean;
   stayActiveInBackground?: () => boolean;
   subscribeBackgroundActivity?: (listener: () => void) => () => void;
   suspendAdditionalTerminalTransport?: () => void;
   recoverAdditionalTerminalTransport?: (forceReconnect: boolean) => void;
-  reconnectSettingsAfterLongResume?: () => void;
+  recoverSettingsAfterResume?: (forceReconnect: boolean) => void;
   recoverAppServerControlAfterResume?: () => void;
   suspendAppServerControlForBackground?: () => void;
   suspendAncillaryTransportForBackground?: () => void;
@@ -28,7 +32,6 @@ interface BrowserLifecycleRecoveryOptions {
 const FOREGROUND_EVENT_LOOP_GAP_MS = 5000;
 const FOREGROUND_RECOVERY_COALESCE_MS = 250;
 const FOREGROUND_HEARTBEAT_INTERVAL_MS = 1000;
-const DISCONNECTED_RECOVERY_INTERVAL_MS = 15000;
 
 export function hasSuspendedForegroundEventLoop(
   lastHeartbeatAtMs: number,
@@ -48,21 +51,82 @@ export function setupBrowserLifecycleRecovery(
   let lastForegroundHeartbeatAtMs = Date.now();
   let resumeFromBackgroundPending = isDocumentHidden();
   let backgroundLifecycleApplied = false;
-  let disconnectedAtMs: number | null = null;
+  let probesPending = false;
+  let finishingGeneration = -1;
+  const finishRecovery = (): void => {
+    if (
+      isDocumentHidden() ||
+      probesPending ||
+      !$browserResuming.get() ||
+      !$stateWsConnected.get() ||
+      !$muxWsConnected.get() ||
+      finishingGeneration === recoveryGeneration
+    )
+      return;
+    const generation = recoveryGeneration;
+    finishingGeneration = generation;
+    void Promise.resolve(options.recoverTerminalPresentationAfterResume()).then(() => {
+      if (generation !== recoveryGeneration || isDocumentHidden()) return;
+      if (!$stateWsConnected.get() || !$muxWsConnected.get()) {
+        finishingGeneration = -1;
+        return;
+      }
+      options.applyScrollbackProtection();
+      $browserResuming.set(false);
+    });
+  };
+  const stopStateReadiness = $stateWsConnected.listen(finishRecovery);
+  const stopMuxReadiness = $muxWsConnected.listen(finishRecovery);
+
+  const probeReusedTransports = (): Promise<void>[] => {
+    const probes: Promise<void>[] = [];
+    const generation = recoveryGeneration;
+    const stillForeground = (): boolean => generation === recoveryGeneration && !isDocumentHidden();
+    // New connections have their own handshake/synchronization deadline.
+    // Probe only reused connections; a failed channel must not retire its peers.
+    if ($stateWsConnected.get()) {
+      probes.push(
+        probeStateWebSocket().then((healthy) => {
+          if (!healthy && stillForeground()) connectStateWebSocket();
+        }),
+      );
+    }
+    if ($muxWsConnected.get()) {
+      probes.push(
+        probeMuxWebSocket().then((healthy) => {
+          if (!healthy && stillForeground()) {
+            recoverVisibleTerminalsAfterBrowserResume(
+              $activeSessionId.get(),
+              options.getVisibleTerminalSessionIds(),
+              { forceReconnect: true },
+            );
+          }
+        }),
+      );
+    }
+    return probes;
+  };
 
   const recoverRealtimeAfterBrowserResume = (
     forceReconnect: boolean,
     resumedFromBackground: boolean,
   ): void => {
     const replaceBrowserTransports = forceReconnect;
+    const recovering = forceReconnect || resumedFromBackground;
+    if (recovering) {
+      probesPending = true;
+      $browserResuming.set(true);
+    }
     if (replaceBrowserTransports || !$stateWsConnected.get()) {
       connectStateWebSocket();
     } else {
       reportBrowserActivity(true);
     }
 
-    if (replaceBrowserTransports) options.reconnectSettingsAfterLongResume?.();
-    if (replaceBrowserTransports || resumedFromBackground) {
+    if (recovering) {
+      options.recoverSettingsAfterResume?.(replaceBrowserTransports);
+    }
+    if (recovering) {
       options.recoverAppServerControlAfterResume?.();
       options.recoverAncillaryTransportAfterResume?.();
     }
@@ -75,16 +139,17 @@ export function setupBrowserLifecycleRecovery(
     options.recoverAdditionalTerminalTransport?.(replaceBrowserTransports);
 
     options.syncMuxTerminalVisibility();
-    options.recoverTerminalPresentationAfterResume();
-    options.focusActiveTerminal();
-    options.applyScrollbackProtection();
-    if (resumedFromBackground && !forceReconnect) {
+    if (!recovering) {
+      void options.recoverTerminalPresentationAfterResume();
+      options.applyScrollbackProtection();
+    }
+    const probes = resumedFromBackground && !forceReconnect ? probeReusedTransports() : [];
+    if (recovering) {
       const generation = recoveryGeneration;
-      void Promise.all([probeStateWebSocket(), probeMuxWebSocket()]).then((healthy) => {
-        if (generation !== recoveryGeneration || isDocumentHidden() || healthy.every(Boolean))
-          return;
-        forceTransportReconnect = true;
-        scheduleForegroundRecovery();
+      void Promise.all(probes).then(() => {
+        if (generation !== recoveryGeneration) return;
+        probesPending = false;
+        finishRecovery();
       });
     }
   };
@@ -255,29 +320,12 @@ export function setupBrowserLifecycleRecovery(
     lastForegroundHeartbeatAtMs = now;
 
     if (isDocumentHidden()) {
-      disconnectedAtMs = null;
       enterBrowserBackground();
       return;
     }
     if (resumeFromBackgroundPending) {
       scheduleForegroundRecovery();
       return;
-    }
-    // A resumed WebSocket handshake can remain CONNECTING without onclose.
-    // Give normal backoff/handshakes time, but never leave the visible app stuck.
-    if ($connectionStatus.get() === 'connected') {
-      disconnectedAtMs = null;
-    } else {
-      disconnectedAtMs ??= now;
-      if (now - disconnectedAtMs >= DISCONNECTED_RECOVERY_INTERVAL_MS) {
-        disconnectedAtMs = now;
-        connectStateWebSocket();
-        recoverVisibleTerminalsAfterBrowserResume(
-          $activeSessionId.get(),
-          options.getVisibleTerminalSessionIds(),
-          { forceReconnect: true },
-        );
-      }
     }
     if (!hasSuspendedForegroundEventLoop(previousHeartbeatAtMs, now)) {
       return;
@@ -289,6 +337,9 @@ export function setupBrowserLifecycleRecovery(
 
   return () => {
     recoveryGeneration += 1;
+    stopStateReadiness();
+    stopMuxReadiness();
+    $browserResuming.set(false);
     unsubscribeBackgroundActivity?.();
     cancelScheduledRecovery();
     globalThis.clearInterval(heartbeatTimer);
