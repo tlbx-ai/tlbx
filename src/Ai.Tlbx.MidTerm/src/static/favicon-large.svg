@@ -9,7 +9,9 @@
     </radialGradient>
   </defs>
   <rect width="400" height="400" fill="var(--tlbx-background)"/>
-  <g transform="translate(20 20) scale(.9)">
+  <!-- Android may mask everything outside the centered 40%-radius safe circle.
+       Keep the complete toolbox, including its stroke, inside that circle. -->
+  <g transform="translate(70 70) scale(.65)">
     <g fill="none" stroke="var(--tlbx-ink)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
       <path d="M 12 98 L 265 7 L 385 69 L 385 299 L 132 390 L 12 328 Z"/>
       <path d="M 12 98 L 132 160 L 385 69"/>
