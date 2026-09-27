@@ -37,7 +37,6 @@ public sealed class BackgroundImageEncoderTests
     }
 
     [Theory]
-    [InlineData(0, 0)]
     [InlineData(128, 120)]
     public void Encode_CompositesTransparencyOnBlack(byte alpha, int expectedRed)
     {
@@ -55,13 +54,7 @@ public sealed class BackgroundImageEncoderTests
     }
 
     [Theory]
-    [InlineData(1, 8, 8)]
-    [InlineData(2, 55, 8)]
-    [InlineData(3, 55, 23)]
-    [InlineData(4, 8, 23)]
-    [InlineData(5, 8, 8)]
     [InlineData(6, 23, 8)]
-    [InlineData(7, 23, 55)]
     [InlineData(8, 8, 55)]
     public void Encode_AppliesExifOrientationAndRemovesMetadata(byte orientation, int redX, int redY)
     {

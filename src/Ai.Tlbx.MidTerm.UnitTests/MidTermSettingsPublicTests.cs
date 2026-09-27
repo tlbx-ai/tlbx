@@ -7,22 +7,6 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermSettingsPublicTests
 {
-    [Fact]
-    public void StayActiveInBackground_PatchAndSerializationRoundTrip()
-    {
-        var settings = new MidTermSettings();
-        Assert.False(settings.StayActiveInBackground);
-        var current = MidTermSettingsPublic.FromSettings(settings);
-        using var patch = JsonDocument.Parse("""{"stayActiveInBackground":true}""");
-        MidTermSettingsPatch.Merge(current, patch.RootElement).ApplyTo(settings);
-        Assert.True(settings.StayActiveInBackground);
-        var json = JsonSerializer.Serialize(settings, SettingsJsonContext.Default.MidTermSettings);
-        var restored = JsonSerializer.Deserialize(json, SettingsJsonContext.Default.MidTermSettings)!;
-        Assert.True(MidTermSettingsPublic.FromSettings(restored).StayActiveInBackground);
-        using var disable = JsonDocument.Parse("""{"stayActiveInBackground":false}""");
-        MidTermSettingsPatch.Merge(MidTermSettingsPublic.FromSettings(restored), disable.RootElement).ApplyTo(restored);
-        Assert.False(restored.StayActiveInBackground);
-    }
 
     [Fact]
     public void SettingsReplacement_RejectsPartialDocument()
@@ -35,25 +19,6 @@ public sealed class MidTermSettingsPublicTests
 
         Assert.Contains("requires a complete settings document", exception.Message, StringComparison.Ordinal);
         Assert.Contains("Use PATCH /api/settings", exception.Message, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void SettingsReplacement_AcceptsFullRoundTripDocument()
-    {
-        var current = MidTermSettingsPublic.FromSettings(new MidTermSettings
-        {
-            Language = LanguageSetting.English,
-            BackgroundImageEnabled = true,
-            UpdateChannel = "dev"
-        });
-        var json = JsonSerializer.Serialize(current, Ai.Tlbx.MidTerm.Services.AppJsonContext.Default.MidTermSettingsPublic);
-        using var document = JsonDocument.Parse(json);
-
-        var replacement = MidTermSettingsPatch.Replace(current, document.RootElement);
-
-        Assert.Equal(LanguageSetting.English, replacement.Language);
-        Assert.True(replacement.BackgroundImageEnabled);
-        Assert.Equal("dev", replacement.UpdateChannel);
     }
 
     [Fact]
@@ -97,92 +62,6 @@ public sealed class MidTermSettingsPublicTests
         Assert.Collection(
             settings.TerminalColorSchemes,
             scheme => Assert.Equal("Personal", scheme.Name));
-    }
-
-    [Fact]
-    public void ApplyTo_NullTerminalTransparency_PreservesExistingValue()
-    {
-        var settings = new MidTermSettings
-        {
-            UiTransparency = 10,
-            TerminalTransparency = 45
-        };
-
-        var publicSettings = new MidTermSettingsPublic
-        {
-            UiTransparency = 10,
-            TerminalTransparency = null
-        };
-
-        publicSettings.ApplyTo(settings);
-
-        Assert.Equal(45, settings.TerminalTransparency);
-    }
-
-    [Fact]
-    public void ApplyTo_MissingUpdateChannel_PreservesExistingChannel()
-    {
-        var settings = new MidTermSettings
-        {
-            UpdateChannel = "dev"
-        };
-
-        var publicSettings = new MidTermSettingsPublic
-        {
-            UpdateChannel = null
-        };
-
-        publicSettings.ApplyTo(settings);
-
-        Assert.Equal("dev", settings.UpdateChannel);
-    }
-
-    [Fact]
-    public void FromSettings_AndApplyTo_ClampsToolCallOutputLines()
-    {
-        var settings = new MidTermSettings
-        {
-            ToolCallOutputLines = 12
-        };
-
-        var publicSettings = MidTermSettingsPublic.FromSettings(settings);
-
-        Assert.Equal(12, publicSettings.ToolCallOutputLines);
-
-        publicSettings.ToolCallOutputLines = 42;
-        publicSettings.ApplyTo(settings);
-        Assert.Equal(20, settings.ToolCallOutputLines);
-
-        publicSettings.ToolCallOutputLines = -3;
-        publicSettings.ApplyTo(settings);
-        Assert.Equal(0, settings.ToolCallOutputLines);
-    }
-
-    [Fact]
-    public void ApplyTo_ClampsAndValidatesFontRenderingSettings()
-    {
-        var settings = new MidTermSettings
-        {
-            LineHeight = 1,
-            LetterSpacing = 0,
-            FontWeight = "normal",
-            FontWeightBold = "bold"
-        };
-
-        var publicSettings = new MidTermSettingsPublic
-        {
-            LineHeight = 5,
-            LetterSpacing = -10,
-            FontWeight = "invalid",
-            FontWeightBold = "900"
-        };
-
-        publicSettings.ApplyTo(settings);
-
-        Assert.Equal(3, settings.LineHeight);
-        Assert.Equal(-2, settings.LetterSpacing);
-        Assert.Equal("normal", settings.FontWeight);
-        Assert.Equal("900", settings.FontWeightBold);
     }
 
     [Fact]

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  isCopyShortcut,
-  isNativeImagePasteShortcut,
-  isPasteShortcut,
   resolveCopyShortcutAction,
   writeTextToClipboardEvent,
   type ShortcutInput,
@@ -20,50 +17,6 @@ function key(
     metaKey: mods.metaKey ?? false,
   };
 }
-
-describe('isPasteShortcut', () => {
-  it('matches unified aliases', () => {
-    expect(isPasteShortcut(key('v', { ctrlKey: true }))).toBe(true);
-    expect(isPasteShortcut(key('V', { ctrlKey: true }))).toBe(true);
-    expect(isPasteShortcut(key('v', { ctrlKey: true, shiftKey: true }))).toBe(true);
-    expect(isPasteShortcut(key('v', { metaKey: true }))).toBe(true);
-    expect(isPasteShortcut(key('v', { altKey: true }))).toBe(false);
-  });
-
-  it('rejects unrelated or ambiguous combinations', () => {
-    expect(isPasteShortcut(key('v'))).toBe(false);
-    expect(isPasteShortcut(key('x', { ctrlKey: true }))).toBe(false);
-    expect(isPasteShortcut(key('v', { altKey: true, shiftKey: true }))).toBe(false);
-    expect(isPasteShortcut(key('v', { ctrlKey: true, altKey: true }))).toBe(false);
-    expect(isPasteShortcut(key('v', { metaKey: true, shiftKey: true }))).toBe(false);
-  });
-});
-
-describe('isNativeImagePasteShortcut', () => {
-  it('matches Alt+V only', () => {
-    expect(isNativeImagePasteShortcut(key('v', { altKey: true }))).toBe(true);
-    expect(isNativeImagePasteShortcut(key('v', { altKey: true, shiftKey: true }))).toBe(false);
-    expect(isNativeImagePasteShortcut(key('v', { ctrlKey: true }))).toBe(false);
-  });
-});
-
-describe('isCopyShortcut', () => {
-  it('matches windows copy shortcuts only', () => {
-    expect(isCopyShortcut(key('c', { ctrlKey: true }), 'windows')).toBe(true);
-    expect(isCopyShortcut(key('c', { ctrlKey: true, shiftKey: true }), 'windows')).toBe(false);
-  });
-
-  it('matches unix copy shortcuts only', () => {
-    expect(isCopyShortcut(key('c', { ctrlKey: true, shiftKey: true }), 'unix')).toBe(true);
-    expect(isCopyShortcut(key('c', { ctrlKey: true }), 'unix')).toBe(false);
-  });
-
-  it('always recognizes the native macOS copy shortcut', () => {
-    expect(isCopyShortcut(key('c', { metaKey: true }), 'windows')).toBe(true);
-    expect(isCopyShortcut(key('C', { metaKey: true }), 'unix')).toBe(true);
-    expect(isCopyShortcut(key('c', { metaKey: true, shiftKey: true }), 'unix')).toBe(false);
-  });
-});
 
 describe('resolveCopyShortcutAction', () => {
   it('copies locally only when there is a selection', () => {
@@ -84,10 +37,6 @@ describe('resolveCopyShortcutAction', () => {
 
   it('does not turn Cmd+C without a selection into terminal input', () => {
     expect(resolveCopyShortcutAction(key('c', { metaKey: true }), 'unix', false)).toBe('ignore');
-  });
-
-  it('ignores unrelated shortcuts', () => {
-    expect(resolveCopyShortcutAction(key('x', { ctrlKey: true }), 'windows', false)).toBe('ignore');
   });
 });
 

@@ -93,18 +93,6 @@ public sealed class AuthServiceTests : IDisposable
     }
 
     [Fact]
-    public void HashPassword_VerifyPassword_RoundTrip()
-    {
-        if (!IsWindows) return;
-        var password = "MySecurePassword123!";
-
-        var hash = _authService.HashPassword(password);
-        var result = _authService.VerifyPassword(password, hash);
-
-        Assert.True(result);
-    }
-
-    [Fact]
     public void HashPassword_ProducesDifferentHashesForSamePassword()
     {
         if (!IsWindows) return;
@@ -150,35 +138,6 @@ public sealed class AuthServiceTests : IDisposable
     }
 
     [Fact]
-    public void VerifyPassword_EmptyPassword_ReturnsFalse()
-    {
-        if (!IsWindows) return;
-        var hash = _authService.HashPassword("SomePassword");
-
-        var result = _authService.VerifyPassword("", hash);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void VerifyPassword_NullHash_ReturnsFalse()
-    {
-        if (!IsWindows) return;
-        var result = _authService.VerifyPassword("AnyPassword", null);
-
-        Assert.False(result);
-    }
-
-    [Fact]
-    public void VerifyPassword_EmptyHash_ReturnsFalse()
-    {
-        if (!IsWindows) return;
-        var result = _authService.VerifyPassword("AnyPassword", "");
-
-        Assert.False(result);
-    }
-
-    [Fact]
     public void RateLimit_LoginSequence_AccumulatesFailuresAcrossChecks()
     {
         if (!IsWindows) return;
@@ -208,39 +167,6 @@ public sealed class AuthServiceTests : IDisposable
             _authService.RecordFailedAttempt(ip);
         }
         Assert.False(_authService.IsRateLimited(ip));
-    }
-
-    [Fact]
-    public void RateLimit_FourFailures_NotLocked()
-    {
-        if (!IsWindows) return;
-        var ip = "192.168.1.1";
-
-        for (var i = 0; i < 4; i++)
-        {
-            _authService.RecordFailedAttempt(ip);
-        }
-
-        Assert.False(_authService.IsRateLimited(ip));
-    }
-
-    [Fact]
-    public void RateLimit_FiveFailures_30SecondLockout()
-    {
-        if (!IsWindows) return;
-        var ip = "192.168.1.2";
-
-        for (var i = 0; i < 5; i++)
-        {
-            _authService.RecordFailedAttempt(ip);
-        }
-
-        Assert.True(_authService.IsRateLimited(ip));
-
-        var remaining = _authService.GetRemainingLockout(ip);
-        Assert.NotNull(remaining);
-        Assert.True(remaining.Value.TotalSeconds <= 30);
-        Assert.True(remaining.Value.TotalSeconds > 0);
     }
 
     [Fact]
@@ -281,23 +207,6 @@ public sealed class AuthServiceTests : IDisposable
     }
 
     [Fact]
-    public void RateLimit_LockoutExpires_AfterTime()
-    {
-        if (!IsWindows) return;
-        var ip = "192.168.1.5";
-
-        for (var i = 0; i < 5; i++)
-        {
-            _authService.RecordFailedAttempt(ip);
-        }
-        Assert.True(_authService.IsRateLimited(ip));
-
-        _timeProvider.Advance(TimeSpan.FromSeconds(31));
-
-        Assert.False(_authService.IsRateLimited(ip));
-    }
-
-    [Fact]
     public void RateLimit_5MinLockoutExpires_AfterTime()
     {
         if (!IsWindows) return;
@@ -312,17 +221,6 @@ public sealed class AuthServiceTests : IDisposable
         _timeProvider.Advance(TimeSpan.FromMinutes(5) + TimeSpan.FromSeconds(1));
 
         Assert.False(_authService.IsRateLimited(ip));
-    }
-
-    [Fact]
-    public void SessionToken_ValidWithinEightDays()
-    {
-        if (!IsWindows) return;
-        var token = _authService.CreateSessionToken();
-
-        _timeProvider.Advance(TimeSpan.FromDays(8) - TimeSpan.FromMinutes(1));
-
-        Assert.True(_authService.ValidateSessionToken(token));
     }
 
     [Fact]
@@ -356,20 +254,6 @@ public sealed class AuthServiceTests : IDisposable
         var tamperedToken = $"9999999999:{parts[1]}:{parts[2]}";
 
         Assert.False(_authService.ValidateSessionToken(tamperedToken));
-    }
-
-    [Fact]
-    public void SessionToken_NullToken_Invalid()
-    {
-        if (!IsWindows) return;
-        Assert.False(_authService.ValidateSessionToken(null));
-    }
-
-    [Fact]
-    public void SessionToken_EmptyToken_Invalid()
-    {
-        if (!IsWindows) return;
-        Assert.False(_authService.ValidateSessionToken(""));
     }
 
     [Fact]

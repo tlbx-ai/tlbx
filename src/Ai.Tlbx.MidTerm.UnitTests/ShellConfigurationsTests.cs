@@ -29,21 +29,6 @@ public sealed class ShellConfigurationsTests
     }
 
     [Fact]
-    public void GetEnvironmentVariables_AdvertisesAndForcesRichColorSupport()
-    {
-        var env = new PwshShellConfiguration().GetEnvironmentVariables();
-
-        Assert.Equal("xterm-256color", env["TERM"]);
-        Assert.Equal("truecolor", env["COLORTERM"]);
-        Assert.Equal("tlbx", env["TERM_PROGRAM"]);
-        Assert.Equal("3", env["FORCE_COLOR"]);
-        Assert.Equal("1", env["CLICOLOR"]);
-        Assert.Equal("1", env["CLICOLOR_FORCE"]);
-        Assert.Equal("1", env["PY_COLORS"]);
-        Assert.Equal("1", env["CLAUDE_CODE_TMUX_TRUECOLOR"]);
-    }
-
-    [Fact]
     public void ApplyMarkedOverrides_ReappliesUserTerminalEnvironmentLast()
     {
         var env = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)

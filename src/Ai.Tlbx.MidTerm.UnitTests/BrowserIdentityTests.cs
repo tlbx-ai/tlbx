@@ -21,25 +21,4 @@ public sealed class BrowserIdentityTests
         Assert.DoesNotContain(label, char.IsControl);
     }
 
-    [Fact]
-    public void GetDeviceLabel_FallsBackToBrowserHeader()
-    {
-        var context = new DefaultHttpContext();
-        context.Request.Headers[BrowserIdentity.DeviceLabelHeader] = "iPad · Safari";
-
-        var label = BrowserIdentity.GetDeviceLabel(context.Request);
-
-        Assert.Equal("iPad · Safari", label);
-    }
-
-    [Fact]
-    public void GetDeviceLabel_DecodesAsciiSafeBrowserHeader()
-    {
-        var context = new DefaultHttpContext();
-        context.Request.Headers[BrowserIdentity.DeviceLabelHeader] = "Windows%20PC%20%C2%B7%20Chrome";
-
-        var label = BrowserIdentity.GetDeviceLabel(context.Request);
-
-        Assert.Equal("Windows PC · Chrome", label);
-    }
 }

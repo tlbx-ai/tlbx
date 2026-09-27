@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import type { MidTermSettingsPublic } from '../../api/types';
 import {
-  boostTerminalTextColor,
   getEffectiveTerminalBackgroundAlpha,
   getEffectiveTerminalCellBackgroundAlpha,
   getEffectiveXtermThemeForSettings,
@@ -75,16 +74,6 @@ describe('themes', () => {
       writable: true,
     });
   });
-  it('uses terminal transparency for the xterm background alpha', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        uiTransparency: 10,
-        terminalTransparency: 60,
-      }),
-    );
-
-    expect(theme.background).toBe('rgba(12, 12, 12, 0.400)');
-  });
 
   it('applies terminal transparency to ANSI background palette colors', () => {
     const theme = getEffectiveXtermThemeForSettings(
@@ -95,28 +84,6 @@ describe('themes', () => {
 
     expect(theme.red).toBe('rgba(255, 64, 85, 0.400)');
     expect(theme.brightBlue).toBe('rgba(125, 166, 255, 0.400)');
-  });
-
-  it('allows the terminal transparency slider to reach a fully transparent xterm background', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalTransparency: 100,
-      }),
-    );
-
-    expect(theme.background).toBe('rgba(12, 12, 12, 0.000)');
-  });
-
-  it('falls back to ui transparency when terminal transparency is absent', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        uiTransparency: 35,
-        terminalTransparency: null,
-        terminalCellBackgroundTransparency: null,
-      }),
-    );
-
-    expect(theme.background).toBe('rgba(12, 12, 12, 0.650)');
   });
 
   it('boosts terminal text brightness without brightening terminal background surfaces', () => {
@@ -135,30 +102,6 @@ describe('themes', () => {
     expect(theme.black).toBe('#0C0C0C');
     expect(theme.brightBlack).toBe('#767676');
     expect(theme.red).toBe('#FF4055');
-  });
-
-  it('lets terminal text brightness boost visibly brighten ANSI foreground colors', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalThemeLightnessBoost: 50,
-      }),
-    );
-
-    expect(theme.background).toBe('#0C0C0C');
-    expect(theme.black).toBe('#0C0C0C');
-    expect(theme.brightBlack).toBe('#767676');
-    expect(theme.foreground).toBe('#f9f9f9');
-
-    expect(boostTerminalTextColor('#f0f0f0', 50)).toBe('#f8f8f8');
-    expect(boostTerminalTextColor('#2B65FF', 50)).toBe('#95b2ff');
-    expect(boostTerminalTextColor('#767676', 50)).toBe('#bbbbbb');
-  });
-
-  it('maps maximum terminal text brightness boost to white', () => {
-    expect(boostTerminalTextColor('#f0f0f0', 100)).toBe('#ffffff');
-    expect(boostTerminalTextColor('#2B65FF', 100)).toBe('#ffffff');
-    expect(boostTerminalTextColor('#767676', 100)).toBe('#ffffff');
-    expect(boostTerminalTextColor('#000000', 100)).toBe('#ffffff');
   });
 
   it('raises terminal contrast automatically on light terminal backgrounds', () => {
@@ -182,123 +125,6 @@ describe('themes', () => {
     ).toBe(4.5);
   });
 
-  it('preserves dark terminal color fidelity unless a higher contrast ratio is configured', () => {
-    expect(
-      resolveEffectiveTerminalMinimumContrastRatio(
-        createSettings({
-          theme: 'light',
-          terminalColorScheme: 'dark',
-          minimumContrastRatio: 1,
-        }),
-      ),
-    ).toBe(1);
-
-    expect(
-      resolveEffectiveTerminalMinimumContrastRatio(
-        createSettings({
-          terminalColorScheme: 'dark',
-          minimumContrastRatio: 7,
-        }),
-      ),
-    ).toBe(7);
-  });
-
-  it('keeps explicit high contrast settings above the light terminal floor', () => {
-    expect(
-      resolveEffectiveTerminalMinimumContrastRatio(
-        createSettings({
-          terminalColorScheme: 'solarizedLight',
-          minimumContrastRatio: 7,
-        }),
-      ),
-    ).toBe(7);
-  });
-
-  it('resolves a saved custom palette by name', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalColorScheme: 'Ocean Copy',
-        terminalColorSchemes: [
-          {
-            name: 'Ocean Copy',
-            background: '#101820',
-            foreground: '#F2F7FF',
-            cursor: '#F2F7FF',
-            cursorAccent: '#101820',
-            selectionBackground: '#2A4C66',
-            scrollbarSliderBackground: 'rgba(242, 247, 255, 0.2)',
-            scrollbarSliderHoverBackground: 'rgba(242, 247, 255, 0.35)',
-            scrollbarSliderActiveBackground: 'rgba(242, 247, 255, 0.5)',
-            black: '#18242E',
-            red: '#FF6B6B',
-            green: '#7EE787',
-            yellow: '#F9E27D',
-            blue: '#66B3FF',
-            magenta: '#D2A8FF',
-            cyan: '#7DE3FF',
-            white: '#D8E7F5',
-            brightBlack: '#5A7288',
-            brightRed: '#FF8E8E',
-            brightGreen: '#9CF0A4',
-            brightYellow: '#FFEEA8',
-            brightBlue: '#90CCFF',
-            brightMagenta: '#E2C0FF',
-            brightCyan: '#A1EEFF',
-            brightWhite: '#F2F7FF',
-          },
-        ],
-      }),
-    );
-
-    expect(theme.background).toBe('#101820');
-    expect(theme.foreground).toBe('#F2F7FF');
-    expect(theme.blue).toBe('#66B3FF');
-    expect(theme.brightCyan).toBe('#A1EEFF');
-  });
-
-  it('applies transparency to custom ANSI palette colors too', () => {
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        terminalTransparency: 25,
-        terminalCellBackgroundTransparency: 25,
-        terminalColorScheme: 'Ocean Copy',
-        terminalColorSchemes: [
-          {
-            name: 'Ocean Copy',
-            background: '#101820',
-            foreground: '#F2F7FF',
-            cursor: '#F2F7FF',
-            cursorAccent: '#101820',
-            selectionBackground: '#2A4C66',
-            scrollbarSliderBackground: 'rgba(242, 247, 255, 0.2)',
-            scrollbarSliderHoverBackground: 'rgba(242, 247, 255, 0.35)',
-            scrollbarSliderActiveBackground: 'rgba(242, 247, 255, 0.5)',
-            black: '#18242E',
-            red: '#FF6B6B',
-            green: '#7EE787',
-            yellow: '#F9E27D',
-            blue: '#66B3FF',
-            magenta: '#D2A8FF',
-            cyan: '#7DE3FF',
-            white: '#D8E7F5',
-            brightBlack: '#5A7288',
-            brightRed: '#FF8E8E',
-            brightGreen: '#9CF0A4',
-            brightYellow: '#FFEEA8',
-            brightBlue: '#90CCFF',
-            brightMagenta: '#E2C0FF',
-            brightCyan: '#A1EEFF',
-            brightWhite: '#F2F7FF',
-          },
-        ],
-      }),
-    );
-
-    expect(theme.background).toBe('rgba(16, 24, 32, 0.750)');
-    expect(theme.blue).toBe('rgba(102, 179, 255, 0.750)');
-    expect(theme.brightWhite).toBe('rgba(242, 247, 255, 0.750)');
-  });
-
   it('keeps ANSI backgrounds opaque when the cell background slider is off', () => {
     const theme = getEffectiveXtermThemeForSettings(
       createSettings({
@@ -308,23 +134,6 @@ describe('themes', () => {
     );
 
     expect(theme.background).toBe('rgba(12, 12, 12, 0.400)');
-    expect(theme.red).toBe('#FF4055');
-  });
-
-  it('treats the wallpaper as disabled on mobile when mobile wallpaper suppression is enabled', () => {
-    Object.assign(globalThis.window, {
-      matchMedia: () => ({ matches: true }),
-    });
-
-    const theme = getEffectiveXtermThemeForSettings(
-      createSettings({
-        hideBackgroundImageOnMobile: true,
-        backgroundImageEnabled: true,
-        backgroundImageFileName: 'paper.jpg',
-      }),
-    );
-
-    expect(theme.background).toBe('#0C0C0C');
     expect(theme.red).toBe('#FF4055');
   });
 

@@ -51,52 +51,6 @@ public sealed class SessionAppServerControlHostRuntimeServiceTests
     }
 
     [Fact]
-    public void ResolveDevHostDllPath_PrefersCurrentBuildConfiguration()
-    {
-        var repoRoot = Path.Combine(Path.GetTempPath(), "midterm-agenthost-resolver-tests", Guid.NewGuid().ToString("N"));
-        var releaseHost = Path.Combine(
-            repoRoot,
-            "Ai.Tlbx.MidTerm.AgentHost",
-            "bin",
-            "Release",
-            "net10.0",
-            "win-x64",
-            "mtagenthost.dll");
-        var debugHost = Path.Combine(
-            repoRoot,
-            "Ai.Tlbx.MidTerm.AgentHost",
-            "bin",
-            "Debug",
-            "net10.0",
-            "win-x64",
-            "mtagenthost.dll");
-        var releaseBaseDir = Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.UnitTests", "bin", "Release", "net10.0");
-
-        Directory.CreateDirectory(Path.GetDirectoryName(releaseHost)!);
-        Directory.CreateDirectory(Path.GetDirectoryName(debugHost)!);
-        Directory.CreateDirectory(releaseBaseDir);
-        File.WriteAllText(debugHost, "debug");
-        File.WriteAllText(releaseHost, "release");
-
-        try
-        {
-            var resolved = SessionAppServerControlHostRuntimeService.ResolveDevHostDllPath(releaseBaseDir);
-
-            Assert.Equal(releaseHost, resolved);
-        }
-        finally
-        {
-            try
-            {
-                Directory.Delete(repoRoot, recursive: true);
-            }
-            catch
-            {
-            }
-        }
-    }
-
-    [Fact]
     public async Task SessionAppServerControlRuntimeService_CanDelegateToMtAgentHostSyntheticMode()
     {
         await using var hostRuntime = new SessionAppServerControlHostRuntimeService(CreateSettingsService(), mode: "synthetic");

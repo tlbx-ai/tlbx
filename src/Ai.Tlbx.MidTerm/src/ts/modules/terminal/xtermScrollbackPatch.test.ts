@@ -29,7 +29,7 @@ const require = createRequire(import.meta.url);
 const { Terminal } = require('@xterm/xterm') as { Terminal: TerminalConstructor };
 
 function write(terminal: TerminalLike, data: string): Promise<void> {
-  return new Promise(resolve => terminal.write(data, resolve));
+  return new Promise((resolve) => terminal.write(data, resolve));
 }
 
 function markerNumbers(terminal: TerminalLike): number[] {
@@ -37,7 +37,10 @@ function markerNumbers(terminal: TerminalLike): number[] {
   const buffer = terminal.buffer.active;
 
   for (let index = 0; index < buffer.length; index++) {
-    const match = buffer.getLine(index)?.translateToString(true).match(/LINE_(\d{3})/);
+    const match = buffer
+      .getLine(index)
+      ?.translateToString(true)
+      .match(/LINE_(\d{3})/);
     if (match) {
       markers.add(Number(match[1]));
     }

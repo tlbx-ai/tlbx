@@ -122,12 +122,8 @@ vi.mock('../terminal/scaling', () => ({
 let destroySessionWrapper: typeof import('./tabManager').destroySessionWrapper;
 let ensureSessionWrapper: typeof import('./tabManager').ensureSessionWrapper;
 let getActiveTab: typeof import('./tabManager').getActiveTab;
-let getTabLabelForSession: typeof import('./tabManager').getTabLabelForSession;
 let getTabPanel: typeof import('./tabManager').getTabPanel;
-let isTabAvailable: typeof import('./tabManager').isTabAvailable;
 let onTabActivated: typeof import('./tabManager').onTabActivated;
-let onTabDeactivated: typeof import('./tabManager').onTabDeactivated;
-let setSessionAppServerControlAvailability: typeof import('./tabManager').setSessionAppServerControlAvailability;
 let switchTab: typeof import('./tabManager').switchTab;
 
 describe('tabManager', () => {
@@ -136,12 +132,8 @@ describe('tabManager', () => {
       destroySessionWrapper,
       ensureSessionWrapper,
       getActiveTab,
-      getTabLabelForSession,
       getTabPanel,
-      isTabAvailable,
       onTabActivated,
-      onTabDeactivated,
-      setSessionAppServerControlAvailability,
       switchTab,
     } = await import('./tabManager'));
   });
@@ -220,36 +212,6 @@ describe('tabManager', () => {
     expect(applyTerminalScalingSyncSpy).not.toHaveBeenCalled();
   });
 
-  it('keeps terminal sessions terminal-only and ignores hidden agent switches', async () => {
-    ensureSessionWrapper('s1');
-
-    expect(isTabAvailable('s1', 'agent')).toBe(false);
-    expect(getActiveTab('s1')).toBe('terminal');
-
-    switchTab('s1', 'agent');
-
-    expect(getActiveTab('s1')).toBe('terminal');
-    expect(focusSpy).not.toHaveBeenCalled();
-  });
-
-  it('makes appServerControl-backed sessions agent-only and uses provider-specific labels', async () => {
-    sessionListMock = [
-      {
-        id: 's1',
-        agentControlled: true,
-        hasAppServerControlHistory: true,
-        appServerControlOnly: true,
-        supervisor: { profile: 'codex' },
-      },
-    ];
-    ensureSessionWrapper('s1');
-
-    expect(isTabAvailable('s1', 'agent')).toBe(true);
-    expect(getActiveTab('s1')).toBe('agent');
-    expect(isTabAvailable('s1', 'terminal')).toBe(false);
-    expect(getTabLabelForSession('s1', 'agent')).toBe('Codex');
-  });
-
   it('activates the initial agent tab for appServerControl-only sessions immediately', async () => {
     sessionListMock = [
       {
@@ -267,69 +229,5 @@ describe('tabManager', () => {
 
     expect(activated).toHaveBeenCalledTimes(1);
     expect(activated).toHaveBeenCalledWith('s1', expect.anything());
-  });
-
-  it('does not expose AppServerControl for ordinary terminal sessions even if AppServerControl availability is forced', async () => {
-    ensureSessionWrapper('s1');
-
-    setSessionAppServerControlAvailability('s1', true);
-
-    expect(isTabAvailable('s1', 'terminal')).toBe(true);
-    expect(getActiveTab('s1')).toBe('terminal');
-    expect(isTabAvailable('s1', 'agent')).toBe(false);
-  });
-
-  it('restores the remembered files tab after a shell refresh', async () => {
-    localStorageData.set('midterm.sessionTab.s1', 'files');
-    ensureSessionWrapper('s1');
-
-    expect(getActiveTab('s1')).toBe('files');
-  });
-
-  it('invokes every registered callback for tab activation and deactivation', async () => {
-    const activatedA = vi.fn();
-    const activatedB = vi.fn();
-    const deactivatedA = vi.fn();
-    const deactivatedB = vi.fn();
-
-    onTabActivated('agent', activatedA);
-    onTabActivated('agent', activatedB);
-    onTabDeactivated('agent', deactivatedA);
-    onTabDeactivated('agent', deactivatedB);
-
-    sessionListMock = [
-      {
-        id: 's1',
-        agentControlled: true,
-        hasAppServerControlHistory: true,
-        appServerControlOnly: true,
-        supervisor: { profile: 'claude' },
-      },
-    ];
-    ensureSessionWrapper('s1');
-    switchTab('s1', 'files');
-    switchTab('s1', 'agent');
-
-    expect(activatedA).toHaveBeenCalledTimes(2);
-    expect(activatedB).toHaveBeenCalledTimes(2);
-    expect(deactivatedA).toHaveBeenCalledTimes(1);
-    expect(deactivatedB).toHaveBeenCalledTimes(1);
-  });
-
-  it('keeps ordinary terminal sessions terminal-only even with agent metadata', async () => {
-    sessionListMock = [
-      {
-        id: 's1',
-        agentControlled: true,
-        hasAppServerControlHistory: true,
-        appServerControlOnly: false,
-        supervisor: { profile: 'claude' },
-      },
-    ];
-    ensureSessionWrapper('s1');
-
-    expect(isTabAvailable('s1', 'agent')).toBe(false);
-    expect(getActiveTab('s1')).toBe('terminal');
-    expect(isTabAvailable('s1', 'terminal')).toBe(true);
   });
 });

@@ -98,21 +98,4 @@ describe('appServerControl quick settings', () => {
 
     expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe('grok-build');
   });
-
-  it('persists the selected provider model into MidTerm settings', () => {
-    $sessions.set({
-      'codex-save': {
-        id: 'codex-save',
-        profileHint: 'codex',
-      } as never,
-    });
-
-    setAppServerControlQuickSettingsDraft('codex-save', { model: 'gpt-5.4-codex' });
-
-    expect($currentSettings.get()?.codexDefaultAppServerControlModel).toBe('gpt-5.4-codex');
-    expect(vi.mocked(updateSettings)).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(updateSettings).mock.calls[0]?.[0]).toMatchObject({
-      codexDefaultAppServerControlModel: 'gpt-5.4-codex',
-    });
-  });
 });

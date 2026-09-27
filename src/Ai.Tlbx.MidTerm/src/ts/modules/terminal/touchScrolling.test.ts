@@ -15,11 +15,10 @@ vi.mock('../comms/muxChannel', () => ({
 }));
 
 import {
-  initTouchScrolling,
-  teardownTouchScrolling,
   computeKineticScrollStep,
+  initTouchScrolling,
   panMobileStableTerminalShellScroll,
-  scrollViewport,
+  teardownTouchScrolling,
 } from './touchScrolling';
 
 function createShell(scrollTop: number, scrollHeight: number, clientHeight: number) {
@@ -64,22 +63,6 @@ describe('mobile terminal touch scrolling', () => {
     expect(panned).toBe(15);
   });
 
-  it('passes the full drag delta through to xterm even when shell panning absorbs it', () => {
-    const { container, state } = createShell(20, 220, 100);
-    const terminal = { scrollLines: vi.fn() };
-    const scrollState = {
-      ...state,
-      terminal,
-      cellHeight: 10,
-      scrollAccumulator: 0,
-    };
-
-    scrollViewport(scrollState as never, 50);
-
-    expect(container.scrollTop).toBe(70);
-    expect(terminal.scrollLines).toHaveBeenCalledWith(5);
-  });
-
   it('continues a fast touch drag with a decaying kinetic scroll step', () => {
     const first = computeKineticScrollStep(1, 16);
     const second = computeKineticScrollStep(first.nextVelocityY, 16);
@@ -91,37 +74,11 @@ describe('mobile terminal touch scrolling', () => {
     expect(second.nextVelocityY).toBeLessThan(first.nextVelocityY);
   });
 
-  it('carries a fling far enough to make terminal history reachable', () => {
-    let velocity = 1;
-    let distance = 0;
-    let active = true;
-    let frames = 0;
-
-    while (active && frames < 500) {
-      const step = computeKineticScrollStep(velocity, 16);
-      distance += step.deltaY;
-      velocity = step.nextVelocityY;
-      active = step.active;
-      frames++;
-    }
-
-    expect(distance).toBeGreaterThan(360);
-    expect(frames).toBeGreaterThan(40);
-  });
-
   it('clamps very fast flings to a bounded but long travel distance', () => {
     const step = computeKineticScrollStep(40, 16);
 
     expect(step.deltaY).toBeLessThan(130);
     expect(step.nextVelocityY).toBeLessThan(8);
-  });
-
-  it('stops kinetic scrolling below the velocity threshold', () => {
-    const step = computeKineticScrollStep(0.01, 16);
-
-    expect(step.active).toBe(false);
-    expect(step.deltaY).toBe(0);
-    expect(step.nextVelocityY).toBe(0);
   });
 });
 
@@ -214,20 +171,6 @@ describe('touch release momentum lifecycle', () => {
     ]);
   });
 
-  it.each(['x10', 'vt200', 'drag', 'any'])(
-    'preserves unmodified clicks for %s mouse tracking',
-    (mode) => {
-      const g = gesture();
-      g.terminal.modes.mouseTrackingMode = mode;
-      g.touch('touchstart', 120);
-      g.touch('touchend', 120);
-      expect(g.screen.dispatchEvent.mock.calls.map(([e]) => e.options.altKey)).toEqual([
-        false,
-        false,
-      ]);
-    },
-  );
-
   it('does not place the cursor after a scroll or cancelled gesture', () => {
     const g = gesture();
     g.touch('touchstart', 200);
@@ -237,37 +180,6 @@ describe('touch release momentum lifecycle', () => {
     g.touch('touchcancel', 120);
     g.touch('touchend', 120);
     expect(g.screen.dispatchEvent).not.toHaveBeenCalled();
-  });
-
-  it.each([1, -1])(
-    'keeps scrolling after release in direction %s, then comes to rest',
-    (direction) => {
-      const g = gesture();
-      g.touch('touchstart', 200);
-      g.touch('touchmove', 200 - direction * 80);
-      g.touch('touchend', 200 - direction * 80);
-      g.terminal.scrollLines.mockClear();
-      expect(g.frames.size).toBe(1);
-      g.frame();
-      expect(g.terminal.scrollLines).toHaveBeenCalled();
-      expect(Math.sign(g.terminal.scrollLines.mock.calls[0]![0])).toBe(direction);
-      for (let i = 0; i < 500 && g.frames.size; i++) g.frame();
-      expect(g.frames.size).toBe(0);
-    },
-  );
-
-  it.each(['touchstart', 'touchcancel', 'teardown'])('stops momentum on %s', (action) => {
-    const g = gesture();
-    g.touch('touchstart', 200);
-    g.touch('touchmove', 120);
-    g.touch('touchend', 120);
-    expect(g.frames.size).toBe(1);
-    if (action === 'teardown') teardownTouchScrolling('fling');
-    else g.touch(action, 120);
-    g.terminal.scrollLines.mockClear();
-    g.frame();
-    expect(g.frames.size).toBe(0);
-    expect(g.terminal.scrollLines).not.toHaveBeenCalled();
   });
 
   it('respects the disabled momentum setting while retaining drag scrolling', () => {

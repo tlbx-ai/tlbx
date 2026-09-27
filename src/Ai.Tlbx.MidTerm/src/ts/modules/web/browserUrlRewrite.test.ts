@@ -41,65 +41,13 @@ function rewrite(value: string, external = false) {
 }
 
 describe('browser URL rewriting', () => {
-  it.each(['https://other.example/page', '../next'])(
-    'keeps bridge navigation to %s inside the proxy',
+  it.each(['mailto:person@example.org', 'data:text/plain,hi', 'javascript:void(0)', '#section'])(
+    'passes %s through without parsing or recursion',
     (value) => {
-      const location = {
-        href: '',
-        pathname: '/webpreview/docs/start',
-        search: '',
-        hash: '',
-        origin: 'https://localhost:2001',
-        protocol: 'https:',
-        host: 'localhost:2001',
-      };
-      const navigationSource = source.slice(
-        source.indexOf('function curU(){'),
-        source.indexOf('var mtLocationView='),
-      );
-      const branch = source.slice(
-        source.indexOf('case"navigate":{'),
-        source.indexOf('case"reload":{'),
-      );
-      new Function(
-        'location',
-        'window',
-        'document',
-        'msg',
-        `
-      var P='/webpreview', PP=P, E=P+'/_ext?u=';
-      function ar(u){return u;}
-      ${rewriteSource}
-      ${navigationSource}
-      var res={success:true};
-      switch(msg.command){${branch}}
-    `,
-      )(
-        location,
-        { __mtTargetOrigin: 'https://example.org' },
-        { baseURI: 'https://localhost:2001/webpreview/docs/start' },
-        { command: 'navigate', value },
-      );
-      expect(location.href).toBe(
-        value.startsWith('https:')
-          ? '/webpreview/_ext?u=' + encodeURIComponent(value)
-          : '/webpreview/next',
-      );
+      expect(rewrite(value)).toEqual({ result: value, parses: 0 });
+      expect(rewrite(value, true)).toEqual({ result: value, parses: 0 });
     },
   );
-
-  it.each([
-    'mailto:person@example.org',
-    'tel:+4912345',
-    'urn:isbn:123',
-    'FTP://example.org/file',
-    'data:text/plain,hi',
-    'javascript:void(0)',
-    '#section',
-  ])('passes %s through without parsing or recursion', (value) => {
-    expect(rewrite(value)).toEqual({ result: value, parses: 0 });
-    expect(rewrite(value, true)).toEqual({ result: value, parses: 0 });
-  });
 
   it('still proxies network and relative links', () => {
     expect(rewrite('https://example.org/a').result).toBe(

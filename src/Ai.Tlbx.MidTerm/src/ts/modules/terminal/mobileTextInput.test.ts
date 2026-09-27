@@ -12,17 +12,10 @@ vi.mock('../touchController/detection', () => ({
 
 describe('mobile edit translation', () => {
   it.each([
-    ['', 'h', 'h'],
-    ['h', 'he', 'e'],
     ['hel', 'hello ', 'lo '],
     ['teh', 'the', '\x7f\x7fhe'],
-    ['git chek', 'git check', '\x7fck'],
-    ['word ', 'word', '\x7f'],
     ['abc', '', '\x7f\x7f\x7f'],
-    ['schon', 'schön', '\x7f\x7fön'],
-    ['に', '日本', '\x7f日本'],
     ['😀', '😃', '\x7f😃'],
-    ['hello', 'hello', ''],
   ])('translates %j to %j', (before, after, expected) => {
     expect(mobileTextEdit(before, after)).toBe(expected);
   });

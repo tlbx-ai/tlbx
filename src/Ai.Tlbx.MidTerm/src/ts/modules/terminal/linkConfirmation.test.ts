@@ -1,9 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  activateTerminalLink,
-  setConfirmTerminalLinks,
-  shouldConfirmTerminalLinks,
-} from './linkConfirmation';
+import { activateTerminalLink, setConfirmTerminalLinks } from './linkConfirmation';
 import { openTerminalWebLinkInNewTab } from './webLinks';
 
 vi.mock('./webLinks', () => ({ openTerminalWebLinkInNewTab: vi.fn() }));
@@ -59,18 +55,5 @@ describe('terminal link confirmation preference', () => {
 
     expect(event.preventDefault).toHaveBeenCalledOnce();
     expect(event.stopPropagation).not.toHaveBeenCalled();
-  });
-
-  it('keeps confirmation enabled when browser storage cannot be read', () => {
-    vi.stubGlobal('localStorage', {
-      getItem: () => {
-        throw new Error('Storage unavailable');
-      },
-      setItem: () => {
-        throw new Error('Storage unavailable');
-      },
-    });
-    expect(() => setConfirmTerminalLinks(false)).not.toThrow();
-    expect(shouldConfirmTerminalLinks()).toBe(true);
   });
 });

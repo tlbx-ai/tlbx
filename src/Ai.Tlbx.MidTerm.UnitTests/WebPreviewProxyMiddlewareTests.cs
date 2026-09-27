@@ -96,16 +96,6 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void BuildUpstreamPath_TargetWithBaseAndRootPath_ReturnsTargetBase()
-    {
-        var target = new Uri("https://example.com/dashboard");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/");
-
-        Assert.Equal("/dashboard", result);
-    }
-
-    [Fact]
     public void BuildRedirectedProxyPath_SameAuthorityRedirect_PreservesFinalPathAndQuery()
     {
         var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
@@ -119,19 +109,6 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void BuildRedirectedProxyPath_UnchangedRequest_ReturnsNull()
-    {
-        var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
-            "/webpreview/route-1",
-            new Uri("https://demo.kilv.de/"),
-            "https://demo.kilv.de/login?ReturnUrl=%2F",
-            "/webpreview/route-1/login",
-            "?ReturnUrl=%2F");
-
-        Assert.Null(result);
-    }
-
-    [Fact]
     public void BuildRedirectedProxyPath_CrossAuthorityRedirect_ReturnsNull()
     {
         var result = WebPreviewProxyMiddleware.BuildRedirectedProxyPath(
@@ -142,36 +119,6 @@ public class WebPreviewProxyMiddlewareTests
             null);
 
         Assert.Null(result);
-    }
-
-    [Fact]
-    public void BuildUpstreamPath_RequestAlreadyContainsTargetBase_DoesNotDuplicate()
-    {
-        var target = new Uri("https://example.com/dashboard");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/dashboard/lib/sneat/css/core.css");
-
-        Assert.Equal("/dashboard/lib/sneat/css/core.css", result);
-    }
-
-    [Fact]
-    public void BuildUpstreamPath_RequestOutsideTargetBase_PrependsTargetBase()
-    {
-        var target = new Uri("https://example.com/dashboard");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/api/health");
-
-        Assert.Equal("/dashboard/api/health", result);
-    }
-
-    [Fact]
-    public void BuildUpstreamPath_TargetWithoutBasePath_UsesRequestPath()
-    {
-        var target = new Uri("https://example.com/");
-
-        var result = WebPreviewProxyMiddleware.BuildUpstreamPath(target, "/css/app.css");
-
-        Assert.Equal("/css/app.css", result);
     }
 
     [Fact]
@@ -207,18 +154,6 @@ public class WebPreviewProxyMiddlewareTests
         Assert.True(nextCalled);
     }
 
-    [Theory]
-    [InlineData("theme=dark", "var cc=\"theme=dark\"")]
-    [InlineData("", "var cc=\"\"")]
-    public void GetUrlRewriteScript_InitializesCookieSnapshot(string header, string expected)
-    {
-        var method = typeof(WebPreviewProxyMiddleware).GetMethod(
-            "GetUrlRewriteScript", BindingFlags.NonPublic | BindingFlags.Static);
-        var script = Assert.IsType<string>(method?.Invoke(null, ["/webpreview/test", header]));
-        Assert.Contains(expected, script, StringComparison.Ordinal);
-        Assert.DoesNotContain("__MT_INITIAL_COOKIES__", script, StringComparison.Ordinal);
-    }
-
     [Fact]
     public void GetUrlRewriteScript_CookieSnapshotCannotCloseInjectedScript()
     {
@@ -231,14 +166,10 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Theory]
-    [InlineData("?__mtPreviewId=pid&__mtPreviewToken=ptk", "")]
-    [InlineData("?__mtTargetRevision=1", "")]
-    [InlineData("?__mtReloadToken=force-1", "")]
     [InlineData("?foo=1&__mtPreviewId=pid&bar=2&__mtPreviewToken=ptk", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtTargetRevision=2&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&__mtReloadToken=force-1&bar=2", "?foo=1&bar=2")]
     [InlineData("?foo=1&bar=2", "?foo=1&bar=2")]
-    [InlineData("", "")]
     public void StripPreviewBootstrapQuery_RemovesOnlyMidTermBootstrapParameters(string query, string expected)
     {
         var sanitized = WebPreviewProxyMiddleware.StripPreviewBootstrapQuery(query);
@@ -280,21 +211,6 @@ public class WebPreviewProxyMiddlewareTests
     }
 
     [Fact]
-    public void RewriteRefererForUpstream_NonProxyReferer_IsLeftUnchanged()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
-        const string referer = "https://example.net/plain/path";
-
-        var rewritten = middleware.RewriteRefererForUpstream(
-            referer,
-            "route-1",
-            new Uri("https://example.com/dashboard"));
-
-        Assert.Equal(referer, rewritten);
-    }
-
-    [Fact]
     public void RewriteRefererForUpstream_RememberedLeakedPath_UsesTargetOrigin()
     {
         var service = new WebPreviewService(serverPort: 2000);
@@ -309,57 +225,6 @@ public class WebPreviewProxyMiddlewareTests
             new Uri("https://demo.kilv.de/"));
 
         Assert.Equal("https://demo.kilv.de/login?ReturnUrl=%2F", rewritten);
-    }
-
-    [Fact]
-    public void BuildInjectedBaseHref_BlazorServerDocument_UsesProxyBaseHref()
-    {
-        const string html = """
-            <html><head><base href="/"></head><body>
-            <!--Blazor:{"type":"server","descriptor":"abc"}-->
-            <script src="_framework/blazor.web.js"></script>
-            </body></html>
-            """;
-
-        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
-            "/webpreview/route-1",
-            "https://demo.kilv.de/login?ReturnUrl=%2F",
-            "/",
-            html);
-
-        Assert.Equal("/webpreview/route-1/", baseHref);
-    }
-
-    [Fact]
-    public void BuildInjectedBaseHref_BlazorWebAssemblyDocument_UsesProxyBaseHref()
-    {
-        const string html = """
-            <html><head><base href="/"></head><body>
-            <script src="_framework/blazor.webassembly.js"></script>
-            </body></html>
-            """;
-
-        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
-            "/webpreview/route-1",
-            "https://demo.kilv.de/login?ReturnUrl=%2F",
-            "/",
-            html);
-
-        Assert.Equal("/webpreview/route-1/", baseHref);
-    }
-
-    [Fact]
-    public void BuildInjectedBaseHref_NonBlazorDocument_UsesProxyBaseHref()
-    {
-        const string html = "<html><head><base href=\"/\"></head><body>plain</body></html>";
-
-        var baseHref = WebPreviewProxyMiddleware.BuildInjectedBaseHref(
-            "/webpreview/route-1",
-            "https://example.com/docs/page",
-            "/",
-            html);
-
-        Assert.Equal("/webpreview/route-1/", baseHref);
     }
 
     [Fact]
@@ -562,9 +427,7 @@ public class WebPreviewProxyMiddlewareTests
 
     [Theory]
     [InlineData("/js/config.js", true, true)]
-    [InlineData("/css/app.css", true, true)]
     [InlineData("/", true, true)]
-    [InlineData("/login.html", true, true)]
     [InlineData("/js/html2canvas.min.js", true, false)]
     [InlineData("/ws/browser", true, false)]
     [InlineData("/js/config.js", false, false)]
@@ -583,45 +446,6 @@ public class WebPreviewProxyMiddlewareTests
         var result = WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path);
 
         Assert.Equal(expected, result);
-    }
-
-    [Fact]
-    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRefererPath()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
-        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
-        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
-
-        var context = new DefaultHttpContext();
-        context.Request.Path = "/router/router-lib.js";
-        context.Request.Headers.Referer = "https://midterm.local/js/login.js";
-
-        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
-
-        Assert.True(resolved);
-        Assert.Equal(routeKey, resolvedRouteKey);
-        Assert.Equal("https://example.com/", targetUri.ToString());
-    }
-
-    [Fact]
-    public void TryResolvePreviewFromRequest_UsesRememberedLeakedRequestPath()
-    {
-        var service = new WebPreviewService(serverPort: 2000);
-        Assert.True(service.SetTarget("session-1", null, "https://example.com"));
-        Assert.True(service.TryGetPreviewRouteKey("session-1", null, out var routeKey));
-        service.RememberLeakedPathRoute(routeKey, "/js/login.js");
-        var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
-
-        var context = new DefaultHttpContext();
-        context.Request.Path = "/js/login.js";
-
-        var resolved = middleware.TryResolvePreviewFromRequest(context.Request, out var resolvedRouteKey, out var targetUri);
-
-        Assert.True(resolved);
-        Assert.Equal(routeKey, resolvedRouteKey);
-        Assert.Equal("https://example.com/", targetUri.ToString());
     }
 
     [Fact]

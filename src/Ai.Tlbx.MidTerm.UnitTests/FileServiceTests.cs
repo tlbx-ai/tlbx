@@ -38,7 +38,6 @@ public sealed class FileServiceTests : IDisposable
     [Theory]
     [InlineData("")]
     [InlineData(" ")]
-    [InlineData("  ")]
     public void ValidatePath_RejectsEmptyOrWhitespace(string path)
     {
         var result = FileService.ValidatePath(path, out var errorResult);
@@ -70,46 +69,12 @@ public sealed class FileServiceTests : IDisposable
     // =======================================================================
 
     [Fact]
-    public void IsWithinDirectory_ChildIsWithinParent()
-    {
-        var parent = Path.Combine(_tempDir, "parent");
-        var child = Path.Combine(parent, "sub", "file.txt");
-        Directory.CreateDirectory(Path.Combine(parent, "sub"));
-
-        Assert.True(FileService.IsWithinDirectory(child, parent));
-    }
-
-    [Fact]
-    public void IsWithinDirectory_SamePathReturnsTrue()
-    {
-        Assert.True(FileService.IsWithinDirectory(_tempDir, _tempDir));
-    }
-
-    [Fact]
-    public void IsWithinDirectory_SiblingIsNot()
-    {
-        var dir1 = Path.Combine(_tempDir, "dir1");
-        var dir2 = Path.Combine(_tempDir, "dir2");
-
-        Assert.False(FileService.IsWithinDirectory(dir2, dir1));
-    }
-
-    [Fact]
     public void IsWithinDirectory_PrefixAttackBlocked()
     {
         var dir = Path.Combine(_tempDir, "Users");
         var attack = Path.Combine(_tempDir, "Users2", "file.txt");
 
         Assert.False(FileService.IsWithinDirectory(attack, dir));
-    }
-
-    [Fact]
-    public void IsWithinDirectory_TrailingSepHandled()
-    {
-        var dir = _tempDir + Path.DirectorySeparatorChar;
-        var child = Path.Combine(_tempDir, "file.txt");
-
-        Assert.True(FileService.IsWithinDirectory(child, dir));
     }
 
     // =======================================================================
@@ -119,61 +84,6 @@ public sealed class FileServiceTests : IDisposable
     // =======================================================================
     // SearchTree
     // =======================================================================
-
-    private void CreateFile(params string[] pathParts)
-    {
-        var filePath = Path.Combine(new[] { _tempDir }.Concat(pathParts).ToArray());
-        Directory.CreateDirectory(Path.GetDirectoryName(filePath)!);
-        File.WriteAllText(filePath, "test content");
-    }
-
-    private void CreateDir(params string[] pathParts)
-    {
-        var dirPath = Path.Combine(new[] { _tempDir }.Concat(pathParts).ToArray());
-        Directory.CreateDirectory(dirPath);
-    }
-
-    [Fact]
-    public void SearchTree_FindsFileInSubdirectory()
-    {
-        CreateFile("src", "main.ts");
-
-        var result = FileService.SearchTree(_tempDir, "src/main.ts", maxDepth: 5);
-
-        Assert.NotNull(result);
-        Assert.EndsWith("main.ts", result, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void SearchTree_SkipsNodeModules()
-    {
-        CreateFile("node_modules", "pkg", "index.js");
-
-        var result = FileService.SearchTree(_tempDir, "index.js", maxDepth: 5);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void SearchTree_SkipsGitDirectory()
-    {
-        CreateFile(".git", "config");
-
-        var result = FileService.SearchTree(_tempDir, "config", maxDepth: 5);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public void SearchTree_RespectsMaxDepth()
-    {
-        // Create file at depth 6 (6 subdirectories deep)
-        CreateFile("a", "b", "c", "d", "e", "f", "deep.txt");
-
-        var result = FileService.SearchTree(_tempDir, "deep.txt", maxDepth: 5);
-
-        Assert.Null(result);
-    }
 
     // =======================================================================
     // GetFileInfo

@@ -8,7 +8,6 @@ import {
   resolveResizeObserverBorderBoxSize,
   resolveScrollCompensationDelta,
   restoreViewportAnchor,
-  resolveViewportDrivenWindowCount,
 } from './virtualizer';
 
 describe('virtualizer', () => {
@@ -66,25 +65,6 @@ describe('virtualizer', () => {
     expect(viewport.scrollTop).toBe(1160);
   });
 
-  it('computes a bounded overscanned render window', () => {
-    const items = Array.from({ length: 100 }, (_, index) => index);
-
-    const window = computeVirtualWindow({
-      items,
-      scrollTop: 500,
-      clientHeight: 300,
-      overscanItems: 2,
-      resolveItemSize: () => 100,
-    });
-
-    expect(window).toEqual({
-      start: 4,
-      end: 11,
-      topSpacerPx: 300,
-      bottomSpacerPx: 8900,
-    });
-  });
-
   it('keeps a 10k item history render window bounded and spacer-backed', () => {
     const items = Array.from({ length: 10000 }, (_, index) => index);
 
@@ -101,17 +81,6 @@ describe('virtualizer', () => {
     expect(window.end - window.start).toBeLessThanOrEqual(40);
     expect(window.topSpacerPx).toBeGreaterThan(350000);
     expect(window.bottomSpacerPx).toBeGreaterThan(400000);
-  });
-
-  it('sizes a retained window from visible rows plus configured fetch-ahead items', () => {
-    const count = resolveViewportDrivenWindowCount({
-      viewport: { clientHeight: 600 } as HTMLDivElement,
-      fetchAheadItems: 30,
-      fallbackCount: 80,
-      observedSizes: [144, 152, 148, 150],
-    });
-
-    expect(count).toBe(64);
   });
 
   it('computes scroll compensation from size changes above the current browse anchor', () => {

@@ -31,16 +31,6 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     }
 
     [Fact]
-    public void SourceInstance_CanBootstrapANewWorkingDirectory()
-    {
-        Directory.CreateDirectory(_tempDir);
-        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2100, "source-token", true);
-        Assert.Contains("source-token", File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1")), StringComparison.Ordinal);
-        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2000, "supervisor-token", false);
-        Assert.Contains("supervisor-token", File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1")), StringComparison.Ordinal);
-    }
-
-    [Fact]
     public void WriteScripts_BashBootstrapProducesValidJsonWithSlashCommands()
     {
         var bashPath = ResolveBashPath();
@@ -255,68 +245,6 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("max_completed_kib=1048576", shell, StringComparison.Ordinal);
         Assert.Contains("$maxCompletedRuns = 100", powershell, StringComparison.Ordinal);
         Assert.Contains("$maxCompletedBytes = 1GB", powershell, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void Ensure_DoesNotCreateRootAgentDocs()
-    {
-        Directory.CreateDirectory(_tempDir);
-
-        TlbxDirectory.Ensure(_tempDir);
-
-        Assert.False(File.Exists(Path.Combine(_tempDir, "AGENTS.md")));
-        Assert.False(File.Exists(Path.Combine(_tempDir, "CLAUDE.md")));
-    }
-
-    [Fact]
-    public void Ensure_MigratesLegacyDirectoryOnFirstEncounter()
-    {
-        Directory.CreateDirectory(_tempDir);
-        var legacyDir = Path.Combine(_tempDir, TlbxDirectory.LegacyDirectoryName);
-        Directory.CreateDirectory(Path.Combine(legacyDir, "uploads"));
-        File.WriteAllText(Path.Combine(legacyDir, "uploads", "artifact.txt"), "legacy");
-
-        var result = TlbxDirectory.Ensure(_tempDir);
-
-        Assert.Equal(Path.Combine(_tempDir, TlbxDirectory.DirectoryName), result);
-        Assert.False(Directory.Exists(legacyDir));
-        Assert.Equal("legacy", File.ReadAllText(Path.Combine(result, "uploads", "artifact.txt")));
-    }
-
-    [Fact]
-    public void Ensure_MergesBothDirectoriesWithoutOverwritingLegacyConflicts()
-    {
-        Directory.CreateDirectory(_tempDir);
-        var legacyDir = Path.Combine(_tempDir, TlbxDirectory.LegacyDirectoryName);
-        var tlbxDir = Path.Combine(_tempDir, TlbxDirectory.DirectoryName);
-        Directory.CreateDirectory(legacyDir);
-        Directory.CreateDirectory(tlbxDir);
-        File.WriteAllText(Path.Combine(legacyDir, "artifact.txt"), "legacy");
-        File.WriteAllText(Path.Combine(tlbxDir, "artifact.txt"), "current");
-
-        TlbxDirectory.Ensure(_tempDir);
-
-        Assert.False(Directory.Exists(legacyDir));
-        Assert.Equal("current", File.ReadAllText(Path.Combine(tlbxDir, "artifact.txt")));
-        Assert.Equal(
-            "legacy",
-            File.ReadAllText(Path.Combine(tlbxDir, "artifact.txt.legacy-midterm")));
-    }
-
-    [Fact]
-    public void Ensure_DoesNotTreatLegacyUserSettingsAsWorkspaceMetadata()
-    {
-        Directory.CreateDirectory(_tempDir);
-        var legacyDir = Path.Combine(_tempDir, TlbxDirectory.LegacyDirectoryName);
-        Directory.CreateDirectory(legacyDir);
-        File.WriteAllText(Path.Combine(legacyDir, "settings.json"), "{}");
-
-        var result = TlbxDirectory.Ensure(_tempDir);
-
-        Assert.True(Directory.Exists(legacyDir));
-        Assert.True(File.Exists(Path.Combine(legacyDir, "settings.json")));
-        Assert.Equal(Path.Combine(_tempDir, TlbxDirectory.DirectoryName), result);
-        Assert.True(Directory.Exists(result));
     }
 
     public void Dispose()

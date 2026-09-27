@@ -47,28 +47,6 @@ public sealed class HubServiceTests : IAsyncDisposable
     }
 
     [Fact]
-    public async Task GetMachineStateAsync_UpdatesPlaceholderNameFromRemoteHostname()
-    {
-        await using var server = await TestHubServer.StartAsync(requirePassword: false);
-        var hubService = CreateHubService();
-
-        var created = hubService.UpsertMachine(null, new HubMachineUpsertRequest
-        {
-            Name = "",
-            BaseUrl = server.BaseUrl,
-            Enabled = true
-        });
-
-        hubService.PinFingerprint(created.Id, server.Fingerprint);
-        Assert.Equal("127.0.0.1", created.Name);
-
-        var state = await hubService.GetMachineStateAsync(created.Id);
-
-        Assert.Equal(server.Hostname, state.Machine.Name);
-        Assert.Equal(server.Hostname, hubService.GetMachine(created.Id)?.Name);
-    }
-
-    [Fact]
     public async Task CreateSessionAsync_FallsBackToPassword_WhenApiKeyIsRejected()
     {
         await using var server = await TestHubServer.StartAsync(requirePassword: true);

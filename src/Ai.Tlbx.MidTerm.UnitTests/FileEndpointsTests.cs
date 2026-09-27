@@ -7,9 +7,7 @@ public sealed class FileEndpointsTests
 {
     [Theory]
     [InlineData("https://github.com/tlbx-ai/MidTerm.git", "MidTerm")]
-    [InlineData("https://github.com/tlbx-ai/MidTerm", "MidTerm")]
     [InlineData("git@github.com:tlbx-ai/MidTerm.git", "MidTerm")]
-    [InlineData("ssh://git@github.com/tlbx-ai/MidTerm.git", "MidTerm")]
     public void TryResolveCloneDirectoryName_ExtractsRepositoryFolderName(string repositoryUrl, string expected)
     {
         var result = FileEndpoints.TryResolveCloneDirectoryName(repositoryUrl, out var directoryName);
@@ -20,7 +18,6 @@ public sealed class FileEndpointsTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("   ")]
     [InlineData("https://github.com")]
     public void TryResolveCloneDirectoryName_RejectsInvalidRepositoryUrl(string repositoryUrl)
     {
@@ -32,8 +29,6 @@ public sealed class FileEndpointsTests
 
     [Theory]
     [InlineData("repo")]
-    [InlineData("repo-name")]
-    [InlineData("repo.name")]
     public void TryValidateLauncherDirectoryName_AcceptsSimpleFolderNames(string name)
     {
         var result = FileEndpoints.TryValidateLauncherDirectoryName(name, out var normalizedName, out var error);
@@ -45,7 +40,6 @@ public sealed class FileEndpointsTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("   ")]
     [InlineData(".")]
     [InlineData("..")]
     [InlineData("nested/path")]

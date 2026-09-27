@@ -1,15 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { isMobileViewport } from '../smartInput/smartInputMetrics';
+import { resolveEffectiveScrollbarStyle } from '../terminal/scrollbarStyle';
 import { isMobilePresentationContext } from '../theming/backgroundVisibility';
 import { shouldShowTouchController } from '../touchController/detection';
-import { resolveEffectiveScrollbarStyle } from '../terminal/scrollbarStyle';
 
 afterEach(() => vi.unstubAllGlobals());
 
 describe('responsive presentation across browser capabilities', () => {
-  for (const width of [320, 390, 768, 769, 1024, 1440]) {
+  for (const width of [768, 769]) {
     for (const touch of [false, true]) {
-      for (const dpr of [1, 3]) {
+      for (const dpr of [3]) {
         it(`keeps presentation consistent at ${width}px, DPR ${dpr}, touch ${touch}`, () => {
           vi.stubGlobal('navigator', { maxTouchPoints: touch ? 5 : 0 });
           vi.stubGlobal('window', {

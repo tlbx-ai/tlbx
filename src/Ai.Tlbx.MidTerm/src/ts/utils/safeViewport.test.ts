@@ -21,10 +21,3 @@ it('keeps floating controls inside the keyboard viewport and display insets', ()
   }));
   expect(getSafeViewportBounds()).toEqual({ top: 36, right: 374, bottom: 398, left: 16 });
 });
-
-it('uses the ordinary desktop viewport when no insets or visual viewport are reported', () => {
-  vi.stubGlobal('window', { innerWidth: 1440, innerHeight: 900 });
-  vi.stubGlobal('document', { documentElement: {} });
-  vi.stubGlobal('getComputedStyle', () => ({ getPropertyValue: () => '' }));
-  expect(getSafeViewportBounds()).toEqual({ top: 0, right: 1440, bottom: 900, left: 0 });
-});

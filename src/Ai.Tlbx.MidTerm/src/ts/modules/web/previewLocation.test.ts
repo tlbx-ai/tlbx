@@ -72,7 +72,9 @@ describe('upstream application location', () => {
   it('does not resolve an already rewritten redirect against the upstream origin again', () => {
     const { view, navigations } = fixture();
     view.href = '/webpreview/route/_ext?u=https%3A%2F%2Flogin.example.com';
-    expect(navigations).toEqual(['assign:proxy:/webpreview/route/_ext?u=https%3A%2F%2Flogin.example.com']);
+    expect(navigations).toEqual([
+      'assign:proxy:/webpreview/route/_ext?u=https%3A%2F%2Flogin.example.com',
+    ]);
   });
 
   it('tracks history and hash changes through live getters', () => {
