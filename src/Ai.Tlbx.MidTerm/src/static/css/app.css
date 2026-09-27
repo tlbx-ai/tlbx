@@ -20229,11 +20229,35 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 }
 
 /* The native and special-key keyboards share the space below the composer. */
+.smart-input-escape-btn {
+  display: none;
+}
+
 .smart-input-mobile-touch-host {
   display: none;
 }
 
 @media (max-width: 768px) {
+  .smart-input-escape-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 44px;
+    min-height: 44px;
+    padding: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font: inherit;
+    font-size: 13px;
+    touch-action: manipulation;
+  }
+
+  .smart-input-escape-btn:active {
+    background: var(--btn-secondary-hover);
+  }
+
   .terminal-page {
     padding-bottom: max(24px, var(--safe-area-inset-bottom));
   }
@@ -20283,7 +20307,9 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
 
   .smart-input-mobile-touch-host .touch-popup-docked {
     position: static;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
+    align-content: start;
+    grid-auto-rows: 44px;
     min-height: 0;
     overflow-y: auto;
     width: 100%;
@@ -20309,6 +20335,24 @@ body.keyboard-visible .adaptive-footer-dock:not([data-device='mobile']) .manager
     min-width: 44px;
     min-height: 44px;
     width: auto;
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded .touch-key,
+  .smart-input-mobile-touch-host .touch-popup-key {
+    height: 44px;
+    min-height: 44px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-elevated-opaque);
+    color: var(--text-primary);
+    font-size: 14px;
+  }
+
+  .smart-input-mobile-touch-host .touch-controller.embedded .touch-key.active,
+  .smart-input-mobile-touch-host .touch-controller.embedded .touch-key:active,
+  .smart-input-mobile-touch-host .touch-popup-key:active {
+    background: var(--btn-secondary-hover);
+    border-color: var(--accent-blue);
   }
 
   .smart-input-mobile-touch-host:has(.touch-popup:not([hidden])) .touch-modifiers,

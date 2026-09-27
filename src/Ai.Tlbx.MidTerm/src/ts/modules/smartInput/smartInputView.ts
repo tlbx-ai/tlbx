@@ -41,6 +41,7 @@ interface CreateSmartInputDomArgs {
   onAppServerControlPlanChange: () => void;
   onPhotoInputChange: (files: FileList) => void;
   onExpandToggleClick: (event: MouseEvent) => void;
+  onEscapeClick: () => void;
   onSendClick: () => void;
   onSendDoubleClick: (event: MouseEvent) => void;
   onSendPointerDown: () => void;
@@ -231,6 +232,17 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   composerExpandBtn.addEventListener('click', args.onExpandToggleClick);
   syncSmartInputComposerExpandToggleState(composerExpandBtn, false);
 
+  const escapeBtn = document.createElement('button');
+  escapeBtn.type = 'button';
+  escapeBtn.className = 'smart-input-escape-btn';
+  escapeBtn.textContent = 'Esc';
+  escapeBtn.setAttribute('aria-label', 'Escape');
+  escapeBtn.addEventListener('pointerdown', (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  escapeBtn.addEventListener('click', args.onEscapeClick);
+
   const sendBtn = document.createElement('button');
   sendBtn.type = 'button';
   sendBtn.className = 'smart-input-send-btn';
@@ -293,6 +305,7 @@ export function createSmartInputDom(args: CreateSmartInputDomArgs): SmartInputDo
   editorHost.appendChild(textareaShell);
   inputRow.appendChild(editorHost);
   inputRow.appendChild(inlineToolHost);
+  inputRow.appendChild(escapeBtn);
   inputRow.appendChild(sendBtn);
   inputRow.appendChild(toolsToggleBtn);
   inputRow.appendChild(toolsPanel);
