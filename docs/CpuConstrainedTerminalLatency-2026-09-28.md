@@ -66,6 +66,24 @@ was reported in these completed runs. Evidence labels: `baseline-3`,
 `color-cache`, `bounded-writes`, and `confirmation`. Earlier startup/serialization
 probe failures are excluded.
 
+With the already-running source server pinned to logical CPU 0 at normal
+priority and two busy loops on that same CPU, the optimized build measured
+p50/p95 of 62.5/84.3 ms at 1x, 91.1/180.1 ms at 4x, and 197.1/308.1 ms at 8x.
+All 144 characters rendered. During the 29.3-second constrained interval, the
+server used 2.75 CPU seconds and the two loads used 12.36 and 11.84 CPU seconds.
+Both loads remained running throughout; cleanup restored affinity mask 65535
+and AboveNormal priority, then stopped the loads. Evidence:
+`server-steady-contention`. This additional run has no matched original-source
+server-contention comparison, so it proves behavior under contention, not an
+optimization speedup on the server.
+
+Earlier attempts constrained the source before creating sessions; children
+inherited the restriction and the full workload did not pass its readiness
+gate. Their startup output is retained but excluded from latency claims. The
+final server experiment applies contention only after verifying both btop
+processes; it measures steady-state server contention separately from browser
+throttling and constrained process startup.
+
 ## Changes
 
 - The WebGL color resolver now reads custom foreground boost, palette, and
@@ -83,3 +101,10 @@ probe failures are excluded.
 The CPU profile still contains substantial xterm parsing and rendering work.
 Overload scheduling/backpressure at 16x and above remains follow-up work; the
 patch does not claim to eliminate that capacity limit.
+
+## Verification
+
+The 52 focused tests passed, including real xterm UTF-8 and VT sequences across
+write boundaries, unchanged parser debt/replacement behavior, and live WebGL
+color/palette/document changes with one DOM traversal per model update. The
+release additionally runs the repository's frontend and dependency categories.

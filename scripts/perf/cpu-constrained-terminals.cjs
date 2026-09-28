@@ -140,6 +140,8 @@ const quantiles = values => {
         return {id,width:r.width,height:r.height,hidden:s.container.classList.contains('hidden'),transport:window.mmDebug.transport(id)};
       })}),{ids:summary.created,rate});
       stage.wallMs=Date.now()-start;
+      if (stage.keys.length !== 24*repetitions) throw Error(`Only ${stage.keys.length} keyboard events reached the terminal`);
+      if (stage.terminals.some(t=>t.hidden || t.width<=0 || t.height<=0)) throw Error('A workload terminal is not visible');
       for (const phase of ['sent','received','parsed','render','frame']) stage[phase]=quantiles(stage.keys.map(k=>k[phase]===undefined?NaN:k[phase]-k.at));
       stage.missing=stage.keys.filter(k=>k.render===undefined).length;
       summary.stages.push(stage);
