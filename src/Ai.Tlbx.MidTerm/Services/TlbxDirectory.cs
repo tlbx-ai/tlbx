@@ -286,7 +286,8 @@ public static class TlbxDirectory
         Handoffs advance the ownership generation; stale in-flight replies fail. A command whose response was lost may have executed: inspect state before retrying an action.
         tlbx injects `MT_SESSION_ID` automatically for this terminal session.
         Browser helpers default to the current `MT_SESSION_ID` plus `MT_PREVIEW_NAME` (`default` unless changed).
-        When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` print reusable export commands for child shells.
+        When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` export the owning server (`MT_BASE_URL`), session ID and preview. Apply these exports before loading the child shell's helper. A session ID belongs to one server; copying only the ID can cause a false-looking 404 on another instance.
+        For Git commands in a shell without inherited context, run `mt_sessions` on the intended server, then `Mt-Repo add PATH -SessionId ID` (PowerShell) or `mt_repo --session ID add PATH` (Bash). Use the verified live ID; do not reuse IDs from previous sessions or select another session automatically after a failure.
         Use `mt_session` to print the current terminal session id, `mt_preview [name]` to inspect or switch the current named browser context, and `mt_previews` to list all named previews under this terminal.
         Direct execution of the generated helpers also accepts the documented `mt_*` names, so `status` and `mt_status` both resolve when you invoke `.tlbx/tlbx_cli.sh` or `.tlbx/tlbx_cli.ps1` directly.
 

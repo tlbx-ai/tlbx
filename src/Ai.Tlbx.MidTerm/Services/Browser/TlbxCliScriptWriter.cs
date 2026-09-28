@@ -167,19 +167,21 @@ public static class TlbxCliScriptWriter
           _MREQUIRECTX "mt_context" || return $?
           case "$format" in
             --bash|bash)
-              printf 'export MT_SESSION_ID=%q; export MT_PREVIEW_NAME=%q\n' "$(_MSID)" "$(_MPREVIEW)"
+              printf 'export MT_BASE_URL=%q; export MT_SESSION_ID=%q; export MT_PREVIEW_NAME=%q\n' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
               ;;
             --pwsh|pwsh|powershell)
+              printf '$env:MT_BASE_URL='
+              printf "'%s'; " "$(_MPWSHQ "$_MT")"
               printf '$env:MT_SESSION_ID='
               printf "'%s'; " "$(_MPWSHQ "$(_MSID)")"
               printf '$env:MT_PREVIEW_NAME='
               printf "'%s'\n" "$(_MPWSHQ "$(_MPREVIEW)")"
               ;;
             --json|json)
-              printf '{"sessionId":"%s","previewName":"%s"}\n' "$(_MJSONESC "$(_MSID)")" "$(_MJSONESC "$(_MPREVIEW)")"
+              printf '{"baseUrl":"%s","sessionId":"%s","previewName":"%s"}\n' "$(_MJSONESC "$_MT")" "$(_MJSONESC "$(_MSID)")" "$(_MJSONESC "$(_MPREVIEW)")"
               ;;
             ""|text)
-              printf 'sessionId=%s\npreviewName=%s\n' "$(_MSID)" "$(_MPREVIEW)"
+              printf 'baseUrl=%s\nsessionId=%s\npreviewName=%s\n' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
               ;;
             *)
               echo "Usage: mt_context [text|bash|pwsh|json]" >&2
@@ -433,35 +435,49 @@ public static class TlbxCliScriptWriter
           if [ "${1:-}" = "--clear" ]; then topic=""; fi
           _MJ -X PUT -d "{\"topic\":\"$(_ME "$topic")\"}" "$_MT/api/sessions/$(_MURLENC "$(_MSID)")/topic"
         }
-        # mt_repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        _MREPOREQUEST() {
+          local sid="$1" result
+          shift
+          _MC "$@" && return 0
+          result=$?
+          printf 'Git request for session %s at %s failed. Run mt_sessions on this server and use mt_repo --session ID ACTION; preserve the server with mt_context when entering another shell.\n' "$sid" "$_MT" >&2
+          return "$result"
+        }
+        # mt_repo [--session ID] list|status|add|remove|refresh [args]
         mt_repo() {
+          local sid="$(_MSID)"
+          if [ "${1:-}" = "--session" ]; then
+            [ $# -ge 2 ] || { echo "Usage: mt_repo --session ID ACTION [args]" >&2; return 1; }
+            sid="$2"
+            shift 2
+          fi
           local action="${1:-list}"
           [ $# -gt 0 ] && shift
-          _MREQUIRECTX "mt_repo" || return $?
+          _MISID "$sid" || { echo "mt_repo requires an eight-character tlbx session id. Run mt_sessions, then use mt_repo --session ID ACTION (or set MT_SESSION_ID)." >&2; return 1; }
           case "$action" in
             list|status)
-              _MC "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")"
+              _MREPOREQUEST "$sid" "$_MT/api/git/repos?sessionId=$(_MURLENC "$sid")"
               ;;
             add)
               local path="${1:-}" role="${2:-target}" label="${3:-}"
               [ -n "$path" ] || { echo "Usage: mt_repo add PATH [ROLE] [LABEL]" >&2; return 1; }
-              _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\",\"label\":\"$(_ME "$label")\"}" "$_MT/api/git/repos"
+              _MREPOREQUEST "$sid" -X POST -H "Content-Type: application/json" -d "{\"sessionId\":\"$(_ME "$sid")\",\"path\":\"$(_ME "$path")\",\"role\":\"$(_ME "$role")\",\"label\":\"$(_ME "$label")\"}" "$_MT/api/git/repos"
               ;;
             remove|rm)
               local root="${1:-}"
               [ -n "$root" ] || { echo "Usage: mt_repo remove REPO_ROOT" >&2; return 1; }
-              _MC -X DELETE "$_MT/api/git/repos?sessionId=$(_MURLENC "$(_MSID)")&repoRoot=$(_MURLENC "$root")"
+              _MREPOREQUEST "$sid" -X DELETE "$_MT/api/git/repos?sessionId=$(_MURLENC "$sid")&repoRoot=$(_MURLENC "$root")"
               ;;
             refresh)
               local root="${1:-}"
               if [ -n "$root" ]; then
-                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\",\"repoRoot\":\"$(_ME "$root")\"}" "$_MT/api/git/repos/refresh"
+                _MREPOREQUEST "$sid" -X POST -H "Content-Type: application/json" -d "{\"sessionId\":\"$(_ME "$sid")\",\"repoRoot\":\"$(_ME "$root")\"}" "$_MT/api/git/repos/refresh"
               else
-                _MJ -d "{\"sessionId\":\"$(_ME "$(_MSID)")\"}" "$_MT/api/git/repos/refresh"
+                _MREPOREQUEST "$sid" -X POST -H "Content-Type: application/json" -d "{\"sessionId\":\"$(_ME "$sid")\"}" "$_MT/api/git/repos/refresh"
               fi
               ;;
             *)
-              echo "Usage: mt_repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
+              echo "Usage: mt_repo [--session ID] list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" >&2
               return 1
               ;;
           esac
@@ -1340,15 +1356,15 @@ public static class TlbxCliScriptWriter
             param([string]$Format = "text")
             _MRequireSessionContext "mt_context"
             switch ($Format.ToLowerInvariant()) {
-                "--bash" { Write-Output "export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
-                "bash" { Write-Output "export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
-                "--pwsh" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
-                "pwsh" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
-                "powershell" { Write-Output "`$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
-                "--json" { Write-Output (_MH @{ sessionId = (_MSID); previewName = (_MPreview) }); return }
-                "json" { Write-Output (_MH @{ sessionId = (_MSID); previewName = (_MPreview) }); return }
-                "text" { Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
-                "" { Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
+                "--bash" { Write-Output "export MT_BASE_URL=$(_MBashQuote $script:_MT); export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
+                "bash" { Write-Output "export MT_BASE_URL=$(_MBashQuote $script:_MT); export MT_SESSION_ID=$(_MBashQuote (_MSID)); export MT_PREVIEW_NAME=$(_MBashQuote (_MPreview))"; return }
+                "--pwsh" { Write-Output "`$env:MT_BASE_URL='$(_MPwshQuote $script:_MT)'; `$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "pwsh" { Write-Output "`$env:MT_BASE_URL='$(_MPwshQuote $script:_MT)'; `$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "powershell" { Write-Output "`$env:MT_BASE_URL='$(_MPwshQuote $script:_MT)'; `$env:MT_SESSION_ID='$(_MPwshQuote (_MSID))'; `$env:MT_PREVIEW_NAME='$(_MPwshQuote (_MPreview))'"; return }
+                "--json" { Write-Output (_MH @{ baseUrl = $script:_MT; sessionId = (_MSID); previewName = (_MPreview) }); return }
+                "json" { Write-Output (_MH @{ baseUrl = $script:_MT; sessionId = (_MSID); previewName = (_MPreview) }); return }
+                "text" { Write-Output "baseUrl=$script:_MT"; Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
+                "" { Write-Output "baseUrl=$script:_MT"; Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
                 default { throw "Usage: mt_context [text|bash|pwsh|json]" }
             }
         }
@@ -1648,34 +1664,43 @@ public static class TlbxCliScriptWriter
             $topic = if ($Clear) { $null } else { ($InputArgs -join " ") }
             _MJ -X PUT -d (_MH @{topic=$topic}) "$script:_MT/api/sessions/$([Uri]::EscapeDataString((_MSID)))/topic"
         }
-        # Mt-Repo list|status|add|remove|refresh [args]  — session-scoped multi-repo Git tracking for IDE bar and /api/git
+        function script:_MRepoRequest {
+            param([string]$SessionId, [string[]]$RequestArgs)
+            try { _MC @RequestArgs }
+            catch {
+                throw "Git request for session '$SessionId' at '$script:_MT' failed. Run mt_sessions on this server and use Mt-Repo ACTION -SessionId ID; preserve the server with mt_context when entering another shell. $($_.Exception.Message)"
+            }
+        }
+        # Mt-Repo list|status|add|remove|refresh [args] [-SessionId ID]
         function Mt-Repo {
-            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label)
-            _MRequireSessionContext "mt_repo"
+            param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label, [string]$SessionId = (_MSID))
+            if (-not (_MIsSessionId $SessionId)) {
+                throw "mt_repo requires an eight-character tlbx session id. Run mt_sessions, then use Mt-Repo ACTION -SessionId ID (or set MT_SESSION_ID)."
+            }
             switch ($Action.ToLowerInvariant()) {
-                "list" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
-                "status" { _MC "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))"; return }
+                "list" { _MRepoRequest $SessionId @("$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))"); return }
+                "status" { _MRepoRequest $SessionId @("$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))"); return }
                 "add" {
                     if (-not $PathOrRoot) { throw "Usage: Mt-Repo add PATH [ROLE] [LABEL]" }
-                    _MJ -d (_MH @{sessionId=(_MSID); path=$PathOrRoot; role=$Role; label=$Label}) "$script:_MT/api/git/repos"
+                    _MRepoRequest $SessionId @('-X', 'POST', '-H', 'Content-Type: application/json', '-d', (_MH @{sessionId=$SessionId; path=$PathOrRoot; role=$Role; label=$Label}), "$script:_MT/api/git/repos")
                     return
                 }
                 "remove" {
                     if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
-                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    _MRepoRequest $SessionId @('-X', 'DELETE', "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))")
                     return
                 }
                 "rm" {
                     if (-not $PathOrRoot) { throw "Usage: Mt-Repo remove REPO_ROOT" }
-                    _MC -X DELETE "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString((_MSID)))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))"
+                    _MRepoRequest $SessionId @('-X', 'DELETE', "$script:_MT/api/git/repos?sessionId=$([Uri]::EscapeDataString($SessionId))&repoRoot=$([Uri]::EscapeDataString($PathOrRoot))")
                     return
                 }
                 "refresh" {
-                    $body = if ($PathOrRoot) { @{sessionId=(_MSID); repoRoot=$PathOrRoot} } else { @{sessionId=(_MSID)} }
-                    _MJ -d (_MH $body) "$script:_MT/api/git/repos/refresh"
+                    $body = if ($PathOrRoot) { @{sessionId=$SessionId; repoRoot=$PathOrRoot} } else { @{sessionId=$SessionId} }
+                    _MRepoRequest $SessionId @('-X', 'POST', '-H', 'Content-Type: application/json', '-d', (_MH $body), "$script:_MT/api/git/repos/refresh")
                     return
                 }
-                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT]" }
+                default { throw "Usage: Mt-Repo list|status|add PATH [ROLE] [LABEL]|remove REPO_ROOT|refresh [REPO_ROOT] [-SessionId ID]" }
             }
         }
         # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
