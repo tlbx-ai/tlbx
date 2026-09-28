@@ -403,6 +403,9 @@ const MAX_COALESCED_BROWSER_OUTPUT_BYTES = 64 * 1024;
 const QUEUE_COMPACT_THRESHOLD = 1000;
 const OUTPUT_DRAIN_BUDGET_MS = 8;
 const MAX_TERMINAL_WRITE_BATCH_BYTES = 64 * 1024;
+// xterm checks its time budget between writes, never inside one input chunk.
+// Keep large transport batches from becoming indivisible parser long tasks.
+const MAX_XTERM_WRITE_BYTES = 4 * 1024;
 const MAX_XTERM_UNPARSED_BYTES = 512 * 1024;
 const XTERM_PARSE_BARRIER_TIMEOUT_MS = 5000;
 const MAX_PRINTABLE_INPUT_COALESCING_MS = 200;
@@ -1080,7 +1083,18 @@ function writeTerminalData(
     });
   };
   try {
-    state.terminal.write(data, () => {
+    for (
+      let offset = 0;
+      offset + MAX_XTERM_WRITE_BYTES < data.length;
+      offset += MAX_XTERM_WRITE_BYTES
+    ) {
+      state.terminal.write(data.subarray(offset, offset + MAX_XTERM_WRITE_BYTES));
+    }
+    const finalOffset =
+      data.length > 0
+        ? Math.floor((data.length - 1) / MAX_XTERM_WRITE_BYTES) * MAX_XTERM_WRITE_BYTES
+        : 0;
+    state.terminal.write(data.subarray(finalOffset), () => {
       release();
       if (!isOutputGenerationCurrent(sessionId, generation)) {
         onParsed?.();
