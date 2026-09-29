@@ -5,6 +5,10 @@ Every release entry point (`release-dev.ps1`, `release-local.ps1`, `release.ps1`
 Choose after reviewing **all changes since the previous release**, including shared
 code, dependencies and build configuration; the dev release prints that diff.
 
+Fresh patch releases skip versions already tagged or reserved in fetched task
+history. Resuming or re-preparing a candidate keeps its exact version and still
+rejects reuse of a published version.
+
 ```powershell
 ./scripts/release-dev.ps1 -Bump patch -ReleaseTitle 'Fix terminal layout' `
     -ReleaseNotes @('Keep the terminal input visible after resizing.') `

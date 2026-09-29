@@ -174,10 +174,19 @@ try {
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.2 } 'Release gate accepted a mismatched version.'
     Invoke-ReleaseGit switch --detach $promotion.Head | Out-Null
     Assert-Rejected { & ./scripts/verify-release-merge.ps1 -Tag v1.0.1 } 'Release gate accepted the unmerged task commit.'
+    # A parallel task reserves the next patch without merging it into dev.
+    Invoke-ReleaseGit switch -c fix/reserved-fixture origin/dev | Out-Null
+    $reserved = Get-Content src/version.json -Raw | ConvertFrom-Json
+    $reserved.web = '1.0.2-dev'
+    $reserved | ConvertTo-Json | Set-Content src/version.json
+    Invoke-ReleaseGit add src/version.json
+    Invoke-ReleaseGit commit -m 'Reserve a parallel dev patch' | Out-Null
+    Invoke-ReleaseGit push origin fix/reserved-fixture | Out-Null
     Invoke-ReleaseGit switch -c fix/reprepare-fixture origin/dev | Out-Null
     $devArgs = @{Bump='patch'; ReleaseTitle='Verify candidate retry'; ReleaseNotes=@('Retain the candidate while correcting the same release PR.'); mthostUpdate='yes'; TestCategories=@('assets'); PrepareOnly=$true}
     & ./scripts/release-dev.ps1 @devArgs
     $candidate = Get-ReleaseState fix/reprepare-fixture
+    Assert-Test ($candidate.Version -eq '1.0.3-dev') 'Fresh patch selection reused a parallel reserved version.'
     $creates = $global:TlbxPrFixture.Creates
     'Corrected implementation' | Set-Content correction.txt
     Invoke-ReleaseGit add correction.txt

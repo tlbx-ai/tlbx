@@ -297,6 +297,15 @@ switch ($Bump) {
 }
 
 $newVersion = if ($retainedCandidate) { $retainedCandidate.Version } else { "$major.$minor.$patch-dev" }
+if (-not $retainedCandidate -and $Bump -eq 'patch') {
+    # Parallel task branches can reserve a patch before it reaches dev. Keep
+    # prepared candidates exact; only fresh patch selection may advance.
+    while ((Test-GitTagExists -TagName "v$newVersion") -or (Test-WebVersionExistsInHistory -Version $newVersion)) {
+        Write-Host "  Skipping reserved patch $newVersion" -ForegroundColor Yellow
+        $patch++
+        $newVersion = "$major.$minor.$patch-dev"
+    }
+}
 Write-Host "New version: $newVersion" -ForegroundColor Green
 
 try {

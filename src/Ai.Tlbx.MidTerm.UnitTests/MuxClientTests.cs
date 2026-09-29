@@ -11,6 +11,46 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(TimingSensitiveCollection.Name)]
 public sealed class MuxClientTests
 {
+    [Fact]
+    public void OutputCoalescing_NeverMutatesABroadcastBuffer()
+    {
+        var shared = RentOutput("original");
+        try
+        {
+            Assert.False(shared.TryAppend("x"u8));
+            shared.AddRef();
+            Assert.False(shared.TryAppend("y"u8));
+            shared.Release();
+            Assert.Equal("original", Encoding.UTF8.GetString(shared.Span));
+        }
+        finally
+        {
+            shared.Release();
+        }
+    }
+
+    [Fact]
+    public void QueueOwnedOutput_AppendsInOrderAndStopsWhenSharedOrFull()
+    {
+        var buffer = SharedOutputBuffer.RentCoalesced(2);
+        try
+        {
+            "ab"u8.CopyTo(buffer.WriteSpan);
+            Assert.True(buffer.TryAppend("cd"u8));
+            Assert.Equal("abcd", Encoding.UTF8.GetString(buffer.Span));
+            buffer.AddRef();
+            Assert.False(buffer.TryAppend("e"u8));
+            buffer.Release();
+            Assert.False(buffer.TryAppend(new byte[65536]));
+            Assert.Equal("abcd", Encoding.UTF8.GetString(buffer.Span));
+        }
+        finally
+        {
+            buffer.Release();
+        }
+        Assert.True(buffer.IsReleased);
+    }
+
     [Theory]
     [InlineData(0, 12)]
     [InlineData(5, 7)]
