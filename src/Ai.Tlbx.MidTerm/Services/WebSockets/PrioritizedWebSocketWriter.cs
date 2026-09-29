@@ -194,6 +194,7 @@ internal sealed class PrioritizedWebSocketWriter : IAsyncDisposable
 
     private async Task ProcessAsync()
     {
+        var passStartedAt = Stopwatch.GetTimestamp();
         try
         {
             while (!_cts.IsCancellationRequested)
@@ -222,6 +223,14 @@ internal sealed class PrioritizedWebSocketWriter : IAsyncDisposable
                 if (!succeeded)
                 {
                     return;
+                }
+                // SendAsync can complete synchronously on a fast connection.
+                // Bound a flood's uninterrupted worker time so terminal input
+                // and other sockets can run on the same constrained pool.
+                if (Stopwatch.GetElapsedTime(passStartedAt).TotalMilliseconds >= 3)
+                {
+                    await Task.Yield();
+                    passStartedAt = Stopwatch.GetTimestamp();
                 }
             }
         }

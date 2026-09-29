@@ -22,13 +22,15 @@ internal sealed class SharedOutputBuffer
     private byte[] _buffer;
     private int _length;
     private int _refCount;
+    private readonly bool _coalescible;
 
-    private SharedOutputBuffer(ArrayPool<byte> pool, byte[] buffer, int length)
+    private SharedOutputBuffer(ArrayPool<byte> pool, byte[] buffer, int length, bool coalescible = false)
     {
         _pool = pool;
         _buffer = buffer;
         _length = length;
         _refCount = 1;
+        _coalescible = coalescible;
     }
 
     public int Length => _length;
@@ -51,6 +53,25 @@ internal sealed class SharedOutputBuffer
     public void AddRef()
     {
         Interlocked.Increment(ref _refCount);
+    }
+
+    // Only buffers created inside a single queue can grow in place. Broadcast
+    // buffers must remain immutable even while their first client is enqueued.
+    internal static SharedOutputBuffer RentCoalesced(int length)
+    {
+        var pool = ArrayPool<byte>.Shared;
+        return new SharedOutputBuffer(pool, pool.Rent(length), length, coalescible: true);
+    }
+
+    internal bool TryAppend(ReadOnlySpan<byte> data)
+    {
+        if (!_coalescible || Volatile.Read(ref _refCount) != 1 || data.Length > _buffer.Length - _length)
+        {
+            return false;
+        }
+        data.CopyTo(_buffer.AsSpan(_length));
+        _length += data.Length;
+        return true;
     }
 
     public void Release()
@@ -79,6 +100,7 @@ public sealed class MuxClient : IAsyncDisposable
     private const int MaxQueuedBytes = 4 * 1024 * 1024;
     private const int MaxCoalescedInputBytes = 32 * 1024;
     private const int InputDrainMaxItemsPerPass = 64;
+    private static readonly TimeSpan InputDrainTimeBudget = TimeSpan.FromMilliseconds(2);
     private const int MaxFrameChunkBytes = 32 * 1024;
     private const int ActiveFlushMaxChunksPerPass = 8;
     private static readonly TimeSpan ActiveFlushInterval = TimeSpan.FromMilliseconds(12);
@@ -106,7 +128,9 @@ public sealed class MuxClient : IAsyncDisposable
     private static readonly Action<object?> s_cancelCallback = static state =>
         ((CancellationTokenSource?)state)?.Cancel();
 
-    private volatile string? _activeSessionId;
+    private sealed record ActiveSessionHint(string? SessionId, IReadOnlySet<string> SessionIds);
+    private ActiveSessionHint _activeSessionHint = new(null, FrozenSet<string>.Empty);
+    private string? _activeSessionId => Volatile.Read(ref _activeSessionHint).SessionId;
     private volatile bool _flushSuspended;
     private readonly ConcurrentDictionary<string, int> _lastFlushDelayMs = new(StringComparer.Ordinal);
     private readonly string? _allowedSessionId;
@@ -455,16 +479,20 @@ public sealed class MuxClient : IAsyncDisposable
             return false;
         }
 
-        var combined = SharedOutputBuffer.Rent(combinedLength);
-        existing.Buffer.Span.CopyTo(combined.WriteSpan);
-        incoming.Buffer.Span.CopyTo(combined.WriteSpan[existing.Buffer.Length..]);
+        var combined = existing.Buffer;
+        if (!combined.TryAppend(incoming.Buffer.Span))
+        {
+            combined = SharedOutputBuffer.RentCoalesced(combinedLength);
+            existing.Buffer.Span.CopyTo(combined.WriteSpan);
+            incoming.Buffer.Span.CopyTo(combined.WriteSpan[existing.Buffer.Length..]);
+            existing.Buffer.Release();
+        }
         merged = new OutputItem(
             incoming.SessionId,
             incoming.SequenceEndExclusive,
             incoming.Cols,
             incoming.Rows,
             combined);
-        existing.Buffer.Release();
         incoming.Buffer.Release();
         return true;
     }
@@ -474,7 +502,10 @@ public sealed class MuxClient : IAsyncDisposable
     /// </summary>
     public void SetActiveSession(string? sessionId)
     {
-        _activeSessionId = sessionId is not null && CanAccessSession(sessionId) ? sessionId : null;
+        var activeId = sessionId is not null && CanAccessSession(sessionId) ? sessionId : null;
+        Volatile.Write(ref _activeSessionHint, new ActiveSessionHint(activeId, activeId is not null
+            ? new[] { activeId }.ToFrozenSet(StringComparer.Ordinal)
+            : FrozenSet<string>.Empty));
         WakeProcessor();
     }
 
@@ -837,9 +868,8 @@ public sealed class MuxClient : IAsyncDisposable
                 // 2. Bound queue work so a continuously replenished background
                 // stream cannot indefinitely postpone an active-session flush.
                 var drainedItems = 0;
-                IReadOnlySet<string> activeSessionIds = _activeSessionId is { } activeSessionId
-                    ? new HashSet<string>(StringComparer.Ordinal) { activeSessionId }
-                    : FrozenSet.ToFrozenSet<string>([], StringComparer.Ordinal);
+                var activeSessionIds = Volatile.Read(ref _activeSessionHint).SessionIds;
+                var drainStartedAt = Stopwatch.GetTimestamp();
                 if (hasAvailableItem && _inputQueue.TryDequeue(activeSessionIds, out var firstItem))
                 {
                     BufferOutput(firstItem);
@@ -847,7 +877,9 @@ public sealed class MuxClient : IAsyncDisposable
                 }
                 hasAvailableItem = false;
 
-                while (drainedItems < InputDrainMaxItemsPerPass && _inputQueue.TryAcquireAvailableItem())
+                while (drainedItems < InputDrainMaxItemsPerPass
+                    && Stopwatch.GetElapsedTime(drainStartedAt) < InputDrainTimeBudget
+                    && _inputQueue.TryAcquireAvailableItem())
                 {
                     if (!_inputQueue.TryDequeue(activeSessionIds, out var item))
                     {
@@ -865,7 +897,9 @@ public sealed class MuxClient : IAsyncDisposable
                 // 4. Wait for more data OR the next due background flush.
                 try
                 {
-                    var waitDelay = CalculateNextFlushDelay(now);
+                    // Compression and socket scheduling may have consumed the
+                    // old deadline. Recompute from the current clock under load.
+                    var waitDelay = CalculateNextFlushDelay(Stopwatch.GetTimestamp());
                     if (waitDelay is null)
                     {
                         hasAvailableItem = await _inputQueue.WaitToReadAsync(ct).ConfigureAwait(false);

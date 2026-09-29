@@ -54,6 +54,7 @@ import {
 import * as muxSessionRouting from './muxSessionRouting';
 import { resolveMuxDataLossReason } from './muxDataLoss';
 import { createMuxInputFrame } from './muxInputFrame';
+import { tryMergeOutputPayloads } from './muxOutputPayload';
 import { createPrintableInputBurstCoalescer } from './printableInputBurst';
 import {
   appendTerminalWriteBatch,
@@ -399,9 +400,8 @@ interface SessionOutputQueue {
 const MAX_QUEUED_FRAMES_PER_SESSION = 2000;
 const MAX_QUEUED_BYTES_PER_SESSION = 4 * 1024 * 1024;
 const MAX_PENDING_FRAMES_PER_SESSION = 1000;
-const MAX_COALESCED_BROWSER_OUTPUT_BYTES = 64 * 1024;
 const QUEUE_COMPACT_THRESHOLD = 1000;
-const OUTPUT_DRAIN_BUDGET_MS = 8;
+const OUTPUT_DRAIN_BUDGET_MS = 3;
 const MAX_TERMINAL_WRITE_BATCH_BYTES = 64 * 1024;
 // xterm checks its time budget between writes, never inside one input chunk.
 // Keep large transport batches from becoming indivisible parser long tasks.
@@ -654,7 +654,12 @@ function dequeueOutputFrame(sessionId: string): OutputFrameItem | null {
 function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: boolean): void {
   const queue = getOrCreateSessionQueue(sessionId);
   const lastItem = queue.items[queue.items.length - 1];
-  if (!compressed && lastItem && !lastItem.compressed) {
+  if (
+    !compressed &&
+    lastItem &&
+    !lastItem.compressed &&
+    queue.bytes + payload.byteLength - 12 <= MAX_QUEUED_BYTES_PER_SESSION
+  ) {
     const mergedPayload = tryMergeOutputPayloads(lastItem.payload, payload);
     if (
       mergedPayload &&
@@ -686,37 +691,6 @@ function queueOutputFrame(sessionId: string, payload: Uint8Array, compressed: bo
   queue.items.push({ sessionId, generation: getOutputGeneration(sessionId), payload, compressed });
   queue.bytes += payload.byteLength;
   scheduleSessionOutputQueue(sessionId, getOutputGeneration(sessionId));
-}
-
-function tryMergeOutputPayloads(
-  previousPayload: Uint8Array,
-  incomingPayload: Uint8Array,
-): Uint8Array | null {
-  const previous = parseOutputFrame(previousPayload);
-  const incoming = parseOutputFrame(incomingPayload);
-  const incomingLength = BigInt(incoming.data.byteLength);
-  if (
-    !previous.valid ||
-    !incoming.valid ||
-    previous.cols !== incoming.cols ||
-    previous.rows !== incoming.rows ||
-    incoming.sequenceEnd < incomingLength ||
-    previous.sequenceEnd !== incoming.sequenceEnd - incomingLength ||
-    previous.data.byteLength + incoming.data.byteLength > MAX_COALESCED_BROWSER_OUTPUT_BYTES
-  ) {
-    return null;
-  }
-
-  const merged = new Uint8Array(12 + previous.data.byteLength + incoming.data.byteLength);
-  const view = new DataView(merged.buffer);
-  view.setBigUint64(0, incoming.sequenceEnd, true);
-  merged[8] = incoming.cols & 0xff;
-  merged[9] = (incoming.cols >> 8) & 0xff;
-  merged[10] = incoming.rows & 0xff;
-  merged[11] = (incoming.rows >> 8) & 0xff;
-  merged.set(previous.data, 12);
-  merged.set(incoming.data, 12 + previous.data.byteLength);
-  return merged;
 }
 
 function scheduleSessionOutputQueue(sessionId: string, generation: number): void {

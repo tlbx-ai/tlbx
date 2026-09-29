@@ -3,6 +3,8 @@
 
 # Preserve whitespace inside the upstream SDK's bundled runtime template literals.
 src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge/dist/claude-agent-sdk-bridge.mjs whitespace=-blank-at-eol
+# Unified patches require a leading context marker on empty context lines.
+src/Ai.Tlbx.MidTerm/patches/*.patch whitespace=-blank-at-eol
 
 # Binary files
 *.woff binary
