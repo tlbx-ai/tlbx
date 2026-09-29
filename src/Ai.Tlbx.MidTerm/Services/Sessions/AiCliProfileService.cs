@@ -4,6 +4,9 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class AiCliProfileService
 {
+    // A shared Codex daemon retains the environment of the terminal that started it,
+    // including MT_SESSION_ID. Keep terminal-owned tool execution in this process.
+    internal const string CodexTerminalLaunchCommand = "codex --no-daemon --yolo";
     public const string ShellProfile = "shell";
     public const string UnknownProfile = "unknown";
     public const string CodexProfile = "codex";
@@ -104,7 +107,7 @@ public sealed class AiCliProfileService
     {
         return NormalizeProfile(profile) switch
         {
-            CodexProfile => "codex --yolo",
+            CodexProfile => CodexTerminalLaunchCommand,
             ClaudeProfile => "claude --dangerously-skip-permissions",
             GrokProfile => "grok",
             _ => null
