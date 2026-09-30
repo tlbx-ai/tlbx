@@ -67,6 +67,18 @@ public static class TlbxCliScriptWriter
           fi
         }
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
+        # Resolve before any command; a stale ID can still be live in another terminal.
+        # Git Bash uses emulated PIDs, so translate to the native Windows PID.
+        _MRESOLVECTX() {
+          local pid=$$ resolved
+          if [ -r "/proc/$$/winpid" ]; then read -r pid < "/proc/$$/winpid"; fi
+          resolved=$(_MC --max-time 2 "$_MT/api/sessions/process-context?processId=$pid" 2>/dev/null) || return 0
+          if [[ "$resolved" =~ ^[A-Za-z0-9]{8}$ ]]; then
+            if [ "${MT_SESSION_ID:-}" != "$resolved" ]; then unset MT_PREVIEW_NAME; fi
+            export MT_SESSION_ID="$resolved"
+          fi
+        }
+        _MRESOLVECTX
         # Send null-delimited args to text CLI endpoint (browser commands)
         _MB() { printf '%s\0' "$@" | _MBR --data-binary @- -X POST "$_MT/api/browser"; }
         _MSID() { printf '%s' "${MT_SESSION_ID:-}"; }
@@ -1151,6 +1163,16 @@ public static class TlbxCliScriptWriter
             $output
         }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
+        # Resolve before any command, including when the inherited ID belongs to a live sibling.
+        try {
+            $resolvedContext = (_MC --max-time 2 "$script:_MT/api/sessions/process-context?processId=$PID" | Out-String).Trim()
+            if ($resolvedContext -match '^[A-Za-z0-9]{8}$') {
+                if ($env:MT_SESSION_ID -ne $resolvedContext) { Remove-Item Env:MT_PREVIEW_NAME -ErrorAction SilentlyContinue }
+                $env:MT_SESSION_ID = $resolvedContext
+            }
+        } catch {
+            # Explicit/exported context remains usable when local ancestry is unavailable.
+        }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Depth 8 -Compress }
         function script:_MSID { $env:MT_SESSION_ID }

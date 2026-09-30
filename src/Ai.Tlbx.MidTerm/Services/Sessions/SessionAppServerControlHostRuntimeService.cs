@@ -47,6 +47,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private readonly string _mode;
     private readonly RedirectedProcessLauncher _launcher;
 
+    internal IEnumerable<KeyValuePair<int, string>> GetProcessContextRoots() =>
+        _states.Values.Where(state => state.HostPid > 0)
+            .Select(state => new KeyValuePair<int, string>(state.HostPid, state.SessionId));
+
     public SessionAppServerControlHostRuntimeService(
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,

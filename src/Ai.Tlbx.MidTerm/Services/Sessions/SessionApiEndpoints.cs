@@ -233,6 +233,23 @@ public static partial class SessionApiEndpoints
             return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime), AppJsonContext.Default.SessionListDto);
         });
 
+        app.MapGet("/api/sessions/process-context", (HttpContext context, int processId) =>
+        {
+            // PIDs are meaningful only on this machine. Never map a remote caller's PID.
+            var remote = context.Connection.RemoteIpAddress;
+            if (remote is null || !System.Net.IPAddress.IsLoopback(remote)) return Results.StatusCode(403);
+            if (processId <= 0) return Results.BadRequest();
+            var roots = new Dictionary<int, string>();
+            foreach (var session in sessionManager.GetAllSessions().Where(session => session.IsRunning))
+            {
+                if (session.Pid > 0) roots[session.Pid] = session.Id;
+            }
+            foreach (var root in app.Services.GetRequiredService<SessionAppServerControlHostRuntimeService>().GetProcessContextRoots())
+                roots[root.Key] = root.Value;
+            var id = SessionProcessContext.Resolve(processId, roots);
+            return id is null ? Results.NoContent() : Results.Text(id);
+        });
+
         app.MapGet("/api/sessions/attention", (bool agentOnly = true) =>
         {
             var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime).Sessions, agentOnly);

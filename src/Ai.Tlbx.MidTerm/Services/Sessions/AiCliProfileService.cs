@@ -4,6 +4,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class AiCliProfileService
 {
+    internal const string CodexTerminalLaunchCommand = "codex --no-daemon --yolo";
     public const string ShellProfile = "shell";
     public const string UnknownProfile = "unknown";
     public const string CodexProfile = "codex";
@@ -104,7 +105,7 @@ public sealed class AiCliProfileService
     {
         return NormalizeProfile(profile) switch
         {
-            CodexProfile => "codex --yolo",
+            CodexProfile => CodexTerminalLaunchCommand,
             ClaudeProfile => "claude --dangerously-skip-permissions",
             GrokProfile => "grok",
             _ => null

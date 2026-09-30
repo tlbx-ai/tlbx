@@ -170,12 +170,8 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
     {
         using var ws = await ConnectWebSocketAsync("/ws/state");
 
-        var buffer = new byte[8192];
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var result = await ws.ReceiveAsync(buffer, cts.Token);
-
-        Assert.Equal(WebSocketMessageType.Text, result.MessageType);
-        var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+        // Session metadata and release notes can span multiple receive buffers.
+        var json = await ReceiveTextMessageAsync(ws, TimeSpan.FromSeconds(5));
 
         var state = System.Text.Json.JsonSerializer.Deserialize<StateUpdate>(json, AppJsonContext.Default.StateUpdate);
         Assert.NotNull(state);
