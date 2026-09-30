@@ -4,6 +4,7 @@ using Ai.Tlbx.MidTerm.Services.Browser;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
 using System.Net;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Text;
 using Xunit;
@@ -79,20 +80,84 @@ public class WebPreviewProxyMiddlewareTests
         Assert.Equal(StatusCodes.Status404NotFound, context.Response.StatusCode);
     }
 
-    [Fact]
-    public void AddForwardedHeaders_UsesUpstreamAuthorityInsteadOfOuterTlbxHost()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ProxyRequests_OnWire_PreserveBrowserUserAgentWithoutLeakingTlbx(bool external)
     {
-        using var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            "https://demo.kilv.de/login?ReturnUrl=%2F");
+        const string userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36";
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var origin = "http://127.0.0.1:" + ((IPEndPoint)listener.LocalEndpoint).Port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var received = Task.Run(async () =>
+        {
+            var requests = new List<string>();
+            for (var i = 0; i < 2; i++)
+            {
+                using var client = await listener.AcceptTcpClientAsync(deadline.Token);
+                await using var stream = client.GetStream();
+                using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+                var lines = new List<string>();
+                while (await reader.ReadLineAsync(deadline.Token) is { Length: > 0 } line)
+                    lines.Add(line);
+                requests.Add(string.Join("\r\n", lines));
+                var response = i == 0
+                    ? $"HTTP/1.1 302 Found\r\nLocation: {origin}/final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    : "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
+                await stream.WriteAsync(Encoding.ASCII.GetBytes(response), deadline.Token);
+            }
+            return requests;
+        }, deadline.Token);
 
-        WebPreviewProxyMiddleware.AddForwardedHeaders(
-            request,
-            IPAddress.Parse("100.78.171.121"));
+        var service = new WebPreviewService(serverPort: 2000);
+        try
+        {
+            Assert.True(service.SetTarget("privacy", null, origin + "/"));
+            Assert.True(service.TryGetPreviewRouteKey("privacy", null, out var routeKey));
+            var middleware = new WebPreviewProxyMiddleware(_ => Task.CompletedTask, service);
+            var context = new DefaultHttpContext();
+            context.RequestAborted = deadline.Token;
+            context.Request.Method = "GET";
+            context.Request.Scheme = "https";
+            context.Request.Host = new HostString("100.78.171.121", 2001);
+            context.Connection.RemoteIpAddress = IPAddress.Parse("100.78.171.121");
+            context.Request.Path = $"/webpreview/{routeKey}/" + (external ? "_ext" : "start");
+            if (external)
+                context.Request.QueryString = new QueryString("?u=" + Uri.EscapeDataString(origin + "/start"));
+            context.Request.Headers.UserAgent = userAgent;
+            context.Request.Headers["sec-ch-ua-platform"] = "\"Windows\"";
+            context.Request.Headers.Referer = external
+                ? $"https://100.78.171.121:2001/webpreview/{routeKey}/page?keep=1&__mtPreviewToken=secret&__mtPreviewId=id&__mtTargetRevision=1"
+                : "https://100.78.171.121:2000/";
+            foreach (var name in new[] { "Forwarded", "Via", "X-Real-IP", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Port" })
+                context.Request.Headers[name] = "private-network";
+            context.Response.Body = new MemoryStream();
 
-        Assert.Equal("100.78.171.121", Assert.Single(request.Headers.GetValues("X-Forwarded-For")));
-        Assert.Equal("https", Assert.Single(request.Headers.GetValues("X-Forwarded-Proto")));
-        Assert.Equal("demo.kilv.de", Assert.Single(request.Headers.GetValues("X-Forwarded-Host")));
+            await middleware.InvokeAsync(context);
+            Assert.Equal(200, context.Response.StatusCode);
+            foreach (var request in await received)
+            {
+                Assert.Contains("User-Agent: " + userAgent + "\r\n", request + "\r\n", StringComparison.Ordinal);
+                Assert.Contains("sec-ch-ua-platform: \"Windows\"", request, StringComparison.Ordinal);
+                Assert.DoesNotContain("Forwarded", request, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("Via:", request, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("X-Real-IP", request, StringComparison.OrdinalIgnoreCase);
+                Assert.DoesNotContain("100.78.171.121", request, StringComparison.Ordinal);
+                Assert.DoesNotContain("__mt", request, StringComparison.Ordinal);
+                Assert.DoesNotContain("private-network", request, StringComparison.Ordinal);
+                if (external)
+                    Assert.Contains($"Referer: {origin}/page?keep=1", request, StringComparison.Ordinal);
+                else
+                    Assert.DoesNotContain("Referer:", request, StringComparison.OrdinalIgnoreCase);
+            }
+            Assert.Equal(userAgent, Assert.Single(service.GetLogEntries("privacy")).RequestHeaders["User-Agent"]);
+        }
+        finally
+        {
+            service.ClearSession("privacy");
+            await deadline.CancelAsync();
+        }
     }
 
     [Fact]
