@@ -150,9 +150,9 @@ public sealed class SessionCodexHandoffService
         ArgumentException.ThrowIfNullOrWhiteSpace(resumeThreadId);
 
         var baseCommand = string.IsNullOrWhiteSpace(launchCommand)
-            ? "codex --yolo"
+            ? AiCliProfileService.CodexTerminalLaunchCommand
             : launchCommand.Trim();
-        return $"{baseCommand} resume {resumeThreadId}";
+        return $"{AiCliProfileService.PreserveTerminalContext(baseCommand)} resume {resumeThreadId}";
     }
 
     internal static string? TryExtractResumeThreadId(string? commandLine)

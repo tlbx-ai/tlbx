@@ -233,6 +233,23 @@ public static partial class SessionApiEndpoints
             return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime), AppJsonContext.Default.SessionListDto);
         });
 
+        app.MapGet("/api/sessions/process-context", (HttpContext context, int processId) =>
+        {
+            // PIDs are meaningful only on this machine. Never map a remote caller's PID.
+            var remote = context.Connection.RemoteIpAddress;
+            if (remote is null || !System.Net.IPAddress.IsLoopback(remote)) return Results.StatusCode(403);
+            if (processId <= 0) return Results.BadRequest();
+            var roots = new Dictionary<int, string>();
+            foreach (var session in sessionManager.GetAllSessions().Where(session => session.IsRunning))
+            {
+                if (session.Pid > 0) roots[session.Pid] = session.Id;
+            }
+            foreach (var root in app.Services.GetRequiredService<SessionAppServerControlHostRuntimeService>().GetProcessContextRoots())
+                roots[root.Key] = root.Value;
+            var id = SessionProcessContext.Resolve(processId, roots);
+            return id is null ? Results.NoContent() : Results.Text(id);
+        });
+
         app.MapGet("/api/sessions/attention", (bool agentOnly = true) =>
         {
             var response = sessionSupervisor.DescribeFleet(GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime).Sessions, agentOnly);
@@ -244,7 +261,7 @@ public static partial class SessionApiEndpoints
             var cols = request?.Cols ?? 120;
             var rows = request?.Rows ?? 30;
             const int maxLaunchCommandLength = 8192;
-            var launchCommand = request?.LaunchCommand?.Trim();
+            var launchCommand = AiCliProfileService.PreserveTerminalContext(request?.LaunchCommand?.Trim());
             if (launchCommand?.Length > maxLaunchCommandLength)
             {
                 return Results.BadRequest($"launchCommand must not exceed {maxLaunchCommandLength} characters.");
@@ -382,7 +399,7 @@ public static partial class SessionApiEndpoints
                 ? null
                 : string.IsNullOrWhiteSpace(request.LaunchCommand)
                     ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
-                    : request.LaunchCommand.Trim();
+                    : AiCliProfileService.PreserveTerminalContext(request.LaunchCommand.Trim());
 
             var guidanceInjected = false;
             string? tlbxDir = null;
@@ -1665,7 +1682,7 @@ public static partial class SessionApiEndpoints
         }
 
         plan = new WorkerAutoResumePlan(
-            launchCommand.Trim(),
+            AiCliProfileService.PreserveTerminalContext(launchCommand.Trim())!,
             profile,
             hasRegistry ? registration!.SlashCommands : [],
             hasRegistry ? registration!.LaunchDelayMs : 1200,

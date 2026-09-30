@@ -15,6 +15,46 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
 
     [Theory]
+    [InlineData(false, "")]
+    [InlineData(false, "deadbeef")]
+    [InlineData(true, "")]
+    [InlineData(true, "deadbeef")]
+    public async Task LiveProcessContextRepairsMissingOrStaleIdentityBeforeFirstMutation(bool bash, string inheritedId)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        app.MapGet("/api/sessions/process-context", (int processId) =>
+        {
+            using var process = Process.GetProcessById(processId);
+            requests.Enqueue("resolve");
+            return Results.Text("abcdefgh");
+        });
+        app.MapPost("/api/git/repos", async (HttpContext context) =>
+        {
+            using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            requests.Enqueue(body.RootElement.GetProperty("sessionId").GetString()!);
+            return Results.Ok();
+        });
+        app.MapGet("/api/git/repos", (string sessionId) =>
+        {
+            requests.Enqueue(sessionId);
+            return Results.Ok();
+        });
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(bash,
+            bash ? "source \"$1\"; set -e; mt_repo add '/repo'; mt_repo --session sibling1 list; test \"$MT_SESSION_ID\" = abcdefgh"
+                : ". $args[0]; mt_repo add '/repo'; mt_repo list -SessionId sibling1; if ($env:MT_SESSION_ID -ne 'abcdefgh') { throw 'Wrong identity' }",
+            app.Urls.Single(), inheritedId, Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Equal(new[] { "resolve", "abcdefgh", "sibling1" }, requests.ToArray());
+    }
+
+    [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
     [InlineData(true, false)]
