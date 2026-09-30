@@ -1250,8 +1250,9 @@ public sealed partial class WebPreviewProxyMiddleware
         "Host",
         // Browser cookies are MT session cookies — upstream cookies come from CookieContainer
         "Cookie",
-        // MidTerm owns forwarded headers and must not let them accumulate across self-proxy hops
-        "X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host",
+        // Preview targets are independent websites, not trusted reverse-proxy backends.
+        // Never disclose the user's network or the supervising tlbx host.
+        "Forwarded", "Via", "X-Real-IP",
         // Internal loop-prevention header is for server-originated requests only
         InternalProxyRequestHeaderName,
         // WebSocket negotiation headers managed by ClientWebSocket
@@ -1632,7 +1633,6 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var msg = new HttpRequestMessage(method, url);
             ForwardRequestHeaders(context.Request, msg, routeKey, targetUri, upstreamOrigin);
-            AddForwardedHeaders(msg, context.Connection.RemoteIpAddress);
             if (_service.IsSelfTarget(msg.RequestUri!))
             {
                 msg.Headers.TryAddWithoutValidation(
@@ -2129,7 +2129,7 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         foreach (var header in source.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key)
+            if (IsBlockedRequestHeader(header.Key)
                 || IsTlbxAuthenticationHeader(source, header.Key))
                 continue;
 
@@ -2140,8 +2140,9 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
             {
-                var refValue = RewriteRefererForUpstream(header.Value.ToString(), routeKey, currentTargetUri);
-                target.Headers.TryAddWithoutValidation(header.Key, refValue);
+                var refValue = RewriteRefererForUpstream(header.Value.ToString(), routeKey, currentTargetUri, source);
+                if (!string.IsNullOrEmpty(refValue))
+                    target.Headers.TryAddWithoutValidation(header.Key, refValue);
                 continue;
             }
 
@@ -2150,23 +2151,15 @@ public sealed partial class WebPreviewProxyMiddleware
 
     }
 
-    internal static void AddForwardedHeaders(HttpRequestMessage target, IPAddress? remoteAddress)
-    {
-        var targetUri = target.RequestUri
-            ?? throw new InvalidOperationException("A web preview upstream request must have a target URI.");
+    internal static bool IsBlockedRequestHeader(string name) =>
+        BlockedRequestHeaders.Contains(name)
+        || name.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase);
 
-        target.Headers.TryAddWithoutValidation(
-            "X-Forwarded-For",
-            remoteAddress?.ToString() ?? IPAddress.Loopback.ToString());
-        target.Headers.TryAddWithoutValidation("X-Forwarded-Proto", targetUri.Scheme);
-        target.Headers.TryAddWithoutValidation("X-Forwarded-Host", targetUri.Authority);
-    }
-
-    internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri)
+    internal string RewriteRefererForUpstream(string refererValue, string currentRouteKey, Uri currentTargetUri, HttpRequest? source = null)
     {
         if (!Uri.TryCreate(refererValue, UriKind.Absolute, out var refererUri))
         {
-            return refererValue;
+            return "";
         }
 
         if (!TryParseProxyRoute(refererUri.AbsolutePath, out var refererRouteKey, out var refererRemainingPath))
@@ -2175,9 +2168,13 @@ public sealed partial class WebPreviewProxyMiddleware
                 && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
                 && leakedTargetUri is not null)
             {
-                return BuildUpstreamUrlFromPath(leakedTargetUri, BuildUpstreamPath(leakedTargetUri, refererUri.AbsolutePath), refererUri.Query);
+                return BuildUpstreamUrlFromPath(leakedTargetUri, BuildUpstreamPath(leakedTargetUri, refererUri.AbsolutePath), StripPreviewBootstrapQuery(refererUri.Query));
             }
 
+            // Initial navigation refers to the tlbx shell, not an upstream page.
+            if (_service.IsSelfTarget(refererUri)
+                || (source is not null && refererUri.Host.Equals(source.Host.Host, StringComparison.OrdinalIgnoreCase)))
+                return "";
             return refererValue;
         }
 
@@ -2187,7 +2184,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return !string.IsNullOrWhiteSpace(externalUrl)
                 && Uri.TryCreate(externalUrl, UriKind.Absolute, out var externalUri)
                 ? externalUri.ToString()
-                : refererValue;
+                : "";
         }
 
         var refererTarget = _service.GetTargetUriByRouteKey(refererRouteKey);
@@ -2199,11 +2196,11 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (refererTarget is null)
         {
-            return refererValue;
+            return "";
         }
 
         var upstreamPath = BuildUpstreamPath(refererTarget, refererRemainingPath);
-        return BuildUpstreamUrlFromPath(refererTarget, upstreamPath, refererUri.Query);
+        return BuildUpstreamUrlFromPath(refererTarget, upstreamPath, StripPreviewBootstrapQuery(refererUri.Query));
     }
 
     private static void AttachRequestBody(
@@ -2366,7 +2363,9 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (request is not null)
         {
-            foreach (var h in request.Headers)
+            // Typed header enumeration splits User-Agent into products/comments.
+            // Preserve its original spacing instead of inventing comma separators.
+            foreach (var h in request.Headers.NonValidated)
                 entry.RequestHeaders[h.Key] = string.Join(", ", h.Value);
             var cookieHeader = request.RequestUri is not null
                 ? _service.GetForwardedCookieHeader(routeKey, request.RequestUri)
@@ -2826,7 +2825,7 @@ public sealed partial class WebPreviewProxyMiddleware
         // Forward all request headers except blocked ones (same blocklist as HTTP)
         foreach (var header in context.Request.Headers)
         {
-            if (BlockedRequestHeaders.Contains(header.Key)
+            if (IsBlockedRequestHeader(header.Key)
                 || IsTlbxAuthenticationHeader(context.Request, header.Key))
                 continue;
             // Skip WebSocket upgrade headers — ClientWebSocket manages these
@@ -2843,7 +2842,9 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             else if (header.Key.Equals("Referer", StringComparison.OrdinalIgnoreCase))
             {
-                value = RewriteRefererForUpstream(value, routeKey, targetUri ?? new Uri(upstreamOrigin));
+                value = RewriteRefererForUpstream(value, routeKey, targetUri ?? new Uri(upstreamOrigin), context.Request);
+                if (string.IsNullOrEmpty(value))
+                    continue;
             }
 
             try
