@@ -152,7 +152,7 @@ public sealed class SessionCodexHandoffService
         var baseCommand = string.IsNullOrWhiteSpace(launchCommand)
             ? AiCliProfileService.CodexTerminalLaunchCommand
             : launchCommand.Trim();
-        return $"{baseCommand} resume {resumeThreadId}";
+        return $"{AiCliProfileService.PreserveTerminalContext(baseCommand)} resume {resumeThreadId}";
     }
 
     internal static string? TryExtractResumeThreadId(string? commandLine)
