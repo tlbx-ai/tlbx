@@ -14,6 +14,17 @@ function Assert-Rejected([scriptblock]$Action, [string]$Message) {
     try { & $Action | Out-Null } catch { $failed = $true }
     Assert-Test $failed $Message
 }
+$partialRelease = @{isDraft=$false; assets=@(
+    @{name='mt-win-x64.zip'; size=100}, @{name='mt-win-x64.spdx.json'; size=100}
+)}
+Assert-PublishedReleaseAssets $partialRelease
+Assert-Test $true 'A published single-platform release is valid for task retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$true; assets=$partialRelease.assets} } 'Draft release accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@()} } 'Empty release accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($partialRelease.assets[0])} } 'Incomplete pair accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='extra.zip'; size=100})} } 'Unknown asset accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($partialRelease.assets + $partialRelease.assets)} } 'Duplicate assets accepted for retirement.'
+Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='mt-win-x64.zip'; size=0}, $partialRelease.assets[1])} } 'Empty asset accepted for retirement.'
 $global:TlbxPrFixture = @{ Pr=$null; Prs=@(); Creates=0; Merges=0; FailChecks=$false; ChangeHead=$false; Remote=$remote }
 function global:gh {
     $a = @($args); $f = $global:TlbxPrFixture; $global:LASTEXITCODE=0
