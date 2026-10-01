@@ -50,6 +50,29 @@ public sealed class UpdateServiceTests : IDisposable
         yield return ["1.0.0.1", "1.0.0", 1];
     }
 
+    [Theory]
+    [InlineData("dev", "10.17.15-dev", "v10.17.16-dev")]
+    [InlineData("stable", "10.17.15", "v10.17.16")]
+    public void SelectBestRelease_SkipsNewerReleasesWithoutTheCurrentPlatform(
+        string channel, string currentVersion, string expectedTag)
+    {
+        var suffix = channel == "dev" ? "-dev" : "";
+        var releases = new[]
+        {
+            new GitHubRelease { TagName = "v10.17.18" + suffix, Prerelease = channel == "dev", Assets = [] },
+            new GitHubRelease
+            {
+                TagName = expectedTag, Prerelease = channel == "dev",
+                Assets = [new GitHubAsset { Name = WindowsAssetName, BrowserDownloadUrl = "https://example.test/mt-win-x64.zip" }]
+            }
+        };
+
+        var selection = UpdateService.SelectBestRelease(releases, channel, currentVersion, WindowsAssetName);
+
+        Assert.NotNull(selection);
+        Assert.Equal(expectedTag, selection.Release.TagName);
+    }
+
     [Fact]
     public void GenerateUpdateScript_RejectsSharedRuntimeBeforeCreatingArtifacts()
     {

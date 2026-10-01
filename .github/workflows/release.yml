@@ -20,7 +20,7 @@ env:
 
 jobs:
 
-  # ── Create dev prereleases immediately; keep stable releases unpublished ──
+  # ── Keep releases draft until shared checks and available packages pass ──
   prepare:
     runs-on: ubuntu-24.04
     permissions:
@@ -247,6 +247,9 @@ jobs:
   build-dev:
     needs: [prepare, frontend, supply-chain]
     if: needs.prepare.outputs.is_dev == 'true'
+    # A platform failure must not invalidate other complete, verified packages.
+    # publish-release remains the required final gate, including shared checks.
+    continue-on-error: true
     permissions:
       contents: write
       id-token: write
@@ -436,6 +439,7 @@ jobs:
   build:
     needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain]
     if: needs.prepare.outputs.is_dev != 'true'
+    continue-on-error: true
     permissions:
       contents: write
       id-token: write
@@ -618,6 +622,7 @@ jobs:
   build-windows-dev:
     needs: [prepare, frontend, supply-chain]
     if: needs.prepare.outputs.is_dev == 'true'
+    continue-on-error: true
     permissions:
       contents: write
       id-token: write
@@ -722,6 +727,7 @@ jobs:
   build-windows:
     needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain]
     if: needs.prepare.outputs.is_dev != 'true'
+    continue-on-error: true
     permissions:
       contents: write
       id-token: write
@@ -869,7 +875,7 @@ jobs:
         run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.zip" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
 
   publish-npm:
-    needs: [prepare, build, build-windows]
+    needs: [prepare, publish-release]
     if: needs.prepare.outputs.is_dev != 'true'
     runs-on: ubuntu-24.04
     continue-on-error: true
@@ -907,16 +913,17 @@ jobs:
           npm publish --access public --provenance --tag latest
 
   publish-release:
-    needs: [prepare, build, build-windows, build-dev, build-windows-dev]
+    needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain, build, build-windows, build-dev, build-windows-dev]
     if: >-
-      always() && needs.prepare.result == 'success' &&
-      ((needs.prepare.outputs.is_dev == 'true' && needs.build-dev.result == 'success' && needs.build-windows-dev.result == 'success') ||
-       (needs.prepare.outputs.is_dev != 'true' && needs.build.result == 'success' && needs.build-windows.result == 'success'))
+      always() && !cancelled() && needs.prepare.result == 'success' &&
+      needs.frontend.result == 'success' && needs.supply-chain.result == 'success' &&
+      (needs.prepare.outputs.is_dev == 'true' ||
+       (needs.frontend-tests.result == 'success' && needs.dotnet-tests.result == 'success'))
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
-      - name: Validate exact release assets
+      - name: Validate and publish available platforms
         id: validate
         shell: bash
         env:
@@ -925,34 +932,31 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           RELEASE_JSON=$(mktemp)
-          trap 'rm -f "$RELEASE_JSON"' EXIT
+          RELEASE_PATCH=$(mktemp)
+          trap 'rm -f "$RELEASE_JSON" "$RELEASE_PATCH"' EXIT
           gh release view "$RELEASE_TAG" \
             --repo "$REPOSITORY" \
-            --json databaseId,tagName,isDraft,isPrerelease,assets \
+            --json databaseId,tagName,isDraft,isPrerelease,assets,body \
             > "$RELEASE_JSON"
 
-          RELEASE_ID=$(python3 - "$RELEASE_JSON" "$RELEASE_TAG" <<'PY'
+          RELEASE_ID=$(python3 - "$RELEASE_JSON" "$RELEASE_TAG" "$RELEASE_PATCH" <<'PY'
           import json
+          import os
           import sys
 
-          release_path, expected_tag = sys.argv[1:]
+          release_path, expected_tag, patch_path = sys.argv[1:]
           with open(release_path, encoding="utf-8") as handle:
               release = json.load(handle)
 
-          expected_assets = {
-              "mt-linux-arm64.tar.gz",
-              "mt-linux-x64.tar.gz",
-              "mt-osx-arm64.tar.gz",
-              "mt-osx-x64.tar.gz",
-              "mt-win-x64.zip",
-              "mt-win-x86.zip",
-              "mt-linux-arm64.spdx.json",
-              "mt-linux-x64.spdx.json",
-              "mt-osx-arm64.spdx.json",
-              "mt-osx-x64.spdx.json",
-              "mt-win-x64.spdx.json",
-              "mt-win-x86.spdx.json",
+          platforms = {
+              rid: {f"mt-{rid}.{extension}", f"mt-{rid}.spdx.json"}
+              for rid, extension in [
+                  ("linux-arm64", "tar.gz"), ("linux-x64", "tar.gz"),
+                  ("osx-arm64", "tar.gz"), ("osx-x64", "tar.gz"),
+                  ("win-x64", "zip"), ("win-x86", "zip"),
+              ]
           }
+          expected_assets = set().union(*platforms.values())
 
           if release.get("tagName") != expected_tag:
               raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}, got {release.get('tagName')!r}")
@@ -963,13 +967,9 @@ jobs:
 
           assets = release.get("assets") or []
           actual_names = {asset.get("name") for asset in assets}
-          missing = sorted(expected_assets - actual_names)
-          unexpected = sorted(actual_names - expected_assets)
-          if len(assets) != len(expected_assets) or missing or unexpected:
-              raise SystemExit(
-                  "Release asset set mismatch: "
-                  f"expected={sorted(expected_assets)}, missing={missing}, unexpected={unexpected}"
-              )
+          unexpected = actual_names - expected_assets
+          if len(assets) != len(actual_names) or unexpected:
+              raise SystemExit(f"Duplicate or unexpected release assets: {unexpected}")
 
           empty = sorted(
               asset["name"]
@@ -979,31 +979,46 @@ jobs:
           if empty:
               raise SystemExit(f"Release assets must be nonzero: {empty}")
 
+          available = []
+          unavailable = []
+          for rid, pair in platforms.items():
+              present = pair & actual_names
+              if present and present != pair:
+                  raise SystemExit(f"Incomplete platform {rid}: missing {sorted(pair - present)}")
+              (available if present else unavailable).append(rid)
+          if not available:
+              raise SystemExit("At least one complete platform archive and matching SBOM is required.")
+
           release_id = release.get("databaseId")
           if not isinstance(release_id, int) or release_id <= 0:
               raise SystemExit(f"Invalid GitHub release id: {release_id!r}")
 
+          availability = (
+              "## Platform availability\n\n"
+              f"Available: {', '.join(available)}.\n\n"
+              f"Unavailable in this release: {', '.join(unavailable) if unavailable else 'none'}."
+          )
+          patch = {
+              "draft": False,
+              "prerelease": release["isPrerelease"],
+              "make_latest": "false" if release["isPrerelease"] else "true",
+              "body": (release.get("body") or "").rstrip() + "\n\n" + availability,
+          }
+          with open(patch_path, "w", encoding="utf-8") as handle:
+              json.dump(patch, handle)
+          if os.environ.get("GITHUB_STEP_SUMMARY"):
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
+                  handle.write(availability + "\n")
+          if unavailable:
+              print(f"::warning::Release excludes unavailable platforms: {', '.join(unavailable)}", file=sys.stderr)
           print(release_id)
           PY
           )
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
-
-      - name: Publish validated release
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          RELEASE_ID: ${{ steps.validate.outputs.release_id }}
-          IS_DEV: ${{ needs.prepare.outputs.is_dev }}
-        run: |
-          MAKE_LATEST=true
-          if [[ "$IS_DEV" == "true" ]]; then MAKE_LATEST=false; fi
           gh api \
             --method PATCH \
             "repos/$REPOSITORY/releases/$RELEASE_ID" \
-            -F draft=false \
-            -F prerelease="$IS_DEV" \
-            -f make_latest="$MAKE_LATEST" \
+            --input "$RELEASE_PATCH" \
             > /dev/null
 
   prune-artifacts:

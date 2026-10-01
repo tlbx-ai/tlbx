@@ -110,6 +110,61 @@ is_tailscale_ipv4 100.127.255.254
             throw "install.sh readiness URL smoke test failed: $($readinessOutput -join [Environment]::NewLine)"
         }
 
+        $releaseSelectionSmoke = @'
+set -e
+eval "$(awk '/^get_latest_release\(\) \{/{emit=1} /^require_extracted_binaries\(\) \{/{emit=0} emit' ./install.sh)"
+print_step_inline() { :; }
+finish_step_inline() { :; }
+print_status() { :; }
+ASSET_NAME=mt-osx-arm64.tar.gz
+REPO_OWNER=tlbx-ai
+REPO_NAME=tlbx
+github_api_get() {
+    case "$1" in
+        */latest) printf '%s' '{"tag_name":"v10.17.18","prerelease":false,"assets":[]}' ;;
+        *) printf '%s' "$releases" ;;
+    esac
+}
+# Both pretty and compact JSON, including escaped quotes/braces in release notes.
+for releases in '[{"tag_name":"v10.17.18-dev","prerelease":true,"body":"brace { and escaped \" quote","assets":[]},{"tag_name":"v10.17.17-dev","prerelease":true,"draft":true,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]},{"tag_name":"v10.17.16-dev","prerelease":true,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]},{"tag_name":"v10.17.16","prerelease":false,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]}]' '[
+{
+"tag_name": "v10.17.16-dev",
+"prerelease": true,
+"assets": [{"browser_download_url": "https://example.test/mt-osx-arm64.tar.gz"}]
+},
+{
+"tag_name": "v10.17.16",
+"prerelease": false,
+"assets": [{"browser_download_url": "https://example.test/mt-osx-arm64.tar.gz"}]
+}
+]'; do
+    DEV_CHANNEL=true
+    get_latest_release
+    test "$VERSION" = 10.17.16-dev
+    test "$ASSET_URL" = https://example.test/mt-osx-arm64.tar.gz
+    DEV_CHANNEL=false
+    get_latest_release
+    test "$VERSION" = 10.17.16
+done
+releases='[{"tag_name":"v10.17.16","prerelease":false,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]}]'
+DEV_CHANNEL=true
+get_latest_release
+test "$VERSION" = 10.17.16
+releases='[]'
+if (get_latest_release) >/dev/null 2>&1; then exit 1; fi
+'@
+        $selectionScript = ".verify-release-selection-$([Guid]::NewGuid().ToString('N')).sh"
+        try {
+            [IO.File]::WriteAllText((Join-Path $repoRoot $selectionScript),
+                $releaseSelectionSmoke.Replace("`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+            $selectionOutput = & $bash.Source "./$selectionScript" 2>&1
+        } finally {
+            Remove-Item -LiteralPath (Join-Path $repoRoot $selectionScript) -ErrorAction SilentlyContinue
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "install.sh platform release selection failed: $($selectionOutput -join [Environment]::NewLine)"
+        }
+
         $signedChecksumsSmoke = @'
 set -e
 eval "$(awk '/^extract_signed_checksum_entries\(\) \{/{emit=1} /^verify_signed_release\(\) \{/{emit=0} emit' ./install.sh)"
@@ -177,6 +232,34 @@ Assert-Contains $unixMultiInstaller 'SERVICE_PREFIX="tlbx"' "Fresh Unix multi-in
 $tokens = $null
 $errors = $null
 $installerAst = [System.Management.Automation.Language.Parser]::ParseInput($windowsInstaller, [ref]$tokens, [ref]$errors)
+& {
+    Invoke-Expression ($installerAst.Find({
+        param($node)
+        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-LatestRelease'
+    }, $true).Extent.Text)
+    $AssetPattern = 'mt-win-x64.zip'
+    $asset = @{name=$AssetPattern; browser_download_url='https://example.test/mt-win-x64.zip'}
+    $fixtures = @(
+        @{tag_name='v10.17.18-dev'; prerelease=$true; assets=@()},
+        @{tag_name='v10.17.17-dev'; prerelease=$true; draft=$true; assets=@($asset)},
+        @{tag_name='v10.17.16-dev'; prerelease=$true; assets=@($asset)},
+        @{tag_name='v10.17.18'; prerelease=$false; assets=@()},
+        @{tag_name='v10.17.16'; prerelease=$false; assets=@($asset)}
+    )
+    function Invoke-CompatibleRestMethod { return $fixtures }
+    if ((Get-LatestRelease -DevChannel $true).tag_name -ne 'v10.17.16-dev' -or
+        (Get-LatestRelease).tag_name -ne 'v10.17.16') {
+        throw 'Windows installer did not skip releases missing its platform.'
+    }
+    $fixtures = @($fixtures | Where-Object { -not $_.prerelease })
+    if ((Get-LatestRelease -DevChannel $true).tag_name -ne 'v10.17.16') {
+        throw 'Windows installer did not fall back to compatible stable.'
+    }
+    $fixtures = @()
+    $rejected = $false
+    try { Get-LatestRelease | Out-Null } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Windows installer accepted no compatible release.' }
+}
 $safetyFunctions = ($installerAst.FindAll({
     param($node)
     $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
@@ -308,8 +391,15 @@ if ($LiveRelease) {
     $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-installer-live-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $tempRoot | Out-Null
     try {
-        $release = Invoke-RestMethod -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
-            -Uri "https://api.github.com/repos/tlbx-ai/tlbx/releases/latest"
+        Invoke-Expression ($installerAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-LatestRelease'
+        }, $true).Extent.Text)
+        function Invoke-CompatibleRestMethod { param($Uri, $Headers) Invoke-RestMethod -Uri $Uri -Headers $Headers }
+        $RepoOwner = 'tlbx-ai'
+        $RepoName = 'tlbx'
+        $AssetPattern = 'mt-win-x64.zip'
+        $release = Get-LatestRelease
         $asset = $release.assets | Where-Object name -eq "mt-win-x64.zip" | Select-Object -First 1
         if (-not $asset) { throw "Latest release has no mt-win-x64.zip asset." }
 
@@ -353,8 +443,10 @@ if ($LiveRelease) {
             Write-Host "Windows PowerShell 5.1 live release verification passed ($($release.tag_name))." -ForegroundColor Green
         }
 
-        $x86Asset = $release.assets | Where-Object name -eq "mt-win-x86.zip" | Select-Object -First 1
-        if (-not $x86Asset) { throw "Latest release has no mt-win-x86.zip asset." }
+        $AssetPattern = 'mt-win-x86.zip'
+        $x86Release = Get-LatestRelease
+        $x86Version = $x86Release.tag_name.TrimStart('v')
+        $x86Asset = $x86Release.assets | Where-Object name -eq "mt-win-x86.zip" | Select-Object -First 1
         $x86ArchivePath = Join-Path $tempRoot "release-win-x86.zip"
         Invoke-WebRequest -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
             -Uri $x86Asset.browser_download_url -OutFile $x86ArchivePath
@@ -362,8 +454,8 @@ if ($LiveRelease) {
         Assert-SafeReleaseArchive -Path $x86ArchivePath
         $x86ExtractDir = Join-Path $tempRoot "extract-win-x86"
         Expand-Archive -Path $x86ArchivePath -DestinationPath $x86ExtractDir
-        Assert-SignedRelease -ExtractDir $x86ExtractDir -ExpectedVersion $version -ExpectedPlatform "win-x86" -ExpectedChannel "stable"
-        Write-Host "Windows x86 live release verification passed ($($release.tag_name))." -ForegroundColor Green
+        Assert-SignedRelease -ExtractDir $x86ExtractDir -ExpectedVersion $x86Version -ExpectedPlatform "win-x86" -ExpectedChannel "stable"
+        Write-Host "Windows x86 live release verification passed ($($x86Release.tag_name))." -ForegroundColor Green
 
         $tar = Get-Command tar -ErrorAction SilentlyContinue
         if ($tar) {
@@ -374,8 +466,10 @@ if ($LiveRelease) {
                 @{ Asset = "mt-osx-arm64.tar.gz"; Platform = "osx-arm64" }
             )
             foreach ($target in $unixTargets) {
-                $unixAsset = $release.assets | Where-Object name -eq $target.Asset | Select-Object -First 1
-                if (-not $unixAsset) { throw "Latest release has no $($target.Asset) asset." }
+                $AssetPattern = $target.Asset
+                $unixRelease = Get-LatestRelease
+                $unixVersion = $unixRelease.tag_name.TrimStart('v')
+                $unixAsset = $unixRelease.assets | Where-Object name -eq $target.Asset | Select-Object -First 1
                 $unixArchivePath = Join-Path $tempRoot $target.Asset
                 Invoke-WebRequest -Headers @{ "User-Agent" = "tlbx-installer-verifier" } `
                     -Uri $unixAsset.browser_download_url -OutFile $unixArchivePath
@@ -399,8 +493,8 @@ if ($LiveRelease) {
                 New-Item -ItemType Directory -Path $unixExtractDir | Out-Null
                 & $tar.Source -xzf $unixArchivePath -C $unixExtractDir
                 if ($LASTEXITCODE -ne 0) { throw "Could not extract $($target.Asset)." }
-                Assert-SignedRelease -ExtractDir $unixExtractDir -ExpectedVersion $version -ExpectedPlatform $target.Platform -ExpectedChannel "stable"
-                Write-Host "$($target.Platform) live release verification passed ($($release.tag_name))." -ForegroundColor Green
+                Assert-SignedRelease -ExtractDir $unixExtractDir -ExpectedVersion $unixVersion -ExpectedPlatform $target.Platform -ExpectedChannel "stable"
+                Write-Host "$($target.Platform) live release verification passed ($($unixRelease.tag_name))." -ForegroundColor Green
             }
         }
     } finally {

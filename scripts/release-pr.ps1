@@ -40,6 +40,29 @@ function Assert-ReleaseClean {
     if (Invoke-ReleaseGit status --porcelain) { throw 'Commit intended changes first. Release preparation requires a clean checkout.' }
 }
 
+function Assert-PublishedReleaseAssets {
+    param($Release)
+    if ($Release.isDraft) { throw 'Release is still a draft.' }
+    $pairs = @{}
+    foreach ($rid in @('linux-arm64','linux-x64','osx-arm64','osx-x64','win-x64','win-x86')) {
+        $extension = if ($rid.StartsWith('win-')) { 'zip' } else { 'tar.gz' }
+        $pairs[$rid] = @("mt-$rid.$extension", "mt-$rid.spdx.json")
+    }
+    $known = @($pairs.Values | ForEach-Object { $_ })
+    $seen = @{}
+    foreach ($asset in $Release.assets) {
+        if ($asset.name -notin $known -or $seen.ContainsKey($asset.name) -or $asset.size -le 0) {
+            throw 'Release contains unknown, duplicate or empty assets.'
+        }
+        $seen[$asset.name] = $true
+    }
+    if ($seen.Count -eq 0) { throw 'Release contains no platform packages.' }
+    foreach ($pair in $pairs.Values) {
+        $present = @($pair | Where-Object { $seen.ContainsKey($_) })
+        if ($present.Count -eq 1) { throw 'Release contains an incomplete archive/SBOM pair.' }
+    }
+}
+
 function Get-ReleaseStatePath {
     param([string]$Branch)
     $dir = Invoke-ReleaseGit rev-parse --absolute-git-dir

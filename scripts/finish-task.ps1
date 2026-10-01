@@ -12,7 +12,7 @@ if (-not @($prs | Where-Object headRefOid -EQ $head).Count) { throw 'No merged P
 $state = Get-ReleaseState $branch
 if ($state) {
     $release = Invoke-ReleaseGh release view "v$($state.Version)" --repo $script:TlbxReleaseRepo --json 'isDraft,assets' | ConvertFrom-Json
-    if ($release.isDraft -or $release.assets.Count -lt 12) { throw 'Release assets are incomplete; keep the task available for recovery.' }
+    Assert-PublishedReleaseAssets $release
     $runs = @(Invoke-ReleaseGh run list --repo $script:TlbxReleaseRepo --workflow release.yml --commit $state.Merge --json 'status,conclusion' | ConvertFrom-Json)
     if (-not @($runs | Where-Object { $_.status -eq 'completed' -and $_.conclusion -eq 'success' }).Count) { throw 'Release CI has not succeeded; task was not retired.' }
 }
