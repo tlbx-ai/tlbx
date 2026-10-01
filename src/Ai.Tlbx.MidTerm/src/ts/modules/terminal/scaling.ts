@@ -170,6 +170,15 @@ function measureTerminalCellDimensions(
   return { cellWidth, cellHeight };
 }
 
+function getTerminalViewportRect(
+  state: Pick<TerminalState, 'container'>,
+  container: HTMLElement,
+  isLayoutPane: boolean,
+): DOMRect {
+  // Split leaves include the session header; their terminal container does not.
+  return (isLayoutPane ? state.container : container).getBoundingClientRect();
+}
+
 function calculateOptimalDimensionsForViewport(
   state: Pick<TerminalState, 'terminal' | 'container'>,
   container: HTMLElement,
@@ -178,7 +187,7 @@ function calculateOptimalDimensionsForViewport(
   const cellDims = measureTerminalCellDimensions(state);
   if (!cellDims) return null;
 
-  const rect = container.getBoundingClientRect();
+  const rect = getTerminalViewportRect(state, container, isLayoutPane);
   const tabBarH = isLayoutPane ? 0 : getTabBarHeight();
   const dockWidth = isLayoutPane ? 0 : getDockPanelWidth();
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
@@ -571,7 +580,7 @@ function calculateViewportFit(
   container: HTMLElement,
   isLayoutPane: boolean,
 ): { cols: number; rows: number; cellWidth: number; cellHeight: number } | null {
-  const rect = container.getBoundingClientRect();
+  const rect = getTerminalViewportRect(state, container, isLayoutPane);
   if (rect.width < 100 || rect.height < 100) {
     return null;
   }
