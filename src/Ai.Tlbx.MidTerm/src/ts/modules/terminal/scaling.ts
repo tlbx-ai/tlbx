@@ -178,7 +178,9 @@ function calculateOptimalDimensionsForViewport(
   const cellDims = measureTerminalCellDimensions(state);
   if (!cellDims) return null;
 
-  const rect = container.getBoundingClientRect();
+  // Split panes include the session header. Measure the terminal below it,
+  // regardless of whether the caller supplied the leaf or its terminal panel.
+  const rect = (isLayoutPane ? state.container : container).getBoundingClientRect();
   const tabBarH = isLayoutPane ? 0 : getTabBarHeight();
   const dockWidth = isLayoutPane ? 0 : getDockPanelWidth();
   const availWidth = rect.width - TERMINAL_PADDING - SCROLLBAR_WIDTH - dockWidth;
@@ -571,7 +573,7 @@ function calculateViewportFit(
   container: HTMLElement,
   isLayoutPane: boolean,
 ): { cols: number; rows: number; cellWidth: number; cellHeight: number } | null {
-  const rect = container.getBoundingClientRect();
+  const rect = (isLayoutPane ? state.container : container).getBoundingClientRect();
   if (rect.width < 100 || rect.height < 100) {
     return null;
   }

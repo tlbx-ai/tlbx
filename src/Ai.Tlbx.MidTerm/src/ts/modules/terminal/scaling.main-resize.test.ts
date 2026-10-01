@@ -6,6 +6,8 @@ import {
   applyTerminalScaling,
   revealTerminalPresentation,
   fitSessionToScreen,
+  fitTerminalToContainer,
+  autoResizeAllTerminalsImmediate,
   scheduleForegroundResizeRecovery,
 } from './scaling';
 import { sendResize } from '../comms';
@@ -285,6 +287,27 @@ describe('fitSessionToScreen', () => {
 
     expect(harness.terminal.resize).not.toHaveBeenCalled();
     expect(sendResize).toHaveBeenCalledWith('s1', 81, 24);
+    expect(focusActiveTerminal).not.toHaveBeenCalled();
+  });
+
+  it('fits split terminals below their header on resize and foreground return', () => {
+    const harness = createFitHarness();
+    const pane = { getBoundingClientRect: () => ({ width: 818, height: 488 }) };
+    Object.assign(harness.state.container, {
+      closest: () => pane,
+      clientHeight: 448,
+      getBoundingClientRect: () => ({ width: 818, height: 448 }),
+    });
+    sessionTerminals.set('s1', harness.state as never);
+
+    fitTerminalToContainer('s1', pane as HTMLElement);
+    expect(sendResize).toHaveBeenLastCalledWith('s1', 81, 22);
+    vi.mocked(sendResize).mockClear();
+    autoResizeAllTerminalsImmediate();
+    expect(sendResize).toHaveBeenLastCalledWith('s1', 81, 22);
+    vi.mocked(sendResize).mockClear();
+    scheduleForegroundResizeRecovery();
+    expect(sendResize).toHaveBeenLastCalledWith('s1', 81, 22);
     expect(focusActiveTerminal).not.toHaveBeenCalled();
   });
 
