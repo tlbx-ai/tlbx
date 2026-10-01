@@ -16,6 +16,8 @@ still need `yes`, even when the build can fall back from reuse to compilation.
 
 Release requests authorize the complete matching script workflow in the current turn. Do not run unrelated release, tag, publish, promote, or merge-to-main workflows outside the requested path.
 
+A release is valid with at least one complete verified platform archive and its matching SBOM after shared checks pass. Missing platforms must be listed explicitly; their build/signing/notarization failures must not block other platforms. Never skip integrity checks for included packages or publish an incomplete archive/SBOM pair. See `docs/BUILD-RELEASE.md`.
+
 ## Repository branch workflow
 
 These rules apply only to tlbx-ai/tlbx. The tlbx terminal product remains workflow agnostic.

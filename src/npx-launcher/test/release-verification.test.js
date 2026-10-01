@@ -7,7 +7,24 @@ const os = require('node:os');
 const path = require('node:path');
 const test = require('node:test');
 
-const { verifyExtractedRelease } = require('../bin/midterm.js');
+const { resolveReleaseFromRepository, verifyExtractedRelease } = require('../bin/midterm.js');
+
+test('selects the newest release containing the requested platform in each channel', async (t) => {
+  const assetName = 'mt-osx-arm64.tar.gz';
+  const releases = [
+    { tag_name: 'v10.17.18-dev', prerelease: true, assets: [{ name: 'mt-win-x64.zip', browser_download_url: 'https://example.test/win.zip' }] },
+    { tag_name: 'v10.17.17-dev', prerelease: true, draft: true, assets: [{ name: assetName, browser_download_url: 'https://example.test/mac.tar.gz' }] },
+    { tag_name: 'v10.17.16-dev', prerelease: true, assets: [{ name: assetName, browser_download_url: 'https://example.test/mac.tar.gz' }] },
+    { tag_name: 'v10.17.18', prerelease: false, assets: [] },
+    { tag_name: 'v10.17.16', prerelease: false, assets: [{ name: assetName, browser_download_url: 'https://example.test/mac.tar.gz' }] }
+  ];
+  t.mock.method(globalThis, 'fetch', async () => ({ ok: true, json: async () => releases }));
+  for (const channel of ['dev', 'stable']) {
+    const release = await resolveReleaseFromRepository('tlbx-ai/tlbx', channel, {}, assetName);
+    assert.equal(release.tag, channel === 'dev' ? 'v10.17.16-dev' : 'v10.17.16');
+  }
+  await assert.rejects(resolveReleaseFromRepository('tlbx-ai/tlbx', 'dev', {}, 'mt-linux-x64.tar.gz'), /No dev releases containing/);
+});
 
 async function createSignedFixture() {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'tlbx-npx-verify-'));

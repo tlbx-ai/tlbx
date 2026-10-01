@@ -1083,31 +1083,21 @@ function Get-LatestRelease
         [bool]$DevChannel = $false
     )
 
+    Write-Host "Fetching latest compatible release ($AssetPattern)..." -ForegroundColor Gray
+    $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases?per_page=50"
+    $releases = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
+    $compatible = @($releases | Where-Object {
+        -not $_.draft -and @($_.assets | Where-Object { $_.name -eq $AssetPattern -and $_.browser_download_url }).Count -gt 0
+    })
     if ($DevChannel)
     {
-        Write-Host "Fetching latest dev release..." -ForegroundColor Gray
-        $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases"
-        $releases = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
-
-        # Find the first prerelease
-        $release = $releases | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
-
-        if (-not $release)
-        {
-            Write-Host "  No dev releases found, falling back to latest stable..." -ForegroundColor Yellow
-            $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
-            $release = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
-        }
-
-        return $release
+        $release = $compatible | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
+        if ($release) { return $release }
+        Write-Host "  No compatible dev release found, using stable..." -ForegroundColor Yellow
     }
-    else
-    {
-        Write-Host "Fetching latest release..." -ForegroundColor Gray
-        $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases/latest"
-        $release = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
-        return $release
-    }
+    $release = $compatible | Where-Object { -not $_.prerelease } | Select-Object -First 1
+    if (-not $release) { throw "No published release contains $AssetPattern." }
+    return $release
 }
 
 function Test-NetworkBinding

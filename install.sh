@@ -671,6 +671,42 @@ get_latest_release() {
             head -1
     }
 
+    select_platform_release() {
+        # Split top-level release objects even for compact JSON; braces inside
+        # JSON strings (release notes) must not affect nesting.
+        awk -v asset="$ASSET_NAME" -v dev="$1" '
+            BEGIN { depth=0; quoted=0; escaped=0; release=""; gsub(/\./, "\\.", asset) }
+            {
+                for (i=1; i<=length($0); i++) {
+                    c=substr($0,i,1)
+                    if (depth>0) release=release c
+                    if (quoted) {
+                        if (escaped) escaped=0
+                        else if (c=="\\") escaped=1
+                        else if (c=="\"") quoted=0
+                        continue
+                    }
+                    if (c=="\"") quoted=1
+                    else if (c=="{") {
+                        if (depth==0) release=c
+                        depth++
+                    } else if (c=="}") {
+                        depth--
+                        if (depth==0) {
+                            if (release !~ /"draft"[[:space:]]*:[[:space:]]*true/ &&
+                                release ~ ("\"prerelease\"[[:space:]]*:[[:space:]]*" dev) &&
+                                release ~ ("\"browser_download_url\"[[:space:]]*:[[:space:]]*\"[^\"]*/" asset "\"")) {
+                                print release
+                                exit
+                            }
+                            release=""
+                        }
+                    }
+                }
+            }
+        '
+    }
+
     resolve_latest_stable_tag_fallback() {
         local effective_url
         effective_url=$(resolve_redirect_url "https://github.com/$REPO_OWNER/$REPO_NAME/releases/latest")
@@ -695,35 +731,13 @@ get_latest_release() {
         local fetch_status="done"
         local fetch_color="$GREEN"
         print_step_inline "Fetching latest dev release..."
-        # Fetch all releases and find first prerelease
-        ALL_RELEASES=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases")
-
-        # Find the first prerelease entry
-        # Use grep/sed to extract the first release where prerelease is true
-        RELEASE_INFO=$(echo "$ALL_RELEASES" | awk '
-            BEGIN { in_release=0; brace_count=0; release="" }
-            /{/ {
-                if (in_release == 0) { in_release=1; release="" }
-                brace_count++
-            }
-            in_release { release = release $0 "\n" }
-            /}/ {
-                brace_count--
-                if (brace_count == 0 && in_release) {
-                    if (release ~ /"prerelease": *true/) {
-                        print release
-                        exit
-                    }
-                    in_release=0
-                    release=""
-                }
-            }
-        ')
+        ALL_RELEASES=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=50")
+        RELEASE_INFO=$(printf '%s' "$ALL_RELEASES" | select_platform_release true)
 
         if [ -z "$RELEASE_INFO" ]; then
-            fetch_status="dev missing, using stable"
+            fetch_status="compatible dev missing, using stable"
             fetch_color="$YELLOW"
-            RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest")
+            RELEASE_INFO=$(printf '%s' "$ALL_RELEASES" | select_platform_release false)
         fi
 
         VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v?//')
@@ -741,6 +755,10 @@ get_latest_release() {
         print_step_inline "Fetching latest release..."
         RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest" 2>/dev/null || true)
         if [ -n "$RELEASE_INFO" ]; then
+            if [ -z "$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")" ]; then
+                ALL_RELEASES=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=50")
+                RELEASE_INFO=$(printf '%s' "$ALL_RELEASES" | select_platform_release false)
+            fi
             VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v?//')
             ASSET_URL=$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")
         else

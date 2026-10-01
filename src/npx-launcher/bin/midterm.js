@@ -31,7 +31,7 @@ async function main() {
 
   const runtime = await detectRuntime();
   const target = await getPlatformTarget(runtime);
-  const release = await resolveRelease(launcher.channel);
+  const release = await resolveRelease(launcher.channel, target.assetName);
   const install = runtime.kind === 'wsl-interop'
     ? await ensureInstalledReleaseInWsl(release, target, runtime)
     : await ensureInstalledRelease(release, target);
@@ -308,7 +308,7 @@ async function getPlatformTarget(runtime) {
   throw new Error(`Unsupported platform: ${process.platform} ${process.arch}`);
 }
 
-async function resolveRelease(channel) {
+async function resolveRelease(channel, assetName) {
   const headers = {
     'User-Agent': '@tlbx-ai/midterm',
     'Accept': 'application/vnd.github+json'
@@ -316,32 +316,29 @@ async function resolveRelease(channel) {
 
   const repository = await resolveRepository();
   try {
-    return await resolveReleaseFromRepository(repository, channel, headers);
+    return await resolveReleaseFromRepository(repository, channel, headers, assetName);
   } catch (error) {
     if (repository === LEGACY_REPOSITORY) {
       throw error;
     }
 
     console.error(`@tlbx-ai/midterm: ${repository} unavailable; falling back to ${LEGACY_REPOSITORY}`);
-    return resolveReleaseFromRepository(LEGACY_REPOSITORY, channel, headers);
+    return resolveReleaseFromRepository(LEGACY_REPOSITORY, channel, headers, assetName);
   }
 }
 
-async function resolveReleaseFromRepository(repository, channel, headers) {
+async function resolveReleaseFromRepository(repository, channel, headers, assetName) {
   const githubApi = `https://api.github.com/repos/${repository}`;
-  if (channel === 'stable') {
-    const release = await fetchJson(`${githubApi}/releases/latest`, headers);
-    return mapRelease(release);
-  }
-
   const releases = await fetchJson(`${githubApi}/releases?per_page=50`, headers);
-  const prereleases = Array.isArray(releases) ? releases.filter((release) => release.prerelease) : [];
-  if (prereleases.length === 0) {
-    throw new Error('No dev releases found on GitHub');
+  const compatible = Array.isArray(releases) ? releases.filter((release) =>
+    !release.draft && Boolean(release.prerelease) === (channel === 'dev') &&
+    release.assets?.some((asset) => asset.name === assetName && asset.browser_download_url)) : [];
+  if (compatible.length === 0) {
+    throw new Error(`No ${channel} releases containing ${assetName} found on GitHub`);
   }
 
-  prereleases.sort((left, right) => compareVersions(right.tag_name, left.tag_name));
-  return mapRelease(prereleases[0]);
+  compatible.sort((left, right) => compareVersions(right.tag_name, left.tag_name));
+  return mapRelease(compatible[0]);
 }
 
 async function resolveRepository() {
@@ -1038,5 +1035,6 @@ if (require.main === module) {
 
 module.exports = {
   platformFromAssetName,
+  resolveReleaseFromRepository,
   verifyExtractedRelease
 };
