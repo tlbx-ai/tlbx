@@ -1362,6 +1362,10 @@ export function closeMobileSessionActionMenu(): void {
 
     const actions = el.querySelector<HTMLElement>('.session-actions');
     if (actions) {
+      if (actions.matches(':popover-open')) {
+        actions.hidePopover();
+      }
+      actions.removeAttribute('popover');
       actions.style.removeProperty('left');
       actions.style.removeProperty('top');
       actions.style.removeProperty('max-height');
@@ -1473,8 +1477,14 @@ function createSidebarSessionMenuButton(
     const isOpen = item.classList.contains('menu-open');
     closeMobileSessionActionMenu();
     if (!isOpen) {
+      const actions = item.querySelector<HTMLElement>('.session-actions');
+      if (!actions) return;
+
       item.classList.add('menu-open');
       menuBtn.setAttribute('aria-expanded', 'true');
+      // Escape the sidebar's stacking context and clipping without moving the keyed DOM node.
+      actions.popover = 'manual';
+      actions.showPopover();
       showMobileSessionActionBackdrop();
       queueMobileSessionActionMenuPosition(item);
     }

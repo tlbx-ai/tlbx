@@ -4095,6 +4095,9 @@ body::before {
     position: fixed;
     top: 0;
     left: 0;
+    right: auto;
+    bottom: auto;
+    margin: 0;
     display: flex;
     flex-direction: column;
     align-items: stretch;
