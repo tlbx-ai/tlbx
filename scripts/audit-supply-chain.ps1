@@ -1,8 +1,8 @@
 #!/usr/bin/env pwsh
 <#[
 .SYNOPSIS
-    Fails when tlbx's locked release dependency graph contains known vulnerabilities
-    or mutable GitHub Action references.
+    Fails on dependency advisory regressions against the last published release,
+    or on failed lock/signature checks and mutable GitHub Action references.
 #>
 
 [CmdletBinding()]
@@ -13,6 +13,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+. "$PSScriptRoot/advisory-regression.ps1"
 
 function Invoke-Checked {
     param(
@@ -30,33 +31,6 @@ function Invoke-Checked {
     }
     finally {
         Pop-Location
-    }
-}
-
-function Invoke-NpmAdvisoryAudit {
-    param(
-        [Parameter(Mandatory=$true)][string]$WorkingDirectory,
-        [int]$MaxAttempts = 3
-    )
-
-    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        try {
-            Invoke-Checked -FilePath "npm" -ArgumentList @(
-                "audit",
-                "--audit-level=low",
-                "--fetch-timeout=600000"
-            ) -WorkingDirectory $WorkingDirectory
-            return
-        }
-        catch {
-            if ($attempt -eq $MaxAttempts) {
-                throw
-            }
-
-            $retryDelaySeconds = 5 * $attempt
-            Write-Warning "npm advisory audit attempt $attempt of $MaxAttempts failed; retrying in $retryDelaySeconds seconds."
-            Start-Sleep -Seconds $retryDelaySeconds
-        }
     }
 }
 
@@ -78,6 +52,7 @@ $mutableActions = foreach ($workflowFile in $workflowFiles) {
 if (@($mutableActions).Count -gt 0) {
     throw "Mutable GitHub Action references found:`n$($mutableActions -join "`n")"
 }
+$baseline = Get-AdvisoryBaseline $repoRoot
 
 if ($Scope -in @('server','tooling','all')) {
     Write-Host "Supply-chain gate: npm advisories and registry signatures" -ForegroundColor Cyan
@@ -103,10 +78,27 @@ if ($Scope -in @('server','tooling','all')) {
         if (-not ($FrontendInstalled -and $workspace -eq (Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm'))) {
             Invoke-Checked -FilePath "npm" -ArgumentList $ciArguments -WorkingDirectory $workspace
         }
-        # The registry's bulk advisory endpoint can be slow or transiently return
-        # 503 for the Claude SDK graph. Keep the audit fail-closed while allowing a
-        # complete response and a bounded retry of this idempotent remote check.
-        Invoke-NpmAdvisoryAudit -WorkingDirectory $workspace
+        $relativeWorkspace = [IO.Path]::GetRelativePath($repoRoot, $workspace).Replace('\', '/')
+        $currentLockText = Get-Content (Join-Path $workspace 'package-lock.json') -Raw
+        $currentLock = $currentLockText | ConvertFrom-Json -AsHashtable
+        $report = Invoke-NpmAdvisoryReport $workspace
+        $currentFindings = @(Convert-NpmAdvisoryFindings $report $currentLock)
+        $baselineFindings = @()
+        if ($currentFindings.Count -gt 0 -and (Export-AdvisoryBaselineFile $repoRoot $baseline "$relativeWorkspace/package-lock.json")) {
+            if (-not (Export-AdvisoryBaselineFile $repoRoot $baseline "$relativeWorkspace/package.json")) {
+                throw "Baseline npm manifest is missing for $relativeWorkspace."
+            }
+            $baselineWorkspace = Join-Path $baseline.Root $relativeWorkspace
+            $oldLock = Get-Content (Join-Path $baselineWorkspace 'package-lock.json') -Raw | ConvertFrom-Json -AsHashtable
+            # Identical inputs need only one query, avoiding advisory-feed races.
+            if (($oldLock | ConvertTo-Json -Depth 100 -Compress) -eq ($currentLock | ConvertTo-Json -Depth 100 -Compress)) {
+                $baselineFindings = $currentFindings
+            } else {
+                $oldReport = Invoke-NpmAdvisoryReport $baselineWorkspace
+                $baselineFindings = @(Convert-NpmAdvisoryFindings $oldReport $oldLock)
+            }
+        }
+        Assert-NoAdvisoryRegression $currentFindings $baselineFindings $relativeWorkspace
         Invoke-Checked -FilePath "npm" -ArgumentList @("audit", "signatures") -WorkingDirectory $workspace
     }
 }
@@ -124,7 +116,7 @@ if ($Scope -in @('server','all')) {
     if ($LASTEXITCODE -ne 0 -or $projectFiles.Count -eq 0) {
         throw "Could not enumerate tracked .NET projects."
     }
-    $nugetFindings = @()
+    $baselineNuGetExported = $false
     foreach ($relativeProject in $projectFiles) {
         $projectPath = Join-Path $repoRoot $relativeProject
         Invoke-Checked -FilePath "dotnet" -ArgumentList @("restore", $projectPath, "--locked-mode") -WorkingDirectory $repoRoot
@@ -134,29 +126,26 @@ if ($Scope -in @('server','all')) {
             throw "NuGet vulnerability audit failed for $relativeProject."
         }
         $audit = $auditOutput | ConvertFrom-Json
-        foreach ($project in @($audit.projects)) {
-            foreach ($framework in @($project.frameworks)) {
-                $packages = @()
-                if ($null -ne $framework.topLevelPackages) {
-                    $packages += @($framework.topLevelPackages)
+        $currentFindings = @(Convert-NuGetAdvisoryFindings $audit)
+        $baselineFindings = @()
+        if ($currentFindings.Count -gt 0) {
+            if (-not $baselineNuGetExported) {
+                $inputs = @(& git -C $repoRoot ls-tree -r --name-only $baseline.Commit)
+                if ($LASTEXITCODE -ne 0) { throw 'Could not enumerate baseline NuGet restore inputs.' }
+                foreach ($inputPath in $inputs | Where-Object { $_ -match '(?i)(\.csproj|\.props|\.targets|/packages\.lock\.json|(^|/)nuget\.config|(^|/)global\.json|(^|/)version\.json)$' }) {
+                    if (-not (Export-AdvisoryBaselineFile $repoRoot $baseline $inputPath)) { throw "Could not export $inputPath." }
                 }
-                if ($null -ne $framework.transitivePackages) {
-                    $packages += @($framework.transitivePackages)
-                }
-
-                foreach ($package in $packages) {
-                    if ($null -eq $package) {
-                        continue
-                    }
-                    foreach ($vulnerability in @($package.vulnerabilities | Where-Object { $null -ne $_ })) {
-                        $nugetFindings += "$relativeProject $($package.id) $($package.resolvedVersion) $($vulnerability.severity) $($vulnerability.advisoryurl)"
-                    }
-                }
+                $baselineNuGetExported = $true
+            }
+            $oldProject = Join-Path $baseline.Root $relativeProject
+            if (Test-Path -LiteralPath $oldProject) {
+                Invoke-Checked 'dotnet' @('restore', $oldProject, '--locked-mode') $baseline.Root
+                $oldOutput = & dotnet list $oldProject package --vulnerable --include-transitive --format json --no-restore
+                if ($LASTEXITCODE -ne 0) { throw "Baseline NuGet audit failed for $relativeProject." }
+                $baselineFindings = @(Convert-NuGetAdvisoryFindings ($oldOutput | ConvertFrom-Json))
             }
         }
-    }
-    if ($nugetFindings.Count -gt 0) {
-        throw "Known NuGet vulnerabilities found:`n$($nugetFindings -join "`n")"
+        Assert-NoAdvisoryRegression $currentFindings $baselineFindings $relativeProject
     }
 }
 if ($Scope -in @('android','all')) {
@@ -182,39 +171,27 @@ if ($Scope -in @('android','all')) {
     if (-not $IsWindows) { $gradleArguments = @('./gradlew') + $gradleArguments }
     Invoke-Checked -FilePath $gradleExecutable -ArgumentList $gradleArguments -WorkingDirectory $androidRoot
 
-    $releasePackages = @{}
-    foreach ($line in Get-Content -LiteralPath $lockFile) {
-        if ($line.StartsWith("#") -or $line -eq "empty=" -or $line -notmatch '=') {
-            continue
-        }
-        $coordinate, $configurations = $line -split '=', 2
-        if (($configurations -split ',') -notcontains "releaseRuntimeClasspath") {
-            continue
-        }
-        $parts = $coordinate -split ':'
-        if ($parts.Count -lt 3) {
-            continue
-        }
-        $name = "$($parts[0]):$($parts[1])"
-        $version = $parts[2..($parts.Count - 1)] -join ':'
-        $releasePackages["$name@$version"] = @{ package = @{ ecosystem = "Maven"; name = $name }; version = $version }
-    }
+    $releasePackages = Get-AndroidAdvisoryPackages (Get-Content -LiteralPath $lockFile)
     if ($releasePackages.Count -eq 0) {
         throw "Android releaseRuntimeClasspath was not represented in the lock file."
     }
 
-    $queryBody = @{ queries = @($releasePackages.Values) } | ConvertTo-Json -Depth 8
+    $oldPackages = @{}
+    $relativeLock = 'src/connectors/android/app/gradle.lockfile'
+    if (Export-AdvisoryBaselineFile $repoRoot $baseline $relativeLock) {
+        $oldPackages = Get-AndroidAdvisoryPackages (Get-Content (Join-Path $baseline.Root $relativeLock))
+    }
+    $queries = $oldPackages.Clone()
+    foreach ($coordinate in $releasePackages.Keys) { $queries[$coordinate] = $releasePackages[$coordinate] }
+    $keys = @($queries.Keys | Sort-Object)
+    $queryBody = @{ queries = @($keys | ForEach-Object { $queries[$_] }) } | ConvertTo-Json -Depth 8
     $osv = Invoke-RestMethod -Method Post -Uri "https://api.osv.dev/v1/querybatch" -ContentType "application/json" -Body $queryBody
-    $gradleFindings = @()
-    $keys = @($releasePackages.Keys)
+    if ($null -eq $osv.results -or $osv.results.Count -ne $keys.Count) { throw 'OSV returned an incomplete Android audit.' }
+    $reports = @{}
     for ($index = 0; $index -lt $keys.Count; $index++) {
-        foreach ($vulnerability in @($osv.results[$index].vulns | Where-Object { $null -ne $_ })) {
-            $gradleFindings += "$($keys[$index]) $($vulnerability.id)"
-        }
+        $reports[$keys[$index]] = $osv.results[$index]
     }
-    if ($gradleFindings.Count -gt 0) {
-        throw "Known Android runtime vulnerabilities found:`n$($gradleFindings -join "`n")"
-    }
+    Assert-NoAdvisoryRegression @(Convert-AndroidAdvisoryFindings $releasePackages $reports) @(Convert-AndroidAdvisoryFindings $oldPackages $reports) 'Android releaseRuntimeClasspath'
 }
 
 Write-Host "Supply-chain gate passed." -ForegroundColor Green

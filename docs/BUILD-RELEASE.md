@@ -37,6 +37,19 @@ Use `all` by itself. Otherwise pass one category or a PowerShell array such as
 install is reused by the selected checks and audit. Hosted server dependency audits,
 package signing, SBOM/provenance and platform builds remain release gates.
 
+Dependency advisories block **security regressions**, compared with the last
+published release in the same channel. `audit-supply-chain.ps1` queries current
+advisory data for the candidate and baseline locked graphs. Existing findings,
+including newly reported advisories affecting unchanged dependencies, are reported
+without blocking. Newly introduced vulnerable packages/advisories, greater severity,
+additional vulnerable installations or development-to-runtime exposure block.
+Changing between versions affected by the same advisory does not itself constitute
+a regression. Drafts are excluded from baseline selection; manifest-only baseline
+inputs are retained in `.git/tlbx-advisory-baselines/`. Locked restores, registry
+signatures, package integrity/provenance and complete audit responses remain enforced.
+Offline behavioral tests run through `test-release-build-system.ps1` on Windows
+and Linux, including unchanged findings, regressions and failed audit responses.
+
 ## PR workflow (tlbx code repository only)
 
 `dev` and `main` require PRs and passing checks, including for administrators.

@@ -9,7 +9,7 @@ if ($env:GITHUB_EVENT_NAME -in @('workflow_dispatch','schedule') -or [string]::I
     $files = @(& git diff --name-only $Base $Head --)
     if ($LASTEXITCODE -ne 0) { throw 'Could not determine mobile changes.' }
     foreach ($file in $files) {
-        if ($file -like 'src/connectors/android/*' -or $file -eq 'scripts/audit-supply-chain.ps1') { $android = $true }
+        if ($file -like 'src/connectors/android/*' -or $file -in @('scripts/audit-supply-chain.ps1','scripts/advisory-regression.ps1')) { $android = $true }
         if ($file -like 'src/connectors/ios/*') { $ios = $true }
         if ($file -like 'src/connectors/shared-assets/*' -or $file -in @('src/connectors/build-number','.github/workflows/mobile-verify.yml','scripts/get-mobile-changes.ps1')) {
             $android = $ios = $true
