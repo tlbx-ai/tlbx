@@ -9,6 +9,7 @@ on:
       - '.github/workflows/mobile-verify.yml'
       - 'src/connectors/**'
       - 'scripts/audit-supply-chain.ps1'
+      - 'scripts/advisory-regression.ps1'
       - 'scripts/get-mobile-changes.ps1'
   push:
     branches:
@@ -20,6 +21,7 @@ on:
       - 'src/connectors/shared-assets/**'
       - 'src/connectors/build-number'
       - 'scripts/audit-supply-chain.ps1'
+      - 'scripts/advisory-regression.ps1'
       - 'scripts/get-mobile-changes.ps1'
 
 permissions:
@@ -61,6 +63,8 @@ jobs:
 
       - name: Audit Android dependencies
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/audit-supply-chain.ps1 -Scope android
 
       - name: Verify Android debug build and lint

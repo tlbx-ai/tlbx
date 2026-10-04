@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # Offline behavioral checks: exercise dispatch and archive handling without publishing anything.
 $ErrorActionPreference = 'Stop'
+& "$PSScriptRoot/test-advisory-regression.ps1"
 . "$PSScriptRoot/release-test-clusters.ps1"
 . "$PSScriptRoot/runtime-reuse.ps1"
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -117,6 +118,8 @@ try {
         Assert-Check (((& "$PSScriptRoot/get-mobile-changes.ps1" -Base base -Head head) -join ',') -eq 'android=true,ios=true') 'Shared mobile changes missed a platform.'
         $global:TlbxBuildTestChangedPaths = @('src/Ai.Tlbx.MidTerm/src/ts/main.ts')
         Assert-Check (((& "$PSScriptRoot/get-mobile-changes.ps1" -Base base -Head head) -join ',') -eq 'android=false,ios=false') 'Server UI changes build mobile apps.'
+        $global:TlbxBuildTestChangedPaths = @('scripts/advisory-regression.ps1')
+        Assert-Check (((& "$PSScriptRoot/get-mobile-changes.ps1" -Base base -Head head) -join ',') -eq 'android=true,ios=false') 'Shared advisory policy changes missed Android verification.'
     } finally {
         Remove-Item Function:\git -ErrorAction SilentlyContinue
         Remove-Variable TlbxBuildTestChangedPaths -Scope Global -ErrorAction SilentlyContinue

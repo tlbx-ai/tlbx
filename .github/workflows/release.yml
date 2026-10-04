@@ -156,6 +156,8 @@ jobs:
 
       - name: Audit shipped server dependencies
         shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: ./scripts/audit-supply-chain.ps1 -Scope server
 
   # ── Build frontend once (platform-agnostic JS/CSS/HTML) ──────────────────
