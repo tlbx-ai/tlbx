@@ -261,7 +261,7 @@ public static partial class SessionApiEndpoints
             var cols = request?.Cols ?? 120;
             var rows = request?.Rows ?? 30;
             const int maxLaunchCommandLength = 8192;
-            var launchCommand = AiCliProfileService.PreserveTerminalContext(request?.LaunchCommand?.Trim());
+            var launchCommand = request?.LaunchCommand?.Trim();
             if (launchCommand?.Length > maxLaunchCommandLength)
             {
                 return Results.BadRequest($"launchCommand must not exceed {maxLaunchCommandLength} characters.");
@@ -399,7 +399,7 @@ public static partial class SessionApiEndpoints
                 ? null
                 : string.IsNullOrWhiteSpace(request.LaunchCommand)
                     ? aiCliProfileService.GetDefaultLaunchCommand(resolvedProfile)
-                    : AiCliProfileService.PreserveTerminalContext(request.LaunchCommand.Trim());
+                    : request.LaunchCommand.Trim();
 
             var guidanceInjected = false;
             string? tlbxDir = null;
@@ -1682,7 +1682,7 @@ public static partial class SessionApiEndpoints
         }
 
         plan = new WorkerAutoResumePlan(
-            AiCliProfileService.PreserveTerminalContext(launchCommand.Trim())!,
+            launchCommand.Trim(),
             profile,
             hasRegistry ? registration!.SlashCommands : [],
             hasRegistry ? registration!.LaunchDelayMs : 1200,

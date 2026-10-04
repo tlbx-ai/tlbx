@@ -55,6 +55,7 @@ Rules:
 
 ## Terminal Design Constraints
 
+- Explicit terminal launch commands and bookmarks are user-controlled. Never silently inject provider-specific CLI flags. Keep supplied arguments and quoting; use provider defaults only when no command was supplied.
 - Do not suggest hiding, virtualizing, or lazily deactivating visible terminal sessions as a latency optimization.
 - In MidTerm, sessions that are shown are intentionally kept as genuinely active terminals; latency work must preserve that UX model.
 

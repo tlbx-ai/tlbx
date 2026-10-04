@@ -1,38 +1,10 @@
 using Ai.Tlbx.MidTerm.Models.Sessions;
-using System.Text.RegularExpressions;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-public sealed partial class AiCliProfileService
+public sealed class AiCliProfileService
 {
-    internal const string CodexTerminalLaunchCommand = "codex --no-daemon --yolo";
-
-    // Bookmark history retains full node/codex paths and old flags. Preserve its
-    // original quoting and arguments while opting terminal launches out of the daemon.
-    internal static string? PreserveTerminalContext(string? command)
-    {
-        if (string.IsNullOrWhiteSpace(command)) return command;
-        var tokens = LaunchTokens().Matches(command);
-        var index = tokens.Count > 0 && tokens[0].Value == "&" ? 1 : 0;
-        if (index >= tokens.Count) return command;
-        var executable = NormalizeExecutableIdentity(tokens[index].Value);
-        if (executable is "node" or "nodejs")
-        {
-            if (++index >= tokens.Count || NormalizeExecutableIdentity(tokens[index].Value) != "codex.js") return command;
-        }
-        else if (executable is not ("codex" or "codex.cmd" or "codex.ps1")) return command;
-
-        foreach (Match token in tokens.Cast<Match>().Skip(index + 1))
-        {
-            var argument = token.Value.Trim('"', '\'');
-            if (argument is "--no-daemon" or "app-server" or "daemon" or "mcp-server") return command;
-        }
-        var insertion = tokens[index].Index + tokens[index].Length;
-        return command.Insert(insertion, " --no-daemon");
-    }
-
-    [GeneratedRegex("\"[^\"]*\"|'[^']*'|[^\\s]+", RegexOptions.CultureInvariant, 1000)]
-    private static partial Regex LaunchTokens();
+    internal const string CodexTerminalLaunchCommand = "codex --yolo";
     public const string ShellProfile = "shell";
     public const string UnknownProfile = "unknown";
     public const string CodexProfile = "codex";
