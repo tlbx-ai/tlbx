@@ -28,7 +28,9 @@ internal static class CodexCliIdentityService
                 {
                     foreach (var path in Directory.EnumerateFiles(directory, "*" + rootId + ".jsonl"))
                     {
-                        using var reader = File.OpenText(path);
+                        // Codex may keep the rollout open for append, including after resume.
+                        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                        using var reader = new StreamReader(stream);
                         var line = await reader.ReadLineAsync(ct).ConfigureAwait(false);
                         if (line is null) continue;
                         using var meta = JsonDocument.Parse(line);

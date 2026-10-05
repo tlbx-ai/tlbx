@@ -7,8 +7,10 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class CodexCliIdentityServiceTests
 {
-    [Fact]
-    public async Task FullUuidMustMatchCanonicalRolloutMetadataInOwningHome()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FullUuidMustMatchCanonicalRolloutMetadataInOwningHome(bool activeWriter)
     {
         const string root = "01a10b97-2853-75e2-b134-d6fe7f527ae3";
         var home = Path.Combine(Path.GetTempPath(), "tlbx-identity-" + Guid.NewGuid().ToString("N"));
@@ -23,6 +25,10 @@ public sealed class CodexCliIdentityServiceTests
             await File.WriteAllTextAsync(path, "{\"type\":\"session_meta\",\"payload\":{\"id\":\"wrong\"}}\n");
             Assert.False(await CodexCliIdentityService.ExistsAsync(root, home, CancellationToken.None));
             await File.WriteAllTextAsync(path, JsonSerializer.Serialize(new { type = "session_meta", payload = new { id = root } }) + "\n");
+            // Codex keeps resumed rollouts open for append. Readers must share write access on Windows.
+            using var writer = activeWriter
+                ? new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite | FileShare.Delete)
+                : null;
             Assert.True(await CodexCliIdentityService.ExistsAsync(root, home, CancellationToken.None));
             Assert.False(await CodexCliIdentityService.ExistsAsync(root[..29], home, CancellationToken.None));
             Assert.False(await CodexCliIdentityService.ExistsAsync(root, "relative-home", CancellationToken.None));
