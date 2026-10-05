@@ -24,8 +24,9 @@ public sealed class SessionCliContextService
 
     public SessionCliContextService(TtyHostSessionManager manager)
         : this(() => manager.GetAllSessions()
-            .Where(s => s.IsRunning && s.ForegroundProcessIdentity == "codex" && s.ForegroundPid is > 0)
-            .Select(s => new Terminal(s.Id, s.Pid, s.ForegroundPid!.Value)).ToArray(),
+            // SessionInfo is mutable: capture the nullable PID once during a foreground change.
+            .Select(s => s.ForegroundPid is int pid && pid > 0 && s.IsRunning && s.ForegroundProcessIdentity == "codex"
+                ? new Terminal(s.Id, s.Pid, pid) : null).OfType<Terminal>().ToArray(),
             SessionProcessContext.ReadProcess, TimeProvider.System)
     {
         manager.OnOutput += (id, _, _, _, data) => ObserveOutput(id, data.Span);
