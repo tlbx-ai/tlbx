@@ -205,6 +205,20 @@ public class Program
         TlbxDirectory.Initialize(port, authService);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
+        var cliContext = app.Services.GetRequiredService<SessionCliContextService>();
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path != "/api/sessions/process-context" &&
+                context.Request.Headers.TryGetValue(SessionCliContextService.LeaseHeader, out var lease) &&
+                cliContext.ValidateLease(lease.ToString()) is { } error)
+            {
+                context.Response.StatusCode = 409;
+                context.Response.ContentType = "text/plain; charset=utf-8";
+                await context.Response.WriteAsync(error, context.RequestAborted);
+                return;
+            }
+            await next(context);
+        });
         var layoutStateService = app.Services.GetRequiredService<SessionLayoutStateService>();
         var muxManager = app.Services.GetRequiredService<TtyHostMuxConnectionManager>();
         var sessionTelemetry = app.Services.GetRequiredService<SessionTelemetryService>();

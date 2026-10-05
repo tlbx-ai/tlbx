@@ -60,6 +60,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     }
 
     public event Action<string, ulong, int, int, ReadOnlyMemory<byte>>? OnOutput;
+    public event Action<string, bool>? OnInput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnSessionClosed;
     public event Action<string, int>? OnSessionCreated;
@@ -1037,18 +1038,30 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return pulseAccepted && restoreAccepted;
     }
 
-    public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    public Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default) =>
+        SendInputAsync(sessionId, data, userInput: true, ct);
+
+    public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, bool userInput, CancellationToken ct = default)
     {
         if (_clients.TryGetValue(sessionId, out var client))
         {
+            if (!data.IsEmpty) OnInput?.Invoke(sessionId, userInput);
             await client.SendInputAsync(data, ct).ConfigureAwait(false);
         }
     }
+
+    public Task<TtyHostInputWriteTiming?> SendInputWithTraceAsync(
+        string sessionId,
+        ReadOnlyMemory<byte> data,
+        uint traceId,
+        CancellationToken ct = default) =>
+        SendInputWithTraceAsync(sessionId, data, traceId, userInput: true, ct);
 
     public async Task<TtyHostInputWriteTiming?> SendInputWithTraceAsync(
         string sessionId,
         ReadOnlyMemory<byte> data,
         uint traceId,
+        bool userInput,
         CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
@@ -1056,6 +1069,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
+        if (!data.IsEmpty) OnInput?.Invoke(sessionId, userInput);
         return await client.SendInputWithTraceAsync(data, traceId, ct).ConfigureAwait(false);
     }
 

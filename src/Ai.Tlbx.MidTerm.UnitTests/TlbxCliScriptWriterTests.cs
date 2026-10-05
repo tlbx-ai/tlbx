@@ -146,6 +146,82 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Equal(6, requests.Count); // A mutation failure is never replayed against another session.
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task CodexRequiresFullIdentityAndLeaseBeforeMutation(bool bash, bool bound)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        const string identity = "01a10b30-4385-71e0-8a60-6fd26e1cfb01";
+        const string lease = "0123456789abcdef0123456789abcdef";
+        var mutations = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        app.MapGet("/api/sessions/process-context", (HttpContext context, int processId, string codexSessionId, string codexThreadId, string codexHome) =>
+        {
+            Assert.Equal(identity, codexSessionId);
+            Assert.Equal(identity, codexThreadId);
+            Assert.True(Path.IsPathFullyQualified(codexHome), codexHome);
+            using var caller = Process.GetProcessById(processId);
+            return Results.Text(bound ? "abcdefgh:" + lease : "TLBXCTX:" + lease + "\nTLBX_CONTEXT_UNBOUND: No session operation was executed.\nRetry the original command in a separate shell tool call.", statusCode: bound ? 200 : 409);
+        });
+        app.MapPost("/api/git/repos", async (HttpContext context) =>
+        {
+            Assert.Equal(lease, context.Request.Headers["X-Tlbx-Cli-Context"].ToString());
+            using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            mutations.Enqueue(body.RootElement.GetProperty("sessionId").GetString()!);
+            return Results.Ok();
+        });
+        await app.StartAsync(CancellationToken.None);
+        var command = bash
+            ? $"set -e; export CODEX_SESSION_ID={identity} CODEX_THREAD_ID={identity}; source \"$1\"; mt_repo add '/repo'"
+            : $"$env:CODEX_SESSION_ID='{identity}'; $env:CODEX_THREAD_ID='{identity}'; . $args[0]; mt_repo add '/repo'";
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        if (bound)
+        {
+            Assert.True(result.ExitCode == 0, result.Error + result.Output);
+            Assert.Equal(new[] { "abcdefgh" }, mutations.ToArray());
+        }
+        else
+        {
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Empty(mutations);
+            Assert.Contains("TLBXCTX:" + lease, result.Output + result.Error, StringComparison.Ordinal);
+            Assert.Contains("Retry the original command", result.Output + result.Error, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CodexDoesNotUseLegacyPlainIdOrBypassFailureWithExplicitTarget(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        app.MapGet("/api/sessions/process-context", () => Results.Text("deadbeef"));
+        app.MapMethods("/api/git/{**path}", ["GET", "POST"], (HttpContext context) => { requests.Enqueue(context.Request.Path); return Results.Ok(); });
+        app.MapGet("/api/sessions", () => Results.Text("global-list-ok"));
+        await app.StartAsync(CancellationToken.None);
+        var command = bash
+            ? "set -e; export CODEX_SESSION_ID=01a10b30-4385-71e0-8a60-6fd26e1cfb01; source \"$1\"; mt_sessions; mt_repo --session sibling1 list"
+            : "$env:CODEX_SESSION_ID='01a10b30-4385-71e0-8a60-6fd26e1cfb01'; . $args[0]; mt_sessions; mt_repo list -SessionId sibling1";
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Empty(requests);
+        Assert.Contains("global-list-ok", result.Output, StringComparison.Ordinal);
+        Assert.Contains("TLBX_CONTEXT_UNAVAILABLE", result.Output + result.Error, StringComparison.Ordinal);
+    }
+
     private async Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
         bool bash, string command, string baseUrl, string sessionId, params string[] arguments)
     {
@@ -158,6 +234,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         };
         foreach (var key in start.Environment.Keys.Where(key => key.StartsWith("MT_", StringComparison.Ordinal)).ToArray())
             start.Environment.Remove(key);
+        start.Environment.Remove("CODEX_SESSION_ID");
+        start.Environment.Remove("CODEX_THREAD_ID");
+        start.Environment.Remove("CODEX_HOME");
         start.Environment["MT_BASE_URL"] = baseUrl;
         start.Environment["MT_SESSION_ID"] = sessionId;
         if (bash)

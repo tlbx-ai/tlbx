@@ -169,6 +169,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<ISessionAppServerControlHeatSource>(static services =>
             services.GetRequiredService<SessionAppServerControlRuntimeService>());
         builder.Services.AddSingleton<SessionCodexHandoffService>();
+        builder.Services.AddSingleton<SessionCliContextService>();
         builder.Services.AddSingleton<ProviderResumeCatalogService>();
         builder.Services.AddSingleton<SessionAgentVibeService>();
         builder.Services.AddSingleton<WorkerSessionRegistryService>();
