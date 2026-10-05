@@ -23,9 +23,13 @@ internal static class CodexCliIdentityService
             {
                 var milliseconds = long.Parse(string.Concat(rootId.AsSpan(0, 8), rootId.AsSpan(9, 4)), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
                 var day = DateTimeOffset.FromUnixTimeMilliseconds(milliseconds).UtcDateTime;
-                var directory = Path.Combine(home, "sessions", day.ToString("yyyy/MM/dd", CultureInfo.InvariantCulture));
-                if (Directory.Exists(directory))
+                // Codex partitions rollouts by local date, which can differ from the UUID's
+                // UTC day. Check both adjacent days as the client and service may use
+                // different time zones; the complete metadata UUID remains authoritative.
+                for (var offset = -1; offset <= 1; offset++)
                 {
+                    var directory = Path.Combine(home, "sessions", day.AddDays(offset).ToString("yyyy/MM/dd", CultureInfo.InvariantCulture));
+                    if (!Directory.Exists(directory)) continue;
                     foreach (var path in Directory.EnumerateFiles(directory, "*" + rootId + ".jsonl"))
                     {
                         // Codex may keep the rollout open for append, including after resume.
