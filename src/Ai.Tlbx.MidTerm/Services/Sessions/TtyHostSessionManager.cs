@@ -60,7 +60,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     }
 
     public event Action<string, ulong, int, int, ReadOnlyMemory<byte>>? OnOutput;
-    public event Action<string>? OnInput;
+    public event Action<string, bool>? OnInput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnSessionClosed;
     public event Action<string, int>? OnSessionCreated;
@@ -1038,11 +1038,11 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return pulseAccepted && restoreAccepted;
     }
 
-    public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default)
+    public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default, bool userInput = true)
     {
         if (_clients.TryGetValue(sessionId, out var client))
         {
-            if (!data.IsEmpty) OnInput?.Invoke(sessionId);
+            if (!data.IsEmpty) OnInput?.Invoke(sessionId, userInput);
             await client.SendInputAsync(data, ct).ConfigureAwait(false);
         }
     }
@@ -1051,14 +1051,15 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         string sessionId,
         ReadOnlyMemory<byte> data,
         uint traceId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool userInput = true)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
         {
             return null;
         }
 
-        if (!data.IsEmpty) OnInput?.Invoke(sessionId);
+        if (!data.IsEmpty) OnInput?.Invoke(sessionId, userInput);
         return await client.SendInputWithTraceAsync(data, traceId, ct).ConfigureAwait(false);
     }
 

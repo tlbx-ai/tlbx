@@ -1,5 +1,5 @@
-using System.Security.Cryptography;
 using System.Globalization;
+using System.Security.Cryptography;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -29,7 +29,7 @@ public sealed class SessionCliContextService
             SessionProcessContext.ReadProcess, TimeProvider.System)
     {
         manager.OnOutput += (id, _, _, _, data) => ObserveOutput(id, data.Span);
-        manager.OnInput += InvalidateInput;
+        manager.OnInput += ObserveInput;
         manager.OnSessionClosed += id => { lock (_gate) { _scanners.Remove(id); _inputVersions.Remove(id); } };
     }
 
@@ -60,6 +60,12 @@ public sealed class SessionCliContextService
     internal void InvalidateInput(string sessionId)
     {
         lock (_gate) { _inputVersions[sessionId] = _inputVersions.GetValueOrDefault(sessionId) + 1; }
+    }
+
+    internal void ObserveInput(string sessionId, bool userInput)
+    {
+        // Cursor positions, colors and other xterm replies cannot change the active thread.
+        if (userInput) InvalidateInput(sessionId);
     }
 
     internal void ObserveOutput(string sessionId, ReadOnlySpan<byte> bytes)
@@ -109,7 +115,7 @@ public sealed class SessionCliContextService
             }
             var status = proof.Observers.Count > 1 ? "AMBIGUOUS" : "UNBOUND";
             var instructions = status == "AMBIGUOUS"
-                ? "Run mt_context repair as a separate shell tool call, then retry the original command. Do not copy the proof to other terminals."
+                ? "Run mt_context repair as a separate shell tool call, then retry the original command. Do not copy the proof to other terminals. If repair remains ambiguous, stop: the same Codex thread may be displayed in multiple terminals. Ask to close the duplicate client before retrying; never guess a session ID."
                 : "Retry the exact original command in a separate shell tool call. The proof above must be displayed in your terminal first. If tool output is hidden, print ONLY the proof line in a separate tool call, then retry.";
             if (root != thread)
                 instructions += " If this is a subagent without its own terminal output, ask the parent agent to perform the scoped operation; do not overwrite CODEX_SESSION_ID or CODEX_THREAD_ID.";
@@ -205,12 +211,21 @@ public sealed class SessionCliContextService
         private int _next;
         private int _count;
         private int _escapeState; // 0 text, 1 ESC, 2 CSI, 3 OSC/string, 4 string ESC
+        private bool _utf8ControlPrefix;
 
         public void Feed(ReadOnlySpan<byte> bytes, Action<string> found)
         {
             Span<char> nonce = stackalloc char[32];
             foreach (var b in bytes)
             {
+                // Terminals may encode C1 controls directly or as UTF-8 (C2 80..9F).
+                if (b == 0xc2) { _utf8ControlPrefix = true; continue; }
+                if (_utf8ControlPrefix)
+                {
+                    _utf8ControlPrefix = false;
+                    if (b is < 0x80 or > 0x9f) _count = 0;
+                }
+                if (b == 0x9c) { _escapeState = 0; continue; }
                 if (_escapeState == 3) { if (b == 7) _escapeState = 0; else if (b == 27) _escapeState = 4; continue; }
                 if (_escapeState == 4) { _escapeState = b == (byte)'\\' ? 0 : 3; continue; }
                 if (_escapeState == 2) { if (b is >= 0x40 and <= 0x7e) _escapeState = 0; continue; }
@@ -220,6 +235,8 @@ public sealed class SessionCliContextService
                     continue;
                 }
                 if (b == 27) { _escapeState = 1; continue; }
+                if (b is 0x90 or 0x9d or 0x9e or 0x9f) { _escapeState = 3; continue; }
+                if (b == 0x9b) { _escapeState = 2; continue; }
                 if (b is 9 or 10 or 13 or 32) continue;
                 if (b is < 0x21 or > 0x7e) { _count = 0; continue; }
                 _tail[_next] = (char)b;

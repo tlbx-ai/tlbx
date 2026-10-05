@@ -12,7 +12,7 @@ public sealed class CodexCliIdentityServiceTests
     {
         const string root = "01a10b97-2853-75e2-b134-d6fe7f527ae3";
         var home = Path.Combine(Path.GetTempPath(), "tlbx-identity-" + Guid.NewGuid().ToString("N"));
-        var timestamp = long.Parse(root[..8] + root.Substring(9, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
+        var timestamp = long.Parse(string.Concat(root.AsSpan(0, 8), root.AsSpan(9, 4)), NumberStyles.HexNumber, CultureInfo.InvariantCulture);
         var date = DateTimeOffset.FromUnixTimeMilliseconds(timestamp).ToString("yyyy/MM/dd", CultureInfo.InvariantCulture);
         var directory = Path.Combine(home, "sessions", date);
         Directory.CreateDirectory(directory);

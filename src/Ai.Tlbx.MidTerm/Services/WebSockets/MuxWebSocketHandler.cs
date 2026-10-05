@@ -761,7 +761,8 @@ public sealed class MuxWebSocketHandler
                 {
                     await _sizeControl.RecordInputAsync(sessionId, browserId, browserLabel, ct);
                 }
-                await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory, ct);
+                await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory, ct,
+                    userInput: type == MuxProtocol.TypeUserInput);
                 break;
 
             case MuxProtocol.TypeResize:

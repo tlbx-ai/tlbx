@@ -22,6 +22,18 @@ public sealed class SessionCliContextServiceTests
     }
 
     [Fact]
+    public void AutomaticTerminalRepliesKeepBindingButUserInputRevokesIt()
+    {
+        var proof = ProofLine(_service.Resolve(Root, Root, 100));
+        Feed("first001", proof);
+        var lease = _service.Resolve(Root, Root, 100);
+        _service.ObserveInput("first001", userInput: false);
+        Assert.Null(_service.ValidateLease(lease[9..]));
+        _service.ObserveInput("first001", userInput: true);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", _service.ValidateLease(lease[9..]), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ExplicitRepairImmediatelyRevokesOldLeaseAndFleetChangesRequireNewProof()
     {
         var proof = ProofLine(_service.Resolve(Root, Root, 100));
@@ -62,6 +74,8 @@ public sealed class SessionCliContextServiceTests
         var marker = ProofLine(error);
         var title = "\x1b]0;" + marker + "\x07";
         foreach (var b in Encoding.UTF8.GetBytes(title)) _service.ObserveOutput("second02", [b]);
+        foreach (var b in Encoding.UTF8.GetBytes("\u009d0;" + marker + "\u009c")) _service.ObserveOutput("second02", [b]);
+        _service.ObserveOutput("second02", [0x9d, .. Encoding.ASCII.GetBytes("0;" + marker), 0x9c]);
         Assert.Contains("TLBX_CONTEXT_UNBOUND", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
         var colored = "\x1b[31m" + marker[..20] + "\x1b[0m\r\n  " + marker[20..];
         foreach (var b in Encoding.UTF8.GetBytes(colored)) _service.ObserveOutput("first001", [b]);
@@ -78,7 +92,7 @@ public sealed class SessionCliContextServiceTests
         Assert.Contains("TLBX_CONTEXT_CHANGED", _service.ValidateLease(lease[9..]), StringComparison.Ordinal);
         Assert.Contains("TLBX_CONTEXT_AMBIGUOUS", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
         var repair = _service.Resolve(Root, Root, 100, fresh: true);
-        Assert.NotEqual(proof, ProofLine(repair));
+        Assert.NotEqual(proof, ProofLine(repair), StringComparer.Ordinal);
         Feed("second02", proof); // Replaying the old proof cannot claim the new context.
         Assert.Contains("TLBX_CONTEXT_UNBOUND", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
         Feed("first001", ProofLine(repair));
@@ -98,7 +112,7 @@ public sealed class SessionCliContextServiceTests
         Feed("first001", proof); // A screen redraw after /new or /resume is stale output.
         var retry = _service.Resolve(Root, Root, 100);
         Assert.Contains("TLBX_CONTEXT_UNBOUND", retry, StringComparison.Ordinal);
-        Assert.NotEqual(proof, ProofLine(retry));
+        Assert.NotEqual(proof, ProofLine(retry), StringComparer.Ordinal);
     }
 
     [Fact]
