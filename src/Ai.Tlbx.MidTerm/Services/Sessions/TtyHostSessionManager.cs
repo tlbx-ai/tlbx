@@ -1038,7 +1038,10 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return pulseAccepted && restoreAccepted;
     }
 
-    public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default, bool userInput = true)
+    public Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default) =>
+        SendInputAsync(sessionId, data, userInput: true, ct);
+
+    public async Task SendInputAsync(string sessionId, ReadOnlyMemory<byte> data, bool userInput, CancellationToken ct = default)
     {
         if (_clients.TryGetValue(sessionId, out var client))
         {
@@ -1047,12 +1050,19 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         }
     }
 
+    public Task<TtyHostInputWriteTiming?> SendInputWithTraceAsync(
+        string sessionId,
+        ReadOnlyMemory<byte> data,
+        uint traceId,
+        CancellationToken ct = default) =>
+        SendInputWithTraceAsync(sessionId, data, traceId, userInput: true, ct);
+
     public async Task<TtyHostInputWriteTiming?> SendInputWithTraceAsync(
         string sessionId,
         ReadOnlyMemory<byte> data,
         uint traceId,
-        CancellationToken ct = default,
-        bool userInput = true)
+        bool userInput,
+        CancellationToken ct = default)
     {
         if (!_clients.TryGetValue(sessionId, out var client))
         {

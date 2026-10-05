@@ -472,7 +472,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
         _inputTraceMarkers[(clientId, sessionId)] = new InputLatencyTrace(clientId, sessionId, traceId, now);
     }
 
-    public async Task HandleInputAsync(string clientId, string sessionId, ReadOnlyMemory<byte> data, CancellationToken ct = default, bool userInput = true)
+    public async Task HandleInputAsync(string clientId, string sessionId, ReadOnlyMemory<byte> data, bool userInput = true, CancellationToken ct = default)
     {
         var inputToken = ct.CanBeCanceled ? ct : _cts?.Token ?? CancellationToken.None;
         var inputReceivedAtMs = Environment.TickCount64;
@@ -480,7 +480,7 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
 
         if (!_inputTraceMarkers.TryRemove((clientId, sessionId), out var trace))
         {
-            await _sessionManager.SendInputAsync(sessionId, data, inputToken, userInput).ConfigureAwait(false);
+            await _sessionManager.SendInputAsync(sessionId, data, userInput, inputToken).ConfigureAwait(false);
             return;
         }
 
@@ -494,8 +494,8 @@ public sealed class TtyHostMuxConnectionManager : IDisposable, IAsyncDisposable
             sessionId,
             data,
             trace.TraceId,
-            inputToken,
-            userInput).ConfigureAwait(false);
+            userInput,
+            inputToken).ConfigureAwait(false);
         if (timing is null)
         {
             RemoveInputTrace(trace);
