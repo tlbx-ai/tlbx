@@ -60,6 +60,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     }
 
     public event Action<string, ulong, int, int, ReadOnlyMemory<byte>>? OnOutput;
+    public event Action<string>? OnInput;
     public event Action<string>? OnStateChanged;
     public event Action<string>? OnSessionClosed;
     public event Action<string, int>? OnSessionCreated;
@@ -1041,6 +1042,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         if (_clients.TryGetValue(sessionId, out var client))
         {
+            if (!data.IsEmpty) OnInput?.Invoke(sessionId);
             await client.SendInputAsync(data, ct).ConfigureAwait(false);
         }
     }
@@ -1056,6 +1058,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
+        if (!data.IsEmpty) OnInput?.Invoke(sessionId);
         return await client.SendInputWithTraceAsync(data, traceId, ct).ConfigureAwait(false);
     }
 

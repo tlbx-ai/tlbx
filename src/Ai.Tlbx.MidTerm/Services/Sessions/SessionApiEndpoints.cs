@@ -233,18 +233,42 @@ public static partial class SessionApiEndpoints
             return Results.Json(GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime), AppJsonContext.Default.SessionListDto);
         });
 
-        app.MapGet("/api/sessions/process-context", (HttpContext context, int processId) =>
+        app.MapGet("/api/sessions/process-context", async (HttpContext context, int processId,
+            string? codexSessionId, string? codexThreadId, string? codexHome, bool? fresh) =>
         {
             // PIDs are meaningful only on this machine. Never map a remote caller's PID.
             var remote = context.Connection.RemoteIpAddress;
-            if (remote is null || !System.Net.IPAddress.IsLoopback(remote)) return Results.StatusCode(403);
+            if (remote is null || (!System.Net.IPAddress.IsLoopback(remote) &&
+                !remote.Equals(context.Connection.LocalIpAddress))) return Results.StatusCode(403);
             if (processId <= 0) return Results.BadRequest();
+            var hosts = app.Services.GetRequiredService<SessionAppServerControlHostRuntimeService>().GetProcessContextRoots().ToDictionary(pair => pair.Key, pair => pair.Value);
+            if (codexSessionId is not null || codexThreadId is not null)
+            {
+                var cliContext = app.Services.GetRequiredService<SessionCliContextService>();
+                var root = codexSessionId ?? codexThreadId ?? "";
+                var thread = codexThreadId ?? root;
+                if (!Guid.TryParseExact(root, "D", out var rootId) || !Guid.TryParseExact(thread, "D", out var threadId))
+                    return Results.Text(SessionCliContextService.Error("INVALID_IDENTITY", "Use the unchanged CODEX_SESSION_ID and CODEX_THREAD_ID from the actual Codex tool shell."), statusCode: 409);
+                // Structured runtimes have a dedicated host process, unlike a shared TUI daemon.
+                var host = SessionProcessContext.Resolve(processId, hosts);
+                if (host is not null)
+                {
+                    var hostedResolution = cliContext.CreateHostLease(host, processId);
+                    return Results.Text(hostedResolution, statusCode: SessionCliContextService.IsResolution(hostedResolution) ? 200 : 409);
+                }
+                if (!await CodexCliIdentityService.ExistsAsync(rootId.ToString(), codexHome, context.RequestAborted))
+                    return Results.Text(SessionCliContextService.Error("INVALID_IDENTITY", "The complete Codex root ID was not found. Keep the harness-provided IDs unchanged and verify CODEX_HOME / the owning tlbx server."), statusCode: 409);
+                if (rootId != threadId && !await CodexCliIdentityService.ExistsAsync(threadId.ToString(), codexHome, context.RequestAborted))
+                    return Results.Text(SessionCliContextService.Error("INVALID_IDENTITY", "The complete Codex tool thread ID was not found. Keep CODEX_THREAD_ID unchanged; a subagent must preserve its own harness-provided identity."), statusCode: 409);
+                var resolution = cliContext.Resolve(rootId.ToString(), threadId.ToString(), processId, fresh == true);
+                return Results.Text(resolution, statusCode: SessionCliContextService.IsResolution(resolution) ? 200 : 409);
+            }
             var roots = new Dictionary<int, string>();
             foreach (var session in sessionManager.GetAllSessions().Where(session => session.IsRunning))
             {
                 if (session.Pid > 0) roots[session.Pid] = session.Id;
             }
-            foreach (var root in app.Services.GetRequiredService<SessionAppServerControlHostRuntimeService>().GetProcessContextRoots())
+            foreach (var root in hosts)
                 roots[root.Key] = root.Value;
             var id = SessionProcessContext.Resolve(processId, roots);
             return id is null ? Results.NoContent() : Results.Text(id);

@@ -24,7 +24,7 @@ internal static partial class SessionProcessContext
         return null;
     }
 
-    private static unsafe (int Parent, DateTime Started)? ReadProcess(int pid)
+    internal static unsafe (int Parent, DateTime Started)? ReadProcess(int pid)
     {
         try
         {
