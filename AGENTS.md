@@ -55,6 +55,7 @@ Rules:
 
 ## Terminal Design Constraints
 
+- CLI context verification must include metadata from a preserved installed mthost after a web-only update, with an unchanged Codex foreground PID, and the resulting scoped command routing. Cover missing host-side process classification and Unicode terminal output; record the exact context error and verify actual command readback.
 - Explicit terminal launch commands and bookmarks are user-controlled. Never silently inject provider-specific CLI flags. Keep supplied arguments and quoting; use provider defaults only when no command was supplied.
 - Do not suggest hiding, virtualizing, or lazily deactivating visible terminal sessions as a latency optimization.
 - In MidTerm, sessions that are shown are intentionally kept as genuinely active terminals; latency work must preserve that UX model.

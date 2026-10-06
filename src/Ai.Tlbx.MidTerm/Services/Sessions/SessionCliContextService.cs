@@ -23,8 +23,9 @@ public sealed class SessionCliContextService
     private readonly Dictionary<string, Lease> _leases = new(StringComparer.Ordinal);
 
     public SessionCliContextService(TtyHostSessionManager manager)
-        : this(() => manager.GetAllSessions()
-            // SessionInfo is mutable: capture the nullable PID once during a foreground change.
+        : this(() => manager.GetSessionList(includeHidden: true).Sessions
+            // Reclassify preserved host snapshots just like the session API. Raw GetInfo
+            // metadata may omit Codex identity after a web update without a client change.
             .Select(s => s.ForegroundPid is int pid && pid > 0 && s.IsRunning && s.ForegroundProcessIdentity == "codex"
                 ? new Terminal(s.Id, s.Pid, pid) : null).OfType<Terminal>().ToArray(),
             SessionProcessContext.ReadProcess, TimeProvider.System)
@@ -212,19 +213,36 @@ public sealed class SessionCliContextService
         private int _next;
         private int _count;
         private int _escapeState; // 0 text, 1 ESC, 2 CSI, 3 OSC/string, 4 string ESC
-        private bool _utf8ControlPrefix;
+        private int _utf8Remaining;
+        private byte _utf8Lead;
 
         public void Feed(ReadOnlySpan<byte> bytes, Action<string> found)
         {
             Span<char> nonce = stackalloc char[32];
             foreach (var b in bytes)
             {
-                // Terminals may encode C1 controls directly or as UTF-8 (C2 80..9F).
-                if (b == 0xc2) { _utf8ControlPrefix = true; continue; }
-                if (_utf8ControlPrefix)
+                // Continuation bytes in ordinary Unicode text are not C1 controls.
+                // Preserve decoder state across output chunks. Only C2 80..9F encodes
+                // an actual UTF-8 C1 control; raw single-byte controls also remain valid.
+                if (_utf8Remaining > 0)
                 {
-                    _utf8ControlPrefix = false;
-                    if (b is < 0x80 or > 0x9f) _count = 0;
+                    if (b is >= 0x80 and <= 0xbf)
+                    {
+                        _utf8Remaining--;
+                        if (_utf8Remaining != 0 || _utf8Lead != 0xc2 || b > 0x9f)
+                        {
+                            _count = 0;
+                            continue;
+                        }
+                    }
+                    else { _utf8Remaining = 0; _count = 0; }
+                }
+                if (b is >= 0xc2 and <= 0xf4)
+                {
+                    _utf8Lead = b;
+                    _utf8Remaining = b < 0xe0 ? 1 : b < 0xf0 ? 2 : 3;
+                    if (b != 0xc2) _count = 0;
+                    continue;
                 }
                 if (b == 0x9c) { _escapeState = 0; continue; }
                 if (_escapeState == 3) { if (b == 7) _escapeState = 0; else if (b == 27) _escapeState = 4; continue; }

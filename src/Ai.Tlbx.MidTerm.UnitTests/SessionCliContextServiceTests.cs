@@ -83,6 +83,20 @@ public sealed class SessionCliContextServiceTests
     }
 
     [Fact]
+    public void Utf8ContinuationBytesAreNotTerminalControls()
+    {
+        var marker = ProofLine(_service.Resolve(Root, Root, 100));
+        // These glyphs contain 90/9B/9C/9D/9E/9F continuation bytes, not C1 controls.
+        // Split every byte to exercise the streaming decoder across output chunks.
+        foreach (var b in Encoding.UTF8.GetBytes("┐┛├┝┞┟▐\r\n" + marker))
+            _service.ObserveOutput("first001", [b]);
+        Assert.StartsWith("first001:", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
+        // Unicode inside a real OSC must never terminate it and expose a hidden proof.
+        _service.ObserveOutput("second02", Encoding.UTF8.GetBytes("\x1b]0;├" + marker + "\x07"));
+        Assert.StartsWith("first001:", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DuplicateProofRevokesAnAlreadyIssuedLeaseAndRequiresFreshCorrection()
     {
         var proof = ProofLine(_service.Resolve(Root, Root, 100));
