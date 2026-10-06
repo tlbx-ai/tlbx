@@ -228,7 +228,14 @@ public static class TlbxCliScriptWriter
           local format="${1:-text}"
           if [ "$format" = repair ]; then
             _MRESOLVECTX true
-            if [ -n "${_MCTXERROR:-}" ]; then printf '%s\n' "$_MCTXERROR"; return 0; fi
+            if [ -n "${_MCTXERROR:-}" ]; then
+              local proof="${_MCTXERROR%%$'\n'*}"
+              proof="${proof%$'\r'}"
+              if [[ "$_MCTXERROR" == *TLBX_CONTEXT_UNBOUND* ]] && [[ "$proof" =~ ^TLBXCTX:[a-f0-9]{32}$ ]]; then
+                printf '%s\n' "$proof"
+              else printf '%s\n' "$_MCTXERROR"; fi
+              return 0
+            fi
           fi
           _MREQUIRECTX "mt_context" || return $?
           case "$format" in
@@ -1491,7 +1498,12 @@ public static class TlbxCliScriptWriter
             param([string]$Format = "text")
             if ($Format -eq 'repair') {
                 _MResolveContext -Fresh
-                if ($script:_MContextError) { Write-Output $script:_MContextError; return }
+                if ($script:_MContextError) {
+                    $proof = [regex]::Match($script:_MContextError, 'TLBXCTX:[a-f0-9]{32}').Value
+                    if ($proof -and $script:_MContextError -match 'TLBX_CONTEXT_UNBOUND') { Write-Output $proof }
+                    else { Write-Output $script:_MContextError }
+                    return
+                }
             }
             _MRequireSessionContext "mt_context"
             switch ($Format.ToLowerInvariant()) {

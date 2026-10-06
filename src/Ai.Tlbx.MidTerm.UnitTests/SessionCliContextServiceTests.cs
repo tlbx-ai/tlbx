@@ -22,6 +22,22 @@ public sealed class SessionCliContextServiceTests
     }
 
     [Fact]
+    public void NonceOnlyRedrawRecognizesFreshProofWithoutReemittingVisiblePrefix()
+    {
+        var old = ProofLine(_service.Resolve(Root, Root, 100));
+        Feed("first001", old);
+        var fresh = ProofLine(_service.Resolve(Root, Root, 100, fresh: true));
+        Assert.NotEqual(old[8], fresh[8]);
+        Assert.NotEqual(old[^1], fresh[^1]);
+        Feed("first001", "\x1b[1;9H" + fresh[8..]);
+        Assert.StartsWith("first001:", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
+        Feed("second02", fresh[24..]); // A partial nonce is never sufficient.
+        Assert.StartsWith("first001:", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
+        Feed("second02", "\x1b]0;" + fresh[8..] + "\x07");
+        Assert.StartsWith("first001:", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PrivateToolAncestryResolvesImmediatelyButSharedBackendRequiresProof()
     {
         var parents = new Dictionary<int, int> { [100] = 12, [12] = 11, [11] = 10, [10] = 1 };
@@ -60,7 +76,7 @@ public sealed class SessionCliContextServiceTests
     }
 
     [Fact]
-    public void ExplicitRepairImmediatelyRevokesOldLeaseAndFleetChangesRequireNewProof()
+    public void ExplicitRepairImmediatelyRevokesOldLeaseAndOwnerClosureRequiresNewProof()
     {
         var proof = ProofLine(_service.Resolve(Root, Root, 100));
         Feed("first001", proof);
@@ -70,9 +86,28 @@ public sealed class SessionCliContextServiceTests
         Feed("first001", ProofLine(repair));
         var lease = _service.Resolve(Root, Root, 100);
         Assert.Null(_service.ValidateLease(lease[9..]));
-        _terminals.RemoveAt(1);
+        _terminals.RemoveAt(0);
         Assert.Contains("TLBX_CONTEXT_CHANGED", _service.ValidateLease(lease[9..]), StringComparison.Ordinal);
         Assert.Contains("TLBX_CONTEXT_UNBOUND", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SiblingStartupKeepsPendingProofAndLeaseButDuplicateOutputStillBlocks()
+    {
+        _terminals.RemoveAt(1);
+        var marker = ProofLine(_service.Resolve(Root, Root, 100));
+        _terminals.Add(new("second02", 20, 21));
+        Assert.Equal(marker, ProofLine(_service.Resolve(Root, Root, 100)));
+        Feed("first001", marker);
+        var lease = _service.Resolve(Root, Root, 100);
+        Assert.StartsWith("first001:", lease, StringComparison.Ordinal);
+        _terminals.RemoveAt(1);
+        Assert.Null(_service.ValidateLease(lease[9..]));
+        _terminals.Add(new("second02", 20, 21));
+        Assert.Null(_service.ValidateLease(lease[9..]));
+        Feed("second02", marker);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", _service.ValidateLease(lease[9..]), StringComparison.Ordinal);
+        Assert.Contains("TLBX_CONTEXT_AMBIGUOUS", _service.Resolve(Root, Root, 100), StringComparison.Ordinal);
     }
 
     [Fact]
