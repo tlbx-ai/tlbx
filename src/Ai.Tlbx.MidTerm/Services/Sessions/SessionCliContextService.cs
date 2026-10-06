@@ -1,4 +1,3 @@
-using System.Globalization;
 using System.Security.Cryptography;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
@@ -49,13 +48,12 @@ public sealed class SessionCliContextService
     internal sealed record Terminal(string Id, int ShellPid, int ClientPid);
     private sealed record Owner(Terminal Terminal, DateTime Started, long InputVersion);
     private sealed class Proof(string root, string thread, string nonce, DateTimeOffset expires,
-        string topology, Dictionary<string, Owner> candidates)
+        Dictionary<string, Owner> candidates)
     {
         public string Root { get; } = root;
         public string Thread { get; } = thread;
         public string Nonce { get; } = nonce;
         public DateTimeOffset Expires { get; } = expires;
-        public string Topology { get; } = topology;
         public Dictionary<string, Owner> Candidates { get; } = candidates;
         public HashSet<string> Observers { get; } = new(StringComparer.Ordinal);
     }
@@ -83,7 +81,10 @@ public sealed class SessionCliContextService
             scanner.Feed(bytes, nonce =>
             {
                 if (!_proofs.TryGetValue(nonce, out var proof) || proof.Expires <= _clock.GetUtcNow()) return;
-                if (!proof.Candidates.TryGetValue(sessionId, out var candidate)) return;
+                if (!proof.Candidates.TryGetValue(sessionId, out var candidate))
+                {
+                    if (!RefreshCandidates(proof, GetOwners()) || !proof.Candidates.TryGetValue(sessionId, out candidate)) return;
+                }
                 if (candidate.InputVersion != _inputVersions.GetValueOrDefault(sessionId)) return;
                 proof.Observers.Add(sessionId);
             });
@@ -113,13 +114,11 @@ public sealed class SessionCliContextService
                 _leases[directToken] = new Lease(null, direct, direct.Terminal.Id, callerPid, caller.Value.Started, _clock.GetUtcNow().AddMinutes(2));
                 return direct.Terminal.Id + ":" + directToken;
             }
-            var topology = Topology(owners);
             var key = root + "/" + thread;
             _contexts.TryGetValue(key, out var proof);
-            if (fresh || proof is null || proof.Expires <= _clock.GetUtcNow() || proof.Topology != topology ||
-                proof.Observers.Any(id => !owners.TryGetValue(id, out var owner) || !SameOwner(proof.Candidates[id], owner)))
+            if (fresh || proof is null || proof.Expires <= _clock.GetUtcNow() || !RefreshCandidates(proof, owners))
             {
-                proof = NewProof(root, thread, topology, owners);
+                proof = NewProof(root, thread, owners);
                 _contexts[key] = proof;
             }
             if (proof.Observers.Count == 1)
@@ -176,7 +175,7 @@ public sealed class SessionCliContextService
             }
             var owners = GetOwners();
             if (!_contexts.TryGetValue(proof.Root + "/" + proof.Thread, out var currentProof) || currentProof != proof ||
-                proof.Expires <= _clock.GetUtcNow() || proof.Topology != Topology(owners) ||
+                proof.Expires <= _clock.GetUtcNow() || !RefreshCandidates(proof, owners) ||
                 proof.Observers.Count != 1 || !owners.TryGetValue(lease.SessionId, out var owner) ||
                 lease.Owner is null || !SameOwner(lease.Owner, owner))
                 return Error("CHANGED", "The terminal input, client, or proof changed. Run mt_context repair, then retry the original command. Do not guess a session ID.");
@@ -221,14 +220,29 @@ public sealed class SessionCliContextService
     private static bool SameOwner(Owner left, Owner right) => left.Terminal == right.Terminal &&
         left.Started == right.Started && left.InputVersion == right.InputVersion;
 
-    private static string Topology(Dictionary<string, Owner> owners) => string.Join(';', owners.OrderBy(pair => pair.Key,
-        StringComparer.Ordinal).Select(pair => string.Create(CultureInfo.InvariantCulture,
-            $"{pair.Key}:{pair.Value.Terminal.ShellPid}:{pair.Value.Terminal.ClientPid}:{pair.Value.Started.Ticks}:{pair.Value.InputVersion}")));
+    private static bool RefreshCandidates(Proof proof, Dictionary<string, Owner> owners)
+    {
+        foreach (var (id, previous) in proof.Candidates)
+        {
+            if (owners.TryGetValue(id, out var current))
+            {
+                if (!SameOwner(previous, current)) return false;
+            }
+            else if (proof.Observers.Contains(id)) return false;
+        }
+        foreach (var id in proof.Candidates.Keys.Where(id => !owners.ContainsKey(id)).ToArray()) proof.Candidates.Remove(id);
+        foreach (var (id, owner) in owners) proof.Candidates.TryAdd(id, owner);
+        return true;
+    }
 
-    private Proof NewProof(string root, string thread, string topology, Dictionary<string, Owner> owners)
+    private Proof NewProof(string root, string thread, Dictionary<string, Owner> owners)
     {
         var nonce = RandomToken();
-        var proof = new Proof(root, thread, nonce, _clock.GetUtcNow().AddMinutes(5), topology, owners);
+        // A TUI may reuse the visible prefix and rewrite only changed nonce cells.
+        // Change both ends on rotation so a contiguous diff emits the full nonce.
+        if (_contexts.TryGetValue(root + "/" + thread, out var previous))
+            while (nonce[0] == previous.Nonce[0] || nonce[^1] == previous.Nonce[^1]) nonce = RandomToken();
+        var proof = new Proof(root, thread, nonce, _clock.GetUtcNow().AddMinutes(5), owners);
         _proofs[nonce] = proof;
         return proof;
     }
@@ -249,7 +263,7 @@ public sealed class SessionCliContextService
     /// <summary>Incremental ASCII proof matching across UTF-8/VT chunks and line wrapping; OSC is never evidence.</summary>
     private sealed class OutputScanner
     {
-        private readonly char[] _tail = new char[40];
+        private readonly char[] _tail = new char[32];
         private int _next;
         private int _count;
         private int _escapeState; // 0 text, 1 ESC, 2 CSI, 3 OSC/string, 4 string ESC
@@ -298,15 +312,16 @@ public sealed class SessionCliContextService
                 if (b == 0x9b) { _escapeState = 2; continue; }
                 if (b is 9 or 10 or 13 or 32) continue;
                 if (b is < 0x21 or > 0x7e) { _count = 0; continue; }
+                if (!char.IsAsciiHexDigit((char)b)) { _count = 0; continue; }
                 _tail[_next] = (char)b;
-                _next = (_next + 1) % 40;
-                _count = Math.Min(_count + 1, 40);
-                if (_count == 40 && HasPrefix())
+                _next = (_next + 1) % 32;
+                _count = Math.Min(_count + 1, 32);
+                if (_count == 32)
                 {
                     var valid = true;
                     for (var i = 0; i < nonce.Length; i++)
                     {
-                        nonce[i] = _tail[(_next + 8 + i) % 40];
+                        nonce[i] = _tail[(_next + i) % 32];
                         if (!char.IsAsciiHexDigit(nonce[i])) { valid = false; break; }
                     }
                     if (valid) found(new string(nonce).ToLowerInvariant());
@@ -314,11 +329,5 @@ public sealed class SessionCliContextService
             }
         }
 
-        private bool HasPrefix()
-        {
-            for (var i = 0; i < MarkerPrefix.Length; i++)
-                if (_tail[(_next + i) % 40] != MarkerPrefix[i]) return false;
-            return true;
-        }
     }
 }
