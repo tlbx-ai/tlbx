@@ -7677,6 +7677,7 @@
       "UpdateInfo": {
         "required": [
           "available",
+          "checkError",
           "currentVersion",
           "latestVersion",
           "releaseUrl",
@@ -7694,6 +7695,12 @@
         "properties": {
           "available": {
             "type": "boolean"
+          },
+          "checkError": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "currentVersion": {
             "type": "string"

@@ -16,6 +16,7 @@ public sealed class SessionCliContextService
     private readonly Func<IReadOnlyList<Terminal>> _terminals;
     private readonly Func<int, (int Parent, DateTime Started)?> _process;
     private readonly TimeProvider _clock;
+    private readonly Func<int, bool?> _sharedBackend;
     private readonly Dictionary<string, long> _inputVersions = new(StringComparer.Ordinal);
     private readonly Dictionary<string, OutputScanner> _scanners = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Proof> _proofs = new(StringComparer.Ordinal);
@@ -36,11 +37,13 @@ public sealed class SessionCliContextService
     }
 
     internal SessionCliContextService(Func<IReadOnlyList<Terminal>> terminals,
-        Func<int, (int Parent, DateTime Started)?> process, TimeProvider clock)
+        Func<int, (int Parent, DateTime Started)?> process, TimeProvider clock,
+        Func<int, bool?>? sharedBackend = null)
     {
         _terminals = terminals;
         _process = process;
         _clock = clock;
+        _sharedBackend = sharedBackend ?? SessionProcessContext.IsSharedCodexBackend;
     }
 
     internal sealed record Terminal(string Id, int ShellPid, int ClientPid);
@@ -95,6 +98,21 @@ public sealed class SessionCliContextService
             var caller = _process(callerPid);
             if (caller is null) return Error("INVALID_PROCESS", "The calling tool process no longer exists.");
             var owners = GetOwners();
+            // Private TUI tools can be attributed immediately. Stop at a shared
+            // app-server boundary: its ancestry identifies the first launcher only.
+            var direct = FindDirectOwner(callerPid, owners);
+            if (direct is not null)
+            {
+                var existingDirect = _leases.FirstOrDefault(pair => pair.Value.Proof is null && pair.Value.Owner is not null &&
+                    pair.Value.CallerPid == callerPid && pair.Value.CallerStarted == caller.Value.Started);
+                if (existingDirect.Key is not null)
+                    return SameOwner(existingDirect.Value.Owner!, direct)
+                        ? direct.Terminal.Id + ":" + existingDirect.Key
+                        : Error("CHANGED", "Terminal input or client changed. Retry the original command in a new shell tool call.");
+                var directToken = RandomToken();
+                _leases[directToken] = new Lease(null, direct, direct.Terminal.Id, callerPid, caller.Value.Started, _clock.GetUtcNow().AddMinutes(2));
+                return direct.Terminal.Id + ":" + directToken;
+            }
             var topology = Topology(owners);
             var key = root + "/" + thread;
             _contexts.TryGetValue(key, out var proof);
@@ -118,7 +136,7 @@ public sealed class SessionCliContextService
             var status = proof.Observers.Count > 1 ? "AMBIGUOUS" : "UNBOUND";
             var instructions = status == "AMBIGUOUS"
                 ? "Run mt_context repair as a separate shell tool call, then retry the original command. Do not copy the proof to other terminals. If repair remains ambiguous, stop: the same Codex thread may be displayed in multiple terminals. Ask to close the duplicate client before retrying; never guess a session ID."
-                : "Retry the exact original command in a separate shell tool call. The proof above must be displayed in your terminal first. If tool output is hidden, print ONLY the proof line in a separate tool call, then retry.";
+                : "Required next action: retry the exact original command in a separate shell tool call before continuing other work. The proof above must be displayed in your terminal first. If tool output is hidden, print ONLY the proof line in a separate tool call, then retry. The failed operation is still pending.";
             if (root != thread)
                 instructions += " If this is a subagent without its own terminal output, ask the parent agent to perform the scoped operation; do not overwrite CODEX_SESSION_ID or CODEX_THREAD_ID.";
             return MarkerPrefix + proof.Nonce + "\n" + Error(status, instructions) +
@@ -149,7 +167,13 @@ public sealed class SessionCliContextService
             var caller = _process(lease.CallerPid);
             if (caller is null || caller.Value.Started != lease.CallerStarted)
                 return Error("INVALID_PROCESS", "The original tool process ended or its PID was reused. Run the original command in the current tool shell.");
-            if (lease.Proof is not { } proof) return null;
+            if (lease.Proof is not { } proof)
+            {
+                if (lease.Owner is null) return null;
+                var direct = FindDirectOwner(lease.CallerPid, GetOwners());
+                return direct is not null && SameOwner(lease.Owner, direct) ? null :
+                    Error("CHANGED", "Terminal input, client or process ancestry changed. Retry in a new shell tool call.");
+            }
             var owners = GetOwners();
             if (!_contexts.TryGetValue(proof.Root + "/" + proof.Thread, out var currentProof) || currentProof != proof ||
                 proof.Expires <= _clock.GetUtcNow() || proof.Topology != Topology(owners) ||
@@ -176,6 +200,22 @@ public sealed class SessionCliContextService
                 owners[terminal.Id] = new Owner(terminal, process.Value.Started, _inputVersions.GetValueOrDefault(terminal.Id));
         }
         return owners;
+    }
+
+    private Owner? FindDirectOwner(int pid, Dictionary<string, Owner> owners)
+    {
+        var visited = new HashSet<int>();
+        DateTime? childStarted = null;
+        while (pid > 0 && visited.Count < 128 && visited.Add(pid))
+        {
+            var process = _process(pid);
+            if (process is null || (childStarted is not null && process.Value.Started > childStarted) || _sharedBackend(pid) != false) return null;
+            var candidates = owners.Values.Where(owner => owner.Terminal.ClientPid == pid).ToArray();
+            if (candidates.Length != 0) return candidates.Length == 1 ? candidates[0] : null;
+            childStarted = process.Value.Started;
+            pid = process.Value.Parent;
+        }
+        return null;
     }
 
     private static bool SameOwner(Owner left, Owner right) => left.Terminal == right.Terminal &&
