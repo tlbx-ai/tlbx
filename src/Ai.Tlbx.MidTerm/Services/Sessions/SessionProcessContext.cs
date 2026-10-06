@@ -84,7 +84,7 @@ internal static partial class SessionProcessContext
                 finally { NativeMemory.Free(buffer); }
             }
             else if (OperatingSystem.IsLinux())
-                command = File.ReadAllText($"/proc/{pid}/cmdline").Replace('\0', ' ');
+                command = File.ReadAllText(string.Create(CultureInfo.InvariantCulture, $"/proc/{pid}/cmdline")).Replace('\0', ' ');
             if (string.IsNullOrWhiteSpace(command)) return null;
             return IsSharedCodexCommand(command);
         }
