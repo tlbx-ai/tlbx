@@ -5052,6 +5052,7 @@ export interface components {
     };
     UpdateInfo: {
       available: boolean;
+      checkError: null | string;
       currentVersion: string;
       latestVersion: string;
       releaseUrl: string;

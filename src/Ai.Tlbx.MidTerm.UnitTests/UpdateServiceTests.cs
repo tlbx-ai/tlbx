@@ -12,6 +12,38 @@ public sealed class UpdateServiceTests : IDisposable
     private const string WindowsAssetName = "mt-win-x64.zip";
     private readonly string _tempDir;
 
+    [Fact]
+    public async Task FailedDiscoveryIsDistinctFromNoUpdateAndCanBeRetried()
+    {
+        using var handler = new FailingDiscoveryHandler();
+#pragma warning disable IDISP014 // Each test uses an isolated fault-injection transport.
+        using var http = new HttpClient(handler, disposeHandler: false);
+#pragma warning restore IDISP014
+        using var service = new UpdateService(new Ai.Tlbx.MidTerm.Settings.SettingsService(_tempDir), null, http);
+        var first = service.CheckForUpdateAsync();
+        var concurrent = service.CheckForUpdateAsync();
+        Assert.Same(first, concurrent);
+        handler.Release.TrySetResult();
+        var failed = await first;
+        Assert.False(failed!.Available);
+        Assert.Contains("HTTP 403", failed.CheckError, StringComparison.Ordinal);
+        var requests = handler.Requests;
+        await service.CheckForUpdateAsync();
+        Assert.True(handler.Requests > requests);
+    }
+
+    private sealed class FailingDiscoveryHandler : HttpMessageHandler
+    {
+        public TaskCompletionSource Release { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public int Requests;
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref Requests);
+            await Release.Task.WaitAsync(cancellationToken);
+            throw new HttpRequestException("GitHub returned HTTP 403 (rate limit).");
+        }
+    }
+
     public UpdateServiceTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_update_tests_{Guid.NewGuid():N}");

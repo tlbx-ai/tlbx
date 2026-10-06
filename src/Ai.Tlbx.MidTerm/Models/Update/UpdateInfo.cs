@@ -6,6 +6,8 @@ namespace Ai.Tlbx.MidTerm.Models.Update;
 public sealed class UpdateInfo
 {
     public bool Available { get; init; }
+    /// <summary>Discovery failed; availability is unknown rather than up to date.</summary>
+    public string? CheckError { get; init; }
     public string CurrentVersion { get; init; } = "";
     public string LatestVersion { get; init; } = "";
     public string ReleaseUrl { get; init; } = "";

@@ -42,6 +42,10 @@ public sealed partial class UpdateService : IDisposable
     private UpdateInfo? _latestUpdate;
     private bool _disposed;
     private int _updateInProgress;
+    private readonly object _checkGate = new();
+    private Task<UpdateInfo?>? _checkTask;
+    private string? _checkKey;
+    private DateTime _checkStarted;
 
     public UpdateInfo? LatestUpdate => _latestUpdate;
     public string CurrentVersion => _currentVersion;
@@ -57,10 +61,15 @@ public sealed partial class UpdateService : IDisposable
     }
 
     public UpdateService(SettingsService settingsService, SessionAppServerControlHostRuntimeService? appServerControlHostRuntime)
+        : this(settingsService, appServerControlHostRuntime, SharedHttpClient)
+    {
+    }
+
+    internal UpdateService(SettingsService settingsService, SessionAppServerControlHostRuntimeService? appServerControlHostRuntime, HttpClient httpClient)
     {
         _settingsService = settingsService;
         _appServerControlHostRuntime = appServerControlHostRuntime;
-        _httpClient = SharedHttpClient;
+        _httpClient = httpClient;
 
         _currentVersion = GetCurrentVersion();
         _installedManifest = ReadInstalledManifest();
@@ -180,7 +189,24 @@ public sealed partial class UpdateService : IDisposable
         _ = CheckForUpdateAsync();
     }
 
-    public async Task<UpdateInfo?> CheckForUpdateAsync(bool forceFull = false)
+    public Task<UpdateInfo?> CheckForUpdateAsync(bool forceFull = false)
+    {
+        var channel = GetDevEnvironment() is not null ? "dev" : _settingsService.Load().UpdateChannel;
+        var key = channel + "/" + forceFull;
+        lock (_checkGate)
+        {
+            // Multiple tabs and an immediate Apply click share one discovery result.
+            // Failed checks remain retryable; full reinstalls have their own result.
+            if (_checkTask is { } task && _checkKey == key &&
+                (!task.IsCompleted || (task.IsCompletedSuccessfully && task.Result?.CheckError is null &&
+                    DateTime.UtcNow - _checkStarted < TimeSpan.FromSeconds(30)))) return task;
+            _checkKey = key;
+            _checkStarted = DateTime.UtcNow;
+            return _checkTask = CheckForUpdateCoreAsync(forceFull);
+        }
+    }
+
+    private async Task<UpdateInfo?> CheckForUpdateCoreAsync(bool forceFull)
     {
         try
         {
@@ -242,27 +268,16 @@ public sealed partial class UpdateService : IDisposable
         {
             Console.Error.WriteLine($"[UpdateCheck] Error: {ex.Message}");
             Log.Warn(() => $"Update check failed: {ex.Message}");
-            // If GitHub check fails but we're in dev mode, still return local update info
+            // Report failed discovery separately from a confirmed absence of updates.
             var devEnv = GetDevEnvironment();
-            if (devEnv is not null)
+            var failed = new UpdateInfo
             {
-                var localUpdate = CheckLocalUpdate();
-                if (localUpdate is not null)
-                {
-                    _latestUpdate = new UpdateInfo
-                    {
-                        Available = false,
-                        CurrentVersion = _currentVersion,
-                        LatestVersion = _currentVersion,
-                        ReleaseUrl = "",
-                        Environment = devEnv,
-                        LocalUpdate = localUpdate
-                    };
-                    NotifyListeners(_latestUpdate);
-                    return _latestUpdate;
-                }
-            }
-            return null;
+                Available = false, CurrentVersion = _currentVersion, LatestVersion = _currentVersion,
+                CheckError = ex.Message, Environment = devEnv,
+                LocalUpdate = devEnv is not null ? CheckLocalUpdate() : null
+            };
+            if (!forceFull) { _latestUpdate = failed; NotifyListeners(failed); }
+            return failed;
         }
     }
 
@@ -1034,6 +1049,8 @@ public sealed partial class UpdateService : IDisposable
             // Never apply a timer/UI snapshot here. A release can finish publishing
             // after the last background check but before the user presses Update.
             var update = await CheckForUpdateAsync(forceFull).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(update?.CheckError))
+                return FailUpdate(artifacts, "Failed to check for updates: " + update.CheckError);
             if (update is null || !update.Available)
             {
                 return FailUpdate(artifacts, "No update available");

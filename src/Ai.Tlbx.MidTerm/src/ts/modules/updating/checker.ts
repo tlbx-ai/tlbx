@@ -468,9 +468,11 @@ function renderUpdateCards(update: UpdateInfo | null, error?: string): void {
   container.innerHTML = '';
 
   // Error state
-  if (error) {
+  const checkError = error || update?.checkError;
+  if (checkError) {
     setNoUpdatesStatusVisibility(statusNone, true);
-    container.innerHTML = `<div class="update-status-error">${error}</div>`;
+    container.innerHTML = `<div class="update-status-error">${escapeHtml(checkError)}</div>`;
+    appendUpdateCard(container, createLocalUpdateCard(update));
     return;
   }
 

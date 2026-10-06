@@ -18,7 +18,7 @@ vi.mock('../navigation/backButtonGuard', () => ({}));
 vi.mock('./runtime', () => ({ ...mocks }));
 
 import { $updateInfo } from '../../stores';
-import { applyFullUpdate, applyLocalUpdate, applyUpdate } from './checker';
+import { applyFullUpdate, applyLocalUpdate, applyUpdate, handleUpdateInfo } from './checker';
 
 describe('full update action', () => {
   const button = { id: 'btn-full-update', disabled: false, textContent: '' };
@@ -43,6 +43,26 @@ describe('full update action', () => {
     await applyFullUpdate();
     expect(mocks.applyUpdate).not.toHaveBeenCalled();
     expect(button.disabled).toBe(false);
+  });
+
+  it('shows failed discovery without claiming the installed version is latest', () => {
+    const cards = { innerHTML: '' };
+    const status = { classList: { toggle: vi.fn() } };
+    vi.stubGlobal('document', {
+      querySelectorAll: () => [],
+      getElementById: (id: string) =>
+        id === 'update-cards' ? cards : id === 'update-status-none' ? status : null,
+    });
+    handleUpdateInfo({
+      available: false,
+      checkError: 'GitHub HTTP 403',
+      currentVersion: '10.17.25-dev',
+      latestVersion: '10.17.25-dev',
+    } as never);
+    expect(cards.innerHTML).toContain('GitHub HTTP 403');
+    expect(status.classList.toggle).toHaveBeenLastCalledWith('hidden', true);
+    handleUpdateInfo({ available: false } as never);
+    expect(status.classList.toggle).toHaveBeenLastCalledWith('hidden', false);
   });
 
   it('shows the server failure and allows retry without announcing a restart', async () => {

@@ -61,6 +61,41 @@ internal static partial class SessionProcessContext
         }
     }
 
+    internal static unsafe bool? IsSharedCodexBackend(int pid)
+    {
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            if (!string.Equals(process.ProcessName, "codex", StringComparison.OrdinalIgnoreCase)) return false;
+            string? command = null;
+            if (OperatingSystem.IsWindows())
+            {
+                NtQueryInformationProcess(process.Handle, 60, null, 0, out var length);
+                if (length <= 0 || length > 131072) return null;
+                var buffer = (byte*)NativeMemory.Alloc((nuint)length);
+                try
+                {
+                    if (NtQueryInformationProcess(process.Handle, 60, buffer, length, out _) != 0) return null;
+                    var bytes = *(ushort*)buffer;
+                    var text = *(nint*)(buffer + IntPtr.Size);
+                    if (text < (nint)buffer || text + bytes > (nint)buffer + length) return null;
+                    command = Marshal.PtrToStringUni(text, bytes / 2);
+                }
+                finally { NativeMemory.Free(buffer); }
+            }
+            else if (OperatingSystem.IsLinux())
+                command = File.ReadAllText($"/proc/{pid}/cmdline").Replace('\0', ' ');
+            if (string.IsNullOrWhiteSpace(command)) return null;
+            return IsSharedCodexCommand(command);
+        }
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or
+            System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException) { return null; }
+    }
+
+    internal static bool IsSharedCodexCommand(string command) =>
+        System.Text.RegularExpressions.Regex.IsMatch(command, "(?:^|[\\s\"'])app-server(?:$|[\\s\"'])", System.Text.RegularExpressions.RegexOptions.CultureInvariant) ||
+        command.Contains("--managed-daemon", StringComparison.Ordinal);
+
     [LibraryImport("ntdll.dll")]
     private static unsafe partial int NtQueryInformationProcess(nint process, int infoClass, void* info, int length, out int returned);
 

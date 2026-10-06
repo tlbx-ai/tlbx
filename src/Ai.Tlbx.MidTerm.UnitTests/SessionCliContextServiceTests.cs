@@ -22,6 +22,32 @@ public sealed class SessionCliContextServiceTests
     }
 
     [Fact]
+    public void PrivateToolAncestryResolvesImmediatelyButSharedBackendRequiresProof()
+    {
+        var parents = new Dictionary<int, int> { [100] = 12, [12] = 11, [11] = 10, [10] = 1 };
+        (int, DateTime)? Process(int pid) => parents.TryGetValue(pid, out var parent) ? (parent, _started) : null;
+        var privateService = new SessionCliContextService(() => _terminals, Process, _clock, _ => false);
+        var direct = privateService.Resolve(Root, Root, 100);
+        Assert.StartsWith("first001:", direct, StringComparison.Ordinal);
+        Assert.Null(privateService.ValidateLease(direct[9..]));
+        privateService.ObserveInput("first001", true);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", privateService.ValidateLease(direct[9..]), StringComparison.Ordinal);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", privateService.Resolve(Root, Root, 100), StringComparison.Ordinal);
+        var daemonService = new SessionCliContextService(() => _terminals, Process, _clock, pid => pid == 12);
+        Assert.Contains("TLBX_CONTEXT_UNBOUND", daemonService.Resolve(Root, Root, 100), StringComparison.Ordinal);
+        var unknownService = new SessionCliContextService(() => _terminals, Process, _clock, _ => null);
+        Assert.Contains("TLBX_CONTEXT_UNBOUND", unknownService.Resolve(Root, Root, 100), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("codex --yolo", false)]
+    [InlineData("codex app-server --listen unix://", true)]
+    [InlineData("codex \"app-server\" --listen unix://", true)]
+    [InlineData("codex 'app-server' --managed-daemon", true)]
+    public void SharedBackendDetectionPreservesQuotedArguments(string command, bool shared)
+        => Assert.Equal(shared, SessionProcessContext.IsSharedCodexCommand(command));
+
+    [Fact]
     public void AutomaticTerminalRepliesKeepBindingButUserInputRevokesIt()
     {
         var proof = ProofLine(_service.Resolve(Root, Root, 100));
