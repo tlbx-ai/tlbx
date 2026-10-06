@@ -89,11 +89,14 @@ internal static partial class SessionProcessContext
             return IsSharedCodexCommand(command);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or
-            System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException) { return null; }
+            System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException or
+            System.Text.RegularExpressions.RegexMatchTimeoutException) { return null; }
     }
 
     internal static bool IsSharedCodexCommand(string command) =>
-        System.Text.RegularExpressions.Regex.IsMatch(command, "(?:^|[\\s\"'])app-server(?:$|[\\s\"'])", System.Text.RegularExpressions.RegexOptions.CultureInvariant) ||
+        System.Text.RegularExpressions.Regex.IsMatch(command, "(?:^|[\\s\"'])app-server(?:$|[\\s\"'])",
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.NonBacktracking,
+            TimeSpan.FromSeconds(1)) ||
         command.Contains("--managed-daemon", StringComparison.Ordinal);
 
     [LibraryImport("ntdll.dll")]
