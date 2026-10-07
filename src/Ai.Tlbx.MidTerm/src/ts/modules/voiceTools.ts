@@ -4,7 +4,7 @@
  * Handles tool requests from the voice assistant server.
  * Tools execute locally in the browser using xterm.js buffers and stores.
  */
-/* eslint-disable max-lines -- Voice bridge groups tool handlers until the module is split. */
+/* eslint-disable max-lines -- Voice bridge owns tool routing and browser interaction handlers. */
 
 import { createLogger } from './logging';
 import { sendInput } from './comms';

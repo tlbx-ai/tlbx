@@ -30,8 +30,8 @@ public sealed class DevAssetHtmlTests : IDisposable
         Assert.Equal(Html, actual);
         var overlay = StaticAssetCacheHeaders.RewriteDevAssetUrls(
             StaticAssetCacheHeaders.StampHtmlAssetUrls(actual!, "dev-probe"), "https://127.0.0.1:2110");
-        Assert.Contains("src=\"https://127.0.0.1:2110/js/terminal.min.js?v=dev-probe\"", overlay);
-        Assert.Contains("href=\"https://127.0.0.1:2110/css/app.css?v=dev-probe\"", overlay);
+        Assert.Contains("src=\"https://127.0.0.1:2110/js/terminal.min.js?v=dev-probe\"", overlay, StringComparison.Ordinal);
+        Assert.Contains("href=\"https://127.0.0.1:2110/css/app.css?v=dev-probe\"", overlay, StringComparison.Ordinal);
     }
 
     [Fact]

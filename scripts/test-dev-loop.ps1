@@ -41,7 +41,7 @@ finally {
     Get-EventSubscriber | Where-Object SourceIdentifier -Like "tlbx.dev.static.$PID.*" | Unregister-Event
     Get-Event | Where-Object SourceIdentifier -Like "tlbx.dev.static.$PID.*" | Remove-Event
     $resolved = [IO.Path]::GetFullPath($testRoot)
-    $tempPrefix = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd('\') + '\tlbx-dev-loop-'
+    $tempPrefix = [IO.Path]::Combine([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), 'tlbx-dev-loop-')
     if (-not $resolved.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe test cleanup path' }
     Remove-Item -LiteralPath $resolved -Recurse -Force
 }
