@@ -25,7 +25,7 @@ public sealed class TtyHostSessionManagerStateTests
         // Preserved hosts omit mt-owned classification in their GetInfo snapshot.
         Assert.Null(info.ForegroundProcessIdentity);
         Assert.Equal(isCodex, manager.GetSessionList().Sessions.Single().ForegroundProcessIdentity == "codex");
-        var cli = new SessionCliContextService(manager);
+        using var cli = new SessionCliContextService(manager);
         const string root = "01a10e58-53de-74a2-bc92-95f64070cd3c";
         var proof = cli.Resolve(root, root, Environment.ProcessId).Split('\n')[0];
         InvokeHandleClientOutput(manager, info.Id, Encoding.UTF8.GetBytes(proof));

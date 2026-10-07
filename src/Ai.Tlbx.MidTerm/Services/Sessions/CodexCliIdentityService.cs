@@ -8,6 +8,42 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 internal static class CodexCliIdentityService
 {
+    // A detached daemon buffers the original tool's output until it returns.
+    // A separate shellCommand emits the challenge through the thread's actual
+    // subscribed TUI clients while that original request is still waiting.
+    internal static async Task<bool> EmitProofAsync(string rootId, string? codexHome, string proof, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(rootId, "D", out _) || proof.Length != 40 ||
+            !proof.StartsWith(SessionCliContextService.MarkerPrefix, StringComparison.Ordinal) ||
+            proof.AsSpan(8).ContainsAnyExcept("0123456789abcdef".AsSpan())) return false;
+        var home = string.IsNullOrWhiteSpace(codexHome)
+            ? Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
+            : codexHome;
+        if (!Path.IsPathFullyQualified(home)) return false;
+        var socketPath = Path.Combine(home, "app-server-control", "app-server-control.sock");
+        if (!File.Exists(socketPath)) return false;
+        try
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+            using var handler = CreateDaemonHandler(socketPath);
+            using var invoker = new HttpMessageInvoker(handler);
+            using var ws = new ClientWebSocket();
+            await ws.ConnectAsync(new Uri("ws://localhost/"), invoker, timeout.Token).ConfigureAwait(false);
+            await SendAsync(ws, "{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"tlbx_cli_context\",\"version\":\"1\"}}}", timeout.Token);
+            using var initialized = await ReadAsync(ws, 1, timeout.Token);
+            await SendAsync(ws, "{\"method\":\"initialized\"}", timeout.Token);
+            // Both values are validated above. echo works in PowerShell and POSIX shells;
+            // never send user command text through this local challenge channel.
+            await SendAsync(ws, $"{{\"id\":2,\"method\":\"thread/shellCommand\",\"params\":{{\"threadId\":\"{rootId}\",\"command\":\"echo {proof}\",\"timeoutMs\":2000}}}}", timeout.Token);
+            using var submitted = await ReadAsync(ws, 2, timeout.Token);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or SocketException or WebSocketException or JsonException or
+            OperationCanceledException or KeyNotFoundException or InvalidOperationException) { }
+        return false;
+    }
+
     internal static async Task<bool> ExistsAsync(string rootId, string? codexHome, CancellationToken ct)
     {
         if (!Guid.TryParseExact(rootId, "D", out _)) return false;
@@ -53,16 +89,7 @@ internal static class CodexCliIdentityService
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(2));
-            using var handler = new SocketsHttpHandler();
-            handler.ConnectCallback = async (_, token) =>
-            {
-                // Ownership transfers to the returned NetworkStream; ConnectCallback's caller disposes it.
-#pragma warning disable IDISP001
-                var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
-#pragma warning restore IDISP001
-                try { await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), token).ConfigureAwait(false); return new NetworkStream(socket, true); }
-                catch { socket.Dispose(); throw; }
-            };
+            using var handler = CreateDaemonHandler(socketPath);
             using var invoker = new HttpMessageInvoker(handler);
             using var ws = new ClientWebSocket();
             await ws.ConnectAsync(new Uri("ws://localhost/"), invoker, timeout.Token).ConfigureAwait(false);
@@ -87,6 +114,19 @@ internal static class CodexCliIdentityService
             OperationCanceledException or KeyNotFoundException or InvalidOperationException) { }
         return false;
     }
+
+    private static SocketsHttpHandler CreateDaemonHandler(string socketPath) => new()
+    {
+        ConnectCallback = async (_, token) =>
+        {
+            // Ownership transfers to the returned NetworkStream.
+#pragma warning disable IDISP001
+            var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
+#pragma warning restore IDISP001
+            try { await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), token).ConfigureAwait(false); return new NetworkStream(socket, true); }
+            catch { socket.Dispose(); throw; }
+        }
+    };
 
     private static Task SendAsync(ClientWebSocket ws, string text, CancellationToken ct) =>
         ws.SendAsync(Encoding.UTF8.GetBytes(text), WebSocketMessageType.Text, true, ct);
