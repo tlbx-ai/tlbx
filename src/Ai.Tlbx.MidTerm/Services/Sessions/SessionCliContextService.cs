@@ -212,12 +212,15 @@ public sealed class SessionCliContextService : IDisposable
         }
         catch (OperationCanceledException)
         {
-            // An observed proof whose settle window was aborted must not become
-            // an immediate binding for the next call. Never revoke a newer proof.
+            // Keep an unobserved challenge after our timeout: the returned error
+            // prints it in the caller's terminal, allowing the requested retry.
+            // Explicit cancellation or an aborted duplicate-settle window must
+            // invalidate it instead. Never revoke a newer proof.
             lock (_gate)
             {
                 var key = root + "/" + thread;
-                if (pendingProof is not null && _contexts.TryGetValue(key, out var current) && current == pendingProof)
+                if (pendingProof is not null && (ct.IsCancellationRequested || pendingProof.Observers.Count > 0) &&
+                    _contexts.TryGetValue(key, out var current) && current == pendingProof)
                 {
                     _contexts.Remove(key);
                     _proofs.Remove(pendingProof.Nonce);

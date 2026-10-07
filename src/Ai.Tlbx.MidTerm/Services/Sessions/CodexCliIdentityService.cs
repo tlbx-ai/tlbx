@@ -8,22 +8,24 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 internal static class CodexCliIdentityService
 {
+    internal readonly record struct ProofEmission(bool Submitted, string Diagnostic);
     // A detached daemon buffers the original tool's output until it returns.
     // A separate shellCommand emits the challenge through the thread's actual
     // subscribed TUI clients while that original request is still waiting.
-    internal static async Task<bool> EmitProofAsync(string rootId, string? codexHome, string proof, CancellationToken ct)
+    internal static async Task<ProofEmission> EmitProofAsync(string rootId, string? codexHome, string proof, CancellationToken ct)
     {
         if (!Guid.TryParseExact(rootId, "D", out _) || proof.Length != 40 ||
             !proof.StartsWith(SessionCliContextService.MarkerPrefix, StringComparison.Ordinal) ||
-            proof.AsSpan(8).ContainsAnyExcept("0123456789abcdef".AsSpan())) return false;
+            proof.AsSpan(8).ContainsAnyExcept("0123456789abcdef".AsSpan())) return new(false, "invalid challenge");
         var home = string.IsNullOrWhiteSpace(codexHome)
             ? Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
             : codexHome;
-        if (!Path.IsPathFullyQualified(home)) return false;
+        if (!Path.IsPathFullyQualified(home)) return new(false, "CODEX_HOME is not an absolute path");
         var socketPath = Path.Combine(home, "app-server-control", "app-server-control.sock");
-        if (!File.Exists(socketPath)) return false;
         try
         {
+            // Unlike File.Exists, this distinguishes access denied from a missing daemon.
+            _ = File.GetAttributes(socketPath);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(3));
             using var handler = CreateDaemonHandler(socketPath);
@@ -37,11 +39,18 @@ internal static class CodexCliIdentityService
             // never send user command text through this local challenge channel.
             await SendAsync(ws, $"{{\"id\":2,\"method\":\"thread/shellCommand\",\"params\":{{\"threadId\":\"{rootId}\",\"command\":\"echo {proof}\",\"timeoutMs\":2000}}}}", timeout.Token);
             using var submitted = await ReadAsync(ws, 2, timeout.Token);
-            return true;
+            return new(true, "Codex accepted the challenge but no matching terminal output was observed");
         }
-        catch (Exception ex) when (ex is IOException or SocketException or WebSocketException or JsonException or
-            OperationCanceledException or KeyNotFoundException or InvalidOperationException) { }
-        return false;
+        catch (UnauthorizedAccessException) { return new(false, "access denied to the Codex control socket"); }
+        catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException)
+        { return new(false, "no local Codex control socket in CODEX_HOME"); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        { return new(false, "Codex control socket request timed out"); }
+        catch (SocketException ex) { return new(false, $"Codex control socket failed ({ex.SocketErrorCode})"); }
+        catch (WebSocketException) { return new(false, "cannot connect to the Codex control socket"); }
+        catch (IOException) { return new(false, "Codex rejected or closed the challenge request"); }
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
+        { return new(false, "unexpected Codex control response"); }
     }
 
     internal static async Task<bool> ExistsAsync(string rootId, string? codexHome, CancellationToken ct)
@@ -115,7 +124,7 @@ internal static class CodexCliIdentityService
         return false;
     }
 
-    private static SocketsHttpHandler CreateDaemonHandler(string socketPath) => new()
+    internal static SocketsHttpHandler CreateDaemonHandler(string socketPath) => new()
     {
         ConnectCallback = async (_, token) =>
         {

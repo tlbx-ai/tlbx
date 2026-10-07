@@ -7,6 +7,27 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class CodexCliIdentityServiceTests
 {
+    [Fact]
+    public async Task MissingSocketReportsCauseWithoutExecutingACommand()
+    {
+        var result = await CodexCliIdentityService.EmitProofAsync("01a10b97-2853-75e2-b134-d6fe7f527ae3",
+            Path.Combine(Path.GetTempPath(), "tlbx-missing-" + Guid.NewGuid().ToString("N")),
+            "TLBXCTX:0123456789abcdef0123456789abcdef", CancellationToken.None);
+        Assert.False(result.Submitted);
+        Assert.Equal("no local Codex control socket in CODEX_HOME", result.Diagnostic);
+    }
+
+    [Theory]
+    [InlineData("TLBXCTX:0123456789abcdef0123456789abcde;")]
+    [InlineData("TLBXCTX:0123456789abcdef0123456789abcdef; echo unsafe")]
+    public async Task ChallengeMustContainOnlyServerNonce(string challenge)
+    {
+        var result = await CodexCliIdentityService.EmitProofAsync("01a10b97-2853-75e2-b134-d6fe7f527ae3",
+            Path.GetTempPath(), challenge, CancellationToken.None);
+        Assert.False(result.Submitted);
+        Assert.Equal("invalid challenge", result.Diagnostic);
+    }
+
     [Theory]
     [InlineData(false, 0)]
     [InlineData(true, 0)]
