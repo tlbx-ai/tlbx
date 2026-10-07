@@ -581,7 +581,7 @@ function calculateViewportFit(
   isLayoutPane: boolean,
 ): { cols: number; rows: number; cellWidth: number; cellHeight: number } | null {
   const rect = getTerminalViewportRect(state, container, isLayoutPane);
-  if (rect.width < 100 || rect.height < 100) {
+  if (rect.width <= 0 || rect.height <= 0) {
     return null;
   }
 
@@ -839,13 +839,18 @@ function prepareTerminalPresentation(state: TerminalState, context: TerminalScal
   });
   const mode =
     scale < 1 ? 'scaled-down' : context.shouldApplyUndersizedState ? 'undersized' : 'natural';
+  const minimumRowsHeight =
+    MIN_TERMINAL_ROWS * (measureTerminalCellDimensions(state)?.cellHeight ?? 0);
+  // The PTY cannot shrink below its minimum rows. Present all of those rows
+  // inside a shorter split instead of clipping its bottom; keep normal owners natural.
+  const belowMinimumRows = container.clientHeight > 0 && container.clientHeight < minimumRowsHeight;
   return {
     snapshot,
     hasOwner: ownership?.hasOwner ?? false,
     label:
       scale < 1 ? buildScaledOverlayLabel(container, scale) : t('terminal.scaledViewExplanation'),
     mode,
-    scaleOwner: ownsSize && isMobileDenseTerminalModeEnabled(),
+    scaleOwner: ownsSize && (isMobileDenseTerminalModeEnabled() || belowMinimumRows),
   } as const;
 }
 
@@ -924,7 +929,7 @@ function normalizeTerminalScalingFactor(
   hasOptimalSizeMismatch: boolean,
 ): number {
   const scale = Math.min(availWidth / termWidth, availHeight / termHeight, 1);
-  if (!hasOptimalSizeMismatch && scale > SCALE_TOLERANCE) {
+  if (!hasOptimalSizeMismatch && scale > SCALE_TOLERANCE && termHeight <= availHeight) {
     return 1;
   }
 
