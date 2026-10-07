@@ -260,11 +260,16 @@ public sealed class SessionCliContextServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AutomaticDiscoveryDoesNotBindWithoutTerminalOutput()
+    public async Task AutomaticDiscoveryTimeoutPreservesPrintedChallengeForRetry()
     {
         var result = await _service.ResolveAsync(Root, Root, 100, false,
             (_, _) => Task.FromResult(true), CancellationToken.None);
         Assert.Contains("TLBX_CONTEXT_UNBOUND", result, StringComparison.Ordinal);
+        Feed("first001", ProofLine(result));
+        var retry = await _service.ResolveAsync(Root, Root, 101, false,
+            (_, _) => throw new InvalidOperationException("Must reuse the displayed challenge"), CancellationToken.None);
+        Assert.StartsWith("first001:", retry, StringComparison.Ordinal);
+        Assert.Null(_service.ValidateLease(retry[9..]));
     }
 
     [Fact]
