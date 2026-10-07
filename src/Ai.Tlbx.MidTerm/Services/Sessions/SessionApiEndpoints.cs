@@ -260,7 +260,8 @@ public static partial class SessionApiEndpoints
                     return Results.Text(SessionCliContextService.Error("INVALID_IDENTITY", "The complete Codex root ID was not found. Keep the harness-provided IDs unchanged and verify CODEX_HOME / the owning tlbx server."), statusCode: 409);
                 if (rootId != threadId && !await CodexCliIdentityService.ExistsAsync(threadId.ToString(), codexHome, context.RequestAborted))
                     return Results.Text(SessionCliContextService.Error("INVALID_IDENTITY", "The complete Codex tool thread ID was not found. Keep CODEX_THREAD_ID unchanged; a subagent must preserve its own harness-provided identity."), statusCode: 409);
-                var resolution = cliContext.Resolve(rootId.ToString(), threadId.ToString(), processId, fresh == true);
+                var resolution = await cliContext.ResolveAsync(rootId.ToString(), threadId.ToString(), processId, fresh == true,
+                    (proof, ct) => CodexCliIdentityService.EmitProofAsync(rootId.ToString(), codexHome, proof, ct), context.RequestAborted);
                 return Results.Text(resolution, statusCode: SessionCliContextService.IsResolution(resolution) ? 200 : 409);
             }
             var roots = new Dictionary<int, string>();

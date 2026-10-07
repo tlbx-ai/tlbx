@@ -6,12 +6,13 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 /// Associates Codex tool threads with terminals using fresh output, never titles or cwd.
 /// Input and client changes invalidate the association before another scoped request.
 /// </summary>
-public sealed class SessionCliContextService
+public sealed class SessionCliContextService : IDisposable
 {
     public const string LeaseHeader = "X-Tlbx-Cli-Context";
     internal const string MarkerPrefix = "TLBXCTX:";
     private const int MaximumEntries = 2048;
     private readonly object _gate = new();
+    private readonly SemaphoreSlim _handshakeGate = new(1, 1);
     private readonly Func<IReadOnlyList<Terminal>> _terminals;
     private readonly Func<int, (int Parent, DateTime Started)?> _process;
     private readonly TimeProvider _clock;
@@ -46,6 +47,8 @@ public sealed class SessionCliContextService
     }
 
     internal sealed record Terminal(string Id, int ShellPid, int ClientPid);
+    public void Dispose() => _handshakeGate.Dispose();
+
     private sealed record Owner(Terminal Terminal, DateTime Started, long InputVersion);
     private sealed class Proof(string root, string thread, string nonce, DateTimeOffset expires,
         Dictionary<string, Owner> candidates)
@@ -140,6 +143,92 @@ public sealed class SessionCliContextService
                 instructions += " If this is a subagent without its own terminal output, ask the parent agent to perform the scoped operation; do not overwrite CODEX_SESSION_ID or CODEX_THREAD_ID.";
             return MarkerPrefix + proof.Nonce + "\n" + Error(status, instructions) +
                 $"\nCodex root={root}; thread={thread}; matched terminals={proof.Observers.Count}.";
+        }
+    }
+
+    internal async Task<string> ResolveAsync(string root, string thread, int callerPid, bool fresh,
+        Func<string, CancellationToken, Task<bool>> emitProof, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        string? initial = null;
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        var acquired = false;
+        Proof? pendingProof = null;
+        try
+        {
+            // Recheck after serialization: another caller may already have established
+            // this thread's proof, so concurrent first calls emit only once.
+            await _handshakeGate.WaitAsync(timeout.Token).ConfigureAwait(false);
+            acquired = true;
+            initial = Resolve(root, thread, callerPid, fresh);
+            if (!initial.Contains("TLBX_CONTEXT_UNBOUND", StringComparison.Ordinal)) return initial;
+            var marker = initial.Split('\n')[0];
+            Proof proof;
+            DateTime callerStarted;
+            lock (_gate)
+            {
+                proof = _contexts[root + "/" + thread];
+                var caller = _process(callerPid);
+                if (caller is null) return Error("INVALID_PROCESS", "The calling tool process no longer exists.");
+                callerStarted = caller.Value.Started;
+            }
+            pendingProof = proof;
+            if (!await emitProof(marker, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false)) return initial;
+            while (true)
+            {
+                timeout.Token.ThrowIfCancellationRequested();
+                var resolution = ReadResolution(settled: false);
+                if (resolution.Length == 0)
+                {
+                    // Duplicate clients can render the same RPC output slightly apart.
+                    // The lease guard continues checking after this short observation window.
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), timeout.Token).ConfigureAwait(false);
+                    return ReadResolution(settled: true);
+                }
+                if (!resolution.Contains("TLBX_CONTEXT_UNBOUND", StringComparison.Ordinal)) return resolution;
+                await Task.Delay(TimeSpan.FromMilliseconds(25), timeout.Token).ConfigureAwait(false);
+            }
+
+            string ReadResolution(bool settled)
+            {
+                lock (_gate)
+                {
+                    var caller = _process(callerPid);
+                    if (caller is null || caller.Value.Started != callerStarted)
+                        return Error("INVALID_PROCESS", "The original tool process ended or its PID was reused.");
+                    if (!_contexts.TryGetValue(root + "/" + thread, out var current) || current != proof)
+                        return Error("CHANGED", "The terminal context changed during automatic discovery.");
+                    if (!RefreshCandidates(proof, GetOwners()))
+                        return Error("CHANGED", "Terminal input or client changed during automatic discovery.");
+                    // Do not mint a lease until duplicate observation has settled.
+                    if (!settled && proof.Observers.Count == 1) return string.Empty;
+                    var result = Resolve(root, thread, callerPid);
+                    if (_contexts[root + "/" + thread] != proof)
+                        return Error("CHANGED", "Terminal input or client changed during automatic discovery.");
+                    return result;
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // An observed proof whose settle window was aborted must not become
+            // an immediate binding for the next call. Never revoke a newer proof.
+            lock (_gate)
+            {
+                var key = root + "/" + thread;
+                if (pendingProof is not null && _contexts.TryGetValue(key, out var current) && current == pendingProof)
+                {
+                    _contexts.Remove(key);
+                    _proofs.Remove(pendingProof.Nonce);
+                }
+            }
+            ct.ThrowIfCancellationRequested();
+            return initial ?? Error("UNBOUND", "Automatic terminal discovery timed out. No operation was executed.");
+        }
+        finally
+        {
+            if (acquired) _handshakeGate.Release();
         }
     }
 

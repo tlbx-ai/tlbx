@@ -91,7 +91,7 @@ public static class TlbxCliScriptWriter
             query="&codexSessionId=$(_MURLENC "$root")&codexThreadId=$(_MURLENC "$thread")&codexHome=$(_MURLENC "$codex_home")&fresh=${1:-false}"
           fi
           if [ -n "${MT_API_KEY:-}" ]; then auth=(-H "Authorization: Bearer $MT_API_KEY"); else auth=(-b "$_MK"); fi
-          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 5 "$_MT/api/sessions/process-context?processId=$pid$query" 2>/dev/null) || true
+          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 "$_MT/api/sessions/process-context?processId=$pid$query" 2>/dev/null) || true
           if [ -n "$root$thread" ]; then
             if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
               export MT_SESSION_ID="${BASH_REMATCH[1]}"
@@ -1242,9 +1242,9 @@ public static class TlbxCliScriptWriter
                 $query = "&codexSessionId=$([Uri]::EscapeDataString($root))&codexThreadId=$([Uri]::EscapeDataString($thread))&codexHome=$([Uri]::EscapeDataString($codexHome))&fresh=$($Fresh.IsPresent.ToString().ToLowerInvariant())"
             }
             $resolvedContext = if ($env:MT_API_KEY) {
-                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 5 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+                & curl.exe --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
             } else {
-                & curl.exe --fail-with-body -sSk -b $script:_MK --max-time 5 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+                & curl.exe --fail-with-body -sSk -b $script:_MK --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
             }
             $resolvedContext = ($resolvedContext | Out-String).Trim()
             if ($root -or $thread) {
