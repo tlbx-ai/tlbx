@@ -148,6 +148,9 @@ function focusAlreadyVisibleSession(sessionId: string, focusTerminal: boolean): 
 }
 
 function hideStandaloneTerminalContainers(): void {
+  dom.terminalsArea?.querySelectorAll(':scope > .session-wrapper').forEach((wrapper) => {
+    wrapper.classList.add('hidden');
+  });
   sessionTerminals.forEach((state, id) => {
     if (!isSessionInLayout(id)) {
       state.container.classList.add('hidden');
@@ -163,7 +166,7 @@ export function createSessionActionHandlers({
   isAppServerControlOnlySession,
 }: SessionActionsDeps) {
   function syncStandaloneSessionWrapper(sessionId: string): void {
-    dom.terminalsArea?.querySelectorAll('.session-wrapper').forEach((wrapper) => {
+    dom.terminalsArea?.querySelectorAll(':scope > .session-wrapper').forEach((wrapper) => {
       (wrapper as HTMLElement).classList.toggle(
         'hidden',
         wrapper.getAttribute('data-session-id') !== sessionId,

@@ -2,6 +2,7 @@
 # Offline behavioral checks: exercise dispatch and archive handling without publishing anything.
 $ErrorActionPreference = 'Stop'
 & "$PSScriptRoot/test-advisory-regression.ps1"
+& "$PSScriptRoot/test-dev-loop.ps1"
 . "$PSScriptRoot/release-test-clusters.ps1"
 . "$PSScriptRoot/runtime-reuse.ps1"
 $repoRoot = Split-Path $PSScriptRoot -Parent

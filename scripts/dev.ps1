@@ -291,6 +291,9 @@ function New-StaticWatcher {
     $watcher.Filter = "*.*"
     $watcher.IncludeSubdirectories = $true
     $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, DirectoryName, LastWrite, CreationTime, Size'
+    foreach ($eventName in @('Changed', 'Created', 'Deleted', 'Renamed', 'Error')) {
+        $null = Register-ObjectEvent -InputObject $watcher -EventName $eventName -SourceIdentifier "tlbx.dev.static.$PID.$eventName"
+    }
     $watcher.EnableRaisingEvents = $true
     return $watcher
 }
@@ -298,19 +301,15 @@ function New-StaticWatcher {
 function Wait-ForStaticChange {
     param([System.IO.FileSystemWatcher]$Watcher)
 
-    $change = $Watcher.WaitForChanged([System.IO.WatcherChangeTypes]::All, 1)
-    if ($change.TimedOut) {
-        return $null
-    }
-
-    $latestPath = if ([string]::IsNullOrWhiteSpace($change.Name)) { $change.OldName } else { $change.Name }
-    do {
-        $change = $Watcher.WaitForChanged([System.IO.WatcherChangeTypes]::All, 150)
-        if (-not $change.TimedOut) {
-            $latestPath = if ([string]::IsNullOrWhiteSpace($change.Name)) { $change.OldName } else { $change.Name }
+    $events = @(Get-Event | Where-Object SourceIdentifier -Like "tlbx.dev.static.$PID.*")
+    if ($events.Count -eq 0) { return $null }
+    $latestPath = 'static watcher overflow'
+    foreach ($event in $events) {
+        if ($event.SourceEventArgs -is [System.IO.FileSystemEventArgs]) {
+            $latestPath = $event.SourceEventArgs.Name
         }
-    } while (-not $change.TimedOut)
-
+        Remove-Event -EventIdentifier $event.EventIdentifier
+    }
     return $latestPath
 }
 
@@ -487,6 +486,8 @@ function Invoke-DevLoopCleanup {
     if ($script:staticWatcher) {
         $script:staticWatcher.Dispose()
         $script:staticWatcher = $null
+        Get-EventSubscriber | Where-Object SourceIdentifier -Like "tlbx.dev.static.$PID.*" | Unregister-Event
+        Get-Event | Where-Object SourceIdentifier -Like "tlbx.dev.static.$PID.*" | Remove-Event
     }
 
     if ($script:esbuildProcess -and -not $script:esbuildProcess.HasExited) {
