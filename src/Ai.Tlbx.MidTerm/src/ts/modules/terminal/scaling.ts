@@ -581,7 +581,7 @@ function calculateViewportFit(
   isLayoutPane: boolean,
 ): { cols: number; rows: number; cellWidth: number; cellHeight: number } | null {
   const rect = getTerminalViewportRect(state, container, isLayoutPane);
-  if (rect.width < 100 || rect.height < 100) {
+  if (rect.width <= 0 || rect.height <= 0) {
     return null;
   }
 
@@ -845,8 +845,20 @@ function prepareTerminalPresentation(state: TerminalState, context: TerminalScal
     label:
       scale < 1 ? buildScaledOverlayLabel(container, scale) : t('terminal.scaledViewExplanation'),
     mode,
-    scaleOwner: ownsSize && isMobileDenseTerminalModeEnabled(),
+    scaleOwner: shouldScaleTerminalOwner(state, ownsSize),
   } as const;
+}
+
+function shouldScaleTerminalOwner(state: TerminalState, ownsSize: boolean): boolean {
+  if (!ownsSize) {
+    return false;
+  }
+  const minimumRowsHeight =
+    MIN_TERMINAL_ROWS * (measureTerminalCellDimensions(state)?.cellHeight ?? 0);
+  // The PTY cannot shrink below its minimum rows. Present all of those rows
+  // inside a shorter split instead of clipping its bottom; keep normal owners natural.
+  const height = state.container.clientHeight;
+  return isMobileDenseTerminalModeEnabled() || (height > 0 && height < minimumRowsHeight);
 }
 
 function canonicalTerminalDimension(serverValue: number, terminalValue: number): number {
@@ -924,7 +936,7 @@ function normalizeTerminalScalingFactor(
   hasOptimalSizeMismatch: boolean,
 ): number {
   const scale = Math.min(availWidth / termWidth, availHeight / termHeight, 1);
-  if (!hasOptimalSizeMismatch && scale > SCALE_TOLERANCE) {
+  if (!hasOptimalSizeMismatch && scale > SCALE_TOLERANCE && termHeight <= availHeight) {
     return 1;
   }
 

@@ -23,7 +23,8 @@ export function commitTerminalPresentationDom(plan: TerminalPresentationCommitPl
   const { container, xterm, snapshot } = plan;
   const ownsSize = snapshot.role === 'owner';
   // A desktop owner keeps natural cell size while reading history or waiting
-  // for its resize acknowledgement. A height change must not shrink its width.
+  // for its resize acknowledgement. Only dense mode or an unfit minimum-row
+  // viewport opts into owner scaling; ordinary height changes preserve cell width.
   const shouldScale = plan.mode === 'scaled-down' && (!ownsSize || plan.scaleOwner);
 
   if (shouldScale) {

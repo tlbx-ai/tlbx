@@ -311,6 +311,36 @@ describe('fitSessionToScreen', () => {
     expect(focusActiveTerminal).not.toHaveBeenCalled();
   });
 
+  it('fits a real short pane instead of abandoning its previous taller row count', () => {
+    const harness = createFitHarness();
+    const pane = { getBoundingClientRect: () => ({ width: 818, height: 140 }) };
+    Object.assign(harness.state.container, {
+      clientHeight: 90,
+      getBoundingClientRect: () => ({ width: 818, height: 90 }),
+      closest: () => pane,
+    });
+    sessionTerminals.set('s1', harness.state as never);
+    fitTerminalToContainer('s1', pane as HTMLElement);
+    expect(sendResize).toHaveBeenCalledWith('s1', 81, 5);
+  });
+
+  it.each([60, 99])('keeps minimum-row owner content visible in a %ipx pane', (height) => {
+    const harness = createFitHarness();
+    const pane = { getBoundingClientRect: () => ({ width: 818, height: height + 40 }) };
+    Object.assign(harness.state.container, {
+      clientHeight: height,
+      getBoundingClientRect: () => ({ width: 818, height }),
+      closest: () => pane,
+    });
+    harness.terminal.rows = 5;
+    harness.state.serverRows = 5;
+    sessionTerminals.set('s1', harness.state as never);
+    applyTerminalScaling('s1', harness.state as never);
+    const xterm = harness.state.container.querySelector<FakeElement>('.xterm')!;
+    expect(xterm.style.transform).toBe(`scale(${height / 100})`);
+    expect(sendResize).not.toHaveBeenCalled();
+  });
+
   it('retries a transiently tiny viewport instead of collapsing to minimum dimensions', () => {
     const harness = createFitHarness();
     let measurements = 0;
