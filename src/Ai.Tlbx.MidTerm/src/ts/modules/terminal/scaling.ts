@@ -839,19 +839,26 @@ function prepareTerminalPresentation(state: TerminalState, context: TerminalScal
   });
   const mode =
     scale < 1 ? 'scaled-down' : context.shouldApplyUndersizedState ? 'undersized' : 'natural';
-  const minimumRowsHeight =
-    MIN_TERMINAL_ROWS * (measureTerminalCellDimensions(state)?.cellHeight ?? 0);
-  // The PTY cannot shrink below its minimum rows. Present all of those rows
-  // inside a shorter split instead of clipping its bottom; keep normal owners natural.
-  const belowMinimumRows = container.clientHeight > 0 && container.clientHeight < minimumRowsHeight;
   return {
     snapshot,
     hasOwner: ownership?.hasOwner ?? false,
     label:
       scale < 1 ? buildScaledOverlayLabel(container, scale) : t('terminal.scaledViewExplanation'),
     mode,
-    scaleOwner: ownsSize && (isMobileDenseTerminalModeEnabled() || belowMinimumRows),
+    scaleOwner: shouldScaleTerminalOwner(state, ownsSize),
   } as const;
+}
+
+function shouldScaleTerminalOwner(state: TerminalState, ownsSize: boolean): boolean {
+  if (!ownsSize) {
+    return false;
+  }
+  const minimumRowsHeight =
+    MIN_TERMINAL_ROWS * (measureTerminalCellDimensions(state)?.cellHeight ?? 0);
+  // The PTY cannot shrink below its minimum rows. Present all of those rows
+  // inside a shorter split instead of clipping its bottom; keep normal owners natural.
+  const height = state.container.clientHeight;
+  return isMobileDenseTerminalModeEnabled() || (height > 0 && height < minimumRowsHeight);
 }
 
 function canonicalTerminalDimension(serverValue: number, terminalValue: number): number {
