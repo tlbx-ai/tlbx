@@ -8,10 +8,10 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 /// </summary>
 public static class TlbxGraphsScriptWriter
 {
-    internal static void WriteScripts(string tlbxDir, int port, string authToken)
+    internal static void WriteScripts(string tlbxDir, int port, string authToken, string host = "localhost")
     {
         var shPath = Path.Combine(tlbxDir, "tlbx_graphs.sh");
-        File.WriteAllText(shPath, GenerateShellScript(port, authToken));
+        File.WriteAllText(shPath, GenerateShellScript(port, authToken, host));
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(shPath,
@@ -21,17 +21,17 @@ public static class TlbxGraphsScriptWriter
         }
 
         var ps1Path = Path.Combine(tlbxDir, "tlbx_graphs.ps1");
-        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken));
+        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken, host));
     }
 
-    private static string GenerateShellScript(int port, string token) =>
+    private static string GenerateShellScript(int port, string token, string host) =>
         $$"""
         #!/bin/bash
         # tlbx graph CLI helpers — auto-generated, do not edit.
         # Source: . .tlbx/tlbx_graphs.sh   |   Run: .tlbx/tlbx_graphs.sh <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral. Optional: set MT_API_KEY instead.
-        _MTG="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+        _MTG="https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         _MTGK="mm-session={{token}}"
         _MTGCURL() {
           if command -v curl.exe >/dev/null 2>&1; then curl.exe "$@"; else curl "$@"; fi
@@ -194,13 +194,13 @@ public static class TlbxGraphsScriptWriter
         fi
         """;
 
-    private static string GeneratePowerShellScript(int port, string token) =>
+    private static string GeneratePowerShellScript(int port, string token, string host) =>
         $$"""
         # tlbx graph CLI helpers — auto-generated, do not edit.
         # Dot-source: . .tlbx\tlbx_graphs.ps1   |   Run: pwsh .tlbx\tlbx_graphs.ps1 <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral. Optional: set MT_API_KEY instead.
-        $script:_MTG = "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+        $script:_MTG = "https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         $script:_MTGK = "mm-session={{token}}"
 
         function script:_MtgCurl {

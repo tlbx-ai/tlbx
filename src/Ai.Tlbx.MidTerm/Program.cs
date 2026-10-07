@@ -202,7 +202,7 @@ public class Program
             browserPreviewOriginService,
             browserPreviewRegistry);
 
-        TlbxDirectory.Initialize(port, authService);
+        TlbxDirectory.Initialize(port, authService, bindAddress);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var cliContext = app.Services.GetRequiredService<SessionCliContextService>();

@@ -222,6 +222,78 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("TLBX_CONTEXT_UNAVAILABLE", result.Output + result.Error, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task ApplyUpdate_AuthenticatesVersionPollAndRecoversAfterRestart(bool bash, bool apiKey)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var polls = 0;
+        var applies = 0;
+        app.Use(async (context, next) =>
+        {
+            var authenticated = apiKey
+                ? context.Request.Headers.Authorization == "Bearer test-key"
+                : context.Request.Cookies["mm-session"] == "test-token";
+            if (!authenticated) { context.Response.StatusCode = 401; return; }
+            await next(context);
+        });
+        app.MapGet("/api/update/check", () => Results.Json(new { latestVersion = "10.17.31-dev" }));
+        app.MapPost("/api/update/apply", (bool detached) =>
+        {
+            Assert.True(detached);
+            Interlocked.Increment(ref applies);
+            return Results.Ok();
+        });
+        app.MapGet("/api/version", () => Interlocked.Increment(ref polls) == 1
+            ? Results.StatusCode(503) : Results.Text("10.17.31-dev"));
+        await app.StartAsync(CancellationToken.None);
+        var authentication = apiKey ? (bash ? "export MT_API_KEY=test-key; " : "$env:MT_API_KEY='test-key'; ") : "";
+        var result = await RunContextShellAsync(bash,
+            authentication + (bash ? "source \"$1\"; mt_apply_update" : ". $args[0]; Mt-ApplyUpdate"),
+            app.Urls.Single(), "abcdefgh", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Contains("Current version: 10.17.31-dev", result.Output, StringComparison.Ordinal);
+        Assert.Equal(1, applies);
+        Assert.Equal(2, polls);
+    }
+
+    [Theory]
+    [InlineData("normal")]
+    [InlineData("important")]
+    public async Task Notify_SerializesPriorityAndLiteralMessageBeforeSinglePost(string priority)
+    {
+        if (ResolvePowerShellPath() is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var posts = 0;
+        app.MapPost("/api/notifications", async (HttpContext context) =>
+        {
+            using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
+            Assert.Equal(priority, body.RootElement.GetProperty("priority").GetString());
+            Assert.Equal("A \"quoted\" message\nwith umlaut ä", body.RootElement.GetProperty("body").GetString());
+            Assert.Equal("abcdefgh", body.RootElement.GetProperty("sessionId").GetString());
+            Interlocked.Increment(ref posts);
+            return Results.Ok();
+        });
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(false,
+            ". $args[0]; Mt-Notify -Message \"A `\"quoted`\" message`nwith umlaut ä\" -Priority " + priority,
+            app.Urls.Single(), "abcdefgh", Path.Combine(_tempDir, "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Equal(1, posts);
+    }
+
     private async Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
         bool bash, string command, string baseUrl, string sessionId, params string[] arguments)
     {
@@ -268,6 +340,42 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task SourceInstance_BoundAddressRemainsReachableWithoutBaseUrlOverride(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        app.MapGet("/api/version", () => Results.Text("bound-source"));
+        await app.StartAsync(CancellationToken.None);
+        var port = new Uri(app.Urls.Single()).Port;
+        TlbxDirectory.WriteInstanceCliScripts(_tempDir, port, "test-token", true, "127.0.0.1");
+        var helper = Path.Combine(_tempDir, "instances", port.ToString(System.Globalization.CultureInfo.InvariantCulture), bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
+        // Use the generated HTTPS authority, but make the fixture's scheme HTTP.
+        // No caller URL override may supply the bound host.
+        var command = bash
+            ? "unset MT_BASE_URL; source \"$1\"; _MT=${_MT/https:/http:}; _MC \"$_MT/api/version\""
+            : "Remove-Item Env:MT_BASE_URL; . $args[0]; $script:_MT=$script:_MT.Replace('https:','http:'); _MC \"$script:_MT/api/version\"";
+        var result = await RunContextShellAsync(bash, command, "ignored", "", helper);
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Equal("bound-source", result.Output.Trim());
+    }
+
+    [Theory]
+    [InlineData("0.0.0.0", "localhost")]
+    [InlineData("::", "localhost")]
+    [InlineData("127.0.0.1", "127.0.0.1")]
+    [InlineData("100.91.240.65", "100.91.240.65")]
+    [InlineData("::1", "[::1]")]
+    public void CliHost_UsesSpecificBindingOrLoopbackForWildcard(string binding, string expected)
+    {
+        Assert.Equal(expected, TlbxDirectory.ResolveCliHost(binding));
     }
 
     [Fact]

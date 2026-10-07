@@ -13,11 +13,13 @@ public static class TlbxDirectory
     private static readonly object DirectoryGate = new();
 
     private static int _port;
+    private static string _cliHost = "localhost";
     private static AuthService? _authService;
 
-    public static void Initialize(int port, AuthService authService)
+    public static void Initialize(int port, AuthService authService, string bindAddress)
     {
         _port = port;
+        _cliHost = ResolveCliHost(bindAddress);
         _authService = authService;
     }
 
@@ -174,7 +176,7 @@ public static class TlbxDirectory
         {
             var token = _authService.CreateSessionToken();
             WriteInstanceCliScripts(tlbxDir, _port, token,
-                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev");
+                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev", _cliHost);
         }
         catch (Exception ex)
         {
@@ -182,7 +184,7 @@ public static class TlbxDirectory
         }
     }
 
-    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev)
+    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev, string host = "localhost")
     {
         if (sourceDev)
         {
@@ -190,21 +192,27 @@ public static class TlbxDirectory
             // Keep its fallback URL/credential pair together without replacing the supervisor's.
             var instanceDir = Path.Combine(tlbxDir, "instances", port.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(instanceDir);
-            TlbxCliScriptWriter.WriteScripts(instanceDir, port, token);
-            TlbxGraphsScriptWriter.WriteScripts(instanceDir, port, token);
+            TlbxCliScriptWriter.WriteScripts(instanceDir, port, token, host);
+            TlbxGraphsScriptWriter.WriteScripts(instanceDir, port, token, host);
             if (File.Exists(Path.Combine(tlbxDir, "tlbx_cli.ps1")) ||
                 File.Exists(Path.Combine(tlbxDir, "tlbx_cli.sh")))
                 return;
         }
 
-        TlbxCliScriptWriter.WriteScripts(tlbxDir, port, token);
-        TlbxGraphsScriptWriter.WriteScripts(tlbxDir, port, token);
+        TlbxCliScriptWriter.WriteScripts(tlbxDir, port, token, host);
+        TlbxGraphsScriptWriter.WriteScripts(tlbxDir, port, token, host);
         if (!sourceDev)
         {
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
         }
     }
+
+    internal static string ResolveCliHost(string bindAddress) => bindAddress switch
+    {
+        "0.0.0.0" or "::" or "[::]" or "*" or "+" => "localhost",
+        _ => new UriBuilder("https", bindAddress).Uri.Host
+    };
 
     private static void TryDeleteLegacyCli(string path)
     {

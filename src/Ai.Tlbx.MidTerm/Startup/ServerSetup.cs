@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Globalization;
 using System.Net;
 using System.Reflection;
@@ -320,16 +321,12 @@ public static class ServerSetup
                 return;
             }
 
-            var fileInfo = fileProvider.GetFileInfo(path);
-            if (!fileInfo.Exists)
+            var html = await ReadHtmlEntryPointAsync(fileProvider, path, context.RequestAborted);
+            if (html is null)
             {
                 await next();
                 return;
             }
-
-            await using var stream = fileInfo.CreateReadStream();
-            using var reader = new StreamReader(stream);
-            var html = await reader.ReadToEndAsync(context.RequestAborted);
             var version = string.Create(CultureInfo.InvariantCulture, $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
             var rewrittenHtml = StaticAssetCacheHeaders.RewriteDevAssetUrls(
                 StaticAssetCacheHeaders.StampHtmlAssetUrls(html, version),
@@ -530,6 +527,20 @@ public static class ServerSetup
                "connect-src 'self' ws: wss: https://api.github.com https://api.tlbx.ai https://midterm.tlbx.ai; " +
                $"frame-src {string.Join(' ', frameSources)}; " +
                "frame-ancestors 'self'";
+    }
+
+    internal static async Task<string?> ReadHtmlEntryPointAsync(IFileProvider fileProvider, string path, CancellationToken ct)
+    {
+        var fileInfo = fileProvider.GetFileInfo(path);
+        var compressed = !fileInfo.Exists;
+        if (compressed) fileInfo = fileProvider.GetFileInfo(path + ".br");
+        if (!fileInfo.Exists) return null;
+
+        await using var stream = fileInfo.CreateReadStream();
+        // Published archives retain only the Brotli version of compressible assets.
+        // The dev overlay must rewrite that HTML before ordinary compressed serving.
+        using var reader = new StreamReader(compressed ? new BrotliStream(stream, CompressionMode.Decompress) : stream);
+        return await reader.ReadToEndAsync(ct);
     }
 
     private static bool IsLocalDevAssetRequest(HttpRequest request) =>

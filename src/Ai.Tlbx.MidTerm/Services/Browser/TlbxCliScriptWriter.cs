@@ -4,10 +4,10 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class TlbxCliScriptWriter
 {
-    internal static void WriteScripts(string tlbxDir, int port, string authToken)
+    internal static void WriteScripts(string tlbxDir, int port, string authToken, string host = "localhost")
     {
         var shPath = Path.Combine(tlbxDir, "tlbx_cli.sh");
-        File.WriteAllText(shPath, GenerateShellScript(port, authToken));
+        File.WriteAllText(shPath, GenerateShellScript(port, authToken, host));
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(shPath,
@@ -17,10 +17,10 @@ public static class TlbxCliScriptWriter
         }
 
         var ps1Path = Path.Combine(tlbxDir, "tlbx_cli.ps1");
-        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken));
+        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken, host));
     }
 
-    private static string GenerateShellScript(int port, string token) =>
+    private static string GenerateShellScript(int port, string token, string host) =>
         $$"""
         #!/bin/bash
         # tlbx CLI helpers — auto-generated, do not edit.
@@ -34,9 +34,9 @@ public static class TlbxCliScriptWriter
         if [ -n "${MT_BASE_URL:-}" ]; then
           _MT="${MT_BASE_URL%/}"
         elif [ -n "${MT_PORT:-}" ]; then
-          _MT="https://localhost:$MT_PORT"
+          _MT="https://{{host}}:$MT_PORT"
         else
-          _MT="https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+          _MT="https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         fi
         if [ -n "${MT_TOKEN:-}" ]; then
           _MK="mm-session=$MT_TOKEN"
@@ -597,7 +597,7 @@ public static class TlbxCliScriptWriter
           sleep 3
           local i version
           for ((i=0; i<90; i++)); do
-            version=$(_MCURL -sfk "$_MT/api/version" 2>/dev/null) || version=""
+            version=$(_MC --max-time 5 "$_MT/api/version" 2>/dev/null) || version=""
             version=${version#\"}; version=${version%\"}
             if [ -n "$version" ] && { [ -z "$target" ] || [ "$version" = "$target" ]; }; then
               printf 'Current version: %s\n' "$version"
@@ -1176,7 +1176,7 @@ public static class TlbxCliScriptWriter
         fi
         """;
 
-    private static string GeneratePowerShellScript(int port, string token) =>
+    private static string GeneratePowerShellScript(int port, string token, string host) =>
         $$"""
         # tlbx CLI helpers — auto-generated, do not edit.
         # Dot-source: . .tlbx\tlbx_cli.ps1   |   Run: pwsh .tlbx\tlbx_cli.ps1 <cmd> [args]
@@ -1189,9 +1189,9 @@ public static class TlbxCliScriptWriter
         $script:_MT = if ($env:MT_BASE_URL) {
             $env:MT_BASE_URL.TrimEnd('/')
         } elseif ($env:MT_PORT) {
-            "https://localhost:$($env:MT_PORT)"
+            "https://{{host}}:$($env:MT_PORT)"
         } else {
-            "https://localhost:{{port.ToString(CultureInfo.InvariantCulture)}}"
+            "https://{{host}}:{{port.ToString(CultureInfo.InvariantCulture)}}"
         }
         $script:_MK = if ($env:MT_TOKEN) { "mm-session=$($env:MT_TOKEN)" } else { "mm-session={{token}}" }
 
@@ -1899,8 +1899,9 @@ public static class TlbxCliScriptWriter
             Start-Sleep -Seconds 3
             $currentVersion = $null
             for ($i = 0; $i -lt 90; $i++) {
-                $version = & curl.exe -sfk "$script:_MT/api/version" 2>$null
-                if ($LASTEXITCODE -eq 0 -and $version) {
+                try { $version = _MC --max-time 5 "$script:_MT/api/version" }
+                catch { $version = $null }
+                if ($version) {
                     $currentVersion = $version.Trim().Trim('"')
                     if (-not $targetVersion -or $currentVersion -eq $targetVersion) {
                         Write-Output "Current version: $currentVersion"
@@ -2160,9 +2161,9 @@ public static class TlbxCliScriptWriter
             )
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required. Use -SessionId or Mt-Context."; return }
-            $body = _MH @{ sessionId=$SessionId; title=$Title; body=$Message }
+            $body = @{ sessionId=$SessionId; title=$Title; body=$Message }
             if ($Priority) { $body.priority = $Priority }
-            _MJ -d $body "$script:_MT/api/notifications"
+            _MJ -d (_MH $body) "$script:_MT/api/notifications"
         }
         # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
         function Mt-Activity {

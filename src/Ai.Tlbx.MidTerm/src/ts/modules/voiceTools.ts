@@ -111,21 +111,21 @@ import type { AgentSessionVibeResponse } from '../api/types';
 import type { GitRepoBinding } from './git/types';
 import { JS_BUILD_VERSION } from '../constants';
 
+import {
+  CAMPAIGN_GOAL_PHASES,
+  emptyFocusContextState,
+  emptyCampaignGoalState,
+  loadPersistedFocusContextState,
+  loadPersistedCampaignGoalState,
+  persistFocusContextState,
+  persistCampaignGoalState,
+} from './voiceContextPersistence';
+
 const log = createLogger('voiceTools');
 
 const recentBells: BellNotification[] = [];
 const DEFAULT_PREVIEW_NAME = 'default';
-const FOCUS_CONTEXT_STORAGE_KEY = 'midterm.voice.focusContext.v1';
-const CAMPAIGN_GOAL_STORAGE_KEY = 'midterm.voice.campaignGoal.v1';
 const LAYOUT_DOCK_POSITIONS = new Set<DockPosition>(['top', 'bottom', 'left', 'right']);
-const CAMPAIGN_GOAL_PHASES = new Set<CampaignGoalPhase>([
-  'orient',
-  'execute',
-  'verify',
-  'report',
-  'blocked',
-  'done',
-]);
 const BROWSER_COMMANDS = new Set([
   'query',
   'click',
@@ -146,148 +146,6 @@ const BROWSER_COMMANDS = new Set([
   'status',
 ]);
 type SessionTurnStatus = 'complete' | 'busy' | 'needs_user' | 'blocked' | 'shell' | 'unknown';
-
-function emptyFocusContextState(): FocusContextState {
-  return {
-    active: false,
-    sessionId: null,
-    sessionTitle: null,
-    sessionExists: null,
-    previewName: null,
-    previewId: null,
-    repoRoot: null,
-    reason: null,
-    updatedAt: null,
-  };
-}
-
-function emptyCampaignGoalState(): CampaignGoalState {
-  return {
-    active: false,
-    objective: null,
-    phase: null,
-    targetSessionIds: [],
-    currentFocusSessionId: null,
-    exitCriteria: null,
-    nextReport: null,
-    createdAt: null,
-    updatedAt: null,
-    reason: null,
-  };
-}
-
-function isNullableString(value: unknown): value is string | null {
-  return value === null || typeof value === 'string';
-}
-
-function isFocusContextState(value: unknown): value is FocusContextState {
-  if (!value || typeof value !== 'object') return false;
-
-  const candidate = value as Partial<FocusContextState>;
-  return (
-    typeof candidate.active === 'boolean' &&
-    isNullableString(candidate.sessionId) &&
-    isNullableString(candidate.sessionTitle) &&
-    (candidate.sessionExists === null || typeof candidate.sessionExists === 'boolean') &&
-    isNullableString(candidate.previewName) &&
-    isNullableString(candidate.previewId) &&
-    isNullableString(candidate.repoRoot) &&
-    isNullableString(candidate.reason) &&
-    isNullableString(candidate.updatedAt)
-  );
-}
-
-function isCampaignGoalState(value: unknown): value is CampaignGoalState {
-  if (!value || typeof value !== 'object') return false;
-
-  const candidate = value as Partial<CampaignGoalState>;
-  const phase = candidate.phase;
-  return (
-    typeof candidate.active === 'boolean' &&
-    isNullableString(candidate.objective) &&
-    (phase === null || (typeof phase === 'string' && CAMPAIGN_GOAL_PHASES.has(phase))) &&
-    Array.isArray(candidate.targetSessionIds) &&
-    candidate.targetSessionIds.every((sessionId) => typeof sessionId === 'string') &&
-    isNullableString(candidate.currentFocusSessionId) &&
-    isNullableString(candidate.exitCriteria) &&
-    isNullableString(candidate.nextReport) &&
-    isNullableString(candidate.createdAt) &&
-    isNullableString(candidate.updatedAt) &&
-    isNullableString(candidate.reason)
-  );
-}
-
-function loadPersistedFocusContextState(): {
-  state: FocusContextState;
-  persisted: boolean;
-} {
-  if (typeof window === 'undefined') {
-    return { state: emptyFocusContextState(), persisted: false };
-  }
-
-  try {
-    const raw = window.localStorage.getItem(FOCUS_CONTEXT_STORAGE_KEY);
-    if (!raw) {
-      return { state: emptyFocusContextState(), persisted: true };
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-    return isFocusContextState(parsed)
-      ? { state: parsed, persisted: true }
-      : { state: emptyFocusContextState(), persisted: false };
-  } catch {
-    return { state: emptyFocusContextState(), persisted: false };
-  }
-}
-
-function loadPersistedCampaignGoalState(): {
-  state: CampaignGoalState;
-  persisted: boolean;
-} {
-  if (typeof window === 'undefined') {
-    return { state: emptyCampaignGoalState(), persisted: false };
-  }
-
-  try {
-    const raw = window.localStorage.getItem(CAMPAIGN_GOAL_STORAGE_KEY);
-    if (!raw) {
-      return { state: emptyCampaignGoalState(), persisted: true };
-    }
-
-    const parsed = JSON.parse(raw) as unknown;
-    return isCampaignGoalState(parsed)
-      ? { state: parsed, persisted: true }
-      : { state: emptyCampaignGoalState(), persisted: false };
-  } catch {
-    return { state: emptyCampaignGoalState(), persisted: false };
-  }
-}
-
-function persistFocusContextState(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    window.localStorage.setItem(FOCUS_CONTEXT_STORAGE_KEY, JSON.stringify(focusContextState));
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function persistCampaignGoalState(): boolean {
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    window.localStorage.setItem(CAMPAIGN_GOAL_STORAGE_KEY, JSON.stringify(campaignGoalState));
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 const persistedFocusContext = loadPersistedFocusContextState();
 let focusContextState: FocusContextState = persistedFocusContext.state;
@@ -384,7 +242,7 @@ function rememberFocusContext(args: FocusContextArgs): void {
   if (next.sessionId && next.sessionExists === false) return;
 
   focusContextState = next;
-  focusContextPersistenceOk = persistFocusContextState();
+  focusContextPersistenceOk = persistFocusContextState(focusContextState);
 }
 
 function resolveUiFocusSessionId(): string | null {
@@ -715,7 +573,7 @@ function handleFocusContextStatus(): FocusContextResult {
 
 function handleFocusContextClear(): FocusContextResult {
   focusContextState = emptyFocusContextState();
-  focusContextPersistenceOk = persistFocusContextState();
+  focusContextPersistenceOk = persistFocusContextState(focusContextState);
   return buildFocusContextResponse(
     'clear',
     'Cleared the persistent voice focus target.',
@@ -756,7 +614,7 @@ function handleFocusContextSet(args: FocusContextArgs): FocusContextResult {
   }
 
   focusContextState = nextState;
-  focusContextPersistenceOk = persistFocusContextState();
+  focusContextPersistenceOk = persistFocusContextState(focusContextState);
   return buildFocusContextResponse(
     'set',
     `Voice focus set to ${focusContextState.sessionTitle ?? focusContextState.sessionId ?? focusContextState.previewName ?? focusContextState.repoRoot}.`,
@@ -1816,7 +1674,7 @@ function clearCampaignGoal(reason: string | null | undefined): CampaignGoalResul
     updatedAt: new Date().toISOString(),
     reason: reason?.trim() || 'cleared',
   };
-  campaignGoalPersistenceOk = persistCampaignGoalState();
+  campaignGoalPersistenceOk = persistCampaignGoalState(campaignGoalState);
   return buildCampaignGoalResponse(
     'clear',
     true,
@@ -1880,7 +1738,7 @@ function applyCampaignGoalChange(
     updatedAt: new Date().toISOString(),
     reason: args.reason?.trim() || campaignGoalState.reason,
   };
-  campaignGoalPersistenceOk = persistCampaignGoalState();
+  campaignGoalPersistenceOk = persistCampaignGoalState(campaignGoalState);
 }
 
 function buildCampaignGoalChangeResponse(
