@@ -102,6 +102,7 @@ import { syncWebglTerminalCellBackgroundAlpha } from './webglCellBackgroundAlpha
 import { shouldOwnWebglContext, shouldUseWebglRenderer } from './webglSupport';
 import { detachTerminalLigatureState, syncTerminalLigatureState } from './ligatures';
 import { isTerminalVisible, refreshTerminalRenderer } from './presentationRefresh';
+import { setupTerminalRenderRecovery } from './renderRecovery';
 import { getTerminalStartupPaintAction, inspectTerminalStartupPaint } from './startupPaintHealth';
 import type { TerminalKeyLogEntryInput } from '../diagnostics/terminalKeyLog';
 import {
@@ -1638,6 +1639,11 @@ export function setupTerminalEvents(
     typeof navigator.clipboard.readText === 'function';
   // Collect disposables for cleanup
   const disposables: Array<{ dispose: () => void }> = [];
+  disposables.push(
+    setupTerminalRenderRecovery(terminal, container, () => {
+      log.warn(() => `Terminal ${sessionId} resumed a stalled visible renderer`);
+    }),
+  );
 
   // Dispose early data handler (was registered immediately after terminal.open)
   const termState = sessionTerminals.get(sessionId);
