@@ -118,7 +118,7 @@ function createElementByClassName(className = ''): FakeElement {
       listeners.get('click')?.(event(1));
     },
     closest: () => null,
-    getBoundingClientRect: () => ({ width: 0, height: 0 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
   };
 }
 
@@ -222,7 +222,7 @@ function createTerminalHarness(
     setAttribute(): void {},
     addEventListener(): void {},
     closest: () => null,
-    getBoundingClientRect: () => ({ width: 818, height: 488 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 488 }),
     getClientRects: () => [{ width: 818, height: 488 }],
     isConnected: true,
   } as FakeElement;
@@ -263,7 +263,7 @@ describe('terminal scaling badge thresholds', () => {
     $isMainBrowser.set(false);
     setSizeControl(false);
     dom.terminalsArea = {
-      getBoundingClientRect: () => ({ width: 818, height: 488 }),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 488 }),
     } as HTMLElement;
     globalThis.document = {
       createElement: () => createElementByClassName(),

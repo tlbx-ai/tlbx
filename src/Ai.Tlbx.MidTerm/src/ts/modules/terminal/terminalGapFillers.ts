@@ -20,8 +20,15 @@ export function updateTerminalGapFillers(
   const containerHeight = container.clientHeight;
   const { width: measuredContentWidth, height: measuredContentHeight } =
     measureTerminalGapContentSize(content, scale);
-  const contentWidth = Math.min(containerWidth, measuredContentWidth);
-  const contentHeight = Math.min(containerHeight, measuredContentHeight);
+  const bounds = container.getBoundingClientRect();
+  const contentWidth = Math.min(
+    containerWidth,
+    snapTerminalGapExtent(measuredContentWidth, bounds.left),
+  );
+  const contentHeight = Math.min(
+    containerHeight,
+    snapTerminalGapExtent(measuredContentHeight, bounds.top),
+  );
   const rightWidth = Math.max(0, containerWidth - contentWidth);
   const bottomHeight = Math.max(0, containerHeight - contentHeight);
   const previousState = gapFillerState.get(container);
@@ -41,11 +48,29 @@ export function updateTerminalGapFillers(
   setTerminalGapVariable(container, '--terminal-gap-content-height', nextState.contentHeight);
   setTerminalGapVariable(container, '--terminal-gap-right-width', nextState.rightWidth);
   setTerminalGapVariable(container, '--terminal-gap-bottom-height', nextState.bottomHeight);
+  // Clip the scaled terminal and its gap at the same physical pixel boundary.
+  // Two separately antialiased translucent edges leave a visible seam, even
+  // when their CSS coordinates and background colours are identical.
+  setTerminalGapVariable(
+    container,
+    '--terminal-gap-clip-width',
+    formatCssPixelValue(contentWidth / scale),
+  );
+  setTerminalGapVariable(
+    container,
+    '--terminal-gap-clip-height',
+    formatCssPixelValue(contentHeight / scale),
+  );
   gapFillerState.set(container, nextState);
 
   if (rightWidth > 0 || bottomHeight > 0) {
     ensureTerminalGapFiller(container);
   }
+}
+
+function snapTerminalGapExtent(extent: number, origin: number): number {
+  const ratio = typeof devicePixelRatio === 'number' && devicePixelRatio > 0 ? devicePixelRatio : 1;
+  return Math.max(0, Math.floor((origin + extent) * ratio) / ratio - origin);
 }
 
 function getTerminalGapContentElement(xterm: HTMLElement): HTMLElement {

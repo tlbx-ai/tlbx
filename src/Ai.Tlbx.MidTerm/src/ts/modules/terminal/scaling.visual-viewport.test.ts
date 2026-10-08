@@ -121,7 +121,7 @@ function createHarness() {
       if (selector === '.xterm-screen') return screen as T;
       return null;
     },
-    getBoundingClientRect: () => ({ width: 818, height: 488 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 488 }),
   };
 
   return {
@@ -195,7 +195,7 @@ describe('setupVisualViewport', () => {
     const harness = createHarness();
     sessionTerminals.set('s1', harness.state as never);
     dom.terminalsArea = {
-      getBoundingClientRect: () => ({ width: 818, height: 488 }),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 488 }),
     } as HTMLElement;
 
     const bodyClasses = new Set<string>();
@@ -349,7 +349,12 @@ describe('setupVisualViewport', () => {
     const state = sessionTerminals.get('s1') as ReturnType<typeof createHarness>['state'];
     state.terminal.resize.mockClear();
     dom.terminalsArea = {
-      getBoundingClientRect: () => ({ width: 818, height: visualViewport.height - 112 }),
+      getBoundingClientRect: () => ({
+        left: 0,
+        top: 0,
+        width: 818,
+        height: visualViewport.height - 112,
+      }),
     } as HTMLElement;
 
     visualViewport.height = 430;

@@ -4707,6 +4707,15 @@ body::before {
   justify-content: flex-start;
 }
 
+.terminal-container.scaled .xterm {
+  clip-path: polygon(
+    0 0,
+    var(--terminal-gap-clip-width) 0,
+    var(--terminal-gap-clip-width) var(--terminal-gap-clip-height),
+    0 var(--terminal-gap-clip-height)
+  );
+}
+
 .terminal-gap-fill {
   position: absolute;
   z-index: 1;

@@ -95,7 +95,7 @@ function createElementByClassName(className = ''): FakeElement {
     querySelector: () => null,
     appendChild: (child) => child,
     setAttribute: () => undefined,
-    getBoundingClientRect: () => ({ width: 0, height: 0 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
   };
 }
 
@@ -166,7 +166,7 @@ function createFitHarness() {
       children.push(child);
       return child;
     },
-    getBoundingClientRect: () => ({ width: 818, height: 488 }),
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 488 }),
   } as FakeElement;
 
   return {
@@ -217,7 +217,7 @@ describe('fitSessionToScreen', () => {
     $sessions.set({});
     $activeSessionId.set('s1');
     dom.terminalsArea = {
-      getBoundingClientRect: () => ({ width: 818, height: 488 }),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 488 }),
     } as HTMLElement;
     bodyClasses = createClassList();
     globalThis.document = {
@@ -292,11 +292,11 @@ describe('fitSessionToScreen', () => {
 
   it('fits split terminals below their header on resize and foreground return', () => {
     const harness = createFitHarness();
-    const pane = { getBoundingClientRect: () => ({ width: 818, height: 488 }) };
+    const pane = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 488 }) };
     Object.assign(harness.state.container, {
       closest: () => pane,
       clientHeight: 448,
-      getBoundingClientRect: () => ({ width: 818, height: 448 }),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 448 }),
     });
     sessionTerminals.set('s1', harness.state as never);
 
@@ -313,10 +313,10 @@ describe('fitSessionToScreen', () => {
 
   it('fits a real short pane instead of abandoning its previous taller row count', () => {
     const harness = createFitHarness();
-    const pane = { getBoundingClientRect: () => ({ width: 818, height: 140 }) };
+    const pane = { getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 140 }) };
     Object.assign(harness.state.container, {
       clientHeight: 90,
-      getBoundingClientRect: () => ({ width: 818, height: 90 }),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: 90 }),
       closest: () => pane,
     });
     sessionTerminals.set('s1', harness.state as never);
@@ -326,10 +326,12 @@ describe('fitSessionToScreen', () => {
 
   it.each([60, 99])('keeps minimum-row owner content visible in a %ipx pane', (height) => {
     const harness = createFitHarness();
-    const pane = { getBoundingClientRect: () => ({ width: 818, height: height + 40 }) };
+    const pane = {
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height: height + 40 }),
+    };
     Object.assign(harness.state.container, {
       clientHeight: height,
-      getBoundingClientRect: () => ({ width: 818, height }),
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 818, height }),
       closest: () => pane,
     });
     harness.terminal.rows = 5;
