@@ -1088,5 +1088,11 @@
   "actionGraphs.fieldAttention": "Exige atenção",
   "actionGraphs.fieldHidden": "Ocultar da vista de trabalho",
   "actionGraphs.attention": "atenção",
-  "actionGraphs.hidden": "ocultos"
+  "actionGraphs.hidden": "ocultos",
+  "settings.behavior.runtimePriorityBoost": "Boost process priority",
+  "settings.behavior.runtimePriorityClass": "Process priority",
+  "settings.behavior.runtimePriorityHint": "Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.",
+  "settings.options.runtimePriorityAboveNormal": "Above normal",
+  "settings.options.runtimePriorityHigh": "High",
+  "settings.options.runtimePriorityNormal": "Normal"
 }

@@ -107,6 +107,8 @@ public sealed partial class MidTermSettingsPublic
             MobileKineticTerminalScroll = settings.MobileKineticTerminalScroll,
             MobileDenseTerminalMode = settings.MobileDenseTerminalMode,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
+            RuntimePriorityBoostEnabled = settings.RuntimePriorityBoostEnabled,
+            RuntimePriorityClass = settings.RuntimePriorityClass,
             ResumeMode = settings.ResumeMode,
             TryResumeNonAiAgentProcesses = settings.TryResumeNonAiAgentProcesses,
             PreserveTerminalCursorControl = settings.PreserveTerminalCursorControl,
@@ -231,6 +233,14 @@ public sealed partial class MidTermSettingsPublic
         settings.MobileKineticTerminalScroll = MobileKineticTerminalScroll;
         settings.MobileDenseTerminalMode = MobileDenseTerminalMode;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
+        settings.RuntimePriorityBoostEnabled = RuntimePriorityBoostEnabled;
+        settings.RuntimePriorityClass = Ai.Tlbx.MidTerm.Common.Process.MidTermProcessPriority
+            .ResolvePriorityClass(RuntimePriorityClass) switch
+        {
+            System.Diagnostics.ProcessPriorityClass.Normal => "normal",
+            System.Diagnostics.ProcessPriorityClass.High => "high",
+            _ => "aboveNormal"
+        };
         settings.ResumeMode = ResumeMode;
         settings.TryResumeNonAiAgentProcesses = TryResumeNonAiAgentProcesses;
         settings.PreserveTerminalCursorControl = PreserveTerminalCursorControl;

@@ -348,6 +348,11 @@ public class Program
                 "mt",
                 message => Log.Info(() => message),
                 message => Log.Warn(() => message));
+            foreach (var session in sessionManager.GetAllSessions())
+            {
+                _ = MidTermProcessPriority.TryApplyToProcessId(session.HostPid, "mthost",
+                    message => Log.Info(() => message), message => Log.Warn(() => message));
+            }
 
             var (isValid, _) = UserValidationService.ValidateRunAsUser(newSettings.RunAsUser);
             if (isValid)

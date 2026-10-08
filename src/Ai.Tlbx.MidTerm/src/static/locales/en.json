@@ -1236,5 +1236,11 @@
   "actionGraphs.fieldAttention": "Demand attention",
   "actionGraphs.fieldHidden": "Hide from working view",
   "actionGraphs.attention": "attention",
-  "actionGraphs.hidden": "hidden"
+  "actionGraphs.hidden": "hidden",
+  "settings.behavior.runtimePriorityBoost": "Boost process priority",
+  "settings.behavior.runtimePriorityClass": "Process priority",
+  "settings.behavior.runtimePriorityHint": "Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.",
+  "settings.options.runtimePriorityAboveNormal": "Above normal",
+  "settings.options.runtimePriorityHigh": "High",
+  "settings.options.runtimePriorityNormal": "Normal"
 }

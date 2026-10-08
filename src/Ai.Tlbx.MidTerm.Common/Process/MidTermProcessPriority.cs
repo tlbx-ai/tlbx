@@ -10,6 +10,8 @@ public static class MidTermProcessPriority
     private static readonly Lock Sync = new();
     private static bool _enabled = true;
     private static ProcessPriorityClass _priorityClass = ProcessPriorityClass.AboveNormal;
+    // Process-lifetime handle; closing it never terminates hosted sessions.
+    private static WindowsProcessPriorityJob? _job;
 
     public static void Configure(bool enabled, string? priorityClassName)
     {
@@ -77,7 +79,7 @@ public static class MidTermProcessPriority
             return false;
         }
 
-        return current is not ProcessPriorityClass.High and not ProcessPriorityClass.RealTime;
+        return current is not ProcessPriorityClass.RealTime;
     }
 
     private static bool TryApply(
@@ -91,18 +93,7 @@ public static class MidTermProcessPriority
             return false;
         }
 
-        bool enabled;
         ProcessPriorityClass target;
-        lock (Sync)
-        {
-            enabled = _enabled;
-            target = _priorityClass;
-        }
-
-        if (!enabled)
-        {
-            return false;
-        }
 
         try
         {
@@ -112,12 +103,25 @@ public static class MidTermProcessPriority
             }
 
             var current = process.PriorityClass;
+            if (current == ProcessPriorityClass.RealTime) return false;
+            lock (Sync)
+            {
+                target = _enabled ? _priorityClass : ProcessPriorityClass.Normal;
+                if (_job is null && _enabled)
+                {
+                    _job = new WindowsProcessPriorityJob();
+                }
+                _job?.SetPriority(target);
+                // Retain the job when disabled so existing children also return
+                // to Normal and future descendants follow the changed setting.
+                _job?.Assign(process);
+                if (ShouldSetPriority(process.PriorityClass, target)) process.PriorityClass = target;
+            }
             if (!ShouldSetPriority(current, target))
             {
                 return false;
             }
 
-            process.PriorityClass = target;
             info?.Invoke(string.Create(
                 CultureInfo.InvariantCulture,
                 $"Applied tlbx process priority {target} to {role} PID {process.Id}"));
