@@ -7,6 +7,22 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermSettingsPublicTests
 {
+    [Fact]
+    public void SettingsPatch_ProcessPriorityRoundTripsAndNormalizesUnsupportedClass()
+    {
+        var settings = new MidTermSettings();
+        var current = MidTermSettingsPublic.FromSettings(settings);
+        using var patch = JsonDocument.Parse("""{"runtimePriorityBoostEnabled":false,"runtimePriorityClass":"high"}""");
+        MidTermSettingsPatch.Merge(current, patch.RootElement).ApplyTo(settings);
+        Assert.False(settings.RuntimePriorityBoostEnabled);
+        Assert.Equal("high", settings.RuntimePriorityClass);
+        var roundTrip = MidTermSettingsPublic.FromSettings(settings);
+        Assert.False(roundTrip.RuntimePriorityBoostEnabled);
+        Assert.Equal("high", roundTrip.RuntimePriorityClass);
+        roundTrip.RuntimePriorityClass = "realtime";
+        roundTrip.ApplyTo(settings);
+        Assert.Equal("aboveNormal", settings.RuntimePriorityClass);
+    }
 
     [Fact]
     public void SettingsReplacement_RejectsPartialDocument()

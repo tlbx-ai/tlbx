@@ -2391,6 +2391,19 @@
                   <div class="settings-section">
                     <h3 data-i18n="settings.sessionsStartup.runtime">Session Runtime</h3>
                     <div class="setting-row">
+                      <label for="setting-runtime-priority-boost" data-i18n="settings.behavior.runtimePriorityBoost">Boost process priority</label>
+                      <input type="checkbox" id="setting-runtime-priority-boost" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-runtime-priority-class" data-i18n="settings.behavior.runtimePriorityClass">Process priority</label>
+                      <select id="setting-runtime-priority-class">
+                        <option value="normal" data-i18n="settings.options.runtimePriorityNormal">Normal</option>
+                        <option value="aboveNormal" data-i18n="settings.options.runtimePriorityAboveNormal">Above normal</option>
+                        <option value="high" data-i18n="settings.options.runtimePriorityHigh">High</option>
+                      </select>
+                    </div>
+                    <p class="setting-hint" data-i18n="settings.behavior.runtimePriorityHint">Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.</p>
+                    <div class="setting-row">
                       <label for="setting-resume-mode" data-i18n="settings.behavior.resumeMode"
                         >Session Resume Mode</label
                       >

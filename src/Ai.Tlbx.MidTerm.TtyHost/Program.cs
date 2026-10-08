@@ -94,6 +94,8 @@ public static class Program
 
         var logDirectory = LogPaths.GetLogDirectory(isWindowsService: false);
         Log.Initialize($"mthost-{config.SessionId}", logDirectory, LogSeverity.Exception);
+        using var priorityJobLifetime = MidTermProcessPriority.HoldInheritedJob(
+            config.MtInstanceId, config.MtOwnerToken, message => Log.Warn(() => message));
 
 #if !WINDOWS
         // Register Unix signal handlers for graceful shutdown

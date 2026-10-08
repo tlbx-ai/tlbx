@@ -1088,5 +1088,11 @@
   "actionGraphs.fieldAttention": "ध्यान चाहिए",
   "actionGraphs.fieldHidden": "कार्य दृश्य से छिपाएँ",
   "actionGraphs.attention": "ध्यान",
-  "actionGraphs.hidden": "छिपे"
+  "actionGraphs.hidden": "छिपे",
+  "settings.behavior.runtimePriorityBoost": "Boost process priority",
+  "settings.behavior.runtimePriorityClass": "Process priority",
+  "settings.behavior.runtimePriorityHint": "Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.",
+  "settings.options.runtimePriorityAboveNormal": "Above normal",
+  "settings.options.runtimePriorityHigh": "High",
+  "settings.options.runtimePriorityNormal": "Normal"
 }

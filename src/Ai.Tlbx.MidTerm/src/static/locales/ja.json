@@ -1088,5 +1088,11 @@
   "actionGraphs.fieldAttention": "要注意",
   "actionGraphs.fieldHidden": "作業ビューから非表示",
   "actionGraphs.attention": "要注意",
-  "actionGraphs.hidden": "非表示"
+  "actionGraphs.hidden": "非表示",
+  "settings.behavior.runtimePriorityBoost": "Boost process priority",
+  "settings.behavior.runtimePriorityClass": "Process priority",
+  "settings.behavior.runtimePriorityHint": "Windows: applies immediately to tlbx and its hosted processes, including all child processes. New processes inherit the selected priority. Child processes include compilers launched in terminals. High requires a Windows service or elevated privileges.",
+  "settings.options.runtimePriorityAboveNormal": "Above normal",
+  "settings.options.runtimePriorityHigh": "High",
+  "settings.options.runtimePriorityNormal": "Normal"
 }

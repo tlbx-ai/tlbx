@@ -4640,6 +4640,8 @@ export interface components {
       mobileKineticTerminalScroll: boolean;
       mobileDenseTerminalMode: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
+      runtimePriorityBoostEnabled: boolean;
+      runtimePriorityClass: string;
       resumeMode: components['schemas']['TerminalResumeModeSetting'];
       tryResumeNonAiAgentProcesses: boolean;
       preserveTerminalCursorControl: boolean;

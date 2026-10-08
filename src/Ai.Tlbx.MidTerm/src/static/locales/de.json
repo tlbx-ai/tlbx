@@ -1132,5 +1132,11 @@
   "actionGraphs.fieldAttention": "Aufmerksamkeit verlangen",
   "actionGraphs.fieldHidden": "Aus Arbeitsansicht ausblenden",
   "actionGraphs.attention": "dringend",
-  "actionGraphs.hidden": "ausgeblendet"
+  "actionGraphs.hidden": "ausgeblendet",
+  "settings.behavior.runtimePriorityBoost": "Prozesspriorität erhöhen",
+  "settings.behavior.runtimePriorityClass": "Prozesspriorität",
+  "settings.behavior.runtimePriorityHint": "Windows: gilt sofort für tlbx und seine gestarteten Prozesse einschließlich aller Unterprozesse. Neue Prozesse übernehmen die gewählte Priorität. Dazu gehören auch Compiler, die im Terminal gestartet werden. Hoch erfordert einen Windows-Dienst oder erhöhte Rechte.",
+  "settings.options.runtimePriorityAboveNormal": "Höher als normal",
+  "settings.options.runtimePriorityHigh": "Hoch",
+  "settings.options.runtimePriorityNormal": "Normal"
 }

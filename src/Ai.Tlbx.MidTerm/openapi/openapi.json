@@ -5811,6 +5811,8 @@
           "mobileKineticTerminalScroll",
           "mobileDenseTerminalMode",
           "keepSystemAwakeWithActiveSessions",
+          "runtimePriorityBoostEnabled",
+          "runtimePriorityClass",
           "resumeMode",
           "tryResumeNonAiAgentProcesses",
           "preserveTerminalCursorControl",
@@ -6048,6 +6050,12 @@
           },
           "keepSystemAwakeWithActiveSessions": {
             "type": "boolean"
+          },
+          "runtimePriorityBoostEnabled": {
+            "type": "boolean"
+          },
+          "runtimePriorityClass": {
+            "type": "string"
           },
           "resumeMode": {
             "$ref": "#/components/schemas/TerminalResumeModeSetting"

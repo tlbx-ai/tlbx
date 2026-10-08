@@ -72,6 +72,8 @@ public sealed partial class MidTermSettingsPublic
     public bool MobileKineticTerminalScroll { get; set; } = true;
     public bool MobileDenseTerminalMode { get; set; } = false;
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
+    public bool RuntimePriorityBoostEnabled { get; set; } = true;
+    public string RuntimePriorityClass { get; set; } = "aboveNormal";
     public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
     public bool TryResumeNonAiAgentProcesses { get; set; } = false;
     public bool PreserveTerminalCursorControl { get; set; } = true;

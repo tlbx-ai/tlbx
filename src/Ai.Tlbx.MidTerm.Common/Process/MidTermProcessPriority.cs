@@ -1,5 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace Ai.Tlbx.MidTerm.Common.Process;
 
@@ -10,13 +13,38 @@ public static class MidTermProcessPriority
     private static readonly Lock Sync = new();
     private static bool _enabled = true;
     private static ProcessPriorityClass _priorityClass = ProcessPriorityClass.AboveNormal;
+    // Process-lifetime handle; closing it never terminates hosted sessions.
+    private static WindowsProcessPriorityJob? _job;
+    private static string? _jobName;
 
-    public static void Configure(bool enabled, string? priorityClassName)
+    public static void Configure(bool enabled, string? priorityClassName, string? instanceKey = null)
     {
         lock (Sync)
         {
             _enabled = enabled;
             _priorityClass = ResolvePriorityClass(priorityClassName);
+            // Reopen the same group after web-only updates with preserved hosts.
+            // Hash the private instance key so another user cannot precreate it.
+            _jobName = instanceKey is null ? null : GetJobName(instanceKey);
+        }
+    }
+
+    private static string GetJobName(string instanceKey) =>
+        $"Global\\tlbx-priority-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(instanceKey)))}";
+
+    public static SafeFileHandle? HoldInheritedJob(string? instanceId, string? ownerToken, Action<string>? warn = null)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(instanceId) || string.IsNullOrEmpty(ownerToken))
+            return null;
+        try
+        {
+            return WindowsProcessPriorityJob.OpenLifetimeHandle(GetJobName($"{instanceId}:{ownerToken}"));
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // Standalone hosts and old web servers have no priority group.
+            if (ex.NativeErrorCode != 2) warn?.Invoke($"Unable to retain runtime priority group: {ex.Message}");
+            return null;
         }
     }
 
@@ -77,7 +105,7 @@ public static class MidTermProcessPriority
             return false;
         }
 
-        return current is not ProcessPriorityClass.High and not ProcessPriorityClass.RealTime;
+        return current is not ProcessPriorityClass.RealTime;
     }
 
     private static bool TryApply(
@@ -91,18 +119,7 @@ public static class MidTermProcessPriority
             return false;
         }
 
-        bool enabled;
         ProcessPriorityClass target;
-        lock (Sync)
-        {
-            enabled = _enabled;
-            target = _priorityClass;
-        }
-
-        if (!enabled)
-        {
-            return false;
-        }
 
         try
         {
@@ -112,12 +129,25 @@ public static class MidTermProcessPriority
             }
 
             var current = process.PriorityClass;
+            if (current == ProcessPriorityClass.RealTime) return false;
+            lock (Sync)
+            {
+                target = _enabled ? _priorityClass : ProcessPriorityClass.Normal;
+                if (_job is null && (_enabled || _jobName is not null))
+                {
+                    _job = new WindowsProcessPriorityJob(_jobName);
+                }
+                _job?.SetPriority(target);
+                // Retain the job when disabled so existing children also return
+                // to Normal and future descendants follow the changed setting.
+                _job?.Assign(process);
+                if (ShouldSetPriority(process.PriorityClass, target)) process.PriorityClass = target;
+            }
             if (!ShouldSetPriority(current, target))
             {
                 return false;
             }
 
-            process.PriorityClass = target;
             info?.Invoke(string.Create(
                 CultureInfo.InvariantCulture,
                 $"Applied tlbx process priority {target} to {role} PID {process.Id}"));

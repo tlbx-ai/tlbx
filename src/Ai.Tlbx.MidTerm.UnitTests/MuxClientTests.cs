@@ -12,6 +12,40 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MuxClientTests
 {
     [Fact]
+    public async Task Recovery_VisibilityRaceRequestsRemainingPausedOutputWithoutSessionSwitch()
+    {
+        const string sessionId = "race0001";
+        using var socket = new RecordingWebSocket();
+        using var siblingSocket = new RecordingWebSocket();
+        await using var client = new MuxClient("race", socket, () => TerminalResumeModeSetting.QuickResume);
+        await using var sibling = new MuxClient("sibling", siblingSocket, () => TerminalResumeModeSetting.QuickResume);
+        sibling.SetActiveSession(sessionId);
+        client.SetActiveSession("other001");
+        client.QueueOutput(sessionId, 3, 80, 24, RentOutput("old"));
+        Assert.True(client.TryGetPausedSession(sessionId, out _));
+
+        Assert.True(await client.ExecuteRecoveryAsync(sessionId, (_, _) =>
+        {
+            // Snapshot captured at 3. Output arrives before the visibility hint
+            // takes effect, while this client's replay is still in flight.
+            client.QueueOutput(sessionId, 6, 80, 24, RentOutput("new"));
+            sibling.QueueOutput(sessionId, 6, 80, 24, RentOutput("oldnew"));
+            client.SetActiveSession(sessionId);
+            return Task.FromResult(new MuxClient.RecoveryResult(true, 3, 3, false));
+        }, CancellationToken.None));
+
+        await WaitForAsync(() => socket.SentFrames.Any(frame => frame[0] == MuxProtocol.TypeDataLoss));
+        Assert.True(await client.ExecuteRecoveryAsync(sessionId,
+            (_, _) => Task.FromResult(new MuxClient.RecoveryResult(true, 6, 3, false)), CancellationToken.None));
+        Assert.False(client.TryGetPausedSession(sessionId, out _));
+        client.QueueOutput(sessionId, 10, 80, 24, RentOutput("live"));
+        await WaitForAsync(() => socket.SentFrames.Any(frame => frame[0] == MuxProtocol.TypeTerminalOutput));
+        await WaitForAsync(() => siblingSocket.SentFrames.Any(frame => frame[0] == MuxProtocol.TypeTerminalOutput));
+        Assert.False(sibling.TryGetPausedSession(sessionId, out _));
+        Assert.DoesNotContain(siblingSocket.SentFrames, frame => frame[0] == MuxProtocol.TypeDataLoss);
+    }
+
+    [Fact]
     public void OutputCoalescing_NeverMutatesABroadcastBuffer()
     {
         var shared = RentOutput("original");

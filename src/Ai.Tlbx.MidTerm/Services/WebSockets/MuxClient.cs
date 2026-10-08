@@ -756,6 +756,18 @@ public sealed class MuxClient : IAsyncDisposable
                     && ReferenceEquals(current, operation))
                 {
                     _activeRecoveries.TryRemove(sessionId, out _);
+                    // A visibility hint can overtake a paused frame while the
+                    // replay snapshot is being sent. The hint's recovery is
+                    // coalesced, but the newer paused bytes still need replay.
+                    // Without another notification this client stays paused
+                    // forever, until a user changes sessions.
+                    if (_pausedSessions.TryGetValue(sessionId, out var remaining)
+                        && ShouldDeliverSession(sessionId))
+                    {
+                        _deferredDataLoss.TryAdd(sessionId, new DeferredDataLoss(
+                            TerminalReplayReason.MuxOverflow, 0,
+                            remaining.ResumeSequence, remaining.SourceSequenceEndExclusive));
+                    }
                 }
             }
             operation.Completion.TrySetResult();
