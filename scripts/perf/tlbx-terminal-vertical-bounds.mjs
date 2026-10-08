@@ -275,6 +275,7 @@ try {
       rows: 30,
       workingDirectory: "Q:\\repos\\Jpa",
       launchRequestId: crypto.randomUUID(),
+      launchCommand: "python '" + tuiPath + "'",
     });
     summary.sessions.push(s.id);
   }
@@ -308,25 +309,6 @@ try {
       const transport = window.mmDebug.transport(id);
       return transport && transport.renderedSeq === transport.receivedSeq;
     }, id);
-    let shellReady = false;
-    for (let attempt = 0; attempt < 50; attempt++) {
-      const tail = await api(
-        "GET",
-        "/api/sessions/" + id + "/buffer/tail?lines=10&stripAnsi=true",
-      );
-      if (tail?.includes("PS ") && tail?.includes(">")) {
-        shellReady = true;
-        break;
-      }
-      await sleep(100);
-    }
-    if (!shellReady)
-      throw Error("PowerShell did not become ready for fixture: " + id);
-    await page.locator("#terminal-" + id + " .xterm-helper-textarea").focus();
-    await page.keyboard.type("python '" + tuiPath.replaceAll("'", "''") + "'", {
-      delay: 1,
-    });
-    await page.keyboard.press("Enter");
     await page.waitForFunction((id) => {
       const state = window.mmDebug.terminals.get(id),
         buffer = state?.terminal.buffer.active;
