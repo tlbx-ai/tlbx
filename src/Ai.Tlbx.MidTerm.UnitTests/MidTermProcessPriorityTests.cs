@@ -54,6 +54,7 @@ public sealed class MidTermProcessPriorityTests
             }
             // Simulate the web process closing its handle while hosts survive,
             // then a replacement process opening the same instance group.
+            using var hostLifetime = WindowsProcessPriorityJob.OpenLifetimeHandle(jobName);
             job.Dispose();
             using var replacementJob = new WindowsProcessPriorityJob(jobName);
             replacementJob.SetPriority(ProcessPriorityClass.Normal);

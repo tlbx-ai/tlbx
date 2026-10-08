@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.Win32.SafeHandles;
 
 namespace Ai.Tlbx.MidTerm.Common.Process;
 
@@ -24,8 +25,26 @@ public static class MidTermProcessPriority
             _priorityClass = ResolvePriorityClass(priorityClassName);
             // Reopen the same group after web-only updates with preserved hosts.
             // Hash the private instance key so another user cannot precreate it.
-            _jobName = instanceKey is null ? null :
-                $"Global\\tlbx-priority-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(instanceKey)))}";
+            _jobName = instanceKey is null ? null : GetJobName(instanceKey);
+        }
+    }
+
+    private static string GetJobName(string instanceKey) =>
+        $"Global\\tlbx-priority-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(instanceKey)))}";
+
+    public static SafeFileHandle? HoldInheritedJob(string? instanceId, string? ownerToken, Action<string>? warn = null)
+    {
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(instanceId) || string.IsNullOrEmpty(ownerToken))
+            return null;
+        try
+        {
+            return WindowsProcessPriorityJob.OpenLifetimeHandle(GetJobName($"{instanceId}:{ownerToken}"));
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            // Standalone hosts and old web servers have no priority group.
+            if (ex.NativeErrorCode != 2) warn?.Invoke($"Unable to retain runtime priority group: {ex.Message}");
+            return null;
         }
     }
 

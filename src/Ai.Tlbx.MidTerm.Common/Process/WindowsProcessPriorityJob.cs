@@ -19,9 +19,62 @@ public sealed class WindowsProcessPriorityJob : IDisposable
 
     public WindowsProcessPriorityJob(string? name = null)
     {
-        _handle = CreateJobObjectW(IntPtr.Zero, name);
+        if (name is null)
+        {
+            _handle = CreateJobObjectW(IntPtr.Zero, null);
+        }
+        else
+        {
+            // Hosts run as the terminal user even when mt runs as LocalSystem.
+            // They need query-only handles to keep the group alive across web
+            // restarts; only its owner, administrators and SYSTEM may change it.
+            if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                "D:(A;;GA;;;SY)(A;;GA;;;BA)(A;;GA;;;OW)(A;;0x0004;;;AU)", 1, out var descriptor, out _))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            try
+            {
+                var attributes = new SecurityAttributes
+                {
+                    Length = (uint)Marshal.SizeOf<SecurityAttributes>(), Descriptor = descriptor
+                };
+                _handle = CreateJobObjectWithSecurity(ref attributes, name);
+            }
+            finally { LocalFree(descriptor); }
+        }
         if (_handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
     }
+
+    public static SafeFileHandle OpenLifetimeHandle(string name)
+    {
+        var handle = OpenJobObjectW(4, false, name);
+        if (!handle.IsInvalid) return handle;
+        var error = Marshal.GetLastWin32Error();
+        handle.Dispose();
+        throw new Win32Exception(error);
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes
+    {
+        public uint Length;
+        public IntPtr Descriptor;
+        [MarshalAs(UnmanagedType.Bool)] public bool InheritHandle;
+    }
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ConvertStringSecurityDescriptorToSecurityDescriptorW(string value, uint revision,
+        out IntPtr descriptor, out uint size);
+
+    [DllImport("kernel32.dll")]
+    private static extern IntPtr LocalFree(IntPtr memory);
+
+    [DllImport("kernel32.dll", EntryPoint = "CreateJobObjectW", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle CreateJobObjectWithSecurity(ref SecurityAttributes attributes, string name);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern SafeFileHandle OpenJobObjectW(uint access,
+        [MarshalAs(UnmanagedType.Bool)] bool inherit, string name);
 
     public void SetPriority(ProcessPriorityClass priority)
     {

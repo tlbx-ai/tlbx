@@ -1,4 +1,5 @@
 using Ai.Tlbx.MidTerm.Common.Ipc;
+using Ai.Tlbx.MidTerm.Common.Process;
 using System.Reflection;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
@@ -23,6 +24,8 @@ public static class Program
         var instanceId = ReadOption(args, "--instance-id");
         var ownerToken = ReadOption(args, "--owner-token");
         var sessionId = ReadOption(args, "--session-id");
+        using var priorityJobLifetime = MidTermProcessPriority.HoldInheritedJob(
+            instanceId, ownerToken, Console.Error.WriteLine);
 
         if (args.Contains("--ipc", StringComparer.Ordinal))
         {
