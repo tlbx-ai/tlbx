@@ -15,10 +15,11 @@ namespace Ai.Tlbx.MidTerm.Common.Process;
 [SupportedOSPlatform("windows")]
 public sealed class WindowsProcessPriorityJob : IDisposable
 {
-    private readonly SafeFileHandle _handle = CreateJobObjectW(IntPtr.Zero, null);
+    private readonly SafeFileHandle _handle;
 
-    public WindowsProcessPriorityJob()
+    public WindowsProcessPriorityJob(string? name = null)
     {
+        _handle = CreateJobObjectW(IntPtr.Zero, name);
         if (_handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
     }
 

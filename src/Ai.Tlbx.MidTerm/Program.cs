@@ -171,7 +171,7 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
-        ConfigureRuntimePriority(settings);
+        ConfigureRuntimePriority(settings, resolvedInstanceIdentity);
         _ = MidTermProcessPriority.TryApplyToCurrentProcess(
             "mt",
             message => Log.Info(() => message),
@@ -343,7 +343,7 @@ public class Program
 
         settingsService.AddSettingsListener(newSettings =>
         {
-            ConfigureRuntimePriority(newSettings);
+            ConfigureRuntimePriority(newSettings, resolvedInstanceIdentity);
             _ = MidTermProcessPriority.TryApplyToCurrentProcess(
                 "mt",
                 message => Log.Info(() => message),
@@ -611,10 +611,11 @@ public class Program
         }
     }
 
-    private static void ConfigureRuntimePriority(MidTermSettings settings)
+    private static void ConfigureRuntimePriority(MidTermSettings settings, MidTermInstanceIdentity identity)
     {
         MidTermProcessPriority.Configure(
             settings.RuntimePriorityBoostEnabled,
-            settings.RuntimePriorityClass);
+            settings.RuntimePriorityClass,
+            $"{identity.InstanceId}:{identity.OwnerToken}");
     }
 }

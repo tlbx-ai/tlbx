@@ -15,7 +15,8 @@ public sealed class MidTermProcessPriorityTests
         var grandchildPidFile = gate + ".grandchild";
         var childScript = gate + ".ps1";
         File.WriteAllText(childScript, $"[IO.File]::WriteAllText('{pidFile}',[string]$PID); while(!(Test-Path -LiteralPath '{gate}')){{Start-Sleep -Milliseconds 20}}; $p=Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile','-Command','Start-Sleep -Seconds 30' -PassThru; [IO.File]::WriteAllText('{grandchildPidFile}',[string]$p.Id); Start-Sleep -Seconds 30");
-        using var job = new WindowsProcessPriorityJob();
+        var jobName = $"Local\\tlbx-priority-test-{Guid.NewGuid():N}";
+        using var job = new WindowsProcessPriorityJob(jobName);
         job.SetPriority(ProcessPriorityClass.AboveNormal);
         var start = new ProcessStartInfo("pwsh") { UseShellExecute = false, CreateNoWindow = true };
         start.ArgumentList.Add("-NoProfile");
@@ -51,7 +52,11 @@ public sealed class MidTermProcessPriorityTests
                 // High job priority requires an administrator/service token.
                 Assert.Equal(ProcessPriorityClass.AboveNormal, child.PriorityClass);
             }
-            job.SetPriority(ProcessPriorityClass.Normal);
+            // Simulate the web process closing its handle while hosts survive,
+            // then a replacement process opening the same instance group.
+            job.Dispose();
+            using var replacementJob = new WindowsProcessPriorityJob(jobName);
+            replacementJob.SetPriority(ProcessPriorityClass.Normal);
             parent.Refresh();
             child.Refresh();
             grandchild.Refresh();

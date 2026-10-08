@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace Ai.Tlbx.MidTerm.Common.Process;
 
@@ -12,13 +14,18 @@ public static class MidTermProcessPriority
     private static ProcessPriorityClass _priorityClass = ProcessPriorityClass.AboveNormal;
     // Process-lifetime handle; closing it never terminates hosted sessions.
     private static WindowsProcessPriorityJob? _job;
+    private static string? _jobName;
 
-    public static void Configure(bool enabled, string? priorityClassName)
+    public static void Configure(bool enabled, string? priorityClassName, string? instanceKey = null)
     {
         lock (Sync)
         {
             _enabled = enabled;
             _priorityClass = ResolvePriorityClass(priorityClassName);
+            // Reopen the same group after web-only updates with preserved hosts.
+            // Hash the private instance key so another user cannot precreate it.
+            _jobName = instanceKey is null ? null :
+                $"Global\\tlbx-priority-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(instanceKey)))}";
         }
     }
 
@@ -107,9 +114,9 @@ public static class MidTermProcessPriority
             lock (Sync)
             {
                 target = _enabled ? _priorityClass : ProcessPriorityClass.Normal;
-                if (_job is null && _enabled)
+                if (_job is null && (_enabled || _jobName is not null))
                 {
-                    _job = new WindowsProcessPriorityJob();
+                    _job = new WindowsProcessPriorityJob(_jobName);
                 }
                 _job?.SetPriority(target);
                 // Retain the job when disabled so existing children also return
