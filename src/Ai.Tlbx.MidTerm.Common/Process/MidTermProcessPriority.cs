@@ -14,8 +14,8 @@ public static class MidTermProcessPriority
     private static bool _enabled = true;
     private static ProcessPriorityClass _priorityClass = ProcessPriorityClass.AboveNormal;
     // Process-lifetime handle; closing it never terminates hosted sessions.
-    private static WindowsProcessPriorityJob? _job;
-    private static string? _jobName;
+    private static readonly Dictionary<int, WindowsProcessPriorityJob> Jobs = [];
+    private static string? _instanceKey;
 
     public static void Configure(bool enabled, string? priorityClassName, string? instanceKey = null)
     {
@@ -25,12 +25,13 @@ public static class MidTermProcessPriority
             _priorityClass = ResolvePriorityClass(priorityClassName);
             // Reopen the same group after web-only updates with preserved hosts.
             // Hash the private instance key so another user cannot precreate it.
-            _jobName = instanceKey is null ? null : GetJobName(instanceKey);
+            _instanceKey = instanceKey;
         }
     }
 
-    private static string GetJobName(string instanceKey) =>
-        $"Global\\tlbx-priority-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(instanceKey)))}";
+    internal static string GetJobName(string instanceKey, int sessionId) =>
+        string.Create(CultureInfo.InvariantCulture,
+            $"Global\\tlbx-priority-{Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(instanceKey)))}-session-{sessionId}");
 
     public static SafeFileHandle? HoldInheritedJob(string? instanceId, string? ownerToken, Action<string>? warn = null)
     {
@@ -38,13 +39,44 @@ public static class MidTermProcessPriority
             return null;
         try
         {
-            return WindowsProcessPriorityJob.OpenLifetimeHandle(GetJobName($"{instanceId}:{ownerToken}"));
+            using var process = System.Diagnostics.Process.GetCurrentProcess();
+            return WindowsProcessPriorityJob.OpenLifetimeHandle(GetJobName($"{instanceId}:{ownerToken}", process.SessionId));
         }
         catch (System.ComponentModel.Win32Exception ex)
         {
             // Standalone hosts and old web servers have no priority group.
             if (ex.NativeErrorCode != 2) warn?.Invoke($"Unable to retain runtime priority group: {ex.Message}");
             return null;
+        }
+    }
+
+    public static void PrepareRuntimeJob(int sessionId, Action<string>? warn = null)
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        try
+        {
+            lock (Sync)
+            {
+                // Publish the query-only lifetime handle before the host starts,
+                // without assigning the web service to this empty job.
+                EnsureRuntimeJob(sessionId);
+                if (Jobs.TryGetValue(sessionId, out var job))
+                    job.SetPriority(_enabled ? _priorityClass : ProcessPriorityClass.Normal);
+            }
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            warn?.Invoke($"Unable to prepare runtime priority group: {ex.Message}");
+        }
+    }
+
+    [System.Runtime.Versioning.SupportedOSPlatform("windows")]
+    private static void EnsureRuntimeJob(int sessionId)
+    {
+        if (!Jobs.ContainsKey(sessionId) && (_enabled || _instanceKey is not null))
+        {
+            Jobs.Add(sessionId, new WindowsProcessPriorityJob(
+                _instanceKey is null ? null : GetJobName(_instanceKey, sessionId)));
         }
     }
 
@@ -133,14 +165,15 @@ public static class MidTermProcessPriority
             lock (Sync)
             {
                 target = _enabled ? _priorityClass : ProcessPriorityClass.Normal;
-                if (_job is null && (_enabled || _jobName is not null))
-                {
-                    _job = new WindowsProcessPriorityJob(_jobName);
-                }
-                _job?.SetPriority(target);
+                // A job cannot span Windows logon sessions. In particular, mt
+                // runs in session 0 as LocalSystem and CreateProcessAsUser must
+                // not inherit its job when launching an interactive user's host.
+                // Keep mt outside the jobs and group hosted runtimes per session.
+                if (role != "mt") EnsureRuntimeJob(process.SessionId);
+                foreach (var job in Jobs.Values) job.SetPriority(target);
                 // Retain the job when disabled so existing children also return
                 // to Normal and future descendants follow the changed setting.
-                _job?.Assign(process);
+                if (role != "mt" && Jobs.TryGetValue(process.SessionId, out var runtimeJob)) runtimeJob.Assign(process);
                 if (ShouldSetPriority(process.PriorityClass, target)) process.PriorityClass = target;
             }
             if (!ShouldSetPriority(current, target))
