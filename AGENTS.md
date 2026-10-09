@@ -1,4 +1,7 @@
-This terminal runs inside MidTerm (web terminal multiplexer).
+Use tlbx supervision when this terminal actually runs inside tlbx.
+For recovery from a broken tlbx instance in an external terminal, use direct
+Windows diagnostics, Git and repository scripts. Do not retry session-context
+binding or require tlbx CLI operations that this terminal cannot perform.
 
 If `.tlbx/AGENTS.md` exists, follow it for browser control and tmux workflows.
 If it does not exist, do not assume extra MidTerm-specific workflow permissions.

@@ -9,7 +9,8 @@ namespace Ai.Tlbx.MidTerm.Common.Process;
 /// <summary>
 /// Windows otherwise starts children of AboveNormal/High parents at Normal.
 /// A priority-only job applies the selected class at creation to every child
-/// and descendant, including shells and processes launched with another token.
+/// and descendant within the same Windows session, including shells and
+/// processes launched with another token in that session.
 /// It has no lifetime, memory, CPU-rate, or kill-on-close limits.
 /// </summary>
 [SupportedOSPlatform("windows")]

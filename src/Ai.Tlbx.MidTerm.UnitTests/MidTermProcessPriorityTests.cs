@@ -7,6 +7,47 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MidTermProcessPriorityTests
 {
     [Fact]
+    public void WebServerPriority_DoesNotCreateAnInheritedJob()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var originalPriority = process.PriorityClass;
+        var instanceKey = $"spawn-regression-{Guid.NewGuid():N}";
+        try
+        {
+            MidTermProcessPriority.Configure(true, "aboveNormal", instanceKey);
+            var warnings = new List<string>();
+            MidTermProcessPriority.TryApplyToCurrentProcess("mt", warn: warnings.Add);
+            Assert.Empty(warnings);
+            process.Refresh();
+            Assert.Equal(ProcessPriorityClass.AboveNormal, process.PriorityClass);
+            // The web process must remain outside tlbx jobs, so a service in
+            // session 0 can create a host with another user's session token.
+            var error = Assert.Throws<System.ComponentModel.Win32Exception>(() =>
+            {
+                if (OperatingSystem.IsWindows())
+                    WindowsProcessPriorityJob.OpenLifetimeHandle(
+                        MidTermProcessPriority.GetJobName(instanceKey, process.SessionId));
+            });
+            Assert.Equal(2, error.NativeErrorCode);
+        }
+        finally
+        {
+            process.PriorityClass = originalPriority;
+            MidTermProcessPriority.Configure(true, MidTermProcessPriority.DefaultPriorityClass);
+        }
+    }
+
+    [Fact]
+    public void RuntimePriorityGroups_AreDistinctPerWindowsSession()
+    {
+        Assert.NotEqual(MidTermProcessPriority.GetJobName("instance", 0),
+            MidTermProcessPriority.GetJobName("instance", 1), StringComparer.Ordinal);
+        Assert.NotEqual(MidTermProcessPriority.GetJobName("instance", 1),
+            MidTermProcessPriority.GetJobName("other-instance", 1), StringComparer.Ordinal);
+    }
+
+    [Fact]
     public async Task WindowsPriorityJob_CoversChildrenAndGrandchildrenAndCanBeDisabled()
     {
         if (!OperatingSystem.IsWindows()) return;
