@@ -59,7 +59,9 @@ public static class MidTermProcessPriority
             {
                 // Publish the query-only lifetime handle before the host starts,
                 // without assigning the web service to this empty job.
-                GetRuntimeJob(sessionId)?.SetPriority(_enabled ? _priorityClass : ProcessPriorityClass.Normal);
+                EnsureRuntimeJob(sessionId);
+                if (Jobs.TryGetValue(sessionId, out var job))
+                    job.SetPriority(_enabled ? _priorityClass : ProcessPriorityClass.Normal);
             }
         }
         catch (System.ComponentModel.Win32Exception ex)
@@ -69,15 +71,13 @@ public static class MidTermProcessPriority
     }
 
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
-    private static WindowsProcessPriorityJob? GetRuntimeJob(int sessionId)
+    private static void EnsureRuntimeJob(int sessionId)
     {
-        if (!Jobs.TryGetValue(sessionId, out var job) && (_enabled || _instanceKey is not null))
+        if (!Jobs.ContainsKey(sessionId) && (_enabled || _instanceKey is not null))
         {
-            job = new WindowsProcessPriorityJob(
-                _instanceKey is null ? null : GetJobName(_instanceKey, sessionId));
-            Jobs.Add(sessionId, job);
+            Jobs.Add(sessionId, new WindowsProcessPriorityJob(
+                _instanceKey is null ? null : GetJobName(_instanceKey, sessionId)));
         }
-        return job;
     }
 
     public static ProcessPriorityClass ResolvePriorityClass(string? priorityClassName)
@@ -169,11 +169,11 @@ public static class MidTermProcessPriority
                 // runs in session 0 as LocalSystem and CreateProcessAsUser must
                 // not inherit its job when launching an interactive user's host.
                 // Keep mt outside the jobs and group hosted runtimes per session.
-                var runtimeJob = role == "mt" ? null : GetRuntimeJob(process.SessionId);
+                if (role != "mt") EnsureRuntimeJob(process.SessionId);
                 foreach (var job in Jobs.Values) job.SetPriority(target);
                 // Retain the job when disabled so existing children also return
                 // to Normal and future descendants follow the changed setting.
-                runtimeJob?.Assign(process);
+                if (role != "mt" && Jobs.TryGetValue(process.SessionId, out var runtimeJob)) runtimeJob.Assign(process);
                 if (ShouldSetPriority(process.PriorityClass, target)) process.PriorityClass = target;
             }
             if (!ShouldSetPriority(current, target))

@@ -26,8 +26,10 @@ public sealed class MidTermProcessPriorityTests
             var error = Assert.Throws<System.ComponentModel.Win32Exception>(() =>
             {
                 if (OperatingSystem.IsWindows())
-                    WindowsProcessPriorityJob.OpenLifetimeHandle(
+                {
+                    using var unexpectedHandle = WindowsProcessPriorityJob.OpenLifetimeHandle(
                         MidTermProcessPriority.GetJobName(instanceKey, process.SessionId));
+                }
             });
             Assert.Equal(2, error.NativeErrorCode);
         }
