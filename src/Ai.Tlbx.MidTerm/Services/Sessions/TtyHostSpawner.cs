@@ -515,6 +515,12 @@ public static class TtyHostSpawner
 
         private RedirectedProcessHandle(ProcessStartInfo startInfo)
         {
+            if (OperatingSystem.IsWindows())
+            {
+                using var parent = Process.GetCurrentProcess();
+                MidTermProcessPriority.PrepareRuntimeJob(parent.SessionId,
+                    message => Log.Warn(() => message));
+            }
             _process = new Process
             {
                 StartInfo = startInfo,
@@ -1179,6 +1185,8 @@ public static class TtyHostSpawner
         string commandLine,
         IReadOnlyDictionary<string, string?>? environmentOverrides)
     {
+        using var parent = Process.GetCurrentProcess();
+        MidTermProcessPriority.PrepareRuntimeJob(parent.SessionId, message => Log.Warn(() => message));
         var si = new STARTUPINFO();
         si.cb = Marshal.SizeOf<STARTUPINFO>();
         IntPtr environmentBlock = IntPtr.Zero;
@@ -1248,6 +1256,7 @@ public static class TtyHostSpawner
 
         try
         {
+            MidTermProcessPriority.PrepareRuntimeJob((int)sessionId, message => Log.Warn(() => message));
             if (!CreateEnvironmentBlock(out var envBlock, userToken, false))
             {
                 var errorCode = Marshal.GetLastWin32Error();
@@ -1503,7 +1512,7 @@ public static class TtyHostSpawner
         launchedProcess = null;
         failure = null;
 
-        if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out _))
+        if (!TryGetUserToken(runAsUser, runAsUserSid, out var userToken, out var sessionId))
         {
             failure = "Failed to get user token for impersonation";
             return false;
@@ -1518,6 +1527,7 @@ public static class TtyHostSpawner
 
         try
         {
+            MidTermProcessPriority.PrepareRuntimeJob((int)sessionId, message => Log.Warn(() => message));
             var sa = new SECURITY_ATTRIBUTES
             {
                 bInheritHandle = true

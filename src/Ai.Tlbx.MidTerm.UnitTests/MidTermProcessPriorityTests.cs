@@ -39,6 +39,29 @@ public sealed class MidTermProcessPriorityTests
     }
 
     [Fact]
+    public void RuntimePriorityGroup_IsAvailableBeforeHostStartup()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+        using var process = System.Diagnostics.Process.GetCurrentProcess();
+        var instanceId = Guid.NewGuid().ToString("N");
+        const string ownerToken = "test-owner";
+        try
+        {
+            MidTermProcessPriority.Configure(true, "aboveNormal", $"{instanceId}:{ownerToken}");
+            var warnings = new List<string>();
+            MidTermProcessPriority.PrepareRuntimeJob(process.SessionId, warnings.Add);
+            using var hostLifetime = MidTermProcessPriority.HoldInheritedJob(instanceId, ownerToken, warnings.Add);
+            Assert.Empty(warnings);
+            Assert.NotNull(hostLifetime);
+            Assert.False(hostLifetime.IsInvalid);
+        }
+        finally
+        {
+            MidTermProcessPriority.Configure(true, MidTermProcessPriority.DefaultPriorityClass);
+        }
+    }
+
+    [Fact]
     public void RuntimePriorityGroups_AreDistinctPerWindowsSession()
     {
         Assert.NotEqual(MidTermProcessPriority.GetJobName("instance", 0),
