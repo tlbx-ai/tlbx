@@ -31,8 +31,6 @@ export function bindBoardCanvas(
   } | null = null;
   const render = (): void => {
     plane.style.transform = `translate(${board.panX}px, ${board.panY}px) scale(${board.zoom})`;
-    surface.style.setProperty('--board-grid', `${24 * board.zoom}px`);
-    surface.style.backgroundPosition = `${board.panX}px ${board.panY}px`;
     surface.dispatchEvent(new CustomEvent('boardzoom', { detail: board.zoom }));
   };
   bindBoardPinch(

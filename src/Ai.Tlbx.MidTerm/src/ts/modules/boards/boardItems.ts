@@ -207,7 +207,8 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
       const done = document.createElement('input');
       done.type = 'checkbox';
       done.setAttribute('aria-label', t('boards.done'));
-      const text = document.createElement('input');
+      const text = document.createElement('textarea');
+      text.rows = 1;
       text.className = 'board-entry-text';
       text.setAttribute('aria-label', t('boards.entryText'));
       const date = document.createElement('input');
@@ -254,8 +255,8 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
         if (current.item.kind !== 'todo') return;
         event.preventDefault();
         event.stopPropagation();
-        const start = text.selectionStart ?? text.value.length;
-        const end = text.selectionEnd ?? start;
+        const start = text.selectionStart;
+        const end = text.selectionEnd;
         const entry: BoardEntry = {
           id: crypto.randomUUID(),
           text: text.value.slice(end),
@@ -266,7 +267,7 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
         current.item.entries.splice(current.item.entries.indexOf(current.entry) + 1, 0, entry);
         patchEntries(parent, current.item, actions);
         actions.changed(current.item);
-        const next = parent.querySelector<HTMLInputElement>(
+        const next = parent.querySelector<HTMLTextAreaElement>(
           `[data-entry-id="${entry.id}"] .board-entry-text`,
         );
         next?.focus();
@@ -314,8 +315,10 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
     patch: (row, entry) => {
       entryContext.set(row, { entry, item });
       row.dataset.entryId = entry.id;
-      const inputs = row.querySelectorAll('input');
-      required(inputs[0]).checked = entry.done;
+      const inputs = row.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+        'input, textarea',
+      );
+      required(row.querySelector<HTMLInputElement>('input[type="checkbox"]')).checked = entry.done;
       patchInput(required(inputs[1]), entry.text);
       patchInput(required(inputs[2]), entry.date ?? '');
       patchInput(

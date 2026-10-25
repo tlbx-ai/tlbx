@@ -1322,6 +1322,7 @@
   "boards.deleteItem": "Delete item",
   "boards.prompt": "Initial prompt",
   "boards.canvasHint": "Double-click to add a note · Drag the background to pan · Ctrl + wheel to zoom",
+  "boards.canvasTouchHint": "पृष्ठभूमि खींचकर खिसकाएँ · ज़ूम करने के लिए दो उँगलियों से पिंच करें",
   "boards.itemSettings": "Item settings",
   "boards.mail": "Mail",
   "boards.addEntry": "Add an item, press Enter",

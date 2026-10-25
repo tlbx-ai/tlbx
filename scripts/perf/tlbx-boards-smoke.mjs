@@ -58,6 +58,29 @@ try {
   await page.goto(`${base}/?board=${boardId}`);
   await page.locator('.boards-workspace').waitFor({ state: 'visible' });
   const surface = page.locator('.boards-surface');
+  assert.equal(await surface.evaluate(el => getComputedStyle(el).backgroundImage), 'none');
+  await page.locator('.boards-empty button').click();
+  await page.locator('.boards-context-menu').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('.boards-identity [data-board-action="rename"]').click();
+  await page.locator('.boards-title').fill('Cancelled title');
+  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.boards-header select option:checked').textContent(), 'Project desk');
+  await page.locator('.boards-identity [data-board-action="new"]').click();
+  await page.locator('.boards-title:not([hidden])').waitFor();
+  await page.locator('.boards-title').fill('Created beside the title');
+  await page.keyboard.press('Enter');
+  let createdBoard;
+  await waitFor(async () => { createdBoard = (await api()).find(b => b.title === 'Created beside the title'); return !!createdBoard; }, 'new board title saved');
+  await page.reload();
+  await page.locator('.boards-header select').selectOption(boardId);
+  await page.locator('.boards-empty button').waitFor();
+  const identityBounds = await page.locator('.boards-identity').boundingBox();
+  const renameBounds = await page.locator('.boards-identity [data-board-action="rename"]').boundingBox();
+  assert.ok(renameBounds.x >= identityBounds.x && renameBounds.x < identityBounds.x + identityBounds.width);
+  await api(`/${createdBoard.id}?expectedRevision=${(await api(`/${createdBoard.id}`)).revision}`, 'DELETE');
+  passed.push('quiet canvas, empty-board creation, adjacent New/Rename, Escape cancel and Enter save with reload');
+
   assert.equal(await page.locator('.boards-tools').count(), 0);
   await surface.click({button:'right',position:{x:200,y:120}});
   await page.locator('.boards-context-menu').waitFor();
@@ -137,6 +160,23 @@ try {
   await todo.locator('.board-entry').nth(1).getByRole('button', {name:'Delete entry',exact:true}).click();
   await waitFor(async () => (await api(`/${boardId}`)).items.find(item => item.kind === 'todo').entries.length === 1, 'extra keyboard rows removed');
   passed.push('Enter in an existing to-do inserts and focuses a new unchecked row, splits at caret and persists exact row order through reload');
+
+  const longTask = 'Mit Julia die nächste Woche für Johanna, Miriam, Georg und Nora abstimmen: Termine, Wege und Betreuung.';
+  await todo.locator('.board-entry-add').fill(longTask);
+  await todo.locator('.board-entry-add').press('Enter');
+  const wrapped = todo.locator('.board-entry-text').last();
+  const wrapping = await wrapped.evaluate(el => ({height:el.clientHeight,scroll:el.scrollHeight,line:parseFloat(getComputedStyle(el).lineHeight),value:el.value}));
+  assert.equal(wrapping.value,longTask);
+  assert.ok(wrapping.height > wrapping.line * 2 && wrapping.scroll <= wrapping.height + 1);
+  await wrapped.focus();
+  await wrapped.evaluate(el => el.setSelectionRange(8,8));
+  await page.keyboard.type('gemeinsam ');
+  await waitFor(async () => (await api(`/${boardId}`)).items.find(item => item.kind === 'todo').entries.at(-1).text.includes('gemeinsam '), 'wrapped edit saved');
+  await page.reload();
+  await todo.waitFor();
+  assert.equal(await todo.locator('.board-entry-text').last().inputValue(),longTask.slice(0,8)+'gemeinsam '+longTask.slice(8));
+  await todo.locator('.board-entry').last().getByRole('button', {name:'Delete entry',exact:true}).click();
+  passed.push('long German tasks wrap fully, grow during editing and persist exact text after reload');
 
   const state = await api(`/${boardId}`);
   const latestNote = state.items.find(item => item.id === noteId);
@@ -234,7 +274,7 @@ try {
   assert.equal(await note.locator('.board-item-text').inputValue(), 'Remote draft kept safely');
   const cameraBefore = await surface.evaluate(element => element.querySelector('.boards-plane').style.transform);
   const titleBase = await api(`/${boardId}`);
-  await boardAction(page, 'rename');
+  await page.locator('.boards-identity [data-board-action="rename"]').click();
   await api(`/${boardId}`, 'PATCH', {expectedRevision:titleBase.revision,title:'Agent board title'});
   await page.locator('.boards-title').fill('My board title');
   await surface.focus();
