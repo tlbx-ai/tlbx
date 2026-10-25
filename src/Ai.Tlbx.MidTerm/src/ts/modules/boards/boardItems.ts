@@ -255,8 +255,8 @@ function patchEntries(parent: HTMLElement, item: BoardItem, actions: BoardItemAc
         if (current.item.kind !== 'todo') return;
         event.preventDefault();
         event.stopPropagation();
-        const start = text.selectionStart ?? text.value.length;
-        const end = text.selectionEnd ?? start;
+        const start = text.selectionStart;
+        const end = text.selectionEnd;
         const entry: BoardEntry = {
           id: crypto.randomUUID(),
           text: text.value.slice(end),
