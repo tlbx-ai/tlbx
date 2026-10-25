@@ -91,6 +91,7 @@ class BoardView {
     },
     'menu',
   );
+  private readonly empty = document.createElement('div');
   private readonly inspector = document.createElement('aside');
   private board: BoardDocument | null = null;
   private canvas: ReturnType<typeof bindBoardCanvas> | null = null;
@@ -176,12 +177,45 @@ class BoardView {
     this.menuButton.setAttribute('aria-label', t('boards.actions'));
     this.menuButton.setAttribute('aria-haspopup', 'menu');
     this.menuButton.setAttribute('aria-expanded', 'false');
-    header.append(brand, this.picker, this.title, this.status, this.resolveButton, this.menuButton);
+    const identity = document.createElement('div');
+    identity.className = 'boards-identity';
+    const rename = this.button(
+      '✎',
+      () => {
+        this.beginRename();
+      },
+      'rename',
+    );
+    rename.setAttribute('aria-label', t('boards.rename'));
+    rename.title = t('boards.rename');
+    const create = this.button(
+      '+',
+      () => {
+        void this.createBoard();
+      },
+      'new',
+    );
+    create.setAttribute('aria-label', t('boards.newBoard'));
+    create.title = t('boards.newBoard');
+    identity.append(this.picker, this.title, rename, create);
+    header.append(brand, identity, this.status, this.resolveButton, this.menuButton);
     this.surface.className = 'boards-surface';
     this.surface.tabIndex = 0;
     this.surface.setAttribute('aria-label', t('boards.canvasHint'));
     this.plane.className = 'boards-plane';
-    this.surface.append(this.plane);
+    this.empty.className = 'boards-empty';
+    this.empty.hidden = true;
+    const firstItem = this.button(t('boards.addItem'), () => {
+      this.showCreationMenu();
+    });
+    const hint = document.createElement('p');
+    hint.className = 'boards-pointer-hint';
+    hint.textContent = t('boards.canvasHint');
+    const touchHint = document.createElement('p');
+    touchHint.className = 'boards-touch-hint';
+    touchHint.textContent = t('boards.canvasTouchHint');
+    this.empty.append(firstItem, hint, touchHint);
+    this.surface.append(this.plane, this.empty);
     this.surface.addEventListener('contextmenu', (event) => {
       if (event.target !== this.surface && event.target !== this.plane) return;
       event.preventDefault();
@@ -311,20 +345,6 @@ class BoardView {
         label: t('boards.addItem'),
         run: () => {
           this.showCreationMenu();
-        },
-      },
-      {
-        id: 'rename',
-        label: t('boards.rename'),
-        run: () => {
-          this.beginRename();
-        },
-      },
-      {
-        id: 'new',
-        label: t('boards.newBoard'),
-        run: () => {
-          void this.createBoard();
         },
       },
       {
@@ -540,6 +560,7 @@ class BoardView {
   }
 
   private render(): void {
+    this.empty.hidden = !this.board || this.board.items.length > 0;
     if (!this.board) return;
     this.syncPickerTitle();
     renderBoardItems(this.plane, this.board.items, this.board.id, {

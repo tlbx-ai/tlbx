@@ -1453,6 +1453,7 @@
   "boards.deleteItem": "Kachel löschen",
   "boards.prompt": "Anfangsprompt",
   "boards.canvasHint": "Doppelklick erstellt eine Notiz · Hintergrund ziehen zum Verschieben · Strg + Mausrad zum Zoomen",
+  "boards.canvasTouchHint": "Hintergrund ziehen zum Verschieben · Mit zwei Fingern zoomen",
   "boards.itemSettings": "Kachel-Einstellungen",
   "boards.mail": "E-Mails",
   "boards.addEntry": "Eintrag hinzufügen, Enter drücken",
