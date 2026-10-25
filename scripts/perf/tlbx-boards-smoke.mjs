@@ -139,6 +139,12 @@ try {
   await waitFor(async () => (await api(`/${boardId}`)).items.some(item => item.kind === 'todo' && item.entries[0]?.done), 'todo saved');
   passed.push('low-friction Enter-to-add and toggle todo');
   const rowText = todo.locator('.board-entry-text');
+  await todo.locator('input[type="checkbox"]').first().focus();
+  assert.equal(await todo.locator('.board-mail-url').first().isVisible(),false);
+  await todo.locator('.board-entry-text').first().focus();
+  assert.equal(await todo.locator('.board-mail-url').first().isVisible(),false);
+  passed.push('focused todo checkbox and text keep mail-only fields hidden');
+
   await rowText.first().focus();
   await page.keyboard.press('End');
   await page.keyboard.press('Enter');
@@ -161,7 +167,7 @@ try {
   await waitFor(async () => (await api(`/${boardId}`)).items.find(item => item.kind === 'todo').entries.length === 1, 'extra keyboard rows removed');
   passed.push('Enter in an existing to-do inserts and focuses a new unchecked row, splits at caret and persists exact row order through reload');
 
-  const longTask = 'Mit Julia die nächste Woche für Johanna, Miriam, Georg und Nora abstimmen: Termine, Wege und Betreuung.';
+  const longTask = 'Mit Julia die nÃ¤chste Woche fÃ¼r Johanna, Miriam, Georg und Nora abstimmen: Termine, Wege und Betreuung.';
   await todo.locator('.board-entry-add').fill(longTask);
   await todo.locator('.board-entry-add').press('Enter');
   const wrapped = todo.locator('.board-entry-text').last();
