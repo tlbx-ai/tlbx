@@ -251,13 +251,22 @@ public static class ServerSetup
             "Ai.Tlbx.MidTerm");
         var useCompressedFiles = true;
 #endif
+        ConfigureStaticFiles(app, fileProvider, useCompressedFiles, sourceDevMode, sourceDevAssetVersion);
+    }
+
+    internal static void ConfigureStaticFiles(WebApplication app, IFileProvider fileProvider,
+        bool useCompressedFiles, bool sourceDevMode, string? sourceDevAssetVersion)
+    {
 
         var manifestFile = fileProvider.GetFileInfo("site.webmanifest");
+        var compressedManifest = !manifestFile.Exists;
+        if (compressedManifest) manifestFile = fileProvider.GetFileInfo("site.webmanifest.br");
         string? manifest = null;
         if (manifestFile.Exists)
         {
             using var manifestStream = manifestFile.CreateReadStream();
-            using var manifestReader = new StreamReader(manifestStream);
+            using var manifestReader = new StreamReader(compressedManifest
+                ? new BrotliStream(manifestStream, CompressionMode.Decompress) : manifestStream);
             manifest = PwaManifest.WithServerName(manifestReader.ReadToEnd(), Environment.MachineName);
         }
 
@@ -330,9 +339,9 @@ public static class ServerSetup
                 return;
             }
             var version = string.Create(CultureInfo.InvariantCulture, $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
-            var rewrittenHtml = StaticAssetCacheHeaders.RewriteDevAssetUrls(
+            var rewrittenHtml = PwaManifest.WithServerNameHtml(StaticAssetCacheHeaders.RewriteDevAssetUrls(
                 StaticAssetCacheHeaders.StampHtmlAssetUrls(html, version),
-                devAssetOrigin);
+                devAssetOrigin), Environment.MachineName);
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             context.Response.ContentType = "text/html; charset=utf-8";
@@ -373,7 +382,7 @@ public static class ServerSetup
                 using var reader = new StreamReader(stream);
                 var html = await reader.ReadToEndAsync(context.RequestAborted);
                 var stampedHtml = StaticAssetCacheHeaders.StampHtmlAssetUrls(
-                    html,
+                    PwaManifest.WithServerNameHtml(html, Environment.MachineName),
                     sourceDevAssetVersion ?? "dev");
 
                 context.Response.StatusCode = StatusCodes.Status200OK;
@@ -383,6 +392,31 @@ public static class ServerSetup
                 await context.Response.WriteAsync(stampedHtml, context.RequestAborted);
             });
         }
+
+        // Apply the same installation name to Apple's home-screen metadata,
+        // including HTML available only as Brotli resources in published binaries.
+        app.Use(async (context, next) =>
+        {
+            var path = StaticAssetCacheHeaders.ResolveHtmlEntryPointPath(context.Request.Path.Value ?? string.Empty);
+            if ((!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                || !StaticAssetCacheHeaders.IsHtmlEntryPoint(path))
+            {
+                await next();
+                return;
+            }
+            var html = await ReadHtmlEntryPointAsync(fileProvider, path, context.RequestAborted);
+            if (html is null)
+            {
+                await next();
+                return;
+            }
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+            if (HttpMethods.IsGet(context.Request.Method))
+            {
+                await context.Response.WriteAsync(PwaManifest.WithServerNameHtml(html, Environment.MachineName), context.RequestAborted);
+            }
+        });
 
         // In release builds, serve pre-compressed .br files for text assets
         if (useCompressedFiles)

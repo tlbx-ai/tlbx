@@ -4,6 +4,8 @@ using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
+// The large-file test measures process-wide allocations, including other tests.
+[Collection(TimingSensitiveCollection.Name)]
 public sealed class FileDocumentServiceTests : IDisposable
 {
     private readonly string _folder = Path.Combine(Path.GetTempPath(), $"file_document_test_{Guid.NewGuid():N}");
