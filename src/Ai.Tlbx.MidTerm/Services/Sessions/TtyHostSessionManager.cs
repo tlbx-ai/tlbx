@@ -36,6 +36,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     private readonly SessionForegroundProcessService _foregroundProcessService;
     private readonly SettingsService? _settingsService;
     private readonly ConcurrentDictionary<string, TerminalTransportRuntimeState> _transportState = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TerminalCursorQueryGuard> _cursorQueryGuards = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _resizeGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _metadataGates = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, TerminalDimensions> _redrawDimensionOverrides = new(StringComparer.Ordinal);
@@ -896,6 +897,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _registry.RemoveSessionState(sessionId);
         _ownershipRegistry.Remove(sessionId);
         _transportState.TryRemove(sessionId, out _);
+        _cursorQueryGuards.TryRemove(sessionId, out _);
         _redrawDimensionOverrides.TryRemove(sessionId, out _);
         _metadataGates.TryRemove(sessionId, out _);
 
@@ -1048,7 +1050,9 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         if (_clients.TryGetValue(sessionId, out var client))
         {
-            if (!data.IsEmpty) OnInput?.Invoke(sessionId, userInput);
+            data = FilterTerminalResponse(sessionId, data, userInput);
+            if (data.IsEmpty) return;
+            OnInput?.Invoke(sessionId, userInput);
             await client.SendInputAsync(data, ct).ConfigureAwait(false);
         }
     }
@@ -1072,8 +1076,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
             return null;
         }
 
-        if (!data.IsEmpty) OnInput?.Invoke(sessionId, userInput);
+        data = FilterTerminalResponse(sessionId, data, userInput);
+        if (data.IsEmpty) return null;
+        OnInput?.Invoke(sessionId, userInput);
         return await client.SendInputWithTraceAsync(data, traceId, ct).ConfigureAwait(false);
+    }
+
+    private ReadOnlyMemory<byte> FilterTerminalResponse(string sessionId, ReadOnlyMemory<byte> data, bool userInput)
+    {
+        if (userInput) return data;
+        var guard = _cursorQueryGuards.GetOrAdd(sessionId, static _ => new TerminalCursorQueryGuard());
+        return guard.FilterResponse(data.Span) is { } filtered ? filtered : data;
     }
 
     public async Task<byte[]?> PingAsync(string sessionId, byte[] pingData, CancellationToken ct = default)
@@ -1349,6 +1362,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
 
     private void HandleClientOutput(string sessionId, ulong sequenceStart, int cols, int rows, ReadOnlyMemory<byte> data)
     {
+        _cursorQueryGuards.GetOrAdd(sessionId, static _ => new TerminalCursorQueryGuard()).ObservePtyOutput(data.Span);
         if (_redrawDimensionOverrides.TryGetValue(sessionId, out var canonicalDimensions))
         {
             cols = canonicalDimensions.Cols;
@@ -1628,6 +1642,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
                     }
                     _registry.RemoveSessionState(sessionId);
                     _transportState.TryRemove(sessionId, out _);
+                    _cursorQueryGuards.TryRemove(sessionId, out _);
                     _redrawDimensionOverrides.TryRemove(sessionId, out _);
                     _ownershipRegistry.Remove(sessionId);
                     removeResizeGate = true;
@@ -1753,6 +1768,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         _resizeGates.Clear();
         _metadataGates.Clear();
         _redrawDimensionOverrides.Clear();
+        _cursorQueryGuards.Clear();
     }
 
     internal readonly record struct TerminalDimensions(int Cols, int Rows);
