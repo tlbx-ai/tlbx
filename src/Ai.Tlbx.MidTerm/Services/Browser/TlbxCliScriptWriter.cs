@@ -79,7 +79,7 @@ public static class TlbxCliScriptWriter
         # Git Bash uses emulated PIDs, so translate to the native Windows PID.
         _MRESOLVECTX() {
           local pid=$$ resolved root="${CODEX_SESSION_ID:-}" thread="${CODEX_THREAD_ID:-}" codex_home="${CODEX_HOME:-$HOME/.codex}" query="" auth=()
-          local previous_session="${MT_SESSION_ID:-}" previous_preview="${MT_PREVIEW_NAME:-}"
+          local previous_session="${MT_SESSION_ID:-}" previous_preview="${MT_PREVIEW_NAME:-}" resolve_exit=0
           [ -n "$root" ] || root="$thread"
           [ -n "$thread" ] || thread="$root"
           if [ -r "/proc/$$/winpid" ]; then
@@ -92,7 +92,7 @@ public static class TlbxCliScriptWriter
             query="&codexSessionId=$(_MURLENC "$root")&codexThreadId=$(_MURLENC "$thread")&codexHome=$(_MURLENC "$codex_home")&fresh=${1:-false}"
           fi
           if [ -n "${MT_API_KEY:-}" ]; then auth=(-H "Authorization: Bearer $MT_API_KEY"); else auth=(-b "$_MK"); fi
-          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 "$_MT/api/sessions/process-context?processId=$pid$query" 2>/dev/null) || true
+          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
           if [ -n "$root$thread" ]; then
             if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
               export MT_SESSION_ID="${BASH_REMATCH[1]}"
@@ -103,7 +103,7 @@ public static class TlbxCliScriptWriter
               _MCTXERROR=""
             else
               _MCTXERROR="$resolved"
-              [[ "$_MCTXERROR" == *TLBX* ]] || _MCTXERROR="TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Verify the tlbx server $_MT, update its generated helper, then retry. Do not export an inherited session ID."
+              [[ "$_MCTXERROR" == *TLBX* ]] || _MCTXERROR="TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Context request to $_MT/api/sessions/process-context failed (curl exit $resolve_exit). ${resolved:0:1000} Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
             fi
             return 0
           fi
@@ -1284,10 +1284,11 @@ public static class TlbxCliScriptWriter
                 $query = "&codexSessionId=$([Uri]::EscapeDataString($root))&codexThreadId=$([Uri]::EscapeDataString($thread))&codexHome=$([Uri]::EscapeDataString($codexHome))&fresh=$($Fresh.IsPresent.ToString().ToLowerInvariant())"
             }
             $resolvedContext = if ($env:MT_API_KEY) {
-                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
             } else {
-                & $script:_MCurl --fail-with-body -sSk -b $script:_MK --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>$null
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
             }
+            $resolveExit = $LASTEXITCODE
             $resolvedContext = ($resolvedContext | Out-String).Trim()
             if ($root -or $thread) {
                 if ($resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
@@ -1299,7 +1300,8 @@ public static class TlbxCliScriptWriter
                     $script:_MContextError = $null
                 } else {
                     $script:_MContextError = if ($resolvedContext -match 'TLBX') { $resolvedContext } else {
-                        "TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Verify the tlbx server $script:_MT, update its generated helper, then retry. Do not export an inherited session ID."
+                    $detail = $resolvedContext.Substring(0, [Math]::Min(1000, $resolvedContext.Length))
+                    "TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Context request to $script:_MT/api/sessions/process-context failed (curl exit $resolveExit). $detail Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
                     }
                 }
                 return

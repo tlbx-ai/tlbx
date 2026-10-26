@@ -373,6 +373,57 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     }
 
     [Theory]
+    [InlineData(false, 401)]
+    [InlineData(true, 401)]
+    [InlineData(false, 403)]
+    [InlineData(true, 403)]
+    [InlineData(false, 500)]
+    [InlineData(true, 500)]
+    public async Task CodexContextFailureReportsTransportDetailsWithoutMutation(bool bash, int status)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        app.MapGet("/api/sessions/process-context", () => Results.StatusCode(status));
+        var mutations = 0;
+        app.MapPut("/api/sessions/{id}/topic", () => { mutations++; return Results.Ok(); });
+        await app.StartAsync(CancellationToken.None);
+        const string identity = "01a10b30-4385-71e0-8a60-6fd26e1cfb01";
+        var command = bash
+            ? $"export CODEX_SESSION_ID={identity}; source \"$1\"; mt_topic diagnostic"
+            : $"$env:CODEX_SESSION_ID='{identity}'; . $args[0]; mt_topic diagnostic";
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef",
+            Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.NotEqual(0, result.ExitCode);
+        var diagnostic = result.Output + result.Error;
+        Assert.Contains("TLBX_CONTEXT_UNAVAILABLE", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("curl exit 22", diagnostic, StringComparison.Ordinal);
+        Assert.Contains(status.ToString(System.Globalization.CultureInfo.InvariantCulture), diagnostic, StringComparison.Ordinal);
+        Assert.Contains(app.Urls.Single() + "/api/sessions/process-context", diagnostic, StringComparison.Ordinal);
+        Assert.Equal(0, mutations);
+    }
+
+    [Fact]
+    public void EnsureRefreshesBothAgentGuidesAndPreservesUserArtifacts()
+    {
+        var directory = TlbxDirectory.Ensure(_tempDir);
+        var guide = File.ReadAllText(Path.Combine(directory, "AGENTS.md"));
+        Assert.StartsWith("<!-- tlbx-guidance:", guide, StringComparison.Ordinal);
+        File.WriteAllText(Path.Combine(directory, "AGENTS.md"), "outdated instructions");
+        File.WriteAllText(Path.Combine(directory, "CLAUDE.md"), "different outdated instructions");
+        var upload = Path.Combine(directory, "uploads", "keep.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(upload)!);
+        File.WriteAllText(upload, "user upload");
+        TlbxDirectory.Ensure(_tempDir);
+        Assert.Equal(guide, File.ReadAllText(Path.Combine(directory, "AGENTS.md")));
+        Assert.Equal(guide, File.ReadAllText(Path.Combine(directory, "CLAUDE.md")));
+        Assert.Equal("user upload", File.ReadAllText(upload));
+    }
+
+    [Theory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task CodexDoesNotUseLegacyPlainIdOrBypassFailureWithExplicitTarget(bool bash)
