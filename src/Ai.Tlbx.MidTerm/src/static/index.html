@@ -2447,6 +2447,19 @@
                   <h2 data-i18n="settings.sessionsStartup.title">Sessions &amp; Startup</h2>
 
                   <div class="settings-section">
+                    <h3 data-i18n="workspace.title">Save sessions for a restart</h3>
+                    <p class="setting-hint" data-i18n="workspace.description">
+                      Save resume hints and close every session on this host before shutting down.
+                      Restore them here later. In-progress work is interrupted; shell memory and terminal scrollback are not restored.
+                    </p>
+                    <div class="workspace-actions">
+                      <button id="btn-save-workspace" class="btn-danger" type="button" disabled data-i18n="workspace.save">Save and close all sessions</button>
+                      <button id="btn-restore-workspace" class="btn-secondary" type="button" disabled data-i18n="workspace.restore">Restore saved sessions</button>
+                    </div>
+                    <p id="workspace-status" class="setting-hint" role="status" aria-live="polite"></p>
+                  </div>
+
+                  <div class="settings-section">
                     <h3 data-i18n="settings.sessionsStartup.newSessions">New Sessions</h3>
                     <div class="setting-row">
                       <label for="setting-default-shell" data-i18n="settings.behavior.defaultShell"
