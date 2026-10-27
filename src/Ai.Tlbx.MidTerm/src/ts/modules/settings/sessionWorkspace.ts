@@ -36,7 +36,16 @@ export async function initSessionWorkspace(): Promise<void> {
     const response = await fetch(`/api/sessions/workspace${action ? `/${action}` : ''}`, {
       method: action ? 'POST' : 'GET',
     });
-    if (!response.ok) throw new Error(await response.text());
+    if (!response.ok) {
+      let message = await response.text();
+      try {
+        const payload: unknown = JSON.parse(message);
+        if (typeof payload === 'string') message = payload;
+      } catch {
+        // Some server failures return plain text.
+      }
+      throw new Error(message);
+    }
     return (await response.json()) as WorkspaceStatus;
   };
 

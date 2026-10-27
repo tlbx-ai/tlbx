@@ -50,6 +50,7 @@ public sealed partial class SessionUpdateStateService
     internal static bool CanSaveWorkspaceSession(SessionDecorationState session) =>
         !session.AppServerControlOnly &&
         (IsCodexForeground(session.ForegroundName, session.ForegroundCommandLine, session.ForegroundProcessIdentity) ||
+         IsToken(session.ForegroundProcessIdentity, "shell") || IsToken(session.ForegroundName, "shell") ||
          (string.IsNullOrWhiteSpace(session.ForegroundCommandLine) && string.IsNullOrWhiteSpace(session.ForegroundName)) ||
          IsShellProcess(session.ForegroundName, session.ForegroundCommandLine ?? ""));
 
@@ -58,6 +59,7 @@ public sealed partial class SessionUpdateStateService
         GitWatcherService gitWatcher,
         bool fullUpdate,
         bool tryResumeNonAiAgentProcesses,
+        SessionLayoutState? layout = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(sessionManager);
@@ -68,7 +70,8 @@ public sealed partial class SessionUpdateStateService
         {
             SavedAt = DateTimeOffset.UtcNow,
             Kind = fullUpdate ? "full" : "web",
-            Sessions = decorations
+            Sessions = decorations,
+            Layout = layout
         };
 
         if (fullUpdate)
@@ -115,7 +118,6 @@ public sealed partial class SessionUpdateStateService
                 throw;
             }
         }
-
         else
         {
             await PersistAsync(state, ct).ConfigureAwait(false);
@@ -140,6 +142,7 @@ public sealed partial class SessionUpdateStateService
     public async Task RestoreAsync(
         TtyHostSessionManager sessionManager,
         GitWatcherService gitWatcher,
+        SessionLayoutStateService? layoutStateService = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(sessionManager);
@@ -154,7 +157,7 @@ public sealed partial class SessionUpdateStateService
         await RestoreDecorationsAsync(sessionManager, gitWatcher, state.Sessions, ct)
             .ConfigureAwait(false);
         var result = IsFullUpdateState(state)
-            ? await RestoreFullUpdateSessionsAsync(sessionManager, gitWatcher, state, ct).ConfigureAwait(false)
+            ? await RestoreFullUpdateSessionsAsync(sessionManager, gitWatcher, state, layoutStateService, ct).ConfigureAwait(false)
             : RestoreUpdateStateResult.Success;
         if (result.FailedOriginalSessionIds.Count > 0)
         {
@@ -379,10 +382,10 @@ public sealed partial class SessionUpdateStateService
         sessionManager.OnOutput += OnOutput;
         try
         {
-            // The update may have been requested by a tool running inside this
-            // exact Codex turn. Interrupt that tool first so Codex can return to
-            // its prompt and process the explicit /quit command.
-            await sessionManager.SendInputAsync(sessionId, new byte[] { 0x03 }, ct).ConfigureAwait(false);
+            // Escape interrupts a busy Codex turn without terminating an idle CLI.
+            // Ctrl+C can exit an idle CLI without printing its resume hint, leaving
+            // no authoritative id to save before the terminal is closed.
+            await sessionManager.SendInputAsync(sessionId, new byte[] { 0x1b }, ct).ConfigureAwait(false);
             await Task.Delay(GracefulExitInterruptDelay, ct).ConfigureAwait(false);
 
             var interruptDeadline = DateTimeOffset.UtcNow + GracefulExitOutputDrainDelay;
@@ -428,19 +431,39 @@ public sealed partial class SessionUpdateStateService
                         $"Codex exited from session {sessionId} after interruption without emitting its authoritative resume command.");
             }
 
-            // Discard every repaint produced while interrupting the active turn.
-            // Only bytes emitted after the explicit /quit are authoritative for
-            // recovery and may contain the resume id.
+            // Discard repaint output from interruption. Only fresh responses to
+            // commands sent to this CLI may identify its conversation.
+            lock (outputGate)
+            {
+                output.Clear();
+            }
+
+            // Current Codex clients do not always print an exit hint. Query this
+            // exact CLI's built-in status first; never infer its thread from cwd.
+            await sessionManager.SendInputAsync(sessionId, "/status"u8.ToArray(), ct).ConfigureAwait(false);
+            await Task.Delay(400, ct).ConfigureAwait(false);
+            await sessionManager.SendInputAsync(sessionId, new byte[] { 0x0d }, ct).ConfigureAwait(false);
+            string? statusResumeId = null;
+            var statusDeadline = DateTimeOffset.UtcNow + TimeSpan.FromSeconds(3);
+            while (DateTimeOffset.UtcNow < statusDeadline && statusResumeId is null)
+            {
+                lock (outputGate)
+                {
+                    statusResumeId = TryExtractCodexStatusResumeId(Encoding.UTF8.GetString(output.ToArray()));
+                }
+                if (statusResumeId is null) await Task.Delay(100, ct).ConfigureAwait(false);
+            }
             lock (outputGate)
             {
                 output.Clear();
             }
 
             await sessionManager.SendInputAsync(sessionId, "/quit"u8.ToArray(), ct).ConfigureAwait(false);
-            await Task.Delay(50, ct).ConfigureAwait(false);
+            await Task.Delay(400, ct).ConfigureAwait(false);
             await sessionManager.SendInputAsync(sessionId, new byte[] { 0x0d }, ct).ConfigureAwait(false);
 
             var deadline = DateTimeOffset.UtcNow + GracefulExitTimeout;
+            DateTimeOffset? exitedAt = null;
             while (DateTimeOffset.UtcNow < deadline)
             {
                 ct.ThrowIfCancellationRequested();
@@ -450,7 +473,7 @@ public sealed partial class SessionUpdateStateService
                     capturedText = Encoding.UTF8.GetString(output.ToArray());
                 }
 
-                var resumeId = TryExtractCodexExitResumeId(capturedText);
+                var resumeId = TryExtractCodexExitResumeId(capturedText) ?? statusResumeId;
                 var session = await sessionManager.GetSessionFreshAsync(sessionId, ct).ConfigureAwait(false);
                 var codexExited = session is not null &&
                     !IsCodexForeground(
@@ -464,8 +487,12 @@ public sealed partial class SessionUpdateStateService
 
                 if (codexExited && resumeId is null)
                 {
-                    throw new InvalidOperationException(
-                        $"Codex exited from session {sessionId} without emitting its authoritative resume command.");
+                    exitedAt ??= DateTimeOffset.UtcNow;
+                    if (DateTimeOffset.UtcNow - exitedAt >= GracefulExitOutputDrainDelay)
+                    {
+                        throw new InvalidOperationException(
+                            $"Codex exited from session {sessionId} without emitting its authoritative resume command.");
+                    }
                 }
 
                 await Task.Delay(100, ct).ConfigureAwait(false);
@@ -519,6 +546,16 @@ public sealed partial class SessionUpdateStateService
         }
 
         return null;
+    }
+
+    internal static string? TryExtractCodexStatusResumeId(string? statusOutput)
+    {
+        if (string.IsNullOrWhiteSpace(statusOutput)) return null;
+        var clean = TerminalOutputSanitizer.StripEscapeSequences(statusOutput);
+        if (!clean.Contains("OpenAI Codex", StringComparison.Ordinal) ||
+            !clean.Contains("Directory:", StringComparison.Ordinal)) return null;
+        var matches = CodexStatusSessionRegex().Matches(clean);
+        return matches.Count == 1 ? matches[0].Groups["id"].Value : null;
     }
 
     private static bool IsCodexForeground(
@@ -623,6 +660,7 @@ public sealed partial class SessionUpdateStateService
         TtyHostSessionManager sessionManager,
         GitWatcherService gitWatcher,
         SessionUpdateState state,
+        SessionLayoutStateService? layoutStateService,
         CancellationToken ct)
     {
         var liveSessionIds = sessionManager.GetAllSessions()
@@ -634,12 +672,14 @@ public sealed partial class SessionUpdateStateService
             .ToDictionary(static group => group.Key, static group => group.First(), StringComparer.Ordinal);
         var decorations = BuildFullUpdateRestoreDecorations(state, pendingByOriginalId);
         var recreatedOrderBySessionId = new Dictionary<string, int>(StringComparer.Ordinal);
+        var restoredSessionIds = new Dictionary<string, string>(StringComparer.Ordinal);
         var failedOriginalSessionIds = new List<string>();
 
         foreach (var decoration in decorations.OrderBy(static item => item.Order))
         {
             if (liveSessionIds.Contains(decoration.SessionId))
             {
+                restoredSessionIds[decoration.SessionId] = decoration.SessionId;
                 continue;
             }
 
@@ -662,6 +702,7 @@ public sealed partial class SessionUpdateStateService
                 .ConfigureAwait(false);
 
             recreatedOrderBySessionId[created.Session.Id] = decoration.Order;
+            restoredSessionIds[decoration.SessionId] = created.Session.Id;
 
             if (!string.IsNullOrWhiteSpace(intent?.Command))
             {
@@ -704,6 +745,7 @@ public sealed partial class SessionUpdateStateService
                     Log.Warn(() => $"Failed to send resume command for restored session {decoration.SessionId}: {ex.Message}");
                     failedOriginalSessionIds.Add(decoration.SessionId);
                     recreatedOrderBySessionId.Remove(created.Session.Id);
+                    restoredSessionIds.Remove(decoration.SessionId);
                     try
                     {
                         await sessionManager.CloseSessionAsync(created.Session.Id, CancellationToken.None)
@@ -726,9 +768,32 @@ public sealed partial class SessionUpdateStateService
                     .ToList());
         }
 
+        if (state.Layout is not null && layoutStateService is not null)
+        {
+            // Keep failed leaves in the checkpoint for a later retry, while the live layout
+            // is normalized to sessions which actually exist now.
+            state.Layout = RemapWorkspaceLayout(state.Layout, restoredSessionIds);
+            layoutStateService.UpdateLayout(state.Layout.Root, state.Layout.FocusedSessionId,
+                sessionManager.GetAllSessions().Select(static session => session.Id));
+        }
+
         state.RestoredAt = DateTimeOffset.UtcNow;
         Log.Info(() => $"Restored full-update session state: recreated={recreatedOrderBySessionId.Count}, failed={failedOriginalSessionIds.Count}");
         return new RestoreUpdateStateResult(failedOriginalSessionIds);
+    }
+
+    internal static SessionLayoutState RemapWorkspaceLayout(SessionLayoutState layout, IReadOnlyDictionary<string, string> ids)
+    {
+        string? Remap(string? id) => id is not null && ids.TryGetValue(id, out var replacement) ? replacement : id;
+        LayoutNode? RemapNode(LayoutNode? node) => node is null ? null : new LayoutNode
+        {
+            Type = node.Type, SessionId = Remap(node.SessionId), Direction = node.Direction,
+            Children = node.Children?.Select(child => RemapNode(child)!).ToList()
+        };
+        return new SessionLayoutState
+        {
+            Revision = layout.Revision, Root = RemapNode(layout.Root), FocusedSessionId = Remap(layout.FocusedSessionId)
+        };
     }
 
     private static async Task WaitForRestoredShellReadyAsync(
@@ -1343,11 +1408,14 @@ public sealed partial class SessionUpdateStateService
     [GeneratedRegex(@"\b(?<provider>codex|claude|grok)(?:\.exe)?\s+(?<resumeArg>--?resume|resume)\s+(?<threadId>[A-Za-z0-9._:-]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex AiResumeHintRegex();
 
-    [GeneratedRegex(@"\bTo\s+(?:continue|resume)\s+this\s+session\s*,?\s*run\s+codex\s+resume\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
+    [GeneratedRegex(@"\bTo\s+(?:continue|resume)\s+this\s+session\s*,?\s*run(?:\s*:\s*|\s+)codex\s+resume\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex CodexExitResumeMarkerRegex();
 
     [GeneratedRegex(@"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex CodexThreadIdRegex();
+
+    [GeneratedRegex(@"(?m)^\s*Session:\s*(?<id>[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})\s*$", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex CodexStatusSessionRegex();
 
     private sealed record AiResumeHint(string Provider, string ResumeArgument, string ThreadId);
 
@@ -1364,6 +1432,7 @@ public sealed class SessionUpdateState
     public string Kind { get; set; } = "";
     public List<SessionDecorationState> Sessions { get; set; } = [];
     public List<SessionResumeIntent> PendingResumeSessions { get; set; } = [];
+    public SessionLayoutState? Layout { get; set; }
 }
 
 public sealed class SessionDecorationState

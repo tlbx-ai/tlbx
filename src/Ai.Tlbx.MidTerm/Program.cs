@@ -378,7 +378,7 @@ public class Program
                     gitWatcher,
                     updateType == UpdateType.Full,
                     settingsService.Load().TryResumeNonAiAgentProcesses,
-                    ct);
+                    ct: ct);
         };
 #pragma warning restore IDISP013
 
@@ -552,7 +552,7 @@ public class Program
                 await gitWatcher.RestoreSessionExtraReposAsync(session.Id, persistedRepos);
             }
         }
-        await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, shutdownService.Token);
+        await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, ct: shutdownService.Token);
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
         await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
         await sessionGitMetadata.ReconcileAllAsync(ct: shutdownService.Token);

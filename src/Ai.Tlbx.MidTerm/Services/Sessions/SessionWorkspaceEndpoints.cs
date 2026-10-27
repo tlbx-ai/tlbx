@@ -11,6 +11,7 @@ public static class SessionWorkspaceEndpoints
         GitWatcherService git, SettingsService settings)
     {
         var state = new SessionUpdateStateService(settings.SettingsDirectory, "saved-workspace.json");
+        var layout = app.Services.GetRequiredService<SessionLayoutStateService>();
         // A browser disconnect must not cancel an already confirmed save/close operation.
 #pragma warning disable IDISP001, CA2000 // Disposed on application shutdown below; closures own it for the app lifetime.
         var gate = new SemaphoreSlim(1, 1);
@@ -34,14 +35,15 @@ public static class SessionWorkspaceEndpoints
                     if (current.Count == 0) return Results.BadRequest("There are no sessions to save.");
                     if (blocked.Length > 0) return Results.Conflict("These sessions cannot be resumed safely yet: " + string.Join(", ", blocked));
                     await state.CaptureAsync(sessions, git, fullUpdate: true,
-                        tryResumeNonAiAgentProcesses: false, stopping).ConfigureAwait(false);
+                        tryResumeNonAiAgentProcesses: false,
+                        layout: layout.GetSnapshot(current.Select(static session => session.SessionId)), ct: stopping).ConfigureAwait(false);
                     if (sessions.GetAllSessions().Any(s => current.Any(c => c.SessionId == s.Id)))
                         return Results.Conflict("The workspace was saved, but some sessions could not be closed. Close them before restarting.");
                 }
                 else if (action == "restore")
                 {
                     if (saved is null) return Results.NotFound("There are no saved sessions.");
-                    await state.RestoreAsync(sessions, git, stopping).ConfigureAwait(false);
+                    await state.RestoreAsync(sessions, git, layout, stopping).ConfigureAwait(false);
                     if (await state.ReadSavedStateAsync(stopping).ConfigureAwait(false) is not null)
                         return Results.Conflict("Some sessions could not be restored. Their resume hints are still saved; try restoring again.");
                 }
@@ -54,7 +56,7 @@ public static class SessionWorkspaceEndpoints
                     UnsupportedSessions = action == "status" ? blocked : []
                 }, SessionWorkspaceJsonContext.Default.SessionWorkspaceStatus);
             }
-            catch (Exception ex) when (ex is InvalidOperationException or IOException or JsonException or UnauthorizedAccessException)
+            catch (Exception ex) when (ex is InvalidOperationException or IOException or JsonException or UnauthorizedAccessException or TimeoutException)
             {
                 return Results.Conflict(ex.Message);
             }
