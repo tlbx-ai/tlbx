@@ -30,9 +30,28 @@ public sealed partial class SessionUpdateStateService
     }
 
     public SessionUpdateStateService(string settingsDirectory)
+        : this(settingsDirectory, "state.json")
     {
-        _statePath = Path.Combine(settingsDirectory, "state.json");
     }
+
+    internal SessionUpdateStateService(string settingsDirectory, string fileName)
+    {
+        _statePath = Path.Combine(settingsDirectory, fileName);
+    }
+
+    internal async Task<SessionUpdateState?> ReadSavedStateAsync(CancellationToken ct = default)
+    {
+        if (!File.Exists(_statePath)) return null;
+        await using var stream = File.OpenRead(_statePath);
+        return await JsonSerializer.DeserializeAsync(stream, SessionUpdateStateJsonContext.Default.SessionUpdateState, ct)
+            .ConfigureAwait(false) ?? throw new InvalidOperationException("The saved session state is empty.");
+    }
+
+    internal static bool CanSaveWorkspaceSession(SessionDecorationState session) =>
+        !session.AppServerControlOnly &&
+        (IsCodexForeground(session.ForegroundName, session.ForegroundCommandLine, session.ForegroundProcessIdentity) ||
+         (string.IsNullOrWhiteSpace(session.ForegroundCommandLine) && string.IsNullOrWhiteSpace(session.ForegroundName)) ||
+         IsShellProcess(session.ForegroundName, session.ForegroundCommandLine ?? ""));
 
     public async Task CaptureAsync(
         TtyHostSessionManager sessionManager,
@@ -87,6 +106,8 @@ public sealed partial class SessionUpdateStateService
                         stoppedSessions.Add((decoration.SessionId, command));
                     }
                 }
+
+                await PersistAsync(state, ct).ConfigureAwait(false);
             }
             catch
             {
@@ -95,7 +116,10 @@ public sealed partial class SessionUpdateStateService
             }
         }
 
-        await PersistAsync(state, ct).ConfigureAwait(false);
+        else
+        {
+            await PersistAsync(state, ct).ConfigureAwait(false);
+        }
 
         if (fullUpdate)
         {
@@ -164,7 +188,7 @@ public sealed partial class SessionUpdateStateService
         return foregroundCommandLine.Trim();
     }
 
-    private static List<SessionDecorationState> CaptureSessionDecorations(
+    internal static List<SessionDecorationState> CaptureSessionDecorations(
         TtyHostSessionManager sessionManager,
         GitWatcherService gitWatcher)
     {
@@ -989,12 +1013,22 @@ public sealed partial class SessionUpdateStateService
             Directory.CreateDirectory(directory);
         }
 
-        await using var stream = File.Create(statePath);
-        await JsonSerializer.SerializeAsync(
-            stream,
-            state,
-            SessionUpdateStateJsonContext.Default.SessionUpdateState,
-            ct).ConfigureAwait(false);
+        var temporaryPath = statePath + ".tmp";
+        try
+        {
+            await using (var stream = File.Create(temporaryPath))
+            {
+                await JsonSerializer.SerializeAsync(stream, state,
+                    SessionUpdateStateJsonContext.Default.SessionUpdateState, ct).ConfigureAwait(false);
+                await stream.FlushAsync(ct).ConfigureAwait(false);
+                stream.Flush(flushToDisk: true);
+            }
+            File.Move(temporaryPath, statePath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
     }
 
     private static AiResumeHint? TryFindAiResumeHint(string? text)

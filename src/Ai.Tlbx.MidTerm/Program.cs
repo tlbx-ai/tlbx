@@ -432,6 +432,7 @@ public class Program
             workerSessionRegistry,
             terminalSizeControlService);
         SessionLayoutEndpoints.MapSessionLayoutEndpoints(app, sessionManager, layoutStateService);
+        SessionWorkspaceEndpoints.MapSessionWorkspaceEndpoints(app, sessionManager, gitWatcher, settingsService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(
