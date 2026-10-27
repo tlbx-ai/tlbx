@@ -103,19 +103,17 @@ try {
   const page = pages[0];
   await page.locator('#btn-settings').click();
   await page.locator('.settings-tab[data-tab="sessions"]').click();
-  await page.locator('#setting-runtime-priority-boost').check();
   await page.locator('#setting-runtime-priority-class').selectOption('aboveNormal');
   await sleep(500);
   const saved = await api('GET', '/api/settings');
-  if (saved.runtimePriorityClass !== 'aboveNormal' || !saved.runtimePriorityBoostEnabled) throw Error('Priority setting did not save');
+  if (saved.runtimePriorityClass !== 'aboveNormal') throw Error('Priority setting did not save');
   summary.ok = summary.errors.length === 0;
 } catch (e) {
   summary.errors.push(e.stack);
   process.exitCode = 1;
 } finally {
   if (id && context) await api('DELETE', '/api/sessions/' + id).catch(e => summary.errors.push(e.message));
-  if (settings && context) await api('PATCH', '/api/settings', { runtimePriorityBoostEnabled: settings.runtimePriorityBoostEnabled,
-    runtimePriorityClass: settings.runtimePriorityClass }).catch(e => summary.errors.push(e.message));
+  if (settings && context) await api('PATCH', '/api/settings', { runtimePriorityClass: settings.runtimePriorityClass }).catch(e => summary.errors.push(e.message));
   for (const browser of browsers) {
     const cdp = await browser.newBrowserCDPSession();
     await cdp.send('Browser.close').catch(() => {});

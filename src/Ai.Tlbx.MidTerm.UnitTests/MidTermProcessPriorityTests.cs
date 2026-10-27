@@ -15,7 +15,7 @@ public sealed class MidTermProcessPriorityTests
         var instanceKey = $"spawn-regression-{Guid.NewGuid():N}";
         try
         {
-            MidTermProcessPriority.Configure(true, "aboveNormal", instanceKey);
+            MidTermProcessPriority.Configure("aboveNormal", instanceKey);
             var warnings = new List<string>();
             MidTermProcessPriority.TryApplyToCurrentProcess("mt", warn: warnings.Add);
             Assert.Empty(warnings);
@@ -36,7 +36,7 @@ public sealed class MidTermProcessPriorityTests
         finally
         {
             process.PriorityClass = originalPriority;
-            MidTermProcessPriority.Configure(true, MidTermProcessPriority.DefaultPriorityClass);
+            MidTermProcessPriority.Configure(MidTermProcessPriority.DefaultPriorityClass);
         }
     }
 
@@ -49,7 +49,7 @@ public sealed class MidTermProcessPriorityTests
         const string ownerToken = "test-owner";
         try
         {
-            MidTermProcessPriority.Configure(true, "aboveNormal", $"{instanceId}:{ownerToken}");
+            MidTermProcessPriority.Configure("aboveNormal", $"{instanceId}:{ownerToken}");
             var warnings = new List<string>();
             MidTermProcessPriority.PrepareRuntimeJob(process.SessionId, warnings.Add);
             using var hostLifetime = MidTermProcessPriority.HoldInheritedJob(instanceId, ownerToken, warnings.Add);
@@ -59,7 +59,7 @@ public sealed class MidTermProcessPriorityTests
         }
         finally
         {
-            MidTermProcessPriority.Configure(true, MidTermProcessPriority.DefaultPriorityClass);
+            MidTermProcessPriority.Configure(MidTermProcessPriority.DefaultPriorityClass);
         }
     }
 
@@ -73,7 +73,7 @@ public sealed class MidTermProcessPriorityTests
     }
 
     [Fact]
-    public async Task WindowsPriorityJob_CoversChildrenAndGrandchildrenAndCanBeDisabled()
+    public async Task WindowsPriorityJob_CoversChildrenAndGrandchildrenAndCanChangeLevels()
     {
         if (!OperatingSystem.IsWindows()) return;
         var gate = Path.Combine(Path.GetTempPath(), $"tlbx-priority-{Guid.NewGuid():N}");
@@ -101,6 +101,9 @@ public sealed class MidTermProcessPriorityTests
             File.WriteAllText(gate, "go");
             while (!File.Exists(grandchildPidFile)) await Task.Delay(20, timeout.Token);
             grandchild = System.Diagnostics.Process.GetProcessById(int.Parse(File.ReadAllText(grandchildPidFile), System.Globalization.CultureInfo.InvariantCulture));
+            parent.Refresh();
+            child.Refresh();
+            grandchild.Refresh();
             Assert.Equal(ProcessPriorityClass.AboveNormal, parent.PriorityClass);
             Assert.Equal(ProcessPriorityClass.AboveNormal, child.PriorityClass);
             Assert.Equal(ProcessPriorityClass.AboveNormal, grandchild.PriorityClass);
@@ -118,6 +121,16 @@ public sealed class MidTermProcessPriorityTests
             {
                 // High job priority requires an administrator/service token.
                 Assert.Equal(ProcessPriorityClass.AboveNormal, child.PriorityClass);
+            }
+            foreach (var priority in new[] { ProcessPriorityClass.Idle, ProcessPriorityClass.BelowNormal })
+            {
+                job.SetPriority(priority);
+                parent.Refresh();
+                child.Refresh();
+                grandchild.Refresh();
+                Assert.Equal(priority, parent.PriorityClass);
+                Assert.Equal(priority, child.PriorityClass);
+                Assert.Equal(priority, grandchild.PriorityClass);
             }
             // Simulate the web process closing its handle while hosts survive,
             // then a replacement process opening the same instance group.
@@ -154,8 +167,16 @@ public sealed class MidTermProcessPriorityTests
 
     [Theory]
     [InlineData("normal", ProcessPriorityClass.Normal)]
-    [InlineData("realtime", ProcessPriorityClass.AboveNormal)]
-    public void ResolvePriorityClass_AllowsOnlyConservativeKnownClasses(
+    [InlineData("idle", ProcessPriorityClass.Idle)]
+    [InlineData("belowNormal", ProcessPriorityClass.BelowNormal)]
+    [InlineData("below-normal", ProcessPriorityClass.BelowNormal)]
+    [InlineData("aboveNormal", ProcessPriorityClass.AboveNormal)]
+    [InlineData("high", ProcessPriorityClass.High)]
+    [InlineData("realTime", ProcessPriorityClass.RealTime)]
+    [InlineData("real-time", ProcessPriorityClass.RealTime)]
+    [InlineData("unknown", ProcessPriorityClass.AboveNormal)]
+    [InlineData(null, ProcessPriorityClass.AboveNormal)]
+    public void ResolvePriorityClass_AllowsEveryWindowsClass(
         string? input,
         ProcessPriorityClass expected)
     {
@@ -163,12 +184,12 @@ public sealed class MidTermProcessPriorityTests
     }
 
     [Fact]
-    public void ShouldSetPriority_AllowsUserToLowerHighButPreservesRealtimeProcesses()
+    public void ShouldSetPriority_AllowsUserToLowerHighAndRealtimeProcesses()
     {
         Assert.True(MidTermProcessPriority.ShouldSetPriority(
             ProcessPriorityClass.High,
             ProcessPriorityClass.AboveNormal));
-        Assert.False(MidTermProcessPriority.ShouldSetPriority(
+        Assert.True(MidTermProcessPriority.ShouldSetPriority(
             ProcessPriorityClass.RealTime,
             ProcessPriorityClass.AboveNormal));
     }

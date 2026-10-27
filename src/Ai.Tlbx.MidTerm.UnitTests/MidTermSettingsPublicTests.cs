@@ -7,21 +7,34 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermSettingsPublicTests
 {
-    [Fact]
-    public void SettingsPatch_ProcessPriorityRoundTripsAndNormalizesUnsupportedClass()
+    [Theory]
+    [InlineData("idle")]
+    [InlineData("belowNormal")]
+    [InlineData("normal")]
+    [InlineData("aboveNormal")]
+    [InlineData("high")]
+    [InlineData("realTime")]
+    public void SettingsPatch_ProcessPriorityRoundTripsEveryClass(string priority)
     {
         var settings = new MidTermSettings();
         var current = MidTermSettingsPublic.FromSettings(settings);
-        using var patch = JsonDocument.Parse("""{"runtimePriorityBoostEnabled":false,"runtimePriorityClass":"high"}""");
+        using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new { runtimePriorityClass = priority }));
         MidTermSettingsPatch.Merge(current, patch.RootElement).ApplyTo(settings);
-        Assert.False(settings.RuntimePriorityBoostEnabled);
-        Assert.Equal("high", settings.RuntimePriorityClass);
+        Assert.Equal(priority, settings.RuntimePriorityClass);
         var roundTrip = MidTermSettingsPublic.FromSettings(settings);
-        Assert.False(roundTrip.RuntimePriorityBoostEnabled);
-        Assert.Equal("high", roundTrip.RuntimePriorityClass);
-        roundTrip.RuntimePriorityClass = "realtime";
+        Assert.Equal(priority, roundTrip.RuntimePriorityClass);
+        roundTrip.RuntimePriorityClass = "unsupported";
         roundTrip.ApplyTo(settings);
         Assert.Equal("aboveNormal", settings.RuntimePriorityClass);
+    }
+
+    [Fact]
+    public void SettingsFile_ObsoleteBoostFlagDoesNotOverrideSelectedPriority()
+    {
+        var settings = JsonSerializer.Deserialize<MidTermSettings>(
+            """{"RuntimePriorityBoostEnabled":false,"RuntimePriorityClass":"belowNormal"}""")!;
+        Assert.Equal("belowNormal", settings.RuntimePriorityClass);
+        Assert.DoesNotContain("RuntimePriorityBoostEnabled", JsonSerializer.Serialize(settings), StringComparison.Ordinal);
     }
 
     [Fact]

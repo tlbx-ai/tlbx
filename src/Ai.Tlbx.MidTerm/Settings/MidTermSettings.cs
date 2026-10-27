@@ -145,7 +145,6 @@ public sealed class MidTermSettings
     public bool DevMode { get; set; } = false;
 
     // Keeps MidTerm's UI/PTY/agent host scheduler priority above build/compiler work.
-    public bool RuntimePriorityBoostEnabled { get; set; } = true;
     public string RuntimePriorityClass { get; set; } = "aboveNormal";
 
     // Terminal input latency tracing - dev mode enables this automatically; in normal mode it is opt-in.

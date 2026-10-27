@@ -11,17 +11,15 @@ public static class MidTermProcessPriority
     public const string DefaultPriorityClass = "aboveNormal";
 
     private static readonly Lock Sync = new();
-    private static bool _enabled = true;
     private static ProcessPriorityClass _priorityClass = ProcessPriorityClass.AboveNormal;
     // Process-lifetime handle; closing it never terminates hosted sessions.
     private static readonly Dictionary<int, WindowsProcessPriorityJob> Jobs = [];
     private static string? _instanceKey;
 
-    public static void Configure(bool enabled, string? priorityClassName, string? instanceKey = null)
+    public static void Configure(string? priorityClassName, string? instanceKey = null)
     {
         lock (Sync)
         {
-            _enabled = enabled;
             _priorityClass = ResolvePriorityClass(priorityClassName);
             // Reopen the same group after web-only updates with preserved hosts.
             // Hash the private instance key so another user cannot precreate it.
@@ -61,7 +59,7 @@ public static class MidTermProcessPriority
                 // without assigning the web service to this empty job.
                 EnsureRuntimeJob(sessionId);
                 if (Jobs.TryGetValue(sessionId, out var job))
-                    job.SetPriority(_enabled ? _priorityClass : ProcessPriorityClass.Normal);
+                    job.SetPriority(_priorityClass);
             }
         }
         catch (System.ComponentModel.Win32Exception ex)
@@ -73,7 +71,7 @@ public static class MidTermProcessPriority
     [System.Runtime.Versioning.SupportedOSPlatform("windows")]
     private static void EnsureRuntimeJob(int sessionId)
     {
-        if (!Jobs.ContainsKey(sessionId) && (_enabled || _instanceKey is not null))
+        if (!Jobs.ContainsKey(sessionId))
         {
             Jobs.Add(sessionId, new WindowsProcessPriorityJob(
                 _instanceKey is null ? null : GetJobName(_instanceKey, sessionId)));
@@ -89,9 +87,12 @@ public static class MidTermProcessPriority
 
         return priorityClassName.Trim().ToLowerInvariant() switch
         {
+            "idle" => ProcessPriorityClass.Idle,
+            "belownormal" or "below-normal" or "below_normal" => ProcessPriorityClass.BelowNormal,
             "normal" => ProcessPriorityClass.Normal,
             "abovenormal" or "above-normal" or "above_normal" => ProcessPriorityClass.AboveNormal,
             "high" => ProcessPriorityClass.High,
+            "realtime" or "real-time" or "real_time" => ProcessPriorityClass.RealTime,
             _ => ProcessPriorityClass.AboveNormal
         };
     }
@@ -132,12 +133,7 @@ public static class MidTermProcessPriority
 
     internal static bool ShouldSetPriority(ProcessPriorityClass current, ProcessPriorityClass target)
     {
-        if (current == target)
-        {
-            return false;
-        }
-
-        return current is not ProcessPriorityClass.RealTime;
+        return current != target;
     }
 
     private static bool TryApply(
@@ -161,18 +157,17 @@ public static class MidTermProcessPriority
             }
 
             var current = process.PriorityClass;
-            if (current == ProcessPriorityClass.RealTime) return false;
             lock (Sync)
             {
-                target = _enabled ? _priorityClass : ProcessPriorityClass.Normal;
+                target = _priorityClass;
+                if (target == ProcessPriorityClass.RealTime) WindowsProcessPriorityJob.EnableBasePriorityPrivilege();
                 // A job cannot span Windows logon sessions. In particular, mt
                 // runs in session 0 as LocalSystem and CreateProcessAsUser must
                 // not inherit its job when launching an interactive user's host.
                 // Keep mt outside the jobs and group hosted runtimes per session.
                 if (role != "mt") EnsureRuntimeJob(process.SessionId);
                 foreach (var job in Jobs.Values) job.SetPriority(target);
-                // Retain the job when disabled so existing children also return
-                // to Normal and future descendants follow the changed setting.
+                // Keep existing and future descendants at the selected level.
                 if (role != "mt" && Jobs.TryGetValue(process.SessionId, out var runtimeJob)) runtimeJob.Assign(process);
                 if (ShouldSetPriority(process.PriorityClass, target)) process.PriorityClass = target;
             }

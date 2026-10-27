@@ -6669,7 +6669,6 @@
           "mobileKineticTerminalScroll",
           "mobileDenseTerminalMode",
           "keepSystemAwakeWithActiveSessions",
-          "runtimePriorityBoostEnabled",
           "runtimePriorityClass",
           "resumeMode",
           "tryResumeNonAiAgentProcesses",
@@ -6907,9 +6906,6 @@
             "type": "boolean"
           },
           "keepSystemAwakeWithActiveSessions": {
-            "type": "boolean"
-          },
-          "runtimePriorityBoostEnabled": {
             "type": "boolean"
           },
           "runtimePriorityClass": {
