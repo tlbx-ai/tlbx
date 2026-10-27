@@ -13,7 +13,7 @@ public sealed class SessionCliContextService : IDisposable
     internal const string MarkerPrefix = "TLBXCTX:";
     private const int MaximumEntries = 2048;
     private readonly object _gate = new();
-    private readonly SemaphoreSlim _handshakeGate = new(1, 1);
+    private readonly Dictionary<string, Handshake> _handshakes = new(StringComparer.Ordinal);
     private readonly Func<IReadOnlyList<Terminal>> _terminals;
     private readonly Func<int, (int Parent, DateTime Started)?> _process;
     private readonly TimeProvider _clock;
@@ -48,7 +48,20 @@ public sealed class SessionCliContextService : IDisposable
     }
 
     internal sealed record Terminal(string Id, int ShellPid, int ClientPid);
-    public void Dispose() => _handshakeGate.Dispose();
+    public void Dispose()
+    {
+        lock (_gate)
+        {
+            foreach (var handshake in _handshakes.Values) handshake.Gate.Dispose();
+            _handshakes.Clear();
+        }
+    }
+
+    private sealed class Handshake
+    {
+        public SemaphoreSlim Gate { get; } = new(1, 1);
+        public int Users { get; set; }
+    }
 
     private sealed record Owner(Terminal Terminal, DateTime Started, long InputVersion);
     private sealed class Proof(string root, string thread, string nonce, DateTimeOffset expires,
@@ -60,6 +73,7 @@ public sealed class SessionCliContextService : IDisposable
         public DateTimeOffset Expires { get; } = expires;
         public Dictionary<string, Owner> Candidates { get; } = candidates;
         public HashSet<string> Observers { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> UnstableCandidates { get; } = new(StringComparer.Ordinal);
     }
     private sealed record Lease(Proof? Proof, Owner? Owner, string SessionId, int CallerPid,
         DateTime CallerStarted, DateTimeOffset Expires);
@@ -87,9 +101,13 @@ public sealed class SessionCliContextService : IDisposable
                 if (!_proofs.TryGetValue(nonce, out var proof) || proof.Expires <= _clock.GetUtcNow()) return;
                 if (!proof.Candidates.TryGetValue(sessionId, out var candidate))
                 {
-                    if (!RefreshCandidates(proof, GetOwners()) || !proof.Candidates.TryGetValue(sessionId, out candidate)) return;
+                    if (!GetOwners().TryGetValue(sessionId, out candidate)) return;
+                    proof.Candidates[sessionId] = candidate;
                 }
-                if (candidate.InputVersion != _inputVersions.GetValueOrDefault(sessionId)) return;
+                // Changed input can never turn stale output into sole ownership. Still
+                // count it as duplicate evidence instead of hiding a second client.
+                if (candidate.InputVersion != _inputVersions.GetValueOrDefault(sessionId))
+                    proof.UnstableCandidates.Add(sessionId);
                 proof.Observers.Add(sessionId);
             });
         }
@@ -127,6 +145,11 @@ public sealed class SessionCliContextService : IDisposable
                 proof = NewProof(root, thread, owners);
                 _contexts[key] = proof;
             }
+            if (proof.Observers.Count == 1 && proof.UnstableCandidates.Contains(proof.Observers.Single()))
+            {
+                proof = NewProof(root, thread, owners);
+                _contexts[key] = proof;
+            }
             if (proof.Observers.Count == 1)
             {
                 var owner = owners[proof.Observers.Single()];
@@ -155,18 +178,66 @@ public sealed class SessionCliContextService : IDisposable
     internal async Task<string> ResolveAsync(string root, string thread, int callerPid, bool fresh,
         Func<string, CancellationToken, Task<bool>> emitProof, CancellationToken ct)
     {
+        var key = root + "/" + thread;
+        Handshake handshake;
+        lock (_gate)
+        {
+            if (!_handshakes.TryGetValue(key, out handshake!))
+            {
+                if (_handshakes.Count >= MaximumEntries)
+                    return ContextError("BUSY", "discovery-capacity: too many concurrent thread handshakes.", "automatic-discovery", root, thread, callerPid);
+                _handshakes[key] = handshake = new Handshake();
+            }
+            handshake.Users++;
+        }
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        var acquired = false;
+        try
+        {
+            await handshake.Gate.WaitAsync(deadline.Token).ConfigureAwait(false);
+            acquired = true;
+            for (var attempt = 0; ; attempt++)
+            {
+                var result = await ResolveAttemptAsync(root, thread, callerPid, fresh || attempt > 0, emitProof, deadline.Token).ConfigureAwait(false);
+                // Only renew the identity preflight. No application request has been sent.
+                // Ambiguity, caller replacement, and authorization failures are never retried.
+                if (!result.StartsWith("TLBX_CONTEXT_CHANGED:", StringComparison.Ordinal) ||
+                    !result.Contains("stage=automatic-discovery;", StringComparison.Ordinal)) return result;
+                if (attempt > 0) return result + "\nRecovery: a fresh proof was attempted once; no session operation was executed.";
+            }
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return ContextError("UNBOUND", "discovery-deadline: automatic binding exceeded its 10-second total budget.",
+                "automatic-discovery", root, thread, callerPid);
+        }
+        finally
+        {
+            if (acquired) handshake.Gate.Release();
+            lock (_gate)
+            {
+                if (--handshake.Users == 0)
+                {
+                    _handshakes.Remove(key);
+                    handshake.Gate.Dispose();
+                }
+            }
+        }
+    }
+
+    private async Task<string> ResolveAttemptAsync(string root, string thread, int callerPid, bool fresh,
+        Func<string, CancellationToken, Task<bool>> emitProof, CancellationToken ct)
+    {
         ct.ThrowIfCancellationRequested();
         string? initial = null;
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(TimeSpan.FromSeconds(5));
-        var acquired = false;
         Proof? pendingProof = null;
         try
         {
             // Recheck after serialization: another caller may already have established
             // this thread's proof, so concurrent first calls emit only once.
-            await _handshakeGate.WaitAsync(timeout.Token).ConfigureAwait(false);
-            acquired = true;
             initial = Resolve(root, thread, callerPid, fresh);
             if (!initial.Contains("TLBX_CONTEXT_UNBOUND", StringComparison.Ordinal)) return initial;
             var marker = initial.Split('\n')[0];
@@ -210,8 +281,16 @@ public sealed class SessionCliContextService : IDisposable
                         return ContextError("CHANGED", "proof-replaced: another fresh/repair request replaced this thread's proof.",
                             "automatic-discovery", root, thread, callerPid, proof);
                     var owners = GetOwners();
-                    if (!RefreshCandidates(proof, owners, out var change))
+                    if (proof.Observers.Count(id => owners.TryGetValue(id, out var live) &&
+                        proof.Candidates.TryGetValue(id, out var previous) && SameClient(previous, live)) > 1)
+                        return ContextError("AMBIGUOUS", "duplicate-proof: the same fresh proof appeared in multiple live terminals.",
+                            "automatic-discovery", root, thread, callerPid, proof, owners,
+                            "Close the duplicate client, then retry the original command. Do not choose a session ID or replay the mutation manually.");
+                    if (!RefreshCandidates(proof, owners, out var change, allowUnobservedInput: true))
                         return ContextError("CHANGED", change!, "automatic-discovery", root, thread, callerPid, proof, owners);
+                    if (proof.Observers.Count == 1 && proof.UnstableCandidates.Contains(proof.Observers.Single()))
+                        return ContextError("CHANGED", "input-before-observation: the sole observer received input after this proof was issued; request a fresh proof.",
+                            "automatic-discovery", root, thread, callerPid, proof, owners);
                     // Do not mint a lease until duplicate observation has settled.
                     if (!settled && proof.Observers.Count == 1) return string.Empty;
                     var result = Resolve(root, thread, callerPid);
@@ -242,10 +321,6 @@ public sealed class SessionCliContextService : IDisposable
             return (initial ?? ContextError("UNBOUND", "discovery-queue-timeout: another discovery occupied the handshake slot.",
                 "automatic-discovery", root, thread, callerPid)) +
                 Invariant($"\nAutomatic discovery: timeout after 5 seconds; phase={(pendingProof is null ? "waiting-for-slot" : pendingProof.Observers.Count > 0 ? "duplicate-settle" : "waiting-for-terminal-output")}; observed={pendingProof?.Observers.Count ?? 0}.");
-        }
-        finally
-        {
-            if (acquired) _handshakeGate.Release();
         }
     }
 
@@ -341,8 +416,9 @@ public sealed class SessionCliContextService : IDisposable
         return null;
     }
 
-    private static bool SameOwner(Owner left, Owner right) => left.Terminal == right.Terminal &&
-        left.Started == right.Started && left.InputVersion == right.InputVersion;
+    private static bool SameClient(Owner left, Owner right) => left.Terminal == right.Terminal && left.Started == right.Started;
+
+    private static bool SameOwner(Owner left, Owner right) => SameClient(left, right) && left.InputVersion == right.InputVersion;
 
     private static string? OwnerChange(Owner previous, Owner current)
     {
@@ -359,15 +435,26 @@ public sealed class SessionCliContextService : IDisposable
 
     private static bool RefreshCandidates(Proof proof, Dictionary<string, Owner> owners) => RefreshCandidates(proof, owners, out _);
 
-    private static bool RefreshCandidates(Proof proof, Dictionary<string, Owner> owners, out string? change)
+    private static bool RefreshCandidates(Proof proof, Dictionary<string, Owner> owners, out string? change, bool allowUnobservedInput = false)
     {
         change = null;
+        List<Owner>? updates = null;
         foreach (var (id, previous) in proof.Candidates)
         {
             if (owners.TryGetValue(id, out var current))
             {
                 change = OwnerChange(previous, current);
-                if (change is not null) return false;
+                if (change is not null)
+                {
+                    // Only a currently running fresh handshake may absorb ordinary input
+                    // in an unobserved sibling. Cached leases remain invalidated by ANY
+                    // candidate input. A sibling showing this nonce still makes it ambiguous.
+                    if (!allowUnobservedInput || proof.Observers.Contains(id) || !SameClient(previous, current))
+                        return false;
+                    proof.UnstableCandidates.Add(id);
+                    (updates ??= []).Add(current);
+                    change = null;
+                }
             }
             else if (proof.Observers.Contains(id))
             {
@@ -375,7 +462,13 @@ public sealed class SessionCliContextService : IDisposable
                 return false;
             }
         }
-        foreach (var id in proof.Candidates.Keys.Where(id => !owners.ContainsKey(id)).ToArray()) proof.Candidates.Remove(id);
+        if (updates is not null)
+            foreach (var owner in updates) proof.Candidates[owner.Terminal.Id] = owner;
+        foreach (var id in proof.Candidates.Keys.Where(id => !owners.ContainsKey(id)).ToArray())
+        {
+            proof.Candidates.Remove(id);
+            proof.UnstableCandidates.Remove(id);
+        }
         foreach (var (id, owner) in owners) proof.Candidates.TryAdd(id, owner);
         return true;
     }

@@ -326,7 +326,7 @@ public sealed class SessionCliContextServiceTests : IDisposable
         {
             Feed("first001", marker);
             if (change == "input") _service.InvalidateInput("first001");
-            else if (change == "client") _processes[11] = _started.AddSeconds(1);
+            else if (change == "client") _processes[11] = _processes[11].AddSeconds(1);
             else _processes[100] = _started.AddSeconds(1);
             return Task.FromResult(true);
         }, CancellationToken.None);
@@ -336,7 +336,7 @@ public sealed class SessionCliContextServiceTests : IDisposable
         Assert.Contains("root=" + Root, result, StringComparison.Ordinal);
         Assert.Contains(change switch
         {
-            "input" => "terminal-input-changed: session=first001; inputVersion=0->1",
+            "input" => "terminal-input-changed: session=first001; inputVersion=1->2",
             "client" => "client-process-replaced: session=first001; clientPid=11",
             _ => "caller-process-changed: expected start="
         }, result, StringComparison.Ordinal);
@@ -344,17 +344,17 @@ public sealed class SessionCliContextServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task SiblingInputReportsTheActualChangedTerminalWithoutExposingLeaseTokens()
+    public async Task PersistentObserverInputReportsTheChangedTerminalWithoutExposingLeaseTokens()
     {
         var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
         {
             Feed("first001", marker);
-            _service.ObserveInput("second02", userInput: true);
+            _service.ObserveInput("first001", userInput: true);
             return Task.FromResult(true);
         }, CancellationToken.None);
-        Assert.Contains("terminal-input-changed: session=second02; inputVersion=0->1", result, StringComparison.Ordinal);
+        Assert.Contains("terminal-input-changed: session=first001; inputVersion=1->2", result, StringComparison.Ordinal);
         Assert.Contains("observed=1 [first001]", result, StringComparison.Ordinal);
-        Assert.Contains("clientPid=21", result, StringComparison.Ordinal);
+        Assert.Contains("clientPid=11", result, StringComparison.Ordinal);
         Assert.Contains("If the same reason repeats, stop retrying", result, StringComparison.Ordinal);
 
         Feed("first001", ProofLine(_service.Resolve(Root, Root, 100)));
@@ -422,6 +422,134 @@ public sealed class SessionCliContextServiceTests : IDisposable
         Assert.All(results, result => Assert.StartsWith("first001:", result, StringComparison.Ordinal));
         Assert.All(results, result => Assert.Null(_service.ValidateLease(result[9..])));
         Assert.NotEqual(results[0], results[1], StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("input")]
+    [InlineData("client")]
+    public async Task TransientCandidateChangeRebindsBeforeReturningTheOriginalFirstCall(string change)
+    {
+        var markers = new List<string>();
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            markers.Add(marker);
+            Feed("first001", marker);
+            if (markers.Count == 1)
+            {
+                if (change == "input") _service.InvalidateInput("first001");
+                else _processes[21] = _started.AddSeconds(1);
+            }
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        Assert.StartsWith("first001:", result, StringComparison.Ordinal);
+        Assert.Equal(2, markers.Count);
+        Assert.NotEqual(markers[0], markers[1], StringComparer.Ordinal);
+        Assert.Null(_service.ValidateLease(result[9..]));
+        Feed("second02", markers[0]); // Late output of the invalidated challenge cannot claim this lease.
+        Assert.Null(_service.ValidateLease(result[9..]));
+    }
+
+    [Fact]
+    public async Task FreshEvidenceToleratesSiblingTypingButStillRejectsLaterInputAndDuplicateClients()
+    {
+        var emitted = 0;
+        string? challenge = null;
+        Task? typing = null;
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            emitted++;
+            challenge = marker;
+            Feed("first001", marker);
+            typing = Task.Run(async () =>
+            {
+                for (var index = 0; index < 8; index++)
+                {
+                    _service.InvalidateInput("second02");
+                    await Task.Delay(20, TestContext.Current.CancellationToken);
+                }
+            }, TestContext.Current.CancellationToken);
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        await typing!;
+        Assert.Equal(1, emitted);
+        Assert.StartsWith("first001:", result, StringComparison.Ordinal);
+        Assert.Null(_service.ValidateLease(result[9..]));
+        Feed("second02", challenge!);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", _service.ValidateLease(result[9..]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InputBeforeTheSoleObservationCannotTurnAStaleRedrawIntoOwnership()
+    {
+        var emitted = 0;
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            emitted++;
+            _service.InvalidateInput("first001");
+            Feed("first001", marker);
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        Assert.Equal(2, emitted);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChangedInputInADuplicateCannotHideItsProofDuringDiscovery()
+    {
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            Feed("first001", marker);
+            _service.InvalidateInput("second02");
+            Feed("second02", marker);
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        // Ambiguity is not an automatically recoverable transient.
+        Assert.Contains("TLBX_CONTEXT_AMBIGUOUS", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SlowThreadCannotBlockAnotherThreadsFirstCall()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var slow = _service.ResolveAsync(Root, Root, 100, false, async (marker, token) =>
+        {
+            entered.SetResult();
+            await release.Task.WaitAsync(token);
+            Feed("first001", marker);
+            return true;
+        }, CancellationToken.None);
+        await entered.Task;
+        try
+        {
+            var fast = _service.ResolveAsync(Other, Other, 101, false, (marker, _) =>
+            {
+                Feed("second02", marker);
+                return Task.FromResult(true);
+            }, CancellationToken.None);
+            Assert.StartsWith("second02:", await fast.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+            Assert.False(slow.IsCompleted);
+        }
+        finally { release.SetResult(); }
+        Assert.StartsWith("first001:", await slow, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ServerReplacementRebindsTheSameLiveTerminalWithANewLease()
+    {
+        async Task<string> Bind(SessionCliContextService service) => await service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            service.ObserveOutput("first001", Encoding.UTF8.GetBytes(marker));
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        var before = await Bind(_service);
+        using var replacement = new SessionCliContextService(() => _terminals,
+            pid => _processes.TryGetValue(pid, out var started) ? (1, started) : null, _clock);
+        Assert.Contains("TLBX_CONTEXT_EXPIRED", replacement.ValidateLease(before[9..]), StringComparison.Ordinal);
+        var after = await Bind(replacement);
+        Assert.StartsWith("first001:", after, StringComparison.Ordinal);
+        Assert.NotEqual(before, after, StringComparer.Ordinal);
+        Assert.Null(replacement.ValidateLease(after[9..]));
     }
 
     [Fact]

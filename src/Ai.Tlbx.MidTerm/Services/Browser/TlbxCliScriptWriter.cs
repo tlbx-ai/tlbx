@@ -1,30 +1,52 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using Ai.Tlbx.MidTerm.Startup;
 
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 public static class TlbxCliScriptWriter
 {
+    private static readonly Lazy<string> ScriptRevision = new(() => Convert.ToHexStringLower(SHA256.HashData(
+        Encoding.UTF8.GetBytes(GenerateShellScript(0, "", "localhost") + GeneratePowerShellScript(0, "", "localhost")))));
+
     internal static void WriteScripts(string tlbxDir, int port, string authToken, string host = "localhost")
     {
         var shPath = Path.Combine(tlbxDir, "tlbx_cli.sh");
-        File.WriteAllText(shPath, GenerateShellScript(port, authToken, host));
-        if (!OperatingSystem.IsWindows())
-        {
-            File.SetUnixFileMode(shPath,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
-                UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
-                UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
-        }
+        WriteAtomically(shPath, GenerateShellScript(port, authToken, host).Replace("__TLBX_CLI_REVISION__", ScriptRevision.Value, StringComparison.Ordinal), executable: true);
 
         var ps1Path = Path.Combine(tlbxDir, "tlbx_cli.ps1");
-        File.WriteAllText(ps1Path, GeneratePowerShellScript(port, authToken, host));
+        WriteAtomically(ps1Path, GeneratePowerShellScript(port, authToken, host).Replace("__TLBX_CLI_REVISION__", ScriptRevision.Value, StringComparison.Ordinal));
+    }
+
+    private static void WriteAtomically(string path, string content, bool executable = false)
+    {
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, content);
+            if (executable && !OperatingSystem.IsWindows())
+                File.SetUnixFileMode(temporary, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute |
+                    UnixFileMode.GroupRead | UnixFileMode.GroupExecute | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+            for (var attempt = 0; ; attempt++)
+            {
+                try { File.Move(temporary, path, overwrite: true); break; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException &&
+                    OperatingSystem.IsWindows() && attempt < 8 && (ex.HResult & 0xffff) is 5 or 32)
+                {
+                    // A shell may still be parsing the old file. Never truncate it in place.
+                    Thread.Sleep(25);
+                }
+            }
+        }
+        finally { File.Delete(temporary); }
     }
 
     private static string GenerateShellScript(int port, string token, string host) =>
         $$"""
         #!/bin/bash
         # tlbx CLI helpers — auto-generated, do not edit.
+        # tlbx-cli-version: {{CliCommands.GetVersion()}}/__TLBX_CLI_REVISION__
         # Source: . .tlbx/tlbx_cli.sh   |   Run: .tlbx/tlbx_cli.sh <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
@@ -45,6 +67,7 @@ public static class TlbxCliScriptWriter
           _MK="mm-session={{token}}"
         fi
         _MTDIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+        _MHELPERVERSION="{{CliCommands.GetVersion()}}/__TLBX_CLI_REVISION__"
         _MLEASE=""
         _MCTXERROR=""
         _MCURL() {
@@ -54,20 +77,57 @@ public static class TlbxCliScriptWriter
             curl "$@"
           fi
         }
+        _MHTTP() {
+          if [ -n "${MT_API_KEY:-}" ]; then
+            _MCURL -H "Authorization: Bearer $MT_API_KEY" "$@"
+            return $?
+          fi
+          local key directory state_root="${LOCALAPPDATA:-}" cache headers temporary exit_code=0
+          [ -n "$state_root" ] || state_root="${XDG_STATE_HOME:-$HOME/.local/state}"
+          directory="${TLBX_CLI_AUTH_CACHE_DIR:-$state_root/tlbx/cli-auth}"
+          if command -v cygpath >/dev/null 2>&1; then directory=$(cygpath -u "$directory"); fi
+          if command -v sha256sum >/dev/null 2>&1; then
+            key=$(printf '%s\n%s' "$_MT" "$_MK" | sha256sum)
+          else key=$(printf '%s\n%s' "$_MT" "$_MK" | shasum -a 256); fi
+          key="${key%% *}"
+          (umask 077; mkdir -p "$directory") || return 1
+          chmod 700 "$directory" || return 1
+          cache="$directory/$key.cookies"
+          headers=$(mktemp "$directory/headers.XXXXXXXX") || return 1
+          temporary=$(mktemp "$directory/cookies.XXXXXXXX") || { rm -f "$headers"; return 1; }
+          local cookie="$_MK"
+          [ ! -f "$cache" ] || cookie="$cache"
+          _MCURL -b "$cookie" -c "$temporary" --dump-header "$headers" "$@" || exit_code=$?
+          if LC_ALL=C grep -iq '^x-midterm-auth-required:[[:space:]]*true' "$headers"; then
+            # Remember explicit rejection as an empty jar. Never resurrect its seed.
+            : > "$temporary"
+            mv -f "$temporary" "$cache" || printf '%s\n' 'TLBX_CLI_AUTH_CACHE: Rejected credential state could not be saved; sign in again.' >&2
+          elif LC_ALL=C grep -iq '^set-cookie:[[:space:]]*mm-session=' "$headers"; then
+            mv -f "$temporary" "$cache" || printf '%s\n' 'TLBX_CLI_AUTH_CACHE: Cookie renewal could not be saved; do not replay an application request.' >&2
+          fi
+          rm -f "$headers" "$temporary"
+          return "$exit_code"
+        }
+        _MREFRESHHELPER() {
+          [ -z "${_MRELOADING:-}" ] || return 0
+          local version
+          version=$(sed -n '1,4s/^# tlbx-cli-version: //p' "$_MTDIR/tlbx_cli.sh")
+          [ -n "$version" ] && [ "$version" != "$_MHELPERVERSION" ] || return 0
+          local MT_BASE_URL="$_MT" MT_TOKEN="${_MK#mm-session=}" _MRELOADING=1
+          export MT_BASE_URL MT_TOKEN
+          . "$_MTDIR/tlbx_cli.sh"
+        }
         _MREQUEST() {
           local exit_code=0 endpoint="unknown" arg
           for arg in "$@"; do case "$arg" in http://*|https://*) endpoint="${arg%%\?*}" ;; esac; done
-          if [ -n "${MT_API_KEY:-}" ]; then
-            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@" || exit_code=$?
-          else
-            _MCURL --fail-with-body -sSk -b "$_MK" "$@" || exit_code=$?
-          fi
+          _MHTTP --fail-with-body -sSk "$@" || exit_code=$?
           if [ "$exit_code" -ne 0 ]; then
             printf '%s\n' "TLBX_API_FAILED: endpoint=$endpoint; curlExit=$exit_code; helper=$_MTDIR/tlbx_cli.sh; generatedBy={{CliCommands.GetVersion()}}. Read the HTTP response/curl detail above. No automatic retry was attempted; verify the failure before replaying a mutation." >&2
           fi
           return "$exit_code"
         }
         _MC() {
+          _MREFRESHHELPER || return $?
           local context_headers=()
           _MCLICTX "$@" || return $?
           [ -z "${_MLEASE:-}" ] || context_headers=(-H "X-Tlbx-Cli-Context: $_MLEASE")
@@ -79,6 +139,7 @@ public static class TlbxCliScriptWriter
         # Resolve before any command; a stale ID can still be live in another terminal.
         # Git Bash uses emulated PIDs, so translate to the native Windows PID.
         _MRESOLVECTX() {
+          _MREFRESHHELPER || return $?
           local pid=$$ resolved root="${CODEX_SESSION_ID:-}" thread="${CODEX_THREAD_ID:-}" codex_home="${CODEX_HOME:-$HOME/.codex}" query="" auth=()
           local previous_session="${MT_SESSION_ID:-}" previous_preview="${MT_PREVIEW_NAME:-}" resolve_exit=0 http_status reason
           [ -n "$root" ] || root="$thread"
@@ -92,8 +153,7 @@ public static class TlbxCliScriptWriter
             _MLEASE=""
             query="&codexSessionId=$(_MURLENC "$root")&codexThreadId=$(_MURLENC "$thread")&codexHome=$(_MURLENC "$codex_home")&fresh=${1:-false}"
           fi
-          if [ -n "${MT_API_KEY:-}" ]; then auth=(-H "Authorization: Bearer $MT_API_KEY"); else auth=(-b "$_MK"); fi
-          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 --write-out $'\nTLBX_HTTP_STATUS:%{http_code}' "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
+          resolved=$(_MHTTP --fail-with-body -sSk --max-time 20 --write-out $'\nTLBX_HTTP_STATUS:%{http_code}' "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
           http_status="${resolved##*TLBX_HTTP_STATUS:}"
           http_status="${http_status:0:3}"
           if [[ "$http_status" =~ ^[0-9]{3}$ ]]; then
@@ -101,7 +161,7 @@ public static class TlbxCliScriptWriter
             resolved="${resolved%$'\n'}"
           else http_status="unknown"; fi
           if [ -n "$root$thread" ]; then
-            if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
+            if [ "$resolve_exit" -eq 0 ] && [ "$http_status" = 200 ] && [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
               export MT_SESSION_ID="${BASH_REMATCH[1]}"
               _MLEASE="${BASH_REMATCH[2]}"
               if [ "$previous_session" = "$MT_SESSION_ID" ] && [ -n "$previous_preview" ]; then
@@ -122,7 +182,7 @@ public static class TlbxCliScriptWriter
             fi
             return 0
           fi
-          if [[ "$resolved" =~ ^[A-Za-z0-9]{8}$ ]]; then
+          if [ "$resolve_exit" -eq 0 ] && [ "$http_status" = 200 ] && [[ "$resolved" =~ ^[A-Za-z0-9]{8}$ ]]; then
             if [ "${MT_SESSION_ID:-}" != "$resolved" ]; then unset MT_PREVIEW_NAME; fi
             export MT_SESSION_ID="$resolved"
           fi
@@ -182,7 +242,7 @@ public static class TlbxCliScriptWriter
             esac
           done
         }
-        _MRESOLVECTX
+        [ -n "${_MRELOADING:-}" ] || _MRESOLVECTX
         _MJSONESC() { local s="$1"; s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\r'/\\r}"; s="${s//$'\t'/\\t}"; s="${s//$'\n'/\\n}"; printf '%s' "$s"; }
         _MHAS() { local want="$1"; shift; for arg in "$@"; do [ "$arg" = "$want" ] && return 0; done; return 1; }
         _MISID() { [[ "${1:-}" =~ ^[A-Za-z0-9]{8}$ ]]; }
@@ -1215,7 +1275,7 @@ public static class TlbxCliScriptWriter
         mt_status()     { _MREQUIRECTX "mt_status" || return $?; _MSTATUS || _MC "$_MT/api/webpreview/target$(_MQ)"; }
 
         # Direct execution: .tlbx/tlbx_cli.sh query ".error"
-        if [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
+        if [ -z "${_MRELOADING:-}" ] && [ -n "${BASH_SOURCE+x}" ] && [ "${BASH_SOURCE[0]}" = "$0" ]; then
           _cmd="${1:-}"
           shift 2>/dev/null
           _normalized_cmd="${_cmd#mt_}"
@@ -1236,6 +1296,7 @@ public static class TlbxCliScriptWriter
     private static string GeneratePowerShellScript(int port, string token, string host) =>
         $$"""
         # tlbx CLI helpers — auto-generated, do not edit.
+        # tlbx-cli-version: {{CliCommands.GetVersion()}}/__TLBX_CLI_REVISION__
         # Dot-source: . .tlbx\tlbx_cli.ps1   |   Run: pwsh .tlbx\tlbx_cli.ps1 <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
@@ -1253,6 +1314,61 @@ public static class TlbxCliScriptWriter
         $script:_MK = if ($env:MT_TOKEN) { "mm-session=$($env:MT_TOKEN)" } else { "mm-session={{token}}" }
         $script:_MCurl = (Get-Command curl -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
         $script:_MHelperPath = $PSCommandPath
+        $script:_MHelperVersion = '{{CliCommands.GetVersion()}}/__TLBX_CLI_REVISION__'
+
+        function script:_MRefreshHelper {
+            if ($script:_MReloading -or -not $script:_MHelperPath) { return }
+            $stream = [IO.File]::Open($script:_MHelperPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+            $reader = [IO.StreamReader]::new($stream)
+            try { [void]$reader.ReadLine(); $version = $reader.ReadLine() }
+            finally { $reader.Dispose() }
+            if ($version -notmatch '^# tlbx-cli-version: (.+)$' -or $Matches[1] -eq $script:_MHelperVersion) { return }
+            $previousBase = $env:MT_BASE_URL
+            $previousToken = $env:MT_TOKEN
+            $script:_MReloading = $true
+            try {
+                # Keep the owning server and credential together across a file refresh.
+                $env:MT_BASE_URL = $script:_MT
+                $env:MT_TOKEN = $script:_MK.Substring('mm-session='.Length)
+                . $script:_MHelperPath
+            } finally {
+                $env:MT_BASE_URL = $previousBase
+                $env:MT_TOKEN = $previousToken
+                $script:_MReloading = $false
+            }
+        }
+        function script:_MHttp {
+            if ($env:MT_API_KEY) {
+                & $script:_MCurl -H "Authorization: Bearer $($env:MT_API_KEY)" @args
+                return
+            }
+            $directory = if ($env:TLBX_CLI_AUTH_CACHE_DIR) { $env:TLBX_CLI_AUTH_CACHE_DIR }
+                elseif ($IsWindows) { Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'tlbx/cli-auth' }
+                else { Join-Path $(if ($env:XDG_STATE_HOME) { $env:XDG_STATE_HOME } else { Join-Path $HOME '.local/state' }) 'tlbx/cli-auth' }
+            [void][IO.Directory]::CreateDirectory($directory)
+            if (-not $IsWindows) { [IO.File]::SetUnixFileMode($directory, [IO.UnixFileMode]::UserRead -bor [IO.UnixFileMode]::UserWrite -bor [IO.UnixFileMode]::UserExecute) }
+            $key = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes("$script:_MT`n$script:_MK"))).ToLowerInvariant()
+            $cache = Join-Path $directory "$key.cookies"
+            $temporary = Join-Path $directory "$([Guid]::NewGuid().ToString('N')).cookies"
+            $headers = Join-Path $directory "$([Guid]::NewGuid().ToString('N')).headers"
+            $cookie = if ([IO.File]::Exists($cache)) { $cache } else { $script:_MK }
+            $exitCode = 0
+            try {
+                & $script:_MCurl -b $cookie -c $temporary --dump-header $headers @args
+                $exitCode = $LASTEXITCODE
+                $responseHeaders = if ([IO.File]::Exists($headers)) { [IO.File]::ReadAllText($headers) } else { '' }
+                $rejected = $responseHeaders -match '(?im)^x-midterm-auth-required:\s*true'
+                if ($rejected) { [IO.File]::WriteAllText($temporary, '') }
+                if ($rejected -or $responseHeaders -match '(?im)^set-cookie:\s*mm-session=') {
+                    try { [IO.File]::Move($temporary, $cache, $true) }
+                    catch { [Console]::Error.WriteLine('TLBX_CLI_AUTH_CACHE: Cookie renewal could not be saved; do not replay an application request.') }
+                }
+            } finally {
+                [IO.File]::Delete($headers)
+                [IO.File]::Delete($temporary)
+                $global:LASTEXITCODE = $exitCode
+            }
+        }
 
         function script:_MRequestFailure {
             param([int]$ExitCode, [object]$Output, [object[]]$RequestArgs)
@@ -1262,13 +1378,10 @@ public static class TlbxCliScriptWriter
             throw "TLBX_API_FAILED: endpoint=$endpoint; curl exit $ExitCode; helper=$script:_MHelperPath; generatedBy={{CliCommands.GetVersion()}}. Read the HTTP response/curl detail above. No automatic retry was attempted; verify the failure before replaying a mutation."
         }
         function script:_MC {
+            _MRefreshHelper
             _MEnsureCliRequestContext @args
             $contextHeaders = if ($script:_MLease) { @('-H', "X-Tlbx-Cli-Context: $script:_MLease") } else { @() }
-            $output = if ($env:MT_API_KEY) {
-                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
-            } else {
-                & $script:_MCurl --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
-            }
+            $output = _MHttp --fail-with-body -sSk @contextHeaders @args 2>&1
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
                 _MRequestFailure $exitCode $output $args
@@ -1281,6 +1394,7 @@ public static class TlbxCliScriptWriter
         # Resolve before any command, including when the inherited ID belongs to a live sibling.
         function script:_MResolveContext {
             param([switch]$Fresh)
+            _MRefreshHelper
             $previousSession = $env:MT_SESSION_ID
             $previousPreview = $env:MT_PREVIEW_NAME
             $root = if ($env:CODEX_SESSION_ID) { $env:CODEX_SESSION_ID } else { $env:CODEX_THREAD_ID }
@@ -1292,17 +1406,13 @@ public static class TlbxCliScriptWriter
                 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex' }
                 $query = "&codexSessionId=$([Uri]::EscapeDataString($root))&codexThreadId=$([Uri]::EscapeDataString($thread))&codexHome=$([Uri]::EscapeDataString($codexHome))&fresh=$($Fresh.IsPresent.ToString().ToLowerInvariant())"
             }
-            $resolvedContext = if ($env:MT_API_KEY) {
-                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 --write-out "`nTLBX_HTTP_STATUS:%{http_code}" "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
-            } else {
-                & $script:_MCurl --fail-with-body -sSk -b $script:_MK --max-time 12 --write-out "`nTLBX_HTTP_STATUS:%{http_code}" "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
-            }
+            $resolvedContext = _MHttp --fail-with-body -sSk --max-time 20 --write-out "`nTLBX_HTTP_STATUS:%{http_code}" "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
             $resolveExit = $LASTEXITCODE
             $resolvedContext = ($resolvedContext | Out-String).Trim()
             $httpStatus = [regex]::Match($resolvedContext, 'TLBX_HTTP_STATUS:(\d{3})').Groups[1].Value
             $resolvedContext = [regex]::Replace($resolvedContext, '[\r\n]*TLBX_HTTP_STATUS:\d{3}', "`n").Trim()
             if ($root -or $thread) {
-                if ($resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
+                if ($resolveExit -eq 0 -and $httpStatus -eq '200' -and $resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
                     $env:MT_SESSION_ID = $Matches[1]
                     $script:_MLease = $Matches[2]
                     if ($previousSession -ceq $env:MT_SESSION_ID -and $previousPreview) {
@@ -1325,7 +1435,7 @@ public static class TlbxCliScriptWriter
                 }
                 return
             }
-            if ($resolvedContext -match '^[A-Za-z0-9]{8}$') {
+            if ($resolveExit -eq 0 -and $httpStatus -eq '200' -and $resolvedContext -match '^[A-Za-z0-9]{8}$') {
                 if ($env:MT_SESSION_ID -ne $resolvedContext) { Remove-Item Env:MT_PREVIEW_NAME -ErrorAction SilentlyContinue }
                 $env:MT_SESSION_ID = $resolvedContext
             }
@@ -1346,7 +1456,7 @@ public static class TlbxCliScriptWriter
         }
         $script:_MLease = $null
         $script:_MContextError = $null
-        try { _MResolveContext } catch { }
+        if (-not $script:_MReloading) { try { _MResolveContext } catch { } }
         # JSON body helper: builds a safe JSON string from a hashtable (no manual escaping)
         function script:_MH { param([hashtable]$h) $h | ConvertTo-Json -Depth 8 -Compress }
         function script:_MSID {
@@ -1560,7 +1670,7 @@ public static class TlbxCliScriptWriter
                 Output = $last
             }
         }
-        function Mt-Context {
+        function script:Mt-Context {
             param([string]$Format = "text")
             if ($Format.ToLowerInvariant() -notin @('repair', 'text', 'bash', '--bash', 'pwsh', '--pwsh', 'powershell', 'json', '--json', '')) {
                 throw "TLBX_CLI_USAGE: Unknown mt_context format '$Format'. Usage: mt_context [repair|text|bash|pwsh|json]. No operation was executed."
@@ -1590,7 +1700,7 @@ public static class TlbxCliScriptWriter
             }
         }
 
-        function _MCleanRuns {
+        function script:_MCleanRuns {
             param([string]$RunsRoot)
             if (-not (Test-Path -LiteralPath $RunsRoot -PathType Container)) {
                 return
@@ -1636,7 +1746,7 @@ public static class TlbxCliScriptWriter
         }
 
         # Mt-RunIsolated EXECUTABLE [ARG ...]  — start a non-interactive child without inheriting terminal stdio
-        function Mt-RunIsolated {
+        function script:Mt-RunIsolated {
             [CmdletBinding()]
             param(
                 [Parameter(Mandatory=$true, Position=0)][string]$Executable,
@@ -1699,23 +1809,23 @@ public static class TlbxCliScriptWriter
 
         # Browser interaction (requires web preview panel open in tlbx)
         # Mt-Query -Selector CSS_SELECTOR [-Text]  — query DOM; -Text for text-only
-        function Mt-Query {
+        function script:Mt-Query {
             param([string]$Selector, [switch]$Text)
             if ($Text) { _MBB query $Selector --text } else { _MBB query $Selector }
         }
         # Mt-Click -Selector CSS_SELECTOR
-        function Mt-Click { param([string]$Selector) _MBB click $Selector }
+        function script:Mt-Click { param([string]$Selector) _MBB click $Selector }
         # Mt-Fill -Selector CSS_SELECTOR -Value TEXT
-        function Mt-Fill { param([string]$Selector, [string]$Value) _MBB fill $Selector $Value }
-        function Mt-Session { _MRequireSessionContext "mt_session"; _MSID }
-        function Mt-Preview {
+        function script:Mt-Fill { param([string]$Selector, [string]$Value) _MBB fill $Selector $Value }
+        function script:Mt-Session { _MRequireSessionContext "mt_session"; _MSID }
+        function script:Mt-Preview {
             param([string]$Name)
             _MRequireSessionContext "mt_preview"
             if ($Name) { $env:MT_PREVIEW_NAME = $Name }
             _MPreview
         }
         # Mt-Exec -Code JS_CODE  — or pipe: 'code' | Mt-Exec
-        function Mt-Exec {
+        function script:Mt-Exec {
             param([Parameter(ValueFromPipeline)][string]$Code)
             process {
                 if (-not $Code) { return }
@@ -1723,32 +1833,32 @@ public static class TlbxCliScriptWriter
             }
         }
         # Mt-Wait -Selector CSS_SELECTOR [-Timeout N]  — wait for element (default 15s)
-        function Mt-Wait {
+        function script:Mt-Wait {
             param([string]$Selector, [int]$Timeout = 15)
             _MBB wait $Selector --timeout $Timeout
         }
-        function Mt-Screenshot {
+        function script:Mt-Screenshot {
             param([switch]$FullPage)
             if ($FullPage) { _MBB screenshot --full-page } else { _MBB screenshot }
         }
-        function Mt-Batch {
+        function script:Mt-Batch {
             param([Parameter(Mandatory)][object[]]$Commands, [int]$Timeout = 60)
             _MRequireSessionContext "mt_batch"
             _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); commands=@($Commands); timeout=$Timeout}) "$script:_MT/api/browser/batch"
         }
-        function Mt-Snapshot   { _MBB snapshot }
+        function script:Mt-Snapshot   { _MBB snapshot }
         # Mt-Outline [-Depth N]  — page structure tree (default depth 4)
-        function Mt-Outline { param([int]$Depth = 4) _MBB outline $Depth }
+        function script:Mt-Outline { param([int]$Depth = 4) _MBB outline $Depth }
         # Mt-Attrs -Selector CSS_SELECTOR  — element attributes (no children)
-        function Mt-Attrs   { param([string]$Selector) _MBB attrs $Selector }
+        function script:Mt-Attrs   { param([string]$Selector) _MBB attrs $Selector }
         # Mt-Css -Selector CSS_SELECTOR -Props COMMA_SEPARATED  — computed CSS values
-        function Mt-Css     { param([string]$Selector, [string]$Props) _MBB css $Selector $Props }
+        function script:Mt-Css     { param([string]$Selector, [string]$Props) _MBB css $Selector $Props }
         # Mt-Log [-Filter error|warn|all]  — console log buffer (default: all)
-        function Mt-Log     { param([string]$Filter = "all") _MBB log $Filter }
+        function script:Mt-Log     { param([string]$Filter = "all") _MBB log $Filter }
         # Mt-Text [-Selector CSS_SELECTOR]  — page text content (default: body)
-        function Mt-Text    { param([string]$Selector = "body") _MBB query $Selector --text }
+        function script:Mt-Text    { param([string]$Selector = "body") _MBB query $Selector --text }
         # Mt-Scroll [-Selector CSS_SELECTOR] [-DeltaY N] [-DeltaX N] [-To top|bottom|left|right]  — scroll page or container
-        function Mt-Scroll {
+        function script:Mt-Scroll {
             param([string]$Selector = "window", [double]$DeltaY = 600, [double]$DeltaX = 0, [string]$To)
             $value = if ($To) {
                 $To
@@ -1758,7 +1868,7 @@ public static class TlbxCliScriptWriter
             _MBB scroll $Selector $value
         }
         # Mt-Wheel [-Selector CSS_SELECTOR] [-Direction up|down|DELTA_Y] [-Steps N]  — send wheel events and report measured scroll progress
-        function Mt-Wheel {
+        function script:Mt-Wheel {
             param([string]$Selector = "window", [string]$Direction = "down", [int]$Steps = 1)
             if ($Selector -match '^(up|down|-?[0-9]+([.][0-9]+)?)$') {
                 $Steps = if ($Direction -match '^\d+$') { [int]$Direction } else { $Steps }
@@ -1768,22 +1878,22 @@ public static class TlbxCliScriptWriter
             _MBB wheel $Selector $Direction $Steps
         }
         # Mt-AgentWheel [-Direction up|down|DELTA_Y] [-Steps N] [-SessionId ID]  — wheel the visible ACP history and return measured position
-        function Mt-AgentWheel {
+        function script:Mt-AgentWheel {
             param([string]$Direction = "down", [int]$Steps = 1, [string]$SessionId = (_MSID))
             $delta = if ($Direction -eq "up") { -120 } elseif ($Direction -eq "down") { 120 } else { [double]::Parse($Direction, [System.Globalization.CultureInfo]::InvariantCulture) }
             _MJR -d (_MH @{sessionId=$SessionId; deltaY=$delta; steps=$Steps}) "$script:_MT/api/browser/agent-wheel"
         }
         # Mt-Submit [-Selector FORM_SELECTOR]  — submit form via JS (default: first form)
-        function Mt-Submit  { param([string]$Selector = "form") _MBB submit $Selector }
+        function script:Mt-Submit  { param([string]$Selector = "form") _MBB submit $Selector }
         # Mt-Url  — upstream page URL (not proxy URL)
-        function Mt-Url     { _MBB url }
+        function script:Mt-Url     { _MBB url }
         # Mt-Links  — all links on page
-        function Mt-Links   { _MBB links }
+        function script:Mt-Links   { _MBB links }
         # Mt-Forms [-Selector CSS_SELECTOR]  — form structure and values (default: all forms)
-        function Mt-Forms   { param([string]$Selector = "form") _MBB forms $Selector }
+        function script:Mt-Forms   { param([string]$Selector = "form") _MBB forms $Selector }
 
         # Web preview (dev browser)
-        function Mt-Navigate {
+        function script:Mt-Navigate {
             param([string]$Url)
             _MRequireSessionContext "mt_navigate"
             if ([string]::IsNullOrWhiteSpace($Url)) {
@@ -1804,7 +1914,7 @@ public static class TlbxCliScriptWriter
             }
         }
         # Mt-Open [-Claim] [-Activate] -Url URL  — attach this session's preview; activate the session only on explicit request
-        function Mt-Open {
+        function script:Mt-Open {
             param([string]$Url, [switch]$Claim, [switch]$Activate)
             _MRequireSessionContext "mt_open"
             if ($Claim) {
@@ -1816,7 +1926,7 @@ public static class TlbxCliScriptWriter
             }
         }
         # Mt-ClosePreview  — close the current preview; named previews are removed entirely
-        function Mt-ClosePreview {
+        function script:Mt-ClosePreview {
             _MRequireSessionContext "mt_close_preview"
             _MJR -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/close"
         }
@@ -1858,16 +1968,16 @@ public static class TlbxCliScriptWriter
                 }
             }
         }
-        function Mt-Reload     { _MRequireSessionContext "mt_reload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="soft"}) "$script:_MT/api/webpreview/reload" }
+        function script:Mt-Reload     { _MRequireSessionContext "mt_reload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="soft"}) "$script:_MT/api/webpreview/reload" }
         # Mt-ForceReload  — force a fresh content reload with cache-busting
-        function Mt-ForceReload { _MRequireSessionContext "mt_forcereload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="force"}) "$script:_MT/api/webpreview/reload" }
-        function Mt-Target     { _MRequireSessionContext "mt_target"; _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
-        function Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
-        function Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
+        function script:Mt-ForceReload { _MRequireSessionContext "mt_forcereload"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="force"}) "$script:_MT/api/webpreview/reload" }
+        function script:Mt-Target     { _MRequireSessionContext "mt_target"; _MC "$script:_MT/api/webpreview/target$(_MQuery)" }
+        function script:Mt-Cookies    { _MRequireSessionContext "mt_cookies"; _MC "$script:_MT/api/webpreview/cookies$(_MQuery)" }
+        function script:Mt-Previews   { _MRequireSessionContext "mt_previews"; _MC "$script:_MT/api/webpreview/previews?sessionId=$([Uri]::EscapeDataString((_MSID)))" }
         # Mt-ClaimPreview  — explicitly assign this named preview to the connected tlbx browser
-        function Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim @args }
+        function script:Mt-ClaimPreview { _MRequireSessionContext "mt_claim_preview"; _MBB claim @args }
         # Mt-ClaimMainBrowser [-BrowserId ID]  — make the selected preview/browser the leading browser for terminal sizing
-        function Mt-ClaimMainBrowser {
+        function script:Mt-ClaimMainBrowser {
             param([string]$BrowserId)
             _MRequireSessionContext "mt_claim_main_browser"
             if ([string]::IsNullOrWhiteSpace($BrowserId)) {
@@ -1877,9 +1987,9 @@ public static class TlbxCliScriptWriter
             }
         }
         # Mt-Capabilities [-Json]  — compact command/capability discovery for agents
-        function Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
+        function script:Mt-Capabilities { param([switch]$Json) _MRequireSessionContext "mt_capabilities"; if ($Json) { _MBB capabilities --json } else { _MBB capabilities } }
         # Mt-Topic TEXT...  — set the current session topic shown in the sidebar; use -Clear to remove
-        function Mt-Topic {
+        function script:Mt-Topic {
             param([Parameter(ValueFromRemainingArguments=$true)][string[]]$InputArgs, [switch]$Clear)
             _MRequireSessionContext "mt_topic"
             $topic = if ($Clear) { $null } else { ($InputArgs -join " ") }
@@ -1893,7 +2003,7 @@ public static class TlbxCliScriptWriter
             }
         }
         # Mt-Repo list|status|add|remove|refresh [args] [-SessionId ID]
-        function Mt-Repo {
+        function script:Mt-Repo {
             param([string]$Action = "list", [string]$PathOrRoot, [string]$Role = "target", [string]$Label, [string]$SessionId = (_MSID))
             if (-not (_MIsSessionId $SessionId)) {
                 throw "mt_repo requires an eight-character tlbx session id. Run mt_sessions, then use Mt-Repo ACTION -SessionId ID (or set MT_SESSION_ID)."
@@ -1925,15 +2035,15 @@ public static class TlbxCliScriptWriter
             }
         }
         # Mt-Inspect [-Screenshot]  — compact page/status/proxy diagnostic bundle
-        function Mt-Inspect { param([switch]$Screenshot) _MRequireSessionContext "mt_inspect"; if ($Screenshot) { _MBB inspect --screenshot } else { _MBB inspect } }
+        function script:Mt-Inspect { param([switch]$Screenshot) _MRequireSessionContext "mt_inspect"; if ($Screenshot) { _MBB inspect --screenshot } else { _MBB inspect } }
         # Mt-ClearCookies  — clear all cookies (browser-side + server-side jar)
-        function Mt-ClearCookies { _MRequireSessionContext "mt_clearcookies"; _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
+        function script:Mt-ClearCookies { _MRequireSessionContext "mt_clearcookies"; _MBB clearcookies; _MC -X POST "$script:_MT/api/webpreview/cookies/clear$(_MQuery)" }
         # Mt-ClearState  — clear preview cookies, storage, cache, and service workers for this session-scoped preview
-        function Mt-ClearState { _MRequireSessionContext "mt_clearstate"; _MBB clearstate; _MC -X POST "$script:_MT/api/webpreview/state/clear$(_MQuery)" }
+        function script:Mt-ClearState { _MRequireSessionContext "mt_clearstate"; _MBB clearstate; _MC -X POST "$script:_MT/api/webpreview/state/clear$(_MQuery)" }
         # Mt-HardReload  — clear cookies + reload (fresh session)
-        function Mt-HardReload { _MRequireSessionContext "mt_hardreload"; Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
+        function script:Mt-HardReload { _MRequireSessionContext "mt_hardreload"; Mt-ClearCookies; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload" }
         # Mt-PreviewReset [-Url URL]  — clear preview cookies + storage, then hard-reload (optionally retarget URL)
-        function Mt-PreviewReset {
+        function script:Mt-PreviewReset {
             param([string]$Url)
             _MRequireSessionContext "mt_preview_reset"
             if ($Url) {
@@ -1943,11 +2053,11 @@ public static class TlbxCliScriptWriter
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); mode="hard"}) "$script:_MT/api/webpreview/reload"
         }
         # Mt-ProxyLog [-Limit N]  — last N proxy requests with full details (default 100)
-        function Mt-ProxyLog   { param([int]$Limit = 100) _MRequireSessionContext "mt_proxylog"; _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
+        function script:Mt-ProxyLog   { param([int]$Limit = 100) _MRequireSessionContext "mt_proxylog"; _MC "$script:_MT/api/webpreview/proxylog$(_MQuery)&limit=$Limit" }
         # Mt-ProxyLogSummary [-Limit N]  — compact proxy request status/error summary
-        function Mt-ProxyLogSummary { param([int]$Limit = 100) _MRequireSessionContext "mt_proxylog_summary"; _MBB proxylog-summary --limit $Limit }
+        function script:Mt-ProxyLogSummary { param([int]$Limit = 100) _MRequireSessionContext "mt_proxylog_summary"; _MBB proxylog-summary --limit $Limit }
         # Mt-ApplyUpdate [-Source SOURCE]  — apply pending update and wait for server to return
-        function Mt-ApplyUpdate {
+        function script:Mt-ApplyUpdate {
             param([string]$Source)
             $url = "$script:_MT/api/update/apply"
             $targetVersion = $null
@@ -1984,8 +2094,8 @@ public static class TlbxCliScriptWriter
         }
 
         # Session management
-        function Mt-Boards { _MC "$script:_MT/api/boards" }
-        function Mt-Board {
+        function script:Mt-Boards { _MC "$script:_MT/api/boards" }
+        function script:Mt-Board {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $parts = @($InputArgs)
             $action = if ($parts.Count) { $parts[0] } else { 'list' }
@@ -2027,22 +2137,22 @@ public static class TlbxCliScriptWriter
             if ($null -ne $body) { _MC -X $method -H 'Content-Type: application/json' --data-binary $body "$script:_MT$path" }
             else { _MC -X $method "$script:_MT$path" }
         }
-        function Mt-Sessions   { _MC "$script:_MT/api/sessions" }
-        function Mt-Buffer {
+        function script:Mt-Sessions   { _MC "$script:_MT/api/sessions" }
+        function script:Mt-Buffer {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer"
         }
         # Mt-Redraw [SESSION_ID]  — ask the foreground console application to repaint its current screen
-        function Mt-Redraw {
+        function script:Mt-Redraw {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/redraw"
         }
         # Mt-Tail [SESSION_ID] [LINES]  — cleaned terminal tail with ANSI stripped
-        function Mt-Tail {
+        function script:Mt-Tail {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
@@ -2050,7 +2160,7 @@ public static class TlbxCliScriptWriter
             _MC "$script:_MT/api/sessions/$($resolved.SessionId)/buffer/tail?lines=$lines&stripAnsi=true"
         }
         # Mt-SendText [SESSION_ID] TEXT  — send literal text without auto-submit
-        function Mt-SendText {
+        function script:Mt-SendText {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             $sessionId = $resolved.SessionId
@@ -2062,7 +2172,7 @@ public static class TlbxCliScriptWriter
             _MSendTextRequest -SessionId $sessionId -Text $text -AppendNewline:$false
         }
         # Mt-Paste [-Bracketed] [-File] [SESSION_ID] [TEXT]  — paste clipboard-style text via the same server path as UI paste
-        function Mt-Paste {
+        function script:Mt-Paste {
             param(
                 [switch]$Bracketed,
                 [switch]$File,
@@ -2101,7 +2211,7 @@ public static class TlbxCliScriptWriter
             }) "$script:_MT/api/sessions/$SessionId/input/prompt"
         }
         # Mt-Prompt [SESSION_ID] TEXT [-DelayMs N]  — state-aware send + submit via the server prompt API
-        function Mt-Prompt {
+        function script:Mt-Prompt {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
             $resolved = _MResolveSessionArgs $InputArgs
             $sessionId = $resolved.SessionId
@@ -2122,7 +2232,7 @@ public static class TlbxCliScriptWriter
             }) "$script:_MT/api/sessions/$sessionId/input/prompt"
         }
         # Mt-PromptNow [SESSION_ID] TEXT [-DelayMs N]  — interrupt first, then atomically send and submit the prompt
-        function Mt-PromptNow {
+        function script:Mt-PromptNow {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
             $resolved = _MResolveSessionArgs $InputArgs
             $sessionId = $resolved.SessionId
@@ -2142,7 +2252,7 @@ public static class TlbxCliScriptWriter
             }) "$script:_MT/api/sessions/$sessionId/input/prompt"
         }
         # Mt-Slash [SESSION_ID] COMMAND  — send a slash command through the prompt API
-        function Mt-Slash {
+        function script:Mt-Slash {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs, [int]$DelayMs = 300)
             $resolved = _MResolveSessionArgs $InputArgs
             $sessionId = $resolved.SessionId
@@ -2158,7 +2268,7 @@ public static class TlbxCliScriptWriter
             Mt-Prompt $sessionId $command -DelayMs $DelayMs
         }
         # Mt-Wake [SESSION_ID] DELAY TEXT  — queue a prompt after DELAY (30s, 5m, 2h, 1d; bare numbers are minutes)
-        function Mt-Wake {
+        function script:Mt-Wake {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             $sessionId = $resolved.SessionId
@@ -2175,7 +2285,7 @@ public static class TlbxCliScriptWriter
             }) "$script:_MT/api/command-bay/queue"
         }
         # Mt-Recur [SESSION_ID] INTERVAL TEXT  — repeat a prompt until its queue item is cancelled
-        function Mt-Recur {
+        function script:Mt-Recur {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             $sessionId = $resolved.SessionId
@@ -2194,20 +2304,20 @@ public static class TlbxCliScriptWriter
             }) "$script:_MT/api/command-bay/queue"
         }
         # Mt-Queue [SESSION_ID]  — list queued one-shot and recurring prompts/actions
-        function Mt-Queue {
+        function script:Mt-Queue {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC "$script:_MT/api/command-bay/queue?sessionId=$([Uri]::EscapeDataString($resolved.SessionId))"
         }
         # Mt-WakeCancel QUEUE_ID  — cancel a queued wake/prompt/action item
-        function Mt-WakeCancel {
+        function script:Mt-WakeCancel {
             param([string]$QueueId)
             if ([string]::IsNullOrWhiteSpace($QueueId)) { Write-Error "Usage: Mt-WakeCancel QUEUE_ID"; return }
             _MC -X DELETE "$script:_MT/api/command-bay/queue/$([Uri]::EscapeDataString($QueueId))"
         }
         # Mt-SendKeys [SESSION_ID] KEY...  — send named keys like Enter, C-c, Escape, Up
-        function Mt-SendKeys {
+        function script:Mt-SendKeys {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             $keys = @($resolved.Remaining)
@@ -2215,57 +2325,57 @@ public static class TlbxCliScriptWriter
             if ($keys.Count -eq 0) { Write-Error "At least one key is required."; return }
             _MJ -d (_MH @{ keys = $keys }) "$script:_MT/api/sessions/$($resolved.SessionId)/input/keys"
         }
-        function Mt-Enter {
+        function script:Mt-Enter {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $forward = @($InputArgs)
             $forward += "Enter"
             Mt-SendKeys @forward
         }
-        function Mt-Ctrlc {
+        function script:Mt-Ctrlc {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $forward = @($InputArgs)
             $forward += "C-c"
             Mt-SendKeys @forward
         }
-        function Mt-Escape {
+        function script:Mt-Escape {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $forward = @($InputArgs)
             $forward += "Escape"
             Mt-SendKeys @forward
         }
-        function Mt-Up {
+        function script:Mt-Up {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $forward = @($InputArgs)
             $forward += "Up"
             Mt-SendKeys @forward
         }
-        function Mt-Down {
+        function script:Mt-Down {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $forward = @($InputArgs)
             $forward += "Down"
             Mt-SendKeys @forward
         }
-        function Mt-Left {
+        function script:Mt-Left {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $forward = @($InputArgs)
             $forward += "Left"
             Mt-SendKeys @forward
         }
-        function Mt-Right {
+        function script:Mt-Right {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $forward = @($InputArgs)
             $forward += "Right"
             Mt-SendKeys @forward
         }
         # Mt-Inject [SESSION_ID]  — ensure .tlbx + tlbx_cli helpers in the target cwd
-        function Mt-Inject {
+        function script:Mt-Inject {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
             _MC -X POST "$script:_MT/api/sessions/$($resolved.SessionId)/inject-guidance"
         }
         # Mt-Notify [-Message] TEXT [-Title TITLE] [-Priority normal|important] [-SessionId SESSION_ID]
-        function Mt-Notify {
+        function script:Mt-Notify {
             param(
                 [Parameter(Mandatory=$true, Position=0)][string]$Message,
                 [string]$Title = "tlbx",
@@ -2279,7 +2389,7 @@ public static class TlbxCliScriptWriter
             _MJ -d (_MH $body) "$script:_MT/api/notifications"
         }
         # Mt-Activity [SESSION_ID] [SECONDS] [BELL_LIMIT]  — output heatmap + bell history as JSON
-        function Mt-Activity {
+        function script:Mt-Activity {
             param([Parameter(ValueFromRemainingArguments)][string[]]$InputArgs)
             $resolved = _MResolveSessionArgs $InputArgs
             if (-not $resolved.SessionId) { Write-Error "Session id required."; return }
@@ -2288,12 +2398,12 @@ public static class TlbxCliScriptWriter
             _MC "$script:_MT/api/sessions/$($resolved.SessionId)/activity?seconds=$seconds&bellLimit=$bellLimit"
         }
         # Mt-Attention [-AgentOnly true|false]  — ranked fleet view for supervision
-        function Mt-Attention {
+        function script:Mt-Attention {
             param([bool]$AgentOnly = $true)
             _MC "$script:_MT/api/sessions/attention?agentOnly=$AgentOnly"
         }
         # Explicit agent control plane. tlbx stores what agents publish; it does not infer meaning from PTY output.
-        function Mt-ControlPlane {
+        function script:Mt-ControlPlane {
             param([string]$MachineId)
             if ($MachineId) {
                 _MC "$script:_MT/api/hub/machines/$([Uri]::EscapeDataString($MachineId))/control-plane"
@@ -2301,7 +2411,7 @@ public static class TlbxCliScriptWriter
                 _MC "$script:_MT/api/control-plane"
             }
         }
-        function Mt-AgentCapabilities {
+        function script:Mt-AgentCapabilities {
             param([string]$MachineId)
             if ($MachineId) {
                 _MC "$script:_MT/api/hub/machines/$([Uri]::EscapeDataString($MachineId))/control-plane/capabilities"
@@ -2309,7 +2419,7 @@ public static class TlbxCliScriptWriter
                 _MC "$script:_MT/api/control-plane/capabilities"
             }
         }
-        function Mt-Events {
+        function script:Mt-Events {
             param([long]$After = 0, [int]$Limit = 100, [string]$MachineId)
             $url = if ($MachineId) {
                 "$script:_MT/api/hub/machines/$([Uri]::EscapeDataString($MachineId))/control-plane/events"
@@ -2318,14 +2428,14 @@ public static class TlbxCliScriptWriter
             }
             _MC "${url}?after=$After&limit=$Limit"
         }
-        function Mt-Dispatch {
+        function script:Mt-Dispatch {
             param(
                 [Parameter(Mandatory=$true)][string[]]$SessionId,
                 [Parameter(Mandatory=$true)][string]$Text
             )
             _MJ -d (_MH @{ sessionIds = @($SessionId); turn = @{ text = $Text } }) "$script:_MT/api/control-plane/dispatch"
         }
-        function Mt-WorkList {
+        function script:Mt-WorkList {
             param([string]$State, [string]$Kind, [string]$SessionId, [int]$Limit = 100)
             $query = "limit=$Limit"
             if ($State) { $query += "&state=$([Uri]::EscapeDataString($State))" }
@@ -2333,7 +2443,7 @@ public static class TlbxCliScriptWriter
             if ($SessionId) { $query += "&sessionId=$([Uri]::EscapeDataString($SessionId))" }
             _MC "$script:_MT/api/control-plane/work-items?$query"
         }
-        function Mt-WorkAdd {
+        function script:Mt-WorkAdd {
             param(
                 [Parameter(Mandatory=$true)][string]$Kind,
                 [Parameter(Mandatory=$true)][string]$Title,
@@ -2357,7 +2467,7 @@ public static class TlbxCliScriptWriter
             if ($RepositoryPath) { $body.repositoryPath = $RepositoryPath }
             _MJ -d (_MH $body) "$script:_MT/api/control-plane/work-items"
         }
-        function Mt-WorkUpdate {
+        function script:Mt-WorkUpdate {
             param(
                 [Parameter(Mandatory=$true)][string]$Id,
                 [Parameter(Mandatory=$true)][ValidateSet("open", "active", "waiting", "blocked", "done", "dismissed")][string]$State,
@@ -2373,11 +2483,11 @@ public static class TlbxCliScriptWriter
             if ($PSBoundParameters.ContainsKey("RepositoryPath")) { $body.repositoryPath = $RepositoryPath }
             _MC -X PATCH -H "Content-Type: application/json" -d (_MH $body) "$script:_MT/api/control-plane/work-items/$([Uri]::EscapeDataString($Id))"
         }
-        function Mt-WorkDelete {
+        function script:Mt-WorkDelete {
             param([Parameter(Mandatory=$true)][string]$Id)
             _MC -X DELETE "$script:_MT/api/control-plane/work-items/$([Uri]::EscapeDataString($Id))"
         }
-        function Mt-PublishStatus {
+        function script:Mt-PublishStatus {
             param(
                 [Parameter(Mandatory=$true)][ValidateSet("working", "waiting", "needsInput", "blocked", "done")][string]$State,
                 [Parameter(Mandatory=$true)][string]$Summary,
@@ -2396,19 +2506,19 @@ public static class TlbxCliScriptWriter
             if ($RepositoryPath) { $body.repositoryPath = $RepositoryPath }
             _MC -X PUT -H "Content-Type: application/json" -d (_MH $body) "$script:_MT/api/control-plane/session-status/$([Uri]::EscapeDataString($SessionId))"
         }
-        function Mt-StatusList {
+        function script:Mt-StatusList {
             param([string]$SessionId)
             $url = "$script:_MT/api/control-plane/session-status"
             if ($SessionId) { $url += "?sessionId=$([Uri]::EscapeDataString($SessionId))" }
             _MC $url
         }
-        function Mt-StatusClear {
+        function script:Mt-StatusClear {
             param([string]$SessionId)
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required."; return }
             _MC -X DELETE "$script:_MT/api/control-plane/session-status/$([Uri]::EscapeDataString($SessionId))"
         }
-        function Mt-Checkpoint {
+        function script:Mt-Checkpoint {
             param(
                 [Parameter(Mandatory=$true)][string]$Kind,
                 [Parameter(Mandatory=$true)][string]$Summary,
@@ -2425,7 +2535,7 @@ public static class TlbxCliScriptWriter
             if ($RepositoryPath) { $body.repositoryPath = $RepositoryPath }
             _MJ -d (_MH $body) "$script:_MT/api/control-plane/checkpoints"
         }
-        function Mt-Checkpoints {
+        function script:Mt-Checkpoints {
             param([string]$SessionId, [string]$Kind, [int]$Limit = 100)
             $query = "limit=$Limit"
             if ($SessionId) { $query += "&sessionId=$([Uri]::EscapeDataString($SessionId))" }
@@ -2433,7 +2543,7 @@ public static class TlbxCliScriptWriter
             _MC "$script:_MT/api/control-plane/checkpoints?$query"
         }
         # Mt-InputHistory [-SessionId ID] [-Kind KIND] [-Limit N]  — deterministic prompt/paste/upload history as JSON
-        function Mt-InputHistory {
+        function script:Mt-InputHistory {
             param([string]$SessionId, [string]$Kind, [int]$Limit = 100)
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required."; return }
@@ -2442,12 +2552,12 @@ public static class TlbxCliScriptWriter
             _MC "$script:_MT/api/input-history?$query"
         }
         # Mt-InputHistoryShow ID
-        function Mt-InputHistoryShow {
+        function script:Mt-InputHistoryShow {
             param([Parameter(Mandatory=$true)][string]$Id)
             _MC "$script:_MT/api/input-history/$([Uri]::EscapeDataString($Id))"
         }
         # Mt-InputHistoryReplay ID [-TargetSessionId ID]
-        function Mt-InputHistoryReplay {
+        function script:Mt-InputHistoryReplay {
             param(
                 [Parameter(Mandatory=$true)][string]$Id,
                 [string]$TargetSessionId
@@ -2458,19 +2568,19 @@ public static class TlbxCliScriptWriter
             _MJ -d (_MH $body) "$script:_MT/api/input-history/$([Uri]::EscapeDataString($Id))/replay"
         }
         # Mt-InputHistoryDelete ID
-        function Mt-InputHistoryDelete {
+        function script:Mt-InputHistoryDelete {
             param([Parameter(Mandatory=$true)][string]$Id)
             _MC -X DELETE "$script:_MT/api/input-history/$([Uri]::EscapeDataString($Id))"
         }
         # Mt-InputHistoryClear [-SessionId ID]
-        function Mt-InputHistoryClear {
+        function script:Mt-InputHistoryClear {
             param([string]$SessionId)
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required."; return }
             _MC -X DELETE "$script:_MT/api/input-history?sessionId=$([Uri]::EscapeDataString($SessionId))"
         }
         # Mt-Bootstrap -Name NAME -Cwd PATH -Profile PROFILE [-SlashCommands ...]  — create an agent-controlled worker session
-        function Mt-Bootstrap {
+        function script:Mt-Bootstrap {
             param(
                 [Parameter(Mandatory=$true)][string]$Name,
                 [Parameter(Mandatory=$true)][string]$Cwd,
@@ -2491,7 +2601,7 @@ public static class TlbxCliScriptWriter
             }) "$script:_MT/api/workers/bootstrap"
         }
         # Mt-AcpNew -Name NAME -Cwd PATH [-Profile PROFILE]  — create a native Agent Controller session
-        function Mt-AcpNew {
+        function script:Mt-AcpNew {
             param(
                 [Parameter(Mandatory=$true)][string]$Name,
                 [Parameter(Mandatory=$true)][string]$Cwd,
@@ -2507,7 +2617,7 @@ public static class TlbxCliScriptWriter
             }) "$script:_MT/api/workers/bootstrap"
         }
         # Mt-AcpHistory [-SessionId ID] [-StartIndex N] [-Count N] [-ViewportWidth N]
-        function Mt-AcpHistory {
+        function script:Mt-AcpHistory {
             param([string]$SessionId, [int]$StartIndex = -1, [int]$Count = -1, [int]$ViewportWidth = -1)
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required."; return }
@@ -2519,7 +2629,7 @@ public static class TlbxCliScriptWriter
             _MC "$script:_MT/api/sessions/$SessionId/agent-control/history$suffix"
         }
         # Mt-AcpTurn TEXT [-SessionId ID] [-Model MODEL] [-Effort LEVEL] [-PlanMode MODE] [-PermissionMode MODE]
-        function Mt-AcpTurn {
+        function script:Mt-AcpTurn {
             param(
                 [Parameter(Mandatory=$true, Position=0)][string]$Text,
                 [string]$SessionId,
@@ -2533,14 +2643,14 @@ public static class TlbxCliScriptWriter
             _MJ -d (_MH @{ text=$Text; model=$Model; effort=$Effort; planMode=$PlanMode; permissionMode=$PermissionMode }) "$script:_MT/api/sessions/$SessionId/agent-control/turn"
         }
         # Mt-AcpInterrupt [-SessionId ID] [-TurnId ID]
-        function Mt-AcpInterrupt {
+        function script:Mt-AcpInterrupt {
             param([string]$SessionId, [string]$TurnId)
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required."; return }
             _MJ -d (_MH @{ turnId=$TurnId }) "$script:_MT/api/sessions/$SessionId/agent-control/interrupt"
         }
         # Mt-AcpSteer -ExpectedTurnId ID -Text TEXT [-SessionId ID]
-        function Mt-AcpSteer {
+        function script:Mt-AcpSteer {
             param(
                 [Parameter(Mandatory=$true)][string]$ExpectedTurnId,
                 [Parameter(Mandatory=$true)][string]$Text,
@@ -2551,14 +2661,14 @@ public static class TlbxCliScriptWriter
             _MJ -d (_MH @{ expectedTurnId=$ExpectedTurnId; text=$Text }) "$script:_MT/api/sessions/$SessionId/agent-control/steer"
         }
         # Mt-AcpCompact [-SessionId ID]
-        function Mt-AcpCompact {
+        function script:Mt-AcpCompact {
             param([string]$SessionId)
             if (-not $SessionId) { $SessionId = _MSID }
             if (-not $SessionId) { Write-Error "Session id required."; return }
             _MJ -d '{}' "$script:_MT/api/sessions/$SessionId/agent-control/compact"
         }
         # Mt-NewSession [-Shell SHELL] [-Cwd PATH]  — create a new terminal session
-        function Mt-NewSession {
+        function script:Mt-NewSession {
             param([string]$Shell, [string]$Cwd)
             $body = @{}
             if ($Shell) { $body.shell = $Shell }
@@ -2566,141 +2676,141 @@ public static class TlbxCliScriptWriter
             _MJ -d (_MH $body) "$script:_MT/api/sessions"
         }
         # Mt-Split [-Horizontal]  — split terminal (creates adjacent pane via tmux shim)
-        function Mt-Split {
+        function script:Mt-Split {
             param([switch]$Horizontal)
             if ($Horizontal) { & tmux split-window -h } else { & tmux split-window }
         }
 
         # Panel control
         # Mt-Detach  — detach web preview to a popup window
-        function Mt-Detach   { _MRequireSessionContext "mt_detach"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/detach" }
+        function script:Mt-Detach   { _MRequireSessionContext "mt_detach"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/detach" }
         # Mt-Dock  — dock web preview back from popup
-        function Mt-Dock     { _MRequireSessionContext "mt_dock"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/dock" }
+        function script:Mt-Dock     { _MRequireSessionContext "mt_dock"; _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview)}) "$script:_MT/api/browser/dock" }
         # Mt-Viewport [-Width N] [-Height N]  — set iframe viewport size (0 0 to reset)
-        function Mt-Viewport {
+        function script:Mt-Viewport {
             param([int]$Width = 0, [int]$Height = 0)
             _MRequireSessionContext "mt_viewport"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); width=$Width; height=$Height}) "$script:_MT/api/browser/viewport"
         }
         # Mt-Mobile [-Action ACTION] [-Profile PROFILE]  — control the local Chrome device attached to this tlbx tab
-        function Mt-Mobile {
+        function script:Mt-Mobile {
             param([string]$Action = "status", [string]$Profile = "pixel-8")
             _MRequireSessionContext "mt_mobile"
             _MJ -d (_MH @{sessionId=(_MSID); previewName=(_MPreview); action=$Action; profile=$Profile}) "$script:_MT/api/browser/mobile-device"
         }
 
         # Status
-        function Mt-Status     { _MRequireSessionContext "mt_status"; try { _MStatus } catch { Mt-Target } }
+        function script:Mt-Status     { _MRequireSessionContext "mt_status"; try { _MStatus } catch { Mt-Target } }
 
         # PowerShell aliases matching the documented mt_* helper names
-        Set-Alias -Name mt_context -Value Mt-Context
-        Set-Alias -Name mt_run_isolated -Value Mt-RunIsolated
-        Set-Alias -Name mt_query -Value Mt-Query
-        Set-Alias -Name mt_click -Value Mt-Click
-        Set-Alias -Name mt_fill -Value Mt-Fill
-        Set-Alias -Name mt_session -Value Mt-Session
-        Set-Alias -Name mt_preview -Value Mt-Preview
-        Set-Alias -Name mt_exec -Value Mt-Exec
-        Set-Alias -Name mt_wait -Value Mt-Wait
-        Set-Alias -Name mt_screenshot -Value Mt-Screenshot
-        Set-Alias -Name mt_batch -Value Mt-Batch
-        Set-Alias -Name mt_snapshot -Value Mt-Snapshot
-        Set-Alias -Name mt_outline -Value Mt-Outline
-        Set-Alias -Name mt_attrs -Value Mt-Attrs
-        Set-Alias -Name mt_css -Value Mt-Css
-        Set-Alias -Name mt_log -Value Mt-Log
-        Set-Alias -Name mt_text -Value Mt-Text
-        Set-Alias -Name mt_scroll -Value Mt-Scroll
-        Set-Alias -Name mt_wheel -Value Mt-Wheel
-        Set-Alias -Name mt_agent_wheel -Value Mt-AgentWheel
-        Set-Alias -Name mt_submit -Value Mt-Submit
-        Set-Alias -Name mt_url -Value Mt-Url
-        Set-Alias -Name mt_links -Value Mt-Links
-        Set-Alias -Name mt_forms -Value Mt-Forms
-        Set-Alias -Name mt_navigate -Value Mt-Navigate
-        Set-Alias -Name mt_open -Value Mt-Open
-        Set-Alias -Name mt_with_preview -Value Invoke-MtPreview
-        Set-Alias -Name mt_reload -Value Mt-Reload
-        Set-Alias -Name mt_forcereload -Value Mt-ForceReload
-        Set-Alias -Name mt_target -Value Mt-Target
-        Set-Alias -Name mt_cookies -Value Mt-Cookies
-        Set-Alias -Name mt_previews -Value Mt-Previews
-        Set-Alias -Name mt_claim_preview -Value Mt-ClaimPreview
-        Set-Alias -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser
-        Set-Alias -Name mt_capabilities -Value Mt-Capabilities
-        Set-Alias -Name mt_topic -Value Mt-Topic
-        Set-Alias -Name mt_repo -Value Mt-Repo
-        Set-Alias -Name mt_inspect -Value Mt-Inspect
-        Set-Alias -Name mt_clearcookies -Value Mt-ClearCookies
-        Set-Alias -Name mt_clearstate -Value Mt-ClearState
-        Set-Alias -Name mt_close_preview -Value Mt-ClosePreview
-        Set-Alias -Name mt_hardreload -Value Mt-HardReload
-        Set-Alias -Name mt_preview_reset -Value Mt-PreviewReset
-        Set-Alias -Name mt_proxylog -Value Mt-ProxyLog
-        Set-Alias -Name mt_proxylog_summary -Value Mt-ProxyLogSummary
-        Set-Alias -Name mt_apply_update -Value Mt-ApplyUpdate
-        Set-Alias -Name mt_sessions -Value Mt-Sessions
-        Set-Alias -Name mt_boards -Value Mt-Boards
-        Set-Alias -Name mt_board -Value Mt-Board
-        Set-Alias -Name mt_buffer -Value Mt-Buffer
-        Set-Alias -Name mt_redraw -Value Mt-Redraw
-        Set-Alias -Name mt_tail -Value Mt-Tail
-        Set-Alias -Name mt_sendtext -Value Mt-SendText
-        Set-Alias -Name mt_paste -Value Mt-Paste
-        Set-Alias -Name mt_prompt -Value Mt-Prompt
-        Set-Alias -Name mt_prompt_now -Value Mt-PromptNow
-        Set-Alias -Name mt_slash -Value Mt-Slash
-        Set-Alias -Name mt_wake -Value Mt-Wake
-        Set-Alias -Name mt_recur -Value Mt-Recur
-        Set-Alias -Name mt_queue -Value Mt-Queue
-        Set-Alias -Name mt_wake_cancel -Value Mt-WakeCancel
-        Set-Alias -Name mt_sendkeys -Value Mt-SendKeys
-        Set-Alias -Name mt_enter -Value Mt-Enter
-        Set-Alias -Name mt_ctrlc -Value Mt-Ctrlc
-        Set-Alias -Name mt_escape -Value Mt-Escape
-        Set-Alias -Name mt_up -Value Mt-Up
-        Set-Alias -Name mt_down -Value Mt-Down
-        Set-Alias -Name mt_left -Value Mt-Left
-        Set-Alias -Name mt_right -Value Mt-Right
-        Set-Alias -Name mt_inject -Value Mt-Inject
-        Set-Alias -Name mt_notify -Value Mt-Notify
-        Set-Alias -Name mt_activity -Value Mt-Activity
-        Set-Alias -Name mt_attention -Value Mt-Attention
-        Set-Alias -Name mt_control_plane -Value Mt-ControlPlane
-        Set-Alias -Name mt_agent_capabilities -Value Mt-AgentCapabilities
-        Set-Alias -Name mt_events -Value Mt-Events
-        Set-Alias -Name mt_dispatch -Value Mt-Dispatch
-        Set-Alias -Name mt_work_list -Value Mt-WorkList
-        Set-Alias -Name mt_work_add -Value Mt-WorkAdd
-        Set-Alias -Name mt_work_update -Value Mt-WorkUpdate
-        Set-Alias -Name mt_work_delete -Value Mt-WorkDelete
-        Set-Alias -Name mt_publish_status -Value Mt-PublishStatus
-        Set-Alias -Name mt_status_list -Value Mt-StatusList
-        Set-Alias -Name mt_status_clear -Value Mt-StatusClear
-        Set-Alias -Name mt_checkpoint -Value Mt-Checkpoint
-        Set-Alias -Name mt_checkpoints -Value Mt-Checkpoints
-        Set-Alias -Name mt_input_history -Value Mt-InputHistory
-        Set-Alias -Name mt_input_history_show -Value Mt-InputHistoryShow
-        Set-Alias -Name mt_input_history_replay -Value Mt-InputHistoryReplay
-        Set-Alias -Name mt_input_history_delete -Value Mt-InputHistoryDelete
-        Set-Alias -Name mt_input_history_clear -Value Mt-InputHistoryClear
-        Set-Alias -Name mt_bootstrap -Value Mt-Bootstrap
-        Set-Alias -Name mt_acp_new -Value Mt-AcpNew
-        Set-Alias -Name mt_acp_history -Value Mt-AcpHistory
-        Set-Alias -Name mt_acp_turn -Value Mt-AcpTurn
-        Set-Alias -Name mt_acp_interrupt -Value Mt-AcpInterrupt
-        Set-Alias -Name mt_acp_steer -Value Mt-AcpSteer
-        Set-Alias -Name mt_acp_compact -Value Mt-AcpCompact
-        Set-Alias -Name mt_new_session -Value Mt-NewSession
-        Set-Alias -Name mt_split -Value Mt-Split
-        Set-Alias -Name mt_detach -Value Mt-Detach
-        Set-Alias -Name mt_dock -Value Mt-Dock
-        Set-Alias -Name mt_viewport -Value Mt-Viewport
-        Set-Alias -Name mt_mobile -Value Mt-Mobile
-        Set-Alias -Name mt_status -Value Mt-Status
+        Set-Alias -Scope Script -Name mt_context -Value Mt-Context
+        Set-Alias -Scope Script -Name mt_run_isolated -Value Mt-RunIsolated
+        Set-Alias -Scope Script -Name mt_query -Value Mt-Query
+        Set-Alias -Scope Script -Name mt_click -Value Mt-Click
+        Set-Alias -Scope Script -Name mt_fill -Value Mt-Fill
+        Set-Alias -Scope Script -Name mt_session -Value Mt-Session
+        Set-Alias -Scope Script -Name mt_preview -Value Mt-Preview
+        Set-Alias -Scope Script -Name mt_exec -Value Mt-Exec
+        Set-Alias -Scope Script -Name mt_wait -Value Mt-Wait
+        Set-Alias -Scope Script -Name mt_screenshot -Value Mt-Screenshot
+        Set-Alias -Scope Script -Name mt_batch -Value Mt-Batch
+        Set-Alias -Scope Script -Name mt_snapshot -Value Mt-Snapshot
+        Set-Alias -Scope Script -Name mt_outline -Value Mt-Outline
+        Set-Alias -Scope Script -Name mt_attrs -Value Mt-Attrs
+        Set-Alias -Scope Script -Name mt_css -Value Mt-Css
+        Set-Alias -Scope Script -Name mt_log -Value Mt-Log
+        Set-Alias -Scope Script -Name mt_text -Value Mt-Text
+        Set-Alias -Scope Script -Name mt_scroll -Value Mt-Scroll
+        Set-Alias -Scope Script -Name mt_wheel -Value Mt-Wheel
+        Set-Alias -Scope Script -Name mt_agent_wheel -Value Mt-AgentWheel
+        Set-Alias -Scope Script -Name mt_submit -Value Mt-Submit
+        Set-Alias -Scope Script -Name mt_url -Value Mt-Url
+        Set-Alias -Scope Script -Name mt_links -Value Mt-Links
+        Set-Alias -Scope Script -Name mt_forms -Value Mt-Forms
+        Set-Alias -Scope Script -Name mt_navigate -Value Mt-Navigate
+        Set-Alias -Scope Script -Name mt_open -Value Mt-Open
+        Set-Alias -Scope Script -Name mt_with_preview -Value Invoke-MtPreview
+        Set-Alias -Scope Script -Name mt_reload -Value Mt-Reload
+        Set-Alias -Scope Script -Name mt_forcereload -Value Mt-ForceReload
+        Set-Alias -Scope Script -Name mt_target -Value Mt-Target
+        Set-Alias -Scope Script -Name mt_cookies -Value Mt-Cookies
+        Set-Alias -Scope Script -Name mt_previews -Value Mt-Previews
+        Set-Alias -Scope Script -Name mt_claim_preview -Value Mt-ClaimPreview
+        Set-Alias -Scope Script -Name mt_claim_main_browser -Value Mt-ClaimMainBrowser
+        Set-Alias -Scope Script -Name mt_capabilities -Value Mt-Capabilities
+        Set-Alias -Scope Script -Name mt_topic -Value Mt-Topic
+        Set-Alias -Scope Script -Name mt_repo -Value Mt-Repo
+        Set-Alias -Scope Script -Name mt_inspect -Value Mt-Inspect
+        Set-Alias -Scope Script -Name mt_clearcookies -Value Mt-ClearCookies
+        Set-Alias -Scope Script -Name mt_clearstate -Value Mt-ClearState
+        Set-Alias -Scope Script -Name mt_close_preview -Value Mt-ClosePreview
+        Set-Alias -Scope Script -Name mt_hardreload -Value Mt-HardReload
+        Set-Alias -Scope Script -Name mt_preview_reset -Value Mt-PreviewReset
+        Set-Alias -Scope Script -Name mt_proxylog -Value Mt-ProxyLog
+        Set-Alias -Scope Script -Name mt_proxylog_summary -Value Mt-ProxyLogSummary
+        Set-Alias -Scope Script -Name mt_apply_update -Value Mt-ApplyUpdate
+        Set-Alias -Scope Script -Name mt_sessions -Value Mt-Sessions
+        Set-Alias -Scope Script -Name mt_boards -Value Mt-Boards
+        Set-Alias -Scope Script -Name mt_board -Value Mt-Board
+        Set-Alias -Scope Script -Name mt_buffer -Value Mt-Buffer
+        Set-Alias -Scope Script -Name mt_redraw -Value Mt-Redraw
+        Set-Alias -Scope Script -Name mt_tail -Value Mt-Tail
+        Set-Alias -Scope Script -Name mt_sendtext -Value Mt-SendText
+        Set-Alias -Scope Script -Name mt_paste -Value Mt-Paste
+        Set-Alias -Scope Script -Name mt_prompt -Value Mt-Prompt
+        Set-Alias -Scope Script -Name mt_prompt_now -Value Mt-PromptNow
+        Set-Alias -Scope Script -Name mt_slash -Value Mt-Slash
+        Set-Alias -Scope Script -Name mt_wake -Value Mt-Wake
+        Set-Alias -Scope Script -Name mt_recur -Value Mt-Recur
+        Set-Alias -Scope Script -Name mt_queue -Value Mt-Queue
+        Set-Alias -Scope Script -Name mt_wake_cancel -Value Mt-WakeCancel
+        Set-Alias -Scope Script -Name mt_sendkeys -Value Mt-SendKeys
+        Set-Alias -Scope Script -Name mt_enter -Value Mt-Enter
+        Set-Alias -Scope Script -Name mt_ctrlc -Value Mt-Ctrlc
+        Set-Alias -Scope Script -Name mt_escape -Value Mt-Escape
+        Set-Alias -Scope Script -Name mt_up -Value Mt-Up
+        Set-Alias -Scope Script -Name mt_down -Value Mt-Down
+        Set-Alias -Scope Script -Name mt_left -Value Mt-Left
+        Set-Alias -Scope Script -Name mt_right -Value Mt-Right
+        Set-Alias -Scope Script -Name mt_inject -Value Mt-Inject
+        Set-Alias -Scope Script -Name mt_notify -Value Mt-Notify
+        Set-Alias -Scope Script -Name mt_activity -Value Mt-Activity
+        Set-Alias -Scope Script -Name mt_attention -Value Mt-Attention
+        Set-Alias -Scope Script -Name mt_control_plane -Value Mt-ControlPlane
+        Set-Alias -Scope Script -Name mt_agent_capabilities -Value Mt-AgentCapabilities
+        Set-Alias -Scope Script -Name mt_events -Value Mt-Events
+        Set-Alias -Scope Script -Name mt_dispatch -Value Mt-Dispatch
+        Set-Alias -Scope Script -Name mt_work_list -Value Mt-WorkList
+        Set-Alias -Scope Script -Name mt_work_add -Value Mt-WorkAdd
+        Set-Alias -Scope Script -Name mt_work_update -Value Mt-WorkUpdate
+        Set-Alias -Scope Script -Name mt_work_delete -Value Mt-WorkDelete
+        Set-Alias -Scope Script -Name mt_publish_status -Value Mt-PublishStatus
+        Set-Alias -Scope Script -Name mt_status_list -Value Mt-StatusList
+        Set-Alias -Scope Script -Name mt_status_clear -Value Mt-StatusClear
+        Set-Alias -Scope Script -Name mt_checkpoint -Value Mt-Checkpoint
+        Set-Alias -Scope Script -Name mt_checkpoints -Value Mt-Checkpoints
+        Set-Alias -Scope Script -Name mt_input_history -Value Mt-InputHistory
+        Set-Alias -Scope Script -Name mt_input_history_show -Value Mt-InputHistoryShow
+        Set-Alias -Scope Script -Name mt_input_history_replay -Value Mt-InputHistoryReplay
+        Set-Alias -Scope Script -Name mt_input_history_delete -Value Mt-InputHistoryDelete
+        Set-Alias -Scope Script -Name mt_input_history_clear -Value Mt-InputHistoryClear
+        Set-Alias -Scope Script -Name mt_bootstrap -Value Mt-Bootstrap
+        Set-Alias -Scope Script -Name mt_acp_new -Value Mt-AcpNew
+        Set-Alias -Scope Script -Name mt_acp_history -Value Mt-AcpHistory
+        Set-Alias -Scope Script -Name mt_acp_turn -Value Mt-AcpTurn
+        Set-Alias -Scope Script -Name mt_acp_interrupt -Value Mt-AcpInterrupt
+        Set-Alias -Scope Script -Name mt_acp_steer -Value Mt-AcpSteer
+        Set-Alias -Scope Script -Name mt_acp_compact -Value Mt-AcpCompact
+        Set-Alias -Scope Script -Name mt_new_session -Value Mt-NewSession
+        Set-Alias -Scope Script -Name mt_split -Value Mt-Split
+        Set-Alias -Scope Script -Name mt_detach -Value Mt-Detach
+        Set-Alias -Scope Script -Name mt_dock -Value Mt-Dock
+        Set-Alias -Scope Script -Name mt_viewport -Value Mt-Viewport
+        Set-Alias -Scope Script -Name mt_mobile -Value Mt-Mobile
+        Set-Alias -Scope Script -Name mt_status -Value Mt-Status
 
         # Direct execution: pwsh .tlbx\tlbx_cli.ps1 query ".error"
-        if ($args.Count -gt 0) {
+        if (-not $script:_MReloading -and $args.Count -gt 0) {
             $cmd = $args[0]
             $cmdArgs = if ($args.Count -gt 1) { $args[1..($args.Count - 1)] } else { @() }
             $normalizedCmd = if ($cmd -match '^(?i)mt[_-](.+)$') { $Matches[1] } else { $cmd }
