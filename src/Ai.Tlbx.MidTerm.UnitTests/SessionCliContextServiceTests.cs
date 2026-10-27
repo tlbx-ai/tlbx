@@ -450,27 +450,25 @@ public sealed class SessionCliContextServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task FreshEvidenceToleratesSiblingTypingButStillRejectsLaterInputAndDuplicateClients()
+    public async Task FreshEvidenceToleratesSiblingTypingButStillRejectsDuplicateClients()
     {
         var emitted = 0;
         string? challenge = null;
-        Task? typing = null;
-        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        var result = await _service.ResolveAsync(Root, Root, 100, false, async (marker, token) =>
         {
             emitted++;
             challenge = marker;
             Feed("first001", marker);
-            typing = Task.Run(async () =>
+            // Keep this input inside discovery. A detached task can be scheduled
+            // after the lease is returned on a busy runner, where input correctly
+            // revokes the cached proof instead of exercising fresh discovery.
+            for (var index = 0; index < 8; index++)
             {
-                for (var index = 0; index < 8; index++)
-                {
-                    _service.InvalidateInput("second02");
-                    await Task.Delay(20, TestContext.Current.CancellationToken);
-                }
-            }, TestContext.Current.CancellationToken);
-            return Task.FromResult(true);
+                _service.InvalidateInput("second02");
+                await Task.Delay(20, token);
+            }
+            return true;
         }, CancellationToken.None);
-        await typing!;
         Assert.Equal(1, emitted);
         Assert.StartsWith("first001:", result, StringComparison.Ordinal);
         Assert.Null(_service.ValidateLease(result[9..]));
