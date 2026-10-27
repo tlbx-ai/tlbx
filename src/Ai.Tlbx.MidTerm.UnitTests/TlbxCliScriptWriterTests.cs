@@ -442,7 +442,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
                 var resolution = await service.ResolveAsync(identity, identity, processId, fresh, (marker, _) =>
                 {
                     service.ObserveOutput("first001", Encoding.UTF8.GetBytes(marker));
-                    service.ObserveInput("second02", userInput: true);
+                    service.ObserveInput("first001", userInput: true);
                     return Task.FromResult(true);
                 }, CancellationToken.None);
                 return Results.Text(resolution, statusCode: 409);
@@ -474,7 +474,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         {
             Assert.NotEqual(0, result.ExitCode);
             Assert.Contains("TLBX_CONTEXT_" + outcome, result.Error, StringComparison.Ordinal);
-            Assert.Contains(outcome == "CHANGED" ? "session=second02; inputVersion=0->1" : "session=second02; inputVersion=4->5", result.Error, StringComparison.Ordinal);
+            Assert.Contains(outcome == "CHANGED" ? "session=first001; inputVersion=1->2" : "session=second02; inputVersion=4->5", result.Error, StringComparison.Ordinal);
             if (outcome == "CHANGED") Assert.Contains("stage=automatic-discovery", result.Error, StringComparison.Ordinal);
             Assert.Contains("httpStatus=409;", result.Error, StringComparison.Ordinal);
             Assert.Contains("helper=", result.Error, StringComparison.Ordinal);
@@ -484,9 +484,11 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ApiFailurePreservesServerReasonAndIdentifiesRequestWithoutReplayingMutation(bool bash)
+    [InlineData(false, 409)]
+    [InlineData(true, 409)]
+    [InlineData(false, 503)]
+    [InlineData(true, 503)]
+    public async Task ApiFailurePreservesServerReasonAndIdentifiesRequestWithoutReplayingMutation(bool bash, int status)
     {
         if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
         Directory.CreateDirectory(_tempDir);
@@ -499,7 +501,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         app.MapPut("/api/sessions/{id}/topic", () =>
         {
             Interlocked.Increment(ref mutations);
-            return Results.Text("Reason: requested session is unavailable; original topic preserved.", statusCode: 409);
+            return Results.Text("Reason: requested session is unavailable; original topic preserved.", statusCode: status);
         });
         await app.StartAsync(CancellationToken.None);
         var result = await RunContextShellAsync(bash,
@@ -511,7 +513,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Reason: requested session is unavailable; original topic preserved.", diagnostic, StringComparison.Ordinal);
         Assert.Contains("TLBX_API_FAILED", result.Error, StringComparison.Ordinal);
         Assert.Contains("endpoint=" + app.Urls.Single() + "/api/sessions/abcdefgh/topic", result.Error, StringComparison.Ordinal);
-        Assert.Contains("409", diagnostic, StringComparison.Ordinal);
+        Assert.Contains(status.ToString(System.Globalization.CultureInfo.InvariantCulture), diagnostic, StringComparison.Ordinal);
         Assert.Contains("No automatic retry", result.Error, StringComparison.Ordinal);
         Assert.DoesNotContain("do-not-log-payload", diagnostic, StringComparison.Ordinal);
         Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
@@ -632,6 +634,242 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Equal(1, posts);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RenewedCookieSurvivesANewToolProcessButNeverChangesIdentityOrServer(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "seed-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var phase = 0;
+        var seedRequests = 0;
+        app.Use(async (context, next) =>
+        {
+            var cookie = context.Request.Cookies["mm-session"];
+            if (cookie == "seed-token") Interlocked.Increment(ref seedRequests);
+            if (phase == 2 || (cookie != "renewed-token" && (phase != 0 || cookie != "seed-token")))
+            {
+                AuthService.MarkAuthenticationRequired(context.Response);
+                context.Response.StatusCode = 401;
+                return;
+            }
+            context.Response.Cookies.Append("mm-session", "renewed-token", new CookieOptions { Path = "/", HttpOnly = true });
+            await next(context);
+        });
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
+        app.MapGet("/api/sessions", () => Results.Text("authenticated"));
+        await app.StartAsync(CancellationToken.None);
+        var helper = Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
+        var command = bash ? "source \"$1\"; mt_sessions" : ". $args[0]; mt_sessions";
+        var first = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.True(first.ExitCode == 0, first.Error + first.Output);
+        Assert.Equal(1, seedRequests);
+        phase = 1; // The inherited seed has expired; only its legitimate renewal remains valid.
+        var resumed = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.True(resumed.ExitCode == 0, resumed.Error + resumed.Output);
+        Assert.Contains("authenticated", resumed.Output, StringComparison.Ordinal);
+        Assert.Equal(1, seedRequests);
+        var anotherWorkspace = Path.Combine(_tempDir, "another-workspace");
+        Directory.CreateDirectory(anotherWorkspace);
+        TlbxCliScriptWriter.WriteScripts(anotherWorkspace, 2100, "seed-token");
+        var moved = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh",
+            Path.Combine(anotherWorkspace, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(moved.ExitCode == 0, moved.Error + moved.Output);
+        Assert.Equal(1, seedRequests);
+        var explicitToken = bash ? "export MT_TOKEN=wrong-identity; " : "$env:MT_TOKEN='wrong-identity'; ";
+        var wrongIdentity = await RunContextShellAsync(bash, explicitToken + command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.NotEqual(0, wrongIdentity.ExitCode);
+        Assert.DoesNotContain("renewed-token", wrongIdentity.Error + wrongIdentity.Output, StringComparison.Ordinal);
+
+        var otherBuilder = WebApplication.CreateSlimBuilder();
+        otherBuilder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var other = otherBuilder.Build();
+        var foreignCookies = 0;
+        other.MapGet("/{**path}", (HttpContext context) =>
+        {
+            if (context.Request.Cookies["mm-session"] != "seed-token") Interlocked.Increment(ref foreignCookies);
+            return Results.Text("abcdefgh");
+        });
+        await other.StartAsync(CancellationToken.None);
+        var otherResult = await RunContextShellAsync(bash, command, other.Urls.Single(), "abcdefgh", helper);
+        Assert.True(otherResult.ExitCode == 0, otherResult.Error + otherResult.Output);
+        Assert.Equal(0, foreignCookies);
+        phase = 2; // Logout/revocation must remain a failure, even while a cookie is cached.
+        var revoked = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.NotEqual(0, revoked.ExitCode);
+        Assert.Equal(1, seedRequests); // No fallback to the generated seed after a rejected renewal.
+        Assert.DoesNotContain("renewed-token", revoked.Output + revoked.Error, StringComparison.Ordinal);
+        phase = 0; // Even if a restarted server accepted old seeds again, this rejected identity stays rejected.
+        var afterServerRestart = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.NotEqual(0, afterServerRestart.ExitCode);
+        Assert.Equal(1, seedRequests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LoadedHelperRefreshesCodeWithoutRetargetingTheOwningServerOrReplayingCommands(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var helper = Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
+        var original = File.ReadAllText(helper);
+        var oldProbe = bash ? "\nmt_recovery_probe() { printf old; }\n" : "\nfunction script:Mt-RecoveryProbe { 'old' }\n";
+        var newProbe = bash ? "\nmt_recovery_probe() { printf renewed; }\n" : "\nfunction script:Mt-RecoveryProbe { 'renewed' }\n";
+        File.WriteAllText(helper, original + oldProbe);
+        var replacement = helper + ".next";
+        File.WriteAllText(replacement, original.Replace(Ai.Tlbx.MidTerm.Startup.CliCommands.GetVersion(), "99.0.0-dev", StringComparison.Ordinal) + newProbe);
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var requests = 0;
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
+        app.MapGet("/api/sessions", () => { Interlocked.Increment(ref requests); return Results.Text("owner"); });
+        await app.StartAsync(CancellationToken.None);
+        var command = bash
+            ? "source \"$1\"; mt_recovery_probe; mv -f \"$2\" \"$1\"; mt_sessions; mt_recovery_probe"
+            : ". $args[0]; Mt-RecoveryProbe; [IO.File]::Move($args[1],$args[0],$true); mt_sessions; Mt-RecoveryProbe";
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper, replacement);
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.Contains("old", result.Output, StringComparison.Ordinal);
+        Assert.Contains("renewed", result.Output, StringComparison.Ordinal);
+        Assert.Equal(1, requests);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RealSessionCookieRenewalKeepsTheCliAliveBeyondTheOriginalEightDays(bool bash)
+    {
+        if (!OperatingSystem.IsWindows() || (bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        var settings = new Ai.Tlbx.MidTerm.Settings.SettingsService(Path.Combine(_tempDir, "settings"));
+        var configured = settings.Load();
+        configured.PasswordHash = "configured";
+        settings.Save(configured);
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var keys = new Ai.Tlbx.MidTerm.Services.Security.ApiKeyService(settings, clock);
+        var auth = new AuthService(settings, keys, clock);
+        var original = auth.CreateSessionToken();
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, original);
+        clock.Advance(TimeSpan.FromDays(7));
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        string? renewed = null;
+        app.Use(async (context, next) =>
+        {
+            var authentication = auth.AuthenticateRequestWithContext(context.Request);
+            if (authentication.Method == RequestAuthMethod.None) { AuthService.MarkAuthenticationRequired(context.Response); context.Response.StatusCode = 401; return; }
+            renewed = auth.RenewSessionToken(authentication.SessionTokenId!);
+            context.Response.Cookies.Append("mm-session", renewed, new CookieOptions { Path = "/", HttpOnly = true });
+            await next(context);
+        });
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
+        app.MapGet("/api/sessions", () => Results.Text("authenticated"));
+        await app.StartAsync(CancellationToken.None);
+        var helper = Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
+        var command = bash ? "source \"$1\"; mt_sessions" : ". $args[0]; mt_sessions";
+        var first = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.True(first.ExitCode == 0, first.Error + first.Output);
+        clock.Advance(TimeSpan.FromDays(2));
+        Assert.False(auth.ValidateSessionToken(original));
+        var afterExpiry = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.True(afterExpiry.ExitCode == 0, afterExpiry.Error + afterExpiry.Output);
+        auth.RevokeSessionToken(renewed);
+        var afterLogout = await RunContextShellAsync(bash, command, app.Urls.Single(), "abcdefgh", helper);
+        Assert.NotEqual(0, afterLogout.ExitCode);
+    }
+
+    [Fact]
+    public async Task ConcurrentHelperReadersOnlySeeCompletePublishedScripts()
+    {
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "first-token");
+        var path = Path.Combine(_tempDir, "tlbx_cli.ps1");
+        var first = File.ReadAllText(path);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "second-token");
+        var second = File.ReadAllText(path);
+        var reader = Task.Run(() =>
+        {
+            for (var index = 0; index < 80; index++)
+            {
+                using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+                using var text = new StreamReader(stream);
+                var observed = text.ReadToEnd();
+                Assert.True(observed == first || observed == second, "A reader observed an incomplete helper during publication.");
+            }
+        }, TestContext.Current.CancellationToken);
+        for (var index = 0; index < 30; index++)
+            TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, index % 2 == 0 ? "first-token" : "second-token");
+        await reader;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RejectedHttpResponseCannotEstablishAContextEvenIfItsBodyLooksLikeALease(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh:0123456789abcdef0123456789abcdef", statusCode: 409));
+        var mutations = 0;
+        app.MapPut("/api/sessions/{id}/topic", () => { mutations++; return Results.Ok(); });
+        await app.StartAsync(CancellationToken.None);
+        var command = bash
+            ? "export CODEX_SESSION_ID=01a10b30-4385-71e0-8a60-6fd26e1cfb01; source \"$1\"; mt_topic blocked"
+            : "$env:CODEX_SESSION_ID='01a10b30-4385-71e0-8a60-6fd26e1cfb01'; . $args[0]; mt_topic blocked";
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Equal(0, mutations);
+        Assert.Contains("httpStatus=409;", result.Output + result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task IdentityPreflightWaitsThroughAWebRestartBeforeExecutingTheOriginalMutation(bool bash, bool resetConnection)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var reads = 0;
+        app.MapGet("/api/sessions/process-context", (HttpContext context) =>
+        {
+            if (Interlocked.Increment(ref reads) == 1)
+            {
+                if (resetConnection) { context.Abort(); return Results.Empty; }
+                return Results.Text("source web is starting", statusCode: 503);
+            }
+            return Results.Text("abcdefgh:0123456789abcdef0123456789abcdef");
+        });
+        var mutations = 0;
+        app.MapPut("/api/sessions/{id}/topic", () => { mutations++; return Results.Ok(); });
+        await app.StartAsync(CancellationToken.None);
+        var command = bash
+            ? "export CODEX_SESSION_ID=01a10b30-4385-71e0-8a60-6fd26e1cfb01; source \"$1\"; mt_topic healed"
+            : "$env:CODEX_SESSION_ID='01a10b30-4385-71e0-8a60-6fd26e1cfb01'; . $args[0]; mt_topic healed";
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.True(reads >= 2);
+        Assert.Equal(1, mutations);
+        Assert.DoesNotContain("source web is starting", result.Output + result.Error, StringComparison.Ordinal);
+    }
+
     private async Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
         bool bash, string command, string baseUrl, string sessionId, params string[] arguments)
     {
@@ -649,6 +887,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         start.Environment.Remove("CODEX_HOME");
         start.Environment["MT_BASE_URL"] = baseUrl;
         start.Environment["MT_SESSION_ID"] = sessionId;
+        start.Environment["TLBX_CLI_AUTH_CACHE_DIR"] = Path.Combine(_tempDir, ".auth");
         if (bash)
         {
             start.ArgumentList.Add("-c");
