@@ -2508,19 +2508,20 @@
                     <h3 data-i18n="settings.sessionsStartup.runtime">Session Runtime</h3>
                     <div class="setting-row">
                       <label
-                        for="setting-runtime-priority-boost"
-                        data-i18n="settings.behavior.runtimePriorityBoost"
-                        >Boost process priority</label
-                      >
-                      <input type="checkbox" id="setting-runtime-priority-boost" />
-                    </div>
-                    <div class="setting-row">
-                      <label
                         for="setting-runtime-priority-class"
                         data-i18n="settings.behavior.runtimePriorityClass"
                         >Process priority</label
                       >
                       <select id="setting-runtime-priority-class">
+                        <option value="idle" data-i18n="settings.options.runtimePriorityIdle">
+                          Very low (Idle)
+                        </option>
+                        <option
+                          value="belowNormal"
+                          data-i18n="settings.options.runtimePriorityBelowNormal"
+                        >
+                          Below normal
+                        </option>
                         <option value="normal" data-i18n="settings.options.runtimePriorityNormal">
                           Normal
                         </option>
@@ -2533,13 +2534,20 @@
                         <option value="high" data-i18n="settings.options.runtimePriorityHigh">
                           High
                         </option>
+                        <option
+                          value="realTime"
+                          data-i18n="settings.options.runtimePriorityRealTime"
+                        >
+                          Very high (Realtime)
+                        </option>
                       </select>
                     </div>
                     <p class="setting-hint" data-i18n="settings.behavior.runtimePriorityHint">
                       Windows: applies immediately to tlbx and its hosted processes, including all
                       child processes. New processes inherit the selected priority. Child processes
                       include compilers launched in terminals. High requires a Windows service or
-                      elevated privileges.
+                      elevated privileges. Realtime requires elevated privileges and can make
+                      Windows unresponsive under load.
                     </p>
                     <div class="setting-row">
                       <label for="setting-resume-mode" data-i18n="settings.behavior.resumeMode"

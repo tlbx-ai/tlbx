@@ -617,7 +617,6 @@ public class Program
     private static void ConfigureRuntimePriority(MidTermSettings settings, MidTermInstanceIdentity identity)
     {
         MidTermProcessPriority.Configure(
-            settings.RuntimePriorityBoostEnabled,
             settings.RuntimePriorityClass,
             $"{identity.InstanceId}:{identity.OwnerToken}");
     }
