@@ -1,4 +1,5 @@
 using System.Globalization;
+using Ai.Tlbx.MidTerm.Startup;
 
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
@@ -53,33 +54,33 @@ public static class TlbxCliScriptWriter
             curl "$@"
           fi
         }
+        _MREQUEST() {
+          local exit_code=0 endpoint="unknown" arg
+          for arg in "$@"; do case "$arg" in http://*|https://*) endpoint="${arg%%\?*}" ;; esac; done
+          if [ -n "${MT_API_KEY:-}" ]; then
+            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "$@" || exit_code=$?
+          else
+            _MCURL --fail-with-body -sSk -b "$_MK" "$@" || exit_code=$?
+          fi
+          if [ "$exit_code" -ne 0 ]; then
+            printf '%s\n' "TLBX_API_FAILED: endpoint=$endpoint; curlExit=$exit_code; helper=$_MTDIR/tlbx_cli.sh; generatedBy={{CliCommands.GetVersion()}}. Read the HTTP response/curl detail above. No automatic retry was attempted; verify the failure before replaying a mutation." >&2
+          fi
+          return "$exit_code"
+        }
         _MC() {
           local context_headers=()
           _MCLICTX "$@" || return $?
           [ -z "${_MLEASE:-}" ] || context_headers=(-H "X-Tlbx-Cli-Context: $_MLEASE")
-          if [ -n "${MT_API_KEY:-}" ]; then
-            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "${context_headers[@]}" "$@"
-          else
-            _MCURL --fail-with-body -sSk -b "$_MK" "${context_headers[@]}" "$@"
-          fi
+          _MREQUEST "${context_headers[@]}" "$@"
         }
         _MJ() { _MC -X POST -H "Content-Type: application/json" "$@"; }
-        _MBR() {
-          local context_headers=()
-          _MCLICTX "$@" || return $?
-          [ -z "${_MLEASE:-}" ] || context_headers=(-H "X-Tlbx-Cli-Context: $_MLEASE")
-          if [ -n "${MT_API_KEY:-}" ]; then
-            _MCURL --fail-with-body -sSk -H "Authorization: Bearer $MT_API_KEY" "${context_headers[@]}" "$@"
-          else
-            _MCURL --fail-with-body -sSk -b "$_MK" "${context_headers[@]}" "$@"
-          fi
-        }
+        _MBR() { _MC "$@"; }
         _MJR() { _MBR -X POST -H "Content-Type: application/json" "$@"; }
         # Resolve before any command; a stale ID can still be live in another terminal.
         # Git Bash uses emulated PIDs, so translate to the native Windows PID.
         _MRESOLVECTX() {
           local pid=$$ resolved root="${CODEX_SESSION_ID:-}" thread="${CODEX_THREAD_ID:-}" codex_home="${CODEX_HOME:-$HOME/.codex}" query="" auth=()
-          local previous_session="${MT_SESSION_ID:-}" previous_preview="${MT_PREVIEW_NAME:-}" resolve_exit=0
+          local previous_session="${MT_SESSION_ID:-}" previous_preview="${MT_PREVIEW_NAME:-}" resolve_exit=0 http_status reason
           [ -n "$root" ] || root="$thread"
           [ -n "$thread" ] || thread="$root"
           if [ -r "/proc/$$/winpid" ]; then
@@ -92,7 +93,13 @@ public static class TlbxCliScriptWriter
             query="&codexSessionId=$(_MURLENC "$root")&codexThreadId=$(_MURLENC "$thread")&codexHome=$(_MURLENC "$codex_home")&fresh=${1:-false}"
           fi
           if [ -n "${MT_API_KEY:-}" ]; then auth=(-H "Authorization: Bearer $MT_API_KEY"); else auth=(-b "$_MK"); fi
-          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
+          resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 --write-out $'\nTLBX_HTTP_STATUS:%{http_code}' "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
+          http_status="${resolved##*TLBX_HTTP_STATUS:}"
+          http_status="${http_status:0:3}"
+          if [[ "$http_status" =~ ^[0-9]{3}$ ]]; then
+            resolved="${resolved/$'\n'TLBX_HTTP_STATUS:$http_status/$'\n'}"
+            resolved="${resolved%$'\n'}"
+          else http_status="unknown"; fi
           if [ -n "$root$thread" ]; then
             if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
               export MT_SESSION_ID="${BASH_REMATCH[1]}"
@@ -103,7 +110,15 @@ public static class TlbxCliScriptWriter
               _MCTXERROR=""
             else
               _MCTXERROR="$resolved"
-              [[ "$_MCTXERROR" == *TLBX* ]] || _MCTXERROR="TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Context request to $_MT/api/sessions/process-context failed (curl exit $resolve_exit). ${resolved:0:1000} Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
+              reason="context-request-failed"
+              [ "$resolve_exit" -ne 0 ] || reason="unexpected-context-response: expected a verified session ID and lease, not a plain session ID or HTML response"
+              [[ "$_MCTXERROR" == *TLBX* ]] || _MCTXERROR="TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Reason: $reason. Context request to $_MT/api/sessions/process-context (curl exit $resolve_exit). Response: ${resolved:0:1000} Next: Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
+              _MCTXERROR+=$'\n'"CLI: endpoint=$_MT/api/sessions/process-context; httpStatus=$http_status; curlExit=$resolve_exit; callerPid=$pid; root=$root; thread=$thread; helper=$_MTDIR/tlbx_cli.sh; generatedBy={{CliCommands.GetVersion()}}."
+              case "$http_status" in
+                401) _MCTXERROR+=$'\nNext: Authentication expired or was rejected. Refresh this workspace helper from the owning tlbx instance; do not remove MT_TOKEN or change session IDs blindly.' ;;
+                403) _MCTXERROR+=$'\nNext: The server denied this local process-context request. Verify the owning server and its caller-access diagnostic; do not change ACLs or credentials to bypass it.' ;;
+                000) _MCTXERROR+=$'\nNext: No HTTP response was received. Check the local owning server and the curl connection/timeout detail above.' ;;
+              esac
             fi
             return 0
           fi
@@ -123,7 +138,7 @@ public static class TlbxCliScriptWriter
           local expected="${MT_SESSION_ID:-}"
           _MRESOLVECTX
           if [ -n "$expected" ] && [ -n "${MT_SESSION_ID:-}" ] && [ "$expected" != "$MT_SESSION_ID" ]; then
-            printf '%s\n' 'TLBX_CONTEXT_CHANGED: No operation was executed. Retry the original command so its arguments use the current verified context.' >&2
+            printf '%s\n' "TLBX_CONTEXT_CHANGED: No operation was executed. Reason: resolved-session-changed; expected=$expected; actual=$MT_SESSION_ID; server=$_MT. Next: Retry the original command once so its arguments use the newly verified context. If this repeats, stop and report this diagnostic." >&2
             return 1
           fi
           [ -n "${MT_SESSION_ID:-}" ] && [ -n "${_MLEASE:-}" ] && return 0
@@ -230,16 +245,19 @@ public static class TlbxCliScriptWriter
         }
         mt_context() {
           local format="${1:-text}"
+          case "$format" in
+            repair|text|bash|--bash|pwsh|--pwsh|powershell|json|--json|"") ;;
+            *) printf '%s\n' "TLBX_CLI_USAGE: Unknown mt_context format '$format'. Usage: mt_context [repair|text|bash|pwsh|json]. No operation was executed." >&2; return 2 ;;
+          esac
           if [ "$format" = repair ]; then
             _MRESOLVECTX true
             if [ -n "${_MCTXERROR:-}" ]; then
-              local proof="${_MCTXERROR%%$'\n'*}"
-              proof="${proof%$'\r'}"
-              if [[ "$_MCTXERROR" == *TLBX_CONTEXT_UNBOUND* ]] && [[ "$proof" =~ ^TLBXCTX:[a-f0-9]{32}$ ]]; then
-                printf '%s\n' "$proof"
-              else printf '%s\n' "$_MCTXERROR"; fi
-              return 0
+              printf '%s\n' "$_MCTXERROR" >&2
+              return 1
             fi
+            _MREQUIRECTX "mt_context repair" || return $?
+            printf 'repair=verified\nbaseUrl=%s\nsessionId=%s\nNext: Retry the original command.\n' "$_MT" "$(_MSID)"
+            return 0
           fi
           _MREQUIRECTX "mt_context" || return $?
           case "$format" in
@@ -261,7 +279,7 @@ public static class TlbxCliScriptWriter
               printf 'baseUrl=%s\nsessionId=%s\npreviewName=%s\n' "$_MT" "$(_MSID)" "$(_MPREVIEW)"
               ;;
             *)
-              echo "Usage: mt_context [text|bash|pwsh|json]" >&2
+              echo "Usage: mt_context [repair|text|bash|pwsh|json]" >&2
               return 1
               ;;
           esac
@@ -1234,7 +1252,15 @@ public static class TlbxCliScriptWriter
         }
         $script:_MK = if ($env:MT_TOKEN) { "mm-session=$($env:MT_TOKEN)" } else { "mm-session={{token}}" }
         $script:_MCurl = (Get-Command curl -CommandType Application -ErrorAction Stop | Select-Object -First 1).Source
+        $script:_MHelperPath = $PSCommandPath
 
+        function script:_MRequestFailure {
+            param([int]$ExitCode, [object]$Output, [object[]]$RequestArgs)
+            $endpoint = @($RequestArgs | Where-Object { $_ -is [string] -and $_ -match '^https?://' } | Select-Object -Last 1)
+            $endpoint = if ($endpoint.Count) { ($endpoint[0] -split '\?', 2)[0] } else { 'unknown' }
+            [Console]::Error.WriteLine(($Output | Out-String).Trim())
+            throw "TLBX_API_FAILED: endpoint=$endpoint; curl exit $ExitCode; helper=$script:_MHelperPath; generatedBy={{CliCommands.GetVersion()}}. Read the HTTP response/curl detail above. No automatic retry was attempted; verify the failure before replaying a mutation."
+        }
         function script:_MC {
             _MEnsureCliRequestContext @args
             $contextHeaders = if ($script:_MLease) { @('-H', "X-Tlbx-Cli-Context: $script:_MLease") } else { @() }
@@ -1245,29 +1271,12 @@ public static class TlbxCliScriptWriter
             }
             $exitCode = $LASTEXITCODE
             if ($exitCode -ne 0) {
-                $detail = ($output | Out-String).Trim()
-                if ($detail) { throw "tlbx API request failed (curl exit $exitCode): $detail" }
-                throw "tlbx API request failed (curl exit $exitCode)."
+                _MRequestFailure $exitCode $output $args
             }
             $output
         }
         function script:_MJ { _MC -X POST -H "Content-Type: application/json" @args }
-        function script:_MBR {
-            _MEnsureCliRequestContext @args
-            $contextHeaders = if ($script:_MLease) { @('-H', "X-Tlbx-Cli-Context: $script:_MLease") } else { @() }
-            $output = if ($env:MT_API_KEY) {
-                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" @contextHeaders @args 2>&1
-            } else {
-                & $script:_MCurl --fail-with-body -sSk -b $script:_MK @contextHeaders @args 2>&1
-            }
-            $exitCode = $LASTEXITCODE
-            if ($exitCode -ne 0) {
-                $detail = ($output | Out-String).Trim()
-                if ($detail) { throw "tlbx API request failed (curl exit $exitCode): $detail" }
-                throw "tlbx API request failed (curl exit $exitCode)."
-            }
-            $output
-        }
+        function script:_MBR { _MC @args }
         function script:_MJR { _MBR -X POST -H "Content-Type: application/json" @args }
         # Resolve before any command, including when the inherited ID belongs to a live sibling.
         function script:_MResolveContext {
@@ -1284,12 +1293,14 @@ public static class TlbxCliScriptWriter
                 $query = "&codexSessionId=$([Uri]::EscapeDataString($root))&codexThreadId=$([Uri]::EscapeDataString($thread))&codexHome=$([Uri]::EscapeDataString($codexHome))&fresh=$($Fresh.IsPresent.ToString().ToLowerInvariant())"
             }
             $resolvedContext = if ($env:MT_API_KEY) {
-                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
+                & $script:_MCurl --fail-with-body -sSk -H "Authorization: Bearer $($env:MT_API_KEY)" --max-time 12 --write-out "`nTLBX_HTTP_STATUS:%{http_code}" "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
             } else {
-                & $script:_MCurl --fail-with-body -sSk -b $script:_MK --max-time 12 "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
+                & $script:_MCurl --fail-with-body -sSk -b $script:_MK --max-time 12 --write-out "`nTLBX_HTTP_STATUS:%{http_code}" "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
             }
             $resolveExit = $LASTEXITCODE
             $resolvedContext = ($resolvedContext | Out-String).Trim()
+            $httpStatus = [regex]::Match($resolvedContext, 'TLBX_HTTP_STATUS:(\d{3})').Groups[1].Value
+            $resolvedContext = [regex]::Replace($resolvedContext, '[\r\n]*TLBX_HTTP_STATUS:\d{3}', "`n").Trim()
             if ($root -or $thread) {
                 if ($resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
                     $env:MT_SESSION_ID = $Matches[1]
@@ -1301,7 +1312,15 @@ public static class TlbxCliScriptWriter
                 } else {
                     $script:_MContextError = if ($resolvedContext -match 'TLBX') { $resolvedContext } else {
                     $detail = $resolvedContext.Substring(0, [Math]::Min(1000, $resolvedContext.Length))
-                    "TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Context request to $script:_MT/api/sessions/process-context failed (curl exit $resolveExit). $detail Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
+                    $reason = if ($resolveExit -ne 0) { 'context-request-failed' } else { 'unexpected-context-response: expected a verified session ID and lease, not a plain session ID or HTML response' }
+                    "TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Reason: $reason. Context request to $script:_MT/api/sessions/process-context (curl exit $resolveExit). Response: $detail Next: Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
+                    }
+                    $script:_MContextError += "`nCLI: endpoint=$script:_MT/api/sessions/process-context; httpStatus=$httpStatus; curlExit=$resolveExit; callerPid=$PID; root=$root; thread=$thread; helper=$script:_MHelperPath; generatedBy={{CliCommands.GetVersion()}}."
+                    $script:_MContextError += switch ($httpStatus) {
+                        '401' { "`nNext: Authentication expired or was rejected. Refresh this workspace helper from the owning tlbx instance; do not remove MT_TOKEN or change session IDs blindly." }
+                        '403' { "`nNext: The server denied this local process-context request. Verify the owning server and its caller-access diagnostic; do not change ACLs or credentials to bypass it." }
+                        '000' { "`nNext: No HTTP response was received. Check the local owning server and the curl connection/timeout detail above." }
+                        default { '' }
                     }
                 }
                 return
@@ -1319,7 +1338,7 @@ public static class TlbxCliScriptWriter
             $expectedContext = $env:MT_SESSION_ID
             _MResolveContext
             if ($expectedContext -and $env:MT_SESSION_ID -and $expectedContext -ne $env:MT_SESSION_ID) {
-                throw 'TLBX_CONTEXT_CHANGED: No operation was executed. Retry the original command so its arguments use the current verified context.'
+                throw "TLBX_CONTEXT_CHANGED: No operation was executed. Reason: resolved-session-changed; expected=$expectedContext; actual=$env:MT_SESSION_ID; server=$script:_MT. Next: Retry the original command once so its arguments use the newly verified context. If this repeats, stop and report this diagnostic."
             }
             if ($env:MT_SESSION_ID -and $script:_MLease) { return }
             [Console]::WriteLine($script:_MContextError)
@@ -1543,14 +1562,18 @@ public static class TlbxCliScriptWriter
         }
         function Mt-Context {
             param([string]$Format = "text")
+            if ($Format.ToLowerInvariant() -notin @('repair', 'text', 'bash', '--bash', 'pwsh', '--pwsh', 'powershell', 'json', '--json', '')) {
+                throw "TLBX_CLI_USAGE: Unknown mt_context format '$Format'. Usage: mt_context [repair|text|bash|pwsh|json]. No operation was executed."
+            }
             if ($Format -eq 'repair') {
                 _MResolveContext -Fresh
                 if ($script:_MContextError) {
-                    $proof = [regex]::Match($script:_MContextError, 'TLBXCTX:[a-f0-9]{32}').Value
-                    if ($proof -and $script:_MContextError -match 'TLBX_CONTEXT_UNBOUND') { Write-Output $proof }
-                    else { Write-Output $script:_MContextError }
-                    return
+                    [Console]::Error.WriteLine($script:_MContextError)
+                    throw 'mt_context repair failed; no session operation was executed. Read the complete diagnostic above.'
                 }
+                _MRequireSessionContext "mt_context repair"
+                Write-Output "repair=verified`nbaseUrl=$script:_MT`nsessionId=$env:MT_SESSION_ID`nNext: Retry the original command."
+                return
             }
             _MRequireSessionContext "mt_context"
             switch ($Format.ToLowerInvariant()) {
@@ -1563,7 +1586,7 @@ public static class TlbxCliScriptWriter
                 "json" { Write-Output (_MH @{ baseUrl = $script:_MT; sessionId = (_MSID); previewName = (_MPreview) }); return }
                 "text" { Write-Output "baseUrl=$script:_MT"; Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
                 "" { Write-Output "baseUrl=$script:_MT"; Write-Output "sessionId=$(_MSID)"; Write-Output "previewName=$(_MPreview)"; return }
-                default { throw "Usage: mt_context [text|bash|pwsh|json]" }
+                default { throw "Usage: mt_context [repair|text|bash|pwsh|json]" }
             }
         }
 

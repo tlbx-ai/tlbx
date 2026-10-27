@@ -331,6 +331,39 @@ public sealed class SessionCliContextServiceTests : IDisposable
             return Task.FromResult(true);
         }, CancellationToken.None);
         Assert.Contains(change == "caller" ? "TLBX_CONTEXT_INVALID_PROCESS" : "TLBX_CONTEXT_CHANGED", result, StringComparison.Ordinal);
+        Assert.Contains("stage=automatic-discovery", result, StringComparison.Ordinal);
+        Assert.Contains("callerPid=100", result, StringComparison.Ordinal);
+        Assert.Contains("root=" + Root, result, StringComparison.Ordinal);
+        Assert.Contains(change switch
+        {
+            "input" => "terminal-input-changed: session=first001; inputVersion=0->1",
+            "client" => "client-process-replaced: session=first001; clientPid=11",
+            _ => "caller-process-changed: expected start="
+        }, result, StringComparison.Ordinal);
+        Assert.Contains("Next:", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SiblingInputReportsTheActualChangedTerminalWithoutExposingLeaseTokens()
+    {
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            Feed("first001", marker);
+            _service.ObserveInput("second02", userInput: true);
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        Assert.Contains("terminal-input-changed: session=second02; inputVersion=0->1", result, StringComparison.Ordinal);
+        Assert.Contains("observed=1 [first001]", result, StringComparison.Ordinal);
+        Assert.Contains("clientPid=21", result, StringComparison.Ordinal);
+        Assert.Contains("If the same reason repeats, stop retrying", result, StringComparison.Ordinal);
+
+        Feed("first001", ProofLine(_service.Resolve(Root, Root, 100)));
+        var lease = _service.Resolve(Root, Root, 100);
+        _processes[11] = _started.AddSeconds(1);
+        var invalid = _service.ValidateLease(lease[9..])!;
+        Assert.Contains("stage=lease-validation", invalid, StringComparison.Ordinal);
+        Assert.Contains("client-process-replaced: session=first001; clientPid=11", invalid, StringComparison.Ordinal);
+        Assert.DoesNotContain(lease[9..], invalid, StringComparison.Ordinal);
     }
 
     [Fact]

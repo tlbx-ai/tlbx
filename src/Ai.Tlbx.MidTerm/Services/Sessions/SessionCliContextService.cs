@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using static System.FormattableString;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -100,7 +101,8 @@ public sealed class SessionCliContextService : IDisposable
         {
             Prune();
             var caller = _process(callerPid);
-            if (caller is null) return Error("INVALID_PROCESS", "The calling tool process no longer exists.");
+            if (caller is null) return ContextError("INVALID_PROCESS", "caller-process-missing: the calling tool process no longer exists.",
+                "resolve", root, thread, callerPid);
             var owners = GetOwners();
             // Private TUI tools can be attributed immediately. Stop at a shared
             // app-server boundary: its ancestry identifies the first launcher only.
@@ -112,7 +114,8 @@ public sealed class SessionCliContextService : IDisposable
                 if (existingDirect.Key is not null)
                     return SameOwner(existingDirect.Value.Owner!, direct)
                         ? direct.Terminal.Id + ":" + existingDirect.Key
-                        : Error("CHANGED", "Terminal input or client changed. Retry the original command in a new shell tool call.");
+                        : ContextError("CHANGED", OwnerChange(existingDirect.Value.Owner!, direct)!,
+                            "direct-ancestry", root, thread, callerPid);
                 var directToken = RandomToken();
                 _leases[directToken] = new Lease(null, direct, direct.Terminal.Id, callerPid, caller.Value.Started, _clock.GetUtcNow().AddMinutes(2));
                 return direct.Terminal.Id + ":" + directToken;
@@ -138,11 +141,14 @@ public sealed class SessionCliContextService : IDisposable
             var status = proof.Observers.Count > 1 ? "AMBIGUOUS" : "UNBOUND";
             var instructions = status == "AMBIGUOUS"
                 ? "Run mt_context repair as a separate shell tool call, then retry the original command. Do not copy the proof to other terminals. If repair remains ambiguous, stop: the same Codex thread may be displayed in multiple terminals. Ask to close the duplicate client before retrying; never guess a session ID."
-                : "Required next action: retry the exact original command in a separate shell tool call before continuing other work. The proof above must be displayed in your terminal first. If tool output is hidden, print ONLY the proof line in a separate tool call, then retry. The failed operation is still pending.";
+                : "Required next action: retry the exact original command once in a separate shell tool call. The proof above must be displayed in your terminal first. If tool output is hidden, print ONLY the proof line in a separate tool call, then retry. If the same reason repeats, stop retrying and report this complete diagnostic. The failed operation is still pending.";
             if (root != thread)
                 instructions += " If this is a subagent without its own terminal output, ask the parent agent to perform the scoped operation; do not overwrite CODEX_SESSION_ID or CODEX_THREAD_ID.";
-            return MarkerPrefix + proof.Nonce + "\n" + Error(status, instructions) +
-                $"\nCodex root={root}; thread={thread}; matched terminals={proof.Observers.Count}.";
+            return MarkerPrefix + proof.Nonce + "\n" + ContextError(status,
+                proof.Observers.Count > 1 ? "duplicate-proof: the same fresh proof appeared in multiple terminals."
+                    : owners.Count == 0 ? "no-candidates: no running Codex terminal with a live client process was found."
+                    : "proof-not-observed: no candidate terminal has displayed the fresh proof.",
+                "terminal-proof", root, thread, callerPid, proof, owners, instructions);
         }
     }
 
@@ -170,11 +176,13 @@ public sealed class SessionCliContextService : IDisposable
             {
                 proof = _contexts[root + "/" + thread];
                 var caller = _process(callerPid);
-                if (caller is null) return Error("INVALID_PROCESS", "The calling tool process no longer exists.");
+                if (caller is null) return ContextError("INVALID_PROCESS", "caller-process-missing: the calling tool process no longer exists.",
+                    "automatic-discovery", root, thread, callerPid, proof);
                 callerStarted = caller.Value.Started;
             }
             pendingProof = proof;
-            if (!await emitProof(marker, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false)) return initial;
+            if (!await emitProof(marker, timeout.Token).WaitAsync(timeout.Token).ConfigureAwait(false))
+                return initial + "\nAutomatic discovery: proof submission unavailable; the daemon did not accept the echo request.";
             while (true)
             {
                 timeout.Token.ThrowIfCancellationRequested();
@@ -196,16 +204,20 @@ public sealed class SessionCliContextService : IDisposable
                 {
                     var caller = _process(callerPid);
                     if (caller is null || caller.Value.Started != callerStarted)
-                        return Error("INVALID_PROCESS", "The original tool process ended or its PID was reused.");
+                        return ContextError("INVALID_PROCESS", Invariant($"caller-process-changed: expected start={callerStarted:O}; actual start={caller?.Started.ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? "missing"}."),
+                            "automatic-discovery", root, thread, callerPid, proof);
                     if (!_contexts.TryGetValue(root + "/" + thread, out var current) || current != proof)
-                        return Error("CHANGED", "The terminal context changed during automatic discovery.");
-                    if (!RefreshCandidates(proof, GetOwners()))
-                        return Error("CHANGED", "Terminal input or client changed during automatic discovery.");
+                        return ContextError("CHANGED", "proof-replaced: another fresh/repair request replaced this thread's proof.",
+                            "automatic-discovery", root, thread, callerPid, proof);
+                    var owners = GetOwners();
+                    if (!RefreshCandidates(proof, owners, out var change))
+                        return ContextError("CHANGED", change!, "automatic-discovery", root, thread, callerPid, proof, owners);
                     // Do not mint a lease until duplicate observation has settled.
                     if (!settled && proof.Observers.Count == 1) return string.Empty;
                     var result = Resolve(root, thread, callerPid);
                     if (_contexts[root + "/" + thread] != proof)
-                        return Error("CHANGED", "Terminal input or client changed during automatic discovery.");
+                        return ContextError("CHANGED", "proof-replaced: the proof changed while resolving the observed terminal.",
+                            "automatic-discovery", root, thread, callerPid, proof, owners);
                     return result;
                 }
             }
@@ -227,7 +239,9 @@ public sealed class SessionCliContextService : IDisposable
                 }
             }
             ct.ThrowIfCancellationRequested();
-            return initial ?? Error("UNBOUND", "Automatic terminal discovery timed out. No operation was executed.");
+            return (initial ?? ContextError("UNBOUND", "discovery-queue-timeout: another discovery occupied the handshake slot.",
+                "automatic-discovery", root, thread, callerPid)) +
+                Invariant($"\nAutomatic discovery: timeout after 5 seconds; phase={(pendingProof is null ? "waiting-for-slot" : pendingProof.Observers.Count > 0 ? "duplicate-settle" : "waiting-for-terminal-output")}; observed={pendingProof?.Observers.Count ?? 0}.");
         }
         finally
         {
@@ -241,7 +255,8 @@ public sealed class SessionCliContextService : IDisposable
         {
             Prune();
             var caller = _process(callerPid);
-            if (caller is null) return Error("INVALID_PROCESS", "The calling tool process no longer exists.");
+            if (caller is null) return ContextError("INVALID_PROCESS", "caller-process-missing: the calling tool process no longer exists.",
+                "host-lease", "hosted", "hosted", callerPid);
             var token = RandomToken();
             _leases[token] = new Lease(null, null, sessionId, callerPid, caller.Value.Started,
                 _clock.GetUtcNow().AddMinutes(2));
@@ -253,25 +268,35 @@ public sealed class SessionCliContextService : IDisposable
     {
         lock (_gate)
         {
-            if (!_leases.TryGetValue(token, out var lease) || lease.Expires <= _clock.GetUtcNow())
-                return Error("EXPIRED", "Run mt_context, then retry the original command.");
+            if (!_leases.TryGetValue(token, out var lease))
+                return Error("EXPIRED", "Reason: unknown-lease: this server has no matching lease (expired, pruned, or issued before a server restart).\nNext: Run the original command in a new shell tool call to obtain a fresh lease from the owning server.");
+            if (lease.Expires <= _clock.GetUtcNow())
+                return ContextError("EXPIRED", Invariant($"lease-expired: expiredAt={lease.Expires:O}."), "lease-validation",
+                    lease.Proof?.Root ?? "direct", lease.Proof?.Thread ?? "direct", lease.CallerPid);
             var caller = _process(lease.CallerPid);
             if (caller is null || caller.Value.Started != lease.CallerStarted)
-                return Error("INVALID_PROCESS", "The original tool process ended or its PID was reused. Run the original command in the current tool shell.");
+                return ContextError("INVALID_PROCESS", Invariant($"caller-process-changed: expected start={lease.CallerStarted:O}; actual start={caller?.Started.ToString("O", System.Globalization.CultureInfo.InvariantCulture) ?? "missing"}."),
+                    "lease-validation", lease.Proof?.Root ?? "direct", lease.Proof?.Thread ?? "direct", lease.CallerPid);
             if (lease.Proof is not { } proof)
             {
                 if (lease.Owner is null) return null;
                 var direct = FindDirectOwner(lease.CallerPid, GetOwners());
                 return direct is not null && SameOwner(lease.Owner, direct) ? null :
-                    Error("CHANGED", "Terminal input, client or process ancestry changed. Retry in a new shell tool call.");
+                    ContextError("CHANGED", direct is null ? $"ancestry-lost: caller no longer resolves to session={lease.SessionId}."
+                        : OwnerChange(lease.Owner, direct)!, "lease-validation", "direct", "direct", lease.CallerPid);
             }
             var owners = GetOwners();
-            if (!_contexts.TryGetValue(proof.Root + "/" + proof.Thread, out var currentProof) || currentProof != proof ||
-                proof.Expires <= _clock.GetUtcNow() || !RefreshCandidates(proof, owners) ||
-                proof.Observers.Count != 1 || !owners.TryGetValue(lease.SessionId, out var owner) ||
-                lease.Owner is null || !SameOwner(lease.Owner, owner))
-                return Error("CHANGED", "The terminal input, client, or proof changed. Run mt_context repair, then retry the original command. Do not guess a session ID.");
-            return null;
+            string? reason;
+            if (!_contexts.TryGetValue(proof.Root + "/" + proof.Thread, out var currentProof) || currentProof != proof)
+                reason = "proof-replaced: another fresh/repair request replaced this thread's proof.";
+            else if (proof.Expires <= _clock.GetUtcNow()) reason = Invariant($"proof-expired: expiredAt={proof.Expires:O}.");
+            else if (RefreshCandidates(proof, owners, out reason))
+            {
+                if (proof.Observers.Count != 1) reason = Invariant($"duplicate-proof: expected one observer; actual={proof.Observers.Count}.");
+                else if (!owners.TryGetValue(lease.SessionId, out var owner)) reason = $"owner-missing: session={lease.SessionId} is no longer a live Codex candidate.";
+                else reason = lease.Owner is null ? "owner-missing: lease has no terminal snapshot." : OwnerChange(lease.Owner, owner);
+            }
+            return reason is null ? null : ContextError("CHANGED", reason, "lease-validation", proof.Root, proof.Thread, lease.CallerPid, proof, owners);
         }
     }
 
@@ -280,6 +305,13 @@ public sealed class SessionCliContextService : IDisposable
 
     internal static string Error(string status, string instruction) =>
         $"TLBX_CONTEXT_{status}: No session operation was executed.\n{instruction}\nNever infer ownership from cwd, terminal title, or inherited MT_SESSION_ID.";
+
+    private static string ContextError(string status, string reason, string stage, string root, string thread,
+        int callerPid, Proof? proof = null, Dictionary<string, Owner>? owners = null, string? next = null) =>
+        Error(status, Invariant($"Reason: {reason}\nContext: stage={stage}; callerPid={callerPid}; root={root}; thread={thread}.") +
+            (proof is null ? "" : Invariant($"\nEvidence: candidates={proof.Candidates.Count} [{string.Join(",", proof.Candidates.Keys.Order(StringComparer.Ordinal).Take(8))}]; observed={proof.Observers.Count} [{string.Join(",", proof.Observers.Order(StringComparer.Ordinal).Take(8))}].")) +
+            (owners is null ? "" : Invariant($"\nLive candidates (first 8 of {owners.Count}): {string.Join("; ", owners.Values.OrderBy(o => o.Terminal.Id, StringComparer.Ordinal).Take(8).Select(o => Invariant($"session={o.Terminal.Id}, shellPid={o.Terminal.ShellPid}, clientPid={o.Terminal.ClientPid}, clientStarted={o.Started:O}, inputVersion={o.InputVersion}")))}.")) +
+            "\nNext: " + (next ?? "Retry the original command once in a new shell tool call. If the same reason repeats, stop retrying and report this complete diagnostic; run mt_context repair separately only to request a fresh proof."));
 
     private Dictionary<string, Owner> GetOwners()
     {
@@ -312,15 +344,36 @@ public sealed class SessionCliContextService : IDisposable
     private static bool SameOwner(Owner left, Owner right) => left.Terminal == right.Terminal &&
         left.Started == right.Started && left.InputVersion == right.InputVersion;
 
-    private static bool RefreshCandidates(Proof proof, Dictionary<string, Owner> owners)
+    private static string? OwnerChange(Owner previous, Owner current)
     {
+        if (SameOwner(previous, current)) return null;
+        var changes = new List<string>();
+        if (previous.Terminal != current.Terminal)
+            changes.Add(Invariant($"client-changed: session={previous.Terminal.Id}; shellPid={previous.Terminal.ShellPid}->{current.Terminal.ShellPid}; clientPid={previous.Terminal.ClientPid}->{current.Terminal.ClientPid}"));
+        if (previous.Started != current.Started)
+            changes.Add(Invariant($"client-process-replaced: session={previous.Terminal.Id}; clientPid={current.Terminal.ClientPid}; started={previous.Started:O}->{current.Started:O}"));
+        if (previous.InputVersion != current.InputVersion)
+            changes.Add(Invariant($"terminal-input-changed: session={previous.Terminal.Id}; inputVersion={previous.InputVersion}->{current.InputVersion} (user input observed; terminal protocol replies do not increment this counter)"));
+        return changes.Count == 0 ? null : string.Join("; ", changes) + ".";
+    }
+
+    private static bool RefreshCandidates(Proof proof, Dictionary<string, Owner> owners) => RefreshCandidates(proof, owners, out _);
+
+    private static bool RefreshCandidates(Proof proof, Dictionary<string, Owner> owners, out string? change)
+    {
+        change = null;
         foreach (var (id, previous) in proof.Candidates)
         {
             if (owners.TryGetValue(id, out var current))
             {
-                if (!SameOwner(previous, current)) return false;
+                change = OwnerChange(previous, current);
+                if (change is not null) return false;
             }
-            else if (proof.Observers.Contains(id)) return false;
+            else if (proof.Observers.Contains(id))
+            {
+                change = Invariant($"owner-missing: observed session={id}, clientPid={previous.Terminal.ClientPid} is no longer a live Codex candidate.");
+                return false;
+            }
         }
         foreach (var id in proof.Candidates.Keys.Where(id => !owners.ContainsKey(id)).ToArray()) proof.Candidates.Remove(id);
         foreach (var (id, owner) in owners) proof.Candidates.TryAdd(id, owner);

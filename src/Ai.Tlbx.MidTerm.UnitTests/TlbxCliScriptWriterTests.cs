@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
@@ -403,7 +404,117 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("curl exit 22", diagnostic, StringComparison.Ordinal);
         Assert.Contains(status.ToString(System.Globalization.CultureInfo.InvariantCulture), diagnostic, StringComparison.Ordinal);
         Assert.Contains(app.Urls.Single() + "/api/sessions/process-context", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("httpStatus=" + status + ";", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("helper=", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
         Assert.Equal(0, mutations);
+    }
+
+    [Theory]
+    [InlineData(false, "bound")]
+    [InlineData(true, "bound")]
+    [InlineData(false, "UNBOUND")]
+    [InlineData(true, "UNBOUND")]
+    [InlineData(false, "CHANGED")]
+    [InlineData(true, "CHANGED")]
+    public async Task ContextRepairReportsVerifiedSuccessOrCompleteActionableFailure(bool bash, string outcome)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        const string identity = "01a10b30-4385-71e0-8a60-6fd26e1cfb01";
+        const string token = "0123456789abcdef0123456789abcdef";
+        var freshRequests = 0;
+        app.MapGet("/api/sessions/process-context", async (bool fresh, int processId) =>
+        {
+            if (fresh) Interlocked.Increment(ref freshRequests);
+            if (outcome == "CHANGED")
+            {
+                // Exercise the production discovery failure through the generated shell,
+                // including its HTTP body, instead of asserting a canned diagnostic.
+                var started = new DateTime(2026, 10, 27, 8, 0, 0, DateTimeKind.Utc);
+                using var service = new Ai.Tlbx.MidTerm.Services.Sessions.SessionCliContextService(
+                    () => [new("first001", 10, 11), new("second02", 20, 21)],
+                    _ => (1, started), TimeProvider.System, _ => true);
+                var resolution = await service.ResolveAsync(identity, identity, processId, fresh, (marker, _) =>
+                {
+                    service.ObserveOutput("first001", Encoding.UTF8.GetBytes(marker));
+                    service.ObserveInput("second02", userInput: true);
+                    return Task.FromResult(true);
+                }, CancellationToken.None);
+                return Results.Text(resolution, statusCode: 409);
+            }
+            return Results.Text(outcome == "bound" ? "abcdefgh:" + token
+                : (outcome == "UNBOUND" ? "TLBXCTX:" + token + "\n" : "") +
+                    $"TLBX_CONTEXT_{outcome}: No session operation was executed.\nReason: terminal-input-changed: session=second02; inputVersion=4->5.\nNext: Retry the original command once in a new shell tool call.",
+                statusCode: outcome == "bound" ? 200 : 409);
+        });
+        await app.StartAsync(CancellationToken.None);
+        var command = bash
+            ? $"export CODEX_SESSION_ID={identity}; source \"$1\"; mt_context repair"
+            : $"$env:CODEX_SESSION_ID='{identity}'; . $args[0]; mt_context repair";
+        var helper = Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", helper);
+        Assert.Equal(1, freshRequests);
+        var diagnostic = result.Output + result.Error;
+        TestContext.Current.TestOutputHelper?.WriteLine(diagnostic);
+        Assert.DoesNotContain("Usage:", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
+        if (outcome == "bound")
+        {
+            Assert.True(result.ExitCode == 0, diagnostic);
+            Assert.Contains("repair=verified", result.Output, StringComparison.Ordinal);
+            Assert.Contains("sessionId=abcdefgh", result.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, diagnostic, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("TLBX_CONTEXT_" + outcome, result.Error, StringComparison.Ordinal);
+            Assert.Contains(outcome == "CHANGED" ? "session=second02; inputVersion=0->1" : "session=second02; inputVersion=4->5", result.Error, StringComparison.Ordinal);
+            if (outcome == "CHANGED") Assert.Contains("stage=automatic-discovery", result.Error, StringComparison.Ordinal);
+            Assert.Contains("httpStatus=409;", result.Error, StringComparison.Ordinal);
+            Assert.Contains("helper=", result.Error, StringComparison.Ordinal);
+            Assert.Contains("Next:", result.Error, StringComparison.Ordinal);
+            if (outcome == "UNBOUND") Assert.Contains("TLBXCTX:" + token, result.Error, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ApiFailurePreservesServerReasonAndIdentifiesRequestWithoutReplayingMutation(bool bash)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
+        var mutations = 0;
+        app.MapPut("/api/sessions/{id}/topic", () =>
+        {
+            Interlocked.Increment(ref mutations);
+            return Results.Text("Reason: requested session is unavailable; original topic preserved.", statusCode: 409);
+        });
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(bash,
+            bash ? "source \"$1\"; mt_topic do-not-log-payload" : ". $args[0]; mt_topic do-not-log-payload",
+            app.Urls.Single(), "abcdefgh", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.NotEqual(0, result.ExitCode);
+        Assert.Equal(1, mutations);
+        var diagnostic = result.Output + result.Error;
+        Assert.Contains("Reason: requested session is unavailable; original topic preserved.", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("TLBX_API_FAILED", result.Error, StringComparison.Ordinal);
+        Assert.Contains("endpoint=" + app.Urls.Single() + "/api/sessions/abcdefgh/topic", result.Error, StringComparison.Ordinal);
+        Assert.Contains("409", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("No automatic retry", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("do-not-log-payload", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
     }
 
     [Fact]
