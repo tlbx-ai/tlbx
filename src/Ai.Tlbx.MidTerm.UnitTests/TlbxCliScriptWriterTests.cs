@@ -484,9 +484,11 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task ApiFailurePreservesServerReasonAndIdentifiesRequestWithoutReplayingMutation(bool bash)
+    [InlineData(false, 409)]
+    [InlineData(true, 409)]
+    [InlineData(false, 503)]
+    [InlineData(true, 503)]
+    public async Task ApiFailurePreservesServerReasonAndIdentifiesRequestWithoutReplayingMutation(bool bash, int status)
     {
         if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
         Directory.CreateDirectory(_tempDir);
@@ -499,7 +501,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         app.MapPut("/api/sessions/{id}/topic", () =>
         {
             Interlocked.Increment(ref mutations);
-            return Results.Text("Reason: requested session is unavailable; original topic preserved.", statusCode: 409);
+            return Results.Text("Reason: requested session is unavailable; original topic preserved.", statusCode: status);
         });
         await app.StartAsync(CancellationToken.None);
         var result = await RunContextShellAsync(bash,
@@ -511,7 +513,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("Reason: requested session is unavailable; original topic preserved.", diagnostic, StringComparison.Ordinal);
         Assert.Contains("TLBX_API_FAILED", result.Error, StringComparison.Ordinal);
         Assert.Contains("endpoint=" + app.Urls.Single() + "/api/sessions/abcdefgh/topic", result.Error, StringComparison.Ordinal);
-        Assert.Contains("409", diagnostic, StringComparison.Ordinal);
+        Assert.Contains(status.ToString(System.Globalization.CultureInfo.InvariantCulture), diagnostic, StringComparison.Ordinal);
         Assert.Contains("No automatic retry", result.Error, StringComparison.Ordinal);
         Assert.DoesNotContain("do-not-log-payload", diagnostic, StringComparison.Ordinal);
         Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
@@ -830,6 +832,42 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.NotEqual(0, result.ExitCode);
         Assert.Equal(0, mutations);
         Assert.Contains("httpStatus=409;", result.Output + result.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task IdentityPreflightWaitsThroughAWebRestartBeforeExecutingTheOriginalMutation(bool bash, bool resetConnection)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        var reads = 0;
+        app.MapGet("/api/sessions/process-context", (HttpContext context) =>
+        {
+            if (Interlocked.Increment(ref reads) == 1)
+            {
+                if (resetConnection) { context.Abort(); return Results.Empty; }
+                return Results.Text("source web is starting", statusCode: 503);
+            }
+            return Results.Text("abcdefgh:0123456789abcdef0123456789abcdef");
+        });
+        var mutations = 0;
+        app.MapPut("/api/sessions/{id}/topic", () => { mutations++; return Results.Ok(); });
+        await app.StartAsync(CancellationToken.None);
+        var command = bash
+            ? "export CODEX_SESSION_ID=01a10b30-4385-71e0-8a60-6fd26e1cfb01; source \"$1\"; mt_topic healed"
+            : "$env:CODEX_SESSION_ID='01a10b30-4385-71e0-8a60-6fd26e1cfb01'; . $args[0]; mt_topic healed";
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+        Assert.True(result.ExitCode == 0, result.Error + result.Output);
+        Assert.True(reads >= 2);
+        Assert.Equal(1, mutations);
+        Assert.DoesNotContain("source web is starting", result.Output + result.Error, StringComparison.Ordinal);
     }
 
     private async Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(

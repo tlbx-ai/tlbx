@@ -142,6 +142,7 @@ public static class TlbxCliScriptWriter
           _MREFRESHHELPER || return $?
           local pid=$$ resolved root="${CODEX_SESSION_ID:-}" thread="${CODEX_THREAD_ID:-}" codex_home="${CODEX_HOME:-$HOME/.codex}" query="" auth=()
           local previous_session="${MT_SESSION_ID:-}" previous_preview="${MT_PREVIEW_NAME:-}" resolve_exit=0 http_status reason
+          local started=$SECONDS attempt remaining
           [ -n "$root" ] || root="$thread"
           [ -n "$thread" ] || thread="$root"
           if [ -r "/proc/$$/winpid" ]; then
@@ -153,13 +154,21 @@ public static class TlbxCliScriptWriter
             _MLEASE=""
             query="&codexSessionId=$(_MURLENC "$root")&codexThreadId=$(_MURLENC "$thread")&codexHome=$(_MURLENC "$codex_home")&fresh=${1:-false}"
           fi
-          resolved=$(_MHTTP --fail-with-body -sSk --max-time 20 --write-out $'\nTLBX_HTTP_STATUS:%{http_code}' "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
-          http_status="${resolved##*TLBX_HTTP_STATUS:}"
-          http_status="${http_status:0:3}"
-          if [[ "$http_status" =~ ^[0-9]{3}$ ]]; then
-            resolved="${resolved/$'\n'TLBX_HTTP_STATUS:$http_status/$'\n'}"
-            resolved="${resolved%$'\n'}"
-          else http_status="unknown"; fi
+          for attempt in 0 1 2; do
+            remaining=$((20 - SECONDS + started))
+            [ "$remaining" -gt 0 ] || break
+            resolve_exit=0
+            resolved=$(_MHTTP --fail-with-body -sSk --max-time "$remaining" --write-out $'\nTLBX_HTTP_STATUS:%{http_code}' "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
+            http_status="${resolved##*TLBX_HTTP_STATUS:}"
+            http_status="${http_status:0:3}"
+            if [[ "$http_status" =~ ^[0-9]{3}$ ]]; then
+              resolved="${resolved/$'\n'TLBX_HTTP_STATUS:$http_status/$'\n'}"
+              resolved="${resolved%$'\n'}"
+            else http_status="unknown"; fi
+            # Only this identity GET may wait through a web-process replacement.
+            [ "$attempt" -lt 2 ] && [ "$((SECONDS - started))" -lt 19 ] || break
+            case "$resolve_exit:$http_status" in 7:*|52:*|56:*|*:503) sleep 0.5 ;; *) break ;; esac
+          done
           if [ -n "$root$thread" ]; then
             if [ "$resolve_exit" -eq 0 ] && [ "$http_status" = 200 ] && [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
               export MT_SESSION_ID="${BASH_REMATCH[1]}"
@@ -173,7 +182,7 @@ public static class TlbxCliScriptWriter
               reason="context-request-failed"
               [ "$resolve_exit" -ne 0 ] || reason="unexpected-context-response: expected a verified session ID and lease, not a plain session ID or HTML response"
               [[ "$_MCTXERROR" == *TLBX* ]] || _MCTXERROR="TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Reason: $reason. Context request to $_MT/api/sessions/process-context (curl exit $resolve_exit). Response: ${resolved:0:1000} Next: Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
-              _MCTXERROR+=$'\n'"CLI: endpoint=$_MT/api/sessions/process-context; httpStatus=$http_status; curlExit=$resolve_exit; callerPid=$pid; root=$root; thread=$thread; helper=$_MTDIR/tlbx_cli.sh; generatedBy={{CliCommands.GetVersion()}}."
+              _MCTXERROR+=$'\n'"CLI: endpoint=$_MT/api/sessions/process-context; httpStatus=$http_status; curlExit=$resolve_exit; preflightAttempts=$((attempt + 1)); callerPid=$pid; root=$root; thread=$thread; helper=$_MTDIR/tlbx_cli.sh; generatedBy={{CliCommands.GetVersion()}}."
               case "$http_status" in
                 401) _MCTXERROR+=$'\nNext: Authentication expired or was rejected. Refresh this workspace helper from the owning tlbx instance; do not remove MT_TOKEN or change session IDs blindly.' ;;
                 403) _MCTXERROR+=$'\nNext: The server denied this local process-context request. Verify the owning server and its caller-access diagnostic; do not change ACLs or credentials to bypass it.' ;;
@@ -1406,11 +1415,19 @@ public static class TlbxCliScriptWriter
                 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path ([Environment]::GetFolderPath('UserProfile')) '.codex' }
                 $query = "&codexSessionId=$([Uri]::EscapeDataString($root))&codexThreadId=$([Uri]::EscapeDataString($thread))&codexHome=$([Uri]::EscapeDataString($codexHome))&fresh=$($Fresh.IsPresent.ToString().ToLowerInvariant())"
             }
-            $resolvedContext = _MHttp --fail-with-body -sSk --max-time 20 --write-out "`nTLBX_HTTP_STATUS:%{http_code}" "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
-            $resolveExit = $LASTEXITCODE
-            $resolvedContext = ($resolvedContext | Out-String).Trim()
-            $httpStatus = [regex]::Match($resolvedContext, 'TLBX_HTTP_STATUS:(\d{3})').Groups[1].Value
-            $resolvedContext = [regex]::Replace($resolvedContext, '[\r\n]*TLBX_HTTP_STATUS:\d{3}', "`n").Trim()
+            $started = [Diagnostics.Stopwatch]::StartNew()
+            for ($attempt = 0; $attempt -lt 3; $attempt++) {
+                $remaining = [int][Math]::Floor(20 - $started.Elapsed.TotalSeconds)
+                if ($remaining -lt 1) { break }
+                $resolvedContext = _MHttp --fail-with-body -sSk --max-time $remaining --write-out "`nTLBX_HTTP_STATUS:%{http_code}" "$script:_MT/api/sessions/process-context?processId=$PID$query" 2>&1
+                $resolveExit = $LASTEXITCODE
+                $resolvedContext = ($resolvedContext | Out-String).Trim()
+                $httpStatus = [regex]::Match($resolvedContext, 'TLBX_HTTP_STATUS:(\d{3})').Groups[1].Value
+                $resolvedContext = [regex]::Replace($resolvedContext, '[\r\n]*TLBX_HTTP_STATUS:\d{3}', "`n").Trim()
+                if ($attempt -ge 2 -or $started.Elapsed.TotalSeconds -ge 19 -or
+                    ($resolveExit -notin @(7, 52, 56) -and $httpStatus -ne '503')) { break }
+                Start-Sleep -Milliseconds 500
+            }
             if ($root -or $thread) {
                 if ($resolveExit -eq 0 -and $httpStatus -eq '200' -and $resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
                     $env:MT_SESSION_ID = $Matches[1]
@@ -1425,7 +1442,7 @@ public static class TlbxCliScriptWriter
                     $reason = if ($resolveExit -ne 0) { 'context-request-failed' } else { 'unexpected-context-response: expected a verified session ID and lease, not a plain session ID or HTML response' }
                     "TLBX_CONTEXT_UNAVAILABLE: No operation was executed. Reason: $reason. Context request to $script:_MT/api/sessions/process-context (curl exit $resolveExit). Response: $detail Next: Verify the owning server and refresh its generated helper. Do not export an inherited session ID."
                     }
-                    $script:_MContextError += "`nCLI: endpoint=$script:_MT/api/sessions/process-context; httpStatus=$httpStatus; curlExit=$resolveExit; callerPid=$PID; root=$root; thread=$thread; helper=$script:_MHelperPath; generatedBy={{CliCommands.GetVersion()}}."
+                    $script:_MContextError += "`nCLI: endpoint=$script:_MT/api/sessions/process-context; httpStatus=$httpStatus; curlExit=$resolveExit; preflightAttempts=$($attempt + 1); callerPid=$PID; root=$root; thread=$thread; helper=$script:_MHelperPath; generatedBy={{CliCommands.GetVersion()}}."
                     $script:_MContextError += switch ($httpStatus) {
                         '401' { "`nNext: Authentication expired or was rejected. Refresh this workspace helper from the owning tlbx instance; do not remove MT_TOKEN or change session IDs blindly." }
                         '403' { "`nNext: The server denied this local process-context request. Verify the owning server and its caller-access diagnostic; do not change ACLs or credentials to bypass it." }
