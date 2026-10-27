@@ -98,6 +98,7 @@ public static class TlbxCliScriptWriter
           http_status="${http_status:0:3}"
           if [[ "$http_status" =~ ^[0-9]{3}$ ]]; then
             resolved="${resolved/$'\n'TLBX_HTTP_STATUS:$http_status/$'\n'}"
+            resolved="${resolved%$'\n'}"
           else http_status="unknown"; fi
           if [ -n "$root$thread" ]; then
             if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
