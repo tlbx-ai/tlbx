@@ -6084,6 +6084,19 @@ body::before {
 }
 
 /* Settings hint and info text */
+.workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.workspace-actions button {
+  max-width: 100%;
+  min-height: 44px;
+  white-space: normal;
+}
+
 .setting-hint {
   font-size: var(--fs-base);
   color: var(--text-secondary);
