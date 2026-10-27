@@ -95,7 +95,10 @@ public static class TlbxCliScriptWriter
           if [ -n "${MT_API_KEY:-}" ]; then auth=(-H "Authorization: Bearer $MT_API_KEY"); else auth=(-b "$_MK"); fi
           resolved=$(_MCURL --fail-with-body -sSk "${auth[@]}" --max-time 12 --write-out $'\nTLBX_HTTP_STATUS:%{http_code}' "$_MT/api/sessions/process-context?processId=$pid$query" 2>&1) || resolve_exit=$?
           http_status="${resolved##*TLBX_HTTP_STATUS:}"
-          resolved="${resolved%$'\n'TLBX_HTTP_STATUS:*}"
+          http_status="${http_status:0:3}"
+          if [[ "$http_status" =~ ^[0-9]{3}$ ]]; then
+            resolved="${resolved/$'\n'TLBX_HTTP_STATUS:$http_status/$'\n'}"
+          else http_status="unknown"; fi
           if [ -n "$root$thread" ]; then
             if [[ "$resolved" =~ ^([A-Za-z0-9]{8}):([a-f0-9]{32})$ ]]; then
               export MT_SESSION_ID="${BASH_REMATCH[1]}"
@@ -1295,8 +1298,8 @@ public static class TlbxCliScriptWriter
             }
             $resolveExit = $LASTEXITCODE
             $resolvedContext = ($resolvedContext | Out-String).Trim()
-            $httpStatus = [regex]::Match($resolvedContext, 'TLBX_HTTP_STATUS:(\d{3})$').Groups[1].Value
-            $resolvedContext = [regex]::Replace($resolvedContext, '\s*TLBX_HTTP_STATUS:\d{3}$', '').Trim()
+            $httpStatus = [regex]::Match($resolvedContext, 'TLBX_HTTP_STATUS:(\d{3})').Groups[1].Value
+            $resolvedContext = [regex]::Replace($resolvedContext, '[\r\n]*TLBX_HTTP_STATUS:\d{3}', "`n").Trim()
             if ($root -or $thread) {
                 if ($resolvedContext -match '^([A-Za-z0-9]{8}):([a-f0-9]{32})$') {
                     $env:MT_SESSION_ID = $Matches[1]

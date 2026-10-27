@@ -404,7 +404,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Contains("curl exit 22", diagnostic, StringComparison.Ordinal);
         Assert.Contains(status.ToString(System.Globalization.CultureInfo.InvariantCulture), diagnostic, StringComparison.Ordinal);
         Assert.Contains(app.Urls.Single() + "/api/sessions/process-context", diagnostic, StringComparison.Ordinal);
-        Assert.Contains("httpStatus=" + status, diagnostic, StringComparison.Ordinal);
+        Assert.Contains("httpStatus=" + status + ";", diagnostic, StringComparison.Ordinal);
         Assert.Contains("helper=", diagnostic, StringComparison.Ordinal);
         Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
         Assert.Equal(0, mutations);
@@ -476,7 +476,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
             Assert.Contains("TLBX_CONTEXT_" + outcome, result.Error, StringComparison.Ordinal);
             Assert.Contains(outcome == "CHANGED" ? "session=second02; inputVersion=0->1" : "session=second02; inputVersion=4->5", result.Error, StringComparison.Ordinal);
             if (outcome == "CHANGED") Assert.Contains("stage=automatic-discovery", result.Error, StringComparison.Ordinal);
-            Assert.Contains("httpStatus=409", result.Error, StringComparison.Ordinal);
+            Assert.Contains("httpStatus=409;", result.Error, StringComparison.Ordinal);
             Assert.Contains("helper=", result.Error, StringComparison.Ordinal);
             Assert.Contains("Next:", result.Error, StringComparison.Ordinal);
             if (outcome == "UNBOUND") Assert.Contains("TLBXCTX:" + token, result.Error, StringComparison.Ordinal);
