@@ -40,7 +40,7 @@ public sealed class SessionWorkspaceTests
             new Dictionary<string, string>(StringComparer.Ordinal) { ["old-a"] = "new-a" });
         Assert.Equal("new-a", restored.FocusedSessionId);
         Assert.Equal("horizontal", restored.Root!.Direction);
-        Assert.Equal(new[] { "new-a", "failed-b" }, restored.Root.Children!.Select(static node => node.SessionId));
+        Assert.Equal(new[] { "new-a", "failed-b" }, restored.Root.Children!.Select(static node => node.SessionId), StringComparer.Ordinal);
         Assert.Equal("old-a", original.Root!.Children![0].SessionId);
     }
 
