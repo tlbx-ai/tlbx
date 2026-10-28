@@ -130,7 +130,7 @@ try {
         $current = $stamp -and $stamp.fingerprint -eq $fingerprint -and (Test-Path -LiteralPath $path) -and
             $stamp.sha256 -eq (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash
         if (-not $current) {
-            & $go build -trimpath -ldflags '-s -w' -o $path .
+            & $go build -trimpath -buildvcs=false -ldflags '-s -w' -o $path .
             if ($LASTEXITCODE -ne 0) { throw "Connect transport build failed: $($target.Rid)" }
             @{ fingerprint = $fingerprint; sha256 = (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash } |
                 ConvertTo-Json | Set-Content -LiteralPath $stampPath -Encoding utf8
@@ -165,7 +165,8 @@ try {
             [void]$notices.AppendLine("===== $modulePath $version =====")
             foreach ($license in $licenses) { [void]$notices.AppendLine([IO.File]::ReadAllText($license.FullName)) }
         }
-        [IO.File]::WriteAllText($noticePath, $notices.ToString().Replace("`r`n", "`n"), [Text.UTF8Encoding]::new($false))
+        $noticeText = [regex]::Replace($notices.ToString().Replace("`r`n", "`n"), '(?m)[ \t]+$', '').TrimEnd() + "`n"
+        [IO.File]::WriteAllText($noticePath, $noticeText, [Text.UTF8Encoding]::new($false))
     }
     foreach ($target in $selected) {
         Copy-Item -LiteralPath $noticePath -Destination (Join-Path $PSScriptRoot "bin/$($target.Rid)") -Force
