@@ -202,6 +202,8 @@ public static class ServerSetup
         builder.Services.AddSingleton<CommandService>();
         builder.Services.AddSingleton<ShutdownService>();
         builder.Services.AddSingleton<HubService>();
+        builder.Services.AddSingleton<Services.Connect.ConnectService>();
+        builder.Services.AddHostedService(static services => services.GetRequiredService<Services.Connect.ConnectService>());
         builder.Services.AddSingleton<HubMuxWebSocketHandler>();
         builder.Services.AddSingleton<HubStateWebSocketHandler>();
         builder.Services.AddSingleton(sp =>
