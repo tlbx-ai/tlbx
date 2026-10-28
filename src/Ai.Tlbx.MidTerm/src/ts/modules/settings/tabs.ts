@@ -53,6 +53,7 @@ export function switchSettingsTab(tab: SettingsTab): void {
   if (!isValidTab(tab)) return;
 
   activeTab = tab;
+  if (tab !== 'security') window.dispatchEvent(new Event('tlbx-connect-setup-close'));
   localStorage.setItem(STORAGE_KEY, tab);
 
   document.querySelectorAll('.settings-tab').forEach((btn) => {

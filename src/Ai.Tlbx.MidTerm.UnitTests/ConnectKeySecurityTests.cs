@@ -181,6 +181,7 @@ public sealed class ConnectKeySecurityTests
     [InlineData("GET", "/connect.html", "cors", "empty")]
     [InlineData("GET", "/api/connect/status", "navigate", "document")]
     [InlineData("GET", "/connect-setup.js", "navigate", "document")]
+    [InlineData("GET", "/connect-setup.html", "navigate", "document")]
     [InlineData("POST", "/api/connect/unlock", "navigate", "document")]
     [InlineData("POST", "/api/connect/generate", "navigate", "document")]
     [InlineData("POST", "/connect.html", "navigate", "document")]

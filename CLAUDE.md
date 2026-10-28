@@ -125,6 +125,7 @@ Rules:
 ## Embedded UI acceptance
 
 For Connect provisioning, follow a real external-page link to `https://localhost:<test-port>/connect.html` in Chrome and Edge as well as entering the URL directly, then verify local sign-in and the fresh installation-password gate. Bind local-only test instances to loopback (`127.0.0.1` or `::1`), never wildcard addresses; these checks require no host firewall permission.
+Connect provisioning belongs in the actual Security & Access settings and reuses the native Settings DOM, theme, typography and controls. Do not create a standalone visual system or an outer workspace toolbar. Compare the embedded result with an existing Settings panel at desktop and narrow widths, including opened password/download states.
 
 For a new workspace surface, verify its actual embedded entry point in the full app, not only a detached/demo view. Capture desktop and narrow screenshots with a background image and full UI transparency enabled; check pane bounds, readable opaque surfaces, sidebar navigation and terminal input isolation before declaring it accepted.
 
