@@ -3080,21 +3080,6 @@ public sealed partial class WebPreviewProxyMiddleware
 
     internal static string BuildUpstreamPath(Uri target, string path)
     {
-        var targetPath = target.AbsolutePath;
-        if (string.IsNullOrEmpty(targetPath))
-        {
-            targetPath = "/";
-        }
-
-        var targetHasTrailingSlash = targetPath.Length > 1
-            && targetPath.EndsWith("/", StringComparison.Ordinal);
-
-        var targetBase = targetPath.TrimEnd('/');
-        if (targetBase == "/")
-        {
-            targetBase = "";
-        }
-
         var normalizedPath = string.IsNullOrEmpty(path) ? "/" : path;
         if (!normalizedPath.StartsWith('/'))
         {
@@ -3103,26 +3088,13 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (normalizedPath == "/")
         {
-            if (string.IsNullOrEmpty(targetBase))
-            {
-                return "/";
-            }
-
-            return targetHasTrailingSlash ? targetBase + "/" : targetBase;
+            // The bare preview route remains an entry alias for its configured target.
+            return string.IsNullOrEmpty(target.AbsolutePath) ? "/" : target.AbsolutePath;
         }
 
-        if (string.IsNullOrEmpty(targetBase))
-        {
-            return normalizedPath;
-        }
-
-        if (normalizedPath.Equals(targetBase, StringComparison.OrdinalIgnoreCase)
-            || normalizedPath.StartsWith(targetBase + "/", StringComparison.OrdinalIgnoreCase))
-        {
-            return normalizedPath;
-        }
-
-        return targetBase + normalizedPath;
+        // Relative URLs have already resolved against the injected document base.
+        // A rooted path identifies the upstream origin, not a directory under the target.
+        return normalizedPath;
     }
 
     private static string BuildUpstreamUrlFromPath(Uri target, string upstreamPath, string? queryString)
