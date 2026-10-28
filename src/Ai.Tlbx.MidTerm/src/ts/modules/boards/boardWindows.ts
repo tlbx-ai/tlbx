@@ -1,3 +1,5 @@
+import { wrapConnectWorkspaceUrl } from '../web/connectPreview';
+
 interface BoardWindowActions {
   boardId: () => string | null;
   save: () => Promise<boolean>;
@@ -60,7 +62,9 @@ export class BoardWindows {
         this.popups.delete(popup);
         return;
       }
-      popup.location.replace(`/?board=${encodeURIComponent(id)}&handoff=1`);
+      popup.location.replace(
+        wrapConnectWorkspaceUrl(`/?board=${encodeURIComponent(id)}&handoff=1`),
+      );
     } catch (error) {
       popup.close();
       this.popups.delete(popup);

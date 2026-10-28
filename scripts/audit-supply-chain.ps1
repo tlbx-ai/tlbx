@@ -54,6 +54,12 @@ if (@($mutableActions).Count -gt 0) {
 }
 $baseline = Get-AdvisoryBaseline $repoRoot
 
+if ($Scope -in @('server','all')) {
+    Write-Host 'Supply-chain gate: Go Connect transport package advisories for all six RIDs' -ForegroundColor Cyan
+    . (Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.ConnectTransport/advisory.ps1')
+    Invoke-ConnectGoAdvisoryGate -RepoRoot $repoRoot -Baseline $baseline
+}
+
 if ($Scope -in @('server','tooling','all')) {
     Write-Host "Supply-chain gate: npm advisories and registry signatures" -ForegroundColor Cyan
     $requiredNpmVersion = "12.2.0"

@@ -1,4 +1,5 @@
 import type { BrowserPreviewClientResponse } from './webApi';
+import { wrapConnectPreviewUrl } from './connectPreview';
 
 const PREVIEW_QUERY_ID_PARAM = '__mtPreviewId';
 const PREVIEW_QUERY_TOKEN_PARAM = '__mtPreviewToken';
@@ -31,7 +32,7 @@ export function buildProxyUrl(
   if (buildOptions.reloadToken) {
     proxyUrl.searchParams.set(PREVIEW_QUERY_RELOAD_TOKEN_PARAM, buildOptions.reloadToken);
   }
-  return proxyUrl.toString();
+  return wrapConnectPreviewUrl(proxyUrl.toString());
 }
 
 export function stripInternalPreviewQueryParams(url: URL): void {

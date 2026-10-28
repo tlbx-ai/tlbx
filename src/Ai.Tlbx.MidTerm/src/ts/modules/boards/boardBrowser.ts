@@ -6,6 +6,7 @@ import {
 } from '../web/webApi';
 import type { BoardBrowserInstruction } from './boardSocket';
 import { t } from '../i18n';
+import { wrapConnectWorkspaceUrl } from '../web/connectPreview';
 
 const mounts = new WeakMap<HTMLIFrameElement, { key: string }>();
 
@@ -19,7 +20,7 @@ export function createBoardBrowserFrame(): HTMLIFrameElement {
   frame.title = t('boards.browser');
   frame.setAttribute('sandbox', 'allow-scripts allow-forms');
   frame.addEventListener('load', () => {
-    if (frame.getAttribute('src')?.startsWith('/web-preview-popup.html'))
+    if (new URL(frame.src, window.location.href).pathname.endsWith('/web-preview-popup.html'))
       showBrowserNotice(frame, null);
   });
   return frame;
@@ -91,7 +92,7 @@ export async function mountBoardBrowser(
     if (preview.url) query.set('url', preview.url);
     // The outer document is tlbx's trusted browser shell; its content frame stays sandboxed.
     frame.removeAttribute('sandbox');
-    frame.src = `/web-preview-popup.html?${query}`;
+    frame.src = wrapConnectWorkspaceUrl(`/web-preview-popup.html?${query}`);
     frame.removeAttribute('data-error');
     frame.title = t('boards.browser');
   } catch (error) {

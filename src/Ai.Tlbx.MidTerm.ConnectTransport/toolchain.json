@@ -1,0 +1,15 @@
+{
+  "version": "go1.27.3",
+  "minimumVersion": "1.26.0",
+  "source": "https://go.dev/dl/?mode=json&include=all",
+  "archives": [
+    { "os": "windows", "arch": "amd64", "filename": "go1.27.3.windows-amd64.zip", "sha256": "f26081f438319757f8a1b46d7d0b2c5ec7583d4038e485e0aa725cfde7885fff" },
+    { "os": "windows", "arch": "386", "filename": "go1.27.3.windows-386.zip", "sha256": "fa6fa87202fdd0421bf1f0daab5192d244840f0728398ee35a56f231d54363be" },
+    { "os": "windows", "arch": "arm64", "filename": "go1.27.3.windows-arm64.zip", "sha256": "c507872ff21f8a7cd3c1c217b059c6f7271a4a9d8e692810ef9dd3e1f601197c" },
+    { "os": "linux", "arch": "amd64", "filename": "go1.27.3.linux-amd64.tar.gz", "sha256": "65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40" },
+    { "os": "linux", "arch": "arm64", "filename": "go1.27.3.linux-arm64.tar.gz", "sha256": "a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49" },
+    { "os": "linux", "arch": "386", "filename": "go1.27.3.linux-386.tar.gz", "sha256": "cfc243057c03dd131413b91269d16b5061f87f312059c1ed78681cbb95d6afbf" },
+    { "os": "darwin", "arch": "amd64", "filename": "go1.27.3.darwin-amd64.tar.gz", "sha256": "b6f8e931e4ab497fcde6da8ae4499a58f9d258e55c8a80824a516eae5950a750" },
+    { "os": "darwin", "arch": "arm64", "filename": "go1.27.3.darwin-arm64.tar.gz", "sha256": "dd3908cf20959d798c1e06ebe5b72213f0505ce01373b40ce3110975a6cd99c2" }
+  ]
+}

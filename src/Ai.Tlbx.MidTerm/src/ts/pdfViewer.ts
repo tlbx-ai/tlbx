@@ -165,7 +165,13 @@ const resize = new ResizeObserver(() => {
     '--toolbar-height',
     `${toolbar.getBoundingClientRect().height}px`,
   );
-  if (pageCount && zoom.value.startsWith('page-')) viewer.currentScaleValue = zoom.value;
+  if (
+    pageCount &&
+    container.clientWidth > 0 &&
+    container.clientHeight > 0 &&
+    zoom.value.startsWith('page-')
+  )
+    viewer.currentScaleValue = zoom.value;
 });
 resize.observe(toolbar);
 resize.observe(container);
@@ -174,7 +180,8 @@ bus.on('pagesinit', () => {
   copyText.disabled = !selectedText();
   element('previous').setAttribute('disabled', '');
   (element('next') as HTMLButtonElement).disabled = pageCount <= 1;
-  viewer.currentScaleValue = 'page-width';
+  if (container.clientWidth > 0 && container.clientHeight > 0)
+    viewer.currentScaleValue = 'page-width';
   status.hidden = true;
 });
 bus.on('pagechanging', ({ pageNumber }: { pageNumber: number }) => {
