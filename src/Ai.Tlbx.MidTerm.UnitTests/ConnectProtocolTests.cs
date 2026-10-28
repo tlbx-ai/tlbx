@@ -1,6 +1,8 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using Ai.Tlbx.MidTerm.Services.Connect;
+using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -75,6 +77,8 @@ public sealed class ConnectProtocolTests
     [InlineData("/api/connect/status")]
     [InlineData("/API/CONNECT/pair?x=1")]
     [InlineData("/x%0d%0aInjected")]
+    [InlineData("/webpreview/0123456789abcdefabcd/")]
+    [InlineData("/%77ebpreview/0123456789abcdefabcd/")]
     public void TunnelRejectsAuthorityEscapesTraversalAndRemoteConfiguration(string path)
     {
         Assert.Throws<InvalidDataException>(() => ConnectRequestPolicy.ResolvePath(new Uri("https://127.0.0.1:2100/"), path));
@@ -113,4 +117,61 @@ public sealed class ConnectProtocolTests
     [Fact]
     public void PairingAllowsExplicitLocalDevelopmentOrigin() =>
         Assert.Equal("http://127.0.0.1:5215/", ConnectRequestPolicy.NormalizeServerUrl("http://127.0.0.1:5215").AbsoluteUri);
+
+    [Theory]
+    [InlineData("/api/settings", "/webpreview/0123456789abcdefabcd/api/settings")]
+    [InlineData("/ws/mux", "/webpreview/0123456789abcdefabcd/ws/mux")]
+    [InlineData("/index.html", "/webpreview/0123456789abcdefabcd/index.html")]
+    [InlineData("/webpreview/0123456789abcdefabcd/api/data", "/webpreview/0123456789abcdefabcd/api/data")]
+    public void PreviewRootRequestsAlwaysRemainOnScopedNativePreviewPort(string path, string expected)
+    {
+        var destination = ConnectRequestPolicy.ResolvePreviewPath(new Uri("https://127.0.0.1:2101/"), path, "0123456789abcdefabcd");
+        Assert.Equal(2101, destination.Port);
+        Assert.Equal(expected, destination.AbsolutePath);
+    }
+
+    [Theory]
+    [InlineData("/webpreview/11111111111111111111/api/data")]
+    [InlineData("//evil.example/webpreview/0123456789abcdefabcd/")]
+    [InlineData("/webpreview/0123456789abcdefabcd/../../api/settings")]
+    [InlineData("/webpreview/%31%31%31%31%31%31%31%31%31%31%31%31%31%31%31%31%31%31%31%31/")]
+    public void PreviewCannotEscapeItsBoundRoute(string path) =>
+        Assert.Throws<InvalidDataException>(() => ConnectRequestPolicy.ResolvePreviewPath(
+            new Uri("https://127.0.0.1:2101/"), path, "0123456789abcdefabcd"));
+
+    [Fact]
+    public void NativePreviewCommandSocketRequiresRegistryTokenForTheBoundRoute()
+    {
+        var registry = new BrowserPreviewRegistry();
+        var client = registry.Create("session", "default", "0123456789abcdefabcd");
+        var correct = new Uri($"https://127.0.0.1:2101/ws/browser?previewId={client.PreviewId}&token={client.PreviewToken}");
+        Assert.True(ConnectRequestPolicy.AuthorizePreviewSocket(registry, correct, "0123456789abcdefabcd"));
+        Assert.False(ConnectRequestPolicy.AuthorizePreviewSocket(registry, correct, "11111111111111111111"));
+        Assert.False(ConnectRequestPolicy.AuthorizePreviewSocket(registry,
+            new Uri(correct.AbsoluteUri + "&routeKey=11111111111111111111"), "0123456789abcdefabcd"));
+        Assert.False(ConnectRequestPolicy.AuthorizePreviewSocket(registry,
+            new Uri("https://127.0.0.1:2101/ws/browser?previewId=wrong&token=wrong"), "0123456789abcdefabcd"));
+    }
+
+    [Fact]
+    public void PreviewCookieJarsCannotShareCredentialsWithOtherPreviewRoutes()
+    {
+        using var first = new ConnectPreviewClient();
+        using var second = new ConnectPreviewClient();
+        var origin = new Uri("https://127.0.0.1:2101/");
+        first.Cookies.SetCookies(origin, "mt-preview-example=preview-id:preview-token; Secure; HttpOnly; Path=/");
+        Assert.Contains("mt-preview-example=", first.Cookies.GetCookieHeader(origin), StringComparison.Ordinal);
+        Assert.Empty(second.Cookies.GetCookieHeader(origin));
+        Assert.DoesNotContain(AuthService.SessionCookieName + "=", first.Cookies.GetCookieHeader(origin), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PreviewPreservesUpstreamBearerAuthWithoutAcceptingBrowserCookiesOrInternalProxyHeaders()
+    {
+        Assert.False(ConnectRequestPolicy.AllowHeader("Authorization"));
+        Assert.True(ConnectRequestPolicy.AllowPreviewHeader("Authorization"));
+        Assert.False(ConnectRequestPolicy.AllowPreviewHeader("Cookie"));
+        Assert.False(ConnectRequestPolicy.AllowPreviewHeader("Host"));
+        Assert.False(ConnectRequestPolicy.AllowPreviewHeader("X-MidTerm-Internal-Proxy"));
+    }
 }

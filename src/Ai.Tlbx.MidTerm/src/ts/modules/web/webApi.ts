@@ -5,6 +5,7 @@
  */
 
 import { getOrCreateTabId } from '../../utils/cookies';
+import { getConnectPreviewIntegration } from './connectPreview';
 
 export interface WebPreviewSessionInfo {
   sessionId: string;
@@ -308,7 +309,10 @@ export async function createBrowserPreviewClient(
     if (!res.ok) {
       return null;
     }
-    return (await res.json()) as BrowserPreviewClientResponse;
+    const client = (await res.json()) as BrowserPreviewClientResponse;
+    const connect = getConnectPreviewIntegration();
+    if (connect) client.origin = connect.origin;
+    return client;
   } catch {
     return null;
   }

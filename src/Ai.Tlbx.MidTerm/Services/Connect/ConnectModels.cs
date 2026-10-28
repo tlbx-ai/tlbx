@@ -40,6 +40,8 @@ internal sealed class ConnectEnvelope
     public string Type { get; set; } = "";
     public string Id { get; set; } = "";
     public string? Method { get; set; }
+    public string? Surface { get; set; }
+    public string? PreviewRouteKey { get; set; }
     public string? Path { get; set; }
     public Dictionary<string, string>? Headers { get; set; }
     public string? Body { get; set; }

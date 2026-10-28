@@ -5,6 +5,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services.Hosting;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Startup;
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
@@ -14,6 +15,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 {
     private const int MaximumBody = 20 * 1024 * 1024;
     private readonly Uri _origin;
+    private readonly Uri? _previewOrigin;
+    private readonly BrowserPreviewRegistry _previewRegistry;
     private readonly string _cookie;
     private readonly HttpClient _http;
     private readonly AuthService _auth;
@@ -21,16 +24,23 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private readonly CancellationTokenSource _lifetime;
     private readonly ConnectFrames _frames = new();
     private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly SemaphoreSlim _requestSlots = new(16, 16);
     private readonly ConcurrentDictionary<string, ConnectWebSocketRelay> _sockets = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Task> _requests = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ConnectPreviewClient> _previews = new(StringComparer.Ordinal);
+    private readonly Lock _previewGate = new();
+    private readonly Lock _socketGate = new();
     private bool _disposed;
 
-    public ConnectTunnel(ServerBindingInfo binding, AuthService auth, HttpClient http,
+    public ConnectTunnel(ServerBindingInfo binding, BrowserPreviewOriginService previewOrigin, BrowserPreviewRegistry previewRegistry,
+        AuthService auth, HttpClient http,
         Func<ConnectSignal, CancellationToken, Task> send, CancellationToken ct)
     {
         var host = binding.BindAddress is "0.0.0.0" or "*" or "+" ? "127.0.0.1"
             : binding.BindAddress == "::" ? "::1" : binding.BindAddress;
         _origin = new UriBuilder("https", host, binding.Port).Uri;
+        _previewOrigin = previewOrigin.IsEnabled ? new UriBuilder("https", host, previewOrigin.PreviewPort).Uri : null;
+        _previewRegistry = previewRegistry;
         _auth = auth;
         _cookie = auth.CreateSessionToken();
         _send = send;
@@ -66,8 +76,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
             return DispatchSocketAsync(message, _lifetime.Token);
         if (message.Type is not ("http" or "ws-open"))
             throw new InvalidDataException("Unsupported Connect request type.");
-        if (_requests.Count >= 16 || _requests.ContainsKey(message.Id))
-            throw new InvalidDataException("Connect request concurrency limit exceeded.");
+        if (_requests.ContainsKey(message.Id)) throw new InvalidDataException("Duplicate Connect request identifier.");
+        if (_requests.Count >= 128) return RejectBusyAsync(message);
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_requests.TryAdd(message.Id, completion.Task))
             throw new InvalidDataException("Duplicate Connect request identifier.");
@@ -77,8 +87,11 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 
     private async Task CompleteRequestAsync(ConnectEnvelope message, TaskCompletionSource completion)
     {
+        var entered = false;
         try
         {
+            await _requestSlots.WaitAsync(_lifetime.Token);
+            entered = true;
             if (message.Type == "http") await ForwardHttpAsync(message, _lifetime.Token);
             else await OpenSocketAsync(message, _lifetime.Token);
         }
@@ -102,14 +115,24 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         }
         finally
         {
+            if (entered) _requestSlots.Release();
             _requests.TryRemove(message.Id, out _);
             completion.TrySetResult();
         }
     }
 
+    private Task RejectBusyAsync(ConnectEnvelope message) => SendEnvelopeAsync(message.Type == "http"
+        ? new ConnectEnvelope
+        {
+            Type = "http-result", Id = message.Id, Status = 429,
+            Headers = new(StringComparer.OrdinalIgnoreCase) { ["Content-Type"] = "text/plain; charset=utf-8", ["Retry-After"] = "1" },
+            Body = Convert.ToBase64String(Encoding.UTF8.GetBytes("Too many pending requests. Try again shortly."))
+        }
+        : new ConnectEnvelope { Type = "ws-close", Id = message.Id, Code = 1008, Reason = "Too many pending requests." }, _lifetime.Token);
+
     private async Task ForwardHttpAsync(ConnectEnvelope message, CancellationToken ct)
     {
-        var destination = ConnectRequestPolicy.ResolvePath(_origin, message.Path);
+        var (destination, preview) = ResolveDestination(message);
         var method = message.Method?.ToUpperInvariant() ?? "GET";
         if (method is not ("GET" or "HEAD" or "POST" or "PUT" or "PATCH" or "DELETE" or "OPTIONS"))
             throw new InvalidDataException("Unsupported HTTP method.");
@@ -127,13 +150,19 @@ internal sealed class ConnectTunnel : IAsyncDisposable
             {
                 if (value.Length > 16384 || value.Any(c => c is '\r' or '\n'))
                     throw new InvalidDataException("Invalid Connect request header.");
-                if (name.Equals("Accept-Encoding", StringComparison.OrdinalIgnoreCase) || !ConnectRequestPolicy.AllowHeader(name)) continue;
+                if (name.Equals("Accept-Encoding", StringComparison.OrdinalIgnoreCase)
+                    || !(preview is null ? ConnectRequestPolicy.AllowHeader(name) : ConnectRequestPolicy.AllowPreviewHeader(name))) continue;
                 if (!request.Headers.TryAddWithoutValidation(name, value) && request.Content is not null)
                     request.Content.Headers.TryAddWithoutValidation(name, value);
             }
         }
-        request.Headers.Add("Cookie", $"{AuthService.SessionCookieName}={_cookie}");
-        using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
+        if (preview is null) request.Headers.Add("Cookie", $"{AuthService.SessionCookieName}={_cookie}");
+        else
+        {
+            request.Headers.Add("Origin", _previewOrigin!.GetLeftPart(UriPartial.Authority));
+            request.Headers.Referrer = new Uri(_previewOrigin, "/webpreview/" + message.PreviewRouteKey + "/");
+        }
+        using var response = await (preview?.Http ?? _http).SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var header in response.Headers.Concat(response.Content.Headers))
         {
@@ -143,7 +172,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
                 || !ConnectRequestPolicy.AllowHeader(header.Key)) continue;
             headers[header.Key] = string.Join(", ", header.Value);
         }
-        if (response.Headers.Location is { IsAbsoluteUri: true } location && location.Authority == _origin.Authority)
+        if (response.Headers.Location is { IsAbsoluteUri: true } location && location.Authority == destination.Authority)
             headers["Location"] = location.PathAndQuery;
         await using var source = await response.Content.ReadAsStreamAsync(ct);
         var bytes = await ReadBoundedAsync(source, MaximumBody, ct);
@@ -156,9 +185,12 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 
     private async Task OpenSocketAsync(ConnectEnvelope message, CancellationToken ct)
     {
-        if (_sockets.Count >= 16 || _sockets.ContainsKey(message.Id))
-            throw new InvalidDataException("Connect WebSocket limit exceeded.");
-        var destination = ConnectRequestPolicy.ResolvePath(_origin, message.Path);
+        var (destination, preview) = ResolveDestination(message);
+        if (preview is not null && destination.AbsolutePath == "/ws/browser")
+        {
+            if (!ConnectRequestPolicy.AuthorizePreviewSocket(_previewRegistry, destination, message.PreviewRouteKey!))
+                throw new InvalidDataException("The browser command channel requires this preview's credentials.");
+        }
         var builder = new UriBuilder(destination) { Scheme = "wss" };
         var socket = new ClientWebSocket();
         var owner = new ConnectWebSocketRelay(socket, message.Id, SendEnvelopeAsync, MaximumBody);
@@ -167,14 +199,25 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         try
         {
             socket.Options.RemoteCertificateValidationCallback = static (_, cert, _, _) => IsOwnCertificate(cert);
-            socket.Options.SetRequestHeader("Cookie", $"{AuthService.SessionCookieName}={_cookie}");
+            if (preview is null) socket.Options.SetRequestHeader("Cookie", $"{AuthService.SessionCookieName}={_cookie}");
+            else
+            {
+                var cookie = preview.Cookies.GetCookieHeader(destination);
+                if (!string.IsNullOrEmpty(cookie)) socket.Options.SetRequestHeader("Cookie", cookie);
+                socket.Options.SetRequestHeader("Origin", _previewOrigin!.GetLeftPart(UriPartial.Authority));
+                socket.Options.SetRequestHeader("Referer", new Uri(_previewOrigin, "/webpreview/" + message.PreviewRouteKey + "/").AbsoluteUri);
+            }
             if (message.Protocols is not null)
             {
                 if (message.Protocols.Length > 8) throw new InvalidDataException("Too many WebSocket protocols.");
                 foreach (var protocol in message.Protocols) socket.Options.AddSubProtocol(protocol);
             }
-            registered = _sockets.TryAdd(message.Id, owner);
-            if (!registered) throw new InvalidDataException("Duplicate Connect WebSocket identifier.");
+            lock (_socketGate)
+            {
+                if (_sockets.Count >= 16) throw new InvalidDataException("Connect WebSocket limit exceeded.");
+                registered = _sockets.TryAdd(message.Id, owner);
+                if (!registered) throw new InvalidDataException("Duplicate Connect WebSocket identifier.");
+            }
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeout.CancelAfter(TimeSpan.FromSeconds(15));
             await socket.ConnectAsync(builder.Uri, timeout.Token);
@@ -201,6 +244,32 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         finally
         {
             _sockets.TryRemove(id, out _);
+        }
+    }
+
+    internal (Uri Destination, ConnectPreviewClient? Preview) ResolveDestination(ConnectEnvelope message)
+    {
+        if (message.Surface is null or "main")
+            return (ConnectRequestPolicy.ResolvePath(_origin, message.Path), null);
+        if (message.Surface != "preview" || _previewOrigin is null)
+            throw new InvalidDataException("Unsupported Connect surface.");
+        var destination = ConnectRequestPolicy.ResolvePreviewPath(_previewOrigin, message.Path, message.PreviewRouteKey);
+        lock (_previewGate)
+        {
+            if (!_previews.TryGetValue(message.PreviewRouteKey!, out var preview))
+            {
+                if (!_previewRegistry.HasActiveRoute(message.PreviewRouteKey!))
+                    throw new InvalidDataException("The preview route is no longer registered.");
+                foreach (var stale in _previews.Keys.Where(key => !_previewRegistry.HasActiveRoute(key)).ToArray())
+                {
+                    _previews[stale].Dispose();
+                    _previews.Remove(stale);
+                }
+                if (_previews.Count >= 32) throw new InvalidDataException("Connect preview limit exceeded.");
+                preview = new ConnectPreviewClient();
+                _previews.Add(message.PreviewRouteKey!, preview);
+            }
+            return (destination, preview);
         }
     }
 
@@ -244,8 +313,10 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         foreach (var owner in sockets) owner.Abort();
         await Task.WhenAll(_requests.Values);
         foreach (var owner in sockets) await owner.DisposeAsync();
+        foreach (var preview in _previews.Values) preview.Dispose();
         _auth.RevokeSessionToken(_cookie);
         _sendGate.Dispose();
+        _requestSlots.Dispose();
         _lifetime.Dispose();
     }
 

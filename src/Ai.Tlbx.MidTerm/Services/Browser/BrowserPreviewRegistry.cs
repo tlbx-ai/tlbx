@@ -91,6 +91,12 @@ public sealed class BrowserPreviewRegistry
         return RemoveMatching(entry => string.Equals(entry.SessionId, sessionId, StringComparison.Ordinal));
     }
 
+    internal bool HasActiveRoute(string routeKey)
+    {
+        CleanupExpired();
+        return _previews.Values.Any(entry => string.Equals(entry.RouteKey, routeKey, StringComparison.Ordinal));
+    }
+
     private int RemoveMatching(Func<RegisteredPreview, bool> predicate)
     {
         var removed = 0;

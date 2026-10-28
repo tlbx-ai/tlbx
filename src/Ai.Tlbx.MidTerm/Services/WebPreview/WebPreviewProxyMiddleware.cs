@@ -122,6 +122,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var path=location.pathname||"";
             if(path===P||path.indexOf(P+"/")===0)return "";
             var idx=path.indexOf(P+"/");
+            if(idx<0&&path.endsWith(P))idx=path.length-P.length;
             if(idx>0)return path.slice(0,idx);
             var match=path.match(/^\/webpreview\/[^/]+/);
             return match?match[0]:"";
@@ -131,7 +132,10 @@ public sealed partial class WebPreviewProxyMiddleware
             try{
               BP=mtProxyPrefix();PP=BP+P;E=PP+"/_ext?u=";
               var baseEl=document.querySelector("base");
-              if(baseEl&&BP)baseEl.setAttribute("href",PP+"/");
+              if(baseEl&&BP){
+                var nativeBase=baseEl.getAttribute("href")||P+"/";
+                if(nativeBase===P||nativeBase.indexOf(P+"/")===0)baseEl.setAttribute("href",BP+nativeBase);
+              }
               else if(baseEl){
                 var baseHref=baseEl.getAttribute("href")||"";
                 if(baseHref.indexOf("/webpreview/")===0&&baseHref.indexOf(P+"/")!==0){
@@ -266,12 +270,17 @@ public sealed partial class WebPreviewProxyMiddleware
           ensureStore("sessionStorage");
           dprop(navigator,"cookieEnabled",function(){return true;});
           // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
+          function mtProxyUrl(u,p){
+            return u===p||u.indexOf(p+"/")===0||u.indexOf(p+"?")===0||u.indexOf(p+"#")===0;
+          }
           function r(u){
             if(typeof u!=="string")return u;
             // Non-network schemes must not recurse through relative URL resolution.
             if(u.startsWith("#")||(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:|^wss?:/i.test(u)))return u;
             if(u.startsWith("//"))return r(location.protocol+u);
-            if(u.startsWith(PP+"/")||u.startsWith(location.origin+PP+"/"))return ar(u);
+            if(BP&&mtProxyUrl(u,P))return ar(BP+u);
+            if(BP&&mtProxyUrl(u,location.origin+P))return ar(location.origin+BP+u.substring(location.origin.length));
+            if(mtProxyUrl(u,PP)||mtProxyUrl(u,location.origin+PP))return ar(u);
             if(window.__mtExternalDocument){
               try{return ar(E+encodeURIComponent(new URL(u,window.__mtDocumentUrl).href));}catch(e){}
             }
@@ -423,23 +432,38 @@ public sealed partial class WebPreviewProxyMiddleware
             mtsw.register=function(u,o){return swr(r(u),o);};
           }
           // === Navigation APIs ===
+          function mtUpstreamSearch(search){
+            if(!search)return "";
+            var entries=search.substring(1).split("&").filter(function(entry){
+              var key=entry.split("=",1)[0];
+              try{key=decodeURIComponent(key.replace(/\+/g," "));}catch(e){}
+              return ["__mtPreviewId","__mtPreviewToken","__mtTargetRevision","__mtReloadToken","__mtSubframe"].indexOf(key)<0;
+            });
+            return entries.length?"?"+entries.join("&"):"";
+          }
           function curU(){
-            if(location.pathname===P+"/_ext"){
+            if(location.pathname===PP+"/_ext"){
               try{
                 var ext=new URLSearchParams(location.search).get("u");
-                if(ext)return ext;
+                if(ext){
+                  var external=new URL(ext);
+                  external.search=mtUpstreamSearch(external.search);
+                  if(location.hash)external.hash=location.hash;
+                  return external.href;
+                }
               }catch(e){}
             }
             var path=location.pathname;
-            if(path.indexOf(P+"/")==0)path=path.substring(P.length);
-            else if(path===P)path="/";
-            return (window.__mtTargetOrigin||"")+path+location.search+location.hash;
+            if(path.indexOf(PP+"/")==0)path=path.substring(PP.length);
+            else if(path===PP)path="/";
+            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(location.search)+location.hash;
           }
           // Application Location is upstream-facing; the bridge keeps the native proxy URL.
           function mtNavigationUrl(value){
             var text=String(value);
             // HTML rewriting may already have converted an inline redirect.
-            if(text.indexOf(P+"/")===0||text.indexOf(location.origin+P+"/")===0)return r(text);
+            if(mtProxyUrl(text,P)||mtProxyUrl(text,PP)
+              ||mtProxyUrl(text,location.origin+P)||mtProxyUrl(text,location.origin+PP))return r(text);
             return r(new URL(text,curU()).href);
           }
           var mtLocationView={};

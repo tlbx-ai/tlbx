@@ -5,6 +5,7 @@ using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services.Hosting;
+using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
@@ -16,6 +17,8 @@ public sealed class ConnectService : BackgroundService
     private readonly SettingsService _settings;
     private readonly AuthService _auth;
     private readonly ServerBindingInfo _binding;
+    private readonly BrowserPreviewOriginService _previewOrigin;
+    private readonly BrowserPreviewRegistry _previewRegistry;
     private readonly HttpClientHandler _registrationHandler = new() { AllowAutoRedirect = false };
     private readonly HttpClientHandler _loopbackHandler = ConnectTunnel.CreateLoopbackHandler();
     private readonly HttpClient _registrationHttp;
@@ -38,11 +41,14 @@ public sealed class ConnectService : BackgroundService
 
     [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient",
         Justification = "This service is a process singleton. Its two lifetime clients isolate public TLS validation from pinned local requests.")]
-    public ConnectService(SettingsService settings, AuthService auth, ServerBindingInfo binding)
+    public ConnectService(SettingsService settings, AuthService auth, ServerBindingInfo binding,
+        BrowserPreviewOriginService previewOrigin, BrowserPreviewRegistry previewRegistry)
     {
         _settings = settings;
         _auth = auth;
         _binding = binding;
+        _previewOrigin = previewOrigin;
+        _previewRegistry = previewRegistry;
         _registrationHttp = new HttpClient(_registrationHandler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(20) };
         _loopbackHttp = new HttpClient(_loopbackHandler, disposeHandler: false) { Timeout = TimeSpan.FromSeconds(60) };
         var stored = settings.SecretStorage.GetSecret(SecretKey);
@@ -248,7 +254,7 @@ public sealed class ConnectService : BackgroundService
                 case "connect":
                     if (_connections.Count >= 8 || _connections.ContainsKey(id))
                         throw new InvalidDataException("Connect peer limit exceeded.");
-                    var owner = new ConnectionOwner(_binding, _auth, _loopbackHttp, ct);
+                    var owner = new ConnectionOwner(_binding, _previewOrigin, _previewRegistry, _auth, _loopbackHttp, ct);
                     if (!_connections.TryAdd(id, owner)) { await owner.DisposeAsync(); break; }
                     try
                     {
@@ -372,10 +378,11 @@ public sealed class ConnectService : BackgroundService
         private readonly CancellationTokenSource _lifetime;
         public ConnectTunnel Tunnel { get; }
 
-        public ConnectionOwner(ServerBindingInfo binding, AuthService auth, HttpClient http, CancellationToken ct)
+        public ConnectionOwner(ServerBindingInfo binding, BrowserPreviewOriginService previewOrigin, BrowserPreviewRegistry previewRegistry,
+            AuthService auth, HttpClient http, CancellationToken ct)
         {
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            Tunnel = new ConnectTunnel(binding, auth, http, SendAsync, _lifetime.Token);
+            Tunnel = new ConnectTunnel(binding, previewOrigin, previewRegistry, auth, http, SendAsync, _lifetime.Token);
         }
 
         public async Task StartAsync(string id, string settingsDirectory, string logDirectory, ConnectSignal connect,

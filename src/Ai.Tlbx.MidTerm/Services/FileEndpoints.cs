@@ -374,14 +374,14 @@ public static class FileEndpoints
         }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(64 * 1024 * 1024))
             .Produces<FileSaveResponse>().Produces<FileDocumentErrorResponse>(409);
 
-        readers.MapGet("/view", async (string path, string? sessionId) =>
+        readers.MapGet("/view", async (HttpContext context, string path, string? sessionId) =>
         {
-            return await ServeFileAsync(path, inline: true, sessionId, fileService);
+            return await ServeFileAsync(context, path, inline: true, sessionId, fileService);
         });
 
-        readers.MapGet("/download", async (string path, string? sessionId) =>
+        readers.MapGet("/download", async (HttpContext context, string path, string? sessionId) =>
         {
-            return await ServeFileAsync(path, inline: false, sessionId, fileService);
+            return await ServeFileAsync(context, path, inline: false, sessionId, fileService);
         });
 
         readers.MapGet("/resolve", async (string sessionId, string path, bool deep = false, CancellationToken ct = default) =>
@@ -555,6 +555,7 @@ public static class FileEndpoints
     }
 
     private static async Task<IResult> ServeFileAsync(
+        HttpContext context,
         string path,
         bool inline,
         string? sessionId,
@@ -571,14 +572,7 @@ public static class FileEndpoints
 
         try
         {
-            var fileName = Path.GetFileName(path);
-            var mimeType = FileService.GetMimeType(fileName);
-
-            return Results.File(
-                fullPath,
-                mimeType,
-                fileDownloadName: inline ? null : fileName,
-                enableRangeProcessing: true);
+            return CreateFileResponse(context, fullPath, Path.GetFileName(path), inline);
         }
         catch (UnauthorizedAccessException)
         {
@@ -588,6 +582,22 @@ public static class FileEndpoints
         {
             return Results.Problem(ex.Message);
         }
+    }
+
+    internal static IResult CreateFileResponse(HttpContext context, string fullPath, string fileName, bool inline)
+    {
+        var mimeType = FileService.GetMimeType(fileName);
+        if (inline && mimeType is "text/html" or "application/xhtml+xml" or "image/svg+xml"
+            or "text/xml" or "application/xml")
+        {
+            // User files are documents, never trusted application pages. Sandboxing
+            // blocks scripts and gives an embedded active document an opaque origin.
+            context.Response.Headers.ContentSecurityPolicy = "sandbox";
+            context.Response.Headers.XContentTypeOptions = "nosniff";
+        }
+
+        return Results.File(fullPath, mimeType,
+            fileDownloadName: inline ? null : fileName, enableRangeProcessing: true);
     }
 
     private static IEnumerable<LauncherDirectoryEntry> GetLauncherRootEntries()
