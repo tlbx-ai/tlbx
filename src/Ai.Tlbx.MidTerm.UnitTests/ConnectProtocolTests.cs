@@ -74,8 +74,6 @@ public sealed class ConnectProtocolTests
     [InlineData("/%2f%2fevil.example/")]
     [InlineData("/a/../api/connect/pair")]
     [InlineData("/%252e%252e/api/connect/pair")]
-    [InlineData("/api/connect/status")]
-    [InlineData("/API/CONNECT/pair?x=1")]
     [InlineData("/x%0d%0aInjected")]
     [InlineData("/webpreview/0123456789abcdefabcd/")]
     [InlineData("/%77ebpreview/0123456789abcdefabcd/")]

@@ -203,6 +203,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<ShutdownService>();
         builder.Services.AddSingleton<HubService>();
         builder.Services.AddSingleton<Services.Connect.ConnectService>();
+        builder.Services.AddSingleton<Services.Connect.ConnectProvisioningGate>();
         builder.Services.AddHostedService(static services => services.GetRequiredService<Services.Connect.ConnectService>());
         builder.Services.AddSingleton<HubMuxWebSocketHandler>();
         builder.Services.AddSingleton<HubStateWebSocketHandler>();
@@ -487,6 +488,7 @@ public static class ServerSetup
         BrowserPreviewRegistry previewRegistry)
     {
         app.UseResponseCompression();
+        Services.Connect.ConnectLocalAccessPolicy.Configure(app, previewOriginService);
 
         // HSTS middleware - always enabled (HTTPS only)
         app.Use(async (context, next) =>
