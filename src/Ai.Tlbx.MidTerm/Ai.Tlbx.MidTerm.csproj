@@ -213,7 +213,7 @@
     <EmbeddedResource Include="wwwroot\**\*.br" />
     <EmbeddedResource Include="wwwroot\**\*.png" />
     <EmbeddedResource Include="wwwroot\**\*.zip" />
-    <EmbeddedResource Include="wwwroot\pdf\**\*.wasm;wwwroot\pdf\**\*.bcmap;wwwroot\pdf\**\*.pfb;wwwroot\pdf\**\*.ttf;wwwroot\pdf\**\*.icc" />
+    <EmbeddedResource Include="wwwroot\pdf\**\*.wasm;wwwroot\pdf\**\*.bcmap;wwwroot\pdf\**\*.pfb;wwwroot\pdf\**\*.ttf;wwwroot\pdf\**\*.icc;wwwroot\pdf\**\*.gif" />
     <EmbeddedResource Include="wwwroot\fonts\CascadiaCode-Regular.woff2" />
     <EmbeddedResource Include="wwwroot\fonts\CascadiaCode-SemiBold.woff2" />
     <EmbeddedResource Include="wwwroot\fonts\JetBrainsMono-Regular.woff2" />
