@@ -131,6 +131,17 @@ try {
     }
     Write-Host "  /api/graphs -> $graphsStatus" -ForegroundColor Green
 
+    # Read the embedded PDF image from the standalone published executable, never source wwwroot.
+    $pdfLoadingPath = Join-Path $settingsDir 'pdf-loading-icon.gif'
+    $pdfLoading = Invoke-WebRequest "https://127.0.0.1:$port/pdf/images/loading-icon.gif" -WebSession $probeSession -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 5 -OutFile $pdfLoadingPath -PassThru
+    $pdfLoadingBytes = [IO.File]::ReadAllBytes($pdfLoadingPath)
+    if ([int]$pdfLoading.StatusCode -ne 200 -or $pdfLoading.Headers['Content-Type'] -ne 'image/gif' -or
+        $pdfLoadingBytes.Length -lt 6 -or
+        [Text.Encoding]::ASCII.GetString($pdfLoadingBytes, 0, 6) -notin @('GIF87a', 'GIF89a')) {
+        throw 'AOT smoke probe FAILED: embedded /pdf/images/loading-icon.gif was not served as a valid GIF'
+    }
+    Write-Host '  /pdf/images/loading-icon.gif -> 200 image/gif (embedded GIF signature)' -ForegroundColor Green
+
     $dbPath = Join-Path $settingsDir "action-graphs.db"
     if (-not (Test-Path $dbPath)) {
         throw "AOT smoke probe FAILED: SQLite database was not created at $dbPath"
