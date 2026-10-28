@@ -1,3 +1,5 @@
+import { wrapConnectWorkspaceUrl } from '../web/connectPreview';
+
 /** Isolate PDF rendering and its worker from the terminal's document/lifecycle. */
 export function createPdfView(
   viewUrl: string,
@@ -13,7 +15,7 @@ export function createPdfView(
     lang: document.documentElement.lang,
     scheme: document.documentElement.dataset.nativeColorScheme ?? 'dark',
   });
-  frame.src = `/pdf/index.html?${params}`;
+  frame.src = wrapConnectWorkspaceUrl(`/pdf/index.html?${params}`);
   if (escape) {
     frame.addEventListener('load', () => {
       frame.contentDocument?.addEventListener('keydown', (event) => {

@@ -25,6 +25,7 @@ import { createBrowserPreviewClient } from './webApi';
 import { isDevMode } from '../sidebar/voiceSection';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
 import { hideWebPreviewDockForDetach, openWebPreviewDock } from './webDock';
+import { wrapConnectWorkspaceUrl } from './connectPreview';
 
 const log = createLogger('webDetach');
 
@@ -239,7 +240,7 @@ export async function detachPreview(
   });
 
   try {
-    popup.location.replace(popupUrl);
+    popup.location.replace(wrapConnectWorkspaceUrl(popupUrl));
   } catch {
     popup.close();
     return { success: false, error: 'tlbx could not navigate the detached preview window.' };

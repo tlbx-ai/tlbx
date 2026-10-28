@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   getConnectPreviewIntegration,
   wrapConnectPreviewUrl,
+  wrapConnectWorkspaceUrl,
   type ConnectPreviewIntegration,
 } from './connectPreview';
 
@@ -34,6 +35,26 @@ describe('Connect scoped preview transport hook', () => {
     vi.stubGlobal('window', { location: { origin: 'https://native.example' } });
     const url = 'https://native.example:2101/webpreview/route/';
     expect(wrapConnectPreviewUrl(url)).toBe(url);
+    expect(wrapConnectWorkspaceUrl('/pdf/index.html?file=document.pdf#page=2')).toBe(
+      '/pdf/index.html?file=document.pdf#page=2',
+    );
+  });
+
+  it('keeps trusted native URLs unchanged when the optional workspace hook is absent', () => {
+    install();
+    const url = '/web-preview-popup.html?session=fixture&previewToken=fixture-token';
+    expect(wrapConnectWorkspaceUrl(url)).toBe(url);
+  });
+
+  it.each([
+    '/web-preview-popup.html?session=fixture&previewToken=fixture-token',
+    '/pdf/index.html?file=%2Fapi%2Ffiles%2Fview%3Fpath%3Ddocument.pdf#page=2',
+    '/?board=fixture&handoff=1',
+  ])('routes trusted document navigation through the explicit workspace hook: %s', (url) => {
+    const workspaceUrl = vi.fn((value: string) => `/remote/connection${value}`);
+    install({ workspaceUrl });
+    expect(wrapConnectWorkspaceUrl(url)).toBe(`/remote/connection${url}`);
+    expect(workspaceUrl).toHaveBeenCalledExactlyOnceWith(url);
   });
 
   it('keeps scoped bootstrap credentials in the broker fragment', () => {

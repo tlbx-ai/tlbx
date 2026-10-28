@@ -3,6 +3,7 @@ export interface ConnectPreviewIntegration {
   origin: string;
   wrapUrl(url: string): string;
   fetch(url: string, init?: RequestInit): Promise<Response>;
+  workspaceUrl?(url: string): string;
 }
 
 declare global {
@@ -52,4 +53,10 @@ export function wrapConnectPreviewUrl(url: string): string {
     throw new Error('Connect preview transport returned a different origin.');
   }
   return wrapped;
+}
+
+/** Keep trusted tlbx documents inside the current Connect workspace namespace. */
+export function wrapConnectWorkspaceUrl(url: string): string {
+  const integration = getConnectPreviewIntegration();
+  return integration?.workspaceUrl ? integration.workspaceUrl(url) : url;
 }
