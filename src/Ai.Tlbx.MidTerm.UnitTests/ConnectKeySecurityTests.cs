@@ -158,6 +158,44 @@ public sealed class ConnectKeySecurityTests
     }
 
     [Theory]
+    [InlineData("none")]
+    [InlineData("same-origin")]
+    [InlineData("same-site")]
+    [InlineData("cross-site")]
+    public void SetupDocumentCanBeOpenedDirectlyOrFromAnExternalLink(string site)
+    {
+        var context = LocalContext();
+        context.Request.Method = "GET"; context.Request.Path = "/connect.html";
+        context.Request.Headers.Remove("Origin");
+        context.Request.Headers["Sec-Fetch-Site"] = site;
+        context.Request.Headers["Sec-Fetch-Mode"] = "navigate";
+        context.Request.Headers["Sec-Fetch-Dest"] = "document";
+        Assert.True(ConnectLocalAccessPolicy.Allows(context, false));
+        Assert.False(ConnectLocalAccessPolicy.Allows(context, true));
+        context.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.3");
+        Assert.False(ConnectLocalAccessPolicy.Allows(context, false));
+    }
+
+    [Theory]
+    [InlineData("GET", "/connect.html", "navigate", "iframe")]
+    [InlineData("GET", "/connect.html", "cors", "empty")]
+    [InlineData("GET", "/api/connect/status", "navigate", "document")]
+    [InlineData("GET", "/connect-setup.js", "navigate", "document")]
+    [InlineData("POST", "/api/connect/unlock", "navigate", "document")]
+    [InlineData("POST", "/api/connect/generate", "navigate", "document")]
+    [InlineData("POST", "/connect.html", "navigate", "document")]
+    public void ExternalNavigationExceptionCannotReadApisEmbedOrMutate(string method, string path, string mode, string destination)
+    {
+        var context = LocalContext();
+        context.Request.Method = method; context.Request.Path = path;
+        context.Request.Headers.Remove("Origin");
+        context.Request.Headers["Sec-Fetch-Site"] = "cross-site";
+        context.Request.Headers["Sec-Fetch-Mode"] = mode;
+        context.Request.Headers["Sec-Fetch-Dest"] = destination;
+        Assert.False(ConnectLocalAccessPolicy.Allows(context, false));
+    }
+
+    [Theory]
     [InlineData("Forwarded")]
     [InlineData("X-Forwarded-For")]
     [InlineData("X-Forwarded-Host")]
