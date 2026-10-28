@@ -42,7 +42,7 @@ public sealed class ConnectRequestQueueTests
                         if (replies.Count == 129) complete.TrySetResult();
                     }
                     return Task.CompletedTask;
-                }, TestContext.Current.CancellationToken);
+                }, ConnectKeySecurityTests.CreateAuthenticatedPeer(), TestContext.Current.CancellationToken);
             var send = new ConnectFrames();
             for (var i = 0; i < 129; i++)
             {

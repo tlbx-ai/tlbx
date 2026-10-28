@@ -28,7 +28,7 @@ public sealed class ConnectPreviewLifecycleTests
             using var http = new HttpClient();
             await using var tunnel = new ConnectTunnel(new ServerBindingInfo(2100, "127.0.0.1"),
                 new BrowserPreviewOriginService(2100, 2101, true), registry, auth, http,
-                (_, _) => Task.CompletedTask, TestContext.Current.CancellationToken);
+                (_, _) => Task.CompletedTask, ConnectKeySecurityTests.CreateAuthenticatedPeer(), TestContext.Current.CancellationToken);
 
             ConnectPreviewClient? previous = null;
             for (var i = 0; i < 40; i++)

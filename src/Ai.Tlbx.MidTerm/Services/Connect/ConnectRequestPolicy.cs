@@ -50,9 +50,8 @@ internal static class ConnectRequestPolicy
         var queryIndex = path.IndexOf('?', StringComparison.Ordinal);
         var pathname = queryIndex < 0 ? path : path[..queryIndex];
         pathname = DecodePath(pathname);
-        if (!allowPreview && (pathname.Equals("/api/connect", StringComparison.OrdinalIgnoreCase)
-            || pathname.StartsWith("/api/connect/", StringComparison.OrdinalIgnoreCase)))
-            throw new InvalidDataException("Connect configuration requires a local login.");
+        if (ConnectLocalAccessPolicy.IsSetupPath(pathname))
+            throw new ConnectLocalAccessException();
         if (!allowPreview && (pathname.Equals("/webpreview", StringComparison.OrdinalIgnoreCase)
             || pathname.StartsWith("/webpreview/", StringComparison.OrdinalIgnoreCase)))
             throw new InvalidDataException("Web previews require their scoped Connect surface.");

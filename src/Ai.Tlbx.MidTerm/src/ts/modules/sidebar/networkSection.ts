@@ -13,6 +13,13 @@ const log = createLogger('networkSection');
 export function initNetworkSection(): void {
   const section = document.getElementById('network-section');
   const toggleBtn = document.getElementById('btn-toggle-network');
+  const connectSetup = document.getElementById('connect-setup-link');
+  if (connectSetup) {
+    connectSetup.hidden =
+      !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) ||
+      !!window.__tlbxConnectPreview ||
+      window.top !== window;
+  }
 
   if (!section || !toggleBtn) {
     log.info(() => 'Network section elements not found');

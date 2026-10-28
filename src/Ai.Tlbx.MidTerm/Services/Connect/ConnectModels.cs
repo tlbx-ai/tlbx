@@ -3,14 +3,26 @@ using System.Text.Json.Serialization;
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
 
-public sealed record ConnectPairRequest(string? ServerUrl = null, string? Name = null);
-public sealed record ConnectPairResponse(string UserCode, string VerificationUri, int ExpiresIn);
-public sealed record ConnectStatus(bool Paired, bool Online, string? ServerUrl, string? Name,
-    string? DeviceId, string? LastError, int ActiveConnections, ConnectPairResponse? Pending);
-internal sealed record ConnectDeviceConfiguration(string ServerUrl, string Name, string DeviceId, string DeviceToken);
-internal sealed record ConnectAuthorizeRequest(string Name);
-internal sealed record ConnectAuthorizeResponse(string DeviceCode, string UserCode, string VerificationUri, int ExpiresIn, int Interval);
-internal sealed record ConnectTokenRequest(string DeviceCode);
+public sealed record ConnectUnlockRequest(string? Password);
+public sealed record ConnectUnlockResponse(string UnlockToken, int ExpiresIn);
+public sealed record ConnectGenerateRequest(string? UnlockToken, string? ServerUrl = null, string? Name = null);
+public sealed record ConnectDisconnectRequest(string? UnlockToken);
+public sealed record ConnectStatus(bool Configured, bool Online, string? ServerUrl, string? Name,
+    string? DeviceId, string? LastError, int ActiveConnections);
+public sealed record ConnectRegistration(int Version, string Payload, string Signature);
+public sealed record ConnectAccessKey(int Version, string Kind, ConnectRegistration Registration, string PrivateKey);
+public sealed record ConnectGenerateResponse(ConnectRegistration Registration, ConnectAccessKey AccessKey);
+internal sealed record ConnectRegistrationPayload(string Kind, int Version, string ServerUrl, string DeviceId,
+    string Name, string HostPublicKey, string AccessPublicKey);
+internal sealed record ConnectDeviceConfiguration(string ServerUrl, string Name, string DeviceId,
+    string HostPrivateKey, string HostPublicKey, string AccessPublicKey);
+internal sealed record ConnectChallengeRequest(string DeviceId, string Role);
+internal sealed record ConnectChallengeResponse(string ChallengeId, string Payload);
+internal sealed record ConnectAuthenticationRequest(string ChallengeId, string Signature);
+internal sealed record ConnectAuthenticationPayload(string Kind, int Version, string Role, string Origin,
+    string DeviceId, string Nonce, long ExpiresAt);
+internal sealed record ConnectPeerPayload(string Kind, int Version, string ConnectionId, string DeviceId,
+    string Nonce, long ExpiresAt, string BrowserFingerprint, string HostFingerprint);
 internal sealed record ConnectTokenResponse(string DeviceId, string DeviceToken);
 internal sealed record ConnectIceServer(string[] Urls, string? Username = null, string? Credential = null);
 
@@ -50,19 +62,28 @@ internal sealed class ConnectEnvelope
     public string? Protocol { get; set; }
     public bool? Binary { get; set; }
     public string? Data { get; set; }
+    public string? Signature { get; set; }
     public int? Code { get; set; }
     public string? Reason { get; set; }
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
-[JsonSerializable(typeof(ConnectPairRequest))]
-[JsonSerializable(typeof(ConnectPairResponse))]
+[JsonSerializable(typeof(ConnectUnlockRequest))]
+[JsonSerializable(typeof(ConnectUnlockResponse))]
+[JsonSerializable(typeof(ConnectGenerateRequest))]
+[JsonSerializable(typeof(ConnectDisconnectRequest))]
+[JsonSerializable(typeof(ConnectRegistration))]
+[JsonSerializable(typeof(ConnectAccessKey))]
+[JsonSerializable(typeof(ConnectGenerateResponse))]
+[JsonSerializable(typeof(ConnectRegistrationPayload))]
+[JsonSerializable(typeof(ConnectChallengeRequest))]
+[JsonSerializable(typeof(ConnectChallengeResponse))]
+[JsonSerializable(typeof(ConnectAuthenticationRequest))]
+[JsonSerializable(typeof(ConnectAuthenticationPayload))]
+[JsonSerializable(typeof(ConnectPeerPayload))]
 [JsonSerializable(typeof(ConnectStatus))]
 [JsonSerializable(typeof(ConnectDeviceConfiguration))]
-[JsonSerializable(typeof(ConnectAuthorizeRequest))]
-[JsonSerializable(typeof(ConnectAuthorizeResponse))]
-[JsonSerializable(typeof(ConnectTokenRequest))]
 [JsonSerializable(typeof(ConnectTokenResponse))]
 [JsonSerializable(typeof(ConnectSignal))]
 [JsonSerializable(typeof(ConnectEnvelope))]

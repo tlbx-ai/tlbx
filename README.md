@@ -109,7 +109,11 @@ These commands install the current stable release. Add `--dev` on macOS/Linux or
 
 ## Private remote access
 
-Connect your host and client devices through a trusted LAN or a private VPN such as [Tailscale](https://tailscale.com/). Then open the host's private tlbx address in your browser.
+For access through [tlbx Connect](https://connect.tlbx.ai), open `https://localhost:<port>/connect.html` directly on the host. Confirm the installation password, generate the connection files, and upload the **public registration** file to Connect. In another browser, open Connect and import the **private access** file. The private key stays in browser memory for that session. Direct WebRTC connections are preferred; an authenticated relay is needed when the networks prevent a direct path. The host needs no inbound port forwarding.
+
+Key provisioning is available only through a direct HTTPS loopback browser. Connect, LAN, preview and proxy requests cannot generate keys. Replacing or disabling keys closes existing connections; keep private access files secure and use them on trusted devices.
+
+You can also connect host and client devices through a trusted LAN or a private VPN such as [Tailscale](https://tailscale.com/), then open the host's private tlbx address in your browser.
 
 Keep HTTPS and password authentication enabled. Restrict network access to the people and devices that need it, and keep tlbx and your VPN updated.
 

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Buffers.Binary;
 using System.Net;
 using System.Net.WebSockets;
 using System.Security.Cryptography.X509Certificates;
@@ -17,7 +18,8 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private readonly Uri _origin;
     private readonly Uri? _previewOrigin;
     private readonly BrowserPreviewRegistry _previewRegistry;
-    private readonly string _cookie;
+    private string? _cookie;
+    private readonly ConnectPeerAuthentication _peer;
     private readonly HttpClient _http;
     private readonly AuthService _auth;
     private readonly Func<ConnectSignal, CancellationToken, Task> _send;
@@ -34,7 +36,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 
     public ConnectTunnel(ServerBindingInfo binding, BrowserPreviewOriginService previewOrigin, BrowserPreviewRegistry previewRegistry,
         AuthService auth, HttpClient http,
-        Func<ConnectSignal, CancellationToken, Task> send, CancellationToken ct)
+        Func<ConnectSignal, CancellationToken, Task> send, ConnectPeerAuthentication peer, CancellationToken ct)
     {
         var host = binding.BindAddress is "0.0.0.0" or "*" or "+" ? "127.0.0.1"
             : binding.BindAddress == "::" ? "::1" : binding.BindAddress;
@@ -42,7 +44,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         _previewOrigin = previewOrigin.IsEnabled ? new UriBuilder("https", host, previewOrigin.PreviewPort).Uri : null;
         _previewRegistry = previewRegistry;
         _auth = auth;
-        _cookie = auth.CreateSessionToken();
+        _peer = peer;
         _send = send;
         _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
         _http = http;
@@ -64,25 +66,38 @@ internal sealed class ConnectTunnel : IAsyncDisposable
             && own.RawData.AsSpan().SequenceEqual(certificate.GetRawCertData());
     }
 
-    public Task ReceiveFrameAsync(byte[] frame)
+    public Task BeginAuthenticationAsync() => SendEnvelopeAsync(_peer.CreateChallenge(), _lifetime.Token);
+
+    public async Task ReceiveFrameAsync(byte[] frame)
     {
+        if (!_peer.Authenticated && (frame.Length < ConnectFrames.HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(9)) > 4096))
+            throw new InvalidDataException("Unauthenticated Connect frame exceeds the authentication limit.");
         var complete = _frames.Receive(frame);
-        if (complete is null) return Task.CompletedTask;
+        if (complete is null) return;
         var message = JsonSerializer.Deserialize(complete, ConnectJsonContext.Default.ConnectEnvelope)
             ?? throw new InvalidDataException("Empty Connect request.");
+        if (!_peer.Authenticated)
+        {
+            _peer.AcceptProof(message);
+            _cookie = _auth.CreateSessionToken();
+            await SendEnvelopeAsync(new ConnectEnvelope { Type = "authOk" }, _lifetime.Token);
+            return;
+        }
         if (string.IsNullOrEmpty(message.Id) || message.Id.Length > 100 || message.Id.Any(char.IsControl))
             throw new InvalidDataException("Invalid Connect request identifier.");
         if (message.Type is "ws-data" or "ws-close")
-            return DispatchSocketAsync(message, _lifetime.Token);
+        {
+            await DispatchSocketAsync(message, _lifetime.Token);
+            return;
+        }
         if (message.Type is not ("http" or "ws-open"))
             throw new InvalidDataException("Unsupported Connect request type.");
         if (_requests.ContainsKey(message.Id)) throw new InvalidDataException("Duplicate Connect request identifier.");
-        if (_requests.Count >= 128) return RejectBusyAsync(message);
+        if (_requests.Count >= 128) { await RejectBusyAsync(message); return; }
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_requests.TryAdd(message.Id, completion.Task))
             throw new InvalidDataException("Duplicate Connect request identifier.");
         _ = CompleteRequestAsync(message, completion);
-        return Task.CompletedTask;
     }
 
     private async Task CompleteRequestAsync(ConnectEnvelope message, TaskCompletionSource completion)
@@ -97,18 +112,18 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex) when (ex is HttpRequestException or WebSocketException or InvalidDataException or FormatException
-            or ArgumentException or IOException or OperationCanceledException)
+            or ArgumentException or IOException or OperationCanceledException or ConnectLocalAccessException)
         {
             try
             {
                 await SendEnvelopeAsync(message.Type == "http"
                     ? new ConnectEnvelope
                     {
-                        Type = "http-result", Id = message.Id, Status = 502,
+                        Type = "http-result", Id = message.Id, Status = ex is ConnectLocalAccessException ? 403 : 502,
                         Headers = new(StringComparer.OrdinalIgnoreCase) { ["Content-Type"] = "text/plain; charset=utf-8" },
                         Body = Convert.ToBase64String(Encoding.UTF8.GetBytes("The local tlbx request could not be completed."))
                     }
-                    : new ConnectEnvelope { Type = "ws-close", Id = message.Id, Code = 1011, Reason = "Local connection failed." },
+                    : new ConnectEnvelope { Type = "ws-close", Id = message.Id, Code = ex is ConnectLocalAccessException ? 1008 : 1011, Reason = "Local connection failed." },
                     _lifetime.Token);
             }
             catch (Exception sendException) when (sendException is IOException or OperationCanceledException or ObjectDisposedException) { }
@@ -314,7 +329,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         await Task.WhenAll(_requests.Values);
         foreach (var owner in sockets) await owner.DisposeAsync();
         foreach (var preview in _previews.Values) preview.Dispose();
-        _auth.RevokeSessionToken(_cookie);
+        if (_cookie is not null) _auth.RevokeSessionToken(_cookie);
         _sendGate.Dispose();
         _requestSlots.Dispose();
         _lifetime.Dispose();

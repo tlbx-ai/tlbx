@@ -111,7 +111,7 @@ internal sealed class ConnectTransportProcess : IAsyncDisposable
         }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
         catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException or ObjectDisposedException
-            or FormatException or OverflowException)
+            or FormatException or OverflowException or System.Security.Cryptography.CryptographicException or ArgumentException)
         {
             _ready.TrySetException(new IOException("Connect transport ended before it was ready."));
             if (!_lifetime.IsCancellationRequested)
