@@ -15,6 +15,7 @@ using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 namespace Ai.Tlbx.MidTerm.Tests;
 
 public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, IAsyncLifetime, IDisposable
