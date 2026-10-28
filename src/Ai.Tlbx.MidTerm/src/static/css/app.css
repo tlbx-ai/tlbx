@@ -6053,6 +6053,8 @@ body::before {
 /* Additional settings input styles */
 .setting-row input[type='text'],
 .setting-row input[type='number'],
+.setting-row input[type='password'],
+.setting-row input[type='url'],
 .setting-row input[type='search'] {
   padding: 8px 12px;
   background-color: var(--text-input-background, var(--bg-input));
@@ -6064,16 +6066,38 @@ body::before {
 
 .setting-row input[type='text']:hover,
 .setting-row input[type='number']:hover,
+.setting-row input[type='password']:hover,
+.setting-row input[type='url']:hover,
 .setting-row input[type='search']:hover {
   border-color: var(--accent-blue);
 }
 
 .setting-row input[type='text']:focus,
 .setting-row input[type='number']:focus,
+.setting-row input[type='password']:focus,
+.setting-row input[type='url']:focus,
 .setting-row input[type='search']:focus {
   outline: none;
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 3px var(--accent-blue-15);
+}
+
+.connect-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#connect-setup .setting-row {
+  flex-wrap: wrap;
+}
+
+#connect-setup .setting-row input {
+  width: min(100%, 280px);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .setting-row input[type='checkbox'] {

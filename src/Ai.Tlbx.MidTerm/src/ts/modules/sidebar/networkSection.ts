@@ -7,6 +7,9 @@
 
 import { createLogger } from '../logging';
 import { t } from '../i18n';
+import { openSettings } from '../settings/panel';
+import { getActiveSettingsTab, switchSettingsTab } from '../settings/tabs';
+import { initConnectSetup, isLocalConnectSetup } from '../settings/connectSetup';
 
 const log = createLogger('networkSection');
 
@@ -15,10 +18,18 @@ export function initNetworkSection(): void {
   const toggleBtn = document.getElementById('btn-toggle-network');
   const connectSetup = document.getElementById('connect-setup-link');
   if (connectSetup) {
-    connectSetup.hidden =
-      !['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) ||
-      !!window.__tlbxConnectPreview ||
-      window.top !== window;
+    connectSetup.hidden = !isLocalConnectSetup();
+    connectSetup.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (!isLocalConnectSetup()) return;
+      void openConnectSettings();
+    });
+    const url = new URL(window.location.href);
+    if (!connectSetup.hidden && url.searchParams.get('connect-setup') === '1') {
+      connectSetup.click();
+      url.searchParams.delete('connect-setup');
+      window.history.replaceState(window.history.state, '', url);
+    }
   }
 
   if (!section || !toggleBtn) {
@@ -53,4 +64,14 @@ export function initNetworkSection(): void {
   });
 
   log.info(() => `Network section initialized (untrusted=${isUntrusted})`);
+}
+
+async function openConnectSettings(): Promise<void> {
+  openSettings();
+  switchSettingsTab('security');
+  await initConnectSetup();
+  const panel = document.getElementById('security-section');
+  if (getActiveSettingsTab() === 'security' && panel?.checkVisibility()) {
+    panel.scrollIntoView({ block: 'start' });
+  }
 }

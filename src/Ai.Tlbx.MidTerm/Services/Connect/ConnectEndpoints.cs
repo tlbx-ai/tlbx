@@ -7,9 +7,9 @@ public static class ConnectEndpoints
 {
     public static void MapConnectEndpoints(WebApplication app)
     {
-        app.MapGet("/connect.html", () => Results.Content(ConnectSetupPage.Html, "text/html; charset=utf-8"));
+        app.MapGet("/connect.html", () => Results.Redirect("/?connect-setup=1"));
+        app.MapGet("/connect-setup.html", () => Results.Content(ConnectSetupPage.Html, "text/html; charset=utf-8"));
         app.MapGet("/connect-setup.js", () => Results.Content(ConnectSetupPage.JavaScript, "text/javascript; charset=utf-8"));
-        app.MapGet("/connect-setup.css", () => Results.Content(ConnectSetupPage.Css, "text/css; charset=utf-8"));
         app.MapGet("/connect-licenses.txt", async (HttpContext context) =>
         {
             using var notices = typeof(ConnectEndpoints).Assembly.GetManifestResourceStream("mtconnect.notices");
