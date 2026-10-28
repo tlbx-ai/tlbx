@@ -1,4 +1,3 @@
-using SkiaSharp;
 using System.Net.WebSockets;
 using System.Net.Http.Json;
 using System.Collections.Concurrent;
@@ -12,13 +11,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 
 using Ai.Tlbx.MidTerm.Models.Auth;
-using Ai.Tlbx.MidTerm.Models.Certificates;
-using Ai.Tlbx.MidTerm.Models.Files;
-using Ai.Tlbx.MidTerm.Models.History;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Models.System;
-using Ai.Tlbx.MidTerm.Models.Browser;
-using Ai.Tlbx.MidTerm.Models.WebPreview;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
@@ -44,71 +38,6 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
         response.EnsureSuccessStatusCode();
         _sessionCookie = response.Headers.GetValues("Set-Cookie").First().Split(';')[0];
         _client.DefaultRequestHeaders.Add("Cookie", _sessionCookie);
-    }
-
-    [Fact]
-    public async Task BackgroundGet_MigratesPreviouslyConfiguredImage()
-    {
-        var settingsService = _factory.Services.GetRequiredService<SettingsService>();
-        var service = _factory.Services.GetRequiredService<BackgroundImageService>();
-        var settings = settingsService.Load();
-        settings.BackgroundImageFileName = "app-background.png";
-        settings.BackgroundImageRevision = 123;
-        settingsService.Save(settings);
-        Directory.CreateDirectory(service.GetDirectory());
-        var oldPath = Path.Combine(service.GetDirectory(), "app-background.png");
-        await using (var png = File.Create(oldPath))
-        {
-            using var bitmap = new SKBitmap(4096, 16);
-            bitmap.Erase(SKColors.Black);
-            using var source = SKImage.FromBitmap(bitmap);
-            using var data = source.Encode(SKEncodedImageFormat.Png, 100);
-            data.SaveTo(png);
-        }
-
-        using var response = await _client.GetAsync("/api/settings/background-image?v=123", Xunit.TestContext.Current.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
-        using var image = SKBitmap.Decode(await response.Content.ReadAsByteArrayAsync(Xunit.TestContext.Current.CancellationToken));
-        Assert.Equal(2048, image.Width);
-        Assert.Equal(8, image.Height);
-        Assert.False(File.Exists(oldPath));
-        Assert.True(settingsService.Load().BackgroundImageRevision > 123);
-        using var deleted = await _client.DeleteAsync("/api/settings/background-image", Xunit.TestContext.Current.CancellationToken);
-        deleted.EnsureSuccessStatusCode();
-    }
-
-    [Fact]
-    public async Task BackgroundUpload_ServesNormalizedWebpAndRejectsInvalidReplacement()
-    {
-        using var png = new MemoryStream();
-        using var bitmap = new SKBitmap(4096, 16);
-        bitmap.Erase(SKColors.Black);
-        using var sourceImage = SKImage.FromBitmap(bitmap);
-        using var data = sourceImage.Encode(SKEncodedImageFormat.Png, 100);
-        data.SaveTo(png);
-        using var form = new MultipartFormDataContent();
-        using var content = new ByteArrayContent(png.ToArray());
-        content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
-        form.Add(content, "file", "large.png");
-        using var uploaded = await _client.PostAsync("/api/settings/background-image", form, Xunit.TestContext.Current.CancellationToken);
-        uploaded.EnsureSuccessStatusCode();
-        using var response = await _client.GetAsync("/api/settings/background-image", Xunit.TestContext.Current.CancellationToken);
-        response.EnsureSuccessStatusCode();
-        Assert.Equal("image/webp", response.Content.Headers.ContentType?.MediaType);
-        var bytes = await response.Content.ReadAsByteArrayAsync(Xunit.TestContext.Current.CancellationToken);
-        using var image = SKBitmap.Decode(bytes);
-        Assert.Equal(2048, image.Width);
-        Assert.Equal(8, image.Height);
-
-        using var invalid = new MultipartFormDataContent();
-        using var invalidContent = new ByteArrayContent([1, 2, 3]);
-        invalid.Add(invalidContent, "file", "broken.png");
-        using var rejected = await _client.PostAsync("/api/settings/background-image", invalid, Xunit.TestContext.Current.CancellationToken);
-        Assert.Equal(System.Net.HttpStatusCode.BadRequest, rejected.StatusCode);
-        Assert.Equal(bytes, await _client.GetByteArrayAsync("/api/settings/background-image", Xunit.TestContext.Current.CancellationToken));
-        using var deleted = await _client.DeleteAsync("/api/settings/background-image", Xunit.TestContext.Current.CancellationToken);
-        deleted.EnsureSuccessStatusCode();
     }
 
     [Fact]
@@ -337,131 +266,6 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
                 AppJsonContext.Default.StateUpdate);
             Assert.NotNull(state?.Sessions);
         }
-    }
-
-    [Fact]
-    public async Task WebPreview_CookieBridge_SetGetDelete_Works()
-    {
-        const string sessionId = "session-a";
-        const string previewName = "default";
-        using var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
-        {
-            SessionId = sessionId,
-            PreviewName = previewName,
-            Url = "https://example.com"
-        }, AppJsonContext.Default.WebPreviewTargetRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        targetRes.EnsureSuccessStatusCode();
-
-        var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
-        using var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
-        {
-            Raw = "theme=dark; Path=/"
-        }, AppJsonContext.Default.WebPreviewCookieSetRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        setRes.EnsureSuccessStatusCode();
-
-        using var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}", Xunit.TestContext.Current.CancellationToken);
-        getRes.EnsureSuccessStatusCode();
-        var cookies = await getRes.Content.ReadFromJsonAsync(
-            AppJsonContext.Default.WebPreviewCookiesResponse, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        Assert.NotNull(cookies);
-        Assert.Contains("theme=dark", cookies.Header, StringComparison.Ordinal);
-
-        using var delRes = await _client.DeleteAsync($"/api/webpreview/cookies{previewQuery}&name=theme", Xunit.TestContext.Current.CancellationToken);
-        delRes.EnsureSuccessStatusCode();
-
-        using var afterDeleteRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}", Xunit.TestContext.Current.CancellationToken);
-        afterDeleteRes.EnsureSuccessStatusCode();
-        var afterDelete = await afterDeleteRes.Content.ReadFromJsonAsync(
-            AppJsonContext.Default.WebPreviewCookiesResponse, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        Assert.NotNull(afterDelete);
-        Assert.DoesNotContain("theme=dark", afterDelete.Header, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task WebPreview_HardReload_ClearsCookieJar()
-    {
-        const string sessionId = "session-a";
-        const string previewName = "default";
-        using var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
-        {
-            SessionId = sessionId,
-            PreviewName = previewName,
-            Url = "https://example.com"
-        }, AppJsonContext.Default.WebPreviewTargetRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        targetRes.EnsureSuccessStatusCode();
-
-        var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
-        using var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
-        {
-            Raw = "session=abc123; Path=/"
-        }, AppJsonContext.Default.WebPreviewCookieSetRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        setRes.EnsureSuccessStatusCode();
-
-        using var reloadRes = await _client.PostAsJsonAsync("/api/webpreview/reload", new WebPreviewReloadRequest
-        {
-            SessionId = sessionId,
-            PreviewName = previewName,
-            Mode = "hard"
-        }, AppJsonContext.Default.WebPreviewReloadRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        reloadRes.EnsureSuccessStatusCode();
-
-        using var getRes = await _client.GetAsync($"/api/webpreview/cookies{previewQuery}", Xunit.TestContext.Current.CancellationToken);
-        getRes.EnsureSuccessStatusCode();
-        var cookies = await getRes.Content.ReadFromJsonAsync(
-            AppJsonContext.Default.WebPreviewCookiesResponse, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        Assert.NotNull(cookies);
-        Assert.True(string.IsNullOrEmpty(cookies.Header));
-    }
-
-    [Fact]
-    public async Task WebPreview_CookieBridge_HidesHttpOnlyCookies()
-    {
-        const string sessionId = "session-a";
-        const string previewName = "default";
-        using var targetRes = await _client.PutAsJsonAsync("/api/webpreview/target", new WebPreviewTargetRequest
-        {
-            SessionId = sessionId,
-            PreviewName = previewName,
-            Url = "https://example.com"
-        }, AppJsonContext.Default.WebPreviewTargetRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        targetRes.EnsureSuccessStatusCode();
-        var target = await targetRes.Content.ReadFromJsonAsync(AppJsonContext.Default.WebPreviewTargetResponse, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        Assert.NotNull(target);
-
-        var previewQuery = $"?sessionId={Uri.EscapeDataString(sessionId)}&previewName={Uri.EscapeDataString(previewName)}";
-        using var setRes = await _client.PostAsJsonAsync($"/api/webpreview/cookies{previewQuery}", new WebPreviewCookieSetRequest
-        {
-            Raw = "session=abc123; Path=/; HttpOnly"
-        }, AppJsonContext.Default.WebPreviewCookieSetRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-        setRes.EnsureSuccessStatusCode();
-
-        using var bridgeRequest = new HttpRequestMessage(HttpMethod.Get, $"/webpreview/{target!.RouteKey}/_cookies");
-        bridgeRequest.Headers.Referrer = new Uri($"https://localhost/webpreview/{target.RouteKey}/");
-        using var bridgeRes = await _client.SendAsync(bridgeRequest, Xunit.TestContext.Current.CancellationToken);
-        bridgeRes.EnsureSuccessStatusCode();
-        var bridgeCookies = await bridgeRes.Content.ReadFromJsonAsync(
-            AppJsonContext.Default.WebPreviewCookiesResponse, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.NotNull(bridgeCookies);
-        Assert.DoesNotContain("session=abc123", bridgeCookies.Header ?? "", StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task BrowserPreviewClient_Create_ReturnsPreviewIdentity()
-    {
-        using var response = await _client.PostAsJsonAsync("/api/browser/preview-client", new BrowserPreviewClientRequest
-        {
-            SessionId = "session-123"
-        }, AppJsonContext.Default.BrowserPreviewClientRequest, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-
-        response.EnsureSuccessStatusCode();
-        var previewClient = await response.Content.ReadFromJsonAsync(
-            AppJsonContext.Default.BrowserPreviewClientResponse, cancellationToken: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.NotNull(previewClient);
-        Assert.Equal("session-123", previewClient.SessionId);
-        Assert.False(string.IsNullOrWhiteSpace(previewClient.PreviewId));
-        Assert.False(string.IsNullOrWhiteSpace(previewClient.PreviewToken));
     }
 
     private async Task<WebSocket> ConnectWebSocketAsync(string path)

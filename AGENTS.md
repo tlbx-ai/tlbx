@@ -1,4 +1,7 @@
 Use tlbx supervision when this terminal actually runs inside tlbx.
+Keep automated behavioral tests focused on protocols, settings, installation and
+updates. Do not add UI, layout or general product-logic test suites without an
+explicit request. Removed tests can be recovered from Git history.
 For recovery from a broken tlbx instance in an external terminal, use direct
 Windows diagnostics, Git and repository scripts. Do not retry session-context
 binding or require tlbx CLI operations that this terminal cannot perform.
