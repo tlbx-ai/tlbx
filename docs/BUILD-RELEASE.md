@@ -23,7 +23,7 @@ rejects reuse of a published version.
 
 | Category | Checks | Choose for |
 |---|---|---|
-| `assets` | TypeScript typecheck, TS/CSS lint and theme/CSS audits | CSS, HTML, text, static assets; also inspect the affected UI |
+| `assets` | TypeScript typecheck and TS/CSS lint | CSS, HTML, text, static assets; also inspect the affected UI |
 | `frontend` | Typecheck, lint, full frontend tests including Kitty graphics | TypeScript behavior and browser contracts |
 | `server` | Server unit and integration suites | Server C# and REST APIs |
 | `runtime` | All three .NET suites, including AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
@@ -45,6 +45,10 @@ OpenAPI.NET 2.x, so that generator retains the latest 2.x package until the
 stable ASP.NET integration supports OpenAPI.NET 3.
 
 Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
+Automated behavioral tests cover protocols, settings, installation and updates.
+Keep UI presentation, layout, Files, Git, Boards and other product logic out of
+the automated suites. Typechecks, lint, package integrity and installer checks
+remain part of the build/release workflow. Removed tests remain in Git history.
 Use `dotnet test --project <path>`; targeted runs use `--filter-class` and
 `--report-trx`, rather than VSTest filters or loggers.
 

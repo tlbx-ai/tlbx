@@ -29,8 +29,6 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw 'Frontend typecheck failed.' }
                 & npm run lint
                 if ($LASTEXITCODE -ne 0) { throw 'Frontend lint failed.' }
-                & npm exec '--' vitest run src/ts/modules/theming
-                if ($LASTEXITCODE -ne 0) { throw 'Theme and CSS audits failed.' }
             }
         } finally { Pop-Location }
     }
