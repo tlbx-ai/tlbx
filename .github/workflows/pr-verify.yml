@@ -58,3 +58,6 @@ jobs:
       - name: Server and host contracts
         shell: pwsh
         run: ./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError
+      - name: Connect transport protocol and supply-chain contracts
+        shell: pwsh
+        run: ./src/Ai.Tlbx.MidTerm.ConnectTransport/verify.ps1
