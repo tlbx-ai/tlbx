@@ -124,6 +124,8 @@ Rules:
 
 ## Embedded UI acceptance
 
+For Connect provisioning, follow a real external-page link to `https://localhost:<test-port>/connect.html` in Chrome and Edge as well as entering the URL directly, then verify local sign-in and the fresh installation-password gate. Bind local-only test instances to loopback (`127.0.0.1` or `::1`), never wildcard addresses; these checks require no host firewall permission.
+
 For a new workspace surface, verify its actual embedded entry point in the full app, not only a detached/demo view. Capture desktop and narrow screenshots with a background image and full UI transparency enabled; check pane bounds, readable opaque surfaces, sidebar navigation and terminal input isolation before declaring it accepted.
 
 For list/text editors, exercise Enter inside an existing row using real keyboard input, caret placement and focus checks, then verify row order/text after reload. Testing only a separate add field or API writes does not cover row editing.
