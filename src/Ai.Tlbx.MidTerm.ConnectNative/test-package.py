@@ -85,16 +85,30 @@ class NativePackageContracts(unittest.TestCase):
         (prefix / "lib/libdatachannel.so").write_bytes(b"fixture library")
         (prefix / "bin").mkdir()
         (prefix / "bin/build-tool.exe").write_bytes(b"must never ship")
-        for name, version in self.pin["versions"].items():
+        source_pin = json.loads((ROOT / "native-stack.json").read_text())
+        fixture_versions = dict(source_pin["versions"])
+        fixture_versions.update({name: value["portVersion"] for name, value in source_pin.get("backports", {}).items()})
+        for name, version in fixture_versions.items():
             share = prefix / "share" / name
             share.mkdir(parents=True)
             document = {"creationInfo": {"creators": ["Tool: fixture"], "created": "2026-10-29T00:00:00Z"}, "packages": [{"name": name, "SPDXID": "SPDXRef-port", "versionInfo": version, "checksums": [{"algorithm": "SHA512", "checksumValue": "b" * 128}]}], "relationships": [{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-port"}]}
             (share / "vcpkg.spdx.json").write_text(json.dumps(document))
             (share / "copyright").write_text("fixture notices " + name)
+            if name in source_pin.get("backports", {}):
+                expected = source_pin["backports"][name]
+                archive_data = b"fixture patched static archive"
+                (prefix / "lib/libz.a").write_bytes(archive_data)
+                proof = {key: expected[key] for key in ("commit", "cve", "patchSha256", "sourceSha256")}
+                proof.update({"version": 1, "archive": "libz.a", "archiveSha256": hashlib.sha256(archive_data).hexdigest()})
+                (share / "tlbx-backport.json").write_text(json.dumps(proof))
+                document["packages"][0]["externalRefs"] = [{"referenceCategory": "PACKAGE-MANAGER", "referenceType": "purl", "referenceLocator": "pkg:vcpkg/zlib@1.3.2?port_version=3&triplet=linux-x64"}]
+                (share / "vcpkg.spdx.json").write_text(json.dumps(document))
             port = self.root / "vcpkg/ports" / name
             port.mkdir(parents=True)
             (port / "vcpkg.json").write_text('{"license":"MIT"}')
         output = self.bundle.parent
+        proof = json.loads((prefix / "share/zlib/tlbx-backport.json").read_text())
+        (prefix / "share/libdatachannel/tlbx-link.json").write_text(json.dumps({"version": 1, "runtimeIdentifier": "linux-x64", "entryPoint": "libdatachannel.so", "entryPointSha256": hashlib.sha256(b"fixture library").hexdigest(), "backports": {"zlib": proof}}))
         package_module.package("linux-x64", installed, output, verify_load=False)
         digest = hashlib.sha256(self.bundle.read_bytes()).hexdigest()
         package_module.package("linux-x64", installed, output, verify_load=False)
@@ -102,8 +116,8 @@ class NativePackageContracts(unittest.TestCase):
         with zipfile.ZipFile(self.bundle) as archive:
             self.assertNotIn("build-tool.exe", archive.namelist())
             graph = json.loads(archive.read("native-dependencies.spdx.json"))
-            self.assertEqual(len(graph["packages"]), 4)
-            self.assertEqual(len({p["SPDXID"] for p in graph["packages"]}), 4)
+            self.assertEqual(len(graph["packages"]), len(fixture_versions))
+            self.assertEqual(len({p["SPDXID"] for p in graph["packages"]}), len(fixture_versions))
             self.assertTrue(all(r["spdxElementId"] == "SPDXRef-DOCUMENT" for r in graph["relationships"]))
 
 

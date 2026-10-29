@@ -193,8 +193,10 @@ public sealed class ConnectTurnProxyTests
 
     public static bool SupportsIpv6 => Socket.OSSupportsIPv6;
 
-    [Fact(Skip = "IPv6 is unavailable on this platform.", SkipUnless = nameof(SupportsIpv6))]
-    public async Task BracketedIpv6TargetIsMappedAndTunneled()
+    [Theory(Skip = "IPv6 is unavailable on this platform.", SkipUnless = nameof(SupportsIpv6))]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BracketedAndNativeBareIpv6TargetsAreMappedAndTunneled(bool bracketed)
     {
         using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
         listener.Start();
@@ -203,13 +205,29 @@ public sealed class ConnectTurnProxyTests
         Assert.Equal(url, Assert.Single(proxy.NativeServers[0].Urls));
         var server = EchoAsync(listener, tls: false);
         using var client = await OpenAsync(proxy);
-        await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(Request(proxy, $"[::1]:{Port(listener)}")), Ct);
+        var authority = bracketed ? $"[::1]:{Port(listener)}" : $"::1:{Port(listener)}";
+        await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(Request(proxy, authority)), Ct);
         Assert.StartsWith("HTTP/1.1 200 ", await HeaderAsync(client.GetStream()), StringComparison.Ordinal);
         await client.GetStream().WriteAsync(new byte[] { 0, 255, 13, 10 }, Ct);
         var response = new byte[4];
         await client.GetStream().ReadExactlyAsync(response, Ct);
         Assert.Equal(new byte[] { 0, 255, 13, 10 }, response);
         await server.WaitAsync(TimeSpan.FromSeconds(3), Ct);
+    }
+
+    [Theory(Skip = "IPv6 is unavailable on this platform.", SkipUnless = nameof(SupportsIpv6))]
+    [InlineData("[[::1]]")]
+    [InlineData("[::1")]
+    [InlineData("::1]")]
+    public async Task MalformedIpv6BracketsAreRejectedEvenForAnAuthorizedAddress(string host)
+    {
+        using var listener = new TcpListener(IPAddress.IPv6Loopback, 0);
+        listener.Start();
+        await using var proxy = await ConnectTurnProxy.CreateAsync([new([$"turn:[::1]:{Port(listener)}?transport=tcp"])], Ct);
+        using var client = await OpenAsync(proxy);
+        await client.GetStream().WriteAsync(Encoding.ASCII.GetBytes(Request(proxy, $"{host}:{Port(listener)}")), Ct);
+        Assert.StartsWith("HTTP/1.1 403 ", await HeaderAsync(client.GetStream()), StringComparison.Ordinal);
+        Assert.False(listener.Pending());
     }
 
     [Fact]

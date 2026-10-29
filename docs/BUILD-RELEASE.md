@@ -86,6 +86,15 @@ Catalog identities come from the [NVD CPE API](https://nvd.nist.gov/developers/p
 Raw vcpkg source evidence remains in `bin/<RID>/source-sboms`. No native executable
 or child process is bundled.
 
+The temporary zlib 1.3.2#3 overlay applies the exact upstream CVE-2026-85091 fix.
+Its patch, compiled source and static archive hashes are checked before the native
+link/install output is frozen. Packaging verifies that output without re-signing;
+macOS signing happens before the frozen binding with an ABI-tracked identity.
+Raw scanner findings remain available. An artifact-scoped OpenVEX `fixed` statement
+is accepted only after that hash chain verifies, and receives a release-archive
+attestation. Wrong-artifact VEX remains a failing control. Remove this temporary
+backport and statement when upgrading to a vendor release containing the fix.
+
 ## PR workflow (tlbx code repository only)
 
 `dev` and `main` require PRs and passing checks, including for administrators.

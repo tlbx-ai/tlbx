@@ -35,5 +35,17 @@
       "linux_amd64.tar.gz": "64e07133d3486115de647a66581461dccf5c732748a0a3119077395565f15519",
       "linux_arm64.tar.gz": "86f570f75ca947ea3dd6486309232bcff6d78e44ba081ae75ab14eab72be3dae"
     }
+  },
+  "backports": {
+    "zlib": {
+      "version": "1.3.2",
+      "portVersion": "1.3.2#3",
+      "cve": "CVE-2026-85091",
+      "commit": "df84af25dc1942490e1d1c899a07619152a46148",
+      "patchSha256": "110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14",
+      "sourceSha256": "31d0da140edf382b82b13e2d87a22f59e158d9014ee026459e01cf437d0ab07d",
+      "upstream": "https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148",
+      "maintainerConfirmation": "https://github.com/madler/zlib/issues/1310#issuecomment-5709374730"
+    }
   }
 }

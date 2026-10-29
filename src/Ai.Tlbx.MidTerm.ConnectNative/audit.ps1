@@ -86,8 +86,24 @@ try {
     }
     $reportPath = Join-Path $security "native-$RuntimeIdentifier-grype.json"
     & $tool "sbom:$sbomPath" --add-cpes-if-none --fail-on high -o json 1> $reportPath 2> (Join-Path $security "native-$RuntimeIdentifier-grype.stderr.log")
-    if ($LASTEXITCODE -ne 0) { throw "Native dependency audit failed; inspect $reportPath. No severity waiver is applied." }
-    Write-Host "Native $RuntimeIdentifier Grype audit passed with fresh database and both known-Critical controls. Review unsupported source identities separately."
+    if ($LASTEXITCODE -notin @(0,2)) { throw "Native raw vulnerability scan failed; inspect $reportPath." }
+    & python (Join-Path $PSScriptRoot 'backports.py') --rid $RuntimeIdentifier
+    if ($LASTEXITCODE -ne 0) { throw 'Native patched-artifact OpenVEX verification failed.' }
+    $vex = Join-Path $PSScriptRoot "bin/$RuntimeIdentifier/native-backports.vex.json"
+    # Exact checksum/port/RID qualifiers must prevent applying this fix to another artifact.
+    $wrong = Get-Content $vex -Raw | ConvertFrom-Json
+    $wrong.statements[0].products[0].'@id' = $wrong.statements[0].products[0].'@id' -replace 'checksum=sha256%3A[0-9a-f]+', ('checksum=sha256%3A' + ('0' * 64))
+    $negativeVex = Join-Path $security "wrong-artifact-$RuntimeIdentifier.openvex.json"
+    $wrong | ConvertTo-Json -Depth 100 | Set-Content $negativeVex
+    $negativeReport = Join-Path $security "wrong-artifact-$RuntimeIdentifier-grype.json"
+    & $tool "sbom:$sbomPath" --add-cpes-if-none --vex $negativeVex --fail-on high -o json 1> $negativeReport 2> (Join-Path $security "wrong-artifact-$RuntimeIdentifier.stderr.log")
+    if ($LASTEXITCODE -ne 2 -or -not @((Get-Content $negativeReport -Raw | ConvertFrom-Json).matches | Where-Object { $_.vulnerability.id -eq 'CVE-2026-85091' -and $_.vulnerability.severity -eq 'High' }).Count) {
+        throw 'Native audit incorrectly accepted backport VEX for the wrong artifact.'
+    }
+    $effectiveReport = Join-Path $security "native-$RuntimeIdentifier-grype-with-vex.json"
+    & $tool "sbom:$sbomPath" --add-cpes-if-none --vex $vex --fail-on high -o json 1> $effectiveReport 2> (Join-Path $security "native-$RuntimeIdentifier-grype-with-vex.stderr.log")
+    if ($LASTEXITCODE -ne 0) { throw "Native dependency audit failed; inspect $effectiveReport. No severity waiver is applied." }
+    Write-Host "Native $RuntimeIdentifier audit passed: fresh DB, both Critical controls and wrong-artifact negative control; exact upstream backport attested fixed. Raw findings retained. Review unsupported source identities separately."
 }
 finally {
     foreach ($name in $previous.Keys) { [Environment]::SetEnvironmentVariable($name, $previous[$name]) }

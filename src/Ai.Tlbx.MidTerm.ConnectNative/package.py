@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+import backports
 
 
 def sha256(data):
@@ -74,6 +75,11 @@ def package(rid, installed, output=None, verify_load=True):
     for name, version in pin["versions"].items():
         if versions.get(name) != version:
             raise ValueError(f"Native version mismatch: {name} expected {version}, got {versions.get(name)}")
+    verified_backports = backports.verify(prefix, pin, port_versions)
+    link_evidence = backports.verify_link(prefix, verified_backports, rid)
+    for name, evidence in verified_backports.items():
+        component = next(p for p in packages if p["SPDXID"] == f"SPDXRef-native-{name}-port")
+        backports.qualify(component, evidence)
     output = output or source / "bin" / rid
     output.mkdir(parents=True, exist_ok=True)
     evidence = output / "source-sboms"
@@ -90,8 +96,9 @@ def package(rid, installed, output=None, verify_load=True):
                 continue
             destination = staging / binary.name
             shutil.copyfile(binary.resolve(), destination)
+            if binary.name == entry and sha256(destination.read_bytes()) != link_evidence["entryPointSha256"]:
+                raise ValueError("Copied native entry differs from frozen link output")
             if rid.startswith("osx-") and os.environ.get("GITHUB_ACTIONS") == "true":
-                subprocess.run(["codesign", "--force", "--sign", "Developer ID Application: Johannes Schmidt (FK7G5C74WH)", "--options", "runtime", "--timestamp", str(destination)], check=True)
                 subprocess.run(["codesign", "--verify", "--strict", str(destination)], check=True)
         if verify_load:
             subprocess.run(["pwsh", "-NoProfile", "-File", str(source / "smoke.ps1"), "-RuntimeIdentifier", rid, "-NativeDirectory", str(staging), "-NativePrefix", str(prefix)], check=True)
@@ -99,9 +106,14 @@ def package(rid, installed, output=None, verify_load=True):
         document = {"spdxVersion": "SPDX-2.3", "dataLicense": "CC0-1.0", "SPDXID": "SPDXRef-DOCUMENT", "name": f"tlbx-connect-{rid}", "documentNamespace": f"https://tlbx.ai/spdx/connect/{rid}/{pin['vcpkgCommit']}", "creationInfo": doc["creationInfo"], "packages": packages, "files": files, "relationships": relationships}
         if licenses:
             document["hasExtractedLicensingInfos"] = licenses
+        if verified_backports:
+            native_hash = sha256((staging / entry).read_bytes())
+            fixed_evidence = backports.vex(pin, verified_backports, document, native_hash, rid)
+            document["annotations"] = [{"annotationType": "OTHER", "annotator": "Tool: tlbx native build", "annotationDate": document["creationInfo"]["created"], "comment": json.dumps(fixed_evidence, sort_keys=True)}]
+            (output / "native-backports.vex.json").write_text(json.dumps(fixed_evidence, indent=2) + "\n", encoding="utf-8")
         (staging / "native-dependencies.spdx.json").write_text(json.dumps(document, indent=2) + "\n", encoding="utf-8")
         shutil.copyfile(staging / "native-dependencies.spdx.json", output / "native-dependencies.spdx.json")
-        manifest = {"version": 1, "runtimeIdentifier": rid, "entryPoint": entry, "versions": versions, "portVersions": port_versions, "files": []}
+        manifest = {"version": 1, "runtimeIdentifier": rid, "entryPoint": entry, "versions": versions, "portVersions": port_versions, "backports": verified_backports, "linkEvidence": link_evidence, "files": []}
         for path in sorted(staging.iterdir()):
             if not re.fullmatch(r"[A-Za-z0-9_.+-]+", path.name) or path.suffix.lower() in (".exe", ".com", ".bat", ".sh"):
                 raise ValueError("Unexpected executable or unsafe native bundle name")

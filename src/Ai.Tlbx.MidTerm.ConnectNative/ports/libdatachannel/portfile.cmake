@@ -44,3 +44,43 @@ endif()
 file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include" "${CURRENT_PACKAGES_DIR}/debug/share")
 
 vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE")
+
+# Freeze the actual native link/install output against its reviewed static inputs.
+if(VCPKG_TARGET_IS_WINDOWS)
+    set(TLBX_NATIVE_ENTRY "datachannel.dll")
+    set(TLBX_NATIVE_PATH "${CURRENT_PACKAGES_DIR}/bin/${TLBX_NATIVE_ENTRY}")
+elseif(VCPKG_TARGET_IS_OSX)
+    set(TLBX_NATIVE_ENTRY "libdatachannel.dylib")
+    set(TLBX_NATIVE_PATH "${CURRENT_PACKAGES_DIR}/lib/${TLBX_NATIVE_ENTRY}")
+    get_filename_component(TLBX_NATIVE_REAL_PATH "${TLBX_NATIVE_PATH}" REALPATH)
+    if("$ENV{TLBX_CONNECT_SIGN_IDENTITY}" STREQUAL "")
+        message(FATAL_ERROR "macOS native signer identity must be explicit and ABI-tracked")
+    endif()
+    set(TLBX_SIGN_ARGS --force --sign "$ENV{TLBX_CONNECT_SIGN_IDENTITY}")
+    if(NOT "$ENV{TLBX_CONNECT_SIGN_IDENTITY}" STREQUAL "-")
+        list(APPEND TLBX_SIGN_ARGS --options runtime --timestamp)
+    endif()
+    vcpkg_execute_required_process(
+        COMMAND /usr/bin/codesign ${TLBX_SIGN_ARGS} "${TLBX_NATIVE_REAL_PATH}"
+        WORKING_DIRECTORY "${CURRENT_PACKAGES_DIR}" LOGNAME native-codesign)
+    vcpkg_execute_required_process(
+        COMMAND /usr/bin/codesign --verify --strict "${TLBX_NATIVE_REAL_PATH}"
+        WORKING_DIRECTORY "${CURRENT_PACKAGES_DIR}" LOGNAME native-codesign-verify)
+else()
+    set(TLBX_NATIVE_ENTRY "libdatachannel.so")
+    set(TLBX_NATIVE_PATH "${CURRENT_PACKAGES_DIR}/lib/${TLBX_NATIVE_ENTRY}")
+endif()
+file(SHA256 "${TLBX_NATIVE_PATH}" TLBX_NATIVE_SHA256)
+set(TLBX_BACKPORTS "{}")
+if(EXISTS "${CURRENT_INSTALLED_DIR}/share/zlib/tlbx-backport.json")
+    file(READ "${CURRENT_INSTALLED_DIR}/share/zlib/tlbx-backport.json" TLBX_ZLIB_PROOF)
+    string(JSON TLBX_ZLIB_ARCHIVE GET "${TLBX_ZLIB_PROOF}" archive)
+    string(JSON TLBX_ZLIB_EXPECTED_SHA256 GET "${TLBX_ZLIB_PROOF}" archiveSha256)
+    file(SHA256 "${CURRENT_INSTALLED_DIR}/lib/${TLBX_ZLIB_ARCHIVE}" TLBX_ZLIB_ACTUAL_SHA256)
+    if(NOT TLBX_ZLIB_ACTUAL_SHA256 STREQUAL TLBX_ZLIB_EXPECTED_SHA256)
+        message(FATAL_ERROR "Native link input differs from the reviewed patched zlib archive")
+    endif()
+    set(TLBX_BACKPORTS "{\"zlib\":${TLBX_ZLIB_PROOF}}")
+endif()
+file(WRITE "${CURRENT_PACKAGES_DIR}/share/libdatachannel/tlbx-link.json"
+    "{\"version\":1,\"runtimeIdentifier\":\"${TARGET_TRIPLET}\",\"entryPoint\":\"${TLBX_NATIVE_ENTRY}\",\"entryPointSha256\":\"${TLBX_NATIVE_SHA256}\",\"backports\":${TLBX_BACKPORTS}}\n")

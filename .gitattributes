@@ -8,6 +8,7 @@ src/Ai.Tlbx.MidTerm/patches/*.patch whitespace=-blank-at-eol
 # Native upstream patch context also prefixes tab-indented source with a space.
 src/Ai.Tlbx.MidTerm.ConnectNative/ports/*/*.patch whitespace=-blank-at-eol,-space-before-tab
 src/Ai.Tlbx.MidTerm.ConnectNative/ports/*/*.diff whitespace=-blank-at-eol,-space-before-tab
+src/Ai.Tlbx.MidTerm.ConnectNative/ports/zlib/CVE-2026-85091.patch whitespace=-blank-at-eol,-space-before-tab,-blank-at-eof
 
 # Binary files
 *.woff binary

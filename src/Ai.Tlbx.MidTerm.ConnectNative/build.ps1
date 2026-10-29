@@ -39,11 +39,15 @@ $previousConcurrency = $env:VCPKG_MAX_CONCURRENCY
 $previousMetrics = $env:VCPKG_DISABLE_METRICS
 $previousVisualStudio = $env:VCPKG_VISUAL_STUDIO_PATH
 $previousBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
+$previousSigner = $env:TLBX_CONNECT_SIGN_IDENTITY
 try {
     $env:VCPKG_MAX_CONCURRENCY = '2'
     $env:VCPKG_DISABLE_METRICS = '1'
     if (-not $env:VCPKG_DEFAULT_BINARY_CACHE) { $env:VCPKG_DEFAULT_BINARY_CACHE = Join-Path $scratch 'binary-cache' }
     New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+    if ($IsMacOS) {
+        $env:TLBX_CONNECT_SIGN_IDENTITY = if ($env:GITHUB_ACTIONS -eq 'true') { 'Developer ID Application: Johannes Schmidt (FK7G5C74WH)' } else { '-' }
+    }
     if ($IsWindows -and -not $env:VCPKG_VISUAL_STUDIO_PATH) {
         $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
         if (Test-Path $vswhere) {
@@ -67,4 +71,5 @@ finally {
     $env:VCPKG_DISABLE_METRICS = $previousMetrics
     $env:VCPKG_VISUAL_STUDIO_PATH = $previousVisualStudio
     $env:VCPKG_DEFAULT_BINARY_CACHE = $previousBinaryCache
+    $env:TLBX_CONNECT_SIGN_IDENTITY = $previousSigner
 }

@@ -325,12 +325,14 @@ jobs:
           $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
           "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-      - name: Cache native dependency archives
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}-${{ matrix.rid }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
           restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
             native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
 
       - name: Build server and reuse verified unchanged hosts
@@ -338,6 +340,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: bash
@@ -535,12 +544,14 @@ jobs:
           $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
           "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-      - name: Cache native dependency archives
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}-${{ matrix.rid }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
           restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
             native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
 
       - name: Build server and reuse verified unchanged hosts
@@ -548,6 +559,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: bash
@@ -706,12 +724,14 @@ jobs:
           $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
           "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-      - name: Cache native dependency archives
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}-${{ matrix.rid }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
           restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
             native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
 
       - name: Build server and reuse verified unchanged hosts
@@ -719,6 +739,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: pwsh
@@ -842,12 +869,14 @@ jobs:
           $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
           "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-      - name: Cache native dependency archives
-        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}-${{ matrix.rid }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
           restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
             native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
 
       - name: Build server and reuse verified unchanged hosts
@@ -855,6 +884,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: pwsh

@@ -1,5 +1,9 @@
 using System.Runtime.InteropServices;
 using System.Text;
+#if DEBUG
+using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
+#endif
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
 
@@ -45,11 +49,48 @@ internal sealed unsafe class ConnectNativeApi
         _reliability = (delegate* unmanaged[Cdecl]<int, Reliability*, int>)NativeLibrary.GetExport(library, "rtcGetDataChannelReliability");
         _isOpen = (delegate* unmanaged[Cdecl]<int, byte>)NativeLibrary.GetExport(library, "rtcIsOpen");
         var logger = (delegate* unmanaged[Cdecl]<int, nint, void>)NativeLibrary.GetExport(library, "rtcInitLogger");
+#if DEBUG
+        logger(5, (nint)(delegate* unmanaged[Cdecl]<int, byte*, void>)&NativeDebugLog);
+#else
         logger(0, 0); // Never print native SDP, TURN URLs or credentials.
+#endif
         var settings = new SctpSettings { ReceiveBuffer = 2 * 1024 * 1024, SendBuffer = 1024 * 1024, MaximumChunks = 1024 };
         var configure = (delegate* unmanaged[Cdecl]<SctpSettings*, int>)NativeLibrary.GetExport(library, "rtcSetSctpSettings");
         Check(configure(&settings));
     }
+
+#if DEBUG
+    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
+    private static void NativeDebugLog(int level, byte* message)
+    {
+        // Native callbacks must never propagate exceptions or read an unbounded string.
+        try
+        {
+            if (message is null || level is < 1 or > 5) return;
+            var length = 0;
+            while (length < 4096 && message[length] != 0) length++;
+            var text = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(message, length));
+            if (text.Contains("sdp", StringComparison.OrdinalIgnoreCase)
+                || text.Contains(" KEY", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("ice-pwd", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("ice-ufrag", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("fingerprint", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("candidate:", StringComparison.OrdinalIgnoreCase))
+                text = "[sensitive native error omitted]";
+            else
+            {
+                const RegexOptions options = RegexOptions.IgnoreCase | RegexOptions.CultureInvariant;
+                var timeout = TimeSpan.FromMilliseconds(50);
+                text = Regex.Replace(text, @"\b(?:turns?|stuns?|https?|socks[45]?):[^\s<>\""']*", "[URI]", options, timeout);
+                text = Regex.Replace(text, @"\b(?:password|passwd|credential|secret|token|authorization|username)\b[^\r\n]*", "[credential omitted]", options, timeout);
+                text = Regex.Replace(text, @"[A-Za-z0-9_+/=-]{24,}", "[opaque value]", options, timeout);
+                text = new string(text.Select(character => char.IsControl(character) ? ' ' : character).ToArray());
+            }
+            Console.Error.WriteLine("Connect native DEBUG: " + text);
+        }
+        catch { }
+    }
+#endif
 
     public int Create(string[] servers, string? proxy, bool relayOnly, nint token)
     {

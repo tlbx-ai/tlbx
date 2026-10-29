@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import zipfile
+import backports
 
 
 def complete(sbom_path, native=None):
@@ -34,13 +35,16 @@ def complete(sbom_path, native=None):
                 raise ValueError("Native bundle dependency version mismatch")
         graph = json.loads(bundle.read("native-dependencies.spdx.json"))
     document = json.loads(sbom_path.read_text(encoding="utf-8-sig"))
+    if manifest.get("backports"):
+        fixed = backports.validate_bundle(native, rid)
+        sbom_path.with_name(sbom_path.name.replace('.spdx.json', '.openvex.json')).write_text(json.dumps(fixed, indent=2) + "\n", encoding="utf-8")
     existing_ids = {entry["SPDXID"] for key in ("packages", "files") for entry in document.get(key, [])}
     native_ids = {entry["SPDXID"] for key in ("packages", "files") for entry in graph.get(key, [])}
     if existing_ids & native_ids:
         raise ValueError("Native SBOM already merged or SPDX IDs collide")
     bundle_id = "SPDXRef-tlbx-connect-native-bundle"
     document.setdefault("packages", []).append({"name": "tlbx-connect-native", "SPDXID": bundle_id, "versionInfo": manifest["versions"]["libdatachannel"], "downloadLocation": "NOASSERTION", "filesAnalyzed": False, "licenseConcluded": "NOASSERTION", "licenseDeclared": "NOASSERTION", "copyrightText": "NOASSERTION", "sourceInfo": f"ZIP embedded in mt as manifest resource tlbx.native.connect.bundle; RID {rid}; pinned vcpkg {pin['vcpkgCommit']}", "checksums": [{"algorithm": "SHA256", "checksumValue": hashlib.sha256(archive.read_bytes()).hexdigest()}]})
-    for key in ("packages", "files", "relationships", "hasExtractedLicensingInfos"):
+    for key in ("packages", "files", "relationships", "hasExtractedLicensingInfos", "annotations"):
         document.setdefault(key, []).extend(graph.get(key, []))
     relationships = document.setdefault("relationships", [])
     relationships.append({"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": bundle_id})

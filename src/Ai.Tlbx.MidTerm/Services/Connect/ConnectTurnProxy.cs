@@ -156,11 +156,13 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
             while (!_lifetime.IsCancellationRequested)
             {
                 var client = await _listener!.AcceptTcpClientAsync(_lifetime.Token);
+                TracePhase("accepted");
                 Task attempt;
                 lock (_sync)
                 {
                     if (_attempts.Count >= MaximumConnections || _lifetime.IsCancellationRequested)
                     {
+                        TraceFailure("capacity", 0);
                         client.Dispose();
                         continue;
                     }
@@ -171,7 +173,10 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
                 _ = ObserveAsync(attempt);
             }
         }
-        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or SocketException) { }
+        catch (Exception ex) when (ex is OperationCanceledException or ObjectDisposedException or SocketException)
+        {
+            if (!_lifetime.IsCancellationRequested) TraceFailure("accept", 0);
+        }
     }
 
     private async Task ObserveAsync(Task attempt)
@@ -196,6 +201,7 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
             var (target, pending) = await ReadRequestAsync(local, handshake.Token);
             using var remote = new TcpClient(target.Endpoint.AddressFamily) { NoDelay = true };
             await remote.ConnectAsync(target.Endpoint.Address, target.Endpoint.Port, handshake.Token);
+            TracePhase("upstreamConnected");
             await using var remoteStream = remote.GetStream();
             await using var tls = target.Tls ? new SslStream(remoteStream, leaveInnerStreamOpen: true) : null;
             Stream upstream = (Stream?)tls ?? remoteStream;
@@ -208,12 +214,14 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
                 }, handshake.Token);
             await RespondAsync(local, 200, handshake.Token);
             established = true;
+            TracePhase("tunnelReady");
             handshake.CancelAfter(Timeout.InfiniteTimeSpan);
             if (pending.Length > 0) await upstream.WriteAsync(pending, handshake.Token);
             using var transfer = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
             var upload = local.CopyToAsync(upstream, 16384, transfer.Token);
             var download = upstream.CopyToAsync(local, 16384, transfer.Token);
-            await Task.WhenAny(upload, download);
+            var completed = await Task.WhenAny(upload, download);
+            if (completed.IsFaulted) TraceFailure("stream", 0);
             await transfer.CancelAsync();
             remote.Dispose();
             client.Dispose();
@@ -223,9 +231,18 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
         catch (Exception ex) when (ex is IOException or SocketException or AuthenticationException
             or OperationCanceledException or ObjectDisposedException or ProxyRequestException)
         {
+            var status = established || _lifetime.IsCancellationRequested ? 0 : ex is ProxyRequestException request ? request.Status : 502;
+            TraceFailure(ex switch
+            {
+                ProxyRequestException => "request",
+                AuthenticationException => "tls",
+                OperationCanceledException => "canceled",
+                ObjectDisposedException => "closed",
+                _ => "io"
+            }, status);
             if (!established && local is not null && !_lifetime.IsCancellationRequested)
             {
-                try { await RespondAsync(local, ex is ProxyRequestException request ? request.Status : 502, _lifetime.Token); }
+                try { await RespondAsync(local, status, _lifetime.Token); }
                 catch (Exception error) when (error is IOException or SocketException or ObjectDisposedException
                     or InvalidOperationException or OperationCanceledException) { }
             }
@@ -282,15 +299,21 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
         }
         if (authorization is null || !CryptographicOperations.FixedTimeEquals(
             Encoding.ASCII.GetBytes(authorization), _authorization)) throw new ProxyRequestException(407);
+        TracePhase("authenticated");
         var authority = request[1];
         var separator = authority.LastIndexOf(':');
         if (separator < 1 || !int.TryParse(authority.AsSpan(separator + 1), NumberStyles.None,
                 CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
             throw new ProxyRequestException(403);
         var host = authority[..separator];
-        if (host.StartsWith('[') && host.EndsWith(']')) host = host[1..^1];
-        else if (host.Contains(':', StringComparison.Ordinal)) throw new ProxyRequestException(403);
-        if (!IPAddress.TryParse(host, out var address) || !_targets.TryGetValue(new IPEndPoint(address, port), out var target))
+        var bracketed = host.StartsWith('[') && host.EndsWith(']');
+        if (bracketed) host = host[1..^1];
+        // libnice emits bare IPv6 CONNECT authorities. The final colon still
+        // separates the port; only an exact configured numeric endpoint passes.
+        if (host.Contains('[', StringComparison.Ordinal) || host.Contains(']', StringComparison.Ordinal)
+            || !IPAddress.TryParse(host, out var address)
+            || (bracketed && address.AddressFamily != AddressFamily.InterNetworkV6)
+            || !_targets.TryGetValue(new IPEndPoint(address, port), out var target))
             throw new ProxyRequestException(403);
         return (target, bytes.AsSpan(end, length - end).ToArray());
     }
@@ -301,6 +324,23 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
         var message = status == 200 ? "Connection Established" : "Connection Rejected";
         return stream.WriteAsync(Encoding.ASCII.GetBytes(string.Create(CultureInfo.InvariantCulture,
             $"HTTP/1.1 {status} {message}\r\n{extra}Content-Length: 0\r\n\r\n")), ct);
+    }
+
+    [System.Diagnostics.Conditional("DEBUG")]
+    private static void TracePhase(string phase)
+    {
+#if DEBUG
+        Console.Error.WriteLine("[connect-turn] " + phase);
+#endif
+    }
+
+    [System.Diagnostics.Conditional("DEBUG")]
+    private static void TraceFailure(string category, int status)
+    {
+#if DEBUG
+        Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture,
+            $"[connect-turn] failure category={category} status={status}"));
+#endif
     }
 
     public ValueTask DisposeAsync()
