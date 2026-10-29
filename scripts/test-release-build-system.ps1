@@ -5,6 +5,8 @@ $ErrorActionPreference = 'Stop'
 & "$PSScriptRoot/test-dev-loop.ps1"
 & python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-package.py"
 if ($LASTEXITCODE -ne 0) { throw 'Native Connect packaging contracts failed.' }
+& python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-backports.py"
+if ($LASTEXITCODE -ne 0) { throw 'Native Connect backport binding contracts failed.' }
 . "$PSScriptRoot/release-test-clusters.ps1"
 . "$PSScriptRoot/runtime-reuse.ps1"
 $repoRoot = Split-Path $PSScriptRoot -Parent

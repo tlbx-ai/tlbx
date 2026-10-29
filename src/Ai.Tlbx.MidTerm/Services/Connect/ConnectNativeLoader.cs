@@ -63,9 +63,13 @@ internal static partial class ConnectNativeLoader
         EnsurePrivateDirectory(staging);
         try
         {
+            var stagingPrefix = Path.GetFullPath(staging) + Path.DirectorySeparatorChar;
+            var pathComparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
             foreach (var entry in archive.Entries)
             {
-                var target = Path.Combine(staging, entry.FullName);
+                var target = Path.GetFullPath(Path.Combine(staging, entry.FullName));
+                if (!target.StartsWith(stagingPrefix, pathComparison))
+                    throw new InvalidDataException("WebRTC bundle entry escapes its extraction directory.");
                 using var input = entry.Open();
                 using var output = new FileStream(target, FileMode.CreateNew, FileAccess.Write, FileShare.None);
                 CopyBounded(input, output, entry.Length);

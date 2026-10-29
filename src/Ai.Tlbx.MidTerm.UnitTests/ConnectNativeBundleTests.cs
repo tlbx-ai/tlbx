@@ -31,8 +31,14 @@ public sealed class ConnectNativeBundleTests
 
     [Theory]
     [InlineData("../escape.dll")]
+    [InlineData(@"..\escape.dll")]
+    [InlineData(@"C:\escape.dll")]
+    [InlineData("/escape.dll")]
+    [InlineData(@"\\server\share\escape.dll")]
+    [InlineData("../.tmp-sibling/escape.dll")]
     [InlineData("helper.exe")]
     [InlineData("sub/datachannel.dll")]
+    [InlineData(@"sub\datachannel.dll")]
     public void BundleRejectsPathsAndExecutablesBeforeExtraction(string unexpected)
     {
         var directory = Path.Combine(Path.GetTempPath(), "tlbx-native-invalid-" + Guid.NewGuid().ToString("N"));
