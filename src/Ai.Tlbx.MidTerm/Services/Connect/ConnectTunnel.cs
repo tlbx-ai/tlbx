@@ -22,7 +22,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private readonly ConnectPeerAuthentication _peer;
     private readonly HttpClient _http;
     private readonly AuthService _auth;
-    private readonly Func<ConnectSignal, CancellationToken, Task> _send;
+    private readonly Func<ReadOnlyMemory<byte>, CancellationToken, Task> _send;
     private readonly CancellationTokenSource _lifetime;
     private readonly ConnectFrames _frames = new();
     private readonly SemaphoreSlim _sendGate = new(1, 1);
@@ -36,7 +36,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 
     public ConnectTunnel(ServerBindingInfo binding, BrowserPreviewOriginService previewOrigin, BrowserPreviewRegistry previewRegistry,
         AuthService auth, HttpClient http,
-        Func<ConnectSignal, CancellationToken, Task> send, ConnectPeerAuthentication peer, CancellationToken ct)
+        Func<ReadOnlyMemory<byte>, CancellationToken, Task> send, ConnectPeerAuthentication peer, CancellationToken ct)
     {
         var host = binding.BindAddress is "0.0.0.0" or "*" or "+" ? "127.0.0.1"
             : binding.BindAddress == "::" ? "::1" : binding.BindAddress;
@@ -68,11 +68,11 @@ internal sealed class ConnectTunnel : IAsyncDisposable
 
     public Task BeginAuthenticationAsync() => SendEnvelopeAsync(_peer.CreateChallenge(), _lifetime.Token);
 
-    public async Task ReceiveFrameAsync(byte[] frame)
+    public async Task ReceiveFrameAsync(ReadOnlyMemory<byte> frame)
     {
-        if (!_peer.Authenticated && (frame.Length < ConnectFrames.HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(9)) > 4096))
+        if (!_peer.Authenticated && (frame.Length < ConnectFrames.HeaderSize || BinaryPrimitives.ReadUInt32LittleEndian(frame.Span[9..]) > 4096))
             throw new InvalidDataException("Unauthenticated Connect frame exceeds the authentication limit.");
-        var complete = _frames.Receive(frame);
+        var complete = _frames.Receive(frame.Span);
         if (complete is null) return;
         var message = JsonSerializer.Deserialize(complete, ConnectJsonContext.Default.ConnectEnvelope)
             ?? throw new InvalidDataException("Empty Connect request.");
@@ -301,7 +301,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         try
         {
             foreach (var frame in _frames.Encode(bytes))
-                await _send(new ConnectSignal { Type = "send", Data = Convert.ToBase64String(frame) }, ct);
+                await _send(frame, ct);
         }
         finally { _sendGate.Release(); }
     }

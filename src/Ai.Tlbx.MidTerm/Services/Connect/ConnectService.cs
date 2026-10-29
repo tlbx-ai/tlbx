@@ -268,29 +268,13 @@ public sealed class ConnectService : BackgroundService
                     if (!_connections.TryAdd(id, owner)) { await using (owner.ConfigureAwait(false)) { } break; }
                     try
                     {
-                        await owner.StartAsync(id, _settings.SettingsDirectory, Path.Combine(_settings.SettingsDirectory, "logs", "connect"), message,
+                        await owner.StartAsync(_settings.SettingsDirectory, message,
                             async transportMessage =>
                             {
-                                if (transportMessage.Type == "data")
-                                {
-                                    if (transportMessage.Data is null) throw new InvalidDataException("Missing Connect data.");
-                                    if (_connections.TryGetValue(id, out var current))
-                                        await current.Tunnel.ReceiveFrameAsync(Convert.FromBase64String(transportMessage.Data));
-                                }
-                                else if (transportMessage.Type == "open")
-                                    await owner.Tunnel.BeginAuthenticationAsync();
-                                else if (transportMessage.Type is "answer" or "candidate" or "state")
-                                {
-                                    if (transportMessage.Type == "answer") owner.Peer.SetAnswer(transportMessage.Sdp ?? "");
-                                    transportMessage.ConnectionId = id;
-                                    await SendSignalAsync(socket, transportMessage, ct);
-                                }
-                                else if (transportMessage.Type == "error")
-                                {
-                                    await SendSignalAsync(socket, new ConnectSignal { Type = "state", ConnectionId = id, State = "failed" }, ct);
-                                    _ = CloseConnectionAsync(id);
-                                }
-                            }, ct);
+                                if (transportMessage.Type == "answer") owner.Peer.SetAnswer(transportMessage.Sdp ?? "");
+                                transportMessage.ConnectionId = id;
+                                await SendSignalAsync(socket, transportMessage, ct);
+                            }, () => { _ = CloseFailedTransportAsync(socket, id, ct); });
                         owner.EnforceAuthenticationDeadline(() => CloseConnectionAsync(id));
                     }
                     catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException)
@@ -306,7 +290,7 @@ public sealed class ConnectService : BackgroundService
                     {
                         if (message.Type == "offer") connection.Peer.SetOffer(message.Sdp ?? "");
                         message.ConnectionId = null;
-                        await connection.SendAsync(message, ct);
+                        await connection.ApplySignalAsync(message, ct);
                     }
                     break;
                 case "close":
@@ -330,9 +314,18 @@ public sealed class ConnectService : BackgroundService
     private async Task SendSignalAsync(ClientWebSocket socket, ConnectSignal message, CancellationToken ct)
     {
         var bytes = JsonSerializer.SerializeToUtf8Bytes(message, ConnectJsonContext.Default.ConnectSignal);
-        await _signalWriter.WaitAsync(ct);
-        try { await socket.SendAsync(bytes, WebSocketMessageType.Text, true, ct); }
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        await _signalWriter.WaitAsync(deadline.Token);
+        try { await socket.SendAsync(bytes, WebSocketMessageType.Text, true, deadline.Token); }
         finally { _signalWriter.Release(); }
+    }
+
+    private async Task CloseFailedTransportAsync(ClientWebSocket socket, string id, CancellationToken ct)
+    {
+        await CloseConnectionAsync(id);
+        try { await SendSignalAsync(socket, new ConnectSignal { Type = "state", ConnectionId = id, State = "failed" }, ct); }
+        catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException) { }
     }
 
     private static async Task<ConnectSignal?> ReceiveSignalAsync(ClientWebSocket socket, CancellationToken ct)
@@ -389,7 +382,7 @@ public sealed class ConnectService : BackgroundService
 
     private sealed class ConnectionOwner : IAsyncDisposable
     {
-        private ConnectTransportProcess? _transport;
+        private ConnectWebRtcTransport? _transport;
         private readonly CancellationTokenSource _lifetime;
         private Task? _authenticationDeadline;
         public ConnectTunnel Tunnel { get; }
@@ -400,15 +393,18 @@ public sealed class ConnectService : BackgroundService
         {
             Peer = peer;
             _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            Tunnel = new ConnectTunnel(binding, previewOrigin, previewRegistry, auth, http, SendAsync, peer, _lifetime.Token);
+            Tunnel = new ConnectTunnel(binding, previewOrigin, previewRegistry, auth, http, SendFrameAsync, peer, _lifetime.Token);
         }
 
-        public async Task StartAsync(string id, string settingsDirectory, string logDirectory, ConnectSignal connect,
-            Func<ConnectSignal, Task> onMessage, CancellationToken ct) =>
-            _transport = await ConnectTransportProcess.StartAsync(id, settingsDirectory, logDirectory, connect, onMessage, _lifetime.Token);
+        public async Task StartAsync(string settingsDirectory, ConnectSignal connect,
+            Func<ConnectSignal, Task> onMessage, Action onFailure) =>
+            _transport = await ConnectWebRtcTransport.CreateAsync(settingsDirectory, connect, onMessage,
+                Tunnel.ReceiveFrameAsync, Tunnel.BeginAuthenticationAsync, onFailure, _lifetime.Token);
 
-        public Task SendAsync(ConnectSignal message, CancellationToken ct) =>
-            (_transport ?? throw new InvalidOperationException("Connect transport is not ready.")).SendAsync(message, ct);
+        public Task ApplySignalAsync(ConnectSignal message, CancellationToken ct) =>
+            (_transport ?? throw new InvalidOperationException("Connect transport is not ready.")).ApplySignalAsync(message, ct);
+        private Task SendFrameAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) =>
+            (_transport ?? throw new InvalidOperationException("Connect transport is not ready.")).SendAsync(frame, ct);
 
         public void EnforceAuthenticationDeadline(Func<Task> close) => _authenticationDeadline = EnforceAsync(close);
 

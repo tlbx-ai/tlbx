@@ -42,7 +42,6 @@ try {
         & "$PSScriptRoot/audit-supply-chain.ps1" -Scope server -FrontendInstalled:$FrontendInstalled
     }
     if ($categories -contains 'build') {
-        & (Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.ConnectTransport/verify.ps1')
         & "$PSScriptRoot/test-release-build-system.ps1"
         & "$PSScriptRoot/test-release-pr.ps1"
         & python "$PSScriptRoot/test-release-publication.py"

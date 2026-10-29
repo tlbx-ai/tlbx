@@ -3,8 +3,8 @@
 $ErrorActionPreference = 'Stop'
 & "$PSScriptRoot/test-advisory-regression.ps1"
 & "$PSScriptRoot/test-dev-loop.ps1"
-& "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectTransport/test-sbom.ps1"
-& "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectTransport/test-advisory.ps1"
+& python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-package.py"
+if ($LASTEXITCODE -ne 0) { throw 'Native Connect packaging contracts failed.' }
 . "$PSScriptRoot/release-test-clusters.ps1"
 . "$PSScriptRoot/runtime-reuse.ps1"
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -91,7 +91,7 @@ Assert-Check (Test-RuntimeReuseMetadata $metadata $fingerprint win-x64 '1.2.3-de
 Assert-Check (-not (Test-RuntimeReuseMetadata $metadata changed win-x64 '1.2.3-dev')) 'Changed inputs accepted.'
 
 $fixture = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-build-tests-" + [Guid]::NewGuid().ToString('N'))
-New-Item -ItemType Directory -Force "$fixture/scripts", "$fixture/src/Ai.Tlbx.MidTerm", "$fixture/src/Ai.Tlbx.MidTerm.ConnectTransport" | Out-Null
+New-Item -ItemType Directory -Force "$fixture/scripts", "$fixture/src/Ai.Tlbx.MidTerm" | Out-Null
 $global:TlbxBuildTestCalls = [Collections.Generic.List[string]]::new()
 function global:npm {
     $global:TlbxBuildTestCalls.Add("npm $args")
@@ -102,7 +102,6 @@ try {
     foreach ($name in @('run-dotnet-test-suite','verify-installers','audit-supply-chain','test-release-build-system','test-release-pr','run-runtime-build-verification','run-aot-smoke-probe')) {
         ('$global:TlbxBuildTestCalls.Add("' + $name + ' $args")') | Set-Content "$fixture/scripts/$name.ps1"
     }
-    '$global:TlbxBuildTestCalls.Add("connect-transport-verify")' | Set-Content "$fixture/src/Ai.Tlbx.MidTerm.ConnectTransport/verify.ps1"
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories assets -FrontendInstalled
     Assert-Check (($global:TlbxBuildTestCalls -join '|') -eq 'npm run typecheck|npm run lint') 'Assets cluster must typecheck and lint without reinstalling dependencies.'
     $global:TlbxBuildTestCalls.Clear()
@@ -118,9 +117,7 @@ try {
     function global:python { $global:TlbxBuildTestCalls.Add("python $args"); $global:LASTEXITCODE=0 }
     try {
         & "$fixture/scripts/run-release-tests.ps1" -TestCategories build
-        Assert-Check ($global:TlbxBuildTestCalls[0] -eq 'connect-transport-verify') 'Build cluster omitted Go transport protocol/vet verification.'
-        Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -eq 'connect-transport-verify' }).Count -eq 1) 'Build cluster duplicated Go transport verification.'
-        Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'run-runtime-build-verification*' }).Count -eq 1) 'Go verification displaced .NET runtime build coverage.'
+        Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'run-runtime-build-verification*' }).Count -eq 1) 'Build cluster duplicated or omitted .NET runtime build coverage.'
     }
     finally { Remove-Item Function:\python -ErrorAction SilentlyContinue }
     function global:npm { $global:LASTEXITCODE = 1 }

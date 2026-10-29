@@ -29,7 +29,6 @@ internal sealed record ConnectIceServer(string[] Urls, string? Username = null, 
 internal sealed class ConnectSignal
 {
     public string Type { get; set; } = "";
-    public int? Version { get; set; }
     public string? ConnectionId { get; set; }
     public ConnectIceServer[]? IceServers { get; set; }
     public bool? RelayOnly { get; set; }
@@ -38,13 +37,6 @@ internal sealed class ConnectSignal
     public string? SdpMid { get; set; }
     public int? SdpMLineIndex { get; set; }
     public string? State { get; set; }
-    public string? Data { get; set; }
-    public string? Message { get; set; }
-    public string? Code { get; set; }
-    public bool? Fatal { get; set; }
-    public string? LocalType { get; set; }
-    public string? RemoteType { get; set; }
-    public string? Protocol { get; set; }
 }
 
 internal sealed class ConnectEnvelope

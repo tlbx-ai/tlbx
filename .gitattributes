@@ -5,6 +5,9 @@
 src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge/dist/claude-agent-sdk-bridge.mjs whitespace=-blank-at-eol
 # Unified patches require a leading context marker on empty context lines.
 src/Ai.Tlbx.MidTerm/patches/*.patch whitespace=-blank-at-eol
+# Native upstream patch context also prefixes tab-indented source with a space.
+src/Ai.Tlbx.MidTerm.ConnectNative/ports/*/*.patch whitespace=-blank-at-eol,-space-before-tab
+src/Ai.Tlbx.MidTerm.ConnectNative/ports/*/*.diff whitespace=-blank-at-eol,-space-before-tab
 
 # Binary files
 *.woff binary

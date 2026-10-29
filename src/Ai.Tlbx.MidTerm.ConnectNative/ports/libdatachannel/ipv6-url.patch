@@ -1,0 +1,11 @@
+diff --git a/src/configuration.cpp b/src/configuration.cpp
+--- a/src/configuration.cpp
++++ b/src/configuration.cpp
+@@ -19,6 +19,6 @@ bool parse_url(const std::string &url, std::vector<std::optional<std::string>> &result) {
+ 	// Modified regex from RFC 3986, see https://www.rfc-editor.org/rfc/rfc3986.html#appendix-B
+ 	static const char *rs =
+-	    R"(^(([^:.@/?#]+):)?(/{0,2}((([^:@]*)(:([^@]*))?)@)?(([^:/?#]*)(:([^/?#]*))?))?([^?#]*)(\?([^#]*))?(#(.*))?)";
++	    R"(^(([^:.@/?#]+):)?(/{0,2}((([^:@]*)(:([^@]*))?)@)?((\[[^]]+\]|[^:/?#]*)(:([^/?#]*))?))?([^?#]*)(\?([^#]*))?(#(.*))?)";
+ 	static const std::regex r(rs, std::regex::extended);
+ 
+ 	std::smatch m;

@@ -65,6 +65,27 @@ signatures, package integrity/provenance and complete audit responses remain enf
 Offline behavioral tests run through `test-release-build-system.ps1` on Windows
 and Linux, including unchanged findings, regressions and failed audit responses.
 
+Connect's in-process native library is built by `ConnectNative.targets` from the
+vcpkg snapshot and source hashes in `src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json`.
+The six RID triplets produce an embedded `bundle.zip` containing native libraries,
+SHA256 metadata, dependency source SBOM and notices. Compilers run with at most two
+parallel jobs; downloaded build tools remain under `.artifacts/connect-dotnet-transport`.
+macOS signs the inner libraries before embedding, using the same Developer ID as mt.
+Focused JIT-only C# checks may use `-p:SkipConnectNativeBuild=true`; publishing rejects
+that property. Release SBOM completion verifies bundle hashes before merging its
+native source/dependency graph. Grype is pinned by release-archive hashes, updates
+and validates its database, and blocks High/Critical findings. Known vulnerable
+OpenSSL and explicitly identified GLib versions must trigger positive controls.
+CPE identities are sourced in `native-stack.json`; dependencies without a matching
+identity require a separate upstream advisory review on every pin change:
+libdatachannel, libnice, libiconv, dirent and plog have no matching CPE catalog
+identity. Zero Grype findings are not a security guarantee. Vendor advisories must
+also be checked before publishing; PCRE2 10.49 fixes the not-yet-CPE-enriched
+[GHSA-r9hj-j2rw-4q3m](https://github.com/PCRE2Project/pcre2/security/advisories/GHSA-r9hj-j2rw-4q3m).
+Catalog identities come from the [NVD CPE API](https://nvd.nist.gov/developers/products).
+Raw vcpkg source evidence remains in `bin/<RID>/source-sboms`. No native executable
+or child process is bundled.
+
 ## PR workflow (tlbx code repository only)
 
 `dev` and `main` require PRs and passing checks, including for administrators.

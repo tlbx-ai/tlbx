@@ -1,5 +1,5 @@
 using System.Buffers.Binary;
-using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Ai.Tlbx.MidTerm.Services.Connect;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services;
@@ -10,26 +10,23 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class ConnectProtocolTests
 {
     [Fact]
-    public async Task ManagedTransportOwnsNativeChildAndStopsItOnDisposal()
+    public void ManagedInteropStructuresMatchThePinnedCAbi()
     {
-        var configured = Environment.GetEnvironmentVariable("TLBX_CONNECT_TRANSPORT_PATH");
-        var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
-        var root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "../../../../.."));
-        var filename = OperatingSystem.IsWindows() ? "mtconnect.exe" : "mtconnect";
-        var executable = Path.Combine(root, "src", "Ai.Tlbx.MidTerm.ConnectTransport", "bin", rid, filename);
-        if (!File.Exists(executable)) Assert.Skip("Build the RID-specific Connect transport before its managed process smoke test.");
-        var directory = Path.Combine(root, ".dev", "connect-managed-smoke");
-        Directory.CreateDirectory(directory);
-        Environment.SetEnvironmentVariable("TLBX_CONNECT_TRANSPORT_PATH", executable);
-        try
-        {
-            var process = await ConnectTransportProcess.StartAsync(Guid.NewGuid().ToString("N"), directory, directory,
-                new ConnectSignal { Type = "connect", IceServers = [] }, _ => Task.CompletedTask, TestContext.Current.CancellationToken);
-            var id = process.ProcessId;
-            await process.DisposeAsync();
-            Assert.Throws<ArgumentException>(() => Process.GetProcessById(id));
-        }
-        finally { Environment.SetEnvironmentVariable("TLBX_CONNECT_TRANSPORT_PATH", configured); }
+        Assert.Equal(IntPtr.Size == 8 ? 56 : 40, Marshal.SizeOf<ConnectNativeApi.Configuration>());
+        Assert.Equal(12, Marshal.SizeOf<ConnectNativeApi.Reliability>());
+        Assert.Equal(IntPtr.Size, Marshal.OffsetOf<ConnectNativeApi.Configuration>(nameof(ConnectNativeApi.Configuration.IceServersCount)).ToInt32());
+        Assert.Equal(IntPtr.Size == 8 ? 16 : 8,
+            Marshal.OffsetOf<ConnectNativeApi.Configuration>(nameof(ConnectNativeApi.Configuration.ProxyServer)).ToInt32());
+        Assert.Equal(IntPtr.Size == 8 ? 32 : 16,
+            Marshal.OffsetOf<ConnectNativeApi.Configuration>(nameof(ConnectNativeApi.Configuration.CertificateType)).ToInt32());
+        Assert.Equal(IntPtr.Size == 8 ? 40 : 24,
+            Marshal.OffsetOf<ConnectNativeApi.Configuration>(nameof(ConnectNativeApi.Configuration.EnableIceTcp)).ToInt32());
+        Assert.Equal(IntPtr.Size == 8 ? 44 : 28,
+            Marshal.OffsetOf<ConnectNativeApi.Configuration>(nameof(ConnectNativeApi.Configuration.PortRangeBegin)).ToInt32());
+        Assert.Equal(IntPtr.Size == 8 ? 48 : 32,
+            Marshal.OffsetOf<ConnectNativeApi.Configuration>(nameof(ConnectNativeApi.Configuration.Mtu)).ToInt32());
+        Assert.Equal(IntPtr.Size == 8 ? 52 : 36,
+            Marshal.OffsetOf<ConnectNativeApi.Configuration>(nameof(ConnectNativeApi.Configuration.MaximumMessageSize)).ToInt32());
     }
 
     [Fact]

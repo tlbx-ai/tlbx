@@ -253,7 +253,7 @@ public sealed class ConnectKeySecurityTests
             await using var tunnel = new ConnectTunnel(new ServerBindingInfo(2100, "127.0.0.1"), new BrowserPreviewOriginService(2100, 2101, true),
                 new BrowserPreviewRegistry(), auth, http, (signal, _) =>
                 {
-                    var bytes = receive.Receive(Convert.FromBase64String(signal.Data!));
+                    var bytes = receive.Receive(signal.Span);
                     if (bytes is not null) envelopes.Add(JsonSerializer.Deserialize(bytes, ConnectJsonContext.Default.ConnectEnvelope)!);
                     return Task.CompletedTask;
                 }, peer, TestContext.Current.CancellationToken);
