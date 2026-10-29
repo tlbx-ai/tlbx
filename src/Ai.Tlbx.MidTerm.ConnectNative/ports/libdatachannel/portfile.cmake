@@ -9,6 +9,7 @@ vcpkg_from_github(
         uwp-warnings.patch
         ipv6-url.patch
         nice-static-closure.patch
+        nice-force-relay.patch
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS

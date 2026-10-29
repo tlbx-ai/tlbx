@@ -20,6 +20,12 @@ int main() try {
     rtc::ProxyServer proxy("http://[::1]:3128");
     if (proxy.hostname != "::1" || proxy.port != 3128 || proxy.type != rtc::ProxyServer::Type::Http)
         throw std::runtime_error("Native proxy IPv6 constructor contract failed");
+    const std::string proxyUser(32, 'a'), proxyPassword(64, 'b');
+    rtc::ProxyServer authenticatedProxy("http://" + proxyUser + ":" + proxyPassword + "@127.0.0.1:49123");
+    if (authenticatedProxy.hostname != "127.0.0.1" || authenticatedProxy.port != 49123
+        || authenticatedProxy.type != rtc::ProxyServer::Type::Http
+        || authenticatedProxy.username != proxyUser || authenticatedProxy.password != proxyPassword)
+        throw std::runtime_error("Native authenticated HTTP proxy constructor contract failed");
     std::cout << "PASS: actual native IceServer/ProxyServer constructors preserve IPv4/IPv6, credentials and TCP projection; no peer or socket created.\n";
 } catch (...) {
     std::cerr << "Native URL constructor proof failed.\n";

@@ -297,8 +297,18 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
                 || (name.Equals("Content-Length", StringComparison.OrdinalIgnoreCase) && value != "0"))
                 throw new ProxyRequestException(400);
         }
-        if (authorization is null || !CryptographicOperations.FixedTimeEquals(
-            Encoding.ASCII.GetBytes(authorization), _authorization)) throw new ProxyRequestException(407);
+        if (authorization is null)
+        {
+            TraceAuthentication("authMissing", 0, false);
+            throw new ProxyRequestException(407);
+        }
+        var suppliedAuthorization = Encoding.ASCII.GetBytes(authorization);
+        if (!CryptographicOperations.FixedTimeEquals(suppliedAuthorization, _authorization))
+        {
+            TraceAuthentication("authMismatch", suppliedAuthorization.Length,
+                authorization.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase));
+            throw new ProxyRequestException(407);
+        }
         TracePhase("authenticated");
         var authority = request[1];
         var separator = authority.LastIndexOf(':');
@@ -340,6 +350,15 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
 #if DEBUG
         Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture,
             $"[connect-turn] failure category={category} status={status}"));
+#endif
+    }
+
+    [System.Diagnostics.Conditional("DEBUG")]
+    private void TraceAuthentication(string reason, int actualLength, bool basicScheme)
+    {
+#if DEBUG
+        Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture,
+            $"[connect-turn] {reason} actualLength={actualLength} expectedLength={_authorization.Length} basicScheme={basicScheme}"));
 #endif
     }
 

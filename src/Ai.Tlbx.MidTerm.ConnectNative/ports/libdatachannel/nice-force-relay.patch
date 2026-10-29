@@ -1,0 +1,12 @@
+diff --git a/src/impl/icetransport.cpp b/src/impl/icetransport.cpp
+--- a/src/impl/icetransport.cpp
++++ b/src/impl/icetransport.cpp
+@@ -471,6 +471,8 @@ IceTransport::IceTransport(const Configuration &config, candidate_callback candidateCallback,
+ 		throw std::runtime_error("Failed to add a stream");
+ 
+ 	g_object_set(G_OBJECT(mNiceAgent.get()), "controlling-mode", TRUE, nullptr); // decided later
++	g_object_set(G_OBJECT(mNiceAgent.get()), "force-relay",
++	             config.iceTransportPolicy == TransportPolicy::Relay ? TRUE : FALSE, nullptr);
+ 	g_object_set(G_OBJECT(mNiceAgent.get()), "ice-udp", TRUE, nullptr);
+ 	g_object_set(G_OBJECT(mNiceAgent.get()), "ice-tcp", config.enableIceTcp ? TRUE : FALSE,
+ 	             nullptr);
