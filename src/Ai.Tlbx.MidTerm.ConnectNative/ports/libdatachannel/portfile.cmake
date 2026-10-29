@@ -8,6 +8,7 @@ vcpkg_from_github(
         dependencies.diff
         uwp-warnings.patch
         ipv6-url.patch
+        nice-static-closure.patch
 )
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
@@ -18,12 +19,16 @@ vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
         srtp    NO_MEDIA
 )
 
+vcpkg_find_acquire_program(PKGCONFIG)
 vcpkg_cmake_configure(
     SOURCE_PATH "${SOURCE_PATH}"
     OPTIONS
         ${FEATURE_OPTIONS}
         -DPREFER_SYSTEM_LIB=ON
         -DUSE_NICE=ON
+        "-DPKG_CONFIG_EXECUTABLE=${PKGCONFIG}"
+        -DPKG_CONFIG_USE_CMAKE_PREFIX_PATH=ON
+        "-DCMAKE_PREFIX_PATH=${CURRENT_INSTALLED_DIR}"
         -DNO_EXAMPLES=ON
         -DNO_TESTS=ON
 )

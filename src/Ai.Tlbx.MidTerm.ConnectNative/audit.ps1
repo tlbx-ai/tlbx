@@ -39,7 +39,7 @@ try {
     $status = & $tool db status -o json
     if ($LASTEXITCODE -ne 0) { throw 'Native vulnerability database status failed.' }
     $database = $status | ConvertFrom-Json
-    if (-not $database.valid -or [DateTimeOffset]::UtcNow - [DateTimeOffset]::Parse($database.built) -gt [TimeSpan]::FromHours(72)) {
+    if (-not $database.valid -or [DateTimeOffset]::UtcNow - [DateTimeOffset]$database.built -gt [TimeSpan]::FromHours(72)) {
         throw 'Native vulnerability database is invalid or too old.'
     }
     $status | Set-Content (Join-Path $security "db-status-$RuntimeIdentifier.json")
