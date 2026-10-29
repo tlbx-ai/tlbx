@@ -86,6 +86,13 @@ Catalog identities come from the [NVD CPE API](https://nvd.nist.gov/developers/p
 Raw vcpkg source evidence remains in `bin/<RID>/source-sboms`. No native executable
 or child process is bundled.
 
+The libdatachannel 0.24.6#1 overlay detaches receive callbacks, removes the stream
+and cancels its timer on the GLib dispatch context before releasing the owner.
+libnice 0.1.24's legacy `attach_recv(NULL)` installs a NULL-target compatibility
+wrapper; the overlay uses the real `attach_recv_ex` detach and pins the patched
+source hash. Verify repeated reconnects with requests in flight when changing
+these pins; load-only checks cannot detect this teardown crash.
+
 The temporary zlib 1.3.2#3 overlay applies the exact upstream CVE-2026-85091 fix.
 Its patch, compiled source and static archive hashes are checked before the native
 link/install output is frozen. Packaging verifies that output without re-signing;

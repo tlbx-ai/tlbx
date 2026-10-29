@@ -10,7 +10,18 @@ vcpkg_from_github(
         ipv6-url.patch
         nice-static-closure.patch
         nice-force-relay.patch
+        nice-teardown-lifetime.patch
 )
+
+# libnice 0.1.24 legacy NULL receive attachment leaves a callable NULL wrapper.
+# True detach, stream removal, and raw-this timer cancellation must all run on
+# the IO context before releasing the barrier. Preserve upstream #1103 ordering.
+file(SHA256 "${CMAKE_CURRENT_LIST_DIR}/nice-teardown-lifetime.patch" TLBX_TEARDOWN_PATCH_SHA256)
+file(SHA256 "${SOURCE_PATH}/src/impl/icetransport.cpp" TLBX_TEARDOWN_SOURCE_SHA256)
+if(NOT TLBX_TEARDOWN_PATCH_SHA256 STREQUAL "c23e6a331b8abfcdca8cffe0bea64bcc65a7c61f8700a66625f07e094a9044aa" OR
+   NOT TLBX_TEARDOWN_SOURCE_SHA256 STREQUAL "6d9e12854e19a174350ae159969fa144e1d351297573489b84e403719119fd63")
+    message(FATAL_ERROR "The reviewed libnice teardown lifetime patch/source does not match")
+endif()
 
 vcpkg_check_features(OUT_FEATURE_OPTIONS FEATURE_OPTIONS
     FEATURES
