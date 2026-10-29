@@ -38,6 +38,7 @@ These rules apply only to tlbx-ai/tlbx. The tlbx terminal product remains workfl
 - Keep the permanent numbered checkout; return it to updated `dev`. No stable promotion is implied by a dev release.
 
 - Midterm is programmed in c# and typescript -> all major data processing/protocol logic/business logic shall be handled in c#, the typescript frontend shall be held as lean as possible.
+- Connect transport must run inside the signed mt process and reuse its identity and privileges. Embedding and extracting another network executable does not satisfy this boundary. In-process native libraries are allowed when mature and vetted for recent severe security advisories, Native AOT and every supported desktop platform. Before selecting a transport dependency, verify its license and required ICE/TURN/browser behavior; distinguish framework APIs from external libraries explicitly.
 - Use best practices for maintainable memory efficient code that uses the newest available .net features >= .net 10
 - We do not have a big team continuously revisiting code quality, and we cannot afford to come back later to clean up avoidable leftovers. If a feature change or refactor supersedes logic, helpers, types, config, branches, or APIs, remove that dead code in the same change. Do not leave cleanup debt behind on the assumption that someone will revisit it later.
 - always search if somthing exist first before implementing new features/api surfaces

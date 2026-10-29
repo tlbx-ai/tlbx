@@ -55,9 +55,11 @@ if (@($mutableActions).Count -gt 0) {
 $baseline = Get-AdvisoryBaseline $repoRoot
 
 if ($Scope -in @('server','all')) {
-    Write-Host 'Supply-chain gate: Go Connect transport package advisories for all six RIDs' -ForegroundColor Cyan
-    . (Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.ConnectTransport/advisory.ps1')
-    Invoke-ConnectGoAdvisoryGate -RepoRoot $repoRoot -Baseline $baseline
+    $architecture = if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64' } else { 'x64' }
+    $nativeRid = if ($IsWindows) { "win-$architecture" } elseif ($IsMacOS) { "osx-$architecture" } else { "linux-$architecture" }
+    Write-Host 'Supply-chain gate: exact native Connect build graph and known-Critical scanner controls' -ForegroundColor Cyan
+    & (Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.ConnectNative/build.ps1') -RuntimeIdentifier $nativeRid
+    & (Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1') -RuntimeIdentifier $nativeRid
 }
 
 if ($Scope -in @('server','tooling','all')) {

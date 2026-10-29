@@ -10,12 +10,11 @@ public static class ConnectEndpoints
         app.MapGet("/connect.html", () => Results.Redirect("/?connect-setup=1"));
         app.MapGet("/connect-setup.html", () => Results.Content(ConnectSetupPage.Html, "text/html; charset=utf-8"));
         app.MapGet("/connect-setup.js", () => Results.Content(ConnectSetupPage.JavaScript, "text/javascript; charset=utf-8"));
-        app.MapGet("/connect-licenses.txt", async (HttpContext context) =>
+        app.MapGet("/connect-licenses.txt", () =>
         {
-            using var notices = typeof(ConnectEndpoints).Assembly.GetManifestResourceStream("mtconnect.notices");
+            var notices = ConnectNativeLoader.ReadNotices();
             if (notices is null) return Results.NotFound();
-            using var reader = new StreamReader(notices);
-            return (IResult)Results.Content(await reader.ReadToEndAsync(context.RequestAborted), "text/plain; charset=utf-8");
+            return (IResult)Results.Content(notices, "text/plain; charset=utf-8");
         });
         app.MapGet("/api/connect/status", (ConnectService connect) => Results.Json(connect.GetStatus(), ConnectJsonContext.Default.ConnectStatus));
         app.MapPost("/api/connect/unlock", async (HttpContext context, ConnectProvisioningGate gate) =>

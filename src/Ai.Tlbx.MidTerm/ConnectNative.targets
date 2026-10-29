@@ -1,0 +1,29 @@
+<Project>
+  <PropertyGroup>
+    <_ConnectNativeRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</_ConnectNativeRid>
+    <_ConnectNativeRid Condition="'$(_ConnectNativeRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</_ConnectNativeRid>
+    <_ConnectNativeRoot>$(MSBuildProjectDirectory)/../Ai.Tlbx.MidTerm.ConnectNative</_ConnectNativeRoot>
+    <_ConnectNativeBundle>$(_ConnectNativeRoot)/bin/$(_ConnectNativeRid)/bundle.zip</_ConnectNativeBundle>
+  </PropertyGroup>
+  <ItemGroup>
+    <_ConnectNativeInput Include="$(_ConnectNativeRoot)/*.ps1;$(_ConnectNativeRoot)/*.py;$(_ConnectNativeRoot)/*.json;$(_ConnectNativeRoot)/ports/**/*;$(_ConnectNativeRoot)/triplets/**/*;$(_ConnectNativeRoot)/smoke/**/*" />
+  </ItemGroup>
+  <Target Name="RejectSkippedConnectNativePublish" BeforeTargets="PrepareForBuild" Condition="'$(IsPublishing)' == 'true' And '$(SkipConnectNativeBuild)' == 'true'">
+    <Error Text="Connect native dependencies cannot be skipped in a published artifact." />
+  </Target>
+  <Target Name="RejectSkippedConnectNativePublishTarget" BeforeTargets="Publish" Condition="'$(SkipConnectNativeBuild)' == 'true'">
+    <Error Text="Connect native dependencies cannot be skipped in a published artifact." />
+  </Target>
+  <Target Name="BuildConnectNative" BeforeTargets="AssignTargetPaths" Inputs="@(_ConnectNativeInput)" Outputs="$(_ConnectNativeBundle)" Condition="'$(SkipConnectNativeBuild)' != 'true'">
+    <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/build.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" />
+  </Target>
+  <Target Name="AuditConnectNative" BeforeTargets="AssignTargetPaths" DependsOnTargets="BuildConnectNative" Condition="'$(SkipConnectNativeBuild)' != 'true'">
+    <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/audit.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" />
+  </Target>
+  <Target Name="EmbedConnectNative" BeforeTargets="AssignTargetPaths" DependsOnTargets="AuditConnectNative" Condition="'$(SkipConnectNativeBuild)' != 'true'">
+    <Error Condition="!Exists('$(_ConnectNativeBundle)')" Text="The matching in-process Connect native bundle is required." />
+    <ItemGroup>
+      <EmbeddedResource Include="$(_ConnectNativeBundle)" LogicalName="tlbx.native.connect.bundle" />
+    </ItemGroup>
+  </Target>
+</Project>

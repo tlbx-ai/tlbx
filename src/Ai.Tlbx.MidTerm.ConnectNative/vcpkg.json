@@ -1,0 +1,10 @@
+{
+  "name": "tlbx-connect-native",
+  "version-string": "1",
+  "dependencies": [
+    {
+      "name": "libdatachannel",
+      "default-features": false
+    }
+  ]
+}

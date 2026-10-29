@@ -42,6 +42,8 @@ jobs:
           retention-days: 1
   server:
     name: PR server
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
     needs: frontend
     runs-on: windows-2025
     steps:
@@ -55,9 +57,34 @@ jobs:
         with:
           name: pr-frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
+      - name: Identify native compiler cache key
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $compiler = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe" | ForEach-Object { $_.VersionInfo.FileVersion } | Sort-Object) -join ';'
+          } else { $compiler = ((& cc --version) + (& c++ --version) + (& clang --version)) -join "`n" }
+          if (-not $compiler) { throw 'Native compiler identity is missing.' }
+          $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
+          "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-win-x64-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
+          restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-win-x64-
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
+
       - name: Server and host contracts
         shell: pwsh
         run: ./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError
-      - name: Connect transport protocol and supply-chain contracts
-        shell: pwsh
-        run: ./src/Ai.Tlbx.MidTerm.ConnectTransport/verify.ps1
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}

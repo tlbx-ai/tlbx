@@ -35,7 +35,7 @@ public sealed class ConnectRequestQueueTests
                 new BrowserPreviewOriginService(2100, 2101, true), new BrowserPreviewRegistry(), auth, http,
                 (signal, _) =>
                 {
-                    var bytes = receive.Receive(Convert.FromBase64String(signal.Data!));
+                    var bytes = receive.Receive(signal.Span);
                     if (bytes is not null)
                     {
                         replies.Enqueue(JsonSerializer.Deserialize(bytes, ConnectJsonContext.Default.ConnectEnvelope)!);
