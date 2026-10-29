@@ -3,8 +3,10 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
+from unittest import mock
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
@@ -88,12 +90,16 @@ class NativePackageContracts(unittest.TestCase):
         source_pin = json.loads((ROOT / "native-stack.json").read_text())
         fixture_versions = dict(source_pin["versions"])
         fixture_versions.update({name: value["portVersion"] for name, value in source_pin.get("backports", {}).items()})
+        fixture_versions["dirent"] = "1.26"
+        fixture_versions["libiconv"] = "1.19#1"
+        fixture_versions["gettext-libintl"] = "0.22.5#4"
         for name, version in fixture_versions.items():
             share = prefix / "share" / name
             share.mkdir(parents=True)
             document = {"creationInfo": {"creators": ["Tool: fixture"], "created": "2026-10-29T00:00:00Z"}, "packages": [{"name": name, "SPDXID": "SPDXRef-port", "versionInfo": version, "checksums": [{"algorithm": "SHA512", "checksumValue": "b" * 128}]}], "relationships": [{"spdxElementId": "SPDXRef-DOCUMENT", "relationshipType": "DESCRIBES", "relatedSpdxElement": "SPDXRef-port"}]}
             (share / "vcpkg.spdx.json").write_text(json.dumps(document))
-            (share / "copyright").write_text("fixture notices " + name)
+            if name not in ("dirent", "libiconv", "gettext-libintl"):
+                (share / "copyright").write_text("fixture notices " + name)
             if name in source_pin.get("backports", {}):
                 expected = source_pin["backports"][name]
                 archive_data = b"fixture patched static archive"
@@ -116,9 +122,50 @@ class NativePackageContracts(unittest.TestCase):
         with zipfile.ZipFile(self.bundle) as archive:
             self.assertNotIn("build-tool.exe", archive.namelist())
             graph = json.loads(archive.read("native-dependencies.spdx.json"))
-            self.assertEqual(len(graph["packages"]), len(fixture_versions))
-            self.assertEqual(len({p["SPDXID"] for p in graph["packages"]}), len(fixture_versions))
+            self.assertEqual(len(graph["packages"]), len(fixture_versions) - 3)
+            self.assertEqual(len({p["SPDXID"] for p in graph["packages"]}), len(fixture_versions) - 3)
+            self.assertFalse(any(p["name"] in ("dirent", "libiconv", "gettext-libintl") for p in graph["packages"]))
             self.assertTrue(all(r["spdxElementId"] == "SPDXRef-DOCUMENT" for r in graph["relationships"]))
+        self.assertEqual((output / "source-sboms/dirent.spdx.json").read_bytes(), (prefix / "share/dirent/vcpkg.spdx.json").read_bytes())
+        for rid in ("linux-arm64", "osx-x64", "osx-arm64"):
+            with self.subTest(rid=rid):
+                target = installed / rid
+                shutil.copytree(prefix, target)
+                entry = "libdatachannel.dylib" if rid.startswith("osx-") else "libdatachannel.so"
+                if entry != "libdatachannel.so":
+                    (target / "lib/libdatachannel.so").rename(target / "lib" / entry)
+                    (target / "share/gettext-libintl/copyright").write_text("fixture macOS bundled libintl notices")
+                link = json.loads((target / "share/libdatachannel/tlbx-link.json").read_text())
+                link.update({"runtimeIdentifier": rid, "entryPoint": entry})
+                (target / "share/libdatachannel/tlbx-link.json").write_text(json.dumps(link))
+                target_output = self.root / "bin" / rid
+                with mock.patch.dict("os.environ", {"GITHUB_ACTIONS": "false"}):
+                    package_module.package(rid, installed, target_output, verify_load=False)
+                with zipfile.ZipFile(target_output / "bundle.zip") as archive:
+                    manifest = json.loads(archive.read("manifest.json"))
+                    self.assertEqual(manifest["entryPoint"], entry)
+                    self.assertNotIn("dirent", manifest["versions"])
+                    self.assertNotIn("libiconv", manifest["versions"])
+                    self.assertEqual("gettext-libintl" in manifest["versions"], rid.startswith("osx-"))
+                    self.assertIn(entry, archive.namelist())
+        empty_recipe = prefix / "share/dirent/vcpkg.spdx.json"
+        original = empty_recipe.read_bytes()
+        malformed = json.loads(original)
+        malformed["files"] = [{"SPDXID": "SPDXRef-binary-file-0", "fileName": "./include/dirent.h"}]
+        empty_recipe.write_text(json.dumps(malformed))
+        with self.assertRaisesRegex(ValueError, "Missing native dependency notices: dirent"):
+            package_module.package("linux-x64", installed, output, verify_load=False)
+        empty_recipe.write_bytes(original)
+        (prefix / "share/libnice/copyright").unlink()
+        with self.assertRaisesRegex(ValueError, "Missing native dependency notices: libnice"):
+            package_module.package("linux-x64", installed, output, verify_load=False)
+        windows = installed / "win-x64"
+        (windows / "bin").mkdir(parents=True)
+        (windows / "bin/datachannel.dll").write_bytes(b"fixture windows library")
+        (windows / "share/dirent").mkdir(parents=True)
+        (windows / "share/dirent/vcpkg.spdx.json").write_bytes((prefix / "share/dirent/vcpkg.spdx.json").read_bytes())
+        with self.assertRaisesRegex(ValueError, "Missing native dependency notices: dirent"):
+            package_module.package("win-x64", installed, output, verify_load=False)
 
 
 if __name__ == "__main__":
