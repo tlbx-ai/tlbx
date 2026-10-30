@@ -7,8 +7,9 @@ protocol checks and use the same C# services for both interfaces.
 ## First slice
 
 `POST /api/mcp` exposes Streamable HTTP using the official C# SDK. It is local
-only and passes through existing tlbx authentication and origin checks. This is
-an experimental read-only slice, not a replacement for the CLI or a public remote
+only and passes through existing tlbx authentication and origin checks. The path
+is also blocked in the Connect tunnel; forwarded/proxy headers are rejected.
+This is an experimental read-only slice, not a replacement for the CLI or a public remote
 MCP service. It does not alter provider configurations or install anything globally.
 
 Every request also requires `X-Tlbx-Cli-Context`, containing a current verified

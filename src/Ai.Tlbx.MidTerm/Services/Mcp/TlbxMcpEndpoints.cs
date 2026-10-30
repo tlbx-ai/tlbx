@@ -50,6 +50,13 @@ internal static class TlbxMcpEndpoints
     {
         if (context.Connection.RemoteIpAddress is not { } remote || !IPAddress.IsLoopback(remote))
             return (403, "TLBX_MCP_LOCAL_ONLY: Run the MCP client on the owning tlbx host.");
+        if (context.Request.Headers.Keys.Any(header =>
+            header.Equals("Forwarded", StringComparison.OrdinalIgnoreCase)
+            || header.Equals("Via", StringComparison.OrdinalIgnoreCase)
+            || header.Equals("X-Real-IP", StringComparison.OrdinalIgnoreCase)
+            || header.StartsWith("X-Forwarded-", StringComparison.OrdinalIgnoreCase)
+            || header.Equals("X-MidTerm-Internal-Proxy", StringComparison.OrdinalIgnoreCase)))
+            return (403, "TLBX_MCP_LOCAL_ONLY: Proxied requests cannot establish local caller identity.");
         var values = context.Request.Headers[SessionCliContextService.LeaseHeader];
         if (values.Count != 1 || string.IsNullOrWhiteSpace(values[0]))
             return (409, "TLBX_MCP_CONTEXT_REQUIRED: Obtain a fresh verified CLI context; no tool was executed.");

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services.Mcp;
+using Ai.Tlbx.MidTerm.Services.Connect;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Startup;
 using Microsoft.AspNetCore.Builder;
@@ -85,6 +86,27 @@ public sealed class TlbxMcpProtocolTests
         Assert.NotNull(TlbxMcpEndpoints.Authorize(context, leases));
         using var restarted = CreateLeases();
         Assert.NotNull(TlbxMcpEndpoints.Authorize(context, restarted));
+    }
+
+    [Fact]
+    public void ConnectCannotTurnRemoteMcpRequestsIntoLoopbackRequests()
+    {
+        foreach (var path in new[] { "/api/mcp", "/API/MCP/", "/api/%6dcp", "/api/%256dcp", "/api/mcp?x=1" })
+            Assert.Throws<InvalidDataException>(() => ConnectRequestPolicy.ResolvePath(new Uri("https://localhost:2000"), path));
+    }
+
+    [Theory]
+    [InlineData("Forwarded")]
+    [InlineData("X-Forwarded-For")]
+    [InlineData("X-MidTerm-Internal-Proxy")]
+    public void ProxyHeadersCannotEstablishLocalIdentity(string header)
+    {
+        using var leases = CreateLeases();
+        var context = new DefaultHttpContext();
+        context.Connection.RemoteIpAddress = IPAddress.Loopback;
+        context.Request.Headers[SessionCliContextService.LeaseHeader] = leases.CreateHostLease("first001", 100).Split(':')[1];
+        context.Request.Headers[header] = "untrusted";
+        Assert.Equal(403, TlbxMcpEndpoints.Authorize(context, leases)!.Value.Status);
     }
 
     [Fact]
