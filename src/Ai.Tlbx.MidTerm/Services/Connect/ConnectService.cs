@@ -68,7 +68,7 @@ public sealed class ConnectService : BackgroundService
         }
         catch (Exception ex) when (ex is JsonException or ArgumentException or InvalidDataException or CryptographicException or FormatException)
         {
-            _lastError = "The saved Connect keys are invalid. Generate new keys locally.";
+            _lastError = "The saved Link keys are invalid. Generate new keys locally.";
         }
     }
 
@@ -84,7 +84,7 @@ public sealed class ConnectService : BackgroundService
     public async Task<ConnectGenerateResponse> GenerateAsync(ConnectGenerateRequest request, CancellationToken ct)
     {
         if (string.IsNullOrEmpty(_settings.Load().PasswordHash))
-            throw new InvalidOperationException("Set a local tlbx password before enabling Connect.");
+            throw new InvalidOperationException("Set a local tlbx password before enabling Link.");
         var origin = ConnectRequestPolicy.NormalizeServerUrl(request.ServerUrl);
         var name = string.IsNullOrWhiteSpace(request.Name) ? Environment.MachineName : request.Name.Trim();
         if (name.Length is < 1 or > 100 || name.Any(char.IsControl)) throw new ArgumentException("Use a device name of 1-100 characters.");
@@ -101,8 +101,8 @@ public sealed class ConnectService : BackgroundService
                 _configuration = configuration;
                 _revoked = false;
                 _lastError = previousRemoved
-                    ? "Import the public registration file in Connect, then use the private access file in your browser."
-                    : "New keys saved. Import both files in Connect. Remove the previous offline computer entry in Connect if it remains.";
+                    ? "Import the public registration file in Link, then use the private access file in your browser."
+                    : "New keys saved. Import both files in Link. Remove the previous offline computer entry in Link if it remains.";
             }
             Wake();
             return downloads;
@@ -118,8 +118,8 @@ public sealed class ConnectService : BackgroundService
             var cloudRemoved = await DisableCurrentAsync();
             lock (_gate)
             {
-                _lastError = cloudRemoved ? "Connect keys removed from this computer."
-                    : "Connect is disabled locally. Remove this computer's offline entry in Connect if it remains.";
+                _lastError = cloudRemoved ? "Link keys removed from this computer."
+                    : "Link is disabled locally. Remove this computer's offline entry in Link if it remains.";
                 _revoked = false;
             }
         }
@@ -185,7 +185,7 @@ public sealed class ConnectService : BackgroundService
             catch (Exception ex) when (ex is HttpRequestException or WebSocketException or IOException or JsonException
                 or InvalidOperationException or ArgumentException or OperationCanceledException or CryptographicException or FormatException)
             {
-                lock (_gate) _lastError = "Connect is temporarily unavailable. Retrying automatically.";
+                lock (_gate) _lastError = "Link is temporarily unavailable. Retrying automatically.";
                 try { await Task.Delay(TimeSpan.FromSeconds(10), generation.Token); }
                 catch (OperationCanceledException) when (generation.IsCancellationRequested) { }
             }
@@ -210,7 +210,7 @@ public sealed class ConnectService : BackgroundService
             new ConnectChallengeRequest(configuration.DeviceId, "host"), ConnectJsonContext.Default.ConnectChallengeRequest, ct);
         if (response.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
-            lock (_gate) _lastError = "Import this computer's public registration file in Connect. Waiting for registration.";
+            lock (_gate) _lastError = "Import this computer's public registration file in Link. Waiting for registration.";
             await Task.Delay(TimeSpan.FromSeconds(10), ct);
             return null;
         }
@@ -248,7 +248,7 @@ public sealed class ConnectService : BackgroundService
         }
         catch (WebSocketException) when (socket.HttpStatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
-            lock (_gate) { _revoked = true; _lastError = "Connect authorization was revoked. Generate new keys locally."; }
+            lock (_gate) { _revoked = true; _lastError = "Link authorization was revoked. Generate new keys locally."; }
             return;
         }
         lock (_gate) { _online = true; _lastError = null; }

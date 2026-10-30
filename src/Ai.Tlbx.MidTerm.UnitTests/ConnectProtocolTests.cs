@@ -114,6 +114,20 @@ public sealed class ConnectProtocolTests
         Assert.Equal("http://127.0.0.1:5215/", ConnectRequestPolicy.NormalizeServerUrl("http://127.0.0.1:5215").AbsoluteUri);
 
     [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("  ")]
+    public void NewPairingDefaultsToLinkOrigin(string? origin) =>
+        Assert.Equal("https://lnk.tlbx.ai/", ConnectRequestPolicy.NormalizeServerUrl(origin).AbsoluteUri);
+
+    [Theory]
+    [InlineData("https://connect.tlbx.ai")]
+    [InlineData("https://lnk.tlbx.ai")]
+    [InlineData("https://link.example.test:8443")]
+    public void PairingPreservesExplicitConfiguredOrigins(string origin) =>
+        Assert.Equal(origin + "/", ConnectRequestPolicy.NormalizeServerUrl(origin).AbsoluteUri);
+
+    [Theory]
     [InlineData("/api/settings", "/webpreview/0123456789abcdefabcd/api/settings")]
     [InlineData("/ws/mux", "/webpreview/0123456789abcdefabcd/ws/mux")]
     [InlineData("/index.html", "/webpreview/0123456789abcdefabcd/index.html")]

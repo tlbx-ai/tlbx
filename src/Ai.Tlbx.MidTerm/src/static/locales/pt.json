@@ -1410,7 +1410,7 @@
   "connect.sidebar.connection": "Conexão",
   "connect.sidebar.switch": "Trocar de computador",
   "connect.sidebar.details": "Detalhes da conexão",
-  "connect.sidebar.update": "Esta sessão ainda não envia detalhes da conexão. Recarregue connect.tlbx.ai e conecte-se novamente. Suas chaves de acesso salvas serão mantidas.",
+  "connect.sidebar.update": "Esta sessão ainda não envia detalhes da conexão. Recarregue lnk.tlbx.ai e conecte-se novamente. Suas chaves de acesso salvas serão mantidas.",
   "connect.sidebar.route": "Rota",
   "connect.sidebar.mode": "Modo",
   "connect.sidebar.source": "Origem",
@@ -1438,7 +1438,7 @@
   "connect.sidebar.unconfirmed": "Não confirmado",
   "connect.sidebar.encryptionHint": "Criptografia entre o navegador e o tlbx, inclusive ao usar TURN.",
   "connect.sidebar.identityVerified": "Chave verificada",
-  "connect.sidebar.signalingConnected": "Connect · WSS ativo",
+  "connect.sidebar.signalingConnected": "Link · WSS ativo",
   "connect.sidebar.signalingMissing": "Não informado",
   "connect.sidebar.signalingHint": "A conexão de sinalização permanece aberta durante o uso. A rota dos dados da aplicação é exibida em Rota."
 }
