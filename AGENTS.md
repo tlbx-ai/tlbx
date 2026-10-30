@@ -1,4 +1,8 @@
 Use tlbx supervision when this terminal actually runs inside tlbx.
+The generated Bash/PowerShell CLI remains a supported, maintained agent interface
+until TLBX MCP has demonstrated equal coverage and better stability in real use.
+MCP work must preserve CLI behavior and share existing C# services; do not remove
+CLI commands or their protocol checks merely because an MCP equivalent exists.
 Keep automated behavioral tests focused on protocols, settings, installation and
 updates. Do not add UI, layout or general product-logic test suites without an
 explicit request. Removed tests can be recovered from Git history.

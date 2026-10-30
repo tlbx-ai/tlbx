@@ -80,6 +80,7 @@
        conditions RID-less, so putting these in a RID-conditional group has no effect. -->
   <ItemGroup>
     <PackageReference Include="Acornima" Version="1.8.0" />
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.0" />
     <PackageReference Include="Ai.Tlbx.VoiceAssistant.Provider.OpenAi" Version="11.5.0" />
     <PackageReference Include="Ai.Tlbx.Inference" Version="2.6.0" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.13" />

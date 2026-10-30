@@ -206,6 +206,7 @@ public class Program
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var cliContext = app.Services.GetRequiredService<SessionCliContextService>();
+        Services.Mcp.TlbxMcpEndpoints.Map(app);
         app.Use(async (context, next) =>
         {
             if (context.Request.Path != "/api/sessions/process-context" &&

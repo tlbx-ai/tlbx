@@ -339,6 +339,14 @@ public sealed class SessionCliContextService : IDisposable
         }
     }
 
+    internal string? GetLeaseSessionId(string token)
+    {
+        lock (_gate)
+        {
+            return ValidateLease(token) is null ? _leases[token].SessionId : null;
+        }
+    }
+
     internal string? ValidateLease(string token)
     {
         lock (_gate)

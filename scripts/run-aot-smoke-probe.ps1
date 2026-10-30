@@ -131,6 +131,17 @@ try {
     }
     Write-Host "  /api/graphs -> $graphsStatus" -ForegroundColor Green
 
+    # MCP tool catalogs are constructed during AOT startup. Verify that the new
+    # endpoint still requires both ordinary authentication and verified context.
+    $mcpUrl = "https://127.0.0.1:$port/api/mcp"
+    $mcpAnonymous = Invoke-WebRequest $mcpUrl -Method Post -ContentType 'application/json' -Body '{}' -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 5
+    $mcpUnbound = Invoke-WebRequest $mcpUrl -Method Post -ContentType 'application/json' -Body '{}' -WebSession $probeSession -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 5
+    if ([int]$mcpAnonymous.StatusCode -ne 401 -or [int]$mcpUnbound.StatusCode -ne 409 -or
+        $mcpUnbound.Content -notlike '*TLBX_MCP_CONTEXT_REQUIRED*') {
+        throw 'AOT smoke probe FAILED: MCP did not enforce authentication and verified caller context'
+    }
+    Write-Host '  /api/mcp -> anonymous401 / authenticated-unbound409' -ForegroundColor Green
+
     # Read the embedded PDF image from the standalone published executable, never source wwwroot.
     $pdfLoadingPath = Join-Path $settingsDir 'pdf-loading-icon.gif'
     $pdfLoading = Invoke-WebRequest "https://127.0.0.1:$port/pdf/images/loading-icon.gif" -WebSession $probeSession -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 5 -OutFile $pdfLoadingPath -PassThru
