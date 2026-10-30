@@ -158,8 +158,9 @@ public class Program
         {
             certInfoService.SetCertificate(ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
 
-            // Clean up old MidTerm certificates from trusted store (Windows only)
-            if (!ServerSetup.IsFallbackCertificate)
+            // Source instances must not replace the installed service's trust,
+            // including isolated development runs under the service identity.
+            if (!ServerSetup.IsFallbackCertificate && !ServerSetup.IsSourceDevLaunchMode())
             {
                 CertificateCleanupService.EnsureCertificateTrust(ServerSetup.LoadedCertificate, WriteEventLogWrapper);
             }

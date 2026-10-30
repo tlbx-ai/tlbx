@@ -446,7 +446,8 @@ public sealed class TlbxMcpTransportProtocolTests
             });
     }
 
-    private static async Task WithStreamProxyAsync(Action<IMcpServerBuilder> configure, Func<McpClient, McpServer, Task> verify)
+    private static async Task WithStreamProxyAsync(Action<IMcpServerBuilder> configure, Func<McpClient, McpServer, Task> verify,
+        McpStdioRuntimeContext? context = null)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         var sourceInput = new Pipe(); var sourceOutput = new Pipe();
@@ -474,7 +475,7 @@ public sealed class TlbxMcpTransportProtocolTests
             var proxyServices = new ServiceCollection();
             proxyServices.AddLogging();
             var builder = proxyServices.AddMcpServer().WithStreamServerTransport(proxyRead, proxyWrite);
-            TlbxMcpStdioCommand.ConfigureForwarding(builder, upstream);
+            TlbxMcpStdioCommand.ConfigureForwarding(builder, upstream, context);
             await using var proxyProvider = proxyServices.BuildServiceProvider();
             var proxy = proxyProvider.GetRequiredService<McpServer>();
             await using var proxyCancellation = proxy.RegisterNotificationHandler(NotificationMethods.CancelledNotification, (notification, _) =>
@@ -489,6 +490,33 @@ public sealed class TlbxMcpTransportProtocolTests
             try { await sourceRun; } catch (OperationCanceledException) { }
             if (proxyRun is not null) try { await proxyRun; } catch (OperationCanceledException) { }
         }
+    }
+
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("untrusted-provider-secret-marker", false)]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Reliability", "IDISP014:Use a single instance of HttpClient", Justification = "Per-test identity authority, never a production HTTP client.")]
+    public async Task NativeIdentityErrorsRemainActionableWithoutExposingUnexpectedExceptions(string? failureMessage, bool controlled)
+    {
+        var options = new McpStdioOptions { Origin = new Uri("https://localhost:2000/"), BaseUrl = "https://localhost:2000", ApiKey = "fixture" };
+        var credentials = new McpStdioCredentials(options, new CookieContainer());
+        using var authority = new NativeIdentityHandler { FailureMessage = failureMessage };
+        using var http = new HttpClient(authority, disposeHandler: false);
+        using var context = new McpStdioRuntimeContext(http, credentials, options);
+        var dispatched = 0;
+        await WithStreamProxyAsync(builder => builder.WithCallToolHandler((_, _) =>
+        {
+            Interlocked.Increment(ref dispatched);
+            return ValueTask.FromResult(new CallToolResult());
+        }), async (client, _) =>
+        {
+            var result = await client.CallToolAsync("context_get", cancellationToken: TestContext.Current.CancellationToken);
+            Assert.True(result.IsError);
+            var text = Assert.Single(result.Content.OfType<TextContentBlock>()).Text;
+            if (controlled) Assert.StartsWith("TLBX_MCP_NATIVE_THREAD_REQUIRED:", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("untrusted-provider-secret-marker", text, StringComparison.Ordinal);
+            Assert.Equal(0, dispatched);
+        }, context);
     }
 
     [Fact]
@@ -575,9 +603,11 @@ public sealed class TlbxMcpTransportProtocolTests
         internal int ThreadProofs => Volatile.Read(ref _proofs);
         internal string SessionId { get; set; } = "first001";
         internal bool UniqueExpiredLeases { get; init; }
+        internal string? FailureMessage { get; init; }
         internal string? LastExpectedSession { get; private set; }
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            if (FailureMessage is { } message) throw new InvalidOperationException(message);
             await using var stream = await request.Content!.ReadAsStreamAsync(cancellationToken);
             var input = await JsonSerializer.DeserializeAsync(stream, McpClientJsonContext.Default.McpContextRequest, cancellationToken);
             if (input!.NativeThreadId is not null) Interlocked.Increment(ref _proofs);

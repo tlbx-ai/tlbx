@@ -25,6 +25,31 @@ supports remote authenticated calls and has no implicit self. Supply
 headers is rejected; Connect currently blocks the MCP paths. HTTPS uses normal
 certificate validation or an explicitly supplied exact SHA256 leaf pin.
 
+## Terminal TUI configuration
+
+Native Agent Controller sessions register MCP per conversation. For a separately
+launched Codex TUI, point its MCP configuration at the native adapter and an
+owner-protected credential file; do not put credentials in command arguments or
+commit the credential file.
+
+```toml
+[mcp_servers.tlbx]
+command = "mt"
+args = ["mcp", "--stdio", "--credentials-file", "C:/private/tlbx-mcp.json"]
+required = true
+startup_timeout_sec = 30
+tool_timeout_sec = 660
+env_vars = ["CODEX_HOME"]
+```
+
+The private JSON file supplies `MT_BASE_URL` and existing `MT_API_KEY` or
+`MT_TOKEN` authentication. A non-default `CODEX_HOME` must be forwarded explicitly
+with `env_vars` or set in the MCP server's `env` table. Otherwise shared-thread
+validation looks for the daemon in the default profile. No directory/title or
+inherited session hint substitutes for this proof. `required` prevents an early
+model turn from starting with an incomplete optional-server tool catalog. See
+the [Codex MCP configuration reference](https://developers.openai.com/codex/mcp#stdio-servers).
+
 ## Tools and outputs under implementation
 
 The catalog covers session/terminal operations, queues, control-plane work and
@@ -78,7 +103,11 @@ from automatic to manual permissions. A controlled source-web restart retained
 the canonical thread and both native adapter PIDs while the server instance
 changed; a subsequent model-issued context call succeeded. These checks do not establish
 complete behavioral parity or the installed service/user boundary.
-Remaining evidence includes installed service/user and shared-TUI model calls,
+Two ordinary terminal TUIs and two TUIs connected to one isolated Codex daemon
+have also completed self/topic/self. Shared calls used CLI-thread proof, not
+terminal ancestry. Resuming the same native thread in a new tlbx terminal
+resolved its new session and left the sibling's topic unchanged.
+Remaining evidence includes installed service/user model calls,
 rendered browser workflows, final integrated runtime Native
 AOT publish and a verified dev release. Keep CLI
 guidance and implementations maintained until these gates pass.

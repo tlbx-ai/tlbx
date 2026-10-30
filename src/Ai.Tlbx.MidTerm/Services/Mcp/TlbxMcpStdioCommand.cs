@@ -117,20 +117,32 @@ internal static class TlbxMcpStdioCommand
                 })
                 .WithCallToolHandler(async (request, ct) =>
                 {
-                    var native = context is null ? null : await context.ResolveNativeCallAsync(request.JsonRpcRequest, request.Params?.Name == "context_repair", ct).ConfigureAwait(false);
-                    using var scope = context?.EnterNativeScope(native);
-                    if (request.Params?.Name == "process_run_isolated")
-                        return await TlbxMcpIsolatedProcessTool.InvokeLocalAsync(request.Params, ct).ConfigureAwait(false);
-                    if (request.Params?.Name == TlbxMcpFileCallTool.ToolName)
-                        return await TlbxMcpNativeWorkflow.InvokeNativeStepAsync(upstream, request.Params, ct).ConfigureAwait(false);
-                    if (request.Params?.Name == "context_repair" && context is not null)
-                        await context.EnsureAsync(force: true, ct).ConfigureAwait(false);
-                    if (request.Params?.Name == "workflow_run")
-                        return await TlbxMcpNativeWorkflow.InvokeAsync(request.Params, upstream, ct).ConfigureAwait(false);
-                    if (request.Params?.Name == "update_apply")
-                        return await TlbxMcpUpdateWorkflow.InvokeAsync(request.Params,
-                            (name, arguments, token) => TlbxMcpNativeWorkflow.CallUpstreamAsync(upstream, name, arguments, token), ct).ConfigureAwait(false);
-                    return await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
+                    try
+                    {
+                        var native = context is null ? null : await context.ResolveNativeCallAsync(request.JsonRpcRequest, request.Params?.Name == "context_repair", ct).ConfigureAwait(false);
+                        using var scope = context?.EnterNativeScope(native);
+                        if (request.Params?.Name == "process_run_isolated")
+                            return await TlbxMcpIsolatedProcessTool.InvokeLocalAsync(request.Params, ct).ConfigureAwait(false);
+                        if (request.Params?.Name == TlbxMcpFileCallTool.ToolName)
+                            return await TlbxMcpNativeWorkflow.InvokeNativeStepAsync(upstream, request.Params, ct).ConfigureAwait(false);
+                        if (request.Params?.Name == "context_repair" && context is not null)
+                            await context.EnsureAsync(force: true, ct).ConfigureAwait(false);
+                        if (request.Params?.Name == "workflow_run")
+                            return await TlbxMcpNativeWorkflow.InvokeAsync(request.Params, upstream, ct).ConfigureAwait(false);
+                        if (request.Params?.Name == "update_apply")
+                            return await TlbxMcpUpdateWorkflow.InvokeAsync(request.Params,
+                                (name, arguments, token) => TlbxMcpNativeWorkflow.CallUpstreamAsync(upstream, name, arguments, token), ct).ConfigureAwait(false);
+                        return await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.CallToolResult, ct).ConfigureAwait(false);
+                    }
+                    catch (InvalidOperationException error) when (
+                        error.Message.StartsWith("TLBX_MCP_", StringComparison.Ordinal) ||
+                        error.Message.StartsWith("TLBX_CONTEXT_", StringComparison.Ordinal))
+                    {
+                        // Preserve our actionable, controlled identity errors.
+                        // Other exceptions remain SDK-masked and cannot expose
+                        // arbitrary provider/configuration text to the model.
+                        return new CallToolResult { IsError = true, Content = [new TextContentBlock { Text = error.Message }] };
+                    }
                 });
         if (upstream.ServerCapabilities.Resources is not null)
         {
