@@ -33,14 +33,15 @@ internal static class TlbxMcpEndpoints
                 return;
             }
 
+            context.Response.Headers.CacheControl = "no-store";
             var error = Authorize(context, app.Services.GetRequiredService<SessionCliContextService>());
             if (error is not null)
             {
                 context.Response.StatusCode = error.Value.Status;
+                context.Response.ContentType = "text/plain; charset=utf-8";
                 await context.Response.WriteAsync(error.Value.Message, context.RequestAborted);
                 return;
             }
-            context.Response.Headers.CacheControl = "no-store";
             await next(context);
         });
         app.MapMcp(Path);

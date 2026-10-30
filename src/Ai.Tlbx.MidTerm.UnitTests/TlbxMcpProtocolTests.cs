@@ -59,6 +59,8 @@ public sealed class TlbxMcpProtocolTests
             using var body = new StringContent("{}");
             using var missing = await Http.PostAsync(address + TlbxMcpEndpoints.Path, body, ct);
             Assert.Equal(HttpStatusCode.Conflict, missing.StatusCode);
+            Assert.Equal("text/plain", missing.Content.Headers.ContentType?.MediaType);
+            Assert.Contains("TLBX_MCP_CONTEXT_REQUIRED", await missing.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
             Assert.False(AuthMiddleware.IsPublicPath(TlbxMcpEndpoints.Path));
         }
         finally { await app.StopAsync(ct); }
