@@ -4,45 +4,73 @@ The Bash/PowerShell CLI remains supported and maintained. MCP is additive until
 real agent workflows demonstrate equal coverage and better stability. Keep CLI
 protocol checks and use the same C# services for both interfaces.
 
-## First slice
+## Transports and identity
 
-`POST /api/mcp` exposes Streamable HTTP using the official C# SDK. It is local
-only and passes through existing tlbx authentication and origin checks. The path
-is also blocked in the Connect tunnel; forwarded/proxy headers are rejected.
-This is an experimental read-only slice, not a replacement for the CLI or a public remote
-MCP service. It does not alter provider configurations or install anything globally.
+`POST /api/mcp` exposes stateless Streamable HTTP using the pinned official C#
+SDK. `mt mcp --stdio` provides the native provider adapter. Both require existing
+full tlbx authentication. No global provider configuration is changed.
 
-Every request also requires `X-Tlbx-Cli-Context`, containing a current verified
-lease obtained from `/api/sessions/process-context` using the existing CLI caller
-identity flow. A plain session ID, cwd, MCP transport session, or API key alone
-cannot select `self`. Leases expire after two minutes and may be revoked sooner;
-clients must obtain fresh context before subsequent calls. Never replay an
-application mutation automatically. Do not persist leases in provider config.
+Runtime binding uses direct loopback and verified process/runtime roots. Shared
+controller backends receive per-thread credentials through an owner-protected
+private file; provider configuration contains only its path. A launch capability
+survives an MCP child restart while its exact root and canonical runtime epoch
+remain live. Application credentials are separately bound to client PID/start.
+They are revalidated and renewed without replaying application operations.
+Inherited session IDs, cwd and daemon ancestry alone never establish `self`.
+Existing short-lived CLI context leases remain supported.
 
-The endpoint is stateless, so it revalidates the caller on every HTTP request and
-again at tool dispatch. It supports the protocol revisions implemented by the
-pinned SDK; legacy SSE endpoints are disabled.
+Explicit owner mode (`mt mcp --stdio --operator --url https://HOST[:PORT][/PREFIX]`)
+supports remote authenticated calls and has no implicit self. Supply
+`targetSessionId` for session-scoped work. Runtime proof through forwarded/proxy
+headers is rejected; Connect currently blocks the MCP paths. HTTPS uses normal
+certificate validation or an explicitly supplied exact SHA256 leaf pin.
 
-| Tool | Result |
-|---|---|
-| `context_get` | Verified calling session, server version, experimental flag |
-| `sessions_list` | Same full-user session projection as REST/CLI |
-| `browser_snapshot` | Existing preview snapshot, bounded to 100,000 characters |
-| `browser_screenshot` | Existing preview PNG as MCP image content |
+## Tools and outputs under implementation
 
-Browser tools accept optional `previewName` and always use the verified calling
-session. Existing browser ownership rules still apply. They never open, activate
-or claim a preview. No arbitrary target-session argument is accepted in this slice.
+The catalog covers session/terminal operations, queues, control-plane work and
+dispatch, structured agents, input history, repository watches, boards, updates
+and browser automation. Fixed API tools invoke the existing registered C# route
+handlers with the authenticated caller context. JSON arguments preserve literal
+Unicode, newlines and binary/base64 payloads without shell quoting.
 
-## Next acceptance gates
+Browser open/close uses the shared REST lifecycle, hidden defaults, readiness and
+existing ownership checks. `previewName` is per call. `workflow_run` executes
+named tools sequentially with earlier-result references, partial results and
+optional ephemeral-preview cleanup. Successful mutations remain committed after
+a later failure; neither workflows nor transports automatically replay them.
 
-1. Prove Native AOT publish and real MCP HTTP discovery/calls; preserve CLI tests.
-2. Add a local stdio adapter and renewable runtime-bound credentials after proving
-   caller identity for ordinary terminal agents and dedicated controller runtimes.
-   Shared backends must not inherit the first launcher's identity.
-3. Share the existing browser-open workflow before adding browser mutations;
-   preserve sticky ownership, hidden-open defaults and readiness checks.
-4. Verify real provider clients, concurrent siblings, resume, reconnect and service
-   identity boundaries before changing default agent instructions to MCP.
-5. Expand session orchestration with explicit caller/target authorization. Remove
-   CLI paths only after their real users and scripts have a verified migration.
+Native `tool_call_from_file` expands a caller-local UTF-8 JSON arguments file, or
+injects an exact text file into a named argument. This replaces board `@file` and
+piped JavaScript/paste input without copying file contents through the model.
+Reads are bounded to 30 MiB; underlying transport/tool limits still apply. HTTP
+never reads caller files as the service account. Native `update_apply` dispatches
+once and verifies a restarted server, expected version and recorded update result;
+lost responses and cancelled recovery are reported as uncertain outcomes.
+
+Screenshots include inline images and opaque resources for complete original
+bytes; snapshots can also become resources. Resource reads are caller-scoped and
+chunked at 4 MiB. Generated copies expire after one hour and are bounded to 128
+captures/512 MiB, except one newest larger original retained in full. Workspace
+copies requested through `saveToWorkspace` survive cache eviction. Resource
+handles do not survive a web-server restart. Abrupt termination may leave private
+temporary files; normal disposal removes the generated cache.
+`artifact_read` and `artifacts_list` provide the same owner-checked access through
+tools/call. Installed Codex 0.166 supplies canonical thread metadata there, but
+omits it on resources/read; shared-backend resource calls without exact scope are
+rejected rather than borrowing another call's identity.
+
+`context_get`, `context_repair` and `context_export` expose verified scope and
+non-secret child-shell hints. A fresh child MCP connection must still prove its
+own identity. Provider tool timeouts must allow browser/workflow waits and cleanup
+(660 seconds for the advertised 600-second workflow maximum, including cleanup).
+
+## Completion gates still open
+
+Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained CLI
+helpers, signatures and semantic scenarios; catalog presence is not acceptance.
+Managed protocol and CLI suites cover routing, literal payloads, native process
+lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
+Remaining evidence includes real Codex/ACP/Claude provider calls, concurrent
+siblings, service/user boundaries, rendered browser workflows, integrated Native
+AOT publish and a verified dev release. Keep CLI
+guidance and implementations maintained until these gates pass.

@@ -347,6 +347,18 @@ public sealed class SessionCliContextService : IDisposable
         }
     }
 
+    internal string? GetLeaseActorIdentity(string token)
+    {
+        lock (_gate)
+        {
+            if (ValidateLease(token) is not null) return null;
+            var lease = _leases[token];
+            var ownerPid = lease.Owner?.Terminal.ClientPid ?? lease.CallerPid;
+            var ownerStarted = lease.Owner?.Started ?? lease.CallerStarted;
+            return Invariant($"cli:{lease.SessionId}:{lease.Proof?.Root ?? "direct"}:{lease.Proof?.Thread ?? "direct"}:{ownerPid}:{ownerStarted.Ticks}");
+        }
+    }
+
     internal string? ValidateLease(string token)
     {
         lock (_gate)

@@ -20,6 +20,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private TtyHostGitRepoMetadata[] _gitRepos = [];
     private ConnectionState? _currentClient;
     private IAppServerControlAgentRuntime? _runtime;
+    private readonly AppServerControlMcpRuntimeScope _mcpScope = new();
     private readonly List<Task> _connectionTasks = [];
 
     public AppServerControlAgentHostServer(string? syntheticProvider, string? ownerInstanceId = null, string? ownerToken = null)
@@ -220,6 +221,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             }
             catch (Exception ex)
             {
+                if (command.Type == "runtime.attach") _mcpScope.Invalidate();
                 outcome = new HostCommandOutcome
                 {
                     Result = new AppServerControlHostCommandResultEnvelope
@@ -236,6 +238,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 StoreRuntimeEvent(appServerControlEvent);
             }
+            outcome.Result.McpScopeIdentity = _mcpScope.Identity;
+            outcome.Result.McpProviderThreadId = _mcpScope.ThreadId;
             await EnqueueAsync(connection, outcome.Result, AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope).ConfigureAwait(false);
         }
     }
@@ -243,6 +247,26 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private async Task<HostCommandOutcome> ExecuteCommandAsync(AppServerControlHostCommandEnvelope command)
     {
         ValidateCommand(command);
+
+        if (command.Type == "runtime.attach" && command.AttachRuntime is { } attach)
+        {
+            if (attach.McpPrepareOnly)
+            {
+                _mcpScope.Prepare(attach.ResumeThreadId ?? attach.AttachPoint?.PreferredThreadId,
+                    string.IsNullOrEmpty(attach.ResumeThreadId) && attach.AttachPoint is null,
+                    string.Join('\n', attach.Provider, attach.RuntimeKind, attach.AttachPoint?.Endpoint, attach.ExecutablePath));
+                return new HostCommandOutcome
+                {
+                    Result = new AppServerControlHostCommandResultEnvelope
+                    {
+                        CommandId = command.CommandId, SessionId = command.SessionId, Status = "accepted",
+                        McpScopeIdentity = _mcpScope.Identity
+                    }
+                };
+            }
+            if (attach.McpServer is { } mcp && !string.Equals(mcp.ScopeIdentity, _mcpScope.Identity, StringComparison.Ordinal))
+                throw new InvalidOperationException("TLBX_MCP_SCOPE_CHANGED: The host runtime scope changed before MCP registration; prepare fresh credentials.");
+        }
 
         if (string.Equals(command.Type, "history.window.get", StringComparison.Ordinal))
         {
@@ -390,12 +414,14 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
+                McpScopeIdentity = _mcpScope.Identity,
                 Providers = _syntheticProvider is null
                     ? ["codex", "claude-agent-sdk", "opencode-http", "acp-v1"]
                     : [_syntheticProvider],
                 Capabilities =
                 [
                     "attach",
+                    "mcp.scope.prepare",
                     "turn.start",
                     "turn.steer",
                     "turn.interrupt",
@@ -545,6 +571,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private void StoreRuntimeEvent(AppServerControlProviderEvent appServerControlEvent)
     {
         ArgumentNullException.ThrowIfNull(appServerControlEvent);
+        _mcpScope.Observe(appServerControlEvent);
         _history.Append(CloneEvent(appServerControlEvent));
     }
 
@@ -569,6 +596,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                                 new AppServerControlHostHistoryPatchEnvelope
                                 {
                                     SessionId = sessionId,
+                                    McpScopeIdentity = _mcpScope.Identity,
                                     Patch = delta
                                 },
                                 AppServerControlHostJsonContext.Default.AppServerControlHostHistoryPatchEnvelope));

@@ -22,6 +22,88 @@ public sealed class TlbxMcpProtocolTests
     private static readonly HttpClient Http = new();
 
     [Fact]
+    public async Task SharedDiscoveryCanHandshakeWithRealSdkButCannotExecuteToolsOrEnumerateArtifacts()
+    {
+        var started = new DateTime(2026, 10, 30);
+        var runtime = new TlbxMcpClientContextService(() => [],
+            pid => pid switch { 100 => (200, started.AddMinutes(1)), 200 => (1, started), _ => null },
+            () => System.Text.Encoding.UTF8.GetBytes("discovery-fixture-key-with-32bytes"), TimeProvider.System,
+            pid => pid == 200);
+        var credential = runtime.Bind(100);
+        Assert.Equal("discovery", credential.Mode);
+        Assert.Null(credential.SessionId);
+        using var leases = CreateLeases();
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0));
+        TlbxMcpEndpoints.AddServices(builder.Services);
+        builder.Services.AddSingleton(runtime);
+        builder.Services.AddSingleton(leases);
+        await using var app = builder.Build();
+        app.Use(async (context, next) => { Ai.Tlbx.MidTerm.Services.RequestAccessContext.SetFullUser(context, true); await next(context); });
+        TlbxMcpEndpoints.Map(app);
+        var ct = TestContext.Current.CancellationToken;
+        await app.StartAsync(ct);
+        try
+        {
+            var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+            await using var transport = new HttpClientTransport(new()
+            {
+                Endpoint = new Uri(address + TlbxMcpEndpoints.Path),
+                AdditionalHeaders = new Dictionary<string, string>(StringComparer.Ordinal) { [TlbxMcpClientContextService.RuntimeHeader] = credential.ContextToken }
+            });
+            await using var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
+            Assert.Contains(await client.ListToolsAsync(cancellationToken: ct), tool => tool.Name == "terminal_prompt");
+            foreach (var method in new[] { "tools/call", "resources/list", "resources/read" })
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, address + TlbxMcpEndpoints.Path);
+                request.Headers.Add(TlbxMcpClientContextService.RuntimeHeader, credential.ContextToken);
+                request.Content = new StringContent("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"" + method + "\",\"params\":{}}", System.Text.Encoding.UTF8, "application/json");
+                using var response = await Http.SendAsync(request, ct);
+                Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+                Assert.Contains("TLBX_MCP_THREAD_PROOF_REQUIRED", await response.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
+            }
+        }
+        finally { await app.StopAsync(ct); }
+    }
+
+    [Theory]
+    [InlineData("initialize", true)]
+    [InlineData("server/discover", true)]
+    [InlineData("tools/list", true)]
+    [InlineData("resources/templates/list", true)]
+    [InlineData("tools/call", false)]
+    [InlineData("resources/list", false)]
+    [InlineData("resources/read", false)]
+    [InlineData("prompts/get", false)]
+    [InlineData("subscriptions/listen", false)]
+    public async Task DiscoveryOnlyAllowsDescriptorMethodsAndRestoresTheRequestBody(string method, bool allowed)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.ContentType = "application/json";
+        var bytes = System.Text.Encoding.UTF8.GetBytes("{\"jsonrpc\":\"2.0\",\"method\":\"" + method + "\",\"id\":1}");
+        await using var body = new MemoryStream(bytes);
+        context.Request.Body = body;
+        var error = await TlbxMcpEndpoints.ValidateDiscoveryRequestAsync(context);
+        Assert.Equal(allowed, error is null);
+        Assert.Equal(0, body.Position);
+    }
+
+    [Fact]
+    public async Task DiscoveryRejectsBatchesAndOversizedBodiesWithoutTrustingContentLength()
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "POST";
+        context.Request.ContentType = "application/json";
+        await using var large = new MemoryStream(new byte[65537]);
+        context.Request.Body = large;
+        Assert.Equal(413, (await TlbxMcpEndpoints.ValidateDiscoveryRequestAsync(context))!.Value.Status);
+        await using var batch = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("[{\"jsonrpc\":\"2.0\",\"method\":\"tools/list\",\"id\":1}]"));
+        context.Request.Body = batch;
+        Assert.Equal(409, (await TlbxMcpEndpoints.ValidateDiscoveryRequestAsync(context))!.Value.Status);
+    }
+
+    [Fact]
     public async Task RealHttpClientDiscoversToolsAndKeepsTwoCallingSessionsSeparate()
     {
         using var leases = CreateLeases();
@@ -32,6 +114,11 @@ public sealed class TlbxMcpProtocolTests
         TlbxMcpEndpoints.AddServices(builder.Services);
         builder.Services.AddSingleton(leases);
         await using var app = builder.Build();
+        app.Use(async (context, next) =>
+        {
+            Ai.Tlbx.MidTerm.Services.RequestAccessContext.SetFullUser(context, true);
+            await next(context);
+        });
         TlbxMcpEndpoints.Map(app);
         var ct = TestContext.Current.CancellationToken;
         await app.StartAsync(ct);
@@ -48,10 +135,21 @@ public sealed class TlbxMcpProtocolTests
                 });
                 await using var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
                 var tools = await client.ListToolsAsync(cancellationToken: ct);
-                Assert.Equal(4, tools.Count);
+                Assert.True(tools.Count > 40);
+                Assert.Empty(TlbxMcpCliParity.MissingTools(tools.Select(tool => tool.Name)));
                 Assert.Contains(tools, t => t.Name == "browser_screenshot");
                 var result = await client.CallToolAsync("context_get", cancellationToken: ct);
                 Assert.Equal(expected, result.StructuredContent!.Value.GetProperty("sessionId").GetString());
+                var repaired = await client.CallToolAsync("context_repair", cancellationToken: ct);
+                Assert.Equal("verified", repaired.StructuredContent!.Value.GetProperty("repair").GetString());
+                Assert.Equal(expected, repaired.StructuredContent.Value.GetProperty("sessionId").GetString());
+                var exported = await client.CallToolAsync("context_export", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["format"] = "pwsh", ["previewName"] = "a'b ü"
+                }, cancellationToken: ct);
+                Assert.Equal("a'b ü", exported.StructuredContent!.Value.GetProperty("previewName").GetString());
+                Assert.Contains("$env:MT_PREVIEW_NAME='a''b ü'", exported.StructuredContent.Value.GetProperty("export").GetString(), StringComparison.Ordinal);
+                Assert.DoesNotContain(token, exported.StructuredContent.Value.GetRawText(), StringComparison.Ordinal);
                 var spoof = await client.CallToolAsync("context_get", new Dictionary<string, object?>(StringComparer.Ordinal) { ["sessionId"] = "sibling" }, cancellationToken: ct);
                 Assert.True(spoof.IsError);
             }
@@ -73,6 +171,7 @@ public sealed class TlbxMcpProtocolTests
         using var leases = CreateLeases(() => live);
         var token = leases.CreateHostLease("first001", 100).Split(':')[1];
         var context = new DefaultHttpContext();
+        Ai.Tlbx.MidTerm.Services.RequestAccessContext.SetFullUser(context, true);
         context.Connection.RemoteIpAddress = IPAddress.Loopback;
         Assert.NotNull(TlbxMcpEndpoints.Authorize(context, leases));
         context.Request.Headers[SessionCliContextService.LeaseHeader] = token;
@@ -105,6 +204,7 @@ public sealed class TlbxMcpProtocolTests
     {
         using var leases = CreateLeases();
         var context = new DefaultHttpContext();
+        Ai.Tlbx.MidTerm.Services.RequestAccessContext.SetFullUser(context, true);
         context.Connection.RemoteIpAddress = IPAddress.Loopback;
         context.Request.Headers[SessionCliContextService.LeaseHeader] = leases.CreateHostLease("first001", 100).Split(':')[1];
         context.Request.Headers[header] = "untrusted";
@@ -119,6 +219,7 @@ public sealed class TlbxMcpProtocolTests
             _ => (1, new DateTime(2026, 10, 30)), clock);
         var token = leases.CreateHostLease("first001", 100).Split(':')[1];
         var context = new DefaultHttpContext();
+        Ai.Tlbx.MidTerm.Services.RequestAccessContext.SetFullUser(context, true);
         context.Connection.RemoteIpAddress = IPAddress.Loopback;
         context.Request.Headers[SessionCliContextService.LeaseHeader] = token;
         Assert.Null(TlbxMcpEndpoints.Authorize(context, leases));

@@ -1,8 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using Ai.Tlbx.MidTerm.Models.Browser;
-using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
@@ -12,8 +10,10 @@ namespace Ai.Tlbx.MidTerm.Services.Mcp;
 /// <summary>Explicit schemas and dispatch avoid reflection-based serialization in Native AOT.</summary>
 internal sealed class TlbxMcpTool : McpServerTool
 {
+    // Process identity, deliberately independent of version: same-version reinstalls restart too.
+    private static readonly string ServerInstanceId = Guid.NewGuid().ToString("N");
     private readonly Tool _tool;
-    private TlbxMcpTool(string name, string description, bool browser = false)
+    private TlbxMcpTool(string name, string description)
     {
         _tool = new Tool
         {
@@ -22,13 +22,14 @@ internal sealed class TlbxMcpTool : McpServerTool
             InputSchema = JsonSerializer.SerializeToElement(new JsonObject
             {
                 ["type"] = "object",
-                ["properties"] = browser ? new JsonObject
+                ["properties"] = name.StartsWith("context_", StringComparison.Ordinal) ? new JsonObject
                 {
-                    ["previewName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 128 }
+                    ["previewName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 128 },
+                    ["format"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("json", "text", "bash", "pwsh") }
                 } : new JsonObject(),
                 ["additionalProperties"] = false
             }, McpJsonContext.Default.JsonObject),
-            Annotations = new ToolAnnotations { ReadOnlyHint = true, OpenWorldHint = browser }
+            Annotations = new ToolAnnotations { ReadOnlyHint = true, OpenWorldHint = false }
         };
     }
 
@@ -38,13 +39,19 @@ internal sealed class TlbxMcpTool : McpServerTool
     internal static IEnumerable<McpServerTool> CreateTools() =>
     [
         new TlbxMcpTool("context_get", "Get this request's verified tlbx session and server version. Never infer self from cwd or an inherited session ID."),
-        new TlbxMcpTool("sessions_list", "List live tlbx sessions using the same projection as the CLI. Requires full tlbx authentication and a verified calling context."),
-        new TlbxMcpTool("browser_snapshot", "Read the existing Dev Browser DOM snapshot for this verified session. Does not open or claim another browser.", true),
-        new TlbxMcpTool("browser_screenshot", "Capture the existing Dev Browser for this verified session as an MCP image. Does not open or claim another browser.", true)
+        new TlbxMcpTool("context_repair", "Revalidate the live process/runtime identity. Native stdio renews its credential before this check. Does not replay the failed operation; retry it explicitly after successful repair."),
+        new TlbxMcpTool("context_export", "Export non-secret verified baseUrl/sessionId/previewName as structured JSON or bash/pwsh/text hints for a child shell. Exported session IDs are hints, never authentication or identity proof. Native child MCP connections need their own verified binding."),
+        new TlbxMcpTool("sessions_list", "List live tlbx sessions using the same projection as the CLI. Requires full tlbx authentication and a verified caller or explicit operator mode.")
     ];
 
-    public override async ValueTask<CallToolResult> InvokeAsync(
+    public override ValueTask<CallToolResult> InvokeAsync(
         RequestContext<CallToolRequestParams> request, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return ValueTask.FromResult(Invoke(request));
+    }
+
+    private CallToolResult Invoke(RequestContext<CallToolRequestParams> request)
     {
         var services = request.Services!;
         var http = services.GetRequiredService<IHttpContextAccessor>().HttpContext;
@@ -53,13 +60,37 @@ internal sealed class TlbxMcpTool : McpServerTool
             services.GetRequiredService<SessionCliContextService>()) is not null)
             return Error("TLBX_MCP_CONTEXT_EXPIRED", "No tool was executed. Obtain a fresh verified context.");
         var arguments = request.Params?.Arguments;
-        if (arguments is not null && arguments.Any(pair => pair.Key != "previewName" ||
-            !_tool.Name.StartsWith("browser_", StringComparison.Ordinal)))
+        if (arguments is not null && arguments.Any(pair => pair.Key is not ("previewName" or "format") ||
+            !_tool.Name.StartsWith("context_", StringComparison.Ordinal)))
             return Error("TLBX_MCP_INVALID_ARGUMENT", "Unexpected argument; self is determined by the verified context.");
-        var sessionId = (string)http.Items[TlbxMcpEndpoints.SessionItem]!;
-        if (_tool.Name == "context_get")
-            return Structured(new JsonObject { ["sessionId"] = sessionId,
-                ["serverVersion"] = Startup.CliCommands.GetVersion(), ["experimental"] = true });
+        var sessionId = http.Items[TlbxMcpEndpoints.SessionItem] as string;
+        if (_tool.Name.StartsWith("context_", StringComparison.Ordinal))
+        {
+            var preview = "default";
+            if (arguments?.TryGetValue("previewName", out var previewValue) == true)
+            {
+                if (previewValue.ValueKind != JsonValueKind.String || previewValue.GetString() is not { Length: > 0 and <= 128 } name)
+                    return Error("TLBX_MCP_INVALID_ARGUMENT", "previewName must contain 1-128 characters.");
+                preview = name;
+            }
+            var format = "json";
+            if (arguments?.TryGetValue("format", out var formatValue) == true)
+            {
+                if (formatValue.ValueKind != JsonValueKind.String || formatValue.GetString() is not ("json" or "text" or "bash" or "pwsh"))
+                    return Error("TLBX_MCP_INVALID_ARGUMENT", "format must be json, text, bash or pwsh.");
+                format = formatValue.GetString()!;
+            }
+            var baseUrl = http.Request.Scheme + "://" + http.Request.Host + http.Request.PathBase;
+            var result = new JsonObject { ["sessionId"] = sessionId,
+                ["baseUrl"] = baseUrl, ["previewName"] = preview,
+                ["serverVersion"] = Startup.CliCommands.GetVersion(),
+                ["serverInstanceId"] = ServerInstanceId,
+                ["bindingMode"] = http.Items[TlbxMcpEndpoints.CallerModeItem] as string,
+                ["experimental"] = true };
+            if (_tool.Name == "context_repair") result["repair"] = "verified";
+            if (format != "json") result["export"] = ExportContext(baseUrl, sessionId, preview, format);
+            return Structured(result);
+        }
         if (_tool.Name == "sessions_list")
         {
             var sessions = SessionApiEndpoints.GetSessionListDto(
@@ -69,22 +100,20 @@ internal sealed class TlbxMcpTool : McpServerTool
             return Structured(JsonSerializer.SerializeToElement(sessions, AppJsonContext.Default.SessionListDto));
         }
 
-        string? preview = null;
-        if (arguments?.TryGetValue("previewName", out var value) == true)
+        return Error("TLBX_MCP_UNKNOWN_TOOL", "Unknown context operation.");
+    }
+
+    internal static string ExportContext(string baseUrl, string? sessionId, string preview, string format)
+    {
+        static string Bash(string value) => "'" + value.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
+        static string Pwsh(string value) => "'" + value.Replace("'", "''", StringComparison.Ordinal) + "'";
+        return format switch
         {
-            if (value.ValueKind != JsonValueKind.String || value.GetString() is not { Length: > 0 and <= 128 } name)
-                return Error("TLBX_MCP_INVALID_ARGUMENT", "previewName must contain 1-128 characters.");
-            preview = name;
-        }
-        var result = await services.GetRequiredService<BrowserCommandService>().ExecuteCommandAsync(
-            new BrowserCommandRequest { Command = _tool.Name == "browser_screenshot" ? "screenshot" : "snapshot",
-                SessionId = sessionId, PreviewName = preview, Timeout = 15 }, cancellationToken);
-        if (!result.Success) return Error("TLBX_MCP_BROWSER_FAILED", result.Error ?? "Browser command failed.");
-        if (_tool.Name == "browser_screenshot") return Screenshot(result.Result);
-        var text = result.Result ?? "";
-        const int maximumTextLength = 100_000;
-        return Structured(new JsonObject { ["sessionId"] = sessionId, ["previewName"] = preview,
-            ["snapshot"] = text[..Math.Min(text.Length, maximumTextLength)], ["truncated"] = text.Length > maximumTextLength });
+            "bash" => "export MT_BASE_URL=" + Bash(baseUrl) + "; export MT_SESSION_ID=" + Bash(sessionId ?? "") + "; export MT_PREVIEW_NAME=" + Bash(preview),
+            "pwsh" => "$env:MT_BASE_URL=" + Pwsh(baseUrl) + "; $env:MT_SESSION_ID=" + Pwsh(sessionId ?? "") + "; $env:MT_PREVIEW_NAME=" + Pwsh(preview),
+            "text" => "baseUrl=" + baseUrl + "\nsessionId=" + sessionId + "\npreviewName=" + preview,
+            _ => throw new ArgumentException("Unsupported context export format.", nameof(format))
+        };
     }
 
     internal static CallToolResult Screenshot(string? dataUrl)

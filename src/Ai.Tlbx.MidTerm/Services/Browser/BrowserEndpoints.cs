@@ -118,6 +118,7 @@ public static class BrowserEndpoints
         BrowserPreviewRegistry previewRegistry,
         BrowserPreviewOwnerService previewOwnerService)
     {
+        var operations = new BrowserPreviewOperations(commandService, webPreviewService, uiBridge, previewRegistry, previewOwnerService);
         app.MapGet("/api/browser/ui-clients", () => Results.Json(uiBridge.GetConnectedBrowserIds(), AppJsonContext.Default.StringArray));
 
         app.MapPost("/api/browser/agent-wheel", async (
@@ -217,111 +218,20 @@ public static class BrowserEndpoints
 
         app.MapPost("/api/browser/open", async (Models.WebPreview.WebPreviewTargetRequest request, CancellationToken cancellationToken) =>
         {
-            var sessionId = NormalizeOptional(request.SessionId);
-            var previewName = NormalizeOptional(request.PreviewName);
-            var url = request.Url ?? "";
-            var activateSession = request.ActivateSession ?? false;
-            if (string.IsNullOrWhiteSpace(sessionId))
-            {
-                return Results.BadRequest("sessionId required");
-            }
-
-            return await uiBridge.SerializeTargetOperationAsync(
-                sessionId,
-                previewName,
-                async () =>
-                {
-                    var commandStartedAt = DateTimeOffset.UtcNow;
-                    if (!webPreviewService.SetTarget(sessionId, previewName, url))
-                    {
-                        return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
-                    }
-
-                    var targetRevision = webPreviewService.GetPreviewSession(sessionId, previewName)?.TargetRevision;
-                    previewOwnerService.ResolveOwnerBrowserId(sessionId, previewName);
-
-                    var openResult = await uiBridge.RequestOpenWhenAvailableAsync(
-                        sessionId,
-                        previewName,
-                        url,
-                        activateSession,
-                        targetRevision: targetRevision,
-                        cancellationToken: cancellationToken);
-                    if (!openResult.Success)
-                    {
-                        return Results.Text(openResult.Error + "\n", statusCode: 409);
-                    }
-
-                    var generation = openResult.OwnershipGeneration;
-                    var status = await commandService.WaitForControllableAsync(
-                        url,
-                        sessionId,
-                        previewName,
-                        requireClientConnectedAfterUtc: commandStartedAt,
-                        requireVisibleClient: activateSession,
-                        connectedUiClientCountProvider: () => uiBridge.ConnectedBrowserCount,
-                        cancellationToken: cancellationToken,
-                        requiredTargetRevision: targetRevision);
-                    var statusText = commandService.GetStatusText(
-                        url,
-                        sessionId,
-                        previewName,
-                        connectedUiClientCount: uiBridge.ConnectedBrowserCount);
-                    var ready = status.Controllable
-                        && previewOwnerService.GetGeneration(sessionId, previewName) == generation
-                        && (!activateSession || status.DefaultClient?.IsVisible == true);
-                    if (ready)
-                    {
-                        // An ACK only means the UI handled the instruction. Verify the actual bridge.
-                        var probe = await commandService.ExecuteCommandAsync(new BrowserCommandRequest
-                        {
-                            Command = "ready", SessionId = sessionId, PreviewName = previewName,
-                            PreviewId = status.DefaultClient?.PreviewId, Timeout = 15
-                        }, cancellationToken);
-                        if (!probe.Success) return Results.Text(probe.Error + "\n", statusCode: 409);
-                        if (previewOwnerService.GetGeneration(sessionId, previewName) != generation
-                            || webPreviewService.GetPreviewSession(sessionId, previewName)?.TargetRevision != targetRevision)
-                            return Results.Text("The preview target changed before open completed. Retry mt_open.\n", statusCode: 409);
-                    }
-                    return ready
-                        ? Results.Text(statusText)
-                        : Results.Text("Open failed: " + (status.StatusMessage ?? "Preview ownership or visibility changed before readiness.") + "\n" + statusText, statusCode: 409);
-                },
-                cancellationToken);
+            var result = await operations.OpenAsync(NormalizeOptional(request.SessionId) ?? "",
+                NormalizeOptional(request.PreviewName), request.Url ?? "", request.ActivateSession ?? false, cancellationToken);
+            return result.Success || result.StatusCode != 400
+                ? result.ToHttpResult()
+                : Results.BadRequest(result.Text);
         });
 
         app.MapPost("/api/browser/close", async (
             Models.WebPreview.WebPreviewSessionRequest request,
             CancellationToken cancellationToken) =>
         {
-            var sessionId = NormalizeOptional(request.SessionId);
-            var previewName = WebPreviewService.NormalizePreviewName(request.PreviewName);
-            if (string.IsNullOrWhiteSpace(sessionId))
-            {
-                return Results.BadRequest("sessionId required");
-            }
-
-            return await uiBridge.SerializeTargetOperationAsync(
-                sessionId,
-                previewName,
-                () =>
-                {
-                    if (string.Equals(previewName, WebPreviewService.DefaultPreviewName, StringComparison.OrdinalIgnoreCase))
-                    {
-                        webPreviewService.ClearTarget(sessionId, previewName);
-                    }
-                    else
-                    {
-                        // Close is deliberately idempotent so automation cleanup can safely run from finally.
-                        webPreviewService.DeletePreviewSession(sessionId, previewName);
-                        previewOwnerService.Release(sessionId, previewName);
-                    }
-
-                    previewRegistry.Remove(sessionId, previewName);
-                    uiBridge.RequestClose(sessionId, previewName);
-                    return Task.FromResult<IResult>(Results.Ok());
-                },
-                cancellationToken);
+            var result = await operations.CloseAsync(NormalizeOptional(request.SessionId) ?? "",
+                request.PreviewName, cancellationToken);
+            return result.StatusCode == 400 ? Results.BadRequest(result.Text) : result.ToHttpResult();
         });
     }
 
@@ -743,7 +653,7 @@ public static class BrowserEndpoints
         });
     }
 
-    private static BrowserCapabilitiesResponse BuildCapabilitiesResponse(
+    internal static BrowserCapabilitiesResponse BuildCapabilitiesResponse(
         BrowserCommandService commandService,
         WebPreviewService webPreviewService,
         BrowserUiBridge? uiBridge,
@@ -831,7 +741,7 @@ public static class BrowserEndpoints
             ]) + "\n";
     }
 
-    private static async Task<string> BuildInspectTextAsync(
+    internal static async Task<string> BuildInspectTextAsync(
         BrowserCommandService commandService,
         TtyHostSessionManager sessionManager,
         WebPreviewService webPreviewService,
@@ -1092,7 +1002,7 @@ public static class BrowserEndpoints
             };
     }
 
-    private static async Task<string?> SaveResultToDiskAsync(
+    internal static async Task<string?> SaveResultToDiskAsync(
         string command,
         BrowserWsResult result,
         BrowserCommandRequest request,

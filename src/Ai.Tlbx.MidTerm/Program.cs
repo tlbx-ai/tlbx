@@ -203,6 +203,7 @@ public class Program
             browserPreviewRegistry);
 
         TlbxDirectory.Initialize(port, authService, bindAddress);
+        Services.Mcp.TlbxMcpRuntimeConfiguration.Configure(app.Services, port, authService, ServerSetup.LoadedCertificate);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var cliContext = app.Services.GetRequiredService<SessionCliContextService>();
@@ -275,6 +276,8 @@ public class Program
             tmuxDispatcher = new TmuxCommandDispatcher(
                 tmuxSessionCommands, tmuxIoCommands, tmuxPaneCommands,
                 tmuxWindowCommands, tmuxConfigCommands, tmuxMiscCommands);
+            app.Services.GetRequiredService<Services.Mcp.TlbxMcpTmuxRuntime>()
+                .Configure(tmuxDispatcher, tmuxPaneMapper, tmuxTargetResolver);
         }
 
         // Browser control (agent-driven web preview interaction)

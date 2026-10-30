@@ -41,9 +41,10 @@ public static class HubEndpoints
             return Results.Json(machine, AppJsonContext.Default.HubMachineState);
         });
 
-        app.MapGet("/api/hub/machines/{id}/control-plane", async (string id, CancellationToken ct) =>
+        app.MapGet("/api/hub/machines/{id}/control-plane", async (
+            string id, int workLimit = 100, int checkpointLimit = 30, CancellationToken ct = default) =>
         {
-            var snapshot = await hubService.GetControlPlaneAsync(id, ct);
+            var snapshot = await hubService.GetControlPlaneAsync(id, workLimit, checkpointLimit, ct);
             return Results.Json(snapshot, AppJsonContext.Default.ControlPlaneSnapshotResponse);
         });
 

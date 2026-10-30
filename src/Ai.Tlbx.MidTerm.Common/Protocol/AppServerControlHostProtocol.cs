@@ -615,6 +615,7 @@ public sealed class AppServerControlHostHello
     public string ProtocolVersion { get; set; } = AppServerControlHostProtocol.CurrentVersion;
     public string HostKind { get; set; } = "mtagenthost";
     public string HostVersion { get; set; } = "dev";
+    public string? McpScopeIdentity { get; set; }
     public List<string> Providers { get; set; } = [];
     public List<string> Capabilities { get; set; } = [];
 }
@@ -635,6 +636,17 @@ public sealed class AppServerControlAttachRuntimeRequest
     public string? AuthenticationMethodId { get; set; }
     public string? UserProfileDirectory { get; set; }
     public string? ResumeThreadId { get; set; }
+    /// <summary>Trusted per-runtime MCP configuration, carried only over the owned host IPC.</summary>
+    public AppServerControlMcpServer? McpServer { get; set; }
+    public bool McpPrepareOnly { get; set; }
+}
+
+public sealed class AppServerControlMcpServer
+{
+    public string? ScopeIdentity { get; set; }
+    public string Command { get; set; } = string.Empty;
+    public List<string> Arguments { get; set; } = [];
+    public Dictionary<string, string> EnvironmentVariables { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class AppServerControlHostHistoryWindowRequest
@@ -680,6 +692,8 @@ public sealed class AppServerControlUserInputResolutionCommand
 
 public sealed class AppServerControlHostCommandResultEnvelope
 {
+    public string? McpScopeIdentity { get; set; }
+    public string? McpProviderThreadId { get; set; }
     public string ProtocolVersion { get; set; } = AppServerControlHostProtocol.CurrentVersion;
     public string CommandId { get; set; } = string.Empty;
     public string SessionId { get; set; } = string.Empty;
@@ -693,6 +707,7 @@ public sealed class AppServerControlHostCommandResultEnvelope
 
 public sealed class AppServerControlHostHistoryPatchEnvelope
 {
+    public string? McpScopeIdentity { get; set; }
     public string ProtocolVersion { get; set; } = AppServerControlHostProtocol.CurrentVersion;
     public string SessionId { get; set; } = string.Empty;
     public AppServerControlHistoryPatch Patch { get; set; } = new();
