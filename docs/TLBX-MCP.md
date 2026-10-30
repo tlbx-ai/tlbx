@@ -79,8 +79,11 @@ Screenshots include inline images and opaque resources for complete original
 bytes; snapshots can also become resources. Resource reads are caller-scoped and
 chunked at 4 MiB. Generated copies expire after one hour and are bounded to 128
 captures/512 MiB, except one newest larger original retained in full. Workspace
-copies requested through `saveToWorkspace` survive cache eviction. Resource
-handles do not survive a web-server restart. Abrupt termination may leave private
+copies requested through `saveToWorkspace` survive cache eviction.
+Large captures use the private resource cache by default, without an extra
+workspace copy. A failed explicit workspace save reports an error while keeping
+the original resource available; use that resource instead of recapturing.
+Resource handles do not survive a web-server restart. Abrupt termination may leave private
 temporary files; normal disposal removes the generated cache.
 `artifact_read` and `artifacts_list` provide the same owner-checked access through
 tools/call. Installed Codex 0.166 supplies canonical thread metadata there, but
@@ -116,7 +119,7 @@ Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained C
 helpers, signatures and semantic scenarios; catalog presence is not acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
-An actual NativeAOT source-instance operator fixture passed 85 calls across 54 tools:
+An actual NativeAOT source-instance operator fixture passed 86 calls across 54 tools:
 terminal text/keys/bracketed paste with observed output, timed queue execution,
 recurring queue cancellation, exact queued history replay, repository binding,
 work/status updates, a real horizontal split and board item/viewport mutations

@@ -3,6 +3,9 @@ using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Mcp;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
+using Ai.Tlbx.MidTerm.Models.Browser;
+using Ai.Tlbx.MidTerm.Services.Hosting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -17,6 +20,63 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class TlbxMcpArtifactProtocolTests
 {
+    [Theory]
+    [InlineData(false, "missing-session")]
+    [InlineData(true, "missing-session")]
+    [InlineData(true, "other001")]
+    public async Task OversizedScreenshotKeepsCompleteOriginalAndHonorsOnlyTheRequestedWorkspace(bool save, string target)
+    {
+        var root = Path.Combine(Path.GetTempPath(), "tlbx-screenshot-protocol-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(root);
+        var manager = new TtyHostSessionManager(expectedVersion: "fixture", minCompatibleVersion: "fixture",
+            instanceIdentity: MidTermInstanceIdentity.Load(root, 0));
+        var otherWorkspace = Path.Combine(root, "other-workspace");
+        Directory.CreateDirectory(otherWorkspace);
+        var cache = (System.Collections.Concurrent.ConcurrentDictionary<string, Ai.Tlbx.MidTerm.Common.Protocol.SessionInfo>)
+            typeof(TtyHostSessionManager).GetField("_sessionCache", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.GetValue(manager)!;
+        cache["other001"] = new() { Id = "other001", CurrentDirectory = otherWorkspace };
+        var context = new DefaultHttpContext();
+        context.Items[TlbxMcpEndpoints.CallerIdentityItem] = "owner";
+        var services = new ServiceCollection();
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = context });
+        services.AddSingleton<TlbxMcpArtifactStore>();
+        // With no explicit save, even resolving the workspace services is forbidden.
+        if (save) { services.AddSingleton(manager); services.AddSingleton(new WebPreviewService(2000)); }
+        await using var provider = services.BuildServiceProvider();
+        try
+        {
+            byte[] png = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=");
+            var original = new byte[12_000_100];
+            png.CopyTo(original, 0); // Valid PNG plus trailing bytes, preserving the entire original.
+            var result = await TlbxMcpBrowserTools.CommandResultAsync(provider,
+                new BrowserCommandRequest { Command = "screenshot", SessionId = target },
+                new BrowserWsResult { Success = true, Result = "data:image/png;base64," + Convert.ToBase64String(original) }, save);
+            var data = result.StructuredContent!.Value;
+            var failedSave = save && target == "missing-session";
+            Assert.Equal(failedSave, result.IsError == true);
+            Assert.Equal(!failedSave, data.GetProperty("success").GetBoolean());
+            var uri = data.GetProperty("resourceUri").GetString()!;
+            var link = Assert.Single(result.Content.OfType<ResourceLinkBlock>());
+            Assert.Equal(original.Length, link.Size);
+            var store = provider.GetRequiredService<TlbxMcpArtifactStore>();
+            var tail = Assert.IsType<BlobResourceContents>(Assert.Single(store.Read(uri + "?offset=12000084&length=16", TestContext.Current.CancellationToken).Contents));
+            Assert.Equal(original.AsSpan(original.Length - 16).ToArray(), tail.DecodedData.ToArray());
+            if (save && target == "other001")
+            {
+                var path = data.GetProperty("artifactPath").GetString()!;
+                Assert.StartsWith(otherWorkspace + Path.DirectorySeparatorChar, path, StringComparison.Ordinal);
+                Assert.Equal(original, await File.ReadAllBytesAsync(path, TestContext.Current.CancellationToken));
+            }
+            else
+            {
+                Assert.Equal(System.Text.Json.JsonValueKind.Null, data.GetProperty("artifactPath").ValueKind);
+                Assert.Empty(Directory.GetFileSystemEntries(otherWorkspace));
+            }
+            if (failedSave) Assert.Contains(result.Content.OfType<TextContentBlock>(), content => content.Text.Contains("Do not replay", StringComparison.Ordinal));
+        }
+        finally { await manager.DisposeAsync(); Directory.Delete(root, recursive: true); }
+    }
+
     [Fact]
     public async Task ToolBasedResourceReadsPreserveExactChunksAndDenySiblingAndFilePathAccess()
     {

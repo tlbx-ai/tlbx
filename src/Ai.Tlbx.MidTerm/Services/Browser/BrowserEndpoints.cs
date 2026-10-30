@@ -1016,7 +1016,7 @@ public static class BrowserEndpoints
             cwd = session?.CurrentDirectory;
         }
 
-        if (string.IsNullOrEmpty(cwd))
+        if (request.SessionId is null && string.IsNullOrEmpty(cwd))
         {
             var sessions = sessionManager.GetAllSessions();
             cwd = sessions.FirstOrDefault(s => !string.IsNullOrEmpty(s.CurrentDirectory))?.CurrentDirectory;

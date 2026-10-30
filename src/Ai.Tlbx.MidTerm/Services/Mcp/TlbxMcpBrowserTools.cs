@@ -408,13 +408,14 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         };
     }
 
-    private static async Task<CallToolResult> CommandResultAsync(IServiceProvider services, BrowserCommandRequest request,
+    internal static async Task<CallToolResult> CommandResultAsync(IServiceProvider services, BrowserCommandRequest request,
         BrowserWsResult result, bool save)
     {
         if (!result.Success) return Error("TLBX_MCP_BROWSER_FAILED", result.Error ?? "Browser command failed.");
         var oversizedImage = request.Command == "screenshot" && result.Result is { Length: > 16_000_000 } payload
             && payload.StartsWith("data:image/png;base64,", StringComparison.Ordinal);
-        var saveArtifact = save || oversizedImage;
+        var store = services.GetService<TlbxMcpArtifactStore>();
+        var saveArtifact = save || oversizedImage && store is null;
         string? artifact = null;
         if (saveArtifact && request.Command is "screenshot" or "snapshot")
         {
@@ -428,7 +429,6 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             ["matchCount"] = result.MatchCount, ["artifactPath"] = artifact
         };
         ResourceLinkBlock? resource = null;
-        var store = services.GetService<TlbxMcpArtifactStore>();
         if (store is not null && result.Result is { } original)
         {
             if (request.Command == "screenshot" && original.StartsWith("data:image/png;base64,", StringComparison.Ordinal))
@@ -441,16 +441,21 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         {
             if (oversizedImage)
             {
-                data["success"] = resource is not null || artifact is not null;
+                var workspaceFailed = save && artifact is null;
+                data["success"] = !workspaceFailed && (resource is not null || artifact is not null);
                 var previewImage = result.Result is { } fullPng
                     ? TlbxMcpArtifactStore.PreviewPng(Convert.FromBase64String(fullPng[22..])) : null;
                 data["inlineImageAvailable"] = previewImage is not null;
                 data["inlineImageIsPreview"] = previewImage is not null;
-                data["detail"] = "The full PNG exceeds the inline image budget; the original workspace artifact preserves the complete capture.";
+                data["detail"] = resource is not null
+                    ? "The full PNG exceeds the inline image budget. resourceUri preserves the complete original; use artifact_save for a caller-local file."
+                    : "The full PNG exceeds the inline image budget. The workspace artifact preserves the complete original.";
                 var oversized = Reply(data);
                 if (resource is not null) oversized.Content.Add(resource);
                 if (previewImage is not null) oversized.Content.Add(previewImage);
-                oversized.IsError = resource is null && artifact is null;
+                oversized.IsError = workspaceFailed || resource is null && artifact is null;
+                if (workspaceFailed) oversized.Content.Add(new TextContentBlock
+                    { Text = "Screenshot captured, but the requested workspace copy could not be saved. Do not replay the browser operation." });
                 return oversized;
             }
             var image = TlbxMcpTool.Screenshot(result.Result);
