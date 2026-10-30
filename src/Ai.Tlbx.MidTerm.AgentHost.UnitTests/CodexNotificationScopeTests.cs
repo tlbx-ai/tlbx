@@ -17,8 +17,11 @@ namespace Ai.Tlbx.MidTerm.AgentHost.UnitTests;
 
 public sealed class CodexNotificationScopeTests
 {
-    [Fact]
-    public async Task BroadcastSiblingNotificationsCannotChangeCanonicalThreadStateOrNextTurnTarget()
+    [Theory]
+    [InlineData("manual", "on-request", "workspaceWrite")]
+    [InlineData("auto", "never", "dangerFullAccess")]
+    public async Task BroadcastSiblingNotificationsCannotChangeCanonicalThreadStateOrNextTurnTarget(
+        string permissionMode, string approvalPolicy, string sandboxType)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
@@ -27,6 +30,8 @@ public sealed class CodexNotificationScopeTests
         var ownCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var scope = new AppServerControlMcpRuntimeScope();
         var nextTarget = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var turnParameters = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var resumeCount = 0;
         WebSocket? connected = null;
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
@@ -52,6 +57,7 @@ public sealed class CodexNotificationScopeTests
                     switch (method)
                     {
                         case "thread/resume":
+                            Interlocked.Increment(ref resumeCount);
                             // A sibling can broadcast while this runtime has no correlated owner yet.
                             await SendAsync(socket, """{"method":"thread/started","params":{"thread":{"id":"sibling-B"}}}""", ct);
                             result = new { thread = new { id = "canonical-A", status = new { type = "idle" } } };
@@ -64,6 +70,7 @@ public sealed class CodexNotificationScopeTests
                             result = new { data = Array.Empty<object>() };
                             break;
                         case "turn/start":
+                            turnParameters.TrySetResult(root.GetProperty("params").Clone());
                             nextTarget.TrySetResult(root.GetProperty("params").GetProperty("threadId").GetString()!);
                             result = new { turn = new { id = "next-own-turn" } };
                             break;
@@ -124,10 +131,14 @@ public sealed class CodexNotificationScopeTests
             Assert.Contains(events, e => e.Type == "turn.started" && e.TurnId == "own-turn");
             var outcome = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
             {
-                Type = "turn.start", CommandId = "next", SessionId = "owned-session", StartTurn = new() { Text = "Fake protocol turn; no model exists." }
+                Type = "turn.start", CommandId = "next", SessionId = "owned-session", StartTurn = new() { Text = "Fake protocol turn; no model exists.", PermissionMode = permissionMode }
             }, ct);
             Assert.Equal("canonical-A", await nextTarget.Task.WaitAsync(ct));
             Assert.Equal("canonical-A", outcome.Result.TurnStarted!.ThreadId);
+            var parameters = await turnParameters.Task.WaitAsync(ct);
+            Assert.Equal(approvalPolicy, parameters.GetProperty("approvalPolicy").GetString());
+            Assert.Equal(sandboxType, parameters.GetProperty("sandboxPolicy").GetProperty("type").GetString());
+            Assert.Equal(1, resumeCount); // Only the initial attach; permissions must not reload the thread/MCP.
         }
         finally
         {

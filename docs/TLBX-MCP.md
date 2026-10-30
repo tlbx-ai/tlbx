@@ -70,7 +70,13 @@ Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained C
 helpers, signatures and semantic scenarios; catalog presence is not acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
-Remaining evidence includes real Codex/ACP/Claude provider calls, concurrent
-siblings, service/user boundaries, rendered browser workflows, integrated Native
+Local source-instance model turns have verified self/topic/self through native
+MCP for two concurrent Codex sessions, Claude Agent SDK and Gemini over ACP.
+Gemini recovered after an unsupported extra argument was explicitly rejected.
+Codex also recovered on the same thread after a rejected model turn and a switch
+from automatic to manual permissions. These smoke checks do not establish
+complete behavioral parity or the installed service/user boundary.
+Remaining evidence includes runtime restart recovery,
+service/user boundaries, rendered browser workflows, integrated Native
 AOT publish and a verified dev release. Keep CLI
 guidance and implementations maintained until these gates pass.

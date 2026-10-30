@@ -26,12 +26,28 @@ public sealed class AppServerControlMcpRuntimeScopeTests
         scope.Observe(Thread("provider-thread-a"));
         var beforeDisconnect = RoundTripHello(scope).McpScopeIdentity;
         // Host events continue without a connected Web client.
-        scope.Observe(SessionState("error"));
+        scope.Observe(new AppServerControlProviderEvent { Type = "session.exited" });
         var reconnect = RoundTripHello(scope).McpScopeIdentity;
         Assert.NotEqual(beforeDisconnect, reconnect, StringComparer.Ordinal);
         scope.Observe(SessionState("starting"));
         scope.Observe(Thread("provider-thread-a"));
         Assert.Equal(reconnect, RoundTripHello(scope).McpScopeIdentity);
+    }
+
+    [Fact]
+    public void RejectedTurnDoesNotRevokeLiveRuntimeOrForgetItsThread()
+    {
+        var scope = new AppServerControlMcpRuntimeScope();
+        scope.Observe(SessionState("starting"));
+        scope.Observe(Thread("provider-thread-a"));
+        scope.Observe(SessionState("ready"));
+        var before = scope.Identity;
+        scope.Observe(SessionState("error"));
+        scope.Observe(SessionState("ready"));
+        Assert.Equal(before, scope.Identity);
+        Assert.Equal("provider-thread-a", scope.ThreadId);
+        scope.Prepare("provider-thread-a", startsNewThread: false);
+        Assert.Equal(before, scope.Identity);
     }
 
     [Fact]

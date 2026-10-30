@@ -339,14 +339,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
-        if (!string.Equals(
-                _quickSettings.PermissionMode,
-                quickSettings.PermissionMode,
-                StringComparison.Ordinal))
-        {
-            await ReopenThreadAsync(quickSettings.PermissionMode, ct).ConfigureAwait(false);
-        }
-
         var input = await CreateCodexTurnInputAsync(request, ct).ConfigureAwait(false);
         if (input.Count == 0)
         {
@@ -362,7 +354,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 quickSettings.Model,
                 quickSettings.Effort,
                 quickSettings.FastMode,
-                quickSettings.PlanMode),
+                quickSettings.PlanMode,
+                quickSettings.PermissionMode),
             ct).ConfigureAwait(false);
 
         _quickSettings = quickSettings;
@@ -2637,7 +2630,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         string? model = null,
         string? effort = null,
         string? fastMode = null,
-        string? planMode = null)
+        string? planMode = null,
+        string? permissionMode = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2648,6 +2642,16 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             writer.WritePropertyName("params");
             writer.WriteStartObject();
             writer.WriteString("threadId", threadId);
+            if (permissionMode is not null)
+            {
+                // Native turn overrides preserve loaded MCP connections and also
+                // work before Codex has persisted the first conversation rollout.
+                writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
+                writer.WriteStartObject("sandboxPolicy");
+                writer.WriteString("type", AppServerControlQuickSettings.NormalizePermissionMode(permissionMode)
+                    == AppServerControlQuickSettings.PermissionModeAuto ? "dangerFullAccess" : "workspaceWrite");
+                writer.WriteEndObject();
+            }
             writer.WritePropertyName("input");
             writer.WriteStartArray();
             foreach (var entry in input)
@@ -3053,25 +3057,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         quickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         quickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions);
         return quickSettings;
-    }
-
-    private async Task ReopenThreadAsync(string permissionMode, CancellationToken ct)
-    {
-        EnsureAttached();
-        if (string.IsNullOrWhiteSpace(_providerThreadId) || string.IsNullOrWhiteSpace(_workingDirectory))
-        {
-            return;
-        }
-
-        var threadResult = await SendCodexRequestAsync(
-            "thread/resume",
-            id => BuildCodexThreadResumeRequest(id, _providerThreadId!, _workingDirectory!, permissionMode),
-            ct).ConfigureAwait(false);
-        var resumedThreadId = GetString(threadResult, "thread", "id") ?? GetString(threadResult, "threadId");
-        if (!string.IsNullOrWhiteSpace(resumedThreadId))
-        {
-            _providerThreadId = resumedThreadId;
-        }
     }
 
     private AppServerControlProviderEvent CreateQuickSettingsUpdatedEvent(

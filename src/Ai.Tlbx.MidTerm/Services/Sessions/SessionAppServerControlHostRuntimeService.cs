@@ -58,7 +58,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     internal IEnumerable<(int ProcessId, string SessionId, string ScopeIdentity)> GetMcpProcessContextRoots() =>
         _states.Values.Where(state => state.HostPid > 0 && !string.IsNullOrEmpty(state.McpScopeIdentity) &&
-            state.Status is not (HostRuntimeStatus.Error or HostRuntimeStatus.Stopped))
+            // Model failures affect presentation status, not runtime identity.
+            // A live IPC reader is required so disconnected hosts cannot retain
+            // stale authority while their canonical scope changes unseen.
+            state.Status != HostRuntimeStatus.Stopped && state.Input is not null && state.Output is not null &&
+            state.ReaderTask is { IsCompleted: false })
             .Select(state => (state.HostPid, state.SessionId, state.McpScopeIdentity!));
 
     public SessionAppServerControlHostRuntimeService(

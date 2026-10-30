@@ -45,7 +45,10 @@ internal sealed class AppServerControlMcpRuntimeScope
         lock (_gate)
         {
             var state = value.SessionState?.State;
-            if (state is "error" or "stopped" || value.Type == "session.exited")
+            // A rejected model turn or recoverable transport error does not
+            // replace the provider runtime. Revoke only on actual shutdown;
+            // Prepare also detects a changed backend before the next attach.
+            if (state == "stopped" || value.Type == "session.exited")
             {
                 if (_started) _identity = Guid.NewGuid().ToString("N");
                 _started = false;
