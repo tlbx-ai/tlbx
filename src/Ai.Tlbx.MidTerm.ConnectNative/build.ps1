@@ -55,6 +55,16 @@ try {
         }
     }
     $installRoot = Join-Path $scratch 'installed'
+    # Seed the exact public gitlink response already pinned by the vcpkg PCRE2
+    # port. Its unchanged SHA512 is rechecked there; source archives still use
+    # their own pins. This avoids a rate-limited GitHub API metadata request.
+    $metadata = Join-Path (Join-Path $PSScriptRoot 'source-metadata') $pin.sourceMetadata.file
+    if ((Get-FileHash -LiteralPath $metadata -Algorithm SHA512).Hash.ToLowerInvariant() -ne $pin.sourceMetadata.sha512) {
+        throw 'Pinned PCRE2 source metadata integrity check failed.'
+    }
+    $downloads = Join-Path $scratch 'downloads'
+    New-Item -ItemType Directory -Force -Path $downloads | Out-Null
+    Copy-Item -LiteralPath $metadata -Destination (Join-Path $downloads $pin.sourceMetadata.file) -Force
     $hostTriplet = if ($IsWindows) { 'x64-windows' }
         elseif ($IsMacOS) { if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64-osx' } else { 'x64-osx' } }
         else { if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64') { 'arm64-linux' } else { 'x64-linux' } }

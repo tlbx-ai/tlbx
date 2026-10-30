@@ -44,6 +44,8 @@ jobs:
     name: Native Linux package
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    outputs:
+      native: ${{ steps.changes.outputs.native }}
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
     steps:
@@ -101,11 +103,28 @@ jobs:
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
+  native-url-stdlib:
+    name: Native URL parser (libc++)
+    runs-on: macos-15-arm64
+    needs: native-linux
+    timeout-minutes: 5
+    steps:
+      - name: Native input scope
+        env:
+          NATIVE_INPUTS: ${{ needs.native-linux.outputs.native }}
+        run: echo "Native input changes=$NATIVE_INPUTS"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.native-linux.outputs.native == 'true'
+        with:
+          persist-credentials: false
+      - name: Verify native URL parsing with libc++
+        if: needs.native-linux.outputs.native == 'true'
+        run: python3 src/Ai.Tlbx.MidTerm.ConnectNative/smoke/regex.py
   server-contracts:
     name: Server and host contracts
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
-    needs: [frontend, native-linux]
+    needs: [frontend, native-linux, native-url-stdlib]
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -151,18 +170,19 @@ jobs:
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
   server:
     name: PR server
-    needs: [frontend, native-linux, server-contracts]
+    needs: [frontend, native-linux, native-url-stdlib, server-contracts]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require frontend, native Linux and server success
+      - name: Require frontend, native Linux, URL parser and server success
         shell: pwsh
         env:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           NATIVE_RESULT: ${{ needs.native-linux.result }}
+          URL_RESULT: ${{ needs.native-url-stdlib.result }}
           SERVER_RESULT: ${{ needs.server-contracts.result }}
         run: |
-          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:SERVER_RESULT -ne 'success') {
-            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; server=$env:SERVER_RESULT"
+          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:URL_RESULT -ne 'success' -or $env:SERVER_RESULT -ne 'success') {
+            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; URL=$env:URL_RESULT; server=$env:SERVER_RESULT"
           }
