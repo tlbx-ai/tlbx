@@ -120,6 +120,18 @@ public sealed class TlbxMcpBrowserProtocolTests
                 Assert.NotEqual(true, result.IsError);
                 Assert.Equal(session, result.StructuredContent!.Value.GetProperty("sessionId").GetString());
                 Assert.Equal(payload, sent[session].Value);
+                // Clearing an input and filling whitespace are literal CLI use
+                // cases too; neither may be rejected as a missing argument.
+                foreach (var blank in new[] { "", " \t\r\n" })
+                {
+                    var cleared = await client.CallToolAsync("browser_fill", new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["previewName"] = preview, ["selector"] = "input", ["value"] = blank
+                    }, cancellationToken: ct);
+                    Assert.NotEqual(true, cleared.IsError);
+                    Assert.Equal(blank, sent[session].Value);
+                    Assert.Equal(preview, sent[session].PreviewName);
+                }
                 var image = await client.CallToolAsync("browser_screenshot", new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["previewName"] = preview, ["fullPage"] = true
@@ -136,6 +148,25 @@ public sealed class TlbxMcpBrowserProtocolTests
             commands.UnregisterClient("client-a");
             commands.UnregisterClient("client-b");
             await app.StopAsync(ct);
+        }
+    }
+
+    [Fact]
+    public void BatchFillAndEvaluatePreserveEmptyAndWhitespacePayloads()
+    {
+        foreach (var literal in new[] { "", " \t\r\n" })
+        {
+            var batch = TlbxMcpBrowserTools.ParseBatch(Args(new
+            {
+                commands = new object[]
+                {
+                    new { command = "fill", selector = "input", value = literal },
+                    new { command = "exec", value = literal },
+                    new { command = "evaluate", code = literal }
+                }
+            }), "first001", "alpha");
+            Assert.All(batch.Commands, command => Assert.Equal(literal, command.Value));
+            Assert.All(batch.Commands, command => Assert.Equal("alpha", command.PreviewName));
         }
     }
 

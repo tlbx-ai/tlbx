@@ -351,7 +351,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     {
         command = command == "evaluate" ? "exec" : command;
         var selector = OptionalString(args, "selector");
-        var value = OptionalString(args, "value");
+        var value = OptionalString(args, "value", allowEmpty: command is "fill" or "exec");
         var timeout = Integer(args, "timeout", command == "screenshot" ? 30 : 15);
         if (timeout is < 1 or > 120) throw new ArgumentException("timeout must be 1-120 seconds.");
         if (command is "query" or "click" or "fill" or "wait" or "attrs" or "css")

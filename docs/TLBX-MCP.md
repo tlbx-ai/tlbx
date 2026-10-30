@@ -66,6 +66,8 @@ a later failure; neither workflows nor transports automatically replay them.
 Native file-input/output wrappers inherit the workflow's preview/session scope
 when calling browser tools. Conflicting wrapped browser targets are rejected;
 explicit non-browser targets remain explicit.
+Literal fill values include empty strings (clear the field) and whitespace;
+direct and batch calls preserve them without treating them as missing arguments.
 
 Native `tool_call_from_file` expands a caller-local UTF-8 JSON arguments file, or
 injects an exact text file into a named argument. This replaces board `@file` and
