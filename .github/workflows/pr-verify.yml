@@ -105,7 +105,7 @@ jobs:
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
   native-url-stdlib:
     name: Native URL parser (libc++)
-    runs-on: macos-15-arm64
+    runs-on: macos-15
     needs: native-linux
     timeout-minutes: 5
     steps:
