@@ -40,11 +40,72 @@ jobs:
           name: pr-frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
           retention-days: 1
-  server:
-    name: PR server
+  native-linux:
+    name: Native Linux package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
-    needs: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Detect native input changes
+        id: changes
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          changed=$(git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" -- \
+            src/Ai.Tlbx.MidTerm.ConnectNative/ \
+            src/Ai.Tlbx.MidTerm/ConnectNative.targets \
+            src/Ai.Tlbx.MidTerm/Services/Connect/ConnectNativeApi.cs \
+            .github/workflows/pr-verify.yml)
+          if [[ -n "$changed" ]]; then
+            echo 'native=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'native=false' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Identify native compiler cache key
+        if: steps.changes.outputs.native == 'true'
+        shell: pwsh
+        run: |
+          $compiler = ((& cc --version) + (& c++ --version) + (& clang --version)) -join "`n"
+          if (-not $compiler) { throw 'Native compiler identity is missing.' }
+          $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
+          "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      - name: Restore native dependency archives
+        id: native-cache
+        if: steps.changes.outputs.native == 'true'
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-linux-x64-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
+          restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-linux-x64-
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
+      - name: Build, package and verify native Linux ABI
+        if: steps.changes.outputs.native == 'true'
+        shell: pwsh
+        run: ./src/Ai.Tlbx.MidTerm.ConnectNative/build.ps1 -RuntimeIdentifier linux-x64
+      - name: Audit native Linux dependencies and artifact binding
+        if: steps.changes.outputs.native == 'true'
+        shell: pwsh
+        run: ./src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1 -RuntimeIdentifier linux-x64
+      - name: Preserve completed native dependency archives
+        if: always() && steps.changes.outputs.native == 'true' && steps.native-cache.outputs.cache-primary-key != '' && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+  server-contracts:
+    name: Server and host contracts
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
+    needs: [frontend, native-linux]
     runs-on: windows-2025
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -88,3 +149,20 @@ jobs:
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
+  server:
+    name: PR server
+    needs: [frontend, native-linux, server-contracts]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require frontend, native Linux and server success
+        shell: pwsh
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          NATIVE_RESULT: ${{ needs.native-linux.result }}
+          SERVER_RESULT: ${{ needs.server-contracts.result }}
+        run: |
+          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:SERVER_RESULT -ne 'success') {
+            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; server=$env:SERVER_RESULT"
+          }

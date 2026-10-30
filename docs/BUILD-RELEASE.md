@@ -86,7 +86,7 @@ Catalog identities come from the [NVD CPE API](https://nvd.nist.gov/developers/p
 Raw vcpkg source evidence remains in `bin/<RID>/source-sboms`. No native executable
 or child process is bundled.
 
-The libdatachannel 0.24.6#1 overlay detaches receive callbacks, removes the stream
+The libdatachannel 0.24.6#2 overlay detaches receive callbacks, removes the stream
 and cancels its timer on the GLib dispatch context before releasing the owner.
 libnice 0.1.24's legacy `attach_recv(NULL)` installs a NULL-target compatibility
 wrapper; the overlay uses the real `attach_recv_ex` detach and pins the patched
@@ -97,6 +97,8 @@ The temporary zlib 1.3.2#3 overlay applies the exact upstream CVE-2026-85091 fix
 Its patch, compiled source and static archive hashes are checked before the native
 link/install output is frozen. Packaging verifies that output without re-signing;
 macOS signing happens before the frozen binding with an ABI-tracked identity.
+ELF/Mach-O RPATH finalization also happens before signing and binding; the pinned
+vcpkg post-port RPATH pass is then disabled so it cannot mutate the frozen bytes.
 Raw scanner findings remain available. An artifact-scoped OpenVEX `fixed` statement
 is accepted only after that hash chain verifies, and receives a release-archive
 attestation. Wrong-artifact VEX remains a failing control. Remove this temporary
