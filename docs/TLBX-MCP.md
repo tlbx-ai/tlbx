@@ -95,6 +95,15 @@ Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained C
 helpers, signatures and semantic scenarios; catalog presence is not acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
+An actual NativeAOT source-instance operator fixture passed 84 calls across 52 tools:
+terminal text/keys/bracketed paste with observed output, timed queue execution,
+recurring queue cancellation, exact queued history replay, repository binding,
+work/status updates, a real horizontal split and board item/viewport mutations
+including stale-revision rejection. Worker bootstrap preserved an explicit shell
+command. Board launch delivered the observed prompt once; repeating its explicit
+request ID retained the same receipt/session without a second delivery. Its own
+sessions and objects were removed.
+This covers those explicit scenarios, not every tool option or provider binding.
 Local source-instance model turns have verified self/topic/self through native
 MCP for two concurrent Codex sessions, Claude Agent SDK and Gemini over ACP.
 Gemini recovered after an unsupported extra argument was explicitly rejected.
@@ -115,7 +124,8 @@ uses the existing command-line tokenizer on Windows. macOS reads KERN_PROCARGS2
 and stops at argc, excluding environment entries. Decoder regressions cover
 Unicode, empty arguments and truncation; a real macOS runtime is still needed
 to verify that platform's native syscall and terminal binding end to end.
+The current Windows NativeAOT publish and standalone boot probe also passed.
 Remaining evidence includes installed service/user model calls,
-rendered browser workflows, macOS runtime acceptance, final integrated runtime Native
-AOT publish and a verified dev release. Keep CLI
+rendered browser workflows, macOS runtime acceptance, final release checks
+and a verified dev release. Keep CLI
 guidance and implementations maintained until these gates pass.

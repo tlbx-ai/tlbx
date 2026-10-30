@@ -85,7 +85,7 @@ internal static partial class TlbxMcpApiTools
         {
             BodyType = AppJsonContext.Default.CreateControlPlaneWorkItemRequest, SessionBody = "sessionId", AllowUnassociatedBody = true
         };
-        yield return Body("work_update", "PATCH", "/api/control-plane/work-items/{id}", "Update work state and optional fields. Omitted fields remain unchanged; explicit empty values are preserved.", AppJsonContext.Default.UpdateControlPlaneWorkItemRequest).Path("id", "workId");
+        yield return Body("work_update", "PATCH", "/api/control-plane/work-items/{id}", "Update work state and optional fields. Omitted fields remain unchanged. An explicit empty string clears optional text such as summary, nextAction, URL or repositoryPath; the existing service returns cleared values as null.", AppJsonContext.Default.UpdateControlPlaneWorkItemRequest).Path("id", "workId");
         yield return D("work_delete", "DELETE", "/api/control-plane/work-items/{id}", "Delete an explicitly identified work item.").Path("id", "workId");
         yield return new McpApiOperation("status_publish", "PUT", "/api/control-plane/session-status/{sessionId}", "Publish explicit working/waiting/needsInput/blocked/done status for a session.")
         {
