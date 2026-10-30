@@ -1410,7 +1410,7 @@
   "connect.sidebar.connection": "连接",
   "connect.sidebar.switch": "切换计算机",
   "connect.sidebar.details": "连接详情",
-  "connect.sidebar.update": "此会话尚未发送连接详情。请重新加载 connect.tlbx.ai 并重新连接。已保存的访问密钥将保留。",
+  "connect.sidebar.update": "此会话尚未发送连接详情。请重新加载 lnk.tlbx.ai 并重新连接。已保存的访问密钥将保留。",
   "connect.sidebar.route": "路径",
   "connect.sidebar.mode": "模式",
   "connect.sidebar.source": "来源",
@@ -1438,7 +1438,7 @@
   "connect.sidebar.unconfirmed": "未确认",
   "connect.sidebar.encryptionHint": "浏览器与 tlbx 之间的加密，包括使用 TURN 时。",
   "connect.sidebar.identityVerified": "密钥已验证",
-  "connect.sidebar.signalingConnected": "Connect · WSS 已启用",
+  "connect.sidebar.signalingConnected": "Link · WSS 已启用",
   "connect.sidebar.signalingMissing": "未报告",
   "connect.sidebar.signalingHint": "使用期间信令连接会保持开启。应用数据路径显示在“路径”下。"
 }

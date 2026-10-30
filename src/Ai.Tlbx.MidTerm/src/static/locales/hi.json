@@ -1410,7 +1410,7 @@
   "connect.sidebar.connection": "कनेक्शन",
   "connect.sidebar.switch": "कंप्यूटर बदलें",
   "connect.sidebar.details": "कनेक्शन विवरण",
-  "connect.sidebar.update": "यह सत्र अभी कनेक्शन विवरण नहीं भेजता है। connect.tlbx.ai फिर से लोड करें और दोबारा कनेक्ट करें। आपकी सहेजी गई एक्सेस कुंजियाँ बनी रहेंगी।",
+  "connect.sidebar.update": "यह सत्र अभी कनेक्शन विवरण नहीं भेजता है। lnk.tlbx.ai फिर से लोड करें और दोबारा कनेक्ट करें। आपकी सहेजी गई एक्सेस कुंजियाँ बनी रहेंगी।",
   "connect.sidebar.route": "मार्ग",
   "connect.sidebar.mode": "मोड",
   "connect.sidebar.source": "स्रोत",
@@ -1438,7 +1438,7 @@
   "connect.sidebar.unconfirmed": "पुष्टि नहीं हुई",
   "connect.sidebar.encryptionHint": "ब्राउज़र और tlbx के बीच एन्क्रिप्शन, TURN का उपयोग करते समय भी।",
   "connect.sidebar.identityVerified": "कुंजी सत्यापित",
-  "connect.sidebar.signalingConnected": "Connect · WSS सक्रिय",
+  "connect.sidebar.signalingConnected": "Link · WSS सक्रिय",
   "connect.sidebar.signalingMissing": "नहीं बताया गया",
   "connect.sidebar.signalingHint": "उपयोग के दौरान सिग्नलिंग कनेक्शन खुला रहता है। ऐप डेटा का मार्ग “मार्ग” के अंतर्गत दिखाया जाता है।"
 }

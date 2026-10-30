@@ -1410,7 +1410,7 @@
   "connect.sidebar.connection": "接続",
   "connect.sidebar.switch": "コンピューターを切り替え",
   "connect.sidebar.details": "接続の詳細",
-  "connect.sidebar.update": "このセッションは接続の詳細をまだ送信していません。connect.tlbx.ai を再読み込みして再接続してください。保存済みのアクセスキーは保持されます。",
+  "connect.sidebar.update": "このセッションは接続の詳細をまだ送信していません。lnk.tlbx.ai を再読み込みして再接続してください。保存済みのアクセスキーは保持されます。",
   "connect.sidebar.route": "経路",
   "connect.sidebar.mode": "モード",
   "connect.sidebar.source": "送信元",
@@ -1438,7 +1438,7 @@
   "connect.sidebar.unconfirmed": "未確認",
   "connect.sidebar.encryptionHint": "TURN 使用時を含む、ブラウザーと tlbx 間の暗号化。",
   "connect.sidebar.identityVerified": "キー検証済み",
-  "connect.sidebar.signalingConnected": "Connect · WSS 有効",
+  "connect.sidebar.signalingConnected": "Link · WSS 有効",
   "connect.sidebar.signalingMissing": "報告なし",
   "connect.sidebar.signalingHint": "使用中はシグナリング接続が維持されます。アプリケーションデータの経路は「経路」に表示されます。"
 }

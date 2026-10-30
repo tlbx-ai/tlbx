@@ -4,28 +4,28 @@ internal static class ConnectSetupPage
 {
     public const string Html = """
         <section id="connect-setup" class="settings-section">
-          <h3>tlbx Connect</h3>
-          <p class="setting-hint">Use this computer from another browser. Create your connection files here on localhost.</p>
+          <h3 data-i18n="connect.setup.title">tlbx Link</h3>
+          <p class="setting-hint" data-i18n="connect.setup.description">Use this computer from another browser. Create your connection files here on localhost.</p>
           <p id="connect-setup-status" class="setting-hint" role="status" aria-live="polite">Loading connection status…</p>
           <form id="connect-setup-unlock">
-            <div class="setting-row"><label for="connect-setup-password">Installation password</label>
+            <div class="setting-row"><label for="connect-setup-password" data-i18n="connect.setup.password">Installation password</label>
               <input id="connect-setup-password" type="password" autocomplete="current-password" maxlength="1024" required></div>
-            <div class="connect-setup-actions"><button type="submit" class="btn-secondary">Unlock key setup</button></div>
+            <div class="connect-setup-actions"><button type="submit" class="btn-secondary" data-i18n="connect.setup.unlock">Unlock key setup</button></div>
           </form>
           <form id="connect-setup-generate" hidden>
-            <div class="setting-row"><label for="connect-setup-name">Computer name</label><input id="connect-setup-name" type="text" maxlength="100" autocomplete="off" required></div>
-            <div class="setting-row"><label for="connect-setup-server">Connect server</label><input id="connect-setup-server" type="url" value="https://connect.tlbx.ai" autocomplete="off" required></div>
-            <p id="connect-setup-replacement" class="setting-hint" hidden>Replacement keys disconnect current browsers. Import the new files to reconnect.</p>
+            <div class="setting-row"><label for="connect-setup-name" data-i18n="connect.setup.name">Computer name</label><input id="connect-setup-name" type="text" maxlength="100" autocomplete="off" required></div>
+            <div class="setting-row"><label for="connect-setup-server" data-i18n="connect.setup.server">Link server</label><input id="connect-setup-server" type="url" value="https://lnk.tlbx.ai" autocomplete="off" required></div>
+            <p id="connect-setup-replacement" class="setting-hint" data-i18n="connect.setup.replacement" hidden>Replacement keys disconnect current browsers. Import the new files to reconnect.</p>
             <div class="connect-setup-actions"><button id="connect-setup-generate-button" type="submit" class="btn-primary">Generate connection files</button>
-              <button id="connect-setup-disconnect" type="button" class="btn-secondary" hidden>Remove Connect keys</button></div>
+              <button id="connect-setup-disconnect" type="button" class="btn-secondary" data-i18n="connect.setup.remove" hidden>Remove Link keys</button></div>
           </form>
           <div id="connect-setup-downloads" hidden>
-            <div class="setting-row"><label>Public registration</label><button id="connect-setup-download-registration" type="button" class="btn-secondary">Save registration file</button></div>
-            <div class="setting-row"><label>Private browser access</label><button id="connect-setup-download-access" type="button" class="btn-secondary">Save private access file</button></div>
-            <p class="setting-hint">Import the registration at connect.tlbx.ai, then import the private access file in your other browser. Keep the private file safe.</p>
-            <p class="setting-hint">Downloads are available for two minutes. Leaving Settings clears them.</p>
+            <div class="setting-row"><label data-i18n="connect.setup.registration">Public registration</label><button id="connect-setup-download-registration" type="button" class="btn-secondary" data-i18n="connect.setup.saveRegistration">Save registration file</button></div>
+            <div class="setting-row"><label data-i18n="connect.setup.access">Private browser access</label><button id="connect-setup-download-access" type="button" class="btn-secondary" data-i18n="connect.setup.saveAccess">Save private access file</button></div>
+            <p class="setting-hint" data-i18n="connect.setup.importHint">Import the registration at lnk.tlbx.ai, then import the private access file in your other browser. Keep the private file safe.</p>
+            <p class="setting-hint" data-i18n="connect.setup.expiry">Downloads are available for two minutes. Leaving Settings clears them.</p>
           </div>
-          <p class="setting-hint">Local setup only. The host private key stays in this installation's protected storage. <a href="/connect-licenses.txt" target="_blank" rel="noopener">Transport licenses</a></p>
+          <p class="setting-hint"><span data-i18n="connect.setup.localOnly">Local setup only. The host private key stays in this installation's protected storage.</span> <a href="/connect-licenses.txt" target="_blank" rel="noopener" data-i18n="connect.setup.licenses">Transport licenses</a></p>
         </section>
         """;
 
@@ -33,26 +33,32 @@ internal static class ConnectSetupPage
         'use strict';
         (() => {
         const root = document.querySelector('#connect-setup');
+        const t = key => window.__tlbxI18n.t(key);
         const find = id => root.querySelector('#connect-setup-' + id);
         const status = find('status'), unlock = find('unlock'), form = find('generate');
         const password = find('password'), downloads = find('downloads');
         let unlockToken = null, files = null, unlockTimer, fileTimer, stopped = false, state, generation = 0;
+        status.textContent = t('connect.setup.loading');
+        find('generate-button').textContent = t('connect.setup.generate');
         function lock() { unlockToken = null; form.hidden = true; unlock.hidden = false; password.value = ''; clearTimeout(unlockTimer); }
         function forgetFiles() { files = null; downloads.hidden = true; clearTimeout(fileTimer); }
         async function request(path, body) {
           const response = await fetch(path, {method:body === undefined ? 'GET' : 'POST', cache:'no-store',
             headers:body === undefined ? {} : {'Content-Type':'application/json'}, body:body === undefined ? undefined : JSON.stringify(body)});
-          if (!response.ok) { let problem; try { problem = await response.json(); } catch {} throw new Error(problem?.detail || (response.status === 401 ? 'Sign in locally and confirm your installation password.' : 'The request failed. Try again locally.')); }
+          if (!response.ok) { let problem; try { problem = await response.json(); } catch {} throw new Error(problem?.detail || t(response.status === 401 ? 'connect.setup.signIn' : 'connect.setup.requestFailed')); }
           return response.status === 204 ? null : response.json();
+        }
+        function translateState() {
+          status.textContent = state.lastError || (state.online ? t('connect.setup.connected').replace('{host}', new URL(state.serverUrl).host) : t(state.configured ? 'connect.setup.waiting' : 'connect.setup.empty'));
+          find('generate-button').textContent = t(state.configured ? 'connect.setup.generateReplacement' : 'connect.setup.generate');
         }
         function show(next) {
           state = next;
-          status.textContent = state.lastError || (state.online ? 'Connected to ' + new URL(state.serverUrl).host : state.configured ? 'Keys saved. Waiting for Connect…' : 'This computer has no Connect keys.');
+          translateState();
           if (state.name) find('name').value = state.name;
           if (state.serverUrl) find('server').value = state.serverUrl;
           find('disconnect').hidden = !state.configured;
           find('replacement').hidden = !state.configured;
-          find('generate-button').textContent = state.configured ? 'Generate replacement connection files' : 'Generate connection files';
         }
         unlock.addEventListener('submit', async event => {
           event.preventDefault(); const button = unlock.querySelector('button'); button.disabled = true;
@@ -92,6 +98,7 @@ internal static class ConnectSetupPage
           const attempt = generation;
           request('/api/connect/status').then(next => { if (attempt === generation) show(next); }).catch(error => { if (attempt === generation) status.textContent = error.message; });
         });
+        document.addEventListener('tlbx-locale-changed', () => { if (state) translateState(); });
         window.addEventListener('pagehide', () => { stopped = true; generation++; lock(); forgetFiles(); });
         request('/api/connect/status').then(state => { if (!stopped) show(state); }).catch(error => { if (!stopped) status.textContent = error.message; });
         })();

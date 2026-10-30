@@ -1410,7 +1410,7 @@
   "connect.sidebar.connection": "Connexion",
   "connect.sidebar.switch": "Changer d’ordinateur",
   "connect.sidebar.details": "Détails de connexion",
-  "connect.sidebar.update": "Cette session ne transmet pas encore les détails de connexion. Rechargez connect.tlbx.ai et reconnectez-vous. Vos clés d’accès enregistrées sont conservées.",
+  "connect.sidebar.update": "Cette session ne transmet pas encore les détails de connexion. Rechargez lnk.tlbx.ai et reconnectez-vous. Vos clés d’accès enregistrées sont conservées.",
   "connect.sidebar.route": "Trajet",
   "connect.sidebar.mode": "Mode",
   "connect.sidebar.source": "Source",
@@ -1438,7 +1438,7 @@
   "connect.sidebar.unconfirmed": "Non confirmé",
   "connect.sidebar.encryptionHint": "Chiffrement entre le navigateur et tlbx, y compris avec TURN.",
   "connect.sidebar.identityVerified": "Clé vérifiée",
-  "connect.sidebar.signalingConnected": "Connect · WSS actif",
+  "connect.sidebar.signalingConnected": "Link · WSS actif",
   "connect.sidebar.signalingMissing": "Non indiqué",
   "connect.sidebar.signalingHint": "La connexion de signalisation reste ouverte pendant l’utilisation. Le trajet des données de l’application est affiché sous Trajet."
 }

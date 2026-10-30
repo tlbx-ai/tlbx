@@ -1410,7 +1410,7 @@
   "connect.sidebar.connection": "সংযোগ",
   "connect.sidebar.switch": "কম্পিউটার বদলান",
   "connect.sidebar.details": "সংযোগের বিবরণ",
-  "connect.sidebar.update": "এই সেশন এখনো সংযোগের বিবরণ পাঠায় না। connect.tlbx.ai আবার লোড করে পুনরায় সংযোগ করুন। আপনার সংরক্ষিত অ্যাক্সেস কী থাকবে।",
+  "connect.sidebar.update": "এই সেশন এখনো সংযোগের বিবরণ পাঠায় না। lnk.tlbx.ai আবার লোড করে পুনরায় সংযোগ করুন। আপনার সংরক্ষিত অ্যাক্সেস কী থাকবে।",
   "connect.sidebar.route": "পথ",
   "connect.sidebar.mode": "মোড",
   "connect.sidebar.source": "উৎস",
@@ -1438,7 +1438,7 @@
   "connect.sidebar.unconfirmed": "নিশ্চিত নয়",
   "connect.sidebar.encryptionHint": "ব্রাউজার ও tlbx-এর মধ্যে এনক্রিপশন, TURN ব্যবহার করলেও।",
   "connect.sidebar.identityVerified": "কী যাচাই হয়েছে",
-  "connect.sidebar.signalingConnected": "Connect · WSS সক্রিয়",
+  "connect.sidebar.signalingConnected": "Link · WSS সক্রিয়",
   "connect.sidebar.signalingMissing": "জানানো হয়নি",
   "connect.sidebar.signalingHint": "ব্যবহারের সময় সিগন্যালিং সংযোগ খোলা থাকে। অ্যাপের ডেটার পথ “পথ”-এর নিচে দেখানো হয়।"
 }
