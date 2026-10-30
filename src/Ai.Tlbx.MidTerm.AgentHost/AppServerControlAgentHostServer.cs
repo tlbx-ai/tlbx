@@ -252,8 +252,13 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         {
             if (attach.McpPrepareOnly)
             {
-                _mcpScope.Prepare(attach.ResumeThreadId ?? attach.AttachPoint?.PreferredThreadId,
-                    string.IsNullOrEmpty(attach.ResumeThreadId) && attach.AttachPoint is null,
+                // A replacement Web client has no cached provider thread. The
+                // surviving owned runtime does; implicit reattach must retain it.
+                var threadId = attach.ResumeThreadId ?? attach.AttachPoint?.PreferredThreadId;
+                if (string.IsNullOrEmpty(threadId) && string.Equals(_runtime?.Provider, attach.Provider, StringComparison.Ordinal))
+                    threadId = _mcpScope.ThreadId;
+                _mcpScope.Prepare(threadId,
+                    string.IsNullOrEmpty(threadId) && attach.AttachPoint is null,
                     string.Join('\n', attach.Provider, attach.RuntimeKind, attach.AttachPoint?.Endpoint, attach.ExecutablePath));
                 return new HostCommandOutcome
                 {

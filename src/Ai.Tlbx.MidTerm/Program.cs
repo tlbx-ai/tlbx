@@ -508,9 +508,27 @@ public class Program
             tmuxLayoutBridge,
             browserUiBridge);
 
+        Task controllerRecoveryTask = Task.CompletedTask;
+        async Task RecoverAgentControllersAsync()
+        {
+            try
+            {
+                // MCP binding validation calls this server's HTTP endpoint. Do
+                // not wait for it before Kestrel has begun accepting requests.
+                await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
+                await sessionGitMetadata.ReconcileAllAsync(ct: shutdownService.Token);
+            }
+            catch (OperationCanceledException) when (shutdownService.Token.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                Log.Error(() => $"Agent Controller startup recovery failed: {ex.GetType().Name}");
+            }
+        }
+
         lifetime.ApplicationStarted.Register(() =>
         {
-            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Server fully operational - listening on https://{bindAddress}:{port}"));
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"HTTP listener ready on https://{bindAddress}:{port}; recovering Agent Controller runtimes."));
+            controllerRecoveryTask = RecoverAgentControllersAsync();
         });
 
         lifetime.ApplicationStopping.Register(() =>
@@ -559,8 +577,6 @@ public class Program
         }
         await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, ct: shutdownService.Token);
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
-        await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
-        await sessionGitMetadata.ReconcileAllAsync(ct: shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();
         var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
@@ -580,6 +596,7 @@ public class Program
             {
                 sessionManager.RemoveStateListener(sleepInhibitorStateListenerId);
                 using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                await controllerRecoveryTask.WaitAsync(cleanupCts.Token);
                 await muxManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
                 await sessionManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
             }

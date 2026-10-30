@@ -54,6 +54,11 @@ public sealed class McpHostScopeIpcTests
             Assert.Equal(prepared.McpScopeIdentity, attached.McpScopeIdentity);
             var same = await Send(Attach("first", prepare: true));
             Assert.Equal(attached.McpScopeIdentity, same.McpScopeIdentity);
+            // A new Web process does not know the provider thread yet. The
+            // host must return its live thread without rotating its authority.
+            var implicitReattach = await Send(Attach(null, prepare: true));
+            Assert.Equal(attached.McpScopeIdentity, implicitReattach.McpScopeIdentity);
+            Assert.Equal("first", implicitReattach.McpProviderThreadId);
 
             // Replacement preparation returns a new authority before any factory
             // issues its launch capability or any provider receives its config.
@@ -76,7 +81,7 @@ public sealed class McpHostScopeIpcTests
         }
     }
 
-    private static AppServerControlHostCommandEnvelope Attach(string thread, bool prepare, string? epoch = null) => new()
+    private static AppServerControlHostCommandEnvelope Attach(string? thread, bool prepare, string? epoch = null) => new()
     {
         Type = "runtime.attach", SessionId = "scope-ipc-session", CommandId = Guid.NewGuid().ToString("N"),
         AttachRuntime = new()

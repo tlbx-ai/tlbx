@@ -74,9 +74,11 @@ Local source-instance model turns have verified self/topic/self through native
 MCP for two concurrent Codex sessions, Claude Agent SDK and Gemini over ACP.
 Gemini recovered after an unsupported extra argument was explicitly rejected.
 Codex also recovered on the same thread after a rejected model turn and a switch
-from automatic to manual permissions. These smoke checks do not establish
+from automatic to manual permissions. A controlled source-web restart retained
+the canonical thread and both native adapter PIDs while the server instance
+changed; a subsequent model-issued context call succeeded. These checks do not establish
 complete behavioral parity or the installed service/user boundary.
-Remaining evidence includes runtime restart recovery,
-service/user boundaries, rendered browser workflows, integrated Native
+Remaining evidence includes installed service/user and shared-TUI model calls,
+rendered browser workflows, final integrated runtime Native
 AOT publish and a verified dev release. Keep CLI
 guidance and implementations maintained until these gates pass.

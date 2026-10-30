@@ -427,6 +427,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     var prepared = await SendCommandAsync(state, id => AttachCommand(id, prepare), ct).ConfigureAwait(false);
                     if (string.IsNullOrEmpty(prepared.McpScopeIdentity))
                         throw new InvalidOperationException("TLBX_MCP_HOST_UPDATE_REQUIRED: The host did not prepare a runtime scope.");
+                    request.ResumeThreadId ??= prepared.McpProviderThreadId;
                     request.McpServer = _mcpServerFactory.Invoke(sessionId, state.HostPid);
                     if (request.McpServer is not null) request.McpServer.ScopeIdentity = prepared.McpScopeIdentity;
                 }
