@@ -27,10 +27,14 @@ internal static class TlbxMcpNativeWorkflow
         tools[TlbxMcpIsolatedProcessTool.ProtocolTool.Name] = TlbxMcpIsolatedProcessTool.ProtocolTool;
         tools[TlbxMcpFileCallTool.ToolName] = TlbxMcpFileCallTool.Definition;
         tools[TlbxMcpArtifactSaveTool.ToolName] = TlbxMcpArtifactSaveTool.Definition;
+        tools[TlbxMcpOutputFileTool.ToolName] = TlbxMcpOutputFileTool.Definition;
         if (tools.ContainsKey("update_apply")) tools["update_apply"] = TlbxMcpUpdateWorkflow.ProtocolTool;
         var executor = new TlbxMcpWorkflowExecutor(tools.Values);
+        var inheritedScope = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+        foreach (var field in new[] { "targetSessionId", "previewName" })
+            if (parameters.Arguments?.TryGetValue(field, out var value) == true) inheritedScope[field] = value;
         ValueTask<CallToolResult> Invoke(string name, IDictionary<string, JsonElement> arguments, CancellationToken ct)
-            => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = arguments }, ct);
+            => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = arguments }, ct, inheritedScope, tools);
 
         async Task<bool> WithPreview(string? target, string? name, string url,
             Func<TlbxMcpWorkflowExecutor.PreviewScope, CancellationToken, Task<bool>> body, CancellationToken ct)
@@ -49,9 +53,12 @@ internal static class TlbxMcpNativeWorkflow
             var completed = false;
             var result = false;
             Exception? cleanupFailure = null;
+            var previousScope = inheritedScope;
+            inheritedScope = Arguments(new JsonObject { ["targetSessionId"] = session, ["previewName"] = preview });
             try { result = await body(new(session, preview), ct).ConfigureAwait(false); completed = true; }
             finally
             {
+                inheritedScope = previousScope;
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 try
                 {
@@ -94,13 +101,35 @@ internal static class TlbxMcpNativeWorkflow
             }
         }, McpClientJsonContext.Default.CallToolResult, ct);
 
-    internal static ValueTask<CallToolResult> InvokeNativeStepAsync(McpClient upstream, CallToolRequestParams call, CancellationToken ct)
+    internal static ValueTask<CallToolResult> InvokeNativeStepAsync(McpClient upstream, CallToolRequestParams call, CancellationToken ct,
+        IReadOnlyDictionary<string, JsonElement>? inheritedScope = null, IReadOnlyDictionary<string, Tool>? catalog = null)
     {
+        if (inheritedScope is { Count: > 0 } && catalog?.TryGetValue(call.Name, out var tool) == true &&
+            tool.InputSchema.TryGetProperty("properties", out var properties))
+        {
+            var values = call.Arguments is null ? new Dictionary<string, JsonElement>(StringComparer.Ordinal)
+                : new Dictionary<string, JsonElement>(call.Arguments, StringComparer.Ordinal);
+            var browserScoped = properties.TryGetProperty("previewName", out _);
+            foreach (var field in new[] { "targetSessionId", "previewName" })
+                if (properties.TryGetProperty(field, out _) && inheritedScope.TryGetValue(field, out var scope))
+                {
+                    if (values.TryGetValue(field, out var explicitValue))
+                    {
+                        if (browserScoped && (explicitValue.ValueKind != JsonValueKind.String || scope.ValueKind != JsonValueKind.String ||
+                            !string.Equals(explicitValue.GetString(), scope.GetString(), StringComparison.Ordinal)))
+                            throw new ArgumentException("Wrapped browser call conflicts with workflow " + field + ".");
+                    }
+                    else values[field] = scope;
+                }
+            call = new CallToolRequestParams { Name = call.Name, Arguments = values };
+        }
         if (call.Name == "process_run_isolated") return TlbxMcpIsolatedProcessTool.InvokeLocalAsync(call, ct);
         if (call.Name == TlbxMcpFileCallTool.ToolName) return TlbxMcpFileCallTool.InvokeLocalAsync(call,
-            (name, values, token) => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = values }, token), ct);
+            (name, values, token) => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = values }, token, inheritedScope, catalog), ct);
         if (call.Name == TlbxMcpArtifactSaveTool.ToolName) return TlbxMcpArtifactSaveTool.InvokeLocalAsync(call,
             (name, values, token) => CallUpstreamAsync(upstream, name, values, token), ct);
+        if (call.Name == TlbxMcpOutputFileTool.ToolName) return TlbxMcpOutputFileTool.InvokeLocalAsync(call,
+            (name, values, token) => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = values }, token, inheritedScope, catalog), ct);
         if (call.Name == "update_apply") return TlbxMcpUpdateWorkflow.InvokeAsync(call,
             (name, values, token) => CallUpstreamAsync(upstream, name, values, token), ct);
         return CallUpstreamAsync(upstream, call.Name, call.Arguments ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal), ct);

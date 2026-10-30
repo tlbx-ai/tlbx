@@ -76,7 +76,7 @@ public sealed class TlbxMcpWorkflowProtocolTests
                 if (message.Command == "fill") mutations.Add(message);
                 commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "native-preview");
             }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
-                ownershipGeneration: owners.GetGeneration(session, name)));
+                ownershipGeneration: owners.GetGeneration(session, name)), close: (_, _) => commands.UnregisterClient("native-preview"));
         var fail = new EchoTool("intentional_failure", true);
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0));
@@ -110,7 +110,8 @@ public sealed class TlbxMcpWorkflowProtocolTests
                 previewUrl = "https://example.invalid", steps = new object[]
                 {
                     new { tool = "process_run_isolated", arguments = new { executable = exe, arguments = argv, workingDirectory = cwd } },
-                    new { tool = "browser_fill", arguments = new { selector = "input", value = new Dictionary<string, object>(StringComparer.Ordinal) { ["$step"] = 0, ["path"] = "/runId" } } },
+                    new { tool = "tool_call_to_file", arguments = new { toolName = "browser_fill", path = Path.Combine(cwd, "browser-result.json"),
+                        arguments = new { selector = "input", value = new Dictionary<string, object>(StringComparer.Ordinal) { ["$step"] = 0, ["path"] = "/runId" } } } },
                     new { tool = "intentional_failure", arguments = new { value = "stop" } },
                     new { tool = "browser_fill", arguments = new { selector = "input", value = "never" } }
                 }
@@ -127,6 +128,36 @@ public sealed class TlbxMcpWorkflowProtocolTests
             var mutation = Assert.Single(mutations);
             Assert.Equal(first.GetProperty("runId").GetString(), mutation.Value);
             Assert.StartsWith("mcp-", mutation.PreviewName, StringComparison.Ordinal);
+            Assert.True(File.Exists(Path.Combine(cwd, "browser-result.json")));
+            Assert.Empty(previews.ListPreviewSessions("first001").Previews);
+            var fileArguments = Path.Combine(cwd, "browser-arguments.json");
+            await File.WriteAllTextAsync(fileArguments, "{\"selector\":\"input\",\"value\":\"literal from file\"}", ct);
+            async Task<CallToolResult> FileWorkflow(bool conflicting)
+            {
+                if (conflicting) await File.WriteAllTextAsync(fileArguments,
+                    "{\"selector\":\"input\",\"value\":\"must not mutate\",\"previewName\":\"foreign\"}", ct);
+                var inner = new JsonObject { ["toolName"] = "browser_fill", ["argumentsFile"] = fileArguments };
+                var step = conflicting ? new JsonObject
+                {
+                    ["tool"] = "tool_call_to_file", ["arguments"] = new JsonObject
+                    { ["toolName"] = "tool_call_from_file", ["path"] = Path.Combine(cwd, "scope-error.json"), ["arguments"] = inner }
+                } : new JsonObject { ["tool"] = "tool_call_from_file", ["arguments"] = inner };
+                var payload = JsonSerializer.SerializeToElement(new JsonObject
+                    { ["previewUrl"] = "https://example.invalid", ["steps"] = new JsonArray(step) }, McpJsonContext.Default.JsonObject);
+                using var values = payload.EnumerateObject();
+                return await TlbxMcpNativeWorkflow.InvokeAsync(new CallToolRequestParams
+                    { Name = "workflow_run", Arguments = values.ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal) }, upstream, ct);
+            }
+            var fileResult = await FileWorkflow(false);
+            Assert.NotEqual(true, fileResult.IsError);
+            Assert.Equal("literal from file", mutations.Last().Value);
+            Assert.StartsWith("mcp-", mutations.Last().PreviewName, StringComparison.Ordinal);
+            var conflict = await FileWorkflow(true);
+            Assert.True(conflict.IsError);
+            Assert.Equal(2, mutations.Count);
+            Assert.True(conflict.StructuredContent!.Value.GetProperty("steps")[0].GetProperty("structuredContent").GetProperty("saved").GetBoolean());
+            using (var capturedError = JsonDocument.Parse(await File.ReadAllBytesAsync(Path.Combine(cwd, "scope-error.json"), ct)))
+                Assert.True(capturedError.RootElement.GetProperty("isError").GetBoolean());
             Assert.Empty(previews.ListPreviewSessions("first001").Previews);
             var run = Path.GetDirectoryName(first.GetProperty("statePath").GetString()!)!;
             var deadline = Stopwatch.StartNew();
@@ -152,6 +183,9 @@ public sealed class TlbxMcpWorkflowProtocolTests
                 foreach (var file in Directory.GetFiles(process.RunDirectory)) File.Delete(file);
                 Directory.Delete(process.RunDirectory);
                 File.Delete(script);
+                File.Delete(Path.Combine(cwd, "browser-result.json"));
+                File.Delete(Path.Combine(cwd, "browser-arguments.json"));
+                File.Delete(Path.Combine(cwd, "scope-error.json"));
                 Directory.Delete(Path.Combine(cwd, ".tlbx", "runs"));
                 Directory.Delete(Path.Combine(cwd, ".tlbx"));
                 Directory.Delete(cwd);

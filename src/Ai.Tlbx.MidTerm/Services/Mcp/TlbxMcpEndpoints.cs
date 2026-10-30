@@ -32,6 +32,7 @@ internal static class TlbxMcpEndpoints
             .Append(new TlbxMcpClientLocalTool())
             .Append(new TlbxMcpFileCallTool())
             .Append(new TlbxMcpArtifactSaveTool())
+            .Append(new TlbxMcpOutputFileTool())
             .Concat(TlbxMcpBrowserTools.CreateTools()).ToArray();
         services.AddMcpServer(options =>
         {

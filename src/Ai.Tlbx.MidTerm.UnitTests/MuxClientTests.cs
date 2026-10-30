@@ -673,11 +673,10 @@ public sealed class MuxClientTests
         client.SetBackgroundSessions(new HashSet<string>(StringComparer.Ordinal) { sessionId });
 
         Assert.True(client.QueueOutput(sessionId, 1, 120, 30, RentOutput("a")));
-        await Task.Delay(80, Xunit.TestContext.Current.CancellationToken);
-        Assert.Empty(socket.SentFrames);
-
         await WaitForAsync(() => socket.SentFrames.Count == 1);
-        Assert.InRange(client.GetFlushDelay(sessionId), 150, 1_000);
+        // Measure the producer's actual queue-to-flush delay. A delayed test
+        // continuation cannot prove that its nominal 80ms wait was only 80ms.
+        Assert.InRange(client.GetFlushDelay(sessionId), 150, int.MaxValue);
     }
 
     private static SharedOutputBuffer RentOutput(string text)

@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Services.Mcp;
 using Microsoft.AspNetCore.Builder;
@@ -63,6 +64,8 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         var authenticatedRequests = 0;
         var forwardedCalls = 0;
         var artifactReads = 0;
+        var capturedCalls = 0;
+        var largeOutput = string.Concat(Enumerable.Repeat("Grüße 日本 🦊 '$()'\r\n", 30000));
         const string artifactUri = "tlbx-artifact://capture/native-executable-fixture";
         var artifactBytes = new byte[TlbxMcpArtifactSaveTool.ChunkBytes + 17];
         RandomNumberGenerator.Fill(artifactBytes);
@@ -71,9 +74,18 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0, endpoint => endpoint.UseHttps(certificate)));
         builder.Services.AddMcpServer().WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
             .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
-                { Tools = TlbxMcpArtifactTools.CreateTools().Select(tool => tool.ProtocolTool).ToList() }))
+                { Tools = [.. TlbxMcpArtifactTools.CreateTools().Select(tool => tool.ProtocolTool), new Tool
+                {
+                    Name = "large_result",
+                    InputSchema = JsonSerializer.SerializeToElement(new JsonObject { ["type"] = "object" }, McpJsonContext.Default.JsonObject)
+                }] }))
             .WithCallToolHandler((call, _) =>
             {
+                if (call.Params!.Name == "large_result")
+                {
+                    Interlocked.Increment(ref capturedCalls);
+                    return ValueTask.FromResult(McpApiResult.Structured(new JsonObject { ["value"] = largeOutput }));
+                }
                 if (call.Params!.Name == "artifacts_list") return ValueTask.FromResult(McpApiResult.Structured(new JsonObject
                 {
                     ["resources"] = new JsonArray(new JsonObject { ["uri"] = artifactUri, ["size"] = artifactBytes.Length })
@@ -153,6 +165,14 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             Assert.Equal(artifactBytes, await File.ReadAllBytesAsync(savedPath, ct));
             Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(artifactBytes)), saved.StructuredContent!.Value.GetProperty("sha256").GetString());
             Assert.Equal(2, artifactReads);
+            var outputPath = Path.Combine(cwd, "complete-output.json");
+            var captured = await client.CallToolAsync("tool_call_to_file", new Dictionary<string, object?>(StringComparer.Ordinal)
+                { ["toolName"] = "large_result", ["path"] = outputPath }, cancellationToken: ct);
+            Assert.False(captured.IsError, captured.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
+            using (var output = JsonDocument.Parse(await File.ReadAllBytesAsync(outputPath, ct)))
+                Assert.Equal(largeOutput, output.RootElement.GetProperty("structuredContent").GetProperty("value").GetString());
+            Assert.Equal(1, capturedCalls);
+            Assert.True(captured.Content.OfType<TextContentBlock>().Single().Text.Length < 2048);
             var executable = OperatingSystem.IsWindows()
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe")
                 : "/bin/sh";

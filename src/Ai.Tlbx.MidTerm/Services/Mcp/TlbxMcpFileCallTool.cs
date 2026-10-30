@@ -62,7 +62,7 @@ internal sealed class TlbxMcpFileCallTool : McpServerTool
             if (input.Keys.Any(key => key is not ("toolName" or "argumentsFile" or "textFile" or "textArgument" or "arguments")))
                 throw new ArgumentException("Unknown file-call argument.");
             var tool = RequiredString(input, "toolName");
-            if (tool is ToolName or "workflow_run") throw new ArgumentException("Recursive file calls and workflows are not allowed.");
+            if (tool is ToolName or TlbxMcpOutputFileTool.ToolName or "workflow_run") throw new ArgumentException("Recursive file/output wrappers and workflows are not allowed. Wrap tool_call_from_file with tool_call_to_file to combine file input and output.");
             var jsonMode = input.ContainsKey("argumentsFile");
             if (jsonMode && input.Keys.Any(key => key is "textFile" or "textArgument" or "arguments"))
                 throw new ArgumentException("argumentsFile cannot be combined with textFile, textArgument or arguments.");

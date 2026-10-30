@@ -63,6 +63,9 @@ existing ownership checks. `previewName` is per call. `workflow_run` executes
 named tools sequentially with earlier-result references, partial results and
 optional ephemeral-preview cleanup. Successful mutations remain committed after
 a later failure; neither workflows nor transports automatically replay them.
+Native file-input/output wrappers inherit the workflow's preview/session scope
+when calling browser tools. Conflicting wrapped browser targets are rejected;
+explicit non-browser targets remain explicit.
 
 Native `tool_call_from_file` expands a caller-local UTF-8 JSON arguments file, or
 injects an exact text file into a named argument. This replaces board `@file` and
@@ -90,6 +93,17 @@ directory must exist and the destination must be new. Failed, expired, truncated
 or cancelled transfers do not publish a partial destination; existing files are
 never overwritten. HTTP reports that this operation requires the native adapter.
 Native workflows can use the saved path in subsequent steps.
+Native `tool_call_to_file` redirects the complete result of one tool to a new
+caller-local JSON file. Only file metadata and outcome flags return to the model;
+large logs, terminal buffers and structured data remain available for local
+processing. The JSON contains the full MCP result, including content blocks and
+structuredContent, rather than raw terminal bytes. Destination access is checked
+before dispatch. Write/transport failures distinguish whether the tool was
+dispatched and whether its response arrived; a dispatched operation is never
+replayed automatically. To combine large file input and output, capture a
+`tool_call_from_file` invocation. Recursive output captures/workflows are rejected.
+Resource links remain links in captured JSON; use `artifact_save` for the actual
+original image or resource bytes.
 
 `context_get`, `context_repair` and `context_export` expose verified scope and
 non-secret child-shell hints. A fresh child MCP connection must still prove its
@@ -102,7 +116,7 @@ Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained C
 helpers, signatures and semantic scenarios; catalog presence is not acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
-An actual NativeAOT source-instance operator fixture passed 85 calls across 53 tools:
+An actual NativeAOT source-instance operator fixture passed 85 calls across 54 tools:
 terminal text/keys/bracketed paste with observed output, timed queue execution,
 recurring queue cancellation, exact queued history replay, repository binding,
 work/status updates, a real horizontal split and board item/viewport mutations

@@ -495,8 +495,16 @@ public sealed class TlbxMcpTransportProtocolTests
                     }, cancellationToken: ct);
                     Assert.NotEqual(true, workflow.IsError);
                     Assert.Equal(bytes, await File.ReadAllBytesAsync(workflowPath, ct));
+                    var capturedPath = Path.Combine(directory, "workflow-output.json");
+                    var captured = await client.CallToolAsync("workflow_run", new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["steps"] = new object[] { new { tool = "tool_call_to_file", arguments = new { toolName = "artifacts_list", path = capturedPath } } }
+                    }, cancellationToken: ct);
+                    Assert.NotEqual(true, captured.IsError);
+                    using (var capturedJson = JsonDocument.Parse(await File.ReadAllBytesAsync(capturedPath, ct)))
+                        Assert.Equal(uri, capturedJson.RootElement.GetProperty("structuredContent").GetProperty("resources")[0].GetProperty("uri").GetString());
                     Assert.All(result.Content, content => Assert.IsType<TextContentBlock>(content));
-                    Assert.Equal(new[] { "artifacts_list", "artifact_read", "artifacts_list", "artifact_read" }, calls, StringComparer.Ordinal);
+                    Assert.Equal(new[] { "artifacts_list", "artifact_read", "artifacts_list", "artifact_read", "artifacts_list" }, calls, StringComparer.Ordinal);
                 });
         }
         finally { Directory.Delete(directory, recursive: true); }
