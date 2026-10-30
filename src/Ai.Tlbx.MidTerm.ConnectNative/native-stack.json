@@ -2,6 +2,10 @@
   "version": 1,
   "vcpkgCommit": "09e7d22e2d9bf97f9549c9f37759bf11758d62f0",
   "vcpkgArchiveSha512": "97ac9e92aae408f8160e5d48671b9a0a9f9972d8dc0b5660b06d29a4f719c6d8178b12882b953aba77e8082efffab740a2f506ee4af55654fd86bfc90306ae18",
+  "sourceMetadata": {
+    "file": "pcre2-pcre2-10.49-sljit-gitlink.json",
+    "sha512": "719fa1d8d8e1e749ce6f7370db32818268f84b1376ed9367fd5290ab440d8bea7a6a25a68e55045a45da68b0ce7a55daa0d7acd2f1b11774319b50268c02441c"
+  },
   "versions": {
     "libdatachannel": "0.24.6",
     "libnice": "0.1.24",
