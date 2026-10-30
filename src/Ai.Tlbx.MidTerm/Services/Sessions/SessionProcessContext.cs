@@ -84,24 +84,68 @@ internal static partial class SessionProcessContext
                 finally { NativeMemory.Free(buffer); }
             }
             else if (OperatingSystem.IsLinux())
-                command = File.ReadAllText(string.Create(CultureInfo.InvariantCulture, $"/proc/{pid}/cmdline")).Replace('\0', ' ');
+            {
+                var arguments = File.ReadAllText(string.Create(CultureInfo.InvariantCulture, $"/proc/{pid}/cmdline"));
+                return string.IsNullOrWhiteSpace(arguments) ? null : IsSharedCodexArguments(arguments.Split('\0'));
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                // Use the same KERN_PROCARGS2 layout as MacOSProcessMonitor, preserving argv
+                // boundaries and excluding the environment following argc arguments.
+                int* argmaxMib = stackalloc int[] { 1, 8 }; // CTL_KERN, KERN_ARGMAX
+                var argmax = 0;
+                nuint size = sizeof(int);
+                if (Sysctl(argmaxMib, 2, &argmax, &size, null, 0) != 0 ||
+                    size != sizeof(int) || argmax < 4 || argmax > 16 * 1024 * 1024) return null;
+                var buffer = new byte[argmax];
+                int* argsMib = stackalloc int[] { 1, 49, pid }; // CTL_KERN, KERN_PROCARGS2
+                size = (nuint)buffer.Length;
+                fixed (byte* data = buffer)
+                    if (Sysctl(argsMib, 3, data, &size, null, 0) != 0 || size > (nuint)buffer.Length) return null;
+                var arguments = ParseMacProcessArguments(buffer.AsSpan(0, (int)size));
+                return arguments is null ? null : IsSharedCodexArguments(arguments);
+            }
             if (string.IsNullOrWhiteSpace(command)) return null;
             return IsSharedCodexCommand(command);
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or
-            System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException or
-            System.Text.RegularExpressions.RegexMatchTimeoutException) { return null; }
+            System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException) { return null; }
     }
 
     internal static bool IsSharedCodexCommand(string command) =>
-        System.Text.RegularExpressions.Regex.IsMatch(command, "(?:^|[\\s\"'])app-server(?:$|[\\s\"'])",
-            System.Text.RegularExpressions.RegexOptions.CultureInvariant | System.Text.RegularExpressions.RegexOptions.NonBacktracking,
-            TimeSpan.FromSeconds(1)) ||
-        command.Contains("--managed-daemon", StringComparison.Ordinal);
+        IsSharedCodexArguments(SessionForegroundProcessService.Tokenize(command));
+
+    internal static bool IsSharedCodexArguments(IEnumerable<string> arguments) =>
+        arguments.Skip(1).Any(static argument => argument is "app-server" or "--managed-daemon");
+
+    internal static string[]? ParseMacProcessArguments(ReadOnlySpan<byte> buffer)
+    {
+        if (buffer.Length < sizeof(int)) return null;
+        var argc = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(buffer);
+        if (argc <= 0 || argc > buffer.Length - sizeof(int)) return null;
+        var position = sizeof(int);
+        var executableEnd = buffer[position..].IndexOf((byte)0);
+        if (executableEnd <= 0) return null;
+        position += executableEnd + 1;
+        while (position < buffer.Length && buffer[position] == 0) position++;
+        var arguments = new string[argc];
+        for (var i = 0; i < argc; i++)
+        {
+            var end = buffer[position..].IndexOf((byte)0);
+            if (end < 0) return null;
+            arguments[i] = System.Text.Encoding.UTF8.GetString(buffer.Slice(position, end));
+            position += end + 1;
+        }
+        return arguments;
+    }
 
     [LibraryImport("ntdll.dll")]
     private static unsafe partial int NtQueryInformationProcess(nint process, int infoClass, void* info, int length, out int returned);
 
     [LibraryImport("libproc", EntryPoint = "proc_pidinfo")]
     private static unsafe partial int ProcPidInfo(int pid, int flavor, ulong arg, void* buffer, int size);
+
+    [LibraryImport("libSystem.B.dylib", EntryPoint = "sysctl")]
+    private static unsafe partial int Sysctl(int* name, uint nameLength, void* oldValue,
+        nuint* oldLength, void* newValue, nuint newLength);
 }

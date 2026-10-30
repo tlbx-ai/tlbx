@@ -60,8 +60,41 @@ public sealed class SessionCliContextServiceTests : IDisposable
     [InlineData("codex app-server --listen unix://", true)]
     [InlineData("codex \"app-server\" --listen unix://", true)]
     [InlineData("codex 'app-server' --managed-daemon", true)]
+    [InlineData("\"C:\\Program Files\\Codex\\codex.exe\" app-server --managed-daemon", true)]
+    [InlineData("codex --yolo \"explain app-server and --managed-daemon\"", false)]
+    [InlineData("codex --yolo 'explain app-server'", false)]
+    [InlineData("codex --yolo \"--managed-daemon help\"", false)]
     public void SharedBackendDetectionPreservesQuotedArguments(string command, bool shared)
         => Assert.Equal(shared, SessionProcessContext.IsSharedCodexCommand(command));
+
+    [Theory]
+    [InlineData("app-server", true)]
+    [InlineData("--managed-daemon", true)]
+    [InlineData("explain app-server and --managed-daemon", false)]
+    [InlineData("", false)]
+    public void MacArgumentsRetainEmptyUnicodeAndPromptBoundariesWithoutReadingEnvironment(string argument, bool shared)
+    {
+        string[] arguments = ["/Applications/Codex 日本/bin/codex", "", argument, "Grüße 👋"];
+        var body = Encoding.UTF8.GetBytes("/Applications/Codex 日本/bin/codex\0\0\0" +
+            string.Join('\0', arguments) + "\0app-server\0--managed-daemon\0");
+        var buffer = BitConverter.GetBytes(arguments.Length).Concat(body).ToArray();
+        var parsed = SessionProcessContext.ParseMacProcessArguments(buffer);
+        Assert.Equal(arguments, parsed);
+        Assert.Equal(shared, SessionProcessContext.IsSharedCodexArguments(parsed!));
+        // A truncated argv must fail closed, rather than classifying a partial command.
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(buffer.AsSpan(0,
+            sizeof(int) + body.Length - Encoding.UTF8.GetByteCount("app-server\0--managed-daemon\0") - 1)));
+    }
+
+    [Fact]
+    public void MacArgumentsRejectInvalidCountAndUnterminatedExecutable()
+    {
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments([]));
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(BitConverter.GetBytes(-1)));
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(BitConverter.GetBytes(int.MaxValue)));
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(BitConverter.GetBytes(1)
+            .Concat(Encoding.UTF8.GetBytes("codex-without-terminator")).ToArray()));
+    }
 
     [Fact]
     public void AutomaticTerminalRepliesKeepBindingButUserInputRevokesIt()

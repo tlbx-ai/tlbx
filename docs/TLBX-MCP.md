@@ -107,7 +107,15 @@ Two ordinary terminal TUIs and two TUIs connected to one isolated Codex daemon
 have also completed self/topic/self. Shared calls used CLI-thread proof, not
 terminal ancestry. Resuming the same native thread in a new tlbx terminal
 resolved its new session and left the sibling's topic unchanged.
+An actual native subagent also resolved its parent's current terminal through
+canonical parent-thread ancestry; the recorded child call returned CLI binding.
+Completed TUI fixtures and their isolated daemon have been stopped.
+Backend classification now preserves argument boundaries on Linux/macOS and
+uses the existing command-line tokenizer on Windows. macOS reads KERN_PROCARGS2
+and stops at argc, excluding environment entries. Decoder regressions cover
+Unicode, empty arguments and truncation; a real macOS runtime is still needed
+to verify that platform's native syscall and terminal binding end to end.
 Remaining evidence includes installed service/user model calls,
-rendered browser workflows, final integrated runtime Native
+rendered browser workflows, macOS runtime acceptance, final integrated runtime Native
 AOT publish and a verified dev release. Keep CLI
 guidance and implementations maintained until these gates pass.
