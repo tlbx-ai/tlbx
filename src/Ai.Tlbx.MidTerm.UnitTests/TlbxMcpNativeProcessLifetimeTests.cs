@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Services.Mcp;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -22,7 +23,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class TlbxMcpNativeProcessLifetimeTests
 {
     [Fact]
-    public async Task RealNativeAdapterExitsBeforeDetachedWorkerAndChildComplete()
+    public async Task RealNativeAdapterSavesCompleteArtifactAndExitsBeforeDetachedWorkerAndChildComplete()
     {
         var cwd = Path.Combine(Path.GetTempPath(), "tlbx-native-lifetime-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(cwd);
@@ -61,13 +62,35 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         var apiKey = "isolated-fixture-" + Guid.NewGuid().ToString("N");
         var authenticatedRequests = 0;
         var forwardedCalls = 0;
+        var artifactReads = 0;
+        const string artifactUri = "tlbx-artifact://capture/native-executable-fixture";
+        var artifactBytes = new byte[TlbxMcpArtifactSaveTool.ChunkBytes + 17];
+        RandomNumberGenerator.Fill(artifactBytes);
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0, endpoint => endpoint.UseHttps(certificate)));
         builder.Services.AddMcpServer().WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
-            .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult { Tools = [] }))
-            .WithCallToolHandler((_, _) =>
+            .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
+                { Tools = TlbxMcpArtifactTools.CreateTools().Select(tool => tool.ProtocolTool).ToList() }))
+            .WithCallToolHandler((call, _) =>
             {
+                if (call.Params!.Name == "artifacts_list") return ValueTask.FromResult(McpApiResult.Structured(new JsonObject
+                {
+                    ["resources"] = new JsonArray(new JsonObject { ["uri"] = artifactUri, ["size"] = artifactBytes.Length })
+                }));
+                if (call.Params.Name == "artifact_read")
+                {
+                    var args = call.Params.Arguments!;
+                    Assert.Equal(artifactUri, args["uri"].GetString());
+                    var offset = args["offset"].GetInt32();
+                    var count = args["length"].GetInt32();
+                    Interlocked.Increment(ref artifactReads);
+                    return ValueTask.FromResult(new CallToolResult { Content = [new EmbeddedResourceBlock
+                    {
+                        Resource = BlobResourceContents.FromBytes(artifactBytes.AsMemory(offset, count),
+                            FormattableString.Invariant($"{artifactUri}?offset={offset}&length={count}"), "application/octet-stream")
+                    }] });
+                }
                 Interlocked.Increment(ref forwardedCalls);
                 return ValueTask.FromResult(new CallToolResult { IsError = true, Content = [] });
             });
@@ -121,6 +144,15 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             });
             client = await McpClient.CreateAsync(transport, cancellationToken: ct);
             Assert.Contains(await client.ListToolsAsync(cancellationToken: ct), tool => tool.Name == "process_run_isolated");
+            var savedPath = Path.Combine(cwd, "native-original.bin");
+            var saved = await client.CallToolAsync("artifact_save", new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["uri"] = artifactUri, ["path"] = savedPath
+            }, cancellationToken: ct);
+            Assert.False(saved.IsError, saved.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
+            Assert.Equal(artifactBytes, await File.ReadAllBytesAsync(savedPath, ct));
+            Assert.Equal(Convert.ToHexStringLower(SHA256.HashData(artifactBytes)), saved.StructuredContent!.Value.GetProperty("sha256").GetString());
+            Assert.Equal(2, artifactReads);
             var executable = OperatingSystem.IsWindows()
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe")
                 : "/bin/sh";

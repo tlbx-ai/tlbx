@@ -83,6 +83,13 @@ temporary files; normal disposal removes the generated cache.
 tools/call. Installed Codex 0.166 supplies canonical thread metadata there, but
 omits it on resources/read; shared-backend resource calls without exact scope are
 rejected rather than borrowing another call's identity.
+Native `artifact_save` takes the base artifact `uri` and a caller-local `path`.
+It transfers the complete original in 4 MiB chunks and returns only the resulting
+path, byte length and SHA256, keeping binary data out of model context. The parent
+directory must exist and the destination must be new. Failed, expired, truncated
+or cancelled transfers do not publish a partial destination; existing files are
+never overwritten. HTTP reports that this operation requires the native adapter.
+Native workflows can use the saved path in subsequent steps.
 
 `context_get`, `context_repair` and `context_export` expose verified scope and
 non-secret child-shell hints. A fresh child MCP connection must still prove its
@@ -95,7 +102,7 @@ Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained C
 helpers, signatures and semantic scenarios; catalog presence is not acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
-An actual NativeAOT source-instance operator fixture passed 84 calls across 52 tools:
+An actual NativeAOT source-instance operator fixture passed 85 calls across 53 tools:
 terminal text/keys/bracketed paste with observed output, timed queue execution,
 recurring queue cancellation, exact queued history replay, repository binding,
 work/status updates, a real horizontal split and board item/viewport mutations
@@ -103,6 +110,10 @@ including stale-revision rejection. Worker bootstrap preserved an explicit shell
 command. Board launch delivered the observed prompt once; repeating its explicit
 request ID retained the same receipt/session without a second delivery. Its own
 sessions and objects were removed.
+The native adapter also saved an original larger than 4 MiB through authenticated
+HTTPS and verified the complete bytes/hash in both JIT and NativeAOT processes.
+Protocol checks cover direct and workflow exports, empty/exact-boundary files,
+truncation, expiry, cancellation and destination races. HTTP rejects local writes.
 This covers those explicit scenarios, not every tool option or provider binding.
 Local source-instance model turns have verified self/topic/self through native
 MCP for two concurrent Codex sessions, Claude Agent SDK and Gemini over ACP.

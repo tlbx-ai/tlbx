@@ -26,6 +26,7 @@ internal static class TlbxMcpNativeWorkflow
         } while (cursor is not null);
         tools[TlbxMcpIsolatedProcessTool.ProtocolTool.Name] = TlbxMcpIsolatedProcessTool.ProtocolTool;
         tools[TlbxMcpFileCallTool.ToolName] = TlbxMcpFileCallTool.Definition;
+        tools[TlbxMcpArtifactSaveTool.ToolName] = TlbxMcpArtifactSaveTool.Definition;
         if (tools.ContainsKey("update_apply")) tools["update_apply"] = TlbxMcpUpdateWorkflow.ProtocolTool;
         var executor = new TlbxMcpWorkflowExecutor(tools.Values);
         ValueTask<CallToolResult> Invoke(string name, IDictionary<string, JsonElement> arguments, CancellationToken ct)
@@ -98,6 +99,8 @@ internal static class TlbxMcpNativeWorkflow
         if (call.Name == "process_run_isolated") return TlbxMcpIsolatedProcessTool.InvokeLocalAsync(call, ct);
         if (call.Name == TlbxMcpFileCallTool.ToolName) return TlbxMcpFileCallTool.InvokeLocalAsync(call,
             (name, values, token) => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = values }, token), ct);
+        if (call.Name == TlbxMcpArtifactSaveTool.ToolName) return TlbxMcpArtifactSaveTool.InvokeLocalAsync(call,
+            (name, values, token) => CallUpstreamAsync(upstream, name, values, token), ct);
         if (call.Name == "update_apply") return TlbxMcpUpdateWorkflow.InvokeAsync(call,
             (name, values, token) => CallUpstreamAsync(upstream, name, values, token), ct);
         return CallUpstreamAsync(upstream, call.Name, call.Arguments ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal), ct);

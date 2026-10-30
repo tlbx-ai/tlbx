@@ -446,6 +446,62 @@ public sealed class TlbxMcpTransportProtocolTests
             });
     }
 
+    [Fact]
+    public async Task NativeArtifactSaveAndWorkflowWriteOnlyCallerFilesWithoutForwardingTheLocalTool()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "tlbx-native-export-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        const string uri = "tlbx-artifact://capture/native-protocol-fixture";
+        byte[] bytes = [0, 255, 13, 10, 128, 42];
+        var calls = new List<string>();
+        try
+        {
+            await WithStreamProxyAsync(builder => builder
+                .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
+                {
+                    Tools = [TlbxMcpArtifactSaveTool.Definition,
+                        .. TlbxMcpArtifactTools.CreateTools().Select(tool => tool.ProtocolTool)]
+                }))
+                .WithCallToolHandler((request, _) =>
+                {
+                    var name = request.Params!.Name;
+                    calls.Add(name);
+                    if (name == "artifacts_list") return ValueTask.FromResult(McpApiResult.Structured(new JsonObject
+                    {
+                        ["resources"] = new JsonArray(new JsonObject { ["uri"] = uri, ["size"] = bytes.Length })
+                    }));
+                    Assert.Equal("artifact_read", name);
+                    var arguments = request.Params.Arguments!;
+                    Assert.Equal(uri, arguments["uri"].GetString());
+                    Assert.Equal(0, arguments["offset"].GetInt32());
+                    Assert.Equal(bytes.Length, arguments["length"].GetInt32());
+                    return ValueTask.FromResult(new CallToolResult { Content = [new EmbeddedResourceBlock
+                    {
+                        Resource = BlobResourceContents.FromBytes(bytes, uri + "?offset=0&length=6", "application/octet-stream")
+                    }] });
+                }), async (client, _) =>
+                {
+                    var ct = TestContext.Current.CancellationToken;
+                    Assert.Single((await client.ListToolsAsync(cancellationToken: ct)).Where(tool => tool.Name == "artifact_save"));
+                    var path = Path.Combine(directory, "direct.bin");
+                    var result = await client.CallToolAsync("artifact_save", new Dictionary<string, object?>(StringComparer.Ordinal)
+                        { ["uri"] = uri, ["path"] = path }, cancellationToken: ct);
+                    Assert.NotEqual(true, result.IsError);
+                    Assert.Equal(bytes, await File.ReadAllBytesAsync(path, ct));
+                    var workflowPath = Path.Combine(directory, "workflow.bin");
+                    var workflow = await client.CallToolAsync("workflow_run", new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["steps"] = new object[] { new { tool = "artifact_save", arguments = new { uri, path = workflowPath } } }
+                    }, cancellationToken: ct);
+                    Assert.NotEqual(true, workflow.IsError);
+                    Assert.Equal(bytes, await File.ReadAllBytesAsync(workflowPath, ct));
+                    Assert.All(result.Content, content => Assert.IsType<TextContentBlock>(content));
+                    Assert.Equal(new[] { "artifacts_list", "artifact_read", "artifacts_list", "artifact_read" }, calls, StringComparer.Ordinal);
+                });
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
     private static async Task WithStreamProxyAsync(Action<IMcpServerBuilder> configure, Func<McpClient, McpServer, Task> verify,
         McpStdioRuntimeContext? context = null)
     {
