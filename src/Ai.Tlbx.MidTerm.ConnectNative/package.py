@@ -39,6 +39,15 @@ def package(rid, installed, output=None, verify_load=True):
             continue  # Build tooling is not linked into the runtime.
         doc = json.loads(recipe.read_text())
         raw_evidence[name] = recipe.read_bytes()
+        copyright_file = recipe.parent / "copyright"
+        system_shim = (rid.startswith(("linux-", "osx-")) and name in ("dirent", "libiconv")) or (rid.startswith("linux-") and name == "gettext-libintl")
+        binary_files = [item["fileName"].removeprefix("./") for item in doc.get("files", []) if item["SPDXID"].startswith("SPDXRef-binary-file-")]
+        metadata_only = all(name == "BUILD_INFO" or name.startswith("share/") for name in binary_files)
+        if system_shim and metadata_only and not copyright_file.is_file():
+            # These pinned ports can reuse platform headers/libraries and emit
+            # only vcpkg metadata. Retain their source evidence; do not invent
+            # bundled code. A payload/header or any other port still needs notices.
+            continue
         port = next(p for p in doc["packages"] if p["SPDXID"] == "SPDXRef-port")
         port_versions[name] = port["versionInfo"]
         versions[name] = port["versionInfo"].split("#", 1)[0]
@@ -68,7 +77,6 @@ def package(rid, installed, output=None, verify_load=True):
         files.extend(rewrite(doc.get("files", [])))
         relationships.extend(rewrite(doc.get("relationships", [])))
         licenses.extend(doc.get("hasExtractedLicensingInfos", []))
-        copyright_file = recipe.parent / "copyright"
         if not copyright_file.is_file():
             raise ValueError(f"Missing native dependency notices: {name}")
         notices.append(f"===== {name} {versions[name]} ({port_license}) =====\n" + copyright_file.read_text(errors="strict"))
