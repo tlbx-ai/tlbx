@@ -101,23 +101,13 @@ jobs:
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
-  server:
-    name: PR server
+  server-contracts:
+    name: Server and host contracts
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
     needs: [frontend, native-linux]
-    if: always()
     runs-on: windows-2025
     steps:
-      - name: Require frontend and native Linux success
-        shell: pwsh
-        env:
-          FRONTEND_RESULT: ${{ needs.frontend.result }}
-          NATIVE_RESULT: ${{ needs.native-linux.result }}
-        run: |
-          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success') {
-            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT"
-          }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -159,3 +149,20 @@ jobs:
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
+  server:
+    name: PR server
+    needs: [frontend, native-linux, server-contracts]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require frontend, native Linux and server success
+        shell: pwsh
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          NATIVE_RESULT: ${{ needs.native-linux.result }}
+          SERVER_RESULT: ${{ needs.server-contracts.result }}
+        run: |
+          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:SERVER_RESULT -ne 'success') {
+            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; server=$env:SERVER_RESULT"
+          }

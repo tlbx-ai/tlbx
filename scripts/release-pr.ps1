@@ -138,6 +138,9 @@ function Get-OrCreateReleasePr {
 
 function Complete-ReleasePrMerge {
     param([int]$Number, [string]$Head, [string]$Base, [string]$ExpectedBase)
+    $protection = Invoke-ReleaseGh api "repos/$script:TlbxReleaseRepo/branches/$Base/protection/required_status_checks" | ConvertFrom-Json
+    $requiredNames = @(@($protection.contexts) + @($protection.checks.context) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
+    if ($requiredNames.Count -eq 0) { throw "No required status checks are configured for $Base; refusing to infer release readiness." }
     $deadline = [DateTime]::UtcNow.AddMinutes(45)
     while ($true) {
         $pr = Invoke-ReleaseGh pr view $Number --repo $script:TlbxReleaseRepo --json 'state,isDraft,headRefOid,baseRefName,mergeCommit,url' | ConvertFrom-Json
@@ -149,8 +152,10 @@ function Complete-ReleasePrMerge {
         if ($checksExit -notin @(0,1,8)) { throw "Could not read required checks for PR #$Number." }
         $checks = @(([regex]::Replace(($checksText -join "`n"), '\x1b\[[0-?]*[ -/]*[@-~]', '')) | ConvertFrom-Json)
         if (@($checks | Where-Object bucket -In @('fail','cancel')).Count) { throw "Required checks failed for $($pr.url). Fix them, then resume." }
-        # An empty set is not proof that protection/check registration is ready.
-        if ($checks.Count -gt 0 -and @($checks | Where-Object bucket -NE 'pass').Count -eq 0) { break }
+        # GitHub's checks endpoint omits contexts whose dependent jobs have not
+        # started yet. Every configured requirement must be present and passed.
+        $missing = @($requiredNames | Where-Object { $checks.name -cnotcontains $_ })
+        if ($missing.Count -eq 0 -and @($checks | Where-Object bucket -NE 'pass').Count -eq 0) { break }
         if ([DateTime]::UtcNow -ge $deadline) { throw "Checks are still pending: $($pr.url). Re-run this release command later." }
         Write-ReleaseProgress "Waiting for required checks: $($pr.url)"
         Start-Sleep -Seconds 30
