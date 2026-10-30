@@ -174,4 +174,3 @@ public sealed partial class TlbxMcpCliParityTests : IDisposable
     [GeneratedRegex(@"^\s*([a-z]+(?:\|[a-z]+)*)\)", RegexOptions.Multiline | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex ShellCaseActionPattern();
 }
-
