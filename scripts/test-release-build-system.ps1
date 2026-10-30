@@ -20,6 +20,32 @@ function Assert-Throws([scriptblock]$Action, [string]$Message) {
     try { & $Action } catch { $threw = $true }
     Assert-Check $threw $Message
 }
+$prWorkflow = Get-Content (Join-Path $repoRoot '.github/workflows/pr-verify.yml') -Raw
+Assert-Check ($prWorkflow -match '(?m)^    name: PR server\r?$' -and $prWorkflow -match 'needs: \[frontend, native-linux\]\r?\n    if: always\(\)') 'PR server must run and fail when a prerequisite fails, rather than become a skipped required check.'
+Assert-Check ($prWorkflow.Contains('git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" --') -and @(
+    'src/Ai.Tlbx.MidTerm.ConnectNative/', 'src/Ai.Tlbx.MidTerm/ConnectNative.targets',
+    'src/Ai.Tlbx.MidTerm/Services/Connect/ConnectNativeApi.cs', '.github/workflows/pr-verify.yml'
+).Where({ -not $prWorkflow.Contains($_) }).Count -eq 0) 'The native Linux change guard misses a native input or its own CI contract.'
+Assert-Check ($prWorkflow.Contains('./src/Ai.Tlbx.MidTerm.ConnectNative/build.ps1 -RuntimeIdentifier linux-x64') -and $prWorkflow.Contains('./src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1 -RuntimeIdentifier linux-x64')) 'PR native Linux verification must use the real package/ABI and security gates.'
+$prGate = [regex]::Match($prWorkflow, '(?m)^      - name: Require frontend and native Linux success\r?\n(?:.*\r?\n)*?        run: \|\r?\n(?<body>(?:          [^\r\n]*\r?\n)+)')
+Assert-Check $prGate.Success 'Missing executable PR prerequisite result gate.'
+$prGateScript = [scriptblock]::Create((($prGate.Groups['body'].Value -split '\r?\n' | Where-Object Length | ForEach-Object { $_.Substring(10) }) -join "`n"))
+$savedFrontendResult = $env:FRONTEND_RESULT
+$savedNativeResult = $env:NATIVE_RESULT
+try {
+    $env:FRONTEND_RESULT = 'success'; $env:NATIVE_RESULT = 'success'
+    & $prGateScript
+    Assert-Check $true 'Successful prerequisites must allow PR server contracts.'
+    foreach ($nativeResult in @('failure', 'cancelled', 'skipped')) {
+        $env:NATIVE_RESULT = $nativeResult
+        Assert-Throws { & $prGateScript } "Native Linux $nativeResult must fail PR server."
+    }
+    $env:FRONTEND_RESULT = 'failure'; $env:NATIVE_RESULT = 'success'
+    Assert-Throws { & $prGateScript } 'Frontend failure must fail PR server.'
+} finally {
+    $env:FRONTEND_RESULT = $savedFrontendResult
+    $env:NATIVE_RESULT = $savedNativeResult
+}
 Assert-Check ((@(Resolve-ReleaseTestClusters @('frontend','server','frontend')) -join ',') -eq 'frontend,server') 'Multi-cluster selection or deduplication failed.'
 Assert-Check (@(Resolve-ReleaseTestClusters all).Count -eq 7) 'all did not select all server clusters.'
 Assert-Throws { Resolve-ReleaseTestClusters @('all','server') } 'Ambiguous all combination accepted.'

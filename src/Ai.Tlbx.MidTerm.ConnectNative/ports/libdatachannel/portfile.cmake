@@ -57,6 +57,16 @@ file(REMOVE_RECURSE "${CURRENT_PACKAGES_DIR}/debug/include" "${CURRENT_PACKAGES_
 
 vcpkg_install_copyright(FILE_LIST "${SOURCE_PATH}/LICENSE")
 
+# vcpkg normally performs these mutations after the portfile returns. Finish
+# them before signing and freezing the link output, then suppress the later pass.
+if(VCPKG_TARGET_IS_LINUX)
+    z_vcpkg_fixup_rpath_in_dir()
+    set(VCPKG_FIXUP_ELF_RPATH OFF)
+elseif(VCPKG_TARGET_IS_OSX)
+    z_vcpkg_fixup_macho_rpath_in_dir()
+    set(VCPKG_FIXUP_MACHO_RPATH OFF)
+endif()
+
 # Freeze the actual native link/install output against its reviewed static inputs.
 if(VCPKG_TARGET_IS_WINDOWS)
     set(TLBX_NATIVE_ENTRY "datachannel.dll")
