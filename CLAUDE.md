@@ -15,6 +15,12 @@ If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 ## Release Authority
 
+For feature availability, verify the exact requested runtime by URL/service identity,
+live version and the feature's actual protocol call. A prepared candidate, a higher
+version number or a different running instance is not completion evidence.
+Report source verification, published packages and installed runtime verification
+separately; updating an installed instance requires explicit authorization.
+
 Every release invocation must explicitly pass `-TestCategories`: one or more of
 `assets`, `frontend`, `server`, `runtime`, `installers`, `dependencies`, `build`,
 or `all` alone. Review the complete changes since the previous release before
