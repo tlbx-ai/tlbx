@@ -11,7 +11,7 @@ using Xunit;
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
 [Collection(PathSensitiveEnvironmentCollection.Name)]
-public sealed class TlbxCliScriptWriterTests : IDisposable
+public sealed partial class TlbxCliScriptWriterTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
 
@@ -234,8 +234,12 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Equal(2, polls);
     }
 
-    private async Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
+    private Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
         bool bash, string command, string baseUrl, string sessionId, params string[] arguments)
+        => RunContextShellAsync(bash, command, baseUrl, sessionId, TimeSpan.FromSeconds(30), arguments);
+
+    private async Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
+        bool bash, string command, string baseUrl, string sessionId, TimeSpan timeoutBudget, params string[] arguments)
     {
         var start = new ProcessStartInfo(bash ? ResolveBashPath()! : ResolvePowerShellPath()!)
         {
@@ -252,16 +256,17 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         start.Environment["MT_BASE_URL"] = baseUrl;
         start.Environment["MT_SESSION_ID"] = sessionId;
         start.Environment["TLBX_CLI_AUTH_CACHE_DIR"] = Path.Combine(_tempDir, ".auth");
+        var driver = Path.Combine(_tempDir, Guid.NewGuid().ToString("N") + (bash ? ".sh" : ".ps1"));
+        await File.WriteAllTextAsync(driver, (bash ? "" : "$ErrorActionPreference = 'Stop'\n") + command,
+            new UTF8Encoding(false), Xunit.TestContext.Current.CancellationToken);
         if (bash)
         {
-            start.ArgumentList.Add("-c");
-            start.ArgumentList.Add(command);
-            start.ArgumentList.Add("context-test");
+            // Git Bash's Windows argv conversion can replace non-ANSI text
+            // before the generated helper even runs. Feed exact UTF-8 source.
+            start.ArgumentList.Add(ToBashPath(driver));
         }
         else
         {
-            var driver = Path.Combine(_tempDir, Guid.NewGuid().ToString("N") + ".ps1");
-            await File.WriteAllTextAsync(driver, "$ErrorActionPreference = 'Stop'\n" + command, Xunit.TestContext.Current.CancellationToken);
             start.ArgumentList.Add("-NoProfile");
             start.ArgumentList.Add("-File");
             start.ArgumentList.Add(driver);
@@ -271,7 +276,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         using var process = Process.Start(start)!;
         var stdout = process.StandardOutput.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
         var stderr = process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var timeout = new CancellationTokenSource(timeoutBudget);
         try
         {
             await process.WaitForExitAsync(timeout.Token);

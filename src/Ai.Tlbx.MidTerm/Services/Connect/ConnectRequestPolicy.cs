@@ -64,6 +64,9 @@ internal static class ConnectRequestPolicy
         var queryIndex = path.IndexOf('?', StringComparison.Ordinal);
         var pathname = queryIndex < 0 ? path : path[..queryIndex];
         pathname = DecodePath(pathname);
+        if (!allowPreview && (pathname.Equals("/api/mcp", StringComparison.OrdinalIgnoreCase)
+            || pathname.StartsWith("/api/mcp/", StringComparison.OrdinalIgnoreCase)))
+            throw new InvalidDataException("TLBX MCP requires a direct local connection.");
         if (ConnectLocalAccessPolicy.IsSetupPath(pathname))
             throw new ConnectLocalAccessException();
         if (!allowPreview && (pathname.Equals("/webpreview", StringComparison.OrdinalIgnoreCase)

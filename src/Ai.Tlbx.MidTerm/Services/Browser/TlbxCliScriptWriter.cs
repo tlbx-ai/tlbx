@@ -71,10 +71,30 @@ public static class TlbxCliScriptWriter
         _MLEASE=""
         _MCTXERROR=""
         _MCURL() {
-          if command -v curl.exe >/dev/null 2>&1; then
-            curl.exe "$@"
+          local executable=curl body="" has_body=0
+          local curl_args=()
+          command -v curl.exe >/dev/null 2>&1 && executable=curl.exe
+          while [ $# -gt 0 ]; do
+            case "$1" in
+              -d|--data|--data-binary)
+                if [ $# -ge 2 ] && [[ "$2" != @* ]]; then
+                  [ "$has_body" -eq 0 ] || { echo 'TLBX_CLI_USAGE: Multiple literal request bodies are not supported. No request was sent.' >&2; return 2; }
+                  body="$2"; has_body=1
+                  curl_args+=(--data-binary @-)
+                  shift 2
+                  continue
+                fi
+                ;;
+            esac
+            curl_args+=("$1")
+            shift
+          done
+          if [ "$has_body" -eq 1 ]; then
+            # Native Windows curl argv can lose Unicode and hit command-length
+            # limits. Builtin printf preserves the exact UTF-8 body on stdin.
+            printf '%s' "$body" | "$executable" "${curl_args[@]}"
           else
-            curl "$@"
+            "$executable" "${curl_args[@]}"
           fi
         }
         _MHTTP() {
