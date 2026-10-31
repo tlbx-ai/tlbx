@@ -121,6 +121,13 @@ Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained C
 helpers, signatures and semantic scenarios; catalog presence is not acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
+Generated Bash and PowerShell helpers also exercise 23 option scenarios each
+against a loopback receiver, comparing their methods, paths, query filters and
+normalized endpoint DTOs with MCP request binding. This includes explicit targets,
+Unicode paths/text, file/bracketed paste, field clearing, history/repository filters
+and agent model/effort/plan/permission options. Bash literal JSON bodies use stdin
+to avoid native Windows curl argument conversion and command-length limits.
+These request checks do not establish rendered browser or provider behavior.
 An actual NativeAOT source-instance operator fixture passed 86 calls across 54 tools:
 terminal text/keys/bracketed paste with observed output, timed queue execution,
 recurring queue cancellation, exact queued history replay, repository binding,
