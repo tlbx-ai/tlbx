@@ -623,6 +623,7 @@
   "fileDrop.fileTooLarge": "ফাইল খুব বড় (সর্বোচ্চ 40KB)",
   "fileDrop.failedToRead": "পড়তে ব্যর্থ",
   "fileDrop.clipboardFailed": "ক্লিপবোর্ড ইনজেকশন ব্যর্থ",
+  "fileDrop.clipboardUseKeyboard": "লেখা বা ছবি পেস্ট করতে Ctrl+V চাপুন (Mac-এ Cmd+V)।",
   "fileDrop.dropToUpload": "আপলোড করতে ফাইল ড্রপ করুন",
   "fileDrop.uploadingToTerminal": "টার্মিনালে আপলোড করা হচ্ছে...",
   "fileDrop.transferringToTerminal": "টার্মিনালে স্থানান্তর করা হচ্ছে...",

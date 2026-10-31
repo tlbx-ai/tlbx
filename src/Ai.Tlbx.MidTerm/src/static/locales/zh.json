@@ -626,6 +626,7 @@
   "fileDrop.fileTooLarge": "文件过大（最大 40KB）",
   "fileDrop.failedToRead": "读取失败",
   "fileDrop.clipboardFailed": "剪贴板注入失败",
+  "fileDrop.clipboardUseKeyboard": "请按 Ctrl+V 粘贴文本或图片（Mac 上按 Cmd+V）。",
   "fileDrop.dropToUpload": "拖放文件以上传",
   "fileDrop.uploadingToTerminal": "正在上传到终端...",
   "fileDrop.transferringToTerminal": "正在传输到终端...",

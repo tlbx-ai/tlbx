@@ -623,6 +623,7 @@
   "fileDrop.fileTooLarge": "फ़ाइल बहुत बड़ी (अधिकतम 40KB)",
   "fileDrop.failedToRead": "पढ़ने में विफल",
   "fileDrop.clipboardFailed": "क्लिपबोर्ड इंजेक्शन विफल",
+  "fileDrop.clipboardUseKeyboard": "टेक्स्ट या चित्र चिपकाने के लिए Ctrl+V दबाएँ (Mac पर Cmd+V)।",
   "fileDrop.dropToUpload": "अपलोड करने के लिए फ़ाइल छोड़ें",
   "fileDrop.uploadingToTerminal": "टर्मिनल में अपलोड किया जा रहा है...",
   "fileDrop.transferringToTerminal": "टर्मिनल में ट्रांसफर किया जा रहा है...",
