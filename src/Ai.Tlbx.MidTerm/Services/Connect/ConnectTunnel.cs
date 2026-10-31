@@ -19,6 +19,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
     private readonly Uri? _previewOrigin;
     private readonly BrowserPreviewRegistry _previewRegistry;
     private string? _cookie;
+    private readonly string _browserClientId = Guid.NewGuid().ToString("D");
     private readonly ConnectPeerAuthentication _peer;
     private readonly HttpClient _http;
     private readonly AuthService _auth;
@@ -171,7 +172,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
                     request.Content.Headers.TryAddWithoutValidation(name, value);
             }
         }
-        if (preview is null) request.Headers.Add("Cookie", $"{AuthService.SessionCookieName}={_cookie}");
+        if (preview is null) request.Headers.Add("Cookie", ConnectRequestPolicy.BuildNativeCookie(_cookie, _browserClientId, destination, message.Headers));
         else
         {
             request.Headers.Add("Origin", _previewOrigin!.GetLeftPart(UriPartial.Authority));
@@ -214,7 +215,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         try
         {
             socket.Options.RemoteCertificateValidationCallback = static (_, cert, _, _) => IsOwnCertificate(cert);
-            if (preview is null) socket.Options.SetRequestHeader("Cookie", $"{AuthService.SessionCookieName}={_cookie}");
+            if (preview is null) socket.Options.SetRequestHeader("Cookie", ConnectRequestPolicy.BuildNativeCookie(_cookie, _browserClientId, destination, message.Headers));
             else
             {
                 var cookie = preview.Cookies.GetCookieHeader(destination);
