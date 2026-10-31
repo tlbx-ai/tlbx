@@ -89,7 +89,7 @@ internal static class ConnectRequestPolicy
 
     public static Uri NormalizeServerUrl(string? value)
     {
-        if (!Uri.TryCreate(string.IsNullOrWhiteSpace(value) ? "https://connect.tlbx.ai" : value, UriKind.Absolute, out var uri)
+        if (!Uri.TryCreate(string.IsNullOrWhiteSpace(value) ? "https://lnk.tlbx.ai" : value, UriKind.Absolute, out var uri)
             || !string.IsNullOrEmpty(uri.UserInfo) || uri.AbsolutePath != "/" || !string.IsNullOrEmpty(uri.Query)
             || !string.IsNullOrEmpty(uri.Fragment) || (uri.Scheme != "https" && !(uri.Scheme == "http" && uri.IsLoopback)))
             throw new ArgumentException("Connect requires an HTTPS origin (HTTP is allowed only on loopback).");

@@ -1,4 +1,6 @@
-/** Loads the localhost-only Connect controls into the existing Security settings. */
+import { applyTranslations, t } from '../i18n';
+
+/** Loads the localhost-only Link controls into the existing Security settings. */
 export function isLocalConnectSetup(): boolean {
   return (
     ['localhost', '127.0.0.1', '[::1]'].includes(window.location.hostname) &&
@@ -21,7 +23,7 @@ export function initConnectSetup(): Promise<void> {
   }
   loading ??= load(container).catch(() => {
     container.className = 'setting-hint';
-    container.textContent = 'Connect setup could not be loaded. Open Settings again to retry.';
+    container.textContent = t('connect.setup.loadFailed');
     loading = undefined;
   });
   return loading;
@@ -29,9 +31,10 @@ export function initConnectSetup(): Promise<void> {
 
 async function load(container: HTMLElement): Promise<void> {
   const response = await fetch('/connect-setup.html', { cache: 'no-store' });
-  if (!response.ok || response.redirected) throw new Error('Local Connect setup is unavailable.');
+  if (!response.ok || response.redirected) throw new Error(t('connect.setup.loadFailed'));
   container.className = '';
   container.innerHTML = await response.text();
+  applyTranslations();
   const script = document.createElement('script');
   script.src = '/connect-setup.js';
   await new Promise<void>((resolve, reject) => {
@@ -41,7 +44,7 @@ async function load(container: HTMLElement): Promise<void> {
     script.onerror = () => {
       container.replaceChildren();
       script.remove();
-      reject(new Error('Local Connect controls are unavailable.'));
+      reject(new Error(t('connect.setup.loadFailed')));
     };
     document.head.appendChild(script);
   });

@@ -69,10 +69,10 @@ internal static class ConnectLocalAccessPolicy
                     {
                         context.Response.ContentType = "text/plain; charset=utf-8";
                         await context.Response.WriteAsync(
-                            "tlbx Connect setup requires a direct local browser connection.\n\n"
+                            "tlbx Link setup requires a direct local browser connection.\n\n"
                             + $"Open https://localhost:{previewOrigin.MainPort.ToString(CultureInfo.InvariantCulture)}/connect.html on the computer you want to connect.\n"
                             + "Sign in to tlbx there, then enter the installation password to create your keys.\n\n"
-                            + "If this address is already open, start from tlbx on localhost and choose Network & remote access > tlbx Connect.", context.RequestAborted);
+                            + "If this address is already open, start from tlbx on localhost and choose Network & remote access > tlbx Link.", context.RequestAborted);
                     }
                     return;
                 }
