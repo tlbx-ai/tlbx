@@ -26,7 +26,10 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
     [Fact]
     public async Task RealNativeAdapterSavesCompleteArtifactAndExitsBeforeDetachedWorkerAndChildComplete()
     {
-        var cwd = Path.Combine(Path.GetTempPath(), "tlbx-native-lifetime-" + Guid.NewGuid().ToString("N"));
+        // getcwd resolves ancestor symlinks (notably macOS /var -> /private/var).
+        // Start from that same physical directory so exact cwd/state-path checks
+        // still verify the adapter's default directory rather than a lexical alias.
+        var cwd = Path.Combine(PhysicalDirectory(Path.GetTempPath()), "tlbx-native-lifetime-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(cwd);
         var gate = Path.Combine(cwd, "release-child");
         var script = Path.Combine(cwd, OperatingSystem.IsWindows() ? "child.ps1" : "child.sh");
@@ -274,6 +277,18 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             if (verified) Directory.Delete(cwd, recursive: true);
             else TestContext.Current.SendDiagnosticMessage("Native process lifetime artifacts: " + cwd);
         }
+    }
+
+    private static string PhysicalDirectory(string path)
+    {
+        var current = Path.GetPathRoot(path)!;
+        foreach (var name in Path.GetRelativePath(current, path).Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar], StringSplitOptions.RemoveEmptyEntries))
+        {
+            var entry = new DirectoryInfo(Path.Combine(current, name));
+            current = entry.ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? entry.FullName;
+        }
+        return current;
     }
 
     private static void AssertAlive(int pid, long startedTicks)
