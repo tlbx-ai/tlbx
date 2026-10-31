@@ -120,6 +120,30 @@ jobs:
       - name: Verify native URL parsing with libc++
         if: needs.native-linux.outputs.native == 'true'
         run: python3 src/Ai.Tlbx.MidTerm.ConnectNative/smoke/regex.py
+  macos-context:
+    name: macOS CLI and MCP process identity
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.402'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.12.0'
+      - name: Build the production process identity code and protocol tests
+        run: dotnet build src/Ai.Tlbx.MidTerm.UnitTests -c Release -p:SkipFrontendBuild=true -p:SkipConnectNativeBuild=true -p:TreatWarningsAsErrors=true
+      - name: Verify actual macOS argv, ancestry, epochs and private/shared binding
+        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net10.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' --report-trx --results-directory .artifacts/macos-context
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: macos-context-results
+          path: .artifacts/macos-context/
+          retention-days: 7
   server-contracts:
     name: Server and host contracts
     env:
@@ -170,7 +194,7 @@ jobs:
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
   server:
     name: PR server
-    needs: [frontend, native-linux, native-url-stdlib, server-contracts]
+    needs: [frontend, native-linux, native-url-stdlib, macos-context, server-contracts]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -182,7 +206,8 @@ jobs:
           NATIVE_RESULT: ${{ needs.native-linux.result }}
           URL_RESULT: ${{ needs.native-url-stdlib.result }}
           SERVER_RESULT: ${{ needs.server-contracts.result }}
+          MACOS_CONTEXT_RESULT: ${{ needs.macos-context.result }}
         run: |
-          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:URL_RESULT -ne 'success' -or $env:SERVER_RESULT -ne 'success') {
-            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; URL=$env:URL_RESULT; server=$env:SERVER_RESULT"
+          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:URL_RESULT -ne 'success' -or $env:MACOS_CONTEXT_RESULT -ne 'success' -or $env:SERVER_RESULT -ne 'success') {
+            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; URL=$env:URL_RESULT; macos-context=$env:MACOS_CONTEXT_RESULT; server=$env:SERVER_RESULT"
           }

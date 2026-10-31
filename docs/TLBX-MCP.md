@@ -191,6 +191,12 @@ uses the existing command-line tokenizer on Windows. macOS reads KERN_PROCARGS2
 and stops at argc, excluding environment entries. Decoder regressions cover
 Unicode, empty arguments and truncation; a real macOS runtime is still needed
 to verify that platform's native syscall and terminal binding end to end.
+The PR macOS identity job now compiles a temporary native `codex` probe and
+exercises actual `sysctl`/`proc_pidinfo` calls, Unicode executable paths, empty
+arguments, environment exclusion, child ancestry and process start epochs.
+Private children must bind immediately; shared backends must require fresh
+terminal proof. Its result is a native identity check, not real-provider or
+rendered terminal acceptance. The Windows suite skips this macOS-only fixture.
 The current Windows NativeAOT publish and standalone boot probe also passed.
 Remaining evidence includes installed service/user model calls,
 rendered browser workflows, macOS runtime acceptance, final release checks
