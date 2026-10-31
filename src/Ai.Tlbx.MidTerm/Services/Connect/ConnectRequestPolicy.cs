@@ -15,6 +15,20 @@ internal static class ConnectRequestPolicy
 
     public static Uri ResolvePath(Uri origin, string? path) => ResolveLocalPath(origin, path, allowPreview: false);
 
+    // Browser identity is not authentication. Carry only its UUID across the
+    // cookie-free peer transport; the session credential always remains host-owned.
+    public static string BuildNativeCookie(string? sessionToken, string fallbackClientId,
+        Uri destination, Dictionary<string, string>? headers)
+    {
+        var clientId = headers?.FirstOrDefault(header =>
+            header.Key.Equals("X-MidTerm-Client-Id", StringComparison.OrdinalIgnoreCase)).Value;
+        if (string.IsNullOrWhiteSpace(clientId)
+            && QueryHelpers.ParseQuery(destination.Query).TryGetValue("clientId", out var queryIdentity))
+            clientId = queryIdentity.FirstOrDefault();
+        var identity = Guid.TryParse(clientId, out var parsed) ? parsed.ToString("D") : fallbackClientId;
+        return $"{AuthService.SessionCookieName}={sessionToken}; mt-client-id={identity}";
+    }
+
     public static Uri ResolvePreviewPath(Uri origin, string? path, string? routeKey)
     {
         if (routeKey is null || routeKey.Length != 20 || !routeKey.All(char.IsAsciiHexDigit))

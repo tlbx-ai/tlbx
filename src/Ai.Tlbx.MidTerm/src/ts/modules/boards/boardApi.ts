@@ -1,4 +1,4 @@
-import { getOrCreateTabId } from '../../utils/cookies';
+import { getOrCreateClientId, getOrCreateTabId } from '../../utils/cookies';
 
 export interface BoardEntry {
   id: string;
@@ -84,6 +84,7 @@ export async function boardRequest<T>(path = '', method = 'GET', body?: unknown)
     headers: {
       'Content-Type': 'application/json',
       'X-MidTerm-Tab-Id': boardId ? getBoardTabId(boardId) : getOrCreateTabId(),
+      'X-MidTerm-Client-Id': getOrCreateClientId(),
     },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });

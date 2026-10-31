@@ -279,6 +279,16 @@ public sealed class ConnectKeySecurityTests
             await Task.Yield();
             Assert.Equal(200, Assert.Single(envelopes).Status); Assert.Equal(1, handler.RequestCount);
             Assert.True(auth.ValidateSessionToken(handler.SessionToken));
+            var browserClientId = handler.BrowserClientId;
+            Assert.True(Guid.TryParse(browserClientId, out _));
+            envelopes.Clear();
+            var next = new ConnectEnvelope { Type = "http", Id = "allowed-next", Method = "GET", Path = "/api/version" };
+            foreach (var frame in frames.Encode(JsonSerializer.SerializeToUtf8Bytes(next, ConnectJsonContext.Default.ConnectEnvelope))) await tunnel.ReceiveFrameAsync(frame);
+            await Task.Yield();
+            Assert.Equal(200, Assert.Single(envelopes).Status);
+            Assert.Equal(2, handler.RequestCount);
+            Assert.Equal(browserClientId, handler.BrowserClientId);
+            Assert.True(auth.ValidateSessionToken(handler.SessionToken));
         }
         finally { Directory.Delete(directory, true); }
     }
@@ -287,10 +297,14 @@ public sealed class ConnectKeySecurityTests
     {
         public int RequestCount { get; private set; }
         public string? SessionToken { get; private set; }
+        public string? BrowserClientId { get; private set; }
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
-            SessionToken = request.Headers.GetValues("Cookie").Single()[(AuthService.SessionCookieName.Length + 1)..];
+            var context = new DefaultHttpContext();
+            context.Request.Headers.Cookie = request.Headers.GetValues("Cookie").Single();
+            SessionToken = context.Request.Cookies[AuthService.SessionCookieName];
+            BrowserClientId = context.Request.Cookies["mt-client-id"];
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("ok") });
         }
     }

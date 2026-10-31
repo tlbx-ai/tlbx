@@ -82,6 +82,8 @@ Rules:
 
 ## Terminal Size Ownership
 
+- Link's cookie-free peer transport must preserve one browser-profile UUID plus the exact tab ID across state, terminal and HTTP input channels, reconnects and refreshes. Reconstruct only the non-authentication identity cookie on the host; peer-provided cookies never replace host-owned authentication. Verify sole-browser input does not produce follower banners and a passive second browser cannot regain ownership after handoff, expiry, focus/visibility changes or reconnect.
+
 - Browser execution ownership is sticky per session and named preview, using an exact browser tab identity independently of terminal size. Initialize from a connected size-owner tab or the sole connected UI; otherwise require explicit selection. An established offline preview owner never moves automatically. Commands, UI dispatch and status share that owner. Use `mt_claim_preview --browser <browserId>` (candidates: `/api/browser/ui-clients`) for explicit handoff; global main-browser selection and newest-connection heuristics must not route scoped commands.
 
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
