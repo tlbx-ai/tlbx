@@ -1,4 +1,8 @@
 Use tlbx supervision when this terminal actually runs inside tlbx.
+The generated Bash/PowerShell CLI remains a supported, maintained agent interface
+until TLBX MCP has demonstrated equal coverage and better stability in real use.
+MCP work must preserve CLI behavior and share existing C# services; do not remove
+CLI commands or their protocol checks merely because an MCP equivalent exists.
 Keep automated behavioral tests focused on protocols, settings, installation and
 updates. Do not add UI, layout or general product-logic test suites without an
 explicit request. Removed tests can be recovered from Git history.
@@ -10,6 +14,12 @@ If `.tlbx/AGENTS.md` exists, follow it for browser control and tmux workflows.
 If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 ## Release Authority
+
+For feature availability, verify the exact requested runtime by URL/service identity,
+live version and the feature's actual protocol call. A prepared candidate, a higher
+version number or a different running instance is not completion evidence.
+Report source verification, published packages and installed runtime verification
+separately; updating an installed instance requires explicit authorization.
 
 Every release invocation must explicitly pass `-TestCategories`: one or more of
 `assets`, `frontend`, `server`, `runtime`, `installers`, `dependencies`, `build`,

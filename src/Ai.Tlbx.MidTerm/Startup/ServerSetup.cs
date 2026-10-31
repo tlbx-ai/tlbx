@@ -120,6 +120,7 @@ public static class ServerSetup
         });
 
         builder.Services.AddSingleton(settingsService);
+        Services.Mcp.TlbxMcpEndpoints.AddServices(builder.Services);
         builder.Services.AddSingleton(runtimeOptions);
         builder.Services.AddSingleton(runtimeOptions.ServiceIdentity);
         builder.Services.AddSingleton(sp =>

@@ -69,7 +69,8 @@ public sealed partial class BoardService
             if (command?.Length > 8192 || profile?.Length > 128) throw new ArgumentException("Session configuration is too large.");
             var url = $"{origin.TrimEnd('/')}/?board={boardId}&item={itemId}" + (entry is null ? "" : $"&entry={Uri.EscapeDataString(entry.Id)}");
             var prompt = $"Board: {board.Title}\nItem: {item.Title}\nReference: {url}\nBoard ID: {boardId}\nItem ID: {itemId}\n" +
-                $"Read current context with: mt board item {boardId} {itemId}\n\n{item.Text}\n\n{item.Prompt}";
+                $"Read current context with native tlbx MCP board_item_get using boardId={boardId} and itemId={itemId} when available. " +
+                $"The maintained CLI equivalent is: mt board item {boardId} {itemId}\n\n{item.Text}\n\n{item.Prompt}";
             if (entry is not null) prompt += FormattableString.Invariant($"\n\nTask entry ID: {entry.Id}\nTask: {entry.Text}\nDate: {entry.Date}; Year: {entry.Year}; ISO week: {entry.Week}; Quarter: {entry.Quarter}");
             else if (item.Entries.Count > 0) prompt += "\n\nEntries:\n" + string.Join("\n", item.Entries.Select(value => $"{(value.Done ? "[x]" : "[ ]")} {value.Text} (entry {value.Id})"));
             var now = DateTimeOffset.UtcNow;

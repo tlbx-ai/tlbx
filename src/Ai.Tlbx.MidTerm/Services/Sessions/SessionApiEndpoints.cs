@@ -1917,7 +1917,7 @@ public static partial class SessionApiEndpoints
         return sessionManager.GetTempDirectory(sessionId);
     }
 
-    private static SessionListDto GetSessionListDto(
+    internal static SessionListDto GetSessionListDto(
         TtyHostSessionManager sessionManager,
         SessionSupervisorService sessionSupervisor,
         SessionAppServerControlRuntimeService appServerControlRuntime)

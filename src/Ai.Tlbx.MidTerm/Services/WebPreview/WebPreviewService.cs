@@ -299,7 +299,8 @@ public sealed class WebPreviewService
         ResetCookieJar(state);
         ClearLog(state);
         ClearLeakedPathRoutes(state.RouteKey);
-        state.TargetRevision++;
+        // Clearing state does not navigate or replace this target. Keep its live
+        // bridge revision valid for the next CLI/MCP command, including reload.
         return true;
     }
 
