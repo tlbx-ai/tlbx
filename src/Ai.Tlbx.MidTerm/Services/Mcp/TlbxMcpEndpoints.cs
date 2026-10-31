@@ -30,6 +30,7 @@ internal static class TlbxMcpEndpoints
             .Concat(TlbxMcpTmuxTool.CreateTools())
             .Concat(TlbxMcpArtifactTools.CreateTools())
             .Append(new TlbxMcpClientLocalTool())
+            .Append(new TlbxMcpClientLocalTool(TlbxMcpProcessWaitTool.Definition))
             .Append(new TlbxMcpFileCallTool())
             .Append(new TlbxMcpArtifactSaveTool())
             .Append(new TlbxMcpOutputFileTool())

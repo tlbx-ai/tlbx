@@ -25,6 +25,7 @@ internal static class TlbxMcpNativeWorkflow
                 return McpApiResult.Error("TLBX_MCP_WORKFLOW_DISCOVERY", "Upstream tool discovery did not terminate; no workflow step was executed.");
         } while (cursor is not null);
         tools[TlbxMcpIsolatedProcessTool.ProtocolTool.Name] = TlbxMcpIsolatedProcessTool.ProtocolTool;
+        tools[TlbxMcpProcessWaitTool.ToolName] = TlbxMcpProcessWaitTool.Definition;
         tools[TlbxMcpFileCallTool.ToolName] = TlbxMcpFileCallTool.Definition;
         tools[TlbxMcpArtifactSaveTool.ToolName] = TlbxMcpArtifactSaveTool.Definition;
         tools[TlbxMcpOutputFileTool.ToolName] = TlbxMcpOutputFileTool.Definition;
@@ -124,6 +125,7 @@ internal static class TlbxMcpNativeWorkflow
             call = new CallToolRequestParams { Name = call.Name, Arguments = values };
         }
         if (call.Name == "process_run_isolated") return TlbxMcpIsolatedProcessTool.InvokeLocalAsync(call, ct);
+        if (call.Name == TlbxMcpProcessWaitTool.ToolName) return TlbxMcpProcessWaitTool.InvokeLocalAsync(call, ct);
         if (call.Name == TlbxMcpFileCallTool.ToolName) return TlbxMcpFileCallTool.InvokeLocalAsync(call,
             (name, values, token) => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = values }, token, inheritedScope, catalog), ct);
         if (call.Name == TlbxMcpArtifactSaveTool.ToolName) return TlbxMcpArtifactSaveTool.InvokeLocalAsync(call,

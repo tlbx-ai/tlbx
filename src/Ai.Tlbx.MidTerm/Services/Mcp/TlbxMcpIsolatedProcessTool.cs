@@ -14,7 +14,7 @@ internal static class TlbxMcpIsolatedProcessTool
     internal static Tool ProtocolTool { get; } = new()
     {
         Name = "process_run_isolated",
-        Description = "Start a noninteractive process on the native MCP caller machine as its OS user, with exact argv, detached stdin and separate durable stdout/stderr logs. The child survives MCP connection closure. Defaults to the caller cwd. Requires native stdio; HTTP never launches as the service account.",
+        Description = "Start a noninteractive process on the native MCP caller machine as its OS user, with exact argv, detached stdin and separate durable stdout/stderr logs. The child survives MCP connection closure. Use process_wait with the returned statePath to read status or await completion before dependent workflow steps. Defaults to the caller cwd. Requires native stdio; HTTP never launches as the service account.",
         InputSchema = JsonSerializer.SerializeToElement(new JsonObject
         {
             ["type"] = "object", ["additionalProperties"] = false, ["required"] = new JsonArray("executable"),
@@ -175,6 +175,8 @@ internal static class TlbxMcpIsolatedProcessTool
             var errorOutput = DrainAsync(process.StandardError.BaseStream, stderr, Record);
             Publish(); // Publishing diagnostics must never abandon a launched child's pipes.
             await Task.WhenAll(output, errorOutput, process.WaitForExitAsync()).ConfigureAwait(false);
+            try { await Task.WhenAll(stdout.FlushAsync(), stderr.FlushAsync()).ConfigureAwait(false); }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Record(ex); }
             state.ExitCode = process.ExitCode;
             state.CompletedAt = DateTimeOffset.UtcNow;
             Publish();
@@ -236,7 +238,7 @@ internal static class TlbxMcpIsolatedProcessTool
 
     private static StringComparison PathComparison => OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    private static void ValidateRun(string run, string root)
+    internal static void ValidateRun(string run, string root)
     {
         var name = Path.GetFileName(run);
         if (name.Length != 52 || name[19] != '-' || !Guid.TryParseExact(name[20..], "N", out _)
@@ -281,7 +283,7 @@ internal static class TlbxMcpIsolatedProcessTool
         }
     }
 
-    private static bool IsActive(int pid, long started)
+    internal static bool IsActive(int pid, long started)
     {
         if (pid <= 0) return false;
         try { using var process = Process.GetProcessById(pid); return started <= 0 || process.StartTime.ToUniversalTime().Ticks == started; }

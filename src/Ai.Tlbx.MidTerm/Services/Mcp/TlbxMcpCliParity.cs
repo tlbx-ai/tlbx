@@ -19,7 +19,7 @@ internal static class TlbxMcpCliParity
     internal static IReadOnlyList<Requirement> Commands { get; } =
     [
         E("context", "Context", "context", "context_get,context_repair,context_export", "Verified server/self/preview context, repair errors and child-context propagation replace all text/JSON/shell export forms without trusting inherited IDs."),
-        E("run_isolated", "RunIsolated", "process", "process_run_isolated", "Exact executable/argument boundaries, caller identity/cwd, detached stdin and separate durable stdout/stderr; retain active runs during bounded cleanup."),
+        E("run_isolated", "RunIsolated", "process", "process_run_isolated,process_wait", "Exact executable/argument boundaries, caller identity/cwd, detached stdin and separate durable stdout/stderr; retain active runs during bounded cleanup. Native status/wait observes completion and exact exit code without replay, including after caller reconnect."),
         E("query", "Query", "browser", "browser_query", "Selectors, depth and text-only results preserve Unicode and multiple-match reporting."),
         E("click", "Click", "browser", "browser_click", "Click the scoped owner's selector, preserving match errors and navigation behavior."),
         E("fill", "Fill", "browser", "browser_fill", "Literal multiline/quoted/Unicode values reach the scoped element without shell escaping."),

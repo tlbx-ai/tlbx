@@ -98,6 +98,12 @@ directory must exist and the destination must be new. Failed, expired, truncated
 or cancelled transfers do not publish a partial destination; existing files are
 never overwritten. HTTP reports that this operation requires the native adapter.
 Native workflows can use the saved path in subsequent steps.
+Native `process_wait` reads the `statePath` returned by `process_run_isolated`.
+Use `timeoutSeconds: 0` for status or a bounded wait (default 30, maximum 600).
+Completion includes the recorded exit code and flushed log paths. A nonzero exit,
+positive wait timeout or unknown outcome stops dependent workflow steps. Waiting
+never stops or relaunches the process and can resume after adapter reconnection.
+HTTP exposes the descriptor but never reads service-account files for this tool.
 Native `tool_call_to_file` redirects the complete result of one tool to a new
 caller-local JSON file. Only file metadata and outcome flags return to the model;
 large logs, terminal buffers and structured data remain available for local
@@ -168,8 +174,8 @@ to verify that platform's native syscall and terminal binding end to end.
 The current Windows NativeAOT publish and standalone boot probe also passed.
 Remaining evidence includes installed service/user model calls,
 rendered browser workflows, macOS runtime acceptance, final release checks
-and a verified dev release. Native workflows also still need a caller-local
-process wait/status operation and verified preview-context propagation to local
-scripts: CLI `mt_with_preview` can await an arbitrary callback before closing its
-preview, while `process_run_isolated` currently returns after launch. Keep CLI
+and a verified dev release. Native workflows also still need verified
+preview-context propagation to local scripts: CLI `mt_with_preview` exports its
+preview selection to arbitrary callbacks. Native process completion waiting is
+available, but that local callback context is not yet proven equivalent. Keep CLI
 guidance and implementations maintained until these gates pass.

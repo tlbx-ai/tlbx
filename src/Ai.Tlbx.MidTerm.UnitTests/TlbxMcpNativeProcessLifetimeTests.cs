@@ -144,7 +144,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             string[] adapterArguments = ["mcp", "--stdio", "--operator", "--url", address,
                 "--certificate-sha256", certificate.GetCertHashString(HashAlgorithmName.SHA256)];
             // Do not inherit owner runtime credentials, provider homes, or proxy settings.
-            var transport = new StdioClientTransport(new StdioClientTransportOptions
+            var transportOptions = new StdioClientTransportOptions
             {
                 Command = nativeBinary ?? "dotnet",
                 Arguments = nativeBinary is null ? [Path.Combine(AppContext.BaseDirectory, "mt.dll"), .. adapterArguments] : adapterArguments,
@@ -153,7 +153,8 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
                 EnvironmentVariables = environment,
                 ShutdownTimeout = TimeSpan.FromSeconds(5),
                 StandardErrorLines = line => { lock (stderrLock) File.AppendAllText(stderrPath, line + Environment.NewLine); }
-            });
+            };
+            var transport = new StdioClientTransport(transportOptions);
             client = await McpClient.CreateAsync(transport, cancellationToken: ct);
             Assert.Contains(await client.ListToolsAsync(cancellationToken: ct), tool => tool.Name == "process_run_isolated");
             var savedPath = Path.Combine(cwd, "native-original.bin");
@@ -195,6 +196,12 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             AssertAlive(state.WorkerPid, state.WorkerStartedTicks);
             AssertAlive(state.TargetPid, state.TargetStartedTicks);
 
+            var status = await client.CallToolAsync("process_wait", new Dictionary<string, object?>(StringComparer.Ordinal)
+                { ["statePath"] = statePath, ["timeoutSeconds"] = 0 }, cancellationToken: ct);
+            Assert.False(status.IsError);
+            Assert.False(status.StructuredContent!.Value.GetProperty("completed").GetBoolean());
+            Assert.False(status.StructuredContent.Value.GetProperty("timedOut").GetBoolean());
+
             var completion = client.Completion;
             await client.DisposeAsync();
             client = null;
@@ -220,6 +227,16 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             Assert.Equal(0, state.ExitCode);
             Assert.Equal("child-started" + Environment.NewLine + "after-native-adapter-exit", File.ReadAllText(outcome.GetProperty("stdoutPath").GetString()!));
             Assert.Equal("separate-child-stderr", File.ReadAllText(outcome.GetProperty("stderrPath").GetString()!));
+            // A fresh native adapter can observe the original run after its
+            // launcher disconnected; no application operation is replayed.
+            client = await McpClient.CreateAsync(new StdioClientTransport(transportOptions), cancellationToken: ct);
+            var resumedWait = await client.CallToolAsync("process_wait", new Dictionary<string, object?>(StringComparer.Ordinal)
+                { ["statePath"] = statePath, ["timeoutSeconds"] = 5 }, cancellationToken: ct);
+            Assert.False(resumedWait.IsError, resumedWait.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
+            Assert.True(resumedWait.StructuredContent!.Value.GetProperty("completed").GetBoolean());
+            Assert.Equal(0, resumedWait.StructuredContent.Value.GetProperty("exitCode").GetInt32());
+            await client.DisposeAsync();
+            client = null;
             Assert.True(authenticatedRequests >= 2);
             Assert.Equal(0, forwardedCalls); // Never dispatch local execution to the HTTPS authority.
             verified = true;

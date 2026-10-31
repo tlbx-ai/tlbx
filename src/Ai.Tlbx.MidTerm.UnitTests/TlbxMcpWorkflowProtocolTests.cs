@@ -110,6 +110,7 @@ public sealed class TlbxMcpWorkflowProtocolTests
                 previewUrl = "https://example.invalid", steps = new object[]
                 {
                     new { tool = "process_run_isolated", arguments = new { executable = exe, arguments = argv, workingDirectory = cwd } },
+                    new { tool = "process_wait", arguments = new { statePath = new Dictionary<string, object>(StringComparer.Ordinal) { ["$step"] = 0, ["path"] = "/statePath" }, timeoutSeconds = 15 } },
                     new { tool = "tool_call_to_file", arguments = new { toolName = "browser_fill", path = Path.Combine(cwd, "browser-result.json"),
                         arguments = new { selector = "input", value = new Dictionary<string, object>(StringComparer.Ordinal) { ["$step"] = 0, ["path"] = "/runId" } } } },
                     new { tool = "intentional_failure", arguments = new { value = "stop" } },
@@ -122,9 +123,11 @@ public sealed class TlbxMcpWorkflowProtocolTests
                 Name = "workflow_run", Arguments = properties.ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal)
             }, upstream, ct);
             var outcome = result.StructuredContent!.Value;
-            Assert.True(outcome.GetProperty("completedSteps").GetInt32() == 3, outcome.GetProperty("error").GetString());
+            Assert.True(outcome.GetProperty("completedSteps").GetInt32() == 4, outcome.GetRawText());
             Assert.True(result.IsError);
             var first = outcome.GetProperty("steps")[0].GetProperty("structuredContent");
+            Assert.True(outcome.GetProperty("steps")[1].GetProperty("structuredContent").GetProperty("completed").GetBoolean());
+            Assert.Equal("native-local", File.ReadAllText(first.GetProperty("stdoutPath").GetString()!));
             var mutation = Assert.Single(mutations);
             Assert.Equal(first.GetProperty("runId").GetString(), mutation.Value);
             Assert.StartsWith("mcp-", mutation.PreviewName, StringComparison.Ordinal);

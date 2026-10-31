@@ -111,6 +111,10 @@ public sealed class TlbxMcpApiProtocolTests
             Assert.Equal(1, calls);
             var buffer = await client.CallToolAsync("terminal_buffer", cancellationToken: ct);
             Assert.Equal(bytes, Convert.FromBase64String(buffer.StructuredContent!.Value.GetProperty("data").GetProperty("base64").GetString()!));
+            var localWait = await client.CallToolAsync("process_wait", new Dictionary<string, object?>(StringComparer.Ordinal)
+                { ["statePath"] = "must-not-read-service-files", ["timeoutSeconds"] = 0 }, cancellationToken: ct);
+            Assert.True(localWait.IsError);
+            Assert.Equal("TLBX_MCP_CLIENT_LOCAL_REQUIRED", localWait.StructuredContent!.Value.GetProperty("errorCode").GetString());
         }
         finally { await app.StopAsync(ct); }
     }

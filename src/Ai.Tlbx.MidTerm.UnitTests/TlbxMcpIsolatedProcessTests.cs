@@ -84,6 +84,16 @@ public sealed class TlbxMcpIsolatedProcessTests
             using var caller = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             state = await TlbxMcpIsolatedProcessTool.StartAsync(executable, argv, cwd, caller.Token);
             caller.Cancel(); // Launch completed; ending the MCP caller does not own the background lifetime.
+            var waited = await TlbxMcpProcessWaitTool.InvokeLocalAsync(new ModelContextProtocol.Protocol.CallToolRequestParams
+            {
+                Name = TlbxMcpProcessWaitTool.ToolName,
+                Arguments = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(JsonSerializer.Serialize(new
+                    { statePath = Path.Combine(state.RunDirectory, "state.json"), timeoutSeconds = 15 }))
+            }, TestContext.Current.CancellationToken);
+            Assert.False(waited.IsError, JsonSerializer.Serialize(waited.StructuredContent));
+            Assert.True(waited.StructuredContent!.Value.GetProperty("completed").GetBoolean());
+            Assert.Equal(0, waited.StructuredContent.Value.GetProperty("exitCode").GetInt32());
+            Assert.EndsWith("after-caller-handles-closed", File.ReadAllText(Path.Combine(state.RunDirectory, "stdout.log")), StringComparison.Ordinal);
             var deadline = Stopwatch.StartNew();
             while (deadline.Elapsed < TimeSpan.FromSeconds(15))
             {

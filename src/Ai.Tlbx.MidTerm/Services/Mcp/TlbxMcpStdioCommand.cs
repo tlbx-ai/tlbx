@@ -106,11 +106,12 @@ internal static class TlbxMcpStdioCommand
             builder.WithListToolsHandler(async (request, ct) =>
                 {
                     var result = await ForwardAsync(upstream, request.JsonRpcRequest, McpClientJsonContext.Default.ListToolsResult, ct).ConfigureAwait(false);
-                    result.Tools = result.Tools.Where(tool => tool.Name is not ("process_run_isolated" or TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName)).ToList();
+                    result.Tools = result.Tools.Where(tool => tool.Name is not ("process_run_isolated" or TlbxMcpProcessWaitTool.ToolName or TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName)).ToList();
                     result.Tools = result.Tools.Select(tool => tool.Name == "update_apply" ? TlbxMcpUpdateWorkflow.ProtocolTool : tool).ToList();
                     if (request.Params?.Cursor is null)
                     {
                         result.Tools.Add(TlbxMcpIsolatedProcessTool.ProtocolTool);
+                        result.Tools.Add(TlbxMcpProcessWaitTool.Definition);
                         result.Tools.Add(TlbxMcpFileCallTool.Definition);
                         result.Tools.Add(TlbxMcpArtifactSaveTool.Definition);
                         result.Tools.Add(TlbxMcpOutputFileTool.Definition);
@@ -125,6 +126,8 @@ internal static class TlbxMcpStdioCommand
                         using var scope = context?.EnterNativeScope(native);
                         if (request.Params?.Name == "process_run_isolated")
                             return await TlbxMcpIsolatedProcessTool.InvokeLocalAsync(request.Params, ct).ConfigureAwait(false);
+                        if (request.Params?.Name == TlbxMcpProcessWaitTool.ToolName)
+                            return await TlbxMcpProcessWaitTool.InvokeLocalAsync(request.Params, ct).ConfigureAwait(false);
                         if (request.Params?.Name is TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName)
                             return await TlbxMcpNativeWorkflow.InvokeNativeStepAsync(upstream, request.Params, ct).ConfigureAwait(false);
                         if (request.Params?.Name == "context_repair" && context is not null)
