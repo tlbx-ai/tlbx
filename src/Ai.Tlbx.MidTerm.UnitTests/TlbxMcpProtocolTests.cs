@@ -165,6 +165,40 @@ public sealed class TlbxMcpProtocolTests
     }
 
     [Fact]
+    public void OperatorSelectionCannotGrantAuthenticationOrInventSelf()
+    {
+        using var leases = CreateLeases();
+        foreach (var (fullUser, credential, expected) in new (bool FullUser, string? Credential, int? Expected)[]
+        {
+            (false, null, 401), (false, "untrusted-key", 401),
+            (true, null, 401), (true, "authenticated-fixture-key", null)
+        })
+        {
+            var context = new DefaultHttpContext();
+            Ai.Tlbx.MidTerm.Services.RequestAccessContext.SetFullUser(context, fullUser);
+            context.Connection.RemoteIpAddress = IPAddress.Parse("192.0.2.1");
+            context.Request.Headers[TlbxMcpEndpoints.OperatorHeader] = "explicit";
+            if (credential is not null) context.Request.Headers["X-API-Key"] = credential;
+            Assert.Equal(expected, TlbxMcpEndpoints.Authorize(context, leases)?.Status);
+            Assert.False(context.Items.ContainsKey(TlbxMcpEndpoints.SessionItem));
+            Assert.False(context.Items.ContainsKey(TlbxMcpEndpoints.RuntimeItem));
+            if (expected is null)
+            {
+                Assert.Equal("operator", context.Items[TlbxMcpEndpoints.CallerModeItem]);
+                Assert.StartsWith("operator:key:", Assert.IsType<string>(context.Items[TlbxMcpEndpoints.CallerIdentityItem]), StringComparison.Ordinal);
+                foreach (var conflicting in new[] { TlbxMcpClientContextService.RuntimeHeader, SessionCliContextService.LeaseHeader })
+                {
+                    context.Request.Headers[conflicting] = "cannot-be-combined";
+                    Assert.Equal(409, TlbxMcpEndpoints.Authorize(context, leases)?.Status);
+                    context.Request.Headers.Remove(conflicting);
+                }
+                context.Request.Headers[TlbxMcpEndpoints.OperatorHeader] = new[] { "explicit", "explicit" };
+                Assert.Equal(409, TlbxMcpEndpoints.Authorize(context, leases)?.Status);
+            }
+        }
+    }
+
+    [Fact]
     public void BindingRequiresOneLiveLeaseAndLoopbackAndCannotChooseSelf()
     {
         var live = true;

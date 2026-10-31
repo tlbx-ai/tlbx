@@ -85,6 +85,9 @@ internal static class TlbxMcpEndpoints
         context.Items.Remove(RuntimeItem);
         context.Items.Remove(CallerIdentityItem);
         context.Items.Remove(CallerModeItem);
+        // Resolve the already-authenticated credential independently of untrusted
+        // mode headers. Selecting operator mode never grants authentication.
+        var credentialIdentity = AuthenticatedCredentialIdentity(context);
         var runtime = context.Request.Headers[TlbxMcpClientContextService.RuntimeHeader];
         var legacy = context.Request.Headers[SessionCliContextService.LeaseHeader];
         var operatorMode = context.Request.Headers[OperatorHeader];
@@ -94,9 +97,8 @@ internal static class TlbxMcpEndpoints
                 return (409, "TLBX_MCP_AMBIGUOUS_CONTEXT: Operator mode cannot claim a local process or session binding.");
             // Native owner clients may use the same remote authenticated authority
             // as the CLI. No server-local PID or implicit self is invented.
-            var identity = AuthenticatedOperatorIdentity(context);
-            if (identity is null) return (401, "TLBX_MCP_AUTH_REQUIRED: Operator mode requires an authenticated credential.");
-            context.Items[CallerIdentityItem] = identity;
+            if (credentialIdentity is null) return (401, "TLBX_MCP_AUTH_REQUIRED: Operator mode requires an authenticated credential.");
+            context.Items[CallerIdentityItem] = credentialIdentity;
             context.Items[CallerModeItem] = "operator";
             return null;
         }
@@ -167,9 +169,9 @@ internal static class TlbxMcpEndpoints
         finally { context.Request.Body.Position = position; }
     }
 
-    private static string? AuthenticatedOperatorIdentity(HttpContext context)
+    private static string? AuthenticatedCredentialIdentity(HttpContext context)
     {
-        var auth = context.RequestServices.GetService<AuthService>()?.AuthenticateRequestWithContext(context.Request);
+        var auth = context.RequestServices?.GetService<AuthService>()?.AuthenticateRequestWithContext(context.Request);
         if (auth?.SessionTokenId is { } sessionTokenId) return "operator:cookie:" + sessionTokenId;
         var key = context.Request.Headers["X-API-Key"].ToString();
         if (string.IsNullOrEmpty(key)) key = context.Request.Headers.Authorization.ToString();
