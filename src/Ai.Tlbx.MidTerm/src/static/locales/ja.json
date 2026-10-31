@@ -623,6 +623,7 @@
   "fileDrop.fileTooLarge": "ファイルが大きすぎます（最大40KB）",
   "fileDrop.failedToRead": "読み取り失敗",
   "fileDrop.clipboardFailed": "クリップボード注入に失敗しました",
+  "fileDrop.clipboardUseKeyboard": "Ctrl+V（MacではCmd+V）でテキストや画像を貼り付けてください。",
   "fileDrop.dropToUpload": "ファイルをドロップしてアップロード",
   "fileDrop.uploadingToTerminal": "ターミナルにアップロード中...",
   "fileDrop.transferringToTerminal": "ターミナルに転送中...",

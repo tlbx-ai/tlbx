@@ -623,6 +623,7 @@
   "fileDrop.fileTooLarge": "Archivo demasiado grande (máx. 40KB)",
   "fileDrop.failedToRead": "Error al leer",
   "fileDrop.clipboardFailed": "Error de inyección del portapapeles",
+  "fileDrop.clipboardUseKeyboard": "Pega el texto o la imagen con Ctrl+V (Cmd+V en Mac).",
   "fileDrop.dropToUpload": "Soltar archivo para cargar",
   "fileDrop.uploadingToTerminal": "Cargando en la terminal...",
   "fileDrop.transferringToTerminal": "Transfiriendo a la terminal...",
