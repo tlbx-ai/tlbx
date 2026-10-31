@@ -22,8 +22,9 @@ internal static class ConnectRequestPolicy
     {
         var clientId = headers?.FirstOrDefault(header =>
             header.Key.Equals("X-MidTerm-Client-Id", StringComparison.OrdinalIgnoreCase)).Value;
-        if (string.IsNullOrWhiteSpace(clientId))
-            clientId = QueryHelpers.ParseQuery(destination.Query)["clientId"].FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(clientId)
+            && QueryHelpers.ParseQuery(destination.Query).TryGetValue("clientId", out var queryIdentity))
+            clientId = queryIdentity.FirstOrDefault();
         var identity = Guid.TryParse(clientId, out var parsed) ? parsed.ToString("D") : fallbackClientId;
         return $"{AuthService.SessionCookieName}={sessionToken}; mt-client-id={identity}";
     }
