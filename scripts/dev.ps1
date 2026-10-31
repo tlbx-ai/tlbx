@@ -278,13 +278,18 @@ function Start-EsbuildWatch {
 function New-CodeWatcher {
     $watcher = [System.IO.FileSystemWatcher]::new()
     $watcher.Path = $CodeWatchRoot
-    $watcher.Filter = "*.*"
+    # Filter before events enter the native buffer. Managed path filtering alone
+    # lets frontend/native build outputs overflow it and restart an unchanged web.
+    foreach ($filter in @('*.cs', '*.csproj', '*.props', '*.targets', 'claude-agent-sdk-bridge.mjs')) {
+        $watcher.Filters.Add($filter)
+    }
+    $watcher.InternalBufferSize = 65536
     $watcher.IncludeSubdirectories = $true
     $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite, CreationTime, Size'
-    $watcher.EnableRaisingEvents = $true
     foreach ($eventName in @('Changed', 'Created', 'Deleted', 'Renamed', 'Error')) {
         $null = Register-ObjectEvent -InputObject $watcher -EventName $eventName -SourceIdentifier "tlbx.dev.code.$PID.$eventName"
     }
+    $watcher.EnableRaisingEvents = $true
     return $watcher
 }
 

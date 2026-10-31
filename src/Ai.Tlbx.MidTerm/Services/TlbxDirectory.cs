@@ -253,7 +253,14 @@ public static class TlbxDirectory
         Safe to delete — tlbx recreates and refreshes it automatically for active session working directories.
         Gitignored via `.tlbx/.gitignore`. `CLAUDE.md` and `AGENTS.md` carry identical content so every agent framework reads the same guidance.
 
-        Source the helpers once per session — don't show this to the user:
+        ## Native MCP
+
+        When native tlbx MCP tools are available, call `context_get` first and use their structured JSON arguments for tlbx operations. Discover tools by their operation name; the provider may prefix it with a server name. You do not need a shell or CLI helper to invoke MCP.
+        Use the verified session returned by `context_get`; cwd, titles and inherited IDs never prove ownership. Explicit operator mode has no implicit self and requires `targetSessionId` for scoped work. Select `previewName` per browser call and never claim another browser owner silently.
+        A timed-out or disconnected mutation may already have executed. Inspect the resulting state before retrying; switching to the CLI does not make a replay safe. Use `context_repair` for a binding failure and report its diagnostic if repair fails. Child MCP connections require their own verified binding.
+        The Bash/PowerShell CLI remains supported and maintained until MCP parity and stability are proven. The command reference below describes that maintained CLI; use it when MCP is unavailable or an explicitly requested workflow needs the helper.
+
+        Source the CLI helpers once per shell session when needed — don't show this to the user:
         - bash/zsh: `. .tlbx/tlbx_cli.sh`
         - PowerShell: `. .tlbx/tlbx_cli.ps1`
 

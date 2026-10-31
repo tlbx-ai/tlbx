@@ -425,7 +425,7 @@ public sealed class SessionForegroundProcessService
         return path.Replace('\\', '/').Split('/').LastOrDefault() ?? path;
     }
 
-    private static List<string> Tokenize(string commandLine)
+    internal static List<string> Tokenize(string commandLine)
     {
         var tokens = new List<string>();
         var current = new System.Text.StringBuilder();
