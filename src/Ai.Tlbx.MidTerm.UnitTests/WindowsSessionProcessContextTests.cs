@@ -33,22 +33,31 @@ public sealed class WindowsSessionProcessContextTests
             using var identity = WindowsIdentity.GetCurrent();
             var sid = identity.User!.Value;
             // Restrict only this disposable child, preserving our already-open full
-            // handle for cleanup. A fresh all-access open must fail, like the live
-            // SYSTEM service observing a terminal created with another user's DACL.
+            // handle for cleanup. Remove debug privileges from the probe token so
+            // elevated CI runners cannot bypass the disposable child's DACL.
             var descriptor = new RawSecurityDescriptor($"D:P(A;;0x101000;;;{sid})");
             var bytes = new byte[descriptor.BinaryLength];
             descriptor.GetBinaryForm(bytes, 0);
             Assert.True(SetKernelObjectSecurity(child.SafeHandle, 4, bytes), Marshal.GetLastPInvokeError().ToString(System.Globalization.CultureInfo.InvariantCulture));
-            using var fresh = Process.GetProcessById(child.Id);
-            Assert.Throws<Win32Exception>(() => _ = fresh.Handle);
-            var observed = SessionProcessContext.ReadProcess(child.Id);
-            Assert.NotNull(observed);
-            Assert.Equal(Environment.ProcessId, observed.Value.Parent);
-            Assert.Equal(expectedStart, observed.Value.Started);
-            var commandLine = SessionProcessContext.ReadWindowsCommandLine(child.Id);
-            Assert.NotNull(commandLine);
-            Assert.Contains("/d", commandLine, StringComparison.Ordinal);
-            Assert.Contains("/q", commandLine, StringComparison.Ordinal);
+            Assert.True(CreateRestrictedToken(identity.AccessToken, 1, 0, 0, 0, 0, 0, 0, out var restricted),
+                Marshal.GetLastPInvokeError().ToString(System.Globalization.CultureInfo.InvariantCulture));
+            using (restricted)
+            {
+                WindowsIdentity.RunImpersonated(restricted, () =>
+                {
+                    if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
+                    using var fresh = Process.GetProcessById(child.Id);
+                    Assert.Throws<Win32Exception>(() => _ = fresh.Handle);
+                    var observed = SessionProcessContext.ReadProcess(child.Id);
+                    Assert.NotNull(observed);
+                    Assert.Equal(Environment.ProcessId, observed.Value.Parent);
+                    Assert.Equal(expectedStart, observed.Value.Started);
+                    var commandLine = SessionProcessContext.ReadWindowsCommandLine(child.Id);
+                    Assert.NotNull(commandLine);
+                    Assert.Contains("/d", commandLine, StringComparison.Ordinal);
+                    Assert.Contains("/q", commandLine, StringComparison.Ordinal);
+                });
+            }
         }
         finally
         {
@@ -66,5 +75,12 @@ public sealed class WindowsSessionProcessContextTests
     [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetKernelObjectSecurity(SafeProcessHandle handle, uint information, byte[] descriptor);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CreateRestrictedToken(SafeAccessTokenHandle token, uint flags,
+        uint disabledCount, nint disabled, uint deletedCount, nint deleted,
+        uint restrictedCount, nint restricting, out SafeAccessTokenHandle result);
 #pragma warning restore SYSLIB1054
 }
