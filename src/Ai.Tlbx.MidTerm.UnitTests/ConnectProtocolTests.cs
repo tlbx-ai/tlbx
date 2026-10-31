@@ -21,7 +21,7 @@ public sealed class ConnectProtocolTests
         {
             var socket = path.StartsWith("/ws/", StringComparison.Ordinal);
             var destination = new Uri(origin, path + (socket ? $"?tabId=tab-a&clientId={clientId}" : ""));
-            var headers = socket ? null : new Dictionary<string, string>
+            var headers = socket ? null : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
                 ["x-midterm-client-id"] = clientId,
                 [BrowserIdentity.TabIdHeader] = "tab-a"
@@ -45,7 +45,7 @@ public sealed class ConnectProtocolTests
     public void PeerIdentityCannotSupplyACookieOrReplaceHostAuthentication(string? identity)
     {
         const string fallback = "25fb48fe-a263-4d14-b384-f287d6600a83";
-        var headers = new Dictionary<string, string> { ["Cookie"] = "mt-session=peer-token", ["X-MidTerm-Client-Id"] = identity ?? "" };
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Cookie"] = "mt-session=peer-token", ["X-MidTerm-Client-Id"] = identity ?? "" };
         var context = new DefaultHttpContext();
         context.Request.Headers.Cookie = ConnectRequestPolicy.BuildNativeCookie("host-owned-token", fallback, new Uri("https://127.0.0.1:2100/api/version"), headers);
         Assert.Equal("host-owned-token", context.Request.Cookies[AuthService.SessionCookieName]);
