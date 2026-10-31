@@ -190,12 +190,14 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 if (!string.Equals(command.Type, "runtime.attach", StringComparison.Ordinal))
                 {
                     await EnqueueRejectedAsync(connection, command, "runtime.attach must be the first command sent to mtagenthost.").ConfigureAwait(false);
+                    await connection.DrainOutboundAsync().ConfigureAwait(false);
                     break;
                 }
 
                 if (requireOwnership && !ValidateOwnership(command.AttachRuntime))
                 {
                     await EnqueueRejectedAsync(connection, command, "mtagenthost ownership mismatch").ConfigureAwait(false);
+                    await connection.DrainOutboundAsync().ConfigureAwait(false);
                     break;
                 }
 
@@ -833,6 +835,16 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         public string? SessionId { get; private set; }
         public bool HistoryPatchForwarderStarted { get; set; }
         public Task? HistoryPatchForwarder { get; set; }
+
+        // Rejected handshakes close immediately. Drain their queued response before
+        // Dispose cancels the writer; enqueueing alone does not flush the IPC stream.
+        public async Task DrainOutboundAsync()
+        {
+            Outbound.Writer.TryComplete();
+            try { await WriterTask.WaitAsync(TimeSpan.FromSeconds(1), Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            catch (TimeoutException) { }
+        }
 
         public bool TryBindSession(string sessionId)
         {

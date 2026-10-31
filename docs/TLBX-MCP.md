@@ -212,9 +212,18 @@ probe confirmed the missing environment and its explicit configuration repair.
 The fixture now verifies actual MCP binary and endpoint before model submission.
 With explicit MCP home and append-only prompt submission, two actual local
 shared-daemon TUIs each passed context, self-topic mutation and context again.
-This is interactive-user evidence; it does not close SYSTEM acceptance.
-The SYSTEM model acceptance remains open; its private profile ACL stayed unchanged
-and its two terminals, daemon and temporary SYSTEM server were stopped.
+That established the interactive-user baseline before the SYSTEM repeat.
+The corrected SYSTEM/private-user model acceptance passed on October 31:
+the source NativeAOT server ran as LocalSystem (`S-1-5-18`), with direct access
+to the user-private Codex home denied. Two real shared-daemon Codex TUIs each
+completed native context, self-topic mutation without an explicit target, and
+context again, resolving distinct correct sessions through the SYSTEM server.
+Actual MCP executable and loopback endpoint were verified before model submission;
+raw provider rollouts record all six calls and both completed turns. The profile
+ACL stayed unchanged. Both terminals, scoped daemon and temporary SYSTEM
+server/task were stopped, and the isolated profile configuration was restored.
+This is source-service acceptance using the preserved installed terminal host;
+the installed production service was not upgraded.
 Independently, Windows process metadata and command-line reads now use
 limited-query handles. Epoch and parent are read from one handle; exited processes,
 including exit code 259, remain rejected. A restricted disposable-process DACL
@@ -222,10 +231,29 @@ regression reproduces the former full-access failure; it has not been shown to
 cause the earlier misrouted model failures.
 The regression uses a token without debug privileges so elevated Windows CI
 runners cannot bypass the test child's DACL.
-Remaining evidence includes installed service/user model calls,
-rendered browser workflows, macOS runtime acceptance, final release checks
-and a verified dev release. Callback protocol checks exercise a real local child
-request into the browser bridge with its selected session and fresh preview,
-completion waiting, unchanged parent environment and cleanup after a later error.
-These checks do not replace rendered browser acceptance. Keep CLI
-guidance and implementations maintained until these gates pass.
+Rendered browser acceptance now exercises the real Chrome preview through the
+NativeAOT stdio adapter: all 17 DOM commands, literal Unicode input, one-time
+click and form submission, measured scrolling, named preview scopes, navigation,
+screenshots and HTML snapshots. A native PNG export matched the captured bytes;
+a complete 139,310-character Unicode snapshot retained its final marker.
+Browser batches preserved committed changes and stopped before later actions
+after a failure. Successful and failed ephemeral workflows removed their named
+preview without changing the original preview. Viewport sizing reported exact
+800x600 dimensions; a viewport wider than the dock is visually clipped and is a
+viewer follow-up. Chrome blocked detach popups; MCP reported that failure and
+kept docked control. Optional extension mobile execution remains unverified.
+
+Actual state clearing exposed a shared CLI/MCP bug: clearing preview storage
+advanced the target revision without replacing the document, invalidating its
+live bridge. State clearing now preserves that revision; retargeting still
+invalidates old clients. The regression fails before the fix, and actual native
+MCP clearing/resetting followed by DOM commands passes after the fix.
+Agent-host IPC also drains queued rejection messages before closing a rejected
+handshake. Actual pipe regressions reproduce the former missing response, and
+both rejected-handshake paths now return their error before EOF.
+
+Callback protocol checks exercise a real local child request into the browser
+bridge with its selected session and fresh preview, completion waiting,
+unchanged parent environment and cleanup after a later error. Real macOS
+provider/terminal acceptance and final protected release checks remain open.
+Keep CLI guidance and implementations maintained; the MCP remains experimental.

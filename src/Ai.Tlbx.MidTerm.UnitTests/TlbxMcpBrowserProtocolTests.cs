@@ -278,6 +278,37 @@ public sealed class TlbxMcpBrowserProtocolTests
         }
     }
 
+    [Fact]
+    public async Task ClearingPreviewStateKeepsTheCurrentBridgeButRetargetingInvalidatesIt()
+    {
+        var previews = new WebPreviewService(2000);
+        var session = "state-" + Guid.NewGuid().ToString("N");
+        Assert.True(previews.SetTarget(session, "alpha", "https://example.invalid/first"));
+        var revision = previews.GetPreviewSession(session, "alpha")!.TargetRevision;
+        var commands = new BrowserCommandService(webPreviewService: previews);
+        Assert.True(commands.TryRegisterClient("state-client", session, "alpha", "state-preview", message =>
+            commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "state-client"),
+            targetRevision: revision));
+        try
+        {
+            Assert.True(previews.ClearState(session, "alpha"));
+            Assert.Equal(revision, previews.GetPreviewSession(session, "alpha")!.TargetRevision);
+            var current = await commands.ExecuteCommandAsync(new BrowserCommandRequest
+            {
+                Command = "query", Selector = "body", SessionId = session, PreviewName = "alpha", Timeout = 1
+            }, TestContext.Current.CancellationToken);
+            Assert.True(current.Success, current.Error);
+            Assert.True(previews.SetTarget(session, "alpha", "https://example.invalid/second"));
+            Assert.NotEqual(revision, previews.GetPreviewSession(session, "alpha")!.TargetRevision);
+            Assert.Null(commands.GetStatus(targetUrl: null, sessionId: session, previewName: "alpha").DefaultClient);
+        }
+        finally
+        {
+            commands.UnregisterClient("state-client");
+            previews.ClearSession(session);
+        }
+    }
+
     private static Dictionary<string, JsonElement> Args<T>(T value)
     {
         using var properties = JsonSerializer.SerializeToElement(value).EnumerateObject();
