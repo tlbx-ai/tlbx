@@ -121,11 +121,15 @@ Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained C
 helpers, signatures and semantic scenarios; catalog presence is not acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
-Generated Bash and PowerShell helpers also exercise 23 option scenarios each
+Generated Bash and PowerShell helpers also exercise 69 option scenarios each
 against a loopback receiver, comparing their methods, paths, query filters and
 normalized endpoint DTOs with MCP request binding. This includes explicit targets,
 Unicode paths/text, file/bracketed paste, field clearing, history/repository filters
-and agent model/effort/plan/permission options. Bash literal JSON bodies use stdin
+and agent model/effort/plan/permission options, prompt delays, recurring queues,
+keyboard shortcuts, bootstrap slash sequences and every board subcommand. The
+suite requires coverage of every CLI counterpart backed by a fixed API route,
+except update apply, whose restart/recovery scenarios have dedicated checks.
+Bash literal JSON bodies use stdin
 to avoid native Windows curl argument conversion and command-length limits.
 These request checks do not establish rendered browser or provider behavior.
 An actual NativeAOT source-instance operator fixture passed 86 calls across 54 tools:
@@ -164,5 +168,8 @@ to verify that platform's native syscall and terminal binding end to end.
 The current Windows NativeAOT publish and standalone boot probe also passed.
 Remaining evidence includes installed service/user model calls,
 rendered browser workflows, macOS runtime acceptance, final release checks
-and a verified dev release. Keep CLI
+and a verified dev release. Native workflows also still need a caller-local
+process wait/status operation and verified preview-context propagation to local
+scripts: CLI `mt_with_preview` can await an arbitrary callback before closing its
+preview, while `process_run_isolated` currently returns after launch. Keep CLI
 guidance and implementations maintained until these gates pass.
