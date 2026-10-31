@@ -27,7 +27,7 @@ internal static class TlbxMcpIsolatedProcessTool
         }, McpJsonContext.Default.JsonObject)
     };
 
-    internal static async ValueTask<CallToolResult> InvokeLocalAsync(CallToolRequestParams request, CancellationToken ct)
+    internal static async ValueTask<CallToolResult> InvokeLocalAsync(CallToolRequestParams request, CancellationToken ct, IsolatedRunContext? context = null)
     {
         try
         {
@@ -44,7 +44,7 @@ internal static class TlbxMcpIsolatedProcessTool
                     argv.Add(item.ValueKind == JsonValueKind.String ? item.GetString()! : throw new ArgumentException("Every argv item must be a string."));
             }
             var cwd = args.TryGetValue("workingDirectory", out var directory) ? directory.GetString()! : Environment.CurrentDirectory;
-            var started = await StartAsync(exe.GetString()!, argv, cwd, ct).ConfigureAwait(false);
+            var started = await StartAsync(exe.GetString()!, argv, cwd, ct, context).ConfigureAwait(false);
             return McpApiResult.Structured(new JsonObject
             {
                 ["pid"] = started.TargetPid, ["runId"] = Path.GetFileName(started.RunDirectory),
@@ -52,14 +52,18 @@ internal static class TlbxMcpIsolatedProcessTool
                 ["stderrPath"] = Path.Combine(started.RunDirectory, "stderr.log"),
                 ["workingDirectory"] = started.WorkingDirectory, ["executionHost"] = "native-mcp-caller",
                 ["processStartedUtcTicks"] = started.TargetStartedTicks,
-                ["statePath"] = Path.Combine(started.RunDirectory, "state.json"), ["warning"] = started.Error
+                ["statePath"] = Path.Combine(started.RunDirectory, "state.json"), ["warning"] = started.Error,
+                ["contextHints"] = context is null ? null : new JsonObject
+                {
+                    ["baseUrl"] = context.BaseUrl, ["sessionId"] = context.SessionId, ["previewName"] = context.PreviewName
+                }
             });
         }
         catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException or UnauthorizedAccessException or System.ComponentModel.Win32Exception)
         { return McpApiResult.Error("TLBX_MCP_PROCESS_START_FAILED", ex.Message + " A confirmed launch is never replayed automatically."); }
     }
 
-    internal static async Task<IsolatedRunState> StartAsync(string executable, IReadOnlyList<string> arguments, string workingDirectory, CancellationToken ct)
+    internal static async Task<IsolatedRunState> StartAsync(string executable, IReadOnlyList<string> arguments, string workingDirectory, CancellationToken ct, IsolatedRunContext? context = null)
     {
         if (string.IsNullOrWhiteSpace(executable) || executable.AsSpan().Contains('\0') || arguments.Any(a => a.AsSpan().Contains('\0')))
             throw new ArgumentException("Executable and argv must not contain NUL; empty argv strings are supported.");
@@ -72,7 +76,7 @@ internal static class TlbxMcpIsolatedProcessTool
         var id = DateTime.UtcNow.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture) + "-" + Guid.NewGuid().ToString("N");
         var run = Path.Combine(root, id);
         FileRecoveryStorage.EnsurePrivate(run);
-        var spec = new IsolatedRunSpec { Executable = executable, Arguments = arguments.ToArray(), WorkingDirectory = cwd, RunDirectory = run };
+        var spec = new IsolatedRunSpec { Executable = executable, Arguments = arguments.ToArray(), WorkingDirectory = cwd, RunDirectory = run, Context = context };
         var specPath = Path.Combine(run, "launch.json");
         File.WriteAllText(specPath, JsonSerializer.Serialize(spec, IsolatedProcessJsonContext.Default.IsolatedRunSpec));
         var launch = WorkerStartInfo(specPath, cwd);
@@ -162,6 +166,14 @@ internal static class TlbxMcpIsolatedProcessTool
                 RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
             };
             foreach (var arg in spec.Arguments) start.ArgumentList.Add(arg);
+            if (spec.Context is { } context)
+            {
+                // Selection hints only. No credentials or identity proof are
+                // copied, and the adapter/worker parent environment is unchanged.
+                start.Environment["MT_BASE_URL"] = context.BaseUrl;
+                start.Environment["MT_SESSION_ID"] = context.SessionId ?? "";
+                start.Environment["MT_PREVIEW_NAME"] = context.PreviewName;
+            }
             await using var stdout = new FileStream(Path.Combine(spec.RunDirectory, "stdout.log"), FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
             await using var stderr = new FileStream(Path.Combine(spec.RunDirectory, "stderr.log"), FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
             using var process = Process.Start(start) ?? throw new InvalidOperationException("Executable did not start.");
@@ -299,6 +311,14 @@ internal sealed class IsolatedRunSpec
     public string[] Arguments { get; set; } = [];
     public string WorkingDirectory { get; set; } = "";
     public string RunDirectory { get; set; } = "";
+    public IsolatedRunContext? Context { get; set; }
+}
+
+internal sealed class IsolatedRunContext
+{
+    public string BaseUrl { get; set; } = "";
+    public string? SessionId { get; set; }
+    public string PreviewName { get; set; } = "default";
 }
 
 internal sealed class IsolatedRunState

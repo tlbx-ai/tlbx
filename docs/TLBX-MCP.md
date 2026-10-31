@@ -104,6 +104,13 @@ Completion includes the recorded exit code and flushed log paths. A nonzero exit
 positive wait timeout or unknown outcome stops dependent workflow steps. Waiting
 never stops or relaunches the process and can resume after adapter reconnection.
 HTTP exposes the descriptor but never reads service-account files for this tool.
+Native workflow process callbacks receive `MT_BASE_URL`, `MT_SESSION_ID` and
+`MT_PREVIEW_NAME` selection hints from verified context export and the active
+preview scope. An explicit workflow target remains explicit, even when the
+operator has no implicit self. Only the child environment changes; existing
+inherited authentication remains unchanged. These hints do not authenticate a
+new MCP connection or establish its self identity. Use `process_wait` before
+dependent steps and preview cleanup, as with a synchronous CLI callback.
 Native `tool_call_to_file` redirects the complete result of one tool to a new
 caller-local JSON file. Only file metadata and outcome flags return to the model;
 large logs, terminal buffers and structured data remain available for local
@@ -174,8 +181,8 @@ to verify that platform's native syscall and terminal binding end to end.
 The current Windows NativeAOT publish and standalone boot probe also passed.
 Remaining evidence includes installed service/user model calls,
 rendered browser workflows, macOS runtime acceptance, final release checks
-and a verified dev release. Native workflows also still need verified
-preview-context propagation to local scripts: CLI `mt_with_preview` exports its
-preview selection to arbitrary callbacks. Native process completion waiting is
-available, but that local callback context is not yet proven equivalent. Keep CLI
+and a verified dev release. Callback protocol checks exercise a real local child
+request into the browser bridge with its selected session and fresh preview,
+completion waiting, unchanged parent environment and cleanup after a later error.
+These checks do not replace rendered browser acceptance. Keep CLI
 guidance and implementations maintained until these gates pass.

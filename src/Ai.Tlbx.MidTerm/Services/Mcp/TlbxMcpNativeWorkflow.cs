@@ -124,7 +124,7 @@ internal static class TlbxMcpNativeWorkflow
                 }
             call = new CallToolRequestParams { Name = call.Name, Arguments = values };
         }
-        if (call.Name == "process_run_isolated") return TlbxMcpIsolatedProcessTool.InvokeLocalAsync(call, ct);
+        if (call.Name == "process_run_isolated") return InvokeProcessAsync(upstream, call, inheritedScope, ct);
         if (call.Name == TlbxMcpProcessWaitTool.ToolName) return TlbxMcpProcessWaitTool.InvokeLocalAsync(call, ct);
         if (call.Name == TlbxMcpFileCallTool.ToolName) return TlbxMcpFileCallTool.InvokeLocalAsync(call,
             (name, values, token) => InvokeNativeStepAsync(upstream, new CallToolRequestParams { Name = name, Arguments = values }, token, inheritedScope, catalog), ct);
@@ -135,6 +135,26 @@ internal static class TlbxMcpNativeWorkflow
         if (call.Name == "update_apply") return TlbxMcpUpdateWorkflow.InvokeAsync(call,
             (name, values, token) => CallUpstreamAsync(upstream, name, values, token), ct);
         return CallUpstreamAsync(upstream, call.Name, call.Arguments ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal), ct);
+    }
+
+    private static async ValueTask<CallToolResult> InvokeProcessAsync(McpClient upstream, CallToolRequestParams call,
+        IReadOnlyDictionary<string, JsonElement>? scope, CancellationToken ct)
+    {
+        if (scope is null) return await TlbxMcpIsolatedProcessTool.InvokeLocalAsync(call, ct).ConfigureAwait(false);
+        var preview = scope.TryGetValue("previewName", out var named) ? named.GetString()! : "default";
+        var exported = await CallUpstreamAsync(upstream, "context_export", Arguments(new JsonObject
+            { ["previewName"] = preview, ["format"] = "json" }), ct).ConfigureAwait(false);
+        if (exported.IsError == true) return exported; // No callback was launched.
+        if (exported.StructuredContent is not { ValueKind: JsonValueKind.Object } data ||
+            !data.TryGetProperty("baseUrl", out var baseUrl) || baseUrl.ValueKind != JsonValueKind.String ||
+            !Uri.TryCreate(baseUrl.GetString(), UriKind.Absolute, out var uri) || uri.Scheme is not ("http" or "https"))
+            return McpApiResult.Error("TLBX_MCP_WORKFLOW_CONTEXT", "Verified context export is missing its base URL. No process was launched.");
+        var session = scope.TryGetValue("targetSessionId", out var target) ? target.GetString()
+            : data.TryGetProperty("sessionId", out var self) && self.ValueKind == JsonValueKind.String ? self.GetString() : null;
+        return await TlbxMcpIsolatedProcessTool.InvokeLocalAsync(call, ct, new IsolatedRunContext
+        {
+            BaseUrl = baseUrl.GetString()!, SessionId = session, PreviewName = preview
+        }).ConfigureAwait(false);
     }
 
     private static string Detail(CallToolResult result) => result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text ?? "No diagnostic was returned.";

@@ -32,6 +32,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         var script = Path.Combine(cwd, OperatingSystem.IsWindows() ? "child.ps1" : "child.sh");
         File.WriteAllText(script, OperatingSystem.IsWindows() ? """
             [Console]::WriteLine('child-started')
+            [IO.File]::WriteAllLines('context-hints.txt', @($env:MT_BASE_URL,$env:MT_SESSION_ID,$env:MT_PREVIEW_NAME))
             $deadline = [DateTime]::UtcNow.AddSeconds(25)
             while (!(Test-Path -LiteralPath $args[0])) {
                 if ([DateTime]::UtcNow -gt $deadline) { exit 23 }
@@ -41,6 +42,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             [Console]::Error.Write('separate-child-stderr')
             """ : """
             printf 'child-started\n'
+            printf '%s\n%s\n%s\n' "$MT_BASE_URL" "$MT_SESSION_ID" "$MT_PREVIEW_NAME" > context-hints.txt
             count=0
             while [ ! -f "$1" ]; do
                 count=$((count + 1)); [ "$count" -lt 250 ] || exit 23
@@ -65,6 +67,8 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         var forwardedCalls = 0;
         var artifactReads = 0;
         var capturedCalls = 0;
+        var contextReads = 0;
+        var authorityAddress = "";
         var largeOutput = string.Concat(Enumerable.Repeat("Grüße 日本 🦊 '$()'\r\n", 30000));
         const string artifactUri = "tlbx-artifact://capture/native-executable-fixture";
         var artifactBytes = new byte[TlbxMcpArtifactSaveTool.ChunkBytes + 17];
@@ -74,13 +78,24 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0, endpoint => endpoint.UseHttps(certificate)));
         builder.Services.AddMcpServer().WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
             .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
-                { Tools = [.. TlbxMcpArtifactTools.CreateTools().Select(tool => tool.ProtocolTool), new Tool
+                { Tools = [.. TlbxMcpArtifactTools.CreateTools().Select(tool => tool.ProtocolTool),
+                    .. TlbxMcpTool.CreateTools().Where(tool => tool.ProtocolTool.Name == "context_export").Select(tool => tool.ProtocolTool),
+                    new TlbxMcpWorkflowTool([]).ProtocolTool, new Tool
                 {
                     Name = "large_result",
                     InputSchema = JsonSerializer.SerializeToElement(new JsonObject { ["type"] = "object" }, McpJsonContext.Default.JsonObject)
                 }] }))
             .WithCallToolHandler((call, _) =>
             {
+                if (call.Params!.Name == "context_export")
+                {
+                    Interlocked.Increment(ref contextReads);
+                    return ValueTask.FromResult(McpApiResult.Structured(new JsonObject
+                    {
+                        ["baseUrl"] = authorityAddress, ["sessionId"] = null,
+                        ["previewName"] = call.Params.Arguments!["previewName"].GetString()
+                    }));
+                }
                 if (call.Params!.Name == "large_result")
                 {
                     Interlocked.Increment(ref capturedCalls);
@@ -132,6 +147,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         try
         {
             var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+            authorityAddress = address;
             var environment = StdioClientTransportOptions.GetDefaultEnvironmentVariables();
             environment["MT_API_KEY"] = apiKey;
             environment["TLBX_CLI_AUTH_CACHE_DIR"] = Path.Combine(cwd, "auth-cache");
@@ -179,12 +195,13 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
                 : "/bin/sh";
             string[] argv = OperatingSystem.IsWindows()
                 ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script, gate] : [script, gate];
-            var result = await client.CallToolAsync("process_run_isolated", new Dictionary<string, object?>(StringComparer.Ordinal)
+            var result = await client.CallToolAsync("workflow_run", new Dictionary<string, object?>(StringComparer.Ordinal)
             {
-                ["executable"] = executable, ["arguments"] = argv
+                ["targetSessionId"] = "target01", ["previewName"] = "native-callback",
+                ["steps"] = new object[] { new { tool = "process_run_isolated", arguments = new { executable, arguments = argv } } }
             }, cancellationToken: ct);
             Assert.False(result.IsError, result.Content.OfType<TextContentBlock>().FirstOrDefault()?.Text);
-            var outcome = result.StructuredContent!.Value;
+            var outcome = result.StructuredContent!.Value.GetProperty("steps")[0].GetProperty("structuredContent");
             Assert.Equal("native-mcp-caller", outcome.GetProperty("executionHost").GetString());
             Assert.Equal(cwd, outcome.GetProperty("workingDirectory").GetString());
             var statePath = outcome.GetProperty("statePath").GetString()!;
@@ -227,6 +244,8 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             Assert.Equal(0, state.ExitCode);
             Assert.Equal("child-started" + Environment.NewLine + "after-native-adapter-exit", File.ReadAllText(outcome.GetProperty("stdoutPath").GetString()!));
             Assert.Equal("separate-child-stderr", File.ReadAllText(outcome.GetProperty("stderrPath").GetString()!));
+            Assert.Equal(new[] { address, "target01", "native-callback" }, File.ReadAllLines(Path.Combine(cwd, "context-hints.txt")));
+            Assert.Equal(1, contextReads);
             // A fresh native adapter can observe the original run after its
             // launcher disconnected; no application operation is replayed.
             client = await McpClient.CreateAsync(new StdioClientTransport(transportOptions), cancellationToken: ct);

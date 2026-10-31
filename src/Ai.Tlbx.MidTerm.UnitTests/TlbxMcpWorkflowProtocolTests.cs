@@ -60,7 +60,21 @@ public sealed class TlbxMcpWorkflowProtocolTests
         var script = Path.Combine(cwd, OperatingSystem.IsWindows() ? "probe.ps1" : "probe.sh");
         var exe = OperatingSystem.IsWindows()
             ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "WindowsPowerShell", "v1.0", "powershell.exe") : "/bin/sh";
-        File.WriteAllText(script, OperatingSystem.IsWindows() ? "[Console]::Write('native-local'); Start-Sleep -Milliseconds 150" : "printf native-local; sleep 0.15\n", new UTF8Encoding(OperatingSystem.IsWindows()));
+        File.WriteAllText(script, OperatingSystem.IsWindows() ? """
+            $ErrorActionPreference='Stop'
+            [Console]::WriteLine('native-local')
+            [Console]::WriteLine($env:MT_BASE_URL)
+            [Console]::WriteLine($env:MT_SESSION_ID)
+            [Console]::WriteLine($env:MT_PREVIEW_NAME)
+            $body=@{command='fill';sessionId=$env:MT_SESSION_ID;previewName=$env:MT_PREVIEW_NAME;selector='input';value='native-callback'}|ConvertTo-Json -Compress
+            Invoke-RestMethod ($env:MT_BASE_URL+'/callback-browser') -Method Post -ContentType 'application/json' -Body $body | Out-Null
+            """ : """
+            set -e
+            printf 'native-local\n%s\n%s\n%s\n' "$MT_BASE_URL" "$MT_SESSION_ID" "$MT_PREVIEW_NAME"
+            printf '{"command":"fill","sessionId":"%s","previewName":"%s","selector":"input","value":"native-callback"}' "$MT_SESSION_ID" "$MT_PREVIEW_NAME" | curl -fSs --data-binary @- -H 'Content-Type: application/json' "$MT_BASE_URL/callback-browser" >/dev/null
+            """, new UTF8Encoding(OperatingSystem.IsWindows()));
+        var parentHints = new[] { "MT_BASE_URL", "MT_SESSION_ID", "MT_PREVIEW_NAME" }
+            .ToDictionary(name => name, Environment.GetEnvironmentVariable, StringComparer.Ordinal);
         string[] argv = OperatingSystem.IsWindows() ? ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script] : [script];
         using var leases = new SessionCliContextService(() => [], _ => (1, new DateTime(2026, 10, 30)), TimeProvider.System);
         var lease = leases.CreateHostLease("first001", 100).Split(':')[1];
@@ -88,10 +102,18 @@ public sealed class TlbxMcpWorkflowProtocolTests
         builder.Services.AddSingleton(commands);
         builder.Services.AddSingleton(operations);
         builder.Services.AddMcpServer().WithHttpTransport(o => o.SessionMode = HttpServerSessionMode.Stateless)
-            .WithTools([.. TlbxMcpBrowserTools.CreateTools(), fail]);
+            .WithTools([.. TlbxMcpBrowserTools.CreateTools(), .. TlbxMcpTool.CreateTools(), fail]);
         await using var app = builder.Build();
         app.Use(async (http, next) => { RequestAccessContext.SetFullUser(http, true); await next(http); });
         TlbxMcpEndpoints.Map(app);
+        // Fixture-only callback route: exercise a real child HTTP request and
+        // the same browser bridge; authentication has separate protocol checks.
+        app.MapPost("/callback-browser", async (HttpContext http) =>
+        {
+            var request = await JsonSerializer.DeserializeAsync(http.Request.Body, AppJsonContext.Default.BrowserCommandRequest, http.RequestAborted);
+            var reply = await commands.ExecuteCommandAsync(request!, http.RequestAborted);
+            return Results.Text(reply.Success ? "ok" : reply.Error, statusCode: reply.Success ? 200 : 409);
+        });
         var ct = TestContext.Current.CancellationToken;
         IsolatedRunState? process = null;
         var verified = false;
@@ -127,8 +149,16 @@ public sealed class TlbxMcpWorkflowProtocolTests
             Assert.True(result.IsError);
             var first = outcome.GetProperty("steps")[0].GetProperty("structuredContent");
             Assert.True(outcome.GetProperty("steps")[1].GetProperty("structuredContent").GetProperty("completed").GetBoolean());
-            Assert.Equal("native-local", File.ReadAllText(first.GetProperty("stdoutPath").GetString()!));
-            var mutation = Assert.Single(mutations);
+            var hints = first.GetProperty("contextHints");
+            Assert.Equal(address, hints.GetProperty("baseUrl").GetString());
+            Assert.Equal("first001", hints.GetProperty("sessionId").GetString());
+            var lines = File.ReadAllLines(first.GetProperty("stdoutPath").GetString()!);
+            Assert.Equal(new[] { "native-local", address, "first001", hints.GetProperty("previewName").GetString() }, lines);
+            var callback = Assert.Single(mutations.Where(message => message.Value == "native-callback"));
+            Assert.Equal("first001", callback.SessionId);
+            Assert.Equal(hints.GetProperty("previewName").GetString(), callback.PreviewName);
+            Assert.All(parentHints, hint => Assert.Equal(hint.Value, Environment.GetEnvironmentVariable(hint.Key)));
+            var mutation = Assert.Single(mutations.Where(message => message.Value == first.GetProperty("runId").GetString()));
             Assert.Equal(first.GetProperty("runId").GetString(), mutation.Value);
             Assert.StartsWith("mcp-", mutation.PreviewName, StringComparison.Ordinal);
             Assert.True(File.Exists(Path.Combine(cwd, "browser-result.json")));
@@ -155,9 +185,10 @@ public sealed class TlbxMcpWorkflowProtocolTests
             Assert.NotEqual(true, fileResult.IsError);
             Assert.Equal("literal from file", mutations.Last().Value);
             Assert.StartsWith("mcp-", mutations.Last().PreviewName, StringComparison.Ordinal);
+            var mutationsBeforeConflict = mutations.Count;
             var conflict = await FileWorkflow(true);
             Assert.True(conflict.IsError);
-            Assert.Equal(2, mutations.Count);
+            Assert.Equal(mutationsBeforeConflict, mutations.Count);
             Assert.True(conflict.StructuredContent!.Value.GetProperty("steps")[0].GetProperty("structuredContent").GetProperty("saved").GetBoolean());
             using (var capturedError = JsonDocument.Parse(await File.ReadAllBytesAsync(Path.Combine(cwd, "scope-error.json"), ct)))
                 Assert.True(capturedError.RootElement.GetProperty("isError").GetBoolean());
@@ -173,7 +204,6 @@ public sealed class TlbxMcpWorkflowProtocolTests
             Assert.NotNull(process);
             Assert.NotNull(process.CompletedAt);
             Assert.Null(process.Error);
-            Assert.Equal("native-local", File.ReadAllText(Path.Combine(run, "stdout.log")));
             verified = true;
         }
         finally
