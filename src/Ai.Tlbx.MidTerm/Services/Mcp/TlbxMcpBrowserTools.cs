@@ -39,6 +39,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     }
 
     public override Tool ProtocolTool => _tool;
+    internal string? BrowserCommand => _command;
     public override IReadOnlyList<object> Metadata => [];
 
     internal static IEnumerable<McpServerTool> CreateTools() =>
@@ -144,12 +145,17 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         {
             case "browser_open":
             case "browser_navigate":
-                if (Bool(args, "claim") && !ui.RequestClaim(target, preview, out var claimError, OptionalString(args, "browserId")))
-                    return Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", claimError);
-                if (!Bool(args, "claim") && OptionalString(args, "browserId") is not null)
+                // Validate every typed option before a requested ownership change.
+                var openUrl = RequiredString(args, "url");
+                var shouldClaim = Bool(args, "claim");
+                var shouldActivate = Bool(args, "activate");
+                var claimBrowser = OptionalString(args, "browserId");
+                if (!shouldClaim && claimBrowser is not null)
                     throw new ArgumentException("browserId on browser_open requires claim=true.");
-                var opened = await operations.OpenAsync(target, preview, RequiredString(args, "url"),
-                    _tool.Name == "browser_open" && Bool(args, "activate"), ct).ConfigureAwait(false);
+                if (shouldClaim && !ui.RequestClaim(target, preview, out var claimError, claimBrowser))
+                    return Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", claimError);
+                var opened = await operations.OpenAsync(target, preview, openUrl,
+                    _tool.Name == "browser_open" && shouldActivate, ct).ConfigureAwait(false);
                 return OperationResult(opened, target, preview);
             case "browser_scope_open":
                 var http = services.GetRequiredService<IHttpContextAccessor>().HttpContext!;
@@ -352,8 +358,8 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         command = command == "evaluate" ? "exec" : command;
         var selector = OptionalString(args, "selector");
         var value = OptionalString(args, "value", allowEmpty: command is "fill" or "exec");
-        var timeout = Integer(args, "timeout", command == "screenshot" ? 30 : 15);
-        if (timeout is < 1 or > 120) throw new ArgumentException("timeout must be 1-120 seconds.");
+        int? timeout = args.ContainsKey("timeout") ? Integer(args, "timeout", 0) : command == "wait" ? 15 : null;
+        if (timeout is < 1 or > MaximumTimeoutSeconds) throw new ArgumentException("timeout exceeds the shared browser timer range.");
         if (command is "query" or "click" or "fill" or "wait" or "attrs" or "css")
             selector = RequiredString(args, "selector");
         if (command == "fill") value = RequiredString(args, "value", allowEmpty: true);
@@ -414,8 +420,9 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         if (!result.Success) return Error("TLBX_MCP_BROWSER_FAILED", result.Error ?? "Browser command failed.");
         var oversizedImage = request.Command == "screenshot" && result.Result is { Length: > 16_000_000 } payload
             && payload.StartsWith("data:image/png;base64,", StringComparison.Ordinal);
+        var oversizedSnapshot = request.Command == "snapshot" && result.Result is { Length: > 65536 };
         var store = services.GetService<TlbxMcpArtifactStore>();
-        var saveArtifact = save || oversizedImage && store is null;
+        var saveArtifact = save || (oversizedImage || oversizedSnapshot) && store is null;
         string? artifact = null;
         if (saveArtifact && request.Command is "screenshot" or "snapshot")
         {
@@ -468,6 +475,23 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 image.Content.Add(new TextContentBlock { Text = "Screenshot captured, but workspace artifact could not be saved. Do not replay the browser operation." });
             }
             return image;
+        }
+        if (request.Command == "snapshot") data["inlineSnapshotAvailable"] = !oversizedSnapshot;
+        if (oversizedSnapshot)
+        {
+            var preserved = resource is not null || artifact is not null;
+            var failedCopy = save && artifact is null;
+            data["success"] = preserved && !failedCopy;
+            data["detail"] = resource is not null
+                ? "The complete HTML exceeds the 65536-character inline budget. resourceUri preserves the original; use artifact_save for a caller-local file."
+                : artifact is not null ? "The complete HTML exceeds the inline budget. The workspace artifact preserves the original."
+                : "The HTML exceeds the inline budget and no complete artifact could be retained.";
+            var snapshot = Reply(data);
+            if (resource is not null) snapshot.Content.Add(resource);
+            snapshot.IsError = !preserved || failedCopy;
+            if (failedCopy) snapshot.Content.Add(new TextContentBlock
+                { Text = "Snapshot captured, but the requested workspace copy could not be saved. Do not replay the browser operation." });
+            return snapshot;
         }
         data["result"] = ParseResult(result.Result);
         var response = Reply(data);
@@ -558,7 +582,9 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         return result;
     }
     private static JsonObject PositiveInteger() => new() { ["type"] = "integer", ["minimum"] = 1 };
-    private static JsonObject Timeout() => new() { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = 120 };
+    // CancellationTokenSource's timer accepts at most uint.MaxValue - 1 ms.
+    private const int MaximumTimeoutSeconds = (int)((uint.MaxValue - 1L) / 1000L);
+    private static JsonObject Timeout(int maximum = MaximumTimeoutSeconds) => new() { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = maximum };
     private static JsonArray Strings(IEnumerable<string> values) => new(values.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray());
     private static JsonObject Enum(params string[] values) => new() { ["type"] = "string", ["enum"] = Strings(values) };
     private static readonly string[] BatchCommands = ["query", "click", "fill", "exec", "evaluate", "wait", "screenshot", "scroll", "wheel", "navigate", "reload", "outline", "attrs", "css", "log", "links", "submit", "forms", "url"];
@@ -576,7 +602,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 ("properties", new JsonObject { ["type"] = "array", ["items"] = Property("string") }), ("props", Property("string")),
                 ("filter", Enum("error", "warn", "all")), ("waitForNavigation", Property("boolean")))
         }
-    }), ("timeout", Timeout()), ("saveToWorkspace", Property("boolean")));
+    }), ("timeout", Timeout(120)), ("saveToWorkspace", Property("boolean")));
     private static JsonObject WithPreviewFields()
     {
         var fields = BatchFields();

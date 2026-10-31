@@ -68,6 +68,10 @@ when calling browser tools. Conflicting wrapped browser targets are rejected;
 explicit non-browser targets remain explicit.
 Literal fill values include empty strings (clear the field) and whitespace;
 direct and batch calls preserve them without treating them as missing arguments.
+Individual browser waits, queries and evaluations use the shared CLI timer range;
+for example, `timeout: 300` is supported. Omitted timeouts use the shared service
+defaults (selector waits retain 15 seconds). Browser batches retain their existing
+120-second total deadline. Typed open options are validated before ownership changes.
 
 Native `tool_call_from_file` expands a caller-local UTF-8 JSON arguments file, or
 injects an exact text file into a named argument. This replaces board `@file` and
@@ -85,6 +89,9 @@ copies requested through `saveToWorkspace` survive cache eviction.
 Large captures use the private resource cache by default, without an extra
 workspace copy. A failed explicit workspace save reports an error while keeping
 the original resource available; use that resource instead of recapturing.
+HTML snapshots above 65,536 characters return compact metadata and the complete
+original resource instead of inline HTML (`inlineSnapshotAvailable: false`).
+Use `artifact_save` for the full UTF-8 file; no partial HTML is presented as complete.
 Resource handles do not survive a web-server restart. Abrupt termination may leave private
 temporary files; normal disposal removes the generated cache.
 `artifact_read` and `artifacts_list` provide the same owner-checked access through
@@ -145,6 +152,12 @@ except update apply, whose restart/recovery scenarios have dedicated checks.
 Bash literal JSON bodies use stdin
 to avoid native Windows curl argument conversion and command-length limits.
 These request checks do not establish rendered browser or provider behavior.
+An additional 30-case comparison covers every one of the 17 DOM command tools
+against the actual CLI parser and shared defaults, including flags, literal
+payloads, scrolling/wheel deltas, CSS property forms and named-preview targeting.
+Transport checks cover a 300-second wait argument and rejection of malformed
+open options without recording an ownership claim. Snapshot boundary checks keep
+complete Unicode originals while bounding the inline reply.
 An actual NativeAOT source-instance operator fixture passed 86 calls across 54 tools:
 terminal text/keys/bracketed paste with observed output, timed queue execution,
 recurring queue cancellation, exact queued history replay, repository binding,

@@ -59,7 +59,7 @@ public sealed partial class TlbxMcpCliParityTests : IDisposable
     public void BrowserTextCommandsBeyondHelperAliasesHaveExplicitToolMappings()
     {
         var source = ReadBrowserEndpoints();
-        var begin = source.IndexOf("private static BrowserCommandRequest? ParseCliArgs", StringComparison.Ordinal);
+        var begin = source.IndexOf("internal static BrowserCommandRequest? ParseCliArgs", StringComparison.Ordinal);
         Assert.True(begin >= 0);
         var end = source.IndexOf("return request is null", begin, StringComparison.Ordinal);
         Assert.True(end > begin);

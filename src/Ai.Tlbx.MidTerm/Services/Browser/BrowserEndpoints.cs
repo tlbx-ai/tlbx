@@ -871,7 +871,7 @@ public static class BrowserEndpoints
         return trimmed.Length <= maxLength ? trimmed : trimmed[..Math.Max(0, maxLength - 1)] + "...";
     }
 
-    private static BrowserCommandRequest? ParseCliArgs(string command, List<string> args)
+    internal static BrowserCommandRequest? ParseCliArgs(string command, List<string> args)
     {
         var request = command switch
         {

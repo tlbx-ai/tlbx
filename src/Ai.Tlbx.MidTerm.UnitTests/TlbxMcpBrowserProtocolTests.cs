@@ -56,6 +56,11 @@ public sealed class TlbxMcpBrowserProtocolTests
         Assert.Equal("exec", request.Commands[0].Command);
         Assert.True(request.Commands[1].FullPage);
         Assert.All(request.Commands, command => Assert.Equal("first001", command.SessionId));
+        var longStep = TlbxMcpBrowserTools.ParseBatch(Args(new { timeout = 120,
+            commands = new object[] { new { command = "wait", selector = "#ready", timeout = 300 } } }), "first001", "alpha");
+        Assert.Equal(300, longStep.Commands[0].Timeout);
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.ParseBatch(Args(new { timeout = 121,
+            commands = new object[] { new { command = "wait", selector = "#ready" } } }), "first001", "alpha"));
     }
 
     [Fact]
@@ -80,11 +85,18 @@ public sealed class TlbxMcpBrowserProtocolTests
         }
         Register("client-a", "first001", "alpha");
         Register("client-b", "second02", "beta");
+        var owners = new BrowserPreviewOwnerService();
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners);
+        ui.RegisterListener("ui", "desktop", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+        var previews = new WebPreviewService(2000);
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0));
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton(leases);
         builder.Services.AddSingleton(commands);
+        builder.Services.AddSingleton(previews);
+        builder.Services.AddSingleton(ui);
+        builder.Services.AddSingleton(new BrowserPreviewOperations(commands, previews, ui, new BrowserPreviewRegistry(), owners));
         builder.Services.AddMcpServer().WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
             .WithTools(TlbxMcpBrowserTools.CreateTools());
         await using var app = builder.Build();
@@ -105,6 +117,21 @@ public sealed class TlbxMcpBrowserProtocolTests
                 await using var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
                 var tools = await client.ListToolsAsync(cancellationToken: ct);
                 Assert.Contains(tools, tool => tool.Name == "browser_with_preview");
+                Assert.True(tools.Single(tool => tool.Name == "browser_wait").ProtocolTool.InputSchema
+                    .GetProperty("properties").GetProperty("timeout").GetProperty("maximum").GetInt32() >= 300);
+                Assert.Equal(120, tools.Single(tool => tool.Name == "browser_batch").ProtocolTool.InputSchema
+                    .GetProperty("properties").GetProperty("timeout").GetProperty("maximum").GetInt32());
+                foreach (var invalid in new[] { (Field: "url", Value: (object)123), (Field: "activate", Value: (object)"yes") })
+                {
+                    var invalidOpen = new Dictionary<string, object?>(StringComparer.Ordinal)
+                    {
+                        ["url"] = "https://example.invalid", ["claim"] = true, ["browserId"] = "desktop", ["previewName"] = preview,
+                        [invalid.Field] = invalid.Value
+                    };
+                    var rejected = await client.CallToolAsync("browser_open", invalidOpen, cancellationToken: ct);
+                    Assert.True(rejected.IsError);
+                    Assert.Null(owners.GetOwnerBrowserId(session, preview));
+                }
                 var denied = await client.CallToolAsync("browser_fill", new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["targetSessionId"] = session == "first001" ? "second02" : "first001",
@@ -132,6 +159,12 @@ public sealed class TlbxMcpBrowserProtocolTests
                     Assert.Equal(blank, sent[session].Value);
                     Assert.Equal(preview, sent[session].PreviewName);
                 }
+                var longWait = await client.CallToolAsync("browser_wait", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = preview, ["selector"] = "input", ["timeout"] = 300
+                }, cancellationToken: ct);
+                Assert.NotEqual(true, longWait.IsError);
+                Assert.Equal(300, sent[session].Timeout);
                 var image = await client.CallToolAsync("browser_screenshot", new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["previewName"] = preview, ["fullPage"] = true
@@ -147,6 +180,7 @@ public sealed class TlbxMcpBrowserProtocolTests
             commands.CancelAllPending();
             commands.UnregisterClient("client-a");
             commands.UnregisterClient("client-b");
+            ui.UnregisterListener("ui");
             await app.StopAsync(ct);
         }
     }

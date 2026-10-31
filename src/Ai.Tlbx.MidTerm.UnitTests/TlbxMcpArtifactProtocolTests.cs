@@ -21,6 +21,40 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class TlbxMcpArtifactProtocolTests
 {
     [Theory]
+    [InlineData(65536, false)]
+    [InlineData(65537, true)]
+    [InlineData(1000000, true)]
+    public async Task SnapshotBudgetPreservesCompleteUnicodeOriginalWithoutImplicitWorkspaceWrites(int characters, bool resourceOnly)
+    {
+        var context = new DefaultHttpContext();
+        context.Items[TlbxMcpEndpoints.CallerIdentityItem] = "snapshot-owner";
+        var services = new ServiceCollection();
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = context });
+        services.AddSingleton<TlbxMcpArtifactStore>();
+        // No workspace/session service is available: default captures must not
+        // create a workspace copy or borrow another session's directory.
+        await using var provider = services.BuildServiceProvider();
+        var html = "<html>" + new string('界', characters - 13) + "</html>";
+        var captured = await TlbxMcpBrowserTools.CommandResultAsync(provider,
+            new BrowserCommandRequest { Command = "snapshot", SessionId = "first001" },
+            new BrowserWsResult { Success = true, Result = html }, save: false);
+        Assert.NotEqual(true, captured.IsError);
+        var data = captured.StructuredContent!.Value;
+        Assert.Equal(!resourceOnly, data.GetProperty("inlineSnapshotAvailable").GetBoolean());
+        if (resourceOnly)
+        {
+            Assert.False(data.TryGetProperty("result", out _));
+            Assert.True(captured.Content.OfType<TextContentBlock>().Single().Text.Length < 2048);
+        }
+        else Assert.Equal(html, data.GetProperty("result").GetString());
+        var original = System.Text.Encoding.UTF8.GetBytes(html);
+        var link = Assert.Single(captured.Content.OfType<ResourceLinkBlock>());
+        Assert.Equal(original.Length, link.Size);
+        var stored = provider.GetRequiredService<TlbxMcpArtifactStore>().Read(link.Uri, TestContext.Current.CancellationToken);
+        Assert.Equal(original, Assert.IsType<BlobResourceContents>(Assert.Single(stored.Contents)).DecodedData.ToArray());
+    }
+
+    [Theory]
     [InlineData(false, "missing-session")]
     [InlineData(true, "missing-session")]
     [InlineData(true, "other001")]
