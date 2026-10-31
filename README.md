@@ -1,17 +1,19 @@
 <p align="center">
-  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — terminal browser multiplexer, say toolbox — your coding agents, your machines, any browser" width="100%">
+  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — Agentic Development Environment — your agents, your machines, any browser" width="100%">
 </p>
 
-<p align="center"><b>t</b>ermina<b>l</b>&nbsp;<b>b</b>rowser&nbsp;multiple<b>x</b>er&nbsp;&nbsp;·&nbsp;&nbsp;say &ldquo;toolbox&rdquo;</p>
+<p align="center"><strong>Agentic Development Environment (ADE)</strong>&nbsp;&nbsp;·&nbsp;&nbsp;say &ldquo;toolbox&rdquo;</p>
 
 <p align="center">
   <a href="https://tlbx.ai"><strong>Website</strong></a>
   ·
   <a href="#install"><strong>Install</strong></a>
   ·
-  <a href="#working-with-coding-agents"><strong>Coding agents</strong></a>
+  <a href="#working-with-agents"><strong>Working with agents</strong></a>
   ·
   <a href="#private-remote-access"><strong>Remote access</strong></a>
+  ·
+  <a href="https://lnk.tlbx.ai"><strong>tlbx Link</strong></a>
   ·
   <a href="https://tlbx.ai/security"><strong>Security</strong></a>
   ·
@@ -24,11 +26,13 @@
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
 </p>
 
-# Persistent terminals and coding agents in any browser.
+# tlbx — your Agentic Development Environment.
 
-tlbx lets you use your computer's terminals and coding agents from a browser. Install it on your Windows, macOS or Linux machine, then open it from your desktop, tablet or phone. Your tools keep running when you close the browser or switch devices, as long as the host stays awake and online.
+tlbx is a free, open-source **ADE** for launching agents, giving them tasks, following their progress and verifying results. It brings prompts, agent sessions, terminals, files, Git changes and your running app into one browser workspace on Windows, macOS and Linux.
 
-Run Codex, Claude Code, OpenCode, your usual shell, tests and dev servers in separate sessions. See files, Git changes and your app preview beside the work. tlbx is free and open source; your agent provider's usual charges still apply.
+An **IDE** integrates the tools you use to write code. An **Agentic Development Environment** integrates the tools you use to **direct agents**: assign work, supply context, answer questions, review changes and check outcomes. Coding is a core use case; research, scripts and other tasks supported by your agents fit the same workflow.
+
+Run Codex, Claude Code, OpenCode and other agents on your own machines. Open the workspace from your desktop, tablet or phone, directly or through **[tlbx Link](https://lnk.tlbx.ai)**. Tools keep running when you close the browser, while the host stays awake and online. Your agent provider's usual charges still apply.
 
 **[Install tlbx](#install)** · **[Explore the features](https://tlbx.ai/features)** · **[How it works](https://tlbx.ai/architecture)**
 
@@ -69,13 +73,14 @@ Use **PowerShell, bash or zsh**, and terminal apps such as `btop`, `vim`, `lazyg
   <img src="docs/marketing/readme/any-terminal.webp" alt="btop system monitor running full-screen in a tlbx terminal session, with CPU, memory, disk, network and process panels" width="100%">
 </p>
 
-## Working with coding agents
+## Working with agents
 
 Keep several agents running and make their work easier to follow:
 
 - **Organize sessions:** name, split, reorder and bookmark agents, shells and servers.
 - **Send screenshots:** `Ctrl+V` / `Cmd+V` uploads an image and gives the terminal its file path. Agent Controller adds it as an attachment.
 - **Write longer prompts:** use multiline input, saved drafts, file attachments and scheduled follow-ups.
+- **Follow progress:** see session activity and requests for attention; supported Agent Controller runtimes expose tool calls, questions, approvals and changes.
 - **Reuse input:** open **History** (`Alt+H`) to resend commands, prompts, images or files.
 - **Let agents use the workspace:** the `mt` helpers let them send prompts, read terminal output and inspect or control the app preview.
 - **Check the result:** open your app beside the agent, try different window sizes and inspect screenshots or browser logs.
@@ -109,7 +114,17 @@ These commands install the current stable release. Add `--dev` on macOS/Linux or
 
 ## Private remote access
 
-Connect your host and client devices through a trusted LAN or a private VPN such as [Tailscale](https://tailscale.com/). Then open the host's private tlbx address in your browser.
+**[tlbx Link — lnk.tlbx.ai](https://lnk.tlbx.ai)** opens your real tlbx workspace through encrypted WebRTC. A direct connection is preferred; relay fallback carries encrypted traffic when the networks prevent a direct path. The host needs no inbound port forwarding. Link is available in the current **dev channel**; the install commands above default to stable.
+
+1. On the host, open `https://localhost:<port>` and go to **Settings → Security & Access → tlbx Link**, or open `https://localhost:<port>/connect.html` directly. Confirm the installation password and generate the connection files.
+2. Open Link and upload the **public registration** file. Import the **private access** file in a trusted browser, then choose the saved computer.
+3. Return from the same browser profile or install Link as a PWA. Each computer has its own access key; the overview keeps your saved machines together.
+
+Private access keys are saved as non-extractable WebCrypto keys in that browser profile, not uploaded to Link. Clearing browser data removes the saved access. Keep the private access file secure: it grants access until revoked or replaced locally on the host. Key generation requires direct HTTPS localhost access and a fresh installation-password confirmation; Link, LAN, preview and proxy requests cannot generate keys.
+
+Link currently buffers HTTP request/response bodies up to 20 MiB; streaming HTTP responses such as server-sent events are not supported through the tunnel. Direct HTTPS remains available for those workflows.
+
+You can also connect host and client devices through a trusted LAN or a private VPN such as [Tailscale](https://tailscale.com/), then open the host's private tlbx address in your browser.
 
 Keep HTTPS and password authentication enabled. Restrict network access to the people and devices that need it, and keep tlbx and your VPN updated.
 
