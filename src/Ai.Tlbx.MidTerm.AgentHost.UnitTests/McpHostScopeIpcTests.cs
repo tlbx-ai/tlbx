@@ -27,9 +27,10 @@ public sealed class McpHostScopeIpcTests
             {
                 await using var stream = await ConnectAsync(endpoint, timeout.Token);
                 using var input = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-                var output = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true);
+                var rejectionVerified = false;
                 try
                 {
+                    using var output = new StreamWriter(stream, new UTF8Encoding(false), leaveOpen: true);
                     await AppServerControlHostTestClient.ReadHelloAsync(input);
                     var command = Attach("rejected", prepare: true);
                     if (wrongOwner) command.AttachRuntime!.OwnerToken = "wrong-owner";
@@ -39,8 +40,13 @@ public sealed class McpHostScopeIpcTests
                     Assert.Equal("rejected", result.Status);
                     Assert.Contains(wrongOwner ? "ownership" : "first command", result.Message!, StringComparison.Ordinal);
                     Assert.Null(await input.ReadLineAsync(timeout.Token));
+                    rejectionVerified = true;
                 }
-                finally { DisposeRejectedWriter(output); }
+                catch (IOException) when (rejectionVerified)
+                {
+                    // Only disposal after a verified response and EOF can reach
+                    // this filter; earlier transport failures must fail the test.
+                }
             }
         }
         finally
@@ -65,9 +71,10 @@ public sealed class McpHostScopeIpcTests
             await using (var unauthorized = await ConnectAsync(endpoint, ct))
             using (var reader = new StreamReader(unauthorized, Encoding.UTF8, leaveOpen: true))
             {
-                var writer = new StreamWriter(unauthorized, new UTF8Encoding(false), leaveOpen: true);
+                var rejectionVerified = false;
                 try
                 {
+                    using var writer = new StreamWriter(unauthorized, new UTF8Encoding(false), leaveOpen: true);
                     await AppServerControlHostTestClient.ReadHelloAsync(reader);
                     var bad = Attach("first", prepare: true);
                     bad.AttachRuntime!.OwnerToken = "wrong-owner";
@@ -75,8 +82,12 @@ public sealed class McpHostScopeIpcTests
                     var denied = await AppServerControlHostTestClient.ReadResultAsync(reader, new(), bad.CommandId);
                     Assert.Equal("rejected", denied.Status);
                     Assert.Contains("ownership", denied.Message!, StringComparison.Ordinal);
+                    rejectionVerified = true;
                 }
-                finally { DisposeRejectedWriter(writer); }
+                catch (IOException) when (rejectionVerified)
+                {
+                    // The server closes this rejected connection before disposal.
+                }
             }
 
             await using var stream = await ConnectAsync(endpoint, ct);
@@ -123,14 +134,6 @@ public sealed class McpHostScopeIpcTests
             await server.DisposeAsync();
             await serving.WaitAsync(ct);
         }
-    }
-
-    private static void DisposeRejectedWriter(StreamWriter writer)
-    {
-        // The server intentionally disconnects after its rejection; disposing an
-        // already-flushed named-pipe writer can report that expected broken pipe.
-        try { writer.Dispose(); }
-        catch (IOException) { }
     }
 
     private static AppServerControlHostCommandEnvelope Attach(string? thread, bool prepare, string? epoch = null) => new()
