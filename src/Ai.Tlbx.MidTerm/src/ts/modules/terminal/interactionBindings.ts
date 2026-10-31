@@ -15,9 +15,11 @@ import {
 import {
   handleClipboardPaste,
   handleNativeImagePaste,
+  pasteClipboardImageAsPath,
   sanitizeCopyContent,
   sanitizePasteContent,
 } from './fileDrop';
+import { getClipboardTransferImageFiles } from '../smartInput/appServerControlAttachments';
 import { getForegroundInfo, getProcessState } from '../process';
 import { evaluateTerminalKeyAudit, isModifierKeyOnlyEvent, isThirdLevelShift } from './keyAudit';
 import {
@@ -35,7 +37,6 @@ export interface TerminalInteractionBindings {
 }
 
 interface TerminalInteractionBindingArgs {
-  canUseAsyncClipboard: () => boolean;
   cancelTerminalInputEvent: (event: Event) => false;
   container: HTMLDivElement;
   getLegacyKeyboardNumbers: (event: KeyboardEvent) => {
@@ -68,7 +69,6 @@ interface TerminalInteractionBindingArgs {
 }
 
 export function bindTerminalInteractionHandlers({
-  canUseAsyncClipboard,
   cancelTerminalInputEvent,
   container,
   getLegacyKeyboardNumbers,
@@ -185,23 +185,6 @@ export function bindTerminalInteractionHandlers({
     return true;
   };
 
-  const tryHandlePasteShortcut = (event: KeyboardEvent): boolean => {
-    if (!isPasteShortcut(event)) {
-      return false;
-    }
-
-    if (canUseAsyncClipboard()) {
-      const foreground = getForegroundInfo(sessionId);
-      void handleClipboardPaste(sessionId, {
-        foregroundName: foreground.name,
-        foregroundCommandLine: foreground.commandLine,
-      });
-      return true;
-    }
-
-    return false;
-  };
-
   const tryHandleSearchShortcut = (event: KeyboardEvent): boolean => {
     if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
       showSearch();
@@ -307,7 +290,13 @@ export function bindTerminalInteractionHandlers({
       return;
     }
 
-    if (tryHandleImagePasteShortcut(event) || tryHandlePasteShortcut(event)) {
+    // A trusted browser paste carries its own text/files and does not require
+    // async clipboard permission (particularly inside a Link iframe).
+    if (isPasteShortcut(event)) {
+      return;
+    }
+
+    if (tryHandleImagePasteShortcut(event)) {
       markHandled(event);
       return;
     }
@@ -536,16 +525,7 @@ export function bindTerminalInteractionHandlers({
     }
 
     if (isPasteShortcut(event)) {
-      if (canUseAsyncClipboard()) {
-        const foreground = getForegroundInfo(sessionId);
-        void handleClipboardPaste(sessionId, {
-          foregroundName: foreground.name,
-          foregroundCommandLine: foreground.commandLine,
-        });
-        return false;
-      }
-
-      return true;
+      return false;
     }
 
     if (tryHandleSearchShortcut(event)) {
@@ -562,6 +542,11 @@ export function bindTerminalInteractionHandlers({
     event.stopImmediatePropagation();
 
     if (event.clipboardData) {
+      const image = getClipboardTransferImageFiles(event.clipboardData)[0];
+      if (image) {
+        void pasteClipboardImageAsPath(sessionId, { blob: image, type: image.type });
+        return;
+      }
       const text = event.clipboardData.getData('text/plain');
       if (text) {
         void pasteToTerminal(sessionId, sanitizePasteContent(text));

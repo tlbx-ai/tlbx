@@ -411,12 +411,12 @@ async function pasteClipboardText(sessionId: string): Promise<ClipboardPasteResu
   return 'none';
 }
 
-async function pasteClipboardImageAsPath(
+export async function pasteClipboardImageAsPath(
   sessionId: string,
   imageData: ClipboardImageData,
 ): Promise<ClipboardPasteResult> {
   const overlay = showTransferOverlay(sessionId, t('fileDrop.uploadingToTerminal'));
-  const file = buildClipboardImageFile(imageData);
+  const file = imageData.blob instanceof File ? imageData.blob : buildClipboardImageFile(imageData);
   try {
     const path = await uploadFile(sessionId, file, 'clipboard');
     if (!path) {
