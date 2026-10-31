@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Globalization;
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using Microsoft.Win32.SafeHandles;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
@@ -28,17 +30,22 @@ internal static partial class SessionProcessContext
     {
         try
         {
+            if (OperatingSystem.IsWindows())
+            {
+                // Process.Handle requests all access. A service may observe a
+                // live user terminal without having those unnecessary rights.
+                // Read the epoch and parent through one limited-query handle.
+                using var handle = OpenProcess(0x1000, false, pid);
+                if (handle.IsInvalid || !GetProcessTimes(handle, out var created, out var exited, out _, out _) || exited != 0) return null;
+                nint* info = stackalloc nint[6];
+                if (NtQueryInformationProcess(handle, 0, info, 6 * sizeof(nint), out _) != 0 ||
+                    *(int*)info != 259 /* STILL_ACTIVE */ || info[4] != pid) return null;
+                return (checked((int)info[5]), DateTime.FromFileTimeUtc(created));
+            }
             using var process = Process.GetProcessById(pid);
             var started = process.StartTime.ToUniversalTime();
             int parent;
-            if (OperatingSystem.IsWindows())
-            {
-                // PROCESS_BASIC_INFORMATION consists of six pointer-sized fields.
-                nint* info = stackalloc nint[6];
-                if (NtQueryInformationProcess(process.Handle, 0, info, 6 * sizeof(nint), out _) != 0) return null;
-                parent = checked((int)info[5]);
-            }
-            else if (OperatingSystem.IsLinux())
+            if (OperatingSystem.IsLinux())
             {
                 var stat = File.ReadAllText(string.Create(CultureInfo.InvariantCulture, $"/proc/{pid}/stat"));
                 var fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
@@ -70,18 +77,7 @@ internal static partial class SessionProcessContext
             string? command = null;
             if (OperatingSystem.IsWindows())
             {
-                NtQueryInformationProcess(process.Handle, 60, null, 0, out var length);
-                if (length <= 0 || length > 131072) return null;
-                var buffer = (byte*)NativeMemory.Alloc((nuint)length);
-                try
-                {
-                    if (NtQueryInformationProcess(process.Handle, 60, buffer, length, out _) != 0) return null;
-                    var bytes = *(ushort*)buffer;
-                    var text = *(nint*)(buffer + IntPtr.Size);
-                    if (text < (nint)buffer || text + bytes > (nint)buffer + length) return null;
-                    command = Marshal.PtrToStringUni(text, bytes / 2);
-                }
-                finally { NativeMemory.Free(buffer); }
+                command = ReadWindowsCommandLine(pid);
             }
             else if (OperatingSystem.IsLinux())
             {
@@ -115,6 +111,25 @@ internal static partial class SessionProcessContext
     internal static bool IsSharedCodexCommand(string command) =>
         IsSharedCodexArguments(SessionForegroundProcessService.Tokenize(command));
 
+    [SupportedOSPlatform("windows")]
+    internal static unsafe string? ReadWindowsCommandLine(int pid)
+    {
+        using var handle = OpenProcess(0x1000, false, pid);
+        if (handle.IsInvalid) return null;
+        NtQueryInformationProcess(handle, 60, null, 0, out var length);
+        if (length <= 0 || length > 131072) return null;
+        var buffer = (byte*)NativeMemory.Alloc((nuint)length);
+        try
+        {
+            if (NtQueryInformationProcess(handle, 60, buffer, length, out _) != 0) return null;
+            var bytes = *(ushort*)buffer;
+            var text = *(nint*)(buffer + IntPtr.Size);
+            if (text < (nint)buffer || text + bytes > (nint)buffer + length) return null;
+            return Marshal.PtrToStringUni(text, bytes / 2);
+        }
+        finally { NativeMemory.Free(buffer); }
+    }
+
     internal static bool IsSharedCodexArguments(IEnumerable<string> arguments) =>
         arguments.Skip(1).Any(static argument => argument is "app-server" or "--managed-daemon");
 
@@ -140,7 +155,14 @@ internal static partial class SessionProcessContext
     }
 
     [LibraryImport("ntdll.dll")]
-    private static unsafe partial int NtQueryInformationProcess(nint process, int infoClass, void* info, int length, out int returned);
+    private static unsafe partial int NtQueryInformationProcess(SafeProcessHandle process, int infoClass, void* info, int length, out int returned);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial SafeProcessHandle OpenProcess(uint access, [MarshalAs(UnmanagedType.Bool)] bool inherit, int pid);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static partial bool GetProcessTimes(SafeProcessHandle process, out long creation, out long exit, out long kernel, out long user);
 
     [LibraryImport("libproc", EntryPoint = "proc_pidinfo")]
     private static unsafe partial int ProcPidInfo(int pid, int flavor, ulong arg, void* buffer, int size);

@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Services.Mcp;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -241,7 +242,14 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             {
                 state = TlbxMcpIsolatedProcessTool.ReadState(state.RunDirectory)!;
                 if (state.CompletedAt is not null && !File.Exists(Path.Combine(state.RunDirectory, "launch.json"))) break;
-                await Task.Delay(50, ct);
+                try { await Task.Delay(50, ct); }
+                catch (OperationCanceledException error) when (!TestContext.Current.CancellationToken.IsCancellationRequested)
+                {
+                    var worker = SessionProcessContext.ReadProcess(state.WorkerPid);
+                    var target = SessionProcessContext.ReadProcess(state.TargetPid);
+                    throw new TimeoutException(FormattableString.Invariant(
+                        $"Native worker completion timed out: state={JsonSerializer.Serialize(state, IsolatedProcessJsonContext.Default.IsolatedRunState)}; launchSpecPresent={File.Exists(Path.Combine(state.RunDirectory, "launch.json"))}; gatePresent={File.Exists(gate)}; workerEpochLive={worker?.Started.Ticks == state.WorkerStartedTicks}; targetEpochLive={target?.Started.Ticks == state.TargetStartedTicks}"), error);
+                }
             }
             Assert.Null(state.Error);
             Assert.Equal(0, state.ExitCode);

@@ -202,6 +202,13 @@ runs the native stdio HTTPS artifact/export and detached-process lifetime fixtur
 These checks cover native identity and transport, not real-provider or
 rendered terminal acceptance. The Windows suite skips this macOS-only fixture.
 The current Windows NativeAOT publish and standalone boot probe also passed.
+The first real SYSTEM/private-user fixture emitted the Codex terminal challenges
+but rejected both callers with `no-candidates`. Windows process metadata and
+command-line reads now use limited-query handles instead of requesting full
+process access. Epoch and parent are read from one handle; exited processes,
+including exit code 259, remain rejected. A restricted disposable-process DACL
+regression reproduces the former failure. The corrected SYSTEM model run is
+still pending; unchanged profile ACLs and the failed-run evidence are retained.
 Remaining evidence includes installed service/user model calls,
 rendered browser workflows, macOS runtime acceptance, final release checks
 and a verified dev release. Callback protocol checks exercise a real local child
