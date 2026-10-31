@@ -4,7 +4,7 @@
  * REST wrappers for session-scoped, named web preview contexts.
  */
 
-import { getOrCreateTabId } from '../../utils/cookies';
+import { getOrCreateClientId, getOrCreateTabId } from '../../utils/cookies';
 import { getConnectPreviewIntegration } from './connectPreview';
 
 export interface WebPreviewSessionInfo {
@@ -303,7 +303,7 @@ export async function createBrowserPreviewClient(
   try {
     const res = await fetch(apiUrl('/api/browser/preview-client'), {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-MidTerm-Client-Id': getOrCreateClientId() },
       body: JSON.stringify({ sessionId, previewName, tabId }),
     });
     if (!res.ok) {

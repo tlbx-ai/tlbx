@@ -52,6 +52,17 @@ function createStorage(initialTabId?: string): Storage {
 }
 
 describe('browser tab identity', () => {
+  it('keeps one in-memory profile identity when cookies cannot be stored', async () => {
+    const cookieDocument = {};
+    Object.defineProperty(cookieDocument, 'cookie', { get: () => '', set: vi.fn() });
+    vi.stubGlobal('document', cookieDocument);
+    const randomUUID = vi.fn(() => 'ae34f137-9fe1-439c-b985-7d46077fe644');
+    vi.stubGlobal('crypto', { randomUUID });
+    const { getOrCreateClientId } = await import('./cookies');
+    expect(getOrCreateClientId()).toBe(getOrCreateClientId());
+    expect(randomUUID).toHaveBeenCalledOnce();
+  });
+
   beforeEach(() => {
     vi.useFakeTimers();
     vi.resetModules();

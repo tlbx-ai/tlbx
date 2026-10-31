@@ -3,12 +3,56 @@ using System.Runtime.InteropServices;
 using Ai.Tlbx.MidTerm.Services.Connect;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Services;
+using Microsoft.AspNetCore.Http;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class ConnectProtocolTests
 {
+    [Fact]
+    public void CookieFreePeerKeepsOneBrowserAcrossStateMuxAndHttpInput()
+    {
+        const string clientId = "ae34f137-9fe1-439c-b985-7d46077fe644";
+        const string fallback = "25fb48fe-a263-4d14-b384-f287d6600a83";
+        var origin = new Uri("https://127.0.0.1:2100/");
+        var identities = new List<string>();
+        foreach (var path in new[] { "/ws/state", "/ws/mux", "/api/sessions/fixture/input" })
+        {
+            var socket = path.StartsWith("/ws/", StringComparison.Ordinal);
+            var destination = new Uri(origin, path + (socket ? $"?tabId=tab-a&clientId={clientId}" : ""));
+            var headers = socket ? null : new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["x-midterm-client-id"] = clientId,
+                [BrowserIdentity.TabIdHeader] = "tab-a"
+            };
+            var context = new DefaultHttpContext();
+            context.Request.Headers.Cookie = ConnectRequestPolicy.BuildNativeCookie("host-owned-token", fallback, destination, headers);
+            context.Request.QueryString = new QueryString(destination.Query);
+            if (!socket) context.Request.Headers[BrowserIdentity.TabIdHeader] = "tab-a";
+            identities.Add(socket ? BrowserIdentity.BuildFromRequest(context.Request) : BrowserIdentity.TryBuildFromBrowserRequest(context.Request)!);
+            Assert.Equal("host-owned-token", context.Request.Cookies[AuthService.SessionCookieName]);
+        }
+        Assert.All(identities, identity => Assert.Equal($"{clientId}:tab-a", identity));
+        Assert.True(BrowserIdentity.AreSameBrowser(identities[0], $"{clientId}:tab-b"));
+        Assert.False(BrowserIdentity.AreSameBrowser(identities[0], $"{fallback}:tab-a"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("not-a-uuid")]
+    [InlineData("ae34f137-9fe1-439c-b985-7d46077fe644; mt-session=peer-token")]
+    public void PeerIdentityCannotSupplyACookieOrReplaceHostAuthentication(string? identity)
+    {
+        const string fallback = "25fb48fe-a263-4d14-b384-f287d6600a83";
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Cookie"] = "mt-session=peer-token", ["X-MidTerm-Client-Id"] = identity ?? "" };
+        var context = new DefaultHttpContext();
+        context.Request.Headers.Cookie = ConnectRequestPolicy.BuildNativeCookie("host-owned-token", fallback, new Uri("https://127.0.0.1:2100/api/version"), headers);
+        Assert.Equal("host-owned-token", context.Request.Cookies[AuthService.SessionCookieName]);
+        Assert.Equal(fallback, context.Request.Cookies["mt-client-id"]);
+        Assert.False(ConnectRequestPolicy.AllowHeader("Cookie"));
+    }
+
     [Fact]
     public void ManagedInteropStructuresMatchThePinnedCAbi()
     {
