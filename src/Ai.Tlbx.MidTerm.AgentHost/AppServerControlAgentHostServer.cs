@@ -20,6 +20,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private TtyHostGitRepoMetadata[] _gitRepos = [];
     private ConnectionState? _currentClient;
     private IAppServerControlAgentRuntime? _runtime;
+    private readonly AppServerControlMcpRuntimeScope _mcpScope = new();
     private readonly List<Task> _connectionTasks = [];
 
     public AppServerControlAgentHostServer(string? syntheticProvider, string? ownerInstanceId = null, string? ownerToken = null)
@@ -189,12 +190,14 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 if (!string.Equals(command.Type, "runtime.attach", StringComparison.Ordinal))
                 {
                     await EnqueueRejectedAsync(connection, command, "runtime.attach must be the first command sent to mtagenthost.").ConfigureAwait(false);
+                    await connection.DrainOutboundAsync().ConfigureAwait(false);
                     break;
                 }
 
                 if (requireOwnership && !ValidateOwnership(command.AttachRuntime))
                 {
                     await EnqueueRejectedAsync(connection, command, "mtagenthost ownership mismatch").ConfigureAwait(false);
+                    await connection.DrainOutboundAsync().ConfigureAwait(false);
                     break;
                 }
 
@@ -220,6 +223,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             }
             catch (Exception ex)
             {
+                if (command.Type == "runtime.attach") _mcpScope.Invalidate();
                 outcome = new HostCommandOutcome
                 {
                     Result = new AppServerControlHostCommandResultEnvelope
@@ -236,6 +240,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 StoreRuntimeEvent(appServerControlEvent);
             }
+            outcome.Result.McpScopeIdentity = _mcpScope.Identity;
+            outcome.Result.McpProviderThreadId = _mcpScope.ThreadId;
             await EnqueueAsync(connection, outcome.Result, AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope).ConfigureAwait(false);
         }
     }
@@ -243,6 +249,31 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private async Task<HostCommandOutcome> ExecuteCommandAsync(AppServerControlHostCommandEnvelope command)
     {
         ValidateCommand(command);
+
+        if (command.Type == "runtime.attach" && command.AttachRuntime is { } attach)
+        {
+            if (attach.McpPrepareOnly)
+            {
+                // A replacement Web client has no cached provider thread. The
+                // surviving owned runtime does; implicit reattach must retain it.
+                var threadId = attach.ResumeThreadId ?? attach.AttachPoint?.PreferredThreadId;
+                if (string.IsNullOrEmpty(threadId) && string.Equals(_runtime?.Provider, attach.Provider, StringComparison.Ordinal))
+                    threadId = _mcpScope.ThreadId;
+                _mcpScope.Prepare(threadId,
+                    string.IsNullOrEmpty(threadId) && attach.AttachPoint is null,
+                    string.Join('\n', attach.Provider, attach.RuntimeKind, attach.AttachPoint?.Endpoint, attach.ExecutablePath));
+                return new HostCommandOutcome
+                {
+                    Result = new AppServerControlHostCommandResultEnvelope
+                    {
+                        CommandId = command.CommandId, SessionId = command.SessionId, Status = "accepted",
+                        McpScopeIdentity = _mcpScope.Identity
+                    }
+                };
+            }
+            if (attach.McpServer is { } mcp && !string.Equals(mcp.ScopeIdentity, _mcpScope.Identity, StringComparison.Ordinal))
+                throw new InvalidOperationException("TLBX_MCP_SCOPE_CHANGED: The host runtime scope changed before MCP registration; prepare fresh credentials.");
+        }
 
         if (string.Equals(command.Type, "history.window.get", StringComparison.Ordinal))
         {
@@ -390,12 +421,14 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 HostKind = "mtagenthost",
                 HostVersion = "dev",
+                McpScopeIdentity = _mcpScope.Identity,
                 Providers = _syntheticProvider is null
                     ? ["codex", "claude-agent-sdk", "opencode-http", "acp-v1"]
                     : [_syntheticProvider],
                 Capabilities =
                 [
                     "attach",
+                    "mcp.scope.prepare",
                     "turn.start",
                     "turn.steer",
                     "turn.interrupt",
@@ -545,6 +578,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     private void StoreRuntimeEvent(AppServerControlProviderEvent appServerControlEvent)
     {
         ArgumentNullException.ThrowIfNull(appServerControlEvent);
+        _mcpScope.Observe(appServerControlEvent);
         _history.Append(CloneEvent(appServerControlEvent));
     }
 
@@ -569,6 +603,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                                 new AppServerControlHostHistoryPatchEnvelope
                                 {
                                     SessionId = sessionId,
+                                    McpScopeIdentity = _mcpScope.Identity,
                                     Patch = delta
                                 },
                                 AppServerControlHostJsonContext.Default.AppServerControlHostHistoryPatchEnvelope));
@@ -800,6 +835,16 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         public string? SessionId { get; private set; }
         public bool HistoryPatchForwarderStarted { get; set; }
         public Task? HistoryPatchForwarder { get; set; }
+
+        // Rejected handshakes close immediately. Drain their queued response before
+        // Dispose cancels the writer; enqueueing alone does not flush the IPC stream.
+        public async Task DrainOutboundAsync()
+        {
+            Outbound.Writer.TryComplete();
+            try { await WriterTask.WaitAsync(TimeSpan.FromSeconds(1), Token).ConfigureAwait(false); }
+            catch (OperationCanceledException) { }
+            catch (TimeoutException) { }
+        }
 
         public bool TryBindSession(string sessionId)
         {

@@ -63,13 +63,15 @@ public sealed class SessionCallerIdentityTests
         Assert.Equal(original.ImpersonationLevel, restored.ImpersonationLevel);
     }
 
-    [Fact]
-    public async Task EndedCallerCannotRunUserStateOperation()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(259)]
+    public async Task EndedCallerCannotRunUserStateOperation(int exitCode)
     {
         if (!OperatingSystem.IsWindows()) return;
         using var child = Process.Start(new ProcessStartInfo("cmd.exe")
         {
-            Arguments = "/c exit 0", UseShellExecute = false, CreateNoWindow = true,
+            Arguments = string.Create(CultureInfo.InvariantCulture, $"/c exit {exitCode}"), UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true
         })!;
         await child.WaitForExitAsync(Xunit.TestContext.Current.CancellationToken);

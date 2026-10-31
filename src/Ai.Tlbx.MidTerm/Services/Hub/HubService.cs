@@ -241,12 +241,14 @@ public sealed class HubService
 
     public async Task<ControlPlaneSnapshotResponse> GetControlPlaneAsync(
         string machineId,
+        int workLimit = 100,
+        int checkpointLimit = 30,
         CancellationToken ct = default)
     {
         var machine = GetRequiredMachine(machineId);
         await using var remote = await CreateRemoteContextAsync(machine, requireTrusted: true, ct);
         return await remote.Client.GetFromJsonAsync(
-            "/api/control-plane",
+            $"/api/control-plane?workLimit={workLimit.ToString(CultureInfo.InvariantCulture)}&checkpointLimit={checkpointLimit.ToString(CultureInfo.InvariantCulture)}",
             AppJsonContext.Default.ControlPlaneSnapshotResponse,
             ct) ?? new ControlPlaneSnapshotResponse();
     }

@@ -51,6 +51,20 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         _states.Values.Where(state => state.HostPid > 0)
             .Select(state => new KeyValuePair<int, string>(state.HostPid, state.SessionId));
 
+    private Func<string, int, AppServerControlMcpServer?>? _mcpServerFactory;
+
+    // Installed after server/auth initialization to avoid the hosts -> context -> hosts DI cycle.
+    internal void ConfigureMcp(Func<string, int, AppServerControlMcpServer?> factory) => _mcpServerFactory = factory;
+
+    internal IEnumerable<(int ProcessId, string SessionId, string ScopeIdentity)> GetMcpProcessContextRoots() =>
+        _states.Values.Where(state => state.HostPid > 0 && !string.IsNullOrEmpty(state.McpScopeIdentity) &&
+            // Model failures affect presentation status, not runtime identity.
+            // A live IPC reader is required so disconnected hosts cannot retain
+            // stale authority while their canonical scope changes unseen.
+            state.Status != HostRuntimeStatus.Stopped && state.Input is not null && state.Output is not null &&
+            state.ReaderTask is { IsCompleted: false })
+            .Select(state => (state.HostPid, state.SessionId, state.McpScopeIdentity!));
+
     public SessionAppServerControlHostRuntimeService(
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,
@@ -371,14 +385,14 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 }
             }
 
-            var attachResult = await SendCommandAsync(
-                state,
-                commandId => new AppServerControlHostCommandEnvelope
-                {
-                    CommandId = commandId,
-                    SessionId = sessionId,
-                    Type = "runtime.attach",
-                    AttachRuntime = new AppServerControlAttachRuntimeRequest
+            // Trusted hello supplies the host-owned epoch before native MCP startup.
+            // A backend death while Web was disconnected changes the next hello too.
+            if (_mcpServerFactory is not null && string.IsNullOrEmpty(state.McpScopeIdentity))
+                throw new InvalidOperationException("TLBX_MCP_HOST_UPDATE_REQUIRED: This AgentHost does not advertise a live MCP runtime scope; update the host before configuring MCP.");
+            state.Status = HostRuntimeStatus.Starting;
+            // Native provider attach verifies actual MCP binding. Loaded Codex threads
+            // require a scoped idle unsubscribe/resume before new config can take effect.
+            AppServerControlAttachRuntimeRequest CreateAttach() => new()
                     {
                         SessionId = sessionId,
                         Provider = profile,
@@ -395,9 +409,41 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                         AuthenticationMethodId = acpAgent?.AuthenticationMethodId,
                         UserProfileDirectory = preferredProfileDirectory,
                         ResumeThreadId = resumeThreadIdOverride ?? session.AppServerControlResumeThreadId ?? attachPoint?.PreferredThreadId
-                    }
-                },
-                ct).ConfigureAwait(false);
+                    };
+            AppServerControlHostCommandEnvelope AttachCommand(string commandId, AppServerControlAttachRuntimeRequest request) => new()
+            {
+                CommandId = commandId, SessionId = sessionId, Type = "runtime.attach", AttachRuntime = request
+            };
+            AppServerControlHostCommandResultEnvelope attachResult;
+            for (var attempt = 0; ; attempt++)
+            {
+                var request = CreateAttach();
+                if (attempt > 0 && !string.IsNullOrEmpty(state.McpProviderThreadId)) request.ResumeThreadId = state.McpProviderThreadId;
+                if (_mcpServerFactory is not null)
+                {
+                    var prepare = CreateAttach();
+                    prepare.ResumeThreadId = request.ResumeThreadId;
+                    prepare.McpPrepareOnly = true;
+                    var prepared = await SendCommandAsync(state, id => AttachCommand(id, prepare), ct).ConfigureAwait(false);
+                    if (string.IsNullOrEmpty(prepared.McpScopeIdentity))
+                        throw new InvalidOperationException("TLBX_MCP_HOST_UPDATE_REQUIRED: The host did not prepare a runtime scope.");
+                    request.ResumeThreadId ??= prepared.McpProviderThreadId;
+                    request.McpServer = _mcpServerFactory.Invoke(sessionId, state.HostPid);
+                    if (request.McpServer is not null) request.McpServer.ScopeIdentity = prepared.McpScopeIdentity;
+                }
+                try
+                {
+                    attachResult = await SendCommandAsync(state, id => AttachCommand(id, request), ct).ConfigureAwait(false);
+                }
+                catch (InvalidOperationException error) when (attempt == 0 && request.McpServer is not null &&
+                    error.Message.StartsWith("TLBX_MCP_SCOPE_CHANGED:", StringComparison.Ordinal))
+                {
+                    continue; // Identity-only attach; no model turn or application mutation was dispatched.
+                }
+                if (request.McpServer is null || string.Equals(request.McpServer.ScopeIdentity, attachResult.McpScopeIdentity, StringComparison.Ordinal)) break;
+                if (attempt > 0)
+                    throw new InvalidOperationException("TLBX_MCP_SCOPE_CHANGED: The canonical runtime changed again during MCP registration.");
+            }
 
             state.Status = attachResult.Status == "accepted" ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
             state.LastError = attachResult.Status == "accepted" ? null : attachResult.Message;
@@ -405,8 +451,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             {
                 state.TransportKey = attachPoint?.TransportKind ?? "mtagenthost-ipc";
                 state.TransportLabel = DescribeTransportLabel(_mode, profile, attachPoint);
-                _ownershipRegistry.Upsert(sessionId, state.HostPid, profile, workingDirectory);
                 await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
+                _ownershipRegistry.Upsert(sessionId, state.HostPid, profile, workingDirectory);
             }
             return attachResult.Status == "accepted";
         }
@@ -978,6 +1024,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                         continue;
                     }
 
+                    state.McpScopeIdentity = patchEnvelope.McpScopeIdentity;
                     ApplyHistoryPatchToState(state, patchEnvelope.Patch);
                     continue;
                 }
@@ -991,6 +1038,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                         continue;
                     }
 
+                    state.McpScopeIdentity = result.McpScopeIdentity;
+                    if (!string.IsNullOrEmpty(result.McpProviderThreadId)) state.McpProviderThreadId = result.McpProviderThreadId;
                     if (state.PendingCommands.TryRemove(commandId, out var pending))
                     {
                         pending.TrySetResult(result);
@@ -1061,7 +1110,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             // an ACP cancel must settle before steering can submit its replacement prompt.
             var timeout = command.Type switch
             {
-                "runtime.attach" or "turn.start" => TimeSpan.FromSeconds(60),
+                "runtime.attach" => TimeSpan.FromSeconds(120),
+                "turn.start" => TimeSpan.FromSeconds(60),
                 "turn.steer" => TimeSpan.FromSeconds(90),
                 "turn.interrupt" => TimeSpan.FromSeconds(20),
                 _ => CommandTimeout
@@ -1174,6 +1224,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             var hello = JsonSerializer.Deserialize(helloLine, AppServerControlHostJsonContext.Default.AppServerControlHostHello)
                         ?? throw new InvalidOperationException("App Server Controller host hello payload was empty.");
             ValidateHello(hello);
+            if (_mcpServerFactory is not null && !hello.Capabilities.Contains("mcp.scope.prepare", StringComparer.Ordinal))
+                throw new InvalidOperationException("TLBX_MCP_HOST_UPDATE_REQUIRED: The host does not support preparing MCP runtime scopes.");
+            state.McpScopeIdentity = hello.McpScopeIdentity;
 
             state.AttachOwnedConnection(connection);
             attached = true;
@@ -1336,6 +1389,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         state.LastError = cachedHistory.Session.LastError ?? state.LastError;
         state.Status = ResolveRuntimeStatus(cachedHistory);
+        var providerThreadId = cachedHistory.Thread.ThreadId;
+        if (!string.IsNullOrEmpty(providerThreadId)) state.McpProviderThreadId = providerThreadId;
     }
 
     private static HostRuntimeStatus ResolveRuntimeStatus(AppServerControlHistoryWindowResponse historyWindow)
@@ -2146,6 +2201,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         state.Status = HostRuntimeStatus.Stopped;
         state.HostPid = 0;
+        state.McpScopeIdentity = null;
+        state.McpProviderThreadId = null;
     }
 
     private static void CompleteHistorySubscribers(HostRuntimeState state)
@@ -2211,6 +2268,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public string? LastError { get; set; }
         public HostRuntimeStatus Status { get; set; }
         public int HostPid { get; set; }
+        public string? McpScopeIdentity { get; set; }
+        public string? McpProviderThreadId { get; set; }
         public HostTransportConnection? Connection { get; private set; }
         public Process? Process { get; private set; }
         public StreamWriter? Input { get; private set; }
