@@ -138,8 +138,8 @@ jobs:
         # Match macOS release builds: existing Unix host analyzer warnings stay visible.
         # This job gates actual process identity; the Windows contracts retain WarnAsError.
         run: dotnet build src/Ai.Tlbx.MidTerm.UnitTests -c Release -p:SkipFrontendBuild=true -p:SkipConnectNativeBuild=true
-      - name: Verify actual macOS argv, ancestry, epochs and private/shared binding
-        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net10.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' --report-trx --results-directory .artifacts/macos-context
+      - name: Verify macOS identity and native stdio artifact/process workflows
+        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net10.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' '*TlbxMcpNativeProcessLifetimeTests' --report-trx --results-directory .artifacts/macos-context
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

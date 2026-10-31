@@ -189,13 +189,17 @@ Completed TUI fixtures and their isolated daemon have been stopped.
 Backend classification now preserves argument boundaries on Linux/macOS and
 uses the existing command-line tokenizer on Windows. macOS reads KERN_PROCARGS2
 and stops at argc, excluding environment entries. Decoder regressions cover
-Unicode, empty arguments and truncation; a real macOS runtime is still needed
-to verify that platform's native syscall and terminal binding end to end.
+Unicode, empty arguments and truncation. A real macOS arm64 CI run has passed
+the native syscall and process-binding fixture; full provider/terminal acceptance
+on that platform remains open.
 The PR macOS identity job now compiles a temporary native `codex` probe and
 exercises actual `sysctl`/`proc_pidinfo` calls, Unicode executable paths, empty
 arguments, environment exclusion, child ancestry and process start epochs.
 Private children must bind immediately; shared backends must require fresh
-terminal proof. Its result is a native identity check, not real-provider or
+terminal proof. The same real processes exercise MCP credential binding,
+renewal, rejection of a different caller and explicit revocation. The job also
+runs the native stdio HTTPS artifact/export and detached-process lifetime fixture.
+These checks cover native identity and transport, not real-provider or
 rendered terminal acceptance. The Windows suite skips this macOS-only fixture.
 The current Windows NativeAOT publish and standalone boot probe also passed.
 Remaining evidence includes installed service/user model calls,

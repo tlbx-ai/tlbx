@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Cryptography;
+using Ai.Tlbx.MidTerm.Services.Mcp;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
 
@@ -84,6 +86,24 @@ public sealed class MacSessionProcessContextTests
                     var result = context.Resolve(thread, thread, child.Id);
                     if (shared) Assert.Contains("TLBX_CONTEXT_UNBOUND", result, StringComparison.Ordinal);
                     else Assert.StartsWith("first001:", result, StringComparison.Ordinal);
+
+                    // Exercise MCP's own credential path with the same real syscalls.
+                    // Shared ancestry may discover the backend but cannot grant a session.
+                    var key = RandomNumberGenerator.GetBytes(32);
+                    var credentials = new TlbxMcpClientContextService(
+                        () => [new("first001", process.Id, Environment.ProcessId, "terminal")],
+                        SessionProcessContext.ReadProcess, () => key, TimeProvider.System,
+                        SessionProcessContext.IsSharedCodexBackend);
+                    var granted = credentials.Bind(child.Id);
+                    Assert.Equal(shared ? "discovery" : "runtime", granted.Mode);
+                    Assert.Equal(shared ? null : "first001", granted.SessionId);
+                    Assert.Equal(granted.SessionId, credentials.Validate(granted.ContextToken)!.SessionId);
+                    Assert.Throws<InvalidOperationException>(() => credentials.Renew(granted.ContextToken, Environment.ProcessId));
+                    var renewed = credentials.Renew(granted.ContextToken, child.Id);
+                    Assert.Equal(granted.SessionId, credentials.Validate(renewed.ContextToken)!.SessionId);
+                    credentials.RevokeRuntime(shared ? child.Id : process.Id);
+                    Assert.Null(credentials.Validate(granted.ContextToken));
+                    Assert.Null(credentials.Validate(renewed.ContextToken));
                 }
                 finally
                 {
