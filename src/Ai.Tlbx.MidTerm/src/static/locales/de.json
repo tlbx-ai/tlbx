@@ -662,6 +662,7 @@
   "fileDrop.fileTooLarge": "Datei zu groß (max. 40KB)",
   "fileDrop.failedToRead": "Lesen fehlgeschlagen",
   "fileDrop.clipboardFailed": "Zwischenablage-Einfügung fehlgeschlagen",
+  "fileDrop.clipboardUseKeyboard": "Füge Text oder ein Bild mit Strg+V ein (auf dem Mac: Cmd+V).",
   "fileDrop.dropToUpload": "Datei zum Hochladen ablegen",
   "fileDrop.uploadingToTerminal": "Wird ins Terminal hochgeladen...",
   "fileDrop.transferringToTerminal": "Wird ins Terminal übertragen...",

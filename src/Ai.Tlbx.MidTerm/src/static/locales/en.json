@@ -902,6 +902,7 @@
   "fileDrop.fileTooLarge": "File too large (max 40KB)",
   "fileDrop.failedToRead": "Failed to read",
   "fileDrop.clipboardFailed": "Clipboard injection failed",
+  "fileDrop.clipboardUseKeyboard": "Paste text or an image with Ctrl+V (Cmd+V on Mac).",
   "fileDrop.dropToUpload": "Drop file to upload",
   "fileDrop.uploadingToTerminal": "Uploading to terminal...",
   "fileDrop.transferringToTerminal": "Transferring into terminal...",

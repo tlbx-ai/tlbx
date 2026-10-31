@@ -372,16 +372,12 @@ async function readClipboardImageData(): Promise<ClipboardImageData | null> {
     return null;
   }
 
-  try {
-    const items = await navigator.clipboard.read();
-    for (const item of items) {
-      const imageType = item.types.find((t) => t.startsWith('image/'));
-      if (!imageType) continue;
-      const blob = await item.getType(imageType);
-      return { blob, type: imageType };
-    }
-  } catch {
-    // clipboard.read() failed (permission denied / blocked / unsupported)
+  const items = await navigator.clipboard.read();
+  for (const item of items) {
+    const imageType = item.types.find((t) => t.startsWith('image/'));
+    if (!imageType) continue;
+    const blob = await item.getType(imageType);
+    return { blob, type: imageType };
   }
 
   return null;
@@ -405,7 +401,8 @@ async function pasteClipboardText(sessionId: string): Promise<ClipboardPasteResu
       return 'text';
     }
   } catch {
-    // clipboard.readText() failed (permission denied / blocked / unsupported)
+    showDropToast(t('fileDrop.clipboardUseKeyboard'));
+    return 'unavailable';
   }
 
   return 'none';
@@ -658,7 +655,8 @@ export async function handleClipboardPaste(
     return 'unavailable';
   }
 
-  const imageData = await readClipboardImageData();
+  // Some browsers permit reading plain text but block the richer read API.
+  const imageData = await readClipboardImageData().catch(() => null);
   if (imageData) {
     return pasteClipboardImageAsPath(sessionId, imageData);
   }
@@ -687,7 +685,14 @@ export async function handleNativeImagePaste(
     return 'unavailable';
   }
 
-  const imageData = await readClipboardImageData();
-  if (!imageData) return 'none';
-  return pasteClipboardImageAsPath(sessionId, imageData);
+  try {
+    const imageData = await readClipboardImageData();
+    if (!imageData) return 'none';
+    return await pasteClipboardImageAsPath(sessionId, imageData);
+  } catch {
+    // A blocked read is not evidence of an empty clipboard. In particular,
+    // don't fall back to an Alt+V on the target computer's different clipboard.
+    showDropToast(t('fileDrop.clipboardUseKeyboard'));
+    return 'unavailable';
+  }
 }

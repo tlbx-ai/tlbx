@@ -623,6 +623,7 @@
   "fileDrop.fileTooLarge": "Файл слишком большой (макс. 40КБ)",
   "fileDrop.failedToRead": "Не удалось прочитать",
   "fileDrop.clipboardFailed": "Ошибка вставки из буфера обмена",
+  "fileDrop.clipboardUseKeyboard": "Вставьте текст или изображение с помощью Ctrl+V (Cmd+V на Mac).",
   "fileDrop.dropToUpload": "Перетащите файл для загрузки",
   "fileDrop.uploadingToTerminal": "Загрузка в терминал...",
   "fileDrop.transferringToTerminal": "Передача в терминал...",
