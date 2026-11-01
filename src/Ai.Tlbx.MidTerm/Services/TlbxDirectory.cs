@@ -158,8 +158,9 @@ public static class TlbxDirectory
     {
         try
         {
-            WriteIfOutdated(Path.Combine(tlbxDir, "CLAUDE.md"));
-            WriteIfOutdated(Path.Combine(tlbxDir, "AGENTS.md"));
+            WriteIfOutdated(Path.Combine(tlbxDir, "CLAUDE.md"), GuidanceContent, GuidanceMarker);
+            WriteIfOutdated(Path.Combine(tlbxDir, "AGENTS.md"), GuidanceContent, GuidanceMarker);
+            WriteIfOutdated(Path.Combine(tlbxDir, "CLI-FALLBACK.md"), CliFallbackContent, CliFallbackMarker);
         }
         catch (Exception ex)
         {
@@ -227,9 +228,8 @@ public static class TlbxDirectory
         }
     }
 
-    private static void WriteIfOutdated(string path)
+    private static void WriteIfOutdated(string path, string content, string marker)
     {
-        var marker = GuidanceMarker;
         if (File.Exists(path))
         {
             var existing = File.ReadAllText(path);
@@ -237,13 +237,15 @@ public static class TlbxDirectory
                 return;
         }
 
-        File.WriteAllText(path, marker + "\n" + GuidanceContent);
+        File.WriteAllText(path, marker + "\n" + content);
     }
 
     // The stamp is derived from the content itself so any guidance edit
     // refreshes previously written files without a hand-bumped version.
     private static readonly string GuidanceMarker =
         $"<!-- tlbx-guidance: {Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(GuidanceContent)))[..16]} -->";
+    private static readonly string CliFallbackMarker =
+        $"<!-- tlbx-guidance: {Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(CliFallbackContent)))[..16]} -->";
 
     private const string GuidanceContent =
         """
@@ -289,15 +291,22 @@ public static class TlbxDirectory
         | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`process_run_isolated`) |
         | `*.ps1`, `*.sh` | Saved command scripts and deprecated CLI fallback helpers |
         | `CLAUDE.md`, `AGENTS.md` | This guide — identical AI agent guidance |
+        | `CLI-FALLBACK.md` | Full deprecated CLI reference; read only for a concrete fallback need |
 
-        <details>
-        <summary>Deprecated CLI fallback reference — planned for removal</summary>
+        ## CLI fallback only
 
-        The remaining command reference applies only when the MCP fallback conditions above are met. Existing helpers remain functional during this transition.
+        Read [CLI-FALLBACK.md](CLI-FALLBACK.md) only when the MCP fallback conditions above are met. Existing helpers remain functional during this transition. Do not load the full CLI reference for normal MCP work.
 
         Source the fallback once per shell session when needed:
         - bash/zsh: `. .tlbx/tlbx_cli.sh`
         - PowerShell: `. .tlbx/tlbx_cli.ps1`
+        """;
+
+    private const string CliFallbackContent =
+        """
+        # Deprecated tlbx CLI fallback — planned for removal
+
+        Auto-generated fallback reference. Use native tlbx MCP first, following [AGENTS.md](AGENTS.md). Read this file only when MCP is unavailable, an operation is missing/broken, or the user explicitly requests CLI. Report the concrete MCP gap. Inspect uncertain mutations before any replay through another transport.
 
         ## Tmux Split Panes
 
@@ -663,7 +672,5 @@ public static class TlbxDirectory
         - Scoped browser commands and status use the same exact preview owner. Focus, visibility, global main-browser selection and newer connections never redirect them; use `mt_claim_preview --browser <browserId>` for handoff.
         - If mt_open returns "No tlbx browser UI is connected", there is no live browser tab attached to /ws/state
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
-
-        </details>
         """;
 }

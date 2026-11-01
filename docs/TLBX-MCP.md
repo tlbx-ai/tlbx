@@ -259,6 +259,8 @@ Callback protocol checks exercise a real local child request into the browser
 bridge with its selected session and fresh preview, completion waiting,
 unchanged parent environment and cleanup after a later error. Real macOS
 provider/terminal acceptance and final protected release checks remain open.
-Generated guidance promotes MCP and places the deprecated CLI reference behind
-the fallback section. Keep existing fallback implementations working until their
+Generated `AGENTS.md`/`CLAUDE.md` promote MCP and link to a separate
+`CLI-FALLBACK.md`, so normal agent read-in does not load the long legacy command
+reference. Read that file only for a concrete fallback need.
+Keep existing fallback implementations working until their
 removal; put new agent workflows on MCP.
