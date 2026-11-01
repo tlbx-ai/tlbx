@@ -38,7 +38,7 @@ internal static class TlbxMcpEndpoints
         services.AddMcpServer(options =>
         {
             options.ServerInfo = new() { Name = "TLBX MCP", Version = Startup.CliCommands.GetVersion() };
-            options.ServerInstructions = "Use context_get to inspect verified self before session-scoped work. Explicit operator mode has no self: name targetSessionId where required. Browser previews belong to their session; select previewName explicitly and never silently claim another owner. Arguments are structured JSON: preserve literal text, newlines, paths and provider options. Mutations execute once; a timeout or lost connection is not permission to replay. The maintained CLI remains available until MCP parity is proven.";
+            options.ServerInstructions = "Use native tlbx MCP as the primary interface. Use context_get to inspect verified self before session-scoped work. Explicit operator mode has no self: name targetSessionId where required. Browser previews belong to their session; select previewName explicitly and never silently claim another owner. Arguments are structured JSON: preserve literal text, newlines, paths and provider options. Mutations execute once; a timeout or lost connection is not permission to replay. The generated CLI is a deprecated transitional fallback planned for removal soon. Use it only when MCP is unavailable or a required operation is missing or broken; report the gap. Inspect uncertain mutations before switching transports.";
         }).WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
           // Named arguments select the SDK's non-reflective tool-instance overload.
           .WithTools(tools: tools)

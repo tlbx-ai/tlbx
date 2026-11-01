@@ -47,6 +47,7 @@ public static class TlbxCliScriptWriter
         #!/bin/bash
         # tlbx CLI helpers — auto-generated, do not edit.
         # tlbx-cli-version: {{CliCommands.GetVersion()}}/__TLBX_CLI_REVISION__
+        # Deprecated transitional fallback: prefer native tlbx MCP. Planned for removal soon.
         # Source: . .tlbx/tlbx_cli.sh   |   Run: .tlbx/tlbx_cli.sh <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
@@ -1326,6 +1327,7 @@ public static class TlbxCliScriptWriter
         $$"""
         # tlbx CLI helpers — auto-generated, do not edit.
         # tlbx-cli-version: {{CliCommands.GetVersion()}}/__TLBX_CLI_REVISION__
+        # Deprecated transitional fallback: prefer native tlbx MCP. Planned for removal soon.
         # Dot-source: . .tlbx\tlbx_cli.ps1   |   Run: pwsh .tlbx\tlbx_cli.ps1 <cmd> [args]
         #
         # Auth token below is auto-generated and ephemeral (expires in ~8 days).
