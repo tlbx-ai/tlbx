@@ -7,143 +7,6 @@ public sealed class TerminalSizeControlServiceTests
 {
 
     [Fact]
-    public async Task Interaction_DoesNotTakeOverFreshOnlineOwner()
-    {
-        using var fixture = new Fixture();
-        var ownerConnection = new object();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", ownerConnection);
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true, ct: Xunit.TestContext.Current.CancellationToken);
-
-        var result = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.False(result.OwnershipChanged);
-        Assert.False(result.Status.IsOwner);
-        Assert.True(result.Status.OwnerOnline);
-    }
-
-    [Fact]
-    public async Task Interaction_TakesOverDifferentOnlineDeviceAfterProtectionWindow()
-    {
-        using var fixture = new Fixture();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
-        fixture.Service.RegisterBrowser("browser-b:tab-2", new object());
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TerminalSizeControlService.ConnectedOwnerProtectionDelay);
-
-        var result = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.True(result.OwnershipChanged);
-        Assert.True(result.Status.IsOwner);
-        Assert.True(result.Status.OwnerOnline);
-    }
-
-    [Fact]
-    public async Task ConnectedSiblingTab_NeverAutomaticallyStealsAfterProtectionWindow()
-    {
-        using var fixture = new Fixture();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
-        fixture.Service.RegisterBrowser("browser-a:tab-2", new object());
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TerminalSizeControlService.ConnectedOwnerProtectionDelay);
-
-        var result = await fixture.Service.RecordInputAsync(
-            "session-1",
-            "browser-a:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.False(result.OwnershipChanged);
-        Assert.False(result.Status.IsOwner);
-        Assert.True(result.Status.OwnerOnline);
-        Assert.True(result.Status.OwnerInSameBrowserProfile);
-    }
-
-    [Fact]
-    public async Task Interaction_TakesOverOfflineOwnerAfterShortGracePeriod()
-    {
-        using var fixture = new Fixture();
-        var ownerConnection = new object();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", ownerConnection);
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Service.UnregisterBrowser("browser-a:tab-1", ownerConnection);
-
-        fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay - TimeSpan.FromSeconds(1));
-        var early = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-        Assert.False(early.OwnershipChanged);
-
-        fixture.Time.Advance(TimeSpan.FromSeconds(1));
-        var eligible = await fixture.Service.RecordInputAsync("session-1", "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.True(eligible.OwnershipChanged);
-        Assert.True(eligible.Status.IsOwner);
-    }
-
-    [Fact]
-    public async Task IdleOwnerStillGetsFullOfflineGracePeriodFromDisconnect()
-    {
-        using var fixture = new Fixture();
-        var ownerConnection = new object();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", ownerConnection);
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TimeSpan.FromHours(1));
-        fixture.Service.UnregisterBrowser("browser-a:tab-1", ownerConnection);
-
-        var immediate = await fixture.Service.RecordInputAsync(
-            "session-1",
-            "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay);
-        var afterGrace = await fixture.Service.RecordInputAsync(
-            "session-1",
-            "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.False(immediate.OwnershipChanged);
-        Assert.True(afterGrace.OwnershipChanged);
-        Assert.True(afterGrace.Status.IsOwner);
-    }
-
-    [Fact]
-    public async Task RestartedServiceGivesPersistedOwnerFreshOfflineGracePeriod()
-    {
-        using var fixture = new Fixture();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TimeSpan.FromHours(1));
-        fixture.RestartService();
-
-        var immediate = await fixture.Service.RecordInputAsync(
-            "session-1",
-            "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TerminalSizeControlService.OfflineTakeoverDelay);
-        var afterGrace = await fixture.Service.RecordInputAsync(
-            "session-1",
-            "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.False(immediate.OwnershipChanged);
-        Assert.True(afterGrace.OwnershipChanged);
-    }
-
-    [Fact]
-    public async Task ReopenedTabInSameBrowserProfile_InheritsOfflineOwnerImmediately()
-    {
-        using var fixture = new Fixture();
-        var ownerConnection = new object();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", ownerConnection);
-        await fixture.Service.RequestControlAsync(
-            "session-1",
-            "browser-a:tab-1",
-            true,
-            "Windows PC · Chrome", ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Service.UnregisterBrowser("browser-a:tab-1", ownerConnection);
-
-        var result = await fixture.Service.RecordInputAsync(
-            "session-1",
-            "browser-a:tab-2",
-            "Windows PC · Chrome", Xunit.TestContext.Current.CancellationToken);
-
-        Assert.True(result.OwnershipChanged);
-        Assert.True(result.Status.IsOwner);
-        Assert.Equal("Windows PC · Chrome", result.Status.OwnerLabel);
-    }
-
-    [Fact]
     public async Task ExplicitClaim_ImmediatelyOverridesFreshOwner()
     {
         using var fixture = new Fixture();
@@ -185,7 +48,7 @@ public sealed class TerminalSizeControlServiceTests
     }
 
     [Fact]
-    public async Task ExplicitHandoff_DoesNotImmediatelyPingPongBack()
+    public async Task ExplicitHandoff_CannotBeUndoneByPassiveFormerOwner()
     {
         using var fixture = new Fixture();
         fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
@@ -195,32 +58,14 @@ public sealed class TerminalSizeControlServiceTests
             "session-1",
             "browser-b:tab-2",
             true, ct: Xunit.TestContext.Current.CancellationToken);
-        var oldOwnerInput = await fixture.Service.RecordInputAsync(
+        var oldOwnerInput = await fixture.Service.RequestControlAsync(
             "session-1",
-            "browser-a:tab-1", ct: Xunit.TestContext.Current.CancellationToken);
+            "browser-a:tab-1", false, ct: Xunit.TestContext.Current.CancellationToken);
 
         Assert.True(handoff.Status.IsOwner);
         Assert.False(oldOwnerInput.OwnershipChanged);
         Assert.False(oldOwnerInput.Status.IsOwner);
         Assert.Equal(handoff.Status.Epoch, oldOwnerInput.Status.Epoch);
-    }
-
-    [Fact]
-    public async Task OwnerInput_RenewsConnectedLease()
-    {
-        using var fixture = new Fixture();
-        fixture.Service.RegisterBrowser("browser-a:tab-1", new object());
-        await fixture.Service.RequestControlAsync("session-1", "browser-a:tab-1", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TimeSpan.FromMinutes(4));
-        await fixture.Service.RecordInputAsync("session-1", "browser-a:tab-1", ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TimeSpan.FromMinutes(2));
-
-        var result = await fixture.Service.RecordInputAsync(
-            "session-1",
-            "browser-b:tab-2", ct: Xunit.TestContext.Current.CancellationToken);
-
-        Assert.False(result.OwnershipChanged);
-        Assert.False(result.Status.IsOwner);
     }
 
     [Fact]
@@ -290,7 +135,7 @@ public sealed class TerminalSizeControlServiceTests
     }
 
     [Fact]
-    public async Task TypingDoesNotWaitForResizeAcknowledgement()
+    public async Task CurrentOwnerTypingDoesNotWaitForResizeButHandoffSerializes()
     {
         using var fixture = new Fixture();
         fixture.Service.RegisterBrowser("desktop:tab", new object());
@@ -307,61 +152,16 @@ public sealed class TerminalSizeControlServiceTests
             Assert.True(ownerInput.IsCompletedSuccessfully);
             Assert.True(ownerInput.Result.Status.IsOwner);
             var followerInput = fixture.Service.RecordInputAsync("session-1", "ipad:tab", ct: Xunit.TestContext.Current.CancellationToken);
-            Assert.True(followerInput.IsCompletedSuccessfully);
-            Assert.False(followerInput.Result.Status.IsOwner);
+            Assert.False(followerInput.IsCompleted);
+            acknowledge.SetResult(true);
+            var handoff = await followerInput;
+            Assert.True(handoff.Status.IsOwner);
         }
         finally
         {
-            acknowledge.SetResult(true);
+            acknowledge.TrySetResult(true);
             await resizing;
         }
-    }
-
-    [Fact]
-    public async Task PassiveReplacementTabInheritsOnlyItsOwnOfflineProfile()
-    {
-        using var fixture = new Fixture();
-        var connection = new object();
-        fixture.Service.RegisterBrowser("desktop:old", connection);
-        await fixture.Service.RequestControlAsync("session-1", "desktop:old", true, ct: Xunit.TestContext.Current.CancellationToken);
-        Assert.False((await fixture.Service.RequestControlAsync("session-1", "desktop:new", false, ct: Xunit.TestContext.Current.CancellationToken)).Status.IsOwner);
-        fixture.Service.UnregisterBrowser("desktop:old", connection);
-        Assert.False((await fixture.Service.RequestControlAsync("session-1", "ipad:new", false, ct: Xunit.TestContext.Current.CancellationToken)).Status.IsOwner);
-        Assert.True((await fixture.Service.RequestControlAsync("session-1", "desktop:new", false, ct: Xunit.TestContext.Current.CancellationToken)).Status.IsOwner);
-    }
-
-    [Fact]
-    public async Task PassiveIpadNeverTakesDesktopAfterExpiryOrReconnect()
-    {
-        using var fixture = new Fixture();
-        var desktop = new object();
-        fixture.Service.RegisterBrowser("desktop:tab", desktop);
-        fixture.Service.RegisterBrowser("ipad:tab", new object());
-        var owner = await fixture.Service.RequestControlAsync("session-1", "desktop:tab", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TimeSpan.FromHours(1));
-        var online = await fixture.Service.RequestControlAsync("session-1", "ipad:tab", false, ct: Xunit.TestContext.Current.CancellationToken);
-        Assert.False(online.Status.IsOwner);
-        fixture.Service.UnregisterBrowser("desktop:tab", desktop);
-        fixture.Time.Advance(TimeSpan.FromHours(1));
-        var offline = await fixture.Service.RequestControlAsync("session-1", "ipad:tab", false, ct: Xunit.TestContext.Current.CancellationToken);
-        Assert.False(offline.Status.IsOwner);
-        fixture.Service.RegisterBrowser("desktop:tab", desktop);
-        Assert.True(fixture.Service.GetStatus("session-1", "desktop:tab").IsOwner);
-        Assert.Equal(owner.Status.Epoch, offline.Status.Epoch);
-        var input = await fixture.Service.RecordInputAsync("session-1", "ipad:tab", ct: Xunit.TestContext.Current.CancellationToken);
-        Assert.True(input.Status.IsOwner);
-    }
-
-    [Fact]
-    public async Task PassiveOwnerRequestDoesNotRenewProtection()
-    {
-        using var fixture = new Fixture();
-        fixture.Service.RegisterBrowser("desktop:tab", new object());
-        await fixture.Service.RequestControlAsync("session-1", "desktop:tab", true, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TimeSpan.FromMinutes(4));
-        await fixture.Service.RequestControlAsync("session-1", "desktop:tab", false, ct: Xunit.TestContext.Current.CancellationToken);
-        fixture.Time.Advance(TimeSpan.FromMinutes(1));
-        Assert.True((await fixture.Service.RecordInputAsync("session-1", "ipad:tab", ct: Xunit.TestContext.Current.CancellationToken)).Status.IsOwner);
     }
 
     [Fact]
@@ -376,6 +176,109 @@ public sealed class TerminalSizeControlServiceTests
         Assert.Equal(1, calls);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task NewOwnerInputSupersedesAnOlderHandoffWaitingForResize(bool waitingViaState, bool currentViaState)
+    {
+        using var fixture = new Fixture();
+        var original = await fixture.Service.RequestControlAsync("session-1", "desktop:one", true,
+            ct: Xunit.TestContext.Current.CancellationToken);
+        var acknowledge = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+#pragma warning disable IDISP013 // Held pending deliberately; both operations are awaited before fixture disposal.
+        var resize = fixture.Service.ResizeAsync("session-1", "desktop:one", original.Status.Epoch,
+            100, 30, _ => acknowledge.Task, Xunit.TestContext.Current.CancellationToken);
+        var delayedInput = waitingViaState
+            ? fixture.Service.RequestControlAsync("session-1", "link:one", true,
+                expectedEpoch: original.Status.Epoch, ct: Xunit.TestContext.Current.CancellationToken)
+            : fixture.Service.RecordInputAsync("session-1", "link:one", ct: Xunit.TestContext.Current.CancellationToken);
+#pragma warning restore IDISP013
+        try
+        {
+            Assert.False(delayedInput.IsCompleted);
+            var currentInput = currentViaState
+                ? await fixture.Service.RequestControlAsync("session-1", "desktop:one", true,
+                    expectedEpoch: original.Status.Epoch, ct: Xunit.TestContext.Current.CancellationToken)
+                : await fixture.Service.RecordInputAsync("session-1", "desktop:one", ct: Xunit.TestContext.Current.CancellationToken);
+            Assert.True(currentInput.Status.IsOwner);
+        }
+        finally { acknowledge.TrySetResult(true); await resize; }
+        var delayed = await delayedInput;
+        Assert.False(delayed.Status.IsOwner);
+        Assert.False(delayed.OwnershipChanged);
+        Assert.Equal(original.Status.Epoch, delayed.Status.Epoch);
+    }
+
+    [Fact]
+    public async Task RestartPreservesOwnerAndEpochUntilNewHumanInput()
+    {
+        using var fixture = new Fixture();
+        var original = await fixture.Service.RequestControlAsync("session-1", "desktop:one", true,
+            ct: Xunit.TestContext.Current.CancellationToken);
+        fixture.RestartService();
+        var passive = await fixture.Service.RequestControlAsync("session-1", "desktop:two", false,
+            ct: Xunit.TestContext.Current.CancellationToken);
+        Assert.False(passive.Status.IsOwner);
+        Assert.Equal(original.Status.Epoch, passive.Status.Epoch);
+        Assert.Equal("desktop:one", fixture.Service.GetOwnerBrowserId("session-1"));
+        var active = await fixture.Service.RecordInputAsync("session-1", "link:one",
+            ct: Xunit.TestContext.Current.CancellationToken);
+        Assert.True(active.Status.IsOwner);
+        Assert.Equal(original.Status.Epoch + 1, active.Status.Epoch);
+        fixture.RestartService();
+        Assert.Equal("link:one", fixture.Service.GetOwnerBrowserId("session-1"));
+        Assert.Equal(active.Status.Epoch, fixture.Service.GetStatus("session-1", "link:one").Epoch);
+    }
+
+    [Fact]
+    public async Task ConfirmedDimensionsSurviveHandoffRestartAndStaleSessionSnapshots()
+    {
+        using var fixture = new Fixture();
+        var ct = Xunit.TestContext.Current.CancellationToken;
+        var owner = await fixture.Service.RequestControlAsync("session-1", "desktop:one", true, ct: ct);
+        var resized = await fixture.Service.ResizeAsync("session-1", "desktop:one", owner.Status.Epoch,
+            103, 44, _ => Task.FromResult(true), ct);
+        Assert.Equal((103, 44, 1L), (resized.Status.Cols, resized.Status.Rows, resized.Status.SizeRevision));
+        var same = await fixture.Service.ResizeAsync("session-1", "desktop:one", owner.Status.Epoch,
+            103, 44, _ => Task.FromResult(true), ct);
+        Assert.Equal(resized.Status.SizeRevision, same.Status.SizeRevision);
+        var failed = await fixture.Service.ResizeAsync("session-1", "desktop:one", owner.Status.Epoch,
+            158, 54, _ => Task.FromResult(false), ct);
+        Assert.Equal((103, 44, 1L), (failed.Status.Cols, failed.Status.Rows, failed.Status.SizeRevision));
+        var handoff = await fixture.Service.RecordInputAsync("session-1", "link:one", ct: ct);
+        Assert.Equal((103, 44, 1L), (handoff.Status.Cols, handoff.Status.Rows, handoff.Status.SizeRevision));
+        fixture.RestartService();
+        var snapshot = Assert.Single(fixture.Service.GetStatuses("link:one",
+            [new() { Id = "session-1", Cols = 158, Rows = 54 }]));
+        Assert.True(snapshot.IsOwner);
+        Assert.Equal((103, 44, 1L), (snapshot.Cols, snapshot.Rows, snapshot.SizeRevision));
+        var next = await fixture.Service.ResizeAsync("session-1", "link:one", snapshot.Epoch,
+            80, 30, _ => Task.FromResult(true), ct);
+        Assert.Equal((80, 30, 2L), (next.Status.Cols, next.Status.Rows, next.Status.SizeRevision));
+    }
+
+    [Fact]
+    public async Task UnownedGridDoesNotPreventHeadlessResizeOrInitialBrowserClaim()
+    {
+        using var fixture = new Fixture();
+        var ct = Xunit.TestContext.Current.CancellationToken;
+        var initial = Assert.Single(fixture.Service.GetStatuses("desktop:one",
+            [new() { Id = "session-1", Cols = 120, Rows = 30 }]));
+        Assert.False(initial.HasOwner);
+        Assert.Null(fixture.Service.GetOwnerBrowserId("session-1"));
+        Assert.True(await fixture.Service.ResizeUnownedAsync("session-1", 80, 25, _ => Task.FromResult(true), ct));
+        fixture.RestartService();
+        var headless = fixture.Service.GetStatus("session-1", "desktop:one");
+        Assert.False(headless.HasOwner);
+        Assert.Equal((80, 25, 2L), (headless.Cols, headless.Rows, headless.SizeRevision));
+        var claimed = await fixture.Service.RequestControlAsync("session-1", "desktop:one", false, ct: ct);
+        Assert.True(claimed.Status.IsOwner);
+        Assert.Equal((80, 25, 2L), (claimed.Status.Cols, claimed.Status.Rows, claimed.Status.SizeRevision));
+        Assert.False(await fixture.Service.ResizeUnownedAsync("session-1", 100, 40, _ => Task.FromResult(true), ct));
+    }
+
     private sealed class Fixture : IDisposable
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), $"midterm-size-control-{Guid.NewGuid():N}");
@@ -383,17 +286,15 @@ public sealed class TerminalSizeControlServiceTests
         public Fixture()
         {
             Directory.CreateDirectory(_directory);
-            Time = new ManualTimeProvider(new DateTimeOffset(2026, 7, 20, 12, 0, 0, TimeSpan.Zero));
-            Service = new TerminalSizeControlService(_directory, Time);
+            Service = new TerminalSizeControlService(_directory);
         }
 
-        public ManualTimeProvider Time { get; }
         public TerminalSizeControlService Service { get; private set; }
 
         public void RestartService()
         {
             Service.Dispose();
-            Service = new TerminalSizeControlService(_directory, Time);
+            Service = new TerminalSizeControlService(_directory);
         }
 
         public void Dispose()
@@ -403,15 +304,4 @@ public sealed class TerminalSizeControlServiceTests
         }
     }
 
-    private sealed class ManualTimeProvider(DateTimeOffset utcNow) : TimeProvider
-    {
-        private DateTimeOffset _utcNow = utcNow;
-
-        public override DateTimeOffset GetUtcNow() => _utcNow;
-
-        public void Advance(TimeSpan elapsed)
-        {
-            _utcNow += elapsed;
-        }
-    }
 }

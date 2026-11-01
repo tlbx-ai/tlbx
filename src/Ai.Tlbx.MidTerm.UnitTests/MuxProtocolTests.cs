@@ -10,6 +10,17 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public class MuxProtocolTests
 {
+    [Theory]
+    [InlineData(MuxProtocol.TypeUserInput, true, true)]
+    [InlineData(MuxProtocol.TypeBufferedUserInput, true, true)]
+    [InlineData(MuxProtocol.TypeTerminalInput, true, false)]
+    [InlineData(MuxProtocol.TypeResize, false, false)]
+    public void BufferedUserInputRemainsUserBytesRatherThanTerminalReplies(byte type, bool input, bool user)
+    {
+        Assert.Equal(input, MuxProtocol.IsInput(type));
+        Assert.Equal(user, MuxProtocol.IsUserInput(type));
+    }
+
     [Fact]
     public void CreateOutputFrame_RoundTrip_ParsesCorrectly()
     {

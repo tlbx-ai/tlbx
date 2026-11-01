@@ -5,6 +5,7 @@ import {
   removeTerminalSizeControlSource,
   setTerminalSizeControl,
   setTerminalSizeControlsForSource,
+  getTerminalSizeControl,
 } from '../../stores';
 
 interface PendingCommand {
@@ -252,6 +253,17 @@ export function requestHubTerminalSizeControl(
     force,
     ...(expectedEpoch === undefined ? {} : { expectedEpoch }),
   });
+}
+
+/** Only current input on an already-connected channel may send this intent.
+ * Never reconnect or retain it for later; an epoch guard rejects stale delivery.
+ */
+export function requestHubSizeControlForCurrentInput(sessionId: string): void {
+  const parsed = parseCompositeId(sessionId);
+  if (!parsed || channels.get(parsed.machineId)?.socket.readyState !== WebSocket.OPEN) return;
+  const status = getTerminalSizeControl(sessionId);
+  if (!status) return;
+  void requestHubTerminalSizeControl(sessionId, true, status.epoch).catch(() => {});
 }
 
 export function resizeHubTerminalWithControl(

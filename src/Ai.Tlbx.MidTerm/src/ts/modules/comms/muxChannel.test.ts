@@ -48,6 +48,7 @@ vi.mock('../share', () => ({
 }));
 
 vi.mock('./stateChannel', () => ({
+  requestSizeControlForCurrentInput: vi.fn(),
   handleStateUpdate: vi.fn(),
   reportTerminalSizeInteraction: vi.fn(),
   resizeTerminalWithControl: vi.fn(),
@@ -293,6 +294,11 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
     throw new Error('Mock WebSocket was not created');
   }
 
+  // A real server advertises its input capabilities before sync completion.
+  const init = new Uint8Array(constants.MUX_HEADER_SIZE + 2);
+  init[0] = 0xff;
+  new DataView(init.buffer).setUint16(constants.MUX_HEADER_SIZE, 3, true);
+  ws.onmessage?.({ data: init.buffer } as MessageEvent<ArrayBuffer>);
   const initialSync = new Uint8Array(constants.MUX_HEADER_SIZE);
   initialSync[0] = constants.MUX_TYPE_SYNC_COMPLETE;
   ws.onmessage?.({ data: initialSync.buffer } as MessageEvent<ArrayBuffer>);
@@ -455,8 +461,43 @@ describe('muxChannel', () => {
   });
 
   afterEach(() => {
+    stores.removeTerminalSizeControlSource('local');
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('does not resize to stale output geometry after a confirmed control snapshot', async () => {
+    const harness = await loadHarness([0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    stores.setTerminalSizeControl({
+      sessionId: 'sess1234',
+      isOwner: true,
+      hasOwner: true,
+      ownerOnline: true,
+      canTakeOverAutomatically: true,
+      epoch: 2,
+      cols: 103,
+      rows: 44,
+      sizeRevision: 3,
+    });
+    harness.ws.onmessage?.({
+      data: buildOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        'still delivered',
+        158,
+        54,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+    const terminal = harness.sessionTerminals.get('sess1234')!;
+    expect(terminal.terminal.resize).toHaveBeenCalledWith(103, 44);
+    expect(terminal.terminal.resize).not.toHaveBeenCalledWith(158, 54);
+    expect(terminal.serverCols).toBe(103);
+    expect(terminal.serverRows).toBe(44);
+    expect(terminal.terminal.write).toHaveBeenCalled();
   });
 
   it('keeps draining queued output without waiting for prior xterm callbacks', async () => {
@@ -1868,6 +1909,24 @@ describe('muxChannel', () => {
       frames[0]!.byteLength,
     );
     expect(markerView.getUint32(harness.constants.MUX_HEADER_SIZE, true)).not.toBe(0);
+  });
+
+  it('waits for init after reconnect and replays queued Unicode as buffered user input', async () => {
+    const harness = await loadHarness([10, 10, 10, 10]);
+    harness.ws.readyState = MockWebSocket.CLOSED;
+    sendInput('sess1234', 'Ω');
+    harness.ws.readyState = MockWebSocket.OPEN;
+    harness.ws.onopen?.(new Event('open'));
+    harness.ws.send.mockClear();
+    const init = new Uint8Array(harness.constants.MUX_HEADER_SIZE + 2);
+    init[0] = 0xff;
+    new DataView(init.buffer).setUint16(harness.constants.MUX_HEADER_SIZE, 3, true);
+    harness.ws.onmessage?.({ data: init.buffer } as MessageEvent<ArrayBuffer>);
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    const replay = frames.find((frame) => frame[0] === 0x15);
+    expect(replay).toBeDefined();
+    expect(new TextDecoder().decode(replay!.subarray(harness.constants.MUX_HEADER_SIZE))).toBe('Ω');
+    expect(frames.some((frame) => frame[0] === harness.constants.MUX_TYPE_INPUT)).toBe(false);
   });
 
   it('tracks bracketed paste mode when control sequences are split across output frames', async () => {

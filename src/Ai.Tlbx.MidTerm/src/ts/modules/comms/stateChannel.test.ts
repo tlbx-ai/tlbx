@@ -251,6 +251,59 @@ async function loadHarness() {
 }
 
 describe('stateChannel browser-ui handling', () => {
+  it('sends current input intent only on a live channel and binds it to the observed epoch', async () => {
+    vi.stubGlobal('window', {
+      setTimeout: globalThis.setTimeout,
+      clearTimeout: globalThis.clearTimeout,
+    });
+    const { ws } = await loadHarness();
+    const { requestSizeControlForCurrentInput } = await stateChannelModulePromise;
+    stores.setTerminalSizeControl({
+      sessionId: 'intent-session',
+      isOwner: false,
+      hasOwner: true,
+      ownerOnline: true,
+      ownerInSameBrowserProfile: false,
+      canTakeOverAutomatically: true,
+      ownerLabel: null,
+      epoch: 7,
+    });
+    ws.readyState = MockWebSocket.CLOSED;
+    requestSizeControlForCurrentInput('intent-session');
+    expect(ws.send).not.toHaveBeenCalled();
+    ws.readyState = MockWebSocket.OPEN;
+    requestSizeControlForCurrentInput('intent-session');
+    expect(ws.send).toHaveBeenCalledOnce();
+    const command = JSON.parse(ws.send.mock.calls[0][0] as string);
+    expect(command).toMatchObject({
+      action: 'terminal.requestSizeControl',
+      payload: {
+        sessionId: 'intent-session',
+        force: true,
+        expectedEpoch: 7,
+      },
+    });
+    ws.onmessage?.({
+      data: JSON.stringify({
+        type: 'response',
+        id: command.id,
+        success: true,
+        data: {
+          status: {
+            sessionId: 'intent-session',
+            isOwner: true,
+            hasOwner: true,
+            ownerOnline: true,
+            ownerInSameBrowserProfile: true,
+            canTakeOverAutomatically: true,
+            ownerLabel: null,
+            epoch: 8,
+          },
+        },
+      }),
+    } as MessageEvent<string>);
+    await vi.waitFor(() => expect(stores.getTerminalSizeControl('intent-session')?.epoch).toBe(8));
+  });
   beforeAll(async () => {
     stores = await storesModulePromise;
     state = await stateModulePromise;
@@ -869,6 +922,23 @@ describe('stateChannel browser-ui handling', () => {
       expect.objectContaining({ currentDirectory: 'Q:/repos/Jpa' }),
     );
     expect(stores.getSession('existing-session')).toBeDefined();
+  });
+
+  it('does not close or deselect a remote Hub terminal when a local host snapshot arrives', async () => {
+    const { stores } = await loadHarness();
+    const remoteId = 'hub:remote-host:session-a';
+    const remoteState = { opened: true, serverCols: 110, serverRows: 32 } as any;
+    state.sessionTerminals.set(remoteId, remoteState);
+    stores.$activeSessionId.set(remoteId);
+    handleStateUpdate([
+      { id: 'local-session', cols: 80, rows: 24, appServerControlOnly: false } as any,
+    ]);
+    handleStateUpdate([]);
+    expect(mocks.destroyTerminalForSession).not.toHaveBeenCalledWith(remoteId);
+    expect(mocks.handleSessionClosed).not.toHaveBeenCalledWith(remoteId);
+    expect(state.sessionTerminals.get(remoteId)).toBe(remoteState);
+    expect(stores.$activeSessionId.get()).toBe(remoteId);
+    expect(mocks.selectSession).not.toHaveBeenCalled();
   });
 
   it('does not recreate an optimistically closed terminal from an in-flight snapshot', async () => {

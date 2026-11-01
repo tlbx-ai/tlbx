@@ -10,6 +10,9 @@ public sealed class TerminalSizeControlStatus
     public bool CanTakeOverAutomatically { get; set; }
     public string? OwnerLabel { get; set; }
     public long Epoch { get; set; }
+    public int Cols { get; set; }
+    public int Rows { get; set; }
+    public long SizeRevision { get; set; }
 }
 
 public sealed class TerminalSizeControlCommandResult

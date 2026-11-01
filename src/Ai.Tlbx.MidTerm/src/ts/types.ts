@@ -104,6 +104,9 @@ export interface TerminalSizeControlStatus {
   canTakeOverAutomatically: boolean;
   ownerLabel?: string | null;
   epoch: number;
+  cols?: number;
+  rows?: number;
+  sizeRevision?: number;
 }
 
 export interface TerminalSizeControlCommandResult {

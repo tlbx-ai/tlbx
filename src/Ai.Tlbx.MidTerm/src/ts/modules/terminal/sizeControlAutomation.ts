@@ -21,8 +21,8 @@ function canTakeOverInCurrentBrowser(): boolean {
   return typeof document.hasFocus !== 'function' || document.hasFocus();
 }
 
-/** Initialize unowned terminals or inherit an offline tab in this browser profile.
- * Passive monitoring never takes another device's lease, even when it is idle/offline.
+/** Initialize unowned terminals only.
+ * Returning, focused and sibling tabs never inherit another tab's ownership passively.
  */
 export function claimEligibleVisibleTerminalSizes(reconsiderCurrentView = false): void {
   if (!canTakeOverInCurrentBrowser()) return;
@@ -39,11 +39,7 @@ export function claimEligibleVisibleTerminalSizes(reconsiderCurrentView = false)
     const observedEpoch = observedEpochs.get(sessionId);
     observedEpochs.set(sessionId, status.epoch);
     if (!reconsiderCurrentView && observedEpoch === status.epoch) return;
-    if (
-      (status.hasOwner && !(status.ownerInSameBrowserProfile && !status.ownerOnline)) ||
-      (status.ownerOnline && status.ownerInSameBrowserProfile) ||
-      takeoversInFlight.has(sessionId)
-    ) {
+    if (status.hasOwner || takeoversInFlight.has(sessionId)) {
       return;
     }
 

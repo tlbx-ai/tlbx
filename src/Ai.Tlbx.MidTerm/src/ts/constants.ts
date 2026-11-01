@@ -32,7 +32,7 @@ export const MOBILE_PIP_ACTIVE_CHANGED_EVENT = 'tlbx:mobile-pip-active-changed';
 export const MUX_HEADER_SIZE = 9;
 
 /** Mux protocol version - increment when making breaking protocol changes */
-export const MUX_PROTOCOL_VERSION = 2;
+export const MUX_PROTOCOL_VERSION = 3;
 
 /** Minimum compatible protocol version */
 export const MUX_MIN_COMPATIBLE_VERSION = 1;
@@ -40,6 +40,7 @@ export const MUX_MIN_COMPATIBLE_VERSION = 1;
 /** Mux protocol message types */
 export const MUX_TYPE_OUTPUT = 0x01; // Server -> Client: Terminal output (includes dimensions)
 export const MUX_TYPE_INPUT = 0x14; // Client -> Server: Terminal input
+export const MUX_TYPE_BUFFERED_INPUT = 0x15; // Replayed user bytes; never current size-control intent
 export const MUX_TYPE_RESIZE = 0x03; // Client -> Server: Terminal resize
 export const MUX_TYPE_RESYNC = 0x05; // Server -> Client: Clear terminals, buffer refresh follows
 export const MUX_TYPE_BUFFER_REQUEST = 0x06; // Client -> Server: Request buffer refresh

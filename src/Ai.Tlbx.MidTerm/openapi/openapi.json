@@ -8367,7 +8367,10 @@
           "ownerInSameBrowserProfile",
           "canTakeOverAutomatically",
           "ownerLabel",
-          "epoch"
+          "epoch",
+          "cols",
+          "rows",
+          "sizeRevision"
         ],
         "type": "object",
         "properties": {
@@ -8396,6 +8399,18 @@
             ]
           },
           "epoch": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sizeRevision": {
             "type": "integer",
             "format": "int64"
           }

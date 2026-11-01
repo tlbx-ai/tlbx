@@ -22,7 +22,7 @@ public static class MuxProtocol
     public const int MaxFrameSize = 64 * 1024;
 
     // Protocol versioning
-    public const ushort ProtocolVersion = 2;
+    public const ushort ProtocolVersion = 3;
     public const ushort MinCompatibleProtocolVersion = 1;
 
     // Custom WebSocket close codes (4000-4999 range)
@@ -33,6 +33,10 @@ public static class MuxProtocol
     public const byte TypeTerminalOutput = 0x01;
     public const byte TypeTerminalInput = 0x02; // Terminal-generated replies (no ownership activity)
     public const byte TypeUserInput = 0x14;
+    public const byte TypeBufferedUserInput = 0x15; // User bytes replayed after disconnect; no size-control intent
+
+    public static bool IsInput(byte type) => type is TypeUserInput or TypeBufferedUserInput or TypeTerminalInput;
+    public static bool IsUserInput(byte type) => type is TypeUserInput or TypeBufferedUserInput;
     public const byte TypeResize = 0x03;
     public const byte TypeSessionState = 0x04;
     public const byte TypeResync = 0x05; // Server -> Client: clear all terminals, buffer refresh follows

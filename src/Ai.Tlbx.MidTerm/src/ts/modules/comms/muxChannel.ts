@@ -53,7 +53,7 @@ import {
 } from './terminalFrameTrim';
 import * as muxSessionRouting from './muxSessionRouting';
 import { resolveMuxDataLossReason } from './muxDataLoss';
-import { createMuxInputFrame } from './muxInputFrame';
+import { bufferedInputFrameType, createMuxInputFrame } from './muxInputFrame';
 import { tryMergeOutputPayloads } from './muxOutputPayload';
 import { createPrintableInputBurstCoalescer } from './printableInputBurst';
 import {
@@ -106,8 +106,8 @@ import { createAlternateScreenReplayPrefix } from '../terminal/replayState';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput } from '../hub/channel';
-import { $currentSettings, getTerminalSizeControl, hasTerminalSizeControl } from '../../stores';
-import { resizeTerminalWithControl } from './stateChannel';
+import { $currentSettings, getTerminalSizeControl, getTerminalSizeDimensions } from '../../stores';
+import { requestSizeControlForCurrentInput, resizeTerminalWithControl } from './stateChannel';
 import {
   muxWs,
   sessionTerminals,
@@ -202,6 +202,8 @@ function scanBracketedPaste(data: Uint8Array, sessionId: string): void {
 }
 
 const pendingInputQueue: Array<{ sessionId: string; data: string }> = [];
+let inputChannelReady = false;
+let inputProtocolVersion = 1;
 
 async function refreshSessionList(): Promise<void> {
   try {
@@ -1121,10 +1123,13 @@ function applyTerminalResizeIfNeeded(
   cols: number,
   rows: number,
 ): void {
+  ({ cols, rows } = getTerminalSizeDimensions(sessionId, cols, rows));
   if (!(cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened)) {
     return;
   }
 
+  state.serverCols = cols;
+  state.serverRows = rows;
   const currentCols = state.terminal.cols;
   const currentRows = state.terminal.rows;
   if (currentCols === cols && currentRows === rows) {
@@ -1215,6 +1220,7 @@ function handleMuxInitFrame(type: number, data: Uint8Array): boolean {
   if (data.length >= MUX_HEADER_SIZE + 2) {
     const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
     const serverVersion = dv.getUint16(MUX_HEADER_SIZE, true);
+    inputProtocolVersion = serverVersion;
     setServerProtocolVersion(serverVersion);
     log.info(
       () => `Server protocol version: ${serverVersion}, client version: ${MUX_PROTOCOL_VERSION}`,
@@ -1232,6 +1238,8 @@ function handleMuxInitFrame(type: number, data: Uint8Array): boolean {
     }
   }
 
+  inputChannelReady = true;
+  flushPendingInput();
   return true;
 }
 
@@ -1619,6 +1627,8 @@ export function connectMuxWebSocket(): void {
 
   ws.onopen = () => {
     if (muxWs !== ws) return;
+    inputChannelReady = false;
+    inputProtocolVersion = 1;
     muxReconnect.reset();
     syncCompletePending = false;
 
@@ -1673,8 +1683,7 @@ export function connectMuxWebSocket(): void {
       requestBufferRefresh(sessionId, request.mode, request.recoveryCause);
     });
 
-    // Flush any input buffered during disconnection
-    flushPendingInput();
+    // The init frame supplies the input capability before buffered bytes are sent.
   };
 
   ws.onmessage = (event) => {
@@ -1775,6 +1784,10 @@ export function sendInput(sessionId: string, data: string): void {
     return;
   }
 
+  if (data.length > 0 && (!muxWs || muxWs.readyState !== WebSocket.OPEN || !inputChannelReady)) {
+    requestSizeControlForCurrentInput(sessionId);
+  }
+
   const inputAtMs = performance.now();
   const state = sessionTerminals.get(sessionId);
   if (state) {
@@ -1790,8 +1803,8 @@ export function sendInput(sessionId: string, data: string): void {
   sendInputNow(sessionId, data, inputAtMs);
 }
 
-function sendInputNow(sessionId: string, data: string, inputAtMs: number): void {
-  if (!muxWs || muxWs.readyState !== WebSocket.OPEN) {
+function sendInputNow(sessionId: string, data: string, inputAtMs: number, replayed = false): void {
+  if (!muxWs || muxWs.readyState !== WebSocket.OPEN || !inputChannelReady) {
     // Buffer input during disconnection (prevents lost keystrokes during reconnect)
     if (pendingInputQueue.length < 100) {
       pendingInputQueue.push({ sessionId, data });
@@ -1807,7 +1820,7 @@ function sendInputNow(sessionId: string, data: string, inputAtMs: number): void 
   sendFrame(
     createMuxInputFrame(
       MUX_HEADER_SIZE,
-      MUX_TYPE_INPUT,
+      replayed ? bufferedInputFrameType(inputProtocolVersion) : MUX_TYPE_INPUT,
       sessionId,
       data,
       encodeSessionId,
@@ -1822,17 +1835,27 @@ function sendInputNow(sessionId: string, data: string, inputAtMs: number): void 
 }
 
 function flushPendingInput(): void {
+  // A suspended coalescer may still contain old bytes. Drain it into the replay
+  // queue before making the transport live, rather than renewing size ownership.
+  const ready = inputChannelReady;
+  inputChannelReady = false;
   printableInputCoalescer.flushAll();
-  while (pendingInputQueue.length > 0) {
+  inputChannelReady = ready;
+  while (
+    pendingInputQueue.length > 0 &&
+    inputChannelReady &&
+    muxWs?.readyState === WebSocket.OPEN
+  ) {
     const item = pendingInputQueue.shift();
     if (!item) break;
-    sendInput(item.sessionId, item.data);
+    sendInputNow(item.sessionId, item.data, performance.now(), true);
   }
 }
 
 interface PendingTerminalResize {
   cols: number;
   rows: number;
+  epoch: number;
 }
 
 interface TerminalResizeQueue {
@@ -1843,7 +1866,8 @@ interface TerminalResizeQueue {
 const terminalResizeQueues = new Map<string, TerminalResizeQueue>();
 
 export function sendResize(sessionId: string, cols: number, rows: number): void {
-  if (!hasTerminalSizeControl(sessionId)) {
+  const ownership = getTerminalSizeControl(sessionId);
+  if (!ownership?.isOwner) {
     return;
   }
 
@@ -1852,7 +1876,7 @@ export function sendResize(sessionId: string, cols: number, rows: number): void 
     queue = { inFlight: false, pending: null };
     terminalResizeQueues.set(sessionId, queue);
   }
-  queue.pending = { cols, rows };
+  queue.pending = { cols, rows, epoch: ownership.epoch };
   if (!queue.inFlight) {
     void processTerminalResizeQueue(sessionId, queue);
   }
@@ -1871,6 +1895,7 @@ async function processTerminalResizeQueue(
       if (!ownership?.isOwner) {
         break;
       }
+      if (ownership.epoch !== request.epoch) continue;
 
       try {
         const result = await resizeTerminalWithControl(
@@ -1882,12 +1907,13 @@ async function processTerminalResizeQueue(
         const state = sessionTerminals.get(sessionId);
         if (!state) continue;
 
+        // A resize can have applied before a newer handoff but arrive afterwards.
+        // Its acknowledgement must not overwrite the new owner's dimensions.
+        const currentOwnership = getTerminalSizeControl(sessionId);
+        if (!currentOwnership?.isOwner || currentOwnership.epoch !== ownership.epoch) continue;
+
         if (result.resizeApplied) {
-          state.serverCols = result.cols;
-          state.serverRows = result.rows;
-          if (state.terminal.cols !== result.cols || state.terminal.rows !== result.rows) {
-            state.terminal.resize(result.cols, result.rows);
-          }
+          applyTerminalResizeIfNeeded(sessionId, state, result.cols, result.rows);
         }
         applyTerminalScaling(sessionId, state);
       } catch (error) {

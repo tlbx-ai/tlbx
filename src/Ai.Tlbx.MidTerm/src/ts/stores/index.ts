@@ -505,6 +505,20 @@ export const $terminalSizeControls = atom<Record<string, TerminalSizeControlStat
 
 const terminalSizeControlSources = new Map<string, Record<string, TerminalSizeControlStatus>>();
 
+function newerTerminalSizeControl(
+  existing: TerminalSizeControlStatus | undefined,
+  incoming: TerminalSizeControlStatus,
+): TerminalSizeControlStatus {
+  if (!existing) return incoming;
+  if (existing.epoch > incoming.epoch) return existing;
+  if (
+    existing.epoch === incoming.epoch &&
+    (existing.sizeRevision ?? 0) > (incoming.sizeRevision ?? 0)
+  )
+    return existing;
+  return incoming;
+}
+
 function publishTerminalSizeControls(): void {
   const combined: Record<string, TerminalSizeControlStatus> = {};
   terminalSizeControlSources.forEach((statuses) => {
@@ -533,7 +547,7 @@ export function setTerminalSizeControls(statuses: TerminalSizeControlStatus[]): 
   statuses.forEach((status) => {
     if (status.sessionId) {
       const existing = $terminalSizeControls.get()[status.sessionId];
-      next[status.sessionId] = existing && existing.epoch > status.epoch ? existing : status;
+      next[status.sessionId] = newerTerminalSizeControl(existing, status);
     }
   });
   terminalSizeControlSources.set('local', next);
@@ -548,7 +562,7 @@ export function setTerminalSizeControlsForSource(
   statuses.forEach((status) => {
     if (status.sessionId) {
       const existing = $terminalSizeControls.get()[status.sessionId];
-      next[status.sessionId] = existing && existing.epoch > status.epoch ? existing : status;
+      next[status.sessionId] = newerTerminalSizeControl(existing, status);
     }
   });
   terminalSizeControlSources.set(source, next);
@@ -564,18 +578,36 @@ export function setTerminalSizeControl(status: TerminalSizeControlStatus): void 
   const hubMatch = /^hub:([^:]+):/.exec(status.sessionId);
   const source = hubMatch ? `hub:${hubMatch[1]}` : 'local';
   const existing = terminalSizeControlSources.get(source)?.[status.sessionId];
-  if (existing && status.epoch < existing.epoch) {
-    return;
-  }
+  const next = newerTerminalSizeControl(existing, status);
   terminalSizeControlSources.set(source, {
     ...(terminalSizeControlSources.get(source) ?? {}),
-    [status.sessionId]: status,
+    [status.sessionId]: next,
   });
   publishTerminalSizeControls();
 }
 
 export function getTerminalSizeControl(sessionId: string): TerminalSizeControlStatus | undefined {
   return $terminalSizeControls.get()[sessionId];
+}
+
+/** Versioned control state wins over unversioned output/session metadata. */
+export function getTerminalSizeDimensions(
+  sessionId: string,
+  cols: number,
+  rows: number,
+): { cols: number; rows: number } {
+  const status = getTerminalSizeControl(sessionId);
+  if (
+    status &&
+    (status.sizeRevision ?? 0) > 0 &&
+    status.cols !== undefined &&
+    status.cols > 0 &&
+    status.rows !== undefined &&
+    status.rows > 0
+  ) {
+    return { cols: status.cols, rows: status.rows };
+  }
+  return { cols, rows };
 }
 
 export function hasTerminalSizeControl(sessionId: string): boolean {

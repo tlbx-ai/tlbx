@@ -558,7 +558,9 @@ public sealed class SessionCliContextServiceTests : IDisposable
                 Feed("second02", marker);
                 return Task.FromResult(true);
             }, CancellationToken.None);
-            Assert.StartsWith("second02:", await fast.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+            // This asserts independence from the still-closed slow gate, not a
+            // two-second scheduling guarantee on a shared CI runner.
+            Assert.StartsWith("second02:", await fast.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken), StringComparison.Ordinal);
             Assert.False(slow.IsCompleted);
         }
         finally { release.SetResult(); }
