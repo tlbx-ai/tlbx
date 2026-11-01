@@ -3,6 +3,7 @@ import type { TerminalSizeControlStatus } from '../types';
 import {
   $terminalSizeControls,
   getTerminalSizeControl,
+  getTerminalSizeDimensions,
   removeTerminalSizeControlSource,
   setTerminalSizeControl,
   setTerminalSizeControlsForSource,
@@ -57,5 +58,22 @@ describe('terminal size-control projection', () => {
 
     setTerminalSizeControl(status(10, true));
     expect(getTerminalSizeControl(sessionId)).toEqual(status(10, true));
+  });
+
+  it('keeps the confirmed grid against older responses and snapshots at the same epoch', () => {
+    const current = { ...status(9, true), cols: 103, rows: 44, sizeRevision: 2 };
+    const stale = { ...current, cols: 158, rows: 54, sizeRevision: 1 };
+    setTerminalSizeControl(current);
+    setTerminalSizeControl(stale);
+    setTerminalSizeControlsForSource(source, [stale]);
+    expect(getTerminalSizeControl(sessionId)).toEqual(current);
+    expect(getTerminalSizeDimensions(sessionId, 158, 54)).toEqual({ cols: 103, rows: 44 });
+    setTerminalSizeControl({ ...current, isOwner: false, epoch: 10 });
+    expect(getTerminalSizeDimensions(sessionId, 158, 54)).toEqual({ cols: 103, rows: 44 });
+  });
+
+  it('uses output dimensions until the remote host provides a confirmed grid', () => {
+    setTerminalSizeControl(status(9, false));
+    expect(getTerminalSizeDimensions(sessionId, 158, 54)).toEqual({ cols: 158, rows: 54 });
   });
 });

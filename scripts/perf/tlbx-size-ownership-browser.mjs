@@ -381,7 +381,11 @@ try {
       await closed;
       window.mmDebug.terminals.get(id).terminal.input("Ω", true);
     }, id);
-    await typeHere(ipad, "ipad-current-input-during-other-reconnect", "q");
+    const currentInputOwner = await typeHere(
+      ipad,
+      "ipad-current-input-during-other-reconnect",
+      "q",
+    );
     await desktop.page.waitForFunction((id) => {
       const b = window.mmDebug.terminals.get(id).terminal.buffer.active;
       return Array.from({ length: b.length }, (_, i) =>
@@ -393,7 +397,7 @@ try {
     assert.equal(await role(desktop.page, id), "follower");
     assert.equal(
       (await checkpoint("buffered-key-keeps-ipad-owner", ipad.page, id)).epoch,
-      active.epoch,
+      currentInputOwner.epoch,
     );
     const stale = await desktop.page.evaluate(
       ([id, epoch]) =>

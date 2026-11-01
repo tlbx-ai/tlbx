@@ -27,6 +27,7 @@ import {
   $currentSettings,
   $sessions,
   hasTerminalSizeControl,
+  getTerminalSizeDimensions,
 } from '../../stores';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import { disposeTerminalPresentation } from './terminalPresentation';
@@ -1353,8 +1354,11 @@ export function createTerminalForSession(
   terminal.unicode.activeVersion = '11';
 
   // Get server dimensions from session info (if available)
-  const serverCols = sessionInfo?.cols ?? 0;
-  const serverRows = sessionInfo?.rows ?? 0;
+  const { cols: serverCols, rows: serverRows } = getTerminalSizeDimensions(
+    sessionId,
+    sessionInfo?.cols ?? 0,
+    sessionInfo?.rows ?? 0,
+  );
 
   const state: TerminalState = {
     terminal: terminal,

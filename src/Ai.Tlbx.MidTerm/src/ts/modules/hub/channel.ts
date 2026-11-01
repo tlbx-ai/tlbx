@@ -12,6 +12,7 @@ import { getHubSessionRecord } from './runtime';
 import { applyOutputFrameToTerminal, getBrowserTransportSnapshot } from '../comms/muxChannel';
 import { getResumeSequence } from '../comms/muxResumeCursor';
 import { bufferedInputFrameType } from '../comms/muxInputFrame';
+import { requestHubSizeControlForCurrentInput } from './sizeControlChannel';
 
 let hubSocket: WebSocket | null = null;
 let activeCompositeId: string | null = null;
@@ -227,6 +228,8 @@ export function sendHubInput(sessionId: string, data: string, userInput = true):
     sendHubInputFrame(sessionId, data, userInput);
     return;
   }
+
+  if (userInput && data.length > 0) requestHubSizeControlForCurrentInput(sessionId);
 
   if (pendingHubInputs.length >= MAX_PENDING_HUB_INPUTS) pendingHubInputs.shift();
   pendingHubInputs.push({ sessionId, data, userInput });

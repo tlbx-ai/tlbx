@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   applyOutputFrameToTerminal: vi.fn(),
   sessionTerminals: new Map<string, unknown>(),
+  requestHubSizeControlForCurrentInput: vi.fn(),
+}));
+
+vi.mock('./sizeControlChannel', () => ({
+  requestHubSizeControlForCurrentInput: mocks.requestHubSizeControlForCurrentInput,
 }));
 
 vi.mock('../../state', () => ({
@@ -85,6 +90,7 @@ describe('Hub terminal browser lifecycle', () => {
     vi.useFakeTimers();
     sockets.length = 0;
     mocks.applyOutputFrameToTerminal.mockClear();
+    mocks.requestHubSizeControlForCurrentInput.mockClear();
     vi.stubGlobal('WebSocket', FakeWebSocket);
     vi.stubGlobal('window', {
       setTimeout: globalThis.setTimeout.bind(globalThis),
@@ -124,6 +130,7 @@ describe('Hub terminal browser lifecycle', () => {
     attachHubChannel('hub:machine-a:session-a');
     sockets[0]!.open(0);
     sendHubInput('hub:machine-a:session-a', 'old Ä');
+    expect(mocks.requestHubSizeControlForCurrentInput).toHaveBeenCalledOnce();
     expect(sockets[0]!.sent).toHaveLength(0);
     sockets[0]!.initialize(3);
     expect(sockets[0]!.sent[0]![0]).toBe(0x15);
@@ -132,6 +139,7 @@ describe('Hub terminal browser lifecycle', () => {
     expect(sockets[0]!.sent[1]![0]).toBe(0x02);
     sendHubInput('hub:machine-a:session-a', 'now');
     expect(sockets[0]!.sent[2]![0]).toBe(0x14);
+    expect(mocks.requestHubSizeControlForCurrentInput).toHaveBeenCalledOnce();
   });
 
   it('preserves queued bytes for a remote host advertising the old protocol', () => {

@@ -48,6 +48,7 @@ vi.mock('../share', () => ({
 }));
 
 vi.mock('./stateChannel', () => ({
+  requestSizeControlForCurrentInput: vi.fn(),
   handleStateUpdate: vi.fn(),
   reportTerminalSizeInteraction: vi.fn(),
   resizeTerminalWithControl: vi.fn(),
@@ -460,8 +461,43 @@ describe('muxChannel', () => {
   });
 
   afterEach(() => {
+    stores.removeTerminalSizeControlSource('local');
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('does not resize to stale output geometry after a confirmed control snapshot', async () => {
+    const harness = await loadHarness([0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    stores.setTerminalSizeControl({
+      sessionId: 'sess1234',
+      isOwner: true,
+      hasOwner: true,
+      ownerOnline: true,
+      canTakeOverAutomatically: true,
+      epoch: 2,
+      cols: 103,
+      rows: 44,
+      sizeRevision: 3,
+    });
+    harness.ws.onmessage?.({
+      data: buildOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        'still delivered',
+        158,
+        54,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+    const terminal = harness.sessionTerminals.get('sess1234')!;
+    expect(terminal.terminal.resize).toHaveBeenCalledWith(103, 44);
+    expect(terminal.terminal.resize).not.toHaveBeenCalledWith(158, 54);
+    expect(terminal.serverCols).toBe(103);
+    expect(terminal.serverRows).toBe(44);
+    expect(terminal.terminal.write).toHaveBeenCalled();
   });
 
   it('keeps draining queued output without waiting for prior xterm callbacks', async () => {

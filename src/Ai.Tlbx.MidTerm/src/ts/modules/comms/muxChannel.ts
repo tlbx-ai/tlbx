@@ -106,8 +106,8 @@ import { createAlternateScreenReplayPrefix } from '../terminal/replayState';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput } from '../hub/channel';
-import { $currentSettings, getTerminalSizeControl } from '../../stores';
-import { resizeTerminalWithControl } from './stateChannel';
+import { $currentSettings, getTerminalSizeControl, getTerminalSizeDimensions } from '../../stores';
+import { requestSizeControlForCurrentInput, resizeTerminalWithControl } from './stateChannel';
 import {
   muxWs,
   sessionTerminals,
@@ -1123,10 +1123,13 @@ function applyTerminalResizeIfNeeded(
   cols: number,
   rows: number,
 ): void {
+  ({ cols, rows } = getTerminalSizeDimensions(sessionId, cols, rows));
   if (!(cols > 0 && rows > 0 && cols <= 500 && rows <= 500 && state.opened)) {
     return;
   }
 
+  state.serverCols = cols;
+  state.serverRows = rows;
   const currentCols = state.terminal.cols;
   const currentRows = state.terminal.rows;
   if (currentCols === cols && currentRows === rows) {
@@ -1781,6 +1784,10 @@ export function sendInput(sessionId: string, data: string): void {
     return;
   }
 
+  if (data.length > 0 && (!muxWs || muxWs.readyState !== WebSocket.OPEN || !inputChannelReady)) {
+    requestSizeControlForCurrentInput(sessionId);
+  }
+
   const inputAtMs = performance.now();
   const state = sessionTerminals.get(sessionId);
   if (state) {
@@ -1906,11 +1913,7 @@ async function processTerminalResizeQueue(
         if (!currentOwnership?.isOwner || currentOwnership.epoch !== ownership.epoch) continue;
 
         if (result.resizeApplied) {
-          state.serverCols = result.cols;
-          state.serverRows = result.rows;
-          if (state.terminal.cols !== result.cols || state.terminal.rows !== result.rows) {
-            state.terminal.resize(result.cols, result.rows);
-          }
+          applyTerminalResizeIfNeeded(sessionId, state, result.cols, result.rows);
         }
         applyTerminalScaling(sessionId, state);
       } catch (error) {

@@ -176,8 +176,12 @@ public sealed class TerminalSizeControlServiceTests
         Assert.Equal(1, calls);
     }
 
-    [Fact]
-    public async Task NewOwnerInputSupersedesAnOlderHandoffWaitingForResize()
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task NewOwnerInputSupersedesAnOlderHandoffWaitingForResize(bool waitingViaState, bool currentViaState)
     {
         using var fixture = new Fixture();
         var original = await fixture.Service.RequestControlAsync("session-1", "desktop:one", true,
@@ -186,14 +190,18 @@ public sealed class TerminalSizeControlServiceTests
 #pragma warning disable IDISP013 // Held pending deliberately; both operations are awaited before fixture disposal.
         var resize = fixture.Service.ResizeAsync("session-1", "desktop:one", original.Status.Epoch,
             100, 30, _ => acknowledge.Task, Xunit.TestContext.Current.CancellationToken);
-        var delayedInput = fixture.Service.RecordInputAsync("session-1", "link:one",
-            ct: Xunit.TestContext.Current.CancellationToken);
+        var delayedInput = waitingViaState
+            ? fixture.Service.RequestControlAsync("session-1", "link:one", true,
+                expectedEpoch: original.Status.Epoch, ct: Xunit.TestContext.Current.CancellationToken)
+            : fixture.Service.RecordInputAsync("session-1", "link:one", ct: Xunit.TestContext.Current.CancellationToken);
 #pragma warning restore IDISP013
         try
         {
             Assert.False(delayedInput.IsCompleted);
-            var currentInput = await fixture.Service.RecordInputAsync("session-1", "desktop:one",
-                ct: Xunit.TestContext.Current.CancellationToken);
+            var currentInput = currentViaState
+                ? await fixture.Service.RequestControlAsync("session-1", "desktop:one", true,
+                    expectedEpoch: original.Status.Epoch, ct: Xunit.TestContext.Current.CancellationToken)
+                : await fixture.Service.RecordInputAsync("session-1", "desktop:one", ct: Xunit.TestContext.Current.CancellationToken);
             Assert.True(currentInput.Status.IsOwner);
         }
         finally { acknowledge.TrySetResult(true); await resize; }
@@ -222,6 +230,53 @@ public sealed class TerminalSizeControlServiceTests
         fixture.RestartService();
         Assert.Equal("link:one", fixture.Service.GetOwnerBrowserId("session-1"));
         Assert.Equal(active.Status.Epoch, fixture.Service.GetStatus("session-1", "link:one").Epoch);
+    }
+
+    [Fact]
+    public async Task ConfirmedDimensionsSurviveHandoffRestartAndStaleSessionSnapshots()
+    {
+        using var fixture = new Fixture();
+        var ct = Xunit.TestContext.Current.CancellationToken;
+        var owner = await fixture.Service.RequestControlAsync("session-1", "desktop:one", true, ct: ct);
+        var resized = await fixture.Service.ResizeAsync("session-1", "desktop:one", owner.Status.Epoch,
+            103, 44, _ => Task.FromResult(true), ct);
+        Assert.Equal((103, 44, 1L), (resized.Status.Cols, resized.Status.Rows, resized.Status.SizeRevision));
+        var same = await fixture.Service.ResizeAsync("session-1", "desktop:one", owner.Status.Epoch,
+            103, 44, _ => Task.FromResult(true), ct);
+        Assert.Equal(resized.Status.SizeRevision, same.Status.SizeRevision);
+        var failed = await fixture.Service.ResizeAsync("session-1", "desktop:one", owner.Status.Epoch,
+            158, 54, _ => Task.FromResult(false), ct);
+        Assert.Equal((103, 44, 1L), (failed.Status.Cols, failed.Status.Rows, failed.Status.SizeRevision));
+        var handoff = await fixture.Service.RecordInputAsync("session-1", "link:one", ct: ct);
+        Assert.Equal((103, 44, 1L), (handoff.Status.Cols, handoff.Status.Rows, handoff.Status.SizeRevision));
+        fixture.RestartService();
+        var snapshot = Assert.Single(fixture.Service.GetStatuses("link:one",
+            [new() { Id = "session-1", Cols = 158, Rows = 54 }]));
+        Assert.True(snapshot.IsOwner);
+        Assert.Equal((103, 44, 1L), (snapshot.Cols, snapshot.Rows, snapshot.SizeRevision));
+        var next = await fixture.Service.ResizeAsync("session-1", "link:one", snapshot.Epoch,
+            80, 30, _ => Task.FromResult(true), ct);
+        Assert.Equal((80, 30, 2L), (next.Status.Cols, next.Status.Rows, next.Status.SizeRevision));
+    }
+
+    [Fact]
+    public async Task UnownedGridDoesNotPreventHeadlessResizeOrInitialBrowserClaim()
+    {
+        using var fixture = new Fixture();
+        var ct = Xunit.TestContext.Current.CancellationToken;
+        var initial = Assert.Single(fixture.Service.GetStatuses("desktop:one",
+            [new() { Id = "session-1", Cols = 120, Rows = 30 }]));
+        Assert.False(initial.HasOwner);
+        Assert.Null(fixture.Service.GetOwnerBrowserId("session-1"));
+        Assert.True(await fixture.Service.ResizeUnownedAsync("session-1", 80, 25, _ => Task.FromResult(true), ct));
+        fixture.RestartService();
+        var headless = fixture.Service.GetStatus("session-1", "desktop:one");
+        Assert.False(headless.HasOwner);
+        Assert.Equal((80, 25, 2L), (headless.Cols, headless.Rows, headless.SizeRevision));
+        var claimed = await fixture.Service.RequestControlAsync("session-1", "desktop:one", false, ct: ct);
+        Assert.True(claimed.Status.IsOwner);
+        Assert.Equal((80, 25, 2L), (claimed.Status.Cols, claimed.Status.Rows, claimed.Status.SizeRevision));
+        Assert.False(await fixture.Service.ResizeUnownedAsync("session-1", 100, 40, _ => Task.FromResult(true), ct));
     }
 
     private sealed class Fixture : IDisposable
