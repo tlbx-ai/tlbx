@@ -15,7 +15,8 @@
     <Error Text="Connect native dependencies cannot be skipped in a published artifact." />
   </Target>
   <Target Name="BuildConnectNative" BeforeTargets="AssignTargetPaths" Inputs="@(_ConnectNativeInput)" Outputs="$(_ConnectNativeBundle)" Condition="'$(SkipConnectNativeBuild)' != 'true'">
-    <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/build.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" />
+    <!-- Recovered mirror failures may print error: text; the checked build script's exit code is authoritative. -->
+    <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/build.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" IgnoreStandardErrorWarningFormat="true" />
   </Target>
   <Target Name="AuditConnectNative" BeforeTargets="AssignTargetPaths" DependsOnTargets="BuildConnectNative" Condition="'$(SkipConnectNativeBuild)' != 'true'">
     <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/audit.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" />

@@ -20,6 +20,41 @@ function Assert-Throws([scriptblock]$Action, [string]$Message) {
     try { & $Action } catch { $threw = $true }
     Assert-Check $threw $Message
 }
+$nativeExecFixture = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('tlbx-native-exec-' + [guid]::NewGuid().ToString('N'))))
+$nativeExecTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+if (-not $nativeExecFixture.StartsWith($nativeExecTempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Native Exec fixture escaped its temporary root.' }
+New-Item -ItemType Directory -Path $nativeExecFixture | Out-Null
+$previousFixtureExit = $env:TLBX_NATIVE_FIXTURE_EXIT_CODE
+try {
+    @'
+param([string]$RuntimeIdentifier)
+[Console]::Error.WriteLine('error: recovered mirror download diagnostic')
+exit [int]$env:TLBX_NATIVE_FIXTURE_EXIT_CODE
+'@ | Set-Content -LiteralPath (Join-Path $nativeExecFixture 'build.ps1')
+    $nativeTargets = [Security.SecurityElement]::Escape((Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm/ConnectNative.targets'))
+    "<Project><Import Project=`"$nativeTargets`" /></Project>" | Set-Content -LiteralPath (Join-Path $nativeExecFixture 'fixture.proj')
+    $dotnetBinary = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
+    foreach ($exitCode in @(0,17)) {
+        $env:TLBX_NATIVE_FIXTURE_EXIT_CODE = $exitCode.ToString([Globalization.CultureInfo]::InvariantCulture)
+        $info = [Diagnostics.ProcessStartInfo]::new($dotnetBinary)
+        $info.UseShellExecute = $false; $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+        foreach ($argument in @('msbuild', (Join-Path $nativeExecFixture 'fixture.proj'), '-t:BuildConnectNative', '-nologo', "-p:_ConnectNativeRoot=$nativeExecFixture", "-p:_ConnectNativeBundle=$nativeExecFixture/missing-bundle.zip", '-p:_ConnectNativeRid=fixture')) { $info.ArgumentList.Add($argument) }
+        $child = [Diagnostics.Process]::Start($info)
+        try {
+            $stdout = $child.StandardOutput.ReadToEndAsync(); $stderr = $child.StandardError.ReadToEndAsync()
+            if (-not $child.WaitForExit(30000)) { $child.Kill($true); throw 'Native Exec protocol fixture timed out.' }
+            $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+            if ($exitCode -eq 0) { Assert-Check ($child.ExitCode -eq 0) "Recovered native-tool diagnostics incorrectly failed MSBuild: $output" }
+            else { Assert-Check ($child.ExitCode -ne 0 -and $output.Contains('MSB3073')) "A real native build failure did not fail MSBuild: $output" }
+        } finally { $child.Dispose() }
+    }
+} finally {
+    $env:TLBX_NATIVE_FIXTURE_EXIT_CODE = $previousFixtureExit
+    $resolvedFixture = [IO.Path]::GetFullPath((Get-Item -LiteralPath $nativeExecFixture).FullName)
+    if (-not $resolvedFixture.StartsWith($nativeExecTempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing to delete an unexpected native Exec fixture path.' }
+    Remove-Item -LiteralPath $resolvedFixture -Recurse -Force
+}
 $prWorkflow = Get-Content (Join-Path $repoRoot '.github/workflows/pr-verify.yml') -Raw
 Assert-Check ($prWorkflow -match '(?m)^    name: PR server\r?$' -and $prWorkflow -match 'needs: \[frontend, native-linux, native-url-stdlib, macos-context, server-contracts\]\r?\n    if: always\(\)\r?\n    runs-on: ubuntu-24.04\r?\n    timeout-minutes: 5') 'The short PR server gate must aggregate all prerequisites and cannot become a skipped required check.'
 $serverContracts = [regex]::Match($prWorkflow, '(?ms)^  server-contracts:\r?\n(?<body>.*?)^  server:\r?\n')
