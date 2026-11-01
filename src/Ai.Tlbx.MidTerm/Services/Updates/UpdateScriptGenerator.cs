@@ -189,12 +189,30 @@ function WaitForFileWritable {{
     return $false
 }}
 
+function IsMcpAdapterProcess {{
+    param([System.Diagnostics.Process]$Process)
+
+    $info = Get-CimInstance Win32_Process -Filter ""ProcessId=$($Process.Id)"" -ErrorAction Stop
+    if (-not $info) {{ return $false }}
+    if ([string]::IsNullOrWhiteSpace($info.CommandLine)) {{
+        throw ""Cannot classify mt process $($Process.Id); leaving it running.""
+    }}
+    # Only the leading subcommand selects MCP mode. Later argument values must
+    # never exempt a web server from shutdown.
+    return $info.CommandLine -cmatch '^\s*(?:""[^""]+""|[^\s""]+)\s+(?:""mcp""|mcp)(?:\s|$)'
+}}
+
 function KillProcessByPath {{
-    param([string]$FullPath)
+    param([string]$FullPath, [switch]$PreserveMcp)
 
     $Name = [System.IO.Path]::GetFileNameWithoutExtension($FullPath)
     $procs = Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object {{
         try {{ $_.Path -eq $FullPath }} catch {{ $false }}
+    }} | Where-Object {{
+        if ($PreserveMcp -and (IsMcpAdapterProcess $_)) {{
+            Log ""Preserving native MCP adapter (PID: $($_.Id))""
+            $false
+        }} else {{ $true }}
     }}
     if ($procs) {{
         foreach ($proc in $procs) {{
@@ -212,6 +230,8 @@ function KillProcessByPath {{
     # Double-check
     $remaining = Get-Process -Name $Name -ErrorAction SilentlyContinue | Where-Object {{
         try {{ $_.Path -eq $FullPath }} catch {{ $false }}
+    }} | Where-Object {{
+        -not ($PreserveMcp -and (IsMcpAdapterProcess $_))
     }}
     if ($remaining) {{
         foreach ($proc in $remaining) {{
@@ -254,6 +274,31 @@ function SafeCopy {{
     VerifyCopy $Source $Dest
 
     Log ""$Description copied successfully""
+}}
+
+function RemoveInactiveMcpImages {{
+    $leaf = [IO.Path]::GetFileName($CurrentMt)
+    $pattern = '^' + [regex]::Escape($leaf) + '\.mcp-[0-9a-f]{{32}}\.old$'
+    Get-ChildItem -LiteralPath $InstallDir -File -Filter ""$leaf.mcp-*.old"" -ErrorAction SilentlyContinue |
+        Where-Object {{ $_.Name -cmatch $pattern }} | ForEach-Object {{
+            try {{ Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop }}
+            catch {{ Log ""Retaining loaded MCP image: $($_.TargetObject)"" }}
+        }}
+}}
+
+function InstallMtBinary {{
+    param([string]$Source = $NewMt)
+
+    # Loaded executable images cannot be overwritten on Windows. Renaming the
+    # old image keeps native stdio clients alive while publishing the new file.
+    if (-not (Test-Path -LiteralPath $Source)) {{ throw ""Source file does not exist: $Source"" }}
+    $retiredImage = $null
+    if (Test-Path -LiteralPath $CurrentMt) {{
+        $retiredImage = $CurrentMt + '.mcp-' + [guid]::NewGuid().ToString('N') + '.old'
+        Move-Item -LiteralPath $CurrentMt -Destination $retiredImage -ErrorAction Stop
+    }}
+    SafeCopy $Source $CurrentMt 'mt.exe'
+    RemoveInactiveMcpImages
 }}
 
 function GetOwnedService {{
@@ -322,6 +367,11 @@ try {{
     Log ''
     Log '=== PHASE 1: Stopping processes ==='
 
+    # Fail before stopping the service if process modes cannot be read safely.
+    Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($CurrentMt)) -ErrorAction SilentlyContinue |
+        Where-Object {{ try {{ $_.Path -eq $CurrentMt }} catch {{ $false }} }} |
+        ForEach-Object {{ $null = IsMcpAdapterProcess $_ }}
+
     # Stop Windows service if running
     $service = GetOwnedService
     if ($service -and $service.Status -eq 'Running') {{
@@ -338,7 +388,7 @@ try {{
 
     # Kill mt.exe processes (by full path to avoid killing unrelated processes)
     Log 'Killing mt.exe processes...'
-    KillProcessByPath $CurrentMt
+    KillProcessByPath $CurrentMt -PreserveMcp
 
     # Kill mthost.exe processes (only for full updates)
     if (-not $IsWebOnly) {{
@@ -365,9 +415,7 @@ try {{
     Log ''
     Log '=== PHASE 2: Waiting for file handles ==='
 
-    if (-not (WaitForFileWritable $CurrentMt)) {{
-        throw ""mt.exe is still locked after $MaxRetries retries. Another process may be using it.""
-    }}
+    Log 'The server image is replaced by rename; active MCP adapters keep their loaded image.'
 
     if ((-not $IsWebOnly) -and (Test-Path $CurrentMthost)) {{
         if (-not (WaitForFileWritable $CurrentMthost)) {{
@@ -541,7 +589,7 @@ try {{
     Log ''
     Log '=== PHASE 4: Installing new files ==='
 
-    SafeCopy $NewMt $CurrentMt 'mt.exe'
+    InstallMtBinary
 
     if (Test-Path $NewTmuxShim) {{
         SafeCopy $NewTmuxShim $CurrentTmuxShim '{TmuxShimBinaryName}.exe'
@@ -695,13 +743,13 @@ try {{
         Log '=== ROLLBACK ===' 'WARN'
 
         # Stop any partially started process
-        KillProcessByPath $CurrentMt
+        KillProcessByPath $CurrentMt -PreserveMcp
 
         # Restore backups
         if (Test-Path ""$CurrentMt.bak"") {{
             Log 'Restoring mt.exe from backup...'
             try {{
-                Copy-Item ""$CurrentMt.bak"" $CurrentMt -Force -ErrorAction Stop
+                InstallMtBinary ""$CurrentMt.bak""
                 Log 'mt.exe restored'
             }} catch {{
                 Log ""Failed to restore mt.exe: $_"" 'ERROR'

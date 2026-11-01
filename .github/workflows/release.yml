@@ -1081,8 +1081,8 @@ jobs:
 
           if release.get("tagName") != expected_tag:
               raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}, got {release.get('tagName')!r}")
-          if release.get("isDraft") is not True:
-              raise SystemExit("Release must still be a draft before publication.")
+          if not isinstance(release.get("isDraft"), bool):
+              raise SystemExit("Release draft state is missing or invalid.")
           if release.get("isPrerelease") is not ("-dev" in expected_tag):
               raise SystemExit("Release prerelease flag does not match its tag.")
 
@@ -1123,7 +1123,7 @@ jobs:
               "draft": False,
               "prerelease": release["isPrerelease"],
               "make_latest": "false" if release["isPrerelease"] else "true",
-              "body": (release.get("body") or "").rstrip() + "\n\n" + availability,
+              "body": (release.get("body") or "").split("## Platform availability", 1)[0].rstrip() + "\n\n" + availability,
           }
           with open(patch_path, "w", encoding="utf-8") as handle:
               json.dump(patch, handle)

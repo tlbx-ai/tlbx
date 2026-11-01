@@ -79,11 +79,20 @@ class PublicationTests(unittest.TestCase):
                 self.assertNotEqual(self.validate(release).returncode, 0)
 
     def test_wrong_metadata_never_publishes(self):
-        for change in [dict(isDraft=False), dict(isPrerelease=False), dict(tagName='v1.2.4-dev'), dict(databaseId=0)]:
+        for change in [dict(isDraft=None), dict(isPrerelease=False), dict(tagName='v1.2.4-dev'), dict(databaseId=0)]:
             with self.subTest(change=change):
                 release = self.release()
                 release.update(change)
                 self.assertNotEqual(self.validate(release).returncode, 0)
+
+    def test_already_published_partial_release_is_completed_idempotently(self):
+        release = self.release()
+        release.update(isDraft=False, body='MCP update fix.\n\n## Platform availability\n\nAvailable: linux-x64.')
+        self.assertEqual(self.validate(release).returncode, 0)
+        self.assertFalse(self.patch['draft'])
+        self.assertEqual(self.patch['body'].count('## Platform availability'), 1)
+        self.assertIn('MCP update fix.', self.patch['body'])
+        self.assertIn('Unavailable in this release: none.', self.patch['body'])
 
     def gate(self, dev, results):
         expression = condition.replace('always()', 'True').replace('!cancelled()', 'True')
