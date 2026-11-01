@@ -140,7 +140,9 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         });
         app.MapMcp(TlbxMcpEndpoints.Path);
         using var bounded = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
-        bounded.CancelAfter(TimeSpan.FromSeconds(45));
+        // Covers two real adapter startups, artifact transfer and detached-worker
+        // completion. Keep the whole scenario bounded without a cold-runner race.
+        bounded.CancelAfter(TimeSpan.FromMinutes(2));
         var ct = bounded.Token;
         IsolatedRunState? state = null;
         McpClient? client = null;

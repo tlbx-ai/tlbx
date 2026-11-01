@@ -121,6 +121,17 @@ public sealed class TlbxMcpIsolatedProcessTests
             }
             else Assert.Contains("[]\n[" + literal + "]", stdout, StringComparison.Ordinal);
             Assert.False(File.Exists(Path.Combine(state.RunDirectory, "launch.json")));
+            // CompletedAt confirms the child's drained output, not that the
+            // supervising worker has exited and released its current directory.
+            try
+            {
+                using var worker = Process.GetProcessById(state.WorkerPid);
+                if (worker.StartTime.ToUniversalTime().Ticks == state.WorkerStartedTicks)
+                    await worker.WaitForExitAsync(TestContext.Current.CancellationToken)
+                        .WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken);
+            }
+            catch (ArgumentException) { /* The exact worker has already exited. */ }
+            catch (InvalidOperationException) { /* It exited while opening its process handle. */ }
             verified = true;
         }
         finally
