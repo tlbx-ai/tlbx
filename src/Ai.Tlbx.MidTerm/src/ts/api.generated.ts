@@ -5452,6 +5452,12 @@ export interface components {
       ownerLabel: null | string;
       /** Format: int64 */
       epoch: number;
+      /** Format: int32 */
+      cols: number;
+      /** Format: int32 */
+      rows: number;
+      /** Format: int64 */
+      sizeRevision: number;
     };
     TerminalTransportDiagnosticsDto: {
       sourceSeq: string;
