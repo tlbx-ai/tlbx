@@ -36,7 +36,7 @@ const cookie = (process.env.TLBX_COOKIE_HEADER || "")
     const i = s.indexOf("=");
     return { name: s.slice(0, i).trim(), value: s.slice(i + 1).trim(), url };
   });
-async function device(label, width, height) {
+async function device(label, width, height, profileId) {
   const ctx = await browser.newContext({
     ignoreHTTPSErrors: true,
     viewport: { width, height },
@@ -44,7 +44,7 @@ async function device(label, width, height) {
   contexts.push(ctx);
   await ctx.addCookies([
     ...cookie,
-    { name: "mt-client-id", value: label + "-" + Date.now(), url },
+    { name: "mt-client-id", value: profileId || crypto.randomUUID(), url },
   ]);
   await ctx.addInitScript(() => {
     window.auditSockets = [];
@@ -100,8 +100,16 @@ async function device(label, width, height) {
 const role = (p, id) =>
   p.locator("#terminal-" + id).getAttribute("data-terminal-presentation-role");
 const select = async (p, id) => {
-  await p.locator(`.session-item[data-session-id="${id}"]`).click();
+  // The item center can be its bookmark action; select the actual session label.
+  await p
+    .locator(`.session-item[data-session-id="${id}"]`)
+    .click({ position: { x: 32, y: 12 } });
   await p.waitForFunction((id) => window.mmDebug.terminals.get(id)?.opened, id);
+  assert.equal(
+    await p.locator(".modal-overlay:visible").count(),
+    0,
+    "Session selection opened an unexpected modal",
+  );
 };
 const checkpoint = async (name, p, id) => {
   const v = await p.evaluate((id) => {
@@ -230,80 +238,223 @@ try {
       path: path.join(artifacts, "owner-scrollback-height.png"),
     });
   }
+
   if (full) {
     const ipad = await device("ipad", 1024, 768);
-    await select(ipad.page, id);
-    assert.equal(await role(ipad.page, id), "follower");
-    // Repeated terminal-generated replies must not count as input or steal a lease.
-    await desktop.page.goto("about:blank");
-    for (let n = 0; n < 7; n++) {
-      await new Promise((r) => setTimeout(r, 45000));
-      await ipad.page.evaluate(
+    const vpn = await device("vpn", 1250, 900);
+    const profile = (await desktop.ctx.cookies()).find(
+      (c) => c.name === "mt-client-id",
+    ).value;
+    const sibling = await device("sibling", 1180, 820, profile);
+    for (const view of [ipad, vpn, sibling]) {
+      await select(view.page, id);
+      assert.equal(await role(view.page, id), "follower");
+    }
+    await ipad.page.screenshot({
+      path: path.join(artifacts, "scaled-follower.png"),
+    });
+    const assertOwner = async (view, name) => {
+      await view.page.waitForFunction(
         (id) =>
-          new Promise((r) =>
-            window.mmDebug.terminals.get(id).terminal.write("\x1b[6n", r),
-          ),
+          document.getElementById("terminal-" + id)?.dataset
+            .terminalPresentationRole === "owner",
         id,
       );
-      await ipad.page.setViewportSize({
-        width: 1024 + (n % 2) * 40,
-        height: 768,
-      });
-      await ipad.page.reload();
-      await select(ipad.page, id);
+      await view.page.waitForFunction((id) => {
+        const s = window.mmDebug.terminals.get(id);
+        const screen = s.container
+          .querySelector(".xterm-screen")
+          .getBoundingClientRect();
+        const container = s.container.getBoundingClientRect();
+        const cell = s.terminal._core._renderService.dimensions.css.cell;
+        return (
+          s.serverCols === s.terminal.cols &&
+          s.serverRows === s.terminal.rows &&
+          screen.width <= container.width + 1 &&
+          screen.bottom <= container.bottom + 1 &&
+          container.width - screen.width < cell.width + 2 &&
+          container.bottom - screen.bottom < cell.height + 2
+        );
+      }, id);
+      const cp = await checkpoint(name, view.page, id);
+      const geometry = await view.page.evaluate((id) => {
+        const state = window.mmDebug.terminals.get(id);
+        const screen = state.container
+          .querySelector(".xterm-screen")
+          .getBoundingClientRect();
+        const container = state.container.getBoundingClientRect();
+        const cell = state.terminal._core._renderService.dimensions.css.cell;
+        return {
+          screen: {
+            width: screen.width,
+            height: screen.height,
+            bottom: screen.bottom,
+          },
+          container: {
+            width: container.width,
+            height: container.height,
+            bottom: container.bottom,
+          },
+          cell,
+          serverCols: state.serverCols,
+          serverRows: state.serverRows,
+          transform: state.container.querySelector(".xterm").style.transform,
+        };
+      }, id);
+      assert.equal(geometry.transform, "");
+      assert.equal(cp.cols, geometry.serverCols);
+      assert.equal(cp.rows, geometry.serverRows);
+      assert(
+        geometry.screen.width <= geometry.container.width + 1,
+        JSON.stringify(geometry),
+      );
+      assert(
+        geometry.screen.bottom <= geometry.container.bottom + 1,
+        JSON.stringify(geometry),
+      );
+      assert(
+        geometry.container.width - geometry.screen.width <
+          geometry.cell.width + 2,
+        JSON.stringify(geometry),
+      );
+      assert(
+        geometry.container.bottom - geometry.screen.bottom <
+          geometry.cell.height + 2,
+        JSON.stringify(geometry),
+      );
+      checkpoints.push({ name: name + "-geometry", ...geometry });
+      return cp;
+    };
+    const typeHere = async (view, name, key) => {
+      await view.page.bringToFront();
+      await view.page.evaluate(
+        (id) => window.mmDebug.terminals.get(id).terminal.focus(),
+        id,
+      );
+      await view.page.keyboard.press(key);
+      return assertOwner(view, name);
+    };
+    const active = await typeHere(ipad, "ipad-immediate-input-owner", "x");
+    assert.equal(await role(desktop.page, id), "follower");
+    for (const [name, view] of [
+      ["desktop", desktop],
+      ["vpn", vpn],
+      ["sibling", sibling],
+    ]) {
+      for (let n = 0; n < 3; n++) {
+        await view.page.bringToFront();
+        await view.page.evaluate(
+          (id) =>
+            new Promise((resolve) =>
+              window.mmDebug.terminals
+                .get(id)
+                .terminal.write("\x1b[6n", resolve),
+            ),
+          id,
+        );
+        await view.page.setViewportSize({
+          width: 1190 + n * 30,
+          height: 810 + n * 20,
+        });
+        await view.page.reload();
+        await select(view.page, id);
+        assert.equal(
+          (await checkpoint(name + "-passive-" + n, view.page, id)).role,
+          "follower",
+        );
+      }
       assert.equal(
-        (await checkpoint("passive-ipad-" + n, ipad.page, id)).role,
-        "follower",
+        (await checkpoint("ipad-retains-after-" + name, ipad.page, id)).epoch,
+        active.epoch,
       );
     }
-    await desktop.page.goto(url);
-    await select(desktop.page, id);
-    const returned = await checkpoint("desktop-return", desktop.page, id);
-    assert.equal(returned.role, "owner");
-    assert.equal(returned.epoch, before.epoch);
-    assert.equal(returned.cols, before.cols);
-    assert.equal(returned.rows, before.rows);
-    assert.equal(await role(ipad.page, id), "follower");
-    // The 5-minute protection has elapsed. Actual input on the iPad now transfers ownership.
-    await ipad.page.evaluate(
-      (id) => window.mmDebug.terminals.get(id).terminal.focus(),
-      id,
-    );
-    await ipad.page.keyboard.press("x");
-    await ipad.page.waitForFunction(
-      (id) =>
-        document.getElementById("terminal-" + id)?.dataset
-          .terminalPresentationRole === "owner",
-      id,
-    );
-    await checkpoint("ipad-input-owner", ipad.page, id);
+    // Real transport gap: queue an old user's key, then type in the active browser.
+    // Reconnect must deliver the queued key without reclaiming terminal dimensions.
+    await desktop.page.evaluate(async (id) => {
+      const socket = window.auditSockets.findLast(
+        (s) => new URL(s.url).pathname === "/ws/mux" && s.readyState === 1,
+      );
+      const closed = new Promise((resolve) =>
+        socket.addEventListener("close", resolve, { once: true }),
+      );
+      socket.close();
+      await closed;
+      window.mmDebug.terminals.get(id).terminal.input("Ω", true);
+    }, id);
+    await typeHere(ipad, "ipad-current-input-during-other-reconnect", "q");
+    await desktop.page.waitForFunction((id) => {
+      const b = window.mmDebug.terminals.get(id).terminal.buffer.active;
+      return Array.from({ length: b.length }, (_, i) =>
+        b.getLine(i)?.translateToString(true),
+      )
+        .join("\n")
+        .includes("ECHO-Ω");
+    }, id);
     assert.equal(await role(desktop.page, id), "follower");
-    // Explicit takeover overrides the fresh lease and fits the desktop viewport.
-    for (const close of await desktop.page
-      .locator(".modal-overlay .modal-close")
-      .all())
-      await close.click();
-    await desktop.page
-      .locator("#terminal-" + id + " > .scaled-overlay")
-      .click();
-    await desktop.page.waitForFunction(
-      (id) =>
-        document.getElementById("terminal-" + id)?.dataset
-          .terminalPresentationRole === "owner",
-      id,
+    assert.equal(
+      (await checkpoint("buffered-key-keeps-ipad-owner", ipad.page, id)).epoch,
+      active.epoch,
     );
-    await checkpoint("desktop-explicit-owner", desktop.page, id);
-    const blocked = await ipad.ctx.request.post(
+    const stale = await desktop.page.evaluate(
+      ([id, epoch]) =>
+        window.auditCommand("terminal.resize", {
+          sessionId: id,
+          cols: 80,
+          rows: 24,
+          expectedEpoch: Number(epoch),
+        }),
+      [id, before.epoch],
+    );
+    assert.equal(stale.resizeApplied, false);
+    // Same-profile tabs obey the same human-input rule as different devices.
+    await typeHere(desktop, "desktop-human-return", "y");
+    const sameProfile = await typeHere(
+      sibling,
+      "same-profile-human-input",
+      "z",
+    );
+    await desktop.page.bringToFront();
+    await desktop.page.reload();
+    await select(desktop.page, id);
+    assert.equal(await role(desktop.page, id), "follower");
+    assert.equal(
+      (
+        await checkpoint(
+          "sibling-survives-passive-profile-return",
+          sibling.page,
+          id,
+        )
+      ).epoch,
+      sameProfile.epoch,
+    );
+    await typeHere(vpn, "vpn-human-input", "v");
+    await typeHere(ipad, "ipad-human-return", "i");
+    const blocked = await desktop.ctx.request.post(
       new URL(`/api/sessions/${id}/resize`, url).href,
       { data: { cols: 80, rows: 24 } },
     );
     assert.equal(blocked.status(), 409);
-    checkpoints.push({
-      name: "rest-resize-rejected",
-      status: blocked.status(),
+    assert.equal(await ipad.page.locator(".modal-overlay:visible").count(), 0);
+    assert.equal(
+      await desktop.page.locator(".modal-overlay:visible").count(),
+      0,
+    );
+    await ipad.page.screenshot({
+      path: path.join(artifacts, "active-owner.png"),
     });
     await desktop.page.screenshot({
-      path: path.join(artifacts, "desktop-final.png"),
+      path: path.join(artifacts, "passive-follower.png"),
+    });
+    await vpn.page.setViewportSize({ width: 390, height: 844 });
+    const narrow = await typeHere(vpn, "narrow-human-input", "m");
+    assert(narrow.cols < active.cols);
+    // Capture the settled mobile view, after the existing off-canvas drawer transition.
+    await vpn.page.waitForFunction(
+      () =>
+        document.querySelector(".sidebar").getBoundingClientRect().right <= 1,
+    );
+    await vpn.page.screenshot({
+      path: path.join(artifacts, "narrow-owner.png"),
     });
   }
   await fs.writeFile(

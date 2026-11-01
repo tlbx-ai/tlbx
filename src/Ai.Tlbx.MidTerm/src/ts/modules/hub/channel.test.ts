@@ -43,9 +43,17 @@ class FakeWebSocket {
     sockets.push(this);
   }
 
-  open(): void {
+  open(version = 3): void {
     this.readyState = FakeWebSocket.OPEN;
     this.onopen?.();
+    if (version) this.initialize(version);
+  }
+
+  initialize(version: number): void {
+    const frame = new Uint8Array(11);
+    frame[0] = 0xff;
+    new DataView(frame.buffer).setUint16(9, version, true);
+    this.onmessage?.({ data: frame.buffer } as MessageEvent);
   }
 
   send(frame: Uint8Array): void {
@@ -108,7 +116,30 @@ describe('Hub terminal browser lifecycle', () => {
     sockets[1]!.open();
 
     expect(sockets[1]!.sent).toHaveLength(1);
+    expect(sockets[1]!.sent[0]![0]).toBe(0x15);
     expect(new TextDecoder().decode(sockets[1]!.sent[0]!.subarray(9))).toBe('queued');
+  });
+
+  it('waits for capabilities and separates replay, parser replies and current typing', () => {
+    attachHubChannel('hub:machine-a:session-a');
+    sockets[0]!.open(0);
+    sendHubInput('hub:machine-a:session-a', 'old Ä');
+    expect(sockets[0]!.sent).toHaveLength(0);
+    sockets[0]!.initialize(3);
+    expect(sockets[0]!.sent[0]![0]).toBe(0x15);
+    expect(new TextDecoder().decode(sockets[0]!.sent[0]!.subarray(9))).toBe('old Ä');
+    sendHubInput('hub:machine-a:session-a', '\x1b[1;1R', false);
+    expect(sockets[0]!.sent[1]![0]).toBe(0x02);
+    sendHubInput('hub:machine-a:session-a', 'now');
+    expect(sockets[0]!.sent[2]![0]).toBe(0x14);
+  });
+
+  it('preserves queued bytes for a remote host advertising the old protocol', () => {
+    attachHubChannel('hub:machine-a:session-a');
+    sendHubInput('hub:machine-a:session-a', 'legacy');
+    sockets[0]!.open(2);
+    expect(sockets[0]!.sent[0]![0]).toBe(0x14);
+    expect(new TextDecoder().decode(sockets[0]!.sent[0]!.subarray(9))).toBe('legacy');
   });
 
   it('reconnects an unexpectedly closed foreground channel once', () => {

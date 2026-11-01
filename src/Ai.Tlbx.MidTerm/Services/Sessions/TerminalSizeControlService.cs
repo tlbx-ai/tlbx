@@ -10,26 +10,22 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class TerminalSizeControlService : IDisposable
 {
-    public static readonly TimeSpan OfflineTakeoverDelay = TimeSpan.FromSeconds(30);
-    public static readonly TimeSpan ConnectedOwnerProtectionDelay = TimeSpan.FromMinutes(5);
-
     private readonly Lock _lock = new();
     private readonly Dictionary<string, OwnershipRecord> _ownership = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, long> _latestInputIntents = new(StringComparer.Ordinal);
+    private long _inputIntentSequence;
     private readonly Dictionary<string, HashSet<object>> _browserConnections = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _sessionGates = new(StringComparer.Ordinal);
-    private readonly TimeProvider _timeProvider;
     private readonly string _statePath;
-    private DateTimeOffset _lastInputPersistUtc;
     private Task _persistenceTask = Task.CompletedTask;
 
     public TerminalSizeControlService(SettingsService settingsService)
-        : this(settingsService.SettingsDirectory, TimeProvider.System)
+        : this(settingsService.SettingsDirectory)
     {
     }
 
-    internal TerminalSizeControlService(string settingsDirectory, TimeProvider timeProvider)
+    internal TerminalSizeControlService(string settingsDirectory)
     {
-        _timeProvider = timeProvider;
         _statePath = Path.Combine(settingsDirectory, "terminal-size-control.json");
         Load();
     }
@@ -44,7 +40,6 @@ public sealed class TerminalSizeControlService : IDisposable
         }
 
         var changed = false;
-        var ownershipChanged = false;
         lock (_lock)
         {
             if (!_browserConnections.TryGetValue(browserId, out var connections))
@@ -54,23 +49,9 @@ public sealed class TerminalSizeControlService : IDisposable
             }
 
             changed = connections.Add(connectionToken) && connections.Count == 1;
-            if (changed)
-            {
-                foreach (var owner in _ownership.Values.Where(owner =>
-                             string.Equals(owner.BrowserId, browserId, StringComparison.Ordinal)))
-                {
-                    ownershipChanged |= owner.DisconnectedAtUtc is not null;
-                    owner.DisconnectedAtUtc = null;
-                }
-
-                if (ownershipChanged)
-                {
-                    PersistLocked();
-                }
-            }
         }
 
-        if (changed || ownershipChanged)
+        if (changed)
         {
             OnChanged?.Invoke();
         }
@@ -79,7 +60,6 @@ public sealed class TerminalSizeControlService : IDisposable
     public void UnregisterBrowser(string browserId, object connectionToken)
     {
         var changed = false;
-        var ownershipChanged = false;
         lock (_lock)
         {
             if (!_browserConnections.TryGetValue(browserId, out var connections))
@@ -92,22 +72,10 @@ public sealed class TerminalSizeControlService : IDisposable
             {
                 _browserConnections.Remove(browserId);
                 changed = true;
-                var disconnectedAt = _timeProvider.GetUtcNow();
-                foreach (var owner in _ownership.Values.Where(owner =>
-                             string.Equals(owner.BrowserId, browserId, StringComparison.Ordinal)))
-                {
-                    owner.DisconnectedAtUtc = disconnectedAt;
-                    ownershipChanged = true;
-                }
-
-                if (ownershipChanged)
-                {
-                    PersistLocked();
-                }
             }
         }
 
-        if (changed || ownershipChanged)
+        if (changed)
         {
             OnChanged?.Invoke();
         }
@@ -125,7 +93,7 @@ public sealed class TerminalSizeControlService : IDisposable
     {
         lock (_lock)
         {
-            return BuildStatusLocked(sessionId, browserId, _timeProvider.GetUtcNow());
+            return BuildStatusLocked(sessionId, browserId);
         }
     }
 
@@ -137,11 +105,10 @@ public sealed class TerminalSizeControlService : IDisposable
             .Where(static id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
-        var now = _timeProvider.GetUtcNow();
 
         lock (_lock)
         {
-            return ids.Select(id => BuildStatusLocked(id, browserId, now)).ToList();
+            return ids.Select(id => BuildStatusLocked(id, browserId)).ToList();
         }
     }
 
@@ -161,11 +128,7 @@ public sealed class TerminalSizeControlService : IDisposable
             {
                 BrowserId = browserId,
                 BrowserLabel = browserLabel,
-                Epoch = nextEpoch,
-                LastInteractionUtc = _timeProvider.GetUtcNow(),
-                DisconnectedAtUtc = IsBrowserOnlineLocked(browserId)
-                    ? null
-                    : _timeProvider.GetUtcNow()
+                Epoch = nextEpoch
             };
             PersistLocked();
         }
@@ -180,7 +143,7 @@ public sealed class TerminalSizeControlService : IDisposable
         string? browserLabel = null,
         long? expectedEpoch = null,
         CancellationToken ct = default)
-        => UpdateControlAsync(sessionId, browserId, force, false, browserLabel, expectedEpoch, ct);
+        => UpdateControlAsync(sessionId, browserId, force, false, browserLabel, expectedEpoch, null, ct);
 
     // Called only with actual browser-authored input at the server input boundary.
     // Terminal replies, API automation and passive control requests are not activity.
@@ -188,46 +151,30 @@ public sealed class TerminalSizeControlService : IDisposable
         string sessionId, string browserId, string? browserLabel = null, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
+        long inputIntent;
         lock (_lock)
         {
-            var now = _timeProvider.GetUtcNow();
+            inputIntent = ++_inputIntentSequence;
+            _latestInputIntents[sessionId] = inputIntent;
             if (_ownership.TryGetValue(sessionId, out var owner))
             {
                 if (string.Equals(owner.BrowserId, browserId, StringComparison.Ordinal))
                 {
-                    RecordOwnerInputLocked(owner, now);
                     return Task.FromResult(new TerminalSizeControlCommandResult
                     {
-                        Status = BuildStatusLocked(sessionId, browserId, now)
-                    });
-                }
-                if (!CanTakeOverAutomaticallyLocked(owner, browserId, now))
-                {
-                    return Task.FromResult(new TerminalSizeControlCommandResult
-                    {
-                        Status = BuildStatusLocked(sessionId, browserId, now)
+                        Status = BuildStatusLocked(sessionId, browserId)
                     });
                 }
             }
         }
         // Only a transfer needs serialization with an in-flight resize. Ordinary
         // typing must never wait for the PTY to acknowledge a resize.
-        return UpdateControlAsync(sessionId, browserId, false, true, browserLabel, null, ct);
-    }
-
-    private void RecordOwnerInputLocked(OwnershipRecord owner, DateTimeOffset now)
-    {
-        owner.LastInteractionUtc = now;
-        if (now - _lastInputPersistUtc >= TimeSpan.FromSeconds(15))
-        {
-            PersistLocked();
-            _lastInputPersistUtc = now;
-        }
+        return UpdateControlAsync(sessionId, browserId, false, true, browserLabel, null, inputIntent, ct);
     }
 
     private async Task<TerminalSizeControlCommandResult> UpdateControlAsync(
         string sessionId, string browserId, bool force, bool isInput,
-        string? browserLabel, long? expectedEpoch, CancellationToken ct)
+        string? browserLabel, long? expectedEpoch, long? inputIntent, CancellationToken ct)
     {
         var gate = _sessionGates.GetOrAdd(sessionId, static _ => new SemaphoreSlim(1, 1));
         await gate.WaitAsync(ct).ConfigureAwait(false);
@@ -237,34 +184,29 @@ public sealed class TerminalSizeControlService : IDisposable
         {
             lock (_lock)
             {
-                var now = _timeProvider.GetUtcNow();
                 if (_ownership.TryGetValue(sessionId, out var current) &&
                     string.Equals(current.BrowserId, browserId, StringComparison.Ordinal))
                 {
-                    if (isInput)
-                    {
-                        RecordOwnerInputLocked(current, now);
-                    }
+                    // Current input needs neither a new epoch nor a persistence write.
                 }
                 else if (
                     (force && (expectedEpoch is null || expectedEpoch.Value == (current?.Epoch ?? 0))) ||
                     (!force && (isInput
-                        ? CanTakeOverAutomaticallyLocked(current, browserId, now)
-                        : CanInheritLocked(current, browserId))))
+                        ? inputIntent == _latestInputIntents.GetValueOrDefault(sessionId)
+                        : current is null)))
                 {
+                    if (force) _latestInputIntents[sessionId] = ++_inputIntentSequence;
                     _ownership[sessionId] = new OwnershipRecord
                     {
                         BrowserId = browserId,
                         BrowserLabel = browserLabel,
-                        Epoch = (current?.Epoch ?? 0) + 1,
-                        LastInteractionUtc = now,
-                        DisconnectedAtUtc = IsBrowserOnlineLocked(browserId) ? null : now
+                        Epoch = (current?.Epoch ?? 0) + 1
                     };
                     PersistLocked();
                     changed = true;
                 }
 
-                status = BuildStatusLocked(sessionId, browserId, now);
+                status = BuildStatusLocked(sessionId, browserId);
             }
         }
         finally
@@ -301,7 +243,7 @@ public sealed class TerminalSizeControlService : IDisposable
             TerminalSizeControlStatus status;
             lock (_lock)
             {
-                status = BuildStatusLocked(sessionId, browserId, _timeProvider.GetUtcNow());
+                status = BuildStatusLocked(sessionId, browserId);
                 if (!status.IsOwner || status.Epoch != expectedEpoch)
                 {
                     return new TerminalSizeControlCommandResult
@@ -347,21 +289,18 @@ public sealed class TerminalSizeControlService : IDisposable
         finally { gate.Release(); }
     }
 
-    private bool CanInheritLocked(OwnershipRecord? owner, string browserId)
-        => owner is null || (!IsBrowserOnlineLocked(owner.BrowserId)
-            && BrowserIdentity.AreSameBrowser(owner.BrowserId, browserId));
-
     public void PruneSessions(IEnumerable<string> validSessionIds)
     {
         var valid = validSessionIds.ToHashSet(StringComparer.Ordinal);
         var changed = false;
         lock (_lock)
         {
-            foreach (var sessionId in _ownership.Keys.Where(id => !valid.Contains(id)).ToArray())
+            foreach (var sessionId in _ownership.Keys.Concat(_latestInputIntents.Keys)
+                         .Distinct(StringComparer.Ordinal).Where(id => !valid.Contains(id)).ToArray())
             {
-                _ownership.Remove(sessionId);
+                changed |= _ownership.Remove(sessionId);
+                _latestInputIntents.Remove(sessionId);
                 _sessionGates.TryRemove(sessionId, out _);
-                changed = true;
             }
 
             if (changed)
@@ -378,8 +317,7 @@ public sealed class TerminalSizeControlService : IDisposable
 
     private TerminalSizeControlStatus BuildStatusLocked(
         string sessionId,
-        string browserId,
-        DateTimeOffset now)
+        string browserId)
     {
         _ownership.TryGetValue(sessionId, out var owner);
         var isOwner = owner is not null &&
@@ -392,41 +330,11 @@ public sealed class TerminalSizeControlService : IDisposable
             OwnerOnline = owner is not null && IsBrowserOnlineLocked(owner.BrowserId),
             OwnerInSameBrowserProfile = owner is not null &&
                 BrowserIdentity.AreSameBrowser(owner.BrowserId, browserId),
-            CanTakeOverAutomatically = isOwner || CanTakeOverAutomaticallyLocked(owner, browserId, now),
+            // Eligibility for actual input, never permission for a passive browser claim.
+            CanTakeOverAutomatically = true,
             OwnerLabel = owner?.BrowserLabel,
             Epoch = owner?.Epoch ?? 0
         };
-    }
-
-    private bool CanTakeOverAutomaticallyLocked(
-        OwnershipRecord? owner,
-        string requestingBrowserId,
-        DateTimeOffset now)
-    {
-        if (owner is null)
-        {
-            return true;
-        }
-
-        var ownerOnline = IsBrowserOnlineLocked(owner.BrowserId);
-        var idleFor = now - owner.LastInteractionUtc;
-        if (ownerOnline)
-        {
-            // A connected sibling tab in the same browser profile must never
-            // auto-steal. Another device may continue naturally only after the
-            // current owner has remained terminal-idle for the protection window.
-            return !BrowserIdentity.AreSameBrowser(owner.BrowserId, requestingBrowserId)
-                && idleFor >= ConnectedOwnerProtectionDelay;
-        }
-
-        if (!ownerOnline && BrowserIdentity.AreSameBrowser(owner.BrowserId, requestingBrowserId))
-        {
-            return true;
-        }
-
-        var disconnectedAt = owner.DisconnectedAtUtc ?? now;
-        var offlineFor = now - disconnectedAt;
-        return offlineFor >= OfflineTakeoverDelay && idleFor >= OfflineTakeoverDelay;
     }
 
     private bool IsBrowserOnlineLocked(string browserId)
@@ -456,10 +364,6 @@ public sealed class TerminalSizeControlService : IDisposable
             {
                 if (!string.IsNullOrWhiteSpace(sessionId) && !string.IsNullOrWhiteSpace(record.BrowserId))
                 {
-                    // A null value means the owner was online when the previous
-                    // process stopped. Start a fresh offline grace window instead
-                    // of treating process restart as an immediate handoff.
-                    record.DisconnectedAtUtc ??= _timeProvider.GetUtcNow();
                     _ownership[sessionId] = record;
                 }
             }
@@ -481,9 +385,7 @@ public sealed class TerminalSizeControlService : IDisposable
             {
                 BrowserId = pair.Value.BrowserId,
                 BrowserLabel = pair.Value.BrowserLabel,
-                Epoch = pair.Value.Epoch,
-                LastInteractionUtc = pair.Value.LastInteractionUtc,
-                DisconnectedAtUtc = pair.Value.DisconnectedAtUtc
+                Epoch = pair.Value.Epoch
             }, StringComparer.Ordinal)
         };
         _persistenceTask = _persistenceTask.ContinueWith(_ => Save(state),
@@ -529,8 +431,6 @@ public sealed class TerminalSizeControlService : IDisposable
         public string BrowserId { get; set; } = string.Empty;
         public string? BrowserLabel { get; set; }
         public long Epoch { get; set; }
-        public DateTimeOffset LastInteractionUtc { get; set; }
-        public DateTimeOffset? DisconnectedAtUtc { get; set; }
     }
 
     internal sealed class TerminalSizeControlPersistedState
