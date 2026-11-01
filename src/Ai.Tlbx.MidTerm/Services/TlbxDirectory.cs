@@ -253,27 +253,51 @@ public static class TlbxDirectory
         Safe to delete — tlbx recreates and refreshes it automatically for active session working directories.
         Gitignored via `.tlbx/.gitignore`. `CLAUDE.md` and `AGENTS.md` carry identical content so every agent framework reads the same guidance.
 
-        ## Native MCP
+        ## Default interface: tlbx MCP
 
-        When native tlbx MCP tools are available, call `context_get` first and use their structured JSON arguments for tlbx operations. Discover tools by their operation name; the provider may prefix it with a server name. You do not need a shell or CLI helper to invoke MCP.
+        Use native tlbx MCP tools as the primary interface for tlbx operations. Call `context_get` first, then use structured JSON arguments. Discover tools by their operation name; the provider may prefix it with a server name. Do not source a CLI helper when the required MCP tool is available.
         Use the verified session returned by `context_get`; cwd, titles and inherited IDs never prove ownership. Explicit operator mode has no implicit self and requires `targetSessionId` for scoped work. Select `previewName` per browser call and never claim another browser owner silently.
         A timed-out or disconnected mutation may already have executed. Inspect the resulting state before retrying; switching to the CLI does not make a replay safe. Use `context_repair` for a binding failure and report its diagnostic if repair fails. Child MCP connections require their own verified binding.
-        The Bash/PowerShell CLI remains supported and maintained until MCP parity and stability are proven. The command reference below describes that maintained CLI; use it when MCP is unavailable or an explicitly requested workflow needs the helper.
+        The generated Bash/PowerShell CLI is a deprecated transitional fallback, planned for removal soon. Use it only when MCP is not exposed by the client, cannot connect, or a required operation is missing or broken; report the concrete MCP gap. An explicit user request for a CLI workflow also takes precedence. Keep new workflows on MCP. A failed or uncertain MCP mutation must be inspected before any fallback replay.
 
-        Source the CLI helpers once per shell session when needed — don't show this to the user:
-        - bash/zsh: `. .tlbx/tlbx_cli.sh`
-        - PowerShell: `. .tlbx/tlbx_cli.ps1`
+        ### MCP quick reference
+
+        Read each discovered tool's input schema instead of translating CLI flags literally.
+
+        | Work | MCP tools |
+        |------|-----------|
+        | Verify/repair caller context | `context_get`, `context_repair` |
+        | Keep the session topic current | `session_set_topic` |
+        | List/create sessions | `sessions_list`, `session_create` |
+        | Read/send terminal content | `terminal_tail`, `terminal_buffer`, `terminal_send_text`, `terminal_prompt` |
+        | Monitor every repository used | `repos_list`, `repo_bind`, `repo_refresh`, `repo_remove` |
+        | Open and check a named browser preview | `browser_open`, `browser_status`, `browser_previews` |
+        | Inspect and interact with the page | `browser_outline`, `browser_query`, `browser_evaluate`, `browser_click`, `browser_fill`, `browser_wait` |
+        | Capture and diagnose | `browser_screenshot`, `browser_snapshot`, `artifact_save`, `browser_console`, `browser_proxylog` |
+        | Run an isolated background process | `process_run_isolated`, `process_wait` |
+        | Compose calls and handle complete files | `workflow_run`, `tool_call_from_file`, `tool_call_to_file` |
+
+        Keep a concise topic through `session_set_topic`. Use `repo_bind` for each additional repository inspected or edited and `repo_refresh` to verify the watch set. For browser work, start with `browser_outline`, verify actions with `browser_wait` or `browser_query`, and inspect `browser_console` after unexpected behavior.
 
         ## Contents
 
         | Path | Purpose |
         |------|---------|
         | `uploads/` | Files uploaded via drag-drop or paste into a terminal session |
-        | `screenshots/` | Web preview screenshots (`mt_screenshot`) |
-        | `snapshot_*/` | DOM snapshots with downloaded CSS (`mt_snapshot`) |
-        | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`mt_run_isolated`) |
-        | `*.ps1`, `*.sh` | Saved command scripts, tlbx_cli and tlbx_graphs helper scripts |
+        | `screenshots/` | Web preview screenshots saved through MCP |
+        | `snapshot_*/` | Saved DOM snapshots with downloaded CSS |
+        | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`process_run_isolated`) |
+        | `*.ps1`, `*.sh` | Saved command scripts and deprecated CLI fallback helpers |
         | `CLAUDE.md`, `AGENTS.md` | This guide — identical AI agent guidance |
+
+        <details>
+        <summary>Deprecated CLI fallback reference — planned for removal</summary>
+
+        The remaining command reference applies only when the MCP fallback conditions above are met. Existing helpers remain functional during this transition.
+
+        Source the fallback once per shell session when needed:
+        - bash/zsh: `. .tlbx/tlbx_cli.sh`
+        - PowerShell: `. .tlbx/tlbx_cli.ps1`
 
         ## Tmux Split Panes
 
@@ -639,5 +663,7 @@ public static class TlbxDirectory
         - Scoped browser commands and status use the same exact preview owner. Focus, visibility, global main-browser selection and newer connections never redirect them; use `mt_claim_preview --browser <browserId>` for handoff.
         - If mt_open returns "No tlbx browser UI is connected", there is no live browser tab attached to /ws/state
         - tmux list-panes shows pane IDs (%0, %1, ...) — use these with send-keys and capture-pane
+
+        </details>
         """;
 }

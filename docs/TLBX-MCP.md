@@ -1,8 +1,11 @@
-# TLBX MCP (experimental)
+# TLBX MCP — primary agent interface
 
-The Bash/PowerShell CLI remains supported and maintained. MCP is additive until
-real agent workflows demonstrate equal coverage and better stability. Keep CLI
-protocol checks and use the same C# services for both interfaces.
+Use native tlbx MCP first for agent workflows. The generated Bash/PowerShell CLI
+is a deprecated transitional fallback, planned for removal soon. Use it when MCP
+is unavailable or a required operation is missing or broken, and report that gap.
+Keep the existing fallback functional and its protocol checks in place during the
+transition. Both interfaces use the same C# services; preferring MCP does not
+claim that every parity acceptance scenario below has already passed.
 
 ## Transports and identity
 
@@ -256,4 +259,6 @@ Callback protocol checks exercise a real local child request into the browser
 bridge with its selected session and fresh preview, completion waiting,
 unchanged parent environment and cleanup after a later error. Real macOS
 provider/terminal acceptance and final protected release checks remain open.
-Keep CLI guidance and implementations maintained; the MCP remains experimental.
+Generated guidance promotes MCP and places the deprecated CLI reference behind
+the fallback section. Keep existing fallback implementations working until their
+removal; put new agent workflows on MCP.
