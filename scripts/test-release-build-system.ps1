@@ -37,6 +37,8 @@ exit [int]$env:TLBX_NATIVE_FIXTURE_EXIT_CODE
     foreach ($exitCode in @(0,17)) {
         $env:TLBX_NATIVE_FIXTURE_EXIT_CODE = $exitCode.ToString([Globalization.CultureInfo]::InvariantCulture)
         $info = [Diagnostics.ProcessStartInfo]::new($dotnetBinary)
+        # This standalone MSBuild fixture does not compile the product or require its pinned SDK.
+        $info.WorkingDirectory = $nativeExecFixture
         $info.UseShellExecute = $false; $info.CreateNoWindow = $true
         $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
         foreach ($argument in @('msbuild', (Join-Path $nativeExecFixture 'fixture.proj'), '-t:BuildConnectNative', '-nologo', "-p:_ConnectNativeRoot=$nativeExecFixture", "-p:_ConnectNativeBundle=$nativeExecFixture/missing-bundle.zip", '-p:_ConnectNativeRid=fixture')) { $info.ArgumentList.Add($argument) }
