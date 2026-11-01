@@ -177,7 +177,9 @@ public sealed partial class WebPreviewProxyMiddleware
           function mtStoragePrefix(name){
             var route="default";
             try{
-              var match=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+              // P is the server-bound route even when Link adds its own prefix
+              // before /webpreview. The displayed pathname is transport-specific.
+              var match=P.match(/^\/webpreview\/([^/]+)/);
               if(match&&match[1])route=decodeURIComponent(match[1]);
             }catch(e){}
             return "__midterm_webpreview__"+route+"__"+name+"__";
@@ -765,9 +767,11 @@ public sealed partial class WebPreviewProxyMiddleware
             trim(clone,0);return clone.outerHTML;
           }
           function ensureH2c(){
-            if(window.html2canvas)return Promise.resolve(window.html2canvas);
+            if(typeof window.html2canvas==="function")return Promise.resolve(window.html2canvas);
             if(h2cLoad)return h2cLoad;
-            h2cLoad=F.call(window,"/js/html2canvas.min.js",{credentials:"same-origin"}).then(function(resp){
+            // Keep this host asset inside the authenticated preview route. Link's
+            // isolated origin routes root-relative fetches to the upstream site.
+            h2cLoad=F.call(window,PP+"/_assets/html2canvas.min.js",{credentials:"same-origin"}).then(function(resp){
               if(!resp.ok)throw new Error("failed to fetch html2canvas");
               return resp.text();
             }).then(function(text){
@@ -776,8 +780,12 @@ public sealed partial class WebPreviewProxyMiddleware
                 var blobUrl=URL.createObjectURL(blob);
                 var scr=document.createElement("script");
                 scr.src=blobUrl;
-                scr.onload=function(){URL.revokeObjectURL(blobUrl);resolve(window.html2canvas);};
-                scr.onerror=function(){URL.revokeObjectURL(blobUrl);reject(new Error("failed to load html2canvas"));};
+                scr.onload=function(){
+                  URL.revokeObjectURL(blobUrl);scr.remove();
+                  if(typeof window.html2canvas!=="function"){reject(new Error("html2canvas did not initialize"));return;}
+                  resolve(window.html2canvas);
+                };
+                scr.onerror=function(){URL.revokeObjectURL(blobUrl);scr.remove();reject(new Error("failed to load html2canvas"));};
                 document.head.appendChild(scr);
               });
             }).catch(function(err){h2cLoad=null;throw err;});
@@ -1363,6 +1371,22 @@ public sealed partial class WebPreviewProxyMiddleware
             if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+            if (remainingPath.Equals("/_assets/html2canvas.min.js", StringComparison.Ordinal))
+            {
+                if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                {
+                    context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+                    context.Response.Headers.Allow = "GET, HEAD";
+                    return;
+                }
+
+                // Resolve only this owned asset through the normal static-file
+                // pipeline, including the embedded Brotli asset in native builds.
+                context.Request.Path = "/js/html2canvas.min.js";
+                try { await _next(context); }
+                finally { context.Request.Path = path; }
                 return;
             }
             if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
