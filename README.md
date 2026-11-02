@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — Agentic Development Environment — your agents, your machines, any browser" width="100%">
+  <img src="docs/marketing/readme/tlbx-wordmark.svg" alt="tlbx — your ADE, in any browser" width="100%">
 </p>
 
-<p align="center"><strong>Agentic Development Environment (ADE)</strong>&nbsp;&nbsp;·&nbsp;&nbsp;say &ldquo;toolbox&rdquo;</p>
+<p align="center">say &ldquo;toolbox&rdquo;</p>
 
 <p align="center">
   <a href="https://tlbx.ai"><strong>Website</strong></a>
@@ -26,13 +26,13 @@
   <img src="https://img.shields.io/badge/Windows%20%C2%B7%20macOS%20%C2%B7%20Linux-ready-80b6f2?style=flat-square" alt="Windows, macOS and Linux">
 </p>
 
-# tlbx — your Agentic Development Environment.
+# Your agents. Your machines. One workspace.
 
-tlbx is a free, open-source **ADE** for launching agents, giving them tasks, following their progress and verifying results. It brings prompts, agent sessions, terminals, files, Git changes and your running app into one browser workspace on Windows, macOS and Linux.
+tlbx is a free, open-source **Agentic Development Environment (ADE)** for Windows, macOS and Linux. Run Codex, Claude Code, OpenCode and other agents on your own machines, and work with them from any browser.
 
-An **IDE** integrates the tools you use to write code. An **Agentic Development Environment** integrates the tools you use to **direct agents**: assign work, supply context, answer questions, review changes and check outcomes. Coding is a core use case; research, scripts and other tasks supported by your agents fit the same workflow.
+Your ADE keeps the work together: give an agent a task, follow its progress, review the Git diff and try the running app beside the conversation. Terminals, files, prompts and app previews stay within reach as you move from one task to the next.
 
-Run Codex, Claude Code, OpenCode and other agents on your own machines. Open the workspace from your desktop, tablet or phone, directly or through **[tlbx Link](https://lnk.tlbx.ai)**. Tools keep running when you close the browser, while the host stays awake and online. Your agent provider's usual charges still apply.
+Open the same workspace from your desktop, tablet or phone, directly or through **[tlbx Link](https://lnk.tlbx.ai)**. Tools keep running when you close the browser, while the host stays awake and online. Your agent provider's usual charges still apply.
 
 **[Install tlbx](#install)** · **[Explore the features](https://tlbx.ai/features)** · **[How it works](https://tlbx.ai/architecture)**
 
