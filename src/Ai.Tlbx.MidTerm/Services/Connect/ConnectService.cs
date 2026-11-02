@@ -8,6 +8,7 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Settings;
+using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
 
@@ -186,6 +187,7 @@ public sealed class ConnectService : BackgroundService
                 or InvalidOperationException or ArgumentException or OperationCanceledException or CryptographicException or FormatException)
             {
                 lock (_gate) _lastError = "Link is temporarily unavailable. Retrying automatically.";
+                Log.Error(() => $"[Link] Signaling failed ({ex.GetType().Name}); retrying automatically.");
                 try { await Task.Delay(TimeSpan.FromSeconds(10), generation.Token); }
                 catch (OperationCanceledException) when (generation.IsCancellationRequested) { }
             }
@@ -275,13 +277,12 @@ public sealed class ConnectService : BackgroundService
                                 transportMessage.ConnectionId = id;
                                 await SendSignalAsync(socket, transportMessage, ct);
                             }, () => { _ = CloseFailedTransportAsync(socket, id, ct); });
-                        owner.EnforceAuthenticationDeadline(() => CloseConnectionAsync(id));
+                        owner.EnforceAuthenticationDeadline(() => CloseFailedTransportAsync(socket, id, ct, "authentication-timeout"));
                     }
                     catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException)
                     {
-                        await CloseConnectionAsync(id);
-                        if (!ct.IsCancellationRequested)
-                            await SendSignalAsync(socket, new ConnectSignal { Type = "state", ConnectionId = id, State = "failed" }, ct);
+                        Log.Error(() => $"[Link] Peer transport startup failed ({ex.GetType().Name}).");
+                        await CloseFailedTransportAsync(socket, id, ct);
                     }
                     break;
                 case "offer":
@@ -321,10 +322,12 @@ public sealed class ConnectService : BackgroundService
         finally { _signalWriter.Release(); }
     }
 
-    private async Task CloseFailedTransportAsync(ClientWebSocket socket, string id, CancellationToken ct)
+    private async Task CloseFailedTransportAsync(ClientWebSocket socket, string id, CancellationToken ct, string state = "failed")
     {
+        if (ct.IsCancellationRequested) { await CloseConnectionAsync(id); return; }
+        Log.Error(() => $"[Link] Peer transport ended ({state}).");
         await CloseConnectionAsync(id);
-        try { await SendSignalAsync(socket, new ConnectSignal { Type = "state", ConnectionId = id, State = "failed" }, ct); }
+        try { await SendSignalAsync(socket, new ConnectSignal { Type = "state", ConnectionId = id, State = state }, ct); }
         catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException) { }
     }
 
