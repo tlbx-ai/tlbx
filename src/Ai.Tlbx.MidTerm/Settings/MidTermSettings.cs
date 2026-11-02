@@ -106,6 +106,8 @@ public sealed class MidTermSettings
 
     // Controls whether the bookmarks UI is visible in the sidebar
     public bool ShowBookmarks { get; set; } = true;
+    public bool ShowSpaces { get; set; } = true;
+    public bool ShowBoards { get; set; } = false;
 
     // Restores bookmark pinning for local ad-hoc sessions only
     public bool AllowAdHocSessionBookmarks { get; set; } = true;

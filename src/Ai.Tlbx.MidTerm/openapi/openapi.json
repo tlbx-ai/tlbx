@@ -6676,6 +6676,8 @@
           "inputMode",
           "fileRadar",
           "showBookmarks",
+          "showSpaces",
+          "showBoards",
           "allowAdHocSessionBookmarks",
           "showSidebarSessionFilter",
           "worktreeRootDirectory",
@@ -6927,6 +6929,12 @@
             "type": "boolean"
           },
           "showBookmarks": {
+            "type": "boolean"
+          },
+          "showSpaces": {
+            "type": "boolean"
+          },
+          "showBoards": {
             "type": "boolean"
           },
           "allowAdHocSessionBookmarks": {

@@ -5090,6 +5090,8 @@ export interface components {
       inputMode: string;
       fileRadar: boolean;
       showBookmarks: boolean;
+      showSpaces: boolean;
+      showBoards: boolean;
       allowAdHocSessionBookmarks: boolean;
       showSidebarSessionFilter: boolean;
       worktreeRootDirectory: string;

@@ -7,6 +7,33 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermSettingsPublicTests
 {
+    [Fact]
+    public void SidebarVisibility_MissingSettingsUseQuietDefaults()
+    {
+        var settings = JsonSerializer.Deserialize<MidTermSettings>("{}")!;
+        var visible = MidTermSettingsPublic.FromSettings(settings);
+        Assert.True(visible.ShowSpaces);
+        Assert.False(visible.ShowBoards);
+    }
+
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public void SidebarVisibility_PatchAndFileRoundTripPreserveIndependentChoices(bool spaces, bool boards)
+    {
+        var settings = new MidTermSettings();
+        var current = MidTermSettingsPublic.FromSettings(settings);
+        using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new { showSpaces = spaces, showBoards = boards }));
+        MidTermSettingsPatch.Merge(current, patch.RootElement).ApplyTo(settings);
+        var saved = JsonSerializer.Deserialize<MidTermSettings>(JsonSerializer.Serialize(settings))!;
+        var roundTrip = MidTermSettingsPublic.FromSettings(saved);
+        Assert.Equal(spaces, roundTrip.ShowSpaces);
+        Assert.Equal(boards, roundTrip.ShowBoards);
+        Assert.True(roundTrip.ShowBookmarks);
+    }
+
     [Theory]
     [InlineData("idle")]
     [InlineData("belowNormal")]

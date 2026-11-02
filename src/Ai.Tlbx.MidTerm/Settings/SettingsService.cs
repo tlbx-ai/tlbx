@@ -608,6 +608,8 @@ public sealed class SettingsService
         current.InputMode = old.InputMode;
         current.FileRadar = old.FileRadar;
         current.ShowSidebarSessionFilter = old.ShowSidebarSessionFilter;
+        current.ShowSpaces = old.ShowSpaces;
+        current.ShowBoards = old.ShowBoards;
         current.ManagerBarEnabled = old.ManagerBarEnabled;
         current.ManagerBarButtons = ManagerBarButton.NormalizeList(old.ManagerBarButtons);
         current.TmuxCompatibility = old.TmuxCompatibility;
