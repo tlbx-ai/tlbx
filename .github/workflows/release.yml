@@ -1044,6 +1044,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate and publish available platforms
         id: validate
         shell: bash
@@ -1060,81 +1061,7 @@ jobs:
             --json databaseId,tagName,isDraft,isPrerelease,assets,body \
             > "$RELEASE_JSON"
 
-          RELEASE_ID=$(python3 - "$RELEASE_JSON" "$RELEASE_TAG" "$RELEASE_PATCH" <<'PY'
-          import json
-          import os
-          import sys
-
-          release_path, expected_tag, patch_path = sys.argv[1:]
-          with open(release_path, encoding="utf-8") as handle:
-              release = json.load(handle)
-
-          platforms = {
-              rid: {f"mt-{rid}.{extension}", f"mt-{rid}.spdx.json"}
-              for rid, extension in [
-                  ("linux-arm64", "tar.gz"), ("linux-x64", "tar.gz"),
-                  ("osx-arm64", "tar.gz"), ("osx-x64", "tar.gz"),
-                  ("win-x64", "zip"), ("win-x86", "zip"),
-              ]
-          }
-          expected_assets = set().union(*platforms.values())
-
-          if release.get("tagName") != expected_tag:
-              raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}, got {release.get('tagName')!r}")
-          if not isinstance(release.get("isDraft"), bool):
-              raise SystemExit("Release draft state is missing or invalid.")
-          if release.get("isPrerelease") is not ("-dev" in expected_tag):
-              raise SystemExit("Release prerelease flag does not match its tag.")
-
-          assets = release.get("assets") or []
-          actual_names = {asset.get("name") for asset in assets}
-          unexpected = actual_names - expected_assets
-          if len(assets) != len(actual_names) or unexpected:
-              raise SystemExit(f"Duplicate or unexpected release assets: {unexpected}")
-
-          empty = sorted(
-              asset["name"]
-              for asset in assets
-              if not isinstance(asset.get("size"), int) or asset["size"] <= 0
-          )
-          if empty:
-              raise SystemExit(f"Release assets must be nonzero: {empty}")
-
-          available = []
-          unavailable = []
-          for rid, pair in platforms.items():
-              present = pair & actual_names
-              if present and present != pair:
-                  raise SystemExit(f"Incomplete platform {rid}: missing {sorted(pair - present)}")
-              (available if present else unavailable).append(rid)
-          if not available:
-              raise SystemExit("At least one complete platform archive and matching SBOM is required.")
-
-          release_id = release.get("databaseId")
-          if not isinstance(release_id, int) or release_id <= 0:
-              raise SystemExit(f"Invalid GitHub release id: {release_id!r}")
-
-          availability = (
-              "## Platform availability\n\n"
-              f"Available: {', '.join(available)}.\n\n"
-              f"Unavailable in this release: {', '.join(unavailable) if unavailable else 'none'}."
-          )
-          patch = {
-              "draft": False,
-              "prerelease": release["isPrerelease"],
-              "make_latest": "false" if release["isPrerelease"] else "true",
-              "body": (release.get("body") or "").split("## Platform availability", 1)[0].rstrip() + "\n\n" + availability,
-          }
-          with open(patch_path, "w", encoding="utf-8") as handle:
-              json.dump(patch, handle)
-          if os.environ.get("GITHUB_STEP_SUMMARY"):
-              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
-                  handle.write(availability + "\n")
-          if unavailable:
-              print(f"::warning::Release excludes unavailable platforms: {', '.join(unavailable)}", file=sys.stderr)
-          print(release_id)
-          PY
-          )
+          RELEASE_ID=$(python3 scripts/validate-release-publication.py "$RELEASE_JSON" "$RELEASE_TAG" "$RELEASE_PATCH")
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
           gh api \
             --method PATCH \

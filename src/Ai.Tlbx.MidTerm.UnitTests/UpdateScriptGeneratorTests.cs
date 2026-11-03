@@ -14,7 +14,7 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
 
     public UpdateScriptGeneratorTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_update_script_{Guid.NewGuid():N}");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_up'date_script_{Guid.NewGuid():N}");
         _extractedDir = Path.Combine(_tempDir, "extracted");
         _settingsDir = Path.Combine(_tempDir, "settings");
         _currentBinaryPath = OperatingSystem.IsWindows()
@@ -39,38 +39,6 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
         catch
         {
         }
-    }
-
-    [Fact]
-    public void GenerateUpdateScript_PathsWithSingleQuotes_AreEscaped()
-    {
-        var extracted = Path.Combine(_tempDir, "O'Brien", "extract");
-        var current = OperatingSystem.IsWindows()
-            ? Path.Combine(_tempDir, "O'Brien", "bin", "mt.exe")
-            : Path.Combine(_tempDir, "O'Brien", "bin", "mt");
-        var settings = Path.Combine(_tempDir, "O'Brien", "settings");
-
-        var scriptText = ReadScript(
-            UpdateScriptGenerator.GenerateUpdateScript(
-                extracted,
-                current,
-                settings,
-                UpdateType.Full,
-                deleteSourceAfter: true));
-
-        if (OperatingSystem.IsWindows())
-        {
-            Assert.Contains("O''Brien", scriptText, StringComparison.Ordinal);
-        }
-        else
-        {
-            Assert.Contains("O'\\''Brien", scriptText, StringComparison.Ordinal);
-        }
-    }
-
-    private static string ReadScript(string path)
-    {
-        return File.ReadAllText(path);
     }
 
     [Fact]
