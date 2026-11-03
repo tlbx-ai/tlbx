@@ -79,6 +79,8 @@ public sealed partial class MidTermSettingsPublic
     public string InputMode { get; set; } = "keyboard";
     public bool FileRadar { get; set; } = true;
     public bool ShowBookmarks { get; set; } = true;
+    public bool ShowSpaces { get; set; } = true;
+    public bool ShowBoards { get; set; } = false;
     public bool AllowAdHocSessionBookmarks { get; set; } = true;
     public bool ShowSidebarSessionFilter { get; set; } = false;
     public string WorktreeRootDirectory { get; set; } = "";

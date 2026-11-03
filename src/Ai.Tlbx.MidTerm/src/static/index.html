@@ -179,7 +179,7 @@
                 /></svg></span
             ><span data-i18n="sidebar.settings">Settings</span>
           </button>
-          <button class="sidebar-nav-btn" id="btn-boards"><span class="icon">▧</span><span data-i18n="boards.title">Boards</span></button>
+          <button class="sidebar-nav-btn" id="btn-boards" hidden><span class="icon">▧</span><span data-i18n="boards.title">Boards</span></button>
           <button class="sidebar-nav-btn btn-spaces" id="btn-spaces">
             <span class="icon icon-svg"
               ><svg
@@ -2212,6 +2212,14 @@
                           Foreground Process
                         </option>
                       </select>
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-show-spaces" data-i18n="settings.behavior.showSpaces">Show Spaces</label>
+                      <input type="checkbox" id="setting-show-spaces" />
+                    </div>
+                    <div class="setting-row">
+                      <label for="setting-show-boards" data-i18n="settings.behavior.showBoards">Show Boards</label>
+                      <input type="checkbox" id="setting-show-boards" />
                     </div>
                     <div class="setting-row">
                       <label

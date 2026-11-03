@@ -532,6 +532,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'boolean',
     applyMode: 'lazy',
   }),
+  controlEntry('showSpaces', 'setting-show-spaces', 'checkbox', true, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
+  controlEntry('showBoards', 'setting-show-boards', 'checkbox', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
   controlEntry('showBookmarks', 'setting-show-bookmarks', 'checkbox', true, {
     editable: true,
     storage: 'settings.json',

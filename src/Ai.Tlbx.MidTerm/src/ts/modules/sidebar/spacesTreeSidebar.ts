@@ -1661,11 +1661,6 @@ function createAdHocSection(): HTMLElement {
   const section = document.createElement('section');
   section.className = 'spaces-tree-target spaces-tree-adhoc session-group session-group-flat';
 
-  const header = document.createElement('div');
-  header.className = 'spaces-tree-target-header';
-  header.appendChild(createTextSpan('spaces-tree-target-label', ''));
-  section.appendChild(header);
-
   const list = document.createElement('div');
   list.className = 'spaces-tree-adhoc-list session-group-items';
   section.appendChild(list);
@@ -1674,12 +1669,6 @@ function createAdHocSection(): HTMLElement {
 
 function patchAdHocSection(section: HTMLElement, sessions: SidebarSessionRef[]): void {
   section.className = 'spaces-tree-target spaces-tree-adhoc session-group session-group-flat';
-  const label = section.querySelector<HTMLElement>('.spaces-tree-target-label');
-  const title = t('spaces.adHocSessions');
-  if (label && label.textContent !== title) {
-    label.textContent = title;
-  }
-
   const list = section.querySelector<HTMLElement>('.spaces-tree-adhoc-list');
   if (list) {
     reconcileSidebarSessions(list, sessions, { reorderScope: 'adhoc' });

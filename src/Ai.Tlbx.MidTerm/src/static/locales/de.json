@@ -225,6 +225,8 @@
   "settings.behavior.keepAwake": "Computer wach halten, solange Sitzungen existieren",
   "settings.behavior.keepAwakeHint": "Verhindert Ruhezustand oder Standby, solange tlbx mindestens eine aktive Sitzung hat. Der Bildschirm darf sich weiterhin ausschalten. Bei Mac-Laptops versetzt das Schließen des Deckels den Computer weiterhin in den Ruhezustand.",
   "settings.behavior.fileRadar": "File Radar",
+  "settings.behavior.showSpaces": "Spaces anzeigen",
+  "settings.behavior.showBoards": "Boards anzeigen",
   "settings.behavior.showBookmarks": "Lesezeichen anzeigen",
   "settings.behavior.adHocSessionBookmarks": "Ad-hoc-Sitzungslesezeichen erlauben",
   "settings.behavior.sidebarTerminalFilter": "Terminal-Filter in der Seitenleiste",

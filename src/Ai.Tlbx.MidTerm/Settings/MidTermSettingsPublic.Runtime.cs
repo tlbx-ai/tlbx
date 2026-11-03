@@ -114,6 +114,8 @@ public sealed partial class MidTermSettingsPublic
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             ShowBookmarks = settings.ShowBookmarks,
+            ShowSpaces = settings.ShowSpaces,
+            ShowBoards = settings.ShowBoards,
             AllowAdHocSessionBookmarks = settings.AllowAdHocSessionBookmarks,
             ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
             WorktreeRootDirectory = SettingsService.ResolveEffectiveWorktreeRootDirectory(settings, ensureExists: true),
@@ -249,6 +251,8 @@ public sealed partial class MidTermSettingsPublic
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
         settings.ShowBookmarks = ShowBookmarks;
+        settings.ShowSpaces = ShowSpaces;
+        settings.ShowBoards = ShowBoards;
         settings.AllowAdHocSessionBookmarks = AllowAdHocSessionBookmarks;
         settings.ShowSidebarSessionFilter = ShowSidebarSessionFilter;
         settings.WorktreeRootDirectory = NormalizeOptionalDirectorySetting(WorktreeRootDirectory);
