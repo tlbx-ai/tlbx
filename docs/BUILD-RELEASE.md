@@ -163,6 +163,17 @@ notes and workflow summary. SBOM generation retries once; a second failure
 excludes that platform. Installers, the npm launcher and the built-in updater
 select a published release containing their platform's archive.
 
+Release uploads retry the same signed archive/SBOM pair at most three times,
+inside a three-minute step limit. A failed upload keeps the job failed and saves
+only that pair as `release-upload-<rid>-<attempt>` for one day, with a two-minute
+artifact-upload limit and no recompression. Successful uploads save no extra
+artifact. No workflow or build is automatically rerun.
+For manual recovery, use `gh run download <run-id> --name release-upload-<rid>-<attempt> --dir .artifacts/recovery`.
+Verify its existing signatures, packaged hashes and GitHub attestations against
+the release tag, then run
+`scripts/upload-release-assets.ps1 -Tag <tag> -ArchivePath <archive> -SbomPath <sbom>`.
+This retries publication without recompiling or signing again.
+
 For stable releases, invoke `promote.ps1 -TestCategories all` from clean updated
 dev. It freezes the accepted candidate on `chore/promote-X-Y-Z`, includes stable
 version/generated changes in its PR into main, and tags only the merged result.

@@ -1,6 +1,7 @@
 #!/usr/bin/env pwsh
 # Offline behavioral checks: exercise dispatch and archive handling without publishing anything.
 $ErrorActionPreference = 'Stop'
+& "$PSScriptRoot/test-release-upload.ps1"
 & "$PSScriptRoot/test-advisory-regression.ps1"
 & "$PSScriptRoot/test-dev-loop.ps1"
 & python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-package.py"
