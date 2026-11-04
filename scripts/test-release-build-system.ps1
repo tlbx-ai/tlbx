@@ -57,42 +57,6 @@ exit [int]$env:TLBX_NATIVE_FIXTURE_EXIT_CODE
     if (-not $resolvedFixture.StartsWith($nativeExecTempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing to delete an unexpected native Exec fixture path.' }
     Remove-Item -LiteralPath $resolvedFixture -Recurse -Force
 }
-$prWorkflow = Get-Content (Join-Path $repoRoot '.github/workflows/pr-verify.yml') -Raw
-Assert-Check ($prWorkflow -match '(?m)^    name: PR server\r?$' -and $prWorkflow -match 'needs: \[frontend, native-linux, native-url-stdlib, macos-context, server-contracts\]\r?\n    if: always\(\)\r?\n    runs-on: ubuntu-24.04\r?\n    timeout-minutes: 5') 'The short PR server gate must aggregate all prerequisites and cannot become a skipped required check.'
-$serverContracts = [regex]::Match($prWorkflow, '(?ms)^  server-contracts:\r?\n(?<body>.*?)^  server:\r?\n')
-Assert-Check ($serverContracts.Success -and $serverContracts.Groups['body'].Value -match 'needs: \[frontend, native-linux, native-url-stdlib\]' -and $serverContracts.Groups['body'].Value -notmatch '(?m)^    if:' -and $serverContracts.Groups['body'].Value.Contains('./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError')) 'Heavy Windows contracts must retain coverage and the default cancellable job condition.'
-Assert-Check ($prWorkflow.Contains('native: ${{ steps.changes.outputs.native }}') -and $prWorkflow -match '(?m)^  native-url-stdlib:\r?\n    name: Native URL parser \(libc\+\+\)\r?\n    runs-on: macos-15\r?\n    needs: native-linux\r?\n    timeout-minutes: 5' -and $prWorkflow.Contains('python3 src/Ai.Tlbx.MidTerm.ConnectNative/smoke/regex.py')) 'The scoped macOS libc++ constructor probe must run before the required PR gate.'
-Assert-Check ($prWorkflow.Contains('git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" --') -and @(
-    'src/Ai.Tlbx.MidTerm.ConnectNative/', 'src/Ai.Tlbx.MidTerm/ConnectNative.targets',
-    'src/Ai.Tlbx.MidTerm/Services/Connect/ConnectNativeApi.cs', '.github/workflows/pr-verify.yml'
-).Where({ -not $prWorkflow.Contains($_) }).Count -eq 0) 'The native Linux change guard misses a native input or its own CI contract.'
-Assert-Check ($prWorkflow.Contains('./src/Ai.Tlbx.MidTerm.ConnectNative/build.ps1 -RuntimeIdentifier linux-x64') -and $prWorkflow.Contains('./src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1 -RuntimeIdentifier linux-x64')) 'PR native Linux verification must use the real package/ABI and security gates.'
-$prGate = [regex]::Match($prWorkflow, '(?m)^      - name: Require frontend, native Linux, URL parser and server success\r?\n(?:.*\r?\n)*?        run: \|\r?\n(?<body>(?:          [^\r\n]*\r?\n)+)')
-Assert-Check $prGate.Success 'Missing executable PR prerequisite result gate.'
-$prGateScript = [scriptblock]::Create((($prGate.Groups['body'].Value -split '\r?\n' | Where-Object Length | ForEach-Object { $_.Substring(10) }) -join "`n"))
-$savedFrontendResult = $env:FRONTEND_RESULT
-$savedNativeResult = $env:NATIVE_RESULT
-$savedServerResult = $env:SERVER_RESULT
-$savedUrlResult = $env:URL_RESULT
-$savedMacContextResult = $env:MACOS_CONTEXT_RESULT
-try {
-    $env:FRONTEND_RESULT = 'success'; $env:NATIVE_RESULT = 'success'; $env:URL_RESULT = 'success'; $env:MACOS_CONTEXT_RESULT = 'success'; $env:SERVER_RESULT = 'success'
-    & $prGateScript
-    Assert-Check $true 'Successful prerequisites must allow PR server contracts.'
-    foreach ($resultName in @('FRONTEND_RESULT', 'NATIVE_RESULT', 'URL_RESULT', 'MACOS_CONTEXT_RESULT', 'SERVER_RESULT')) {
-        foreach ($result in @('failure', 'cancelled', 'skipped')) {
-            $env:FRONTEND_RESULT = 'success'; $env:NATIVE_RESULT = 'success'; $env:URL_RESULT = 'success'; $env:MACOS_CONTEXT_RESULT = 'success'; $env:SERVER_RESULT = 'success'
-            [Environment]::SetEnvironmentVariable($resultName, $result)
-            Assert-Throws { & $prGateScript } "$resultName=$result must fail PR server."
-        }
-    }
-} finally {
-    $env:FRONTEND_RESULT = $savedFrontendResult
-    $env:NATIVE_RESULT = $savedNativeResult
-    $env:SERVER_RESULT = $savedServerResult
-    $env:URL_RESULT = $savedUrlResult
-    $env:MACOS_CONTEXT_RESULT = $savedMacContextResult
-}
 Assert-Check ((@(Resolve-ReleaseTestClusters @('frontend','server','frontend')) -join ',') -eq 'frontend,server') 'Multi-cluster selection or deduplication failed.'
 Assert-Check (@(Resolve-ReleaseTestClusters all).Count -eq 7) 'all did not select all server clusters.'
 Assert-Throws { Resolve-ReleaseTestClusters @('all','server') } 'Ambiguous all combination accepted.'

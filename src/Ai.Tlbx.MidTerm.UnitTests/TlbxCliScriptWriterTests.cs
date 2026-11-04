@@ -180,10 +180,6 @@ public sealed partial class TlbxCliScriptWriterTests : IDisposable
         var directory = TlbxDirectory.Ensure(_tempDir);
         var guide = File.ReadAllText(Path.Combine(directory, "AGENTS.md"));
         var fallback = File.ReadAllText(Path.Combine(directory, "CLI-FALLBACK.md"));
-        Assert.StartsWith("<!-- tlbx-guidance:", guide, StringComparison.Ordinal);
-        Assert.Contains("[CLI-FALLBACK.md](CLI-FALLBACK.md)", guide, StringComparison.Ordinal);
-        Assert.DoesNotContain("## Tmux Split Panes", guide, StringComparison.Ordinal);
-        Assert.Contains("## Tmux Split Panes", fallback, StringComparison.Ordinal);
         File.WriteAllText(Path.Combine(directory, "AGENTS.md"), "outdated instructions");
         File.WriteAllText(Path.Combine(directory, "CLAUDE.md"), "different outdated instructions");
         File.WriteAllText(Path.Combine(directory, "CLI-FALLBACK.md"), "outdated fallback reference");

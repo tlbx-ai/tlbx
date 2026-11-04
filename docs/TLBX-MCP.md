@@ -140,8 +140,7 @@ own identity. Provider tool timeouts must allow browser/workflow waits and clean
 
 ## Completion gates still open
 
-Full parity is not yet verified. `TlbxMcpCliParity` inventories all maintained CLI
-helpers, signatures and semantic scenarios; catalog presence is not acceptance.
+Full parity is not yet verified. Catalog presence is not behavioral acceptance.
 Managed protocol and CLI suites cover routing, literal payloads, native process
 lifetime, actual HTTP update restart, resource isolation and workflow cleanup.
 Generated Bash and PowerShell helpers also exercise 69 option scenarios each
@@ -150,8 +149,8 @@ normalized endpoint DTOs with MCP request binding. This includes explicit target
 Unicode paths/text, file/bracketed paste, field clearing, history/repository filters
 and agent model/effort/plan/permission options, prompt delays, recurring queues,
 keyboard shortcuts, bootstrap slash sequences and every board subcommand. The
-suite requires coverage of every CLI counterpart backed by a fixed API route,
-except update apply, whose restart/recovery scenarios have dedicated checks.
+suite executes its explicit request scenarios. Update apply has separate
+restart/recovery checks; a growing tool catalog does not establish parity.
 Bash literal JSON bodies use stdin
 to avoid native Windows curl argument conversion and command-length limits.
 These request checks do not establish rendered browser or provider behavior.

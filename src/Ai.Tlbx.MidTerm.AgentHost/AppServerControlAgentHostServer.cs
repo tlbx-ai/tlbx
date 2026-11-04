@@ -590,33 +590,34 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
         }
 
         connection.HistoryPatchForwarderStarted = true;
-        connection.HistoryPatchForwarder = Task.Run(
-            async () =>
+        // Start inline so subscription precedes the command's initial runtime events.
+        connection.HistoryPatchForwarder = ForwardAsync();
+
+        async Task ForwardAsync()
+        {
+            using var subscription = _history.SubscribeHistoryPatches(sessionId, connection.Token);
+            try
             {
-                using var subscription = _history.SubscribeHistoryPatches(sessionId, connection.Token);
-                try
+                await foreach (var delta in subscription.Reader.ReadAllAsync(connection.Token).ConfigureAwait(false))
                 {
-                    await foreach (var delta in subscription.Reader.ReadAllAsync(connection.Token).ConfigureAwait(false))
-                    {
-                        connection.Outbound.Writer.TryWrite(
-                            JsonSerializer.Serialize(
-                                new AppServerControlHostHistoryPatchEnvelope
-                                {
-                                    SessionId = sessionId,
-                                    McpScopeIdentity = _mcpScope.Identity,
-                                    Patch = delta
-                                },
-                                AppServerControlHostJsonContext.Default.AppServerControlHostHistoryPatchEnvelope));
-                    }
+                    connection.Outbound.Writer.TryWrite(
+                        JsonSerializer.Serialize(
+                            new AppServerControlHostHistoryPatchEnvelope
+                            {
+                                SessionId = sessionId,
+                                McpScopeIdentity = _mcpScope.Identity,
+                                Patch = delta
+                            },
+                            AppServerControlHostJsonContext.Default.AppServerControlHostHistoryPatchEnvelope));
                 }
-                catch (OperationCanceledException)
-                {
-                }
-                catch
-                {
-                }
-            },
-            CancellationToken.None);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch
+            {
+            }
+        }
     }
 
     private static AppServerControlProviderEvent CloneEvent(AppServerControlProviderEvent appServerControlEvent)

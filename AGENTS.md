@@ -8,6 +8,9 @@ both interfaces share the existing C# services.
 Keep automated behavioral tests focused on protocols, settings, installation and
 updates. Do not add UI, layout or general product-logic test suites without an
 explicit request. Removed tests can be recovered from Git history.
+Tests must exercise a concrete contract or failure. Do not assert source text,
+workflow job layout, documentation wording or arbitrary catalog counts. Reuse
+existing fixtures; keep build/setup costs separate from actual test duration.
 For recovery from a broken tlbx instance in an external terminal, use direct
 Windows diagnostics, Git and repository scripts. Do not retry session-context
 binding or require tlbx CLI operations that this terminal cannot perform.

@@ -52,13 +52,6 @@ public sealed partial class TlbxCliScriptWriterTests
         Assert.True(result.ExitCode == 0, result.Error + result.Output);
         Assert.Equal(cases.Length, requests.Count);
         var operations = TlbxMcpApiTools.Operations().ToDictionary(operation => operation.Name, StringComparer.Ordinal);
-        // Update apply has dedicated real HTTP restart/recovery checks. Every
-        // other CLI counterpart backed by a fixed API route must appear here.
-        var fixedCliTools = TlbxMcpCliParity.Commands.SelectMany(requirement => requirement.McpTools)
-            .Concat(TlbxMcpCliParity.BoardCommands.Select(requirement => requirement.McpTool))
-            .Concat(TlbxMcpCliParity.RepoCommands.Select(requirement => requirement.McpTool))
-            .Where(tool => tool != "update_apply" && operations.ContainsKey(tool)).Distinct(StringComparer.Ordinal);
-        Assert.All(fixedCliTools, tool => Assert.Contains(cases, item => item.Tool == tool));
         Assert.Multiple(cases.Select(item => (Action)(() =>
         {
             Assert.True(requests.TryDequeue(out var actual));

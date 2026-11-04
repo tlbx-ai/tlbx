@@ -6,16 +6,6 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-function Assert-Contains {
-    param([string]$Content, [string]$Pattern, [string]$Message)
-    if ($Content -notmatch $Pattern) { throw $Message }
-}
-
-function Assert-NotContains {
-    param([string]$Content, [string]$Pattern, [string]$Message)
-    if ($Content -match $Pattern) { throw $Message }
-}
-
 $powerShellScripts = @("install.ps1", "uninstall.ps1", "install-multi.ps1")
 foreach ($relativePath in $powerShellScripts) {
     $tokens = $null
@@ -193,39 +183,6 @@ test "$(printf '%s\n' "$entries" | tail -1 | tr -d '\r')" = "\"mthost\":\"$hash\
 }
 
 $windowsInstaller = Get-Content (Join-Path $repoRoot "install.ps1") -Raw
-$unixInstaller = Get-Content (Join-Path $repoRoot "install.sh") -Raw
-
-Assert-Contains $windowsInstaller '\$ServiceName\s*=\s*"tlbx"' "Fresh Windows service identity is not tlbx."
-Assert-Contains $windowsInstaller '\$TLBX_SERVICE_INSTALL_DIR\s*=\s*"\$env:ProgramFiles\\tlbx"' "Fresh Windows install directory is not tlbx."
-Assert-Contains $windowsInstaller '\$AssetArchitecture\s*=\s*if \(\$Is64BitWindows\)' "Windows x86/x64 release selection is missing."
-Assert-Contains $windowsInstaller 'Existing MidTerm installation detected' "Windows legacy-update detection is missing."
-Assert-Contains $windowsInstaller 'TLBX_PORT' "Windows user port selection is not persisted."
-Assert-Contains $windowsInstaller 'Test-ReleaseMetadataSignature' "Windows signed-release verification is missing."
-Assert-Contains $windowsInstaller 'Restore-PreviousBinarySet' "Windows post-swap rollback is missing."
-Assert-Contains $windowsInstaller 'Start-TlbxUserProcess' "Windows user-mode install does not start tlbx."
-Assert-Contains $windowsInstaller 'Wait-TlbxReady' "Windows process/health readiness verification is missing."
-Assert-Contains $windowsInstaller 'Your tlbx is ready at:' "Windows installer does not present the verified access URL."
-Assert-Contains $windowsInstaller 'Get-TailscaleIpv4Addresses' "Windows installer does not discover Tailscale access URLs."
-
-Assert-Contains $unixInstaller 'SERVICE_NAME="tlbx"' "Fresh Unix service identity is not tlbx."
-Assert-Contains $unixInstaller 'TLBX_SERVICE_SETTINGS_DIR="/usr/local/etc/tlbx"' "Fresh Unix settings directory is not tlbx."
-Assert-Contains $unixInstaller 'Existing MidTerm installation detected' "Unix legacy-update detection is missing."
-Assert-Contains $unixInstaller 'runtime\.json' "Unix user port selection is not persisted."
-Assert-Contains $unixInstaller 'validate_archive_members' "Unix archive allowlist is missing."
-Assert-Contains $unixInstaller 'rollback_install_transaction' "Unix post-swap rollback is missing."
-Assert-NotContains $unixInstaller 'sudo env[^\n]*PASSWORD_HASH' "Password material must not cross sudo in argv or environment."
-Assert-Contains $unixInstaller 'start_user_tlbx' "Unix user-mode install does not start tlbx."
-Assert-Contains $unixInstaller 'wait_tlbx_ready' "Unix process/health readiness verification is missing."
-Assert-Contains $unixInstaller 'Your tlbx is ready at:' "Unix installer does not present the verified access URL."
-Assert-Contains $unixInstaller 'get_tailscale_ipv4_addresses' "Unix installer does not discover Tailscale access URLs."
-
-$windowsMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.ps1") -Raw
-$unixMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.sh") -Raw
-Assert-Contains $windowsMultiInstaller '\$instanceServicePrefix\s*=\s*"tlbx"' "Fresh Windows multi-instance services are not tlbx-branded."
-Assert-Contains $windowsMultiInstaller '\$env:ProgramData\\tlbx\\instances' "Fresh Windows multi-instance settings are not under tlbx."
-Assert-Contains $unixMultiInstaller 'ROOT_DIR="/usr/local/etc/tlbx-instances"' "Fresh Unix multi-instance settings are not under tlbx."
-Assert-Contains $unixMultiInstaller 'SERVICE_PREFIX="tlbx"' "Fresh Unix multi-instance services are not tlbx-branded."
-
 # Exercise the PowerShell archive guard and rollback helper without touching a
 # real installation. This catches unsafe extraction and partial-swap regressions
 # on both Windows and Linux CI runners.

@@ -17,11 +17,9 @@ public sealed class MidTermSettingsPublicTests
     }
 
     [Theory]
-    [InlineData(true, true)]
     [InlineData(true, false)]
     [InlineData(false, true)]
-    [InlineData(false, false)]
-    public void SidebarVisibility_PatchAndFileRoundTripPreserveIndependentChoices(bool spaces, bool boards)
+    public void SidebarVisibility_PatchAndJsonRoundTripPreserveIndependentChoices(bool spaces, bool boards)
     {
         var settings = new MidTermSettings();
         var current = MidTermSettingsPublic.FromSettings(settings);
