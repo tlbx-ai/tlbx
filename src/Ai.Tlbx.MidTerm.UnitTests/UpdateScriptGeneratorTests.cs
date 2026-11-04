@@ -14,12 +14,12 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
 
     public UpdateScriptGeneratorTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_up'date_script_{Guid.NewGuid():N}");
-        _extractedDir = Path.Combine(_tempDir, "extracted");
-        _settingsDir = Path.Combine(_tempDir, "settings");
+        _tempDir = Path.Combine(Path.GetTempPath(), $"midterm_update_script_{Guid.NewGuid():N}");
+        _extractedDir = Path.Combine(_tempDir, "ex'tracted");
+        _settingsDir = Path.Combine(_tempDir, "set'tings");
         _currentBinaryPath = OperatingSystem.IsWindows()
-            ? Path.Combine(_tempDir, "bin", "mt.exe")
-            : Path.Combine(_tempDir, "bin", "mt");
+            ? Path.Combine(_tempDir, "bi'n", "mt.exe")
+            : Path.Combine(_tempDir, "bi'n", "mt");
 
         Directory.CreateDirectory(_extractedDir);
         Directory.CreateDirectory(_settingsDir);
