@@ -456,10 +456,29 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.tar.gz" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.tar.gz"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.tar.gz
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
@@ -669,10 +688,29 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.tar.gz" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.tar.gz"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.tar.gz
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
@@ -811,10 +849,29 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.zip" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.zip"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.zip
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   build-windows:
     needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain]
@@ -990,10 +1047,29 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.zip" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.zip"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.zip
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   publish-npm:
     needs: [prepare, publish-release]
