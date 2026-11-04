@@ -9,6 +9,7 @@
     <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
     <!-- Keep high advisory warnings visible; audit-supply-chain.ps1 gates regressions against the published release. -->
     <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1903</WarningsNotAsErrors>
+    <MSBuildWarningsNotAsErrors>$(MSBuildWarningsNotAsErrors);NU1903</MSBuildWarningsNotAsErrors>
 
     <!-- Detect CI environments automatically -->
     <ContinuousIntegrationBuild Condition="'$(GITHUB_ACTIONS)' == 'true'">true</ContinuousIntegrationBuild>
