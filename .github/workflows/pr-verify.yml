@@ -82,7 +82,7 @@ jobs:
       - name: Restore native dependency archives
         id: native-cache
         if: steps.changes.outputs.native == 'true'
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-linux-x64-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
@@ -99,7 +99,7 @@ jobs:
         run: ./src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1 -RuntimeIdentifier linux-x64
       - name: Preserve completed native dependency archives
         if: always() && steps.changes.outputs.native == 'true' && steps.native-cache.outputs.cache-primary-key != '' && steps.native-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
@@ -177,7 +177,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
       - name: Restore native dependency archives
         id: native-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-win-x64-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
@@ -190,7 +190,7 @@ jobs:
         run: ./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError
       - name: Preserve completed native dependency archives
         if: always() && steps.native-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
           key: ${{ steps.native-cache.outputs.cache-primary-key }}
