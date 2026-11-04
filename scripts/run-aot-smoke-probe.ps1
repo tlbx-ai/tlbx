@@ -117,6 +117,55 @@ try {
     }
     Write-Host "  /api/version -> $version" -ForegroundColor Green
 
+    # Exercise the real published worker command and embedded native closure.
+    # Kill only a probe-owned worker, then require HTTP survival and a fresh worker.
+    foreach ($attempt in 1..2) {
+        $worker = $null
+        $workerInfo = [Diagnostics.ProcessStartInfo]::new($exePath)
+        $workerInfo.UseShellExecute = $false
+        $workerInfo.CreateNoWindow = $true
+        $workerInfo.RedirectStandardInput = $true
+        $workerInfo.RedirectStandardOutput = $true
+        $workerInfo.RedirectStandardError = $true
+        foreach ($argument in @('connect-worker', "$($proc.Id)", "$($proc.StartTime.ToUniversalTime().Ticks)")) {
+            $workerInfo.ArgumentList.Add($argument)
+        }
+        try {
+            $worker = [Diagnostics.Process]::Start($workerInfo)
+            $workerErrors = $worker.StandardError.ReadToEndAsync()
+            $initialization = [Text.Encoding]::UTF8.GetBytes((@{
+                settingsDirectory = $settingsDir
+                configuration = @{iceServers = @()}
+            } | ConvertTo-Json -Compress -Depth 4))
+            $header = [byte[]]::new(5)
+            $header[0] = 1
+            [BitConverter]::GetBytes([int]$initialization.Length).CopyTo($header, 1)
+            $worker.StandardInput.BaseStream.Write($header, 0, $header.Length)
+            $worker.StandardInput.BaseStream.Write($initialization, 0, $initialization.Length)
+            $worker.StandardInput.BaseStream.Flush()
+            $ready = [byte[]]::new(5)
+            $worker.StandardOutput.BaseStream.ReadExactlyAsync([Memory[byte]]::new($ready), [Threading.CancellationToken]::None).AsTask().WaitAsync([TimeSpan]::FromSeconds(10)).GetAwaiter().GetResult()
+            if ($ready[0] -ne 4 -or [BitConverter]::ToInt32($ready, 1) -ne 0) { throw 'Invalid AOT worker readiness frame.' }
+            $workerOutput = $worker.StandardOutput.BaseStream.CopyToAsync([IO.Stream]::Null)
+            if ($attempt -eq 1) { $worker.Kill() } else { $worker.StandardInput.Close() }
+            if (-not $worker.WaitForExit(5000)) { throw 'AOT worker failed to exit within five seconds.' }
+            $workerOutput.WaitAsync([TimeSpan]::FromSeconds(3)).GetAwaiter().GetResult()
+            [IO.File]::WriteAllText((Join-Path $settingsDir "worker-$attempt.log"), $workerErrors.GetAwaiter().GetResult())
+            $afterWorker = Invoke-RestMethod "https://127.0.0.1:$port/api/version" -WebSession $probeSession -SkipCertificateCheck -TimeoutSec 3
+            if ($proc.HasExited -or $afterWorker -ne $version) { throw 'Worker failure interrupted the AOT control plane.' }
+        } finally {
+            if ($worker) {
+                if (-not $worker.HasExited) { $worker.Kill($true); $worker.WaitForExit(3000) | Out-Null }
+                $worker.Dispose()
+            }
+        }
+    }
+    if ($IsWindows -and @($proc.Modules | Where-Object ModuleName -Like '*datachannel*').Count -ne 0) {
+        throw 'Native WebRTC was loaded into the main AOT server.'
+    }
+    Write-Host '  Link worker crash / replacement / graceful shutdown -> HTTP survives, native code stays outside mt' -ForegroundColor Green
+
+
     $anonymous = Invoke-WebRequest "https://127.0.0.1:$port/api/version" -SkipCertificateCheck -SkipHttpErrorCheck -TimeoutSec 5
     if ([int]$anonymous.StatusCode -ne 401) { throw "AOT smoke probe FAILED: anonymous API access was not denied" }
     $graphsStatus = 0

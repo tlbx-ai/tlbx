@@ -19,6 +19,12 @@ public static class CliCommands
         var runtimeOptions = ArgumentParser.ParseOptions(args);
         runtimeOptions.ApplyProcessEnvironment();
 
+        if (args.Length > 0 && args[0] == "connect-worker")
+        {
+            Environment.ExitCode = Services.Connect.ConnectTransportWorker.Run(args[1..]);
+            return true;
+        }
+
         if (args.Length > 0 && args[0] == "mcp-process-worker")
         {
             Environment.ExitCode = Services.Mcp.TlbxMcpIsolatedProcessTool.RunWorker(args[1..]);

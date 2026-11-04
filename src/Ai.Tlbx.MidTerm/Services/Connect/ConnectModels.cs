@@ -77,6 +77,7 @@ internal sealed class ConnectEnvelope
 [JsonSerializable(typeof(ConnectStatus))]
 [JsonSerializable(typeof(ConnectDeviceConfiguration))]
 [JsonSerializable(typeof(ConnectTokenResponse))]
+[JsonSerializable(typeof(ConnectWorkerInitialization))]
 [JsonSerializable(typeof(ConnectSignal))]
 [JsonSerializable(typeof(ConnectEnvelope))]
 internal sealed partial class ConnectJsonContext : JsonSerializerContext { }

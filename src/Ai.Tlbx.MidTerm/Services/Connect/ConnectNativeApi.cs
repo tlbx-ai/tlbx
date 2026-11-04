@@ -48,6 +48,9 @@ internal sealed unsafe class ConnectNativeApi
         _send = (delegate* unmanaged[Cdecl]<int, byte*, int, int>)NativeLibrary.GetExport(library, "rtcSendMessage");
         _reliability = (delegate* unmanaged[Cdecl]<int, Reliability*, int>)NativeLibrary.GetExport(library, "rtcGetDataChannelReliability");
         _isOpen = (delegate* unmanaged[Cdecl]<int, byte>)NativeLibrary.GetExport(library, "rtcIsOpen");
+        // Each worker owns one peer; do not create a CPU-count-sized pool per browser.
+        var threadPool = (delegate* unmanaged[Cdecl]<uint, int>)NativeLibrary.GetExport(library, "rtcSetThreadPoolSize");
+        Check(threadPool(2));
         var logger = (delegate* unmanaged[Cdecl]<int, nint, void>)NativeLibrary.GetExport(library, "rtcInitLogger");
 #if DEBUG
         logger(5, (nint)(delegate* unmanaged[Cdecl]<int, byte*, void>)&NativeDebugLog);
@@ -110,11 +113,11 @@ internal sealed unsafe class ConnectNativeApi
                 _user(peer, token);
                 try
                 {
-                    Check(_description(peer, (nint)(delegate* unmanaged[Cdecl]<int, byte*, byte*, nint, void>)&ConnectWebRtcTransport.NativeDescription));
-                    Check(_candidate(peer, (nint)(delegate* unmanaged[Cdecl]<int, byte*, byte*, nint, void>)&ConnectWebRtcTransport.NativeCandidate));
-                    Check(_state(peer, (nint)(delegate* unmanaged[Cdecl]<int, int, nint, void>)&ConnectWebRtcTransport.NativeState));
-                    Check(_gathering(peer, (nint)(delegate* unmanaged[Cdecl]<int, int, nint, void>)&ConnectWebRtcTransport.NativeGathering));
-                    Check(_channel(peer, (nint)(delegate* unmanaged[Cdecl]<int, int, nint, void>)&ConnectWebRtcTransport.NativeChannel));
+                    Check(_description(peer, (nint)(delegate* unmanaged[Cdecl]<int, byte*, byte*, nint, void>)&ConnectNativePeer.NativeDescription));
+                    Check(_candidate(peer, (nint)(delegate* unmanaged[Cdecl]<int, byte*, byte*, nint, void>)&ConnectNativePeer.NativeCandidate));
+                    Check(_state(peer, (nint)(delegate* unmanaged[Cdecl]<int, int, nint, void>)&ConnectNativePeer.NativeState));
+                    Check(_gathering(peer, (nint)(delegate* unmanaged[Cdecl]<int, int, nint, void>)&ConnectNativePeer.NativeGathering));
+                    Check(_channel(peer, (nint)(delegate* unmanaged[Cdecl]<int, int, nint, void>)&ConnectNativePeer.NativeChannel));
                     return peer;
                 }
                 catch { DeletePeer(peer); throw; }
@@ -155,11 +158,11 @@ internal sealed unsafe class ConnectNativeApi
     {
         _user(id, token);
         Check(_threshold(id, 512 * 1024));
-        Check(_message(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, int, nint, void>)&ConnectWebRtcTransport.NativeMessage));
-        Check(_closed(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectWebRtcTransport.NativeClosed));
-        Check(_error(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, nint, void>)&ConnectWebRtcTransport.NativeError));
-        Check(_low(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectWebRtcTransport.NativeBufferedLow));
-        Check(_opened(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectWebRtcTransport.NativeOpen));
+        Check(_message(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, int, nint, void>)&ConnectNativePeer.NativeMessage));
+        Check(_closed(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectNativePeer.NativeClosed));
+        Check(_error(id, (nint)(delegate* unmanaged[Cdecl]<int, byte*, nint, void>)&ConnectNativePeer.NativeError));
+        Check(_low(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectNativePeer.NativeBufferedLow));
+        Check(_opened(id, (nint)(delegate* unmanaged[Cdecl]<int, nint, void>)&ConnectNativePeer.NativeOpen));
     }
 
     public bool IsOpen(int id) => _isOpen(id) != 0;

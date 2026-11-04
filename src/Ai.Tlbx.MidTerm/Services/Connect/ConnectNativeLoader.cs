@@ -20,6 +20,8 @@ internal static partial class ConnectNativeLoader
 
     public static ConnectNativeApi GetApi(string settingsDirectory)
     {
+        if (!ConnectTransportWorker.IsWorkerProcess)
+            throw new InvalidOperationException("Native WebRTC is restricted to an isolated Link worker.");
         lock (Gate)
         {
             if (_api is not null) return _api;

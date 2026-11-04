@@ -183,8 +183,8 @@ public sealed class ConnectService : BackgroundService
                 else await _changed.WaitAsync(generation.Token);
             }
             catch (OperationCanceledException) when (generation.IsCancellationRequested) { }
-            catch (Exception ex) when (ex is HttpRequestException or WebSocketException or IOException or JsonException
-                or InvalidOperationException or ArgumentException or OperationCanceledException or CryptographicException or FormatException)
+            // Link is optional; a managed failure must not stop the HTTP host.
+            catch (Exception ex)
             {
                 lock (_gate) _lastError = "Link is temporarily unavailable. Retrying automatically.";
                 Log.Error(() => $"[Link] Signaling failed ({ex.GetType().Name}); retrying automatically.");
@@ -291,7 +291,11 @@ public sealed class ConnectService : BackgroundService
                     {
                         if (message.Type == "offer") connection.Peer.SetOffer(message.Sdp ?? "");
                         message.ConnectionId = null;
-                        await connection.ApplySignalAsync(message, ct);
+                        try { await connection.ApplySignalAsync(message, ct); }
+                        catch (Exception ex) when (!ct.IsCancellationRequested && (ex is IOException or InvalidOperationException or OperationCanceledException))
+                        {
+                            await CloseFailedTransportAsync(socket, id, ct);
+                        }
                     }
                     break;
                 case "close":
@@ -309,7 +313,10 @@ public sealed class ConnectService : BackgroundService
             if (!_connections.TryRemove(id, out var owner)) return;
             await using (owner.ConfigureAwait(false)) { }
         }
-        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException) { }
+        catch (Exception ex)
+        {
+            Log.Error(() => $"[Link] Peer cleanup failed ({ex.GetType().Name}); HTTP host remains running.");
+        }
     }
 
     private async Task SendSignalAsync(ClientWebSocket socket, ConnectSignal message, CancellationToken ct)
