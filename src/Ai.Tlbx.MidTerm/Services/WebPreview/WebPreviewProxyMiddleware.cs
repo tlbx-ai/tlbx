@@ -1897,6 +1897,7 @@ public sealed partial class WebPreviewProxyMiddleware
             RewriteProtocolRelativeCssUrl(m, routePrefix, targetUri.Scheme, targetAuthority, reloadToken));
         html = RewriteCssImports(html, routePrefix, targetUri.Scheme, targetAuthority, reloadToken);
         html = StripIntegrityAttributeRegex().Replace(html, "");
+        html = StripImportMapIntegrity(html);
 
         // Prime the root-fallback cache from rewritten HTML before the browser starts
         // requesting assets. This avoids the first-wave 404s on deep document targets
