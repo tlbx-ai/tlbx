@@ -9,7 +9,7 @@ import { openSettings, closeSettings } from '../settings/panel';
 import { switchSettingsTab, type SettingsTab } from '../settings/tabs';
 import { switchTab, isTabAvailable } from '../sessionTabs';
 import { showSearch } from '../terminal/search';
-import { dockSession, undockSession, getLayoutSessionIds, focusLayoutSession } from '../layout';
+import { dockSession, undockSession, getLayoutSessionIds } from '../layout';
 import { showAlert } from '../../utils/dialog';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { bindingProblem, matchesSearch, ShortcutModifiers } from './keybindings';
@@ -180,7 +180,7 @@ export function initShortcuts(deps: Dependencies): void {
     const active = activeId();
     if (active && panes.some((pane) => pane.id === active)) {
       const target = directionalSession(panes, active, direction);
-      if (target) focusLayoutSession(target);
+      if (target) deps.selectSession(target);
     } else {
       move(direction === 'up' || direction === 'left' ? -1 : 1);
     }
@@ -346,7 +346,7 @@ export function initShortcuts(deps: Dependencies): void {
     () => {
       const ids = getLayoutSessionIds();
       const next = ids[(ids.indexOf(activeId() ?? '') + 1) % ids.length];
-      if (next) focusLayoutSession(next);
+      if (next) deps.selectSession(next);
     },
     () => getLayoutSessionIds().length > 1,
   );

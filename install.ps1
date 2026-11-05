@@ -2414,7 +2414,10 @@ function Install-AsService
         throw $message
     }
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
-    sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+    sc.exe failure $ServiceName reset= 86400 actions= restart/1000/restart/5000/restart/30000 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not configure service crash recovery." }
+    sc.exe failureflag $ServiceName 1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not enable service failure recovery." }
 
     # Start service
     Write-Log "Starting service..."

@@ -460,6 +460,23 @@ public sealed partial class WebPreviewProxyMiddleware
             else if(path===PP)path="/";
             return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(location.search)+location.hash;
           }
+          // Frameworks pass document.baseURI together with location.href to the
+          // server. Both must use upstream coordinates or Blazor rejects its circuit.
+          function mtDocumentBaseURI(){
+            try{
+              var base=new URL(document.baseURI);
+              if(base.pathname===PP+"/_ext")return new URL(base.searchParams.get("u")).href;
+              if(base.pathname===PP||base.pathname.indexOf(PP+"/")===0){
+                var path=base.pathname.substring(PP.length)||"/";
+                return new URL(path+mtUpstreamSearch(base.search)+base.hash,window.__mtTargetOrigin||curU()).href;
+              }
+              return base.href;
+            }catch(e){return document.baseURI;}
+          }
+          var mtDocumentView={};
+          Object.defineProperty(mtDocumentView,"baseURI",{get:mtDocumentBaseURI});
+          ["URL","documentURI"].forEach(function(key){Object.defineProperty(mtDocumentView,key,{get:curU});});
+          window.__mtPreviewDocument=function(value){return value===document?mtDocumentView:value;};
           // Application Location is upstream-facing; the bridge keeps the native proxy URL.
           function mtNavigationUrl(value){
             var text=String(value);

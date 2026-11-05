@@ -464,7 +464,11 @@ async function init(): Promise<void> {
   initTouchController();
   initShortcuts({
     createSession,
-    selectSession,
+    selectSession: (sessionId) => {
+      selectSession(sessionId, {
+        userInitiated: navigator.userActivation.isActive,
+      });
+    },
     renameSession: promptRenameSession,
     inlineRename: startInlineRename,
     bookmarkSession: pinSessionToHistory,

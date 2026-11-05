@@ -704,7 +704,7 @@ function createWorkspaceNode(): HTMLElement {
   const mainButton = document.createElement('button');
   mainButton.type = 'button';
   mainButton.className = 'spaces-tree-workspace-open';
-  mainButton.addEventListener('click', () => {
+  mainButton.addEventListener('click', (event) => {
     const context = workspaceNodeContexts.get(block);
     if (!context) {
       return;
@@ -721,7 +721,7 @@ function createWorkspaceNode(): HTMLElement {
       if (!activeSession) {
         return;
       }
-      callbacks?.onSelect(activeSession.id);
+      callbacks?.onSelect(activeSession.id, { userInitiated: event.isTrusted });
       callbacks?.onCloseSidebar();
     }
   });
@@ -897,8 +897,8 @@ function createSidebarSessionNode(
   const isReorderable = canReorderSidebarSession(entry, reorderScope);
   const item = document.createElement('div');
   configureSidebarSessionNode(item, entry, reorderScope, isReorderable);
-  item.addEventListener('click', () => {
-    callbacks?.onSelect(entry.id);
+  item.addEventListener('click', (event) => {
+    callbacks?.onSelect(entry.id, { userInitiated: event.isTrusted });
     callbacks?.onCloseSidebar();
   });
 
@@ -1275,7 +1275,11 @@ function patchSidebarSessionActions(actions: HTMLDivElement, entry: SidebarSessi
     notesButton.addEventListener('click', (event) => {
       event.preventDefault();
       event.stopPropagation();
-      callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });
+      callbacks?.onSelect(entry.id, {
+        closeSettingsPanel: false,
+        focusTerminal: false,
+        userInitiated: event.isTrusted,
+      });
       toggleSessionNotes(entry.id);
     });
     actions.appendChild(notesButton);
@@ -1509,6 +1513,15 @@ function createSessionNotesPane(entry: SidebarSessionRef): HTMLDivElement {
   textarea.addEventListener('touchstart', stopRowInteraction);
   textarea.addEventListener('click', stopRowInteraction);
   textarea.addEventListener('dblclick', stopRowInteraction);
+  textarea.addEventListener('pointerdown', (event) => {
+    if (event.isTrusted && event.button === 0) {
+      callbacks?.onSelect(entry.id, {
+        closeSettingsPanel: false,
+        focusTerminal: false,
+        userInitiated: true,
+      });
+    }
+  });
   textarea.addEventListener('focus', () => {
     callbacks?.onSelect(entry.id, { closeSettingsPanel: false, focusTerminal: false });
   });

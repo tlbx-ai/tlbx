@@ -172,6 +172,11 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
+        if (OperatingSystem.IsWindows() && settingsService.IsRunningAsService && !ServerSetup.IsSourceDevLaunchMode())
+        {
+            app.Lifetime.ApplicationStarted.Register(() =>
+                WindowsServiceRecovery.EnsureForCurrentProcess(runtimeOptions.ServiceIdentity.WindowsServiceName));
+        }
         ConfigureRuntimePriority(settings, resolvedInstanceIdentity);
         _ = MidTermProcessPriority.TryApplyToCurrentProcess(
             "mt",

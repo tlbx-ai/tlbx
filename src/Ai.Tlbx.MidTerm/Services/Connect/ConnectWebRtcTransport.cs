@@ -1,353 +1,227 @@
-using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.CompilerServices;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Channels;
+using System.Globalization;
+using System.Reflection;
+using System.Text.Json;
+using Ai.Tlbx.MidTerm.Common.Logging;
 
 namespace Ai.Tlbx.MidTerm.Services.Connect;
 
-/// <summary>One in-process native PeerConnection; native callbacks never wait for application work.</summary>
+/// <summary>One peer's private IPC proxy. The web server never loads WebRTC native code.</summary>
 internal sealed class ConnectWebRtcTransport : IAsyncDisposable
 {
-    internal const int MaximumFrameSize = 65536;
-    internal const int MaximumBufferedBytes = 1024 * 1024;
-    private static readonly ConcurrentDictionary<nint, ConnectWebRtcTransport> Owners = new();
-    private static int _nextToken;
-    private static ConnectNativeApi? _loadedApi;
-    private readonly ConnectNativeApi _api;
-    private readonly ConnectTurnProxy _proxy;
-    [SuppressMessage("Usage", "IDISP002:Dispose member", Justification = "ReleaseManagedResources disposes this source after all callbacks and operations have drained.")]
-    [SuppressMessage("Usage", "IDISP006:Implement IDisposable", Justification = "This owner requires asynchronous native shutdown and implements IAsyncDisposable.")]
-    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "DisposeAsync delegates final cleanup to ReleaseManagedResources after workers finish.")]
+    [SuppressMessage("Usage", "IDISP002:Dispose member", Justification = "ReleaseAsync disposes the process after its pipes drain.")]
+    [SuppressMessage("Usage", "IDISP006:Implement IDisposable", Justification = "Worker shutdown and pipe draining are asynchronous.")]
+    private readonly Process _process;
+    [SuppressMessage("Usage", "IDISP002:Dispose member", Justification = "ReleaseAsync disposes this member after asynchronous users drain.")]
+    [SuppressMessage("Usage", "IDISP006:Implement IDisposable", Justification = "Worker disposal must asynchronously drain pipes and process exit.")]
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "ReleaseAsync disposes the lifetime after readers and writers finish.")]
     private readonly CancellationTokenSource _lifetime;
-    private readonly CancellationToken _token;
-    private readonly Channel<ConnectSignal> _events = Channel.CreateBounded<ConnectSignal>(32);
-    private readonly Channel<byte[]> _frames = Channel.CreateBounded<byte[]>(32);
-    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "ReleaseManagedResources disposes these gates after pending operations and callbacks have drained.")]
-    private readonly SemaphoreSlim _sender = new(1, 1), _signals = new(1, 1), _bufferedLow = new(0, 1);
-    private readonly List<ConnectSignal> _pending = [];
+    [SuppressMessage("Usage", "IDISP002:Dispose member", Justification = "ReleaseAsync disposes this gate after asynchronous writers drain.")]
+    [SuppressMessage("Usage", "CA2213:Disposable fields should be disposed", Justification = "ReleaseAsync disposes the gate after pending writers finish.")]
+    private readonly SemaphoreSlim _writer = new(1, 1);
+    private readonly TaskCompletionSource _ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly Func<ConnectSignal, Task> _onSignal;
     private readonly Func<ReadOnlyMemory<byte>, Task> _onFrame;
     private readonly Func<Task> _onOpen;
     private readonly Action _onFailure;
-    private readonly nint _ownerToken;
-    private readonly Task _eventWorker, _receiveWorker;
-    private readonly TaskCompletionSource _operationsDrained = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly Lock _nativeGate = new();
-    private int _peer = -1, _channel = -1, _closed, _failed, _operations, _openedOnce;
-    private bool _offered;
+    private readonly string _logPath;
+    private readonly Task _reader, _stderr;
+    private readonly Lock _disposeGate = new();
     private Task? _disposeTask;
+    private int _closed, _failed;
 
-    private ConnectWebRtcTransport(ConnectNativeApi api, ConnectTurnProxy proxy, Func<ConnectSignal, Task> onSignal,
+    internal int WorkerProcessId => _process.Id;
+    internal static string[] NativeServerUrls(ConnectIceServer[] servers, bool expanded = false) => ConnectNativePeer.NativeServerUrls(servers, expanded);
+
+    private ConnectWebRtcTransport(Process process, string logPath, Func<ConnectSignal, Task> onSignal,
         Func<ReadOnlyMemory<byte>, Task> onFrame, Func<Task> onOpen, Action onFailure, CancellationToken ct)
     {
-        _api = api; _loadedApi = api; _proxy = proxy;
+        _process = process; _logPath = logPath;
         _onSignal = onSignal; _onFrame = onFrame; _onOpen = onOpen; _onFailure = onFailure;
-        _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct); _token = _lifetime.Token;
-        do { _ownerToken = Interlocked.Increment(ref _nextToken); } while (_ownerToken == 0 || !Owners.TryAdd(_ownerToken, this));
-        _eventWorker = RunEventsAsync(); _receiveWorker = RunFramesAsync();
+        _lifetime = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        _stderr = CaptureErrorsAsync();
+        _reader = ReadAsync();
     }
 
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "Successful initialization transfers ownership to caller; finally disposes unsuccessful instances.")]
+    [SuppressMessage("Usage", "IDISP001:Dispose created", Justification = "Successful initialization transfers process ownership to the transport and caller.")]
+    [SuppressMessage("Usage", "IDISP003:Dispose previous before re-assigning", Justification = "Null marks ownership transfer to the returned instance.")]
     public static async Task<ConnectWebRtcTransport> CreateAsync(string settingsDirectory, ConnectSignal configuration,
         Func<ConnectSignal, Task> onSignal, Func<ReadOnlyMemory<byte>, Task> onFrame, Func<Task> onOpen,
         Action onFailure, CancellationToken ct)
     {
-        var servers = configuration.IceServers ?? [];
-        _ = NativeServerUrls(servers); // Validate before starting proxy DNS/network work.
-        var proxy = await ConnectTurnProxy.CreateAsync(servers, ct);
+        _ = NativeServerUrls(configuration.IceServers ?? []);
+        var logs = Path.Combine(settingsDirectory, "logs", "link-workers");
+        FileRecoveryStorage.EnsurePrivate(logs);
+        var logPath = Path.Combine(logs, "worker-" + Guid.NewGuid().ToString("N") + ".log");
         ConnectWebRtcTransport? transport = null;
+        Process? process = null;
         try
         {
-            transport = new ConnectWebRtcTransport(ConnectNativeLoader.GetApi(settingsDirectory), proxy, onSignal, onFrame, onOpen, onFailure, ct);
             ct.ThrowIfCancellationRequested();
-            var peer = transport._api.Create(NativeServerUrls(proxy.NativeServers, expanded: true), proxy.ProxyUrl,
-                configuration.RelayOnly == true, transport._ownerToken);
-            lock (transport._nativeGate)
-            {
-                if (transport._closed != 0) { transport._api.DeletePeer(peer); throw new IOException("Connect closed during initialization."); }
-                transport._peer = peer;
-            }
-            return transport;
+            process = Process.Start(StartInfo()) ?? throw new IOException("Could not start Link worker.");
+            transport = new ConnectWebRtcTransport(process, logPath, onSignal, onFrame, onOpen, onFailure, ct);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(30));
+            var init = new ConnectWorkerInitialization(settingsDirectory, configuration);
+            await transport.WriteAsync(ConnectWorkerMessage.Initialize,
+                JsonSerializer.SerializeToUtf8Bytes(init, ConnectJsonContext.Default.ConnectWorkerInitialization), deadline.Token).ConfigureAwait(false);
+            await transport._ready.Task.WaitAsync(deadline.Token).ConfigureAwait(false);
+            var result = transport;
+            transport = null; process = null;
+            return result;
         }
-        catch
+        catch (Exception ex)
         {
-            if (transport is not null) await transport.DisposeAsync();
-            else await proxy.DisposeAsync();
-            throw;
+            throw new IOException("Link worker could not be initialized.", ex);
+        }
+        finally
+        {
+            if (transport is not null) await transport.DisposeAsync().ConfigureAwait(false);
+            else if (process is not null)
+            {
+                try { process.Kill(entireProcessTree: true); } catch (Exception) { }
+                process.Dispose();
+            }
         }
     }
 
-    public async Task ApplySignalAsync(ConnectSignal signal, CancellationToken ct)
+    internal static ProcessStartInfo StartInfo()
     {
-        EnterOperation();
-        using var operation = CancellationTokenSource.CreateLinkedTokenSource(ct, _token);
-        var entered = false;
-        try
+        var isOwnEntry = Assembly.GetEntryAssembly() == typeof(Program).Assembly;
+        var host = isOwnEntry ? Environment.ProcessPath! : Environment.GetEnvironmentVariable("DOTNET_HOST_PATH") ?? "dotnet";
+        var info = new ProcessStartInfo(host)
         {
-            await _signals.WaitAsync(operation.Token); entered = true;
-            ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
-            if (signal.Type == "offer")
-            {
-                if (_offered || string.IsNullOrEmpty(signal.Sdp) || signal.Sdp.Contains('\0', StringComparison.Ordinal) || Encoding.UTF8.GetByteCount(signal.Sdp) > 65536)
-                    throw new InvalidDataException("Exactly one bounded Connect offer is required.");
-                _offered = true;
-                _api.ApplyOffer(_peer, signal.Sdp);
-                foreach (var candidate in _pending) AddCandidate(candidate);
-                _pending.Clear();
-            }
-            else if (signal.Type == "candidate")
-            {
-                ValidateCandidate(signal);
-                if (_offered) AddCandidate(signal);
-                else
-                {
-                    if (_pending.Count >= 128) throw new InvalidDataException("Too many Connect candidates before the offer.");
-                    _pending.Add(signal);
-                }
-            }
-            else throw new InvalidDataException("Unsupported Connect transport signal.");
-        }
-        catch (Exception) when (!_token.IsCancellationRequested) { Fail(); throw; }
-        finally { if (entered) _signals.Release(); ExitOperation(); }
+            UseShellExecute = false, CreateNoWindow = true,
+            RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        if (!isOwnEntry) info.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "mt.dll"));
+        else if (string.Equals(Path.GetFileNameWithoutExtension(host), "dotnet", StringComparison.OrdinalIgnoreCase))
+            info.ArgumentList.Add(Path.GetFullPath(Environment.GetCommandLineArgs()[0]));
+        using var parent = Process.GetCurrentProcess();
+        info.ArgumentList.Add("connect-worker");
+        info.ArgumentList.Add(parent.Id.ToString(CultureInfo.InvariantCulture));
+        info.ArgumentList.Add(parent.StartTime.ToUniversalTime().Ticks.ToString(CultureInfo.InvariantCulture));
+        return info;
     }
 
-    public async Task SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct)
+    public Task ApplySignalAsync(ConnectSignal signal, CancellationToken ct) => WriteAsync(ConnectWorkerMessage.Signal,
+        JsonSerializer.SerializeToUtf8Bytes(signal, ConnectJsonContext.Default.ConnectSignal), ct);
+    public Task SendAsync(ReadOnlyMemory<byte> frame, CancellationToken ct) => WriteAsync(ConnectWorkerMessage.Frame, frame, ct);
+
+    private async Task WriteAsync(ConnectWorkerMessage kind, ReadOnlyMemory<byte> payload, CancellationToken ct)
     {
-        if (frame.Length is 0 or > MaximumFrameSize) throw new InvalidDataException("Invalid Connect binary frame size.");
-        EnterOperation();
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, _token);
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
         deadline.CancelAfter(TimeSpan.FromSeconds(30));
         var entered = false;
         try
         {
-            await _sender.WaitAsync(deadline.Token); entered = true;
-            while (true)
-            {
-                ObjectDisposedException.ThrowIf(Volatile.Read(ref _closed) != 0, this);
-                var channel = Volatile.Read(ref _channel);
-                if (channel < 0 || !_api.IsOpen(channel)) throw new IOException("The Connect data channel is not open.");
-                if (_api.BufferedAmount(channel) <= MaximumBufferedBytes - frame.Length)
-                {
-                    _api.Send(channel, frame.Span);
-                    return;
-                }
-                await _bufferedLow.WaitAsync(deadline.Token);
-            }
+            await _writer.WaitAsync(deadline.Token).ConfigureAwait(false); entered = true;
+            await ConnectWorkerProtocol.WriteAsync(_process.StandardInput.BaseStream, kind, payload, deadline.Token).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested && !_token.IsCancellationRequested)
-        { Fail(); throw new IOException("Connect data-channel backpressure exceeded its deadline."); }
-        catch (IOException) { Fail(); throw; }
-        finally { if (entered) _sender.Release(); ExitOperation(); }
-    }
-
-    private void AddCandidate(ConnectSignal candidate)
-    {
-        ValidateCandidate(candidate);
-        if (!string.IsNullOrEmpty(candidate.Candidate)) _api.AddCandidate(_peer, candidate.Candidate, candidate.SdpMid);
-    }
-    private static void ValidateCandidate(ConnectSignal signal)
-    {
-        if (signal.Candidate is null || Encoding.UTF8.GetByteCount(signal.Candidate) > 8192 || signal.Candidate.Any(x => x is '\0' or '\r' or '\n')
-            || signal.SdpMid?.Length > 256 || signal.SdpMid?.Contains('\0', StringComparison.Ordinal) == true || signal.SdpMLineIndex is < 0 or > 65535)
-            throw new InvalidDataException("Invalid Connect ICE candidate.");
-    }
-
-    internal static string[] NativeServerUrls(ConnectIceServer[] servers, bool expanded = false)
-    {
-        if (servers.Length > 8) throw new InvalidDataException("Too many Connect ICE servers.");
-        var urls = new List<string>();
-        foreach (var server in servers)
+        catch (Exception ex) when (ex is IOException or OperationCanceledException or ObjectDisposedException)
         {
-            if (server.Urls is not { Length: > 0 } || server.Urls.Length > (expanded ? 64 : 8)
-                || server.Username?.Length > 512 || server.Credential?.Length > 1024
-                || server.Username?.Any(char.IsControl) == true || server.Credential?.Any(char.IsControl) == true)
-                throw new InvalidDataException("Invalid Connect ICE configuration.");
-            foreach (var url in server.Urls)
-            {
-                if (string.IsNullOrWhiteSpace(url) || url.Length > 2048 || url.Any(char.IsControl)) throw new InvalidDataException("Invalid Connect ICE URL.");
-                var colon = url.IndexOf(':', StringComparison.Ordinal);
-                var scheme = colon > 0 ? url[..colon].ToLowerInvariant() : "";
-                var address = colon > 0 ? url[(colon + 1)..] : "";
-                if (address.StartsWith("//", StringComparison.Ordinal)) address = address[2..];
-                if (scheme is not ("stun" or "turn" or "turns") || address.Length == 0 || address.Contains('@', StringComparison.Ordinal)) throw new InvalidDataException("Unsupported Connect ICE URL.");
-                var credentials = scheme != "stun" && (server.Username is not null || server.Credential is not null)
-                    ? Uri.EscapeDataString(server.Username ?? "") + ":" + Uri.EscapeDataString(server.Credential ?? "") + "@" : "";
-                urls.Add(scheme + ":" + credentials + address);
-            }
+            if (!ct.IsCancellationRequested && Volatile.Read(ref _closed) == 0) Fail();
+            throw;
         }
-        return urls.ToArray();
+        finally { if (entered) _writer.Release(); }
     }
 
-    private async Task RunEventsAsync()
+    private async Task ReadAsync()
     {
         try
         {
-            await foreach (var signal in _events.Reader.ReadAllAsync(_token))
+            while (await ConnectWorkerProtocol.ReadAsync(_process.StandardOutput.BaseStream, _lifetime.Token).ConfigureAwait(false) is { } message)
             {
-                if (signal.Type == "open") await _onOpen();
-                else await _onSignal(signal);
+                switch (message.Kind)
+                {
+                    case ConnectWorkerMessage.Ready: _ready.TrySetResult(); break;
+                    case ConnectWorkerMessage.Open: await _onOpen().ConfigureAwait(false); break;
+                    case ConnectWorkerMessage.Signal:
+                        var signal = JsonSerializer.Deserialize(message.Payload, ConnectJsonContext.Default.ConnectSignal)
+                            ?? throw new InvalidDataException("Empty Link worker signal.");
+                        await _onSignal(signal).ConfigureAwait(false);
+                        break;
+                    case ConnectWorkerMessage.Frame: await _onFrame(message.Payload).ConfigureAwait(false); break;
+                    default: throw new InvalidDataException("Unexpected Link worker response.");
+                }
             }
         }
-        catch (OperationCanceledException) when (_token.IsCancellationRequested) { }
+        catch (Exception) { /* A corrupt or closed worker stream is a peer failure. */ }
+        finally { if (Volatile.Read(ref _closed) == 0) Fail(); }
+    }
+
+    private async Task CaptureErrorsAsync()
+    {
+        try
+        {
+            await using var file = new FileStream(_logPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
+            var buffer = new byte[4096];
+            var saved = 0;
+            int count;
+            while ((count = await _process.StandardError.BaseStream.ReadAsync(buffer.AsMemory(), CancellationToken.None).ConfigureAwait(false)) != 0)
+            {
+                var keep = Math.Min(count, 65536 - saved);
+                if (keep > 0) await file.WriteAsync(buffer.AsMemory(0, keep), CancellationToken.None).ConfigureAwait(false);
+                saved += keep; // Continue draining even after the private log reaches its cap.
+            }
+        }
         catch (Exception) { Fail(); }
     }
-    private async Task RunFramesAsync()
-    {
-        try { await foreach (var frame in _frames.Reader.ReadAllAsync(_token)) await _onFrame(frame); }
-        catch (OperationCanceledException) when (_token.IsCancellationRequested) { }
-        catch (Exception) { Fail(); }
-    }
-    private void Emit(ConnectSignal signal)
-    {
-        if (Volatile.Read(ref _closed) == 0 && !_events.Writer.TryWrite(signal)) Fail();
-    }
+
     private void Fail()
     {
+        _ready.TrySetException(new IOException("Link worker exited or its IPC stream failed."));
         if (Volatile.Read(ref _closed) != 0 || Interlocked.Exchange(ref _failed, 1) != 0) return;
-        // Never close/delete native objects synchronously on their own callback stack.
         _ = Task.Run(async () =>
         {
-            try { _onFailure(); } catch (Exception) { /* Closing this peer is best effort during shutdown. */ }
-            await DisposeAsync();
+            try { _onFailure(); } catch (Exception) { }
+            try { await DisposeAsync().ConfigureAwait(false); } catch (Exception) { }
         }, CancellationToken.None);
-    }
-
-    private static ConnectWebRtcTransport? Owner(nint token) => Owners.TryGetValue(token, out var owner) && Volatile.Read(ref owner._closed) == 0 ? owner : null;
-    private static unsafe string Text(byte* value, int maximum)
-    {
-        if (value is null) return "";
-        var length = 0;
-        while (length <= maximum && value[length] != 0) length++;
-        if (length > maximum) throw new InvalidDataException("Native WebRTC callback exceeds its limit.");
-        return Encoding.UTF8.GetString(new ReadOnlySpan<byte>(value, length));
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static unsafe void NativeDescription(int peer, byte* sdp, byte* type, nint token)
-    {
-        var owner = Owner(token); if (owner is null) return;
-        try
-        {
-            if (Text(type, 16) != "answer") throw new InvalidDataException("Unexpected local Connect description.");
-            owner.Emit(new ConnectSignal { Type = "answer", Sdp = Text(sdp, 65536) });
-        }
-        catch (Exception) { owner.Fail(); }
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static unsafe void NativeCandidate(int peer, byte* candidate, byte* mid, nint token)
-    {
-        var owner = Owner(token); if (owner is null) return;
-        try { owner.Emit(new ConnectSignal { Type = "candidate", Candidate = Text(candidate, 8192), SdpMid = Text(mid, 256) }); }
-        catch (Exception) { owner.Fail(); }
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static void NativeState(int peer, int state, nint token)
-    {
-        var owner = Owner(token); if (owner is null) return;
-        try
-        {
-            var value = state switch { 0 => "new", 1 => "connecting", 2 => "connected", 3 => "disconnected", 4 => "failed", 5 => "closed", _ => null };
-            if (value is null) { owner.Fail(); return; }
-            owner.Emit(new ConnectSignal { Type = "state", State = value });
-            if (state is 4 or 5) owner.Fail();
-        }
-        catch (Exception) { owner.Fail(); }
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static void NativeGathering(int peer, int state, nint token)
-    {
-        var owner = Owner(token); if (owner is null) return;
-        try { if (state == 2) owner.Emit(new ConnectSignal { Type = "candidate", Candidate = "" }); }
-        catch (Exception) { owner.Fail(); }
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static void NativeChannel(int peer, int channel, nint token)
-    {
-        var owner = Owner(token);
-        try
-        {
-            if (owner is null) { _loadedApi?.DeleteChannel(channel); return; }
-            lock (owner._nativeGate)
-            {
-                if (Volatile.Read(ref owner._closed) != 0 || owner._channel >= 0 || !owner._api.ReliableTlbxChannel(channel))
-                { owner._api.DeleteChannel(channel); owner.Fail(); return; }
-                owner._channel = channel;
-                owner._api.AttachChannel(channel, token);
-                if (owner._api.IsOpen(channel)) owner.MarkOpened();
-            }
-        }
-        catch (Exception) { owner?.Fail(); }
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static void NativeOpen(int id, nint token)
-    {
-        var owner = Owner(token); if (owner is null) return;
-        try { owner.MarkOpened(); } catch (Exception) { owner.Fail(); }
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static unsafe void NativeMessage(int id, byte* message, int size, nint token)
-    {
-        var owner = Owner(token); if (owner is null) return;
-        try
-        {
-            if (size is <= 0 or > MaximumFrameSize || message is null) { owner.Fail(); return; }
-            // Native owns the callback buffer only until this callback returns.
-            if (!owner._frames.Writer.TryWrite(new ReadOnlySpan<byte>(message, size).ToArray())) owner.Fail();
-        }
-        catch (Exception) { owner.Fail(); }
-    }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static void NativeClosed(int id, nint token) { try { Owner(token)?.Fail(); } catch (Exception) { } }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static unsafe void NativeError(int id, byte* error, nint token) { try { Owner(token)?.Fail(); } catch (Exception) { } }
-    [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
-    internal static void NativeBufferedLow(int id, nint token)
-    {
-        try { Owner(token)?._bufferedLow.Release(); } catch (Exception) { }
     }
 
     public ValueTask DisposeAsync()
     {
-        lock (_nativeGate) return new ValueTask(_disposeTask ??= Task.Run(DisposeCoreAsync, CancellationToken.None));
+        lock (_disposeGate) return new ValueTask(_disposeTask ??= Task.Run(DisposeCoreAsync, CancellationToken.None));
     }
+
     private async Task DisposeCoreAsync()
     {
-        lock (_nativeGate)
-        {
-            _closed = 1;
-            if (_operations == 0) _operationsDrained.TrySetResult();
-        }
+        Interlocked.Exchange(ref _closed, 1);
         _lifetime.Cancel();
-        _events.Writer.TryComplete(); _frames.Writer.TryComplete();
-        await _operationsDrained.Task;
-        if (_channel >= 0) _api.DeleteChannel(_channel);
-        if (_peer >= 0) _api.DeletePeer(_peer);
-        Owners.TryRemove(_ownerToken, out _);
-        await _proxy.DisposeAsync();
-        var workers = Task.WhenAll(_eventWorker, _receiveWorker);
-        try { await workers.WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None); }
-        catch (TimeoutException) { /* A shared signaling send may finish after this peer closes. */ }
-        if (workers.IsCompleted) ReleaseManagedResources();
-        else _ = ReleaseAfterWorkersAsync(workers);
+        try { _process.StandardInput.Close(); } catch (Exception) { }
+        try { await _process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false); }
+        catch (TimeoutException)
+        {
+            try { _process.Kill(entireProcessTree: true); } catch (Exception) { }
+            try { await _process.WaitForExitAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception) { /* Cleanup must not hold the control plane indefinitely. */ }
+        }
+        catch (Exception) { /* A peer cleanup failure cannot stop mt. */ }
+        Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"[Link] Worker {_process.Id} closed; main server remains running."));
+        var workers = Task.WhenAll(_reader, _stderr);
+        try { await workers.WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false); }
+        catch (TimeoutException) { _ = ReleaseAfterWorkersAsync(workers); return; }
+        var release = ReleaseAsync();
+        try { await release.WaitAsync(TimeSpan.FromSeconds(3), CancellationToken.None).ConfigureAwait(false); }
+        catch (TimeoutException) { _ = ObserveReleaseAsync(release); }
     }
+
+    private static async Task ObserveReleaseAsync(Task release)
+    {
+        try { await release.ConfigureAwait(false); } catch (Exception) { }
+    }
+
     private async Task ReleaseAfterWorkersAsync(Task workers)
     {
-        try { await workers; } finally { ReleaseManagedResources(); }
+        try { await workers.ConfigureAwait(false); await ReleaseAsync().ConfigureAwait(false); } catch (Exception) { }
     }
-    private void ReleaseManagedResources()
+    private async Task ReleaseAsync()
     {
-        _lifetime.Dispose(); _sender.Dispose(); _signals.Dispose(); _bufferedLow.Dispose();
-    }
-    private void EnterOperation()
-    {
-        lock (_nativeGate) { ObjectDisposedException.ThrowIf(_closed != 0, this); _operations++; }
-    }
-    private void ExitOperation()
-    {
-        lock (_nativeGate) { if (--_operations == 0 && _closed != 0) _operationsDrained.TrySetResult(); }
-    }
-    private void MarkOpened()
-    {
-        if (Interlocked.Exchange(ref _openedOnce, 1) == 0) Emit(new ConnectSignal { Type = "open" });
+        await _writer.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        _writer.Dispose(); _lifetime.Dispose(); _process.Dispose();
+        try { if (new FileInfo(_logPath).Length == 0) File.Delete(_logPath); } catch (Exception) { }
     }
 }
