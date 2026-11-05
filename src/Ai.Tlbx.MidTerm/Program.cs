@@ -208,7 +208,8 @@ public class Program
             browserPreviewOriginService,
             browserPreviewRegistry);
 
-        TlbxDirectory.Initialize(port, authService, bindAddress);
+        TlbxDirectory.Initialize(port, authService, bindAddress,
+            ServerSetup.LoadedCertificate?.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256));
         Services.Mcp.TlbxMcpRuntimeConfiguration.Configure(app.Services, port, authService, ServerSetup.LoadedCertificate);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
