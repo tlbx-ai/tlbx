@@ -180,6 +180,9 @@ public sealed partial class TlbxCliScriptWriterTests : IDisposable
         var directory = TlbxDirectory.Ensure(_tempDir);
         var guide = File.ReadAllText(Path.Combine(directory, "AGENTS.md"));
         var fallback = File.ReadAllText(Path.Combine(directory, "CLI-FALLBACK.md"));
+        Assert.Contains(".tlbx/install-mcp.ps1 codex", guide, StringComparison.Ordinal);
+        Assert.Contains(".tlbx/install-mcp.sh claude", guide, StringComparison.Ordinal);
+        Assert.Contains("native tool call succeeds", guide, StringComparison.Ordinal);
         File.WriteAllText(Path.Combine(directory, "AGENTS.md"), "outdated instructions");
         File.WriteAllText(Path.Combine(directory, "CLAUDE.md"), "different outdated instructions");
         File.WriteAllText(Path.Combine(directory, "CLI-FALLBACK.md"), "outdated fallback reference");

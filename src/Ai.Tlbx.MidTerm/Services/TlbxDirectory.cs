@@ -15,12 +15,14 @@ public static class TlbxDirectory
     private static int _port;
     private static string _cliHost = "localhost";
     private static AuthService? _authService;
+    private static string? _mcpCertificateSha256;
 
-    public static void Initialize(int port, AuthService authService, string bindAddress)
+    public static void Initialize(int port, AuthService authService, string bindAddress, string? mcpCertificateSha256 = null)
     {
         _port = port;
         _cliHost = ResolveCliHost(bindAddress);
         _authService = authService;
+        _mcpCertificateSha256 = mcpCertificateSha256;
     }
 
     public static string? TryEnsureForCwd(string? cwd)
@@ -177,7 +179,7 @@ public static class TlbxDirectory
         {
             var token = _authService.CreateSessionToken();
             WriteInstanceCliScripts(tlbxDir, _port, token,
-                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev", _cliHost);
+                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev", _cliHost, _mcpCertificateSha256);
         }
         catch (Exception ex)
         {
@@ -185,7 +187,7 @@ public static class TlbxDirectory
         }
     }
 
-    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev, string host = "localhost")
+    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev, string host = "localhost", string? mcpCertificateSha256 = null)
     {
         if (sourceDev)
         {
@@ -193,6 +195,7 @@ public static class TlbxDirectory
             // Keep its fallback URL/credential pair together without replacing the supervisor's.
             var instanceDir = Path.Combine(tlbxDir, "instances", port.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(instanceDir);
+            WriteMcpSetupScripts(instanceDir, port, token, mcpCertificateSha256);
             TlbxCliScriptWriter.WriteScripts(instanceDir, port, token, host);
             TlbxGraphsScriptWriter.WriteScripts(instanceDir, port, token, host);
             if (File.Exists(Path.Combine(tlbxDir, "tlbx_cli.ps1")) ||
@@ -200,6 +203,7 @@ public static class TlbxDirectory
                 return;
         }
 
+        WriteMcpSetupScripts(tlbxDir, port, token, mcpCertificateSha256);
         TlbxCliScriptWriter.WriteScripts(tlbxDir, port, token, host);
         TlbxGraphsScriptWriter.WriteScripts(tlbxDir, port, token, host);
         if (!sourceDev)
@@ -207,6 +211,15 @@ public static class TlbxDirectory
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
         }
+    }
+
+    private static void WriteMcpSetupScripts(string directory, int port, string token, string? fingerprint)
+    {
+        var command = Environment.ProcessPath;
+        if (command is null) return;
+        string[] prefix = string.Equals(Path.GetFileNameWithoutExtension(command), "dotnet", StringComparison.OrdinalIgnoreCase)
+            ? [Path.GetFullPath(Environment.GetCommandLineArgs()[0])] : [];
+        Mcp.TlbxMcpInstallation.WriteSetupScripts(directory, port, token, fingerprint, command, prefix);
     }
 
     internal static string ResolveCliHost(string bindAddress) => bindAddress switch
@@ -261,6 +274,20 @@ public static class TlbxDirectory
         Use the verified session returned by `context_get`; cwd, titles and inherited IDs never prove ownership. Explicit operator mode has no implicit self and requires `targetSessionId` for scoped work. Select `previewName` per browser call and never claim another browser owner silently.
         A timed-out or disconnected mutation may already have executed. Inspect the resulting state before retrying; switching to the CLI does not make a replay safe. Use `context_repair` for a binding failure and report its diagnostic if repair fails. Child MCP connections require their own verified binding.
         The generated Bash/PowerShell CLI is a deprecated transitional fallback, planned for removal soon. Use it only when MCP is not exposed by the client, cannot connect, or a required operation is missing or broken; report the concrete MCP gap. An explicit user request for a CLI workflow also takes precedence. Keep new workflows on MCP. A failed or uncertain MCP mutation must be inspected before any fallback replay.
+
+        ### If native MCP tools are missing: install them first
+
+        Reading this guide does not register a server in Codex or Claude Code. Agent Controller sessions receive MCP automatically; an agent started manually in a terminal needs the client configuration below.
+        Run the matching command from the project root. No CLI helper needs to be sourced:
+
+        | Client | PowerShell | Bash/sh |
+        |--------|------------|---------|
+        | Codex | `pwsh -NoProfile -File .tlbx/install-mcp.ps1 codex` | `sh .tlbx/install-mcp.sh codex` |
+        | Claude Code | `pwsh -NoProfile -File .tlbx/install-mcp.ps1 claude` | `sh .tlbx/install-mcp.sh claude` |
+
+        The setup configures only this project (`.codex/config.toml` for Codex; `.mcp.json` for Claude), preserves other servers/settings, and keeps authentication in an owner-only file outside the repository. Client configs contain a machine-local file path, never the token; keep those generated local entries out of commits. Existing custom tlbx entries require review instead of being silently overwritten.
+        Start a new client session or resume after restarting. Accept the client's project-trust / MCP approval prompt if shown. Discover native `context_get`, call it, then verify `sessions_list` before scoped operations. A successful installer or shell protocol probe does not prove that tools are exposed to the current model. Do not claim MCP works until a native tool call succeeds.
+        If tools remain absent, report the client/version, generated config path, project trust/approval state and MCP startup diagnostic with secrets removed. A running agent may need a new session to load its MCP configuration. Authentication errors require rerunning setup from an active tlbx terminal; never copy credentials into chat or Git. When investigating this gap, repair setup before settling for the CLI fallback.
 
         ### MCP quick reference
 

@@ -30,28 +30,50 @@ certificate validation or an explicitly supplied exact SHA256 leaf pin.
 
 ## Terminal TUI configuration
 
-Native Agent Controller sessions register MCP per conversation. For a separately
-launched Codex TUI, point its MCP configuration at the native adapter and an
-owner-protected credential file; do not put credentials in command arguments or
-commit the credential file.
+Native Agent Controller sessions register MCP per conversation. Separately launched
+Codex and Claude Code terminal agents need project configuration. From the project
+root run one of the generated setup scripts (they do not source the fallback CLI):
 
-```toml
-[mcp_servers.tlbx]
-command = "mt"
-args = ["mcp", "--stdio", "--credentials-file", "C:/private/tlbx-mcp.json"]
-required = true
-startup_timeout_sec = 30
-tool_timeout_sec = 660
-env_vars = ["CODEX_HOME"]
+```powershell
+pwsh -NoProfile -File .tlbx/install-mcp.ps1 codex
+pwsh -NoProfile -File .tlbx/install-mcp.ps1 claude
 ```
 
-The private JSON file supplies `MT_BASE_URL` and existing `MT_API_KEY` or
-`MT_TOKEN` authentication. A non-default `CODEX_HOME` must be forwarded explicitly
-with `env_vars` or set in the MCP server's `env` table. Otherwise shared-thread
-validation looks for the daemon in the default profile. No directory/title or
-inherited session hint substitutes for this proof. `required` prevents an early
-model turn from starting with an incomplete optional-server tool catalog. See
-the [Codex MCP configuration reference](https://developers.openai.com/codex/mcp#stdio-servers).
+```sh
+sh .tlbx/install-mcp.sh codex
+sh .tlbx/install-mcp.sh claude
+```
+
+The native equivalent is `mt mcp install codex` or `mt mcp install claude` when the
+adapter is on PATH and the owning tlbx authentication/TLS environment is present.
+The generated scripts locate the exact running adapter and supply that instance's
+current authentication and SHA256 certificate pin. They preserve another owning
+instance's inherited URL/authentication pair. Source instances retain their scripts
+under `.tlbx/instances/<port>/` when the installed supervisor already owns `.tlbx/`.
+
+Setup edits only this project's `.codex/config.toml` or `.mcp.json`, preserving
+other settings and servers. It stores authentication in an owner-only file outside
+the repository and puts only its path in client configuration. These entries are
+machine-local; keep them out of commits. Existing custom tlbx entries are reported
+for review instead of silently overwritten. Re-running setup refreshes its own
+configuration and private credentials, without copying controller launch authority.
+No global provider configuration or explicit terminal launch command is changed.
+
+Restart the client or resume the conversation in a new client process, trust the
+project / approve its MCP server if prompted, discover native `context_get`, and
+call it followed by `sessions_list`. Successful setup proves configuration only;
+a shell protocol probe does not prove model-visible native tools. If discovery
+still fails, report client/version, configuration path, project trust/approval and
+the sanitized MCP startup diagnostic. On authentication rejection, rerun setup
+from an active tlbx terminal; do not post credentials or put them in Git.
+
+Codex setup marks the project server required, waits up to 30 seconds at startup,
+and forwards `CODEX_HOME` for shared-thread identity. Tool timeout is 660 seconds
+for bounded workflows. Claude uses project-scoped stdio registration and its normal
+MCP approval. Both clients retain verified caller binding; cwd, title and inherited
+session IDs cannot establish identity. See the official
+[Codex MCP configuration](https://developers.openai.com/codex/mcp) and
+[Claude Code MCP configuration](https://code.claude.com/docs/en/mcp).
 
 ## Tools and outputs under implementation
 
