@@ -212,6 +212,7 @@ import {
 import { isHubSessionId } from '../hub/runtime';
 import {
   requestHubTerminalSizeControl,
+  requestHubSizeControlForCurrentInput,
   resizeHubTerminalWithControl,
 } from '../hub/sizeControlChannel';
 
@@ -1086,6 +1087,10 @@ function applyTerminalSizeControlResult(result: TerminalSizeControlCommandResult
 
 /** Preserve a current gesture when mux is reconnecting, without queueing claims. */
 export function requestSizeControlForCurrentInput(sessionId: string): void {
+  if (isHubSessionId(sessionId)) {
+    requestHubSizeControlForCurrentInput(sessionId);
+    return;
+  }
   if (!isStateConnected()) return;
   const status = getTerminalSizeControl(sessionId);
   if (!status) return;

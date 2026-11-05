@@ -13,6 +13,7 @@ import {
   suppressLayoutAutoFit,
   setSuppressLayoutAutoFit,
 } from '../../state';
+import { requestSizeControlForCurrentInput } from '../comms';
 import { isLayoutActive, focusLayoutSession } from './layoutStore';
 import {
   applyTerminalScalingSync,
@@ -150,8 +151,9 @@ function renderLeaf(leaf: LayoutLeaf): HTMLElement {
   pane.dataset.sessionId = leaf.sessionId;
 
   // Add click handler for focus
-  pane.addEventListener('click', () => {
+  pane.addEventListener('click', (event) => {
     focusLayoutSession(leaf.sessionId);
+    if (event.isTrusted) requestSizeControlForCurrentInput(leaf.sessionId);
   });
 
   return pane;

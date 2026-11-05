@@ -83,7 +83,7 @@ import {
   setSessionBookmark,
   setSessionControl as apiSetSessionControl,
 } from './api/client';
-import { sendActiveSessionHint } from './modules/comms';
+import { sendActiveSessionHint, requestSizeControlForCurrentInput } from './modules/comms';
 import { t } from './modules/i18n';
 import { closeOperatorView } from './modules/operator';
 import { closeActionGraphsView } from './modules/actionGraphs';
@@ -94,6 +94,7 @@ import { hasDirtySessionFiles, confirmSessionFileNavigation } from './modules/fi
 const log = createLogger('main');
 
 export interface SessionSelectionOptions {
+  userInitiated?: boolean;
   closeSettingsPanel?: boolean;
   focusTerminal?: boolean;
 }
@@ -309,11 +310,13 @@ export function createSessionActionHandlers({
     const focusTerminal = options?.focusTerminal !== false;
 
     if (isHubSessionId(sessionId)) {
-      void selectHubSession(sessionId, focusTerminal);
+      selectHubSession(sessionId, focusTerminal);
+      if (options?.userInitiated) requestSizeControlForCurrentInput(sessionId);
       return;
     }
 
     detachHubChannel();
+    if (options?.userInitiated) requestSizeControlForCurrentInput(sessionId);
     if (selectLayoutSession(sessionId, focusTerminal)) {
       return;
     }
