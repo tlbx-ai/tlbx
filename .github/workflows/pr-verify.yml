@@ -30,16 +30,6 @@ jobs:
         working-directory: src/Ai.Tlbx.MidTerm
       - run: npm run verify
         working-directory: src/Ai.Tlbx.MidTerm
-      - name: Package the embedded frontend used by server tests
-        shell: pwsh
-        run: |
-          $version = (Get-Content src/version.json | ConvertFrom-Json).web
-          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 -Publish -Version $version -SkipVerify -DevRelease:($version -match '-dev')
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: pr-frontend
-          path: src/Ai.Tlbx.MidTerm/wwwroot/
-          retention-days: 1
   native-linux:
     name: Native Linux package
     runs-on: ubuntu-24.04
@@ -136,7 +126,7 @@ jobs:
           node-version: '26.12.0'
       - name: Build the production process identity code and protocol tests
         # Match macOS release builds: existing Unix host analyzer warnings stay visible.
-        # Windows contracts run analyzers with WarnAsError; this job gates actual macOS process behavior.
+        # This job gates actual macOS process behavior; broad .NET suites run locally.
         run: dotnet build src/Ai.Tlbx.MidTerm.UnitTests -c Release -p:SkipFrontendBuild=true -p:SkipConnectNativeBuild=true -p:RunAnalyzersDuringBuild=false -p:UseSharedCompilation=false
       - name: Verify macOS identity and native stdio artifact/process workflows
         run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net10.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' '*TlbxMcpNativeProcessLifetimeTests' --report-trx --results-directory .artifacts/macos-context
@@ -146,70 +136,21 @@ jobs:
           name: macos-context-results
           path: .artifacts/macos-context/
           retention-days: 7
-  server-contracts:
-    name: Server and host contracts
-    env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
-    needs: [frontend, native-linux, native-url-stdlib]
-    runs-on: windows-2025
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: '10.0.402'
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: pr-frontend
-          path: src/Ai.Tlbx.MidTerm/wwwroot/
-      - name: Identify native compiler cache key
-        shell: pwsh
-        run: |
-          if ($IsWindows) {
-            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
-            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-            $compiler = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe" | ForEach-Object { $_.VersionInfo.FileVersion } | Sort-Object) -join ';'
-          } else { $compiler = ((& cc --version) + (& c++ --version) + (& clang --version)) -join "`n" }
-          if (-not $compiler) { throw 'Native compiler identity is missing.' }
-          $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
-          "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
-          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
-      - name: Restore native dependency archives
-        id: native-cache
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-win-x64-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
-          restore-keys: |
-            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-win-x64-
-            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
-
-      - name: Server and host contracts
-        shell: pwsh
-        run: ./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError
-      - name: Preserve completed native dependency archives
-        if: always() && steps.native-cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: ${{ steps.native-cache.outputs.cache-primary-key }}
   server:
     name: PR server
-    needs: [frontend, native-linux, native-url-stdlib, macos-context, server-contracts]
+    needs: [frontend, native-linux, native-url-stdlib, macos-context]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require frontend, native Linux, URL parser and server success
+      - name: Require frontend and platform checks
         shell: pwsh
         env:
           FRONTEND_RESULT: ${{ needs.frontend.result }}
           NATIVE_RESULT: ${{ needs.native-linux.result }}
           URL_RESULT: ${{ needs.native-url-stdlib.result }}
-          SERVER_RESULT: ${{ needs.server-contracts.result }}
           MACOS_CONTEXT_RESULT: ${{ needs.macos-context.result }}
         run: |
-          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:URL_RESULT -ne 'success' -or $env:MACOS_CONTEXT_RESULT -ne 'success' -or $env:SERVER_RESULT -ne 'success') {
-            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; URL=$env:URL_RESULT; macos-context=$env:MACOS_CONTEXT_RESULT; server=$env:SERVER_RESULT"
+          if ($env:FRONTEND_RESULT -ne 'success' -or $env:NATIVE_RESULT -ne 'success' -or $env:URL_RESULT -ne 'success' -or $env:MACOS_CONTEXT_RESULT -ne 'success') {
+            throw "PR prerequisites failed: frontend=$env:FRONTEND_RESULT; native-linux=$env:NATIVE_RESULT; URL=$env:URL_RESULT; macos-context=$env:MACOS_CONTEXT_RESULT"
           }

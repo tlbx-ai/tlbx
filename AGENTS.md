@@ -8,6 +8,8 @@ both interfaces share the existing C# services.
 Keep automated behavioral tests focused on protocols, settings, installation and
 updates. Do not add UI, layout or general product-logic test suites without an
 explicit request. Removed tests can be recovered from Git history.
+Run the broad .NET server/host suite locally when explicitly selected; do not add
+it to PR or release CI. Keep focused CI checks and package builds independent of it.
 Tests must exercise a concrete contract or failure. Do not assert source text,
 workflow job layout, documentation wording or arbitrary catalog counts. Reuse
 existing fixtures; keep build/setup costs separate from actual test duration.

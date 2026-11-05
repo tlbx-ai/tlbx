@@ -200,6 +200,10 @@ Required checks on both branches: `PR frontend`, `PR server`,
 `Release workflow (ubuntu-24.04)`, `Release workflow (windows-2025)`, and both
 CodeQL `analyze` languages. PR checks run without path filters, so documentation
 and synchronization PRs cannot wait forever for an untriggered required job.
+The broad .NET server/host suite runs locally on demand via
+`./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError`; it is not
+a PR or release CI job. Focused platform checks, builds, audits and package integrity
+checks remain in CI.
 No mandatory second-person approval is configured. GitHub still enforces
 required checks, an up-to-date branch and resolved review conversations.
 
