@@ -32,6 +32,8 @@ interface BrowserLifecycleRecoveryOptions {
 const FOREGROUND_EVENT_LOOP_GAP_MS = 5000;
 const FOREGROUND_RECOVERY_COALESCE_MS = 250;
 const FOREGROUND_HEARTBEAT_INTERVAL_MS = 1000;
+const FOREGROUND_TRANSPORT_PROBE_INTERVAL_MS = 5000;
+const LINK_RESTORED_EVENT = 'tlbx-link-restored';
 
 export function hasSuspendedForegroundEventLoop(
   lastHeartbeatAtMs: number,
@@ -52,6 +54,7 @@ export function setupBrowserLifecycleRecovery(
   let resumeFromBackgroundPending = isDocumentHidden();
   let backgroundLifecycleApplied = false;
   let probesPending = false;
+  let lastTransportProbeAtMs = Date.now();
   let finishingGeneration = -1;
   const finishRecovery = (): void => {
     if (
@@ -65,15 +68,20 @@ export function setupBrowserLifecycleRecovery(
       return;
     const generation = recoveryGeneration;
     finishingGeneration = generation;
-    void Promise.resolve(options.recoverTerminalPresentationAfterResume()).then(() => {
-      if (generation !== recoveryGeneration || isDocumentHidden()) return;
-      if (!$stateWsConnected.get() || !$muxWsConnected.get()) {
-        finishingGeneration = -1;
-        return;
-      }
-      options.applyScrollbackProtection();
-      $browserResuming.set(false);
-    });
+    void Promise.resolve()
+      .then(options.recoverTerminalPresentationAfterResume)
+      .then(() => {
+        if (generation !== recoveryGeneration || isDocumentHidden()) return;
+        if (!$stateWsConnected.get() || !$muxWsConnected.get()) {
+          finishingGeneration = -1;
+          return;
+        }
+        options.applyScrollbackProtection();
+        $browserResuming.set(false);
+      })
+      .catch(() => {
+        if (generation === recoveryGeneration) finishingGeneration = -1;
+      });
   };
   const stopStateReadiness = $stateWsConnected.listen(finishRecovery);
   const stopMuxReadiness = $muxWsConnected.listen(finishRecovery);
@@ -87,7 +95,11 @@ export function setupBrowserLifecycleRecovery(
     if ($stateWsConnected.get()) {
       probes.push(
         probeStateWebSocket().then((healthy) => {
-          if (!healthy && stillForeground()) connectStateWebSocket();
+          if (!healthy && stillForeground()) {
+            finishingGeneration = -1;
+            $browserResuming.set(true);
+            connectStateWebSocket();
+          }
         }),
       );
     }
@@ -95,6 +107,8 @@ export function setupBrowserLifecycleRecovery(
       probes.push(
         probeMuxWebSocket().then((healthy) => {
           if (!healthy && stillForeground()) {
+            finishingGeneration = -1;
+            $browserResuming.set(true);
             recoverVisibleTerminalsAfterBrowserResume(
               $activeSessionId.get(),
               options.getVisibleTerminalSessionIds(),
@@ -105,6 +119,23 @@ export function setupBrowserLifecycleRecovery(
       );
     }
     return probes;
+  };
+
+  const completeTransportProbes = (probes: Promise<void>[]): void => {
+    const generation = recoveryGeneration;
+    lastTransportProbeAtMs = Date.now();
+    void Promise.all(probes)
+      .then(() => {
+        if (generation !== recoveryGeneration) return;
+        probesPending = false;
+        finishRecovery();
+      })
+      .catch(() => {
+        if (generation !== recoveryGeneration) return;
+        probesPending = false;
+        forceTransportReconnect = true;
+        scheduleForegroundRecovery();
+      });
   };
 
   const recoverRealtimeAfterBrowserResume = (
@@ -145,12 +176,7 @@ export function setupBrowserLifecycleRecovery(
     }
     const probes = resumedFromBackground && !forceReconnect ? probeReusedTransports() : [];
     if (recovering) {
-      const generation = recoveryGeneration;
-      void Promise.all(probes).then(() => {
-        if (generation !== recoveryGeneration) return;
-        probesPending = false;
-        finishRecovery();
-      });
+      completeTransportProbes(probes);
     }
   };
 
@@ -162,6 +188,7 @@ export function setupBrowserLifecycleRecovery(
 
   const rememberBackgroundStart = (): void => {
     recoveryGeneration += 1;
+    probesPending = false;
     resumeFromBackgroundPending = true;
     cancelScheduledRecovery();
   };
@@ -241,6 +268,18 @@ export function setupBrowserLifecycleRecovery(
     scheduleForegroundRecovery();
   };
 
+  const handleLinkRestored = (): void => {
+    // Link preserves the workspace document while replacing its RTC carrier.
+    // A socket can still look OPEN in that document until its old broker reply
+    // is delivered; explicitly replace those socket generations immediately.
+    forceTransportReconnect = true;
+    if (isDocumentHidden()) {
+      resumeFromBackgroundPending = true;
+      return;
+    }
+    scheduleForegroundRecovery();
+  };
+
   const handleBlur = (): void => {
     reportBrowserActivity(false);
   };
@@ -296,6 +335,7 @@ export function setupBrowserLifecycleRecovery(
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('focus', handleFocus);
   window.addEventListener('online', handleOnline);
+  window.addEventListener(LINK_RESTORED_EVENT, handleLinkRestored);
   window.addEventListener('blur', handleBlur);
   window.addEventListener('pagehide', handlePageHide);
   window.addEventListener('pageshow', handlePageShow);
@@ -327,7 +367,16 @@ export function setupBrowserLifecycleRecovery(
       scheduleForegroundRecovery();
       return;
     }
+    finishRecovery();
     if (!hasSuspendedForegroundEventLoop(previousHeartbeatAtMs, now)) {
+      if (
+        !probesPending &&
+        !$browserResuming.get() &&
+        now - lastTransportProbeAtMs >= FOREGROUND_TRANSPORT_PROBE_INTERVAL_MS
+      ) {
+        probesPending = true;
+        completeTransportProbes(probeReusedTransports());
+      }
       return;
     }
 
@@ -346,6 +395,7 @@ export function setupBrowserLifecycleRecovery(
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     window.removeEventListener('focus', handleFocus);
     window.removeEventListener('online', handleOnline);
+    window.removeEventListener(LINK_RESTORED_EVENT, handleLinkRestored);
     window.removeEventListener('blur', handleBlur);
     window.removeEventListener('pagehide', handlePageHide);
     window.removeEventListener('pageshow', handlePageShow);

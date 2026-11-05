@@ -162,6 +162,7 @@ interface ActiveSessionRecovery {
   prepared: boolean;
   ready: Promise<void> | null;
   releaseBarrier: () => void;
+  parseWatchdog: ReturnType<typeof setTimeout> | null;
 }
 
 const pendingBufferRefreshes = new Map<
@@ -177,6 +178,7 @@ const recoveryFollowupCauses = new Map<string, string>();
 function discardSessionRecovery(sessionId: string): void {
   const recovery = activeSessionRecoveries.get(sessionId);
   activeSessionRecoveries.delete(sessionId);
+  if (recovery && recovery.parseWatchdog !== null) clearTimeout(recovery.parseWatchdog);
   if (recovery?.ready) {
     recovery.ready = null;
     recovery.releaseBarrier();
@@ -1079,6 +1081,7 @@ function writeTerminalData(
 
       const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
       snapshot.renderedSeq = maxSequence(snapshot.renderedSeq, sequenceEnd);
+      tryCompleteSessionRecovery(sessionId);
       measureCompletedOutputRtt(sessionId);
       recordInputTraceOutputParsed(sessionId, sequenceEnd);
       onParsed?.();
@@ -1156,7 +1159,10 @@ function writeOutputDataWithPathScan(
   onParsed?: () => void,
 ): void {
   if (data.length === 0) {
-    onParsed?.();
+    // Locally filtered cursor controls still consumed protocol bytes. An empty
+    // write acknowledges them after preceding xterm writes, so reconnect never
+    // waits for a raw sequence cursor that the parser cannot otherwise reach.
+    writeTerminalData(sessionId, state, sequenceEnd, data, generation, onParsed);
     return;
   }
 
@@ -1313,6 +1319,7 @@ function handleMuxRecoveryBeginFrame(
     prepared: false,
     ready: recoveryReady,
     releaseBarrier: releaseRecoveryBarrier,
+    parseWatchdog: null,
   };
   activeSessionRecoveries.set(sessionId, recovery);
 
@@ -1394,8 +1401,32 @@ function handleMuxRecoveryEndFrame(type: number, sessionId: string, payload: Uin
   recovery.sourceSequenceEndExclusive = view.getBigUint64(4, true);
   recovery.replayBytes = Math.max(0, view.getInt32(12, true));
   recovery.endReceived = true;
+  watchSessionRecoveryParser(sessionId, recovery);
   tryCompleteSessionRecovery(sessionId);
   return true;
+}
+
+function watchSessionRecoveryParser(sessionId: string, recovery: ActiveSessionRecovery): void {
+  if (recovery.parseWatchdog !== null) clearTimeout(recovery.parseWatchdog);
+  const parsedAtStart = browserTransportSnapshots.get(sessionId)?.renderedSeq;
+  recovery.parseWatchdog = setTimeout(() => {
+    recovery.parseWatchdog = null;
+    if (activeSessionRecoveries.get(sessionId) !== recovery) return;
+    const state = sessionTerminals.get(sessionId);
+    if (!state?.opened) return;
+    if (
+      document.visibilityState === 'hidden' ||
+      browserTransportSnapshots.get(sessionId)?.renderedSeq !== parsedAtStart
+    ) {
+      watchSessionRecoveryParser(sessionId, recovery);
+      return;
+    }
+    log.warn(() => `Recovery parser stalled for ${sessionId}; replacing its terminal`);
+    clearQueuedOutput(sessionId);
+    discardSessionRecovery(sessionId);
+    if (terminalParseStallHandler) terminalParseStallHandler(sessionId, state);
+    else restartStalledSessionRecovery(sessionId, 'xterm_recovery_parse_stalled');
+  }, XTERM_PARSE_BARRIER_TIMEOUT_MS);
 }
 
 function tryCompleteSessionRecovery(sessionId: string): void {
@@ -1405,7 +1436,9 @@ function tryCompleteSessionRecovery(sessionId: string): void {
     !recovery?.prepared ||
     !recovery.endReceived ||
     !snapshot ||
-    snapshot.receivedSeq !== recovery.sourceSequenceEndExclusive
+    snapshot.receivedSeq < recovery.sourceSequenceEndExclusive ||
+    (sessionTerminals.get(sessionId)?.opened &&
+      snapshot.renderedSeq < recovery.sourceSequenceEndExclusive)
   ) {
     return;
   }
