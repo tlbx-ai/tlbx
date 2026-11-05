@@ -78,7 +78,7 @@ internal static partial class TlbxMcpInstallation
         if (servers["tlbx"] is { } configured && !configured["args"]!.AsArray().Any(value => value?.GetValue<string>() == credentialsPath))
             throw new InvalidOperationException("TLBX_MCP_INSTALL: Preserve the existing Claude tlbx entry; resolve it before installing.");
         var args = new JsonArray();
-        foreach (var argument in arguments) args.Add(JsonValue.Create(argument));
+        foreach (var argument in arguments) args.Add((JsonNode?)JsonValue.Create(argument));
         servers["tlbx"] = new JsonObject { ["type"] = "stdio", ["command"] = command, ["args"] = args };
         return root.ToJsonString() + "\n";
     }
