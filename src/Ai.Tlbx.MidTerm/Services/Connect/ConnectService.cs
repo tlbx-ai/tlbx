@@ -1,10 +1,12 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Security.Cryptography;
 using System.Net.Http.Json;
 using System.Net.WebSockets;
 using System.Text.Json;
+using System.Threading.Channels;
 using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Settings;
@@ -16,6 +18,9 @@ namespace Ai.Tlbx.MidTerm.Services.Connect;
 public sealed class ConnectService : BackgroundService
 {
     private const string SecretKey = "connect.keys.v1";
+    // All eight permitted peers may send their 128 pre-offer candidates while
+    // one native peer initializes, plus connect/offer/close control messages.
+    internal const int MaximumPendingSignals = 8 * (128 + 3);
     private readonly SettingsService _settings;
     private readonly AuthService _auth;
     private readonly ServerBindingInfo _binding;
@@ -38,6 +43,7 @@ public sealed class ConnectService : BackgroundService
     private bool _online;
     private bool _revoked;
     private string? _lastError;
+    private long _signalingConnectedAt;
 
     [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient",
         Justification = "This service is a process singleton. Its two lifetime clients isolate public TLS validation from pinned local requests.")]
@@ -163,6 +169,7 @@ public sealed class ConnectService : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        var retryMilliseconds = 250;
         while (!stoppingToken.IsCancellationRequested)
         {
             ConnectDeviceConfiguration? configuration;
@@ -178,29 +185,45 @@ public sealed class ConnectService : BackgroundService
             }
             try
             {
-                if (configuration is not null && !revoked)
-                    await RunSignalingAsync(configuration, generation.Token);
-                else await _changed.WaitAsync(generation.Token);
-            }
-            catch (OperationCanceledException) when (generation.IsCancellationRequested) { }
-            // Link is optional; a managed failure must not stop the HTTP host.
-            catch (Exception ex)
-            {
-                lock (_gate) _lastError = "Link is temporarily unavailable. Retrying automatically.";
-                Log.Error(() => $"[Link] Signaling failed ({ex.GetType().Name}); retrying automatically.");
-                try { await Task.Delay(TimeSpan.FromSeconds(10), generation.Token); }
+                var retryDelay = TimeSpan.Zero;
+                _signalingConnectedAt = 0;
+                try
+                {
+                    if (configuration is not null && !revoked)
+                        await RunSignalingAsync(configuration, generation.Token);
+                    else await _changed.WaitAsync(generation.Token);
+                }
                 catch (OperationCanceledException) when (generation.IsCancellationRequested) { }
+                // Link is optional; a managed failure must not stop the HTTP host.
+                catch (Exception ex)
+                {
+                    // A brief accept/close loop is not a healthy connection. Keep
+                    // its backoff, but recover quickly after an established link.
+                    if (_signalingConnectedAt != 0 && Stopwatch.GetElapsedTime(_signalingConnectedAt) >= TimeSpan.FromSeconds(10))
+                        retryMilliseconds = 250;
+                    retryDelay = TimeSpan.FromMilliseconds(retryMilliseconds);
+                    retryMilliseconds = Math.Min(retryMilliseconds * 2, 5000);
+                    lock (_gate) _lastError = "Link is temporarily unavailable. Retrying automatically.";
+                    Log.Error(() => $"[Link] Signaling failed ({ex.GetType().Name}); retrying automatically.");
+                }
+                finally
+                {
+                    lock (_gate) { _online = false; _deviceToken = null; }
+                    foreach (var id in _connections.Keys) await CloseConnectionAsync(id);
+                }
+
+                // Peers are already closed. Keep this generation cancellable so
+                // disabling/replacing keys interrupts even the retry backoff.
+                if (retryDelay > TimeSpan.Zero)
+                {
+                    try { await Task.Delay(retryDelay, generation.Token); }
+                    catch (OperationCanceledException) when (generation.IsCancellationRequested) { }
+                }
             }
             finally
             {
-                lock (_gate)
-                {
-                    _cancelGeneration = null;
-                    _online = false;
-                    _deviceToken = null;
-                }
-                try { foreach (var id in _connections.Keys) await CloseConnectionAsync(id); }
-                finally { completion.TrySetResult(); }
+                lock (_gate) _cancelGeneration = null;
+                completion.TrySetResult();
             }
         }
     }
@@ -231,6 +254,8 @@ public sealed class ConnectService : BackgroundService
         return token.DeviceToken;
     }
 
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope",
+        Justification = "This method owns the linked signaling source in its using scope. The receive pump only cancels it and is awaited before disposal.")]
     private async Task RunSignalingAsync(ConnectDeviceConfiguration configuration, CancellationToken ct)
     {
         var deviceToken = await AuthenticateHostAsync(configuration, ct);
@@ -239,7 +264,8 @@ public sealed class ConnectService : BackgroundService
         using var socket = new ClientWebSocket();
         socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader("Authorization", $"Bearer {deviceToken}");
-        socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
+        socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
+        socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(5);
         var origin = new Uri(configuration.ServerUrl);
         var uri = new UriBuilder(new Uri(origin, "/ws/device")) { Scheme = origin.Scheme == "https" ? "wss" : "ws" }.Uri;
         try
@@ -253,56 +279,97 @@ public sealed class ConnectService : BackgroundService
             lock (_gate) { _revoked = true; _lastError = "Link authorization was revoked. Generate new keys locally."; }
             return;
         }
+        _signalingConnectedAt = Stopwatch.GetTimestamp();
         lock (_gate) { _online = true; _lastError = null; }
-        while (socket.State == WebSocketState.Open && !ct.IsCancellationRequested)
+        using var signaling = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var signalingToken = signaling.Token;
+        var signals = Channel.CreateBounded<ConnectSignal>(new BoundedChannelOptions(MaximumPendingSignals)
         {
-            var message = await ReceiveSignalAsync(socket, ct);
-            if (message is null) return;
-            var id = message.ConnectionId;
-            if (string.IsNullOrEmpty(id) || id.Length > 100 || !id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
-                throw new InvalidDataException("Invalid Connect connection identifier.");
-            switch (message.Type)
+            SingleReader = true, SingleWriter = true, AllowSynchronousContinuations = false
+        });
+        var receiver = ReceiveSignalsAsync(socket, signals.Writer, signaling);
+        try
+        {
+            await foreach (var message in signals.Reader.ReadAllAsync(signalingToken))
             {
-                case "connect":
-                    if (_connections.Count >= 8 || _connections.ContainsKey(id))
-                        throw new InvalidDataException("Connect peer limit exceeded.");
-                    var owner = new ConnectionOwner(_binding, _previewOrigin, _previewRegistry, _auth, _loopbackHttp, new ConnectPeerAuthentication(configuration, id), ct);
-                    if (!_connections.TryAdd(id, owner)) { await using (owner.ConfigureAwait(false)) { } break; }
-                    try
-                    {
-                        await owner.StartAsync(_settings.SettingsDirectory, message,
-                            async transportMessage =>
-                            {
-                                if (transportMessage.Type == "answer") owner.Peer.SetAnswer(transportMessage.Sdp ?? "");
-                                transportMessage.ConnectionId = id;
-                                await SendSignalAsync(socket, transportMessage, ct);
-                            }, () => { _ = CloseFailedTransportAsync(socket, id, ct); });
-                        owner.EnforceAuthenticationDeadline(() => CloseFailedTransportAsync(socket, id, ct, "authentication-timeout"));
-                    }
-                    catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException)
-                    {
-                        Log.Error(() => $"[Link] Peer transport startup failed ({ex.GetType().Name}).");
-                        await CloseFailedTransportAsync(socket, id, ct);
-                    }
-                    break;
-                case "offer":
-                case "candidate":
-                    if (_connections.TryGetValue(id, out var connection))
-                    {
-                        if (message.Type == "offer") connection.Peer.SetOffer(message.Sdp ?? "");
-                        message.ConnectionId = null;
-                        try { await connection.ApplySignalAsync(message, ct); }
-                        catch (Exception ex) when (!ct.IsCancellationRequested && (ex is IOException or InvalidOperationException or OperationCanceledException))
+                var id = message.ConnectionId;
+                if (string.IsNullOrEmpty(id) || id.Length > 100 || !id.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_'))
+                    throw new InvalidDataException("Invalid Connect connection identifier.");
+                switch (message.Type)
+                {
+                    case "connect":
+                        if (_connections.Count >= 8 || _connections.ContainsKey(id))
+                            throw new InvalidDataException("Connect peer limit exceeded.");
+                        var owner = new ConnectionOwner(_binding, _previewOrigin, _previewRegistry, _auth, _loopbackHttp, new ConnectPeerAuthentication(configuration, id), signalingToken);
+                        if (!_connections.TryAdd(id, owner)) { await using (owner.ConfigureAwait(false)) { } break; }
+                        try
                         {
-                            await CloseFailedTransportAsync(socket, id, ct);
+                            await owner.StartAsync(_settings.SettingsDirectory, message,
+                                async transportMessage =>
+                                {
+                                    if (transportMessage.Type == "answer") owner.Peer.SetAnswer(transportMessage.Sdp ?? "");
+                                    transportMessage.ConnectionId = id;
+                                    await SendSignalAsync(socket, transportMessage, signalingToken);
+                                }, () => { _ = CloseFailedTransportAsync(socket, id, signalingToken); });
+                            owner.EnforceAuthenticationDeadline(() => CloseFailedTransportAsync(socket, id, signalingToken, "authentication-timeout"));
                         }
-                    }
-                    break;
-                case "close":
-                    await CloseConnectionAsync(id);
-                    break;
-                default: throw new InvalidDataException("Unsupported Connect signaling message.");
+                        catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException)
+                        {
+                            Log.Error(() => $"[Link] Peer transport startup failed ({ex.GetType().Name}).");
+                            await CloseFailedTransportAsync(socket, id, signalingToken);
+                        }
+                        break;
+                    case "offer":
+                    case "candidate":
+                        if (_connections.TryGetValue(id, out var connection))
+                        {
+                            if (message.Type == "offer") connection.Peer.SetOffer(message.Sdp ?? "");
+                            message.ConnectionId = null;
+                            try { await connection.ApplySignalAsync(message, signalingToken); }
+                            catch (Exception ex) when (!signalingToken.IsCancellationRequested && (ex is IOException or InvalidOperationException or OperationCanceledException))
+                            {
+                                await CloseFailedTransportAsync(socket, id, signalingToken);
+                            }
+                        }
+                        break;
+                    case "close":
+                        await CloseConnectionAsync(id);
+                        break;
+                    default: throw new InvalidDataException("Unsupported Connect signaling message.");
+                }
             }
+            ct.ThrowIfCancellationRequested();
+            throw new IOException("Link signaling connection closed.");
+        }
+        finally
+        {
+            signaling.Cancel();
+            socket.Abort();
+            await receiver;
+        }
+    }
+
+    // Only this pump reads the WebSocket. Native peer initialization may wait on
+    // DNS/ICE, but PONGs still have to be consumed before their liveness deadline.
+    internal static async Task ReceiveSignalsAsync(WebSocket socket, ChannelWriter<ConnectSignal> writer,
+        CancellationTokenSource lifetime)
+    {
+        Exception? failure = null;
+        try
+        {
+            while (!lifetime.IsCancellationRequested)
+            {
+                var message = await ReceiveSignalAsync(socket, lifetime.Token);
+                if (message is null) throw new IOException("Link signaling connection closed.");
+                if (!writer.TryWrite(message)) throw new IOException("Link signaling queue limit exceeded.");
+            }
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (Exception ex) { failure = ex; }
+        finally
+        {
+            writer.TryComplete(failure);
+            lifetime.Cancel();
         }
     }
 
@@ -338,7 +405,7 @@ public sealed class ConnectService : BackgroundService
         catch (Exception ex) when (ex is WebSocketException or IOException or OperationCanceledException or ObjectDisposedException) { }
     }
 
-    private static async Task<ConnectSignal?> ReceiveSignalAsync(ClientWebSocket socket, CancellationToken ct)
+    private static async Task<ConnectSignal?> ReceiveSignalAsync(WebSocket socket, CancellationToken ct)
     {
         var buffer = new byte[8192];
         using var message = new MemoryStream();
