@@ -5509,6 +5509,9 @@ export interface components {
       latestVersion: string;
       releaseUrl: string;
       downloadUrl: null | string;
+      archiveSha256: null | string;
+      /** Format: int64 */
+      archiveSize: number;
       assetName: null | string;
       releaseNotes: null | string;
       type: components['schemas']['UpdateType'];
