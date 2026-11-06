@@ -55,6 +55,7 @@ $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/release-pr.ps1"
 . "$PSScriptRoot/release-test-clusters.ps1"
+. "$PSScriptRoot/advisory-regression.ps1"
 $selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories -Stable)
 Show-ReleaseTestPlan -Categories $selectedCategories
 $currentBranch = Invoke-ReleaseGit branch --show-current
@@ -183,8 +184,12 @@ if ($devVersion -notmatch '-dev$') {
 # Calculate stable version
 $stableVersion = $devVersion -replace '-dev$', ''
 
-# Find last stable tag (non-dev, sorted by version descending)
-$lastStableTag = git tag --sort=-v:refname | Where-Object { $_ -notmatch '-dev' } | Select-Object -First 1
+# A tag can exist after failed release CI while its release is still a draft.
+# Only an actually published stable release marks changelog entries as delivered.
+$releasePages = Invoke-ReleaseGh api 'repos/tlbx-ai/tlbx/releases?per_page=100' --paginate --slurp
+$publishedReleases = @($releasePages | ConvertFrom-Json | ForEach-Object { $_ })
+$lastStableTag = (Select-AdvisoryBaselineRelease $publishedReleases $false).tag_name
+Invoke-ReleaseGit fetch origin tag $lastStableTag --no-tags | Out-Host
 $lastStableVersion = [version]($lastStableTag -replace '^v', '')
 
 Write-Host ""

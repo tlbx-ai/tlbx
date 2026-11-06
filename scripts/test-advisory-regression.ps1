@@ -75,5 +75,57 @@ try {
     Remove-Item Function:\npm -ErrorAction SilentlyContinue
     Remove-Variable TlbxAuditFixtureOutput -Scope Global -ErrorAction SilentlyContinue
 }
+# Resolve actual SDKs against a scratch export; no app build, network or Git mutation.
+$repoRoot = Split-Path -Parent $PSScriptRoot
+$scratch = Join-Path ([IO.Path]::GetTempPath()) ("tlbx-baseline-sdk-" + [Guid]::NewGuid().ToString('N'))
+$globalPath = Join-Path $repoRoot 'global.json'
+$relativeLock = 'src/Ai.Tlbx.MidTerm/packages.lock.json'
+$lockPath = Join-Path $repoRoot $relativeLock
+$globalHash = (Get-FileHash -LiteralPath $globalPath).Hash
+$lockHash = (Get-FileHash -LiteralPath $lockPath).Hash
+try {
+    $baseline = @{ Root=$scratch; Commit='HEAD' }
+    Check (Export-AdvisoryBaselineFile $repoRoot $baseline 'global.json') 'SDK snapshot was not exported.'
+    Check (Export-AdvisoryBaselineFile $repoRoot $baseline $relativeLock) 'Locked graph was not exported.'
+    $exportedLock = Join-Path $scratch $relativeLock
+    $exportedLockHash = (Get-FileHash -LiteralPath $exportedLock).Hash
+    $sdks = @(& dotnet --list-sdks | ForEach-Object {
+        if ($_ -match '^(\d+\.\d+\.\d+) \[') { [version]$matches[1] }
+    } | Sort-Object -Unique)
+    if ($LASTEXITCODE -ne 0 -or $sdks.Count -eq 0) { throw 'No installed SDK is available for the resolver regression test.' }
+    # Prefer the exact latestPatch failure when two patches of a feature band
+    # exist. Other hosts still exercise a real roll-forward with their two SDKs.
+    $sameBand = @($sdks | Group-Object { "$($_.Major).$($_.Minor).$([Math]::Floor($_.Build / 100))" } | Where-Object Count -ge 2)
+    if ($sameBand.Count -gt 0) {
+        $declared = [string]($sameBand[0].Group | Select-Object -First 1)
+        $policy = 'latestPatch'
+    } else {
+        $declared = [string]$sdks[0]
+        $policy = 'latestMajor'
+    }
+    $configuration = @{ sdk=@{version=$declared;rollForward=$policy;allowPrerelease=$false};test=@{runner='Microsoft.Testing.Platform'} }
+    $scratchGlobal = Join-Path $scratch 'global.json'
+    [IO.File]::WriteAllText($scratchGlobal, ($configuration | ConvertTo-Json -Depth 10), [Text.UTF8Encoding]::new($false))
+    Push-Location $scratch
+    try {
+        $before = (& dotnet --version).Trim()
+        if ($LASTEXITCODE -ne 0) { throw 'Original SDK resolver input failed.' }
+        Check ((Set-AdvisoryBaselineSdk $scratch) -ceq $declared) 'Baseline SDK version was changed.'
+        $after = (& dotnet --version).Trim()
+        if ($LASTEXITCODE -ne 0) { throw 'Pinned SDK resolver input failed.' }
+    } finally { Pop-Location }
+    Check ($after -ceq $declared) 'Baseline restore would not use its exact declared SDK.'
+    if ($sdks.Count -ge 2) { Check ($before -cne $after) 'Available newer SDK did not exercise roll-forward before the pin.' }
+    $pinned = Get-Content -LiteralPath $scratchGlobal -Raw | ConvertFrom-Json
+    Check ($pinned.test.runner -ceq 'Microsoft.Testing.Platform' -and $pinned.sdk.allowPrerelease -eq $false) 'Other historical SDK/test settings changed.'
+    Check ((Get-FileHash -LiteralPath $exportedLock).Hash -ceq $exportedLockHash) 'SDK pin changed an exported package lock.'
+    Check ((Get-FileHash -LiteralPath $globalPath).Hash -ceq $globalHash -and (Get-FileHash -LiteralPath $lockPath).Hash -ceq $lockHash) 'SDK pin changed candidate inputs.'
+    Write-Host "Baseline SDK resolver: $policy selected $before; scratch pin selected declared $after ($($sdks.Count) installed SDKs)."
+    [IO.File]::WriteAllText($scratchGlobal, '{"sdk":{}}', [Text.UTF8Encoding]::new($false))
+    Reject { Set-AdvisoryBaselineSdk $scratch } 'An unspecified historical SDK was silently substituted.'
+} finally {
+    if (Test-Path -LiteralPath $scratch) { Remove-Item -LiteralPath $scratch -Recurse -Force }
+}
+
 Write-Host "Advisory regression policy: $checks checks passed." -ForegroundColor Green
 $global:LASTEXITCODE = 0

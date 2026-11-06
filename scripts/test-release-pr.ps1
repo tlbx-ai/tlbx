@@ -25,12 +25,19 @@ Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($part
 Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='extra.zip'; size=100})} } 'Unknown asset accepted for retirement.'
 Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($partialRelease.assets + $partialRelease.assets)} } 'Duplicate assets accepted for retirement.'
 Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='mt-win-x64.zip'; size=0}, $partialRelease.assets[1])} } 'Empty asset accepted for retirement.'
-$global:TlbxPrFixture = @{ Pr=$null; Prs=@(); Creates=0; Merges=0; FailChecks=$false; ChangeHead=$false; Remote=$remote; RequiredNames=@('fixture'); OmitOnce=$false; CheckPolls=0; Waits=0 }
+$global:TlbxPrFixture = @{ Pr=$null; Prs=@(); Creates=0; Merges=0; FailChecks=$false; ChangeHead=$false; Remote=$remote; RequiredNames=@('fixture'); OmitOnce=$false; CheckPolls=0; Waits=0; Releases=@(@{tag_name='v1.0.0';draft=$false;prerelease=$false;published_at='2026-01-01T00:00:00Z'}) }
 function global:Start-Sleep { param([int]$Seconds) $global:TlbxPrFixture.Waits++ }
 function global:gh {
     $a = @($args); $f = $global:TlbxPrFixture; $global:LASTEXITCODE=0
     if (@($a | Where-Object { $_ -is [array] }).Count) { throw 'Nested command arguments would become System.Object[] at the native gh boundary.' }
     if ($a[0] -eq 'api') {
+        if ($a[1] -eq 'repos/tlbx-ai/tlbx/releases?per_page=100') {
+            if ($a -notcontains '--paginate' -or $a -notcontains '--slurp') { throw 'Promotion catalog must include all release pages.' }
+            if ($f.FailReleaseCatalog) { $global:LASTEXITCODE=1; return }
+            $catalog = ConvertTo-Json -InputObject @($f.Releases) -Depth 8 -Compress
+            "[$catalog]"
+            return
+        }
         if ($a[1] -like '*/protection/required_status_checks') {
             @{contexts=@($f.RequiredNames)} | ConvertTo-Json -Compress
             return
@@ -156,7 +163,7 @@ try {
     Invoke-ReleaseGit switch dev | Out-Null
     Invoke-ReleaseGit pull --ff-only origin dev | Out-Null
     New-Item -ItemType Directory scripts | Out-Null
-    Copy-Item "$sourceScripts/promote.ps1", "$sourceScripts/release-dev.ps1", "$sourceScripts/release-pr.ps1", "$sourceScripts/release-test-clusters.ps1", "$sourceScripts/verify-release-merge.ps1" scripts/
+    Copy-Item "$sourceScripts/promote.ps1", "$sourceScripts/release-dev.ps1", "$sourceScripts/release-pr.ps1", "$sourceScripts/release-test-clusters.ps1", "$sourceScripts/verify-release-merge.ps1", "$sourceScripts/advisory-regression.ps1" scripts/
     '$global:TlbxFixturePreflight = $args -join " "' | Set-Content scripts/release-frontend-preflight.ps1
     'param([string[]]$TestCategories, [switch]$FrontendInstalled) $global:TlbxFixtureTests = $TestCategories -join " "' | Set-Content scripts/run-release-tests.ps1
     function global:node { $global:LASTEXITCODE=0 }
@@ -241,6 +248,41 @@ try {
     Invoke-ReleaseGit tag -d "v$($candidate.Version)" | Out-Null
     Complete-TlbxRelease (Get-ReleaseState fix/reprepare-fixture)
     Assert-Rejected { & ./scripts/release-dev.ps1 @devArgs -Reprepare } 'Re-preparation accepted a merged PR.'
+    # A failed stable tag is not a delivered release. Preserve all annotated
+    # prerelease changes since the older published stable, including 50 releases
+    # that precede the failed tag numerically.
+    Invoke-ReleaseGit switch dev | Out-Null
+    Invoke-ReleaseGit pull --ff-only origin dev | Out-Null
+    $nextVersion = Get-Content src/version.json -Raw | ConvertFrom-Json
+    $nextVersion.web = '1.0.54-dev'
+    $nextVersion | ConvertTo-Json | Set-Content src/version.json
+    Invoke-ReleaseGit add src/version.json
+    Invoke-ReleaseGit commit -m 'Next candidate after a failed stable release' | Out-Null
+    Invoke-ReleaseGit push origin dev | Out-Null
+    $global:TlbxPrFixture.Releases = @(
+        @{tag_name='v1.0.52';draft=$true;prerelease=$false;published_at=$null;assets=@()}
+        @{tag_name='v1.0.1';draft=$false;prerelease=$false;published_at='2026-01-02T00:00:00Z';assets=$partialRelease.assets}
+    )
+    foreach ($patch in 4..53) {
+        $tag = "v1.0.$patch-dev"
+        Invoke-ReleaseGit tag -a $tag -m "Development $patch`n`n- Undelivered change $patch." | Out-Null
+        $global:TlbxPrFixture.Releases += @{tag_name=$tag;draft=$false;prerelease=$true;published_at='2026-02-01T00:00:00Z'}
+    }
+    Invoke-ReleaseGit tag -a v1.0.52 -m 'Failed draft without any platform assets' | Out-Null
+    Invoke-ReleaseGit push origin refs/tags/v1.0.52 | Out-Null
+    $global:TlbxPrFixture.FailReleaseCatalog = $true
+    Assert-Rejected { & ./scripts/promote.ps1 -TestCategories all -PrepareOnly } 'Promotion silently trusted Git tags after release metadata failed.'
+    Assert-Test ((Invoke-ReleaseGit branch --show-current) -eq 'dev') 'Failed baseline discovery froze an unverified promotion.'
+    $global:TlbxPrFixture.FailReleaseCatalog = $false
+    & ./scripts/promote.ps1 -TestCategories all -PrepareOnly
+    $recoveredPromotion = Get-ReleaseState chore/promote-1-0-54
+    Assert-Test ($recoveredPromotion.Version -eq '1.0.54') 'Failed stable tag changed the new candidate version.'
+    Assert-Test ($recoveredPromotion.Message.Contains('All changes since v1.0.1:')) 'Promotion used an undelivered tag as its changelog baseline.'
+    foreach ($patch in 4..53) {
+        Assert-Test ($recoveredPromotion.Message.Contains("- Undelivered change $patch.")) "Undelivered release note $patch was omitted from the stable candidate."
+        Assert-Test ($recoveredPromotion.Body.Contains("- Undelivered change $patch.")) "Undelivered release note $patch was omitted from the promotion PR."
+    }
+    Assert-Test (@(Invoke-ReleaseGit ls-remote --tags --refs origin 'refs/tags/v1.0.54').Count -eq 0) 'Baseline regression fixture published its candidate.'
     foreach ($name in @('release-pr','release-dev','release-local','promote','release','finish-task','verify-release-merge')) {
         $tokens=$null;$errors=$null
         [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot "$name.ps1"),[ref]$tokens,[ref]$errors) | Out-Null
