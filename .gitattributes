@@ -27,4 +27,4 @@ src/Ai.Tlbx.MidTerm.ConnectNative/ports/zlib/CVE-2026-85091.patch whitespace=-bl
 *.zip binary
 
 # Reviewed native artifacts and their hash-bound metadata must remain byte-exact.
-src/Ai.Tlbx.MidTerm.ConnectNative/prebuilt/** -text
+src/Ai.Tlbx.MidTerm.ConnectNative/prebuilt/** -text whitespace=cr-at-eol

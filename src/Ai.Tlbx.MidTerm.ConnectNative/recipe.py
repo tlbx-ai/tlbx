@@ -49,5 +49,3 @@ def vex(pin, verified, graph, native_hash, rid):
         expected = pin["backports"][name]
         statements.append({"vulnerability": {"name": evidence["cve"]}, "products": [{"@id": purl, "hashes": {"sha-256": evidence["archiveSha256"]}}], "status": "fixed", "status_notes": f"Exact upstream fix {expected['upstream']}; patch SHA256 {evidence['patchSha256']}; compiled source SHA256 {evidence['sourceSha256']}; static archive SHA256 {evidence['archiveSha256']}. Native {rid} entrypoint SHA256 {native_hash}. Maintainer confirmation: {expected['maintainerConfirmation']}."})
     return {"@context": "https://openvex.dev/ns/v0.2.0", "@id": f"https://tlbx.ai/vex/connect-native/{rid}/{native_hash}", "author": "tlbx native build", "timestamp": graph["creationInfo"]["created"], "version": 1, "statements": statements}
-
-
