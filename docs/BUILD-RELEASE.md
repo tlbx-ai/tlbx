@@ -202,7 +202,9 @@ the release tag, then run
 This retries publication without recompiling or signing again.
 
 For stable releases, invoke `promote.ps1 -TestCategories all` from clean updated
-dev. It freezes the accepted candidate on `chore/promote-X-Y-Z`, includes stable
+dev. To select a minor release number explicitly, use
+`promote.ps1 -Version 10.26.0 -TestCategories all`. The target cannot be lower
+than the accepted dev version or reuse an existing tag. It freezes the accepted candidate on `chore/promote-X-Y-Z`, includes stable
 version/generated changes in its PR into main, and tags only the merged result.
 It then creates `chore/sync-main-X-Y-Z` from current dev, merges main into it,
 and opens/merges its synchronization PR into dev. This preserves newer dev work

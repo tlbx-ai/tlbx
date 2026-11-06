@@ -6,6 +6,8 @@
 param(
     [Parameter(Mandatory)][ValidateSet('all')][string[]]$TestCategories,
     [string]$ReleaseTitle,
+    [ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')]
+    [string]$Version,
     [string[]]$ReleaseNotes,
     [switch]$PrepareOnly,
     [switch]$Reprepare
