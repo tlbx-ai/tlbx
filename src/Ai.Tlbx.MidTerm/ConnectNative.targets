@@ -5,18 +5,15 @@
     <_ConnectNativeRoot>$(MSBuildProjectDirectory)/../Ai.Tlbx.MidTerm.ConnectNative</_ConnectNativeRoot>
     <_ConnectNativeBundle>$(_ConnectNativeRoot)/bin/$(_ConnectNativeRid)/bundle.zip</_ConnectNativeBundle>
   </PropertyGroup>
-  <ItemGroup>
-    <_ConnectNativeInput Include="$(_ConnectNativeRoot)/*.ps1;$(_ConnectNativeRoot)/*.py;$(_ConnectNativeRoot)/*.json;$(_ConnectNativeRoot)/ports/**/*;$(_ConnectNativeRoot)/triplets/**/*;$(_ConnectNativeRoot)/smoke/**/*" />
-  </ItemGroup>
   <Target Name="RejectSkippedConnectNativePublish" BeforeTargets="PrepareForBuild" Condition="'$(IsPublishing)' == 'true' And '$(SkipConnectNativeBuild)' == 'true'">
     <Error Text="Connect native dependencies cannot be skipped in a published artifact." />
   </Target>
   <Target Name="RejectSkippedConnectNativePublishTarget" BeforeTargets="Publish" Condition="'$(SkipConnectNativeBuild)' == 'true'">
     <Error Text="Connect native dependencies cannot be skipped in a published artifact." />
   </Target>
-  <Target Name="BuildConnectNative" BeforeTargets="AssignTargetPaths" Inputs="@(_ConnectNativeInput)" Outputs="$(_ConnectNativeBundle)" Condition="'$(SkipConnectNativeBuild)' != 'true'">
-    <!-- Recovered mirror failures may print error: text; the checked build script's exit code is authoritative. -->
-    <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/build.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" IgnoreStandardErrorWarningFormat="true" />
+  <Target Name="BuildConnectNative" BeforeTargets="AssignTargetPaths" Condition="'$(SkipConnectNativeBuild)' != 'true'">
+    <!-- Always verify the committed artifact hashes; never compile dependencies implicitly. -->
+    <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/prepare.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" IgnoreStandardErrorWarningFormat="true" />
   </Target>
   <Target Name="AuditConnectNative" BeforeTargets="AssignTargetPaths" DependsOnTargets="BuildConnectNative" Condition="'$(SkipConnectNativeBuild)' != 'true'">
     <Exec Command="pwsh -NoProfile -File &quot;$(_ConnectNativeRoot)/audit.ps1&quot; -RuntimeIdentifier $(_ConnectNativeRid)" WorkingDirectory="$(_ConnectNativeRoot)" />

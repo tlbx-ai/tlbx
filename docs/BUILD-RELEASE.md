@@ -65,12 +65,39 @@ signatures, package integrity/provenance and complete audit responses remain enf
 Offline behavioral tests run through `test-release-build-system.ps1` on Windows
 and Linux, including unchanged findings, regressions and failed audit responses.
 
-Connect's in-process native library is built by `ConnectNative.targets` from the
-vcpkg snapshot and source hashes in `src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json`.
-The six RID triplets produce an embedded `bundle.zip` containing native libraries,
-SHA256 metadata, dependency source SBOM and notices. Compilers run with at most two
-parallel jobs; downloaded build tools remain under `.artifacts/connect-dotnet-transport`.
-macOS signs the inner libraries before embedding, using the same Developer ID as mt.
+Connect native dependencies are built explicitly once per recipe and committed as
+`src/Ai.Tlbx.MidTerm.ConnectNative/prebuilt/<RID>` artifacts. Normal builds, PRs and
+releases run offline `prepare.ps1 -RuntimeIdentifier <RID>` through
+`ConnectNative.targets`: verify the recipe/index hashes, then stage the unchanged
+bundle, manifest, SPDX source graph and backport VEX into `bin/<RID>`. Missing,
+stale or tampered artifacts fail; no compiler or vcpkg fallback is permitted.
+The existing per-RID `audit.ps1` CVE gate still runs before embedding; only artifact
+preparation is offline.
+Dependency recipe changes require an explicit `build.ps1` refresh and check-in of
+the matching frozen artifacts and index. macOS inner libraries are signed before
+freezing. Normal releases still compile the .NET NativeAOT executables and sign/
+notarize their macOS packages; those platform compiler/linker tools remain needed.
+Native compiler-identity probes and vcpkg binary caches are not release inputs.
+On native API/input changes, PR Linux compiles only the existing tiny `load.c` probe
+and checks the frozen library against every exact C API export in `ConnectNativeApi.cs`.
+It creates no peer/socket and does not rebuild any Connect dependency.
+For an explicit refresh on the RID's native toolchain host, after changing the recipe
+(repeat build/copy/seal for all affected RIDs before the final --validate-all):
+
+```powershell
+$rid = 'win-x64'
+$native = 'src/Ai.Tlbx.MidTerm.ConnectNative'
+& "$native/build.ps1" -RuntimeIdentifier $rid
+New-Item -ItemType Directory -Force "$native/prebuilt/$rid" | Out-Null
+'bundle.zip','manifest.json','native-dependencies.spdx.json','native-backports.vex.json' |
+    ForEach-Object { Copy-Item "$native/bin/$rid/$_" "$native/prebuilt/$rid/$_" -Force }
+python "$native/prebuilt.py" --seal $rid
+python "$native/prebuilt.py" --validate-all
+```
+
+`--seal` accepts optional `--source <provenance.json>` for one build-source record.
+Commit the changed recipe, `prebuilt/index.json` and matching RID artifacts together.
+
 Focused JIT-only C# checks may use `-p:SkipConnectNativeBuild=true`; publishing rejects
 that property. Release SBOM completion verifies bundle hashes before merging its
 native source/dependency graph. Grype is pinned by release-archive hashes, updates
@@ -83,7 +110,7 @@ identity. Zero Grype findings are not a security guarantee. Vendor advisories mu
 also be checked before publishing; PCRE2 10.49 fixes the not-yet-CPE-enriched
 [GHSA-r9hj-j2rw-4q3m](https://github.com/PCRE2Project/pcre2/security/advisories/GHSA-r9hj-j2rw-4q3m).
 Catalog identities come from the [NVD CPE API](https://nvd.nist.gov/developers/products).
-Raw vcpkg source evidence remains in `bin/<RID>/source-sboms`. No native executable
+The committed SPDX graph retains the pinned vcpkg source evidence. No native executable
 or child process is bundled.
 
 The libdatachannel 0.24.6#3 overlay detaches receive callbacks, removes the stream
