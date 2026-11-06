@@ -417,7 +417,7 @@
   "update.copyLog": "लॉग कॉपी करें",
   "error.newPasswordRequired": "नया पासवर्ड आवश्यक है",
   "error.passwordsNoMatch": "पासवर्ड मेल नहीं खाते",
-  "error.passwordTooShort": "पासवर्ड कम से कम 4 अक्षर का होना चाहिए",
+  "error.passwordLength": "पासवर्ड 10 से 1024 अक्षरों का होना चाहिए",
   "error.passwordChangeFailed": "पासवर्ड बदलने में विफल",
   "error.connectionError": "कनेक्शन त्रुटि",
   "settings.options.cursorBar": "बार",

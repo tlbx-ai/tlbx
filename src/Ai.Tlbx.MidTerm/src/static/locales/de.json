@@ -458,7 +458,7 @@
   "update.copyLog": "Protokoll kopieren",
   "error.newPasswordRequired": "Neues Passwort ist erforderlich",
   "error.passwordsNoMatch": "Passwörter stimmen nicht überein",
-  "error.passwordTooShort": "Passwort muss mindestens 4 Zeichen lang sein",
+  "error.passwordLength": "Das Passwort muss 10 bis 1024 Zeichen lang sein",
   "error.passwordChangeFailed": "Passwortänderung fehlgeschlagen",
   "error.connectionError": "Verbindungsfehler",
   "settings.options.cursorBar": "Balken",

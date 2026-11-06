@@ -98,8 +98,8 @@ function validateNewPassword(newPassword: string, confirmPassword: string): stri
     return t('error.passwordsNoMatch');
   }
 
-  if (newPassword.length < 4) {
-    return t('error.passwordTooShort');
+  if (newPassword.length < 10 || newPassword.length > 1024) {
+    return t('error.passwordLength');
   }
 
   return null;

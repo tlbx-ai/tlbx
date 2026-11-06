@@ -75,7 +75,10 @@ public sealed class AuthServiceTests : IDisposable
     }
 
     [Theory]
-    [InlineData(14, false)]
+    [InlineData(0, false)]
+    [InlineData(9, false)]
+    [InlineData(10, true)]
+    [InlineData(14, true)]
     [InlineData(15, true)]
     [InlineData(1024, true)]
     [InlineData(1025, false)]

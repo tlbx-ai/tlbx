@@ -366,7 +366,81 @@ resolve_redirect_url() {
         sed -E 's/^[[:space:]]*[Ll]ocation:[[:space:]]*//'
 }
 
+run_with_system_privileges() {
+    if [ "$EUID" -eq 0 ]; then
+        "$@"
+    elif command_exists sudo; then
+        sudo "$@"
+    else
+        echo "Error: installing missing system dependencies requires root or sudo. Run this installer as root." >&2
+        return 1
+    fi
+}
+
+install_linux_system_packages() {
+    [ "${LINUX_PACKAGES_READY:-false}" != true ] || return 0
+    echo "Installing tlbx system dependencies (no .NET SDK or other language runtimes)..." >&2
+    if command_exists apt-get; then
+        run_with_system_privileges apt-get update &&
+            run_with_system_privileges apt-get install -y --no-install-recommends \
+                ca-certificates curl openssl tar gzip coreutils grep sed gawk procps libgcc-s1 libstdc++6 || return 1
+    elif command_exists dnf; then
+        run_with_system_privileges dnf install -y \
+            ca-certificates curl openssl tar gzip coreutils grep sed gawk procps-ng libgcc libstdc++ || return 1
+    elif command_exists yum; then
+        run_with_system_privileges yum install -y \
+            ca-certificates curl openssl tar gzip coreutils grep sed gawk procps-ng libgcc libstdc++ || return 1
+    elif command_exists pacman; then
+        run_with_system_privileges pacman -S --needed --noconfirm \
+            ca-certificates curl openssl tar gzip coreutils grep sed gawk procps-ng gcc-libs || return 1
+    else
+        echo "Error: automatic dependency installation requires apt-get, dnf, yum, or pacman on glibc Linux." >&2
+        echo "Musl/Alpine releases are not available. Use a supported glibc distribution." >&2
+        return 1
+    fi
+    LINUX_PACKAGES_READY=true
+}
+
+prepare_system_dependencies() {
+    [ "$(uname -s)" = Linux ] || return 0
+    local name missing=false
+    for name in bash mktemp tar gzip grep sed awk stty tee base64 pgrep openssl; do
+        command_exists "$name" || missing=true
+    done
+    if ! command_exists curl && ! command_exists wget; then missing=true; fi
+    if ! command_exists sha256sum && ! command_exists shasum; then missing=true; fi
+    if [ "$missing" = true ]; then
+        install_linux_system_packages
+    fi
+}
+
+check_native_crypto_runtime() {
+    local binary="$1" diagnostic="$2" hash
+    # The signed AOT executable exercises its actual crypto dependencies without
+    # starting the server or accessing installation settings. This is not a secret.
+    hash=$(printf '%s\n' 'tlbx-runtime-check' | "$binary" --hash-password 2> "$diagnostic") || return 1
+    [[ "$hash" == '$PBKDF2$'* ]]
+}
+
+prepare_native_runtime() {
+    local extract_dir="$1" diagnostic="$1/.tlbx-runtime-check.stderr"
+    chmod +x "$extract_dir/mt"
+    if check_native_crypto_runtime "$extract_dir/mt" "$diagnostic"; then
+        rm -f "$diagnostic"
+        return 0
+    fi
+    if [ "$(uname -s)" = Linux ] && install_linux_system_packages &&
+       check_native_crypto_runtime "$extract_dir/mt" "$diagnostic"; then
+        rm -f "$diagnostic"
+        return 0
+    fi
+    echo "Error: the verified native tlbx executable cannot run on this system; the installed files have not been changed." >&2
+    echo "Linux requires a compatible glibc loader and OpenSSL 1.1.1 or later. No .NET SDK is required." >&2
+    cat "$diagnostic" >&2
+    return 1
+}
 ensure_prerequisites() {
+    prepare_system_dependencies
     # Fail fast on all commands we rely on later so users get one actionable
     # message before the script starts downloading or prompting.
     require_command bash bash
@@ -395,7 +469,7 @@ validate_archive_members() {
     while IFS= read -r member; do
         normalized="${member#./}"
         case "$normalized" in
-            ""|mt|mthost|mtagenthost|mttmux|version.json|SHA256SUMS.txt) ;;
+            ""|mt|mthost|mtagenthost|mttmux|version.json|runtime-inputs.json|THIRD-PARTY-LICENSES.txt|SHA256SUMS.txt) ;;
             *)
                 log "Release archive contains unexpected member: $member" "ERROR"
                 return 1
@@ -1129,8 +1203,8 @@ prompt_password() {
             continue
         fi
 
-        if [ ${#password} -lt 15 ] || [ ${#password} -gt 1024 ]; then
-            echo -e "  ${RED}Password must be between 15 and 1024 characters.${NC}"
+        if [ ${#password} -lt 10 ] || [ ${#password} -gt 1024 ]; then
+            echo -e "  ${RED}Password must be between 10 and 1024 characters.${NC}"
             attempt=$((attempt + 1))
             continue
         fi
@@ -1138,7 +1212,7 @@ prompt_password() {
         # Try to hash using the installed binary
         local mt_path="${MT_BINARY_PATH:-/usr/local/bin/mt}"
         if [ -f "$mt_path" ]; then
-            local hash=$(echo "$password" | "$mt_path" --hash-password 2>/dev/null || true)
+            local hash=$(printf '%s\n' "$password" | "$mt_path" --hash-password 2>/dev/null || true)
             if [[ "$hash" == '$PBKDF2$'* ]]; then
                 PASSWORD_HASH="$hash"
                 return 0
@@ -1970,6 +2044,11 @@ install_binary() {
     fi
     finish_step_inline "verified" "$GREEN"
 
+    if ! prepare_native_runtime "$temp_dir"; then
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+
     local had_service=false
     if [ "$service_mode" = true ]; then
         if [ "$PLATFORM" = "osx" ]; then
@@ -1988,6 +2067,9 @@ install_binary() {
     local backup_dir="$temp_dir/backup"
     local file_name install_ok=true
     local runtime_files="mt mthost mtagenthost version.json"
+    if [ -f "$temp_dir/runtime-inputs.json" ]; then
+        runtime_files="$runtime_files runtime-inputs.json"
+    fi
     if [ -f "$temp_dir/mttmux" ]; then
         runtime_files="$runtime_files mttmux"
     fi
@@ -2154,7 +2236,7 @@ install_as_service() {
         log "Hashing new password..."
         local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
         local plain_password
-        plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+        plain_password=$(decode_base64_to_file "$encoded_password" /dev/stdout)
         local hash
         hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
@@ -2786,7 +2868,7 @@ install_as_user() {
         log "Hashing new password..."
         local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
         local plain_password
-        plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+        plain_password=$(decode_base64_to_file "$encoded_password" /dev/stdout)
         local hash
         hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
@@ -2810,7 +2892,7 @@ install_as_user() {
         if [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
             local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
             local plain_password
-            plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+            plain_password=$(decode_base64_to_file "$encoded_password" /dev/stdout)
             local hash
             hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
             if [[ "$hash" == '$PBKDF2$'* ]]; then

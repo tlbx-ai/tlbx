@@ -417,7 +417,7 @@
   "update.copyLog": "Copier le Journal",
   "error.newPasswordRequired": "Le nouveau mot de passe est requis",
   "error.passwordsNoMatch": "Les mots de passe ne correspondent pas",
-  "error.passwordTooShort": "Le mot de passe doit contenir au moins 4 caractères",
+  "error.passwordLength": "Le mot de passe doit contenir entre 10 et 1024 caractères",
   "error.passwordChangeFailed": "Échec du changement de mot de passe",
   "error.connectionError": "Erreur de connexion",
   "settings.options.cursorBar": "Barre",

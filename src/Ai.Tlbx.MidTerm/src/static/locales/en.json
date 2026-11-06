@@ -1204,7 +1204,7 @@
   "trust.errorLoading": "Error loading certificate info",
   "error.newPasswordRequired": "New password is required",
   "error.passwordsNoMatch": "Passwords do not match",
-  "error.passwordTooShort": "Password must be at least 4 characters",
+  "error.passwordLength": "Password must contain 10 to 1024 characters",
   "error.passwordChangeFailed": "Failed to change password",
   "error.connectionError": "Connection error",
   "dialog.confirm": "Confirm",

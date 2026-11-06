@@ -120,7 +120,7 @@ public static class CliCommands
         if (args.Contains("--set-password", StringComparer.Ordinal))
         {
             Console.Error.Write("New password: ");
-            var password = Console.IsInputRedirected ? Console.ReadLine() ?? "" : ReadPasswordMasked();
+            var password = Console.IsInputRedirected ? ReadRedirectedSecret() : ReadPasswordMasked();
             var passwordError = AuthService.ValidateNewPassword(password);
             if (passwordError is not null)
             {
@@ -169,7 +169,7 @@ public static class CliCommands
             string password;
             if (Console.IsInputRedirected)
             {
-                password = Console.ReadLine() ?? "";
+                password = ReadRedirectedSecret();
             }
             else
             {
@@ -177,10 +177,13 @@ public static class CliCommands
                 password = ReadPasswordMasked();
             }
 
-            if (string.IsNullOrEmpty(password))
+            // Hashing also supports existing short passwords; only password
+            // creation/change commands apply the new-password minimum.
+            if (string.IsNullOrEmpty(password) || password.Length > AuthService.MaximumPasswordLength)
             {
-                Console.Error.WriteLine("Error: Password cannot be empty");
-                Environment.Exit(1);
+                Console.Error.WriteLine($"Error: Password must contain 1 to {AuthService.MaximumPasswordLength} characters");
+                Environment.ExitCode = 1;
+                return true;
             }
 
             // Use static hash method to avoid AuthService constructor side effects
@@ -219,7 +222,7 @@ public static class CliCommands
             string value;
             if (Console.IsInputRedirected)
             {
-                value = Console.ReadLine() ?? "";
+                value = ReadRedirectedSecret();
             }
             else
             {
@@ -523,6 +526,13 @@ public static class CliCommands
         Console.WriteLine("  Service: %ProgramData%\\MidTerm\\settings.json (Windows)");
         Console.WriteLine("           /usr/local/etc/midterm/settings.json (Unix)");
         Console.WriteLine("  User:    ~/.midterm/settings.json");
+    }
+
+    private static string ReadRedirectedSecret()
+    {
+        // Installers pass UTF-8 regardless of the Windows console code page.
+        Console.InputEncoding = Encoding.UTF8;
+        return Console.ReadLine() ?? "";
     }
 
     public static string ReadPasswordMasked()
