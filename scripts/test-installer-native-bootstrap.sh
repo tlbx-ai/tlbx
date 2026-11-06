@@ -8,9 +8,12 @@ case "$(uname -s)" in
     Linux) export PATH=/usr/bin:/bin:/usr/sbin:/sbin ;;
     *) echo 'Native Unix bootstrap smoke requires Linux or macOS.' >&2; exit 1 ;;
 esac
-# Definitions and constants only; do not execute the interactive install entry.
-source <(sed '/^# Parse command line arguments/,$d' "$repo_root/install.sh")
+# A regular source file also works with macOS' system Bash 3.2. Avoid sharing
+# the source stream with subprocesses through a process-substitution descriptor.
 temp_root=$(mktemp -d)
+trap 'rm -rf "$temp_root"' EXIT
+sed '/^# Parse command line arguments/,$d' "$repo_root/install.sh" > "$temp_root/installer-functions.sh"
+source "$temp_root/installer-functions.sh"
 trap 'rm -rf "$temp_root"' EXIT
 export HOME="$temp_root/home"
 mkdir -p "$HOME" "$temp_root/extracted"
