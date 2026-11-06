@@ -75,7 +75,11 @@ public sealed class ReleaseStore : IDisposable
                         if (!completed.Publication.Assets.Contains(asset)) throw new BuildProtocolException(409, "Published assets are immutable");
                         return (asset, true);
                     }
-                    var target = Path.Combine(stage, name); NoLinks(target);
+                    var target = Path.GetFullPath(Path.Combine(stage, name));
+                    if (!target.StartsWith(Path.GetFullPath(Staging) + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                        || !target.StartsWith(stage + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                        throw new BuildProtocolException(400, "Upload target escapes staging root");
+                    NoLinks(target);
                     if (File.Exists(target))
                     {
                         var existing = await DescribeAsync(target, name, ct);
@@ -118,7 +122,11 @@ public sealed class ReleaseStore : IDisposable
                 throw new BuildProtocolException(400, "Publication must include every staged asset");
             foreach (var asset in normalized.Assets)
             {
-                var file = Path.Combine(stage, asset.Name); NoLinks(file);
+                var file = Path.GetFullPath(Path.Combine(stage, asset.Name));
+                if (!file.StartsWith(Path.GetFullPath(Staging) + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                    || !file.StartsWith(stage + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                    throw new BuildProtocolException(400, "Publication asset escapes staging root");
+                NoLinks(file);
                 if (!File.Exists(file) || await DescribeAsync(file, asset.Name, ct) != asset)
                     throw new BuildProtocolException(400, "Asset digest or length mismatch");
             }
@@ -182,13 +190,17 @@ public sealed class ReleaseStore : IDisposable
         var completed = ReadCompleted(release); if (completed is null) return null;
         var asset = completed.Publication.Assets.FirstOrDefault(a => a.Name == name && AssetNames.Rid(a.Name) == rid);
         if (asset is null) return null;
-        var path = Path.Combine(Destination(release), rid, name);
+        var path = Path.GetFullPath(Path.Combine(Destination(release), rid, name));
+        if (!path.StartsWith(Path.GetFullPath(Public) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new BuildProtocolException(400, "Asset path escapes published root");
         return FileExistsWithoutLinks(path) ? (path, asset.Sha256) : null;
     }
     public string? Manifest(ReleaseIdentity release, string rid)
     {
         if (!AssetNames.Rids.Contains(rid, StringComparer.Ordinal) || ReadCompleted(release) is null) return null;
-        var path = Path.Combine(Destination(release), rid, "version.json");
+        var path = Path.GetFullPath(Path.Combine(Destination(release), rid, "version.json"));
+        if (!path.StartsWith(Path.GetFullPath(Public) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new BuildProtocolException(400, "Manifest path escapes published root");
         return FileExistsWithoutLinks(path) ? path : null;
     }
     private static void ValidatePublication(PublishRequest request)
@@ -210,18 +222,36 @@ public sealed class ReleaseStore : IDisposable
         var hash = await SHA256.HashDataAsync(stream, ct);
         return new(name, Convert.ToHexString(hash).ToLowerInvariant(), stream.Length);
     }
-    private string Stage(ReleaseIdentity r) => Path.Combine(Staging, r.Tag);
-    private string Destination(ReleaseIdentity r) => Path.Combine(Public, r.Channel, r.Number);
+    private string Stage(ReleaseIdentity r)
+    {
+        var root = Path.GetFullPath(Staging);
+        var path = Path.GetFullPath(Path.Combine(root, r.Tag));
+        if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new BuildProtocolException(400, "Release staging path escapes root");
+        return path;
+    }
+    private string Destination(ReleaseIdentity r)
+    {
+        var root = Path.GetFullPath(Public);
+        var path = Path.GetFullPath(Path.Combine(root, r.Channel, r.Number));
+        if (!path.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new BuildProtocolException(400, "Release destination escapes published root");
+        return path;
+    }
     private static bool FileExistsWithoutLinks(string path)
     {
         try { NoLinks(path); return File.Exists(path); }
         catch (FileNotFoundException) { return false; }
         catch (DirectoryNotFoundException) { return false; }
-    }    private CompletedRelease? ReadCompleted(ReleaseIdentity r)
+    }
+    private CompletedRelease? ReadCompleted(ReleaseIdentity r)
     {
         try
         {
-            var path = Path.Combine(Destination(r), "release.json"); NoLinks(path);
+            var path = Path.GetFullPath(Path.Combine(Destination(r), "release.json"));
+            if (!path.StartsWith(Path.GetFullPath(Public) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                throw new BuildProtocolException(400, "Release metadata escapes published root");
+            NoLinks(path);
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete);
             return JsonSerializer.Deserialize<CompletedRelease>(stream, Json);
         }

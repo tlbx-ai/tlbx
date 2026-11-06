@@ -22,7 +22,8 @@ public sealed class ArchiveVerifier(IReleaseSignatureVerifier signatures)
     private const long MaxExpanded = 2L * 1024 * 1024 * 1024;
     public async Task<byte[]> VerifyAsync(string archive, string sbom, string scratch, string rid, ReleaseIdentity release, CancellationToken ct)
     {
-        Directory.CreateDirectory(scratch);
+        var extractionRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(scratch));
+        Directory.CreateDirectory(extractionRoot);
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         long expanded = 0;
         async Task Extract(string name, Stream? input, long length, bool directory)
@@ -34,7 +35,9 @@ public sealed class ArchiveVerifier(IReleaseSignatureVerifier signatures)
                 name.Split('/').Any(s => s.Length == 0 || s is "." or ".." || !s.All(c => char.IsAsciiLetterOrDigit(c) || c is '-' or '_' or '.')))
                 throw new BuildProtocolException(400, "Unsafe archive path");
             if (!names.Add(name) || names.Count > 256) throw new BuildProtocolException(400, "Duplicate or excessive archive entries");
-            var destination = Path.Combine(scratch, name.Replace('/', Path.DirectorySeparatorChar));
+            var destination = Path.GetFullPath(Path.Combine(extractionRoot, name.Replace('/', Path.DirectorySeparatorChar)));
+            if (!destination.StartsWith(extractionRoot + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+                throw new BuildProtocolException(400, "Archive entry escapes extraction root");
             if (directory) { Directory.CreateDirectory(destination); return; }
             if (length < 0 || length > MaxExpanded - expanded || input is null) throw new BuildProtocolException(413, "Expanded archive exceeds limit");
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
@@ -112,7 +115,9 @@ public sealed class ArchiveVerifier(IReleaseSignatureVerifier signatures)
         if (!rid.StartsWith("win-", StringComparison.Ordinal)) return false;
         return name is "THIRD-PARTY-LICENSES.txt" or "conpty.dll" or "arm64/OpenConsole.exe" or "x64/OpenConsole.exe"
             || (rid == "win-x86" && name == "x86/OpenConsole.exe");
-    }    private static async Task CheckZipDirectoryAsync(string path, CancellationToken ct)
+    }
+
+    private static async Task CheckZipDirectoryAsync(string path, CancellationToken ct)
     {
         // Bound ZIP directory allocation before ZipArchive materializes entries.
         // Official archives are below 1 GiB/256 files and do not need ZIP64.

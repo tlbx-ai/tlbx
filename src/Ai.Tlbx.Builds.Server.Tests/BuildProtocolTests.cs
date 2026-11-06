@@ -326,6 +326,44 @@ public sealed class BuildProtocolTests
         }
         public void Dispose() => Resume.Dispose();
     }
+    [Theory]
+    [InlineData("../escape")]
+    [InlineData("nested/../../escape")]
+    [InlineData("../zip-containment-sibling/escape")]
+    [InlineData("..\\escape")]
+    [InlineData("rooted")]
+    public async Task ZipEntriesCannotWriteOutsideTheirExactExtractionRoot(string name)
+    {
+        await using var f = await Fixture.Start();
+        var scratch = Path.Combine(f.Root, "zip-containment");
+        var archive = Path.Combine(f.Root, "malicious.zip");
+        var sbom = Path.Combine(f.Root, "fixture.spdx.json");
+        await File.WriteAllTextAsync(sbom, "{\"spdxVersion\":\"SPDX-2.3\",\"SPDXID\":\"SPDXRef-DOCUMENT\"}");
+        using (var zip = ZipFile.Open(archive, ZipArchiveMode.Create))
+        {
+            using var output = zip.CreateEntry(name == "rooted" ? Path.Combine(f.Root, "escape") : name).Open();
+            output.WriteByte(42);
+        }
+        var verifier = new ArchiveVerifier(new TestSignature(f.Key));
+        var error = await Assert.ThrowsAsync<BuildProtocolException>(() => verifier.VerifyAsync(archive, sbom, scratch, "win-x64", ReleaseIdentity.Parse("v8.0.0-dev"), default));
+        Assert.Equal(400, error.Status);
+        Assert.False(File.Exists(Path.Combine(f.Root, "escape")));
+        Assert.False(Directory.Exists(Path.Combine(f.Root, "zip-containment-sibling")));
+    }
+
+    [Fact]
+    public async Task StorageContainmentRejectsEscapingReleaseRecordsBeforeOpeningAnyFile()
+    {
+        await using var f = await Fixture.Start();
+        var store = f.App.Services.GetRequiredService<ReleaseStore>();
+        // Public routes parse their tags; containment is also enforced at the
+        // filesystem boundary when an internal caller supplies an invalid record.
+        var forged = new ReleaseIdentity("v../../../outside", new Version(8, 0, 0), true);
+        var upload = await Assert.ThrowsAsync<BuildProtocolException>(() => store.UploadAsync(forged, AssetNames.Archive("linux-x64"), new Unreadable(), 1, default));
+        Assert.Equal(400, upload.Status);
+        Assert.Equal(400, Assert.Throws<BuildProtocolException>(() => store.Manifest(forged, "linux-x64")).Status);
+        Assert.Equal(400, Assert.Throws<BuildProtocolException>(() => store.PublicAsset("dev", "../../outside", "linux-x64", AssetNames.Archive("linux-x64"))).Status);
+    }
     private sealed class Unreadable : Stream
     {
         public override bool CanRead => true; public override bool CanSeek => false; public override bool CanWrite => false;
