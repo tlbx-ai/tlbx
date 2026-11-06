@@ -143,6 +143,8 @@ if ($Scope -in @('server','all')) {
                 foreach ($inputPath in $inputs | Where-Object { $_ -match '(?i)(\.csproj|\.props|\.targets|/packages\.lock\.json|(^|/)nuget\.config|(^|/)global\.json|(^|/)version\.json)$' }) {
                     if (-not (Export-AdvisoryBaselineFile $repoRoot $baseline $inputPath)) { throw "Could not export $inputPath." }
                 }
+                $baselineSdk = Set-AdvisoryBaselineSdk -BaselineRoot $baseline.Root
+                Write-Host "Advisory baseline SDK: $baselineSdk (exact snapshot version; locked restore unchanged)."
                 $baselineNuGetExported = $true
             }
             $oldProject = Join-Path $baseline.Root $relativeProject

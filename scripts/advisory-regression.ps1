@@ -41,6 +41,22 @@ function Export-AdvisoryBaselineFile {
     return $true
 }
 
+function Set-AdvisoryBaselineSdk {
+    param([Parameter(Mandatory=$true)][string]$BaselineRoot)
+    # Historical roll-forward policies must not reinterpret a locked graph with
+    # a newer runner SDK. Only this exported scratch copy is adjusted.
+    $path = Join-Path $BaselineRoot 'global.json'
+    $configuration = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable
+    if ($configuration.sdk -isnot [System.Collections.IDictionary] -or
+        $configuration.sdk.version -isnot [string] -or [string]::IsNullOrWhiteSpace($configuration.sdk.version)) {
+        throw 'The advisory baseline does not declare an exact SDK version in global.json.'
+    }
+    $version = $configuration.sdk.version
+    $configuration.sdk.rollForward = 'disable'
+    [IO.File]::WriteAllText($path, ($configuration | ConvertTo-Json -Depth 100) + "`n", [Text.UTF8Encoding]::new($false))
+    return $version
+}
+
 function New-AdvisoryFinding {
     param([string]$Package, [string]$Advisory, [string]$Severity, [string]$Exposure = 'runtime', [int]$Count = 1)
     $ranks = @{ unknown = 0; low = 1; moderate = 2; medium = 2; high = 3; critical = 4 }
