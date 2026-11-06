@@ -1,0 +1,67 @@
+name: Verify build distribution
+on:
+  pull_request:
+    paths:
+      - 'src/Ai.Tlbx.Builds.Server*/**'
+      - 'src/Ai.Tlbx.MidTerm/Services/Updates/UpdateVerification.cs'
+      - 'src/Ai.Tlbx.MidTerm/Models/Update/VersionManifest.cs'
+      - 'scripts/publish-builds.ps1'
+      - 'scripts/test-publish-builds.ps1'
+      - '.github/workflows/build-distribution-verify.yml'
+  push:
+    branches: [dev, main]
+    paths:
+      - 'src/Ai.Tlbx.Builds.Server*/**'
+      - 'src/Ai.Tlbx.MidTerm/Services/Updates/UpdateVerification.cs'
+      - 'src/Ai.Tlbx.MidTerm/Models/Update/VersionManifest.cs'
+      - 'scripts/publish-builds.ps1'
+      - 'scripts/test-publish-builds.ps1'
+permissions:
+  contents: read
+jobs:
+  distribution-protocols:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.402'
+      - name: Verify artifact publication protocol
+        shell: pwsh
+        run: ./scripts/test-publish-builds.ps1
+      - name: Fetch original ZIP and tar release fixtures
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          . ./scripts/publish-builds.ps1 -LibraryOnly
+          $pages = Invoke-BuildGhJson @('api','repos/tlbx-ai/tlbx/releases?per_page=100','--paginate','--slurp')
+          $releases = @($pages | ForEach-Object { $_ } | Where-Object { -not $_.draft -and -not $_.prerelease -and $_.published_at -and $_.tag_name -cmatch '^v\d+\.\d+\.\d+$' } | Sort-Object { [version]($_.tag_name.TrimStart('v')) } -Descending)
+          $fixtures = Join-Path $env:RUNNER_TEMP 'builds-original-archives'
+          New-Item -ItemType Directory -Path $fixtures -Force | Out-Null
+          $inventory = @(foreach ($rid in @('win-x64','linux-x64')) {
+            $found = $false
+            foreach ($release in $releases) {
+              $pair = @(Get-BuildPairs $release | Where-Object Rid -eq $rid)
+              if (-not $pair.Count) { continue }
+              $script:CurrentBuildTag = $release.tag_name
+              $archive = Join-Path $fixtures $pair[0].Archive.name
+              $sbom = Join-Path $fixtures $pair[0].Sbom.name
+              Save-BuildAsset $pair[0].Archive $archive
+              Save-BuildAsset $pair[0].Sbom $sbom
+              [pscustomobject]@{ tag=$release.tag_name; rid=$rid; archive=$archive; sbom=$sbom }
+              $found = $true
+              break
+            }
+            if (-not $found) { throw "No original release fixture for $rid" }
+          })
+          $inventoryPath = Join-Path $fixtures 'inventory.json'
+          ConvertTo-Json -InputObject $inventory | Set-Content $inventoryPath
+          "BUILDS_REAL_ARCHIVES=$inventoryPath" | Out-File $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Restore locked build server protocol dependencies
+        run: dotnet restore src/Ai.Tlbx.Builds.Server.Tests/Ai.Tlbx.Builds.Server.Tests.csproj --locked-mode
+      - name: Verify build server HTTP, trust and storage contracts
+        run: dotnet test --project src/Ai.Tlbx.Builds.Server.Tests/Ai.Tlbx.Builds.Server.Tests.csproj --configuration Release --no-restore --report-trx

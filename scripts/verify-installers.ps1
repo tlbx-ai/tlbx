@@ -100,6 +100,54 @@ is_tailscale_ipv4 100.127.255.254
             throw "install.sh readiness URL smoke test failed: $($readinessOutput -join [Environment]::NewLine)"
         }
 
+        $wgetTransportSmoke = @'
+set -e
+eval "$(awk '/^download_to_file\(\) \{/{emit=1} /^build_catalog_get\(\) \{/{emit=0} emit' ./install.sh)"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/bin"
+export WGET_ARGV="$tmp/argv"
+cat > "$tmp/bin/wget" <<'WGET'
+#!/bin/bash
+printf '%s\n' "$@" > "$WGET_ARGV"
+test "$#" = 8 || exit 64
+test "$1" = -qO || exit 64
+printf fixture > "$2"
+WGET
+chmod +x "$tmp/bin/wget"
+export PATH="$tmp/bin:$PATH"
+DOWNLOADER=wget
+log() { :; }
+validate_archive() { test "$(cat "$1")" = fixture; }
+sleep() { echo 'unexpected wget transport retry' >&2; return 1; }
+url=https://builds.tlbx.ai/dev/10.25.30-dev/linux-x64/mt-linux-x64.tar.gz
+destination="$tmp/release with spaces.tar.gz"
+download_to_file "$url" "$destination" 'wget argument contract'
+cat > "$tmp/expected" <<EOF
+-qO
+$destination
+--https-only
+--max-redirect=0
+--timeout=600
+--tries=1
+--user-agent=tlbx-Installer
+$url
+EOF
+cmp "$tmp/expected" "$WGET_ARGV"
+test "$(cat "$destination")" = fixture
+printf '%s\n' 'wget download argv contract passed (URL, quoted destination, HTTPS, no redirects, bounded timeout)'
+'@
+        $wgetTransportScript = ".verify-wget-transport-$([Guid]::NewGuid().ToString('N')).sh"
+        try {
+            [IO.File]::WriteAllText((Join-Path $repoRoot $wgetTransportScript),
+                $wgetTransportSmoke.Replace("`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+            $wgetTransportOutput = & $bash.Source "./$wgetTransportScript" 2>&1
+        } finally {
+            Remove-Item -LiteralPath (Join-Path $repoRoot $wgetTransportScript) -ErrorAction SilentlyContinue
+        }
+        if ($LASTEXITCODE -ne 0) { throw "install.sh wget argument contract failed: $($wgetTransportOutput -join [Environment]::NewLine)" }
+        Write-Output $wgetTransportOutput
+
         $releaseSelectionSmoke = @'
 set -e
 eval "$(awk '/^get_latest_release\(\) \{/{emit=1} /^require_extracted_binaries\(\) \{/{emit=0} emit' ./install.sh)"
