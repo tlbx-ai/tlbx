@@ -626,136 +626,6 @@ public sealed partial class WebPreviewProxyMiddleware
             }
           }catch(e){}
           // === MutationObserver: catch dynamically added elements ===
-          function clampByte(v){
-            v=Math.round(v);
-            if(v<0)return 0;
-            if(v>255)return 255;
-            return v;
-          }
-          function parseSrgbChannel(raw){
-            if(!raw)return null;
-            if(/%$/.test(raw)){
-              var pct=parseFloat(raw);
-              if(!isFinite(pct))return null;
-              return clampByte((pct/100)*255);
-            }
-            var num=parseFloat(raw);
-            if(!isFinite(num))return null;
-            return num<=1?clampByte(num*255):clampByte(num);
-          }
-          function parseSrgbAlpha(raw){
-            if(!raw)return 1;
-            if(/%$/.test(raw)){
-              var pct=parseFloat(raw);
-              if(!isFinite(pct))return 1;
-              return Math.max(0,Math.min(1,pct/100));
-            }
-            var num=parseFloat(raw);
-            if(!isFinite(num))return 1;
-            return Math.max(0,Math.min(1,num));
-          }
-          var captureColorContext=null,captureColorCache=new Map();
-          function normalizeCssColorFunctions(value){
-            if(typeof value!=="string"||!/(?:oklch|oklab|lch|lab|color|color-mix)\(/i.test(value))return value;
-            value=value.replace(/color\(\s*srgb\s+([^\s)\/]+)\s+([^\s)\/]+)\s+([^\s)\/]+)(?:\s*\/\s*([^)]+?))?\s*\)/gi,function(_,r,g,b,a){
-              var rr=parseSrgbChannel(r),gg=parseSrgbChannel(g),bb=parseSrgbChannel(b);
-              if(rr===null||gg===null||bb===null)return _;
-              var aa=parseSrgbAlpha(a);
-              if(aa>=1)return "rgb("+rr+", "+gg+", "+bb+")";
-              var alphaText=(Math.round(aa*1000)/1000).toString();
-              return "rgba("+rr+", "+gg+", "+bb+", "+alphaText+")";
-            });
-            // Let the browser convert modern color spaces to sRGB for html2canvas.
-            // Cache each color; gradients/shadows can contain multiple or nested functions.
-            var pattern=/(?:oklch|oklab|lch|lab|color-mix|color)\(/gi,match,output="",cursor=0;
-            while((match=pattern.exec(value))!==null){
-              var end=pattern.lastIndex,depth=1;
-              while(end<value.length&&depth){var c=value.charAt(end++);if(c==="(")depth++;else if(c===")")depth--;}
-              if(depth)break;
-              var token=value.slice(match.index,end),converted=captureColorCache.get(token);
-              if(!converted){
-                try{
-                  if(!CSS.supports("color",token))throw new Error("Invalid color");
-                  if(!captureColorContext){var canvas=document.createElement("canvas");canvas.width=canvas.height=1;captureColorContext=canvas.getContext("2d",{willReadFrequently:true});}
-                  var ctx=captureColorContext;ctx.clearRect(0,0,1,1);ctx.fillStyle=token;ctx.fillRect(0,0,1,1);
-                  var pixel=ctx.getImageData(0,0,1,1).data;
-                  converted="rgba("+pixel[0]+", "+pixel[1]+", "+pixel[2]+", "+(Math.round(pixel[3]/255*1000)/1000)+")";
-                  captureColorCache.set(token,converted);
-                }catch(e){converted=token;}
-              }
-              output+=value.slice(cursor,match.index)+converted;cursor=end;pattern.lastIndex=end;
-            }
-            return output+value.slice(cursor);
-          }
-          function createNormalizedStyleReader(styles,captureProperties){
-            if(!styles||typeof styles!=="object")return styles;
-            if(typeof Proxy!=="function")return styles;
-            try{
-              // html2canvas copies every enumerated property onto cloned SVG and
-              // custom elements. Computed standard properties already resolve var(),
-              // so copying thousands of inherited design tokens adds no visual value.
-              // Keep direct custom-property reads available to the page itself.
-              if(!captureProperties){
-                captureProperties=[];
-                for(var index=0;index<styles.length;index++){
-                  var name=styles.item(index);
-                  if(name.indexOf("--")!==0)captureProperties.push(name);
-                }
-              }
-              return new Proxy(styles,{
-                get:function(target,prop){
-                  if(prop==="length")return captureProperties.length;
-                  if(typeof prop==="string"&&/^\d+$/.test(prop))return captureProperties[Number(prop)];
-                  if(prop===Symbol.iterator)return captureProperties[Symbol.iterator].bind(captureProperties);
-                  if(prop==="getPropertyValue"){
-                    return function(name){
-                      return normalizeCssColorFunctions(target.getPropertyValue(name));
-                    };
-                  }
-                  if(prop==="setProperty"){
-                    return function(name,value,priority){
-                      return target.setProperty(name,normalizeCssColorFunctions(value),priority);
-                    };
-                  }
-                  if(prop==="getPropertyPriority"){
-                    return function(name){
-                      return target.getPropertyPriority(name);
-                    };
-                  }
-                  if(prop==="item"){
-                    return function(index){
-                      return captureProperties[index]||"";
-                    };
-                  }
-                  var value=target[prop];
-                  if(typeof value==="function")return value.bind(target);
-                  return typeof value==="string"?normalizeCssColorFunctions(value):value;
-                }
-              });
-            }catch(e){}
-            return styles;
-          }
-          function installComputedStyleColorNormalization(view){
-            if(!view||typeof view.getComputedStyle!=="function")return function(){};
-            var current=view.getComputedStyle;
-            if(current&&current.__mtColorNormalized)return function(){};
-            // Standard computed-property names are identical for this browser realm.
-            // Discover them once, not once for every element and pseudo-element.
-            var captureProperties=Array.from(createNormalizedStyleReader(current.call(view,view.document.documentElement)));
-            var wrapped=function(){
-              return createNormalizedStyleReader(current.apply(this,arguments),captureProperties);
-            };
-            try{wrapped.__mtColorNormalized=true;}catch(e){}
-            try{
-              view.getComputedStyle=wrapped;
-              return function(){
-                try{
-                  if(view.getComputedStyle===wrapped)view.getComputedStyle=current;
-                }catch(e){}
-              };
-            }catch(e){}
-            return function(){};
-          }
           function rewriteEl(el){
             if(!el.getAttribute)return;
             ["src","href","action","data","formaction","poster"].forEach(function(attr){
@@ -790,7 +660,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
           }).observe(document.documentElement,{childList:true,subtree:true});
           // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
-          var bws,bwsReady=false,h2cLoad=null;
+          var bws,bwsReady=false,captureLoad=null;
           function truncDom(el,d,mx){
             if(d>=mx)return"<!-- ... -->";
             var t=el.cloneNode(false);
@@ -809,13 +679,13 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             trim(clone,0);return clone.outerHTML;
           }
-          function ensureH2c(){
-            if(typeof window.html2canvas==="function")return Promise.resolve(window.html2canvas);
-            if(h2cLoad)return h2cLoad;
+          function ensureCapture(){
+            if(window.__tlbxDomCapture&&typeof window.__tlbxDomCapture.snapdom==="function")return Promise.resolve(window.__tlbxDomCapture.snapdom);
+            if(captureLoad)return captureLoad;
             // Keep this host asset inside the authenticated preview route. Link's
             // isolated origin routes root-relative fetches to the upstream site.
-            h2cLoad=F.call(window,PP+"/_assets/html2canvas.min.js",{credentials:"same-origin"}).then(function(resp){
-              if(!resp.ok)throw new Error("failed to fetch html2canvas");
+            captureLoad=F.call(window,PP+"/_assets/dom-capture.min.js",{credentials:"same-origin"}).then(function(resp){
+              if(!resp.ok)throw new Error("failed to fetch screenshot renderer");
               return resp.text();
             }).then(function(text){
               return new Promise(function(resolve,reject){
@@ -825,14 +695,14 @@ public sealed partial class WebPreviewProxyMiddleware
                 scr.src=blobUrl;
                 scr.onload=function(){
                   URL.revokeObjectURL(blobUrl);scr.remove();
-                  if(typeof window.html2canvas!=="function"){reject(new Error("html2canvas did not initialize"));return;}
-                  resolve(window.html2canvas);
+                  if(!window.__tlbxDomCapture||typeof window.__tlbxDomCapture.snapdom!=="function"){reject(new Error("screenshot renderer did not initialize"));return;}
+                  resolve(window.__tlbxDomCapture.snapdom);
                 };
-                scr.onerror=function(){URL.revokeObjectURL(blobUrl);scr.remove();reject(new Error("failed to load html2canvas"));};
+                scr.onerror=function(){URL.revokeObjectURL(blobUrl);scr.remove();reject(new Error("failed to load screenshot renderer"));};
                 document.head.appendChild(scr);
               });
-            }).catch(function(err){h2cLoad=null;throw err;});
-            return h2cLoad;
+            }).catch(function(err){captureLoad=null;throw err;});
+            return captureLoad;
           }
           function setFormControlValue(el,value){
             var proto=null;
@@ -973,39 +843,21 @@ public sealed partial class WebPreviewProxyMiddleware
                     else setTimeout(poll,200);
                   })();return;}
                 case"screenshot":{
-                  var restoreComputedStyles=installComputedStyleColorNormalization(window);
                   var fullPage=msg.fullPage===true;
-                  var captureX=window.scrollX,captureY=window.scrollY;
-                  ensureH2c().then(function(){
-                    return window.html2canvas(document.documentElement,{
-                      useCORS:true,
-                      logging:false,
+                  ensureCapture().then(function(capture){
+                    return capture(document.documentElement,{
+                      clip:fullPage?null:"viewport",
+                      dpr:1,
                       scale:1,
-                      x:fullPage?0:captureX,
-                      y:fullPage?0:captureY,
-                      width:fullPage?undefined:window.innerWidth,
-                      height:fullPage?undefined:window.innerHeight,
-                      imageTimeout:1500,
-                      ignoreElements:function(el){
-                        if(fullPage||!el.getBoundingClientRect)return false;
-                        // Prune only below the viewport: removing earlier flow content
-                        // would shift the visible layout in the clone.
-                        if(/^(HTML|HEAD|BODY|STYLE|LINK|SCRIPT)$/.test(el.tagName))return false;
-                        var rect=el.getBoundingClientRect();
-                        return rect.top>=window.innerHeight&&rect.height>0;
-                      },
-                      onclone:function(doc){
-                        try{
-                          installComputedStyleColorNormalization(doc.defaultView||window);
-                        }catch(e){}
-                      }
+                      fast:false,
+                      reconcile:true
                     });
+                  }).then(function(capture){
+                    return capture.toCanvas();
                   }).then(function(canvas){
-                      try{restoreComputedStyles();}catch(e){}
-                      res.result=canvas.toDataURL("image/png");bws.send(JSON.stringify(res));
+                    res.result=canvas.toDataURL("image/png");if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
                   }).catch(function(e){
-                      try{restoreComputedStyles();}catch(x){}
-                      res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));
+                    res.success=false;res.error="screenshot failed: "+e.message;if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
                   });
                   return;}
                 case"snapshot":{
@@ -1426,7 +1278,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
             }
-            if (remainingPath.Equals("/_assets/html2canvas.min.js", StringComparison.Ordinal))
+            if (remainingPath.Equals("/_assets/dom-capture.min.js", StringComparison.Ordinal))
             {
                 if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
                 {
@@ -1437,7 +1289,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
                 // Resolve only this owned asset through the normal static-file
                 // pipeline, including the embedded Brotli asset in native builds.
-                context.Request.Path = "/js/html2canvas.min.js";
+                context.Request.Path = "/js/dom-capture.min.js";
                 try { await _next(context); }
                 finally { context.Request.Path = path; }
                 return;
@@ -1748,7 +1600,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private static bool IsPreviewLocalPath(string path)
     {
-        return path.Equals("/js/html2canvas.min.js", StringComparison.OrdinalIgnoreCase);
+        return path.Equals("/js/dom-capture.min.js", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ProxyHttpAsync(HttpContext context, string routeKey, Uri targetUri, string path)

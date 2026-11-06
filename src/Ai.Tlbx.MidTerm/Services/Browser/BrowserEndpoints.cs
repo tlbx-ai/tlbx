@@ -715,7 +715,7 @@ public static class BrowserEndpoints
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so tlbx shows it in the IDE bar and sidebar.",
-                "Docked screenshots capture the viewport by default; use --full-page for the slower full document. Rendering uses html2canvas; Chrome mobile devices use native CDP capture.",
+                "Docked screenshots capture the viewport by default; use --full-page for the slower full document. Rendering uses native SVG DOM capture inside the preview sandbox; Chrome mobile devices use native CDP capture.",
                 "Chrome mobile device control runs in the optional extension on the owning browser machine, so the tlbx server may remain remote."
             ]
         };

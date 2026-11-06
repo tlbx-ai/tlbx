@@ -290,7 +290,7 @@ if ($StaticOnly) {
     $jsDir = Join-Path $WwwRoot 'js'
     if (Test-Path $jsDir) {
         Get-ChildItem -Path $jsDir -Filter '*.js' -File |
-            Where-Object { $_.Name -notin @('terminal.min.js', 'html2canvas.min.js') } |
+            Where-Object { $_.Name -notin @('terminal.min.js', 'dom-capture.min.js') } |
             Remove-Item -Force
     }
 }
@@ -643,17 +643,20 @@ if ($Publish) {
     $null = Process-TextFile -Source (Join-Path $pdfOutput 'viewer.js') -Destination (Join-Path $pdfOutput 'viewer.js') -Compress $true
 }
 
-# html2canvas vendor library — lazy-loaded by web preview screenshot feature
-$h2cSrc = Join-Path $NodeModulesRoot "html2canvas/dist/html2canvas.min.js"
-if (Test-Path $h2cSrc) {
-    $dstPath = Join-Path $WwwRoot "js/html2canvas.min.js"
-    $result = Process-TextFile -Source $h2cSrc -Destination $dstPath -Compress $Publish
-    if ($Publish) {
-        $totalSaved += $result.Saved
-        Write-Host "  html2canvas.min.js -> html2canvas.min.js.br ($($result.Reduction)% reduction)" -ForegroundColor DarkGray
-    } else {
-        Write-Host "  html2canvas.min.js" -ForegroundColor DarkGray
-    }
+# DOM screenshot renderer — lazy-loaded inside the isolated preview
+$captureSrc = Join-Path $NodeModulesRoot "@zumer/snapdom/dist/snapdom.mjs"
+if (-not (Test-Path $captureSrc)) {
+    throw "Pinned DOM screenshot renderer is missing. Run npm ci before building."
+}
+$dstPath = Join-Path $WwwRoot "js/dom-capture.min.js"
+& $esbuildCommand $captureSrc --bundle --minify --format=iife --global-name=__tlbxDomCapture --target=es2020 "--outfile=$dstPath"
+if ($LASTEXITCODE -ne 0) { throw "DOM screenshot renderer bundling failed" }
+$result = Process-TextFile -Source $dstPath -Destination $dstPath -Compress $Publish
+if ($Publish) {
+    $totalSaved += $result.Saved
+    Write-Host "  dom-capture.min.js -> dom-capture.min.js.br ($($result.Reduction)% reduction)" -ForegroundColor DarkGray
+} else {
+    Write-Host "  dom-capture.min.js" -ForegroundColor DarkGray
 }
 
 if ($Publish) {
