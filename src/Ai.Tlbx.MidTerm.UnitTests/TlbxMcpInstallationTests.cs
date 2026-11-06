@@ -42,6 +42,28 @@ public sealed class TlbxMcpInstallationTests : IDisposable
         else Assert.Equal(42, JsonNode.Parse(first)!["extra"]!.GetValue<int>());
     }
 
+    [Fact]
+    public void GenericBootstrapPreservesClientConfigurationAndExportsLiteralArgumentsWithoutSecrets()
+    {
+        Directory.CreateDirectory(Path.Combine(_root, ".codex"));
+        var codexConfig = Path.Combine(_root, ".codex", "config.toml");
+        var otherConfig = Path.Combine(_root, "opencode.json");
+        File.WriteAllText(codexConfig, "existing codex configuration");
+        File.WriteAllText(otherConfig, "existing other-client configuration");
+        var descriptor = TlbxMcpInstallation.Bootstrap(_root, Path.Combine(_root, "private"), Options, "adapter with spaces", ["literal ä path.dll"]);
+        Assert.Equal("existing codex configuration", File.ReadAllText(codexConfig));
+        Assert.Equal("existing other-client configuration", File.ReadAllText(otherConfig));
+        Assert.Equal("adapter with spaces", descriptor["command"]!.GetValue<string>());
+        var arguments = descriptor["args"]!.AsArray().Select(value => value!.GetValue<string>()).ToArray();
+        Assert.Equal(new[] { "literal ä path.dll", "mcp", "--stdio", "--credentials-file" }, arguments[..^1], StringComparer.Ordinal);
+        Assert.DoesNotContain("fixture-secret", descriptor.ToJsonString(), StringComparison.Ordinal);
+        var credentials = McpStdioOptions.ReadCredentialsFile(arguments[^1]);
+        Assert.Equal("fixture-secret", credentials["MT_TOKEN"]);
+        Assert.Equal(Options.CertificateSha256, credentials["TLBX_MCP_CERT_SHA256"]);
+        var again = TlbxMcpInstallation.Bootstrap(_root, Path.Combine(_root, "private"), Options, "adapter with spaces", ["literal ä path.dll"]);
+        Assert.Equal(descriptor.ToJsonString(), again.ToJsonString());
+    }
+
     [Theory]
     [InlineData("codex", "[mcp_servers.tlbx]\ncommand = \"custom\"\n")]
     [InlineData("codex", "[mcp_servers.\"tlbx\"]\ncommand = \"custom\"\n")]
@@ -57,11 +79,15 @@ public sealed class TlbxMcpInstallationTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task GeneratedSetupRunsWithoutCliAndPreservesOwningInstance(bool bash, bool otherInstance)
+    [InlineData(false, false, false)]
+    [InlineData(false, true, false)]
+    [InlineData(true, false, false)]
+    [InlineData(true, true, false)]
+    [InlineData(false, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, true)]
+    public async Task GeneratedSetupRunsWithoutCliAndPreservesOwningInstance(bool bash, bool otherInstance, bool generic)
     {
         Directory.CreateDirectory(_root);
         var shell = bash && OperatingSystem.IsWindows() ? @"C:\Program Files\Git\bin\bash.exe" : bash ? "/bin/sh" : "pwsh";
@@ -73,7 +99,7 @@ public sealed class TlbxMcpInstallationTests : IDisposable
         var start = new ProcessStartInfo(shell) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
         if (!bash) { start.ArgumentList.Add("-NoProfile"); start.ArgumentList.Add("-File"); }
         start.ArgumentList.Add(Path.Combine(_root, bash ? "install-mcp.sh" : "install-mcp.ps1").Replace('\\', '/'));
-        start.ArgumentList.Add("codex");
+        if (!generic) start.ArgumentList.Add("codex");
         start.Environment["TLBX_INSTALL_TEST_RESULT"] = result;
         start.Environment["MT_BASE_URL"] = otherInstance ? "https://localhost:2000" : "https://localhost:2103";
         start.Environment["MT_TOKEN"] = "inherited-token";
@@ -88,19 +114,20 @@ public sealed class TlbxMcpInstallationTests : IDisposable
         Assert.Equal(otherInstance ? "https://localhost:2000" : "https://localhost:2103", observed["url"]!.GetValue<string>());
         Assert.Equal(otherInstance ? "inherited-token" : "fixture-secret", observed["token"]!.GetValue<string>());
         Assert.Equal(otherInstance ? "inherited-pin" : new string('A', 64), observed["pin"]!.GetValue<string>());
-        Assert.Equal(new[] { "mcp", "install", "codex" }, observed["args"]!.AsArray().Select(value => value!.GetValue<string>()), StringComparer.Ordinal);
+        Assert.Equal(generic ? new[] { "mcp", "bootstrap" } : ["mcp", "install", "codex"], observed["args"]!.AsArray().Select(value => value!.GetValue<string>()), StringComparer.Ordinal);
     }
 
     [Theory]
     [InlineData("codex")]
     [InlineData("claude")]
+    [InlineData("generic")]
     public async Task NativeEntryPointInstallsWithoutReflectionMetadata(string client)
     {
         Directory.CreateDirectory(_root);
         var assembly = typeof(Ai.Tlbx.MidTerm.Services.TlbxDirectory).Assembly.Location;
         var start = new ProcessStartInfo("dotnet") { WorkingDirectory = _root, UseShellExecute = false,
             RedirectStandardOutput = true, RedirectStandardError = true, CreateNoWindow = true };
-        foreach (var argument in new[] { assembly, "mcp", "install", client }) start.ArgumentList.Add(argument);
+        foreach (var argument in client == "generic" ? new[] { assembly, "mcp", "bootstrap" } : [assembly, "mcp", "install", client]) start.ArgumentList.Add(argument);
         start.Environment["MT_BASE_URL"] = "https://localhost:2103";
         start.Environment["MT_TOKEN"] = "fixture-secret";
         start.Environment.Remove("MT_API_KEY");
@@ -115,11 +142,28 @@ public sealed class TlbxMcpInstallationTests : IDisposable
         try { await process.WaitForExitAsync(TestContext.Current.CancellationToken).WaitAsync(TimeSpan.FromSeconds(20), TestContext.Current.CancellationToken); }
         catch { if (!process.HasExited) process.Kill(entireProcessTree: true); throw; }
         Assert.True(process.ExitCode == 0, await output + await error);
-        var configPath = client == "codex" ? Path.Combine(_root, ".codex", "config.toml") : Path.Combine(_root, ".mcp.json");
-        Assert.True(File.Exists(configPath));
-        var config = File.ReadAllText(configPath);
-        var arguments = client == "claude" ? JsonNode.Parse(config)!["mcpServers"]!["tlbx"]!["args"]!.AsArray()
-            : JsonNode.Parse(config.Split('\n').Single(line => line.StartsWith("args = ", StringComparison.Ordinal))["args = ".Length..])!.AsArray();
+        JsonArray arguments;
+        if (client == "generic")
+        {
+            var descriptor = JsonNode.Parse(await output)!;
+            Assert.Equal("tlbx", descriptor["name"]!.GetValue<string>());
+            Assert.Equal("stdio", descriptor["transport"]!.GetValue<string>());
+            Assert.Equal("dotnet", Path.GetFileNameWithoutExtension(descriptor["command"]!.GetValue<string>()));
+            Assert.Equal(30, descriptor["startupTimeoutSeconds"]!.GetValue<int>());
+            Assert.Equal(660, descriptor["toolTimeoutSeconds"]!.GetValue<int>());
+            Assert.DoesNotContain("fixture-secret", await output, StringComparison.Ordinal);
+            Assert.False(File.Exists(Path.Combine(_root, ".codex", "config.toml")));
+            Assert.False(File.Exists(Path.Combine(_root, ".mcp.json")));
+            arguments = descriptor["args"]!.AsArray();
+        }
+        else
+        {
+            var configPath = client == "codex" ? Path.Combine(_root, ".codex", "config.toml") : Path.Combine(_root, ".mcp.json");
+            Assert.True(File.Exists(configPath));
+            var config = File.ReadAllText(configPath);
+            arguments = client == "claude" ? JsonNode.Parse(config)!["mcpServers"]!["tlbx"]!["args"]!.AsArray()
+                : JsonNode.Parse(config.Split('\n').Single(line => line.StartsWith("args = ", StringComparison.Ordinal))["args = ".Length..])!.AsArray();
+        }
         var credentialsPath = arguments.Last()!.GetValue<string>();
         var identity = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(_root + "\nhttps://localhost:2103")));
         Assert.EndsWith(Path.Combine(identity, "credentials.json"), credentialsPath, StringComparison.Ordinal);

@@ -44,6 +44,30 @@ sh .tlbx/install-mcp.sh codex
 sh .tlbx/install-mcp.sh claude
 ```
 
+For every other agent or client, including OpenCode and Grok Build, use the
+vendor-neutral entry point without a client name:
+
+```powershell
+pwsh -NoProfile -File .tlbx/install-mcp.ps1
+```
+
+```sh
+sh .tlbx/install-mcp.sh
+# Native equivalent with the adapter/authentication available:
+mt mcp bootstrap
+```
+
+It emits exactly one JSON descriptor with `name`, `transport`, `command`, `args`,
+`env`, `startupTimeoutSeconds` and `toolTimeoutSeconds`. Authentication remains in
+an owner-only file referenced by the argument array, outside the repository; the
+JSON contains no token. Bootstrap preserves existing client configuration.
+The agent must translate this descriptor into its own client's documented native
+MCP add/install command or configuration schema, preserving literal argv entries
+and environment values. No OpenCode/Grok/vendor CLI flags are guessed or injected.
+Reload/restart that client as required and prove tool exposure with native
+`context_get` followed by `sessions_list`; JSON output alone is not registration
+or acceptance. Explicit `generic` is also accepted by both generated scripts.
+
 The native equivalent is `mt mcp install codex` or `mt mcp install claude` when the
 adapter is on PATH and the owning tlbx authentication/TLS environment is present.
 The generated scripts locate the exact running adapter and supply that instance's

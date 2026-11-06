@@ -117,6 +117,63 @@ try {
     }
     Write-Host "  /api/version -> $version" -ForegroundColor Green
 
+    # Execute the vendor-neutral bootstrap in the actual NativeAOT binary.
+    $mcpProject = Join-Path $settingsDir 'mcp-client'
+    New-Item -ItemType Directory -Path $mcpProject | Out-Null
+    $mcpOrigin = "https://127.0.0.1:$port"
+    $mcpToken = $probeSession.Cookies.GetCookies([Uri]$mcpOrigin)['mm-session'].Value
+    $mcpInfo = [Diagnostics.ProcessStartInfo]::new($exePath)
+    $mcpInfo.WorkingDirectory = $mcpProject
+    $mcpInfo.UseShellExecute = $false
+    $mcpInfo.CreateNoWindow = $true
+    $mcpInfo.RedirectStandardInput = $true
+    $mcpInfo.RedirectStandardOutput = $true
+    $mcpInfo.RedirectStandardError = $true
+    $mcpInfo.ArgumentList.Add('mcp')
+    $mcpInfo.ArgumentList.Add('bootstrap')
+    $mcpInfo.Environment['MT_BASE_URL'] = $mcpOrigin
+    $mcpInfo.Environment['MT_TOKEN'] = $mcpToken
+    $mcpInfo.Environment['TLBX_MCP_CERT_SHA256'] = $bootstrap.certificate.fingerprint
+    $null = $mcpInfo.Environment.Remove('MT_API_KEY')
+    $null = $mcpInfo.Environment.Remove('TLBX_MCP_BOOTSTRAP')
+    $mcpProcess = $null
+    $mcpCredentials = $null
+    try {
+        $mcpProcess = [Diagnostics.Process]::Start($mcpInfo)
+        $mcpProcess.StandardInput.Close()
+        $mcpOutput = $mcpProcess.StandardOutput.ReadToEndAsync()
+        $mcpErrors = $mcpProcess.StandardError.ReadToEndAsync()
+        if (-not $mcpProcess.WaitForExit(15000)) { throw 'AOT MCP bootstrap did not exit within 15 seconds.' }
+        $mcpJson = $mcpOutput.GetAwaiter().GetResult()
+        [IO.File]::WriteAllText((Join-Path $settingsDir 'mcp-bootstrap.stderr.log'), $mcpErrors.GetAwaiter().GetResult())
+        if ($mcpProcess.ExitCode -ne 0) { throw 'AOT MCP bootstrap failed; inspect mcp-bootstrap.stderr.log.' }
+        $mcpDescriptor = $mcpJson | ConvertFrom-Json
+        if ($mcpDescriptor.name -ne 'tlbx' -or $mcpDescriptor.transport -ne 'stdio' -or $mcpDescriptor.command -ne $exePath -or
+            $mcpDescriptor.args[0] -ne 'mcp' -or $mcpDescriptor.args[1] -ne '--stdio' -or $mcpDescriptor.args[2] -ne '--credentials-file' -or
+            $mcpDescriptor.startupTimeoutSeconds -ne 30 -or $mcpDescriptor.toolTimeoutSeconds -ne 660 -or $mcpJson.Contains($mcpToken)) {
+            throw 'AOT MCP bootstrap returned an invalid or secret-bearing descriptor.'
+        }
+        $expectedProfile = [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($mcpProject + "`n" + $mcpOrigin))).ToLowerInvariant()
+        $candidate = [string]$mcpDescriptor.args[-1]
+        if ((Split-Path $candidate -Leaf) -ne 'credentials.json' -or (Split-Path (Split-Path $candidate) -Leaf) -ne $expectedProfile) {
+            throw 'Unexpected AOT MCP credential path.'
+        }
+        $mcpCredentials = $candidate
+        $privateValues = Get-Content -LiteralPath $mcpCredentials -Raw | ConvertFrom-Json
+        if ($privateValues.MT_TOKEN -ne $mcpToken -or $privateValues.MT_BASE_URL -ne $mcpOrigin) { throw 'AOT MCP credential authority mismatch.' }
+        [IO.File]::WriteAllText((Join-Path $settingsDir 'mcp-bootstrap.json'), $mcpJson)
+        Write-Host '  mcp bootstrap -> vendor-neutral stdio JSON / private authentication' -ForegroundColor Green
+    } finally {
+        if ($mcpProcess) {
+            if (-not $mcpProcess.HasExited) { $mcpProcess.Kill($true); $mcpProcess.WaitForExit(3000) | Out-Null }
+            $mcpProcess.Dispose()
+        }
+        if ($mcpCredentials) {
+            Remove-Item -LiteralPath $mcpCredentials
+            Remove-Item -LiteralPath (Split-Path $mcpCredentials)
+        }
+    }
+
     # Exercise the real published worker command and embedded native closure.
     # Kill only a probe-owned worker, then require HTTP survival and a fresh worker.
     foreach ($attempt in 1..2) {
