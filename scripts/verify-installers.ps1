@@ -770,4 +770,12 @@ if ($IsWindows) {
     & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-windows-service.ps1")
     if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 service-installer contracts failed." }
 }
+if ($IsWindows) {
+    foreach ($fixture in @('transaction', 'input', 'environment', 'network', 'certificate')) {
+        $fixturePath = Join-Path $PSScriptRoot "test-installer-windows-$fixture.ps1"
+        & $fixturePath
+        & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixturePath
+        if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 $fixture installer contracts failed." }
+    }
+}
 Write-Host "Installer verification passed." -ForegroundColor Green
