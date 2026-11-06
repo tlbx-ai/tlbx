@@ -3,12 +3,13 @@ using System.Buffers.Binary;
 namespace Ai.Tlbx.MidTerm.Services.Connect;
 
 /// <summary>Bounded framing for complete HTTP and WebSocket envelopes over a DataChannel.</summary>
-internal sealed class ConnectFrames
+internal sealed class ConnectFrames(TimeProvider? timeProvider = null)
 {
     internal const int HeaderSize = 13;
     internal const int ChunkSize = 48 * 1024;
     internal const int MaximumMessageSize = 32 * 1024 * 1024;
     private const int MaximumBufferedSize = 64 * 1024 * 1024;
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly Dictionary<uint, Assembly> _messages = [];
     private int _buffered;
     private uint _nextId;
@@ -23,8 +24,8 @@ internal sealed class ConnectFrames
         var data = frame[HeaderSize..];
         if (total <= 0 || total > MaximumMessageSize || data.IsEmpty || offset > total - data.Length)
             throw new InvalidDataException("Invalid Connect frame length.");
-        var now = DateTimeOffset.UtcNow;
-        if (_messages.Values.Any(message => now - message.Created > TimeSpan.FromSeconds(30)))
+        var now = _timeProvider.GetUtcNow();
+        if (_messages.Values.Any(message => now - message.LastProgressAt > TimeSpan.FromSeconds(30)))
             throw new InvalidDataException("Connect message assembly timed out.");
         if (!_messages.TryGetValue(id, out var assembly))
         {
@@ -38,6 +39,7 @@ internal sealed class ConnectFrames
             throw new InvalidDataException("Out-of-order Connect fragment.");
         data.CopyTo(assembly.Bytes.AsSpan(offset));
         assembly.Offset += data.Length;
+        assembly.LastProgressAt = now;
         if (assembly.Offset != total) return null;
         _messages.Remove(id);
         _buffered -= total;
@@ -65,7 +67,7 @@ internal sealed class ConnectFrames
     private sealed class Assembly(byte[] bytes, DateTimeOffset created)
     {
         public byte[] Bytes { get; } = bytes;
-        public DateTimeOffset Created { get; } = created;
+        public DateTimeOffset LastProgressAt { get; set; } = created;
         public int Offset { get; set; }
     }
 }
