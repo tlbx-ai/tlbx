@@ -170,7 +170,7 @@ function Initialize-Log
     $script:UpdateLogFile = Join-Path $logDir "update.log"
 
     # Clear previous log
-    "" | Set-Content $script:UpdateLogFile -Force -ErrorAction SilentlyContinue
+    "" | Set-Content $script:UpdateLogFile -Encoding UTF8 -Force -ErrorAction SilentlyContinue
 
     $script:LogInitialized = $true
 
@@ -196,7 +196,7 @@ function Write-Log
     {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
         $line = "[$timestamp] [$Level] $Message"
-        Add-Content -Path $script:UpdateLogFile -Value $line -ErrorAction SilentlyContinue
+        Add-Content -Path $script:UpdateLogFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
     }
 }
 
@@ -448,7 +448,7 @@ function Get-CurrentInstallerScriptContent
 {
     if ($script:InstallerScriptPath -and (Test-Path $script:InstallerScriptPath))
     {
-        return Get-Content -Path $script:InstallerScriptPath -Raw
+        return Get-Content -Path $script:InstallerScriptPath -Raw -Encoding UTF8
     }
 
     if (-not [string]::IsNullOrWhiteSpace($script:InstallerScriptDefinition) -and
@@ -534,7 +534,7 @@ function Import-ElevatedReplayFile
         throw "Elevated installer replay file not found: $Path"
     }
 
-    $replay = Get-Content -Path $Path -Raw | ConvertFrom-Json
+    $replay = Get-Content -Path $Path -Raw -Encoding UTF8 | ConvertFrom-Json
     $script:RunAsUser = [string]$replay.runAsUser
     $script:RunAsUserSid = [string]$replay.runAsUserSid
     $script:PasswordHash = if ($null -ne $replay.passwordHash) { [string]$replay.passwordHash } else { $null }
@@ -606,7 +606,7 @@ function Assert-NoCrossModeConflict
         Write-Host "  Cannot install as a system service while a user install still exists." -ForegroundColor Red
         Write-Host "  Uninstall the user-mode copy first, then rerun the installer." -ForegroundColor Gray
         Write-Host "  User traces: $TLBX_USER_INSTALL_DIR, $TLBX_USER_SETTINGS_DIR, or their legacy MidTerm equivalents" -ForegroundColor Gray
-        exit 1
+        throw "Installation mode conflicts with an existing tlbx installation."
     }
 
     if (-not $AsService -and (Test-ExistingServiceInstall))
@@ -615,7 +615,7 @@ function Assert-NoCrossModeConflict
         Write-Host "  Cannot install in user mode while a system service install still exists." -ForegroundColor Red
         Write-Host "  Uninstall the service-mode copy first, then rerun the installer." -ForegroundColor Gray
         Write-Host "  Service traces: $TLBX_SERVICE_INSTALL_DIR, $TLBX_SERVICE_SETTINGS_DIR, or their legacy MidTerm equivalents" -ForegroundColor Gray
-        exit 1
+        throw "Installation mode conflicts with an existing tlbx installation."
     }
 }
 
@@ -1637,24 +1637,82 @@ function Assert-SafeReleaseArchive
     }
 }
 
+function Get-InstallExecutablePaths
+{
+    param([Parameter(Mandatory=$true)][string]$InstallDir)
+
+    foreach ($name in @("mt.exe", "mthost.exe", "mtagenthost.exe", "mt-host.exe"))
+    {
+        [IO.Path]::GetFullPath((Join-Path $InstallDir $name))
+    }
+}
+
+function Get-InstallOwnedProcesses
+{
+    param([Parameter(Mandatory=$true)][string]$InstallDir)
+
+    $paths = @(Get-InstallExecutablePaths -InstallDir $InstallDir)
+    foreach ($candidate in @(Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue))
+    {
+        try
+        {
+            if ($candidate.Path -and [IO.Path]::GetFullPath($candidate.Path) -in $paths)
+            {
+                $candidate
+            }
+        }
+        catch { } # Never stop a process whose executable cannot be identified.
+    }
+}
+
+function Assert-InstallerCanStopTarget
+{
+    param(
+        [Parameter(Mandatory=$true)][string]$InstallDir,
+        [string]$TargetServiceName = ""
+    )
+
+    $paths = @(Get-InstallExecutablePaths -InstallDir $InstallDir)
+    $targetServiceProcessId = 0
+    if ($TargetServiceName)
+    {
+        $escapedName = $TargetServiceName.Replace("'", "''")
+        $serviceInfo = Get-CimInstance -ClassName Win32_Service -Filter "Name='$escapedName'" -ErrorAction Stop
+        if ($serviceInfo) { $targetServiceProcessId = [int]$serviceInfo.ProcessId }
+    }
+    $ancestorId = $PID
+    $seen = @{}
+    while ($ancestorId -gt 0 -and -not $seen.ContainsKey($ancestorId))
+    {
+        $seen[$ancestorId] = $true
+        $ancestor = Get-CimInstance -ClassName Win32_Process -Filter "ProcessId=$ancestorId" -ErrorAction Stop
+        if (-not $ancestor) { break }
+        $ownedPath = $ancestor.ExecutablePath -and [IO.Path]::GetFullPath($ancestor.ExecutablePath) -in $paths
+        if ($ownedPath -or ($targetServiceProcessId -gt 0 -and $ancestorId -eq $targetServiceProcessId))
+        {
+            throw "This terminal is hosted by the tlbx installation being replaced. Run the installer from an external Windows Terminal or PowerShell window; stopping this installation would terminate the installer."
+        }
+        $ancestorId = [int]$ancestor.ParentProcessId
+    }
+}
+
 function Stop-ExistingInstallProcesses
 {
+    param([Parameter(Mandatory=$true)][string]$InstallDir)
+
+    Assert-InstallerCanStopTarget -InstallDir $InstallDir -TargetServiceName $ServiceName
     $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     $oldHostService = Get-Service -Name $OldHostServiceName -ErrorAction SilentlyContinue
 
-    if ($existingService)
+    if ($existingService -or $oldHostService)
     {
-        Write-Host "Stopping existing service..." -ForegroundColor Gray
-        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-        Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue |
-            Stop-Process -Force -ErrorAction SilentlyContinue
-
+        Write-Host "Stopping existing installation..." -ForegroundColor Gray
+        if ($existingService) { Stop-Service -Name $ServiceName -Force -ErrorAction Stop }
+        if ($oldHostService) { Stop-Service -Name $OldHostServiceName -Force -ErrorAction Stop }
+        Get-InstallOwnedProcesses -InstallDir $InstallDir | Stop-Process -Force -ErrorAction SilentlyContinue
         for ($waited = 0; $waited -lt 10; $waited++)
         {
-            if (-not (Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue))
-            {
-                break
-            }
+            if (-not (Get-InstallOwnedProcesses -InstallDir $InstallDir)) { break }
             Start-Sleep -Milliseconds 500
         }
     }
@@ -1662,9 +1720,6 @@ function Stop-ExistingInstallProcesses
     if ($oldHostService)
     {
         Write-Host "Migrating from old two-service architecture..." -ForegroundColor Yellow
-        Stop-Service -Name $OldHostServiceName -Force -ErrorAction SilentlyContinue
-        Get-Process -Name "mt-host" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-        Start-Sleep -Seconds 1
         sc.exe delete $OldHostServiceName | Out-Null
     }
 }
@@ -1990,6 +2045,34 @@ function Start-TlbxUserProcess
         -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
 }
 
+function Get-InstallerServiceSnapshot
+{
+    param([Parameter(Mandatory=$true)][string]$Name)
+
+    $escapedName = $Name.Replace("'", "''")
+    $serviceInfo = Get-CimInstance -ClassName Win32_Service -Filter "Name='$escapedName'" -ErrorAction Stop
+    if (-not $serviceInfo) { throw "Existing service '$Name' could not be read before installation." }
+    return @{
+        Name = $Name
+        ServiceInfo = $serviceInfo
+        WasRunning = $serviceInfo.State -eq "Running"
+        Arguments = @{
+            PathName = $serviceInfo.PathName
+            DisplayName = $serviceInfo.DisplayName
+            StartMode = if ($serviceInfo.StartMode -eq "Auto") { "Automatic" } else { $serviceInfo.StartMode }
+        }
+    }
+}
+
+function Restore-InstallerServiceSnapshot
+{
+    param([Parameter(Mandatory=$true)]$Snapshot)
+
+    $restored = Invoke-CimMethod -InputObject $Snapshot.ServiceInfo -MethodName Change -Arguments $Snapshot.Arguments -ErrorAction Stop
+    if ($restored.ReturnValue -ne 0) { throw "Could not restore Windows service '$($Snapshot.Name)' configuration (SCM result $($restored.ReturnValue))." }
+    if ($Snapshot.WasRunning) { Start-Service -Name $Snapshot.Name -ErrorAction Stop }
+}
+
 function Install-Tlbx
 {
     param(
@@ -2009,6 +2092,7 @@ function Install-Tlbx
     $binarySwapCompleted = $false
     $installationCompleted = $false
     $serviceExistedBefore = $false
+    $serviceSnapshot = $null
     $startedUserProcess = $null
     trap
     {
@@ -2029,7 +2113,7 @@ function Install-Tlbx
                 Restore-PreviousBinarySet -InstallDir $installDir -BackupRoot $tempRoot
                 if ($AsService -and $serviceExistedBefore)
                 {
-                    Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+                    Restore-InstallerServiceSnapshot -Snapshot $serviceSnapshot
                 }
                 elseif ($AsService -and (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue))
                 {
@@ -2067,6 +2151,9 @@ function Install-Tlbx
         $installDir = $WIN_USER_INSTALL_DIR
     }
 
+    $targetService = if ($AsService) { $ServiceName } else { "" }
+    Assert-InstallerCanStopTarget -InstallDir $installDir -TargetServiceName $targetService
+
     # Download and extract
     $tempRoot = Join-Path $env:TEMP ("tlbx-install-" + [Guid]::NewGuid().ToString("N"))
     $tempZip = Join-Path $tempRoot "release.zip"
@@ -2095,7 +2182,8 @@ function Install-Tlbx
     if ($AsService)
     {
         $serviceExistedBefore = [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
-        Stop-ExistingInstallProcesses
+        if ($serviceExistedBefore) { $serviceSnapshot = Get-InstallerServiceSnapshot -Name $ServiceName }
+        Stop-ExistingInstallProcesses -InstallDir $installDir
     }
     if (-not (Test-Path $installDir))
     {
@@ -2114,11 +2202,13 @@ function Install-Tlbx
     }
     catch
     {
-        if ($AsService -and (Get-Service -Name $ServiceName -ErrorAction SilentlyContinue))
+        $swapError = $_
+        if ($AsService -and $serviceSnapshot)
         {
-            Start-Service -Name $ServiceName -ErrorAction SilentlyContinue
+            try { Restore-InstallerServiceSnapshot -Snapshot $serviceSnapshot }
+            catch { Write-Log "Service configuration rollback failed: $_" "ERROR" }
         }
-        throw
+        throw $swapError
     }
 
     Write-Log "=== PHASE 3: Password configuration ==="
@@ -2315,30 +2405,6 @@ function Install-AsService
 
     $webBinaryPath = Join-Path $InstallDir $WebBinaryName
 
-    function Wait-ServiceDeleted
-    {
-        param(
-            [string]$Name,
-            [int]$TimeoutSeconds = 20
-        )
-
-        $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
-        do
-        {
-            $service = Get-Service -Name $Name -ErrorAction SilentlyContinue
-            if (-not $service)
-            {
-                return
-            }
-
-            Start-Sleep -Milliseconds 250
-        } while ((Get-Date) -lt $deadline)
-
-        $status = (Get-Service -Name $Name -ErrorAction SilentlyContinue).Status
-        $statusText = if ($status) { " (status: $status)" } else { "" }
-        throw "Service '$Name' is still present after delete request$statusText."
-    }
-
     function Get-TlbxServiceDiagnostics
     {
         $details = New-Object System.Collections.Generic.List[string]
@@ -2401,25 +2467,20 @@ function Install-AsService
         return $details
     }
 
-    # Remove existing service if present
+    Assert-InstallerCanStopTarget -InstallDir $InstallDir -TargetServiceName $ServiceName
+
+    # Keep an existing SCM entry intact so failed configuration can restart
+    # the previous binary set during rollback.
     $existingService = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
     if ($existingService)
     {
-        Write-Host "Removing existing service..." -ForegroundColor Gray
-        Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
-        Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-
-        # Wait for processes to exit
-        $maxWait = 10
-        for ($i = 0; $i -lt $maxWait; $i++)
+        Stop-Service -Name $ServiceName -Force -ErrorAction Stop
+        Get-InstallOwnedProcesses -InstallDir $InstallDir | Stop-Process -Force -ErrorAction SilentlyContinue
+        for ($i = 0; $i -lt 10; $i++)
         {
-            $procs = Get-Process -Name "mt-host", "mthost", "mtagenthost", "mt" -ErrorAction SilentlyContinue
-            if (-not $procs) { break }
+            if (-not (Get-InstallOwnedProcesses -InstallDir $InstallDir)) { break }
             Start-Sleep -Milliseconds 500
         }
-
-        sc.exe delete $ServiceName | Out-Null
-        Wait-ServiceDeleted -Name $ServiceName
     }
 
     # Convert bind address for command line
@@ -2430,16 +2491,26 @@ function Install-AsService
     Write-Host "Creating $DisplayName service..." -ForegroundColor Gray
     $binPath = "`"$webBinaryPath`" --service-mode --settings-dir `"$WIN_SERVICE_SETTINGS_DIR`" --service-name `"$ServiceName`" --port $Port --bind $bindArg"
     Write-Log "Service binPath: $binPath"
-    $scCreateOutput = sc.exe create $ServiceName binPath= $binPath start= auto DisplayName= "$DisplayName" 2>&1
-    Write-Log "sc.exe create output: $scCreateOutput"
-    if ($LASTEXITCODE -ne 0)
+    # Use typed service APIs: native argument reparsing in Windows PowerShell
+    # otherwise loses the embedded quotes in this logical SCM command line.
+    if ($existingService)
     {
-        $message = "Failed to create Windows service (sc.exe exit code $LASTEXITCODE): $scCreateOutput"
-        Write-Log $message "ERROR"
-        Write-Host "  $message" -ForegroundColor Red
-        throw $message
+        $escapedName = $ServiceName.Replace("'", "''")
+        $serviceInfo = Get-CimInstance -ClassName Win32_Service -Filter "Name='$escapedName'" -ErrorAction Stop
+        if (-not $serviceInfo) { throw "Existing service '$ServiceName' could not be read for configuration." }
+        $changed = Invoke-CimMethod -InputObject $serviceInfo -MethodName Change -Arguments @{
+            PathName = $binPath
+            DisplayName = $DisplayName
+            StartMode = "Automatic"
+        } -ErrorAction Stop
+        if ($changed.ReturnValue -ne 0) { throw "Could not configure Windows service '$ServiceName' (SCM result $($changed.ReturnValue))." }
+    }
+    else
+    {
+        New-Service -Name $ServiceName -BinaryPathName $binPath -DisplayName $DisplayName -StartupType Automatic -ErrorAction Stop | Out-Null
     }
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not configure service description." }
     sc.exe failure $ServiceName reset= 86400 actions= restart/1000/restart/5000/restart/30000 | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Could not configure service crash recovery." }
     sc.exe failureflag $ServiceName 1 | Out-Null
@@ -2587,26 +2658,156 @@ else
     Set-Content -Path $uninstallScript -Value $content
 }
 
+function Save-ElevatedInstallerFailureLog
+{
+    param([Parameter(Mandatory=$true)][string]$LogPath)
+
+    $logDirectory = Join-Path $env:LOCALAPPDATA "tlbx\logs"
+    New-Item -ItemType Directory -Path $logDirectory -Force -ErrorAction Stop | Out-Null
+    $savedPath = Join-Path $logDirectory ("install-elevated-failure-" + [Guid]::NewGuid().ToString("N") + ".log")
+    Copy-Item -LiteralPath $LogPath -Destination $savedPath -ErrorAction Stop
+    return $savedPath
+}
+
+function Invoke-ElevatedInstaller
+{
+    param(
+        [Parameter(Mandatory=$true)][string]$PowerShellPath,
+        [Parameter(Mandatory=$true)][string[]]$Arguments,
+        [Parameter(Mandatory=$true)][string]$HandoffDirectory,
+        [Parameter(Mandatory=$true)][string]$LogPath
+    )
+
+    $HandoffDirectory = [IO.Path]::GetFullPath($HandoffDirectory)
+    $LogPath = [IO.Path]::GetFullPath($LogPath)
+    $handoffPrefix = $HandoffDirectory.TrimEnd('\') + '\'
+    if (-not $LogPath.StartsWith($handoffPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+        ((Get-Item -LiteralPath $HandoffDirectory -Force -ErrorAction Stop).Attributes -band [IO.FileAttributes]::ReparsePoint))
+    {
+        throw "Invalid elevated installer handoff directory or log path."
+    }
+
+    # Only Start-Process errors mean UAC/launch failed. A started installer has
+    # its own failure, exit status and diagnostics; never relabel it as UAC.
+    try
+    {
+        $child = Start-Process -FilePath $PowerShellPath -ArgumentList (Join-ProcessArguments -Arguments $Arguments) -Verb RunAs -WindowStyle Hidden -PassThru -ErrorAction Stop
+    }
+    catch
+    {
+        $launchFailure = "Could not start the administrator installer: $($_.Exception.Message). Run from an external administrator PowerShell window, or choose a user install."
+        $savedLog = $LogPath
+        try
+        {
+            Add-Content -LiteralPath $LogPath -Value $launchFailure -Encoding UTF8 -ErrorAction Stop
+            $savedLog = Save-ElevatedInstallerFailureLog -LogPath $LogPath
+        }
+        catch { } # Preserve the private original log if copying diagnostics failed.
+        Remove-Item -LiteralPath (Join-Path $HandoffDirectory "mt-install-replay.json") -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath (Join-Path $HandoffDirectory "mt-install-elevated.ps1") -Force -ErrorAction SilentlyContinue
+        if ($savedLog -ne $LogPath)
+        {
+            Remove-Item -LiteralPath $HandoffDirectory -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Write-Host "  Installer diagnostics: $savedLog" -ForegroundColor Yellow
+        throw "$launchFailure Installer diagnostics: $savedLog"
+    }
+
+    $completed = $false
+    $savedLog = $null
+    try
+    {
+        # Keep the real process handle before polling: Windows PowerShell 5.1
+        # can otherwise lose ExitCode when a fast child has already exited.
+        $null = $child.Handle
+        $linesRead = 0
+        do
+        {
+            $lines = @(Get-Content -LiteralPath $LogPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+            if ($lines.Count -gt $linesRead)
+            {
+                $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+                $linesRead = $lines.Count
+            }
+            if ($child.HasExited) { break }
+            Start-Sleep -Milliseconds 200
+        } while ($true)
+        $child.WaitForExit()
+        # Drain the last lines after the child has closed its log handle.
+        $lines = @(Get-Content -LiteralPath $LogPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+        if ($lines.Count -gt $linesRead)
+        {
+            $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
+        }
+        if ($child.ExitCode -ne 0)
+        {
+            throw "Elevated installation failed (exit code $($child.ExitCode))."
+        }
+        $completed = $true
+    }
+    catch
+    {
+        $failure = $_
+        try { $savedLog = Save-ElevatedInstallerFailureLog -LogPath $LogPath }
+        catch { $savedLog = $LogPath }
+        Write-Host "  Installer diagnostics: $savedLog" -ForegroundColor Yellow
+        throw "$($failure.Exception.Message) Installer diagnostics: $savedLog"
+    }
+    finally
+    {
+        # Never retain the password-hash replay file after the child is done.
+        if ($child.HasExited)
+        {
+            Remove-Item -LiteralPath (Join-Path $HandoffDirectory "mt-install-replay.json") -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath (Join-Path $HandoffDirectory "mt-install-elevated.ps1") -Force -ErrorAction SilentlyContinue
+            if ($completed -or ($savedLog -and $savedLog -ne $LogPath))
+            {
+                Remove-Item -LiteralPath $HandoffDirectory -Recurse -Force -ErrorAction SilentlyContinue
+            }
+        }
+        $child.Dispose()
+    }
+}
+
 # Main
 
 # If we're being called with ServiceMode flag, we're the elevated process (runs hidden)
 if ($ServiceMode)
 {
-    if ($ReplayFile)
+    try
     {
-        Import-ElevatedReplayFile -Path $ReplayFile
-    }
+        if ($ReplayFile)
+        {
+            Import-ElevatedReplayFile -Path $ReplayFile
+        }
 
-    Select-InstallIdentity -AsService $true
+        Select-InstallIdentity -AsService $true
 
-    # If log file specified, redirect all output there for streaming to original terminal
-    if ($LogFile)
-    {
-        # Clear log file
-        "" | Set-Content $LogFile -Force
+        # If log file specified, redirect all output there for streaming to original terminal
+        if ($LogFile)
+        {
+            # Clear log file
+            "" | Set-Content $LogFile -Encoding UTF8 -Force
 
-        # Run the install with all output captured to file
-        & {
+            # Run the install with all output captured to file
+            & {
+                Write-Host ""
+                Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
+                Write-Host ""
+                $script:release = Get-LatestRelease -DevChannel $Dev
+                $version = $script:release.tag_name -replace "^v", ""
+                $channelLabel = Get-ReleaseChannel -Release $script:release
+                Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
+                Write-Host ""
+                Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
+            } *>&1 | ForEach-Object {
+                $line = $_.ToString()
+                Write-Host $_
+                Add-Content -Path $LogFile -Value $line -Encoding UTF8
+            }
+        }
+        else
+        {
             Write-Host ""
             Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
             Write-Host ""
@@ -2616,23 +2817,15 @@ if ($ServiceMode)
             Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
             Write-Host ""
             Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
-        } *>&1 | ForEach-Object {
-            $line = $_.ToString()
-            Write-Host $_
-            Add-Content -Path $LogFile -Value $line
         }
     }
-    else
+    catch
     {
-        Write-Host ""
-        Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
-        Write-Host ""
-        $script:release = Get-LatestRelease -DevChannel $Dev
-        $version = $script:release.tag_name -replace "^v", ""
-        $channelLabel = Get-ReleaseChannel -Release $script:release
-        Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
-        Write-Host ""
-        Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
+        if ($LogFile)
+        {
+            Add-Content -LiteralPath $LogFile -Value ("ERROR: " + $_.ToString()) -Encoding UTF8 -ErrorAction SilentlyContinue
+        }
+        throw
     }
     return
 }
@@ -2749,6 +2942,8 @@ if ($asService)
     $trustCert = ($trustChoice -ne "n" -and $trustChoice -ne "N")
     $configureFirewall = Prompt-FirewallConfig -BindAddress $bindAddress -Port $port
 
+    Assert-InstallerCanStopTarget -InstallDir $WIN_SERVICE_INSTALL_DIR -TargetServiceName $ServiceName
+
     # Check if we need to elevate
     if (-not (Test-Administrator))
     {
@@ -2767,7 +2962,7 @@ if ($asService)
         $tempLogFile = Join-Path $handoffDir "mt-install-log.txt"
         $replayFile = Join-Path $handoffDir "mt-install-replay.json"
 
-        Set-Content -Path $tempScript -Value (Get-CurrentInstallerScriptContent) -Encoding UTF8 -Force
+        [IO.File]::WriteAllText($tempScript, (Get-CurrentInstallerScriptContent), [Text.UTF8Encoding]::new($true))
         "" | Set-Content -Path $tempLogFile -Encoding UTF8 -Force
 
         $replay = @{
@@ -2791,73 +2986,8 @@ if ($asService)
             "-LogFile", $tempLogFile
         )
 
-        try
-        {
-            $elevatedProcess = Start-Process $psExe -ArgumentList (Join-ProcessArguments -Arguments $runAsArguments) -Verb RunAs -WindowStyle Minimized -PassThru
-            $elevated = $true
+        Invoke-ElevatedInstaller -PowerShellPath $psExe -Arguments $runAsArguments -HandoffDirectory $handoffDir -LogPath $tempLogFile
 
-            # Stream output from log file to original terminal
-            $linesRead = 0
-            while (-not $elevatedProcess.HasExited)
-            {
-                Start-Sleep -Milliseconds 200
-                if (Test-Path $tempLogFile)
-                {
-                    $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
-                    if ($lines -and $lines.Count -gt $linesRead)
-                    {
-                        $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
-                        $linesRead = $lines.Count
-                    }
-                }
-            }
-
-            # Final read to catch any remaining output
-            Start-Sleep -Milliseconds 300
-            if (Test-Path $tempLogFile)
-            {
-                $lines = Get-Content $tempLogFile -ErrorAction SilentlyContinue
-                if ($lines -and $lines.Count -gt $linesRead)
-                {
-                    $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
-                    $linesRead = $lines.Count
-                }
-            }
-
-            $elevatedProcess.WaitForExit()
-            if ($elevatedProcess.ExitCode -ne 0)
-            {
-                Write-Host ""
-                Write-Host "  Elevated installer exited with code $($elevatedProcess.ExitCode)." -ForegroundColor Red
-                Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
-                exit $elevatedProcess.ExitCode
-            }
-
-            Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        catch
-        {
-            Write-Host ""
-            Write-Host "  ERROR: Could not obtain administrator privileges." -ForegroundColor Red
-            Write-Host ""
-            Write-Host "  This can happen when:" -ForegroundColor Yellow
-            Write-Host "    - UAC is disabled and you're not an administrator" -ForegroundColor Gray
-            Write-Host "    - Running in a non-interactive session (SSH, container)" -ForegroundColor Gray
-            Write-Host "    - The UAC prompt was cancelled" -ForegroundColor Gray
-            Write-Host ""
-            Write-Host "  Options:" -ForegroundColor White
-            Write-Host "    1. Run this script from an elevated (Admin) terminal" -ForegroundColor White
-            Write-Host "    2. Re-run the installer and choose [2] (user install, no admin needed)" -ForegroundColor White
-            Write-Host ""
-            if ($handoffDir)
-            {
-                Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
-            }
-            exit 1
-        }
-
-        # Cleanup
-        Remove-Item $handoffDir -Recurse -Force -ErrorAction SilentlyContinue
         return
     }
 
