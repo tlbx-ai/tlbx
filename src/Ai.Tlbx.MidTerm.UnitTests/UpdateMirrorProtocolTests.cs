@@ -127,7 +127,7 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         Assert.True(update!.Available);
         Assert.Null(update.CheckError);
         Assert.Equal(expected, update.LatestVersion);
-        Assert.Equal(expected.Contains('-') ? Download : "https://builds.tlbx.ai/main/10.26.0/win-x64/mt-win-x64.zip", update.DownloadUrl);
+        Assert.Equal(expected.Contains("-", StringComparison.Ordinal) ? Download : "https://builds.tlbx.ai/main/10.26.0/win-x64/mt-win-x64.zip", update.DownloadUrl);
         Assert.Equal(channel == "dev", handler.Paths.Contains("/v1/channels/dev/releases.json", StringComparer.Ordinal));
         Assert.Contains("/v1/channels/main/releases.json", handler.Paths, StringComparer.Ordinal);
         Assert.Equal(channel == "dev" ? 3 : 2, handler.Paths.Count);
