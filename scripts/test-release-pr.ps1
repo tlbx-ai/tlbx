@@ -14,6 +14,15 @@ function Assert-Rejected([scriptblock]$Action, [string]$Message) {
     try { & $Action | Out-Null } catch { $failed = $true }
     Assert-Test $failed $Message
 }
+$promotionSource = Get-Content (Join-Path $PSScriptRoot 'promote.ps1') -Raw
+$promotionTokens = $null; $promotionErrors = $null
+$promotionAst = [Management.Automation.Language.Parser]::ParseInput($promotionSource, [ref]$promotionTokens, [ref]$promotionErrors)
+if ($promotionErrors.Count) { throw ($promotionErrors.Message -join '; ') }
+$resolveVersion = $promotionAst.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Resolve-PromotionVersion' }, $true)
+Invoke-Expression $resolveVersion.Extent.Text
+Assert-Test ((Resolve-PromotionVersion '10.25.35-dev' '') -eq '10.25.35') 'Default promotion version changed.'
+Assert-Test ((Resolve-PromotionVersion '10.25.35-dev' '10.26.0') -eq '10.26.0') 'Explicit minor promotion version was ignored.'
+Assert-Rejected { Resolve-PromotionVersion '10.25.35-dev' '10.25.34' } 'Promotion accepted a version below its candidate.'
 $partialRelease = @{isDraft=$false; assets=@(
     @{name='mt-win-x64.zip'; size=100}, @{name='mt-win-x64.spdx.json'; size=100}
 )}

@@ -15,6 +15,10 @@
     Optional. A concise title for this release (one line, no version number).
     If omitted, uses the most recent dev release title.
 
+.PARAMETER Version
+    Optional stable target version, for example 10.26.0 for a minor release.
+    It must not be lower than the accepted dev candidate's base version.
+
 .PARAMETER TestCategories
     REQUIRED: assets, frontend, server, runtime, installers, dependencies, build; or all alone.
     Stable releases require all. Mobile apps are verified and released independently.
@@ -46,6 +50,8 @@ param(
     [string[]]$TestCategories,
 
     [string]$ReleaseTitle,
+    [ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$')]
+    [string]$Version,
     [string[]]$ReleaseNotes,
     [switch]$PrepareOnly,
     [switch]$Reprepare
@@ -62,6 +68,7 @@ $currentBranch = Invoke-ReleaseGit branch --show-current
 $pending = Get-ReleaseState $currentBranch
 if ($pending) {
     if ($pending.Base -ne 'main') { throw 'This branch has a dev release in progress; finish and retire it first.' }
+    if ($Version -and $Version -ne $pending.Version) { throw 'The requested version differs from the prepared promotion; resume its exact version.' }
     if (-not $Reprepare) { Complete-TlbxRelease $pending -PrepareOnly:$PrepareOnly; return }
     Reset-ReleasePreparation $pending
 }
@@ -181,8 +188,14 @@ if ($devVersion -notmatch '-dev$') {
     throw 'Release preparation failed; see details above.'
 }
 
-# Calculate stable version
-$stableVersion = $devVersion -replace '-dev$', ''
+function Resolve-PromotionVersion {
+    param([string]$DevVersion, [string]$RequestedVersion)
+    $baseVersion = $DevVersion -replace '-dev$', ''
+    $targetVersion = if ($RequestedVersion) { $RequestedVersion } else { $baseVersion }
+    if ([version]$targetVersion -lt [version]$baseVersion) { throw 'The stable target cannot be lower than the accepted dev candidate.' }
+    return $targetVersion
+}
+$stableVersion = Resolve-PromotionVersion -DevVersion $devVersion -RequestedVersion $Version
 
 # A tag can exist after failed release CI while its release is still a draft.
 # Only an actually published stable release marks changelog entries as delivered.
@@ -191,6 +204,8 @@ $publishedReleases = @($releasePages | ConvertFrom-Json | ForEach-Object { $_ })
 $lastStableTag = (Select-AdvisoryBaselineRelease $publishedReleases $false).tag_name
 Invoke-ReleaseGit fetch origin tag $lastStableTag --no-tags | Out-Host
 $lastStableVersion = [version]($lastStableTag -replace '^v', '')
+if ([version]$stableVersion -le $lastStableVersion) { throw 'The stable target must be newer than the last published stable release.' }
+if (git tag --list "v$stableVersion") { throw "Tag v$stableVersion already exists. Resume its prepared release instead of reusing a version." }
 
 Write-Host ""
 Write-Host "  tlbx Promotion" -ForegroundColor Cyan
