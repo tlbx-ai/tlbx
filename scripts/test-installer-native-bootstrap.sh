@@ -33,7 +33,14 @@ if [ "${CI:-}" = true ] && [ -n "${TLBX_BOOTSTRAP_VERSION:-}" ]; then
 else
     get_latest_release
 fi
-download_to_file "$ASSET_URL" "$temp_root/release.tar.gz" 'native installer bootstrap'
+if [ "${CI:-}" = true ] && [ -n "${TLBX_BOOTSTRAP_VERSION:-}" ]; then
+    # Only this authenticated CI fixture starts at GitHub's HTTPS redirector.
+    # Production mirror downloads continue to reject all redirects.
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+        --retry 3 --connect-timeout 15 --max-time 600 "$ASSET_URL" -o "$temp_root/release.tar.gz"
+else
+    download_to_file "$ASSET_URL" "$temp_root/release.tar.gz" 'native installer bootstrap'
+fi
 assert_build_archive "$temp_root/release.tar.gz"
 validate_archive_members "$temp_root/release.tar.gz"
 tar -xzf "$temp_root/release.tar.gz" -C "$temp_root/extracted"
