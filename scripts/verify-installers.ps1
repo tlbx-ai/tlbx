@@ -765,4 +765,9 @@ if ($IsWindows) {
     & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-first-run.ps1")
     if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 first-install contracts failed." }
 }
+if ($IsWindows) {
+    & (Join-Path $PSScriptRoot "test-installer-windows-service.ps1")
+    & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-windows-service.ps1")
+    if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 service-installer contracts failed." }
+}
 Write-Host "Installer verification passed." -ForegroundColor Green
