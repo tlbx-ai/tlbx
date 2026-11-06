@@ -24,6 +24,7 @@ if ($CallerCase) {
     New-Item -ItemType Directory -Path $script:FixtureRoot -Force | Out-Null
     $env:LOCALAPPDATA = Join-Path $script:FixtureRoot 'local app data'
     $script:FixtureCase = $CallerCase
+    $script:FixturePasswordHash = '$PBKDF2$600000$' + [Convert]::ToBase64String((New-Object byte[] 32)) + '$' + [Convert]::ToBase64String((New-Object byte[] 32))
     $script:UnicodeDiagnostic = 'Gr' + [char]0x00FC + [char]0x00DF + 'e ' + [char]0x03A9
     # Execute the actual IEX main flow. Only interactive/network/OS boundaries
     # are replaced; the elevation orchestration and failure handlers stay real.
@@ -35,7 +36,7 @@ if ($CallerCase) {
         'Select-InstallIdentity' = '$script:WIN_SERVICE_INSTALL_DIR=Join-Path $script:FixtureRoot "binary path"; $script:WIN_SERVICE_SETTINGS_DIR=Join-Path $script:FixtureRoot "settings path"'
         'Assert-NoCrossModeConflict' = ''
         'Test-ExistingPassword' = 'return $false'
-        'Prompt-Password' = 'return "fixture-hash-only"'
+        'Prompt-Password' = 'return $script:FixturePasswordHash'
         'Prompt-NetworkConfig' = 'return @{Port=44444;BindAddress="localhost"}'
         'Prompt-FirewallConfig' = 'return $false'
         'Test-Administrator' = 'return ($script:FixtureCase -eq "service-create")'
@@ -62,7 +63,7 @@ if ($CallerCase) {
         # Run a genuine bounded failed child without requesting elevation. This
         # preserves Windows PowerShell's real Process/ExitCode behavior.
         $replayPath = (Join-Path $handoff 'mt-install-replay.json').Replace("'","''")
-        $command = (Get-InstallerDefinition 'Import-ElevatedReplayFile') + "`nImport-ElevatedReplayFile -Path '$replayPath';" + 'if($script:RunAsUser -cne ("fixture"+[char]0x00E4+[char]0x03A9)){throw "Unicode replay was changed"};[Threading.Thread]::Sleep(200);exit 37'
+        $command = (Get-InstallerDefinition 'Import-ElevatedReplayFile') + (Get-InstallerDefinition 'Normalize-InstallerBindAddress') + (Get-InstallerDefinition 'Assert-InstallerOptions') + "`nImport-ElevatedReplayFile -Path '$replayPath';" + 'if($script:RunAsUser -cne ("fixture"+[char]0x00E4+[char]0x03A9)){throw "Unicode replay was changed"};[Threading.Thread]::Sleep(200);exit 37'
         $encoded = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
         return Microsoft.PowerShell.Management\Start-Process -FilePath (Get-WindowsPowerShellPath) -ArgumentList "-NoProfile -NonInteractive -EncodedCommand $encoded" -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $script:FixtureRoot 'child.stdout.log') -RedirectStandardError (Join-Path $script:FixtureRoot 'child.stderr.log')
     }
@@ -85,7 +86,7 @@ if ($CallerCase) {
 }
 if (-not $ServiceSmoke) {
     & {
-        foreach ($name in @('Install-AsService','Create-UninstallScript','Write-Log','Get-InstallExecutablePaths','Assert-InstallerCanStopTarget','Get-InstallOwnedProcesses','Stop-ExistingInstallProcesses')) { Invoke-Expression (Get-InstallerDefinition $name) }
+        foreach ($name in @('Install-AsService','Normalize-InstallerBindAddress','Create-UninstallScript','Write-Log','Get-InstallExecutablePaths','Assert-InstallerCanStopTarget','Get-InstallOwnedProcesses','Stop-ExistingInstallProcesses')) { Invoke-Expression (Get-InstallerDefinition $name) }
         $InstallDir = Join-Path $EvidenceDirectory 'binary directory with spaces'
         $WIN_SERVICE_SETTINGS_DIR = Join-Path $EvidenceDirectory 'settings directory with spaces'
         New-Item -ItemType Directory -Path $InstallDir,$WIN_SERVICE_SETTINGS_DIR -Force | Out-Null
@@ -140,10 +141,12 @@ if (-not $ServiceSmoke) {
         Write-Host 'PASS: exact typed SCM arguments, process-path boundary, self-host/PID protection and failed in-place Change.'
     }
     & {
-        foreach ($name in @('Install-Tlbx','Install-AsService','Get-InstallerServiceSnapshot','Restore-InstallerServiceSnapshot','Initialize-Log','Write-Log')) { Invoke-Expression (Get-InstallerDefinition $name) }
+        foreach ($name in @('Install-Tlbx','Install-AsService','Normalize-InstallerBindAddress','Get-InstallerServiceSnapshot','Restore-InstallerServiceSnapshot','Get-InstallerSettingsSnapshot','Restore-InstallerSettingsSnapshot','Initialize-Log','Write-Log')) { Invoke-Expression (Get-InstallerDefinition $name) }
         $WIN_SERVICE_INSTALL_DIR = Join-Path $EvidenceDirectory 'rollback binary path'
         $WIN_SERVICE_SETTINGS_DIR = Join-Path $EvidenceDirectory 'rollback settings path'
         $WebBinaryName = 'mt.exe'; $ServiceName = 'fixture-rollback'; $DisplayName = 'New fixture display'
+        $WIN_SECRETS_FILENAME = 'secrets.bin'; $CertificateFileName = 'tlbx.pem'; $CertificateKeyId = 'tlbx'
+        $script:InstallerTempRoot = [IO.Path]::GetTempPath()
         $script:release = @{tag_name='v10.25.33';prerelease=$false}
         $oldPath = '"{0}" --service-mode --settings-dir "{1}" --port 2000 --bind 127.0.0.1' -f (Join-Path $WIN_SERVICE_INSTALL_DIR 'mt.exe'), $WIN_SERVICE_SETTINGS_DIR
         function Assert-InstallerCanStopTarget { }
@@ -154,11 +157,26 @@ if (-not $ServiceSmoke) {
         function Assert-SafeReleaseArchive { }
         function Expand-Archive { }
         function Assert-SignedRelease { }
+        function Assert-InstallerPortAvailable { }
+        function Assert-VerifiedWindowsRuntime { }
         function Unblock-DownloadedTree { }
         function Get-ReleaseChannel { return 'stable' }
         function Install-VerifiedBinarySet { $script:rollbackEvents.Add('new-binaries') }
         function Restore-PreviousBinarySet { $script:rollbackEvents.Add('old-binaries') }
-        function Generate-Certificate { return $null }
+        function Generate-Certificate {
+            foreach ($relative in $script:settingsFixtureFiles) {
+                Set-Content -LiteralPath (Join-Path $WIN_SERVICE_SETTINGS_DIR $relative) -Value 'new installer state'
+            }
+            return 'fixture-certificate.pem'
+        }
+        function Register-Uninstall { }
+        function Create-UninstallScript { }
+        function Show-CertificateFingerprint { }
+        function Trust-InstallerCertificate { throw 'Certificate trust changed before health verification.' }
+        function Ensure-FirewallRule { throw 'Firewall changed before health verification.' }
+        function Write-Section { }
+        function Write-StatusLine { }
+        function Wait-TlbxReady { return @{Ready=$false;ServiceStatus='Running';Process=$null;Bootstrap=$null;BootstrapUrl='https://localhost:2443'} }
         function Get-InstallOwnedProcesses { return $null }
         function Get-WinEvent { return $null }
         function Get-CimInstance { return $script:fixtureService }
@@ -175,22 +193,38 @@ if (-not $ServiceSmoke) {
         }
         function sc.exe { $global:LASTEXITCODE=0 }
         function Start-Service {
-            if ($script:fixtureService.PathName -match '--port 2443 ') { throw 'fixture occupied port 2443' }
+            if ($script:fixtureService.PathName -match '--port 2443 ') {
+                if ($script:failurePhase -eq 'start') { throw 'fixture occupied port 2443' }
+                $script:fixtureService.State='Running'; return
+            }
             if ($script:fixtureService.PathName -cne $oldPath -or $script:fixtureService.DisplayName -cne 'Old fixture display' -or $script:fixtureService.StartMode -cne 'Manual') { throw 'Old service started before its original SCM configuration was restored.' }
             if ($script:rollbackEvents.IndexOf('old-binaries') -lt 0 -or $script:rollbackEvents.IndexOf('old-config') -lt $script:rollbackEvents.IndexOf('old-binaries')) { throw 'Rollback restart preceded binary/configuration restoration.' }
+            foreach ($relative in $script:settingsFixtureFiles) {
+                if ((Get-Content -LiteralPath (Join-Path $WIN_SERVICE_SETTINGS_DIR $relative) -Raw).Trim() -cne 'old installer state') { throw "Old service restarted with modified $relative." }
+            }
             $script:rollbackEvents.Add('old-start'); $script:fixtureService.State='Running'
         }
-        foreach ($oldState in @('Running','Stopped')) {
+        $script:settingsFixtureFiles = @('settings.json','merge-settings.json','runtime.json','secrets.bin','tlbx.pem','keys/tlbx.dpapi')
+        foreach ($oldState in @('Running','Stopped')) { foreach ($script:failurePhase in @('start','health')) {
+            foreach ($relative in $script:settingsFixtureFiles) {
+                $path=Join-Path $WIN_SERVICE_SETTINGS_DIR $relative
+                New-Item -ItemType Directory -Path (Split-Path $path -Parent) -Force | Out-Null
+                Set-Content -LiteralPath $path -Value 'old installer state'
+            }
             $script:fixtureService = @{Name=$ServiceName;PathName=$oldPath;DisplayName='Old fixture display';StartMode='Manual';State=$oldState;ProcessId=999}
             $script:rollbackEvents = New-Object 'Collections.Generic.List[string]'
             $failure = $null
-            try { Install-Tlbx -AsService $true -Version '10.25.33' -Port 2443 -BindAddress localhost } catch { $failure=$_.ToString() }
-            if ($failure -notmatch 'fixture occupied port 2443') { throw "Original start failure did not propagate: $failure" }
+            try { Install-Tlbx -AsService $true -Version '10.25.33' -Port 2443 -BindAddress '*' -ConfigureFirewall $true -TrustCert $true } catch { $failure=$_.ToString() }
+            $expectedFailure = if ($script:failurePhase -eq 'start') { 'fixture occupied port 2443' } else { 'did not pass the service and health verification' }
+            if ($failure -notmatch $expectedFailure) { throw "Original $($script:failurePhase) failure did not propagate: $failure" }
             if ($script:fixtureService.PathName -cne $oldPath -or $script:fixtureService.DisplayName -cne 'Old fixture display' -or $script:fixtureService.StartMode -cne 'Manual') { throw 'Install-Tlbx trap did not restore original SCM configuration.' }
             if ($script:rollbackEvents.IndexOf('old-config') -le $script:rollbackEvents.IndexOf('old-binaries')) { throw 'Rollback configuration was not restored after old binaries.' }
             if (($oldState -eq 'Running') -ne $script:rollbackEvents.Contains('old-start')) { throw 'Rollback did not preserve the previous Running/Stopped state.' }
-            Write-Host "PASS: actual Install-Tlbx trap restores old port/config before restart; previous $oldState preserved; original error retained."
-        }
+            foreach ($relative in $script:settingsFixtureFiles) {
+                if ((Get-Content -LiteralPath (Join-Path $WIN_SERVICE_SETTINGS_DIR $relative) -Raw).Trim() -cne 'old installer state') { throw "Rollback left modified $relative." }
+            }
+            Write-Host "PASS: actual Install-Tlbx $($script:failurePhase) failure restores old binaries/settings/password/cert/config before restart; previous $oldState preserved."
+        } }
     }
     foreach ($case in @('service-create', 'uac-launch', 'elevated-child')) {
         $stdout = Join-Path $EvidenceDirectory "$case-$($PSVersionTable.PSVersion.Major).stdout.log"
@@ -215,7 +249,7 @@ if (-not $ServiceSmoke) {
 # Actual SCM mutations are only permitted on disposable administrative CI runners.
 $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
 if ($env:GITHUB_ACTIONS -ne 'true' -or -not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Real SCM fixture requires an administrative GitHub Actions runner; never run it on the installed host.' }
-foreach ($name in @('Install-AsService','Create-UninstallScript','Write-Log','Get-InstallExecutablePaths','Assert-InstallerCanStopTarget','Get-InstallOwnedProcesses','Assert-SafeReleaseArchive','Get-WindowsReleaseFileNames','Assert-SignedRelease','Test-ReleaseMetadataSignature','Convert-DerEcdsaSignatureToP1363','Invoke-TlbxBootstrapRequest','Get-TlbxAccessUrls','Format-TlbxUrl','Test-TailscaleIpv4Address','Get-TlbxProcess','Wait-TlbxReady')) { Invoke-Expression (Get-InstallerDefinition $name) }
+foreach ($name in @('Install-AsService','Normalize-InstallerBindAddress','Create-UninstallScript','Write-Log','Get-InstallExecutablePaths','Assert-InstallerCanStopTarget','Get-InstallOwnedProcesses','Assert-SafeReleaseArchive','Get-WindowsReleaseFileNames','Assert-SignedRelease','Test-ReleaseMetadataSignature','Convert-DerEcdsaSignatureToP1363','Invoke-TlbxBootstrapRequest','Get-TlbxAccessUrls','Format-TlbxUrl','Test-TailscaleIpv4Address','Get-TlbxProcess','Wait-TlbxReady','Invoke-InstallerVersionProbe','Assert-VerifiedWindowsRuntime','Test-ExistingCertificate')) { Invoke-Expression (Get-InstallerDefinition $name) }
 function Register-Uninstall { param($InstallDir,$Version,$IsService) }
 $rid = 'win-x64'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
@@ -245,6 +279,7 @@ try {
     Expand-Archive -LiteralPath $ArchivePath -DestinationPath $InstallDir
     Assert-SignedRelease -ExtractDir $InstallDir -ExpectedVersion $version -ExpectedPlatform $rid -ExpectedChannel stable
     foreach ($file in @('mt.exe','mthost.exe','mtagenthost.exe','mttmux.exe')) { if ((Get-AuthenticodeSignature -LiteralPath (Join-Path $InstallDir $file)).Status -ne 'Valid') { throw "Authenticode verification failed: $file" } }
+    Assert-VerifiedWindowsRuntime -ExtractDir $InstallDir -ExpectedVersion $version
     # mt creates a private self-signed certificate in this explicit settings path.
     # No trust-store, firewall, or global uninstall changes.
     $serviceCreated = $true
@@ -253,8 +288,27 @@ try {
     $expected = '"{0}" --service-mode --settings-dir "{1}" --service-name "{2}" --port {3} --bind 127.0.0.1' -f (Join-Path $InstallDir 'mt.exe'), $WIN_SERVICE_SETTINGS_DIR, $ServiceName, $port
     if ($service.PathName -cne $expected) { throw "SCM BinaryPath changed: expected=$expected; actual=$($service.PathName)" }
     if ($service.State -ne 'Running' -or -not $service.ProcessId) { throw "SCM state is $($service.State)" }
-    $readiness = Wait-TlbxReady -ExecutablePath (Join-Path $InstallDir 'mt.exe') -Port $port -BindAddress localhost -AsService $true -ExpectedProcessId $service.ProcessId
+    # A corporate/system proxy and a pre-existing TLS callback must not break
+    # loopback readiness or be overwritten by the installer in an IEX shell.
+    $savedProxy = [Net.WebRequest]::DefaultWebProxy
+    $savedCallback = [Net.ServicePointManager]::ServerCertificateValidationCallback
+    $savedHttpsProxy = $env:HTTPS_PROXY; $savedNoProxy = $env:NO_PROXY
+    try {
+        $sentinel = [Net.Security.RemoteCertificateValidationCallback]{ return $false }
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = $sentinel
+        [Net.WebRequest]::DefaultWebProxy = New-Object Net.WebProxy('http://127.0.0.1:1')
+        $env:HTTPS_PROXY = 'http://127.0.0.1:1'; $env:NO_PROXY = ''
+        $readiness = Wait-TlbxReady -ExecutablePath (Join-Path $InstallDir 'mt.exe') -Port $port -BindAddress localhost -AsService $true -ExpectedProcessId $service.ProcessId
+        if (-not [object]::ReferenceEquals($sentinel,[Net.ServicePointManager]::ServerCertificateValidationCallback)) { throw 'Installer changed global TLS validation.' }
+    } finally {
+        [Net.WebRequest]::DefaultWebProxy = $savedProxy
+        [Net.ServicePointManager]::ServerCertificateValidationCallback = $savedCallback
+        $env:HTTPS_PROXY = $savedHttpsProxy; $env:NO_PROXY = $savedNoProxy
+    }
     if (-not $readiness.Ready -or $readiness.ServiceStatus -ne 'Running' -or -not $readiness.Bootstrap.certificate.fingerprint) { throw 'SCM service failed real HTTPS bootstrap health.' }
+    $existingCertificate = Test-ExistingCertificate -SettingsDir $WIN_SERVICE_SETTINGS_DIR -IsService $true
+    if (-not $existingCertificate) { throw 'Real LocalSystem service certificate/private key pair did not validate.' }
+    $existingCertificate.Certificate.Dispose()
     [pscustomobject]@{shell=$PSVersionTable.PSVersion.ToString();service=$ServiceName;binaryPath=$service.PathName;state=$service.State;pid=$service.ProcessId;port=$port;version=$readiness.Version;https=$readiness.BootstrapUrl;fingerprint=$readiness.Bootstrap.certificate.fingerprint;sha256=(Get-FileHash $ArchivePath).Hash} | ConvertTo-Json | Set-Content (Join-Path $EvidenceDirectory "service-$($PSVersionTable.PSVersion.Major)-proof.json")
     Write-Host "PASS: real SCM create/query exact BinaryPath/start/Running/HTTPS; PowerShell $($PSVersionTable.PSVersion); signed stable $version archive."
 } finally {

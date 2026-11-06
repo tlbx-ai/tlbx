@@ -5,7 +5,7 @@ $tokens = $null
 $errors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'install.ps1'), [ref]$tokens, [ref]$errors)
 if ($errors.Count) { throw "Installer parser errors: $($errors.Message -join '; ')" }
-$names = @('New-InstallerPasswordHash', 'ConvertFrom-InstallerSecureString', 'Prompt-Password', 'Prompt-FirewallConfig', 'Test-NetworkBinding', 'Invoke-CompatibleWebRequest', 'Invoke-CompatibleRestMethod')
+$names = @('New-InstallerPasswordHash', 'ConvertFrom-InstallerSecureString', 'Prompt-Password', 'Prompt-FirewallConfig', 'Read-InstallerYesNo', 'Test-NetworkBinding', 'Invoke-CompatibleWebRequest', 'Invoke-CompatibleRestMethod')
 foreach ($name in $names) {
     $definition = $ast.Find({param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name}, $true)
     if (-not $definition) { throw "Installer function missing: $name" }
