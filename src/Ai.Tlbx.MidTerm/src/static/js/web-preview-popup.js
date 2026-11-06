@@ -179,10 +179,20 @@
     var parsed = new URL(targetUrl);
     var path = parsed.pathname || '/';
     var prefix = getProxyPrefix();
+    var transport = connectPreviewTransport();
+    if (!transport) {
+      if (!previewContext || !previewContext.previewId || !previewContext.previewToken)
+        throw new Error('A scoped preview capability is required.');
+      prefix +=
+        '/_access/' +
+        encodeURIComponent(previewContext.previewId) +
+        '/' +
+        encodeURIComponent(previewContext.previewToken);
+    }
     var proxyUrl = new URL(path === '/' ? prefix + '/' : prefix + path, previewOrigin);
     proxyUrl.search = parsed.search;
     proxyUrl.hash = parsed.hash;
-    if (previewContext && previewContext.previewId && previewContext.previewToken) {
+    if (transport && previewContext && previewContext.previewId && previewContext.previewToken) {
       proxyUrl.searchParams.set('__mtPreviewId', previewContext.previewId);
       proxyUrl.searchParams.set('__mtPreviewToken', previewContext.previewToken);
     }
@@ -192,7 +202,6 @@
     if (currentTargetRevision > 0) {
       proxyUrl.searchParams.set('__mtTargetRevision', String(currentTargetRevision));
     }
-    var transport = connectPreviewTransport();
     if (!transport) return proxyUrl.toString();
     var wrapped = transport.wrapUrl(proxyUrl.toString());
     if (new URL(wrapped).origin !== new URL(transport.origin).origin)
@@ -211,7 +220,10 @@
   function getSandboxFlags() {
     var flags = sandboxBaseFlags.slice();
     try {
-      if (new URL(previewOrigin, window.location.origin).origin !== window.location.origin) {
+      if (
+        connectPreviewTransport() &&
+        new URL(previewOrigin, window.location.origin).origin !== window.location.origin
+      ) {
         flags.push('allow-same-origin');
       }
     } catch (_) {}
@@ -1162,7 +1174,7 @@
     setCurrentUrl(url);
 
     try {
-      if (sandboxEnabled) {
+      if (!connectPreviewTransport() || sandboxEnabled) {
         frame.setAttribute('sandbox', getSandboxFlags());
       } else {
         frame.removeAttribute('sandbox');

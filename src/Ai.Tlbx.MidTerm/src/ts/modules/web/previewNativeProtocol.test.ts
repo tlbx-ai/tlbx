@@ -105,3 +105,36 @@ describe.each(['', `/p/connection/${route}`])('native preview URL protocol at %s
     expect(result.curU()).toBe('https://other.example/docs?q=a%20b#changed');
   });
 });
+
+describe('preview navigation attachment metadata', () => {
+  const bootstrap = section(
+    'function mtReadBootstrapContext(){',
+    'function mtPersistPreviewContext(){',
+  );
+  function read(saved: Record<string, unknown>) {
+    return runInNewContext(`${bootstrap} mtReadBootstrapContext();`, {
+      URLSearchParams,
+      location: new URL(`https://native${nativePrefix}/_access/id/token/docs/next`),
+      window: { name: JSON.stringify(saved) },
+    }) as Record<string, unknown>;
+  }
+  it('retains revision and session context on subsequent navigation of the same attachment', () => {
+    expect(
+      read({ previewId: 'id', previewToken: 'token', targetRevision: 7, sessionId: 'session' }),
+    ).toEqual({
+      previewId: 'id',
+      previewToken: 'token',
+      targetRevision: 7,
+      sessionId: 'session',
+    });
+  });
+  it.each([
+    { previewId: 'other', previewToken: 'token' },
+    { previewId: 'id', previewToken: 'other' },
+  ])('does not inherit metadata from a different capability %j', (saved) => {
+    expect(read({ ...saved, targetRevision: 99, sessionId: 'old-session' })).toEqual({
+      previewId: 'id',
+      previewToken: 'token',
+    });
+  });
+});

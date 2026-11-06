@@ -52,7 +52,7 @@ public sealed class ConnectSignalingRecoveryTests
                 JsonSerializer.Serialize(configuration, ConnectJsonContext.Default.ConnectDeviceConfiguration));
             var auth = new AuthService(settings, new ApiKeyService(settings));
             using var service = new ConnectService(settings, auth, new ServerBindingInfo(2100, "127.0.0.1"),
-                new BrowserPreviewOriginService(2100, 2101, true), new BrowserPreviewRegistry());
+                new BrowserPreviewOriginService(2100), new BrowserPreviewRegistry());
             await service.StartAsync(ct);
             try
             {

@@ -634,7 +634,6 @@ public class Program
         try
         {
             app.Urls.Add(string.Create(CultureInfo.InvariantCulture, $"https://{bindAddress}:{port}"));
-            browserPreviewOriginService.ApplyUrls(app, bindAddress);
             WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
         }
         finally

@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Time.Testing;
 using System.Buffers.Binary;
 using System.Runtime.InteropServices;
 using Ai.Tlbx.MidTerm.Services.Connect;
@@ -87,6 +88,35 @@ public sealed class ConnectProtocolTests
             result = receiver.Receive(frame);
         }
         Assert.Equal(payload, result);
+    }
+
+    [Fact]
+    public void ActiveBinaryUploadCanProgressPastThirtySecondsWithoutLosingItsAssembly()
+    {
+        var time = new FakeTimeProvider();
+        var receiver = new ConnectFrames(time);
+        var payload = new byte[100_000];
+        for (var i = 0; i < payload.Length; i++) payload[i] = (byte)(i % 256);
+        var frames = new ConnectFrames().Encode(payload).ToArray();
+        Assert.Equal(3, frames.Length);
+        Assert.Null(receiver.Receive(frames[0]));
+        time.Advance(TimeSpan.FromSeconds(20));
+        Assert.Null(receiver.Receive(frames[1]));
+        // 100,000 binary bytes over 40 seconds, progressing every 20 seconds.
+        // The inactivity gap is below 30 seconds even though total age is not.
+        time.Advance(TimeSpan.FromSeconds(20));
+        Assert.Equal(payload, receiver.Receive(frames[2]));
+    }
+
+    [Fact]
+    public void IncompleteBinaryUploadStillExpiresAfterThirtySecondsWithoutProgress()
+    {
+        var time = new FakeTimeProvider();
+        var receiver = new ConnectFrames(time);
+        var frames = new ConnectFrames().Encode(new byte[100_000]).ToArray();
+        Assert.Null(receiver.Receive(frames[0]));
+        time.Advance(TimeSpan.FromSeconds(31));
+        Assert.Throws<InvalidDataException>(() => receiver.Receive(frames[1]));
     }
 
     [Fact]

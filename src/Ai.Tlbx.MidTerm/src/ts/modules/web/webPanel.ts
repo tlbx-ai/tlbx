@@ -57,6 +57,7 @@ import {
   upsertSessionPreview,
 } from './webSessionState';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
+import { getConnectPreviewIntegration } from './connectPreview';
 import { buildBrowserPreviewStatusIndicatorState } from './webPreviewStatus';
 import { decodeScreenshotDataUrl, normalizeUrl } from './webPanelUtils';
 import { captureMobileDeviceScreenshot } from './mobileDeviceController';
@@ -335,7 +336,7 @@ function shouldAllowSameOriginSandbox(frameOrigin?: string): boolean {
 
 function getSandboxFlags(frameOrigin?: string): string {
   const flags = [...SANDBOX_BASE_FLAGS];
-  if (shouldAllowSameOriginSandbox(frameOrigin)) {
+  if (getConnectPreviewIntegration() && shouldAllowSameOriginSandbox(frameOrigin)) {
     flags.push('allow-same-origin');
   }
   return flags.join(' ');
@@ -351,7 +352,10 @@ function applyIframeSandbox(
     return;
   }
 
-  if (shouldSandboxPreviewFrame(targetUrl ?? getActiveUrl(), isDevMode())) {
+  if (
+    !getConnectPreviewIntegration() ||
+    shouldSandboxPreviewFrame(targetUrl ?? getActiveUrl(), isDevMode())
+  ) {
     frame.setAttribute('sandbox', getSandboxFlags(frameOrigin));
     return;
   }
