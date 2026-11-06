@@ -61,7 +61,7 @@ internal static class ConnectLocalAccessPolicy
                     context.Response.Headers.ContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
                     return Task.CompletedTask;
                 });
-                if (!Allows(context, previewOrigin.IsPreviewRequest(context)))
+                if (!Allows(context, previewRequest: false))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     if (context.Request.Path.Equals("/connect.html", StringComparison.OrdinalIgnoreCase)

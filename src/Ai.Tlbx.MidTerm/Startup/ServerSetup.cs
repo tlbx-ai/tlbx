@@ -210,7 +210,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<HubStateWebSocketHandler>();
         builder.Services.AddSingleton(sp =>
         {
-            return BrowserPreviewOriginService.Create(runtimeOptions.Port, runtimeOptions.BindAddress);
+            return BrowserPreviewOriginService.Create(runtimeOptions.Port);
         });
         builder.Services.AddSingleton<BrowserPreviewRegistry>();
         builder.Services.AddSingleton<BrowserPreviewOwnerService>();
@@ -498,24 +498,17 @@ public static class ServerSetup
             await next();
         });
 
-        app.Use(async (context, next) =>
-        {
-            var path = context.Request.Path.Value ?? "/";
-            if (previewOriginService.IsPreviewRequest(context)
-                && previewOriginService.ShouldBlockPath(path)
-                && !WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path))
-            {
-                context.Response.StatusCode = 404;
-                return;
-            }
-
-            await next();
-        });
-
         // Enable upgrade detection before authentication and preview authorization.
         app.UseWebSockets(new WebSocketOptions
         {
             KeepAliveInterval = TimeSpan.FromSeconds(30)
+        });
+
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/webpreview", StringComparison.OrdinalIgnoreCase))
+                PreviewProxyAuthorization.ApplyResponsePolicy(context);
+            await next();
         });
 
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
@@ -524,7 +517,6 @@ public static class ServerSetup
             settingsService,
             authService,
             shareGrantService,
-            previewOriginService,
             previewRegistry);
 
         // Web preview reverse proxy — after auth, before security headers (short-circuits for /webpreview/*)

@@ -106,7 +106,7 @@ public sealed class ConnectTunnelHttpBodyTests
             var result = new TaskCompletionSource<ConnectEnvelope>(TaskCreationOptions.RunContinuationsAsynchronously);
             var received = new ConnectFrames();
             await using var tunnel = new ConnectTunnel(new ServerBindingInfo(2100, "127.0.0.1"),
-                new BrowserPreviewOriginService(2100, 2101, true), new BrowserPreviewRegistry(), auth, http,
+                new BrowserPreviewOriginService(2100), new BrowserPreviewRegistry(), auth, http,
                 (signal, _) =>
                 {
                     var bytes = received.Receive(signal.Span);

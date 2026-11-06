@@ -25,7 +25,7 @@ import { createBrowserPreviewClient } from './webApi';
 import { isDevMode } from '../sidebar/voiceSection';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
 import { hideWebPreviewDockForDetach, openWebPreviewDock } from './webDock';
-import { wrapConnectWorkspaceUrl } from './connectPreview';
+import { getConnectPreviewIntegration, wrapConnectWorkspaceUrl } from './connectPreview';
 
 const log = createLogger('webDetach');
 
@@ -134,7 +134,9 @@ function buildDetachedPopupUrl(args: {
         `&viewportHeight=${encodeURIComponent(String(args.viewport.height))}`
       : '') +
     (args.mobileMode ? '&mobile=1' : '') +
-    (shouldSandboxPreviewFrame(args.url, isDevMode()) ? '&sandbox=1' : '') +
+    (!getConnectPreviewIntegration() || shouldSandboxPreviewFrame(args.url, isDevMode())
+      ? '&sandbox=1'
+      : '') +
     (args.url ? `&url=${encodeURIComponent(args.url)}` : '')
   );
 }

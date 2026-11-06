@@ -158,45 +158,17 @@ When tlbx itself is running inside `/webpreview/`, the nested tlbx UI now treats
 
 This prevents the previewed tlbx app from clearing or repointing the host tlbx dev-browser target during bootstrap.
 
-## Preview Sandbox
+## Single-port Preview Isolation
 
-In dev-mode and local-dev runs, the docked preview iframe and detached popup iframe opt into a real sandbox for every target. Outside that mode, tlbx still force-sandboxes external HTTP(S) sites and local `file:` previews so an arbitrary page cannot execute with full access to the owning tlbx shell origin:
+Native previews use the configured tlbx HTTPS port, including direct IP-only access. There is no secondary `port + 1` listener or extra TCP firewall rule.
 
-- baseline flags: `allow-scripts allow-forms allow-popups allow-modals allow-downloads`
-- when the preview is loaded from the dedicated preview origin (`https://host:port+1`), tlbx also adds `allow-same-origin`
-- when tlbx falls back to the primary app origin, it still omits `allow-same-origin`, so the proxied page runs with an opaque origin
-- tlbx's own `localStorage`, `CacheStorage`, and service-worker scope are no longer shared with the previewed app
+Direct docked, detached and top-level preview documents are forced into an opaque origin by both the iframe sandbox and an HTTP `Content-Security-Policy: sandbox` response header. The policy applies to every preview response, including SVG/XHTML, errors and redirects; it never grants `allow-same-origin` or top-level navigation. Ordinary links/forms targeting `_top` or `_parent` are retargeted to the preview itself.
 
-The dedicated preview origin makes `allow-same-origin` safe for self-preview and similar apps that require `localStorage` or `navigator.serviceWorker`: the iframe becomes same-origin with `port + 1`, not with the main tlbx shell on `port`.
+The direct URL is `/webpreview/{routeKey}/_access/{previewId}/{previewToken}/...`. Relative modules, CSS and form actions retain this existing route capability through their path. The server validates the registry token and route, strips the capability prefix before forwarding, and omits it from upstream Referer headers, diagnostic URLs and the user-facing address field. Opaque `Origin: null` requests receive CORS permission only after explicit capability validation; installation cookies alone grant no preview or native API access.
 
-Because sandboxed preview frames are cross-site from the main app's perspective, tlbx relaxes the auth cookie to `SameSite=None` only for dev-mode/local-dev runs where tlbx itself needs to operate inside that sandbox. Production/stable-style runs keep `SameSite=Lax`.
+Link keeps its existing separate preview web origin and route-specific native cookie jar. Its authenticated preview service worker rehosts documents on that isolated origin and removes only the known native opaque-sandbox policy; no request header can bypass native isolation. The native transport still uses only the main tlbx listener.
 
-## Dedicated Preview Origin
-
-When tlbx can reserve `port + 1`, preview clients now receive a dedicated frame origin on that secondary listener:
-
-- the main app stays on `https://host:port`
-- the iframe loads proxied content from `https://host:port+1`
-- preview client registration returns that origin to the docked panel and detached popup
-
-The preview listener blocks normal tlbx app pages and non-browser WebSockets on the secondary port, so leaked navigations do not fall back into the tlbx application on the preview origin. If the extra port is unavailable, tlbx falls back to the primary origin and keeps the sandbox protections from step 3.
-
-The server must bind both the main app URL and the preview URL explicitly at startup. Advertising a preview origin without listening on `port + 1` breaks tlbx-in-tlbx immediately once the iframe tries to navigate to the isolated frame host.
-
-## tlbx in tlbx
-
-Self-preview is supported only when the dedicated preview origin is active:
-
-- target the main app origin (`https://host:port`), not the preview origin (`port + 1`)
-- the preview-origin listener itself is still rejected as a web-preview target, so the proxy never points at its own isolated frame host
-- proxied requests to tlbx itself mirror the current `mm-session` auth cookie from the browser request into the in-memory proxy cookie jar before each upstream HTTP/WebSocket hop
-- that mirrored auth cookie is deliberately excluded from cookie-disk persistence, so nested tlbx stays authenticated without writing tlbx session tokens into the preview cookie files
-
-This is what keeps nested tlbx from falling into `/login.html` once its own `/api/*` and `/ws/*` traffic starts flowing through the dev browser.
-
-The main tlbx shell also has to allow that isolated frame host in its own CSP `frame-src`. Without that, the browser blocks `https://host:port+1/webpreview/...` before the nested app can render.
-
-For self-targets, internal upstream hops must not re-enter the catch-all "leaked root-relative URL" proxy path. tlbx marks those server-originated self-proxy requests and lets them fall through to local static files and normal handlers, which prevents recursive `/site.webmanifest` and `/favicon.ico` loops that otherwise explode into `431 Request Header Fields Too Large`.
+Upstream website cookies remain in the preview's server-side cookie jar. The opaque runtime's `localStorage`/`sessionStorage` compatibility stores are memory-only across a document lifetime; real IndexedDB and website service-worker behavior are unavailable in direct opaque previews. Sites requiring those APIs need a real isolated-origin browser context.
 
 ## Canonical Host Adoption
 

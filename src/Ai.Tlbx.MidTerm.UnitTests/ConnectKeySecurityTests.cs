@@ -250,7 +250,7 @@ public sealed class ConnectKeySecurityTests
             var envelopes = new List<ConnectEnvelope>(); var receive = new ConnectFrames();
             using var handler = new CountingHandler();
             using var http = new HttpClient(handler, disposeHandler: false);
-            await using var tunnel = new ConnectTunnel(new ServerBindingInfo(2100, "127.0.0.1"), new BrowserPreviewOriginService(2100, 2101, true),
+            await using var tunnel = new ConnectTunnel(new ServerBindingInfo(2100, "127.0.0.1"), new BrowserPreviewOriginService(2100),
                 new BrowserPreviewRegistry(), auth, http, (signal, _) =>
                 {
                     var bytes = receive.Receive(signal.Span);
