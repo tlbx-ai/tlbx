@@ -36,7 +36,8 @@ public sealed class ReleaseStore : IDisposable
 
     public async Task<(ReleaseAsset Asset, bool Exists)> UploadAsync(ReleaseIdentity release, string name, Stream input, long? contentLength, CancellationToken ct)
     {
-        _ = AssetNames.Rid(name);
+        var rid = AssetNames.Rid(name);
+        var canonicalName = name == AssetNames.Sbom(rid) ? AssetNames.Sbom(rid) : AssetNames.Archive(rid);
         if (contentLength is > BuildOptions.MaxAssetBytes or 0) throw new BuildProtocolException(413, "Asset size out of bounds");
         if (!await _admission.WaitAsync(0, ct)) throw new BuildProtocolException(429, "Upload concurrency exceeded");
         try
@@ -68,21 +69,21 @@ public sealed class ReleaseStore : IDisposable
                         await output.FlushAsync(ct);
                     }
                     if (size == 0 || (contentLength is not null && size != contentLength)) throw new BuildProtocolException(400, "Empty or truncated asset");
-                    var asset = new ReleaseAsset(name, Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant(), size);
+                    var asset = new ReleaseAsset(canonicalName, Convert.ToHexString(hasher.GetHashAndReset()).ToLowerInvariant(), size);
                     var completed = ReadCompleted(release);
                     if (completed is not null)
                     {
                         if (!completed.Publication.Assets.Contains(asset)) throw new BuildProtocolException(409, "Published assets are immutable");
                         return (asset, true);
                     }
-                    var target = Path.GetFullPath(Path.Combine(stage, name));
+                    var target = Path.GetFullPath(Path.Combine(stage, canonicalName));
                     if (!target.StartsWith(Path.GetFullPath(Staging) + Path.DirectorySeparatorChar, StringComparison.Ordinal)
                         || !target.StartsWith(stage + Path.DirectorySeparatorChar, StringComparison.Ordinal))
                         throw new BuildProtocolException(400, "Upload target escapes staging root");
                     NoLinks(target);
                     if (File.Exists(target))
                     {
-                        var existing = await DescribeAsync(target, name, ct);
+                        var existing = await DescribeAsync(target, canonicalName, ct);
                         if (existing != asset) throw new BuildProtocolException(409, "Uploaded assets are immutable");
                         return (asset, true);
                     }
