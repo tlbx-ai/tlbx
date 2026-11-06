@@ -1,0 +1,78 @@
+{
+  "version": 1,
+  "runtimeIdentifier": "win-x64",
+  "entryPoint": "datachannel.dll",
+  "versions": {
+    "vcpkgCommit": "09e7d22e2d9bf97f9549c9f37759bf11758d62f0",
+    "dirent": "1.26",
+    "gettext-libintl": "0.22.5",
+    "glib": "2.90.1",
+    "libdatachannel": "0.24.6",
+    "libffi": "3.8.0",
+    "libiconv": "1.19",
+    "libnice": "0.1.24",
+    "nlohmann-json": "3.12.0",
+    "openssl": "3.6.5",
+    "pcre2": "10.49",
+    "plog": "1.1.11",
+    "usrsctp": "0.9.5.0",
+    "zlib": "1.3.2"
+  },
+  "portVersions": {
+    "dirent": "1.26",
+    "gettext-libintl": "0.22.5#4",
+    "glib": "2.90.1",
+    "libdatachannel": "0.24.6#3",
+    "libffi": "3.8.0",
+    "libiconv": "1.19#1",
+    "libnice": "0.1.24",
+    "nlohmann-json": "3.12.0#2",
+    "openssl": "3.6.5#2",
+    "pcre2": "10.49#2",
+    "plog": "1.1.11",
+    "usrsctp": "0.9.5.0#4",
+    "zlib": "1.3.2#3"
+  },
+  "backports": {
+    "zlib": {
+      "version": 1,
+      "cve": "CVE-2026-85091",
+      "commit": "df84af25dc1942490e1d1c899a07619152a46148",
+      "patchSha256": "110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14",
+      "sourceSha256": "31d0da140edf382b82b13e2d87a22f59e158d9014ee026459e01cf437d0ab07d",
+      "archive": "zs.lib",
+      "archiveSha256": "5beb78c746a24b57f7c2d810b54777eab84bbd4acf3bd8f7dd8cef3bd7413ef1"
+    }
+  },
+  "linkEvidence": {
+    "version": 1,
+    "runtimeIdentifier": "win-x64",
+    "entryPoint": "datachannel.dll",
+    "entryPointSha256": "e07e8b59ac84747f845e9d24b8802e4ab1a409da8dd148f50716f8c542a9da48",
+    "backports": {
+      "zlib": {
+        "version": 1,
+        "cve": "CVE-2026-85091",
+        "commit": "df84af25dc1942490e1d1c899a07619152a46148",
+        "patchSha256": "110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14",
+        "sourceSha256": "31d0da140edf382b82b13e2d87a22f59e158d9014ee026459e01cf437d0ab07d",
+        "archive": "zs.lib",
+        "archiveSha256": "5beb78c746a24b57f7c2d810b54777eab84bbd4acf3bd8f7dd8cef3bd7413ef1"
+      }
+    }
+  },
+  "files": [
+    {
+      "name": "datachannel.dll",
+      "sha256": "e07e8b59ac84747f845e9d24b8802e4ab1a409da8dd148f50716f8c542a9da48"
+    },
+    {
+      "name": "native-dependencies.spdx.json",
+      "sha256": "41c7a0431490a11a42959d00ec9375d19d2b5beb53ec3bbb91519fcc18cabd31"
+    },
+    {
+      "name": "THIRD-PARTY-NOTICES.txt",
+      "sha256": "2b97252fe00cc7ba44012317edd9edff8b5ca117165980518874f68d5d5d43e3"
+    }
+  ]
+}

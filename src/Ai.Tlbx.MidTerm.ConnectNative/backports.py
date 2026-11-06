@@ -1,56 +1,10 @@
-"""Verify compiled upstream backports and emit artifact-scoped OpenVEX fixed evidence."""
+"""Offline validation of the frozen, artifact-scoped native proof."""
 import hashlib
 import json
 from pathlib import Path
+import re
 import zipfile
-from urllib.parse import parse_qsl, urlencode
-
-
-def verify(prefix, pin, port_versions):
-    verified = {}
-    for name, expected in pin.get("backports", {}).items():
-        if port_versions.get(name) != expected["portVersion"]:
-            raise ValueError("Backport port version does not match reviewed native recipe")
-        evidence = json.loads((prefix / "share" / name / "tlbx-backport.json").read_text())
-        for key in ("commit", "patchSha256", "sourceSha256", "cve"):
-            if evidence[key] != expected[key]:
-                raise ValueError("Compiled backport source evidence does not match reviewed upstream fix")
-        archive = prefix / "lib" / evidence["archive"]
-        if archive.parent != prefix / "lib" or hashlib.sha256(archive.read_bytes()).hexdigest() != evidence["archiveSha256"]:
-            raise ValueError("Patched static archive integrity mismatch")
-        verified[name] = evidence
-    return verified
-
-
-def qualify(component, evidence):
-    refs = [ref for ref in component.get("externalRefs", []) if ref["referenceType"] == "purl"]
-    if len(refs) != 1:
-        raise ValueError("Backported component needs exactly one authentic package URL")
-    base, query = refs[0]["referenceLocator"].split("?", 1)
-    qualifiers = dict(parse_qsl(query))
-    qualifiers["checksum"] = "sha256:" + evidence["archiveSha256"]
-    refs[0]["referenceLocator"] = base + "?" + urlencode(sorted(qualifiers.items()))
-    return refs[0]["referenceLocator"]
-
-
-def verify_link(prefix, verified, rid):
-    proof = json.loads((prefix / "share/libdatachannel/tlbx-link.json").read_text())
-    expected_entry = "datachannel.dll" if rid.startswith("win-") else "libdatachannel.dylib" if rid.startswith("osx-") else "libdatachannel.so"
-    entry = prefix / ("bin" if rid.startswith("win-") else "lib") / expected_entry
-    if (proof.get("version") != 1 or proof.get("runtimeIdentifier") != rid or proof.get("entryPoint") != expected_entry
-            or proof.get("backports") != verified or hashlib.sha256(entry.read_bytes()).hexdigest() != proof.get("entryPointSha256")):
-        raise ValueError("Native DLL does not match frozen link/install output and patched static inputs")
-    return proof
-
-
-def vex(pin, verified, graph, native_hash, rid):
-    statements = []
-    for name, evidence in verified.items():
-        component = next(p for p in graph["packages"] if p["SPDXID"] == f"SPDXRef-native-{name}-port")
-        purl = next(r["referenceLocator"] for r in component["externalRefs"] if r["referenceType"] == "purl")
-        expected = pin["backports"][name]
-        statements.append({"vulnerability": {"name": evidence["cve"]}, "products": [{"@id": purl, "hashes": {"sha-256": evidence["archiveSha256"]}}], "status": "fixed", "status_notes": f"Exact upstream fix {expected['upstream']}; patch SHA256 {evidence['patchSha256']}; compiled source SHA256 {evidence['sourceSha256']}; static archive SHA256 {evidence['archiveSha256']}. Native {rid} entrypoint SHA256 {native_hash}. Maintainer confirmation: {expected['maintainerConfirmation']}."})
-    return {"@context": "https://openvex.dev/ns/v0.2.0", "@id": f"https://tlbx.ai/vex/connect-native/{rid}/{native_hash}", "author": "tlbx native build", "timestamp": graph["creationInfo"]["created"], "version": 1, "statements": statements}
+from recipe import verify, qualify, verify_link, vex
 
 
 def validate(document, pin, verified, graph, native_hash, rid):
@@ -58,29 +12,68 @@ def validate(document, pin, verified, graph, native_hash, rid):
         raise ValueError("OpenVEX does not match exact patched source, archive and native artifact")
 
 
-def validate_bundle(native, rid):
-    pin = json.loads((native / "native-stack.json").read_text())
-    output = native / "bin" / rid
+def validate_frozen_bundle(native, rid, output):
+    pin = json.loads((native / "native-stack.json").read_text(encoding="utf-8-sig"))
+    expected_entry = "datachannel.dll" if rid.startswith("win-") else "libdatachannel.dylib" if rid.startswith("osx-") else "libdatachannel.so"
     with zipfile.ZipFile(output / "bundle.zip") as bundle:
-        manifest = json.loads(bundle.read("manifest.json"))
-        for record in manifest["files"]:
-            if hashlib.sha256(bundle.read(record["name"])).hexdigest() != record["sha256"]:
-                raise ValueError("Backport VEX native bundle file integrity mismatch")
-        graph = json.loads(bundle.read("native-dependencies.spdx.json"))
-        native_hash = hashlib.sha256(bundle.read(manifest["entryPoint"])).hexdigest()
-    prefix = native.parents[1] / ".artifacts/connect-dotnet-transport/installed" / rid
-    verified = verify(prefix, pin, manifest["portVersions"])
-    link = verify_link(prefix, verified, rid)
-    if manifest.get("linkEvidence") != link or native_hash != link["entryPointSha256"]:
-        raise ValueError("Native bundle DLL differs from the verified link/install output")
-    if manifest.get("backports") != verified:
-        raise ValueError("Native manifest does not describe the compiled backport")
-    document = json.loads((output / "native-backports.vex.json").read_text())
+        names = bundle.namelist()
+        if len(set(names)) != len(names):
+            raise ValueError("Duplicate native bundle entries")
+        manifest_bytes = bundle.read("manifest.json")
+        manifest = json.loads(manifest_bytes)
+        if (manifest.get("version") != 1 or manifest.get("runtimeIdentifier") != rid
+                or manifest.get("entryPoint") != expected_entry
+                or manifest.get("versions", {}).get("vcpkgCommit") != pin["vcpkgCommit"]):
+            raise ValueError("Native bundle provenance mismatch")
+        for name, version in pin["versions"].items():
+            if manifest["versions"].get(name) != version:
+                raise ValueError("Native bundle dependency version mismatch")
+        records = manifest["files"]
+        declared = {record["name"] for record in records}
+        if len(declared) != len(records) or declared | {"manifest.json"} != set(names):
+            raise ValueError("Native bundle contains undeclared or duplicate files")
+        payload = {}
+        for record in records:
+            name = record["name"]
+            if (not re.fullmatch(r"[A-Za-z0-9_.+-]+", name)
+                    or Path(name).suffix.lower() in (".exe", ".com", ".bat", ".sh")):
+                raise ValueError("Native bundle file integrity mismatch")
+            payload[name] = bundle.read(name)  # ZIP CRC is checked by read().
+            if hashlib.sha256(payload[name]).hexdigest() != record["sha256"]:
+                raise ValueError("Native bundle file integrity mismatch")
+        if ((output / "manifest.json").read_bytes() != manifest_bytes
+                or (output / "native-dependencies.spdx.json").read_bytes() != payload["native-dependencies.spdx.json"]):
+            raise ValueError("Detached native metadata differs from embedded bundle")
+        graph = json.loads(payload["native-dependencies.spdx.json"])
+        native_hash = hashlib.sha256(payload[expected_entry]).hexdigest()
+    verified = manifest.get("backports", {})
+    if set(verified) != set(pin.get("backports", {})):
+        raise ValueError("Frozen manifest is missing the reviewed backport proof")
+    for name, expected in pin.get("backports", {}).items():
+        evidence = verified[name]
+        if (manifest.get("portVersions", {}).get(name) != expected["portVersion"]
+                or evidence.get("version") != 1
+                or any(evidence.get(key) != expected[key] for key in ("commit", "patchSha256", "sourceSha256", "cve"))
+                or not re.fullmatch(r"[A-Za-z0-9_.+-]+", evidence.get("archive", ""))
+                or not re.fullmatch(r"[0-9a-f]{64}", evidence.get("archiveSha256", ""))):
+            raise ValueError("Frozen compiled backport does not match reviewed source/version pins")
+    link = manifest.get("linkEvidence", {})
+    if (link.get("version") != 1 or link.get("runtimeIdentifier") != rid
+            or link.get("entryPoint") != expected_entry or link.get("entryPointSha256") != native_hash
+            or link.get("backports") != verified):
+        raise ValueError("Native bundle differs from frozen link output and patched static inputs")
+    document = json.loads((output / "native-backports.vex.json").read_bytes())
     validate(document, pin, verified, graph, native_hash, rid)
-    embedded = [json.loads(a["comment"]) for a in graph.get("annotations", []) if a.get("annotator") == "Tool: tlbx native build"]
+    embedded = [json.loads(annotation["comment"]) for annotation in graph.get("annotations", []) if annotation.get("annotator") == "Tool: tlbx native build"]
     if embedded != [document]:
-        raise ValueError("Detached OpenVEX does not match the embedded, hashed attestation")
-    print("PASS: OpenVEX fixed evidence matches exact upstream source, compiled archive and native DLL hashes.")
+        raise ValueError("Detached OpenVEX does not match embedded hashed attestation")
+    return manifest, graph, document
+
+
+def validate_bundle(native, rid):
+    import prebuilt
+    _, _, document = prebuilt.validate(native, rid, native / "bin" / rid)
+    print("PASS: frozen source/archive/link OpenVEX and committed native artifact hashes match.")
     return document
 
 
