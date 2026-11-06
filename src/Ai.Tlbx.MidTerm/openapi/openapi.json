@@ -8567,6 +8567,8 @@
           "latestVersion",
           "releaseUrl",
           "downloadUrl",
+          "archiveSha256",
+          "archiveSize",
           "assetName",
           "releaseNotes",
           "type",
@@ -8601,6 +8603,16 @@
               "null",
               "string"
             ]
+          },
+          "archiveSha256": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "archiveSize": {
+            "type": "integer",
+            "format": "int64"
           },
           "assetName": {
             "type": [

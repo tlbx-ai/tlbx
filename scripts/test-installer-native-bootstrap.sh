@@ -19,8 +19,29 @@ export HOME="$temp_root/home"
 mkdir -p "$HOME" "$temp_root/extracted"
 ensure_prerequisites
 detect_platform
-get_latest_release
-download_to_file "$ASSET_URL" "$temp_root/release.tar.gz" 'native installer bootstrap'
+# CI resolves its official package outside the minimal OS. This keeps package
+# startup verification independent of the not-yet-seeded distribution service.
+# Selection and URL binding are separately exercised by installer protocols.
+if [ "${CI:-}" = true ] && [ -n "${TLBX_BOOTSTRAP_VERSION:-}" ]; then
+    VERSION=$TLBX_BOOTSTRAP_VERSION
+    ASSET_URL=$TLBX_BOOTSTRAP_URL
+    ASSET_SHA256=$TLBX_BOOTSTRAP_SHA256
+    ASSET_SIZE=$TLBX_BOOTSTRAP_SIZE
+    [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 1
+    [ "$ASSET_URL" = "https://github.com/tlbx-ai/tlbx/releases/download/v$VERSION/$ASSET_NAME" ] || exit 1
+    [[ "$ASSET_SHA256" =~ ^[a-f0-9]{64}$ && "$ASSET_SIZE" =~ ^[1-9][0-9]*$ ]] || exit 1
+else
+    get_latest_release
+fi
+if [ "${CI:-}" = true ] && [ -n "${TLBX_BOOTSTRAP_VERSION:-}" ]; then
+    # Only this authenticated CI fixture starts at GitHub's HTTPS redirector.
+    # Production mirror downloads continue to reject all redirects.
+    curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' \
+        --retry 3 --connect-timeout 15 --max-time 600 "$ASSET_URL" -o "$temp_root/release.tar.gz"
+else
+    download_to_file "$ASSET_URL" "$temp_root/release.tar.gz" 'native installer bootstrap'
+fi
+assert_build_archive "$temp_root/release.tar.gz"
 validate_archive_members "$temp_root/release.tar.gz"
 tar -xzf "$temp_root/release.tar.gz" -C "$temp_root/extracted"
 require_extracted_binaries "$temp_root/extracted"

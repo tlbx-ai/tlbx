@@ -234,3 +234,27 @@ six supported targets because it embeds the current web frontend.
 
 Do not use `-mthostUpdate no` to hide runtime source changes: it controls installed
 host replacement, independently of test selection or the cold-build fallback.
+## HTTPS build distribution
+
+Native clients and installers discover published packages through
+`https://builds.tlbx.ai/v1/channels/dev/releases.json` or `main/releases.json`
+(`main` is the stable channel). They do not call the GitHub release API.
+Archives and their matching SPDX documents keep their original bytes under
+`/{channel}/{version}/{platform}/{filename}`; original signed manifests are
+available at `/v1/releases/{tag}/{platform}/version.json`.
+
+After GitHub publication, `release.yml` runs `scripts/publish-builds.ps1`.
+It checks the GitHub archive digests, provenance, SPDX attestation and vendor
+manifest before uploading over HTTPS. Each request uses a fresh GitHub OIDC
+token scoped to this repository and workflow; no upload secret lives on clients.
+The service stages uploads privately, verifies them again, then publishes an
+immutable complete set of platform archive/SPDX pairs. Only the latest three
+versions per channel remain. Incomplete transfers do not enter the catalog.
+
+`mirror-builds.yml` seeds or repairs the catalog after relevant protected-dev
+changes. Rerun that existing workflow run to retry an interrupted backfill.
+Manual dispatch becomes available after the workflow reaches the default branch.
+The publisher tests and build-server HTTP/storage/authentication tests belong to
+the local `build` test cluster and the focused distribution CI workflow.
+Hosting configuration lives in `linode-deploy`; only the existing HTTPS ingress
+is public, and all package data/staging live on the mounted storage volume.

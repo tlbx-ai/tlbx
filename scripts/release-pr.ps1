@@ -141,7 +141,7 @@ function Complete-ReleasePrMerge {
     $protection = Invoke-ReleaseGh api "repos/$script:TlbxReleaseRepo/branches/$Base/protection/required_status_checks" | ConvertFrom-Json
     $requiredNames = @(@($protection.contexts) + @($protection.checks.context) | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Sort-Object -Unique)
     if ($requiredNames.Count -eq 0) { throw "No required status checks are configured for $Base; refusing to infer release readiness." }
-    $deadline = [DateTime]::UtcNow.AddMinutes(45)
+    $deadline = [DateTime]::UtcNow.AddMinutes(10)
     while ($true) {
         $pr = Invoke-ReleaseGh pr view $Number --repo $script:TlbxReleaseRepo --json 'state,isDraft,headRefOid,baseRefName,mergeCommit,url' | ConvertFrom-Json
         if ($pr.headRefOid -ne $Head -or $pr.baseRefName -ne $Base) { throw "PR #$Number changed head or target. Refusing to merge unverified work." }

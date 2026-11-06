@@ -139,7 +139,7 @@ function global:npm {
 }
 try {
     Copy-Item "$PSScriptRoot/run-release-tests.ps1", "$PSScriptRoot/release-test-clusters.ps1" "$fixture/scripts/"
-    foreach ($name in @('run-dotnet-test-suite','verify-installers','audit-supply-chain','test-release-build-system','test-release-pr','run-runtime-build-verification','run-aot-smoke-probe')) {
+    foreach ($name in @('run-dotnet-test-suite','verify-installers','audit-supply-chain','test-release-build-system','test-publish-builds','test-release-pr','run-runtime-build-verification','run-aot-smoke-probe')) {
         ('$global:TlbxBuildTestCalls.Add("' + $name + ' $args")') | Set-Content "$fixture/scripts/$name.ps1"
     }
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories assets -FrontendInstalled
@@ -155,11 +155,12 @@ try {
     Assert-Check ($global:TlbxBuildTestCalls.Count -eq 1 -and $global:TlbxBuildTestCalls[0] -match '-Scope server -FrontendInstalled') 'Server dependency cluster is coupled to mobile or loses install ownership.'
     $global:TlbxBuildTestCalls.Clear()
     function global:python { $global:TlbxBuildTestCalls.Add("python $args"); $global:LASTEXITCODE=0 }
+    function global:dotnet { $global:TlbxBuildTestCalls.Add("dotnet $args"); $global:LASTEXITCODE=0 }
     try {
         & "$fixture/scripts/run-release-tests.ps1" -TestCategories build
         Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'run-runtime-build-verification*' }).Count -eq 1) 'Build cluster duplicated or omitted .NET runtime build coverage.'
     }
-    finally { Remove-Item Function:\python -ErrorAction SilentlyContinue }
+    finally { Remove-Item Function:\python,Function:\dotnet -ErrorAction SilentlyContinue }
     function global:npm { $global:LASTEXITCODE = 1 }
     Assert-Throws { & "$fixture/scripts/run-release-tests.ps1" -TestCategories frontend -FrontendInstalled } 'Failed frontend test did not fail the release gate.'
 

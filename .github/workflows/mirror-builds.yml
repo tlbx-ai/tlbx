@@ -1,0 +1,33 @@
+name: Repair HTTPS build catalog
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev]
+    paths:
+      - '.github/workflows/mirror-builds.yml'
+      - 'scripts/publish-builds.ps1'
+permissions:
+  contents: read
+concurrency:
+  group: https-build-catalog
+  cancel-in-progress: false
+jobs:
+  mirror:
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify HTTPS publisher contracts
+        shell: pwsh
+        run: ./scripts/test-publish-builds.ps1
+      - name: Mirror latest three public dev and stable releases
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-builds.ps1 -Mode Backfill

@@ -1122,6 +1122,31 @@ jobs:
             --input "$RELEASE_PATCH" \
             > /dev/null
 
+  publish-builds:
+    needs: publish-release
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: https-build-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify HTTPS publisher contracts
+        shell: pwsh
+        run: ./scripts/test-publish-builds.ps1
+      - name: Publish verified public packages over HTTPS
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/publish-builds.ps1 -Tag $env:RELEASE_TAG
+
   prune-artifacts:
     needs: [prepare, publish-release]
     if: needs.prepare.outputs.is_dev != 'true'

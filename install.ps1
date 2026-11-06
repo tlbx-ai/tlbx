@@ -27,7 +27,7 @@ $ProgressPreference = "SilentlyContinue"
 $script:InstallerScriptPath = $PSCommandPath
 $script:InstallerScriptDefinition = $MyInvocation.MyCommand.Definition
 
-# Ensure TLS 1.2 for GitHub API/downloads (PS 5.1 defaults to TLS 1.0)
+# Ensure TLS 1.2 for HTTPS build distribution (PS 5.1 defaults to TLS 1.0)
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 function Invoke-CompatibleRestMethod
@@ -42,6 +42,7 @@ function Invoke-CompatibleRestMethod
 
     $params = @{ Uri = $Uri }
     if ($Headers) { $params.Headers = $Headers }
+    if ($Uri.StartsWith("https://builds.tlbx.ai/", [StringComparison]::OrdinalIgnoreCase)) { $params.MaximumRedirection = 0 }
     if ($PSBoundParameters.ContainsKey("TimeoutSec")) { $params.TimeoutSec = $TimeoutSec }
 
     if ($PSVersionTable.PSVersion.Major -lt 6)
@@ -84,6 +85,7 @@ function Invoke-CompatibleWebRequest
         $params.UseBasicParsing = $true
     }
 
+    if ($Uri.StartsWith("https://builds.tlbx.ai/", [StringComparison]::OrdinalIgnoreCase)) { $params.MaximumRedirection = 0 }
     $params.TimeoutSec = 600
     for ($attempt = 1; $attempt -le 3; $attempt++)
     {
@@ -202,8 +204,7 @@ $ServiceName = "tlbx"
 $OldHostServiceName = "tlbxHost"
 $DisplayName = "tlbx"
 $Publisher = "tlbx-ai"
-$RepoOwner = "tlbx-ai"
-$RepoName = "tlbx"
+$BuildsOrigin = "https://builds.tlbx.ai"
 $WebBinaryName = "mt.exe"
 $TtyHostBinaryName = "mthost.exe"
 $AgentHostBinaryName = "mtagenthost.exe"
@@ -219,19 +220,6 @@ $CertificateFileName = "tlbx.pem"
 $CertificateKeyId = "tlbx"
 $UninstallRegistryName = "tlbx"
 $FirewallDisplayName = "tlbx HTTPS"
-
-try
-{
-    $repositoryCoordinate = (Invoke-CompatibleRestMethod -Uri "https://get.tlbx.ai/v1/repository" -TimeoutSec 3).Trim()
-    if ($repositoryCoordinate -in @("tlbx-ai/MidTerm", "tlbx-ai/tlbx"))
-    {
-        $RepoOwner, $RepoName = $repositoryCoordinate.Split("/", 2)
-    }
-}
-catch
-{
-    # Migration discovery is optional. Existing installs remain valid through the legacy coordinate.
-}
 
 # ============================================================================
 # PATH CONSTANTS - SYNC: These paths MUST match:
@@ -1122,20 +1110,22 @@ function Get-LatestRelease
     )
 
     Write-Host "Fetching latest compatible release ($AssetPattern)..." -ForegroundColor Gray
-    $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases?per_page=50"
-    $releases = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
-    $compatible = @($releases | Where-Object {
-        -not $_.draft -and @($_.assets | Where-Object { $_.name -eq $AssetPattern -and $_.browser_download_url }).Count -gt 0
-    })
-    if ($DevChannel)
+    $channels = if ($DevChannel) { @("dev", "main") } else { @("main") }
+    foreach ($channel in $channels)
     {
-        $release = $compatible | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
-        if ($release) { return $release }
-        Write-Host "  No compatible dev release found, using stable..." -ForegroundColor Yellow
+        $releases = Invoke-CompatibleRestMethod -Uri "$BuildsOrigin/v1/channels/$channel/releases.json" -TimeoutSec 10 -Headers @{ "User-Agent" = "tlbx-Installer" }
+        $release = $releases | Where-Object {
+            -not $_.draft -and ([bool]$_.prerelease -eq ($channel -eq "dev")) -and
+                @($_.assets | Where-Object { $_.name -eq $AssetPattern }).Count -gt 0
+        } | Select-Object -First 1
+        if ($release)
+        {
+            Get-AssetUrl -Release $release | Out-Null
+            return $release
+        }
+        if ($channel -eq "dev") { Write-Host "  No compatible dev release found, using stable..." -ForegroundColor Yellow }
     }
-    $release = $compatible | Where-Object { -not $_.prerelease } | Select-Object -First 1
-    if (-not $release) { throw "No published release contains $AssetPattern." }
-    return $release
+    throw "No published build contains $AssetPattern."
 }
 
 function Test-NetworkBinding
@@ -1307,15 +1297,45 @@ function Ensure-FirewallRule
     }
 }
 
+function Get-ReleaseChannel
+{
+    param($Release)
+    if ([bool]$Release.prerelease) { return "dev" }
+    return "stable"
+}
+
 function Get-AssetUrl
 {
     param($Release)
-    $asset = $Release.assets | Where-Object { $_.name -eq $AssetPattern }
-    if (-not $asset)
+    $assets = @($Release.assets | Where-Object { $_.name -ceq $AssetPattern })
+    if ($assets.Count -ne 1) { throw "Expected one $AssetPattern in build assets." }
+    $asset = $assets[0]
+    $tag = [string]$Release.tag_name
+    if ($tag -cnotmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$') { throw "Invalid build tag." }
+    $version = $tag -creplace '^v', ''
+    $channel = if ($version.Contains('-')) { 'dev' } else { 'main' }
+    $expected = "$BuildsOrigin/$channel/$version/$ExpectedReleasePlatform/$AssetPattern"
+    $uri = $null
+    if (-not [uri]::TryCreate([string]$asset.browser_download_url, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.AbsoluteUri -cne $expected -or [long]$asset.size -le 0 -or
+        [bool]$Release.prerelease -ne $version.Contains('-') -or
+        [string]$asset.digest -cnotmatch '^sha256:[0-9a-fA-F]{64}$')
     {
-        throw "Could not find $AssetPattern in release assets"
+        throw "Invalid build URL, size or SHA256 for $AssetPattern."
     }
-    return $asset.browser_download_url
+    return $uri.AbsoluteUri
+}
+
+function Assert-BuildArchive
+{
+    param([Parameter(Mandatory=$true)][string]$Path, [Parameter(Mandatory=$true)]$Release)
+    Get-AssetUrl -Release $Release | Out-Null
+    $asset = @($Release.assets | Where-Object { $_.name -ceq $AssetPattern })[0]
+    if ((Get-Item -LiteralPath $Path).Length -ne [long]$asset.size -or
+        (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ine ([string]$asset.digest).Substring(7))
+    {
+        throw "Downloaded build archive does not match its catalog size/SHA256."
+    }
 }
 
 function Convert-DerEcdsaSignatureToP1363
@@ -2058,6 +2078,7 @@ function Install-Tlbx
     $assetUrl = Get-AssetUrl -Release $script:release
     Write-Log "Downloading from: $assetUrl"
     Invoke-CompatibleWebRequest -Uri $assetUrl -OutFile $tempZip
+    Assert-BuildArchive -Path $tempZip -Release $script:release
     Unblock-DownloadedPath -Path $tempZip
     Write-Log "Download complete"
 
@@ -2065,7 +2086,7 @@ function Install-Tlbx
     Write-Log "Extracting to: $tempExtract"
     Assert-SafeReleaseArchive -Path $tempZip
     Expand-Archive -Path $tempZip -DestinationPath $tempExtract
-    Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform $ExpectedReleasePlatform -ExpectedChannel $channelLabel
+    Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform $ExpectedReleasePlatform -ExpectedChannel (Get-ReleaseChannel -Release $script:release)
     Unblock-DownloadedTree -Path $tempExtract
     Write-Log "Extraction and release-signature verification complete"
 
@@ -2591,7 +2612,7 @@ if ($ServiceMode)
             Write-Host ""
             $script:release = Get-LatestRelease -DevChannel $Dev
             $version = $script:release.tag_name -replace "^v", ""
-            $channelLabel = if ($Dev) { "dev" } else { "stable" }
+            $channelLabel = Get-ReleaseChannel -Release $script:release
             Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
             Write-Host ""
             Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
@@ -2608,7 +2629,7 @@ if ($ServiceMode)
         Write-Host ""
         $script:release = Get-LatestRelease -DevChannel $Dev
         $version = $script:release.tag_name -replace "^v", ""
-        $channelLabel = if ($Dev) { "dev" } else { "stable" }
+        $channelLabel = Get-ReleaseChannel -Release $script:release
         Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
         Write-Host ""
         Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
@@ -2631,7 +2652,7 @@ if ($Dev)
 # Fetch release info first
 $script:release = Get-LatestRelease -DevChannel $Dev
 $version = $script:release.tag_name -replace "^v", ""
-$channelLabel = if ($Dev) { "dev" } else { "stable" }
+$channelLabel = Get-ReleaseChannel -Release $script:release
 
 Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
 Write-Host ""

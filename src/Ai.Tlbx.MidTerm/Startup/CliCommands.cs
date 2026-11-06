@@ -54,6 +54,12 @@ public static class CliCommands
         {
             using var updateService = new UpdateService();
             var update = updateService.CheckForUpdateAsync().GetAwaiter().GetResult();
+            if (!string.IsNullOrWhiteSpace(update?.CheckError))
+            {
+                Console.Error.WriteLine($"Failed to check for updates: {update.CheckError}");
+                Environment.ExitCode = 1;
+                return true;
+            }
             if (update is not null && update.Available)
             {
                 Console.WriteLine($"Update available: {update.CurrentVersion} -> {update.LatestVersion}");
@@ -77,6 +83,12 @@ public static class CliCommands
             using var updateService = new UpdateService();
             Console.WriteLine("Checking for updates...");
             var update = updateService.CheckForUpdateAsync().GetAwaiter().GetResult();
+            if (!string.IsNullOrWhiteSpace(update?.CheckError))
+            {
+                Console.Error.WriteLine($"Failed to check for updates: {update.CheckError}");
+                Environment.ExitCode = 1;
+                return true;
+            }
 
             if (update is null || !update.Available)
             {

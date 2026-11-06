@@ -1,7 +1,7 @@
 /**
  * Changelog Module
  *
- * Fetches and displays the changelog from GitHub releases.
+ * Fetches and displays recent release notes from the public build catalog.
  */
 
 import { escapeHtml } from '../../utils';
@@ -14,34 +14,65 @@ import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 const log = createLogger('updating');
 let releaseBackButtonLayer: (() => void) | null = null;
 
-const GITHUB_RELEASES_BASE = 'https://api.github.com/repos/tlbx-ai/tlbx/releases';
-const PER_PAGE = 30;
+const BUILDS_RELEASES_BASE = 'https://builds.tlbx.ai/v1/channels';
 const GITHUB_RELEASES_PAGE = 'https://github.com/tlbx-ai/tlbx/releases';
 
-interface GitHubRelease {
-  tag_name?: string;
+interface ChangelogRelease {
+  tag_name: string;
   published_at?: string;
   body?: string;
 }
 
-// Pagination state
-let currentPage = 1;
-let hasMoreReleases = true;
-let isLoading = false;
+let changelogRequest = 0;
 
+/** Read each retained channel once; older history is available through HTML links. */
+export async function fetchChangelogReleases(): Promise<ChangelogRelease[]> {
+  const channels = await Promise.all(
+    (['dev', 'main'] as const).map(async (channel) => {
+      const response = await fetch(`${BUILDS_RELEASES_BASE}/${channel}/releases.json`, {
+        credentials: 'omit',
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!response.ok) throw new Error(`Build catalog HTTP ${response.status}`);
+      const releases: unknown = await response.json();
+      if (!Array.isArray(releases)) throw new Error('Invalid build catalog');
+      return releases.slice(0, 3).map((release: unknown): ChangelogRelease => {
+        if (!release || typeof release !== 'object') throw new Error('Invalid catalog release');
+        const value = release as Record<string, unknown>;
+        if (
+          typeof value.tag_name !== 'string' ||
+          !/^v\d+\.\d+\.\d+(-dev)?$/.test(value.tag_name) ||
+          value.tag_name.endsWith('-dev') !== (channel === 'dev') ||
+          value.draft === true
+        ) {
+          throw new Error('Invalid catalog release');
+        }
+        return {
+          tag_name: value.tag_name,
+          ...(typeof value.body === 'string' ? { body: value.body } : {}),
+          ...(typeof value.published_at === 'string' ? { published_at: value.published_at } : {}),
+        };
+      });
+    }),
+  );
+  return channels.flat().sort((a, b) => {
+    const left = a.tag_name.slice(1).replace(/-dev$/, '').split('.').map(Number);
+    const right = b.tag_name.slice(1).replace(/-dev$/, '').split('.').map(Number);
+    for (let i = 0; i < 3; i++) {
+      const difference = (right[i] ?? 0) - (left[i] ?? 0);
+      if (difference) return difference;
+    }
+    return Number(a.tag_name.endsWith('-dev')) - Number(b.tag_name.endsWith('-dev'));
+  });
+}
 /**
- * Show the changelog modal and fetch releases from GitHub.
+ * Show the changelog modal and fetch recent releases from the build catalog.
  * When afterUpdate is true, a "don't show again" option is displayed.
  */
 export function showChangelog(afterUpdate = false): void {
   const modal = document.getElementById('changelog-modal');
   const body = document.getElementById('changelog-body');
   const dontShow = document.getElementById('changelog-dont-show');
-
-  // Reset pagination state
-  currentPage = 1;
-  hasMoreReleases = true;
-  isLoading = false;
 
   if (!releaseBackButtonLayer) {
     releaseBackButtonLayer = registerBackButtonLayer(closeChangelog);
@@ -58,7 +89,7 @@ export function showChangelog(afterUpdate = false): void {
     }
   }
 
-  fetchReleases(true);
+  fetchReleases();
 }
 
 export function disableChangelogAfterUpdate(): void {
@@ -80,50 +111,24 @@ export function disableChangelogAfterUpdate(): void {
   closeChangelog();
 }
 
-/**
- * Fetch releases from GitHub API
- */
-function fetchReleases(isInitial: boolean): void {
-  if (isLoading) return;
-  isLoading = true;
-
+/** Fetch the six most recent retained notes without GitHub API pagination. */
+function fetchReleases(): void {
   const body = document.getElementById('changelog-body');
   if (!body) return;
+  const request = ++changelogRequest;
+  const historyLink =
+    `<p><a href="${GITHUB_RELEASES_PAGE}" target="_blank" rel="noopener noreferrer">` +
+    `${t('changelog.viewOnGithub')}</a></p>`;
 
-  const url = `${GITHUB_RELEASES_BASE}?per_page=${PER_PAGE}&page=${currentPage}`;
-
-  fetch(url)
-    .then((r) => r.json())
-    .then((releases: GitHubRelease[]) => {
-      isLoading = false;
-
-      if (!Array.isArray(releases)) {
-        if (isInitial) {
-          body.innerHTML = `<p>${t('changelog.noReleases')}</p>`;
-        }
-        hasMoreReleases = false;
-        return;
-      }
-
-      // Check if there are more pages
-      hasMoreReleases = releases.length === PER_PAGE;
-
-      if (releases.length === 0) {
-        if (isInitial) {
-          body.innerHTML = `<p>${t('changelog.noReleases')}</p>`;
-        }
-        hasMoreReleases = false;
-        return;
-      }
-
-      // Build HTML for releases
-      let html = '';
+  void fetchChangelogReleases()
+    .then((releases) => {
+      if (request !== changelogRequest) return;
+      let html = releases.length ? '' : `<p>${t('changelog.noReleases')}</p>`;
       releases.forEach((release) => {
-        const version = release.tag_name || 'Unknown';
+        const version = release.tag_name;
         const date = release.published_at
           ? new Date(release.published_at).toLocaleDateString()
           : '';
-        // Strip version prefix from body since version is already shown in header
         const rawNotes = release.body || t('changelog.noNotes');
         const notes = stripVersionPrefix(rawNotes, version);
 
@@ -133,51 +138,19 @@ function fetchReleases(isInitial: boolean): void {
         html += '<div class="changelog-notes">' + formatMarkdown(notes) + '</div>';
         html += '</div>';
       });
-
-      if (isInitial) {
-        body.innerHTML = html;
-      } else {
-        // Remove existing load more button before appending
-        const existingBtn = body.querySelector('.changelog-load-more');
-        if (existingBtn) existingBtn.remove();
-        body.insertAdjacentHTML('beforeend', html);
-      }
-
-      // Add load more button if there are more releases
-      if (hasMoreReleases) {
-        const loadMoreBtn = document.createElement('button');
-        loadMoreBtn.className = 'changelog-load-more';
-        loadMoreBtn.textContent = t('changelog.loadOlder');
-        loadMoreBtn.addEventListener('click', () => {
-          currentPage++;
-          loadMoreBtn.textContent = t('changelog.loadingMore');
-          loadMoreBtn.disabled = true;
-          fetchReleases(false);
-        });
-        body.appendChild(loadMoreBtn);
-      }
+      body.innerHTML = html + historyLink;
     })
     .catch((e: unknown) => {
-      isLoading = false;
-      if (isInitial) {
-        body.innerHTML =
-          '<p class="changelog-error">' +
-          t('changelog.failed') +
-          ' ' +
-          '<a href="' +
-          GITHUB_RELEASES_PAGE +
-          '" target="_blank">' +
-          t('changelog.viewOnGithub') +
-          '</a></p>';
-      }
+      if (request !== changelogRequest) return;
+      body.innerHTML = `<p class="changelog-error">${t('changelog.failed')}</p>` + historyLink;
       log.error(() => `Changelog error: ${String(e)}`);
     });
 }
-
 /**
  * Close the changelog modal
  */
 export function closeChangelog(): void {
+  changelogRequest++;
   releaseBackButtonLayer?.();
   releaseBackButtonLayer = null;
 
