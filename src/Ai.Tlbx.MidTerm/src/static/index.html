@@ -3940,13 +3940,27 @@ Enable terminal key log to capture Enter and modifier events.</pre>
             </div>
             <div class="form-group">
               <label for="new-password" data-i18n="modal.newPassword">New Password</label>
-              <input type="password" id="new-password" required autocomplete="new-password" />
+              <input
+                type="password"
+                id="new-password"
+                required
+                minlength="10"
+                maxlength="1024"
+                autocomplete="new-password"
+              />
             </div>
             <div class="form-group">
               <label for="confirm-password" data-i18n="modal.confirmPassword"
                 >Confirm Password</label
               >
-              <input type="password" id="confirm-password" required autocomplete="new-password" />
+              <input
+                type="password"
+                id="confirm-password"
+                required
+                minlength="10"
+                maxlength="1024"
+                autocomplete="new-password"
+              />
             </div>
             <div id="password-error" class="error-message hidden"></div>
             <div class="modal-footer">

@@ -420,7 +420,7 @@
   "update.copyLog": "复制日志",
   "error.newPasswordRequired": "新密码是必需的",
   "error.passwordsNoMatch": "密码不匹配",
-  "error.passwordTooShort": "密码必须至少 4 个字符",
+  "error.passwordLength": "密码长度必须为 10 到 1024 个字符",
   "error.passwordChangeFailed": "更改密码失败",
   "error.connectionError": "连接错误",
   "settings.options.cursorBar": "竖线",

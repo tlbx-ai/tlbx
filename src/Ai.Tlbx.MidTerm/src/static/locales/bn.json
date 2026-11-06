@@ -417,7 +417,7 @@
   "update.copyLog": "লগ কপি করুন",
   "error.newPasswordRequired": "নতুন পাসওয়ার্ড প্রয়োজন",
   "error.passwordsNoMatch": "পাসওয়ার্ড মিলছে না",
-  "error.passwordTooShort": "পাসওয়ার্ড কমপক্ষে ৪ অক্ষরের হতে হবে",
+  "error.passwordLength": "পাসওয়ার্ডে ১০ থেকে ১০২৪ অক্ষর থাকতে হবে",
   "error.passwordChangeFailed": "পাসওয়ার্ড পরিবর্তন ব্যর্থ",
   "error.connectionError": "সংযোগ ত্রুটি",
   "settings.options.cursorBar": "বার",

@@ -417,7 +417,7 @@
   "update.copyLog": "ログをコピー",
   "error.newPasswordRequired": "新しいパスワードが必要です",
   "error.passwordsNoMatch": "パスワードが一致しません",
-  "error.passwordTooShort": "パスワードは4文字以上必要です",
+  "error.passwordLength": "パスワードは10文字以上1024文字以下にしてください",
   "error.passwordChangeFailed": "パスワードの変更に失敗",
   "error.connectionError": "接続エラー",
   "settings.options.cursorBar": "バー",

@@ -177,6 +177,151 @@ test "$(printf '%s\n' "$entries" | tail -1 | tr -d '\r')" = "\"mthost\":\"$hash\
         if ($LASTEXITCODE -ne 0) {
             throw "install.sh signed checksum extraction smoke test failed: $($signedChecksumsOutput -join [Environment]::NewLine)"
         }
+        $firstRunSmoke = @'
+set -e
+# Extract and execute real installer functions; never run its installation entrypoint.
+eval "$(awk '/^command_exists\(\) \{/{emit=1} /^bootstrap_download\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^pick_downloader\(\) \{/{emit=1} /^print_dependency_help\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^run_with_system_privileges\(\) \{/{emit=1} /^ensure_prerequisites\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^ensure_prerequisites\(\) \{/{emit=1} /^init_log\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^decode_base64_to_file\(\) \{/{emit=1} /^extract_json_string_from_file\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^prompt_password\(\) \{/{emit=1} /^prompt_existing_password_action\(\) \{/{emit=0} emit' ./install.sh)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+log() { :; }
+print_dependency_help() { :; }
+RED='' GREEN='' YELLOW='' GRAY='' NC=''
+# Git Bash does not ship pgrep; fixture its presence, without running it.
+# Developer runtimes must not be required for native release installation.
+command_exists() {
+    case "$1" in dotnet|node|nodejs|python|python3|pwsh) return 1 ;; pgrep) return 0 ;; esac
+    command -v "$1" >/dev/null 2>&1
+}
+run_with_system_privileges() { echo 'unexpected system mutation attempted' >&2; return 1; }
+ensure_prerequisites
+mkdir -p "$tmp/payload"
+for name in mt mthost mtagenthost version.json runtime-inputs.json THIRD-PARTY-LICENSES.txt SHA256SUMS.txt; do
+    printf fixture > "$tmp/payload/$name"
+done
+tar -czf "$tmp/valid.tar.gz" -C "$tmp/payload" .
+validate_archive_members "$tmp/valid.tar.gz"
+printf unexpected > "$tmp/payload/unexpected"
+tar -czf "$tmp/invalid.tar.gz" -C "$tmp/payload" .
+if validate_archive_members "$tmp/invalid.tar.gz"; then echo 'unexpected archive member accepted' >&2; exit 1; fi
+printf '%s\n' 'archive and prerequisite checks passed'
+read_password_masked() { REPLY="$fixture_password"; }
+MT_BINARY_PATH="$tmp/missing-mt"
+fixture_password=1234567890
+prompt_password >/dev/null
+test "$PASSWORD_HASH" = "__PENDING64__:$(printf '%s' "$fixture_password" | base64)"
+for fixture_password in 123456789 "$(printf '%01025d' 0)"; do
+    if (prompt_password >/dev/null); then echo 'invalid password length accepted' >&2; exit 1; fi
+done
+fixture_password='ab\cdefghi'
+export CAPTURE="$tmp/password"
+cat > "$tmp/mt" <<'MT'
+#!/bin/bash
+test "$1" = --hash-password || exit 1
+cat > "$CAPTURE"
+printf '%s\n' '$PBKDF2$600000$c2FsdA==$aGFzaA=='
+MT
+chmod +x "$tmp/mt"
+MT_BINARY_PATH="$tmp/mt"
+prompt_password >/dev/null
+printf '%s\n' "$fixture_password" > "$tmp/expected"
+cmp "$tmp/expected" "$CAPTURE"
+# The already-present cross-platform decoder works even on BSD-only base64.
+REAL_BASE64="$(command -v base64)"
+base64() {
+    case "${1:-}" in
+        --decode|-d) return 1 ;;
+        -D) shift; "$REAL_BASE64" --decode "$@" 2>/dev/null || "$REAL_BASE64" -D "$@" ;;
+        *) "$REAL_BASE64" "$@" ;;
+    esac
+}
+decode_base64_to_file "$(printf '%s' "$fixture_password" | base64)" "$tmp/decoded"
+printf '%s' "$fixture_password" > "$tmp/expected"
+cmp "$tmp/expected" "$tmp/decoded"
+printf '%s\n' 'password boundary, byte identity, and BSD decoding checks passed'
+# Exercise only file staging/copy/rollback in a private root, never services/startup.
+eval "$(awk '/^copy_with_retry\(\) \{/{emit=1} /^check_existing_certificate\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^rollback_install_transaction\(\) \{/{emit=1} /^install_as_service\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^require_extracted_binaries\(\) \{/{emit=1} /^decode_base64_to_file\(\) \{/{emit=0} emit' ./install.sh)"
+prepare_native_runtime() { :; } # File-transaction fixture never executes a downloaded binary.
+print_step_inline() { :; }
+finish_step_inline() { :; }
+verify_signed_release() { :; } # Signature protocol has its own tests; this fixture isolates the swap.
+download_to_file() { cp "$fixture_archive" "$2"; }
+ASSET_NAME=fixture.tar.gz ASSET_URL=https://invalid.test/fixture VERSION=fixture
+export TMPDIR="$tmp"
+fixture_archive="$tmp/valid.tar.gz"
+mkdir -p "$tmp/install"
+printf old > "$tmp/install/mt"
+printf oldmetadata > "$tmp/install/runtime-inputs.json"
+install_binary "$tmp/install"
+test "$(cat "$tmp/install/runtime-inputs.json")" = fixture
+rollback_install_transaction 2>/dev/null
+test "$(cat "$tmp/install/runtime-inputs.json")" = oldmetadata
+test "$(cat "$tmp/install/mt")" = old
+# Previous releases without optional runtime metadata are still valid payloads.
+rm -f "$tmp/payload/unexpected" "$tmp/payload/runtime-inputs.json"
+tar -czf "$tmp/previous.tar.gz" -C "$tmp/payload" .
+fixture_archive="$tmp/previous.tar.gz"
+install_binary "$tmp/fresh"
+test -f "$tmp/fresh/mt"
+rollback_install_transaction 2>/dev/null
+test ! -e "$tmp/fresh/mt"
+printf '%s\n' 'transactional metadata and previous archive checks passed'
+# Real dependency selection runs with an argv recorder, never an OS package manager.
+eval "$(awk '/^run_with_system_privileges\(\) \{/{emit=1} /^ensure_prerequisites\(\) \{/{emit=0} emit' ./install.sh)"
+run_with_system_privileges() { printf '%s ' "$@" >> "$tmp/packages"; printf '\n' >> "$tmp/packages"; }
+for fixture_manager in apt-get dnf yum pacman; do
+    command_exists() { [ "$1" = "$fixture_manager" ]; }
+    LINUX_PACKAGES_READY=false
+    : > "$tmp/packages"
+    install_linux_system_packages >/dev/null 2>&1
+    grep -q "$fixture_manager .*openssl" "$tmp/packages"
+    grep -q ca-certificates "$tmp/packages"
+    if grep -Eq 'dotnet|python|nodejs|pwsh' "$tmp/packages"; then exit 1; fi
+    before="$(wc -l < "$tmp/packages")"
+    install_linux_system_packages
+    test "$(wc -l < "$tmp/packages")" = "$before"
+done
+# Missing crypto libraries trigger one recovery; healthy runtimes never invoke it.
+uname() { printf '%s\n' Linux; }
+install_linux_system_packages() { touch "$tmp/dependencies-ready"; }
+cat > "$tmp/native" <<'MT'
+#!/bin/bash
+if [ ! -e "$RUNTIME_READY" ]; then printf 'missing libssl' >&2; exit 1; fi
+printf '%s\n' '$PBKDF2$600000$c2FsdA==$aGFzaA=='
+MT
+export RUNTIME_READY="$tmp/dependencies-ready"
+mkdir -p "$tmp/runtime"
+cp "$tmp/native" "$tmp/runtime/mt"
+prepare_native_runtime "$tmp/runtime"
+test -e "$RUNTIME_READY"
+install_linux_system_packages() { echo 'healthy native runtime attempted package installation' >&2; return 1; }
+prepare_native_runtime "$tmp/runtime"
+cat > "$tmp/runtime/mt" <<'MT'
+#!/bin/bash
+printf 'incompatible glibc' >&2
+exit 1
+MT
+if prepare_native_runtime "$tmp/runtime" > "$tmp/failure.stdout" 2> "$tmp/failure.stderr"; then exit 1; fi
+grep -q 'incompatible glibc' "$tmp/failure.stderr"
+printf '%s\n' 'automatic system-dependency selection and native readiness checks passed'
+'@
+        $firstRunScript = ".verify-bash-first-run-$([Guid]::NewGuid().ToString('N')).sh"
+        try {
+            [IO.File]::WriteAllText((Join-Path $repoRoot $firstRunScript),
+                $firstRunSmoke.Replace("`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+            $firstRunOutput = & $bash.Source "./$firstRunScript" 2>&1
+        } finally {
+            Remove-Item -LiteralPath (Join-Path $repoRoot $firstRunScript) -ErrorAction SilentlyContinue
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "install.sh first-run behavior failed: $($firstRunOutput -join [Environment]::NewLine)"
+        }
     } finally {
         Pop-Location
     }
@@ -258,7 +403,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $validArchiveRoot = Join-Path $safetyRoot "valid"
     New-Item -ItemType Directory -Path (Join-Path $validArchiveRoot "x64"), (Join-Path $validArchiveRoot "arm64") -Force | Out-Null
-    foreach ($fileName in @(Get-WindowsReleaseFileNames) + "SHA256SUMS.txt") {
+    foreach ($fileName in @(Get-WindowsReleaseFileNames) + "SHA256SUMS.txt" + "runtime-inputs.json") {
         $path = Join-Path $validArchiveRoot $fileName
         New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
         Set-Content -LiteralPath $path -Value "payload" -NoNewline
@@ -433,7 +578,7 @@ if ($LiveRelease) {
 
                 $members = @(& $tar.Source -tzf $unixArchivePath)
                 if ($LASTEXITCODE -ne 0) { throw "Could not list $($target.Asset)." }
-                $allowed = @("mt", "mthost", "mtagenthost", "mttmux", "version.json", "SHA256SUMS.txt")
+                $allowed = @("mt", "mthost", "mtagenthost", "mttmux", "version.json", "SHA256SUMS.txt", "runtime-inputs.json", "THIRD-PARTY-LICENSES.txt")
                 $seen = @{}
                 foreach ($member in $members) {
                     $normalized = $member -replace '^\./', ''
@@ -459,4 +604,9 @@ if ($LiveRelease) {
     }
 }
 
+& (Join-Path $PSScriptRoot "test-installer-first-run.ps1")
+if ($IsWindows) {
+    & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-first-run.ps1")
+    if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 first-install contracts failed." }
+}
 Write-Host "Installer verification passed." -ForegroundColor Green

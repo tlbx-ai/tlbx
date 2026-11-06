@@ -417,7 +417,7 @@
   "update.copyLog": "Копировать журнал",
   "error.newPasswordRequired": "Требуется новый пароль",
   "error.passwordsNoMatch": "Пароли не совпадают",
-  "error.passwordTooShort": "Пароль должен содержать не менее 4 символов",
+  "error.passwordLength": "Пароль должен содержать от 10 до 1024 символов",
   "error.passwordChangeFailed": "Не удалось изменить пароль",
   "error.connectionError": "Ошибка подключения",
   "settings.options.cursorBar": "Линия",

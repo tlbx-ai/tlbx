@@ -8,6 +8,8 @@ on:
       - "uninstall*.ps1"
       - "uninstall*.sh"
       - "scripts/verify-installers.ps1"
+      - "scripts/test-installer-*.ps1"
+      - "scripts/test-installer-*.sh"
       - "src/Ai.Tlbx.MidTerm.Common/Identity/**"
       - "src/Ai.Tlbx.MidTerm/Settings/**"
       - "src/Ai.Tlbx.MidTerm/Startup/**"
@@ -21,6 +23,8 @@ on:
       - "uninstall*.ps1"
       - "uninstall*.sh"
       - "scripts/verify-installers.ps1"
+      - "scripts/test-installer-*.ps1"
+      - "scripts/test-installer-*.sh"
       - "src/Ai.Tlbx.MidTerm.Common/Identity/**"
       - "src/Ai.Tlbx.MidTerm/Settings/**"
       - "src/Ai.Tlbx.MidTerm/Startup/**"
@@ -34,7 +38,7 @@ jobs:
   verify:
     strategy:
       matrix:
-        os: [ubuntu-24.04, windows-2025]
+        os: [ubuntu-24.04, windows-2025, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,3 +47,13 @@ jobs:
       - name: Verify installer contracts
         shell: pwsh
         run: ./scripts/verify-installers.ps1
+
+      - name: Verify native macOS bootstrap with operating-system tools
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash ./scripts/test-installer-native-bootstrap.sh
+
+      - name: Verify native Linux bootstrap on a minimal OS
+        if: runner.os == 'Linux'
+        shell: bash
+        run: docker run --rm --mount type=bind,source="$PWD",target=/repo,readonly ubuntu:24.04 bash /repo/scripts/test-installer-native-bootstrap.sh

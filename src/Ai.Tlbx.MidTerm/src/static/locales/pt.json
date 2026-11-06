@@ -417,7 +417,7 @@
   "update.copyLog": "Copiar Log",
   "error.newPasswordRequired": "Nova senha é necessária",
   "error.passwordsNoMatch": "As senhas não coincidem",
-  "error.passwordTooShort": "A senha deve ter pelo menos 4 caracteres",
+  "error.passwordLength": "A senha deve ter de 10 a 1024 caracteres",
   "error.passwordChangeFailed": "Falha ao alterar senha",
   "error.connectionError": "Erro de conexão",
   "settings.options.cursorBar": "Barra",
