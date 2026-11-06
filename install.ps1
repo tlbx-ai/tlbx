@@ -27,6 +27,102 @@ $ProgressPreference = "SilentlyContinue"
 $script:InstallerScriptPath = $PSCommandPath
 $script:InstallerScriptDefinition = $MyInvocation.MyCommand.Definition
 
+function Test-InstallerPbkdf2Support
+{
+    try
+    {
+        return $null -ne [Security.Cryptography.Rfc2898DeriveBytes].GetConstructor(
+            [type[]]@([byte[]], [byte[]], [int], [Security.Cryptography.HashAlgorithmName]))
+    }
+    catch { return $false }
+}
+
+function Assert-InstallerPrerequisites
+{
+    param(
+        [version]$PowerShellVersion = $PSVersionTable.PSVersion,
+        [string]$LanguageMode = $ExecutionContext.SessionState.LanguageMode,
+        [bool]$WindowsPlatform = ($env:OS -eq 'Windows_NT' -or $PSVersionTable.PSEdition -eq 'Desktop' -or $PSVersionTable.Platform -eq 'Win32NT')
+    )
+    if (-not $WindowsPlatform) { throw 'This installer supports Windows only. Use install.sh on Linux or macOS.' }
+    if ($PowerShellVersion.Major -lt 5 -or ($PowerShellVersion.Major -eq 5 -and $PowerShellVersion.Minor -lt 1))
+    { throw 'The tlbx installer requires Windows PowerShell 5.1 or PowerShell 7.' }
+    if ($LanguageMode -ne 'FullLanguage')
+    { throw "The tlbx installer requires PowerShell FullLanguage; this session is $LanguageMode. Use an administrator-approved FullLanguage session." }
+    if (-not (Test-InstallerPbkdf2Support))
+    { throw 'This PowerShell runtime lacks PBKDF2-HMAC-SHA256 support. Windows PowerShell needs .NET Framework 4.7.2 or later; alternatively use a supported PowerShell 7 installation. No runtime is installed automatically.' }
+}
+
+function Get-InstallerEnvironmentValue([string]$Name) { return [Environment]::GetEnvironmentVariable($Name) }
+function Get-InstallerSpecialFolder([string]$Name) { return [Environment]::GetFolderPath([Environment+SpecialFolder]$Name) }
+function Get-InstallerNativeProgramFiles
+{
+    try { $key = [Microsoft.Win32.RegistryKey]::OpenBaseKey([Microsoft.Win32.RegistryHive]::LocalMachine, [Microsoft.Win32.RegistryView]::Registry64) } catch { return $null }
+    try
+    {
+        $version = $key.OpenSubKey('SOFTWARE\Microsoft\Windows\CurrentVersion')
+        try { if ($version) { return [string]$version.GetValue('ProgramFilesDir') } }
+        finally { if ($version) { $version.Dispose() } }
+    }
+    finally { $key.Dispose() }
+}
+
+function Resolve-InstallerDirectory
+{
+    param([string]$Name, [string[]]$Candidates, [switch]$Writable)
+    foreach ($candidate in $Candidates)
+    {
+        if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+        $created = $false; $check = $null; $stream = $null
+        try
+        {
+            $expanded = [Environment]::ExpandEnvironmentVariables($candidate)
+            if ($expanded -notmatch '^(?:[a-zA-Z]:[\\/]|\\\\[^\\]+\\[^\\]+)') { continue }
+            $path = [IO.Path]::GetFullPath($expanded)
+            if ([IO.File]::Exists($path)) { continue }
+            if (-not $Writable -and -not [IO.Directory]::Exists($path)) { continue }
+            if ($Writable)
+            {
+                $null = [IO.Directory]::CreateDirectory($path)
+                $check = Join-Path $path ('.tlbx-write-check-' + [Guid]::NewGuid().ToString('N'))
+                $stream = [IO.File]::Open($check, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+                $created = $true
+            }
+            return $path
+        }
+        catch { } # Try the OS-owned fallback instead of a missing/invalid environment path.
+        finally
+        {
+            if ($stream) { $stream.Dispose() }
+            if ($created) { [IO.File]::Delete($check) }
+        }
+    }
+    throw "Could not resolve a usable Windows $Name directory. Check this account's Windows profile/environment before retrying."
+}
+
+function Resolve-InstallerEnvironmentPaths
+{
+    param([bool]$Is64BitOperatingSystem = [Environment]::Is64BitOperatingSystem, [bool]$Is64BitProcess = [Environment]::Is64BitProcess)
+    $profile = Resolve-InstallerDirectory -Name UserProfile -Candidates @((Get-InstallerEnvironmentValue USERPROFILE), (Get-InstallerSpecialFolder UserProfile))
+    $local = Resolve-InstallerDirectory -Name LocalAppData -Writable -Candidates @((Get-InstallerEnvironmentValue LOCALAPPDATA), (Get-InstallerSpecialFolder LocalApplicationData), (Join-Path $profile 'AppData\Local'))
+    $windows = Resolve-InstallerDirectory -Name Windows -Candidates @((Get-InstallerEnvironmentValue SystemRoot), (Get-InstallerEnvironmentValue windir), (Get-InstallerSpecialFolder Windows))
+    $data = Resolve-InstallerDirectory -Name ProgramData -Candidates @((Get-InstallerEnvironmentValue ProgramData), (Get-InstallerSpecialFolder CommonApplicationData))
+    if ($Is64BitOperatingSystem -and -not $Is64BitProcess)
+    {
+        $programs = Resolve-InstallerDirectory -Name NativeProgramFiles -Candidates @((Get-InstallerEnvironmentValue ProgramW6432), (Get-InstallerNativeProgramFiles))
+    }
+    else
+    {
+        $programs = Resolve-InstallerDirectory -Name ProgramFiles -Candidates @((Get-InstallerEnvironmentValue ProgramFiles), (Get-InstallerSpecialFolder ProgramFiles))
+    }
+    $temp = Resolve-InstallerDirectory -Name Temp -Writable -Candidates @((Get-InstallerEnvironmentValue TEMP), (Get-InstallerEnvironmentValue TMP), (Join-Path $local 'Temp'), (Join-Path $windows 'Temp'))
+    return [pscustomobject]@{ UserProfile=$profile; LocalAppData=$local; ProgramData=$data; ProgramFiles=$programs; WindowsRoot=$windows; TempRoot=$temp }
+}
+
+# Reject unsupported shells before TLS, cryptography or filesystem operations.
+Assert-InstallerPrerequisites
+$script:InstallerPaths = Resolve-InstallerEnvironmentPaths
+$script:InstallerTempRoot = $script:InstallerPaths.TempRoot
 # Ensure TLS 1.2 for HTTPS build distribution (PS 5.1 defaults to TLS 1.0)
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
@@ -104,7 +200,7 @@ function Unblock-DownloadedPath
         [string]$Path
     )
 
-    if (-not (Test-Path $Path))
+    if (-not (Test-Path -LiteralPath $Path))
     {
         return
     }
@@ -126,7 +222,7 @@ function Unblock-DownloadedTree
         [string]$Path
     )
 
-    if (-not (Test-Path $Path))
+    if (-not (Test-Path -LiteralPath $Path))
     {
         return
     }
@@ -162,7 +258,7 @@ function Initialize-Log
         $logDir = $WIN_USER_SETTINGS_DIR
     }
 
-    if (-not (Test-Path $logDir))
+    if (-not (Test-Path -LiteralPath $logDir))
     {
         New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     }
@@ -170,7 +266,7 @@ function Initialize-Log
     $script:UpdateLogFile = Join-Path $logDir "update.log"
 
     # Clear previous log
-    "" | Set-Content $script:UpdateLogFile -Encoding UTF8 -Force -ErrorAction SilentlyContinue
+    "" | Set-Content -LiteralPath $script:UpdateLogFile -Encoding UTF8 -Force -ErrorAction SilentlyContinue
 
     $script:LogInitialized = $true
 
@@ -196,7 +292,7 @@ function Write-Log
     {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
         $line = "[$timestamp] [$Level] $Message"
-        Add-Content -Path $script:UpdateLogFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+        Add-Content -LiteralPath $script:UpdateLogFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
     }
 }
 
@@ -230,14 +326,14 @@ $FirewallDisplayName = "tlbx HTTPS"
 # ============================================================================
 # New installations use tlbx. Existing MidTerm layouts are selected explicitly
 # later and remain updateable in place.
-$TLBX_SERVICE_SETTINGS_DIR = "$env:ProgramData\tlbx"
-$TLBX_SERVICE_INSTALL_DIR = "$env:ProgramFiles\tlbx"
-$TLBX_USER_INSTALL_DIR = "$env:LOCALAPPDATA\tlbx"
-$TLBX_USER_SETTINGS_DIR = "$env:USERPROFILE\.tlbx"
-$LEGACY_SERVICE_SETTINGS_DIR = "$env:ProgramData\MidTerm"
-$LEGACY_SERVICE_INSTALL_DIR = "$env:ProgramFiles\MidTerm"
-$LEGACY_USER_INSTALL_DIR = "$env:LOCALAPPDATA\MidTerm"
-$LEGACY_USER_SETTINGS_DIR = "$env:USERPROFILE\.midterm"
+$TLBX_SERVICE_SETTINGS_DIR = (Join-Path $script:InstallerPaths.ProgramData 'tlbx')
+$TLBX_SERVICE_INSTALL_DIR = (Join-Path $script:InstallerPaths.ProgramFiles 'tlbx')
+$TLBX_USER_INSTALL_DIR = (Join-Path $script:InstallerPaths.LocalAppData 'tlbx')
+$TLBX_USER_SETTINGS_DIR = (Join-Path $script:InstallerPaths.UserProfile '.tlbx')
+$LEGACY_SERVICE_SETTINGS_DIR = (Join-Path $script:InstallerPaths.ProgramData 'MidTerm')
+$LEGACY_SERVICE_INSTALL_DIR = (Join-Path $script:InstallerPaths.ProgramFiles 'MidTerm')
+$LEGACY_USER_INSTALL_DIR = (Join-Path $script:InstallerPaths.LocalAppData 'MidTerm')
+$LEGACY_USER_SETTINGS_DIR = (Join-Path $script:InstallerPaths.UserProfile '.midterm')
 $WIN_SERVICE_SETTINGS_DIR = $TLBX_SERVICE_SETTINGS_DIR
 $WIN_SERVICE_INSTALL_DIR = $TLBX_SERVICE_INSTALL_DIR
 $WIN_USER_INSTALL_DIR = $TLBX_USER_INSTALL_DIR
@@ -255,9 +351,9 @@ function Test-ServiceInstallIdentity
         [string[]]$ServiceNames
     )
 
-    if ((Test-Path (Join-Path $InstallDir $WebBinaryName)) -or
+    if ((Test-Path -LiteralPath (Join-Path $InstallDir $WebBinaryName)) -or
         (Test-MeaningfulSettingsDirectory -Path $SettingsDir) -or
-        (Test-Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$RegistryName"))
+        (Test-Path -LiteralPath "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$RegistryName"))
     {
         return $true
     }
@@ -281,9 +377,9 @@ function Test-UserInstallIdentity
         [string]$RegistryName
     )
 
-    return ((Test-Path (Join-Path $InstallDir $WebBinaryName)) -or
+    return ((Test-Path -LiteralPath (Join-Path $InstallDir $WebBinaryName)) -or
         (Test-MeaningfulSettingsDirectory -Path $SettingsDir) -or
-        (Test-Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$RegistryName"))
+        (Test-Path -LiteralPath "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$RegistryName"))
 }
 
 function Test-MeaningfulSettingsDirectory
@@ -409,7 +505,7 @@ function Test-Administrator
 
 function Get-WindowsPowerShellPath
 {
-    $systemRoot = $env:SystemRoot
+    $systemRoot = $script:InstallerPaths.WindowsRoot
     if ([string]::IsNullOrWhiteSpace($systemRoot))
     {
         $systemRoot = $env:windir
@@ -418,7 +514,7 @@ function Get-WindowsPowerShellPath
     if (-not [string]::IsNullOrWhiteSpace($systemRoot))
     {
         $candidate = Join-Path $systemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
-        if (Test-Path $candidate)
+        if (Test-Path -LiteralPath $candidate)
         {
             return $candidate
         }
@@ -446,9 +542,9 @@ function Get-CurrentUserInfo
 
 function Get-CurrentInstallerScriptContent
 {
-    if ($script:InstallerScriptPath -and (Test-Path $script:InstallerScriptPath))
+    if ($script:InstallerScriptPath -and (Test-Path -LiteralPath $script:InstallerScriptPath))
     {
-        return Get-Content -Path $script:InstallerScriptPath -Raw -Encoding UTF8
+        return Get-Content -LiteralPath $script:InstallerScriptPath -Raw -Encoding UTF8
     }
 
     if (-not [string]::IsNullOrWhiteSpace($script:InstallerScriptDefinition) -and
@@ -468,7 +564,7 @@ function New-ElevationHandoffDirectory
         [string]$UserSid
     )
 
-    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("tlbx-install-" + [Guid]::NewGuid().ToString("N"))
+    $root = Join-Path $script:InstallerTempRoot ("tlbx-install-" + [Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $root -Force | Out-Null
 
     $grants = @()
@@ -479,7 +575,7 @@ function New-ElevationHandoffDirectory
     $output = & icacls.exe $root /inheritance:r 2>&1
     if ($LASTEXITCODE -ne 0)
     {
-        Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
         throw "Could not disable inherited ACLs on elevated installer handoff directory: $output"
     }
 
@@ -488,7 +584,7 @@ function New-ElevationHandoffDirectory
         $output = & icacls.exe $root /grant:r $grant 2>&1
         if ($LASTEXITCODE -ne 0)
         {
-            Remove-Item $root -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
             throw "Could not grant elevated installer handoff directory ACL '$grant': $output"
         }
     }
@@ -522,27 +618,103 @@ function Join-ProcessArguments
     return ($quoted -join " ")
 }
 
+function Read-InstallerChoice
+{
+    param([string]$Prompt, [string[]]$Choices, [string]$DefaultValue)
+    for ($attempt = 0; $attempt -lt 3; $attempt++)
+    {
+        $answer = ([string](Read-Host $Prompt)).Trim()
+        if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultValue }
+        if ($answer -in $Choices) { return $answer }
+        Write-Host "  Invalid choice. Please enter $($Choices -join ' or ')." -ForegroundColor Red
+    }
+    throw "Too many invalid choices. Installation cancelled before making changes."
+}
+
+function Read-InstallerYesNo
+{
+    param([string]$Prompt, [bool]$DefaultValue = $true)
+    for ($attempt = 0; $attempt -lt 3; $attempt++)
+    {
+        $answer = ([string](Read-Host $Prompt)).Trim().ToLowerInvariant()
+        if ([string]::IsNullOrWhiteSpace($answer)) { return $DefaultValue }
+        if ($answer -in @('y','yes','j','ja')) { return $true }
+        if ($answer -in @('n','no','nein')) { return $false }
+        Write-Host "  Invalid answer. Please enter yes or no." -ForegroundColor Red
+    }
+    throw "Too many invalid answers. Installation cancelled before making changes."
+}
+
+function Normalize-InstallerBindAddress
+{
+    param([AllowNull()][string]$BindAddress)
+    if ([string]::IsNullOrWhiteSpace($BindAddress)) { return '*' }
+    switch ($BindAddress.Trim().ToLowerInvariant())
+    {
+        '*' { return '*' }
+        '0.0.0.0' { return '*' }
+        'localhost' { return 'localhost' }
+        '127.0.0.1' { return 'localhost' }
+        '::1' { return 'localhost' }
+        default { throw "Invalid bind address. Use localhost, 127.0.0.1, ::1, * or 0.0.0.0." }
+    }
+}
+
+function Assert-InstallerOptions
+{
+    param($Port, [AllowNull()][string]$BindAddress)
+    $parsedPort = 0
+    if (-not [int]::TryParse([string]$Port, [ref]$parsedPort) -or $parsedPort -lt 1 -or $parsedPort -gt 65535)
+    {
+        throw "Invalid port. Enter a whole number between 1 and 65535."
+    }
+    return @{ Port = $parsedPort; BindAddress = (Normalize-InstallerBindAddress $BindAddress) }
+}
+
 function Import-ElevatedReplayFile
 {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Path
-    )
-
-    if (-not (Test-Path $Path))
+    param([Parameter(Mandatory = $true)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "Elevated installer replay file not found: $Path" }
+    $replay = Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json
+    if (-not $replay -or $replay -is [Array]) { throw "Invalid installer replay object." }
+    foreach ($field in @('runAsUser','runAsUserSid','passwordHash','port','bindAddress','configureFirewall','trustCert','dev'))
     {
-        throw "Elevated installer replay file not found: $Path"
+        if ($field -notin $replay.PSObject.Properties.Name) { throw "Installer replay is missing '$field'." }
     }
-
-    $replay = Get-Content -Path $Path -Raw -Encoding UTF8 | ConvertFrom-Json
-    $script:RunAsUser = [string]$replay.runAsUser
-    $script:RunAsUserSid = [string]$replay.runAsUserSid
-    $script:PasswordHash = if ($null -ne $replay.passwordHash) { [string]$replay.passwordHash } else { $null }
-    $script:Port = [int]$replay.port
-    $script:BindAddress = [string]$replay.bindAddress
-    $script:ConfigureFirewall = [bool]$replay.configureFirewall
-    $script:TrustCert = [bool]$replay.trustCert
-    $script:Dev = [bool]$replay.dev
+    foreach ($field in @('configureFirewall','trustCert','dev'))
+    {
+        if ($replay.$field -isnot [bool]) { throw "Installer replay '$field' must be a JSON boolean." }
+    }
+    if ($replay.runAsUser -isnot [string] -or [string]::IsNullOrWhiteSpace($replay.runAsUser) -or
+        $replay.runAsUserSid -isnot [string] -or [string]::IsNullOrWhiteSpace($replay.runAsUserSid))
+    {
+        throw "Installer replay requires a user name and SID."
+    }
+    try { $sid = New-Object Security.Principal.SecurityIdentifier($replay.runAsUserSid) }
+    catch { throw "Invalid installer replay user SID." }
+    if ($replay.bindAddress -isnot [string]) { throw "Installer replay bind address must be a string." }
+    $options = Assert-InstallerOptions -Port $replay.port -BindAddress $replay.bindAddress
+    if ($null -ne $replay.passwordHash)
+    {
+        if ($replay.passwordHash -isnot [string] -or
+            $replay.passwordHash -cnotmatch '^\$PBKDF2\$600000\$([A-Za-z0-9+/]{43}=)\$([A-Za-z0-9+/]{43}=)$')
+        {
+            throw "Invalid installer replay password hash."
+        }
+        if ([Convert]::FromBase64String($Matches[1]).Length -ne 32 -or [Convert]::FromBase64String($Matches[2]).Length -ne 32)
+        {
+            throw "Invalid installer replay password hash."
+        }
+    }
+    # Assign only after the complete replay has passed validation.
+    $script:RunAsUser = $replay.runAsUser
+    $script:RunAsUserSid = $sid.Value
+    $script:PasswordHash = $replay.passwordHash
+    $script:Port = $options.Port
+    $script:BindAddress = $options.BindAddress
+    $script:ConfigureFirewall = $replay.configureFirewall
+    $script:TrustCert = $replay.trustCert
+    $script:Dev = $replay.dev
 }
 
 function Test-ExistingPassword
@@ -550,11 +722,11 @@ function Test-ExistingPassword
     # Check if password exists in secure storage (secrets.bin)
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     $secretsPath = "$WIN_SERVICE_SETTINGS_DIR\$WIN_SECRETS_FILENAME"
-    if (Test-Path $secretsPath)
+    if (Test-Path -LiteralPath $secretsPath)
     {
         try
         {
-            $secrets = Get-Content $secretsPath -Raw | ConvertFrom-Json
+            $secrets = Get-Content -LiteralPath $secretsPath -Raw | ConvertFrom-Json
             if ($secrets.password_hash -and $secrets.password_hash.Length -gt 10)
             {
                 return $true
@@ -565,11 +737,11 @@ function Test-ExistingPassword
 
     # Legacy: check settings.json (old broken path - will be migrated)
     $settingsPath = "$WIN_SERVICE_SETTINGS_DIR\settings.json"
-    if (Test-Path $settingsPath)
+    if (Test-Path -LiteralPath $settingsPath)
     {
         try
         {
-            $settings = Get-Content $settingsPath -Raw | ConvertFrom-Json
+            $settings = Get-Content -LiteralPath $settingsPath -Raw | ConvertFrom-Json
             if ($settings.passwordHash -and $settings.passwordHash.Length -gt 10)
             {
                 return $true
@@ -709,137 +881,82 @@ function Prompt-ExistingPasswordAction
     Write-Host "      - Replaces the existing password" -ForegroundColor Gray
     Write-Host ""
 
-    $maxAttempts = 3
-    for ($i = 0; $i -lt $maxAttempts; $i++)
-    {
-        $choice = Read-Host "  Your choice [1/2]"
-
-        if ([string]::IsNullOrWhiteSpace($choice) -or $choice -eq "1")
-        {
-            return "Preserve"
-        }
-
-        if ($choice -eq "2")
-        {
-            return "Replace"
-        }
-
-        Write-Host "  Error: Please enter 1 or 2." -ForegroundColor Red
-        if ($i -lt $maxAttempts - 1)
-        {
-            Write-Host "  Please try again." -ForegroundColor Yellow
-        }
-        else
-        {
-            Write-Host "  Using default: keep existing password." -ForegroundColor Yellow
-        }
-    }
-
-    return "Preserve"
+    $choice = Read-InstallerChoice -Prompt "  Your choice [1/2]" -Choices @('1','2') -DefaultValue '1'
+    if ($choice -eq '2') { return 'Replace' }
+    return 'Preserve'
 }
 
 function Test-ExistingCertificate
 {
-    param(
-        [string]$SettingsDir
-    )
-
+    param([string]$SettingsDir, [bool]$IsService = $false)
     $certPath = Join-Path $SettingsDir $CertificateFileName
-    $keyPath = Join-Path (Join-Path $SettingsDir "keys") "$CertificateKeyId.dpapi"
-
-    # Check if both cert and key exist
-    if (-not (Test-Path $certPath))
+    $keyPath = Join-Path (Join-Path $SettingsDir 'keys') "$CertificateKeyId.dpapi"
+    if (-not (Test-Path -LiteralPath $certPath -PathType Leaf)) { return $null }
+    if (-not (Test-Path -LiteralPath $keyPath -PathType Leaf))
     {
+        Write-Host '  Warning: Certificate exists but private key is missing' -ForegroundColor Yellow
         return $null
     }
-
-    if (-not (Test-Path $keyPath))
-    {
-        Write-Host "  Warning: Certificate exists but private key is missing" -ForegroundColor Yellow
-        return $null
-    }
-
+    $cert = $null; $privateBytes = $null; $key = $null; $privateKey = $null; $publicKey = $null
+    $accepted = $false
     try
     {
-        # Load and validate the certificate
-        $certContent = Get-Content $certPath -Raw
-        $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
-        $certBytes = [Convert]::FromBase64String($base64)
-        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
-
-        # Check if cert is still valid (not expired, and has at least 30 days left)
+        $certContent = Get-Content -LiteralPath $certPath -Raw
+        $base64 = $certContent -replace '-----BEGIN CERTIFICATE-----','' -replace '-----END CERTIFICATE-----','' -replace '\s',''
+        $cert = New-Object Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,[Convert]::FromBase64String($base64))
         $now = Get-Date
-        if ($cert.NotAfter -lt $now)
+        if ($cert.NotBefore -gt $now -or $cert.NotAfter -lt $now.AddDays(30))
         {
-            Write-Host "  Warning: Existing certificate has expired" -ForegroundColor Yellow
+            Write-Host '  Warning: Existing certificate is not valid now or expires in less than 30 days' -ForegroundColor Yellow
             return $null
         }
-
-        if ($cert.NotAfter -lt $now.AddDays(30))
+        Add-Type -AssemblyName System.Security
+        $scope = if ($IsService) { [Security.Cryptography.DataProtectionScope]::LocalMachine } else { [Security.Cryptography.DataProtectionScope]::CurrentUser }
+        $privateBytes = [Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes($keyPath), $null, $scope)
+        $key = [Security.Cryptography.CngKey]::Import($privateBytes, [Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
+        $challenge = New-Object byte[] 32
+        $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+        try { $rng.GetBytes($challenge) } finally { $rng.Dispose() }
+        $matches = $false
+        if ($key.AlgorithmGroup -eq [Security.Cryptography.CngAlgorithmGroup]::ECDsa)
         {
-            Write-Host "  Warning: Existing certificate expires in less than 30 days" -ForegroundColor Yellow
-            return $null
+            $privateKey = New-Object Security.Cryptography.ECDsaCng -ArgumentList $key
+            $publicKey = [Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPublicKey($cert)
+            if ($publicKey)
+            {
+                $signature = $privateKey.SignData($challenge, [Security.Cryptography.HashAlgorithmName]::SHA256)
+                $matches = $publicKey.VerifyData($challenge, $signature, [Security.Cryptography.HashAlgorithmName]::SHA256)
+            }
         }
-
-        return @{
-            Path = $certPath
-            Certificate = $cert
-            Thumbprint = $cert.Thumbprint
-            NotAfter = $cert.NotAfter
+        elseif ($key.AlgorithmGroup -eq [Security.Cryptography.CngAlgorithmGroup]::Rsa)
+        {
+            $privateKey = New-Object Security.Cryptography.RSACng -ArgumentList $key
+            $publicKey = [Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPublicKey($cert)
+            if ($publicKey)
+            {
+                $signature = $privateKey.SignData($challenge, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+                $matches = $publicKey.VerifyData($challenge, $signature, [Security.Cryptography.HashAlgorithmName]::SHA256, [Security.Cryptography.RSASignaturePadding]::Pkcs1)
+            }
         }
+        if (-not $matches) { throw 'The protected private key does not match the HTTPS certificate.' }
+        $accepted = $true
+        return @{ Path=$certPath; Certificate=$cert; Thumbprint=$cert.Thumbprint; NotAfter=$cert.NotAfter }
     }
     catch
     {
-        Write-Host "  Warning: Could not validate existing certificate: $_" -ForegroundColor Yellow
+        Write-Host "  Warning: Could not validate existing certificate/key pair: $_" -ForegroundColor Yellow
         return $null
     }
-}
-
-function Remove-PreviousTlbxCertificates
-{
-    param(
-        [string]$ExceptThumbprint = $null
-    )
-
-    try
+    finally
     {
-        $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
-        $rootStore.Open("ReadWrite")
-
-        $oldCerts = $rootStore.Certificates | Where-Object { $_.Subject -eq $CertificateSubject }
-        $removed = 0
-
-        foreach ($old in $oldCerts)
-        {
-            if ($ExceptThumbprint -and $old.Thumbprint -eq $ExceptThumbprint)
-            {
-                continue  # Keep the current cert
-            }
-
-            try
-            {
-                $rootStore.Remove($old)
-                $removed++
-                Write-Host "  Removed old certificate: $($old.Thumbprint.Substring(0, 8))..." -ForegroundColor Gray
-            }
-            catch
-            {
-                Write-Host "  Warning: Could not remove old certificate: $_" -ForegroundColor Yellow
-            }
-        }
-
-        $rootStore.Close()
-
-        if ($removed -gt 0)
-        {
-            Write-Host "  Cleaned up $removed old $DisplayName certificate(s) from trusted store" -ForegroundColor Green
-        }
-    }
-    catch
-    {
-        Write-Host "  Warning: Could not clean up old certificates: $_" -ForegroundColor Yellow
+        if ($privateBytes) { [Array]::Clear($privateBytes, 0, $privateBytes.Length) }
+        if ($publicKey) { $publicKey.Dispose() }
+        if ($privateKey) { $privateKey.Dispose() }
+        if ($key) { $key.Dispose() }
+        if ($cert -and -not $accepted) { $cert.Dispose() }
     }
 }
+
 
 function Show-CertificateFingerprint
 {
@@ -847,7 +964,7 @@ function Show-CertificateFingerprint
         [string]$CertPath
     )
 
-    if (-not $CertPath -or -not (Test-Path $CertPath))
+    if (-not $CertPath -or -not (Test-Path -LiteralPath $CertPath))
     {
         return
     }
@@ -855,7 +972,7 @@ function Show-CertificateFingerprint
     try
     {
         # Load the PEM certificate
-        $certContent = Get-Content $CertPath -Raw
+        $certContent = Get-Content -LiteralPath $CertPath -Raw
         $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
         $certBytes = [Convert]::FromBase64String($base64)
 
@@ -889,14 +1006,13 @@ function Generate-Certificate
     param(
         [string]$InstallDir,
         [string]$SettingsDir,
-        [bool]$IsService = $false,
-        [bool]$TrustCert = $false
+        [bool]$IsService = $false
     )
 
     Write-Log "Generating certificate: InstallDir=$InstallDir, SettingsDir=$SettingsDir, IsService=$IsService"
 
     # First check if a valid certificate already exists
-    $existingCert = Test-ExistingCertificate -SettingsDir $SettingsDir
+    $existingCert = Test-ExistingCertificate -SettingsDir $SettingsDir -IsService $IsService
     if ($existingCert)
     {
         Write-Log "Existing valid certificate found: $($existingCert.Path), expires $($existingCert.NotAfter)"
@@ -911,7 +1027,7 @@ function Generate-Certificate
         Write-Host "  Generating HTTPS certificate with OS-protected private key..." -ForegroundColor Gray
 
         $mtPath = Join-Path $InstallDir "mt.exe"
-        if (-not (Test-Path $mtPath))
+        if (-not (Test-Path -LiteralPath $mtPath))
         {
             Write-Log "mt.exe not found at $mtPath" "ERROR"
             Write-Host "  Error: mt.exe not found at $mtPath" -ForegroundColor Red
@@ -954,7 +1070,7 @@ function Generate-Certificate
             $wasGenerated = $true
 
             # Get the thumbprint of the new cert
-            $certContent = Get-Content $certPath -Raw
+            $certContent = Get-Content -LiteralPath $certPath -Raw
             $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
             $certBytes = [Convert]::FromBase64String($base64)
             $newCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
@@ -967,40 +1083,43 @@ function Generate-Certificate
         }
     }
 
-    # Trust the certificate if requested (decision made before elevation)
-    if ($TrustCert)
-    {
-        # First, remove old certificates for the selected install identity.
-        Remove-PreviousTlbxCertificates -ExceptThumbprint $null  # Remove all, we'll add the current one
-
-        Write-Host "  Adding certificate to trusted root store..." -ForegroundColor Gray
-        try
-        {
-            # Load the PEM certificate - extract base64 and create cert via constructor (not Import)
-            $certContent = Get-Content $certPath -Raw
-            $base64 = $certContent -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "`n", "" -replace "`r", ""
-            $certBytes = [Convert]::FromBase64String($base64)
-            $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$certBytes)
-
-            # Import to Trusted Root - requires admin
-            $rootStore = New-Object System.Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
-            $rootStore.Open("ReadWrite")
-            $rootStore.Add($cert)
-            $rootStore.Close()
-            Write-Host "  Certificate trusted successfully" -ForegroundColor Green
-        }
-        catch
-        {
-            Write-Host "  Could not trust certificate: $_" -ForegroundColor Yellow
-            Write-Host "  You may see browser warnings until manually trusted" -ForegroundColor Gray
-        }
-    }
-
     return $certPath
+}
+
+function Trust-InstallerCertificate
+{
+    param([Parameter(Mandatory=$true)][string]$CertPath)
+    $rootStore = $null
+    $cert = $null
+    try
+    {
+        Write-Host "  Adding certificate to trusted root store..." -ForegroundColor Gray
+        $content = Get-Content -LiteralPath $CertPath -Raw
+        $base64 = $content -replace "-----BEGIN CERTIFICATE-----", "" -replace "-----END CERTIFICATE-----", "" -replace "\s", ""
+        $bytes = [Convert]::FromBase64String($base64)
+        $cert = New-Object Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList @(,$bytes)
+        $rootStore = New-Object Security.Cryptography.X509Certificates.X509Store("Root", "LocalMachine")
+        $rootStore.Open("ReadWrite")
+        # Other tlbx hosts/installations can have the same certificate subject.
+        # Add this verified instance only; never remove unrelated trusted roots.
+        $rootStore.Add($cert)
+        Write-Host "  Certificate trusted successfully" -ForegroundColor Green
+    }
+    catch
+    {
+        Write-Host "  Could not trust certificate: $_" -ForegroundColor Yellow
+        Write-Host "  You may see browser warnings until manually trusted" -ForegroundColor Gray
+    }
+    finally
+    {
+        if ($rootStore) { $rootStore.Close() }
+        if ($cert) { $cert.Dispose() }
+    }
 }
 
 function Prompt-NetworkConfig
 {
+    param([string]$InstallDir = '')
     Write-Host ""
     Write-Host "  Network Configuration:" -ForegroundColor Cyan
     Write-Host ""
@@ -1008,44 +1127,25 @@ function Prompt-NetworkConfig
     # Port configuration with validation and retry
     $maxAttempts = 3
     $port = 2000
+    $validPort = $false
     for ($i = 0; $i -lt $maxAttempts; $i++)
     {
-        $portInput = Read-Host "  Port number [2000]"
-        if ([string]::IsNullOrWhiteSpace($portInput))
+        $portInput = ([string](Read-Host "  Port number [2000]")).Trim()
+        $parsedPort = 2000
+        if (-not [string]::IsNullOrWhiteSpace($portInput) -and
+            (-not [int]::TryParse($portInput, [ref]$parsedPort) -or $parsedPort -lt 1 -or $parsedPort -gt 65535))
         {
-            $port = 2000
-            break
+            Write-Host "  Error: Port must be a whole number between 1 and 65535." -ForegroundColor Red
+            continue
         }
-
-        if ($portInput -match '^\d+$')
+        try
         {
-            $portNum = [int]$portInput
-            if ($portNum -ge 1 -and $portNum -le 65535)
-            {
-                $port = $portNum
-                break
-            }
-            else
-            {
-                Write-Host "  Error: Port must be between 1 and 65535." -ForegroundColor Red
-            }
+            if ($InstallDir) { Assert-InstallerPortAvailable -Port $parsedPort -BindAddress localhost -InstallDir $InstallDir }
+            $port = $parsedPort; $validPort = $true; break
         }
-        else
-        {
-            Write-Host "  Error: Port must be a number." -ForegroundColor Red
-        }
-
-        if ($i -lt $maxAttempts - 1)
-        {
-            Write-Host "  Please try again." -ForegroundColor Yellow
-        }
-        else
-        {
-            Write-Host "  Using default port 2000." -ForegroundColor Yellow
-            $port = 2000
-        }
+        catch { Write-Host "  $($_.Exception.Message)" -ForegroundColor Red }
     }
-
+    if (-not $validPort) { throw "Too many invalid ports. Installation cancelled before making changes." }
     Write-Host ""
     Write-Host "  Network binding:" -ForegroundColor White
     Write-Host "  [1] Accept connections from anywhere (default)" -ForegroundColor Cyan
@@ -1057,42 +1157,13 @@ function Prompt-NetworkConfig
     Write-Host "      - More secure, no network exposure" -ForegroundColor Green
     Write-Host ""
 
-    # Binding choice with validation and retry
-    $bindAddress = "*"
-    for ($i = 0; $i -lt $maxAttempts; $i++)
+    $bindChoice = Read-InstallerChoice -Prompt "  Your choice [1/2]" -Choices @('1','2') -DefaultValue '1'
+    $bindAddress = if ($bindChoice -eq '2') { 'localhost' } else { '*' }
+    if ($bindAddress -eq '*')
     {
-        $bindChoice = Read-Host "  Your choice [1/2]"
-
-        if ([string]::IsNullOrWhiteSpace($bindChoice) -or $bindChoice -eq "1")
-        {
-            $bindAddress = "*"
-            Write-Host ""
-            Write-Host "  Security Warning:" -ForegroundColor Yellow
-            Write-Host "  tlbx will accept connections from any device on your network." -ForegroundColor Yellow
-            Write-Host "  Ensure your password is strong and consider firewall rules." -ForegroundColor Yellow
-            break
-        }
-        elseif ($bindChoice -eq "2")
-        {
-            $bindAddress = "localhost"
-            Write-Host "  Binding to localhost only" -ForegroundColor Gray
-            break
-        }
-        else
-        {
-            Write-Host "  Error: Please enter 1 or 2." -ForegroundColor Red
-            if ($i -lt $maxAttempts - 1)
-            {
-                Write-Host "  Please try again." -ForegroundColor Yellow
-            }
-            else
-            {
-                Write-Host "  Using default: accept connections from anywhere." -ForegroundColor Yellow
-                $bindAddress = "*"
-            }
-        }
+        Write-Host "  tlbx will accept connections from other devices. Use a strong password." -ForegroundColor Yellow
     }
-
+    else { Write-Host "  Binding to localhost only" -ForegroundColor Gray }
     # Always HTTPS - certificate will be generated after binary install
     Write-Host ""
     Write-Host "  HTTPS: Enabled (self-signed certificate with OS-protected key)" -ForegroundColor Green
@@ -1242,22 +1313,13 @@ function Get-TlbxAccessUrls
 
 function Prompt-FirewallConfig
 {
-    param(
-        [string]$BindAddress,
-        [int]$Port
-    )
-
-    if (-not (Test-NetworkBinding -BindAddress $BindAddress))
-    {
-        return $false
-    }
-
+    param([string]$BindAddress, [int]$Port = 2000)
+    if (-not (Test-NetworkBinding -BindAddress $BindAddress)) { return $false }
     Write-Host ""
     Write-Host "  Windows Firewall:" -ForegroundColor Cyan
     Write-Host "  Allow other PCs to reach tlbx on TCP port ${Port}?" -ForegroundColor Yellow
     Write-Host "  (Creates or updates the inbound rule named '$FirewallDisplayName')" -ForegroundColor Gray
-    $choice = Read-Host "  Add firewall rule? [Y/n]"
-    return ($choice -ne "n" -and $choice -ne "N")
+    return Read-InstallerYesNo -Prompt "  Add firewall rule? [Y/n]" -DefaultValue $true
 }
 
 function Ensure-FirewallRule
@@ -1735,24 +1797,22 @@ function Install-VerifiedBinarySet
     $fileNames = @(Get-WindowsReleaseFileNames)
     $stagingDir = Join-Path $InstallDir (".tlbx-install-" + [Guid]::NewGuid().ToString("N"))
     $backupDir = Join-Path $BackupRoot "backup"
-    New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
-    New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
-
-    foreach ($fileName in $fileNames)
-    {
-        $source = Join-Path $ExtractDir $fileName
-        if (-not (Test-Path -LiteralPath $source -PathType Leaf))
-        {
-            throw "Verified release is missing $fileName."
-        }
-        $stagedPath = Join-Path $stagingDir $fileName
-        New-Item -ItemType Directory -Path (Split-Path -Parent $stagedPath) -Force | Out-Null
-        Copy-Item -LiteralPath $source -Destination $stagedPath -Force
-    }
-
-    $backedUp = New-Object System.Collections.Generic.List[string]
+    $touched = New-Object System.Collections.Generic.List[string]
     try
     {
+        New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+        New-Item -ItemType Directory -Path $backupDir -Force | Out-Null
+        foreach ($fileName in $fileNames)
+        {
+            $source = Join-Path $ExtractDir $fileName
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Verified release is missing $fileName." }
+            $stagedPath = Join-Path $stagingDir $fileName
+            New-Item -ItemType Directory -Path (Split-Path -Parent $stagedPath) -Force | Out-Null
+            Copy-Item -LiteralPath $source -Destination $stagedPath -Force -ErrorAction Stop
+        }
+
+        # Complete every backup before changing any installed file. A failed
+        # backup must never remove originals that have not been secured yet.
         foreach ($fileName in $fileNames)
         {
             $destination = Join-Path $InstallDir $fileName
@@ -1760,32 +1820,37 @@ function Install-VerifiedBinarySet
             {
                 $backupPath = Join-Path $backupDir $fileName
                 New-Item -ItemType Directory -Path (Split-Path -Parent $backupPath) -Force | Out-Null
-                Copy-Item -LiteralPath $destination -Destination $backupPath -Force
-                $backedUp.Add($fileName)
+                Copy-Item -LiteralPath $destination -Destination $backupPath -Force -ErrorAction Stop
             }
         }
-
         foreach ($fileName in $fileNames)
         {
             $destination = Join-Path $InstallDir $fileName
             New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-            Move-Item -LiteralPath (Join-Path $stagingDir $fileName) -Destination $destination -Force
-            Write-Host "  Installed: $(Join-Path $InstallDir $fileName)" -ForegroundColor Gray
+            # Include the current operation: a failed Move-Item may already
+            # have replaced its destination before reporting the failure.
+            $touched.Add($fileName)
+            Move-Item -LiteralPath (Join-Path $stagingDir $fileName) -Destination $destination -Force -ErrorAction Stop
+            Write-Host "  Installed: $destination" -ForegroundColor Gray
         }
     }
     catch
     {
-        foreach ($fileName in $fileNames)
+        $installFailure = $_
+        if ($touched.Count -gt 0)
         {
-            Remove-Item -LiteralPath (Join-Path $InstallDir $fileName) -Force -ErrorAction SilentlyContinue
+            try
+            {
+                Restore-PreviousBinarySet -InstallDir $InstallDir -BackupRoot $BackupRoot -FileNames $touched.ToArray()
+            }
+            catch
+            {
+                $failure = [InvalidOperationException]::new("Installing the verified binary set failed: $($installFailure.Exception.Message) Rollback also failed: $($_.Exception.Message) Backup retained at $BackupRoot.", $installFailure.Exception)
+                $failure.Data['TlbxPreserveBackupRoot'] = $BackupRoot
+                throw $failure
+            }
         }
-        foreach ($fileName in $backedUp)
-        {
-            $destination = Join-Path $InstallDir $fileName
-            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-            Copy-Item -LiteralPath (Join-Path $backupDir $fileName) -Destination $destination -Force -ErrorAction SilentlyContinue
-        }
-        throw "Installing the verified binary set failed; the previous files were restored. $_"
+        throw $installFailure
     }
     finally
     {
@@ -1797,20 +1862,33 @@ function Restore-PreviousBinarySet
 {
     param(
         [Parameter(Mandatory=$true)][string]$InstallDir,
-        [Parameter(Mandatory=$true)][string]$BackupRoot
+        [Parameter(Mandatory=$true)][string]$BackupRoot,
+        [string[]]$FileNames = @(Get-WindowsReleaseFileNames)
     )
 
     $backupDir = Join-Path $BackupRoot "backup"
-    foreach ($fileName in @(Get-WindowsReleaseFileNames))
+    try
     {
-        Remove-Item -LiteralPath (Join-Path $InstallDir $fileName) -Force -ErrorAction SilentlyContinue
-        $backupPath = Join-Path $backupDir $fileName
-        if (Test-Path -LiteralPath $backupPath -PathType Leaf)
+        foreach ($fileName in $FileNames)
         {
             $destination = Join-Path $InstallDir $fileName
-            New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
-            Copy-Item -LiteralPath $backupPath -Destination $destination -Force -ErrorAction Stop
+            $backupPath = Join-Path $backupDir $fileName
+            if (Test-Path -LiteralPath $backupPath -PathType Leaf)
+            {
+                New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+                Copy-Item -LiteralPath $backupPath -Destination $destination -Force -ErrorAction Stop
+            }
+            elseif (Test-Path -LiteralPath $destination)
+            {
+                Remove-Item -LiteralPath $destination -Force -ErrorAction Stop
+            }
         }
+    }
+    catch
+    {
+        $failure = [InvalidOperationException]::new("Could not restore the previous binary set. Backup retained at $BackupRoot. $($_.Exception.Message)", $_.Exception)
+        $failure.Data['TlbxPreserveBackupRoot'] = $BackupRoot
+        throw $failure
     }
 }
 
@@ -1831,7 +1909,7 @@ function Write-ServiceSettings
     $settingsPath = Join-Path $configDir "settings.json"
     $mergePath = Join-Path $configDir "merge-settings.json"
 
-    if (-not (Test-Path $configDir))
+    if (-not (Test-Path -LiteralPath $configDir))
     {
         New-Item -ItemType Directory -Path $configDir -Force | Out-Null
     }
@@ -1853,16 +1931,16 @@ function Write-ServiceSettings
 
     $json = $settings | ConvertTo-Json -Depth 10
 
-    if (Test-Path $settingsPath)
+    if (Test-Path -LiteralPath $settingsPath)
     {
         # Reinstall: write merge file, let mt handle merging
-        Set-Content -Path $mergePath -Value $json -Encoding UTF8
+        Set-Content -LiteralPath $mergePath -Value $json -Encoding UTF8
         Write-Host "  Settings: merge file written for mt" -ForegroundColor Gray
     }
     else
     {
         # Fresh install: write settings.json directly
-        Set-Content -Path $settingsPath -Value $json -Encoding UTF8
+        Set-Content -LiteralPath $settingsPath -Value $json -Encoding UTF8
         Write-Host "  Settings: $settingsPath" -ForegroundColor Gray
     }
 
@@ -1897,32 +1975,32 @@ function Invoke-TlbxBootstrapRequest
 
     if ($PSVersionTable.PSVersion.Major -ge 6)
     {
-        return Invoke-RestMethod -Uri "$Url/api/bootstrap/login" -TimeoutSec 5 -SkipCertificateCheck -ErrorAction Stop
+        return Invoke-RestMethod -Uri "$Url/api/bootstrap/login" -TimeoutSec 5 -SkipCertificateCheck -NoProxy -ErrorAction Stop
     }
 
-    Add-Type @"
+    if (-not ('TlbxInstallerHttpsProbe' -as [type]))
+    {
+        Add-Type @"
 using System.Net;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
-public class TlbxInstallerTrustAllCerts {
-    public static void Ignore() {
-        ServicePointManager.ServerCertificateValidationCallback = delegate { return true; };
-    }
-    public static void Restore() {
-        ServicePointManager.ServerCertificateValidationCallback = null;
+using System.IO;
+public static class TlbxInstallerHttpsProbe {
+    public static string Get(string url) {
+        var request = (HttpWebRequest)WebRequest.Create(url);
+        request.Proxy = null;
+        request.Timeout = 5000;
+        request.ReadWriteTimeout = 5000;
+        request.ServerCertificateValidationCallback = delegate { return true; };
+        using (var response = request.GetResponse())
+        using (var reader = new StreamReader(response.GetResponseStream())) {
+            return reader.ReadToEnd();
+        }
     }
 }
-"@ -ErrorAction SilentlyContinue
-
-    try
-    {
-        [TlbxInstallerTrustAllCerts]::Ignore()
-        return Invoke-RestMethod -Uri "$Url/api/bootstrap/login" -TimeoutSec 5 -ErrorAction Stop
+"@ -ErrorAction Stop
     }
-    finally
-    {
-        [TlbxInstallerTrustAllCerts]::Restore()
-    }
+    # Accept only this local instance's self-signed certificate. Do not alter
+    # the calling shell's global TLS validation callback or use its HTTP proxy.
+    return [TlbxInstallerHttpsProbe]::Get("$Url/api/bootstrap/login") | ConvertFrom-Json
 }
 
 function Get-TlbxProcess
@@ -2021,6 +2099,73 @@ function Wait-TlbxReady
     }
 }
 
+function Invoke-InstallerVersionProbe
+{
+    param([Parameter(Mandatory=$true)][string]$ExecutablePath, [Parameter(Mandatory=$true)][string]$ExpectedVersion, [int]$TimeoutMilliseconds = 15000)
+    if ($TimeoutMilliseconds -lt 1 -or $TimeoutMilliseconds -gt 60000) { throw 'Invalid native compatibility probe timeout.' }
+    $info = New-Object Diagnostics.ProcessStartInfo
+    $info.FileName = [IO.Path]::GetFullPath($ExecutablePath)
+    $info.Arguments = '--version'
+    $info.WorkingDirectory = Split-Path -Parent $info.FileName
+    $info.UseShellExecute = $false
+    $info.CreateNoWindow = $true
+    $info.RedirectStandardOutput = $true
+    $info.RedirectStandardError = $true
+    $process = New-Object Diagnostics.Process
+    $process.StartInfo = $info
+    $started = $false
+    try
+    {
+        try { $started = $process.Start() }
+        catch
+        { throw "The verified Windows binary '$ExecutablePath' could not start: $($_.Exception.Message). Check Windows compatibility and antivirus/application-control or missing native loader dependencies. The running installation has not been stopped." }
+        if (-not $started) { throw "The verified Windows binary '$ExecutablePath' did not start." }
+        # Drain both redirected pipes concurrently, including loader diagnostics.
+        $stdout = $process.StandardOutput.ReadToEndAsync()
+        $stderr = $process.StandardError.ReadToEndAsync()
+        $finished = $process.WaitForExit($TimeoutMilliseconds)
+        if (-not $finished) { $process.Kill(); $null = $process.WaitForExit(5000) }
+        if (-not [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($stdout, $stderr), 5000))
+        { throw "Native compatibility probe did not close its diagnostic streams: $ExecutablePath" }
+        $output = $stdout.GetAwaiter().GetResult().Trim()
+        $errorOutput = $stderr.GetAwaiter().GetResult().Trim()
+        $detail = ("stdout: $output; stderr: $errorOutput")
+        if ($detail.Length -gt 4096) { $detail = $detail.Substring(0, 4096) }
+        if (-not $finished) { throw "Native compatibility probe timed out after ${TimeoutMilliseconds}ms: $ExecutablePath. $detail" }
+        if ($process.ExitCode -ne 0) { throw "Native compatibility probe failed (exit $($process.ExitCode)): $ExecutablePath. $detail" }
+        $pattern = '^(?:(?:mtagenthost|mthost|tmux)\s+)?v?' + [regex]::Escape($ExpectedVersion.TrimStart('v')) + '(?:\+[A-Za-z0-9.-]+)?$'
+        if ($output -notmatch $pattern) { throw "Native binary version mismatch for $ExecutablePath (expected $ExpectedVersion). $detail" }
+        return $output
+    }
+    finally
+    {
+        if ($started -and -not $process.HasExited) { try { $process.Kill() } catch { } }
+        $process.Dispose()
+    }
+}
+
+function Assert-VerifiedWindowsRuntime
+{
+    param([Parameter(Mandatory=$true)][string]$ExtractDir, [Parameter(Mandatory=$true)][string]$ExpectedVersion)
+    try
+    {
+        $null = Invoke-InstallerVersionProbe -ExecutablePath (Join-Path $ExtractDir 'mt.exe') -ExpectedVersion $ExpectedVersion
+        # All four version-only commands return before host/session startup.
+        $manifest = Get-Content -LiteralPath (Join-Path $ExtractDir 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($manifest.pty -and (Test-Path -LiteralPath (Join-Path $ExtractDir 'mtagenthost.exe')))
+        { $null = Invoke-InstallerVersionProbe -ExecutablePath (Join-Path $ExtractDir 'mtagenthost.exe') -ExpectedVersion ([string]$manifest.pty) }
+        if ($manifest.pty -and (Test-Path -LiteralPath (Join-Path $ExtractDir 'mthost.exe')))
+        { $null = Invoke-InstallerVersionProbe -ExecutablePath (Join-Path $ExtractDir 'mthost.exe') -ExpectedVersion ([string]$manifest.pty) }
+        if (Test-Path -LiteralPath (Join-Path $ExtractDir 'mttmux.exe'))
+        { $null = Invoke-InstallerVersionProbe -ExecutablePath (Join-Path $ExtractDir 'mttmux.exe') -ExpectedVersion '3.5a-midterm' }
+        Write-Log "Verified Windows native startup/version compatibility before stopping the current installation."
+    }
+    catch
+    {
+        Write-Log $_.Exception.Message 'ERROR'
+        throw
+    }
+}
 function Start-TlbxUserProcess
 {
     param(
@@ -2043,6 +2188,43 @@ function Start-TlbxUserProcess
     Write-Log "Starting user-mode tlbx with stdout=$stdoutLog and stderr=$stderrLog"
     return Start-Process -FilePath $ExecutablePath -ArgumentList $arguments -WorkingDirectory $InstallDir `
         -WindowStyle Hidden -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog -PassThru
+}
+
+function Assert-InstallerPortAvailable
+{
+    param([int]$Port, [string]$BindAddress, [string]$InstallDir)
+
+    $connections = $null
+    if (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)
+    {
+        try { $connections = @(Get-NetTCPConnection -State Listen -ErrorAction Stop) }
+        catch { Write-Log "Could not inspect TCP listeners; checking the local socket instead: $_" "WARN" }
+    }
+    if ($null -ne $connections)
+    {
+        $ownedIds = @(Get-InstallOwnedProcesses -InstallDir $InstallDir | ForEach-Object { $_.Id })
+        $conflicts = @($connections | Where-Object { $_.LocalPort -eq $Port -and $_.OwningProcess -notin $ownedIds })
+        if ($conflicts.Count)
+        {
+            $ownerIds = @($conflicts | ForEach-Object { $_.OwningProcess } | Select-Object -Unique) -join ', '
+            throw "TCP port $Port is already in use by another process (PID $ownerIds). Choose another port or stop that application. The existing tlbx installation has not been stopped."
+        }
+        return
+    }
+
+    # The NetTCPIP module can be absent/disabled on stripped-down Windows.
+    # Use only loopback for this brief probe; it must not create a firewall prompt.
+    $listener = New-Object Net.Sockets.TcpListener([Net.IPAddress]::Loopback, $Port)
+    try
+    {
+        $listener.ExclusiveAddressUse = $true
+        $listener.Start()
+    }
+    catch
+    {
+        throw "TCP port $Port could not be reserved and Windows could not identify its owner. Choose a free port, or stop the existing service from an external terminal before retrying. The existing installation has not been changed. $($_.Exception.Message)"
+    }
+    finally { $listener.Stop() }
 }
 
 function Get-InstallerServiceSnapshot
@@ -2073,6 +2255,61 @@ function Restore-InstallerServiceSnapshot
     if ($Snapshot.WasRunning) { Start-Service -Name $Snapshot.Name -ErrorAction Stop }
 }
 
+function Get-InstallerSettingsSnapshot
+{
+    param(
+        [Parameter(Mandatory=$true)][string]$SettingsDir,
+        [Parameter(Mandatory=$true)][string]$BackupRoot
+    )
+
+    $files = @("settings.json", "merge-settings.json", "runtime.json", "secrets.bin", $CertificateFileName, "keys/$CertificateKeyId.dpapi")
+    $existing = New-Object System.Collections.Generic.List[string]
+    foreach ($file in $files)
+    {
+        $source = Join-Path $SettingsDir $file
+        if (Test-Path -LiteralPath $source)
+        {
+            if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Installer settings path is not a file: $source" }
+            $backup = Join-Path (Join-Path $BackupRoot "settings-backup") $file
+            New-Item -ItemType Directory -Path (Split-Path -Parent $backup) -Force | Out-Null
+            Copy-Item -LiteralPath $source -Destination $backup -Force -ErrorAction Stop
+            $existing.Add($file)
+        }
+    }
+    return @{ SettingsDir = $SettingsDir; BackupRoot = $BackupRoot; Files = $files; ExistingFiles = $existing.ToArray() }
+}
+
+function Restore-InstallerSettingsSnapshot
+{
+    param([Parameter(Mandatory=$true)]$Snapshot)
+
+    try
+    {
+        foreach ($file in $Snapshot.Files)
+        {
+            $destination = Join-Path $Snapshot.SettingsDir $file
+            if ($file -in $Snapshot.ExistingFiles)
+            {
+                $backup = Join-Path (Join-Path $Snapshot.BackupRoot "settings-backup") $file
+                if (-not (Test-Path -LiteralPath $backup -PathType Leaf)) { throw "Settings backup is missing: $backup" }
+                New-Item -ItemType Directory -Path (Split-Path -Parent $destination) -Force | Out-Null
+                Copy-Item -LiteralPath $backup -Destination $destination -Force -ErrorAction Stop
+            }
+            elseif (Test-Path -LiteralPath $destination)
+            {
+                if (-not (Test-Path -LiteralPath $destination -PathType Leaf)) { throw "Installer settings path is not a file: $destination" }
+                Remove-Item -LiteralPath $destination -Force -ErrorAction Stop
+            }
+        }
+    }
+    catch
+    {
+        $failure = [InvalidOperationException]::new("Could not restore installer settings. Backup retained at $($Snapshot.BackupRoot). $($_.Exception.Message)", $_.Exception)
+        $failure.Data['TlbxPreserveBackupRoot'] = $Snapshot.BackupRoot
+        throw $failure
+    }
+}
+
 function Install-Tlbx
 {
     param(
@@ -2093,10 +2330,14 @@ function Install-Tlbx
     $installationCompleted = $false
     $serviceExistedBefore = $false
     $serviceSnapshot = $null
+    $settingsSnapshot = $null
+    $settingsSnapshotCreated = $false
+    $targetStopped = $false
     $startedUserProcess = $null
     trap
     {
         $installError = $_
+        $preserveBackup = [bool]$installError.Exception.Data['TlbxPreserveBackupRoot']
         if ($startedUserProcess -and -not $startedUserProcess.HasExited)
         {
             Stop-Process -Id $startedUserProcess.Id -Force -ErrorAction SilentlyContinue
@@ -2111,6 +2352,7 @@ function Install-Tlbx
                     Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
                 }
                 Restore-PreviousBinarySet -InstallDir $installDir -BackupRoot $tempRoot
+                if ($settingsSnapshotCreated) { Restore-InstallerSettingsSnapshot -Snapshot $settingsSnapshot }
                 if ($AsService -and $serviceExistedBefore)
                 {
                     Restore-InstallerServiceSnapshot -Snapshot $serviceSnapshot
@@ -2123,11 +2365,25 @@ function Install-Tlbx
             }
             catch
             {
+                $preserveBackup = $true
                 Write-Log "Rollback failed: $_" "ERROR"
-                Write-Host "  Automatic rollback also failed. See $script:UpdateLogFile." -ForegroundColor Red
+                Write-Host "  Automatic rollback also failed. Backup retained at $tempRoot. See $script:UpdateLogFile." -ForegroundColor Red
             }
         }
-        if ($tempRoot -and (Test-Path -LiteralPath $tempRoot))
+        if (-not $binarySwapCompleted -and $targetStopped -and $serviceSnapshot -and -not $preserveBackup)
+        {
+            try { Restore-InstallerServiceSnapshot -Snapshot $serviceSnapshot }
+            catch
+            {
+                $preserveBackup = $true
+                Write-Log "Could not restart the unchanged previous service: $_" "ERROR"
+            }
+        }
+        if ($preserveBackup)
+        {
+            Write-Host "  Recovery files retained at $tempRoot." -ForegroundColor Yellow
+        }
+        elseif ($tempRoot -and (Test-Path -LiteralPath $tempRoot))
         {
             Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
@@ -2155,7 +2411,7 @@ function Install-Tlbx
     Assert-InstallerCanStopTarget -InstallDir $installDir -TargetServiceName $targetService
 
     # Download and extract
-    $tempRoot = Join-Path $env:TEMP ("tlbx-install-" + [Guid]::NewGuid().ToString("N"))
+    $tempRoot = Join-Path $script:InstallerTempRoot ("tlbx-install-" + [Guid]::NewGuid().ToString("N"))
     $tempZip = Join-Path $tempRoot "release.zip"
     $tempExtract = Join-Path $tempRoot "extract"
     New-Item -ItemType Directory -Path $tempExtract -Force | Out-Null
@@ -2172,10 +2428,12 @@ function Install-Tlbx
     Write-Host "Extracting..." -ForegroundColor Gray
     Write-Log "Extracting to: $tempExtract"
     Assert-SafeReleaseArchive -Path $tempZip
-    Expand-Archive -Path $tempZip -DestinationPath $tempExtract
+    Expand-Archive -LiteralPath $tempZip -DestinationPath $tempExtract
     Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform $ExpectedReleasePlatform -ExpectedChannel (Get-ReleaseChannel -Release $script:release)
     Unblock-DownloadedTree -Path $tempExtract
     Write-Log "Extraction and release-signature verification complete"
+    Assert-VerifiedWindowsRuntime -ExtractDir $tempExtract -ExpectedVersion $version
+    Assert-InstallerPortAvailable -Port $Port -BindAddress $BindAddress -InstallDir $installDir
 
     # Do not interrupt a working installation until the complete download has
     # passed archive, metadata-signature, and checksum verification.
@@ -2184,32 +2442,24 @@ function Install-Tlbx
         $serviceExistedBefore = [bool](Get-Service -Name $ServiceName -ErrorAction SilentlyContinue)
         if ($serviceExistedBefore) { $serviceSnapshot = Get-InstallerServiceSnapshot -Name $ServiceName }
         Stop-ExistingInstallProcesses -InstallDir $installDir
+        $targetStopped = $true
     }
-    if (-not (Test-Path $installDir))
+    if (-not (Test-Path -LiteralPath $installDir))
     {
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
     }
+
+    $settingsDir = if ($AsService) { $WIN_SERVICE_SETTINGS_DIR } else { $WIN_USER_SETTINGS_DIR }
+    $settingsSnapshot = Get-InstallerSettingsSnapshot -SettingsDir $settingsDir -BackupRoot $tempRoot
+    $settingsSnapshotCreated = $true
 
     Write-Log "=== PHASE 2: Installing binaries ==="
     $destWebBinary = Join-Path $installDir $WebBinaryName
 
     Write-Host "Installing binaries to $installDir..." -ForegroundColor Gray
     Write-Log "Installing binaries to $installDir"
-    try
-    {
-        Install-VerifiedBinarySet -ExtractDir $tempExtract -InstallDir $installDir -BackupRoot $tempRoot
-        $binarySwapCompleted = $true
-    }
-    catch
-    {
-        $swapError = $_
-        if ($AsService -and $serviceSnapshot)
-        {
-            try { Restore-InstallerServiceSnapshot -Snapshot $serviceSnapshot }
-            catch { Write-Log "Service configuration rollback failed: $_" "ERROR" }
-        }
-        throw $swapError
-    }
+    Install-VerifiedBinarySet -ExtractDir $tempExtract -InstallDir $installDir -BackupRoot $tempRoot
+    $binarySwapCompleted = $true
 
     Write-Log "=== PHASE 3: Password configuration ==="
     Write-Log "=== PHASE 4: Certificate configuration ==="
@@ -2217,7 +2467,7 @@ function Install-Tlbx
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
     $settingsDir = if ($AsService) { $WIN_SERVICE_SETTINGS_DIR } else { $WIN_USER_SETTINGS_DIR }
     Write-Log "Settings directory: $settingsDir"
-    $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService -TrustCert $TrustCert
+    $CertPath = Generate-Certificate -InstallDir $installDir -SettingsDir $settingsDir -IsService $AsService
     if (-not $CertPath)
     {
         Write-Host "  Warning: Certificate generation failed. App will use fallback certificate." -ForegroundColor Yellow
@@ -2240,11 +2490,6 @@ function Install-Tlbx
 
         Write-Log "Installing as Windows service..."
         Install-AsService -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
-
-        if ($ConfigureFirewall -and (Test-NetworkBinding -BindAddress $BindAddress))
-        {
-            Ensure-FirewallRule -Port $Port -InstallDir $installDir
-        }
 
         # Monitor both the supervised process and the configured HTTPS endpoint.
         Write-Section "Status"
@@ -2283,13 +2528,13 @@ function Install-Tlbx
         $userSettingsDir = $WIN_USER_SETTINGS_DIR
         $userSettingsPath = Join-Path $userSettingsDir "settings.json"
         $userMergePath = Join-Path $userSettingsDir "merge-settings.json"
-        if (-not (Test-Path $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
+        if (-not (Test-Path -LiteralPath $userSettingsDir)) { New-Item -ItemType Directory -Path $userSettingsDir -Force | Out-Null }
 
         $runtimeSettings = @{
             port = $Port
             bindAddress = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
         }
-        $runtimeSettings | ConvertTo-Json | Set-Content -Path (Join-Path $userSettingsDir "runtime.json") -Encoding UTF8
+        $runtimeSettings | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $userSettingsDir "runtime.json") -Encoding UTF8
 
         # Build install-time settings
         $userSettings = @{
@@ -2301,16 +2546,16 @@ function Install-Tlbx
             $userSettings.keyProtection = "osProtected"
         }
 
-        if (Test-Path $userSettingsPath)
+        if (Test-Path -LiteralPath $userSettingsPath)
         {
             # Reinstall: write merge file, let mt handle merging
-            $userSettings | ConvertTo-Json | Set-Content -Path $userMergePath -Encoding UTF8
+            $userSettings | ConvertTo-Json | Set-Content -LiteralPath $userMergePath -Encoding UTF8
             Write-Host "  Settings: merge file written for mt" -ForegroundColor Gray
         }
         else
         {
             # Fresh install: write settings.json directly
-            $userSettings | ConvertTo-Json | Set-Content -Path $userSettingsPath -Encoding UTF8
+            $userSettings | ConvertTo-Json | Set-Content -LiteralPath $userSettingsPath -Encoding UTF8
             Write-Host "  Settings: $userSettingsPath" -ForegroundColor Gray
         }
 
@@ -2355,17 +2600,23 @@ function Install-Tlbx
         }
     }
 
+    if ($TrustCert -and $CertPath) { Trust-InstallerCertificate -CertPath $CertPath }
+    if ($AsService -and $ConfigureFirewall -and (Test-NetworkBinding -BindAddress $BindAddress))
+    {
+        Ensure-FirewallRule -Port $Port -InstallDir $installDir
+    }
+
     # Remove the obsolete split-host binary only after the complete install has
     # succeeded so rollback never destroys a still-working legacy deployment.
     $legacyHostPath = Join-Path $installDir $LegacyHostBinaryName
-    if (Test-Path $legacyHostPath)
+    if (Test-Path -LiteralPath $legacyHostPath)
     {
-        Remove-Item $legacyHostPath -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath $legacyHostPath -Force -ErrorAction SilentlyContinue
         Write-Host "  Removed legacy: $LegacyHostBinaryName" -ForegroundColor Gray
     }
 
     $installationCompleted = $true
-    Remove-Item $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $tempRoot -Recurse -Force -ErrorAction SilentlyContinue
 
     Write-Log "=========================================="
     Write-Log "INSTALLATION COMPLETE"
@@ -2411,9 +2662,9 @@ function Install-AsService
 
         try
         {
-            if (Test-Path $webBinaryPath)
+            if (Test-Path -LiteralPath $webBinaryPath)
             {
-                $exe = Get-Item $webBinaryPath -ErrorAction Stop
+                $exe = Get-Item -LiteralPath $webBinaryPath -ErrorAction Stop
                 $details.Add("Executable: $webBinaryPath ($($exe.Length) bytes, last write $($exe.LastWriteTime))")
             }
             else
@@ -2484,7 +2735,7 @@ function Install-AsService
     }
 
     # Convert bind address for command line
-    $bindArg = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
+    $bindArg = if ((Normalize-InstallerBindAddress $BindAddress) -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
 
     # Create service - mt.exe spawns mthost per terminal session
     Write-Log "Creating Windows service..."
@@ -2570,7 +2821,7 @@ function Install-AsUserApp
         [Environment]::SetEnvironmentVariable("Path", "$userPath;$InstallDir", "User")
     }
 
-    $bindArg = if ($BindAddress -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
+    $bindArg = if ((Normalize-InstallerBindAddress $BindAddress) -eq "localhost") { "127.0.0.1" } else { "0.0.0.0" }
     [Environment]::SetEnvironmentVariable("TLBX_PORT", $Port.ToString([Globalization.CultureInfo]::InvariantCulture), "User")
     [Environment]::SetEnvironmentVariable("TLBX_BIND", $bindArg, "User")
     $env:TLBX_PORT = $Port.ToString([Globalization.CultureInfo]::InvariantCulture)
@@ -2614,7 +2865,7 @@ function Register-Uninstall
         NoRepair = 1
     }
 
-    if (-not (Test-Path $regPath))
+    if (-not (Test-Path -LiteralPath $regPath))
     {
         New-Item -Path $regPath -Force | Out-Null
     }
@@ -2655,14 +2906,14 @@ else
 & `$scriptBlock
 "@
 
-    Set-Content -Path $uninstallScript -Value $content
+    Set-Content -LiteralPath $uninstallScript -Value $content
 }
 
 function Save-ElevatedInstallerFailureLog
 {
     param([Parameter(Mandatory=$true)][string]$LogPath)
 
-    $logDirectory = Join-Path $env:LOCALAPPDATA "tlbx\logs"
+    $logDirectory = Join-Path $script:InstallerPaths.LocalAppData "tlbx\logs"
     New-Item -ItemType Directory -Path $logDirectory -Force -ErrorAction Stop | Out-Null
     $savedPath = Join-Path $logDirectory ("install-elevated-failure-" + [Guid]::NewGuid().ToString("N") + ".log")
     Copy-Item -LiteralPath $LogPath -Destination $savedPath -ErrorAction Stop
@@ -2781,13 +3032,16 @@ if ($ServiceMode)
             Import-ElevatedReplayFile -Path $ReplayFile
         }
 
+        $validatedOptions = Assert-InstallerOptions -Port $Port -BindAddress $BindAddress
+        $script:Port = $validatedOptions.Port
+        $script:BindAddress = $validatedOptions.BindAddress
         Select-InstallIdentity -AsService $true
 
         # If log file specified, redirect all output there for streaming to original terminal
         if ($LogFile)
         {
             # Clear log file
-            "" | Set-Content $LogFile -Encoding UTF8 -Force
+            "" | Set-Content -LiteralPath $LogFile -Encoding UTF8 -Force
 
             # Run the install with all output captured to file
             & {
@@ -2803,7 +3057,7 @@ if ($ServiceMode)
             } *>&1 | ForEach-Object {
                 $line = $_.ToString()
                 Write-Host $_
-                Add-Content -Path $LogFile -Value $line -Encoding UTF8
+                Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
             }
         }
         else
@@ -2867,36 +3121,7 @@ Write-Host "      - Installs to your AppData folder" -ForegroundColor Gray
 Write-Host "      - No special permissions needed" -ForegroundColor Green
 Write-Host ""
 
-$asService = $null
-$maxAttempts = 3
-for ($i = 0; $i -lt $maxAttempts; $i++)
-{
-    $choice = Read-Host "  Your choice [1/2]"
-
-    if ([string]::IsNullOrWhiteSpace($choice) -or $choice -eq "1")
-    {
-        $asService = $true
-        break
-    }
-    elseif ($choice -eq "2")
-    {
-        $asService = $false
-        break
-    }
-    else
-    {
-        Write-Host "  Error: Please enter 1 or 2." -ForegroundColor Red
-        if ($i -lt $maxAttempts - 1)
-        {
-            Write-Host "  Please try again." -ForegroundColor Yellow
-        }
-        else
-        {
-            Write-Host "  Using default: System service." -ForegroundColor Yellow
-            $asService = $true
-        }
-    }
-}
+$asService = (Read-InstallerChoice -Prompt "  Your choice [1/2]" -Choices @('1','2') -DefaultValue '1') -eq '1'
 
 if ($asService)
 {
@@ -2929,7 +3154,7 @@ if ($asService)
     }
 
     # Prompt for network configuration
-    $networkConfig = Prompt-NetworkConfig
+    $networkConfig = Prompt-NetworkConfig -InstallDir $WIN_SERVICE_INSTALL_DIR
     $port = $networkConfig.Port
     $bindAddress = $networkConfig.BindAddress
 
@@ -2938,8 +3163,7 @@ if ($asService)
     Write-Host "  Certificate Trust:" -ForegroundColor Cyan
     Write-Host "  Trust the certificate to remove browser warnings?" -ForegroundColor Yellow
     Write-Host "  (Adds self-signed certificate to Windows trusted root store)" -ForegroundColor Gray
-    $trustChoice = Read-Host "  Trust certificate? [Y/n]"
-    $trustCert = ($trustChoice -ne "n" -and $trustChoice -ne "N")
+    $trustCert = Read-InstallerYesNo -Prompt "  Trust certificate? [Y/n]" -DefaultValue $true
     $configureFirewall = Prompt-FirewallConfig -BindAddress $bindAddress -Port $port
 
     Assert-InstallerCanStopTarget -InstallDir $WIN_SERVICE_INSTALL_DIR -TargetServiceName $ServiceName
@@ -2963,7 +3187,7 @@ if ($asService)
         $replayFile = Join-Path $handoffDir "mt-install-replay.json"
 
         [IO.File]::WriteAllText($tempScript, (Get-CurrentInstallerScriptContent), [Text.UTF8Encoding]::new($true))
-        "" | Set-Content -Path $tempLogFile -Encoding UTF8 -Force
+        "" | Set-Content -LiteralPath $tempLogFile -Encoding UTF8 -Force
 
         $replay = @{
             runAsUser = $currentUser.Name
@@ -2975,7 +3199,7 @@ if ($asService)
             trustCert = [bool]$trustCert
             dev = [bool]$Dev
         }
-        $replay | ConvertTo-Json -Depth 5 | Set-Content -Path $replayFile -Encoding UTF8 -Force
+        $replay | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $replayFile -Encoding UTF8 -Force
 
         $runAsArguments = @(
             "-NoProfile"
@@ -3007,11 +3231,11 @@ else
     # Check for existing password in secure storage so user-mode reinstalls keep
     # the current auth state unless the user explicitly chooses Replace.
     $hasExistingPassword = $false
-    if (Test-Path $userSecretsPath)
+    if (Test-Path -LiteralPath $userSecretsPath)
     {
         try
         {
-            $secrets = Get-Content $userSecretsPath -Raw | ConvertFrom-Json
+            $secrets = Get-Content -LiteralPath $userSecretsPath -Raw | ConvertFrom-Json
             if ($secrets.password_hash -and $secrets.password_hash.Length -gt 10)
             {
                 $hasExistingPassword = $true
@@ -3025,7 +3249,7 @@ else
         $passwordAction = Prompt-ExistingPasswordAction
         if ($passwordAction -eq "Replace")
         {
-            $tempDir = Join-Path $env:TEMP "tlbx-install"
+            $tempDir = Join-Path $script:InstallerTempRoot "tlbx-install"
             $passwordHash = Prompt-Password
         }
         else
@@ -3038,12 +3262,12 @@ else
     else
     {
         # Hash locally before download or elevation; only the hash is replayed.
-        $tempDir = Join-Path $env:TEMP "tlbx-install"
+        $tempDir = Join-Path $script:InstallerTempRoot "tlbx-install"
         $passwordHash = Prompt-Password
     }
 
     # Prompt for network configuration
-    $networkConfig = Prompt-NetworkConfig
+    $networkConfig = Prompt-NetworkConfig -InstallDir $WIN_USER_INSTALL_DIR
 
     Install-Tlbx -AsService $false -Version $version -RunAsUser "" -RunAsUserSid "" -PasswordHash $passwordHash -Port $networkConfig.Port -BindAddress $networkConfig.BindAddress
 }

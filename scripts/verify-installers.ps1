@@ -5,6 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
+$installerOnWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 
 $powerShellScripts = @("install.ps1", "uninstall.ps1", "install-multi.ps1")
 foreach ($relativePath in $powerShellScripts) {
@@ -609,7 +610,7 @@ try {
     Remove-Item -LiteralPath $safetyRoot -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-if ($IsWindows) {
+if ($installerOnWindows) {
     $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
     if (Test-Path $windowsPowerShell) {
         $tokens = $null
@@ -689,7 +690,7 @@ if ($LiveRelease) {
         Assert-SignedRelease -ExtractDir $extractDir -ExpectedVersion $version -ExpectedPlatform "win-x64" -ExpectedChannel "stable"
         Write-Host "PowerShell 7 live release verification passed ($($release.tag_name))." -ForegroundColor Green
 
-        if ($IsWindows) {
+        if ($installerOnWindows) {
             $windowsPowerShell = Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe"
             $escapedExtractDir = $extractDir.Replace("'", "''", [StringComparison]::Ordinal)
             $call = '$ErrorActionPreference=''Stop''; Assert-SignedRelease -ExtractDir ''' + $escapedExtractDir +
@@ -761,13 +762,21 @@ if ($LiveRelease) {
 }
 
 & (Join-Path $PSScriptRoot "test-installer-first-run.ps1")
-if ($IsWindows) {
+if ($installerOnWindows) {
     & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-first-run.ps1")
     if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 first-install contracts failed." }
 }
-if ($IsWindows) {
+if ($installerOnWindows) {
     & (Join-Path $PSScriptRoot "test-installer-windows-service.ps1")
     & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-windows-service.ps1")
     if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 service-installer contracts failed." }
+}
+if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) {
+    foreach ($fixture in @('transaction', 'input', 'environment', 'network', 'certificate')) {
+        $fixturePath = Join-Path $PSScriptRoot "test-installer-windows-$fixture.ps1"
+        & $fixturePath
+        & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File $fixturePath
+        if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 $fixture installer contracts failed." }
+    }
 }
 Write-Host "Installer verification passed." -ForegroundColor Green
