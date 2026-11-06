@@ -230,7 +230,7 @@ public sealed partial class UpdateService : IDisposable
             var assetName = GetAssetNameForPlatform();
             Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}, asset={assetName}");
 
-            var releases = await FetchReleasesAsync(updateChannel, assetName);
+            var releases = await FetchReleasesAsync(updateChannel);
             var selection = SelectBestRelease(releases, updateChannel, _currentVersion, assetName, allowReinstall: true);
             if (selection is null)
             {
@@ -337,13 +337,14 @@ public sealed partial class UpdateService : IDisposable
         return _latestUpdate;
     }
 
-    private async Task<List<GitHubRelease>> FetchReleasesAsync(string updateChannel, string assetName)
+    private async Task<List<GitHubRelease>> FetchReleasesAsync(string updateChannel)
     {
         var dev = string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase);
-        var releases = await FetchCatalogAsync(dev ? "dev" : "main");
-        if (dev && !releases.Any(release => !release.Draft && GetAssetDownloadUrl(release, assetName) is not null))
-            releases = await FetchCatalogAsync("main");
-        return releases;
+        if (!dev) return await FetchCatalogAsync("main");
+        // Dev accepts prereleases and stable releases. Compare both catalogs
+        // even when the dev catalog still contains a compatible older build.
+        var catalogs = await Task.WhenAll(FetchCatalogAsync("dev"), FetchCatalogAsync("main"));
+        return [.. catalogs[0], .. catalogs[1]];
     }
 
     private async Task<List<GitHubRelease>> FetchCatalogAsync(string channel)
