@@ -20,6 +20,32 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class WebPreviewSamePortProtocolTests
 {
+    [Theory]
+    [InlineData("https://localhost:2000/")]
+    [InlineData("https://127.0.0.1:2000/")]
+    [InlineData("https://[::1]:2000/?session=test")]
+    public void MainListenerCanPreviewItsOwnUi(string url)
+    {
+        var service = new WebPreviewService(2000, BrowserPreviewOriginService.Create(2000));
+        Assert.True(service.SetTarget("session", "self", url));
+        var preview = service.GetPreviewSession("session", "self");
+        Assert.NotNull(preview);
+        Assert.True(preview.Active);
+        Assert.Equal(new Uri(url).ToString(), preview.Url);
+    }
+
+    [Theory]
+    [InlineData("https://localhost:2000/webpreview/route/")]
+    [InlineData("https://localhost:2000/%77ebpreview/route/")]
+    [InlineData("https://127.0.0.1:2000/webpreview")]
+    [InlineData("https://[::1]:2000/WebPreview/route/_access/owner/token/")]
+    public void MainListenerRejectsRecursivePreviewRoutes(string url)
+    {
+        var service = new WebPreviewService(2000, BrowserPreviewOriginService.Create(2000));
+        Assert.False(service.SetTarget("session", "self", url));
+        Assert.Null(service.GetPreviewSession("session", "self"));
+    }
+
     [Fact]
     public void CapabilityPathKeepsRelativeResourcesScopedAndRejectsWrongOwnerRoute()
     {
