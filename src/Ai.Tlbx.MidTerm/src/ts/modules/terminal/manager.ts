@@ -27,6 +27,7 @@ import {
   $currentSettings,
   $sessions,
   hasTerminalSizeControl,
+  getTerminalSizeDimensions,
 } from '../../stores';
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import { disposeTerminalPresentation } from './terminalPresentation';
@@ -1353,8 +1354,11 @@ export function createTerminalForSession(
   terminal.unicode.activeVersion = '11';
 
   // Get server dimensions from session info (if available)
-  const serverCols = sessionInfo?.cols ?? 0;
-  const serverRows = sessionInfo?.rows ?? 0;
+  const { cols: serverCols, rows: serverRows } = getTerminalSizeDimensions(
+    sessionId,
+    sessionInfo?.cols ?? 0,
+    sessionInfo?.rows ?? 0,
+  );
 
   const state: TerminalState = {
     terminal: terminal,
@@ -1633,10 +1637,6 @@ export function setupTerminalEvents(
   terminal: Terminal,
   container: HTMLDivElement,
 ): void {
-  const canUseAsyncClipboard = (): boolean =>
-    window.isSecureContext &&
-    typeof navigator.clipboard !== 'undefined' &&
-    typeof navigator.clipboard.readText === 'function';
   // Collect disposables for cleanup
   const disposables: Array<{ dispose: () => void }> = [];
   disposables.push(
@@ -1778,7 +1778,6 @@ export function setupTerminalEvents(
     enterOverrideHandler,
     pasteHandler,
   } = bindTerminalInteractionHandlers({
-    canUseAsyncClipboard,
     cancelTerminalInputEvent,
     container,
     getLegacyKeyboardNumbers,

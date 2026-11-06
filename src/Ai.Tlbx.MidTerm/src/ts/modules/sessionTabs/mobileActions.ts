@@ -1,5 +1,6 @@
 import { $activeSessionId, getSession } from '../../stores';
 import { t } from '../i18n';
+import { closeBoardsView } from '../boards';
 import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from '../sessionSurface';
 import { getActiveTab, getTabLabelForSession, isTabAvailable, switchTab } from './tabManager';
 
@@ -64,6 +65,7 @@ export function activateMobileTab(tab: MobileSessionTab): void {
     return;
   }
 
+  closeBoardsView();
   switchTab(activeId, tab);
   syncMobileTabActionState();
 }

@@ -9,6 +9,70 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 internal static class CodexCliIdentityService
 {
     internal readonly record struct ProofEmission(bool Submitted, string Diagnostic);
+    internal readonly record struct RootThreadResolution(string? RootThreadId, string Diagnostic);
+
+    /// <summary>Read canonical subagent ancestry; caller must impersonate the native process owner.</summary>
+    internal static async Task<RootThreadResolution> ResolveRootThreadAsync(string actualThreadId,
+        string? codexHome, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(actualThreadId, "D", out _)) return new(null, "native thread id is not a canonical UUID");
+        var home = string.IsNullOrWhiteSpace(codexHome)
+            ? Environment.GetEnvironmentVariable("CODEX_HOME") ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".codex")
+            : codexHome;
+        if (!Path.IsPathFullyQualified(home)) return new(null, "CODEX_HOME is not an absolute path");
+        try
+        {
+            var socketPath = Path.Combine(home, "app-server-control", "app-server-control.sock");
+            _ = File.GetAttributes(socketPath);
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(5));
+            using var handler = CreateDaemonHandler(socketPath);
+            using var invoker = new HttpMessageInvoker(handler);
+            using var ws = new ClientWebSocket();
+            await ws.ConnectAsync(new Uri("ws://localhost/"), invoker, deadline.Token).ConfigureAwait(false);
+            await SendAsync(ws, "{\"id\":1,\"method\":\"initialize\",\"params\":{\"clientInfo\":{\"name\":\"tlbx_mcp_identity\",\"version\":\"1\"}}}", deadline.Token).ConfigureAwait(false);
+            using var initialized = await ReadAsync(ws, 1, deadline.Token).ConfigureAwait(false);
+            await SendAsync(ws, "{\"method\":\"initialized\"}", deadline.Token).ConfigureAwait(false);
+            var requestId = 1;
+            return await ResolveRootThreadAsync(actualThreadId, async (threadId, token) =>
+            {
+                var id = ++requestId;
+                // threadId has already passed strict UUID validation. Reads neither
+                // subscribe nor resume and cannot create another conversation.
+                await SendAsync(ws, string.Create(CultureInfo.InvariantCulture,
+                    $"{{\"id\":{id},\"method\":\"thread/read\",\"params\":{{\"threadId\":\"{threadId}\",\"includeTurns\":false}}}}"), token).ConfigureAwait(false);
+                using var response = await ReadAsync(ws, id, token).ConfigureAwait(false);
+                return response.RootElement.GetProperty("result").GetProperty("thread").Clone();
+            }, deadline.Token).ConfigureAwait(false);
+        }
+        catch (UnauthorizedAccessException) { return new(null, "access denied to the Codex control socket"); }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return new(null, "canonical thread discovery exceeded its five-second budget"); }
+        catch (Exception ex) when (ex is IOException or SocketException or WebSocketException or JsonException or
+            KeyNotFoundException or InvalidOperationException or ArgumentException)
+        { return new(null, "canonical thread ancestry could not be read from the local Codex daemon"); }
+    }
+
+    internal static async Task<RootThreadResolution> ResolveRootThreadAsync(string actualThreadId,
+        Func<string, CancellationToken, Task<JsonElement>> readThread, CancellationToken ct)
+    {
+        if (!Guid.TryParseExact(actualThreadId, "D", out var current)) return new(null, "native thread id is not a canonical UUID");
+        var seen = new HashSet<Guid>();
+        for (var depth = 0; depth < 64; depth++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (!seen.Add(current)) return new(null, "canonical thread ancestry contains a cycle");
+            var thread = await readThread(current.ToString("D"), ct).ConfigureAwait(false);
+            if (thread.ValueKind != JsonValueKind.Object || !thread.TryGetProperty("id", out var id) ||
+                id.ValueKind != JsonValueKind.String || !Guid.TryParseExact(id.GetString(), "D", out var returned) || returned != current)
+                return new(null, "Codex returned a different or malformed canonical thread identity");
+            if (!thread.TryGetProperty("parentThreadId", out var parent))
+                return new(null, "Codex did not provide authoritative parent-thread metadata");
+            if (parent.ValueKind == JsonValueKind.Null) return new(current.ToString("D"), "canonical root thread verified");
+            if (parent.ValueKind != JsonValueKind.String || !Guid.TryParseExact(parent.GetString(), "D", out current))
+                return new(null, "Codex returned malformed parent-thread metadata");
+        }
+        return new(null, "canonical thread ancestry exceeds the 64-thread depth limit");
+    }
     // A detached daemon buffers the original tool's output until it returns.
     // A separate shellCommand emits the challenge through the thread's actual
     // subscribed TUI clients while that original request is still waiting.

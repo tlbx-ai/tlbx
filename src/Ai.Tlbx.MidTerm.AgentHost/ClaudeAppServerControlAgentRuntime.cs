@@ -28,6 +28,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     private TaskCompletionSource _bridgeReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private string? _sessionId;
     private string? _workingDirectory;
+    private AppServerControlMcpCredentials? _mcpCredentials;
     private string? _binaryPath;
     private string? _userProfileDirectory;
     private string? _providerThreadId;
@@ -63,6 +64,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         await DisposeProcessAsync().ConfigureAwait(false);
         _shutdown.Dispose();
         _gate.Dispose();
+        _mcpCredentials?.Dispose();
+        _mcpCredentials = null;
     }
 
     public async Task<HostCommandOutcome> ExecuteAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -123,6 +126,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         _workingDirectory = attach.WorkingDirectory;
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
+        _mcpCredentials?.Dispose();
+        _mcpCredentials = attach.McpServer is null ? null : new AppServerControlMcpCredentials(attach.McpServer);
         _newProviderSessionId = Guid.NewGuid().ToString();
         _quickSettings = CreateDefaultQuickSettings();
         _providerThreadId = AppServerControlQuickSettings.NormalizeOptionalValue(attach.ResumeThreadId);
@@ -1265,6 +1270,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             writer.WriteString("sessionId", _newProviderSessionId);
             writer.WriteString("permissionMode", _quickSettings.PermissionMode);
             writer.WriteBoolean("loadHistory", _sessionId is not null && !_hasRetainedConversation(_sessionId));
+            AppServerControlMcpConfiguration.WriteClaude(writer, _mcpCredentials?.Server);
             if (_quickSettings.Model is not null) writer.WriteString("model", _quickSettings.Model);
             if (!string.IsNullOrWhiteSpace(_providerThreadId))
             {
@@ -1272,7 +1278,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             }
             writer.WriteEndObject();
         }, ct).ConfigureAwait(false);
-        await _bridgeReady.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+        await _bridgeReady.Task.WaitAsync(TimeSpan.FromSeconds(45), ct).ConfigureAwait(false);
     }
 
     private async Task SendTurnCommandAsync(

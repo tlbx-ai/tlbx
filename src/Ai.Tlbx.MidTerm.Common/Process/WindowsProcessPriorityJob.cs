@@ -79,7 +79,7 @@ public sealed class WindowsProcessPriorityJob : IDisposable
 
     public void SetPriority(ProcessPriorityClass priority)
     {
-        if (priority == ProcessPriorityClass.High) EnableBasePriorityPrivilege();
+        if (priority is ProcessPriorityClass.High or ProcessPriorityClass.RealTime) EnableBasePriorityPrivilege();
         var limits = new BasicLimitInformation { LimitFlags = 0x20, PriorityClass = (uint)priority };
         if (!SetInformationJobObject(_handle, 2, ref limits, (uint)Marshal.SizeOf<BasicLimitInformation>()))
             throw new Win32Exception(Marshal.GetLastWin32Error());
@@ -160,7 +160,7 @@ public sealed class WindowsProcessPriorityJob : IDisposable
 
     public void Dispose() => _handle.Dispose();
 
-    private static void EnableBasePriorityPrivilege()
+    internal static void EnableBasePriorityPrivilege()
     {
         using var process = System.Diagnostics.Process.GetCurrentProcess();
         if (!OpenProcessToken(process.SafeHandle, 0x20 | 0x8, out var token))

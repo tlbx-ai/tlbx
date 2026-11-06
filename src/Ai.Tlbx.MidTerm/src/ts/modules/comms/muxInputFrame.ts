@@ -1,3 +1,5 @@
+import { MUX_TYPE_BUFFERED_INPUT, MUX_TYPE_INPUT } from '../../constants';
+
 type EncodeSessionId = (buffer: Uint8Array, offset: number, sessionId: string) => void;
 
 export function createMuxInputFrame(
@@ -34,4 +36,9 @@ function isAsciiOnly(data: string): boolean {
   }
 
   return true;
+}
+
+/** Older remote hosts retain their existing input policy; never lose queued user bytes. */
+export function bufferedInputFrameType(serverProtocolVersion: number): number {
+  return serverProtocolVersion >= 3 ? MUX_TYPE_BUFFERED_INPUT : MUX_TYPE_INPUT;
 }

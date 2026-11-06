@@ -4,6 +4,9 @@ internal static class RequestOriginPolicy
 {
     public static bool Allows(HttpRequest request)
     {
+        // An opaque preview may use only its explicitly scoped capability routes,
+        // never installation cookies/API access, including otherwise read-only GETs.
+        if (request.Headers.Origin.ToString().Equals("null", StringComparison.OrdinalIgnoreCase)) return false;
         var isWebSocket = request.Path.StartsWithSegments("/ws", StringComparison.OrdinalIgnoreCase)
             || string.Equals(request.Headers.Upgrade, "websocket", StringComparison.OrdinalIgnoreCase);
         if (!isWebSocket && (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method)

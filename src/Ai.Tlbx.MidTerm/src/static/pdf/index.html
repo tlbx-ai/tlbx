@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tlbx PDF</title>
+  <link rel="stylesheet" href="/pdf/pdf_viewer.css">
+  <link rel="stylesheet" href="/pdf/viewer.css">
+</head>
+<body>
+  <nav id="toolbar" aria-label="PDF">
+    <button id="selectText" type="button" title="Select text" aria-label="Select text" aria-pressed="true">Text</button>
+    <button id="handTool" type="button" title="Hand tool" aria-label="Hand tool" aria-pressed="false">Hand</button>
+    <button id="copyText" type="button" title="Copy selected text" aria-label="Copy selected text" disabled>Copy</button>
+    <button id="previous" title="Previous page" aria-label="Previous page">‹</button>
+    <input id="page" type="number" min="1" value="1" aria-label="Page">
+    <span id="pages">/ …</span>
+    <button id="next" title="Next page" aria-label="Next page">›</button>
+    <button id="zoomOut" title="Zoom out" aria-label="Zoom out">−</button>
+    <select id="zoom" aria-label="Zoom"><option value="page-width">Page width</option><option value="page-fit">Fit page</option><option value="0.5">50%</option><option value="1">100%</option><option value="1.5">150%</option><option value="2">200%</option><option value="3">300%</option></select>
+    <button id="zoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+    <input id="search" type="search" placeholder="Find in document" aria-label="Find in document">
+    <button id="findPrevious" title="Previous match" aria-label="Previous match">↑</button>
+    <button id="findNext" title="Next match" aria-label="Next match">↓</button>
+    <span id="matches" role="status"></span>
+    <a href="/THIRD-PARTY-LICENSES.txt" target="_blank" rel="noopener" title="PDF.js — Apache-2.0">PDF.js</a>
+  </nav>
+  <span id="toolStatus" class="sr-only" role="status"></span>
+  <p id="status" role="status">Loading PDF…</p>
+  <form id="passwordForm" hidden>
+    <label for="password">PDF password</label>
+    <input id="password" type="password" autocomplete="off" required>
+    <button id="passwordSubmit" type="submit">Open</button>
+  </form>
+  <div id="viewerContainer" tabindex="0"><div class="pdfViewer"></div></div>
+  <script type="module" src="/pdf/viewer.js"></script>
+</body>
+</html>

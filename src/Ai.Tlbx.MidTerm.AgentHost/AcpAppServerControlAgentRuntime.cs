@@ -34,6 +34,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private Task? _errorTask;
     private string? _sessionId;
     private string? _workingDirectory;
+    private AppServerControlMcpServer? _mcpServer;
+    private AppServerControlMcpCredentials? _mcpCredentials;
+    private bool _disposingProcess;
     private string? _binaryPath;
     private string? _userProfileDirectory;
     private Dictionary<string, string?> _environmentVariables = new(StringComparer.Ordinal);
@@ -167,6 +170,13 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
         _sessionId = command.SessionId;
         _workingDirectory = attach.WorkingDirectory;
+        if (attach.McpServer is not null)
+        {
+            _mcpCredentials?.Dispose();
+            _mcpCredentials = new AppServerControlMcpCredentials(attach.McpServer);
+            _mcpServer = _mcpCredentials.Server;
+        }
+        else _mcpServer = null;
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
         _environmentVariables = new Dictionary<string, string?>(attach.EnvironmentVariables, StringComparer.Ordinal);
@@ -221,6 +231,9 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     ct)
                 .ConfigureAwait(false);
             _protocolGeneration = ResolveProtocolGeneration(initializeResult);
+            if (_mcpServer is not null && _protocolGeneration == 2 &&
+                Traverse(initializeResult, "capabilities", "session", "mcp", "stdio") is not { ValueKind: JsonValueKind.Object })
+                throw new InvalidOperationException($"{_agentName} does not advertise ACP session.mcp.stdio; tlbx MCP cannot be configured for this runtime.");
             await AuthenticateAcpAsync(initializeResult, ct).ConfigureAwait(false);
             _supportsImagePrompts = _protocolGeneration == 2
                 ? Traverse(initializeResult, "capabilities", "session", "prompt", "image") is { ValueKind: JsonValueKind.Object }
@@ -1293,6 +1306,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
     private async Task DisposeProcessAsync()
     {
+        _disposingProcess = true;
         foreach (var pending in _pendingRequests.Values)
         {
             pending.TrySetException(new InvalidOperationException($"{_agentName} ACP runtime is shutting down."));
@@ -1337,7 +1351,11 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
 
         _readerTask = null;
         _errorTask = null;
+        _mcpCredentials?.Dispose();
+        _mcpCredentials = null;
+        _mcpServer = null;
         ResetTurnState();
+        _disposingProcess = false;
     }
 
     private async Task FinalizeExitAsync(Process process)
@@ -1376,6 +1394,14 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
         {
             pending.TrySetException(new InvalidOperationException($"{_agentName} ACP connection closed."));
         }
+        if (!_shutdown.IsCancellationRequested && !_disposingProcess)
+            _emit(CreateEvent("session.stopped", null, null, null, "acp", "process.exit", null, value =>
+            {
+                value.SessionState = new AppServerControlProviderSessionStatePayload
+                {
+                    State = "stopped", StateLabel = "Stopped", Reason = $"{_agentName} ACP connection closed."
+                };
+            }));
     }
 
     private void EnsureAttached()

@@ -12,6 +12,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
+  VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.artifacts/connect-dotnet-transport/binary-cache
   GIT_CONFIG_COUNT: '2'
   GIT_CONFIG_KEY_0: 'advice.detachedHead'
   GIT_CONFIG_VALUE_0: 'false'
@@ -222,29 +223,6 @@ jobs:
         working-directory: src/Ai.Tlbx.MidTerm
         run: npm run verify
 
-  dotnet-tests:
-    needs: [prepare, frontend, supply-chain]
-    if: needs.prepare.outputs.is_dev != 'true'
-    runs-on: windows-2022
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Download frontend
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: frontend
-          path: src/Ai.Tlbx.MidTerm/wwwroot/
-
-      - name: Run .NET test suite
-        shell: pwsh
-        run: ./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError
-
   # ── Build macOS ARM64 + Linux ARM64 for dev prereleases ────────────────────
   build-dev:
     needs: [prepare, frontend, supply-chain]
@@ -261,10 +239,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             rid: osx-arm64
             ext: ''
-          - os: macos-14
+          - os: macos-15-intel
             rid: osx-x64
             ext: ''
           - os: ubuntu-24.04
@@ -290,12 +268,6 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build server and reuse verified unchanged hosts
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
-
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
         env:
@@ -304,6 +276,7 @@ jobs:
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
           KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -317,6 +290,41 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Identify native compiler cache key
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $compiler = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe" | ForEach-Object { $_.VersionInfo.FileVersion } | Sort-Object) -join ';'
+          } else { $compiler = ((& cc --version) + (& c++ --version) + (& clang --version)) -join "`n" }
+          if (-not $compiler) { throw 'Native compiler identity is missing.' }
+          $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
+          "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
+          restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
+
+      - name: Build server and reuse verified unchanged hosts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: bash
@@ -425,10 +433,29 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.tar.gz" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.tar.gz"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.tar.gz
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
@@ -439,7 +466,7 @@ jobs:
 
   # ── Build macOS + Linux for stable/public releases ─────────────────────────
   build:
-    needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain]
+    needs: [prepare, frontend, frontend-tests, supply-chain]
     if: needs.prepare.outputs.is_dev != 'true'
     continue-on-error: true
     permissions:
@@ -451,10 +478,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             rid: osx-arm64
             ext: ''
-          - os: macos-14
+          - os: macos-15-intel
             rid: osx-x64
             ext: ''
           - os: ubuntu-24.04
@@ -480,12 +507,6 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
-      - name: Build server and reuse verified unchanged hosts
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
-
       - name: Import Apple Developer ID certificate
         if: startsWith(matrix.rid, 'osx-')
         env:
@@ -494,6 +515,7 @@ jobs:
         run: |
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain"
           KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          echo "::add-mask::$KEYCHAIN_PASSWORD"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -507,6 +529,41 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PASSWORD=$KEYCHAIN_PASSWORD" >> "$GITHUB_ENV"
+
+      - name: Identify native compiler cache key
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $compiler = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe" | ForEach-Object { $_.VersionInfo.FileVersion } | Sort-Object) -join ';'
+          } else { $compiler = ((& cc --version) + (& c++ --version) + (& clang --version)) -join "`n" }
+          if (-not $compiler) { throw 'Native compiler identity is missing.' }
+          $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
+          "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
+          restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
+
+      - name: Build server and reuse verified unchanged hosts
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: bash
@@ -608,10 +665,29 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.tar.gz" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.tar.gz"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.tar.gz
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
       - name: Clean up keychain
         if: startsWith(matrix.rid, 'osx-') && always()
@@ -653,11 +729,40 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
+      - name: Identify native compiler cache key
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $compiler = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe" | ForEach-Object { $_.VersionInfo.FileVersion } | Sort-Object) -join ';'
+          } else { $compiler = ((& cc --version) + (& c++ --version) + (& clang --version)) -join "`n" }
+          if (-not $compiler) { throw 'Native compiler identity is missing.' }
+          $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
+          "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
+          restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
+
       - name: Build server and reuse verified unchanged hosts
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: pwsh
@@ -721,13 +826,32 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.zip" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.zip"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.zip
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   build-windows:
-    needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain]
+    needs: [prepare, frontend, frontend-tests, supply-chain]
     if: needs.prepare.outputs.is_dev != 'true'
     continue-on-error: true
     permissions:
@@ -769,11 +893,40 @@ jobs:
           name: frontend
           path: src/Ai.Tlbx.MidTerm/wwwroot/
 
+      - name: Identify native compiler cache key
+        shell: pwsh
+        run: |
+          if ($IsWindows) {
+            $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+            $vs = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+            $compiler = (Get-ChildItem "$vs/VC/Tools/MSVC/*/bin/Hostx64/x64/cl.exe" | ForEach-Object { $_.VersionInfo.FileVersion } | Sort-Object) -join ';'
+          } else { $compiler = ((& cc --version) + (& c++ --version) + (& clang --version)) -join "`n" }
+          if (-not $compiler) { throw 'Native compiler identity is missing.' }
+          $key = [Convert]::ToHexStringLower([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($compiler)))
+          "TLBX_NATIVE_COMPILER_KEY=$key" | Out-File $env:GITHUB_ENV -Append
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
+      - name: Restore native dependency archives
+        id: native-cache
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-${{ hashFiles('src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json', 'src/Ai.Tlbx.MidTerm.ConnectNative/ports/**', 'src/Ai.Tlbx.MidTerm.ConnectNative/triplets/**') }}
+          restore-keys: |
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-${{ matrix.rid }}-
+            native-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.TLBX_NATIVE_COMPILER_KEY }}-
+
       - name: Build server and reuse verified unchanged hosts
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: ./scripts/publish-runtime-set.ps1 -Rid '${{ matrix.rid }}' -Configuration Release
+
+      - name: Preserve completed native dependency archives
+        if: always() && steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
 
       - name: Stage artifacts
         shell: pwsh
@@ -871,10 +1024,29 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        id: release_upload
+        timeout-minutes: 3
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ github.ref_name }}" "staging/mt-${{ matrix.rid }}.zip" "staging/mt-${{ matrix.rid }}.spdx.json" --clobber
+        run: >-
+          ./scripts/upload-release-assets.ps1
+          -Tag "${{ github.ref_name }}"
+          -ArchivePath "staging/mt-${{ matrix.rid }}.zip"
+          -SbomPath "staging/mt-${{ matrix.rid }}.spdx.json"
+
+      - name: Preserve signed package after upload failure
+        if: failure() && steps.release_upload.outcome == 'failure'
+        timeout-minutes: 2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-upload-${{ matrix.rid }}-${{ github.run_attempt }}
+          path: |
+            staging/mt-${{ matrix.rid }}.zip
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
 
   publish-npm:
     needs: [prepare, publish-release]
@@ -915,16 +1087,17 @@ jobs:
           npm publish --access public --provenance --tag latest
 
   publish-release:
-    needs: [prepare, frontend, frontend-tests, dotnet-tests, supply-chain, build, build-windows, build-dev, build-windows-dev]
+    needs: [prepare, frontend, frontend-tests, supply-chain, build, build-windows, build-dev, build-windows-dev]
     if: >-
       always() && !cancelled() && needs.prepare.result == 'success' &&
       needs.frontend.result == 'success' && needs.supply-chain.result == 'success' &&
       (needs.prepare.outputs.is_dev == 'true' ||
-       (needs.frontend-tests.result == 'success' && needs.dotnet-tests.result == 'success'))
+       needs.frontend-tests.result == 'success')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate and publish available platforms
         id: validate
         shell: bash
@@ -941,87 +1114,38 @@ jobs:
             --json databaseId,tagName,isDraft,isPrerelease,assets,body \
             > "$RELEASE_JSON"
 
-          RELEASE_ID=$(python3 - "$RELEASE_JSON" "$RELEASE_TAG" "$RELEASE_PATCH" <<'PY'
-          import json
-          import os
-          import sys
-
-          release_path, expected_tag, patch_path = sys.argv[1:]
-          with open(release_path, encoding="utf-8") as handle:
-              release = json.load(handle)
-
-          platforms = {
-              rid: {f"mt-{rid}.{extension}", f"mt-{rid}.spdx.json"}
-              for rid, extension in [
-                  ("linux-arm64", "tar.gz"), ("linux-x64", "tar.gz"),
-                  ("osx-arm64", "tar.gz"), ("osx-x64", "tar.gz"),
-                  ("win-x64", "zip"), ("win-x86", "zip"),
-              ]
-          }
-          expected_assets = set().union(*platforms.values())
-
-          if release.get("tagName") != expected_tag:
-              raise SystemExit(f"Release tag mismatch: expected {expected_tag!r}, got {release.get('tagName')!r}")
-          if release.get("isDraft") is not True:
-              raise SystemExit("Release must still be a draft before publication.")
-          if release.get("isPrerelease") is not ("-dev" in expected_tag):
-              raise SystemExit("Release prerelease flag does not match its tag.")
-
-          assets = release.get("assets") or []
-          actual_names = {asset.get("name") for asset in assets}
-          unexpected = actual_names - expected_assets
-          if len(assets) != len(actual_names) or unexpected:
-              raise SystemExit(f"Duplicate or unexpected release assets: {unexpected}")
-
-          empty = sorted(
-              asset["name"]
-              for asset in assets
-              if not isinstance(asset.get("size"), int) or asset["size"] <= 0
-          )
-          if empty:
-              raise SystemExit(f"Release assets must be nonzero: {empty}")
-
-          available = []
-          unavailable = []
-          for rid, pair in platforms.items():
-              present = pair & actual_names
-              if present and present != pair:
-                  raise SystemExit(f"Incomplete platform {rid}: missing {sorted(pair - present)}")
-              (available if present else unavailable).append(rid)
-          if not available:
-              raise SystemExit("At least one complete platform archive and matching SBOM is required.")
-
-          release_id = release.get("databaseId")
-          if not isinstance(release_id, int) or release_id <= 0:
-              raise SystemExit(f"Invalid GitHub release id: {release_id!r}")
-
-          availability = (
-              "## Platform availability\n\n"
-              f"Available: {', '.join(available)}.\n\n"
-              f"Unavailable in this release: {', '.join(unavailable) if unavailable else 'none'}."
-          )
-          patch = {
-              "draft": False,
-              "prerelease": release["isPrerelease"],
-              "make_latest": "false" if release["isPrerelease"] else "true",
-              "body": (release.get("body") or "").rstrip() + "\n\n" + availability,
-          }
-          with open(patch_path, "w", encoding="utf-8") as handle:
-              json.dump(patch, handle)
-          if os.environ.get("GITHUB_STEP_SUMMARY"):
-              with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as handle:
-                  handle.write(availability + "\n")
-          if unavailable:
-              print(f"::warning::Release excludes unavailable platforms: {', '.join(unavailable)}", file=sys.stderr)
-          print(release_id)
-          PY
-          )
+          RELEASE_ID=$(python3 scripts/validate-release-publication.py "$RELEASE_JSON" "$RELEASE_TAG" "$RELEASE_PATCH")
           echo "release_id=$RELEASE_ID" >> "$GITHUB_OUTPUT"
           gh api \
             --method PATCH \
             "repos/$REPOSITORY/releases/$RELEASE_ID" \
             --input "$RELEASE_PATCH" \
             > /dev/null
+
+  publish-builds:
+    needs: publish-release
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: https-build-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify HTTPS publisher contracts
+        shell: pwsh
+        run: ./scripts/test-publish-builds.ps1
+      - name: Publish verified public packages over HTTPS
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/publish-builds.ps1 -Tag $env:RELEASE_TAG
 
   prune-artifacts:
     needs: [prepare, publish-release]

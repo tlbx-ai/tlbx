@@ -60,8 +60,41 @@ public sealed class SessionCliContextServiceTests : IDisposable
     [InlineData("codex app-server --listen unix://", true)]
     [InlineData("codex \"app-server\" --listen unix://", true)]
     [InlineData("codex 'app-server' --managed-daemon", true)]
+    [InlineData("\"C:\\Program Files\\Codex\\codex.exe\" app-server --managed-daemon", true)]
+    [InlineData("codex --yolo \"explain app-server and --managed-daemon\"", false)]
+    [InlineData("codex --yolo 'explain app-server'", false)]
+    [InlineData("codex --yolo \"--managed-daemon help\"", false)]
     public void SharedBackendDetectionPreservesQuotedArguments(string command, bool shared)
         => Assert.Equal(shared, SessionProcessContext.IsSharedCodexCommand(command));
+
+    [Theory]
+    [InlineData("app-server", true)]
+    [InlineData("--managed-daemon", true)]
+    [InlineData("explain app-server and --managed-daemon", false)]
+    [InlineData("", false)]
+    public void MacArgumentsRetainEmptyUnicodeAndPromptBoundariesWithoutReadingEnvironment(string argument, bool shared)
+    {
+        string[] arguments = ["/Applications/Codex 日本/bin/codex", "", argument, "Grüße 👋"];
+        var body = Encoding.UTF8.GetBytes("/Applications/Codex 日本/bin/codex\0\0\0" +
+            string.Join('\0', arguments) + "\0app-server\0--managed-daemon\0");
+        var buffer = BitConverter.GetBytes(arguments.Length).Concat(body).ToArray();
+        var parsed = SessionProcessContext.ParseMacProcessArguments(buffer);
+        Assert.Equal(arguments, parsed);
+        Assert.Equal(shared, SessionProcessContext.IsSharedCodexArguments(parsed!));
+        // A truncated argv must fail closed, rather than classifying a partial command.
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(buffer.AsSpan(0,
+            sizeof(int) + body.Length - Encoding.UTF8.GetByteCount("app-server\0--managed-daemon\0") - 1)));
+    }
+
+    [Fact]
+    public void MacArgumentsRejectInvalidCountAndUnterminatedExecutable()
+    {
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments([]));
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(BitConverter.GetBytes(-1)));
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(BitConverter.GetBytes(int.MaxValue)));
+        Assert.Null(SessionProcessContext.ParseMacProcessArguments(BitConverter.GetBytes(1)
+            .Concat(Encoding.UTF8.GetBytes("codex-without-terminator")).ToArray()));
+    }
 
     [Fact]
     public void AutomaticTerminalRepliesKeepBindingButUserInputRevokesIt()
@@ -326,11 +359,44 @@ public sealed class SessionCliContextServiceTests : IDisposable
         {
             Feed("first001", marker);
             if (change == "input") _service.InvalidateInput("first001");
-            else if (change == "client") _processes[11] = _started.AddSeconds(1);
+            else if (change == "client") _processes[11] = _processes[11].AddSeconds(1);
             else _processes[100] = _started.AddSeconds(1);
             return Task.FromResult(true);
         }, CancellationToken.None);
         Assert.Contains(change == "caller" ? "TLBX_CONTEXT_INVALID_PROCESS" : "TLBX_CONTEXT_CHANGED", result, StringComparison.Ordinal);
+        Assert.Contains("stage=automatic-discovery", result, StringComparison.Ordinal);
+        Assert.Contains("callerPid=100", result, StringComparison.Ordinal);
+        Assert.Contains("root=" + Root, result, StringComparison.Ordinal);
+        Assert.Contains(change switch
+        {
+            "input" => "terminal-input-changed: session=first001; inputVersion=1->2",
+            "client" => "client-process-replaced: session=first001; clientPid=11",
+            _ => "caller-process-changed: expected start="
+        }, result, StringComparison.Ordinal);
+        Assert.Contains("Next:", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PersistentObserverInputReportsTheChangedTerminalWithoutExposingLeaseTokens()
+    {
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            Feed("first001", marker);
+            _service.ObserveInput("first001", userInput: true);
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        Assert.Contains("terminal-input-changed: session=first001; inputVersion=1->2", result, StringComparison.Ordinal);
+        Assert.Contains("observed=1 [first001]", result, StringComparison.Ordinal);
+        Assert.Contains("clientPid=11", result, StringComparison.Ordinal);
+        Assert.Contains("If the same reason repeats, stop retrying", result, StringComparison.Ordinal);
+
+        Feed("first001", ProofLine(_service.Resolve(Root, Root, 100)));
+        var lease = _service.Resolve(Root, Root, 100);
+        _processes[11] = _started.AddSeconds(1);
+        var invalid = _service.ValidateLease(lease[9..])!;
+        Assert.Contains("stage=lease-validation", invalid, StringComparison.Ordinal);
+        Assert.Contains("client-process-replaced: session=first001; clientPid=11", invalid, StringComparison.Ordinal);
+        Assert.DoesNotContain(lease[9..], invalid, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -389,6 +455,134 @@ public sealed class SessionCliContextServiceTests : IDisposable
         Assert.All(results, result => Assert.StartsWith("first001:", result, StringComparison.Ordinal));
         Assert.All(results, result => Assert.Null(_service.ValidateLease(result[9..])));
         Assert.NotEqual(results[0], results[1], StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("input")]
+    [InlineData("client")]
+    public async Task TransientCandidateChangeRebindsBeforeReturningTheOriginalFirstCall(string change)
+    {
+        var markers = new List<string>();
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            markers.Add(marker);
+            Feed("first001", marker);
+            if (markers.Count == 1)
+            {
+                if (change == "input") _service.InvalidateInput("first001");
+                else _processes[21] = _started.AddSeconds(1);
+            }
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        Assert.StartsWith("first001:", result, StringComparison.Ordinal);
+        Assert.Equal(2, markers.Count);
+        Assert.NotEqual(markers[0], markers[1], StringComparer.Ordinal);
+        Assert.Null(_service.ValidateLease(result[9..]));
+        Feed("second02", markers[0]); // Late output of the invalidated challenge cannot claim this lease.
+        Assert.Null(_service.ValidateLease(result[9..]));
+    }
+
+    [Fact]
+    public async Task FreshEvidenceToleratesSiblingTypingButStillRejectsDuplicateClients()
+    {
+        var emitted = 0;
+        string? challenge = null;
+        var result = await _service.ResolveAsync(Root, Root, 100, false, async (marker, token) =>
+        {
+            emitted++;
+            challenge = marker;
+            Feed("first001", marker);
+            // Keep this input inside discovery. A detached task can be scheduled
+            // after the lease is returned on a busy runner, where input correctly
+            // revokes the cached proof instead of exercising fresh discovery.
+            for (var index = 0; index < 8; index++)
+            {
+                _service.InvalidateInput("second02");
+                await Task.Delay(20, token);
+            }
+            return true;
+        }, CancellationToken.None);
+        Assert.Equal(1, emitted);
+        Assert.StartsWith("first001:", result, StringComparison.Ordinal);
+        Assert.Null(_service.ValidateLease(result[9..]));
+        Feed("second02", challenge!);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", _service.ValidateLease(result[9..]), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InputBeforeTheSoleObservationCannotTurnAStaleRedrawIntoOwnership()
+    {
+        var emitted = 0;
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            emitted++;
+            _service.InvalidateInput("first001");
+            Feed("first001", marker);
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        Assert.Equal(2, emitted);
+        Assert.Contains("TLBX_CONTEXT_CHANGED", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ChangedInputInADuplicateCannotHideItsProofDuringDiscovery()
+    {
+        var result = await _service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            Feed("first001", marker);
+            _service.InvalidateInput("second02");
+            Feed("second02", marker);
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        // Ambiguity is not an automatically recoverable transient.
+        Assert.Contains("TLBX_CONTEXT_AMBIGUOUS", result, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SlowThreadCannotBlockAnotherThreadsFirstCall()
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var slow = _service.ResolveAsync(Root, Root, 100, false, async (marker, token) =>
+        {
+            entered.SetResult();
+            await release.Task.WaitAsync(token);
+            Feed("first001", marker);
+            return true;
+        }, CancellationToken.None);
+        await entered.Task;
+        try
+        {
+            var fast = _service.ResolveAsync(Other, Other, 101, false, (marker, _) =>
+            {
+                Feed("second02", marker);
+                return Task.FromResult(true);
+            }, CancellationToken.None);
+            // This asserts independence from the still-closed slow gate, not a
+            // two-second scheduling guarantee on a shared CI runner.
+            Assert.StartsWith("second02:", await fast.WaitAsync(TimeSpan.FromSeconds(15), TestContext.Current.CancellationToken), StringComparison.Ordinal);
+            Assert.False(slow.IsCompleted);
+        }
+        finally { release.SetResult(); }
+        Assert.StartsWith("first001:", await slow, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task ServerReplacementRebindsTheSameLiveTerminalWithANewLease()
+    {
+        async Task<string> Bind(SessionCliContextService service) => await service.ResolveAsync(Root, Root, 100, false, (marker, _) =>
+        {
+            service.ObserveOutput("first001", Encoding.UTF8.GetBytes(marker));
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+        var before = await Bind(_service);
+        using var replacement = new SessionCliContextService(() => _terminals,
+            pid => _processes.TryGetValue(pid, out var started) ? (1, started) : null, _clock);
+        Assert.Contains("TLBX_CONTEXT_EXPIRED", replacement.ValidateLease(before[9..]), StringComparison.Ordinal);
+        var after = await Bind(replacement);
+        Assert.StartsWith("first001:", after, StringComparison.Ordinal);
+        Assert.NotEqual(before, after, StringComparer.Ordinal);
+        Assert.Null(replacement.ValidateLease(after[9..]));
     }
 
     [Fact]

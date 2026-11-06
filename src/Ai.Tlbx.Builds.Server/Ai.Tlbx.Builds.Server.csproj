@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ai.Tlbx.MidTerm.Common/Ai.Tlbx.MidTerm.Common.csproj" />
+    <Compile Include="../Ai.Tlbx.MidTerm/Services/Updates/UpdateVerification.cs" Link="Verification/UpdateVerification.cs" />
+    <Compile Include="../Ai.Tlbx.MidTerm/Models/Update/VersionManifest.cs" Link="Verification/VersionManifest.cs" />
+    <InternalsVisibleTo Include="Ai.Tlbx.Builds.Server.Tests" />
+  </ItemGroup>
+  <Target Name="ReadVersionJson" BeforeTargets="GetAssemblyVersion;BeforeCompile">
+    <PropertyGroup>
+      <_BuildVersionJson>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/../version.json'))</_BuildVersionJson>
+      <WebVersion>$([System.Text.RegularExpressions.Regex]::Match('$(_BuildVersionJson)', '&quot;web&quot;\s*:\s*&quot;([^&quot;]+)&quot;').Groups[1].Value)</WebVersion>
+      <Version>$(WebVersion)</Version>
+    </PropertyGroup>
+    <Error Condition="'$(WebVersion)' == ''" Text="Could not read web version from src/version.json" />
+  </Target></Project>

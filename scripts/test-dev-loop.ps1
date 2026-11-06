@@ -5,7 +5,7 @@ $parseErrors = $null
 $tokens = $null
 $ast = [System.Management.Automation.Language.Parser]::ParseFile($devScript, [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors | Out-String) }
-foreach ($name in @('New-StaticWatcher', 'Wait-ForStaticChange')) {
+foreach ($name in @('New-StaticWatcher', 'Wait-ForStaticChange', 'New-CodeWatcher', 'Should-RestartForPath', 'Wait-ForCodeChange')) {
     $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $true)
     if (-not $function) { throw "Missing dev-loop function $name" }
     Invoke-Expression $function.Extent.Text
@@ -15,6 +15,7 @@ $WebProjectDir = $testRoot
 $staticDir = Join-Path $testRoot 'src/static'
 New-Item -ItemType Directory $staticDir -Force | Out-Null
 $watcher = $null
+$codeWatcher = $null
 try {
     $watcher = New-StaticWatcher
     if (Wait-ForStaticChange $watcher) { throw 'Unchanged assets caused a sync' }
@@ -35,11 +36,29 @@ try {
     if (-not (Wait-ForStaticChange $watcher)) { throw 'Watcher overflow did not request a full sync' }
     if (Wait-ForStaticChange $watcher) { throw 'Consumed events caused a duplicate sync' }
     Write-Output 'PASS: static changes survive waits; rename, deletion and overflow request sync; consumed events do not repeat.'
+    $CodeWatchRoot = $testRoot
+    $codeWatcher = New-CodeWatcher
+    $generatedDir = Join-Path $testRoot 'obj'
+    New-Item -ItemType Directory $generatedDir -Force | Out-Null
+    for ($index = 0; $index -lt 1024; $index++) {
+        [IO.File]::WriteAllText((Join-Path $generatedDir "$index.json"), '{}')
+    }
+    if (Wait-ForCodeChange $codeWatcher 400) { throw 'Generated build outputs restarted unchanged code or overflowed its native watcher' }
+    $source = Join-Path $testRoot 'scope.cs'
+    [IO.File]::WriteAllText($source, 'class Scope {}')
+    if ((Wait-ForCodeChange $codeWatcher 1000) -ne 'scope.cs') { throw 'Real source change was lost after build output burst' }
+    $null = Wait-ForCodeChange $codeWatcher 200
+    [IO.File]::WriteAllText((Join-Path $generatedDir 'generated.cs'), 'class Generated {}')
+    if (Wait-ForCodeChange $codeWatcher 300) { throw 'Generated C# restarted the source server' }
+    Rename-Item -LiteralPath $source -NewName 'scope.bak'
+    if (-not (Wait-ForCodeChange $codeWatcher 1000)) { throw 'Renaming source out of the code filter was lost' }
+    Write-Output 'PASS: generated-output burst does not restart code; source edits and renames remain observable.'
 }
 finally {
     if ($watcher) { $watcher.Dispose() }
-    Get-EventSubscriber | Where-Object SourceIdentifier -Like "tlbx.dev.static.$PID.*" | Unregister-Event
-    Get-Event | Where-Object SourceIdentifier -Like "tlbx.dev.static.$PID.*" | Remove-Event
+    if ($codeWatcher) { $codeWatcher.Dispose() }
+    Get-EventSubscriber | Where-Object { $_.SourceIdentifier -Like "tlbx.dev.static.$PID.*" -or $_.SourceIdentifier -Like "tlbx.dev.code.$PID.*" } | Unregister-Event
+    Get-Event | Where-Object { $_.SourceIdentifier -Like "tlbx.dev.static.$PID.*" -or $_.SourceIdentifier -Like "tlbx.dev.code.$PID.*" } | Remove-Event
     $resolved = [IO.Path]::GetFullPath($testRoot)
     $tempPrefix = [IO.Path]::Combine([IO.Path]::GetFullPath([IO.Path]::GetTempPath()), 'tlbx-dev-loop-')
     if (-not $resolved.StartsWith($tempPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe test cleanup path' }

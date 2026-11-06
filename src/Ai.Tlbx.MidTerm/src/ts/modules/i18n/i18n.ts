@@ -31,6 +31,21 @@ export function getCurrentLocale(): string {
   return currentLocale;
 }
 
+declare global {
+  interface Window {
+    __tlbxI18n?: Readonly<{
+      t: typeof t;
+      getCurrentLocale: typeof getCurrentLocale;
+    }>;
+  }
+}
+
+// Connect's injected controls share this document and must use its native locale.
+// Expose lookups only; settings remain the sole owner of language changes.
+if (typeof window !== 'undefined') {
+  window.__tlbxI18n = Object.freeze({ t, getCurrentLocale });
+}
+
 /**
  * Get the list of supported locale codes.
  */

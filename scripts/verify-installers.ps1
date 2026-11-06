@@ -6,16 +6,6 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 
-function Assert-Contains {
-    param([string]$Content, [string]$Pattern, [string]$Message)
-    if ($Content -notmatch $Pattern) { throw $Message }
-}
-
-function Assert-NotContains {
-    param([string]$Content, [string]$Pattern, [string]$Message)
-    if ($Content -match $Pattern) { throw $Message }
-}
-
 $powerShellScripts = @("install.ps1", "uninstall.ps1", "install-multi.ps1")
 foreach ($relativePath in $powerShellScripts) {
     $tokens = $null
@@ -110,48 +100,164 @@ is_tailscale_ipv4 100.127.255.254
             throw "install.sh readiness URL smoke test failed: $($readinessOutput -join [Environment]::NewLine)"
         }
 
+        $wgetTransportSmoke = @'
+set -e
+eval "$(awk '/^download_to_file\(\) \{/{emit=1} /^build_catalog_get\(\) \{/{emit=0} emit' ./install.sh)"
+tmp=$(mktemp -d)
+trap 'rm -rf "$tmp"' EXIT
+mkdir -p "$tmp/bin"
+export WGET_ARGV="$tmp/argv"
+cat > "$tmp/bin/wget" <<'WGET'
+#!/bin/bash
+printf '%s\n' "$@" > "$WGET_ARGV"
+test "$#" = 8 || exit 64
+test "$1" = -qO || exit 64
+printf fixture > "$2"
+WGET
+chmod +x "$tmp/bin/wget"
+export PATH="$tmp/bin:$PATH"
+DOWNLOADER=wget
+log() { :; }
+validate_archive() { test "$(cat "$1")" = fixture; }
+sleep() { echo 'unexpected wget transport retry' >&2; return 1; }
+url=https://builds.tlbx.ai/dev/10.25.30-dev/linux-x64/mt-linux-x64.tar.gz
+destination="$tmp/release with spaces.tar.gz"
+download_to_file "$url" "$destination" 'wget argument contract'
+cat > "$tmp/expected" <<EOF
+-qO
+$destination
+--https-only
+--max-redirect=0
+--timeout=600
+--tries=1
+--user-agent=tlbx-Installer
+$url
+EOF
+cmp "$tmp/expected" "$WGET_ARGV"
+test "$(cat "$destination")" = fixture
+printf '%s\n' 'wget download argv contract passed (URL, quoted destination, HTTPS, no redirects, bounded timeout)'
+'@
+        $wgetTransportScript = ".verify-wget-transport-$([Guid]::NewGuid().ToString('N')).sh"
+        try {
+            [IO.File]::WriteAllText((Join-Path $repoRoot $wgetTransportScript),
+                $wgetTransportSmoke.Replace("`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+            $wgetTransportOutput = & $bash.Source "./$wgetTransportScript" 2>&1
+        } finally {
+            Remove-Item -LiteralPath (Join-Path $repoRoot $wgetTransportScript) -ErrorAction SilentlyContinue
+        }
+        if ($LASTEXITCODE -ne 0) { throw "install.sh wget argument contract failed: $($wgetTransportOutput -join [Environment]::NewLine)" }
+        Write-Output $wgetTransportOutput
+
         $releaseSelectionSmoke = @'
 set -e
 eval "$(awk '/^get_latest_release\(\) \{/{emit=1} /^require_extracted_binaries\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^compute_sha256\(\) \{/{emit=1} /^extract_signed_checksum_entries\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^assert_build_archive\(\) \{/{emit=1} /^install_binary\(\) \{/{emit=0} emit' ./install.sh)"
 print_step_inline() { :; }
 finish_step_inline() { :; }
 print_status() { :; }
+command_exists() { command -v "$1" >/dev/null 2>&1; }
 ASSET_NAME=mt-osx-arm64.tar.gz
-REPO_OWNER=tlbx-ai
-REPO_NAME=tlbx
-github_api_get() {
+PLATFORM=osx ARCH=arm64
+BUILDS_ORIGIN=https://builds.tlbx.ai
+calls=$(mktemp)
+payload=$(mktemp)
+trap 'rm -f "$calls" "$payload"' EXIT
+build_catalog_get() {
     case "$1" in
-        */latest) printf '%s' '{"tag_name":"v10.17.18","prerelease":false,"assets":[]}' ;;
-        *) printf '%s' "$releases" ;;
+        https://builds.tlbx.ai/v1/channels/dev/releases.json|https://builds.tlbx.ai/v1/channels/main/releases.json) ;;
+        *) echo "unexpected metadata request: $1" >&2; return 1 ;;
     esac
+    printf '%s\n' "$1" >> "$calls"
+    printf '%s' "$releases"
 }
-# Both pretty and compact JSON, including escaped quotes/braces in release notes.
-for releases in '[{"tag_name":"v10.17.18-dev","prerelease":true,"body":"brace { and escaped \" quote","assets":[]},{"tag_name":"v10.17.17-dev","prerelease":true,"draft":true,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]},{"tag_name":"v10.17.16-dev","prerelease":true,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]},{"tag_name":"v10.17.16","prerelease":false,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]}]' '[
-{
-"tag_name": "v10.17.16-dev",
-"prerelease": true,
-"assets": [{"browser_download_url": "https://example.test/mt-osx-arm64.tar.gz"}]
-},
-{
-"tag_name": "v10.17.16",
-"prerelease": false,
-"assets": [{"browser_download_url": "https://example.test/mt-osx-arm64.tar.gz"}]
-}
+for releases in '[{"tag_name":"v10.17.18-dev","prerelease":true,"draft":false,"body":"brace { and escaped \" quote","assets":[]},{"tag_name":"v10.17.17-dev","prerelease":true,"draft":true,"body":"brace { and escaped \" quote","assets":[{"name":"mt-osx-arm64.tar.gz","browser_download_url":"https://builds.tlbx.ai/dev/10.17.17-dev/osx-arm64/mt-osx-arm64.tar.gz","size":7,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},{"tag_name":"v10.17.16-dev","prerelease":true,"draft":false,"body":"brace { and escaped \" quote","assets":[{"name":"mt-osx-arm64.tar.gz","browser_download_url":"https://builds.tlbx.ai/dev/10.17.16-dev/osx-arm64/mt-osx-arm64.tar.gz","size":7,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]},{"tag_name":"v10.17.18","prerelease":false,"draft":false,"body":"brace { and escaped \" quote","assets":[]},{"tag_name":"v10.17.16","prerelease":false,"draft":false,"body":"brace { and escaped \" quote","assets":[{"name":"mt-osx-arm64.tar.gz","browser_download_url":"https://builds.tlbx.ai/main/10.17.16/osx-arm64/mt-osx-arm64.tar.gz","size":7,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}]' '[
+  {
+    "tag_name": "v10.17.18-dev",
+    "prerelease": true,
+    "draft": false,
+    "body": "brace { and escaped \" quote",
+    "assets": []
+  },
+  {
+    "tag_name": "v10.17.17-dev",
+    "prerelease": true,
+    "draft": true,
+    "body": "brace { and escaped \" quote",
+    "assets": [
+      {
+        "name": "mt-osx-arm64.tar.gz",
+        "browser_download_url": "https://builds.tlbx.ai/dev/10.17.17-dev/osx-arm64/mt-osx-arm64.tar.gz",
+        "size": 7,
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "tag_name": "v10.17.16-dev",
+    "prerelease": true,
+    "draft": false,
+    "body": "brace { and escaped \" quote",
+    "assets": [
+      {
+        "name": "mt-osx-arm64.tar.gz",
+        "browser_download_url": "https://builds.tlbx.ai/dev/10.17.16-dev/osx-arm64/mt-osx-arm64.tar.gz",
+        "size": 7,
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  },
+  {
+    "tag_name": "v10.17.18",
+    "prerelease": false,
+    "draft": false,
+    "body": "brace { and escaped \" quote",
+    "assets": []
+  },
+  {
+    "tag_name": "v10.17.16",
+    "prerelease": false,
+    "draft": false,
+    "body": "brace { and escaped \" quote",
+    "assets": [
+      {
+        "name": "mt-osx-arm64.tar.gz",
+        "browser_download_url": "https://builds.tlbx.ai/main/10.17.16/osx-arm64/mt-osx-arm64.tar.gz",
+        "size": 7,
+        "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ]
+  }
 ]'; do
     DEV_CHANNEL=true
     get_latest_release
     test "$VERSION" = 10.17.16-dev
-    test "$ASSET_URL" = https://example.test/mt-osx-arm64.tar.gz
+    test "$ASSET_URL" = https://builds.tlbx.ai/dev/10.17.16-dev/osx-arm64/mt-osx-arm64.tar.gz
+    test "$ASSET_SIZE" = 7
     DEV_CHANNEL=false
     get_latest_release
     test "$VERSION" = 10.17.16
+    test "$ASSET_URL" = https://builds.tlbx.ai/main/10.17.16/osx-arm64/mt-osx-arm64.tar.gz
 done
-releases='[{"tag_name":"v10.17.16","prerelease":false,"assets":[{"browser_download_url":"https://example.test/mt-osx-arm64.tar.gz"}]}]'
+releases='[{"tag_name":"v10.17.16","prerelease":false,"draft":false,"body":"brace { and escaped \" quote","assets":[{"name":"mt-osx-arm64.tar.gz","browser_download_url":"https://builds.tlbx.ai/main/10.17.16/osx-arm64/mt-osx-arm64.tar.gz","size":7,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}]'
+: > "$calls"
 DEV_CHANNEL=true
 get_latest_release
 test "$VERSION" = 10.17.16
+test "$(wc -l < "$calls" | tr -d '[:space:]')" = 2
 releases='[]'
-if (get_latest_release) >/dev/null 2>&1; then exit 1; fi
+if (get_latest_release) >/dev/null 2>&1; then echo 'empty catalog accepted' >&2; exit 1; fi
+releases='[{"tag_name":"v10.17.16","prerelease":false,"draft":false,"body":"brace { and escaped \" quote","assets":[{"name":"mt-osx-arm64.tar.gz","browser_download_url":"https://builds.tlbx.ai/main/10.17.16/osx-arm64/mt-osx-arm64.tar.gz","size":7,"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}]}]'
+releases=${releases//https:\/\/builds.tlbx.ai/https:\/\/evil.example}
+if (get_latest_release) >/dev/null 2>&1; then echo 'foreign download URL accepted' >&2; exit 1; fi
+printf fixture > "$payload"
+ASSET_SIZE=7
+ASSET_SHA256=$(compute_sha256 "$payload")
+assert_build_archive "$payload"
+printf tamper >> "$payload"
+if assert_build_archive "$payload" >/dev/null 2>&1; then echo 'changed archive size accepted' >&2; exit 1; fi
+ASSET_SIZE=$(wc -c < "$payload" | tr -d '[:space:]')
+if assert_build_archive "$payload" >/dev/null 2>&1; then echo 'changed archive SHA256 accepted' >&2; exit 1; fi
 '@
         $selectionScript = ".verify-release-selection-$([Guid]::NewGuid().ToString('N')).sh"
         try {
@@ -187,45 +293,162 @@ test "$(printf '%s\n' "$entries" | tail -1 | tr -d '\r')" = "\"mthost\":\"$hash\
         if ($LASTEXITCODE -ne 0) {
             throw "install.sh signed checksum extraction smoke test failed: $($signedChecksumsOutput -join [Environment]::NewLine)"
         }
+        $firstRunSmoke = @'
+set -e
+# Extract and execute real installer functions; never run its installation entrypoint.
+eval "$(awk '/^command_exists\(\) \{/{emit=1} /^bootstrap_download\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^pick_downloader\(\) \{/{emit=1} /^print_dependency_help\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^run_with_system_privileges\(\) \{/{emit=1} /^ensure_prerequisites\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^ensure_prerequisites\(\) \{/{emit=1} /^init_log\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^decode_base64_to_file\(\) \{/{emit=1} /^extract_json_string_from_file\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^compute_sha256\(\) \{/{emit=1} /^extract_signed_checksum_entries\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^prompt_password\(\) \{/{emit=1} /^prompt_existing_password_action\(\) \{/{emit=0} emit' ./install.sh)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+log() { :; }
+print_dependency_help() { :; }
+RED='' GREEN='' YELLOW='' GRAY='' NC=''
+# Git Bash does not ship pgrep; fixture its presence, without running it.
+# Developer runtimes must not be required for native release installation.
+command_exists() {
+    case "$1" in dotnet|node|nodejs|python|python3|pwsh) return 1 ;; pgrep) return 0 ;; esac
+    command -v "$1" >/dev/null 2>&1
+}
+run_with_system_privileges() { echo 'unexpected system mutation attempted' >&2; return 1; }
+ensure_prerequisites
+mkdir -p "$tmp/payload"
+for name in mt mthost mtagenthost version.json runtime-inputs.json THIRD-PARTY-LICENSES.txt SHA256SUMS.txt; do
+    printf fixture > "$tmp/payload/$name"
+done
+tar -czf "$tmp/valid.tar.gz" -C "$tmp/payload" .
+validate_archive_members "$tmp/valid.tar.gz"
+printf unexpected > "$tmp/payload/unexpected"
+tar -czf "$tmp/invalid.tar.gz" -C "$tmp/payload" .
+if validate_archive_members "$tmp/invalid.tar.gz"; then echo 'unexpected archive member accepted' >&2; exit 1; fi
+printf '%s\n' 'archive and prerequisite checks passed'
+read_password_masked() { REPLY="$fixture_password"; }
+MT_BINARY_PATH="$tmp/missing-mt"
+fixture_password=1234567890
+prompt_password >/dev/null
+test "$PASSWORD_HASH" = "__PENDING64__:$(printf '%s' "$fixture_password" | base64)"
+for fixture_password in 123456789 "$(printf '%01025d' 0)"; do
+    if (prompt_password >/dev/null); then echo 'invalid password length accepted' >&2; exit 1; fi
+done
+fixture_password='ab\cdefghi'
+export CAPTURE="$tmp/password"
+cat > "$tmp/mt" <<'MT'
+#!/bin/bash
+test "$1" = --hash-password || exit 1
+cat > "$CAPTURE"
+printf '%s\n' '$PBKDF2$600000$c2FsdA==$aGFzaA=='
+MT
+chmod +x "$tmp/mt"
+MT_BINARY_PATH="$tmp/mt"
+prompt_password >/dev/null
+printf '%s\n' "$fixture_password" > "$tmp/expected"
+cmp "$tmp/expected" "$CAPTURE"
+# The already-present cross-platform decoder works even on BSD-only base64.
+REAL_BASE64="$(command -v base64)"
+base64() {
+    case "${1:-}" in
+        --decode|-d) return 1 ;;
+        -D) shift; "$REAL_BASE64" --decode "$@" 2>/dev/null || "$REAL_BASE64" -D "$@" ;;
+        *) "$REAL_BASE64" "$@" ;;
+    esac
+}
+decode_base64_to_file "$(printf '%s' "$fixture_password" | base64)" "$tmp/decoded"
+printf '%s' "$fixture_password" > "$tmp/expected"
+cmp "$tmp/expected" "$tmp/decoded"
+printf '%s\n' 'password boundary, byte identity, and BSD decoding checks passed'
+# Exercise only file staging/copy/rollback in a private root, never services/startup.
+eval "$(awk '/^copy_with_retry\(\) \{/{emit=1} /^check_existing_certificate\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^rollback_install_transaction\(\) \{/{emit=1} /^install_as_service\(\) \{/{emit=0} emit' ./install.sh)"
+eval "$(awk '/^require_extracted_binaries\(\) \{/{emit=1} /^decode_base64_to_file\(\) \{/{emit=0} emit' ./install.sh)"
+prepare_native_runtime() { :; } # File-transaction fixture never executes a downloaded binary.
+print_step_inline() { :; }
+finish_step_inline() { :; }
+verify_signed_release() { :; } # Signature protocol has its own tests; this fixture isolates the swap.
+download_to_file() { cp "$fixture_archive" "$2"; }
+ASSET_NAME=fixture.tar.gz ASSET_URL=https://invalid.test/fixture VERSION=fixture
+export TMPDIR="$tmp"
+fixture_archive="$tmp/valid.tar.gz"
+ASSET_SIZE=$(wc -c < "$fixture_archive" | tr -d '[:space:]')
+ASSET_SHA256=$(compute_sha256 "$fixture_archive")
+mkdir -p "$tmp/install"
+printf old > "$tmp/install/mt"
+printf oldmetadata > "$tmp/install/runtime-inputs.json"
+install_binary "$tmp/install"
+test "$(cat "$tmp/install/runtime-inputs.json")" = fixture
+rollback_install_transaction 2>/dev/null
+test "$(cat "$tmp/install/runtime-inputs.json")" = oldmetadata
+test "$(cat "$tmp/install/mt")" = old
+# Previous releases without optional runtime metadata are still valid payloads.
+rm -f "$tmp/payload/unexpected" "$tmp/payload/runtime-inputs.json"
+tar -czf "$tmp/previous.tar.gz" -C "$tmp/payload" .
+fixture_archive="$tmp/previous.tar.gz"
+ASSET_SIZE=$(wc -c < "$fixture_archive" | tr -d '[:space:]')
+ASSET_SHA256=$(compute_sha256 "$fixture_archive")
+install_binary "$tmp/fresh"
+test -f "$tmp/fresh/mt"
+rollback_install_transaction 2>/dev/null
+test ! -e "$tmp/fresh/mt"
+printf '%s\n' 'transactional metadata and previous archive checks passed'
+# Real dependency selection runs with an argv recorder, never an OS package manager.
+eval "$(awk '/^run_with_system_privileges\(\) \{/{emit=1} /^ensure_prerequisites\(\) \{/{emit=0} emit' ./install.sh)"
+run_with_system_privileges() { printf '%s ' "$@" >> "$tmp/packages"; printf '\n' >> "$tmp/packages"; }
+for fixture_manager in apt-get dnf yum pacman; do
+    command_exists() { [ "$1" = "$fixture_manager" ]; }
+    LINUX_PACKAGES_READY=false
+    : > "$tmp/packages"
+    install_linux_system_packages >/dev/null 2>&1
+    grep -q "$fixture_manager .*openssl" "$tmp/packages"
+    grep -q ca-certificates "$tmp/packages"
+    if grep -Eq 'dotnet|python|nodejs|pwsh' "$tmp/packages"; then exit 1; fi
+    before="$(wc -l < "$tmp/packages")"
+    install_linux_system_packages
+    test "$(wc -l < "$tmp/packages")" = "$before"
+done
+# Missing crypto libraries trigger one recovery; healthy runtimes never invoke it.
+uname() { printf '%s\n' Linux; }
+install_linux_system_packages() { touch "$tmp/dependencies-ready"; }
+cat > "$tmp/native" <<'MT'
+#!/bin/bash
+if [ ! -e "$RUNTIME_READY" ]; then printf 'missing libssl' >&2; exit 1; fi
+printf '%s\n' '$PBKDF2$600000$c2FsdA==$aGFzaA=='
+MT
+export RUNTIME_READY="$tmp/dependencies-ready"
+mkdir -p "$tmp/runtime"
+cp "$tmp/native" "$tmp/runtime/mt"
+prepare_native_runtime "$tmp/runtime"
+test -e "$RUNTIME_READY"
+install_linux_system_packages() { echo 'healthy native runtime attempted package installation' >&2; return 1; }
+prepare_native_runtime "$tmp/runtime"
+cat > "$tmp/runtime/mt" <<'MT'
+#!/bin/bash
+printf 'incompatible glibc' >&2
+exit 1
+MT
+if prepare_native_runtime "$tmp/runtime" > "$tmp/failure.stdout" 2> "$tmp/failure.stderr"; then exit 1; fi
+grep -q 'incompatible glibc' "$tmp/failure.stderr"
+printf '%s\n' 'automatic system-dependency selection and native readiness checks passed'
+'@
+        $firstRunScript = ".verify-bash-first-run-$([Guid]::NewGuid().ToString('N')).sh"
+        try {
+            [IO.File]::WriteAllText((Join-Path $repoRoot $firstRunScript),
+                $firstRunSmoke.Replace("`r`n", "`n") + "`n", [Text.UTF8Encoding]::new($false))
+            $firstRunOutput = & $bash.Source "./$firstRunScript" 2>&1
+        } finally {
+            Remove-Item -LiteralPath (Join-Path $repoRoot $firstRunScript) -ErrorAction SilentlyContinue
+        }
+        if ($LASTEXITCODE -ne 0) {
+            throw "install.sh first-run behavior failed: $($firstRunOutput -join [Environment]::NewLine)"
+        }
     } finally {
         Pop-Location
     }
 }
 
 $windowsInstaller = Get-Content (Join-Path $repoRoot "install.ps1") -Raw
-$unixInstaller = Get-Content (Join-Path $repoRoot "install.sh") -Raw
-
-Assert-Contains $windowsInstaller '\$ServiceName\s*=\s*"tlbx"' "Fresh Windows service identity is not tlbx."
-Assert-Contains $windowsInstaller '\$TLBX_SERVICE_INSTALL_DIR\s*=\s*"\$env:ProgramFiles\\tlbx"' "Fresh Windows install directory is not tlbx."
-Assert-Contains $windowsInstaller '\$AssetArchitecture\s*=\s*if \(\$Is64BitWindows\)' "Windows x86/x64 release selection is missing."
-Assert-Contains $windowsInstaller 'Existing MidTerm installation detected' "Windows legacy-update detection is missing."
-Assert-Contains $windowsInstaller 'TLBX_PORT' "Windows user port selection is not persisted."
-Assert-Contains $windowsInstaller 'Test-ReleaseMetadataSignature' "Windows signed-release verification is missing."
-Assert-Contains $windowsInstaller 'Restore-PreviousBinarySet' "Windows post-swap rollback is missing."
-Assert-Contains $windowsInstaller 'Start-TlbxUserProcess' "Windows user-mode install does not start tlbx."
-Assert-Contains $windowsInstaller 'Wait-TlbxReady' "Windows process/health readiness verification is missing."
-Assert-Contains $windowsInstaller 'Your tlbx is ready at:' "Windows installer does not present the verified access URL."
-Assert-Contains $windowsInstaller 'Get-TailscaleIpv4Addresses' "Windows installer does not discover Tailscale access URLs."
-
-Assert-Contains $unixInstaller 'SERVICE_NAME="tlbx"' "Fresh Unix service identity is not tlbx."
-Assert-Contains $unixInstaller 'TLBX_SERVICE_SETTINGS_DIR="/usr/local/etc/tlbx"' "Fresh Unix settings directory is not tlbx."
-Assert-Contains $unixInstaller 'Existing MidTerm installation detected' "Unix legacy-update detection is missing."
-Assert-Contains $unixInstaller 'runtime\.json' "Unix user port selection is not persisted."
-Assert-Contains $unixInstaller 'validate_archive_members' "Unix archive allowlist is missing."
-Assert-Contains $unixInstaller 'rollback_install_transaction' "Unix post-swap rollback is missing."
-Assert-NotContains $unixInstaller 'sudo env[^\n]*PASSWORD_HASH' "Password material must not cross sudo in argv or environment."
-Assert-Contains $unixInstaller 'start_user_tlbx' "Unix user-mode install does not start tlbx."
-Assert-Contains $unixInstaller 'wait_tlbx_ready' "Unix process/health readiness verification is missing."
-Assert-Contains $unixInstaller 'Your tlbx is ready at:' "Unix installer does not present the verified access URL."
-Assert-Contains $unixInstaller 'get_tailscale_ipv4_addresses' "Unix installer does not discover Tailscale access URLs."
-
-$windowsMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.ps1") -Raw
-$unixMultiInstaller = Get-Content (Join-Path $repoRoot "install-multi.sh") -Raw
-Assert-Contains $windowsMultiInstaller '\$instanceServicePrefix\s*=\s*"tlbx"' "Fresh Windows multi-instance services are not tlbx-branded."
-Assert-Contains $windowsMultiInstaller '\$env:ProgramData\\tlbx\\instances' "Fresh Windows multi-instance settings are not under tlbx."
-Assert-Contains $unixMultiInstaller 'ROOT_DIR="/usr/local/etc/tlbx-instances"' "Fresh Unix multi-instance settings are not under tlbx."
-Assert-Contains $unixMultiInstaller 'SERVICE_PREFIX="tlbx"' "Fresh Unix multi-instance services are not tlbx-branded."
-
 # Exercise the PowerShell archive guard and rollback helper without touching a
 # real installation. This catches unsafe extraction and partial-swap regressions
 # on both Windows and Linux CI runners.
@@ -233,32 +456,67 @@ $tokens = $null
 $errors = $null
 $installerAst = [System.Management.Automation.Language.Parser]::ParseInput($windowsInstaller, [ref]$tokens, [ref]$errors)
 & {
-    Invoke-Expression ($installerAst.Find({
-        param($node)
-        $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-LatestRelease'
-    }, $true).Extent.Text)
+    foreach ($name in @('Get-LatestRelease', 'Get-AssetUrl', 'Assert-BuildArchive', 'Get-ReleaseChannel')) {
+        Invoke-Expression ($installerAst.Find({
+            param($node)
+            $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name
+        }, $true).Extent.Text)
+    }
+    $BuildsOrigin = 'https://builds.tlbx.ai'
     $AssetPattern = 'mt-win-x64.zip'
-    $asset = @{name=$AssetPattern; browser_download_url='https://example.test/mt-win-x64.zip'}
+    $ExpectedReleasePlatform = 'win-x64'
+    function New-TestAsset([string]$Version, [bool]$Prerelease) {
+        $channel = if ($Prerelease) { 'dev' } else { 'main' }
+        return @{name=$AssetPattern; browser_download_url="$BuildsOrigin/$channel/$Version/win-x64/$AssetPattern"; size=7; digest=('sha256:' + ('a' * 64))}
+    }
     $fixtures = @(
         @{tag_name='v10.17.18-dev'; prerelease=$true; assets=@()},
-        @{tag_name='v10.17.17-dev'; prerelease=$true; draft=$true; assets=@($asset)},
-        @{tag_name='v10.17.16-dev'; prerelease=$true; assets=@($asset)},
+        @{tag_name='v10.17.17-dev'; prerelease=$true; draft=$true; assets=@((New-TestAsset '10.17.17-dev' $true))},
+        @{tag_name='v10.17.16-dev'; prerelease=$true; assets=@((New-TestAsset '10.17.16-dev' $true))},
         @{tag_name='v10.17.18'; prerelease=$false; assets=@()},
-        @{tag_name='v10.17.16'; prerelease=$false; assets=@($asset)}
+        @{tag_name='v10.17.16'; prerelease=$false; assets=@((New-TestAsset '10.17.16' $false))}
     )
-    function Invoke-CompatibleRestMethod { return $fixtures }
-    if ((Get-LatestRelease -DevChannel $true).tag_name -ne 'v10.17.16-dev' -or
-        (Get-LatestRelease).tag_name -ne 'v10.17.16') {
-        throw 'Windows installer did not skip releases missing its platform.'
+    $script:mirrorCalls = New-Object 'Collections.Generic.List[string]'
+    function Invoke-CompatibleRestMethod {
+        param($Uri, $Headers, $TimeoutSec)
+        if ($Uri -notin @("$BuildsOrigin/v1/channels/dev/releases.json", "$BuildsOrigin/v1/channels/main/releases.json")) { throw "Unexpected metadata request: $Uri" }
+        $script:mirrorCalls.Add($Uri)
+        return $fixtures
     }
+    if ((Get-LatestRelease -DevChannel $true).tag_name -ne 'v10.17.16-dev') { throw 'Windows installer did not skip a dev build missing its platform.' }
+    if ((Get-LatestRelease).tag_name -ne 'v10.17.16') { throw 'Windows installer did not select the stable main catalog.' }
     $fixtures = @($fixtures | Where-Object { -not $_.prerelease })
-    if ((Get-LatestRelease -DevChannel $true).tag_name -ne 'v10.17.16') {
-        throw 'Windows installer did not fall back to compatible stable.'
-    }
+    $script:mirrorCalls.Clear()
+    $fallback = Get-LatestRelease -DevChannel $true
+    if ($fallback.tag_name -ne 'v10.17.16' -or $script:mirrorCalls.Count -ne 2 -or (Get-ReleaseChannel $fallback) -cne 'stable') { throw 'Windows installer did not use bounded dev-to-main platform fallback with the actual signed channel.' }
     $fixtures = @()
     $rejected = $false
     try { Get-LatestRelease | Out-Null } catch { $rejected = $true }
     if (-not $rejected) { throw 'Windows installer accepted no compatible release.' }
+    $asset = New-TestAsset '10.17.16' $false
+    $release = @{tag_name='v10.17.16'; prerelease=$false; assets=@($asset)}
+    $validUrl = $asset.browser_download_url
+    foreach ($invalid in @($validUrl.Replace('https:', 'http:'), $validUrl.Replace('builds.tlbx.ai', 'api.github.com'), ($validUrl + '?redirect=github'), $validUrl.Replace('/win-x64/', '/win-x86/'))) {
+        $asset.browser_download_url = $invalid
+        $rejected = $false
+        try { Get-AssetUrl $release | Out-Null } catch { $rejected = $true }
+        if (-not $rejected) { throw 'Windows installer accepted an unbound asset URL.' }
+    }
+    $asset.browser_download_url = $validUrl
+    $file = [IO.Path]::GetTempFileName()
+    try {
+        [IO.File]::WriteAllText($file, 'fixture', [Text.UTF8Encoding]::new($false))
+        $asset.digest = 'sha256:' + (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+        Assert-BuildArchive -Path $file -Release $release
+        [IO.File]::AppendAllText($file, 'tamper')
+        $rejected = $false
+        try { Assert-BuildArchive -Path $file -Release $release } catch { $rejected = $true }
+        if (-not $rejected) { throw 'Windows installer accepted a changed archive size.' }
+        $asset.size = (Get-Item $file).Length
+        $rejected = $false
+        try { Assert-BuildArchive -Path $file -Release $release } catch { $rejected = $true }
+        if (-not $rejected) { throw 'Windows installer accepted a changed archive SHA256.' }
+    } finally { Remove-Item -LiteralPath $file -Force }
 }
 $safetyFunctions = ($installerAst.FindAll({
     param($node)
@@ -301,7 +559,7 @@ try {
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $validArchiveRoot = Join-Path $safetyRoot "valid"
     New-Item -ItemType Directory -Path (Join-Path $validArchiveRoot "x64"), (Join-Path $validArchiveRoot "arm64") -Force | Out-Null
-    foreach ($fileName in @(Get-WindowsReleaseFileNames) + "SHA256SUMS.txt") {
+    foreach ($fileName in @(Get-WindowsReleaseFileNames) + "SHA256SUMS.txt" + "runtime-inputs.json") {
         $path = Join-Path $validArchiveRoot $fileName
         New-Item -ItemType Directory -Path (Split-Path -Parent $path) -Force | Out-Null
         Set-Content -LiteralPath $path -Value "payload" -NoNewline
@@ -476,7 +734,7 @@ if ($LiveRelease) {
 
                 $members = @(& $tar.Source -tzf $unixArchivePath)
                 if ($LASTEXITCODE -ne 0) { throw "Could not list $($target.Asset)." }
-                $allowed = @("mt", "mthost", "mtagenthost", "mttmux", "version.json", "SHA256SUMS.txt")
+                $allowed = @("mt", "mthost", "mtagenthost", "mttmux", "version.json", "SHA256SUMS.txt", "runtime-inputs.json", "THIRD-PARTY-LICENSES.txt")
                 $seen = @{}
                 foreach ($member in $members) {
                     $normalized = $member -replace '^\./', ''
@@ -502,4 +760,9 @@ if ($LiveRelease) {
     }
 }
 
+& (Join-Path $PSScriptRoot "test-installer-first-run.ps1")
+if ($IsWindows) {
+    & $windowsPowerShell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "test-installer-first-run.ps1")
+    if ($LASTEXITCODE -ne 0) { throw "Windows PowerShell 5.1 first-install contracts failed." }
+}
 Write-Host "Installer verification passed." -ForegroundColor Green

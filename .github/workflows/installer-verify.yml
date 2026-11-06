@@ -8,6 +8,8 @@ on:
       - "uninstall*.ps1"
       - "uninstall*.sh"
       - "scripts/verify-installers.ps1"
+      - "scripts/test-installer-*.ps1"
+      - "scripts/test-installer-*.sh"
       - "src/Ai.Tlbx.MidTerm.Common/Identity/**"
       - "src/Ai.Tlbx.MidTerm/Settings/**"
       - "src/Ai.Tlbx.MidTerm/Startup/**"
@@ -21,6 +23,8 @@ on:
       - "uninstall*.ps1"
       - "uninstall*.sh"
       - "scripts/verify-installers.ps1"
+      - "scripts/test-installer-*.ps1"
+      - "scripts/test-installer-*.sh"
       - "src/Ai.Tlbx.MidTerm.Common/Identity/**"
       - "src/Ai.Tlbx.MidTerm/Settings/**"
       - "src/Ai.Tlbx.MidTerm/Startup/**"
@@ -34,7 +38,7 @@ jobs:
   verify:
     strategy:
       matrix:
-        os: [ubuntu-24.04, windows-2025]
+        os: [ubuntu-24.04, windows-2025, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -43,3 +47,31 @@ jobs:
       - name: Verify installer contracts
         shell: pwsh
         run: ./scripts/verify-installers.ps1
+
+      - name: Resolve official bootstrap fixture in authenticated CI
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "${RUNNER_OS}" in macOS) platform=osx ;; Linux) platform=linux ;; *) exit 1 ;; esac
+          case "$(uname -m)" in x86_64|amd64) arch=x64 ;; arm64|aarch64) arch=arm64 ;; *) exit 1 ;; esac
+          name="mt-$platform-$arch.tar.gz"
+          fixture=$(gh api 'repos/tlbx-ai/tlbx/releases?per_page=100' --paginate --slurp |
+            jq -c --arg name "$name" 'first(.[][] | select(.draft == false and .prerelease == false) | . as $release | .assets[] | select(.name == $name) | {version: $release.tag_name, url: .browser_download_url, digest: .digest, size: .size}) // empty')
+          test -n "$fixture"
+          version=$(printf '%s' "$fixture" | jq -r .version)
+          printf 'TLBX_BOOTSTRAP_VERSION=%s\n' "${version#v}" >> "$GITHUB_ENV"
+          printf 'TLBX_BOOTSTRAP_URL=%s\n' "$(printf '%s' "$fixture" | jq -r .url)" >> "$GITHUB_ENV"
+          digest=$(printf '%s' "$fixture" | jq -r .digest)
+          printf 'TLBX_BOOTSTRAP_SHA256=%s\n' "${digest#sha256:}" >> "$GITHUB_ENV"
+          printf 'TLBX_BOOTSTRAP_SIZE=%s\n' "$(printf '%s' "$fixture" | jq -r .size)" >> "$GITHUB_ENV"
+      - name: Verify native macOS bootstrap with operating-system tools
+        if: runner.os == 'macOS'
+        shell: bash
+        run: bash ./scripts/test-installer-native-bootstrap.sh
+
+      - name: Verify native Linux bootstrap on a minimal OS
+        if: runner.os == 'Linux'
+        shell: bash
+        run: docker run --rm -e CI=true -e TLBX_BOOTSTRAP_VERSION -e TLBX_BOOTSTRAP_URL -e TLBX_BOOTSTRAP_SHA256 -e TLBX_BOOTSTRAP_SIZE --mount type=bind,source="$PWD",target=/repo,readonly ubuntu:24.04 bash /repo/scripts/test-installer-native-bootstrap.sh

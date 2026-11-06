@@ -1,3 +1,4 @@
+import { createPdfView } from '../fileViewer/pdfView';
 /**
  * File Browser Preview Panel
  *
@@ -220,7 +221,7 @@ export function renderPreview(
   if (previewKind === 'pdf') {
     const { shell, body, actions } = createPreviewShell(entry);
     appendPreviewFileActions(actions, entry, sessionId);
-    body.innerHTML = `<iframe class="preview-pdf" src="${escapeHtml(viewUrl)}"></iframe>`;
+    body.replaceChildren(createPdfView(viewUrl, 'preview-pdf', load.signal));
     container.appendChild(shell);
     return;
   }

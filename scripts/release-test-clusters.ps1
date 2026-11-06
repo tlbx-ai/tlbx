@@ -38,7 +38,7 @@ function Show-ReleaseTestPlan {
 }
 
 function Assert-ReleaseRuntimeSelection {
-    param([string]$PtyVersion, [string]$mthostUpdate)
+    param([string]$PtyVersion, [string]$mthostUpdate, [string]$WebVersion)
     if ($mthostUpdate -eq 'yes') { return }
     if ($PtyVersion -notmatch '^\d+\.\d+\.\d+(?:-dev(?:\.\d+)?)?$') {
         throw 'Cannot verify the runtime baseline; use -mthostUpdate yes for a new runtime release.'
@@ -47,7 +47,20 @@ function Assert-ReleaseRuntimeSelection {
     $null = & git rev-parse --verify "refs/tags/$tag" 2>$null
     if ($LASTEXITCODE -ne 0) {
         & git fetch origin "refs/tags/${tag}:refs/tags/${tag}"
-        if ($LASTEXITCODE -ne 0) { throw "Cannot inspect runtime baseline $tag; use -mthostUpdate yes." }
+        if ($LASTEXITCODE -ne 0) {
+            # Stable promotion can normalize a reused runtime version without
+            # publishing a separate runtime-version tag. Its web release still
+            # records the exact runtime shipped and is a valid source baseline.
+            if ($WebVersion -notmatch '^\d+\.\d+\.\d+(?:-dev(?:\.\d+)?)?$') {
+                throw "Cannot inspect runtime baseline $tag; use -mthostUpdate yes."
+            }
+            $webTag = "v$WebVersion"
+            $metadata = & git show "refs/tags/${webTag}:src/version.json" 2>$null
+            if ($LASTEXITCODE -ne 0 -or ($metadata | ConvertFrom-Json).pty -ne $PtyVersion) {
+                throw "Cannot verify runtime $PtyVersion in $webTag; use -mthostUpdate yes."
+            }
+            $tag = $webTag
+        }
     }
     $changed = @(& git diff --name-only "refs/tags/$tag" -- 'src/Ai.Tlbx.MidTerm.TtyHost' 'src/Ai.Tlbx.MidTerm.AgentHost' 'src/Ai.Tlbx.MidTerm.Common' 'src/Ai.Tlbx.MidTerm.TmuxShim' 'src/Directory.*' 'Directory.*' 'global.json' '*NuGet.Config' '*nuget.config')
     if ($LASTEXITCODE -ne 0) { throw 'Could not compare runtime sources with their release baseline.' }

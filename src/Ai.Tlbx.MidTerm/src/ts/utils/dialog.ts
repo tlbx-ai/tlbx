@@ -43,6 +43,8 @@ interface TextPromptElements {
  */
 export function showConfirm(message: string, options?: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const id = `confirm-${crypto.randomUUID()}`;
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
     let releaseBackButtonLayer: (() => void) | null = null;
@@ -54,13 +56,13 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
 
     overlay.innerHTML = `
       <div class="modal dialog-modal">
-        <div class="modal-content dialog-content">
+        <div class="modal-content dialog-content" role="alertdialog" aria-modal="true" aria-labelledby="${id}-title" aria-describedby="${id}-message">
           <div class="modal-header">
-            <h3>${escapeHtml(titleText)}</h3>
-            <button class="modal-close" data-role="cancel">&times;</button>
+            <h3 id="${id}-title">${escapeHtml(titleText)}</h3>
+            <button class="modal-close" data-role="cancel" aria-label="${escapeHtml(cancelText)}">&times;</button>
           </div>
           <div class="modal-body">
-            <p class="dialog-message">${escapeHtml(message)}</p>
+            <p id="${id}-message" class="dialog-message">${escapeHtml(message)}</p>
           </div>
           <div class="modal-footer">
             <button class="btn-secondary" data-role="cancel">${escapeHtml(cancelText)}</button>
@@ -75,6 +77,7 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
       releaseBackButtonLayer?.();
       releaseBackButtonLayer = null;
       overlay.remove();
+      previousFocus?.focus({ preventScroll: true });
       resolve(result);
     }
 
@@ -82,9 +85,8 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
       if (e.key === 'Escape') {
         e.preventDefault();
         close(false);
-      } else if (e.key === 'Enter') {
-        e.preventDefault();
-        close(true);
+      } else if (e.key === 'Tab') {
+        trapConfirmFocus(overlay, e);
       }
     }
 
@@ -105,10 +107,22 @@ export function showConfirm(message: string, options?: ConfirmOptions): Promise<
       close(false);
     });
 
-    // Focus the confirm button for keyboard accessibility
-    const confirmBtn = overlay.querySelector<HTMLButtonElement>('[data-role="confirm"]');
-    confirmBtn?.focus();
+    const initialRole = options?.danger ? 'cancel' : 'confirm';
+    overlay.querySelector<HTMLButtonElement>(`.modal-footer [data-role="${initialRole}"]`)?.focus();
   });
+}
+
+function trapConfirmFocus(overlay: HTMLElement, event: KeyboardEvent): void {
+  const buttons = [...overlay.querySelectorAll<HTMLButtonElement>('button:not(:disabled)')];
+  const first = buttons[0];
+  const last = buttons[buttons.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
 }
 
 /**

@@ -1,0 +1,17 @@
+{
+  "name": "sljit",
+  "path": "deps/sljit",
+  "sha": "de0259c7aaf36aa40cba8014f3fad3edde9307f9",
+  "size": 0,
+  "url": "https://api.github.com/repos/PCRE2Project/pcre2/contents/deps/sljit?ref=pcre2-10.49",
+  "html_url": "https://github.com/zherczeg/sljit/tree/de0259c7aaf36aa40cba8014f3fad3edde9307f9",
+  "git_url": "https://api.github.com/repos/zherczeg/sljit/git/trees/de0259c7aaf36aa40cba8014f3fad3edde9307f9",
+  "download_url": null,
+  "type": "submodule",
+  "submodule_git_url": "https://github.com/zherczeg/sljit.git",
+  "_links": {
+    "self": "https://api.github.com/repos/PCRE2Project/pcre2/contents/deps/sljit?ref=pcre2-10.49",
+    "git": "https://api.github.com/repos/zherczeg/sljit/git/trees/de0259c7aaf36aa40cba8014f3fad3edde9307f9",
+    "html": "https://github.com/zherczeg/sljit/tree/de0259c7aaf36aa40cba8014f3fad3edde9307f9"
+  }
+}

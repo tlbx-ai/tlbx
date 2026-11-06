@@ -168,8 +168,8 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 }
             };
             await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
-            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
-                process.StandardOutput, patches, attach.CommandId)).Status);
+            var attached = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, attach.CommandId);
+            Assert.True(attached.Status == "accepted", attached.Message ?? $"Claude attach returned {attached.Status}.");
             var initial = await AppServerControlHostTestClient.GetHistoryWindowAsync(
                 process.StandardOutput, process.StandardInput, patches, sessionId, count: 96);
             Assert.Equal("Claude", initial.Session.AgentName);

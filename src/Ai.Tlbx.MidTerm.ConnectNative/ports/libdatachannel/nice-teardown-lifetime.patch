@@ -1,0 +1,60 @@
+diff --git a/src/impl/icetransport.cpp b/src/impl/icetransport.cpp
+--- a/src/impl/icetransport.cpp
++++ b/src/impl/icetransport.cpp
+@@ -666,28 +666,34 @@
+ 	g_signal_handlers_disconnect_by_func(G_OBJECT(mNiceAgent.get()),
+ 	                 (gpointer)GatheringDoneCallback, this);
+ 
+-	nice_agent_attach_recv(mNiceAgent.get(), mStreamId, 1, g_main_loop_get_context(MainLoop->get()),
+-	                       NULL, NULL);
+-
+-	// Remove the stream on the main loop thread. The attach_recv above only
+-	// clears the io callback: the socket sources stay attached, and libnice's
+-	// component_io_cb dereferences its component before taking the agent lock,
+-	// so removing the stream from here would free it under a live dispatch.
+-	// GLib dispatches serially on that thread, so the removal cannot overlap
+-	// one; waiting for it also ensures no callback still uses `this` or the
+-	// stream's rx buffer.
++	// Detach and remove on the IO context: libnice 0.1.24 attach_recv(NULL)
++	// installs a compatibility callback with a NULL target instead of detaching.
++	// Replacing it off-context can also free compatibility data already captured
++	// by a live dispatch. Waiting keeps this and the rx buffer alive until all
++	// prior dispatches finish; the same context also owns the timeout below.
+ 	{
+ 		struct RemoveStreamData {
++			IceTransport *transport;
++			GMainContext *context;
+ 			NiceAgent *agent;
+ 			guint streamId;
+ 			std::promise<void> done;
+-		} data{mNiceAgent.get(), mStreamId, {}};
++		} data{this, g_main_loop_get_context(MainLoop->get()), mNiceAgent.get(), mStreamId, {}};
+ 		auto future = data.done.get_future();
+ 		g_main_context_invoke_full(
+-		    g_main_loop_get_context(MainLoop->get()), G_PRIORITY_HIGH,
++		    data.context, G_PRIORITY_HIGH,
+ 		    [](gpointer ptr) -> gboolean {
+ 			    auto *data = static_cast<RemoveStreamData *>(ptr);
++			    nice_agent_attach_recv_ex(data->agent, data->streamId, 1, data->context,
++			                              NULL, NULL, NULL);
+ 			    nice_agent_remove_stream(data->agent, data->streamId);
++			    // Cancel the raw-this timer before releasing the destructor.
++			    // Source removal does not join an already running callback.
++			    auto *transport = data->transport;
++			    const auto timeoutId = transport->mTimeoutId;
++			    transport->mTimeoutId = 0;
++			    if (timeoutId)
++				    g_source_remove(timeoutId);
+ 			    data->done.set_value();
+ 			    return G_SOURCE_REMOVE;
+ 		    },
+@@ -696,9 +702,6 @@
+ 	}
+ 
+ 	mNiceAgent.reset();
+-
+-	if (mTimeoutId)
+-		g_source_remove(mTimeoutId);
+ }
+ 
+ Description::Role IceTransport::role() const { return mRole; }

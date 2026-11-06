@@ -70,19 +70,7 @@ if [[ "$SCRIPT_PATH" == "bash" || "$SCRIPT_PATH" == "/bin/bash" || "$SCRIPT_PATH
     exec "$TEMP_SCRIPT" "$@"
 fi
 
-REPO_OWNER="tlbx-ai"
-REPO_NAME="tlbx"
-if command_exists curl; then
-    REPOSITORY_COORDINATE=$(curl --fail --silent --show-error --max-time 3 https://get.tlbx.ai/v1/repository 2>/dev/null || true)
-elif command_exists wget; then
-    REPOSITORY_COORDINATE=$(wget -qO- --timeout=3 https://get.tlbx.ai/v1/repository 2>/dev/null || true)
-fi
-case "${REPOSITORY_COORDINATE:-}" in
-    tlbx-ai/MidTerm|tlbx-ai/tlbx)
-        REPO_OWNER="${REPOSITORY_COORDINATE%%/*}"
-        REPO_NAME="${REPOSITORY_COORDINATE#*/}"
-        ;;
-esac
+BUILDS_ORIGIN="https://builds.tlbx.ai"
 SERVICE_NAME="tlbx"
 LAUNCHD_LABEL="ai.tlbx.service"
 DISPLAY_NAME="tlbx"
@@ -298,8 +286,8 @@ download_to_file() {
         log "Downloading $description (attempt $attempt/$max_attempts) from: $url"
 
         if [ "$DOWNLOADER" = "curl" ]; then
-            if curl --fail --silent --show-error --location \
-                --retry 3 --retry-delay 1 --retry-all-errors \
+            if curl --fail --silent --show-error --proto '=https' \
+                --connect-timeout 15 --max-time 600 \
                 -H "User-Agent: tlbx-Installer" \
                 "$url" -o "$dest"; then
                 if validate_archive "$dest"; then
@@ -308,7 +296,7 @@ download_to_file() {
                 fi
             fi
         else
-            if wget -qO "$dest" --user-agent="tlbx-Installer" "$url"; then
+            if wget -qO "$dest" --https-only --max-redirect=0 --timeout=600 --tries=1 --user-agent="tlbx-Installer" "$url"; then
                 if validate_archive "$dest"; then
                     log "Download and archive validation succeeded for $description"
                     return 0
@@ -324,49 +312,93 @@ download_to_file() {
     return 1
 }
 
-github_api_get() {
+build_catalog_get() {
     local url="$1"
-
     if [ "$DOWNLOADER" = "curl" ]; then
-        curl --fail --silent --show-error --location \
-            --retry 3 --retry-delay 1 --retry-all-errors \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            -H "User-Agent: tlbx-Installer" \
-            "$url"
+        curl --fail --silent --show-error --proto '=https' \
+            --connect-timeout 10 --max-time 20 --retry 2 --retry-delay 1 --retry-max-time 60 --retry-all-errors \
+            -H "Accept: application/json" -H "User-Agent: tlbx-Installer" "$url"
         return
     fi
-
-    wget -qO- \
-        --header="Accept: application/vnd.github+json" \
-        --header="X-GitHub-Api-Version: 2022-11-28" \
-        --user-agent="tlbx-Installer" \
-        "$url"
+    wget -qO- --https-only --max-redirect=0 --timeout=20 --tries=3 \
+        --header="Accept: application/json" --user-agent="tlbx-Installer" "$url"
 }
 
-resolve_redirect_url() {
-    local url="$1"
-
-    if [ "$DOWNLOADER" = "curl" ]; then
-        curl --fail --silent --show-error --location --head \
-            --output /dev/null --write-out '%{url_effective}' \
-            -H "User-Agent: tlbx-Installer" \
-            "$url"
-        return
+run_with_system_privileges() {
+    if [ "$EUID" -eq 0 ]; then
+        "$@"
+    elif command_exists sudo; then
+        sudo "$@"
+    else
+        echo "Error: installing missing system dependencies requires root or sudo. Run this installer as root." >&2
+        return 1
     fi
-
-    local headers
-    headers=$(wget --server-response --spider --max-redirect=0 \
-        --user-agent="tlbx-Installer" "$url" 2>&1 || true)
-
-    printf '%s' "$headers" |
-        tr -d '\r' |
-        grep -i '^[[:space:]]*Location: ' |
-        tail -1 |
-        sed -E 's/^[[:space:]]*[Ll]ocation:[[:space:]]*//'
 }
 
+install_linux_system_packages() {
+    [ "${LINUX_PACKAGES_READY:-false}" != true ] || return 0
+    echo "Installing tlbx system dependencies (no .NET SDK or other language runtimes)..." >&2
+    if command_exists apt-get; then
+        run_with_system_privileges apt-get update &&
+            run_with_system_privileges apt-get install -y --no-install-recommends \
+                ca-certificates curl openssl tar gzip coreutils grep sed gawk procps libgcc-s1 libstdc++6 || return 1
+    elif command_exists dnf; then
+        run_with_system_privileges dnf install -y \
+            ca-certificates curl openssl tar gzip coreutils grep sed gawk procps-ng libgcc libstdc++ || return 1
+    elif command_exists yum; then
+        run_with_system_privileges yum install -y \
+            ca-certificates curl openssl tar gzip coreutils grep sed gawk procps-ng libgcc libstdc++ || return 1
+    elif command_exists pacman; then
+        run_with_system_privileges pacman -S --needed --noconfirm \
+            ca-certificates curl openssl tar gzip coreutils grep sed gawk procps-ng gcc-libs || return 1
+    else
+        echo "Error: automatic dependency installation requires apt-get, dnf, yum, or pacman on glibc Linux." >&2
+        echo "Musl/Alpine releases are not available. Use a supported glibc distribution." >&2
+        return 1
+    fi
+    LINUX_PACKAGES_READY=true
+}
+
+prepare_system_dependencies() {
+    [ "$(uname -s)" = Linux ] || return 0
+    local name missing=false
+    for name in bash mktemp tar gzip grep sed awk stty tee base64 pgrep openssl; do
+        command_exists "$name" || missing=true
+    done
+    if ! command_exists curl && ! command_exists wget; then missing=true; fi
+    if ! command_exists sha256sum && ! command_exists shasum; then missing=true; fi
+    if [ "$missing" = true ]; then
+        install_linux_system_packages
+    fi
+}
+
+check_native_crypto_runtime() {
+    local binary="$1" diagnostic="$2" hash
+    # The signed AOT executable exercises its actual crypto dependencies without
+    # starting the server or accessing installation settings. This is not a secret.
+    hash=$(printf '%s\n' 'tlbx-runtime-check' | "$binary" --hash-password 2> "$diagnostic") || return 1
+    [[ "$hash" == '$PBKDF2$'* ]]
+}
+
+prepare_native_runtime() {
+    local extract_dir="$1" diagnostic="$1/.tlbx-runtime-check.stderr"
+    chmod +x "$extract_dir/mt"
+    if check_native_crypto_runtime "$extract_dir/mt" "$diagnostic"; then
+        rm -f "$diagnostic"
+        return 0
+    fi
+    if [ "$(uname -s)" = Linux ] && install_linux_system_packages &&
+       check_native_crypto_runtime "$extract_dir/mt" "$diagnostic"; then
+        rm -f "$diagnostic"
+        return 0
+    fi
+    echo "Error: the verified native tlbx executable cannot run on this system; the installed files have not been changed." >&2
+    echo "Linux requires a compatible glibc loader and OpenSSL 1.1.1 or later. No .NET SDK is required." >&2
+    cat "$diagnostic" >&2
+    return 1
+}
 ensure_prerequisites() {
+    prepare_system_dependencies
     # Fail fast on all commands we rely on later so users get one actionable
     # message before the script starts downloading or prompting.
     require_command bash bash
@@ -395,7 +427,7 @@ validate_archive_members() {
     while IFS= read -r member; do
         normalized="${member#./}"
         case "$normalized" in
-            ""|mt|mthost|mtagenthost|mttmux|version.json|SHA256SUMS.txt) ;;
+            ""|mt|mthost|mtagenthost|mttmux|version.json|runtime-inputs.json|THIRD-PARTY-LICENSES.txt|SHA256SUMS.txt) ;;
             *)
                 log "Release archive contains unexpected member: $member" "ERROR"
                 return 1
@@ -660,17 +692,6 @@ get_latest_release() {
             head -1
     }
 
-    extract_asset_url() {
-        local json="$1"
-        local asset_name="$2"
-        local escaped_asset_name
-        escaped_asset_name=$(printf '%s' "$asset_name" | sed 's/[][(){}.^$?+*|\\/]/\\&/g')
-
-        printf '%s' "$json" |
-            sed -nE "s/.*\"browser_download_url\"[[:space:]]*:[[:space:]]*\"([^\"]*\/${escaped_asset_name})\".*/\1/p" |
-            head -1
-    }
-
     select_platform_release() {
         # Split top-level release objects even for compact JSON; braces inside
         # JSON strings (release notes) must not affect nesting.
@@ -707,78 +728,72 @@ get_latest_release() {
         '
     }
 
-    resolve_latest_stable_tag_fallback() {
-        local effective_url
-        effective_url=$(resolve_redirect_url "https://github.com/$REPO_OWNER/$REPO_NAME/releases/latest")
-
-        case "$effective_url" in
-            /*)
-                effective_url="https://github.com$effective_url"
-                ;;
-        esac
-
-        case "$effective_url" in
-            */releases/tag/*)
-                echo "${effective_url##*/}"
-                return 0
-                ;;
-        esac
-
-        return 1
+    extract_asset_metadata() {
+        # Capture asset objects while respecting escaped strings/release notes.
+        awk -v asset="$ASSET_NAME" '
+            BEGIN { depth=0; quoted=0; escaped=0; item=""; gsub(/\./, "\\.", asset) }
+            {
+                for (i=1; i<=length($0); i++) {
+                    c=substr($0,i,1)
+                    if (depth>=2) item=item c
+                    if (quoted) {
+                        if (escaped) escaped=0
+                        else if (c=="\\") escaped=1
+                        else if (c=="\"") quoted=0
+                        continue
+                    }
+                    if (c=="\"") quoted=1
+                    else if (c=="{") { depth++; if (depth==2) item="{" }
+                    else if (c=="}") {
+                        if (depth==2 && item ~ ("\"name\"[[:space:]]*:[[:space:]]*\"" asset "\"")) { print item; exit }
+                        depth--
+                    }
+                }
+            }
+        '
     }
 
-    if [ "$DEV_CHANNEL" = true ]; then
-        local fetch_status="done"
-        local fetch_color="$GREEN"
-        print_step_inline "Fetching latest dev release..."
-        ALL_RELEASES=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=50")
-        RELEASE_INFO=$(printf '%s' "$ALL_RELEASES" | select_platform_release true)
-
-        if [ -z "$RELEASE_INFO" ]; then
-            fetch_status="compatible dev missing, using stable"
-            fetch_color="$YELLOW"
-            RELEASE_INFO=$(printf '%s' "$ALL_RELEASES" | select_platform_release false)
-        fi
-
-        VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v?//')
-        ASSET_URL=$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")
-
-        if [ -z "$ASSET_URL" ]; then
+    local channels="main" channel want_dev asset_info digest expected_url
+    [ "$DEV_CHANNEL" != true ] || channels="dev main"
+    print_step_inline "Fetching latest compatible build..."
+    RELEASE_INFO=""
+    for channel in $channels; do
+        if ! ALL_RELEASES=$(build_catalog_get "$BUILDS_ORIGIN/v1/channels/$channel/releases.json"); then
             finish_step_inline "failed" "$RED"
-            echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
-            exit 1
+            echo "Build distribution catalog is unavailable." >&2
+            return 1
         fi
-
-        finish_step_inline "$fetch_status" "$fetch_color"
-        print_status "Version" "$VERSION" "$CYAN"
-    else
-        print_step_inline "Fetching latest release..."
-        RELEASE_INFO=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases/latest" 2>/dev/null || true)
-        if [ -n "$RELEASE_INFO" ]; then
-            if [ -z "$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")" ]; then
-                ALL_RELEASES=$(github_api_get "https://api.github.com/repos/$REPO_OWNER/$REPO_NAME/releases?per_page=50")
-                RELEASE_INFO=$(printf '%s' "$ALL_RELEASES" | select_platform_release false)
-            fi
-            VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v?//')
-            ASSET_URL=$(extract_asset_url "$RELEASE_INFO" "$ASSET_NAME")
-        else
-            local latest_tag
-            latest_tag=$(resolve_latest_stable_tag_fallback 2>/dev/null || true)
-            if [ -n "$latest_tag" ]; then
-                VERSION="${latest_tag#v}"
-                ASSET_URL="https://github.com/$REPO_OWNER/$REPO_NAME/releases/download/$latest_tag/$ASSET_NAME"
-            fi
-        fi
-
-        if [ -z "$ASSET_URL" ]; then
-            finish_step_inline "failed" "$RED"
-            echo -e "${RED}Could not find $ASSET_NAME in release assets${NC}"
-            exit 1
-        fi
-
-        finish_step_inline "done" "$GREEN"
-        print_status "Version" "$VERSION" "$CYAN"
+        want_dev=false
+        [ "$channel" != dev ] || want_dev=true
+        RELEASE_INFO=$(printf '%s' "$ALL_RELEASES" | select_platform_release "$want_dev")
+        [ -z "$RELEASE_INFO" ] || break
+    done
+    VERSION=$(extract_first_json_string "$RELEASE_INFO" "tag_name" | sed -E 's/^v//')
+    asset_info=$(printf '%s' "$RELEASE_INFO" | extract_asset_metadata)
+    ASSET_URL=$(extract_first_json_string "$asset_info" "browser_download_url")
+    ASSET_SIZE=$(printf '%s' "$asset_info" | sed -nE 's/.*"size"[[:space:]]*:[[:space:]]*([0-9]+).*/\1/p' | head -1)
+    digest=$(extract_first_json_string "$asset_info" "digest")
+    if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]] ||
+       ! [[ "$ASSET_SIZE" =~ ^[1-9][0-9]*$ ]] || ! [[ "$digest" =~ ^sha256:[0-9a-fA-F]{64}$ ]]; then
+        finish_step_inline "failed" "$RED"
+        echo "Build distribution returned no valid $ASSET_NAME metadata." >&2
+        return 1
     fi
+    case "$VERSION" in *-*) channel=dev ;; *) channel=main ;; esac
+    if { [ "$want_dev" = true ] && [ "$channel" != dev ]; } ||
+       { [ "$want_dev" = false ] && [ "$channel" != main ]; }; then
+        echo "Build distribution returned inconsistent release channel metadata." >&2
+        return 1
+    fi
+    expected_url="$BUILDS_ORIGIN/$channel/$VERSION/$PLATFORM-$ARCH/$ASSET_NAME"
+    if [ "$ASSET_URL" != "$expected_url" ]; then
+        finish_step_inline "failed" "$RED"
+        echo "Build distribution returned an unexpected asset URL." >&2
+        return 1
+    fi
+    ASSET_SHA256="${digest#sha256:}"
+    finish_step_inline "done" "$GREEN"
+    print_status "Version" "$VERSION" "$CYAN"
 }
 
 require_extracted_binaries() {
@@ -1129,8 +1144,8 @@ prompt_password() {
             continue
         fi
 
-        if [ ${#password} -lt 15 ] || [ ${#password} -gt 1024 ]; then
-            echo -e "  ${RED}Password must be between 15 and 1024 characters.${NC}"
+        if [ ${#password} -lt 10 ] || [ ${#password} -gt 1024 ]; then
+            echo -e "  ${RED}Password must be between 10 and 1024 characters.${NC}"
             attempt=$((attempt + 1))
             continue
         fi
@@ -1138,7 +1153,7 @@ prompt_password() {
         # Try to hash using the installed binary
         local mt_path="${MT_BINARY_PATH:-/usr/local/bin/mt}"
         if [ -f "$mt_path" ]; then
-            local hash=$(echo "$password" | "$mt_path" --hash-password 2>/dev/null || true)
+            local hash=$(printf '%s\n' "$password" | "$mt_path" --hash-password 2>/dev/null || true)
             if [[ "$hash" == '$PBKDF2$'* ]]; then
                 PASSWORD_HASH="$hash"
                 return 0
@@ -1919,6 +1934,17 @@ commit_install_transaction() {
     log "Installation transaction committed"
 }
 
+assert_build_archive() {
+    local path="$1" actual_size actual_hash expected_hash
+    actual_size=$(wc -c < "$path" | tr -d '[:space:]')
+    actual_hash=$(compute_sha256 "$path") || return 1
+    expected_hash=$(printf '%s' "$ASSET_SHA256" | tr '[:upper:]' '[:lower:]')
+    if [ "$actual_size" != "$ASSET_SIZE" ] || [ "$actual_hash" != "$expected_hash" ]; then
+        echo "Downloaded build archive does not match its catalog size/SHA256." >&2
+        return 1
+    fi
+}
+
 install_binary() {
     local install_dir="$1"
     local service_mode="${2:-false}"
@@ -1939,6 +1965,7 @@ install_binary() {
     fi
     finish_step_inline "done" "$GREEN"
     log "Download complete"
+    assert_build_archive "$archive_path" || return 1
 
     log "Extracting to: $temp_dir"
     print_step_inline "Extracting binaries..."
@@ -1970,6 +1997,11 @@ install_binary() {
     fi
     finish_step_inline "verified" "$GREEN"
 
+    if ! prepare_native_runtime "$temp_dir"; then
+        rm -rf "$temp_dir"
+        exit 1
+    fi
+
     local had_service=false
     if [ "$service_mode" = true ]; then
         if [ "$PLATFORM" = "osx" ]; then
@@ -1988,6 +2020,9 @@ install_binary() {
     local backup_dir="$temp_dir/backup"
     local file_name install_ok=true
     local runtime_files="mt mthost mtagenthost version.json"
+    if [ -f "$temp_dir/runtime-inputs.json" ]; then
+        runtime_files="$runtime_files runtime-inputs.json"
+    fi
     if [ -f "$temp_dir/mttmux" ]; then
         runtime_files="$runtime_files mttmux"
     fi
@@ -2154,7 +2189,7 @@ install_as_service() {
         log "Hashing new password..."
         local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
         local plain_password
-        plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+        plain_password=$(decode_base64_to_file "$encoded_password" /dev/stdout)
         local hash
         hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
@@ -2786,7 +2821,7 @@ install_as_user() {
         log "Hashing new password..."
         local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
         local plain_password
-        plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+        plain_password=$(decode_base64_to_file "$encoded_password" /dev/stdout)
         local hash
         hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
         if [[ "$hash" == '$PBKDF2$'* ]]; then
@@ -2810,7 +2845,7 @@ install_as_user() {
         if [[ "$PASSWORD_HASH" == "__PENDING64__:"* ]]; then
             local encoded_password="${PASSWORD_HASH#__PENDING64__:}"
             local plain_password
-            plain_password=$(printf '%s' "$encoded_password" | base64 -d 2>/dev/null)
+            plain_password=$(decode_base64_to_file "$encoded_password" /dev/stdout)
             local hash
             hash=$(printf '%s' "$plain_password" | "$install_dir/mt" --hash-password 2>/dev/null || true)
             if [[ "$hash" == '$PBKDF2$'* ]]; then

@@ -48,6 +48,7 @@ vi.mock('../share', () => ({
 }));
 
 vi.mock('./stateChannel', () => ({
+  requestSizeControlForCurrentInput: vi.fn(),
   handleStateUpdate: vi.fn(),
   reportTerminalSizeInteraction: vi.fn(),
   resizeTerminalWithControl: vi.fn(),
@@ -137,11 +138,11 @@ function buildSequencedOutputMessage(
   headerSize: number,
   sessionId: string,
   sequenceEnd: bigint,
-  text: string,
+  text: string | Uint8Array,
   cols = 80,
   rows = 24,
 ): ArrayBuffer {
-  const payload = new TextEncoder().encode(text);
+  const payload = typeof text === 'string' ? new TextEncoder().encode(text) : text;
   const frame = new Uint8Array(headerSize + 12 + payload.length);
   const view = new DataView(frame.buffer);
   frame[0] = outputType;
@@ -293,9 +294,15 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
     throw new Error('Mock WebSocket was not created');
   }
 
+  // A real server advertises its input capabilities before sync completion.
+  const init = new Uint8Array(constants.MUX_HEADER_SIZE + 2);
+  init[0] = 0xff;
+  new DataView(init.buffer).setUint16(constants.MUX_HEADER_SIZE, 3, true);
+  ws.onmessage?.({ data: init.buffer } as MessageEvent<ArrayBuffer>);
   const initialSync = new Uint8Array(constants.MUX_HEADER_SIZE);
   initialSync[0] = constants.MUX_TYPE_SYNC_COMPLETE;
   ws.onmessage?.({ data: initialSync.buffer } as MessageEvent<ArrayBuffer>);
+  ws.dispatchEvent(new Event('message'));
 
   return {
     decodeSessionId,
@@ -455,8 +462,43 @@ describe('muxChannel', () => {
   });
 
   afterEach(() => {
+    stores.removeTerminalSizeControlSource('local');
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it('does not resize to stale output geometry after a confirmed control snapshot', async () => {
+    const harness = await loadHarness([0, 0, 0]);
+    attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    stores.setTerminalSizeControl({
+      sessionId: 'sess1234',
+      isOwner: true,
+      hasOwner: true,
+      ownerOnline: true,
+      canTakeOverAutomatically: true,
+      epoch: 2,
+      cols: 103,
+      rows: 44,
+      sizeRevision: 3,
+    });
+    harness.ws.onmessage?.({
+      data: buildOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        'still delivered',
+        158,
+        54,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await Promise.resolve();
+    const terminal = harness.sessionTerminals.get('sess1234')!;
+    expect(terminal.terminal.resize).toHaveBeenCalledWith(103, 44);
+    expect(terminal.terminal.resize).not.toHaveBeenCalledWith(158, 54);
+    expect(terminal.serverCols).toBe(103);
+    expect(terminal.serverRows).toBe(44);
+    expect(terminal.terminal.write).toHaveBeenCalled();
   });
 
   it('keeps draining queued output without waiting for prior xterm callbacks', async () => {
@@ -1488,10 +1530,9 @@ describe('muxChannel', () => {
       ),
     } as MessageEvent<ArrayBuffer>);
 
-    await vi.waitFor(() => {
-      expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
-    });
-    expect(terminal.writeMock).toHaveBeenCalledTimes(3);
+    await vi.waitFor(() => expect(terminal.writeMock).toHaveBeenCalledTimes(3));
+    terminal.pendingCallbacks.splice(0).forEach((callback) => callback());
+    expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
     expect(getBrowserTransportSnapshot(sessionId)).toMatchObject({
       receivedSeq: 5n,
       recoveryReplayBytes: 2,
@@ -1603,11 +1644,375 @@ describe('muxChannel', () => {
     expect(terminal.writeMock.mock.calls[1]?.[0]).toBe('\x1b[?1049h');
     expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(0);
 
-    terminal.pendingCallbacks[0]?.();
-    await vi.waitFor(() => {
-      expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
+    terminal.pendingCallbacks.shift()?.();
+    await vi.waitFor(() => expect(terminal.writeMock).toHaveBeenCalledTimes(3));
+    terminal.pendingCallbacks.shift()?.();
+    expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
+  });
+
+  it('keeps reconnect unready until xterm parses replay and contiguous live output', async () => {
+    const harness = await loadHarness([0]);
+    const terminal = attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    stores.$muxWsConnected.set(false);
+    harness.ws.onmessage?.({
+      data: buildRecoveryBeginMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_BEGIN,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        10,
+        100n,
+        103n,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        103n,
+        'old',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildRecoveryEndMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_END,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        10,
+        103n,
+        3,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        107n,
+        'live',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    const sync = new Uint8Array(constants.MUX_HEADER_SIZE);
+    sync[0] = constants.MUX_TYPE_SYNC_COMPLETE;
+    harness.ws.onmessage?.({ data: sync.buffer } as MessageEvent<ArrayBuffer>);
+    await vi.waitFor(() => expect(terminal.pendingCallbacks).toHaveLength(1));
+    expect(getBrowserTransportSnapshot('sess1234')).toMatchObject({
+      receivedSeq: 107n,
+      renderedSeq: 100n,
+      recoveryCompleted: 0,
     });
-    expect(terminal.writeMock).toHaveBeenCalledTimes(3);
+    expect(stores.$muxWsConnected.get()).toBe(false);
+    terminal.pendingCallbacks.shift()?.();
+    expect(getBrowserTransportSnapshot('sess1234')).toMatchObject({
+      renderedSeq: 107n,
+      recoveryCompleted: 1,
+    });
+    expect(stores.$muxWsConnected.get()).toBe(true);
+  });
+
+  it('replaces a stalled parser for a small replay instead of showing partial history', async () => {
+    vi.useFakeTimers();
+    const harness = await loadHarness([0]);
+    const old = attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    const stalled = vi.fn();
+    setTerminalParseStallHandler(stalled);
+    stores.$muxWsConnected.set(false);
+    harness.ws.onmessage?.({
+      data: buildRecoveryBeginMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_BEGIN,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        11,
+        100n,
+        103n,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        103n,
+        'old',
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildRecoveryEndMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_END,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        11,
+        103n,
+        3,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(stalled).toHaveBeenCalledExactlyOnceWith(
+      'sess1234',
+      harness.sessionTerminals.get('sess1234'),
+    );
+    expect(getBrowserTransportSnapshot('sess1234')?.recoveryCompleted).toBe(0);
+    old.pendingCallbacks.splice(0).forEach((callback) => callback());
+    expect(getBrowserTransportSnapshot('sess1234')?.renderedSeq).toBe(100n);
+  });
+
+  it('ignores old parser acknowledgements while a newer replay is pending', async () => {
+    const harness = await loadHarness([0]);
+    const terminal = attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    const begin = (generation: number, start: bigint, end: bigint) =>
+      harness.ws.onmessage?.({
+        data: buildRecoveryBeginMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_RECOVERY_BEGIN,
+          constants.MUX_HEADER_SIZE,
+          'sess1234',
+          generation,
+          start,
+          end,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+    const output = (end: bigint, text: string) =>
+      harness.ws.onmessage?.({
+        data: buildSequencedOutputMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_OUTPUT,
+          constants.MUX_HEADER_SIZE,
+          'sess1234',
+          end,
+          text,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+    const end = (generation: number, sequence: bigint) =>
+      harness.ws.onmessage?.({
+        data: buildRecoveryEndMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_RECOVERY_END,
+          constants.MUX_HEADER_SIZE,
+          'sess1234',
+          generation,
+          sequence,
+          3,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+    begin(12, 100n, 103n);
+    output(103n, 'old');
+    end(12, 103n);
+    await vi.waitFor(() => expect(terminal.pendingCallbacks).toHaveLength(1));
+    const oldAcknowledgement = terminal.pendingCallbacks.shift()!;
+    begin(13, 200n, 203n);
+    output(203n, 'new');
+    end(13, 203n);
+    await vi.waitFor(() => expect(terminal.pendingCallbacks).toHaveLength(1));
+    oldAcknowledgement();
+    expect(getBrowserTransportSnapshot('sess1234')).toMatchObject({
+      renderedSeq: 200n,
+      recoveryCompleted: 0,
+    });
+    terminal.pendingCallbacks.shift()?.();
+    expect(getBrowserTransportSnapshot('sess1234')).toMatchObject({
+      renderedSeq: 203n,
+      recoveryCompleted: 1,
+    });
+  });
+
+  it('continues split UTF-8 and CSI state across reconnects in the real xterm parser', async () => {
+    const harness = await loadHarness(new Array(128).fill(0));
+    const fake = attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    const terminal = new Terminal({ cols: 80, rows: 24 });
+    fake.writeMock.mockImplementation((data, callback) => terminal.write(data, callback));
+    const first = new TextEncoder().encode('\x1b[31mRED \u20ac').slice(0, -1);
+    let sequence = BigInt(first.length);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        sequence,
+        first,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    try {
+      await vi.waitFor(() =>
+        expect(getBrowserTransportSnapshot('sess1234')?.renderedSeq).toBe(sequence),
+      );
+      const fragments = [
+        new Uint8Array([0xac, 0x1b, 0x5b, 0x33]),
+        new TextEncoder().encode('2mGREEN\x1b[0m'),
+      ];
+      for (const [index, bytes] of fragments.entries()) {
+        connectMuxWebSocket();
+        const socket = MockWebSocket.instances.at(-1)!;
+        expect(new URL(socket.url).searchParams.get('resumeCursors')).toBe(`sess1234:${sequence}`);
+        const start = sequence;
+        sequence += BigInt(bytes.length);
+        socket.onmessage?.({
+          data: buildRecoveryBeginMessage(
+            encodeSessionId,
+            constants.MUX_TYPE_RECOVERY_BEGIN,
+            constants.MUX_HEADER_SIZE,
+            'sess1234',
+            index + 20,
+            start,
+            sequence,
+          ),
+        } as MessageEvent<ArrayBuffer>);
+        socket.onmessage?.({
+          data: buildSequencedOutputMessage(
+            encodeSessionId,
+            constants.MUX_TYPE_OUTPUT,
+            constants.MUX_HEADER_SIZE,
+            'sess1234',
+            sequence,
+            bytes,
+          ),
+        } as MessageEvent<ArrayBuffer>);
+        socket.onmessage?.({
+          data: buildRecoveryEndMessage(
+            encodeSessionId,
+            constants.MUX_TYPE_RECOVERY_END,
+            constants.MUX_HEADER_SIZE,
+            'sess1234',
+            index + 20,
+            sequence,
+            bytes.length,
+          ),
+        } as MessageEvent<ArrayBuffer>);
+        await vi.waitFor(() =>
+          expect(getBrowserTransportSnapshot('sess1234')?.recoveryCompleted).toBe(index + 1),
+        );
+      }
+      expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe('RED \u20acGREEN');
+      expect(terminal.buffer.active.getLine(0)?.getCell(5)?.getFgColor()).toBe(2);
+      expect(harness.sessionTerminals.get('sess1234')?.terminal.reset).not.toHaveBeenCalled();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it('clears poisoned parser state before truncated alternate-screen replay in real xterm', async () => {
+    const harness = await loadHarness(new Array(128).fill(0));
+    const fake = attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    const terminal = new Terminal({ cols: 80, rows: 24 });
+    fake.writeMock.mockImplementation((data, callback) => terminal.write(data, callback));
+    vi.mocked(harness.sessionTerminals.get('sess1234')!.terminal.reset).mockImplementation(() =>
+      terminal.reset(),
+    );
+    const poison = '\x1b(0qqq\x1b[3';
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        BigInt(poison.length),
+        poison,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    try {
+      await vi.waitFor(() =>
+        expect(getBrowserTransportSnapshot('sess1234')?.renderedSeq).toBe(BigInt(poison.length)),
+      );
+      const replay = '\x1b[32mFRESH\u20ac\x1b[0m';
+      const length = new TextEncoder().encode(replay).length;
+      harness.ws.onmessage?.({
+        data: buildRecoveryBeginMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_RECOVERY_BEGIN,
+          constants.MUX_HEADER_SIZE,
+          'sess1234',
+          23,
+          100n,
+          100n + BigInt(length),
+          true,
+          1049,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+      harness.ws.onmessage?.({
+        data: buildSequencedOutputMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_OUTPUT,
+          constants.MUX_HEADER_SIZE,
+          'sess1234',
+          100n + BigInt(length),
+          replay,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+      harness.ws.onmessage?.({
+        data: buildRecoveryEndMessage(
+          encodeSessionId,
+          constants.MUX_TYPE_RECOVERY_END,
+          constants.MUX_HEADER_SIZE,
+          'sess1234',
+          23,
+          100n + BigInt(length),
+          length,
+        ),
+      } as MessageEvent<ArrayBuffer>);
+      await vi.waitFor(() =>
+        expect(getBrowserTransportSnapshot('sess1234')?.recoveryCompleted).toBe(1),
+      );
+      expect(terminal.buffer.active.type).toBe('alternate');
+      expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe('FRESH\u20ac');
+      expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getFgColor()).toBe(2);
+      expect(harness.sessionTerminals.get('sess1234')?.terminal.reset).toHaveBeenCalledOnce();
+    } finally {
+      terminal.dispose();
+    }
+  });
+
+  it('acknowledges replay bytes consumed by local cursor-control filtering', async () => {
+    const harness = await loadHarness([0]);
+    const terminal = attachFakeTerminal(harness.sessionTerminals, 'sess1234');
+    stores.$currentSettings.set({ preserveTerminalCursorControl: false } as never);
+    harness.sessionTerminals.get('sess1234')!.burstCursorHidden = true;
+    const controls = '\x1b[?25h';
+    harness.ws.onmessage?.({
+      data: buildRecoveryBeginMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_BEGIN,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        24,
+        100n,
+        100n + BigInt(controls.length),
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildSequencedOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        100n + BigInt(controls.length),
+        controls,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    harness.ws.onmessage?.({
+      data: buildRecoveryEndMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_END,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        24,
+        100n + BigInt(controls.length),
+        controls.length,
+      ),
+    } as MessageEvent<ArrayBuffer>);
+    await vi.waitFor(() =>
+      expect(getBrowserTransportSnapshot('sess1234')?.recoveryCompleted).toBe(1),
+    );
+    expect(getBrowserTransportSnapshot('sess1234')?.renderedSeq).toBe(
+      100n + BigInt(controls.length),
+    );
+    expect(terminal.writeMock.mock.calls.at(-1)?.[0]).toHaveLength(0);
   });
 
   it('keeps replay mode with output that arrives before the terminal opens', async () => {
@@ -1868,6 +2273,24 @@ describe('muxChannel', () => {
       frames[0]!.byteLength,
     );
     expect(markerView.getUint32(harness.constants.MUX_HEADER_SIZE, true)).not.toBe(0);
+  });
+
+  it('waits for init after reconnect and replays queued Unicode as buffered user input', async () => {
+    const harness = await loadHarness([10, 10, 10, 10]);
+    harness.ws.readyState = MockWebSocket.CLOSED;
+    sendInput('sess1234', 'Ω');
+    harness.ws.readyState = MockWebSocket.OPEN;
+    harness.ws.onopen?.(new Event('open'));
+    harness.ws.send.mockClear();
+    const init = new Uint8Array(harness.constants.MUX_HEADER_SIZE + 2);
+    init[0] = 0xff;
+    new DataView(init.buffer).setUint16(harness.constants.MUX_HEADER_SIZE, 3, true);
+    harness.ws.onmessage?.({ data: init.buffer } as MessageEvent<ArrayBuffer>);
+    const frames = harness.ws.send.mock.calls.map((call) => call[0] as Uint8Array);
+    const replay = frames.find((frame) => frame[0] === 0x15);
+    expect(replay).toBeDefined();
+    expect(new TextDecoder().decode(replay!.subarray(harness.constants.MUX_HEADER_SIZE))).toBe('Ω');
+    expect(frames.some((frame) => frame[0] === harness.constants.MUX_TYPE_INPUT)).toBe(false);
   });
 
   it('tracks bracketed paste mode when control sequences are split across output frames', async () => {

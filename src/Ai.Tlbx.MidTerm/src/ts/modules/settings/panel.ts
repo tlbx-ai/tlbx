@@ -28,6 +28,8 @@ import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { beginServerRestartLifecycle } from '../updating';
 import { bindTerminalLinkSecuritySetting } from '../terminal/linkConfirmation';
+import { initSessionWorkspace } from './sessionWorkspace';
+import { initConnectSetup } from './connectSetup';
 
 const log = createLogger('settings');
 let releaseBackButtonLayer: (() => void) | null = null;
@@ -73,6 +75,8 @@ export function openSettings(): void {
   if (dom.settingsView) dom.settingsView.classList.remove('hidden');
 
   initSettingsTabs();
+  void initConnectSetup();
+  void initSessionWorkspace();
   void initAiProviderSettings();
   bindTerminalLinkSecuritySetting();
   void fetchSettings();
@@ -90,6 +94,7 @@ export function openSettings(): void {
  */
 export function closeSettings(): void {
   if (!$settingsOpen.get()) return;
+  window.dispatchEvent(new Event('tlbx-connect-setup-close'));
   releaseBackButtonLayer?.();
   releaseBackButtonLayer = null;
 

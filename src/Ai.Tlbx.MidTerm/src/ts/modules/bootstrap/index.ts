@@ -32,6 +32,8 @@ import { consumePendingChangelogFlag } from '../updating/checker';
 import { showChangelog } from '../updating/changelog';
 import { escapeHtml } from '../../utils';
 import { t } from '../i18n';
+import { applyCssTheme } from '../theming/cssThemes';
+import { cacheTheme } from '../theming/themes';
 
 const log = createLogger('bootstrap');
 
@@ -74,6 +76,8 @@ export async function fetchBootstrap(): Promise<BootstrapResponse | null> {
 
     // Initialize settings
     $currentSettings.set(data.settings);
+    applyCssTheme(data.settings.theme);
+    cacheTheme(data.settings.theme);
     const users = data.users.map((u: UserInfo) => ({
       username: u.username,
       displayName: u.username,

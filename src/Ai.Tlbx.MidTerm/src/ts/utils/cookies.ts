@@ -24,13 +24,16 @@ export function setCookie(name: string, value: string, days: number = 365): void
 /**
  * Get or create a persistent client ID cookie for unique-client tracking.
  */
+let volatileClientId: string | null = null;
+
 export function getOrCreateClientId(): string {
   const name = 'mt-client-id';
   let id = getCookie(name);
   if (!id) {
-    id = crypto.randomUUID();
+    id = volatileClientId ?? crypto.randomUUID();
     setCookie(name, id, 365);
   }
+  volatileClientId = id;
   return id;
 }
 

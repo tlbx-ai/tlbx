@@ -158,8 +158,9 @@ public class Program
         {
             certInfoService.SetCertificate(ServerSetup.LoadedCertificate, ServerSetup.IsFallbackCertificate);
 
-            // Clean up old MidTerm certificates from trusted store (Windows only)
-            if (!ServerSetup.IsFallbackCertificate)
+            // Source instances must not replace the installed service's trust,
+            // including isolated development runs under the service identity.
+            if (!ServerSetup.IsFallbackCertificate && !ServerSetup.IsSourceDevLaunchMode())
             {
                 CertificateCleanupService.EnsureCertificateTrust(ServerSetup.LoadedCertificate, WriteEventLogWrapper);
             }
@@ -171,6 +172,11 @@ public class Program
         var logDirectory = LogPaths.GetLogDirectory(settingsService.IsRunningAsService);
         Log.Initialize("mt", logDirectory, LogSeverity.Error);
         Log.SetupCrashHandlers();
+        if (OperatingSystem.IsWindows() && settingsService.IsRunningAsService && !ServerSetup.IsSourceDevLaunchMode())
+        {
+            app.Lifetime.ApplicationStarted.Register(() =>
+                WindowsServiceRecovery.EnsureForCurrentProcess(runtimeOptions.ServiceIdentity.WindowsServiceName));
+        }
         ConfigureRuntimePriority(settings, resolvedInstanceIdentity);
         _ = MidTermProcessPriority.TryApplyToCurrentProcess(
             "mt",
@@ -202,10 +208,13 @@ public class Program
             browserPreviewOriginService,
             browserPreviewRegistry);
 
-        TlbxDirectory.Initialize(port, authService, bindAddress);
+        TlbxDirectory.Initialize(port, authService, bindAddress,
+            ServerSetup.LoadedCertificate?.GetCertHashString(System.Security.Cryptography.HashAlgorithmName.SHA256));
+        Services.Mcp.TlbxMcpRuntimeConfiguration.Configure(app.Services, port, authService, ServerSetup.LoadedCertificate);
 
         var sessionManager = app.Services.GetRequiredService<TtyHostSessionManager>();
         var cliContext = app.Services.GetRequiredService<SessionCliContextService>();
+        Services.Mcp.TlbxMcpEndpoints.Map(app);
         app.Use(async (context, next) =>
         {
             if (context.Request.Path != "/api/sessions/process-context" &&
@@ -274,6 +283,8 @@ public class Program
             tmuxDispatcher = new TmuxCommandDispatcher(
                 tmuxSessionCommands, tmuxIoCommands, tmuxPaneCommands,
                 tmuxWindowCommands, tmuxConfigCommands, tmuxMiscCommands);
+            app.Services.GetRequiredService<Services.Mcp.TlbxMcpTmuxRuntime>()
+                .Configure(tmuxDispatcher, tmuxPaneMapper, tmuxTargetResolver);
         }
 
         // Browser control (agent-driven web preview interaction)
@@ -378,7 +389,7 @@ public class Program
                     gitWatcher,
                     updateType == UpdateType.Full,
                     settingsService.Load().TryResumeNonAiAgentProcesses,
-                    ct);
+                    ct: ct);
         };
 #pragma warning restore IDISP013
 
@@ -390,6 +401,7 @@ public class Program
         EndpointSetup.DetectCodeSigning();
 
         AuthEndpoints.MapAuthEndpoints(app, settingsService, authService);
+        Services.Connect.ConnectEndpoints.MapConnectEndpoints(app);
         Services.Voice.VoiceEndpoints.MapVoiceEndpoints(app, settingsService);
         SecurityEndpoints.MapSecurityEndpoints(app, securityStatusService, apiKeyService);
         EndpointSetup.MapBootstrapEndpoints(app, sessionManager, updateService, settingsService, version);
@@ -432,6 +444,7 @@ public class Program
             workerSessionRegistry,
             terminalSizeControlService);
         SessionLayoutEndpoints.MapSessionLayoutEndpoints(app, sessionManager, layoutStateService);
+        SessionWorkspaceEndpoints.MapSessionWorkspaceEndpoints(app, sessionManager, gitWatcher, settingsService);
         if (tmuxDispatcher is not null && tmuxLayoutBridge is not null)
         {
             TmuxEndpoints.MapTmuxEndpoints(
@@ -457,6 +470,7 @@ public class Program
             managerBarQueueService,
             inputHistoryService);
         ActionGraphEndpoints.MapActionGraphEndpoints(app, actionGraphService);
+        Services.Boards.BoardEndpoints.MapBoardEndpoints(app, app.Services.GetRequiredService<Services.Boards.BoardService>());
         FileEndpoints.MapFileEndpoints(app, sessionManager, sessionPathAllowlistService, settingsService, gitWatcher);
         GitEndpoints.MapGitEndpoints(app, gitWatcher, sessionManager, sessionGitMetadata);
         CommandEndpoints.MapCommandEndpoints(app, commandService, sessionManager);
@@ -501,9 +515,27 @@ public class Program
             tmuxLayoutBridge,
             browserUiBridge);
 
+        Task controllerRecoveryTask = Task.CompletedTask;
+        async Task RecoverAgentControllersAsync()
+        {
+            try
+            {
+                // MCP binding validation calls this server's HTTP endpoint. Do
+                // not wait for it before Kestrel has begun accepting requests.
+                await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
+                await sessionGitMetadata.ReconcileAllAsync(ct: shutdownService.Token);
+            }
+            catch (OperationCanceledException) when (shutdownService.Token.IsCancellationRequested) { }
+            catch (Exception ex)
+            {
+                Log.Error(() => $"Agent Controller startup recovery failed: {ex.GetType().Name}");
+            }
+        }
+
         lifetime.ApplicationStarted.Register(() =>
         {
-            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"Server fully operational - listening on https://{bindAddress}:{port}"));
+            Log.Info(() => string.Create(CultureInfo.InvariantCulture, $"HTTP listener ready on https://{bindAddress}:{port}; recovering Agent Controller runtimes."));
+            controllerRecoveryTask = RecoverAgentControllersAsync();
         });
 
         lifetime.ApplicationStopping.Register(() =>
@@ -550,10 +582,8 @@ public class Program
                 await gitWatcher.RestoreSessionExtraReposAsync(session.Id, persistedRepos);
             }
         }
-        await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, shutdownService.Token);
+        await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, ct: shutdownService.Token);
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
-        await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
-        await sessionGitMetadata.ReconcileAllAsync(ct: shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();
         var layoutSnapshot = layoutStateService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
@@ -573,6 +603,7 @@ public class Program
             {
                 sessionManager.RemoveStateListener(sleepInhibitorStateListenerId);
                 using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                await controllerRecoveryTask.WaitAsync(cleanupCts.Token);
                 await muxManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
                 await sessionManager.DisposeAsync().AsTask().WaitAsync(cleanupCts.Token);
             }
@@ -603,7 +634,6 @@ public class Program
         try
         {
             app.Urls.Add(string.Create(CultureInfo.InvariantCulture, $"https://{bindAddress}:{port}"));
-            browserPreviewOriginService.ApplyUrls(app, bindAddress);
             WelcomeScreen.RunWithPortErrorHandling(app, port, bindAddress, WriteEventLogWrapper);
         }
         finally
@@ -615,7 +645,6 @@ public class Program
     private static void ConfigureRuntimePriority(MidTermSettings settings, MidTermInstanceIdentity identity)
     {
         MidTermProcessPriority.Configure(
-            settings.RuntimePriorityBoostEnabled,
             settings.RuntimePriorityClass,
             $"{identity.InstanceId}:{identity.OwnerToken}");
     }

@@ -3,7 +3,6 @@ export const SANDBOX_BASE_FLAGS = [
   'allow-forms',
   'allow-popups',
   'allow-popups-to-escape-sandbox',
-  'allow-top-navigation-by-user-activation',
   'allow-modals',
   'allow-downloads',
   'allow-storage-access-by-user-activation',

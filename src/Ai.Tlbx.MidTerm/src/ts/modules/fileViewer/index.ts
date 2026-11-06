@@ -1,3 +1,4 @@
+import { createPdfView } from '../fileViewer/pdfView';
 /**
  * File Viewer Module
  *
@@ -101,16 +102,10 @@ export function initFileViewer(): void {
   }
 
   const backdrop = modal.querySelector('.modal-backdrop');
-  modalFocus = createFileViewerFocus(
-    modal,
-    () => {
-      if (document.fullscreenElement) void document.exitFullscreen();
-      else void requestCloseViewer();
-    },
-    () =>
-      document.querySelector<HTMLElement>(
-        `.session-wrapper[data-session-id="${CSS.escape($activeSessionId.get() ?? '')}"] .session-tab[data-tab="terminal"]`,
-      ),
+  modalFocus = createFileViewerFocus(modal, escapeViewer, () =>
+    document.querySelector<HTMLElement>(
+      `.session-wrapper[data-session-id="${CSS.escape($activeSessionId.get() ?? '')}"] .session-tab[data-tab="terminal"]`,
+    ),
   );
   const closeBtn = modal.querySelector('.modal-close');
   const maximizeBtn = modal.querySelector('#file-viewer-maximize');
@@ -119,7 +114,13 @@ export function initFileViewer(): void {
 
   backdrop?.addEventListener('click', () => void requestCloseViewer());
   closeBtn?.addEventListener('click', () => void requestCloseViewer());
-  maximizeBtn?.addEventListener('click', toggleFullscreen);
+  maximizeBtn?.addEventListener('click', () => {
+    setViewerMaximized(!isViewerMaximized());
+  });
+  setViewerMaximized(false);
+  document.addEventListener('tlbx-locale-changed', () => {
+    setViewerMaximized(isViewerMaximized());
+  });
   dockBtn?.addEventListener('click', dockViewer);
 
   modal.querySelector('#file-viewer-save')?.addEventListener('click', () => void saveFile());
@@ -162,11 +163,8 @@ export function initFileViewer(): void {
   document.addEventListener('keydown', (e) => {
     if (document.querySelector('.modal-overlay')) return;
     if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) {
-      if (document.fullscreenElement) {
-        void document.exitFullscreen();
-      } else {
-        void requestCloseViewer();
-      }
+      e.preventDefault();
+      escapeViewer();
     }
 
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -292,13 +290,33 @@ function registerDockBackLayer(): void {
   });
 }
 
-function toggleFullscreen(): void {
-  const content = modal?.querySelector('.file-viewer-modal-content') as HTMLElement | undefined;
-  if (document.fullscreenElement) {
-    void document.exitFullscreen();
-  } else if (content) {
-    void content.requestFullscreen();
-  }
+function isViewerMaximized(): boolean {
+  return (
+    modal?.querySelector('.file-viewer-modal-content')?.classList.contains('is-maximized') ?? false
+  );
+}
+
+function setViewerMaximized(maximized: boolean): void {
+  modal?.querySelector('.file-viewer-modal-content')?.classList.toggle('is-maximized', maximized);
+  const button = modal?.querySelector<HTMLButtonElement>('#file-viewer-maximize');
+  if (!button) return;
+  const label = t(maximized ? 'fileViewer.restoreSize' : 'fileViewer.maximize');
+  button.title = label;
+  button.setAttribute('aria-label', label);
+  button.setAttribute('aria-pressed', String(maximized));
+  button
+    .querySelector('path')
+    ?.setAttribute(
+      'd',
+      maximized
+        ? 'M4 1h11v11h-3v3H1V4h3V1zm1 1v2h7v7h2V2H5zM2 5v9h9V5H2z'
+        : 'M2 2h5v1H3v4H2V2zm7 0h5v5h-1V3H9V2zM3 9v4h4v1H2V9h1zm10 0v5H9v-1h4V9h1z',
+    );
+}
+
+function escapeViewer(): void {
+  if (isViewerMaximized()) setViewerMaximized(false);
+  else void requestCloseViewer();
 }
 
 function dockViewer(): void {
@@ -311,8 +329,6 @@ function dockViewer(): void {
   // Mutual exclusion: close sidebar docks if open
   if ($commandsPanelDocked.get()) closeCommandsDock();
   if ($gitPanelDocked.get()) closeGitDock();
-
-  if (document.fullscreenElement) void document.exitFullscreen();
 
   // Update stores and show dock
   $dockedFilePath.set(currentPath);
@@ -500,6 +516,7 @@ async function renderInDock(path: string): Promise<void> {
 }
 
 function hideModal(restoreFocus = true): void {
+  setViewerMaximized(false);
   releaseBackButtonLayer?.();
   releaseBackButtonLayer = null;
 
@@ -516,7 +533,8 @@ function showModal(): void {
     modal?.querySelector('.modal-header')?.insertAdjacentElement('afterend', navigationBar);
   if (!releaseBackButtonLayer) {
     releaseBackButtonLayer = registerBackButtonLayer(() => {
-      if (navigationHistory.canBack) void navigateHistory('back');
+      if (isViewerMaximized()) setViewerMaximized(false);
+      else if (navigationHistory.canBack) void navigateHistory('back');
       else void requestCloseViewer();
     });
   }
@@ -874,7 +892,13 @@ async function renderFile(load: FileViewLoad, info: FilePathInfo): Promise<void>
     container.innerHTML = `<audio class="file-viewer-audio" controls src="${viewUrl}"></audio>`;
   } else if (previewKind === 'pdf') {
     updateSaveButtonVisibility(false);
-    container.innerHTML = `<iframe class="file-viewer-pdf" src="${viewUrl}"></iframe>`;
+    container.replaceChildren(
+      createPdfView(viewUrl, 'file-viewer-pdf', load.signal, () => {
+        if (!modal || modal.classList.contains('hidden')) return false;
+        escapeViewer();
+        return true;
+      }),
+    );
   } else if (previewKind === 'text') {
     await renderTextFile(load);
   } else {

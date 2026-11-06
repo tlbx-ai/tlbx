@@ -19,6 +19,30 @@ public static class CliCommands
         var runtimeOptions = ArgumentParser.ParseOptions(args);
         runtimeOptions.ApplyProcessEnvironment();
 
+        if (args.Length > 0 && args[0] == "connect-worker")
+        {
+            Environment.ExitCode = Services.Connect.ConnectTransportWorker.Run(args[1..]);
+            return true;
+        }
+
+        if (args.Length > 0 && args[0] == "mcp-process-worker")
+        {
+            Environment.ExitCode = Services.Mcp.TlbxMcpIsolatedProcessTool.RunWorker(args[1..]);
+            return true;
+        }
+
+        if (args.Length > 0 && args[0] == "mcp")
+        {
+            Environment.ExitCode = Services.Mcp.TlbxMcpStdioCommand.Run(args[1..]);
+            return true;
+        }
+
+        if (args.Length > 0 && args[0] is "board" or "boards")
+        {
+            Environment.ExitCode = Services.Boards.BoardCliCommand.Run(args[1..], Environment.CurrentDirectory);
+            return true;
+        }
+
         var clipboardWriteImageIdx = Array.IndexOf(args, "--clipboard-write-image");
         if (clipboardWriteImageIdx >= 0)
         {
@@ -30,6 +54,12 @@ public static class CliCommands
         {
             using var updateService = new UpdateService();
             var update = updateService.CheckForUpdateAsync().GetAwaiter().GetResult();
+            if (!string.IsNullOrWhiteSpace(update?.CheckError))
+            {
+                Console.Error.WriteLine($"Failed to check for updates: {update.CheckError}");
+                Environment.ExitCode = 1;
+                return true;
+            }
             if (update is not null && update.Available)
             {
                 Console.WriteLine($"Update available: {update.CurrentVersion} -> {update.LatestVersion}");
@@ -53,6 +83,12 @@ public static class CliCommands
             using var updateService = new UpdateService();
             Console.WriteLine("Checking for updates...");
             var update = updateService.CheckForUpdateAsync().GetAwaiter().GetResult();
+            if (!string.IsNullOrWhiteSpace(update?.CheckError))
+            {
+                Console.Error.WriteLine($"Failed to check for updates: {update.CheckError}");
+                Environment.ExitCode = 1;
+                return true;
+            }
 
             if (update is null || !update.Available)
             {
@@ -96,7 +132,7 @@ public static class CliCommands
         if (args.Contains("--set-password", StringComparer.Ordinal))
         {
             Console.Error.Write("New password: ");
-            var password = Console.IsInputRedirected ? Console.ReadLine() ?? "" : ReadPasswordMasked();
+            var password = Console.IsInputRedirected ? ReadRedirectedSecret() : ReadPasswordMasked();
             var passwordError = AuthService.ValidateNewPassword(password);
             if (passwordError is not null)
             {
@@ -145,7 +181,7 @@ public static class CliCommands
             string password;
             if (Console.IsInputRedirected)
             {
-                password = Console.ReadLine() ?? "";
+                password = ReadRedirectedSecret();
             }
             else
             {
@@ -153,10 +189,13 @@ public static class CliCommands
                 password = ReadPasswordMasked();
             }
 
-            if (string.IsNullOrEmpty(password))
+            // Hashing also supports existing short passwords; only password
+            // creation/change commands apply the new-password minimum.
+            if (string.IsNullOrEmpty(password) || password.Length > AuthService.MaximumPasswordLength)
             {
-                Console.Error.WriteLine("Error: Password cannot be empty");
-                Environment.Exit(1);
+                Console.Error.WriteLine($"Error: Password must contain 1 to {AuthService.MaximumPasswordLength} characters");
+                Environment.ExitCode = 1;
+                return true;
             }
 
             // Use static hash method to avoid AuthService constructor side effects
@@ -195,7 +234,7 @@ public static class CliCommands
             string value;
             if (Console.IsInputRedirected)
             {
-                value = Console.ReadLine() ?? "";
+                value = ReadRedirectedSecret();
             }
             else
             {
@@ -474,6 +513,7 @@ public static class CliCommands
         Console.WriteLine($"tlbx {GetVersion()} — browser control station");
         Console.WriteLine();
         Console.WriteLine("Usage: mt [options]");
+        Console.WriteLine("       mt board <command> [args] (run mt board help for persistent canvas commands)");
         Console.WriteLine();
         Console.WriteLine("Options:");
         Console.WriteLine("  --port <port>       Set listening port (default: 2000)");
@@ -498,6 +538,13 @@ public static class CliCommands
         Console.WriteLine("  Service: %ProgramData%\\MidTerm\\settings.json (Windows)");
         Console.WriteLine("           /usr/local/etc/midterm/settings.json (Unix)");
         Console.WriteLine("  User:    ~/.midterm/settings.json");
+    }
+
+    private static string ReadRedirectedSecret()
+    {
+        // Installers pass UTF-8 regardless of the Windows console code page.
+        Console.InputEncoding = Encoding.UTF8;
+        return Console.ReadLine() ?? "";
     }
 
     public static string ReadPasswordMasked()

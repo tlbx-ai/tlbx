@@ -181,7 +181,7 @@ public sealed class StateWebSocketHandler
                     ? _managerBarQueueService.GetSnapshot(sessionList.Sessions.Select(s => s.Id)).ToList()
                     : [],
                 TerminalSizeControls = shareAccess is null
-                    ? _terminalSizeControlService.GetStatuses(browserId, sessionList.Sessions.Select(s => s.Id))
+                    ? _terminalSizeControlService.GetStatuses(browserId, sessionList.Sessions)
                     : []
             };
             if (Volatile.Read(ref stateDeliveryActive) == 0)

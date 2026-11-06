@@ -25,11 +25,16 @@ Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($part
 Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='extra.zip'; size=100})} } 'Unknown asset accepted for retirement.'
 Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@($partialRelease.assets + $partialRelease.assets)} } 'Duplicate assets accepted for retirement.'
 Assert-Rejected { Assert-PublishedReleaseAssets @{isDraft=$false; assets=@(@{name='mt-win-x64.zip'; size=0}, $partialRelease.assets[1])} } 'Empty asset accepted for retirement.'
-$global:TlbxPrFixture = @{ Pr=$null; Prs=@(); Creates=0; Merges=0; FailChecks=$false; ChangeHead=$false; Remote=$remote }
+$global:TlbxPrFixture = @{ Pr=$null; Prs=@(); Creates=0; Merges=0; FailChecks=$false; ChangeHead=$false; Remote=$remote; RequiredNames=@('fixture'); OmitOnce=$false; CheckPolls=0; Waits=0 }
+function global:Start-Sleep { param([int]$Seconds) $global:TlbxPrFixture.Waits++ }
 function global:gh {
     $a = @($args); $f = $global:TlbxPrFixture; $global:LASTEXITCODE=0
     if (@($a | Where-Object { $_ -is [array] }).Count) { throw 'Nested command arguments would become System.Object[] at the native gh boundary.' }
     if ($a[0] -eq 'api') {
+        if ($a[1] -like '*/protection/required_status_checks') {
+            @{contexts=@($f.RequiredNames)} | ConvertTo-Json -Compress
+            return
+        }
         $matches = @($f.Prs | Where-Object state -EQ 'MERGED' | ForEach-Object {
             @{number=$_.number;merged_at='2026-01-01';merge_commit_sha=$_.mergeCommit.oid;base=@{ref=$_.baseRefName}}
         })
@@ -65,8 +70,10 @@ function global:gh {
             $f.Pr.headRefOid = git --git-dir=$($f.Remote) rev-parse "refs/heads/$($f.Pr.headRefName)"
         }
         'checks' {
+            $f.CheckPolls++
             if ($f.FailChecks) { '[{"name":"fixture","bucket":"fail"}]'; $global:LASTEXITCODE=1 }
-            else { '[{"name":"fixture","bucket":"pass"}]' }
+            elseif ($f.OmitOnce) { $f.OmitOnce=$false; '[{"name":"fixture","bucket":"pass"}]' }
+            else { @($f.RequiredNames | ForEach-Object { @{name=$_;bucket='pass'} }) | ConvertTo-Json -AsArray -Compress }
         }
         'merge' {
             $expected = $a[[Array]::IndexOf($a, '--match-head-commit')+1]
@@ -120,7 +127,13 @@ try {
     $state.ExpectedBase='changed'
     Assert-Rejected { Complete-TlbxRelease $state } 'Changed integration base was accepted.'
     $state.ExpectedBase=$base
+    $global:TlbxPrFixture.RequiredNames=@()
+    Assert-Rejected { Complete-TlbxRelease $state } 'Missing branch protection requirements allowed publication.'
+    $global:TlbxPrFixture.RequiredNames=@('fixture','delayed-server')
+    $global:TlbxPrFixture.OmitOnce=$true
+    $global:TlbxPrFixture.CheckPolls=0
     Complete-TlbxRelease $state
+    Assert-Test ($global:TlbxPrFixture.CheckPolls -eq 2 -and $global:TlbxPrFixture.Waits -eq 1) 'A missing required check was treated as passed before registration.'
     $merged = $state.Merge
     Assert-Test ($merged -ne $head) 'Fixture did not produce a real merge commit.'
     Assert-Test ((Invoke-ReleaseGit rev-parse 'v1.0.1-dev^{}') -eq $merged) 'Tag points at task tip instead of merged commit.'
@@ -238,6 +251,7 @@ try {
     Pop-Location
     Remove-Item Function:\gh -ErrorAction SilentlyContinue
     Remove-Item Function:\node -ErrorAction SilentlyContinue
+    Remove-Item Function:\Start-Sleep -ErrorAction SilentlyContinue
     Remove-Variable TlbxPrFixture -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable TlbxFixtureFailVerification -Scope Global -ErrorAction SilentlyContinue
     $resolved = [IO.Path]::GetFullPath($root)

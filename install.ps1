@@ -27,7 +27,7 @@ $ProgressPreference = "SilentlyContinue"
 $script:InstallerScriptPath = $PSCommandPath
 $script:InstallerScriptDefinition = $MyInvocation.MyCommand.Definition
 
-# Ensure TLS 1.2 for GitHub API/downloads (PS 5.1 defaults to TLS 1.0)
+# Ensure TLS 1.2 for HTTPS build distribution (PS 5.1 defaults to TLS 1.0)
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 function Invoke-CompatibleRestMethod
@@ -42,6 +42,7 @@ function Invoke-CompatibleRestMethod
 
     $params = @{ Uri = $Uri }
     if ($Headers) { $params.Headers = $Headers }
+    if ($Uri.StartsWith("https://builds.tlbx.ai/", [StringComparison]::OrdinalIgnoreCase)) { $params.MaximumRedirection = 0 }
     if ($PSBoundParameters.ContainsKey("TimeoutSec")) { $params.TimeoutSec = $TimeoutSec }
 
     if ($PSVersionTable.PSVersion.Major -lt 6)
@@ -53,7 +54,16 @@ function Invoke-CompatibleRestMethod
         $params.SkipCertificateCheck = $true
     }
 
-    return Invoke-RestMethod @params
+    if (-not $params.ContainsKey("TimeoutSec")) { $params.TimeoutSec = 30 }
+    for ($attempt = 1; $attempt -le 3; $attempt++)
+    {
+        try { return Invoke-RestMethod @params }
+        catch
+        {
+            if ($attempt -eq 3) { throw }
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
 }
 
 function Invoke-CompatibleWebRequest
@@ -75,7 +85,17 @@ function Invoke-CompatibleWebRequest
         $params.UseBasicParsing = $true
     }
 
-    return Invoke-WebRequest @params
+    if ($Uri.StartsWith("https://builds.tlbx.ai/", [StringComparison]::OrdinalIgnoreCase)) { $params.MaximumRedirection = 0 }
+    $params.TimeoutSec = 600
+    for ($attempt = 1; $attempt -le 3; $attempt++)
+    {
+        try { return Invoke-WebRequest @params }
+        catch
+        {
+            if ($attempt -eq 3) { throw }
+            Start-Sleep -Seconds (2 * $attempt)
+        }
+    }
 }
 
 function Unblock-DownloadedPath
@@ -184,8 +204,7 @@ $ServiceName = "tlbx"
 $OldHostServiceName = "tlbxHost"
 $DisplayName = "tlbx"
 $Publisher = "tlbx-ai"
-$RepoOwner = "tlbx-ai"
-$RepoName = "tlbx"
+$BuildsOrigin = "https://builds.tlbx.ai"
 $WebBinaryName = "mt.exe"
 $TtyHostBinaryName = "mthost.exe"
 $AgentHostBinaryName = "mtagenthost.exe"
@@ -201,19 +220,6 @@ $CertificateFileName = "tlbx.pem"
 $CertificateKeyId = "tlbx"
 $UninstallRegistryName = "tlbx"
 $FirewallDisplayName = "tlbx HTTPS"
-
-try
-{
-    $repositoryCoordinate = (Invoke-CompatibleRestMethod -Uri "https://get.tlbx.ai/v1/repository" -TimeoutSec 3).Trim()
-    if ($repositoryCoordinate -in @("tlbx-ai/MidTerm", "tlbx-ai/tlbx"))
-    {
-        $RepoOwner, $RepoName = $repositoryCoordinate.Split("/", 2)
-    }
-}
-catch
-{
-    # Migration discovery is optional. Existing installs remain valid through the legacy coordinate.
-}
 
 # ============================================================================
 # PATH CONSTANTS - SYNC: These paths MUST match:
@@ -613,63 +619,83 @@ function Assert-NoCrossModeConflict
     }
 }
 
+function New-InstallerPasswordHash
+{
+    param([Parameter(Mandatory=$true)][string]$Password)
+
+    if ($Password.Length -lt 10 -or $Password.Length -gt 1024)
+    {
+        throw "Password must be between 10 and 1024 characters."
+    }
+
+    # Windows PowerShell 5.1/.NET Framework and PowerShell 7 both provide this
+    # SHA256 overload. No downloaded executable or extra runtime is needed.
+    $salt = New-Object byte[] 32
+    $passwordBytes = [Text.Encoding]::UTF8.GetBytes($Password)
+    $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
+    $derivation = $null
+    try
+    {
+        $rng.GetBytes($salt)
+        $derivation = [Security.Cryptography.Rfc2898DeriveBytes]::new(
+            $passwordBytes, $salt, 600000, [Security.Cryptography.HashAlgorithmName]::SHA256)
+        $hash = $derivation.GetBytes(32)
+        return '$PBKDF2$600000$' + [Convert]::ToBase64String($salt) + '$' + [Convert]::ToBase64String($hash)
+    }
+    finally
+    {
+        if ($derivation) { $derivation.Dispose() }
+        $rng.Dispose()
+        [Array]::Clear($passwordBytes, 0, $passwordBytes.Length)
+    }
+}
+
+function ConvertFrom-InstallerSecureString
+{
+    param([Parameter(Mandatory=$true)][Security.SecureString]$Value)
+    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($Value)
+    try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
+}
+
 function Prompt-Password
 {
-    param(
-        [string]$InstallDir
-    )
-
     Write-Host ""
     Write-Host "  Security Notice:" -ForegroundColor Yellow
     Write-Host "  tlbx exposes terminal access over the network." -ForegroundColor Gray
     Write-Host "  A password is required to prevent unauthorized access." -ForegroundColor Gray
     Write-Host ""
 
-    $maxAttempts = 3
-    for ($i = 0; $i -lt $maxAttempts; $i++)
+    for ($i = 0; $i -lt 3; $i++)
     {
         $password = Read-Host "  Enter password" -AsSecureString
         $confirm = Read-Host "  Confirm password" -AsSecureString
-
-        $pwPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($password))
-        $confirmPlain = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($confirm))
-
-        if ($pwPlain -ne $confirmPlain)
+        try
         {
-            Write-Host "  Passwords do not match. Try again." -ForegroundColor Red
-            continue
-        }
-
-        if ($pwPlain.Length -lt 15 -or $pwPlain.Length -gt 1024)
-        {
-            Write-Host "  Password must be between 15 and 1024 characters." -ForegroundColor Red
-            continue
-        }
-
-        # Hash the password using mt.exe --hash-password (password piped via stdin)
-        $mmPath = Join-Path $InstallDir "mt.exe"
-        if (Test-Path $mmPath)
-        {
-            try
+            $pwPlain = ConvertFrom-InstallerSecureString $password
+            $confirmPlain = ConvertFrom-InstallerSecureString $confirm
+            if ($pwPlain -cne $confirmPlain)
             {
-                $hash = $pwPlain | & $mmPath --hash-password 2>&1
-                if ($hash -match '^\$PBKDF2\$')
-                {
-                    return $hash
-                }
+                Write-Host "  Passwords do not match. Try again." -ForegroundColor Red
+                continue
             }
-            catch { }
+            if ($pwPlain.Length -lt 10 -or $pwPlain.Length -gt 1024)
+            {
+                Write-Host "  Password must be between 10 and 1024 characters." -ForegroundColor Red
+                continue
+            }
+            return New-InstallerPasswordHash -Password $pwPlain
         }
-
-        # Fallback: Return plaintext marker (will be hashed on first run)
-        Write-Host "  Warning: Could not hash password, will be set on first access." -ForegroundColor Yellow
-        return "__PENDING__:$pwPlain"
+        finally
+        {
+            $pwPlain = $null
+            $confirmPlain = $null
+            $password.Dispose()
+            $confirm.Dispose()
+        }
     }
-
-    Write-Host "  Too many failed attempts. Exiting." -ForegroundColor Red
-    exit 1
+    throw "Too many failed password attempts."
 }
-
 function Prompt-ExistingPasswordAction
 {
     Write-Host ""
@@ -1084,20 +1110,22 @@ function Get-LatestRelease
     )
 
     Write-Host "Fetching latest compatible release ($AssetPattern)..." -ForegroundColor Gray
-    $apiUrl = "https://api.github.com/repos/$RepoOwner/$RepoName/releases?per_page=50"
-    $releases = Invoke-CompatibleRestMethod -Uri $apiUrl -Headers @{ "User-Agent" = "tlbx-Installer" }
-    $compatible = @($releases | Where-Object {
-        -not $_.draft -and @($_.assets | Where-Object { $_.name -eq $AssetPattern -and $_.browser_download_url }).Count -gt 0
-    })
-    if ($DevChannel)
+    $channels = if ($DevChannel) { @("dev", "main") } else { @("main") }
+    foreach ($channel in $channels)
     {
-        $release = $compatible | Where-Object { $_.prerelease -eq $true } | Select-Object -First 1
-        if ($release) { return $release }
-        Write-Host "  No compatible dev release found, using stable..." -ForegroundColor Yellow
+        $releases = Invoke-CompatibleRestMethod -Uri "$BuildsOrigin/v1/channels/$channel/releases.json" -TimeoutSec 10 -Headers @{ "User-Agent" = "tlbx-Installer" }
+        $release = $releases | Where-Object {
+            -not $_.draft -and ([bool]$_.prerelease -eq ($channel -eq "dev")) -and
+                @($_.assets | Where-Object { $_.name -eq $AssetPattern }).Count -gt 0
+        } | Select-Object -First 1
+        if ($release)
+        {
+            Get-AssetUrl -Release $release | Out-Null
+            return $release
+        }
+        if ($channel -eq "dev") { Write-Host "  No compatible dev release found, using stable..." -ForegroundColor Yellow }
     }
-    $release = $compatible | Where-Object { -not $_.prerelease } | Select-Object -First 1
-    if (-not $release) { throw "No published release contains $AssetPattern." }
-    return $release
+    throw "No published build contains $AssetPattern."
 }
 
 function Test-NetworkBinding
@@ -1226,7 +1254,7 @@ function Prompt-FirewallConfig
 
     Write-Host ""
     Write-Host "  Windows Firewall:" -ForegroundColor Cyan
-    Write-Host "  Allow other PCs to reach tlbx on TCP port $Port?" -ForegroundColor Yellow
+    Write-Host "  Allow other PCs to reach tlbx on TCP port ${Port}?" -ForegroundColor Yellow
     Write-Host "  (Creates or updates the inbound rule named '$FirewallDisplayName')" -ForegroundColor Gray
     $choice = Read-Host "  Add firewall rule? [Y/n]"
     return ($choice -ne "n" -and $choice -ne "N")
@@ -1269,15 +1297,45 @@ function Ensure-FirewallRule
     }
 }
 
+function Get-ReleaseChannel
+{
+    param($Release)
+    if ([bool]$Release.prerelease) { return "dev" }
+    return "stable"
+}
+
 function Get-AssetUrl
 {
     param($Release)
-    $asset = $Release.assets | Where-Object { $_.name -eq $AssetPattern }
-    if (-not $asset)
+    $assets = @($Release.assets | Where-Object { $_.name -ceq $AssetPattern })
+    if ($assets.Count -ne 1) { throw "Expected one $AssetPattern in build assets." }
+    $asset = $assets[0]
+    $tag = [string]$Release.tag_name
+    if ($tag -cnotmatch '^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$') { throw "Invalid build tag." }
+    $version = $tag -creplace '^v', ''
+    $channel = if ($version.Contains('-')) { 'dev' } else { 'main' }
+    $expected = "$BuildsOrigin/$channel/$version/$ExpectedReleasePlatform/$AssetPattern"
+    $uri = $null
+    if (-not [uri]::TryCreate([string]$asset.browser_download_url, [UriKind]::Absolute, [ref]$uri) -or
+        $uri.AbsoluteUri -cne $expected -or [long]$asset.size -le 0 -or
+        [bool]$Release.prerelease -ne $version.Contains('-') -or
+        [string]$asset.digest -cnotmatch '^sha256:[0-9a-fA-F]{64}$')
     {
-        throw "Could not find $AssetPattern in release assets"
+        throw "Invalid build URL, size or SHA256 for $AssetPattern."
     }
-    return $asset.browser_download_url
+    return $uri.AbsoluteUri
+}
+
+function Assert-BuildArchive
+{
+    param([Parameter(Mandatory=$true)][string]$Path, [Parameter(Mandatory=$true)]$Release)
+    Get-AssetUrl -Release $Release | Out-Null
+    $asset = @($Release.assets | Where-Object { $_.name -ceq $AssetPattern })[0]
+    if ((Get-Item -LiteralPath $Path).Length -ne [long]$asset.size -or
+        (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -ine ([string]$asset.digest).Substring(7))
+    {
+        throw "Downloaded build archive does not match its catalog size/SHA256."
+    }
 }
 
 function Convert-DerEcdsaSignatureToP1363
@@ -1528,7 +1586,7 @@ function Assert-SafeReleaseArchive
     try
     {
         $required = @(Get-WindowsReleaseFileNames)
-        $allowed = @($required + "SHA256SUMS.txt")
+        $allowed = @($required + "SHA256SUMS.txt" + "runtime-inputs.json")
         $allowedDirectories = @("x64/", "arm64/")
         if ($ExpectedReleasePlatform -eq "win-x86")
         {
@@ -1763,6 +1821,7 @@ function Write-ServiceSettings
         try
         {
             $PasswordHash | & $mtPath --write-secret password_hash --service-mode --settings-dir $configDir 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Native secret storage failed (exit $LASTEXITCODE)." }
             Write-Host "  Password: stored in $secretsPath" -ForegroundColor Gray
         }
         catch
@@ -2019,6 +2078,7 @@ function Install-Tlbx
     $assetUrl = Get-AssetUrl -Release $script:release
     Write-Log "Downloading from: $assetUrl"
     Invoke-CompatibleWebRequest -Uri $assetUrl -OutFile $tempZip
+    Assert-BuildArchive -Path $tempZip -Release $script:release
     Unblock-DownloadedPath -Path $tempZip
     Write-Log "Download complete"
 
@@ -2026,7 +2086,7 @@ function Install-Tlbx
     Write-Log "Extracting to: $tempExtract"
     Assert-SafeReleaseArchive -Path $tempZip
     Expand-Archive -Path $tempZip -DestinationPath $tempExtract
-    Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform $ExpectedReleasePlatform -ExpectedChannel $channelLabel
+    Assert-SignedRelease -ExtractDir $tempExtract -ExpectedVersion $version -ExpectedPlatform $ExpectedReleasePlatform -ExpectedChannel (Get-ReleaseChannel -Release $script:release)
     Unblock-DownloadedTree -Path $tempExtract
     Write-Log "Extraction and release-signature verification complete"
 
@@ -2062,41 +2122,6 @@ function Install-Tlbx
     }
 
     Write-Log "=== PHASE 3: Password configuration ==="
-    # Hash pending password now that mt.exe is installed
-    if ($PasswordHash -and $PasswordHash.StartsWith("__PENDING__:"))
-    {
-        Write-Log "Hashing pending password..."
-        $plainPassword = $PasswordHash.Substring(12)
-        try
-        {
-            $hash = $plainPassword | & $destWebBinary --hash-password 2>&1
-            if ($hash -match '^\$PBKDF2\$')
-            {
-                $PasswordHash = $hash
-                Write-Log "Password hashed successfully"
-                Write-Host "  Password: hashed" -ForegroundColor Gray
-            }
-            else
-            {
-                Write-Log "Password hashing failed, using fallback" "WARN"
-                Write-Host "  Warning: Password hashing failed, using fallback" -ForegroundColor Yellow
-            }
-        }
-        catch
-        {
-            Write-Log "Could not hash password: $_" "WARN"
-            Write-Host "  Warning: Could not hash password: $_" -ForegroundColor Yellow
-        }
-    }
-    elseif ($PasswordHash)
-    {
-        Write-Log "Using existing password hash"
-    }
-    else
-    {
-        Write-Log "No password hash provided (existing password will be preserved)"
-    }
-
     Write-Log "=== PHASE 4: Certificate configuration ==="
     # Always generate certificate now that mt.exe is installed (always HTTPS)
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!
@@ -2207,6 +2232,7 @@ function Install-Tlbx
             try
             {
                 $PasswordHash | & $mtPath --write-secret password_hash --user-mode --settings-dir $userSettingsDir 2>&1 | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "Native secret storage failed (exit $LASTEXITCODE)." }
                 Write-Host "  Password: stored in secure storage ($userSettingsDir\secrets.bin)" -ForegroundColor Gray
             }
             catch
@@ -2414,7 +2440,10 @@ function Install-AsService
         throw $message
     }
     sc.exe description $ServiceName "Web-based terminal multiplexer for AI coding agents and TUI apps" | Out-Null
-    sc.exe failure $ServiceName reset= 86400 actions= restart/5000/restart/10000/restart/30000 | Out-Null
+    sc.exe failure $ServiceName reset= 86400 actions= restart/1000/restart/5000/restart/30000 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not configure service crash recovery." }
+    sc.exe failureflag $ServiceName 1 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Could not enable service failure recovery." }
 
     # Start service
     Write-Log "Starting service..."
@@ -2583,7 +2612,7 @@ if ($ServiceMode)
             Write-Host ""
             $script:release = Get-LatestRelease -DevChannel $Dev
             $version = $script:release.tag_name -replace "^v", ""
-            $channelLabel = if ($Dev) { "dev" } else { "stable" }
+            $channelLabel = Get-ReleaseChannel -Release $script:release
             Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
             Write-Host ""
             Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
@@ -2600,7 +2629,7 @@ if ($ServiceMode)
         Write-Host ""
         $script:release = Get-LatestRelease -DevChannel $Dev
         $version = $script:release.tag_name -replace "^v", ""
-        $channelLabel = if ($Dev) { "dev" } else { "stable" }
+        $channelLabel = Get-ReleaseChannel -Release $script:release
         Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
         Write-Host ""
         Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
@@ -2623,7 +2652,7 @@ if ($Dev)
 # Fetch release info first
 $script:release = Get-LatestRelease -DevChannel $Dev
 $version = $script:release.tag_name -replace "^v", ""
-$channelLabel = if ($Dev) { "dev" } else { "stable" }
+$channelLabel = Get-ReleaseChannel -Release $script:release
 
 Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
 Write-Host ""
@@ -2691,7 +2720,7 @@ if ($asService)
         $passwordAction = Prompt-ExistingPasswordAction
         if ($passwordAction -eq "Replace")
         {
-            $passwordHash = Prompt-Password -InstallDir $installDir
+            $passwordHash = Prompt-Password
         }
         else
         {
@@ -2703,7 +2732,7 @@ if ($asService)
     else
     {
         # New install - prompt for password
-        $passwordHash = Prompt-Password -InstallDir $installDir
+        $passwordHash = Prompt-Password
     }
 
     # Prompt for network configuration
@@ -2867,7 +2896,7 @@ else
         if ($passwordAction -eq "Replace")
         {
             $tempDir = Join-Path $env:TEMP "tlbx-install"
-            $passwordHash = Prompt-Password -InstallDir $tempDir
+            $passwordHash = Prompt-Password
         }
         else
         {
@@ -2878,9 +2907,9 @@ else
     }
     else
     {
-        # Prompt for password - need a temp location for mt.exe to hash
+        # Hash locally before download or elevation; only the hash is replayed.
         $tempDir = Join-Path $env:TEMP "tlbx-install"
-        $passwordHash = Prompt-Password -InstallDir $tempDir
+        $passwordHash = Prompt-Password
     }
 
     # Prompt for network configuration

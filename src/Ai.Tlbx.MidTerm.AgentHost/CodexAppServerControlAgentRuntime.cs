@@ -39,6 +39,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private Task? _errorTask;
     private string? _sessionId;
     private string? _workingDirectory;
+    private AppServerControlMcpCredentials? _mcpCredentials;
+    private bool _mcpBindingMustReload;
     private string? _providerThreadId;
     private string? _activeTurnId;
     private string? _remoteEndpoint;
@@ -96,6 +98,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
             if (_process is { HasExited: false } process)
             {
+                using var ownedProcess = Interlocked.Exchange(ref _process, null);
                 process.Kill(entireProcessTree: true);
                 await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
@@ -121,6 +124,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         _shutdown.Dispose();
         _gate.Dispose();
+        _mcpCredentials?.Dispose();
+        _mcpCredentials = null;
     }
 
     public async Task<HostCommandOutcome> ExecuteAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -172,12 +177,51 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         _sessionId = command.SessionId;
         _workingDirectory = attach.WorkingDirectory;
         var attachPoint = attach.AttachPoint;
-        if (IsAttachSatisfied(attachPoint))
+        if (IsAttachSatisfied(attachPoint, attach.ResumeThreadId))
         {
+            if (attach.McpServer is not null && _mcpCredentials?.CanRefresh(attach.McpServer) == true)
+                _mcpCredentials.Refresh(attach.McpServer);
+            if (attach.McpServer is not null &&
+                (_mcpCredentials?.CanRefresh(attach.McpServer) != true ||
+                !await HasExpectedMcpBindingAsync(_providerThreadId!, ct).ConfigureAwait(false)))
+            {
+                var previousCredentials = _mcpCredentials;
+                _mcpBindingMustReload = previousCredentials is not null && !previousCredentials.CanRefresh(attach.McpServer);
+                if (_mcpCredentials?.CanRefresh(attach.McpServer) == true) _mcpCredentials.Refresh(attach.McpServer);
+                else _mcpCredentials = new AppServerControlMcpCredentials(attach.McpServer);
+                attach.McpServer = _mcpCredentials.Server;
+                try
+                {
+                    var current = await SendCodexRequestAsync("thread/read",
+                        id => BuildMcpNativeRequest(id, "thread/read", _providerThreadId!), ct).ConfigureAwait(false);
+                    await EnsureMcpBindingAsync(attach, current, _providerThreadId!, _quickSettings.PermissionMode, ct,
+                        allowIdleReload: true).ConfigureAwait(false);
+                    if (!ReferenceEquals(previousCredentials, _mcpCredentials)) previousCredentials?.Dispose();
+                }
+                catch
+                {
+                    if (!ReferenceEquals(previousCredentials, _mcpCredentials)) _mcpCredentials.Dispose();
+                    _mcpCredentials = previousCredentials;
+                    throw;
+                }
+            }
             return Accepted(command.CommandId, command.SessionId);
         }
 
         await DisposeProcessAsync().ConfigureAwait(false);
+        if (attach.McpServer is not null)
+        {
+            if (_mcpCredentials?.CanRefresh(attach.McpServer) == true) _mcpCredentials.Refresh(attach.McpServer);
+            else
+            {
+                var previousCredentials = _mcpCredentials;
+                _mcpBindingMustReload = previousCredentials is not null && attachPoint is not null;
+                _mcpCredentials = new AppServerControlMcpCredentials(attach.McpServer);
+                previousCredentials?.Dispose();
+            }
+            attach.McpServer = _mcpCredentials.Server;
+        }
+        else { _mcpCredentials?.Dispose(); _mcpCredentials = null; }
 
         if (attachPoint is not null)
         {
@@ -295,14 +339,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
-        if (!string.Equals(
-                _quickSettings.PermissionMode,
-                quickSettings.PermissionMode,
-                StringComparison.Ordinal))
-        {
-            await ReopenThreadAsync(quickSettings.PermissionMode, ct).ConfigureAwait(false);
-        }
-
         var input = await CreateCodexTurnInputAsync(request, ct).ConfigureAwait(false);
         if (input.Count == 0)
         {
@@ -318,7 +354,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 quickSettings.Model,
                 quickSettings.Effort,
                 quickSettings.FastMode,
-                quickSettings.PlanMode),
+                quickSettings.PlanMode,
+                quickSettings.PermissionMode),
             ct).ConfigureAwait(false);
 
         _quickSettings = quickSettings;
@@ -802,16 +839,23 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
     private void HandleCodexNotification(string method, JsonElement payload)
     {
+        // Shared app-server WebSockets broadcast thread notifications to sibling clients.
+        // Only the correlated start/resume response may choose this runtime's thread.
+        var threadId = GetString(payload, "threadId");
+        var nestedThreadId = GetString(payload, "thread", "id");
+        var threadScoped = threadId is not null || nestedThreadId is not null ||
+            method.StartsWith("thread/", StringComparison.Ordinal) ||
+            method.StartsWith("turn/", StringComparison.Ordinal) || method.StartsWith("item/", StringComparison.Ordinal);
+        if (threadScoped && (string.IsNullOrWhiteSpace(_providerThreadId) ||
+            threadId is not null && !string.Equals(threadId, _providerThreadId, StringComparison.Ordinal) ||
+            nestedThreadId is not null && !string.Equals(nestedThreadId, _providerThreadId, StringComparison.Ordinal)))
+            return;
+
         switch (method)
         {
             case "thread/started":
             {
                 var providerThreadId = GetString(payload, "thread", "id") ?? GetString(payload, "threadId");
-                if (!string.IsNullOrWhiteSpace(providerThreadId))
-                {
-                    _providerThreadId = providerThreadId;
-                }
-
                 _emit(CreateEvent("thread.started", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
                     appServerControlEvent.ThreadState = new AppServerControlProviderThreadStatePayload
@@ -831,11 +875,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             case "thread/compacted":
             {
                 var providerThreadId = GetString(payload, "thread", "id") ?? GetString(payload, "threadId") ?? _providerThreadId;
-                if (!string.IsNullOrWhiteSpace(providerThreadId))
-                {
-                    _providerThreadId = providerThreadId;
-                }
-
                 var threadState = ResolveCodexThreadState(method, payload);
                 _emit(CreateEvent("thread.state.changed", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
@@ -1987,6 +2026,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
             if (_process is { HasExited: false } process)
             {
+                // Transfer ownership before killing: prepared replacement already revoked this backend.
+                using var ownedProcess = Interlocked.Exchange(ref _process, null);
                 process.Kill(entireProcessTree: true);
                 await process.WaitForExitAsync(CancellationToken.None).ConfigureAwait(false);
             }
@@ -2049,8 +2090,10 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         _error = null;
     }
 
-    private bool IsAttachSatisfied(SessionAgentAttachPoint? attachPoint)
+    private bool IsAttachSatisfied(SessionAgentAttachPoint? attachPoint, string? resumeThreadId)
     {
+        if (!string.IsNullOrEmpty(resumeThreadId) && !string.Equals(resumeThreadId, _providerThreadId, StringComparison.Ordinal))
+            return false;
         if (string.IsNullOrWhiteSpace(_providerThreadId))
         {
             return false;
@@ -2106,6 +2149,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         AttachOwnedProcess(process);
         process.Exited += (_, _) =>
         {
+            if (!ReferenceEquals(_process, process)) return;
             EmitRuntimeMessage(
                 "session.exited",
                 "Codex App Server Controller runtime exited.",
@@ -2130,7 +2174,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         {
             threadResult = await SendCodexRequestAsync(
                 "thread/resume",
-                id => BuildCodexThreadResumeRequest(id, resumeThreadId, attach.WorkingDirectory, quickSettings.PermissionMode),
+                id => BuildCodexThreadResumeRequest(id, resumeThreadId, attach.WorkingDirectory, quickSettings.PermissionMode, attach.McpServer),
                 ct).ConfigureAwait(false);
             resumedExistingThread = true;
         }
@@ -2138,12 +2182,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         {
             threadResult = await SendCodexRequestAsync(
                 "thread/start",
-                id => BuildCodexThreadStartRequest(id, attach.WorkingDirectory, quickSettings.PermissionMode),
+                id => BuildCodexThreadStartRequest(id, attach.WorkingDirectory, quickSettings.PermissionMode, attach.McpServer),
                 ct).ConfigureAwait(false);
             resumedExistingThread = false;
         }
 
         var providerThreadId = GetString(threadResult, "thread", "id") ?? GetString(threadResult, "threadId");
+        if (!string.IsNullOrEmpty(providerThreadId))
+            threadResult = await EnsureMcpBindingAsync(attach, threadResult, providerThreadId, quickSettings.PermissionMode, ct).ConfigureAwait(false);
         return (threadResult, providerThreadId, resumedExistingThread);
     }
 
@@ -2496,7 +2542,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         });
     }
 
-    private static string BuildCodexThreadStartRequest(string id, string cwd, string permissionMode)
+    private static string BuildCodexThreadStartRequest(string id, string cwd, string permissionMode, AppServerControlMcpServer? mcpServer = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2511,6 +2557,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("experimentalRawEvents", false);
             writer.WriteBoolean("persistExtendedHistory", false);
+            AppServerControlMcpConfiguration.WriteCodex(writer, mcpServer);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2537,7 +2584,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         string id,
         string threadId,
         string cwd,
-        string permissionMode)
+        string permissionMode,
+        AppServerControlMcpServer? mcpServer = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2553,6 +2601,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             writer.WriteString("sandbox", ResolveCodexSandbox(permissionMode));
             writer.WriteBoolean("persistExtendedHistory", false);
             writer.WriteBoolean("excludeTurns", true);
+            AppServerControlMcpConfiguration.WriteCodex(writer, mcpServer);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });
@@ -2581,7 +2630,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         string? model = null,
         string? effort = null,
         string? fastMode = null,
-        string? planMode = null)
+        string? planMode = null,
+        string? permissionMode = null)
     {
         return BuildJsonString(writer =>
         {
@@ -2592,6 +2642,16 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             writer.WritePropertyName("params");
             writer.WriteStartObject();
             writer.WriteString("threadId", threadId);
+            if (permissionMode is not null)
+            {
+                // Native turn overrides preserve loaded MCP connections and also
+                // work before Codex has persisted the first conversation rollout.
+                writer.WriteString("approvalPolicy", ResolveCodexApprovalPolicy(permissionMode));
+                writer.WriteStartObject("sandboxPolicy");
+                writer.WriteString("type", AppServerControlQuickSettings.NormalizePermissionMode(permissionMode)
+                    == AppServerControlQuickSettings.PermissionModeAuto ? "dangerFullAccess" : "workspaceWrite");
+                writer.WriteEndObject();
+            }
             writer.WritePropertyName("input");
             writer.WriteStartArray();
             foreach (var entry in input)
@@ -2997,25 +3057,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         quickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         quickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions);
         return quickSettings;
-    }
-
-    private async Task ReopenThreadAsync(string permissionMode, CancellationToken ct)
-    {
-        EnsureAttached();
-        if (string.IsNullOrWhiteSpace(_providerThreadId) || string.IsNullOrWhiteSpace(_workingDirectory))
-        {
-            return;
-        }
-
-        var threadResult = await SendCodexRequestAsync(
-            "thread/resume",
-            id => BuildCodexThreadResumeRequest(id, _providerThreadId!, _workingDirectory!, permissionMode),
-            ct).ConfigureAwait(false);
-        var resumedThreadId = GetString(threadResult, "thread", "id") ?? GetString(threadResult, "threadId");
-        if (!string.IsNullOrWhiteSpace(resumedThreadId))
-        {
-            _providerThreadId = resumedThreadId;
-        }
     }
 
     private AppServerControlProviderEvent CreateQuickSettingsUpdatedEvent(

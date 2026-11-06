@@ -883,6 +883,12 @@ Start-Service -Name $serviceName -ErrorAction Stop
                 return;
             }
 
+            if (path == "/ws/boards")
+            {
+                await Services.Boards.BoardSocket.HandleAsync(context);
+                return;
+            }
+
             if (path == "/ws/share/state")
             {
                 await stateHandler.HandleAsync(context);

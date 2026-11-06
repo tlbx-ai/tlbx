@@ -7,6 +7,7 @@ describe('createWsUrl', () => {
 
   beforeEach(() => {
     storage.clear();
+    vi.stubGlobal('document', { cookie: 'mt-client-id=ae34f137-9fe1-439c-b985-7d46077fe644' });
 
     vi.stubGlobal('location', {
       protocol: 'https:',
@@ -48,8 +49,16 @@ describe('createWsUrl', () => {
     expect(parsed.pathname).toBe('/ws/state');
     expect(parsed.searchParams.get('existing')).toBe('1');
     expect(parsed.searchParams.get('tabId')).toBe('tab-123');
+    expect(parsed.searchParams.get('clientId')).toBe('ae34f137-9fe1-439c-b985-7d46077fe644');
     expect(parsed.searchParams.get('deviceLabel')).toBe('Windows PC · Chrome');
     expect(createWsUrl('/ws/state').includes('tabId=tab-123')).toBe(true);
+  });
+
+  it('keeps the same profile and tab identity on state and terminal sockets', () => {
+    const state = new URL(createWsUrl('/ws/state'));
+    const mux = new URL(createWsUrl('/ws/mux'));
+    expect(state.searchParams.get('clientId')).toBe(mux.searchParams.get('clientId'));
+    expect(state.searchParams.get('tabId')).toBe(mux.searchParams.get('tabId'));
   });
 
   it('routes websocket paths through the active web preview proxy prefix', () => {

@@ -652,11 +652,11 @@ public sealed class MuxWebSocketHandler
                     if (!MuxProtocol.TryParseFrame(data.Span, out var type, out var sessionId, out _) ||
                         (shareAccess is not null && !string.Equals(sessionId, shareAccess.SessionId, StringComparison.Ordinal)))
                         continue;
-                    if (type is MuxProtocol.TypeUserInput or MuxProtocol.TypeTerminalInput or MuxProtocol.TypeInputTraceMarker or MuxProtocol.TypePing)
+                    if (MuxProtocol.IsInput(type) || type is MuxProtocol.TypeInputTraceMarker or MuxProtocol.TypePing)
                     {
                         // The receive buffer is reused immediately. Each admitted
                         // lane owns its bytes until the IPC operation has completed.
-                        if (type is MuxProtocol.TypeUserInput or MuxProtocol.TypeTerminalInput)
+                        if (MuxProtocol.IsInput(type))
                         {
                             if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess)) continue;
                             client.SetActiveSession(sessionId);
@@ -746,6 +746,7 @@ public sealed class MuxWebSocketHandler
         switch (type)
         {
             case MuxProtocol.TypeUserInput:
+            case MuxProtocol.TypeBufferedUserInput:
             case MuxProtocol.TypeTerminalInput:
                 if (shareAccess is not null && !ShareGrantService.CanWrite(shareAccess))
                 {
@@ -762,7 +763,7 @@ public sealed class MuxWebSocketHandler
                     await _sizeControl.RecordInputAsync(sessionId, browserId, browserLabel, ct);
                 }
                 await _muxManager.HandleInputAsync(client.Id, sessionId, payloadMemory,
-                    userInput: type == MuxProtocol.TypeUserInput, ct);
+                    userInput: MuxProtocol.IsUserInput(type), ct);
                 break;
 
             case MuxProtocol.TypeResize:

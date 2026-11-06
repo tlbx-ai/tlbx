@@ -1,4 +1,18 @@
 Use tlbx supervision when this terminal actually runs inside tlbx.
+Use native tlbx MCP as the primary agent interface. The generated Bash/PowerShell
+CLI is a deprecated transitional fallback, planned for removal soon. Use it only
+when MCP is unavailable, a required operation is missing/broken, or the user
+explicitly requests CLI. Report concrete MCP gaps and keep new workflows on MCP.
+Preserve existing fallback behavior and its protocol checks during the transition;
+both interfaces share the existing C# services.
+Keep automated behavioral tests focused on protocols, settings, installation and
+updates. Do not add UI, layout or general product-logic test suites without an
+explicit request. Removed tests can be recovered from Git history.
+Run the broad .NET server/host suite locally when explicitly selected; do not add
+it to PR or release CI. Keep focused CI checks and package builds independent of it.
+Tests must exercise a concrete contract or failure. Do not assert source text,
+workflow job layout, documentation wording or arbitrary catalog counts. Reuse
+existing fixtures; keep build/setup costs separate from actual test duration.
 For recovery from a broken tlbx instance in an external terminal, use direct
 Windows diagnostics, Git and repository scripts. Do not retry session-context
 binding or require tlbx CLI operations that this terminal cannot perform.
@@ -7,6 +21,12 @@ If `.tlbx/AGENTS.md` exists, follow it for browser control and tmux workflows.
 If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 ## Release Authority
+
+For feature availability, verify the exact requested runtime by URL/service identity,
+live version and the feature's actual protocol call. A prepared candidate, a higher
+version number or a different running instance is not completion evidence.
+Report source verification, published packages and installed runtime verification
+separately; updating an installed instance requires explicit authorization.
 
 Every release invocation must explicitly pass `-TestCategories`: one or more of
 `assets`, `frontend`, `server`, `runtime`, `installers`, `dependencies`, `build`,
@@ -35,6 +55,7 @@ These rules apply only to tlbx-ai/tlbx. The tlbx terminal product remains workfl
 - Keep the permanent numbered checkout; return it to updated `dev`. No stable promotion is implied by a dev release.
 
 - Midterm is programmed in c# and typescript -> all major data processing/protocol logic/business logic shall be handled in c#, the typescript frontend shall be held as lean as possible.
+- The main mt process is the control plane and must not load the native WebRTC stack. Run each Link peer in a dedicated child mode of the same signed mt executable, with inherited private IPC, bounded messages, bounded shutdown and parent-death cleanup. A native transport crash must close only that peer; authentication and HTTP authorization stay in the main process. Do not extract or trust a separate network executable. Preserve signature, native dependency and ABI verification.
 - Use best practices for maintainable memory efficient code that uses the newest available .net features >= .net 10
 - We do not have a big team continuously revisiting code quality, and we cannot afford to come back later to clean up avoidable leftovers. If a feature change or refactor supersedes logic, helpers, types, config, branches, or APIs, remove that dead code in the same change. Do not leave cleanup debt behind on the assumption that someone will revisit it later.
 - always search if somthing exist first before implementing new features/api surfaces
@@ -58,6 +79,8 @@ Rules:
 
 ## Terminal Design Constraints
 
+- Keyboard paste must preserve the browser's trusted paste event and consume its clipboardData text/image files. Do not cancel Ctrl/Cmd+V merely because async clipboard APIs exist: permission may be denied in a secure Link iframe. Verify real text and image paste with clipboard-read denied, plus granted permission and duplicate-delivery checks; use an isolated browser clipboard, never the user's or server's OS clipboard.
+
 - Windows Codex CLI acceptance must cover the installed service identity (normally LocalSystem) accessing a user-private daemon socket. An interactive-user source server does not cover that boundary. Use only the exact tool caller's token for private Codex state; never widen existing ACLs. Distinguish a model-issued `exec_command` from a manually submitted `thread/shellCommand`; report an unavailable path as unverified. A timeout fallback must preserve its unobserved printed challenge for the documented retry.
 - CLI context verification must include metadata from a preserved installed mthost after a web-only update, with an unchanged Codex foreground PID, and the first scoped command resolving without manual repair for private TUI ancestry. Shared app-server ancestry must still require fresh terminal evidence, established automatically during the first command through the local daemon. Verify the unchanged FIRST scoped command with two real shared-daemon TUI clients, including while another tool is running; manual proof/retry success is not first-call acceptance. Also verify sibling startup, context repair, scoped mutation/readback, and rejection of duplicated proof. Cover nonce-only TUI redraws, missing host-side process classification, and Unicode terminal output; record the exact context error.
 - Explicit terminal launch commands and bookmarks are user-controlled. Never silently inject provider-specific CLI flags. Keep supplied arguments and quoting; use provider defaults only when no command was supplied.
@@ -66,13 +89,15 @@ Rules:
 
 ## Terminal Size Ownership
 
+- Link's cookie-free peer transport must preserve one browser-profile UUID plus the exact tab ID across state, terminal and HTTP input channels, reconnects and refreshes. Reconstruct only the non-authentication identity cookie on the host; peer-provided cookies never replace host-owned authentication. Verify sole-browser input does not produce follower banners and a passive second browser cannot regain ownership after handoff, expiry, focus/visibility changes or reconnect.
+
 - Browser execution ownership is sticky per session and named preview, using an exact browser tab identity independently of terminal size. Initialize from a connected size-owner tab or the sole connected UI; otherwise require explicit selection. An established offline preview owner never moves automatically. Commands, UI dispatch and status share that owner. Use `mt_claim_preview --browser <browserId>` (candidates: `/api/browser/ui-clients`) for explicit handoff; global main-browser selection and newest-connection heuristics must not route scoped commands.
 
 - Terminal row/column size ownership is server-authoritative and scoped per terminal session, never global to the whole browser.
 - For owned sessions, only the current owner may send authoritative `cols`/`rows`; every resize must carry the server-issued ownership epoch. Headless REST/tmux resize is permitted only while the session is unowned. Followers render the canonical PTY size and CSS-scale locally.
 - A user can explicitly take control at any time. The takeover must apply immediately and clearly explain that the terminal will be optimized for this browser.
-- Passive views never take another browser profile's ownership, even after expiry. Visibility, focus, reconnect, session selection and viewport changes do not claim or renew leases. Only actual browser input may take an eligible lease; explicit takeover remains immediate. An unowned session or an offline predecessor in the same browser profile may be inherited without input.
-- A connected owner is protected for five minutes after its last server-observed browser user input. Terminal protocol replies and headless automation do not renew browser activity. An offline owner becomes eligible after thirty seconds without terminal input. This prevents ping-pong while allowing work to move naturally between locations.
+- Passive views never take another browser profile's ownership, even after expiry. Visibility, focus, reconnect, restored session selection and viewport changes do not claim control. A real user selecting a session through the sidebar, keyboard navigation or a terminal pane immediately takes size ownership for that session, using the observed server epoch. Programmatic selection and agent browser commands remain passive; never queue or replay a takeover gesture across a disconnected channel. An unowned session or an offline predecessor in the same browser profile may be inherited without input.
+- Browser-authored input and deliberate user session selection are current control intent. Terminal protocol replies, headless automation, background tabs and state restoration never become control intent. Preserve server epoch guards so delayed requests cannot steal ownership back.
 - A replacement tab in the same browser profile may immediately inherit from its offline predecessor. An online sibling tab never auto-steals, and copied `sessionStorage` tab IDs must be collision-checked before WebSockets connect.
 - New sessions belong to the browser tab that created them and use that tab's measured viewport. Persist ownership across server restarts and reject stale or unauthorized resize commands in the backend.
 - Ownership status may expose only a short sanitized device/browser label for orientation. Followers do not scale above `1`; use the naturally empty terminal area for the takeover affordance and name the current controlling device there.
@@ -118,3 +143,14 @@ Rules:
 
 - In user-facing MidTerm UI and docs, prefer `Automation Bar` over the old `Middle Manager Bar` name.
 - `middle manager bar` may still appear in older code identifiers and APIs, but new visible labels and architectural descriptions should use `Automation Bar`.
+
+## Embedded UI acceptance
+
+For Connect provisioning, follow a real external-page link to `https://localhost:<test-port>/connect.html` in Chrome and Edge as well as entering the URL directly, then verify local sign-in and the fresh installation-password gate. Bind local-only test instances to loopback (`127.0.0.1` or `::1`), never wildcard addresses; these checks require no host firewall permission.
+Connect provisioning belongs in the actual Security & Access settings and reuses the native Settings DOM, theme, typography and controls. Do not create a standalone visual system or an outer workspace toolbar. Compare the embedded result with an existing Settings panel at desktop and narrow widths, including opened password/download states.
+
+For a new workspace surface, verify its actual embedded entry point in the full app, not only a detached/demo view. Capture desktop and narrow screenshots with a background image and full UI transparency enabled; check pane bounds, readable opaque surfaces, sidebar navigation and terminal input isolation before declaring it accepted.
+
+For list/text editors, exercise Enter inside an existing row using real keyboard input, caret placement and focus checks, then verify row order/text after reload. Testing only a separate add field or API writes does not cover row editing.
+
+Include dialogs opened by touched controls in embedded visual acceptance: check footer/button bounds on narrow screens, plus keyboard cancellation and explicit confirmation. A closed main view screenshot does not cover its dialogs.

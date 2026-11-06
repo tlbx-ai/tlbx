@@ -10,7 +10,8 @@ import { FitAddon } from '@xterm/addon-fit';
 import { createLogger } from '../logging';
 import { t } from '../i18n';
 import { sessionTerminals, hiddenSessionIds } from '../../state';
-import { forgetMuxSession, sendInput, sendResize } from '../comms/muxChannel';
+import { forgetMuxSession, sendInput, sendResize, sendTerminalResponse } from '../comms/muxChannel';
+import { onTerminalInput } from '../terminal/terminalInputOrigin';
 import { getTerminalOptions } from '../terminal/terminalOptions';
 import { syncTerminalWebglState } from '../terminal/manager';
 import { syncTerminalLigatureState } from '../terminal/ligatures';
@@ -116,8 +117,9 @@ export function showOutputOverlay(hiddenSessionId: string, scriptName: string): 
     syncTerminalLigatureState(termState, settings.terminalLigaturesEnabled);
   }
 
-  terminal.onData((data: string) => {
-    sendInput(hiddenSessionId, data);
+  onTerminalInput(terminal, (data, userInput) => {
+    if (userInput) sendInput(hiddenSessionId, data);
+    else sendTerminalResponse(hiddenSessionId, data);
   });
 
   requestAnimationFrame(() => {

@@ -59,7 +59,11 @@ import {
   resolveAppServerControlUserInputWs,
   submitAppServerControlTurnWs,
 } from './appServerControlWebSocket';
-import { getBrowserDeviceHeaderValue, getOrCreateTabId } from '../utils/cookies';
+import {
+  getBrowserDeviceHeaderValue,
+  getOrCreateClientId,
+  getOrCreateTabId,
+} from '../utils/cookies';
 
 const client = createClient<paths>({ baseUrl: '' });
 const API_RECONNECT_DELAYS_MS = [0, 150, 400, 900];
@@ -231,6 +235,7 @@ async function postJsonAttempt(path: string, body: unknown, timeoutMs?: number):
       headers: {
         'Content-Type': 'application/json',
         'X-MidTerm-Tab-Id': getOrCreateTabId(),
+        'X-MidTerm-Client-Id': getOrCreateClientId(),
         'X-MidTerm-Device-Label': getBrowserDeviceHeaderValue(),
       },
       body: JSON.stringify(body ?? {}),

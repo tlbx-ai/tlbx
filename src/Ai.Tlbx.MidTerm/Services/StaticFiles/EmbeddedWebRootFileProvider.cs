@@ -14,7 +14,7 @@ public sealed class EmbeddedWebRootFileProvider : IFileProvider
     private static readonly HashSet<string> KnownExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         "html", "css", "js", "json", "txt", "xml", "svg", "png", "jpg", "jpeg", "gif", "ico",
-        "woff", "woff2", "ttf", "eot", "otf", "map", "webmanifest", "zip"
+        "woff", "woff2", "ttf", "eot", "otf", "map", "webmanifest", "zip", "wasm", "bcmap", "pfb", "icc"
     };
 
     private static readonly HashSet<string> CompoundExtensions = new(StringComparer.OrdinalIgnoreCase)

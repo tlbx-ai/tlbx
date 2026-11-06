@@ -9,7 +9,11 @@ import type {
   SpaceUpdateWorkspaceRequest,
   LaunchEntry,
 } from '../../api/types';
-import { getBrowserDeviceHeaderValue, getOrCreateTabId } from '../../utils/cookies';
+import {
+  getBrowserDeviceHeaderValue,
+  getOrCreateClientId,
+  getOrCreateTabId,
+} from '../../utils/cookies';
 
 interface FetchSpacesOptions {
   includeWorkspaces?: boolean;
@@ -105,6 +109,7 @@ export async function launchLocalSpaceWorkspace(
         headers: {
           'Content-Type': 'application/json',
           'X-MidTerm-Tab-Id': getOrCreateTabId(),
+          'X-MidTerm-Client-Id': getOrCreateClientId(),
           'X-MidTerm-Device-Label': getBrowserDeviceHeaderValue(),
         },
         body: JSON.stringify(request),

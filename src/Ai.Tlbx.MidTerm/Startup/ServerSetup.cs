@@ -116,9 +116,11 @@ public static class ServerSetup
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
             options.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);
+            options.SerializerOptions.TypeInfoResolverChain.Insert(0, Services.Boards.BoardJsonContext.Default);
         });
 
         builder.Services.AddSingleton(settingsService);
+        Services.Mcp.TlbxMcpEndpoints.AddServices(builder.Services);
         builder.Services.AddSingleton(runtimeOptions);
         builder.Services.AddSingleton(runtimeOptions.ServiceIdentity);
         builder.Services.AddSingleton(sp =>
@@ -192,6 +194,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<InputHistoryService>();
         builder.Services.AddSingleton<ControlPlaneService>();
         builder.Services.AddSingleton<ActionGraphService>();
+        builder.Services.AddSingleton<Services.Boards.BoardService>();
         builder.Services.AddSingleton<SpaceService>();
         builder.Services.AddSingleton<SessionPathAllowlistService>();
         builder.Services.AddSingleton<GitWatcherService>();
@@ -200,11 +203,14 @@ public static class ServerSetup
         builder.Services.AddSingleton<CommandService>();
         builder.Services.AddSingleton<ShutdownService>();
         builder.Services.AddSingleton<HubService>();
+        builder.Services.AddSingleton<Services.Connect.ConnectService>();
+        builder.Services.AddSingleton<Services.Connect.ConnectProvisioningGate>();
+        builder.Services.AddHostedService(static services => services.GetRequiredService<Services.Connect.ConnectService>());
         builder.Services.AddSingleton<HubMuxWebSocketHandler>();
         builder.Services.AddSingleton<HubStateWebSocketHandler>();
         builder.Services.AddSingleton(sp =>
         {
-            return BrowserPreviewOriginService.Create(runtimeOptions.Port, runtimeOptions.BindAddress);
+            return BrowserPreviewOriginService.Create(runtimeOptions.Port);
         });
         builder.Services.AddSingleton<BrowserPreviewRegistry>();
         builder.Services.AddSingleton<BrowserPreviewOwnerService>();
@@ -249,13 +255,22 @@ public static class ServerSetup
             "Ai.Tlbx.MidTerm");
         var useCompressedFiles = true;
 #endif
+        ConfigureStaticFiles(app, fileProvider, useCompressedFiles, sourceDevMode, sourceDevAssetVersion);
+    }
+
+    internal static void ConfigureStaticFiles(WebApplication app, IFileProvider fileProvider,
+        bool useCompressedFiles, bool sourceDevMode, string? sourceDevAssetVersion)
+    {
 
         var manifestFile = fileProvider.GetFileInfo("site.webmanifest");
+        var compressedManifest = !manifestFile.Exists;
+        if (compressedManifest) manifestFile = fileProvider.GetFileInfo("site.webmanifest.br");
         string? manifest = null;
         if (manifestFile.Exists)
         {
             using var manifestStream = manifestFile.CreateReadStream();
-            using var manifestReader = new StreamReader(manifestStream);
+            using var manifestReader = new StreamReader(compressedManifest
+                ? new BrotliStream(manifestStream, CompressionMode.Decompress) : manifestStream);
             manifest = PwaManifest.WithServerName(manifestReader.ReadToEnd(), Environment.MachineName);
         }
 
@@ -328,9 +343,9 @@ public static class ServerSetup
                 return;
             }
             var version = string.Create(CultureInfo.InvariantCulture, $"dev-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}");
-            var rewrittenHtml = StaticAssetCacheHeaders.RewriteDevAssetUrls(
+            var rewrittenHtml = PwaManifest.WithServerNameHtml(StaticAssetCacheHeaders.RewriteDevAssetUrls(
                 StaticAssetCacheHeaders.StampHtmlAssetUrls(html, version),
-                devAssetOrigin);
+                devAssetOrigin), Environment.MachineName);
 
             context.Response.StatusCode = StatusCodes.Status200OK;
             context.Response.ContentType = "text/html; charset=utf-8";
@@ -371,7 +386,7 @@ public static class ServerSetup
                 using var reader = new StreamReader(stream);
                 var html = await reader.ReadToEndAsync(context.RequestAborted);
                 var stampedHtml = StaticAssetCacheHeaders.StampHtmlAssetUrls(
-                    html,
+                    PwaManifest.WithServerNameHtml(html, Environment.MachineName),
                     sourceDevAssetVersion ?? "dev");
 
                 context.Response.StatusCode = StatusCodes.Status200OK;
@@ -381,6 +396,31 @@ public static class ServerSetup
                 await context.Response.WriteAsync(stampedHtml, context.RequestAborted);
             });
         }
+
+        // Apply the same installation name to Apple's home-screen metadata,
+        // including HTML available only as Brotli resources in published binaries.
+        app.Use(async (context, next) =>
+        {
+            var path = StaticAssetCacheHeaders.ResolveHtmlEntryPointPath(context.Request.Path.Value ?? string.Empty);
+            if ((!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                || !StaticAssetCacheHeaders.IsHtmlEntryPoint(path))
+            {
+                await next();
+                return;
+            }
+            var html = await ReadHtmlEntryPointAsync(fileProvider, path, context.RequestAborted);
+            if (html is null)
+            {
+                await next();
+                return;
+            }
+            context.Response.ContentType = "text/html; charset=utf-8";
+            context.Response.Headers.CacheControl = "no-cache, must-revalidate";
+            if (HttpMethods.IsGet(context.Request.Method))
+            {
+                await context.Response.WriteAsync(PwaManifest.WithServerNameHtml(html, Environment.MachineName), context.RequestAborted);
+            }
+        });
 
         // In release builds, serve pre-compressed .br files for text assets
         if (useCompressedFiles)
@@ -397,6 +437,10 @@ public static class ServerSetup
         contentTypeProvider.Mappings[".ttf"] = "font/ttf";
         contentTypeProvider.Mappings[".eot"] = "application/vnd.ms-fontobject";
         contentTypeProvider.Mappings[".zip"] = "application/zip";
+        contentTypeProvider.Mappings[".wasm"] = "application/wasm";
+        contentTypeProvider.Mappings[".bcmap"] = "application/octet-stream";
+        contentTypeProvider.Mappings[".pfb"] = "application/octet-stream";
+        contentTypeProvider.Mappings[".icc"] = "application/octet-stream";
 
         app.UseStaticFiles(new StaticFileOptions
         {
@@ -445,25 +489,12 @@ public static class ServerSetup
         BrowserPreviewRegistry previewRegistry)
     {
         app.UseResponseCompression();
+        Services.Connect.ConnectLocalAccessPolicy.Configure(app, previewOriginService);
 
         // HSTS middleware - always enabled (HTTPS only)
         app.Use(async (context, next) =>
         {
             context.Response.Headers.StrictTransportSecurity = "max-age=31536000; includeSubDomains";
-            await next();
-        });
-
-        app.Use(async (context, next) =>
-        {
-            var path = context.Request.Path.Value ?? "/";
-            if (previewOriginService.IsPreviewRequest(context)
-                && previewOriginService.ShouldBlockPath(path)
-                && !WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path))
-            {
-                context.Response.StatusCode = 404;
-                return;
-            }
-
             await next();
         });
 
@@ -473,13 +504,19 @@ public static class ServerSetup
             KeepAliveInterval = TimeSpan.FromSeconds(30)
         });
 
+        app.Use(async (context, next) =>
+        {
+            if (context.Request.Path.StartsWithSegments("/webpreview", StringComparison.OrdinalIgnoreCase))
+                PreviewProxyAuthorization.ApplyResponsePolicy(context);
+            await next();
+        });
+
         // Auth middleware must run BEFORE static files so unauthenticated users get redirected to login
         AuthMiddleware.ConfigureAuthMiddleware(
             app,
             settingsService,
             authService,
             shareGrantService,
-            previewOriginService,
             previewRegistry);
 
         // Web preview reverse proxy — after auth, before security headers (short-circuits for /webpreview/*)
@@ -524,7 +561,7 @@ public static class ServerSetup
                $"style-src 'self' 'unsafe-inline'{devAssetSource}; " +
                "img-src 'self' data:; " +
                $"font-src 'self' data:{devAssetSource}; " +
-               "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
+               "connect-src 'self' ws: wss: https://builds.tlbx.ai https://midterm.tlbx.ai; " +
                $"frame-src {string.Join(' ', frameSources)}; " +
                "frame-ancestors 'self'";
     }

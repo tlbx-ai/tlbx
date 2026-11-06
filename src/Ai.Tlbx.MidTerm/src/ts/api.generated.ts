@@ -5083,7 +5083,6 @@ export interface components {
       mobileKineticTerminalScroll: boolean;
       mobileDenseTerminalMode: boolean;
       keepSystemAwakeWithActiveSessions: boolean;
-      runtimePriorityBoostEnabled: boolean;
       runtimePriorityClass: string;
       resumeMode: components['schemas']['TerminalResumeModeSetting'];
       tryResumeNonAiAgentProcesses: boolean;
@@ -5091,6 +5090,8 @@ export interface components {
       inputMode: string;
       fileRadar: boolean;
       showBookmarks: boolean;
+      showSpaces: boolean;
+      showBoards: boolean;
       allowAdHocSessionBookmarks: boolean;
       showSidebarSessionFilter: boolean;
       worktreeRootDirectory: string;
@@ -5453,6 +5454,12 @@ export interface components {
       ownerLabel: null | string;
       /** Format: int64 */
       epoch: number;
+      /** Format: int32 */
+      cols: number;
+      /** Format: int32 */
+      rows: number;
+      /** Format: int64 */
+      sizeRevision: number;
     };
     TerminalTransportDiagnosticsDto: {
       sourceSeq: string;
@@ -5502,6 +5509,9 @@ export interface components {
       latestVersion: string;
       releaseUrl: string;
       downloadUrl: null | string;
+      archiveSha256: null | string;
+      /** Format: int64 */
+      archiveSize: number;
       assetName: null | string;
       releaseNotes: null | string;
       type: components['schemas']['UpdateType'];

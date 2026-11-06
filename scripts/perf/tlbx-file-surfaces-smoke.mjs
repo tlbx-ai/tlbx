@@ -183,10 +183,10 @@ try {
       const position = await editor.evaluate(el => { window.policyEditor = el; el.setSelectionRange(5, 19); el.scrollTop = 500; return [el.selectionStart, el.selectionEnd, el.scrollTop]; });
       const retained = async root => { assert.equal(await root.locator('textarea').evaluate(el => el === window.policyEditor), true); assert.equal(await root.locator('textarea').inputValue(), draft); assert.deepEqual(await root.locator('textarea').evaluate(el => [el.selectionStart, el.selectionEnd, el.scrollTop]), position); };
       await sample(label + '-modal', '#file-viewer-modal textarea', '.file-viewer-modal-content', imageColor, false, true);
-      await modal.locator('#file-viewer-maximize').click(); await page.waitForFunction(() => !!document.fullscreenElement); await retained(modal);
+      await modal.locator('#file-viewer-maximize').click(); await page.waitForFunction(() => document.querySelector('.file-viewer-modal-content')?.classList.contains('is-maximized')); assert.equal(await page.evaluate(() => document.fullscreenElement), null); await retained(modal);
       assert.equal(await content.evaluate(el => getComputedStyle(el).backgroundColor), base);
-      await sample(label + '-fullscreen', '#file-viewer-modal textarea', '.file-viewer-modal-content', imageColor, false, true);
-      await modal.locator('#file-viewer-maximize').click(); await page.waitForFunction(() => !document.fullscreenElement);
+      await sample(label + '-maximized', '#file-viewer-modal textarea', '.file-viewer-modal-content', imageColor, false, true);
+      await modal.locator('#file-viewer-maximize').click(); await page.waitForFunction(() => !document.querySelector('.file-viewer-modal-content')?.classList.contains('is-maximized')); assert.equal(await page.evaluate(() => document.fullscreenElement), null);
       await modal.locator('#file-viewer-dock-btn').click(); const dock = page.locator('#file-viewer-dock'); await dock.waitFor(); await retained(dock);
       assert.equal(await dock.evaluate(el => getComputedStyle(el).backgroundColor), base);
       await sample(label + '-dock', '#file-viewer-dock textarea', '#file-viewer-dock', imageColor, false, true);

@@ -17,6 +17,7 @@ import {
   $actionGraphsOpen,
   $currentSettings,
   $activeSessionId,
+  $boardsOpen,
   $settingsOpen,
   $voiceAvailable,
 } from '../../stores';
@@ -320,6 +321,7 @@ function isFooterSuppressed(): boolean {
   return (
     $settingsOpen.get() ||
     $actionGraphsOpen.get() ||
+    $boardsOpen.get() ||
     (!!sessionId && getActiveTab(sessionId) === 'files')
   );
 }
@@ -1014,6 +1016,7 @@ export function initSmartInput(): void {
   $actionGraphsOpen.subscribe(() => {
     syncSmartInputVisibility();
   });
+  $boardsOpen.subscribe(syncSmartInputVisibility);
 
   $voiceAvailable.subscribe(() => {
     syncVoiceInputAvailability();

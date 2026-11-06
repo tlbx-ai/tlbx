@@ -70,6 +70,7 @@ $requiredNodeDeps = @(
     @{ Name = "esbuild"; Path = Join-Path $NodeModulesRoot "esbuild" },
     @{ Name = "prettier"; Path = Join-Path $NodeModulesRoot "prettier" },
     @{ Name = "openapi-typescript"; Path = Join-Path $NodeModulesRoot "openapi-typescript" },
+    @{ Name = "pdfjs-dist"; Path = Join-Path $NodeModulesRoot "pdfjs-dist/package.json" },
     @{ Name = "swagger-ui-dist"; Path = Join-Path $NodeModulesRoot "swagger-ui-dist/package.json" }
 )
 
@@ -608,6 +609,38 @@ foreach ($asset in $swaggerTextAssets) {
     else {
         Write-Host "  $($asset.Label)" -ForegroundColor DarkGray
     }
+}
+
+# PDF.js is bundled only into its isolated viewer, never the terminal bundle.
+$pdfRoot = Join-Path $NodeModulesRoot "pdfjs-dist"
+$pdfOutput = Join-Path $WwwRoot "pdf"
+New-Item -ItemType Directory -Path $pdfOutput -Force | Out-Null
+& $esbuildCommand (Join-Path $TsSource "pdfViewer.ts") --bundle --minify --format=esm --target=es2022 "--outfile=$pdfOutput/viewer.js"
+if ($LASTEXITCODE -ne 0) { throw "PDF viewer bundle failed" }
+foreach ($asset in @(
+    @{ Source = Join-Path $StaticSource "pdf/index.html"; Name = "index.html" },
+    @{ Source = Join-Path $StaticSource "pdf/viewer.css"; Name = "viewer.css" },
+    @{ Source = Join-Path $pdfRoot "web/pdf_viewer.css"; Name = "pdf_viewer.css" },
+    @{ Source = Join-Path $pdfRoot "build/pdf.worker.min.mjs"; Name = "worker.js" },
+    @{ Source = Join-Path $pdfRoot "LICENSE"; Name = "LICENSE.txt" }
+)) {
+    $null = Process-TextFile -Source $asset.Source -Destination (Join-Path $pdfOutput $asset.Name) -Compress $Publish
+}
+# Preserve package paths and licenses for CMaps, fallback fonts and image decoders.
+foreach ($folder in @('cmaps', 'standard_fonts', 'wasm', 'web/images')) {
+    $destination = if ($folder -eq 'web/images') { Join-Path $pdfOutput 'images' } else { Join-Path $pdfOutput $folder }
+    New-Item -ItemType Directory -Path $destination -Force | Out-Null
+    Get-ChildItem (Join-Path $pdfRoot $folder) -File | ForEach-Object {
+        $target = Join-Path $destination $(if ($_.Name -like 'LICENSE*') { $_.Name + '.txt' } else { $_.Name })
+        if ($_.Extension -in @('.js', '.json', '.svg', '.txt') -or $_.Name -like 'LICENSE*') {
+            $null = Process-TextFile -Source $_.FullName -Destination $target -Compress $Publish
+        } else {
+            Copy-Item -LiteralPath $_.FullName -Destination $target -Force
+        }
+    }
+}
+if ($Publish) {
+    $null = Process-TextFile -Source (Join-Path $pdfOutput 'viewer.js') -Destination (Join-Path $pdfOutput 'viewer.js') -Compress $true
 }
 
 # html2canvas vendor library — lazy-loaded by web preview screenshot feature

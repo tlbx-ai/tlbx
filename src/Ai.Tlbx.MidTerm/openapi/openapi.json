@@ -6669,7 +6669,6 @@
           "mobileKineticTerminalScroll",
           "mobileDenseTerminalMode",
           "keepSystemAwakeWithActiveSessions",
-          "runtimePriorityBoostEnabled",
           "runtimePriorityClass",
           "resumeMode",
           "tryResumeNonAiAgentProcesses",
@@ -6677,6 +6676,8 @@
           "inputMode",
           "fileRadar",
           "showBookmarks",
+          "showSpaces",
+          "showBoards",
           "allowAdHocSessionBookmarks",
           "showSidebarSessionFilter",
           "worktreeRootDirectory",
@@ -6909,9 +6910,6 @@
           "keepSystemAwakeWithActiveSessions": {
             "type": "boolean"
           },
-          "runtimePriorityBoostEnabled": {
-            "type": "boolean"
-          },
           "runtimePriorityClass": {
             "type": "string"
           },
@@ -6931,6 +6929,12 @@
             "type": "boolean"
           },
           "showBookmarks": {
+            "type": "boolean"
+          },
+          "showSpaces": {
+            "type": "boolean"
+          },
+          "showBoards": {
             "type": "boolean"
           },
           "allowAdHocSessionBookmarks": {
@@ -8371,7 +8375,10 @@
           "ownerInSameBrowserProfile",
           "canTakeOverAutomatically",
           "ownerLabel",
-          "epoch"
+          "epoch",
+          "cols",
+          "rows",
+          "sizeRevision"
         ],
         "type": "object",
         "properties": {
@@ -8400,6 +8407,18 @@
             ]
           },
           "epoch": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "cols": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "sizeRevision": {
             "type": "integer",
             "format": "int64"
           }
@@ -8548,6 +8567,8 @@
           "latestVersion",
           "releaseUrl",
           "downloadUrl",
+          "archiveSha256",
+          "archiveSize",
           "assetName",
           "releaseNotes",
           "type",
@@ -8582,6 +8603,16 @@
               "null",
               "string"
             ]
+          },
+          "archiveSha256": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "archiveSize": {
+            "type": "integer",
+            "format": "int64"
           },
           "assetName": {
             "type": [

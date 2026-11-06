@@ -29,8 +29,6 @@ try {
                 if ($LASTEXITCODE -ne 0) { throw 'Frontend typecheck failed.' }
                 & npm run lint
                 if ($LASTEXITCODE -ne 0) { throw 'Frontend lint failed.' }
-                & npm exec '--' vitest run src/ts/modules/theming
-                if ($LASTEXITCODE -ne 0) { throw 'Theme and CSS audits failed.' }
             }
         } finally { Pop-Location }
     }
@@ -45,6 +43,9 @@ try {
     }
     if ($categories -contains 'build') {
         & "$PSScriptRoot/test-release-build-system.ps1"
+        & "$PSScriptRoot/test-publish-builds.ps1"
+        & dotnet test --project src/Ai.Tlbx.Builds.Server.Tests/Ai.Tlbx.Builds.Server.Tests.csproj --configuration $Configuration --report-trx
+        if ($LASTEXITCODE -ne 0) { throw 'Build server protocol verification failed.' }
         & "$PSScriptRoot/test-release-pr.ps1"
         & python "$PSScriptRoot/test-release-publication.py"
         if ($LASTEXITCODE -ne 0) { throw 'Release publication tests failed.' }

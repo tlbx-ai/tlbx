@@ -23,7 +23,7 @@ rejects reuse of a published version.
 
 | Category | Checks | Choose for |
 |---|---|---|
-| `assets` | TypeScript typecheck, TS/CSS lint and theme/CSS audits | CSS, HTML, text, static assets; also inspect the affected UI |
+| `assets` | TypeScript typecheck and TS/CSS lint | CSS, HTML, text, static assets; also inspect the affected UI |
 | `frontend` | Typecheck, lint, full frontend tests including Kitty graphics | TypeScript behavior and browser contracts |
 | `server` | Server unit and integration suites | Server C# and REST APIs |
 | `runtime` | All three .NET suites, including AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
@@ -45,6 +45,10 @@ OpenAPI.NET 2.x, so that generator retains the latest 2.x package until the
 stable ASP.NET integration supports OpenAPI.NET 3.
 
 Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
+Automated behavioral tests cover protocols, settings, installation and updates.
+Keep UI presentation, layout, Files, Git, Boards and other product logic out of
+the automated suites. Typechecks, lint, package integrity and installer checks
+remain part of the build/release workflow. Removed tests remain in Git history.
 Use `dotnet test --project <path>`; targeted runs use `--filter-class` and
 `--report-trx`, rather than VSTest filters or loggers.
 
@@ -60,6 +64,49 @@ inputs are retained in `.git/tlbx-advisory-baselines/`. Locked restores, registr
 signatures, package integrity/provenance and complete audit responses remain enforced.
 Offline behavioral tests run through `test-release-build-system.ps1` on Windows
 and Linux, including unchanged findings, regressions and failed audit responses.
+
+Connect's in-process native library is built by `ConnectNative.targets` from the
+vcpkg snapshot and source hashes in `src/Ai.Tlbx.MidTerm.ConnectNative/native-stack.json`.
+The six RID triplets produce an embedded `bundle.zip` containing native libraries,
+SHA256 metadata, dependency source SBOM and notices. Compilers run with at most two
+parallel jobs; downloaded build tools remain under `.artifacts/connect-dotnet-transport`.
+macOS signs the inner libraries before embedding, using the same Developer ID as mt.
+Focused JIT-only C# checks may use `-p:SkipConnectNativeBuild=true`; publishing rejects
+that property. Release SBOM completion verifies bundle hashes before merging its
+native source/dependency graph. Grype is pinned by release-archive hashes, updates
+and validates its database, and blocks High/Critical findings. Known vulnerable
+OpenSSL and explicitly identified GLib versions must trigger positive controls.
+CPE identities are sourced in `native-stack.json`; dependencies without a matching
+identity require a separate upstream advisory review on every pin change:
+libdatachannel, libnice, libiconv, dirent and plog have no matching CPE catalog
+identity. Zero Grype findings are not a security guarantee. Vendor advisories must
+also be checked before publishing; PCRE2 10.49 fixes the not-yet-CPE-enriched
+[GHSA-r9hj-j2rw-4q3m](https://github.com/PCRE2Project/pcre2/security/advisories/GHSA-r9hj-j2rw-4q3m).
+Catalog identities come from the [NVD CPE API](https://nvd.nist.gov/developers/products).
+Raw vcpkg source evidence remains in `bin/<RID>/source-sboms`. No native executable
+or child process is bundled.
+
+The libdatachannel 0.24.6#3 overlay detaches receive callbacks, removes the stream
+and cancels its timer on the GLib dispatch context before releasing the owner.
+libnice 0.1.24's legacy `attach_recv(NULL)` installs a NULL-target compatibility
+wrapper; the overlay uses the real `attach_recv_ex` detach and pins the patched
+source hash. Verify repeated reconnects with requests in flight when changing
+these pins; load-only checks cannot detect this teardown crash.
+The URL patch also keeps the POSIX ERE closing bracket literal for libc++.
+The small macOS PR probe checks the actual patch pattern without the SDK or a
+signing identity. PCRE2's public submodule metadata is kept byte-for-byte with
+the existing vcpkg SHA512 pin so SDK builds do not depend on GitHub API quotas.
+
+The temporary zlib 1.3.2#3 overlay applies the exact upstream CVE-2026-85091 fix.
+Its patch, compiled source and static archive hashes are checked before the native
+link/install output is frozen. Packaging verifies that output without re-signing;
+macOS signing happens before the frozen binding with an ABI-tracked identity.
+ELF/Mach-O RPATH finalization also happens before signing and binding; the pinned
+vcpkg post-port RPATH pass is then disabled so it cannot mutate the frozen bytes.
+Raw scanner findings remain available. An artifact-scoped OpenVEX `fixed` statement
+is accepted only after that hash chain verifies, and receives a release-archive
+attestation. Wrong-artifact VEX remains a failing control. Remove this temporary
+backport and statement when upgrading to a vendor release containing the fix.
 
 ## PR workflow (tlbx code repository only)
 
@@ -116,6 +163,17 @@ notes and workflow summary. SBOM generation retries once; a second failure
 excludes that platform. Installers, the npm launcher and the built-in updater
 select a published release containing their platform's archive.
 
+Release uploads retry the same signed archive/SBOM pair at most three times,
+inside a three-minute step limit. A failed upload keeps the job failed and saves
+only that pair as `release-upload-<rid>-<attempt>` for one day, with a two-minute
+artifact-upload limit and no recompression. Successful uploads save no extra
+artifact. No workflow or build is automatically rerun.
+For manual recovery, use `gh run download <run-id> --name release-upload-<rid>-<attempt> --dir .artifacts/recovery`.
+Verify its existing signatures, packaged hashes and GitHub attestations against
+the release tag, then run
+`scripts/upload-release-assets.ps1 -Tag <tag> -ArchivePath <archive> -SbomPath <sbom>`.
+This retries publication without recompiling or signing again.
+
 For stable releases, invoke `promote.ps1 -TestCategories all` from clean updated
 dev. It freezes the accepted candidate on `chore/promote-X-Y-Z`, includes stable
 version/generated changes in its PR into main, and tags only the merged result.
@@ -142,6 +200,10 @@ Required checks on both branches: `PR frontend`, `PR server`,
 `Release workflow (ubuntu-24.04)`, `Release workflow (windows-2025)`, and both
 CodeQL `analyze` languages. PR checks run without path filters, so documentation
 and synchronization PRs cannot wait forever for an untriggered required job.
+The broad .NET server/host suite runs locally on demand via
+`./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError`; it is not
+a PR or release CI job. Focused platform checks, builds, audits and package integrity
+checks remain in CI.
 No mandatory second-person approval is configured. GitHub still enforces
 required checks, an up-to-date branch and resolved review conversations.
 
@@ -172,3 +234,27 @@ six supported targets because it embeds the current web frontend.
 
 Do not use `-mthostUpdate no` to hide runtime source changes: it controls installed
 host replacement, independently of test selection or the cold-build fallback.
+## HTTPS build distribution
+
+Native clients and installers discover published packages through
+`https://builds.tlbx.ai/v1/channels/dev/releases.json` or `main/releases.json`
+(`main` is the stable channel). They do not call the GitHub release API.
+Archives and their matching SPDX documents keep their original bytes under
+`/{channel}/{version}/{platform}/{filename}`; original signed manifests are
+available at `/v1/releases/{tag}/{platform}/version.json`.
+
+After GitHub publication, `release.yml` runs `scripts/publish-builds.ps1`.
+It checks the GitHub archive digests, provenance, SPDX attestation and vendor
+manifest before uploading over HTTPS. Each request uses a fresh GitHub OIDC
+token scoped to this repository and workflow; no upload secret lives on clients.
+The service stages uploads privately, verifies them again, then publishes an
+immutable complete set of platform archive/SPDX pairs. Only the latest three
+versions per channel remain. Incomplete transfers do not enter the catalog.
+
+`mirror-builds.yml` seeds or repairs the catalog after relevant protected-dev
+changes. Rerun that existing workflow run to retry an interrupted backfill.
+Manual dispatch becomes available after the workflow reaches the default branch.
+The publisher tests and build-server HTTP/storage/authentication tests belong to
+the local `build` test cluster and the focused distribution CI workflow.
+Hosting configuration lives in `linode-deploy`; only the existing HTTPS ingress
+is public, and all package data/staging live on the mounted storage volume.

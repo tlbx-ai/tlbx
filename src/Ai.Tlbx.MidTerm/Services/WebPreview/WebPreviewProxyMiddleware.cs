@@ -53,8 +53,18 @@ public sealed partial class WebPreviewProxyMiddleware
               var params=new URLSearchParams(location.search);
               var previewId=params.get("__mtPreviewId")||"";
               var previewToken=params.get("__mtPreviewToken")||"";
+              if(!previewId||!previewToken){
+                var access=(location.pathname||"").match(/\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)(?:\/|$)/);
+                if(access){previewId=access[1];previewToken=access[2];}
+              }
               if(!previewId||!previewToken)return null;
-              return {previewId:previewId,previewToken:previewToken};
+              var context={previewId:previewId,previewToken:previewToken};
+              try{
+                var saved=window.name?JSON.parse(window.name):null;
+                if(saved&&saved.previewId===previewId&&saved.previewToken===previewToken)
+                  context=Object.assign({},saved,context);
+              }catch(e){}
+              return context;
             }catch(e){}
             return null;
           }
@@ -87,15 +97,16 @@ public sealed partial class WebPreviewProxyMiddleware
               history.replaceState(history.state,"",url.pathname+url.search+url.hash);
             }catch(e){}
           }
-          try{mtCtx=window.name?JSON.parse(window.name):null;}catch(e){mtCtx=null;}
+          // Explicit navigation owns this attachment; an older shared route cookie must never replace it.
+          mtCtx=mtReadBootstrapContext();
+          if(!mtCtx){
+            try{mtCtx=window.name?JSON.parse(window.name):null;}catch(e){mtCtx=null;}
+          }
           if(!mtCtx){
             try{
               var mtCookieCtx=mtReadCookie("mt-preview-ctx");
               mtCtx=mtCookieCtx?JSON.parse(decodeURIComponent(mtCookieCtx)):null;
             }catch(e){mtCtx=null;}
-          }
-          if(!mtCtx){
-            mtCtx=mtReadBootstrapContext();
           }
           if(mtCtx){
             var revisionParam=new URLSearchParams(location.search).get("__mtTargetRevision");
@@ -121,6 +132,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var path=location.pathname||"";
             if(path===P||path.indexOf(P+"/")===0)return "";
             var idx=path.indexOf(P+"/");
+            if(idx<0&&path.endsWith(P))idx=path.length-P.length;
             if(idx>0)return path.slice(0,idx);
             var match=path.match(/^\/webpreview\/[^/]+/);
             return match?match[0]:"";
@@ -130,7 +142,10 @@ public sealed partial class WebPreviewProxyMiddleware
             try{
               BP=mtProxyPrefix();PP=BP+P;E=PP+"/_ext?u=";
               var baseEl=document.querySelector("base");
-              if(baseEl&&BP)baseEl.setAttribute("href",PP+"/");
+              if(baseEl&&BP){
+                var nativeBase=baseEl.getAttribute("href")||P+"/";
+                if(nativeBase===P||nativeBase.indexOf(P+"/")===0)baseEl.setAttribute("href",BP+nativeBase);
+              }
               else if(baseEl){
                 var baseHref=baseEl.getAttribute("href")||"";
                 if(baseHref.indexOf("/webpreview/")===0&&baseHref.indexOf(P+"/")!==0){
@@ -172,7 +187,9 @@ public sealed partial class WebPreviewProxyMiddleware
           function mtStoragePrefix(name){
             var route="default";
             try{
-              var match=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+              // P is the server-bound route even when Link adds its own prefix
+              // before /webpreview. The displayed pathname is transport-specific.
+              var match=P.match(/^\/webpreview\/([^/]+)/);
               if(match&&match[1])route=decodeURIComponent(match[1]);
             }catch(e){}
             return "__midterm_webpreview__"+route+"__"+name+"__";
@@ -265,13 +282,18 @@ public sealed partial class WebPreviewProxyMiddleware
           ensureStore("sessionStorage");
           dprop(navigator,"cookieEnabled",function(){return true;});
           // r(u): rewrite a URL to go through the proxy (add /webpreview prefix or _ext proxy)
+          function mtProxyUrl(u,p){
+            return u===p||u.indexOf(p+"/")===0||u.indexOf(p+"?")===0||u.indexOf(p+"#")===0;
+          }
           function r(u){
             if(typeof u!=="string")return u;
             // Non-network schemes must not recurse through relative URL resolution.
             if(u.startsWith("#")||(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:|^wss?:/i.test(u)))return u;
             if(u.startsWith("//"))return r(location.protocol+u);
+            if(BP&&mtProxyUrl(u,P))return ar(BP+u);
+            if(BP&&mtProxyUrl(u,location.origin+P))return ar(location.origin+BP+u.substring(location.origin.length));
+            if(mtProxyUrl(u,PP)||mtProxyUrl(u,location.origin+PP))return ar(u);
             if(window.__mtExternalDocument){
-              if(u.startsWith(PP+"/")||u.startsWith(location.origin+PP+"/"))return ar(u);
               try{return ar(E+encodeURIComponent(new URL(u,window.__mtDocumentUrl).href));}catch(e){}
             }
             if(!u.includes("://")&&!u.startsWith("/")&&!u.startsWith("//")){
@@ -397,6 +419,22 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             return sa.call(this,n,v);
           };
+          // A normal preview gesture may navigate its own document, never the tlbx shell.
+          function mtInnerTarget(element,name){
+            if(!element||!element.getAttribute)return;
+            var target=(element.getAttribute(name)||"").toLowerCase();
+            if(target==="_top"||target==="_parent")element.setAttribute(name,"_self");
+          }
+          document.addEventListener("click",function(event){
+            var element=event.target;
+            if(element&&element.closest)mtInnerTarget(element.closest("a,area"),"target");
+          },true);
+          document.addEventListener("submit",function(event){
+            mtInnerTarget(event.target,"target");
+            mtInnerTarget(event.submitter,"formtarget");
+          },true);
+          var nativeFormSubmit=HTMLFormElement.prototype.submit;
+          if(nativeFormSubmit)HTMLFormElement.prototype.submit=function(){mtInnerTarget(this,"target");return nativeFormSubmit.apply(this,arguments);};
           // === Constructors ===
           var wo=window.open;
           window.open=function(u){var a=[].slice.call(arguments);if(typeof u==="string")a[0]=r(u);return wo.apply(this,a);};
@@ -422,23 +460,55 @@ public sealed partial class WebPreviewProxyMiddleware
             mtsw.register=function(u,o){return swr(r(u),o);};
           }
           // === Navigation APIs ===
+          function mtUpstreamSearch(search){
+            if(!search)return "";
+            var entries=search.substring(1).split("&").filter(function(entry){
+              var key=entry.split("=",1)[0];
+              try{key=decodeURIComponent(key.replace(/\+/g," "));}catch(e){}
+              return ["__mtPreviewId","__mtPreviewToken","__mtTargetRevision","__mtReloadToken","__mtSubframe"].indexOf(key)<0;
+            });
+            return entries.length?"?"+entries.join("&"):"";
+          }
           function curU(){
-            if(location.pathname===P+"/_ext"){
+            if(location.pathname===PP+"/_ext"){
               try{
                 var ext=new URLSearchParams(location.search).get("u");
-                if(ext)return ext;
+                if(ext){
+                  var external=new URL(ext);
+                  external.search=mtUpstreamSearch(external.search);
+                  if(location.hash)external.hash=location.hash;
+                  return external.href;
+                }
               }catch(e){}
             }
             var path=location.pathname;
-            if(path.indexOf(P+"/")==0)path=path.substring(P.length);
-            else if(path===P)path="/";
-            return (window.__mtTargetOrigin||"")+path+location.search+location.hash;
+            if(path.indexOf(PP+"/")==0)path=path.substring(PP.length);
+            else if(path===PP)path="/";
+            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(location.search)+location.hash;
           }
+          // Frameworks pass document.baseURI together with location.href to the
+          // server. Both must use upstream coordinates or Blazor rejects its circuit.
+          function mtDocumentBaseURI(){
+            try{
+              var base=new URL(document.baseURI);
+              if(base.pathname===PP+"/_ext")return new URL(base.searchParams.get("u")).href;
+              if(base.pathname===PP||base.pathname.indexOf(PP+"/")===0){
+                var path=base.pathname.substring(PP.length)||"/";
+                return new URL(path+mtUpstreamSearch(base.search)+base.hash,window.__mtTargetOrigin||curU()).href;
+              }
+              return base.href;
+            }catch(e){return document.baseURI;}
+          }
+          var mtDocumentView={};
+          Object.defineProperty(mtDocumentView,"baseURI",{get:mtDocumentBaseURI});
+          ["URL","documentURI"].forEach(function(key){Object.defineProperty(mtDocumentView,key,{get:curU});});
+          window.__mtPreviewDocument=function(value){return value===document?mtDocumentView:value;};
           // Application Location is upstream-facing; the bridge keeps the native proxy URL.
           function mtNavigationUrl(value){
             var text=String(value);
             // HTML rewriting may already have converted an inline redirect.
-            if(text.indexOf(P+"/")===0||text.indexOf(location.origin+P+"/")===0)return r(text);
+            if(mtProxyUrl(text,P)||mtProxyUrl(text,PP)
+              ||mtProxyUrl(text,location.origin+P)||mtProxyUrl(text,location.origin+PP))return r(text);
             return r(new URL(text,curU()).href);
           }
           var mtLocationView={};
@@ -740,9 +810,11 @@ public sealed partial class WebPreviewProxyMiddleware
             trim(clone,0);return clone.outerHTML;
           }
           function ensureH2c(){
-            if(window.html2canvas)return Promise.resolve(window.html2canvas);
+            if(typeof window.html2canvas==="function")return Promise.resolve(window.html2canvas);
             if(h2cLoad)return h2cLoad;
-            h2cLoad=F.call(window,"/js/html2canvas.min.js",{credentials:"same-origin"}).then(function(resp){
+            // Keep this host asset inside the authenticated preview route. Link's
+            // isolated origin routes root-relative fetches to the upstream site.
+            h2cLoad=F.call(window,PP+"/_assets/html2canvas.min.js",{credentials:"same-origin"}).then(function(resp){
               if(!resp.ok)throw new Error("failed to fetch html2canvas");
               return resp.text();
             }).then(function(text){
@@ -751,8 +823,12 @@ public sealed partial class WebPreviewProxyMiddleware
                 var blobUrl=URL.createObjectURL(blob);
                 var scr=document.createElement("script");
                 scr.src=blobUrl;
-                scr.onload=function(){URL.revokeObjectURL(blobUrl);resolve(window.html2canvas);};
-                scr.onerror=function(){URL.revokeObjectURL(blobUrl);reject(new Error("failed to load html2canvas"));};
+                scr.onload=function(){
+                  URL.revokeObjectURL(blobUrl);scr.remove();
+                  if(typeof window.html2canvas!=="function"){reject(new Error("html2canvas did not initialize"));return;}
+                  resolve(window.html2canvas);
+                };
+                scr.onerror=function(){URL.revokeObjectURL(blobUrl);scr.remove();reject(new Error("failed to load html2canvas"));};
                 document.head.appendChild(scr);
               });
             }).catch(function(err){h2cLoad=null;throw err;});
@@ -1331,6 +1407,16 @@ public sealed partial class WebPreviewProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        var originalPath = context.Request.Path;
+        if (context.Items.ContainsKey(PreviewProxyAuthorization.PathPrefixItemKey)
+            && PreviewProxyAuthorization.TryParseAccessPath(originalPath, out _, out _, out _, out _, out var logicalPath))
+            context.Request.Path = logicalPath;
+        try { await InvokeAuthorizedAsync(context); }
+        finally { context.Request.Path = originalPath; }
+    }
+
+    private async Task InvokeAuthorizedAsync(HttpContext context)
+    {
         var path = context.Request.Path;
 
         if (TryParseProxyRoute(path, out var routeKey, out var remainingPath))
@@ -1338,6 +1424,22 @@ public sealed partial class WebPreviewProxyMiddleware
             if (!PreviewProxyAuthorization.AllowsRoute(context, routeKey))
             {
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                return;
+            }
+            if (remainingPath.Equals("/_assets/html2canvas.min.js", StringComparison.Ordinal))
+            {
+                if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
+                {
+                    context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+                    context.Response.Headers.Allow = "GET, HEAD";
+                    return;
+                }
+
+                // Resolve only this owned asset through the normal static-file
+                // pipeline, including the embedded Brotli asset in native builds.
+                context.Request.Path = "/js/html2canvas.min.js";
+                try { await _next(context); }
+                finally { context.Request.Path = path; }
                 return;
             }
             if (remainingPath.StartsWith("/_ext", StringComparison.Ordinal))
@@ -1774,7 +1876,7 @@ public sealed partial class WebPreviewProxyMiddleware
             CopyResponseHeaders(
                 upstreamResponse,
                 context.Response,
-                _service.BuildProxyPrefix(routeKey),
+                PreviewProxyAuthorization.GetProxyPrefix(context, routeKey),
                 targetUri);
             ApplyForcedReloadHeaders(context.Request, context.Response);
             await DispatchResponseBodyAsync(context, routeKey, upstreamResponse, finalUrl);
@@ -1799,7 +1901,7 @@ public sealed partial class WebPreviewProxyMiddleware
         // Rewrite root-relative URLs to go through the proxy.
         // <base href> only handles truly relative URLs (foo/bar.js),
         // but root-relative URLs (/path/to/file) need explicit rewriting.
-        var routePrefix = _service.BuildProxyPrefix(routeKey);
+        var routePrefix = PreviewProxyAuthorization.GetProxyPrefix(context, routeKey);
         var targetAuthority = targetUri.Authority;
         var isExternalDocument = Uri.TryCreate(finalUrl, UriKind.Absolute, out var documentUri)
             && !documentUri.Authority.Equals(targetAuthority, StringComparison.OrdinalIgnoreCase);
@@ -1831,11 +1933,12 @@ public sealed partial class WebPreviewProxyMiddleware
             RewriteProtocolRelativeCssUrl(m, routePrefix, targetUri.Scheme, targetAuthority, reloadToken));
         html = RewriteCssImports(html, routePrefix, targetUri.Scheme, targetAuthority, reloadToken);
         html = StripIntegrityAttributeRegex().Replace(html, "");
+        html = StripImportMapIntegrity(html);
 
         // Prime the root-fallback cache from rewritten HTML before the browser starts
         // requesting assets. This avoids the first-wave 404s on deep document targets
         // whose HTML points at server-root assets like /_astro/*.
-        PrimeRootFallbacksFromHtml(routeKey, html);
+        PrimeRootFallbacksFromHtml(routeKey, html, routePrefix);
 
         // Remove any existing <base> tags to avoid duplicates — we inject our own
         html = ExistingBaseTagRegex().Replace(html, "");
@@ -1917,7 +2020,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var path = finalUri.AbsolutePath;
         var lastSlash = path.LastIndexOf('/');
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
-        return routePrefix + directory;
+        return routePrefix.TrimEnd('/') + "/" + directory.TrimStart('/');
     }
 
     internal static string? BuildRedirectedProxyPath(
@@ -1992,7 +2095,7 @@ public sealed partial class WebPreviewProxyMiddleware
             : "application/octet-stream";
     }
 
-    internal void PrimeRootFallbacksFromHtml(string routeKey, string html)
+    internal void PrimeRootFallbacksFromHtml(string routeKey, string html, string? scopedPrefix = null)
     {
         _service.TryGetTargetUriByRouteKey(routeKey, out var targetUri);
         if (targetUri is null)
@@ -2009,7 +2112,7 @@ public sealed partial class WebPreviewProxyMiddleware
         ResetFallbackCacheIfTargetChanged(routeKey, targetUri.ToString());
         var routeCache = GetOrCreateRootFallbackCache(routeKey);
 
-        foreach (var prefix in CollectProxyPathPrefixes(_service.BuildProxyPrefix(routeKey), html))
+        foreach (var prefix in CollectProxyPathPrefixes(scopedPrefix ?? _service.BuildProxyPrefix(routeKey), html))
         {
             routeCache[prefix] = true;
         }
@@ -2047,7 +2150,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private async Task ProxyCssResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse)
     {
         var css = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
-        var routePrefix = _service.BuildProxyPrefix(routeKey);
+        var routePrefix = PreviewProxyAuthorization.GetProxyPrefix(context, routeKey);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
         // Rewrite url(/...) references in CSS to go through the proxy
@@ -2079,7 +2182,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private async Task ProxyJavaScriptResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse)
     {
         var script = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
-        var routePrefix = _service.BuildProxyPrefix(routeKey);
+        var routePrefix = PreviewProxyAuthorization.GetProxyPrefix(context, routeKey);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
         script = RewriteRootRelativeModuleSpecifiers(script, routePrefix, reloadToken);
         script = WebPreviewLocationRewriter.Rewrite(script);
@@ -2159,7 +2262,7 @@ public sealed partial class WebPreviewProxyMiddleware
             CopyResponseHeaders(
                 upstreamResponse,
                 context.Response,
-                _service.BuildProxyPrefix(routeKey),
+                PreviewProxyAuthorization.GetProxyPrefix(context, routeKey),
                 responseHeaderUri);
             await DispatchResponseBodyAsync(context, routeKey, upstreamResponse, finalUrl);
         }
@@ -2212,7 +2315,10 @@ public sealed partial class WebPreviewProxyMiddleware
             return "";
         }
 
-        if (!TryParseProxyRoute(refererUri.AbsolutePath, out var refererRouteKey, out var refererRemainingPath))
+        // Normalize only our capability envelope, preserving escaped upstream
+        // path bytes. External-module referers must reach the _ext branch below.
+        var refererPath = PreviewProxyAuthorization.RedactAccessPath(refererUri.AbsolutePath);
+        if (!TryParseProxyRoute(refererPath, out var refererRouteKey, out var refererRemainingPath))
         {
             if (_service.TryGetRouteKeyByLeakedPath(refererUri.AbsolutePath, out var leakedRouteKey)
                 && _service.TryGetTargetUriByRouteKey(leakedRouteKey, out var leakedTargetUri)
@@ -2404,7 +2510,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             Type = type,
             Method = method,
-            RequestUrl = context.Request.Path + context.Request.QueryString,
+            RequestUrl = PreviewProxyAuthorization.RedactAccessPath(context.Request.Path) + StripPreviewBootstrapQuery(context.Request.QueryString.Value ?? ""),
             UpstreamUrl = finalUrl,
             StatusCode = statusCode,
             DurationMs = durationMs,
@@ -2446,6 +2552,19 @@ public sealed partial class WebPreviewProxyMiddleware
         _service.AddLogEntry(routeKey, entry);
     }
 
+    private static string SanitizeRequestHeader(string name, string value)
+    {
+        if (name.Equals("Cookie", StringComparison.OrdinalIgnoreCase) || name.Equals("Authorization", StringComparison.OrdinalIgnoreCase))
+            return "[redacted]";
+        if (name.Equals("Referer", StringComparison.OrdinalIgnoreCase) && Uri.TryCreate(value, UriKind.Absolute, out var uri))
+            return new UriBuilder(uri)
+            {
+                Path = PreviewProxyAuthorization.RedactAccessPath(uri.AbsolutePath),
+                Query = StripPreviewBootstrapQuery(uri.Query)
+            }.Uri.ToString();
+        return value;
+    }
+
     private void LogWebSocket(
         HttpContext context, string routeKey, string type, string upstreamUrl,
         IList<string> requestedProtocols, string? negotiatedProtocol,
@@ -2455,7 +2574,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             Type = type,
             Method = "WS-UPGRADE",
-            RequestUrl = context.Request.Path + context.Request.QueryString,
+            RequestUrl = PreviewProxyAuthorization.RedactAccessPath(context.Request.Path) + StripPreviewBootstrapQuery(context.Request.QueryString.Value ?? ""),
             UpstreamUrl = upstreamUrl,
             StatusCode = statusCode,
             DurationMs = durationMs,
@@ -2466,7 +2585,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         foreach (var h in context.Request.Headers)
         {
-            entry.RequestHeaders[h.Key] = h.Value.ToString();
+            entry.RequestHeaders[h.Key] = SanitizeRequestHeader(h.Key, h.Value.ToString());
         }
 
         if (Uri.TryCreate(upstreamUrl, UriKind.Absolute, out var upstreamUri))
@@ -2573,6 +2692,13 @@ public sealed partial class WebPreviewProxyMiddleware
             localPath = Path.Combine(localPath, "index.html");
         }
 
+        var localRoot = _service.GetLocalRootByRouteKey(routeKey);
+        if (localRoot is not null && WebPreviewLocalDirectory.ResolveFile(localRoot, Path.GetRelativePath(localRoot, localPath)) is null)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            return;
+        }
+
         if (!File.Exists(localPath))
         {
             context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -2607,7 +2733,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var html = await File.ReadAllTextAsync(localPath, context.RequestAborted);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
-        var routePrefix = _service.BuildProxyPrefix(routeKey);
+        var routePrefix = PreviewProxyAuthorization.GetProxyPrefix(context, routeKey);
         html = RootRelativeAttrRegex().Replace(html, m => RewriteRootRelativeAttributeUrl(m, routePrefix, reloadToken));
         html = RewriteSrcsetAttributes(html, routePrefix, Uri.UriSchemeHttps, null, reloadToken);
         html = RootRelativeCssUrlRegex().Replace(html, m => RewriteRootRelativeCssUrl(m, routePrefix, reloadToken));
@@ -2628,7 +2754,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var baseHref = ComputeBaseHref(routePrefix, requestedFileUri.ToString());
         var targetOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = HeadTagRegex().Replace(html, $"$0<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix), 1);
+        html = InjectHeadContent(html, $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix));
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.ContentType = "text/html; charset=utf-8";
@@ -3022,7 +3148,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private void SyncSelfTargetAuthCookie(string routeKey, HttpRequest request, Uri targetUri)
     {
-        if (!_service.IsSelfTarget(targetUri))
+        if (!RequestAccessContext.HasFullUserAccess(request.HttpContext) || !_service.IsSelfTarget(targetUri))
         {
             return;
         }
@@ -3048,21 +3174,6 @@ public sealed partial class WebPreviewProxyMiddleware
 
     internal static string BuildUpstreamPath(Uri target, string path)
     {
-        var targetPath = target.AbsolutePath;
-        if (string.IsNullOrEmpty(targetPath))
-        {
-            targetPath = "/";
-        }
-
-        var targetHasTrailingSlash = targetPath.Length > 1
-            && targetPath.EndsWith("/", StringComparison.Ordinal);
-
-        var targetBase = targetPath.TrimEnd('/');
-        if (targetBase == "/")
-        {
-            targetBase = "";
-        }
-
         var normalizedPath = string.IsNullOrEmpty(path) ? "/" : path;
         if (!normalizedPath.StartsWith('/'))
         {
@@ -3071,26 +3182,13 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (normalizedPath == "/")
         {
-            if (string.IsNullOrEmpty(targetBase))
-            {
-                return "/";
-            }
-
-            return targetHasTrailingSlash ? targetBase + "/" : targetBase;
+            // The bare preview route remains an entry alias for its configured target.
+            return string.IsNullOrEmpty(target.AbsolutePath) ? "/" : target.AbsolutePath;
         }
 
-        if (string.IsNullOrEmpty(targetBase))
-        {
-            return normalizedPath;
-        }
-
-        if (normalizedPath.Equals(targetBase, StringComparison.OrdinalIgnoreCase)
-            || normalizedPath.StartsWith(targetBase + "/", StringComparison.OrdinalIgnoreCase))
-        {
-            return normalizedPath;
-        }
-
-        return targetBase + normalizedPath;
+        // Relative URLs have already resolved against the injected document base.
+        // A rooted path identifies the upstream origin, not a directory under the target.
+        return normalizedPath;
     }
 
     private static string BuildUpstreamUrlFromPath(Uri target, string upstreamPath, string? queryString)

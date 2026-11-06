@@ -1,0 +1,23 @@
+:root { color-scheme: light dark; font: 13px system-ui, sans-serif; }
+body { margin: 0; background: light-dark(#e8eaed, #22262c); }
+nav { display: flex; align-items: center; gap: 4px; padding: 6px; flex-wrap: wrap; background: light-dark(#f8f9fa, #30353e); }
+button, input, select { box-sizing: border-box; min-height: 32px; font: inherit; color: inherit; background: light-dark(#fff, #20242c); border: 1px solid light-dark(#b8bec8, #505763); border-radius: 4px; padding: 4px 7px; }
+button { min-width: 32px; cursor: pointer; }
+button:hover { background: light-dark(#e3e8f1, #3a4250); }
+button:disabled { opacity: 0.45; cursor: default; }
+button[aria-pressed="true"] { background: light-dark(#dce8ff, #294775); border-color: #729ef8; }
+button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid #729ef8; outline-offset: 1px; }
+input[type="number"] { width: 55px; }
+input[type="search"] { width: 170px; min-width: 80px; flex: 1; }
+nav a { margin-left: auto; color: inherit; font-size: 11px; }
+#viewerContainer { position: absolute; inset: var(--toolbar-height, 44px) 0 0; overflow: auto; }
+#viewerContainer.pdf-hand { cursor: grab; }
+#viewerContainer.pdf-hand.pdf-dragging { cursor: grabbing; }
+#viewerContainer.pdf-hand .textLayer { pointer-events: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+#status, #passwordForm { position: relative; z-index: 2; margin: 12px; padding: 12px; background: light-dark(white, #30353e); }
+[hidden] { display: none !important; }
+@media (pointer: coarse) {
+  button, input, select { min-height: 44px; }
+  button { min-width: 44px; }
+}

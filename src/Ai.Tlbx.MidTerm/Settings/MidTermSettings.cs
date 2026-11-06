@@ -106,6 +106,8 @@ public sealed class MidTermSettings
 
     // Controls whether the bookmarks UI is visible in the sidebar
     public bool ShowBookmarks { get; set; } = true;
+    public bool ShowSpaces { get; set; } = true;
+    public bool ShowBoards { get; set; } = false;
 
     // Restores bookmark pinning for local ad-hoc sessions only
     public bool AllowAdHocSessionBookmarks { get; set; } = true;
@@ -145,7 +147,6 @@ public sealed class MidTermSettings
     public bool DevMode { get; set; } = false;
 
     // Keeps MidTerm's UI/PTY/agent host scheduler priority above build/compiler work.
-    public bool RuntimePriorityBoostEnabled { get; set; } = true;
     public string RuntimePriorityClass { get; set; } = "aboveNormal";
 
     // Terminal input latency tracing - dev mode enables this automatically; in normal mode it is opt-in.

@@ -1,8 +1,13 @@
 #!/usr/bin/env pwsh
 # Offline behavioral checks: exercise dispatch and archive handling without publishing anything.
 $ErrorActionPreference = 'Stop'
+& "$PSScriptRoot/test-release-upload.ps1"
 & "$PSScriptRoot/test-advisory-regression.ps1"
 & "$PSScriptRoot/test-dev-loop.ps1"
+& python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-package.py"
+if ($LASTEXITCODE -ne 0) { throw 'Native Connect packaging contracts failed.' }
+& python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-backports.py"
+if ($LASTEXITCODE -ne 0) { throw 'Native Connect backport binding contracts failed.' }
 . "$PSScriptRoot/release-test-clusters.ps1"
 . "$PSScriptRoot/runtime-reuse.ps1"
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -16,11 +21,97 @@ function Assert-Throws([scriptblock]$Action, [string]$Message) {
     try { & $Action } catch { $threw = $true }
     Assert-Check $threw $Message
 }
+$nativeExecFixture = [IO.Path]::GetFullPath((Join-Path ([IO.Path]::GetTempPath()) ('tlbx-native-exec-' + [guid]::NewGuid().ToString('N'))))
+$nativeExecTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+if (-not $nativeExecFixture.StartsWith($nativeExecTempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Native Exec fixture escaped its temporary root.' }
+New-Item -ItemType Directory -Path $nativeExecFixture | Out-Null
+$previousFixtureExit = $env:TLBX_NATIVE_FIXTURE_EXIT_CODE
+try {
+    @'
+param([string]$RuntimeIdentifier)
+[Console]::Error.WriteLine('error: recovered mirror download diagnostic')
+exit [int]$env:TLBX_NATIVE_FIXTURE_EXIT_CODE
+'@ | Set-Content -LiteralPath (Join-Path $nativeExecFixture 'build.ps1')
+    $nativeTargets = [Security.SecurityElement]::Escape((Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm/ConnectNative.targets'))
+    "<Project><Import Project=`"$nativeTargets`" /></Project>" | Set-Content -LiteralPath (Join-Path $nativeExecFixture 'fixture.proj')
+    $dotnetBinary = (Get-Command dotnet -CommandType Application | Select-Object -First 1).Source
+    foreach ($exitCode in @(0,17)) {
+        $env:TLBX_NATIVE_FIXTURE_EXIT_CODE = $exitCode.ToString([Globalization.CultureInfo]::InvariantCulture)
+        $info = [Diagnostics.ProcessStartInfo]::new($dotnetBinary)
+        # This standalone MSBuild fixture does not compile the product or require its pinned SDK.
+        $info.WorkingDirectory = $nativeExecFixture
+        $info.UseShellExecute = $false; $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true; $info.RedirectStandardError = $true
+        foreach ($argument in @('msbuild', (Join-Path $nativeExecFixture 'fixture.proj'), '-t:BuildConnectNative', '-nologo', "-p:_ConnectNativeRoot=$nativeExecFixture", "-p:_ConnectNativeBundle=$nativeExecFixture/missing-bundle.zip", '-p:_ConnectNativeRid=fixture')) { $info.ArgumentList.Add($argument) }
+        $child = [Diagnostics.Process]::Start($info)
+        try {
+            $stdout = $child.StandardOutput.ReadToEndAsync(); $stderr = $child.StandardError.ReadToEndAsync()
+            if (-not $child.WaitForExit(30000)) { $child.Kill($true); throw 'Native Exec protocol fixture timed out.' }
+            $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+            if ($exitCode -eq 0) { Assert-Check ($child.ExitCode -eq 0) "Recovered native-tool diagnostics incorrectly failed MSBuild: $output" }
+            else { Assert-Check ($child.ExitCode -ne 0 -and $output.Contains('MSB3073')) "A real native build failure did not fail MSBuild: $output" }
+        } finally { $child.Dispose() }
+    }
+} finally {
+    $env:TLBX_NATIVE_FIXTURE_EXIT_CODE = $previousFixtureExit
+    $resolvedFixture = [IO.Path]::GetFullPath((Get-Item -LiteralPath $nativeExecFixture).FullName)
+    if (-not $resolvedFixture.StartsWith($nativeExecTempRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Refusing to delete an unexpected native Exec fixture path.' }
+    Remove-Item -LiteralPath $resolvedFixture -Recurse -Force
+}
 Assert-Check ((@(Resolve-ReleaseTestClusters @('frontend','server','frontend')) -join ',') -eq 'frontend,server') 'Multi-cluster selection or deduplication failed.'
 Assert-Check (@(Resolve-ReleaseTestClusters all).Count -eq 7) 'all did not select all server clusters.'
 Assert-Throws { Resolve-ReleaseTestClusters @('all','server') } 'Ambiguous all combination accepted.'
 Assert-Throws { Resolve-ReleaseTestClusters unknown } 'Unknown category accepted.'
 Assert-Throws { Resolve-ReleaseTestClusters frontend -Stable } 'Partial stable verification accepted.'
+$global:TlbxRuntimeBaselineDiff = ''
+$global:TlbxRuntimeBaselineChanged = $false
+$global:TlbxRuntimeBaselineVersion = '1.2.0'
+function global:git {
+    $global:LASTEXITCODE = 0
+    switch ($args[0]) {
+        'rev-parse' { $global:LASTEXITCODE = 1 }
+        'fetch' { $global:LASTEXITCODE = 1 }
+        'show' { @{pty=$global:TlbxRuntimeBaselineVersion;web='1.3.0'} | ConvertTo-Json -Compress }
+        'diff' {
+            $global:TlbxRuntimeBaselineDiff = $args[2]
+            if ($global:TlbxRuntimeBaselineChanged) { 'src/Ai.Tlbx.MidTerm.Common/Changed.cs' }
+        }
+        default { throw "Unexpected baseline probe: $args" }
+    }
+}
+try {
+    Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no
+    Assert-Check ($global:TlbxRuntimeBaselineDiff -eq 'refs/tags/v1.3.0') 'Promoted runtime must compare against the verified web tag.'
+    # Execute the real preparation guard with an unpublished worktree candidate.
+    $devAst = [Management.Automation.Language.Parser]::ParseFile((Join-Path $PSScriptRoot 'release-dev.ps1'), [ref]$null, [ref]$null)
+    $getVersion = $devAst.Find({ param($node)
+        $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Get-WebVersionFromGitRef'
+    }, $true)
+    . ([scriptblock]::Create($getVersion.Extent.Text))
+    $baselineAssignment = $devAst.Find({ param($node)
+        $node -is [Management.Automation.Language.AssignmentStatementAst] -and
+        $node.Left -is [Management.Automation.Language.VariableExpressionAst] -and
+        $node.Left.VariablePath.UserPath -eq 'runtimeBaselineWebVersion'
+    }, $true)
+    $runtimeGuard = $devAst.Find({ param($node)
+        $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq 'Assert-ReleaseRuntimeSelection'
+    }, $true)
+    $releaseRemoteCommit = 'integration-base'
+    $currentVersion = '1.4.0-dev'
+    $versionJson = @{pty='1.2.0'}
+    $mthostUpdate = 'no'
+    . ([scriptblock]::Create($baselineAssignment.Extent.Text))
+    . ([scriptblock]::Create($runtimeGuard.Extent.Text))
+    Assert-Check ($global:TlbxRuntimeBaselineDiff -eq 'refs/tags/v1.3.0') 'Re-preparation must not use the unpublished candidate as its runtime baseline.'
+    $global:TlbxRuntimeBaselineChanged = $true
+    Assert-Throws { Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no } 'Promoted baseline accepted changed runtime sources.'
+    $global:TlbxRuntimeBaselineVersion = '1.1.0'
+    Assert-Throws { Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -WebVersion 1.3.0 -mthostUpdate no } 'Mismatched runtime metadata accepted.'
+    Assert-Throws { Assert-ReleaseRuntimeSelection -PtyVersion 1.2.0 -mthostUpdate no } 'Missing runtime and web baseline accepted.'
+} finally {
+    Remove-Item Function:\git
+    Remove-Variable TlbxRuntimeBaselineDiff,TlbxRuntimeBaselineChanged,TlbxRuntimeBaselineVersion -Scope Global
+}
 foreach ($name in @('release-dev.ps1','release.ps1','release-local.ps1','promote.ps1')) {
     $command = Get-Command (Join-Path $PSScriptRoot $name)
     $mandatory = @($command.Parameters.TestCategories.Attributes | Where-Object { $_ -is [Management.Automation.ParameterAttribute] -and $_.Mandatory })
@@ -48,11 +139,11 @@ function global:npm {
 }
 try {
     Copy-Item "$PSScriptRoot/run-release-tests.ps1", "$PSScriptRoot/release-test-clusters.ps1" "$fixture/scripts/"
-    foreach ($name in @('run-dotnet-test-suite','verify-installers','audit-supply-chain','test-release-build-system','run-runtime-build-verification','run-aot-smoke-probe')) {
+    foreach ($name in @('run-dotnet-test-suite','verify-installers','audit-supply-chain','test-release-build-system','test-publish-builds','test-release-pr','run-runtime-build-verification','run-aot-smoke-probe')) {
         ('$global:TlbxBuildTestCalls.Add("' + $name + ' $args")') | Set-Content "$fixture/scripts/$name.ps1"
     }
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories assets -FrontendInstalled
-    Assert-Check (($global:TlbxBuildTestCalls -join '|') -eq 'npm run typecheck|npm run lint|npm exec -- vitest run src/ts/modules/theming') 'Assets cluster must include theme/CSS audits without reinstalling dependencies.'
+    Assert-Check (($global:TlbxBuildTestCalls -join '|') -eq 'npm run typecheck|npm run lint') 'Assets cluster must typecheck and lint without reinstalling dependencies.'
     $global:TlbxBuildTestCalls.Clear()
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories frontend,server -FrontendInstalled
     Assert-Check ($global:TlbxBuildTestCalls.Count -eq 2 -and $global:TlbxBuildTestCalls[0] -eq 'npm run verify' -and $global:TlbxBuildTestCalls[1] -match '-Suite server') 'Frontend/server dispatch failed.'
@@ -62,6 +153,14 @@ try {
     $global:TlbxBuildTestCalls.Clear()
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories dependencies -FrontendInstalled
     Assert-Check ($global:TlbxBuildTestCalls.Count -eq 1 -and $global:TlbxBuildTestCalls[0] -match '-Scope server -FrontendInstalled') 'Server dependency cluster is coupled to mobile or loses install ownership.'
+    $global:TlbxBuildTestCalls.Clear()
+    function global:python { $global:TlbxBuildTestCalls.Add("python $args"); $global:LASTEXITCODE=0 }
+    function global:dotnet { $global:TlbxBuildTestCalls.Add("dotnet $args"); $global:LASTEXITCODE=0 }
+    try {
+        & "$fixture/scripts/run-release-tests.ps1" -TestCategories build
+        Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'run-runtime-build-verification*' }).Count -eq 1) 'Build cluster duplicated or omitted .NET runtime build coverage.'
+    }
+    finally { Remove-Item Function:\python,Function:\dotnet -ErrorAction SilentlyContinue }
     function global:npm { $global:LASTEXITCODE = 1 }
     Assert-Throws { & "$fixture/scripts/run-release-tests.ps1" -TestCategories frontend -FrontendInstalled } 'Failed frontend test did not fail the release gate.'
 

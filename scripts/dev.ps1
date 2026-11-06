@@ -278,13 +278,18 @@ function Start-EsbuildWatch {
 function New-CodeWatcher {
     $watcher = [System.IO.FileSystemWatcher]::new()
     $watcher.Path = $CodeWatchRoot
-    $watcher.Filter = "*.*"
+    # Filter before events enter the native buffer. Managed path filtering alone
+    # lets frontend/native build outputs overflow it and restart an unchanged web.
+    foreach ($filter in @('*.cs', '*.csproj', '*.props', '*.targets', 'claude-agent-sdk-bridge.mjs')) {
+        $watcher.Filters.Add($filter)
+    }
+    $watcher.InternalBufferSize = 65536
     $watcher.IncludeSubdirectories = $true
     $watcher.NotifyFilter = [System.IO.NotifyFilters]'FileName, LastWrite, CreationTime, Size'
-    $watcher.EnableRaisingEvents = $true
     foreach ($eventName in @('Changed', 'Created', 'Deleted', 'Renamed', 'Error')) {
         $null = Register-ObjectEvent -InputObject $watcher -EventName $eventName -SourceIdentifier "tlbx.dev.code.$PID.$eventName"
     }
+    $watcher.EnableRaisingEvents = $true
     return $watcher
 }
 
@@ -465,6 +470,10 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     $psi.WorkingDirectory = $RepoRoot
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $false
+    # This is an independent server. Its terminals must resolve their own client identity,
+    # rather than inherit the Codex thread that happened to launch the dev loop.
+    $null = $psi.Environment.Remove("CODEX_SESSION_ID")
+    $null = $psi.Environment.Remove("CODEX_THREAD_ID")
     $psi.Environment["MIDTERM_SETTINGS_DIR"] = $SettingsDir
     $psi.Environment["MIDTERM_TTYHOST_PATH"] = $resolvedTtyHostPath
     $psi.Environment["MIDTERM_APP_SERVER_CONTROL_AGENTHOST_PATH"] = $script:currentAgentHostPath

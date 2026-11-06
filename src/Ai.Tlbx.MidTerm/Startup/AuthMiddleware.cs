@@ -13,7 +13,6 @@ public static class AuthMiddleware
         SettingsService settingsService,
         AuthService authService,
         ShareGrantService shareGrantService,
-        BrowserPreviewOriginService previewOriginService,
         BrowserPreviewRegistry previewRegistry)
     {
         app.Use(async (context, next) =>
@@ -32,9 +31,7 @@ public static class AuthMiddleware
 
             // Preview ports are a separate capability surface. A route name or
             // Referer alone is never proof of access to a private preview.
-            if (path.StartsWith("/webpreview/", StringComparison.OrdinalIgnoreCase)
-                || (previewOriginService.IsPreviewRequest(context)
-                    && WebPreviewProxyMiddleware.ShouldProxyPreviewLeak(context.Request, path)))
+            if (path.StartsWith("/webpreview/", StringComparison.OrdinalIgnoreCase))
             {
                 var scopedAccess = !string.IsNullOrEmpty(authSettings.PasswordHash)
                     && PreviewProxyAuthorization.TryAuthorize(context, previewRegistry);
@@ -48,6 +45,12 @@ public static class AuthMiddleware
                     return;
                 }
                 RequestAccessContext.SetFullUser(context, fullAccess && !scopedAccess);
+                if (scopedAccess && HttpMethods.IsOptions(context.Request.Method)
+                    && context.Request.Headers.Origin.ToString().Equals("null", StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Response.StatusCode = StatusCodes.Status204NoContent;
+                    return;
+                }
                 await next();
                 return;
             }

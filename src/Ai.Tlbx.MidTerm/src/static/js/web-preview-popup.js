@@ -1,5 +1,33 @@
 (function () {
+  function connectPreviewTransport() {
+    var transport = window.__tlbxConnectPreview;
+    if (
+      !transport ||
+      typeof transport.origin !== 'string' ||
+      typeof transport.wrapUrl !== 'function' ||
+      typeof transport.fetch !== 'function'
+    )
+      return null;
+    var origin = new URL(transport.origin);
+    if (
+      origin.origin === window.location.origin ||
+      origin.username ||
+      origin.password ||
+      origin.pathname !== '/' ||
+      origin.search ||
+      origin.hash ||
+      (origin.protocol !== 'https:' &&
+        !(
+          origin.protocol === 'http:' &&
+          ['localhost', '127.0.0.1', '[::1]'].indexOf(origin.hostname) >= 0
+        ))
+    )
+      return null;
+    return transport;
+  }
   var params = new URLSearchParams(window.location.search);
+  var boardEmbedded = params.get('embedded') === '1';
+  if (boardEmbedded) document.documentElement.classList.add('board-embedded');
   var sessionId = params.get('session') || '';
   var initialPreviewName = params.get('preview') || 'default';
   var initialViewportWidth = parseInt(params.get('viewportWidth') || '0', 10) || 0;
@@ -151,16 +179,34 @@
     var parsed = new URL(targetUrl);
     var path = parsed.pathname || '/';
     var prefix = getProxyPrefix();
+    var transport = connectPreviewTransport();
+    if (!transport) {
+      if (!previewContext || !previewContext.previewId || !previewContext.previewToken)
+        throw new Error('A scoped preview capability is required.');
+      prefix +=
+        '/_access/' +
+        encodeURIComponent(previewContext.previewId) +
+        '/' +
+        encodeURIComponent(previewContext.previewToken);
+    }
     var proxyUrl = new URL(path === '/' ? prefix + '/' : prefix + path, previewOrigin);
     proxyUrl.search = parsed.search;
     proxyUrl.hash = parsed.hash;
+    if (transport && previewContext && previewContext.previewId && previewContext.previewToken) {
+      proxyUrl.searchParams.set('__mtPreviewId', previewContext.previewId);
+      proxyUrl.searchParams.set('__mtPreviewToken', previewContext.previewToken);
+    }
     if (reloadToken) {
       proxyUrl.searchParams.set('__mtReloadToken', reloadToken);
     }
     if (currentTargetRevision > 0) {
       proxyUrl.searchParams.set('__mtTargetRevision', String(currentTargetRevision));
     }
-    return proxyUrl.toString();
+    if (!transport) return proxyUrl.toString();
+    var wrapped = transport.wrapUrl(proxyUrl.toString());
+    if (new URL(wrapped).origin !== new URL(transport.origin).origin)
+      throw new Error('Invalid Connect preview origin.');
+    return wrapped;
   }
 
   function createForceReloadToken() {
@@ -174,7 +220,10 @@
   function getSandboxFlags() {
     var flags = sandboxBaseFlags.slice();
     try {
-      if (new URL(previewOrigin, window.location.origin).origin !== window.location.origin) {
+      if (
+        connectPreviewTransport() &&
+        new URL(previewOrigin, window.location.origin).origin !== window.location.origin
+      ) {
         flags.push('allow-same-origin');
       }
     } catch (_) {}
@@ -208,7 +257,8 @@
 
   function setPreviewContext(client) {
     previewRouteKey = client.routeKey || '';
-    previewOrigin = client.origin || window.location.origin;
+    var transport = connectPreviewTransport();
+    previewOrigin = transport ? transport.origin : client.origin || window.location.origin;
     previewContext = {
       sessionId: sessionId,
       previewName: activePreviewName,
@@ -304,9 +354,7 @@
       viewport.height || window.innerHeight || 0,
     );
     var likelyMobile =
-      shortestSide > 0 &&
-      shortestSide <= 820 &&
-      (maxTouchPoints > 0 || coarsePointer || hoverNone);
+      shortestSide > 0 && shortestSide <= 820 && (maxTouchPoints > 0 || coarsePointer || hoverNone);
 
     return {
       viewport: viewport,
@@ -960,7 +1008,8 @@
 
     var idleGlyph = screenshotButton.dataset.idleGlyph || screenshotButton.innerHTML;
     screenshotButton.dataset.idleGlyph = idleGlyph;
-    var idleTitle = screenshotButton.dataset.idleTitle || screenshotButton.title || 'Screenshot to terminal';
+    var idleTitle =
+      screenshotButton.dataset.idleTitle || screenshotButton.title || 'Screenshot to terminal';
     screenshotButton.dataset.idleTitle = idleTitle;
 
     if (active) {
@@ -1019,6 +1068,7 @@
   }
 
   async function refreshStatusIndicator() {
+    if (boardEmbedded) return;
     if (!currentUrl && !(previewContext && previewContext.previewId)) {
       setStatusIndicator('info', null);
       return;
@@ -1072,14 +1122,23 @@
       previewName: data.previewName,
     };
 
-    var request =
+    var transport = connectPreviewTransport();
+    var requestOptions =
       data.action === 'set'
-        ? fetch(url.toString(), {
+        ? {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ raw: typeof data.raw === 'string' ? data.raw : '' }),
-          })
-        : fetch(url.toString(), { method: 'GET' });
+          }
+        : { method: 'GET' };
+    if (transport && previewContext) {
+      url = new URL(url.pathname + url.search, transport.origin);
+      url.searchParams.set('__mtPreviewId', previewContext.previewId);
+      url.searchParams.set('__mtPreviewToken', previewContext.previewToken);
+    }
+    var request = transport
+      ? transport.fetch(url.toString(), requestOptions)
+      : fetch(url.toString(), requestOptions);
 
     request
       .then(function (response) {
@@ -1115,7 +1174,7 @@
     setCurrentUrl(url);
 
     try {
-      if (sandboxEnabled) {
+      if (!connectPreviewTransport() || sandboxEnabled) {
         frame.setAttribute('sandbox', getSandboxFlags());
       } else {
         frame.removeAttribute('sandbox');
@@ -1137,7 +1196,8 @@
       selectedPreview = getPreviewSession(activePreviewName);
     }
 
-    currentTargetRevision = selectedPreview && selectedPreview.targetRevision ? selectedPreview.targetRevision : 0;
+    currentTargetRevision =
+      selectedPreview && selectedPreview.targetRevision ? selectedPreview.targetRevision : 0;
     var client = await ensurePreviewClient(activePreviewName);
     if (!client) {
       return;
@@ -1217,7 +1277,10 @@
     }
 
     if (!currentUrl || frame.src === 'about:blank') {
-      setActionMessage('error', 'Screenshot failed: there is no active browser preview to capture.');
+      setActionMessage(
+        'error',
+        'Screenshot failed: there is no active browser preview to capture.',
+      );
       return;
     }
 
@@ -1299,7 +1362,9 @@
     }
 
     await sendSessionText(
-      'Read the file ' + guidanceFile + ' for instructions on how to interact with this browser preview.\n',
+      'Read the file ' +
+        guidanceFile +
+        ' for instructions on how to interact with this browser preview.\n',
       false,
     );
   }
@@ -1371,7 +1436,11 @@
   };
 
   window.addEventListener('message', function (event) {
-    if (event.source !== frame.contentWindow || !event.data || typeof event.data.type !== 'string') {
+    if (
+      event.source !== frame.contentWindow ||
+      !event.data ||
+      typeof event.data.type !== 'string'
+    ) {
       return;
     }
 
@@ -1466,7 +1535,7 @@
       applyViewport(initialViewportWidth, initialViewportHeight);
     }
 
-    if (statusRefreshTimer === null) {
+    if (!boardEmbedded && statusRefreshTimer === null) {
       statusRefreshTimer = window.setInterval(function () {
         void refreshStatusIndicator();
       }, 4000);

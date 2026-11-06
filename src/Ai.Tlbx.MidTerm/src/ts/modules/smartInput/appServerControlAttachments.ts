@@ -177,7 +177,7 @@ function looksLikeClipboardImageUrl(value: string): boolean {
   return isClipboardImageDataUrl(value) || IMAGE_URL_PATH_PATTERN.test(value);
 }
 
-function getClipboardTransferImageFiles(
+export function getClipboardTransferImageFiles(
   clipboardData: ClipboardTransferData | null | undefined,
 ): File[] {
   const files: File[] = [];

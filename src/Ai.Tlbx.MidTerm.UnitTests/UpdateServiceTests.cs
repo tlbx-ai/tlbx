@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Time.Testing;
 using Ai.Tlbx.MidTerm.Models.Update;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -19,7 +20,8 @@ public sealed class UpdateServiceTests : IDisposable
 #pragma warning disable IDISP014 // Each test uses an isolated fault-injection transport.
         using var http = new HttpClient(handler, disposeHandler: false);
 #pragma warning restore IDISP014
-        using var service = new UpdateService(new Ai.Tlbx.MidTerm.Settings.SettingsService(_tempDir), null, http);
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        using var service = new UpdateService(new Ai.Tlbx.MidTerm.Settings.SettingsService(_tempDir), null, http, clock);
         var first = service.CheckForUpdateAsync();
         var concurrent = service.CheckForUpdateAsync();
         Assert.Same(first, concurrent);
@@ -28,6 +30,9 @@ public sealed class UpdateServiceTests : IDisposable
         Assert.False(failed!.Available);
         Assert.Contains("HTTP 403", failed.CheckError, StringComparison.Ordinal);
         var requests = handler.Requests;
+        await service.CheckForUpdateAsync();
+        Assert.Equal(requests, handler.Requests);
+        clock.Advance(TimeSpan.FromSeconds(4));
         await service.CheckForUpdateAsync();
         Assert.True(handler.Requests > requests);
     }
@@ -40,7 +45,7 @@ public sealed class UpdateServiceTests : IDisposable
         {
             Interlocked.Increment(ref Requests);
             await Release.Task.WaitAsync(cancellationToken);
-            throw new HttpRequestException("GitHub returned HTTP 403 (rate limit).");
+            throw new HttpRequestException("Build distribution returned HTTP 403 (rate limit).");
         }
     }
 
@@ -95,7 +100,12 @@ public sealed class UpdateServiceTests : IDisposable
             new GitHubRelease
             {
                 TagName = expectedTag, Prerelease = channel == "dev",
-                Assets = [new GitHubAsset { Name = WindowsAssetName, BrowserDownloadUrl = "https://example.test/mt-win-x64.zip" }]
+                Assets = [new GitHubAsset
+                {
+                    Name = WindowsAssetName,
+                    BrowserDownloadUrl = $"https://builds.tlbx.ai/{(channel == "dev" ? "dev" : "main")}/{expectedTag[1..]}/win-x64/{WindowsAssetName}",
+                    Size = 100, Digest = "sha256:" + new string('a', 64)
+                }]
             }
         };
 

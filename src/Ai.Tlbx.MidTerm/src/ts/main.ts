@@ -1,4 +1,6 @@
 import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
+import { initBoards, initDetachedBoard } from './modules/boards';
+import { initMobileFullscreen } from './modules/fullscreen';
 /**
  * tlbx Terminal Client
  *
@@ -191,6 +193,7 @@ import {
 } from './state';
 import {
   $activeSessionId,
+  $boardsOpen,
   $settingsOpen,
   $operatorOpen,
   $sessionList,
@@ -347,6 +350,8 @@ async function init(): Promise<void> {
   // still loading. Capture that one-shot event before the first await.
   initPwaInstall();
   await initI18n();
+  if (await initDetachedBoard()) return;
+  initBoards(selectSession);
   initUpdateUi();
   initUpdateRuntime();
   initAppShellStatePersistence();
@@ -459,7 +464,11 @@ async function init(): Promise<void> {
   initTouchController();
   initShortcuts({
     createSession,
-    selectSession,
+    selectSession: (sessionId) => {
+      selectSession(sessionId, {
+        userInitiated: navigator.userActivation.isActive,
+      });
+    },
     renameSession: promptRenameSession,
     inlineRename: startInlineRename,
     bookmarkSession: pinSessionToHistory,
@@ -565,7 +574,7 @@ async function initShared(): Promise<void> {
 }
 
 function getVisibleTerminalSessionIds(): string[] {
-  if ($settingsOpen.get() || $operatorOpen.get()) {
+  if ($settingsOpen.get() || $operatorOpen.get() || $boardsOpen.get()) {
     return [];
   }
 
@@ -632,6 +641,7 @@ function bindTerminalVisibilitySync(): void {
     syncMuxTerminalVisibility();
   });
   $operatorOpen.subscribe(syncMuxTerminalVisibility);
+  $boardsOpen.subscribe(syncMuxTerminalVisibility);
 
   let lastResumeMode = $currentSettings.get()?.resumeMode ?? null;
   $currentSettings.subscribe((settings) => {
@@ -1298,26 +1308,7 @@ function bindEvents(): void {
     clickActiveSessionTabBarControl('button[data-action="git"]');
   });
 
-  // Fullscreen toggle (mobile) - hide button if API not supported
-  const fullscreenBtn = document.getElementById('btn-fullscreen-mobile');
-  if (document.fullscreenEnabled) {
-    bindClick('btn-fullscreen-mobile', () => {
-      if (document.fullscreenElement) {
-        void document.exitFullscreen();
-      } else {
-        document.documentElement.requestFullscreen().catch(() => {});
-      }
-    });
-
-    document.addEventListener('fullscreenchange', () => {
-      const iconEl = fullscreenBtn?.querySelector('.icon');
-      if (iconEl) {
-        iconEl.textContent = document.fullscreenElement ? '\ue920' : '\ue90c';
-      }
-    });
-  } else if (fullscreenBtn) {
-    fullscreenBtn.style.display = 'none';
-  }
+  initMobileFullscreen();
 
   if (dom.settingsBtn) {
     dom.settingsBtn.addEventListener('click', toggleSettings);

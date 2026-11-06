@@ -1,6 +1,7 @@
 import type { BrowserPreviewClientResponse } from './webApi';
 import type { PreviewBridgeMessage, PreviewCookieRequestMessage } from './webPanelTypes';
 import { getSessionPreview, type WebPreviewState } from './webSessionState';
+import { getConnectPreviewIntegration } from './connectPreview';
 
 export interface PreviewMessageTarget {
   sessionId: string;
@@ -58,14 +59,22 @@ export async function fetchPreviewCookie(
   const url = new URL(`/webpreview/${encodeURIComponent(target.routeKey)}/_cookies`, origin);
   const upstreamUrl = request.upstreamUrl ?? target.preview.navigationUrl ?? target.preview.url;
   if (upstreamUrl) url.searchParams.set('u', upstreamUrl);
-  return fetch(
-    url.toString(),
+  const init: RequestInit =
     request.action === 'set'
       ? {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ raw: request.raw ?? '' }),
         }
-      : { method: 'GET' },
-  );
+      : { method: 'GET' };
+  const connect = getConnectPreviewIntegration();
+  if (connect) {
+    const client = target.preview.dockedClient;
+    if (client?.previewId && client.previewToken) {
+      url.searchParams.set('__mtPreviewId', client.previewId);
+      url.searchParams.set('__mtPreviewToken', client.previewToken);
+    }
+    return connect.fetch(new URL(url.pathname + url.search, connect.origin).toString(), init);
+  }
+  return fetch(url.toString(), init);
 }

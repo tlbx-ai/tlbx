@@ -4944,6 +4944,7 @@ body::before {
   overflow: visible;
 }
 
+.sidebar-nav-btn[hidden],
 .sidebar-nav-btn.hidden {
   display: none;
 }
@@ -6053,6 +6054,8 @@ body::before {
 /* Additional settings input styles */
 .setting-row input[type='text'],
 .setting-row input[type='number'],
+.setting-row input[type='password'],
+.setting-row input[type='url'],
 .setting-row input[type='search'] {
   padding: 8px 12px;
   background-color: var(--text-input-background, var(--bg-input));
@@ -6064,16 +6067,38 @@ body::before {
 
 .setting-row input[type='text']:hover,
 .setting-row input[type='number']:hover,
+.setting-row input[type='password']:hover,
+.setting-row input[type='url']:hover,
 .setting-row input[type='search']:hover {
   border-color: var(--accent-blue);
 }
 
 .setting-row input[type='text']:focus,
 .setting-row input[type='number']:focus,
+.setting-row input[type='password']:focus,
+.setting-row input[type='url']:focus,
 .setting-row input[type='search']:focus {
   outline: none;
   border-color: var(--accent-blue);
   box-shadow: 0 0 0 3px var(--accent-blue-15);
+}
+
+.connect-setup-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#connect-setup .setting-row {
+  flex-wrap: wrap;
+}
+
+#connect-setup .setting-row input {
+  width: min(100%, 280px);
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .setting-row input[type='checkbox'] {
@@ -6084,6 +6109,19 @@ body::before {
 }
 
 /* Settings hint and info text */
+.workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.workspace-actions button {
+  max-width: 100%;
+  min-height: 44px;
+  white-space: normal;
+}
+
 .setting-hint {
   font-size: var(--fs-base);
   color: var(--text-secondary);
@@ -7318,6 +7356,8 @@ body::before {
 
 .modal-overlay > .modal.dialog-modal {
   position: static;
+  width: 100%;
+  pointer-events: none;
   background: transparent;
   border-radius: 0;
   box-shadow: none;
@@ -7347,11 +7387,27 @@ body::before {
 
 /* Dialog utility (confirm/alert replacement) */
 .dialog-content {
+  --text-primary: var(--workspace-reading-text-primary, #d4d7e8);
+  --text-secondary: var(--workspace-reading-text-secondary, #a0a4b8);
   max-width: 420px;
-  width: 90%;
-  background: var(--bg-dialog, var(--bg-elevated-opaque));
+  width: calc(100% - 32px);
+  min-width: 0;
+  pointer-events: auto;
+  background: var(--bg-elevated-opaque);
   animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
+
+.dialog-content .modal-footer { flex-wrap: wrap; }
+.dialog-content .modal-footer > button { min-width: 80px; padding: 8px 16px; }
+.dialog-content .btn-danger {
+  color: var(--workspace-reading-accent-red, var(--accent-red));
+  background: var(--bg-elevated-opaque);
+  border: 1px solid currentcolor;
+}
+.dialog-content .btn-danger:hover {
+  background: color-mix(in srgb, var(--accent-red) 12%, var(--bg-elevated-opaque));
+}
+
 
 .dialog-content .modal-header h3 {
   margin: 0;
@@ -7360,6 +7416,7 @@ body::before {
 }
 
 .dialog-message {
+  overflow-wrap: anywhere;
   margin: 0;
   font-size: var(--fs-lg);
   color: var(--text-secondary);
@@ -10770,10 +10827,6 @@ body.shared-session-mode .session-tab-bar {
   background: var(--workspace-pane-background);
 }
 
-.file-viewer-modal-content::backdrop {
-  background: var(--app-background-image) center / cover no-repeat var(--bg-primary-opaque);
-}
-
 .file-viewer-navigation {
   display: flex;
   flex: 0 0 auto;
@@ -11175,13 +11228,6 @@ body.shared-session-mode .session-tab-bar {
   height: 100%;
 }
 
-.file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-editor-shell,
-.file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-readonly-shell,
-.file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-code-stack,
-.file-viewer-modal-content:fullscreen .file-viewer-body > .file-viewer-image-stage {
-  height: calc(100vh - 80px);
-}
-
 /* Load More button */
 .file-viewer-load-more {
   display: block;
@@ -11298,25 +11344,38 @@ body.shared-session-mode .session-tab-bar {
   color: var(--text-secondary);
 }
 
-/* File viewer: Fullscreen mode */
-.file-viewer-modal-content:fullscreen {
+/* Maximize within the app viewport; browser fullscreen is independent. */
+.file-viewer-modal-content.is-maximized {
+  box-sizing: border-box;
   max-width: none;
   max-height: none;
-  width: 100vw;
-  height: 100vh;
+  width: 100%;
+  height: 100%;
   border-radius: 0;
+  overflow: hidden;
 }
 
-.file-viewer-modal-content:fullscreen .file-viewer-body {
-  max-height: calc(100vh - 60px);
+.file-viewer-modal-content.is-maximized .modal-header,
+.file-viewer-modal-content.is-maximized .file-viewer-navigation {
+  flex-shrink: 0;
 }
 
-.file-viewer-modal-content:fullscreen .file-viewer-video {
-  max-height: calc(100vh - 80px);
+.file-viewer-modal-content.is-maximized .file-viewer-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  max-height: none;
 }
 
-.file-viewer-modal-content:fullscreen .file-viewer-pdf {
-  height: calc(100vh - 80px);
+.file-viewer-modal-content.is-maximized .file-viewer-body > :is(.file-viewer-editor-shell, .file-viewer-readonly-shell, .file-viewer-code-stack, .file-viewer-image-stage, .file-document-view, .file-viewer-pdf) {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
+
+.file-viewer-modal-content.is-maximized .file-viewer-video {
+  max-height: 100%;
 }
 
 /* Syntax Highlighting */

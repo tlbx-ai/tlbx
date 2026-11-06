@@ -267,8 +267,11 @@ $versionJsonPath = "$PSScriptRoot\..\src\version.json"
 # Read current version from version.json
 $versionJson = Get-Content $versionJsonPath | ConvertFrom-Json
 $currentVersion = $versionJson.web
-Assert-ReleaseRuntimeSelection -PtyVersion $versionJson.pty -mthostUpdate $mthostUpdate
-Show-ReleaseTestPlan -Categories $selectedCategories -BaseVersion $currentVersion
+# Re-preparation keeps an unpublished candidate in the worktree. Runtime reuse
+# must resolve through the pinned integration base's published web version.
+$runtimeBaselineWebVersion = Get-WebVersionFromGitRef -RefName $releaseRemoteCommit
+Assert-ReleaseRuntimeSelection -PtyVersion $versionJson.pty -mthostUpdate $mthostUpdate -WebVersion $runtimeBaselineWebVersion
+Show-ReleaseTestPlan -Categories $selectedCategories -BaseVersion $runtimeBaselineWebVersion
 Write-Host "Current version: $currentVersion" -ForegroundColor Cyan
 
 # Dev versions must be >= main's version. Use the higher of dev/main as the base.

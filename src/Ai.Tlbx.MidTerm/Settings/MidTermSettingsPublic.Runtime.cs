@@ -107,7 +107,6 @@ public sealed partial class MidTermSettingsPublic
             MobileKineticTerminalScroll = settings.MobileKineticTerminalScroll,
             MobileDenseTerminalMode = settings.MobileDenseTerminalMode,
             KeepSystemAwakeWithActiveSessions = settings.KeepSystemAwakeWithActiveSessions,
-            RuntimePriorityBoostEnabled = settings.RuntimePriorityBoostEnabled,
             RuntimePriorityClass = settings.RuntimePriorityClass,
             ResumeMode = settings.ResumeMode,
             TryResumeNonAiAgentProcesses = settings.TryResumeNonAiAgentProcesses,
@@ -115,6 +114,8 @@ public sealed partial class MidTermSettingsPublic
             InputMode = settings.InputMode,
             FileRadar = settings.FileRadar,
             ShowBookmarks = settings.ShowBookmarks,
+            ShowSpaces = settings.ShowSpaces,
+            ShowBoards = settings.ShowBoards,
             AllowAdHocSessionBookmarks = settings.AllowAdHocSessionBookmarks,
             ShowSidebarSessionFilter = settings.ShowSidebarSessionFilter,
             WorktreeRootDirectory = SettingsService.ResolveEffectiveWorktreeRootDirectory(settings, ensureExists: true),
@@ -233,12 +234,14 @@ public sealed partial class MidTermSettingsPublic
         settings.MobileKineticTerminalScroll = MobileKineticTerminalScroll;
         settings.MobileDenseTerminalMode = MobileDenseTerminalMode;
         settings.KeepSystemAwakeWithActiveSessions = KeepSystemAwakeWithActiveSessions;
-        settings.RuntimePriorityBoostEnabled = RuntimePriorityBoostEnabled;
         settings.RuntimePriorityClass = Ai.Tlbx.MidTerm.Common.Process.MidTermProcessPriority
             .ResolvePriorityClass(RuntimePriorityClass) switch
         {
+            System.Diagnostics.ProcessPriorityClass.Idle => "idle",
+            System.Diagnostics.ProcessPriorityClass.BelowNormal => "belowNormal",
             System.Diagnostics.ProcessPriorityClass.Normal => "normal",
             System.Diagnostics.ProcessPriorityClass.High => "high",
+            System.Diagnostics.ProcessPriorityClass.RealTime => "realTime",
             _ => "aboveNormal"
         };
         settings.ResumeMode = ResumeMode;
@@ -248,6 +251,8 @@ public sealed partial class MidTermSettingsPublic
             settings.InputMode = InputMode;
         settings.FileRadar = FileRadar;
         settings.ShowBookmarks = ShowBookmarks;
+        settings.ShowSpaces = ShowSpaces;
+        settings.ShowBoards = ShowBoards;
         settings.AllowAdHocSessionBookmarks = AllowAdHocSessionBookmarks;
         settings.ShowSidebarSessionFilter = ShowSidebarSessionFilter;
         settings.WorktreeRootDirectory = NormalizeOptionalDirectorySetting(WorktreeRootDirectory);

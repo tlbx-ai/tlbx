@@ -496,16 +496,10 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
       applyMode: 'server-only',
     },
   ),
-  controlEntry('runtimePriorityBoostEnabled', 'setting-runtime-priority-boost', 'checkbox', true, {
-    editable: true,
-    storage: 'settings.json',
-    validation: 'boolean',
-    applyMode: 'server-only',
-  }),
   controlEntry('runtimePriorityClass', 'setting-runtime-priority-class', 'select', 'aboveNormal', {
     editable: true,
     storage: 'settings.json',
-    validation: 'normal, aboveNormal or high',
+    validation: 'idle, belowNormal, normal, aboveNormal, high or realTime',
     applyMode: 'server-only',
   }),
   controlEntry('resumeMode', 'setting-resume-mode', 'select', 'fullReplay', {
@@ -537,6 +531,18 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     storage: 'settings.json',
     validation: 'boolean',
     applyMode: 'lazy',
+  }),
+  controlEntry('showSpaces', 'setting-show-spaces', 'checkbox', true, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
+  }),
+  controlEntry('showBoards', 'setting-show-boards', 'checkbox', false, {
+    editable: true,
+    storage: 'settings.json',
+    validation: 'boolean',
+    applyMode: 'immediate',
   }),
   controlEntry('showBookmarks', 'setting-show-bookmarks', 'checkbox', true, {
     editable: true,

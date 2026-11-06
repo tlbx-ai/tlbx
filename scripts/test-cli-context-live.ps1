@@ -6,6 +6,9 @@ Consumes paid model calls. Uses an existing daemon and server; never restarts ei
 The helper snapshot contains local ephemeral credentials: keep the artifact directory private.
 Native TUI output stays attached to each owned terminal. Named stdout/stderr logs record
 the model-issued tool command; terminal-tail files preserve the real TUI evidence.
+.PARAMETER ResumeFromSummary
+Resumes both original Codex roots in new terminals after verifying and closing the
+retained fixture sessions from a successful summary on this exact server.
 .EXAMPLE
 ./scripts/test-cli-context-live.ps1 -BaseUrl https://localhost:2000 `
   -HelperPath ./.tlbx/tlbx_cli.ps1 `
@@ -20,6 +23,7 @@ param(
     [Parameter(Mandatory)][string]$Model,
     [string]$WorkingDirectory = 'Q:\repos\Jpa',
     [string]$ArtifactDirectory,
+    [string]$ResumeFromSummary,
     [ValidateRange(15, 180)][int]$TimeoutSeconds = 90,
     [switch]$KeepSessions
 )
@@ -63,6 +67,29 @@ function Read-Sessions { (Invoke-TestApi GET '/api/sessions').sessions }
 
 try {
     . $helperSnapshot
+    $resumedRoots = @()
+    if ($ResumeFromSummary) {
+        $previous = Get-Content -LiteralPath $ResumeFromSummary -Raw | ConvertFrom-Json
+        if (-not $previous.ok -or -not $previous.keptSessions -or $previous.baseUrl -cne $summary.baseUrl -or $previous.clients.Count -ne 2) {
+            throw 'Resume requires a successful retained two-client summary from this exact server.'
+        }
+        $current = @(Read-Sessions)
+        foreach ($client in $previous.clients) {
+            $session = @($current | Where-Object id -EQ $client.expectedSessionId)
+            if ($session.Count -ne 1 -or $session[0].topic -cne $client.topic -or $client.root -notmatch '^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') {
+                throw 'Retained fixture no longer matches its recorded owner; do not close or resume it.'
+            }
+            $idleDeadline = [DateTime]::UtcNow.AddSeconds(20)
+            while ($session[0].supervisor.state -ne 'idle-prompt') {
+                if ([DateTime]::UtcNow -ge $idleDeadline) { throw 'Retained fixture has not finished its protocol turn; preserve it.' }
+                Start-Sleep -Milliseconds 300
+                $session = @(Read-Sessions | Where-Object id -EQ $client.expectedSessionId)
+                if ($session.Count -ne 1) { throw 'Retained fixture disappeared before resume.' }
+            }
+            Invoke-TestApi DELETE "/api/sessions/$($client.expectedSessionId)" | Out-Null
+            $resumedRoots += $client.root
+        }
+    }
     $before = @(Read-Sessions)
     for ($index = 1; $index -le 2; $index++) {
         $created = Invoke-TestApi POST '/api/sessions' @{ shell = 'Pwsh'; workingDirectory = $WorkingDirectory; cols = 140; rows = 40; launchRequestId = [Guid]::NewGuid().ToString() }
@@ -82,6 +109,7 @@ try {
             model = $Model
             workingDirectory = $WorkingDirectory
             callScript = $callScript
+            resumeRoot = if ($resumedRoots.Count) { $resumedRoots[$index - 1] } else { $null }
         }
         '' | Set-Content -LiteralPath $config.stdoutPath
         '' | Set-Content -LiteralPath $config.stderrPath
@@ -93,7 +121,9 @@ Remove-Item Env:MT_SESSION_ID -ErrorAction SilentlyContinue
 function Quote-Literal([string]$Value) { "'" + $Value.Replace("'", "''") + "'" }
 $command = '& ' + (Quote-Literal $config.callScript) + ' -ConfigPath ' + (Quote-Literal $configPath)
 $prompt = 'Protocol acceptance test only. Do not read or edit project files. Your only tool call must execute this exact PowerShell command: ' + "`n" + $command + "`n" + 'Do not retry or repair. Then respond done.'
-& codex --yolo --remote $config.socket --cd $config.workingDirectory -m $config.model -c 'model_reasoning_effort="low"' -c 'service_tier="default"' $prompt
+$launchArgs = @('--yolo', '--remote', $config.socket, '--cd', $config.workingDirectory, '-m', $config.model, '-c', 'model_reasoning_effort="low"', '-c', 'service_tier="default"')
+if ($config.resumeRoot) { $launchArgs += @('resume', $config.resumeRoot) }
+& codex @launchArgs $prompt
 '@
         # ConfigPath is a launcher-local variable, passed verbatim to the model tool call.
         $launcher = '$configPath = ' + (Quote-Literal $configPath) + "`n" + $launcher
@@ -121,6 +151,9 @@ $prompt = 'Protocol acceptance test only. Do not read or edit project files. You
         }
         if ($summary.callerRoot -and $results[$index].root -eq $summary.callerRoot) {
             throw "Client $($index + 1) resolved the supervisor's Codex root."
+        }
+        if ($resumedRoots.Count -gt 0 -and $results[$index].root -cne $resumedRoots[$index]) {
+            throw "Resumed client $($index + 1) did not preserve its complete original Codex root."
         }
     }
     if ($results[0].root -eq $results[1].root) { throw 'The two real clients did not have distinct Codex roots.' }
@@ -164,3 +197,4 @@ finally {
 }
 Write-Output "Acceptance summary: $summaryPath"
 if (-not $summary.ok) { throw ($summary.error ?? ($summary.cleanupErrors -join '; ')) }
+$global:LASTEXITCODE = 0

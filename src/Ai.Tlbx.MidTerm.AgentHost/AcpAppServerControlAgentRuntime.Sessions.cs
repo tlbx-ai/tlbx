@@ -63,9 +63,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                     }
                 }
                 writer.WriteString("cwd", _workingDirectory);
-                writer.WritePropertyName("mcpServers");
-                writer.WriteStartArray();
-                writer.WriteEndArray();
+                AppServerControlMcpConfiguration.WriteAcp(writer, _mcpServer, _protocolGeneration);
                 writer.WriteEndObject();
             }, AttachRequestTimeout, ct).ConfigureAwait(false);
         }

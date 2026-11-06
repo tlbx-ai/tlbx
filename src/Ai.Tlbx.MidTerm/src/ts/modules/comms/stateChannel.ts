@@ -193,6 +193,8 @@ import {
   $webPreviewUrl,
   getSession,
   setTerminalSizeControl,
+  getTerminalSizeControl,
+  getTerminalSizeDimensions,
   setTerminalSizeControls,
   setSessions,
   filterClosingSessions,
@@ -210,6 +212,7 @@ import {
 import { isHubSessionId } from '../hub/runtime';
 import {
   requestHubTerminalSizeControl,
+  requestHubSizeControlForCurrentInput,
   resizeHubTerminalWithControl,
 } from '../hub/sizeControlChannel';
 
@@ -467,7 +470,9 @@ export function connectStateWebSocket(): void {
 function removeClosedSessions(validSessions: readonly (Session & { id: string })[]): void {
   const newIds = new Set(validSessions.map((s) => s.id));
   sessionTerminals.forEach((_, id) => {
-    if (!newIds.has(id) && !hiddenSessionIds.has(id)) {
+    // This snapshot describes local PTYs only. Hub terminals belong to their
+    // remote host; absence here says nothing about their lifetime or ownership.
+    if (!isHubSessionId(id) && !newIds.has(id) && !hiddenSessionIds.has(id)) {
       handleSessionClosed(id);
       destroySessionWrapper(id);
       destroyTerminalForSession(id);
@@ -495,21 +500,21 @@ function syncSessionTerminalState(session: Session & { id: string }): void {
   );
 
   const state = sessionTerminals.get(session.id);
+  const { cols, rows } = getTerminalSizeDimensions(session.id, session.cols, session.rows);
   if (state && state.opened) {
-    const dimensionsChanged =
-      state.serverCols !== session.cols || state.serverRows !== session.rows;
+    const dimensionsChanged = state.serverCols !== cols || state.serverRows !== rows;
     if (dimensionsChanged) {
-      state.serverCols = session.cols;
-      state.serverRows = session.rows;
-      state.terminal.resize(session.cols, session.rows);
+      state.serverCols = cols;
+      state.serverRows = rows;
+      state.terminal.resize(cols, rows);
       applyTerminalScaling(session.id, state);
     }
     return;
   }
 
   if (state) {
-    state.serverCols = session.cols;
-    state.serverRows = session.rows;
+    state.serverCols = cols;
+    state.serverRows = rows;
     return;
   }
 
@@ -568,7 +573,7 @@ function syncActiveSessionSelection(): void {
     });
   }
 
-  if (activeId && !sessionList.find((s) => s.id === activeId)) {
+  if (activeId && !isHubSessionId(activeId) && !sessionList.find((s) => s.id === activeId)) {
     $activeSessionId.set(null);
     const nextSession = sessionList[0];
     if (nextSession?.id && !isSettingsOpen) {
@@ -1078,6 +1083,18 @@ export function claimMainBrowser(): void {
 
 function applyTerminalSizeControlResult(result: TerminalSizeControlCommandResult): void {
   setTerminalSizeControl(result.status);
+}
+
+/** Preserve a current gesture when mux is reconnecting, without queueing claims. */
+export function requestSizeControlForCurrentInput(sessionId: string): void {
+  if (isHubSessionId(sessionId)) {
+    requestHubSizeControlForCurrentInput(sessionId);
+    return;
+  }
+  if (!isStateConnected()) return;
+  const status = getTerminalSizeControl(sessionId);
+  if (!status) return;
+  void requestTerminalSizeControl(sessionId, true, status.epoch).catch(() => {});
 }
 
 export async function requestTerminalSizeControl(

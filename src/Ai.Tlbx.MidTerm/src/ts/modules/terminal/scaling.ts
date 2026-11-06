@@ -22,6 +22,7 @@ import {
   $sessions,
   hasTerminalSizeControl,
   getTerminalSizeControl,
+  getTerminalSizeDimensions,
   getSession,
 } from '../../stores';
 import { throttle } from '../../utils';
@@ -1378,7 +1379,20 @@ export function setupResizeObserver(): void {
     requestAnimationFrame(() => {
       for (const sessionId of changedIds) {
         const state = sessionTerminals.get(sessionId);
-        if (!state?.opened || !isTerminalVisible(state)) continue;
+        if (!state?.opened) continue;
+        const { cols, rows } = getTerminalSizeDimensions(
+          sessionId,
+          state.serverCols,
+          state.serverRows,
+        );
+        if (cols > 0 && rows > 0) {
+          state.serverCols = cols;
+          state.serverRows = rows;
+          if (state.terminal.cols !== cols || state.terminal.rows !== rows) {
+            state.terminal.resize(cols, rows);
+          }
+        }
+        if (!isTerminalVisible(state)) continue;
         if (hasTerminalSizeControl(sessionId)) {
           const pane = state.container.closest<HTMLElement>('.layout-leaf');
           if (pane) fitTerminalToContainer(sessionId, pane);

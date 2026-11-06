@@ -189,12 +189,12 @@ try {
   result.cases.push('Dock and undock preserve the same editor, draft, caret and scroll without refetch');
 
   await page.locator('#file-viewer-maximize').click();
-  await page.waitForFunction(() => !!document.fullscreenElement);
+  await page.waitForFunction(() => document.querySelector('.file-viewer-modal-content')?.classList.contains('is-maximized')); assert.equal(await page.evaluate(() => document.fullscreenElement), null);
   await page.locator('#file-viewer-dock-btn').click();
-  await page.waitForFunction(() => !document.fullscreenElement);
+  await page.waitForFunction(() => !document.querySelector('.file-viewer-modal-content')?.classList.contains('is-maximized')); assert.equal(await page.evaluate(() => document.fullscreenElement), null);
   await activateEdit('#file-viewer-dock');
   assert.equal(await dockEditor.inputValue(), longText + '\nUNSAVED_DOCK_DRAFT');
-  result.cases.push('Fullscreen to dock retains the dirty document');
+  result.cases.push('Maximized dialog to dock retains the dirty document');
   await page.goBack();
   await dialog.locator('[data-file-decision="cancel"]').click();
   await activateEdit('#file-viewer-dock');

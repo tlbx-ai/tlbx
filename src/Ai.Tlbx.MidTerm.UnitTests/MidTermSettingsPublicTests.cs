@@ -8,20 +8,58 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class MidTermSettingsPublicTests
 {
     [Fact]
-    public void SettingsPatch_ProcessPriorityRoundTripsAndNormalizesUnsupportedClass()
+    public void SidebarVisibility_MissingSettingsUseQuietDefaults()
+    {
+        var settings = JsonSerializer.Deserialize<MidTermSettings>("{}")!;
+        var visible = MidTermSettingsPublic.FromSettings(settings);
+        Assert.True(visible.ShowSpaces);
+        Assert.False(visible.ShowBoards);
+    }
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    public void SidebarVisibility_PatchAndJsonRoundTripPreserveIndependentChoices(bool spaces, bool boards)
     {
         var settings = new MidTermSettings();
         var current = MidTermSettingsPublic.FromSettings(settings);
-        using var patch = JsonDocument.Parse("""{"runtimePriorityBoostEnabled":false,"runtimePriorityClass":"high"}""");
+        using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new { showSpaces = spaces, showBoards = boards }));
         MidTermSettingsPatch.Merge(current, patch.RootElement).ApplyTo(settings);
-        Assert.False(settings.RuntimePriorityBoostEnabled);
-        Assert.Equal("high", settings.RuntimePriorityClass);
+        var saved = JsonSerializer.Deserialize<MidTermSettings>(JsonSerializer.Serialize(settings))!;
+        var roundTrip = MidTermSettingsPublic.FromSettings(saved);
+        Assert.Equal(spaces, roundTrip.ShowSpaces);
+        Assert.Equal(boards, roundTrip.ShowBoards);
+        Assert.True(roundTrip.ShowBookmarks);
+    }
+
+    [Theory]
+    [InlineData("idle")]
+    [InlineData("belowNormal")]
+    [InlineData("normal")]
+    [InlineData("aboveNormal")]
+    [InlineData("high")]
+    [InlineData("realTime")]
+    public void SettingsPatch_ProcessPriorityRoundTripsEveryClass(string priority)
+    {
+        var settings = new MidTermSettings();
+        var current = MidTermSettingsPublic.FromSettings(settings);
+        using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new { runtimePriorityClass = priority }));
+        MidTermSettingsPatch.Merge(current, patch.RootElement).ApplyTo(settings);
+        Assert.Equal(priority, settings.RuntimePriorityClass);
         var roundTrip = MidTermSettingsPublic.FromSettings(settings);
-        Assert.False(roundTrip.RuntimePriorityBoostEnabled);
-        Assert.Equal("high", roundTrip.RuntimePriorityClass);
-        roundTrip.RuntimePriorityClass = "realtime";
+        Assert.Equal(priority, roundTrip.RuntimePriorityClass);
+        roundTrip.RuntimePriorityClass = "unsupported";
         roundTrip.ApplyTo(settings);
         Assert.Equal("aboveNormal", settings.RuntimePriorityClass);
+    }
+
+    [Fact]
+    public void SettingsFile_ObsoleteBoostFlagDoesNotOverrideSelectedPriority()
+    {
+        var settings = JsonSerializer.Deserialize<MidTermSettings>(
+            """{"RuntimePriorityBoostEnabled":false,"RuntimePriorityClass":"belowNormal"}""")!;
+        Assert.Equal("belowNormal", settings.RuntimePriorityClass);
+        Assert.DoesNotContain("RuntimePriorityBoostEnabled", JsonSerializer.Serialize(settings), StringComparison.Ordinal);
     }
 
     [Fact]

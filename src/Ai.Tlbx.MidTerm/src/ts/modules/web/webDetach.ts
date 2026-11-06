@@ -25,6 +25,7 @@ import { createBrowserPreviewClient } from './webApi';
 import { isDevMode } from '../sidebar/voiceSection';
 import { shouldSandboxPreviewFrame } from './previewSandbox';
 import { hideWebPreviewDockForDetach, openWebPreviewDock } from './webDock';
+import { getConnectPreviewIntegration, wrapConnectWorkspaceUrl } from './connectPreview';
 
 const log = createLogger('webDetach');
 
@@ -133,7 +134,9 @@ function buildDetachedPopupUrl(args: {
         `&viewportHeight=${encodeURIComponent(String(args.viewport.height))}`
       : '') +
     (args.mobileMode ? '&mobile=1' : '') +
-    (shouldSandboxPreviewFrame(args.url, isDevMode()) ? '&sandbox=1' : '') +
+    (!getConnectPreviewIntegration() || shouldSandboxPreviewFrame(args.url, isDevMode())
+      ? '&sandbox=1'
+      : '') +
     (args.url ? `&url=${encodeURIComponent(args.url)}` : '')
   );
 }
@@ -239,7 +242,7 @@ export async function detachPreview(
   });
 
   try {
-    popup.location.replace(popupUrl);
+    popup.location.replace(wrapConnectWorkspaceUrl(popupUrl));
   } catch {
     popup.close();
     return { success: false, error: 'tlbx could not navigate the detached preview window.' };

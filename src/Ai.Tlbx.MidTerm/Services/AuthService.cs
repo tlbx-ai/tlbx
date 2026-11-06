@@ -19,7 +19,7 @@ public sealed class AuthService
     public const string AuthRequiredHeaderName = "X-MidTerm-Auth-Required";
 
     private const int Iterations = 600_000;
-    public const int MinimumNewPasswordLength = 15;
+    public const int MinimumNewPasswordLength = 10;
     public const int MaximumPasswordLength = 1024;
     private int _passwordOperationActive;
     private static readonly TimeSpan FailedAttemptRetention = TimeSpan.FromMinutes(15);

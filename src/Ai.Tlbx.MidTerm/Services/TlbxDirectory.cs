@@ -15,12 +15,14 @@ public static class TlbxDirectory
     private static int _port;
     private static string _cliHost = "localhost";
     private static AuthService? _authService;
+    private static string? _mcpCertificateSha256;
 
-    public static void Initialize(int port, AuthService authService, string bindAddress)
+    public static void Initialize(int port, AuthService authService, string bindAddress, string? mcpCertificateSha256 = null)
     {
         _port = port;
         _cliHost = ResolveCliHost(bindAddress);
         _authService = authService;
+        _mcpCertificateSha256 = mcpCertificateSha256;
     }
 
     public static string? TryEnsureForCwd(string? cwd)
@@ -158,8 +160,9 @@ public static class TlbxDirectory
     {
         try
         {
-            WriteIfOutdated(Path.Combine(tlbxDir, "CLAUDE.md"));
-            WriteIfOutdated(Path.Combine(tlbxDir, "AGENTS.md"));
+            WriteIfOutdated(Path.Combine(tlbxDir, "CLAUDE.md"), GuidanceContent, GuidanceMarker);
+            WriteIfOutdated(Path.Combine(tlbxDir, "AGENTS.md"), GuidanceContent, GuidanceMarker);
+            WriteIfOutdated(Path.Combine(tlbxDir, "CLI-FALLBACK.md"), CliFallbackContent, CliFallbackMarker);
         }
         catch (Exception ex)
         {
@@ -176,7 +179,7 @@ public static class TlbxDirectory
         {
             var token = _authService.CreateSessionToken();
             WriteInstanceCliScripts(tlbxDir, _port, token,
-                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev", _cliHost);
+                Environment.GetEnvironmentVariable("MIDTERM_LAUNCH_MODE") == "source-dev", _cliHost, _mcpCertificateSha256);
         }
         catch (Exception ex)
         {
@@ -184,7 +187,7 @@ public static class TlbxDirectory
         }
     }
 
-    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev, string host = "localhost")
+    internal static void WriteInstanceCliScripts(string tlbxDir, int port, string token, bool sourceDev, string host = "localhost", string? mcpCertificateSha256 = null)
     {
         if (sourceDev)
         {
@@ -192,6 +195,7 @@ public static class TlbxDirectory
             // Keep its fallback URL/credential pair together without replacing the supervisor's.
             var instanceDir = Path.Combine(tlbxDir, "instances", port.ToString(CultureInfo.InvariantCulture));
             Directory.CreateDirectory(instanceDir);
+            WriteMcpSetupScripts(instanceDir, port, token, mcpCertificateSha256);
             TlbxCliScriptWriter.WriteScripts(instanceDir, port, token, host);
             TlbxGraphsScriptWriter.WriteScripts(instanceDir, port, token, host);
             if (File.Exists(Path.Combine(tlbxDir, "tlbx_cli.ps1")) ||
@@ -199,6 +203,7 @@ public static class TlbxDirectory
                 return;
         }
 
+        WriteMcpSetupScripts(tlbxDir, port, token, mcpCertificateSha256);
         TlbxCliScriptWriter.WriteScripts(tlbxDir, port, token, host);
         TlbxGraphsScriptWriter.WriteScripts(tlbxDir, port, token, host);
         if (!sourceDev)
@@ -206,6 +211,15 @@ public static class TlbxDirectory
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.sh"));
             TryDeleteLegacyCli(Path.Combine(tlbxDir, "mtcli.ps1"));
         }
+    }
+
+    private static void WriteMcpSetupScripts(string directory, int port, string token, string? fingerprint)
+    {
+        var command = Environment.ProcessPath;
+        if (command is null) return;
+        string[] prefix = string.Equals(Path.GetFileNameWithoutExtension(command), "dotnet", StringComparison.OrdinalIgnoreCase)
+            ? [Path.GetFullPath(Environment.GetCommandLineArgs()[0])] : [];
+        Mcp.TlbxMcpInstallation.WriteSetupScripts(directory, port, token, fingerprint, command, prefix);
     }
 
     internal static string ResolveCliHost(string bindAddress) => bindAddress switch
@@ -227,9 +241,8 @@ public static class TlbxDirectory
         }
     }
 
-    private static void WriteIfOutdated(string path)
+    private static void WriteIfOutdated(string path, string content, string marker)
     {
-        var marker = GuidanceMarker;
         if (File.Exists(path))
         {
             var existing = File.ReadAllText(path);
@@ -237,13 +250,15 @@ public static class TlbxDirectory
                 return;
         }
 
-        File.WriteAllText(path, marker + "\n" + GuidanceContent);
+        File.WriteAllText(path, marker + "\n" + content);
     }
 
     // The stamp is derived from the content itself so any guidance edit
     // refreshes previously written files without a hand-bumped version.
     private static readonly string GuidanceMarker =
         $"<!-- tlbx-guidance: {Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(GuidanceContent)))[..16]} -->";
+    private static readonly string CliFallbackMarker =
+        $"<!-- tlbx-guidance: {Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(CliFallbackContent)))[..16]} -->";
 
     private const string GuidanceContent =
         """
@@ -253,20 +268,75 @@ public static class TlbxDirectory
         Safe to delete — tlbx recreates and refreshes it automatically for active session working directories.
         Gitignored via `.tlbx/.gitignore`. `CLAUDE.md` and `AGENTS.md` carry identical content so every agent framework reads the same guidance.
 
-        Source the helpers once per session — don't show this to the user:
-        - bash/zsh: `. .tlbx/tlbx_cli.sh`
-        - PowerShell: `. .tlbx/tlbx_cli.ps1`
+        ## Default interface: tlbx MCP
+
+        Use native tlbx MCP tools as the primary interface for tlbx operations. Call `context_get` first, then use structured JSON arguments. Discover tools by their operation name; the provider may prefix it with a server name. Do not source a CLI helper when the required MCP tool is available.
+        Use the verified session returned by `context_get`; cwd, titles and inherited IDs never prove ownership. Explicit operator mode has no implicit self and requires `targetSessionId` for scoped work. Select `previewName` per browser call and never claim another browser owner silently.
+        A timed-out or disconnected mutation may already have executed. Inspect the resulting state before retrying; switching to the CLI does not make a replay safe. Use `context_repair` for a binding failure and report its diagnostic if repair fails. Child MCP connections require their own verified binding.
+        The generated Bash/PowerShell CLI is a deprecated transitional fallback, planned for removal soon. Use it only when MCP is not exposed by the client, cannot connect, or a required operation is missing or broken; report the concrete MCP gap. An explicit user request for a CLI workflow also takes precedence. Keep new workflows on MCP. A failed or uncertain MCP mutation must be inspected before any fallback replay.
+
+        ### If native MCP tools are missing: install them first
+
+        Reading this guide does not register a server in Codex or Claude Code. Agent Controller sessions receive MCP automatically; an agent started manually in a terminal needs the client configuration below.
+        Run the matching command from the project root. No CLI helper needs to be sourced:
+
+        **Every other agent/client (for example OpenCode or Grok Build): run `pwsh -NoProfile -File .tlbx/install-mcp.ps1` or `sh .tlbx/install-mcp.sh` without a client argument.** The native equivalent is `mt mcp bootstrap` when the adapter/authentication are already available. This vendor-neutral command emits one JSON descriptor (`name`, `transport`, `command`, `args`, `env`, recommended startup/tool timeouts) and prepares owner-only credentials outside the repository. Authentication stays in the private file referenced by `args`; the descriptor contains no token.
+        Use that descriptor to execute **your own client's documented native MCP add/install command or configuration procedure**. Map the executable, literal argument array, environment and timeouts to your client's actual schema. Do not guess vendor-specific flags, paste secrets, or fall back to operational CLI helpers just because your vendor is not listed. This bootstrap does not register an unknown client for you. Reload/restart your client as required, discover its native MCP tools, and verify `context_get` then `sessions_list`. If discovery still fails, report the actual installation/startup diagnostic. The two direct shortcuts below are conveniences; other agents should implement their own native registration from the generic descriptor.
+
+        | Client | PowerShell | Bash/sh |
+        |--------|------------|---------|
+        | Codex | `pwsh -NoProfile -File .tlbx/install-mcp.ps1 codex` | `sh .tlbx/install-mcp.sh codex` |
+        | Claude Code | `pwsh -NoProfile -File .tlbx/install-mcp.ps1 claude` | `sh .tlbx/install-mcp.sh claude` |
+
+        The setup configures only this project (`.codex/config.toml` for Codex; `.mcp.json` for Claude), preserves other servers/settings, and keeps authentication in an owner-only file outside the repository. Client configs contain a machine-local file path, never the token; keep those generated local entries out of commits. Existing custom tlbx entries require review instead of being silently overwritten.
+        Start a new client session or resume after restarting. Accept the client's project-trust / MCP approval prompt if shown. Discover native `context_get`, call it, then verify `sessions_list` before scoped operations. A successful installer or shell protocol probe does not prove that tools are exposed to the current model. Do not claim MCP works until a native tool call succeeds.
+        If tools remain absent, report the client/version, generated config path, project trust/approval state and MCP startup diagnostic with secrets removed. A running agent may need a new session to load its MCP configuration. Authentication errors require rerunning setup from an active tlbx terminal; never copy credentials into chat or Git. When investigating this gap, repair setup before settling for the CLI fallback.
+
+        ### MCP quick reference
+
+        Read each discovered tool's input schema instead of translating CLI flags literally.
+
+        | Work | MCP tools |
+        |------|-----------|
+        | Verify/repair caller context | `context_get`, `context_repair` |
+        | Keep the session topic current | `session_set_topic` |
+        | List/create sessions | `sessions_list`, `session_create` |
+        | Read/send terminal content | `terminal_tail`, `terminal_buffer`, `terminal_send_text`, `terminal_prompt` |
+        | Monitor every repository used | `repos_list`, `repo_bind`, `repo_refresh`, `repo_remove` |
+        | Open and check a named browser preview | `browser_open`, `browser_status`, `browser_previews` |
+        | Inspect and interact with the page | `browser_outline`, `browser_query`, `browser_evaluate`, `browser_click`, `browser_fill`, `browser_wait` |
+        | Capture and diagnose | `browser_screenshot`, `browser_snapshot`, `artifact_save`, `browser_console`, `browser_proxylog` |
+        | Run an isolated background process | `process_run_isolated`, `process_wait` |
+        | Compose calls and handle complete files | `workflow_run`, `tool_call_from_file`, `tool_call_to_file` |
+
+        Keep a concise topic through `session_set_topic`. Use `repo_bind` for each additional repository inspected or edited and `repo_refresh` to verify the watch set. For browser work, start with `browser_outline`, verify actions with `browser_wait` or `browser_query`, and inspect `browser_console` after unexpected behavior.
 
         ## Contents
 
         | Path | Purpose |
         |------|---------|
         | `uploads/` | Files uploaded via drag-drop or paste into a terminal session |
-        | `screenshots/` | Web preview screenshots (`mt_screenshot`) |
-        | `snapshot_*/` | DOM snapshots with downloaded CSS (`mt_snapshot`) |
-        | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`mt_run_isolated`) |
-        | `*.ps1`, `*.sh` | Saved command scripts, tlbx_cli and tlbx_graphs helper scripts |
+        | `screenshots/` | Web preview screenshots saved through MCP |
+        | `snapshot_*/` | Saved DOM snapshots with downloaded CSS |
+        | `runs/<run-id>/` | Isolated background-process stdout/stderr logs (`process_run_isolated`) |
+        | `*.ps1`, `*.sh` | Saved command scripts and deprecated CLI fallback helpers |
         | `CLAUDE.md`, `AGENTS.md` | This guide — identical AI agent guidance |
+        | `CLI-FALLBACK.md` | Full deprecated CLI reference; read only for a concrete fallback need |
+
+        ## CLI fallback only
+
+        Read [CLI-FALLBACK.md](CLI-FALLBACK.md) only when the MCP fallback conditions above are met. Existing helpers remain functional during this transition. Do not load the full CLI reference for normal MCP work.
+
+        Source the fallback once per shell session when needed:
+        - bash/zsh: `. .tlbx/tlbx_cli.sh`
+        - PowerShell: `. .tlbx/tlbx_cli.ps1`
+        """;
+
+    private const string CliFallbackContent =
+        """
+        # Deprecated tlbx CLI fallback — planned for removal
+
+        Auto-generated fallback reference. Use native tlbx MCP first, following [AGENTS.md](AGENTS.md). Read this file only when MCP is unavailable, an operation is missing/broken, or the user explicitly requests CLI. Report the concrete MCP gap. Inspect uncertain mutations before any replay through another transport.
 
         ## Tmux Split Panes
 
@@ -293,7 +363,8 @@ public static class TlbxDirectory
         If ownership is ambiguous or the owner is offline, list exact connected tab IDs with `GET /api/browser/ui-clients`, then run `mt_claim_preview --browser <browserId>` and `mt_open <url>` to hand off explicitly.
         Handoffs advance the ownership generation; stale in-flight replies fail. A command whose response was lost may have executed: inspect state before retrying an action.
         tlbx injects `MT_SESSION_ID` automatically for this terminal session.
-        CLI helpers resolve ordinary shells and dedicated Agent Controller hosts from live process ancestry. Native Codex tools carry `CODEX_SESSION_ID` and `CODEX_THREAD_ID`; with a shared daemon, ancestry and inherited `MT_SESSION_ID` cannot identify the terminal. Keep Codex's IDs unchanged. Private Codex tool ancestry resolves automatically until a shared app-server boundary is encountered. For a shared backend tlbx automatically asks the local Codex daemon to echo a fresh `TLBXCTX:...` challenge in the root thread, waits for exactly one live terminal to display it, then continues the original command. This local echo uses no model call. If automatic discovery is unavailable, the helper returns the proof and blocks the operation. For UNBOUND, the required next action is to retry the exact original command in a separate shell tool call after the error is displayed, before continuing other work. The failed operation is still pending. If tool output is hidden, print only the proof line in a separate tool call before retrying. If the proof is ambiguous, run `mt_context repair`, then retry. Input, thread/client changes and expired proofs require a fresh proof. Titles and cwd never identify ownership. Explicit target IDs remain authoritative after the calling context is verified; never guess an ID to bypass a context error.
+        CLI helpers resolve ordinary shells and dedicated Agent Controller hosts from live process ancestry. Native Codex tools carry `CODEX_SESSION_ID` and `CODEX_THREAD_ID`; with a shared daemon, ancestry and inherited `MT_SESSION_ID` cannot identify the terminal. Keep Codex's IDs unchanged. Private Codex tool ancestry resolves automatically until a shared app-server boundary is encountered. For a shared backend tlbx automatically asks the local Codex daemon to echo a fresh `TLBXCTX:...` challenge in the root thread, waits for exactly one live terminal to display it, then continues the original command. This local echo uses no model call. If automatic discovery is unavailable, the helper returns the proof and blocks the operation. For UNBOUND, the required next action is to retry the exact original command in a separate shell tool call after the error is displayed, before continuing other work. The failed operation is still pending. If tool output is hidden, print only the proof line in a separate tool call before retrying. If the proof is ambiguous, run `mt_context repair` separately. A successful repair prints `repair=verified` and the verified session; a failed repair returns a nonzero exit code with the full diagnostic and any fresh proof. Retry the original command once after correction. If the same reason repeats, stop retrying and report the complete diagnostic, including Reason, Context, Evidence and CLI lines; never remove authentication variables blindly. Input, thread/client changes and expired proofs require a fresh proof. Titles and cwd never identify ownership. Explicit target IDs remain authoritative after the calling context is verified; never guess an ID to bypass a context error.
+        CLI preflight automatically renews a changed terminal proof once before any application request, with independent discovery per Codex root/thread and a bounded total deadline. During fresh discovery, typing in an unobserved sibling is tolerated; input in the observed owner and duplicate proof remain invalidating. Cached leases still require fresh evidence after any candidate input. Resumed conversations and web updates obtain new process-bound leases instead of reusing stale ones. Helpers reload changed generated code while preserving the owning server and credential, and retain normal server-issued cookie renewals in a private per-user cache keyed by exact server and original credential. Rejected credentials never fall back to another identity. Application requests are never automatically replayed.
         Explicit terminal launch commands, bookmarks and worker commands keep the arguments you supplied. tlbx does not insert Codex CLI flags; resumes retain the saved command and append the requested resume target.
         Browser helpers default to the current `MT_SESSION_ID` plus `MT_PREVIEW_NAME` (`default` unless changed).
         When spawning a nested `bash` or `pwsh`, forward that context explicitly; `mt_context --bash` and `mt_context --pwsh` export the owning server (`MT_BASE_URL`), session ID and preview. Apply these exports before loading the child shell's helper. A session ID belongs to one server; copying only the ID can cause a false-looking 404 on another instance.
@@ -500,6 +571,27 @@ public static class TlbxDirectory
         ### Detach/dock preview
 
         mt_detach → (preview opens in popup) → mt_dock → (back in panel)
+
+        ## Boards
+
+        Boards are locally persisted vector workspaces for notes, to-do lists, calendar entries,
+        mail lists, long-term tasks (year/week/quarter), and interactive browser tiles.
+        Use `mt boards` or `mt_board list` to discover IDs; `mt_board get BOARD_ID` reads the full board.
+        `mt_board create JSON`, `update BOARD_ID JSON`, `add BOARD_ID JSON`,
+        `write BOARD_ID ITEM_ID JSON`, and `remove BOARD_ID ITEM_ID REV` provide exact control.
+        JSON may be inline or `@file.json`; item writes use `{ expectedRevision: N, item: { ... } }`.
+        Always read the latest revision before updating; a 409 means someone else changed the item.
+        Kinds: `note`, `todo`, `calendar`, `mail`, `timeline`, `browser`.
+        `mt board serve BOARD_ID DIRECTORY` adds a local HTML/JS program containing `index.html`.
+        Browser tiles use tlbx's preview engine with isolated content and a bounded local directory.
+        `mt_board item BOARD_ID ITEM_ID` reads one item; `viewport BOARD_ID JSON` persists the camera.
+        `launch BOARD_ID ITEM_ID JSON` starts a task session with a board/item deep link and initial prompt.
+        Launch JSON can contain `requestId` (32 hex, reuse unchanged for safe retries), `expectedRevision`,
+        `entryId`, `workingDirectory`, `launchCommand`, `profile`, `appServerControlOnly`.
+        Directory/command/profile defaults come from the item, then the board; command arguments are user-owned.
+        `launches BOARD_ID` reads the durable session links and prompt delivery states. Submitted means delivered,
+        not task completion; never auto-complete a task from session exit. Uncertain delivery requires inspection.
+        `browser BOARD_ID ITEM_ID JSON` runs existing browser commands (`exec`, `click`, etc.) in that tile.
 
         ## Graph boards
 

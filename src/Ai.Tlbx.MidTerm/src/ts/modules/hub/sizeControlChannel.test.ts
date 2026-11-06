@@ -4,6 +4,7 @@ const storeMocks = vi.hoisted(() => ({
   removeTerminalSizeControlSource: vi.fn(),
   setTerminalSizeControl: vi.fn(),
   setTerminalSizeControlsForSource: vi.fn(),
+  getTerminalSizeControl: vi.fn(),
 }));
 
 vi.mock('../../stores', () => storeMocks);
@@ -41,6 +42,42 @@ class MockWebSocket {
 }
 
 describe('Hub size-control channel', () => {
+  it('does not reconnect or queue old input intent and sends a live intent with its epoch', async () => {
+    vi.stubGlobal('WebSocket', MockWebSocket);
+    const { requestHubSizeControlForCurrentInput, syncHubSizeControlMachines } =
+      await import('./sizeControlChannel');
+    syncHubSizeControlMachines([]);
+    const count = MockWebSocket.instances.length;
+    storeMocks.getTerminalSizeControl.mockReturnValue({ epoch: 7 });
+    requestHubSizeControlForCurrentInput('hub:intent-host:abc12345');
+    expect(MockWebSocket.instances).toHaveLength(count);
+    syncHubSizeControlMachines([
+      {
+        machine: { id: 'intent-host', enabled: true },
+        status: 'online',
+        requiresTrust: false,
+        fingerprintMismatch: false,
+      } as never,
+    ]);
+    const socket = MockWebSocket.instances.at(-1)!;
+    requestHubSizeControlForCurrentInput('hub:intent-host:abc12345');
+    expect(socket.send).not.toHaveBeenCalled();
+    socket.open();
+    requestHubSizeControlForCurrentInput('hub:intent-host:abc12345');
+    await vi.waitFor(() => expect(socket.send).toHaveBeenCalledOnce());
+    const command = JSON.parse(socket.send.mock.calls[0][0] as string);
+    expect(command).toMatchObject({
+      action: 'terminal.requestSizeControl',
+      payload: { sessionId: 'abc12345', force: true, expectedEpoch: 7 },
+    });
+    socket.receive({
+      type: 'response',
+      id: command.id,
+      success: true,
+      data: { status: { sessionId: 'abc12345', isOwner: true, epoch: 8 } },
+    });
+    syncHubSizeControlMachines([]);
+  });
   it('projects remote ownership and sends commands to the terminal host', async () => {
     vi.stubGlobal('WebSocket', MockWebSocket);
     const { requestHubTerminalSizeControl, syncHubSizeControlMachines } =
@@ -54,7 +91,7 @@ describe('Hub size-control channel', () => {
         fingerprintMismatch: false,
       } as never,
     ]);
-    const socket = MockWebSocket.instances[0];
+    const socket = MockWebSocket.instances.at(-1)!;
     expect(socket.url).toBe('ws://midterm.test/ws/hub/state?machineId=home');
     socket.open();
     socket.receive({

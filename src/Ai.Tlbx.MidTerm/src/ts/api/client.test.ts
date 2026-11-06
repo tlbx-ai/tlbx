@@ -1,6 +1,10 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 describe('api client appServerControl helpers', () => {
+  beforeEach(() => {
+    vi.stubGlobal('document', { cookie: 'mt-client-id=ae34f137-9fe1-439c-b985-7d46077fe644' });
+  });
+
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.resetModules();

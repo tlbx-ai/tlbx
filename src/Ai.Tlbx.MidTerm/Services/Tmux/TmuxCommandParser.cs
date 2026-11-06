@@ -123,11 +123,21 @@ public static class TmuxCommandParser
         var name = args[0];
         var flags = new Dictionary<string, string?>(StringComparer.Ordinal);
         var positional = new List<string>();
+        var splitWindow = name is "split-window" or "splitw";
 
         var i = 1;
         while (i < args.Count)
         {
             var arg = args[i];
+
+            // The first split-window shell-command argument ends tmux options.
+            // Its following flags belong to the launched executable, even when
+            // they happen to spell tmux flags. -- explicitly marks that boundary.
+            if (splitWindow && (arg == "--" || !arg.StartsWith('-') || arg.Length < 2 || IsNegativeNumber(arg)))
+            {
+                positional.AddRange(args[(arg == "--" ? i + 1 : i)..]);
+                break;
+            }
 
             if (arg.StartsWith('-') && arg.Length >= 2 && !IsNegativeNumber(arg))
             {
@@ -202,7 +212,7 @@ public static class TmuxCommandParser
     /// </summary>
     private static bool FlagTakesValue(string command, char flag) => command switch
     {
-        "split-window" => flag is 'c' or 'l' or 't' or 'F' or 'e',
+        "split-window" or "splitw" => flag is 'c' or 'l' or 't' or 'F' or 'e',
         "select-pane" => flag is 't' or 'T',
         "send-keys" => flag is 't' or 'N',
         "resize-pane" => flag is 't' or 'x' or 'y',

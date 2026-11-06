@@ -32,3 +32,11 @@ SkiaSharp.NativeAssets.Linux.NoDependencies 4.151.2.
 SkiaSharp is MIT licensed; its native Skia build includes permissively licensed
 image codecs including libwebp. Full upstream notices and licenses are reproduced
 in THIRD-PARTY-LICENSES.txt.
+
+================================================================================
+PDF.js 6.4.299
+https://github.com/mozilla/pdf.js
+================================================================================
+Copyright Mozilla Foundation and individual contributors.
+Licensed under Apache License 2.0. Locally bundled with a tlbx-specific viewer.
+Additional font, CMap, and decoder licenses are shipped beside their assets in /pdf/.

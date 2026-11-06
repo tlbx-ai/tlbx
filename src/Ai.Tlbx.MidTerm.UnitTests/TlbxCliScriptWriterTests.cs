@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
@@ -10,202 +11,9 @@ using Xunit;
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
 [Collection(PathSensitiveEnvironmentCollection.Name)]
-public sealed class TlbxCliScriptWriterTests : IDisposable
+public sealed partial class TlbxCliScriptWriterTests : IDisposable
 {
     private readonly string _tempDir = Path.Combine(Path.GetTempPath(), "tlbx-cli-tests", Guid.NewGuid().ToString("N"));
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CodexPreviewSelectionSurvivesVerifiedRenewalsButNotSessionChanges(bool bash)
-    {
-        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var app = builder.Build();
-        var sessionId = "abcdefgh";
-        var resolutions = 0;
-        app.MapGet("/api/sessions/process-context", () =>
-        {
-            Interlocked.Increment(ref resolutions);
-            return Results.Text(sessionId + ":" + new string('a', 32));
-        });
-        app.MapPost("/api/browser/open", async (HttpContext context) =>
-        {
-            using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
-            Assert.Equal("abcdefgh", body.RootElement.GetProperty("sessionId").GetString());
-            Assert.Equal("background-test", body.RootElement.GetProperty("previewName").GetString());
-            Assert.Equal(new string('a', 32), context.Request.Headers["X-Tlbx-Cli-Context"]);
-            sessionId = "ijklmnop";
-            return Results.Text("opened");
-        });
-        await app.StartAsync(CancellationToken.None);
-        var result = await RunContextShellAsync(bash,
-            bash ? "export CODEX_THREAD_ID=01234567-89ab-cdef-0123-456789abcdef; source \"$1\"; set -e; mt_preview background-test; mt_preview; mt_open https://example.test/; mt_preview"
-                : "$env:CODEX_THREAD_ID='01234567-89ab-cdef-0123-456789abcdef'; . $args[0]; mt_preview background-test; mt_preview; mt_open https://example.test/; mt_preview",
-            app.Urls.Single(), "deadbeef",
-            Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal(["background-test", "background-test", "opened", "default"],
-            result.Output.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        Assert.True(resolutions >= 4, "Every operation must still verify its calling context.");
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task FirstPreviewSelectionSurvivesSessionContextResolution(bool bash)
-    {
-        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var app = builder.Build();
-        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
-        await app.StartAsync(CancellationToken.None);
-        var result = await RunContextShellAsync(bash,
-            bash ? "source \"$1\"; mt_preview background-test"
-                : ". $args[0]; mt_preview background-test",
-            app.Urls.Single(), "deadbeef",
-            Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal("background-test", result.Output.Trim());
-    }
-
-    [Theory]
-    [InlineData(false, "")]
-    [InlineData(false, "deadbeef")]
-    [InlineData(true, "")]
-    [InlineData(true, "deadbeef")]
-    public async Task LiveProcessContextRepairsMissingOrStaleIdentityBeforeFirstMutation(bool bash, string inheritedId)
-    {
-        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var app = builder.Build();
-        var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        app.MapGet("/api/sessions/process-context", (int processId) =>
-        {
-            using var process = Process.GetProcessById(processId);
-            requests.Enqueue("resolve");
-            return Results.Text("abcdefgh");
-        });
-        app.MapPost("/api/git/repos", async (HttpContext context) =>
-        {
-            using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
-            requests.Enqueue(body.RootElement.GetProperty("sessionId").GetString()!);
-            return Results.Ok();
-        });
-        app.MapGet("/api/git/repos", (string sessionId) =>
-        {
-            requests.Enqueue(sessionId);
-            return Results.Ok();
-        });
-        await app.StartAsync(CancellationToken.None);
-        var result = await RunContextShellAsync(bash,
-            bash ? "source \"$1\"; set -e; mt_repo add '/repo'; mt_repo --session sibling1 list; test \"$MT_SESSION_ID\" = abcdefgh"
-                : ". $args[0]; mt_repo add '/repo'; mt_repo list -SessionId sibling1; if ($env:MT_SESSION_ID -ne 'abcdefgh') { throw 'Wrong identity' }",
-            app.Urls.Single(), inheritedId, Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal(new[] { "resolve", "abcdefgh", "sibling1" }, requests.ToArray());
-    }
-
-    [Theory]
-    [InlineData(false, false)]
-    [InlineData(false, true)]
-    [InlineData(true, false)]
-    [InlineData(true, true)]
-    public async Task ContextExport_KeepsGitRequestsOnOwningServerAcrossShells(bool producerBash, bool consumerBash)
-    {
-        if (ResolveBashPath() is null || ResolvePowerShellPath() is null) return;
-
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var app = builder.Build();
-        app.MapGet("/{instance}/api/git/repos", (string instance, string sessionId) =>
-            instance == "owner" && sessionId == "abcdefgh"
-                ? Results.Json(new { sessionId })
-                : Results.NotFound("Session not found"));
-        await app.StartAsync(CancellationToken.None);
-        var server = app.Urls.Single();
-        var exports = await RunContextShellAsync(producerBash,
-            producerBash ? "source \"$1\"; mt_context \"$2\"" : ". $args[0]; mt_context $args[1]",
-            server + "/owner", "abcdefgh",
-            Path.Combine(_tempDir, producerBash ? "tlbx_cli.sh" : "tlbx_cli.ps1"),
-            consumerBash ? "--bash" : "--pwsh");
-        Assert.Equal(0, exports.ExitCode);
-        Assert.DoesNotContain("test-token", exports.Output, StringComparison.Ordinal);
-        var exportPath = Path.Combine(_tempDir, consumerBash ? "context.sh" : "context.ps1");
-        await File.WriteAllTextAsync(exportPath, exports.Output, CancellationToken.None);
-
-        // A daemon/remote shell may inherit another instance's environment and
-        // load a helper generated by that instance. The exported tuple must win.
-        var result = await RunContextShellAsync(consumerBash,
-            consumerBash ? "source \"$1\"; source \"$2\"; mt_repo list" : ". $args[0]; . $args[1]; mt_repo list",
-            server + "/other", "deadbeef", exportPath,
-            Path.Combine(_tempDir, consumerBash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        using var json = JsonDocument.Parse(result.Output);
-        Assert.Equal("abcdefgh", json.RootElement.GetProperty("sessionId").GetString());
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task Repo_ExplicitSessionOverridesStaleContextWithoutRetargetingOrRetryingFailures(bool bash)
-    {
-        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var app = builder.Build();
-        var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        app.MapMethods("/api/git/{**path}", ["GET", "POST", "DELETE"], async (HttpContext context) =>
-        {
-            var sessionId = context.Request.Query["sessionId"].ToString();
-            if (context.Request.Method == "POST")
-            {
-                using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
-                sessionId = body.RootElement.GetProperty("sessionId").GetString()!;
-            }
-            requests.Enqueue(sessionId);
-            return sessionId == "abcdefgh" ? Results.Ok() : Results.NotFound("Session not found");
-        });
-        await app.StartAsync(CancellationToken.None);
-        var server = app.Urls.Single();
-        var helper = Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
-        var result = await RunContextShellAsync(bash,
-            bash
-                ? "source \"$1\"; set -e; mt_repo --session abcdefgh add '/repo with space'; mt_repo --session abcdefgh refresh; mt_repo --session abcdefgh remove '/repo with space'; mt_repo --session abcdefgh list; test \"$MT_SESSION_ID\" = deadbeef"
-                : ". $args[0]; mt_repo add '/repo with space' -SessionId abcdefgh; mt_repo refresh -SessionId abcdefgh; mt_repo remove '/repo with space' -SessionId abcdefgh; mt_repo list -SessionId abcdefgh; if ($env:MT_SESSION_ID -ne 'deadbeef') { throw 'Environment changed' }",
-            server, "deadbeef", helper);
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal(4, requests.Count);
-        Assert.All(requests, id => Assert.Equal("abcdefgh", id));
-
-        result = await RunContextShellAsync(bash,
-            bash ? "source \"$1\"; mt_repo --session abcdefgh list" : ". $args[0]; mt_repo list -SessionId abcdefgh",
-            server, "", helper);
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal(5, requests.Count);
-
-        result = await RunContextShellAsync(bash,
-            bash ? "source \"$1\"; mt_repo add '/repo with space'" : ". $args[0]; mt_repo add '/repo with space'",
-            server, "deadbeef", helper);
-        Assert.NotEqual(0, result.ExitCode);
-        Assert.Contains("deadbeef", result.Error, StringComparison.Ordinal);
-        Assert.Contains(server, result.Error, StringComparison.Ordinal);
-        Assert.Contains("mt_sessions", result.Error, StringComparison.Ordinal);
-        Assert.Equal(6, requests.Count); // A mutation failure is never replayed against another session.
-    }
 
     [Theory]
     [InlineData(false, false)]
@@ -258,9 +66,13 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
     }
 
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task CodexDoesNotUseLegacyPlainIdOrBypassFailureWithExplicitTarget(bool bash)
+    [InlineData(false, "bound")]
+    [InlineData(true, "bound")]
+    [InlineData(false, "UNBOUND")]
+    [InlineData(true, "UNBOUND")]
+    [InlineData(false, "CHANGED")]
+    [InlineData(true, "CHANGED")]
+    public async Task ContextRepairReportsVerifiedSuccessOrCompleteActionableFailure(bool bash, string outcome)
     {
         if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
         Directory.CreateDirectory(_tempDir);
@@ -268,19 +80,117 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.UseUrls("http://127.0.0.1:0");
         await using var app = builder.Build();
-        var requests = new System.Collections.Concurrent.ConcurrentQueue<string>();
-        app.MapGet("/api/sessions/process-context", () => Results.Text("deadbeef"));
-        app.MapMethods("/api/git/{**path}", ["GET", "POST"], (HttpContext context) => { requests.Enqueue(context.Request.Path); return Results.Ok(); });
-        app.MapGet("/api/sessions", () => Results.Text("global-list-ok"));
+        const string identity = "01a10b30-4385-71e0-8a60-6fd26e1cfb01";
+        const string token = "0123456789abcdef0123456789abcdef";
+        var freshRequests = 0;
+        app.MapGet("/api/sessions/process-context", async (bool fresh, int processId) =>
+        {
+            if (fresh) Interlocked.Increment(ref freshRequests);
+            if (outcome == "CHANGED")
+            {
+                // Exercise the production discovery failure through the generated shell,
+                // including its HTTP body, instead of asserting a canned diagnostic.
+                var started = new DateTime(2026, 10, 27, 8, 0, 0, DateTimeKind.Utc);
+                using var service = new Ai.Tlbx.MidTerm.Services.Sessions.SessionCliContextService(
+                    () => [new("first001", 10, 11), new("second02", 20, 21)],
+                    _ => (1, started), TimeProvider.System, _ => true);
+                var resolution = await service.ResolveAsync(identity, identity, processId, fresh, (marker, _) =>
+                {
+                    service.ObserveOutput("first001", Encoding.UTF8.GetBytes(marker));
+                    service.ObserveInput("first001", userInput: true);
+                    return Task.FromResult(true);
+                }, CancellationToken.None);
+                return Results.Text(resolution, statusCode: 409);
+            }
+            return Results.Text(outcome == "bound" ? "abcdefgh:" + token
+                : (outcome == "UNBOUND" ? "TLBXCTX:" + token + "\n" : "") +
+                    $"TLBX_CONTEXT_{outcome}: No session operation was executed.\nReason: terminal-input-changed: session=second02; inputVersion=4->5.\nNext: Retry the original command once in a new shell tool call.",
+                statusCode: outcome == "bound" ? 200 : 409);
+        });
         await app.StartAsync(CancellationToken.None);
         var command = bash
-            ? "set -e; export CODEX_SESSION_ID=01a10b30-4385-71e0-8a60-6fd26e1cfb01; source \"$1\"; mt_sessions; mt_repo --session sibling1 list"
-            : "$env:CODEX_SESSION_ID='01a10b30-4385-71e0-8a60-6fd26e1cfb01'; . $args[0]; mt_sessions; mt_repo list -SessionId sibling1";
-        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
+            ? $"export CODEX_SESSION_ID={identity}; source \"$1\"; mt_context repair"
+            : $"$env:CODEX_SESSION_ID='{identity}'; . $args[0]; mt_context repair";
+        var helper = Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
+        var result = await RunContextShellAsync(bash, command, app.Urls.Single(), "deadbeef", helper);
+        Assert.Equal(1, freshRequests);
+        var diagnostic = result.Output + result.Error;
+        TestContext.Current.TestOutputHelper?.WriteLine(diagnostic);
+        Assert.DoesNotContain("Usage:", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
+        if (outcome == "bound")
+        {
+            Assert.True(result.ExitCode == 0, diagnostic);
+            Assert.Contains("repair=verified", result.Output, StringComparison.Ordinal);
+            Assert.Contains("sessionId=abcdefgh", result.Output, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, diagnostic, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.NotEqual(0, result.ExitCode);
+            Assert.Contains("TLBX_CONTEXT_" + outcome, result.Error, StringComparison.Ordinal);
+            Assert.Contains(outcome == "CHANGED" ? "session=first001; inputVersion=1->2" : "session=second02; inputVersion=4->5", result.Error, StringComparison.Ordinal);
+            if (outcome == "CHANGED") Assert.Contains("stage=automatic-discovery", result.Error, StringComparison.Ordinal);
+            Assert.Contains("httpStatus=409;", result.Error, StringComparison.Ordinal);
+            Assert.Contains("helper=", result.Error, StringComparison.Ordinal);
+            Assert.Contains("Next:", result.Error, StringComparison.Ordinal);
+            if (outcome == "UNBOUND") Assert.Contains("TLBXCTX:" + token, result.Error, StringComparison.Ordinal);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, 409)]
+    [InlineData(true, 409)]
+    [InlineData(false, 503)]
+    [InlineData(true, 503)]
+    public async Task ApiFailurePreservesServerReasonAndIdentifiesRequestWithoutReplayingMutation(bool bash, int status)
+    {
+        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
+        Directory.CreateDirectory(_tempDir);
+        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.UseUrls("http://127.0.0.1:0");
+        await using var app = builder.Build();
+        app.MapGet("/api/sessions/process-context", () => Results.Text("abcdefgh"));
+        var mutations = 0;
+        app.MapPut("/api/sessions/{id}/topic", () =>
+        {
+            Interlocked.Increment(ref mutations);
+            return Results.Text("Reason: requested session is unavailable; original topic preserved.", statusCode: status);
+        });
+        await app.StartAsync(CancellationToken.None);
+        var result = await RunContextShellAsync(bash,
+            bash ? "source \"$1\"; mt_topic do-not-log-payload" : ". $args[0]; mt_topic do-not-log-payload",
+            app.Urls.Single(), "abcdefgh", Path.Combine(_tempDir, bash ? "tlbx_cli.sh" : "tlbx_cli.ps1"));
         Assert.NotEqual(0, result.ExitCode);
-        Assert.Empty(requests);
-        Assert.Contains("global-list-ok", result.Output, StringComparison.Ordinal);
-        Assert.Contains("TLBX_CONTEXT_UNAVAILABLE", result.Output + result.Error, StringComparison.Ordinal);
+        Assert.Equal(1, mutations);
+        var diagnostic = result.Output + result.Error;
+        Assert.Contains("Reason: requested session is unavailable; original topic preserved.", diagnostic, StringComparison.Ordinal);
+        Assert.Contains("TLBX_API_FAILED", result.Error, StringComparison.Ordinal);
+        Assert.Contains("endpoint=" + app.Urls.Single() + "/api/sessions/abcdefgh/topic", result.Error, StringComparison.Ordinal);
+        Assert.Contains(status.ToString(System.Globalization.CultureInfo.InvariantCulture), diagnostic, StringComparison.Ordinal);
+        Assert.Contains("No automatic retry", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("do-not-log-payload", diagnostic, StringComparison.Ordinal);
+        Assert.DoesNotContain("test-token", diagnostic, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnsureRefreshesBothAgentGuidesAndPreservesUserArtifacts()
+    {
+        var directory = TlbxDirectory.Ensure(_tempDir);
+        var guide = File.ReadAllText(Path.Combine(directory, "AGENTS.md"));
+        var fallback = File.ReadAllText(Path.Combine(directory, "CLI-FALLBACK.md"));
+        File.WriteAllText(Path.Combine(directory, "AGENTS.md"), "outdated instructions");
+        File.WriteAllText(Path.Combine(directory, "CLAUDE.md"), "different outdated instructions");
+        File.WriteAllText(Path.Combine(directory, "CLI-FALLBACK.md"), "outdated fallback reference");
+        var upload = Path.Combine(directory, "uploads", "keep.txt");
+        Directory.CreateDirectory(Path.GetDirectoryName(upload)!);
+        File.WriteAllText(upload, "user upload");
+        TlbxDirectory.Ensure(_tempDir);
+        Assert.Equal(guide, File.ReadAllText(Path.Combine(directory, "AGENTS.md")));
+        Assert.Equal(guide, File.ReadAllText(Path.Combine(directory, "CLAUDE.md")));
+        Assert.Equal(fallback, File.ReadAllText(Path.Combine(directory, "CLI-FALLBACK.md")));
+        Assert.Equal("user upload", File.ReadAllText(upload));
     }
 
     [Theory]
@@ -326,37 +236,12 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         Assert.Equal(2, polls);
     }
 
-    [Theory]
-    [InlineData("normal")]
-    [InlineData("important")]
-    public async Task Notify_SerializesPriorityAndLiteralMessageBeforeSinglePost(string priority)
-    {
-        if (ResolvePowerShellPath() is null) return;
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2100, "test-token");
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var app = builder.Build();
-        var posts = 0;
-        app.MapPost("/api/notifications", async (HttpContext context) =>
-        {
-            using var body = await JsonDocument.ParseAsync(context.Request.Body, cancellationToken: context.RequestAborted);
-            Assert.Equal(priority, body.RootElement.GetProperty("priority").GetString());
-            Assert.Equal("A \"quoted\" message\nwith umlaut ä", body.RootElement.GetProperty("body").GetString());
-            Assert.Equal("abcdefgh", body.RootElement.GetProperty("sessionId").GetString());
-            Interlocked.Increment(ref posts);
-            return Results.Ok();
-        });
-        await app.StartAsync(CancellationToken.None);
-        var result = await RunContextShellAsync(false,
-            ". $args[0]; Mt-Notify -Message \"A `\"quoted`\" message`nwith umlaut ä\" -Priority " + priority,
-            app.Urls.Single(), "abcdefgh", Path.Combine(_tempDir, "tlbx_cli.ps1"));
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal(1, posts);
-    }
+    private Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
+        bool bash, string command, string baseUrl, string sessionId, params string[] arguments)
+        => RunContextShellAsync(bash, command, baseUrl, sessionId, TimeSpan.FromSeconds(30), arguments);
 
     private async Task<(int ExitCode, string Output, string Error)> RunContextShellAsync(
-        bool bash, string command, string baseUrl, string sessionId, params string[] arguments)
+        bool bash, string command, string baseUrl, string sessionId, TimeSpan timeoutBudget, params string[] arguments)
     {
         var start = new ProcessStartInfo(bash ? ResolveBashPath()! : ResolvePowerShellPath()!)
         {
@@ -372,16 +257,18 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         start.Environment.Remove("CODEX_HOME");
         start.Environment["MT_BASE_URL"] = baseUrl;
         start.Environment["MT_SESSION_ID"] = sessionId;
+        start.Environment["TLBX_CLI_AUTH_CACHE_DIR"] = Path.Combine(_tempDir, ".auth");
+        var driver = Path.Combine(_tempDir, Guid.NewGuid().ToString("N") + (bash ? ".sh" : ".ps1"));
+        await File.WriteAllTextAsync(driver, (bash ? "" : "$ErrorActionPreference = 'Stop'\n") + command,
+            new UTF8Encoding(false), Xunit.TestContext.Current.CancellationToken);
         if (bash)
         {
-            start.ArgumentList.Add("-c");
-            start.ArgumentList.Add(command);
-            start.ArgumentList.Add("context-test");
+            // Git Bash's Windows argv conversion can replace non-ANSI text
+            // before the generated helper even runs. Feed exact UTF-8 source.
+            start.ArgumentList.Add(ToBashPath(driver));
         }
         else
         {
-            var driver = Path.Combine(_tempDir, Guid.NewGuid().ToString("N") + ".ps1");
-            await File.WriteAllTextAsync(driver, "$ErrorActionPreference = 'Stop'\n" + command, Xunit.TestContext.Current.CancellationToken);
             start.ArgumentList.Add("-NoProfile");
             start.ArgumentList.Add("-File");
             start.ArgumentList.Add(driver);
@@ -391,7 +278,7 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         using var process = Process.Start(start)!;
         var stdout = process.StandardOutput.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
         var stderr = process.StandardError.ReadToEndAsync(Xunit.TestContext.Current.CancellationToken);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var timeout = new CancellationTokenSource(timeoutBudget);
         try
         {
             await process.WaitForExitAsync(timeout.Token);
@@ -401,278 +288,6 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
         {
             if (!process.HasExited) process.Kill(entireProcessTree: true);
         }
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task SourceInstance_BoundAddressRemainsReachableWithoutBaseUrlOverride(bool bash)
-    {
-        if ((bash ? ResolveBashPath() : ResolvePowerShellPath()) is null) return;
-        Directory.CreateDirectory(_tempDir);
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var app = builder.Build();
-        app.MapGet("/api/version", () => Results.Text("bound-source"));
-        await app.StartAsync(CancellationToken.None);
-        var port = new Uri(app.Urls.Single()).Port;
-        TlbxDirectory.WriteInstanceCliScripts(_tempDir, port, "test-token", true, "127.0.0.1");
-        var helper = Path.Combine(_tempDir, "instances", port.ToString(System.Globalization.CultureInfo.InvariantCulture), bash ? "tlbx_cli.sh" : "tlbx_cli.ps1");
-        // Use the generated HTTPS authority, but make the fixture's scheme HTTP.
-        // No caller URL override may supply the bound host.
-        var command = bash
-            ? "unset MT_BASE_URL; source \"$1\"; _MT=${_MT/https:/http:}; _MC \"$_MT/api/version\""
-            : "Remove-Item Env:MT_BASE_URL; . $args[0]; $script:_MT=$script:_MT.Replace('https:','http:'); _MC \"$script:_MT/api/version\"";
-        var result = await RunContextShellAsync(bash, command, "ignored", "", helper);
-        Assert.True(result.ExitCode == 0, result.Error + result.Output);
-        Assert.Equal("bound-source", result.Output.Trim());
-    }
-
-    [Theory]
-    [InlineData("0.0.0.0", "localhost")]
-    [InlineData("::", "localhost")]
-    [InlineData("127.0.0.1", "127.0.0.1")]
-    [InlineData("100.91.240.65", "100.91.240.65")]
-    [InlineData("::1", "[::1]")]
-    public void CliHost_UsesSpecificBindingOrLoopbackForWildcard(string binding, string expected)
-    {
-        Assert.Equal(expected, TlbxDirectory.ResolveCliHost(binding));
-    }
-
-    [Fact]
-    public void SourceInstance_PreservesSupervisorHelpersAndKeepsItsOwnCredentials()
-    {
-        Directory.CreateDirectory(_tempDir);
-        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2000, "supervisor-token", false);
-        var names = new[] { "tlbx_cli.ps1", "tlbx_cli.sh", "tlbx_graphs.ps1", "tlbx_graphs.sh" };
-        var originals = names.ToDictionary(name => name, name => File.ReadAllText(Path.Combine(_tempDir, name)), StringComparer.Ordinal);
-        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2100, "source-token", true);
-        TlbxDirectory.WriteInstanceCliScripts(_tempDir, 2100, "refreshed-source-token", true);
-        foreach (var name in names)
-        {
-            Assert.Equal(originals[name], File.ReadAllText(Path.Combine(_tempDir, name)));
-            var source = File.ReadAllText(Path.Combine(_tempDir, "instances", "2100", name));
-            Assert.Contains("2100", source, StringComparison.Ordinal);
-            Assert.Contains("refreshed-source-token", source, StringComparison.Ordinal);
-            Assert.DoesNotContain("supervisor-token", source, StringComparison.Ordinal);
-        }
-    }
-
-    [Fact]
-    public void WriteScripts_BashBootstrapProducesValidJsonWithSlashCommands()
-    {
-        var bashPath = ResolveBashPath();
-        if (bashPath is null)
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
-
-        var scriptPath = ToBashPath(Path.Combine(_tempDir, "tlbx_cli.sh"));
-        var startInfo = new ProcessStartInfo(bashPath)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-        startInfo.ArgumentList.Add("-c");
-        startInfo.ArgumentList.Add(
-            "source \"$1\"; _MJ() { printf '%s' \"$2\"; }; " +
-            "mt_bootstrap 'review \"worker\"' 'Q:/repo with space' codex status compact");
-        startInfo.ArgumentList.Add("midterm-test");
-        startInfo.ArgumentList.Add(scriptPath);
-
-        using var process = Process.Start(startInfo)!;
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        Assert.True(process.ExitCode == 0, error);
-        using var json = JsonDocument.Parse(output);
-        var root = json.RootElement;
-        Assert.Equal("review \"worker\"", root.GetProperty("name").GetString());
-        Assert.Equal("Q:/repo with space", root.GetProperty("workingDirectory").GetString());
-        Assert.Equal("codex", root.GetProperty("profile").GetString());
-        var slashCommands = root.GetProperty("slashCommands");
-        Assert.Equal(2, slashCommands.GetArrayLength());
-        Assert.Equal("status", slashCommands[0].GetString());
-        Assert.Equal("compact", slashCommands[1].GetString());
-    }
-
-    [Fact]
-    public void WriteScripts_BashRunIsolatedKeepsChildBytesOutOfCallerAndPreservesArgv()
-    {
-        var bashPath = ResolveBashPath();
-        if (bashPath is null)
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
-        var childPath = Path.Combine(_tempDir, "isolated-child.sh");
-        File.WriteAllText(childPath,
-            "sleep 0.15\n" +
-            "printf 'stdout-sentinel\\n'\n" +
-            "printf 'arg1=<%s>\\n' \"$1\"\n" +
-            "printf 'arg2=<%s>\\n' \"$2\"\n" +
-            "printf 'arg3=<%s>\\n' \"$3\"\n" +
-            "if IFS= read -r line; then printf 'stdin=<%s>\\n' \"$line\"; else printf 'stdin=<eof>\\n'; fi\n" +
-            "printf 'stderr-sentinel\\n' >&2\n");
-
-        var startInfo = new ProcessStartInfo(bashPath)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-        startInfo.ArgumentList.Add("-c");
-        startInfo.ArgumentList.Add("source \"$1\"; mt_run_isolated \"$2\" \"$3\" \"$4\" \"$5\" \"$6\"");
-        startInfo.ArgumentList.Add("midterm-test");
-        startInfo.ArgumentList.Add(ToBashPath(Path.Combine(_tempDir, "tlbx_cli.sh")));
-        startInfo.ArgumentList.Add(ToBashPath(bashPath));
-        startInfo.ArgumentList.Add(ToBashPath(childPath));
-        startInfo.ArgumentList.Add("two words");
-        startInfo.ArgumentList.Add("quote\"value");
-        startInfo.ArgumentList.Add("slash and space\\");
-
-        using var process = Process.Start(startInfo)!;
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        Assert.True(process.ExitCode == 0, error);
-        Assert.DoesNotContain("stdout-sentinel", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("stderr-sentinel", error, StringComparison.Ordinal);
-        using var receipt = JsonDocument.Parse(output);
-        var root = receipt.RootElement;
-        Assert.True(root.GetProperty("pid").GetInt32() > 0);
-        var runId = root.GetProperty("runId").GetString()!;
-        var stdoutPath = Path.Combine(_tempDir, "runs", runId, "stdout.log");
-        var stderrPath = Path.Combine(_tempDir, "runs", runId, "stderr.log");
-
-        var childOutput = WaitForFileContent(stdoutPath, content => content.Contains("stdin=<eof>", StringComparison.Ordinal));
-        var childError = WaitForFileContent(stderrPath, content => content.Contains("stderr-sentinel", StringComparison.Ordinal));
-        Assert.Contains("stdout-sentinel", childOutput, StringComparison.Ordinal);
-        Assert.Contains("arg1=<two words>", childOutput, StringComparison.Ordinal);
-        Assert.Contains("arg2=<quote\"value>", childOutput, StringComparison.Ordinal);
-        Assert.Contains("arg3=<slash and space\\>", childOutput, StringComparison.Ordinal);
-        Assert.Equal("stderr-sentinel", childError.Trim());
-        Assert.EndsWith($"/runs/{runId}/stdout.log", root.GetProperty("stdoutPath").GetString()!.Replace('\\', '/'), StringComparison.Ordinal);
-        Assert.EndsWith($"/runs/{runId}/stderr.log", root.GetProperty("stderrPath").GetString()!.Replace('\\', '/'), StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void WriteScripts_PowerShellRunIsolatedKeepsChildBytesOutOfCallerAndPreservesArgv()
-    {
-        var powershellPath = ResolvePowerShellPath();
-        if (powershellPath is null)
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
-        var childPath = Path.Combine(_tempDir, "isolated-child.ps1");
-        File.WriteAllText(childPath,
-            "param([Parameter(ValueFromRemainingArguments=$true)][string[]]$InputArgs)\n" +
-            "Start-Sleep -Milliseconds 150\n" +
-            "[Console]::Out.WriteLine('stdout-sentinel')\n" +
-            "$InputArgs | ForEach-Object -Begin { $index = 0 } -Process { [Console]::Out.WriteLine(('arg{0}=<{1}>' -f (++$index), $_)) }\n" +
-            "[Console]::Out.WriteLine(('stdin-length={0}' -f ([Console]::In.ReadToEnd().Length)))\n" +
-            "[Console]::Error.WriteLine('stderr-sentinel')\n");
-
-        var startInfo = new ProcessStartInfo(powershellPath)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(Path.Combine(_tempDir, "tlbx_cli.ps1"));
-        startInfo.ArgumentList.Add("mt_run_isolated");
-        startInfo.ArgumentList.Add(powershellPath);
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-NonInteractive");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(childPath);
-        startInfo.ArgumentList.Add("two words");
-        startInfo.ArgumentList.Add("quote\"value");
-        startInfo.ArgumentList.Add("slash and space\\");
-
-        using var process = Process.Start(startInfo)!;
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        Assert.True(process.ExitCode == 0, error);
-        Assert.DoesNotContain("stdout-sentinel", output, StringComparison.Ordinal);
-        Assert.DoesNotContain("stderr-sentinel", error, StringComparison.Ordinal);
-        using var receipt = JsonDocument.Parse(output);
-        var root = receipt.RootElement;
-        Assert.True(root.GetProperty("pid").GetInt32() > 0);
-        var runId = root.GetProperty("runId").GetString()!;
-        var stdoutPath = root.GetProperty("stdoutPath").GetString()!;
-        var stderrPath = root.GetProperty("stderrPath").GetString()!;
-        Assert.Equal(Path.Combine(_tempDir, "runs", runId, "stdout.log"), stdoutPath);
-        Assert.Equal(Path.Combine(_tempDir, "runs", runId, "stderr.log"), stderrPath);
-
-        var childOutput = WaitForFileContent(stdoutPath, content => content.Contains("stdin-length=0", StringComparison.Ordinal));
-        var childError = WaitForFileContent(stderrPath, content => content.Contains("stderr-sentinel", StringComparison.Ordinal));
-        Assert.Contains("stdout-sentinel", childOutput, StringComparison.Ordinal);
-        Assert.Contains("arg1=<two words>", childOutput, StringComparison.Ordinal);
-        Assert.Contains("arg2=<quote\"value>", childOutput, StringComparison.Ordinal);
-        Assert.Contains("arg3=<slash and space\\>", childOutput, StringComparison.Ordinal);
-        Assert.Equal("stderr-sentinel", childError.Trim());
-    }
-
-    [Fact]
-    public void WriteScripts_PowerShellRunIsolated_RemovesExpiredCompletedRuns()
-    {
-        var powershellPath = ResolvePowerShellPath();
-        if (powershellPath is null)
-        {
-            return;
-        }
-
-        Directory.CreateDirectory(_tempDir);
-        TlbxCliScriptWriter.WriteScripts(_tempDir, 2000, "test-token");
-        var expiredRun = Path.Combine(_tempDir, "runs", "expired-run");
-        Directory.CreateDirectory(expiredRun);
-        Directory.SetLastWriteTimeUtc(expiredRun, DateTime.UtcNow.AddDays(-15));
-
-        var startInfo = new ProcessStartInfo(powershellPath)
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false
-        };
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-File");
-        startInfo.ArgumentList.Add(Path.Combine(_tempDir, "tlbx_cli.ps1"));
-        startInfo.ArgumentList.Add("mt_run_isolated");
-        startInfo.ArgumentList.Add(powershellPath);
-        startInfo.ArgumentList.Add("-NoProfile");
-        startInfo.ArgumentList.Add("-Command");
-        startInfo.ArgumentList.Add("exit 0");
-
-        using var process = Process.Start(startInfo)!;
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        Assert.True(process.ExitCode == 0, error + output);
-        Assert.False(Directory.Exists(expiredRun));
-
-        var shell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.sh"));
-        var powershell = File.ReadAllText(Path.Combine(_tempDir, "tlbx_cli.ps1"));
-        Assert.Contains("max_completed_runs=100", shell, StringComparison.Ordinal);
-        Assert.Contains("max_completed_kib=1048576", shell, StringComparison.Ordinal);
-        Assert.Contains("$maxCompletedRuns = 100", powershell, StringComparison.Ordinal);
-        Assert.Contains("$maxCompletedBytes = 1GB", powershell, StringComparison.Ordinal);
     }
 
     public void Dispose()
@@ -717,41 +332,9 @@ public sealed class TlbxCliScriptWriterTests : IDisposable
             .FirstOrDefault(File.Exists);
     }
 
-    private static string WaitForFileContent(string path, Func<string, bool> completed)
-    {
-        var timeout = Stopwatch.StartNew();
-        string content = string.Empty;
-        while (timeout.Elapsed < TimeSpan.FromSeconds(10))
-        {
-            if (File.Exists(path))
-            {
-                try
-                {
-                    content = File.ReadAllText(path);
-                    if (completed(content))
-                    {
-                        return content;
-                    }
-                }
-                catch (IOException)
-                {
-                }
-            }
-
-            Thread.Sleep(25);
-        }
-
-        Assert.Fail($"Timed out waiting for isolated run artifact '{path}'. Last content: {content}");
-        return content;
-    }
-
     private static string ToBashPath(string path)
     {
-        if (!OperatingSystem.IsWindows())
-        {
-            return path;
-        }
-
+        if (!OperatingSystem.IsWindows()) return path;
         var normalized = path.Replace('\\', '/');
         return normalized.Length >= 3 && normalized[1] == ':'
             ? $"/{char.ToLowerInvariant(normalized[0])}/{normalized[3..]}"

@@ -220,6 +220,7 @@ async function startRuntime(command) {
       settingSources: ["user", "project", "local"],
       includePartialMessages: true,
       env: process.env,
+      ...(configuration.mcpServers ? { mcpServers: configuration.mcpServers } : {}),
       canUseTool,
       permissionMode: mode,
       allowDangerouslySkipPermissions: true,
@@ -263,6 +264,19 @@ async function handle(command) {
       }
       await startRuntime(command);
       const initialized = await runtime.initializationResult();
+      if (configuration.mcpServers?.tlbx) {
+        const deadline = Date.now() + 30_000;
+        let connected = false;
+        while (Date.now() < deadline) {
+          const servers = await runtime.mcpServerStatus();
+          const tlbx = servers.find((server) => server.name === "tlbx");
+          if (tlbx?.status === "connected") { connected = true; break; }
+          if (tlbx && tlbx.status !== "pending") break;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        if (!connected)
+          throw new Error("TLBX_MCP_PROVIDER_DISCOVERY: Claude did not connect its native tlbx MCP server; no model turn was started.");
+      }
       emit({
         type: "bridge.ready",
         sdk: "@anthropic-ai/claude-agent-sdk",
