@@ -1,0 +1,113 @@
+{
+  "artifacts": {
+    "linux-arm64": {
+      "files": {
+        "bundle.zip": "8df0f2fe2084b700a1fb32b51a28cbca99933f71a22348444c8ab8774e61d48e",
+        "manifest.json": "e5f09e35f2ded9c1efcf37d93e76372e7f759321fdd362b02635396a10ec32f6",
+        "native-backports.vex.json": "eea2eff945c483f30024c324d7c09c501a23a82ecc561b55e56214d7ec78c056",
+        "native-dependencies.spdx.json": "b740f4f94765ef0c24c9195e496c12d8b5380df0c1cc35f0f3153f04f83d0bd9"
+      },
+      "recipeSha256": "a048bd44b9d862f4e096c4512c18f5d7cc6292c7a3adc81183cf080c744febb7",
+      "source": {
+        "archive": "mt-linux-arm64.tar.gz",
+        "archiveSha256": "8d2e867b38d96b4d39f826330080cbfbe1a4f20f604bfcdfed7cb54162953f9f",
+        "commit": "eaf81443830f228caf4131548f06e56e617c5114",
+        "nativeRecipeGitTree": "292e2b42f3a19b5916a7999614342583d28f0b08",
+        "spdxSha256": "d9471df8a0f54140ce5c7bc8f4edd36cff3847b1b289f7a2c4e96db265c79cdc",
+        "tag": "v10.25.28-dev",
+        "workflowRun": 42149130099
+      }
+    },
+    "linux-x64": {
+      "files": {
+        "bundle.zip": "54c918e97467a9d737343fec2a35587241d320a18e7eb03d6cbe2d34616ddf19",
+        "manifest.json": "d5b792acef2ac4925dfed780a26a5dc28c1f0db295f506118b8562b97dcf0f7a",
+        "native-backports.vex.json": "f3597435e81c5bad25d4d2d8c1f7c911fa61064d24a6c317f276ff3e17f715dd",
+        "native-dependencies.spdx.json": "c7d640798494d91dafab493b1c81fea72e09db1c18a9048f7866d2816dd2cc41"
+      },
+      "recipeSha256": "e2c66c62fca7499569d5665a382450e31ab6e4486c96306b8b7b46bf45059fe4",
+      "source": {
+        "archive": "mt-linux-x64.tar.gz",
+        "archiveSha256": "7fe4c4a0dd691289e6330484618b35dd8ab3ec342ebc97b53c71f1395192b50e",
+        "commit": "eaf81443830f228caf4131548f06e56e617c5114",
+        "nativeRecipeGitTree": "292e2b42f3a19b5916a7999614342583d28f0b08",
+        "spdxSha256": "a8eef656e6c54b2ddfd6f4fc178b0b248b4033d3af0920a5b43a03156d4a4a72",
+        "tag": "v10.25.28-dev",
+        "workflowRun": 42149130099
+      }
+    },
+    "osx-arm64": {
+      "files": {
+        "bundle.zip": "fea899ae371b9f75e7c2d5bbdc21933a466f7b84e9172e49bbcee8aaccca4d8a",
+        "manifest.json": "a9cc6317f3ad52f32a2d5d6b1826a4a2363d98053dcf39a9c2ef3beca41aec13",
+        "native-backports.vex.json": "8d4d92ea5cf202e86fe0dac1b35dd766ed107a4546d998f130594eeac5a7f9c2",
+        "native-dependencies.spdx.json": "bf78bbc8174dc343bbbb3e9239555e735a9166b51307d2f7a6d7efd182a327ee"
+      },
+      "recipeSha256": "1864d26ff1961cc53efba8b711750b304a7dda09f541cbfba76980507b2ef18f",
+      "source": {
+        "archive": "mt-osx-arm64.tar.gz",
+        "archiveSha256": "30afc0ebf985586a336a884c44a11e111bb7da02849897973363928470f77d17",
+        "commit": "eaf81443830f228caf4131548f06e56e617c5114",
+        "nativeRecipeGitTree": "292e2b42f3a19b5916a7999614342583d28f0b08",
+        "spdxSha256": "273bf3584afe11851a1e43a94e5d02c68e897d1bbf9bf4268538b18e263e93d2",
+        "tag": "v10.25.28-dev",
+        "workflowRun": 42149130099
+      }
+    },
+    "osx-x64": {
+      "files": {
+        "bundle.zip": "27bacf67cebc2df5b893768be7d972654a28c353b934474e713336f2d3538192",
+        "manifest.json": "9531570f4a8a781c62eace9daa9de47c7a5e9d0671d16f9206fb66c9ae1a25fb",
+        "native-backports.vex.json": "d9eb7e589cc51db856134549f0738bb4f46d5926717cff2ee7ef23edaf8ea0ac",
+        "native-dependencies.spdx.json": "162c9b2e6a7989cabef5ed0eb7247ebc74e1c36af769a4c633bfe66037a1e686"
+      },
+      "recipeSha256": "7a0131ce71673a8de357855ee78180516d54746d1ac2bca5f52b6cca8099dce5",
+      "source": {
+        "archive": "mt-osx-x64.tar.gz",
+        "archiveSha256": "47a5fd2fb85ccd7aae1dd84c7c0709ca109c3c8a51e2d48b9757874b52d3dddd",
+        "commit": "eaf81443830f228caf4131548f06e56e617c5114",
+        "nativeRecipeGitTree": "292e2b42f3a19b5916a7999614342583d28f0b08",
+        "spdxSha256": "ea552d5a086fc4c165f5d330850baa496f341d94b4b1743f65101e61f414ef9d",
+        "tag": "v10.25.28-dev",
+        "workflowRun": 42149130099
+      }
+    },
+    "win-x64": {
+      "files": {
+        "bundle.zip": "4df7587e5d658c99191cb6f260b68ec14516aa9c78d89c93355e212a9e8a5e57",
+        "manifest.json": "597e7e3118b99a23ba6c4e9dbfc64e6932ffc91ea3aa53b7216cce281cc6abe7",
+        "native-backports.vex.json": "caaaa50c929b7466748dfd7f6c185ff7531a31c3aaa15884be15202ebe9d8f7f",
+        "native-dependencies.spdx.json": "41c7a0431490a11a42959d00ec9375d19d2b5beb53ec3bbb91519fcc18cabd31"
+      },
+      "recipeSha256": "8b973d741cd9bf102d6b413b91515729ba36c787acb5afbd6b8efb152f338b9d",
+      "source": {
+        "archive": "mt-win-x64.zip",
+        "archiveSha256": "efe42f7b6d7d1ede43d7b47a1f2edb8c24501475b4b66acbcde312e2bddcaa29",
+        "commit": "eaf81443830f228caf4131548f06e56e617c5114",
+        "nativeRecipeGitTree": "292e2b42f3a19b5916a7999614342583d28f0b08",
+        "spdxSha256": "ae33ead71554420a2cc87a3fa2c0966442ca2fde398d5b723582301861d8cf65",
+        "tag": "v10.25.28-dev",
+        "workflowRun": 42149130099
+      }
+    },
+    "win-x86": {
+      "files": {
+        "bundle.zip": "d0550a1705fe9bea1ba88e753cba07d7a40512ca4cec502331fbc1645dd70530",
+        "manifest.json": "4322b2d1a38e1a517ccc2dc46fde18fd61bfc99993d0eda688f5aa9d20c6142b",
+        "native-backports.vex.json": "bb135b2bc5b73b9270276b7499cf8ee0ce620bc2b466af30965853caea86dbdb",
+        "native-dependencies.spdx.json": "587bbef24107c8021c24fb30f152fe717fa7a0ff7163c873845fa55db59fe0a1"
+      },
+      "recipeSha256": "c01e614cbbb489c5761ef55999ded974afd3ba3282c7390f8408ce80d8911373",
+      "source": {
+        "archive": "mt-win-x86.zip",
+        "archiveSha256": "e3cb9329a64283061f89e531527041f4d4f71c4c6d271f43c1843e8db8378016",
+        "commit": "eaf81443830f228caf4131548f06e56e617c5114",
+        "nativeRecipeGitTree": "292e2b42f3a19b5916a7999614342583d28f0b08",
+        "spdxSha256": "a94cda61e2bebb58e77d03e2f6928d0a3672558d54917212de6a1a1140d6ae2e",
+        "tag": "v10.25.28-dev",
+        "workflowRun": 42149130099
+      }
+    }
+  },
+  "version": 1
+}

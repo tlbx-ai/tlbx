@@ -1,0 +1,24 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://tlbx.ai/vex/connect-native/osx-x64/9834ff2ccb21ca789c1dbb92fa077f58704c55ef081b37f773360072e9e280f3",
+  "author": "tlbx native build",
+  "timestamp": "2026-11-06T02:30:40Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-85091"
+      },
+      "products": [
+        {
+          "@id": "pkg:vcpkg/zlib@1.3.2?checksum=sha256%3A23f7a769ac687b5fbf691b12693efa89ff46b7931c4c0fa42b94adaf8c4e5f71&port_version=3&triplet=osx-x64",
+          "hashes": {
+            "sha-256": "23f7a769ac687b5fbf691b12693efa89ff46b7931c4c0fa42b94adaf8c4e5f71"
+          }
+        }
+      ],
+      "status": "fixed",
+      "status_notes": "Exact upstream fix https://github.com/madler/zlib/commit/df84af25dc1942490e1d1c899a07619152a46148; patch SHA256 110ff14375733173d8aa54574473424fbd7dfe4b81f1ca34a759c6fe14b15b14; compiled source SHA256 31d0da140edf382b82b13e2d87a22f59e158d9014ee026459e01cf437d0ab07d; static archive SHA256 23f7a769ac687b5fbf691b12693efa89ff46b7931c4c0fa42b94adaf8c4e5f71. Native osx-x64 entrypoint SHA256 9834ff2ccb21ca789c1dbb92fa077f58704c55ef081b37f773360072e9e280f3. Maintainer confirmation: https://github.com/madler/zlib/issues/1310#issuecomment-5709374730."
+    }
+  ]
+}

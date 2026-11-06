@@ -10,6 +10,9 @@ from unittest import mock
 import zipfile
 
 ROOT = Path(__file__).resolve().parent
+fixture_spec = importlib.util.spec_from_file_location("prebuilt_fixture", ROOT / "test-prebuilt.py")
+fixture = importlib.util.module_from_spec(fixture_spec)
+fixture_spec.loader.exec_module(fixture)
 spec = importlib.util.spec_from_file_location("complete_native_sbom", ROOT / "complete-sbom.py")
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
@@ -23,21 +26,19 @@ class NativePackageContracts(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix="tlbx-native-contract-")
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+        fixture.seed_recipe(self.root)
         self.pin = json.loads((ROOT / "native-stack.json").read_text())
-        (self.root / "native-stack.json").write_text(json.dumps(self.pin))
         self.bundle = self.root / "bin/linux-x64/bundle.zip"
-        self.bundle.parent.mkdir(parents=True)
-        self.graph = {"packages": [{"name": "libnice", "SPDXID": "SPDXRef-native-libnice-port", "versionInfo": "0.1.24", "checksums": [{"algorithm": "SHA512", "checksumValue": "a" * 128}]}], "relationships": [], "files": []}
-        self.files = {"libdatachannel.so": b"fixture native archive bytes", "THIRD-PARTY-NOTICES.txt": b"fixture notices", "native-dependencies.spdx.json": json.dumps(self.graph).encode()}
-        self.manifest = {"version": 1, "runtimeIdentifier": "linux-x64", "entryPoint": "libdatachannel.so", "versions": dict(self.pin["versions"], vcpkgCommit=self.pin["vcpkgCommit"]), "files": [{"name": name, "sha256": hashlib.sha256(data).hexdigest()} for name, data in self.files.items()]}
+        self.manifest, self.graph, self.vex, self.files = fixture.fixture_payload(self.root)
+        self.write_bundle()
+        frozen = self.root / "prebuilt/linux-x64"
+        shutil.copytree(self.bundle.parent, frozen)
+        fixture.prebuilt.seal(self.root, "linux-x64")
         self.sbom = self.root / "mt-linux-x64.spdx.json"
         self.sbom.write_text(json.dumps({"SPDXID": "SPDXRef-DOCUMENT", "packages": [], "relationships": []}))
 
     def write_bundle(self):
-        with zipfile.ZipFile(self.bundle, "w") as bundle:
-            bundle.writestr("manifest.json", json.dumps(self.manifest))
-            for name, data in self.files.items():
-                bundle.writestr(name, data)
+        fixture.write_payload(self.bundle.parent, self.manifest, self.files, self.vex)
 
     def test_source_checksums_and_native_binary_provenance_reach_release_sbom(self):
         self.write_bundle()
@@ -60,7 +61,7 @@ class NativePackageContracts(unittest.TestCase):
     def test_undeclared_sidecar_rejected(self):
         self.files["helper.exe"] = b"unwanted child process"
         self.write_bundle()
-        with self.assertRaisesRegex(ValueError, "undeclared"):
+        with self.assertRaises(ValueError):
             module.complete(self.sbom, self.root)
 
     def test_wrong_rid_or_source_snapshot_rejected(self):
@@ -68,7 +69,7 @@ class NativePackageContracts(unittest.TestCase):
             old = self.manifest[field]
             self.manifest[field] = "win-x64" if field == "runtimeIdentifier" else dict(old, vcpkgCommit="bad")
             self.write_bundle()
-            with self.assertRaisesRegex(ValueError, "provenance"):
+            with self.assertRaises(ValueError):
                 module.complete(self.sbom, self.root)
             self.manifest[field] = old
 

@@ -9,7 +9,7 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
-import backports
+import recipe as backports
 
 
 def sha256(data):

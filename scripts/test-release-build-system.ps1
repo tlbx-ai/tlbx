@@ -8,6 +8,8 @@ $ErrorActionPreference = 'Stop'
 if ($LASTEXITCODE -ne 0) { throw 'Native Connect packaging contracts failed.' }
 & python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-backports.py"
 if ($LASTEXITCODE -ne 0) { throw 'Native Connect backport binding contracts failed.' }
+& python "$PSScriptRoot/../src/Ai.Tlbx.MidTerm.ConnectNative/test-prebuilt.py"
+if ($LASTEXITCODE -ne 0) { throw 'Committed native Connect artifact contracts failed.' }
 . "$PSScriptRoot/release-test-clusters.ps1"
 . "$PSScriptRoot/runtime-reuse.ps1"
 $repoRoot = Split-Path $PSScriptRoot -Parent
@@ -29,8 +31,12 @@ $previousFixtureExit = $env:TLBX_NATIVE_FIXTURE_EXIT_CODE
 try {
     @'
 param([string]$RuntimeIdentifier)
-[Console]::Error.WriteLine('error: recovered mirror download diagnostic')
+[Console]::Error.WriteLine('error: recovered native validation diagnostic')
 exit [int]$env:TLBX_NATIVE_FIXTURE_EXIT_CODE
+'@ | Set-Content -LiteralPath (Join-Path $nativeExecFixture 'prepare.ps1')
+    @'
+Set-Content -LiteralPath (Join-Path $PSScriptRoot 'compiler-invoked') -Value 'unexpected'
+throw 'Normal builds must never fall back to compiling native dependencies.'
 '@ | Set-Content -LiteralPath (Join-Path $nativeExecFixture 'build.ps1')
     $nativeTargets = [Security.SecurityElement]::Escape((Join-Path $repoRoot 'src/Ai.Tlbx.MidTerm/ConnectNative.targets'))
     "<Project><Import Project=`"$nativeTargets`" /></Project>" | Set-Content -LiteralPath (Join-Path $nativeExecFixture 'fixture.proj')
@@ -49,9 +55,10 @@ exit [int]$env:TLBX_NATIVE_FIXTURE_EXIT_CODE
             if (-not $child.WaitForExit(30000)) { $child.Kill($true); throw 'Native Exec protocol fixture timed out.' }
             $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
             if ($exitCode -eq 0) { Assert-Check ($child.ExitCode -eq 0) "Recovered native-tool diagnostics incorrectly failed MSBuild: $output" }
-            else { Assert-Check ($child.ExitCode -ne 0 -and $output.Contains('MSB3073')) "A real native build failure did not fail MSBuild: $output" }
+            else { Assert-Check ($child.ExitCode -ne 0 -and $output.Contains('MSB3073')) "A real native validation failure did not fail MSBuild: $output" }
         } finally { $child.Dispose() }
     }
+    Assert-Check (-not (Test-Path (Join-Path $nativeExecFixture 'compiler-invoked'))) 'Native validation failure invoked a compiler fallback.'
 } finally {
     $env:TLBX_NATIVE_FIXTURE_EXIT_CODE = $previousFixtureExit
     $resolvedFixture = [IO.Path]::GetFullPath((Get-Item -LiteralPath $nativeExecFixture).FullName)
