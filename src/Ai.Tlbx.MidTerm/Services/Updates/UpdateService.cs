@@ -1,8 +1,10 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using System.IO.Compression;
 using System.Reflection;
 using System.Security;
+using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -17,12 +19,11 @@ namespace Ai.Tlbx.MidTerm.Services.Updates;
 public sealed partial class UpdateService : IDisposable
 {
     private const string AgentHostBinaryName = "mtagenthost";
-    private const string LegacyRepoOwner = "tlbx-ai";
-    private const string LegacyRepoName = "MidTerm";
-    private const string RepositoryCoordinateUrl = "https://get.tlbx.ai/v1/repository";
+    private const string DistributionOrigin = "https://builds.tlbx.ai";
     private const string DevEnvironmentName = "THELAIR";
     private const string FallbackMinCompatiblePty = "2.0.0";
-    private const int RecentReleaseTagProbeLimit = 20;
+    private static readonly TimeSpan MetadataTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DownloadTimeout = TimeSpan.FromMinutes(10);
 
     // Dev-only local update path - uses secure ProgramData folder instead of world-writable temp
     private static string LocalReleasePath => OperatingSystem.IsWindows()
@@ -30,7 +31,15 @@ public sealed partial class UpdateService : IDisposable
         : Path.Combine("/var/lib/midterm", "localrelease");
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan DevCheckInterval = TimeSpan.FromMinutes(7);
-    private static readonly HttpClient SharedHttpClient = new();
+    private static readonly HttpClient SharedHttpClient = CreateSharedHttpClient();
+
+    [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "This factory is called only by the process-wide SharedHttpClient initializer.")]
+    [SuppressMessage("Reliability", "CA2000:Dispose objects before losing scope", Justification = "The process-wide HttpClient owns its handler through disposeHandler:true.")]
+    private static HttpClient CreateSharedHttpClient()
+    {
+        var handler = new HttpClientHandler { AllowAutoRedirect = false };
+        return new HttpClient(handler, disposeHandler: true) { Timeout = Timeout.InfiniteTimeSpan };
+    }
 
     private readonly HttpClient _httpClient;
     private readonly SettingsService _settingsService;
@@ -45,7 +54,10 @@ public sealed partial class UpdateService : IDisposable
     private readonly object _checkGate = new();
     private Task<UpdateInfo?>? _checkTask;
     private string? _checkKey;
-    private DateTime _checkStarted;
+    private DateTimeOffset _checkStarted;
+    private readonly TimeProvider _timeProvider;
+    private readonly ConcurrentDictionary<string, UpdateInfo> _lastGoodUpdates = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, DiscoveryFailure> _discoveryFailures = new(StringComparer.OrdinalIgnoreCase);
 
     public UpdateInfo? LatestUpdate => _latestUpdate;
     public string CurrentVersion => _currentVersion;
@@ -65,13 +77,15 @@ public sealed partial class UpdateService : IDisposable
     {
     }
 
-    internal UpdateService(SettingsService settingsService, SessionAppServerControlHostRuntimeService? appServerControlHostRuntime, HttpClient httpClient)
+    internal UpdateService(SettingsService settingsService, SessionAppServerControlHostRuntimeService? appServerControlHostRuntime,
+        HttpClient httpClient, TimeProvider? timeProvider = null, string? currentVersion = null)
     {
         _settingsService = settingsService;
         _appServerControlHostRuntime = appServerControlHostRuntime;
         _httpClient = httpClient;
+        _timeProvider = timeProvider ?? TimeProvider.System;
 
-        _currentVersion = GetCurrentVersion();
+        _currentVersion = currentVersion ?? GetCurrentVersion();
         _installedManifest = ReadInstalledManifest();
         var interval = (IsDevEnvironment || settingsService.Load().DevMode) ? DevCheckInterval : CheckInterval;
         _checkTimer = new Timer(OnCheckTimer, null, TimeSpan.FromSeconds(10), interval);
@@ -199,31 +213,29 @@ public sealed partial class UpdateService : IDisposable
             // Failed checks remain retryable; full reinstalls have their own result.
             if (_checkTask is { } task && _checkKey == key &&
                 (!task.IsCompleted || (task.IsCompletedSuccessfully && task.Result?.CheckError is null &&
-                    DateTime.UtcNow - _checkStarted < TimeSpan.FromSeconds(30)))) return task;
+                    _timeProvider.GetUtcNow() - _checkStarted < TimeSpan.FromSeconds(30)))) return task;
+            if (_discoveryFailures.TryGetValue(channel, out var failure) && _timeProvider.GetUtcNow() < failure.RetryAt)
+                return Task.FromResult<UpdateInfo?>(failure.Update);
             _checkKey = key;
-            _checkStarted = DateTime.UtcNow;
-            return _checkTask = CheckForUpdateCoreAsync(forceFull);
+            _checkStarted = _timeProvider.GetUtcNow();
+            return _checkTask = CheckForUpdateCoreAsync(channel, forceFull);
         }
     }
 
-    private async Task<UpdateInfo?> CheckForUpdateCoreAsync(bool forceFull)
+    private async Task<UpdateInfo?> CheckForUpdateCoreAsync(string updateChannel, bool forceFull)
     {
         try
         {
             var devEnv = GetDevEnvironment();
-            var updateChannel = _settingsService.Load().UpdateChannel;
-
-            // Dev environment always uses dev update channel
-            if (devEnv is not null)
-                updateChannel = "dev";
-
             var assetName = GetAssetNameForPlatform();
             Console.Error.WriteLine($"[UpdateCheck] channel={updateChannel}, current={_currentVersion}, asset={assetName}");
 
-            var releaseCatalog = await FetchReleasesAsync(updateChannel, _currentVersion);
-            var selection = SelectBestRelease(releaseCatalog.Releases, updateChannel, _currentVersion, assetName, allowReinstall: true);
+            var releases = await FetchReleasesAsync(updateChannel, assetName);
+            var selection = SelectBestRelease(releases, updateChannel, _currentVersion, assetName, allowReinstall: true);
             if (selection is null)
             {
+                _discoveryFailures.TryRemove(updateChannel, out _);
+                _lastGoodUpdates.TryRemove(updateChannel, out _);
                 return TryCreateLocalOnlyUpdate(devEnv);
             }
 
@@ -232,10 +244,12 @@ public sealed partial class UpdateService : IDisposable
             var comparison = CompareVersions(latestVersion, _currentVersion);
             Console.Error.WriteLine(string.Create(CultureInfo.InvariantCulture, $"[UpdateCheck] latest={latestVersion}, comparison={comparison}, downgrade={selection.IsDowngrade}"));
 
-            var releaseManifest = await FetchReleaseManifestAsync(release.TagName!, releaseCatalog.Repository);
+            var releaseManifest = await FetchReleaseManifestAsync(release.TagName!, GetPlatformFromAssetName(assetName)!);
             var updateType = forceFull ? UpdateType.Full : DetermineUpdateType(_installedManifest, releaseManifest);
             if (!forceFull && comparison == 0 && updateType != UpdateType.Full)
             {
+                _discoveryFailures.TryRemove(updateChannel, out _);
+                _lastGoodUpdates.TryRemove(updateChannel, out _);
                 return TryCreateLocalOnlyUpdate(devEnv);
             }
 
@@ -246,9 +260,10 @@ public sealed partial class UpdateService : IDisposable
                 Available = true,
                 CurrentVersion = _currentVersion,
                 LatestVersion = latestVersion,
-                ReleaseUrl = release.HtmlUrl ??
-                    $"https://github.com/{releaseCatalog.Repository.Owner}/{releaseCatalog.Repository.Name}/releases/tag/{release.TagName}",
+                ReleaseUrl = release.HtmlUrl ?? $"{DistributionOrigin}/v1/releases/{release.TagName}",
                 DownloadUrl = selection.DownloadUrl,
+                ArchiveSha256 = selection.ArchiveSha256,
+                ArchiveSize = selection.ArchiveSize,
                 AssetName = assetName,
                 ReleaseNotes = release.Body,
                 Type = updateType,
@@ -257,8 +272,10 @@ public sealed partial class UpdateService : IDisposable
                 IsDowngrade = selection.IsDowngrade
             };
 
+            _discoveryFailures.TryRemove(updateChannel, out _);
             if (!forceFull)
             {
+                _lastGoodUpdates[updateChannel] = updateInfo;
                 _latestUpdate = updateInfo;
                 NotifyListeners(updateInfo);
             }
@@ -270,12 +287,23 @@ public sealed partial class UpdateService : IDisposable
             Log.Warn(() => $"Update check failed: {ex.Message}");
             // Report failed discovery separately from a confirmed absence of updates.
             var devEnv = GetDevEnvironment();
+            _lastGoodUpdates.TryGetValue(updateChannel, out var cached);
             var failed = new UpdateInfo
             {
-                Available = false, CurrentVersion = _currentVersion, LatestVersion = _currentVersion,
-                CheckError = ex.Message, Environment = devEnv,
+                Available = cached?.Available ?? false, CurrentVersion = _currentVersion,
+                LatestVersion = cached?.LatestVersion ?? _currentVersion,
+                ReleaseUrl = cached?.ReleaseUrl ?? "", DownloadUrl = cached?.DownloadUrl,
+                ArchiveSha256 = cached?.ArchiveSha256, ArchiveSize = cached?.ArchiveSize ?? 0,
+                AssetName = cached?.AssetName, ReleaseNotes = cached?.ReleaseNotes,
+                Type = cached?.Type ?? UpdateType.Full, IsDowngrade = cached?.IsDowngrade ?? false,
+                LastResult = cached?.LastResult, CheckError = ex.Message, Environment = devEnv,
                 LocalUpdate = devEnv is not null ? CheckLocalUpdate() : null
             };
+            var failures = _discoveryFailures.TryGetValue(updateChannel, out var previous) ? Math.Min(previous.Count + 1, 6) : 1;
+            var delay = ex is DistributionRequestException { RetryAfter: { } retryAfter }
+                ? retryAfter
+                : TimeSpan.FromSeconds(Math.Min(60, Math.Pow(2, failures)) + Random.Shared.NextDouble());
+            _discoveryFailures[updateChannel] = new DiscoveryFailure(_timeProvider.GetUtcNow() + delay, failures, failed);
             if (!forceFull) { _latestUpdate = failed; NotifyListeners(failed); }
             return failed;
         }
@@ -309,132 +337,53 @@ public sealed partial class UpdateService : IDisposable
         return _latestUpdate;
     }
 
-    private async Task<ReleaseCatalog> FetchReleasesAsync(string updateChannel, string currentVersion)
+    private async Task<List<GitHubRelease>> FetchReleasesAsync(string updateChannel, string assetName)
     {
-        var repository = await ResolveRepositoryAsync();
-
-        try
-        {
-            return await FetchReleasesFromRepositoryAsync(repository, updateChannel, currentVersion);
-        }
-        catch (Exception ex) when (repository != RepositoryCoordinate.Legacy)
-        {
-            Console.Error.WriteLine($"[UpdateCheck] repository {repository} failed, falling back to {RepositoryCoordinate.Legacy}: {ex.Message}");
-            Log.Warn(() => $"Update repository {repository} failed; falling back to {RepositoryCoordinate.Legacy}: {ex.Message}");
-            return await FetchReleasesFromRepositoryAsync(RepositoryCoordinate.Legacy, updateChannel, currentVersion);
-        }
-    }
-
-    private async Task<ReleaseCatalog> FetchReleasesFromRepositoryAsync(
-        RepositoryCoordinate repository,
-        string updateChannel,
-        string currentVersion)
-    {
-        var apiUrl = $"https://api.github.com/repos/{repository.Owner}/{repository.Name}/releases?per_page=50";
-        var response = await _httpClient.GetStringAsync(apiUrl);
-        var releases = JsonSerializer.Deserialize<List<GitHubRelease>>(
-            response,
-            GitHubReleaseContext.Default.ListGitHubRelease) ?? [];
-
-        if (string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase))
-        {
-            releases = await IncludeRecentTaggedReleasesAsync(repository, releases, currentVersion);
-        }
-
-        return new ReleaseCatalog(repository, releases);
-    }
-
-    private async Task<List<GitHubRelease>> IncludeRecentTaggedReleasesAsync(
-        RepositoryCoordinate repository,
-        List<GitHubRelease> releases,
-        string currentVersion)
-    {
-        List<GitHubTag> tags;
-        try
-        {
-            var tagsUrl = $"https://api.github.com/repos/{repository.Owner}/{repository.Name}/tags?per_page={RecentReleaseTagProbeLimit}";
-            var response = await _httpClient.GetStringAsync(tagsUrl);
-            tags = JsonSerializer.Deserialize<List<GitHubTag>>(
-                response,
-                GitHubReleaseContext.Default.ListGitHubTag) ?? [];
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[UpdateCheck] tag probe skipped: {ex.Message}");
-            Log.Warn(() => $"Update check tag probe skipped: {ex.Message}");
-            return releases;
-        }
-
-        foreach (var tagName in GetMissingNewerReleaseTagNames(releases, tags, currentVersion))
-        {
-            var release = await FetchReleaseByTagAsync(repository, tagName);
-            if (release is null)
-            {
-                continue;
-            }
-
-            releases.Add(release);
-            Console.Error.WriteLine($"[UpdateCheck] release list missing {tagName}; loaded by tag");
-            Log.Info(() => $"Update check loaded release {tagName} by tag because it was missing from the release list");
-        }
-
+        var dev = string.Equals(updateChannel, "dev", StringComparison.OrdinalIgnoreCase);
+        var releases = await FetchCatalogAsync(dev ? "dev" : "main");
+        if (dev && !releases.Any(release => !release.Draft && GetAssetDownloadUrl(release, assetName) is not null))
+            releases = await FetchCatalogAsync("main");
         return releases;
     }
 
-    internal static IReadOnlyList<string> GetMissingNewerReleaseTagNames(
-        IEnumerable<GitHubRelease> releases,
-        IEnumerable<GitHubTag> tags,
-        string currentVersion)
+    private async Task<List<GitHubRelease>> FetchCatalogAsync(string channel)
     {
-        var existingTags = releases
-            .Select(release => release.TagName)
-            .Where(tagName => !string.IsNullOrWhiteSpace(tagName))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missingTags = new List<string>();
-        var seenMissingTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var tag in tags.Take(RecentReleaseTagProbeLimit))
-        {
-            var tagName = tag.Name?.Trim();
-            if (string.IsNullOrWhiteSpace(tagName) ||
-                !tagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ||
-                existingTags.Contains(tagName) ||
-                seenMissingTags.Contains(tagName) ||
-                CompareVersions(TrimReleaseTagPrefix(tagName), currentVersion) <= 0)
-            {
-                continue;
-            }
-
-            missingTags.Add(tagName);
-            seenMissingTags.Add(tagName);
-        }
-
-        return missingTags;
+        var json = await FetchMetadataAsync($"{DistributionOrigin}/v1/channels/{channel}/releases.json", 2 * 1024 * 1024);
+        return JsonSerializer.Deserialize(json, GitHubReleaseContext.Default.ListGitHubRelease)
+            ?? throw new InvalidDataException("Build distribution returned no release catalog.");
     }
 
-    private async Task<GitHubRelease?> FetchReleaseByTagAsync(RepositoryCoordinate repository, string tagName)
+    private async Task<string> FetchMetadataAsync(string url, int maximumBytes)
     {
-        try
+        using var timeout = new CancellationTokenSource(MetadataTimeout, _timeProvider);
+        using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
+        if (!response.IsSuccessStatusCode)
         {
-            var tagUrl =
-                $"https://api.github.com/repos/{repository.Owner}/{repository.Name}/releases/tags/{Uri.EscapeDataString(tagName)}";
-            var response = await _httpClient.GetStringAsync(tagUrl);
-            return JsonSerializer.Deserialize<GitHubRelease>(
-                response,
-                GitHubReleaseContext.Default.GitHubRelease);
+            var retry = response.Headers.RetryAfter;
+            var delay = retry?.Delta ?? (retry?.Date - _timeProvider.GetUtcNow());
+            throw new DistributionRequestException(string.Create(CultureInfo.InvariantCulture, $"Build distribution returned HTTP {(int)response.StatusCode}."),
+                delay is { } value ? TimeSpan.FromSeconds(Math.Clamp(value.TotalSeconds, 1, 300)) : null);
         }
-        catch (Exception ex)
+        if (response.Content.Headers.ContentLength > maximumBytes)
+            throw new InvalidDataException("Build distribution metadata is too large.");
+        await using var input = await response.Content.ReadAsStreamAsync(timeout.Token);
+        using var output = new MemoryStream();
+        var buffer = new byte[8192];
+        int read;
+        while ((read = await input.ReadAsync(buffer, timeout.Token)) != 0)
         {
-            Console.Error.WriteLine($"[UpdateCheck] release tag probe failed for {tagName}: {ex.Message}");
-            Log.Warn(() => $"Update check release tag probe failed for {tagName}: {ex.Message}");
-            return null;
+            if (output.Length + read > maximumBytes) throw new InvalidDataException("Build distribution metadata is too large.");
+            output.Write(buffer, 0, read);
         }
+        return System.Text.Encoding.UTF8.GetString(output.GetBuffer(), 0, checked((int)output.Length));
     }
 
-    private static string TrimReleaseTagPrefix(string tagName)
+    private sealed class DistributionRequestException(string message, TimeSpan? retryAfter) : HttpRequestException(message)
     {
-        return tagName.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? tagName[1..] : tagName;
+        public TimeSpan? RetryAfter { get; } = retryAfter;
     }
+
+    private sealed record DiscoveryFailure(DateTimeOffset RetryAt, int Count, UpdateInfo Update);
 
     internal static ReleaseSelection? SelectBestRelease(
         IEnumerable<GitHubRelease> releases,
@@ -466,7 +415,9 @@ public sealed partial class UpdateService : IDisposable
             var candidate = new ReleaseSelection
             {
                 Release = release,
-                DownloadUrl = downloadUrl
+                DownloadUrl = downloadUrl,
+                ArchiveSha256 = release.Assets!.First(asset => asset.Name == assetName).Digest!["sha256:".Length..],
+                ArchiveSize = release.Assets!.First(asset => asset.Name == assetName).Size
             };
 
             var comparison = CompareVersions(release.TagName!.TrimStart('v'), currentVersion);
@@ -518,83 +469,43 @@ public sealed partial class UpdateService : IDisposable
 
     private static string? GetAssetDownloadUrl(GitHubRelease release, string assetName)
     {
-        var asset = release.Assets?.FirstOrDefault(a =>
-            string.Equals(a.Name, assetName, StringComparison.OrdinalIgnoreCase) &&
-            !string.IsNullOrWhiteSpace(a.BrowserDownloadUrl));
-
-        return asset?.BrowserDownloadUrl;
+        var asset = release.Assets?.FirstOrDefault(a => string.Equals(a.Name, assetName, StringComparison.Ordinal));
+        if (asset is null) return null;
+        if (release.Prerelease != HasPrerelease(release.TagName ?? "")
+            || !IsDistributionAssetUrl(asset.BrowserDownloadUrl, release.TagName, assetName)
+            || asset.Size <= 0 || !IsArchiveDigest(asset.Digest))
+            throw new SecurityException($"Build distribution returned invalid metadata for {assetName}.");
+        return asset.BrowserDownloadUrl;
     }
 
-    private async Task<VersionManifest> FetchReleaseManifestAsync(
-        string tagName,
-        RepositoryCoordinate repository)
+    internal static bool IsDistributionAssetUrl(string? value, string? tag, string assetName)
     {
-        foreach (var url in GetReleaseManifestUrls(tagName, repository.Owner, repository.Name))
-        {
-            try
-            {
-                var json = await _httpClient.GetStringAsync(url);
-                var manifest = JsonSerializer.Deserialize<VersionManifest>(json, VersionManifestContext.Default.VersionManifest);
-                if (manifest is not null)
-                {
-                    return manifest;
-                }
-            }
-            catch
-            {
-            }
-        }
-
-        var version = tagName.TrimStart('v');
-        return new VersionManifest
-        {
-            Web = version,
-            Pty = version,
-            Protocol = 1,
-            MinCompatiblePty = version
-        };
+        if (tag is null || !ReleaseTagRegex().IsMatch(tag) || !Uri.TryCreate(value, UriKind.Absolute, out var uri)) return false;
+        var version = tag.StartsWith('v') ? tag[1..] : tag;
+        var rid = GetPlatformFromAssetName(assetName);
+        if (rid is not ("win-x64" or "win-x86" or "linux-x64" or "linux-arm64" or "osx-x64" or "osx-arm64")) return false;
+        var channel = HasPrerelease(version) ? "dev" : "main";
+        return uri.Scheme == Uri.UriSchemeHttps && uri.Host.Equals("builds.tlbx.ai", StringComparison.OrdinalIgnoreCase)
+            && uri.Port == 443 && uri.UserInfo.Length == 0 && uri.Query.Length == 0 && uri.Fragment.Length == 0
+            && uri.AbsolutePath == $"/{channel}/{version}/{rid}/{assetName}";
     }
 
-    internal static IReadOnlyList<string> GetReleaseManifestUrls(
-        string tagName,
-        string repoOwner = LegacyRepoOwner,
-        string repoName = LegacyRepoName)
+    [GeneratedRegex(@"^v?[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex ReleaseTagRegex();
+
+    private static bool IsArchiveDigest(string? value) => value is { Length: 71 }
+        && value.StartsWith("sha256:", StringComparison.Ordinal)
+        && value.AsSpan(7).IndexOfAnyExcept("0123456789abcdefABCDEF") < 0;
+
+    internal async Task<VersionManifest> FetchReleaseManifestAsync(string tagName, string platform)
     {
-        var urls = new List<string>
-        {
-            $"https://raw.githubusercontent.com/{repoOwner}/{repoName}/{tagName}/src/version.json",
-            $"https://raw.githubusercontent.com/{repoOwner}/{repoName}/{tagName}/version.json"
-        };
-
-        if (!string.Equals(repoOwner, LegacyRepoOwner, StringComparison.OrdinalIgnoreCase) ||
-            !string.Equals(repoName, LegacyRepoName, StringComparison.OrdinalIgnoreCase))
-        {
-            urls.Add($"https://raw.githubusercontent.com/{LegacyRepoOwner}/{LegacyRepoName}/{tagName}/src/version.json");
-            urls.Add($"https://raw.githubusercontent.com/{LegacyRepoOwner}/{LegacyRepoName}/{tagName}/version.json");
-        }
-
-        return urls;
-    }
-
-    private async Task<RepositoryCoordinate> ResolveRepositoryAsync()
-    {
-        try
-        {
-            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-            var value = (await _httpClient.GetStringAsync(RepositoryCoordinateUrl, timeout.Token)).Trim();
-            if (RepositoryCoordinate.TryParseAllowed(value, out var repository))
-            {
-                return repository;
-            }
-
-            Log.Warn(() => $"Ignoring unsupported update repository coordinate '{value}'");
-        }
-        catch (Exception ex)
-        {
-            Log.Warn(() => $"Update repository discovery unavailable; using {RepositoryCoordinate.Legacy}: {ex.Message}");
-        }
-
-        return RepositoryCoordinate.Legacy;
+        if (!ReleaseTagRegex().IsMatch(tagName)) throw new SecurityException("Invalid release tag.");
+        var json = await FetchMetadataAsync($"{DistributionOrigin}/v1/releases/{tagName}/{platform}/version.json", 128 * 1024);
+        var manifest = JsonSerializer.Deserialize(json, VersionManifestContext.Default.VersionManifest);
+        if (manifest is null || !UpdateVerification.VerifyManifest(manifest, platform, tagName,
+                HasPrerelease(tagName) ? "dev" : "stable"))
+            throw new SecurityException("Build distribution release manifest signature or identity is invalid.");
+        return manifest;
     }
 
     private LocalUpdateInfo? CheckLocalUpdate()
@@ -695,70 +606,64 @@ public sealed partial class UpdateService : IDisposable
 
     public async Task<string?> DownloadUpdateAsync(UpdateInfo update)
     {
-        var url = update.DownloadUrl;
-        if (string.IsNullOrEmpty(url))
-        {
-            return null;
-        }
-
+        var assetName = update.AssetName ?? GetAssetNameForPlatform();
+        if (!IsDistributionAssetUrl(update.DownloadUrl, "v" + update.LatestVersion.TrimStart('v'), assetName)
+            || !IsArchiveDigest("sha256:" + update.ArchiveSha256) || update.ArchiveSize <= 0) return null;
+        string? tempDir = null;
+        var verified = false;
         try
         {
-            var tempDir = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}");
+            using var timeout = new CancellationTokenSource(DownloadTimeout, _timeProvider);
+            tempDir = Path.Combine(Path.GetTempPath(), $"mt-update-{Guid.NewGuid():N}");
             Directory.CreateDirectory(tempDir);
-
-            var assetName = update.AssetName ?? GetAssetNameForPlatform();
             var downloadPath = Path.Combine(tempDir, assetName);
-
-            using (var response = await _httpClient.GetAsync(url))
+            using (var response = await _httpClient.GetAsync(update.DownloadUrl, HttpCompletionOption.ResponseHeadersRead, timeout.Token))
             {
                 response.EnsureSuccessStatusCode();
-                await using var fs = File.Create(downloadPath);
-                await response.Content.CopyToAsync(fs);
+                if (response.Content.Headers.ContentLength is { } length && length != update.ArchiveSize)
+                    throw new InvalidDataException("Build archive length does not match the catalog.");
+                await using var input = await response.Content.ReadAsStreamAsync(timeout.Token);
+                await using var output = File.Create(downloadPath);
+                var buffer = new byte[81920];
+                long written = 0;
+                int read;
+                while ((read = await input.ReadAsync(buffer, timeout.Token)) != 0)
+                {
+                    written += read;
+                    if (written > update.ArchiveSize) throw new InvalidDataException("Build archive exceeds the catalog length.");
+                    await output.WriteAsync(buffer.AsMemory(0, read), timeout.Token);
+                }
+                if (written != update.ArchiveSize) throw new InvalidDataException("Build archive is truncated.");
             }
-
+            await using (var downloaded = File.OpenRead(downloadPath))
+            {
+                var actualHash = Convert.ToHexStringLower(await SHA256.HashDataAsync(downloaded, timeout.Token));
+                if (!string.Equals(actualHash, update.ArchiveSha256, StringComparison.OrdinalIgnoreCase))
+                    throw new SecurityException("Build archive SHA256 does not match the catalog.");
+            }
             var extractDir = Path.Combine(tempDir, "extracted");
             Directory.CreateDirectory(extractDir);
+            if (assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)) ZipFile.ExtractToDirectory(downloadPath, extractDir);
+            else if (assetName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase)) ExtractTarGz(downloadPath, extractDir);
 
-            if (assetName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-            {
-                ZipFile.ExtractToDirectory(downloadPath, extractDir);
-            }
-            else if (assetName.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
-            {
-                ExtractTarGz(downloadPath, extractDir);
-            }
-
-            // Verify update integrity using checksums and signature from version.json
-            var manifestPath = Path.Combine(extractDir, "version.json");
-            if (!File.Exists(manifestPath))
-            {
-                try { Directory.Delete(tempDir, true); } catch { }
-                return null;
-            }
-
-            var manifestJson = await File.ReadAllTextAsync(manifestPath);
-            var manifest = JsonSerializer.Deserialize<VersionManifest>(manifestJson, VersionManifestContext.Default.VersionManifest);
-            var expectedVersion = update.LatestVersion;
-            var expectedChannel = string.IsNullOrWhiteSpace(expectedVersion)
-                ? null
-                : HasPrerelease(expectedVersion) ? "dev" : "stable";
-            if (manifest is null || !UpdateVerification.VerifyUpdate(
-                    extractDir,
-                    manifest,
-                    GetPlatformFromAssetName(assetName),
-                    expectedVersion,
-                    expectedChannel))
-            {
-                // Verification failed - clean up and reject update
-                try { Directory.Delete(tempDir, true); } catch { }
-                return null;
-            }
-
+            var manifestJson = await File.ReadAllTextAsync(Path.Combine(extractDir, "version.json"), timeout.Token);
+            var manifest = JsonSerializer.Deserialize(manifestJson, VersionManifestContext.Default.VersionManifest);
+            if (manifest is null || !UpdateVerification.VerifyUpdate(extractDir, manifest,
+                    GetPlatformFromAssetName(assetName), update.LatestVersion,
+                    HasPrerelease(update.LatestVersion) ? "dev" : "stable"))
+                throw new SecurityException("Build archive manifest signature or file checksums are invalid.");
+            verified = true;
             return extractDir;
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Warn(() => $"Update download verification failed: {ex.Message}");
             return null;
+        }
+        finally
+        {
+            if (!verified && tempDir is not null)
+                try { Directory.Delete(tempDir, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
         }
     }
 
@@ -2099,55 +2004,21 @@ internal sealed class GitHubRelease
     public List<GitHubAsset>? Assets { get; set; }
 }
 
-internal sealed class GitHubTag
-{
-    public string? Name { get; set; }
-}
-
 internal readonly record struct UpdateArtifacts(string LogPath, string ResultPath);
 
 internal sealed class GitHubAsset
 {
     public string? Name { get; set; }
     public string? BrowserDownloadUrl { get; set; }
+    public long Size { get; set; }
+    public string? Digest { get; set; }
 }
-
-internal readonly record struct RepositoryCoordinate(string Owner, string Name)
-{
-    public static RepositoryCoordinate Legacy { get; } = new("tlbx-ai", "MidTerm");
-    public static RepositoryCoordinate Renamed { get; } = new("tlbx-ai", "tlbx");
-
-    public static bool TryParseAllowed(string value, out RepositoryCoordinate repository)
-    {
-        if (string.Equals(value, Legacy.ToString(), StringComparison.OrdinalIgnoreCase))
-        {
-            repository = Legacy;
-            return true;
-        }
-
-        if (string.Equals(value, Renamed.ToString(), StringComparison.OrdinalIgnoreCase))
-        {
-            repository = Renamed;
-            return true;
-        }
-
-        repository = default;
-        return false;
-    }
-
-    public override string ToString()
-    {
-        return $"{Owner}/{Name}";
-    }
-}
-
-internal readonly record struct ReleaseCatalog(
-    RepositoryCoordinate Repository,
-    List<GitHubRelease> Releases);
 
 internal sealed class ReleaseSelection
 {
     public GitHubRelease Release { get; init; } = null!;
     public string DownloadUrl { get; init; } = "";
+    public string ArchiveSha256 { get; init; } = "";
+    public long ArchiveSize { get; init; }
     public bool IsDowngrade { get; set; }
 }

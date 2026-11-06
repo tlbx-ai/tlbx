@@ -14,6 +14,14 @@ public static class UpdateVerification
     // ECDSA P-384 public key for verifying release signatures (base64 encoded SPKI format)
     private const string PublicKeyBase64 = "MHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE9txOtWhrtgO7q8Hlpe7tzv8ARMHaLYpO1JFm9psIc6LyBMLgwgz0GXfL+kU7iDVK0GyE6q2nsz7AEhKfwfbQY7d+k/WKPDEvV6OzYIYStxW4v2mAKNY1XHyuOntapcb/";
 
+    /// <summary>Authenticates release metadata before using its runtime compatibility claims.</summary>
+    public static bool VerifyManifest(
+        VersionManifest manifest,
+        string? expectedPlatform = null,
+        string? expectedVersion = null,
+        string? expectedChannel = null) =>
+        VerifyMetadataSignature(manifest, PublicKeyBase64, expectedPlatform, expectedVersion, expectedChannel);
+
     /// <summary>
     /// Verifies the integrity of extracted update files.
     /// </summary>

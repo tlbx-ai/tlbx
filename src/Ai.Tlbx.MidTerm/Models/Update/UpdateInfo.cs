@@ -1,7 +1,7 @@
 namespace Ai.Tlbx.MidTerm.Models.Update;
 
 /// <summary>
-/// Information about an available update from GitHub releases.
+/// Information about an available update from the published build catalog.
 /// </summary>
 public sealed class UpdateInfo
 {
@@ -12,6 +12,8 @@ public sealed class UpdateInfo
     public string LatestVersion { get; init; } = "";
     public string ReleaseUrl { get; init; } = "";
     public string? DownloadUrl { get; init; }
+    public string? ArchiveSha256 { get; init; }
+    public long ArchiveSize { get; init; }
     public string? AssetName { get; init; }
     public string? ReleaseNotes { get; init; }
     public UpdateType Type { get; init; } = UpdateType.Full;

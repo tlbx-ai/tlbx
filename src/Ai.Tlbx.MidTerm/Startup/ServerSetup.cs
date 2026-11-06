@@ -561,7 +561,7 @@ public static class ServerSetup
                $"style-src 'self' 'unsafe-inline'{devAssetSource}; " +
                "img-src 'self' data:; " +
                $"font-src 'self' data:{devAssetSource}; " +
-               "connect-src 'self' ws: wss: https://api.github.com https://midterm.tlbx.ai; " +
+               "connect-src 'self' ws: wss: https://builds.tlbx.ai https://midterm.tlbx.ai; " +
                $"frame-src {string.Join(' ', frameSources)}; " +
                "frame-ancestors 'self'";
     }
