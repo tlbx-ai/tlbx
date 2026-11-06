@@ -280,6 +280,9 @@ public static class TlbxDirectory
         Reading this guide does not register a server in Codex or Claude Code. Agent Controller sessions receive MCP automatically; an agent started manually in a terminal needs the client configuration below.
         Run the matching command from the project root. No CLI helper needs to be sourced:
 
+        **Every other agent/client (for example OpenCode or Grok Build): run `pwsh -NoProfile -File .tlbx/install-mcp.ps1` or `sh .tlbx/install-mcp.sh` without a client argument.** The native equivalent is `mt mcp bootstrap` when the adapter/authentication are already available. This vendor-neutral command emits one JSON descriptor (`name`, `transport`, `command`, `args`, `env`, recommended startup/tool timeouts) and prepares owner-only credentials outside the repository. Authentication stays in the private file referenced by `args`; the descriptor contains no token.
+        Use that descriptor to execute **your own client's documented native MCP add/install command or configuration procedure**. Map the executable, literal argument array, environment and timeouts to your client's actual schema. Do not guess vendor-specific flags, paste secrets, or fall back to operational CLI helpers just because your vendor is not listed. This bootstrap does not register an unknown client for you. Reload/restart your client as required, discover its native MCP tools, and verify `context_get` then `sessions_list`. If discovery still fails, report the actual installation/startup diagnostic. The two direct shortcuts below are conveniences; other agents should implement their own native registration from the generic descriptor.
+
         | Client | PowerShell | Bash/sh |
         |--------|------------|---------|
         | Codex | `pwsh -NoProfile -File .tlbx/install-mcp.ps1 codex` | `sh .tlbx/install-mcp.sh codex` |

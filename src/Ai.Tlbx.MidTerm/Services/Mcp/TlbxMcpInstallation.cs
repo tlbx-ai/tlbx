@@ -16,13 +16,18 @@ internal static partial class TlbxMcpInstallation
 
     internal static int Run(string client)
     {
-        if (client is not ("codex" or "claude"))
-            throw new ArgumentException("TLBX_MCP_INSTALL: Use mt mcp install codex or mt mcp install claude from the project directory.");
+        if (client is not ("codex" or "claude" or "generic"))
+            throw new ArgumentException("TLBX_MCP_INSTALL: Use mt mcp bootstrap for any client, or mt mcp install codex|claude for direct project setup.");
         var options = McpStdioOptions.Parse(["--stdio"]);
         var command = Environment.ProcessPath ?? throw new InvalidOperationException("Cannot locate the tlbx MCP adapter.");
         string[] prefix = string.Equals(Path.GetFileNameWithoutExtension(command), "dotnet", StringComparison.OrdinalIgnoreCase)
             ? [Path.GetFullPath(Environment.GetCommandLineArgs()[0])] : [];
         var storage = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "tlbx", "mcp");
+        if (client == "generic")
+        {
+            Console.WriteLine(Bootstrap(Environment.CurrentDirectory, storage, options, command, prefix).ToJsonString());
+            return 0;
+        }
         var path = Install(client, Environment.CurrentDirectory, storage, options, command, prefix);
         Console.WriteLine("Configured tlbx MCP for " + client + " in " + path);
         Console.WriteLine("Start a new agent session or resume this conversation after restarting the client. Trust the project / approve its MCP server if prompted.");
@@ -34,20 +39,42 @@ internal static partial class TlbxMcpInstallation
     {
         if (client is not ("codex" or "claude")) throw new ArgumentException("Unsupported MCP client.");
         workspace = Path.GetFullPath(workspace);
-        var identity = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(workspace + "\n" + options.BaseUrl)));
-        var privateDirectory = Path.Combine(storage, identity);
-        var credentialsPath = Path.Combine(privateDirectory, "credentials.json");
+        var credentialsPath = GetCredentialsPath(workspace, storage, options);
         string[] arguments = [.. prefix, "mcp", "--stdio", "--credentials-file", credentialsPath];
-        if (!string.IsNullOrEmpty(options.BootstrapToken))
-            throw new InvalidOperationException("TLBX_MCP_INSTALL: Install from an ordinary terminal; controller runtime credentials cannot be persisted.");
         var configPath = client == "codex" ? Path.Combine(workspace, ".codex", "config.toml") : Path.Combine(workspace, ".mcp.json");
         var previous = File.Exists(configPath) ? File.ReadAllText(configPath) : "";
         var content = client == "codex" ? CodexConfiguration(previous, command, arguments) : ClaudeConfiguration(previous, command, arguments, credentialsPath);
         // Validate existing configuration before writing any secrets or changing a client.
-        WriteCredentials(privateDirectory, credentialsPath, options);
+        WriteCredentials(Path.GetDirectoryName(credentialsPath)!, credentialsPath, options);
         Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
         WriteAtomically(configPath, content);
         return configPath;
+    }
+
+    internal static JsonObject Bootstrap(string workspace, string storage, McpStdioOptions options, string command, string[] prefix)
+    {
+        var credentialsPath = GetCredentialsPath(workspace, storage, options);
+        WriteCredentials(Path.GetDirectoryName(credentialsPath)!, credentialsPath, options);
+        var arguments = new JsonArray();
+        foreach (var argument in prefix.Concat(["mcp", "--stdio", "--credentials-file", credentialsPath]))
+            arguments.Add((JsonNode?)JsonValue.Create(argument));
+        var environment = new JsonObject();
+        if (Environment.GetEnvironmentVariable("CODEX_HOME") is { Length: > 0 } codexHome)
+            environment["CODEX_HOME"] = codexHome;
+        return new JsonObject
+        {
+            ["name"] = "tlbx", ["transport"] = "stdio", ["command"] = command,
+            ["args"] = arguments, ["env"] = environment,
+            ["startupTimeoutSeconds"] = 30, ["toolTimeoutSeconds"] = 660
+        };
+    }
+
+    private static string GetCredentialsPath(string workspace, string storage, McpStdioOptions options)
+    {
+        if (!string.IsNullOrEmpty(options.BootstrapToken))
+            throw new InvalidOperationException("TLBX_MCP_INSTALL: Install from an ordinary terminal; controller runtime credentials cannot be persisted.");
+        var identity = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(Path.GetFullPath(workspace) + "\n" + options.BaseUrl)));
+        return Path.Combine(storage, identity, "credentials.json");
     }
 
     internal static string CodexConfiguration(string previous, string command, string[] arguments)
@@ -148,14 +175,16 @@ internal static partial class TlbxMcpInstallation
         static string Sh(string text) => "'" + text.Replace("'", "'\"'\"'", StringComparison.Ordinal) + "'";
         var shellCommand = OperatingSystem.IsWindows() ? command.Replace('\\', '/') : command;
         var shellPrefix = OperatingSystem.IsWindows() ? prefix.Select(value => value.Replace('\\', '/')).ToArray() : prefix;
-        var ps = "param([Parameter(Mandatory=$true)][ValidateSet('codex','claude')][string]$Client)\n$ErrorActionPreference = 'Stop'\n" +
+        var ps = "param([ValidateSet('codex','claude','generic')][string]$Client = 'generic')\n$ErrorActionPreference = 'Stop'\n" +
             "if (-not $env:MT_BASE_URL) { $env:MT_BASE_URL = if ($env:MT_PORT) { 'https://localhost:' + $env:MT_PORT } else { " + Ps(url) + " } }\n" +
             "if ($env:MT_BASE_URL.TrimEnd('/') -eq " + Ps(url) + ") { $env:MT_TOKEN = " + Ps(token) + "; $env:TLBX_MCP_CERT_SHA256 = " + Ps(fingerprint ?? "") + " }\n" +
-            "& " + Ps(command) + " " + string.Join(" ", prefix.Select(Ps)) + " mcp install $Client\nexit $LASTEXITCODE\n";
+            "$mcpArguments = if ($Client -eq 'generic') { @('mcp','bootstrap') } else { @('mcp','install',$Client.ToLowerInvariant()) }\n" +
+            "& " + Ps(command) + " " + string.Join(" ", prefix.Select(Ps)) + " @mcpArguments\nexit $LASTEXITCODE\n";
         var sh = "#!/bin/sh\nset -eu\n" +
             "if [ -z \"${MT_BASE_URL:-}\" ]; then MT_BASE_URL=\"https://localhost:${MT_PORT:-" + port.ToString(System.Globalization.CultureInfo.InvariantCulture) + "}\"; export MT_BASE_URL; fi\n" +
             "if [ \"${MT_BASE_URL%/}\" = " + Sh(url) + " ]; then export MT_TOKEN=" + Sh(token) + " TLBX_MCP_CERT_SHA256=" + Sh(fingerprint ?? "") + "; fi\n" +
-            "exec " + Sh(shellCommand) + " " + string.Join(" ", shellPrefix.Select(Sh)) + " mcp install \"${1:?Usage: sh .tlbx/install-mcp.sh codex|claude}\"\n";
+            "if [ \"${1:-generic}\" = generic ]; then set -- bootstrap; else set -- install \"$1\"; fi\n" +
+            "exec " + Sh(shellCommand) + " " + string.Join(" ", shellPrefix.Select(Sh)) + " mcp \"$@\"\n";
         WriteAtomically(Path.Combine(directory, "install-mcp.ps1"), ps);
         WriteAtomically(Path.Combine(directory, "install-mcp.sh"), sh);
     }

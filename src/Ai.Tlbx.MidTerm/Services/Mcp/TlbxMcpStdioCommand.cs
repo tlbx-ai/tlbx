@@ -26,6 +26,7 @@ internal static class TlbxMcpStdioCommand
     {
         try
         {
+            if (args is ["bootstrap"]) return TlbxMcpInstallation.Run("generic");
             if (args is ["install", var client]) return TlbxMcpInstallation.Run(client);
             using var input = Console.OpenStandardInput();
             using var output = Console.OpenStandardOutput();
@@ -45,6 +46,7 @@ internal static class TlbxMcpStdioCommand
     {
         if (args is ["--help"] or ["-h"])
         {
+            Console.WriteLine("mt mcp bootstrap  (vendor-neutral JSON descriptor; register it with your client's native MCP command)");
             Console.WriteLine("mt mcp install codex|claude  (project-scoped setup for a terminal agent)");
             Console.WriteLine("mt mcp --stdio [--url https://localhost:PORT] [--operator] [--certificate-sha256 HEX] [--credentials-file PRIVATE_JSON]");
             Console.WriteLine("Authentication: private credential file or inherited MT_API_KEY/MT_TOKEN; MT_SESSION_ID is never identity evidence.");
