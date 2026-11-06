@@ -918,7 +918,8 @@ function Test-ExistingCertificate
         $rng = [Security.Cryptography.RandomNumberGenerator]::Create()
         try { $rng.GetBytes($challenge) } finally { $rng.Dispose() }
         $matches = $false
-        if ($key.AlgorithmGroup -eq [Security.Cryptography.CngAlgorithmGroup]::ECDsa)
+        if ($key.AlgorithmGroup -eq [Security.Cryptography.CngAlgorithmGroup]::ECDsa -or
+            $key.AlgorithmGroup -eq [Security.Cryptography.CngAlgorithmGroup]::ECDiffieHellman)
         {
             $privateKey = New-Object Security.Cryptography.ECDsaCng -ArgumentList $key
             $publicKey = [Security.Cryptography.X509Certificates.ECDsaCertificateExtensions]::GetECDsaPublicKey($cert)
@@ -2166,6 +2167,59 @@ function Assert-VerifiedWindowsRuntime
         throw
     }
 }
+function Stop-InstallerUserProcesses
+{
+    param([Parameter(Mandatory=$true)][string]$InstallDir)
+
+    Assert-InstallerCanStopTarget -InstallDir $InstallDir
+    $processes = @(Get-InstallOwnedProcesses -InstallDir $InstallDir)
+    $webPath = [IO.Path]::GetFullPath((Join-Path $InstallDir $WebBinaryName))
+    $wasRunning = @($processes | Where-Object { $_.Path -and [IO.Path]::GetFullPath($_.Path) -eq $webPath }).Count -gt 0
+    $processes | Stop-Process -Force -ErrorAction Stop
+    for ($attempt = 0; $attempt -lt 20; $attempt++)
+    {
+        if (-not (Get-InstallOwnedProcesses -InstallDir $InstallDir)) { return @{ WasRunning = $wasRunning } }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "The previous user installation did not stop. No installed files have been replaced."
+}
+
+function Start-TlbxPreviousUserProcess
+{
+    param([string]$ExecutablePath, [string]$InstallDir, [string]$SettingsDir)
+
+    # The restored runtime.json owns the previous port/bind. Do not let the
+    # installer's inherited process environment override those saved values.
+    $savedEnvironment = @{}
+    foreach ($name in @('TLBX_PORT', 'TLBX_BIND', 'MIDTERM_PORT', 'MIDTERM_BIND'))
+    {
+        $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+    }
+    try
+    {
+        foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
+        $arguments = Join-ProcessArguments -Arguments @('--user-mode', '--settings-dir', $SettingsDir)
+        return Start-Process -FilePath $ExecutablePath -ArgumentList $arguments -WorkingDirectory $InstallDir -WindowStyle Hidden `
+            -RedirectStandardOutput (Join-Path $SettingsDir 'tlbx-user.stdout.log') -RedirectStandardError (Join-Path $SettingsDir 'tlbx-user.stderr.log') -PassThru -ErrorAction Stop
+    }
+    finally
+    {
+        foreach ($name in $savedEnvironment.Keys) { [Environment]::SetEnvironmentVariable($name, $savedEnvironment[$name], 'Process') }
+    }
+}
+
+function Assert-InstallerUserLaunchPaths
+{
+    param([string]$InstallDir, [string]$SettingsDir)
+    # Start-Process treats these valid filename characters as wildcards in
+    # WorkingDirectory AND redirected log paths, including in PowerShell 7.
+    # Refuse before teardown instead of damaging an existing installation.
+    if ($InstallDir.IndexOfAny([char[]]'[]') -ge 0 -or $SettingsDir.IndexOfAny([char[]]'[]') -ge 0)
+    {
+        throw 'Windows PowerShell cannot launch this background user installation because its install/settings path contains square brackets. Choose system service mode instead. The existing installation has not been stopped or replaced.'
+    }
+}
+
 function Start-TlbxUserProcess
 {
     param(
@@ -2203,6 +2257,19 @@ function Assert-InstallerPortAvailable
     if ($null -ne $connections)
     {
         $ownedIds = @(Get-InstallOwnedProcesses -InstallDir $InstallDir | ForEach-Object { $_.Id })
+        # A non-elevated PowerShell cannot always read a LocalSystem process's
+        # executable path. SCM still exposes the exact registered binary path.
+        try
+        {
+            $escapedName = $ServiceName.Replace("'", "''")
+            $service = Get-CimInstance -ClassName Win32_Service -Filter "Name='$escapedName'" -ErrorAction Stop
+            if ($service.ProcessId -gt 0 -and $service.PathName -match '^"([^"]+)"(?:\s|$)')
+            {
+                if ([IO.Path]::GetFullPath($Matches[1]) -eq [IO.Path]::GetFullPath((Join-Path $InstallDir 'mt.exe')))
+                { $ownedIds += $service.ProcessId }
+            }
+        }
+        catch { Write-Log "Could not read the selected SCM process identity: $_" "WARN" }
         $conflicts = @($connections | Where-Object { $_.LocalPort -eq $Port -and $_.OwningProcess -notin $ownedIds })
         if ($conflicts.Count)
         {
@@ -2333,6 +2400,7 @@ function Install-Tlbx
     $settingsSnapshot = $null
     $settingsSnapshotCreated = $false
     $targetStopped = $false
+    $userSnapshot = $null
     $startedUserProcess = $null
     trap
     {
@@ -2341,6 +2409,7 @@ function Install-Tlbx
         if ($startedUserProcess -and -not $startedUserProcess.HasExited)
         {
             Stop-Process -Id $startedUserProcess.Id -Force -ErrorAction SilentlyContinue
+            $null = $startedUserProcess.WaitForExit(5000)
         }
         if ($binarySwapCompleted -and -not $installationCompleted -and $installDir -and $tempRoot)
         {
@@ -2361,6 +2430,10 @@ function Install-Tlbx
                 {
                     sc.exe delete $ServiceName | Out-Null
                 }
+                if (-not $AsService -and $userSnapshot -and $userSnapshot.WasRunning)
+                {
+                    $null = Start-TlbxPreviousUserProcess -ExecutablePath (Join-Path $installDir $WebBinaryName) -InstallDir $installDir -SettingsDir $WIN_USER_SETTINGS_DIR
+                }
                 Write-Log "Previous binary set restored after installation failure" "WARN"
             }
             catch
@@ -2378,6 +2451,11 @@ function Install-Tlbx
                 $preserveBackup = $true
                 Write-Log "Could not restart the unchanged previous service: $_" "ERROR"
             }
+        }
+        if (-not $binarySwapCompleted -and $userSnapshot -and $userSnapshot.WasRunning -and -not $preserveBackup)
+        {
+            try { $null = Start-TlbxPreviousUserProcess -ExecutablePath (Join-Path $installDir $WebBinaryName) -InstallDir $installDir -SettingsDir $WIN_USER_SETTINGS_DIR }
+            catch { $preserveBackup = $true; Write-Log "Could not restart the unchanged previous user installation: $_" "ERROR" }
         }
         if ($preserveBackup)
         {
@@ -2405,6 +2483,7 @@ function Install-Tlbx
     {
         # Uses PATH_CONSTANTS defined above
         $installDir = $WIN_USER_INSTALL_DIR
+        Assert-InstallerUserLaunchPaths -InstallDir $installDir -SettingsDir $WIN_USER_SETTINGS_DIR
     }
 
     $targetService = if ($AsService) { $ServiceName } else { "" }
@@ -2443,6 +2522,10 @@ function Install-Tlbx
         if ($serviceExistedBefore) { $serviceSnapshot = Get-InstallerServiceSnapshot -Name $ServiceName }
         Stop-ExistingInstallProcesses -InstallDir $installDir
         $targetStopped = $true
+    }
+    else
+    {
+        $userSnapshot = Stop-InstallerUserProcesses -InstallDir $installDir
     }
     if (-not (Test-Path -LiteralPath $installDir))
     {
@@ -2576,8 +2659,6 @@ function Install-Tlbx
             }
         }
 
-        Install-AsUserApp -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress
-
         Write-Section "Status"
         Write-StatusLine "Startup" "Starting tlbx and waiting for https endpoint..." Yellow
         $startedUserProcess = Start-TlbxUserProcess -ExecutablePath $destWebBinary -InstallDir $installDir `
@@ -2600,6 +2681,12 @@ function Install-Tlbx
         }
     }
 
+    if ($AsService)
+    {
+        Register-Uninstall -InstallDir $installDir -Version $Version -IsService $true
+        Create-UninstallScript -InstallDir $installDir -IsService $true
+    }
+    else { Install-AsUserApp -InstallDir $installDir -Version $Version -Port $Port -BindAddress $BindAddress }
     if ($TrustCert -and $CertPath) { Trust-InstallerCertificate -CertPath $CertPath }
     if ($AsService -and $ConfigureFirewall -and (Test-NetworkBinding -BindAddress $BindAddress))
     {
@@ -2797,11 +2884,6 @@ function Install-AsService
         Write-Log "Service status: $($svc.Status)"
     }
 
-    # Register in Add/Remove Programs
-    Register-Uninstall -InstallDir $InstallDir -Version $Version -IsService $true
-
-    # Create uninstall script
-    Create-UninstallScript -InstallDir $InstallDir -IsService $true
 }
 
 function Install-AsUserApp
@@ -3222,6 +3304,7 @@ else
 {
     Assert-NoCrossModeConflict -AsService $false
     Select-InstallIdentity -AsService $false
+    Assert-InstallerUserLaunchPaths -InstallDir $WIN_USER_INSTALL_DIR -SettingsDir $WIN_USER_SETTINGS_DIR
 
     # User install - still require password
     # Uses PATH_CONSTANTS defined above - keep in sync with SettingsService.cs!

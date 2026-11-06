@@ -6,7 +6,7 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $tokens = $null; $parseErrors = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'install.ps1'), [ref]$tokens, [ref]$parseErrors)
 if ($parseErrors.Count) { throw ($parseErrors.Message -join '; ') }
-foreach ($name in @('Get-WindowsReleaseFileNames', 'Install-VerifiedBinarySet', 'Restore-PreviousBinarySet', 'Get-InstallerSettingsSnapshot', 'Restore-InstallerSettingsSnapshot')) {
+foreach ($name in @('Get-WindowsReleaseFileNames', 'Install-VerifiedBinarySet', 'Restore-PreviousBinarySet', 'Get-InstallerSettingsSnapshot', 'Restore-InstallerSettingsSnapshot', 'Stop-InstallerUserProcesses', 'Start-TlbxPreviousUserProcess', 'Join-ProcessArguments')) {
     $node = $ast.Find({ param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name }, $true)
     if (-not $node) { throw "Missing installer function $name" }
     Invoke-Expression $node.Extent.Text
@@ -174,6 +174,49 @@ try {
     catch { $failure = $_.Exception }
     Assert-Contract ($null -ne $failure -and $failure.Data['TlbxPreserveBackupRoot'] -eq $fixture.Backup) 'Failed settings restore lost its recovery marker.'
     foreach ($file in $existingSettings) { Assert-Contract ([IO.File]::ReadAllText((Join-Path (Join-Path $fixture.Backup 'settings-backup') $file)) -ceq "original/$file") "Failed settings restore lost backup $file" }
+    $script:Cases++
+    & {
+        $script:userFixtureActive = $true
+        $script:stoppedUserIds = New-Object System.Collections.Generic.List[int]
+        function Assert-InstallerCanStopTarget { param($InstallDir, $TargetServiceName) if ($TargetServiceName) { throw 'User stop acquired service scope.' } }
+        function Get-InstallOwnedProcesses {
+            param($InstallDir)
+            if ($script:userFixtureActive) {
+                [pscustomobject]@{ Id=71001; Path=(Join-Path $InstallDir 'mt.exe') }
+                [pscustomobject]@{ Id=71002; Path=(Join-Path $InstallDir 'mthost.exe') }
+            }
+        }
+        function Stop-Process {
+            [CmdletBinding()]
+            param([Parameter(ValueFromPipeline=$true)]$InputObject, [switch]$Force)
+            process { $script:stoppedUserIds.Add([int]$InputObject.Id); $script:userFixtureActive=$false }
+        }
+        $stopped = Stop-InstallerUserProcesses -InstallDir $fixture.Install
+        Assert-Contract ($stopped.WasRunning -and $script:stoppedUserIds.Count -eq 2 -and $script:stoppedUserIds[0] -eq 71001 -and $script:stoppedUserIds[1] -eq 71002) 'User stop lost the previous main process or touched unrelated IDs.'
+    }
+    $script:Cases++
+
+    & {
+        $environment = @{}
+        foreach ($name in @('TLBX_PORT','TLBX_BIND','MIDTERM_PORT','MIDTERM_BIND')) {
+            $environment[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+            [Environment]::SetEnvironmentVariable($name, 'fixture-new-runtime', 'Process')
+        }
+        function Start-Process {
+            [CmdletBinding()]
+            param($FilePath,$ArgumentList,$WorkingDirectory,$WindowStyle,$RedirectStandardOutput,$RedirectStandardError,[switch]$PassThru)
+            foreach ($name in @('TLBX_PORT','TLBX_BIND','MIDTERM_PORT','MIDTERM_BIND')) { Assert-Contract ([string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($name,'Process'))) "Rollback inherited the new runtime $name" }
+            Assert-Contract ($ArgumentList -match '--user-mode' -and $ArgumentList -match '--settings-dir' -and $ArgumentList -notmatch '--port|--bind') 'Rollback overrode the restored runtime.json.'
+            Assert-Contract ($WindowStyle -eq 'Hidden' -and $RedirectStandardOutput -and $RedirectStandardError) 'Rollback user process lost output isolation.'
+            return [pscustomobject]@{Id=71003}
+        }
+        try {
+            $restarted = Start-TlbxPreviousUserProcess -ExecutablePath (Join-Path $fixture.Install 'mt.exe') -InstallDir $fixture.Install -SettingsDir $settings
+            Assert-Contract ($restarted.Id -eq 71003) 'Rollback did not launch the previous user binary.'
+            foreach ($name in $environment.Keys) { Assert-Contract ([Environment]::GetEnvironmentVariable($name,'Process') -eq 'fixture-new-runtime') 'Rollback changed the calling shell environment.' }
+        }
+        finally { foreach ($name in $environment.Keys) { [Environment]::SetEnvironmentVariable($name,$environment[$name],'Process') } }
+    }
     $script:Cases++
     Write-Host "Windows binary transaction: $script:Cases behavioral cases passed."
 }

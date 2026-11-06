@@ -14,6 +14,9 @@ foreach ($name in @('Assert-InstallerPortAvailable','Invoke-TlbxBootstrapRequest
 function Write-Log { }
 & {
     $script:FixtureListeners = @()
+    $ServiceName = 'fixture'
+    $script:FixtureService = $null
+    function Get-CimInstance { return $script:FixtureService }
     function Get-NetTCPConnection { return $script:FixtureListeners }
     function Get-InstallOwnedProcesses { return @{Id=111} }
     Assert-InstallerPortAvailable -Port 24443 -BindAddress localhost -InstallDir 'C:\fixture'
@@ -23,6 +26,13 @@ function Write-Log { }
     $failure = $null
     try { Assert-InstallerPortAvailable -Port 24443 -BindAddress localhost -InstallDir 'C:\fixture' } catch { $failure = $_.ToString() }
     if ($failure -notmatch '24443.*PID 222' -or $failure -notmatch 'not been stopped') { throw "Conflicting listener was not rejected before teardown: $failure" }
+    $script:FixtureListeners = @(@{LocalPort=24443;OwningProcess=333})
+    $script:FixtureService = @{ProcessId=333;PathName='"C:\fixture\mt.exe" --service-mode'}
+    Assert-InstallerPortAvailable -Port 24443 -BindAddress localhost -InstallDir 'C:\fixture'
+    $script:FixtureService.PathName='"C:\other\mt.exe" --service-mode'
+    $failure = $null
+    try { Assert-InstallerPortAvailable -Port 24443 -BindAddress localhost -InstallDir 'C:\fixture' } catch { $failure=$_.ToString() }
+    if ($failure -notmatch 'PID 333') { throw 'SCM ownership check crossed installation paths.' }
     Write-Host 'PASS: free port, existing target listener and foreign listener rejection.'
 }
 & {

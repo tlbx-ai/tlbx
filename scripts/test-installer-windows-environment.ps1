@@ -6,7 +6,7 @@ $source=Get-Content -LiteralPath (Join-Path (Split-Path $PSScriptRoot -Parent) '
 $tokens=$null; $errors=$null
 $ast=[Management.Automation.Language.Parser]::ParseInput($source,[ref]$tokens,[ref]$errors)
 if ($errors.Count) { throw ($errors.Message -join '; ') }
-foreach ($name in @('Test-InstallerPbkdf2Support','Assert-InstallerPrerequisites','Get-InstallerEnvironmentValue','Get-InstallerSpecialFolder','Get-InstallerNativeProgramFiles','Resolve-InstallerDirectory','Resolve-InstallerEnvironmentPaths','Invoke-InstallerVersionProbe','Assert-VerifiedWindowsRuntime')) {
+foreach ($name in @('Test-InstallerPbkdf2Support','Assert-InstallerPrerequisites','Get-InstallerEnvironmentValue','Get-InstallerSpecialFolder','Get-InstallerNativeProgramFiles','Resolve-InstallerDirectory','Resolve-InstallerEnvironmentPaths','Invoke-InstallerVersionProbe','Assert-VerifiedWindowsRuntime','Assert-InstallerUserLaunchPaths')) {
  $node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq $name},$true)
  if (-not $node) { throw "Missing installer function $name" }; Invoke-Expression $node.Extent.Text
 }
@@ -14,6 +14,9 @@ $script:Passed=0
 function Assert-True($Value,[string]$Message) { if (-not $Value) { throw $Message }; $script:Passed++ }
 function Assert-Fails([scriptblock]$Action,[string]$Pattern) { $failure=$null; try { & $Action } catch { $failure=$_.ToString() }; Assert-True ($failure -match $Pattern) "Expected '$Pattern'; got '$failure'" }
 Assert-InstallerPrerequisites
+Assert-InstallerUserLaunchPaths -InstallDir 'C:\normal path' -SettingsDir 'C:\settings'
+Assert-Fails { Assert-InstallerUserLaunchPaths -InstallDir 'C:\profile[x]\tlbx' -SettingsDir 'C:\settings' } 'not been stopped or replaced'
+Assert-Fails { Assert-InstallerUserLaunchPaths -InstallDir 'C:\normal' -SettingsDir 'C:\profile[x]\.tlbx' } 'system service mode'
 Assert-True (Test-InstallerPbkdf2Support) 'Current shell must support PBKDF2-SHA256.'
 Assert-Fails { Assert-InstallerPrerequisites -WindowsPlatform $false } 'Windows only'
 Assert-Fails { Assert-InstallerPrerequisites -PowerShellVersion ([version]'5.0') } 'requires Windows PowerShell 5.1'

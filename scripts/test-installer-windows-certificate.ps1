@@ -1,6 +1,6 @@
 # Certificate/key reuse contracts using only own temporary files and unnamed CNG keys.
 [CmdletBinding()]
-param([string]$EvidenceDirectory = '')
+param([string]$EvidenceDirectory = '', [string]$NativeExecutable = '')
 $ErrorActionPreference='Stop'
 if([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT){return}
 Add-Type -AssemblyName System.Security
@@ -25,10 +25,10 @@ function Assert-Pair([string]$Case,[bool]$Expected,[bool]$IsService) {
     if($actual -ne $Expected){throw "Certificate case '$Case' expected $Expected, got $actual."}
     $results.Add(@{case=$Case;accepted=$actual;service=$IsService})
 }
-function New-FixtureKey([bool]$Rsa) {
+function New-FixtureKey([bool]$Rsa, [bool]$Ecdh = $false) {
     $parameters=New-Object Security.Cryptography.CngKeyCreationParameters
     $parameters.ExportPolicy=[Security.Cryptography.CngExportPolicies]::AllowExport -bor [Security.Cryptography.CngExportPolicies]::AllowPlaintextExport
-    $algorithm=if($Rsa){[Security.Cryptography.CngAlgorithm]::Rsa}else{[Security.Cryptography.CngAlgorithm]::ECDsaP384}
+    $algorithm=if($Rsa){[Security.Cryptography.CngAlgorithm]::Rsa}elseif($Ecdh){[Security.Cryptography.CngAlgorithm]::ECDiffieHellmanP384}else{[Security.Cryptography.CngAlgorithm]::ECDsaP384}
     if($Rsa){$parameters.Parameters.Add([Security.Cryptography.CngProperty]::new('Length',[BitConverter]::GetBytes(2048),[Security.Cryptography.CngPropertyOptions]::None))}
     $key=[Security.Cryptography.CngKey]::Create($algorithm,[NullString]::Value,$parameters)
     if(-not $key.IsEphemeral -or $key.KeyName){$key.Dispose();throw 'Fixture attempted a persisted CNG key.'}
@@ -47,13 +47,17 @@ function Write-FixtureCertificate($Key,[bool]$Rsa,[DateTimeOffset]$NotBefore,[Da
 }
 $keyPath=Join-Path $fixtureRoot 'keys\tlbx.dpapi'
 try {
-    foreach($rsa in @($false,$true)) {
-        $algorithm=if($rsa){'RSA'}else{'ECDSA-P384'}
-        $key=New-FixtureKey $rsa;$otherKey=New-FixtureKey $rsa
+    foreach($algorithm in @('ECDSA-P384','ECDH-P384','RSA')) {
+        $rsa=$algorithm -eq 'RSA';$ecdh=$algorithm -eq 'ECDH-P384'
+        $key=New-FixtureKey $rsa $ecdh;$otherKey=New-FixtureKey $rsa $ecdh
         $raw=$null;$otherRaw=$null
         try {
             $raw=$key.Export([Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
             $otherRaw=$otherKey.Export([Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
+            if($ecdh){
+                $imported=[Security.Cryptography.CngKey]::Import($raw,[Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
+                try{if($imported.AlgorithmGroup -ne [Security.Cryptography.CngAlgorithmGroup]::ECDiffieHellman){throw 'ECDH regression fixture did not exercise a real ECDH PKCS8 import.'}}finally{$imported.Dispose()}
+            }
             foreach($service in @($false,$true)) {
                 $scope=if($service){[Security.Cryptography.DataProtectionScope]::LocalMachine}else{[Security.Cryptography.DataProtectionScope]::CurrentUser}
                 Write-FixtureCertificate $key $rsa ([DateTimeOffset]::UtcNow.AddDays(-1)) ([DateTimeOffset]::UtcNow.AddDays(90))
@@ -94,6 +98,24 @@ try {
     $script:regenerating=$false
     Generate-Certificate -InstallDir $fixtureRoot -SettingsDir $fixtureRoot -IsService $true|Out-Null
     if(-not $script:regenerating){throw 'Generate-Certificate reused an invalid pair instead of attempting regeneration.'}
+    if($NativeExecutable){
+        $nativeSettings=Join-Path $fixtureRoot 'native generated profile'
+        $nativeOut=Join-Path $EvidenceDirectory "native-certificate-$($PSVersionTable.PSVersion.Major).stdout.log"
+        $nativeErr=Join-Path $EvidenceDirectory "native-certificate-$($PSVersionTable.PSVersion.Major).stderr.log"
+        & $NativeExecutable --generate-cert --user-mode --settings-dir $nativeSettings --force > $nativeOut 2> $nativeErr
+        if($LASTEXITCODE -ne 0){throw "Native certificate generation failed; see $nativeErr"}
+        $nativePair=Test-ExistingCertificate -SettingsDir $nativeSettings -IsService $false
+        if(-not $nativePair){throw 'Real native-generated certificate/key pair failed verification.'}
+        try{
+            $nativeRaw=$null;$nativeKey=$null
+            try{
+                $nativeRaw=[Security.Cryptography.ProtectedData]::Unprotect([IO.File]::ReadAllBytes((Join-Path $nativeSettings 'keys\tlbx.dpapi')),$null,[Security.Cryptography.DataProtectionScope]::CurrentUser)
+                $nativeKey=[Security.Cryptography.CngKey]::Import($nativeRaw,[Security.Cryptography.CngKeyBlobFormat]::Pkcs8PrivateBlob)
+                @{shell=$PSVersionTable.PSVersion.ToString();accepted=$true;algorithm=$nativeKey.Algorithm.Algorithm;group=$nativeKey.AlgorithmGroup.AlgorithmGroup;keySize=$nativeKey.KeySize;ephemeral=$nativeKey.IsEphemeral;fingerprint=$nativePair.Thumbprint}|ConvertTo-Json|Set-Content (Join-Path $EvidenceDirectory "native-certificate-$($PSVersionTable.PSVersion.Major)-proof.json")
+            }finally{if($nativeRaw){[Array]::Clear($nativeRaw,0,$nativeRaw.Length)};if($nativeKey){$nativeKey.Dispose()}}
+            Write-Host 'PASS: real native-generated DPAPI/PKCS8 certificate pair verified; no listener, service or trust entry created.'
+        }finally{$nativePair.Certificate.Dispose()}
+    }
     $results|ConvertTo-Json -Depth 4|Set-Content (Join-Path $EvidenceDirectory "certificate-$($PSVersionTable.PSVersion.Major)-proof.json")
     Write-Host "PASS: $($results.Count) actual DPAPI/CNG certificate cases plus regeneration branch; PowerShell $($PSVersionTable.PSVersion); no trust/SCM changes."
 } finally {
