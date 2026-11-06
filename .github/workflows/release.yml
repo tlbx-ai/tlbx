@@ -239,10 +239,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             rid: osx-arm64
             ext: ''
-          - os: macos-14
+          - os: macos-15-intel
             rid: osx-x64
             ext: ''
           - os: ubuntu-24.04
@@ -478,10 +478,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-14
+          - os: macos-15
             rid: osx-arm64
             ext: ''
-          - os: macos-14
+          - os: macos-15-intel
             rid: osx-x64
             ext: ''
           - os: ubuntu-24.04
