@@ -241,7 +241,8 @@ public sealed class WebPreviewService
         }
 
         var isMainServerTarget = IsMainServerTarget(uri);
-        if (IsPreviewServerTarget(uri))
+        // The preview shares the main listener. Reject recursive proxy routes, not the tlbx UI itself.
+        if (isMainServerTarget && PathString.FromUriComponent(uri).StartsWithSegments("/webpreview", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -1163,12 +1164,6 @@ public sealed class WebPreviewService
     private bool IsMainServerTarget(Uri uri)
     {
         return IsThisServerTarget(uri, _serverPort);
-    }
-
-    private bool IsPreviewServerTarget(Uri uri)
-    {
-        return _previewOriginService is { IsEnabled: true }
-            && IsThisServerTarget(uri, _previewOriginService.PreviewPort);
     }
 
     private bool IsThisServerTarget(Uri uri, int port)
