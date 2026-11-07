@@ -866,6 +866,14 @@ public sealed partial class WebPreviewProxyMiddleware
             if(truncated)lines.push("[outline truncated: "+count+" entries, "+visited+" nodes visited; narrow selector or maxDepth]");
             return {text:lines.join("\n")||"(no visible semantic elements)",count:count};
           }
+          function captureBackground(){
+            var root=getComputedStyle(document.documentElement),opaque=/^rgb\([\d\s.,]+\)$/;
+            if(root.backgroundImage!=="none")return undefined;
+            if(opaque.test(root.backgroundColor))return root.backgroundColor;
+            if(root.backgroundColor!=="transparent"&&!/^rgba\([^,]+,[^,]+,[^,]+,\s*0(?:\.0+)?\)$/.test(root.backgroundColor))return undefined;
+            var body=document.body?getComputedStyle(document.body):null;
+            return body&&body.backgroundImage==="none"&&opaque.test(body.backgroundColor)?body.backgroundColor:undefined;
+          }
           function ensureCapture(){
             if(window.__tlbxDomCapture&&typeof window.__tlbxDomCapture.snapdom==="function")return Promise.resolve(window.__tlbxDomCapture.snapdom);
             if(captureLoad)return captureLoad;
@@ -1078,6 +1086,7 @@ public sealed partial class WebPreviewProxyMiddleware
                       clip:fullPage?null:"viewport",
                       dpr:1,
                       scale:1,
+                      backgroundColor:captureBackground(),
                       fast:false,
                       reconcile:true,
                       // Image compression awaits bitmap decode(), which never settles in a hidden, never-painted document.
