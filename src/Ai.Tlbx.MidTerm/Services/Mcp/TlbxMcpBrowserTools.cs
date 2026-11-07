@@ -45,8 +45,8 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     internal static IEnumerable<McpServerTool> CreateTools() =>
     [
         Command("query", "Query DOM elements, with optional textOnly and maxDepth.", Fields(("selector", Property("string")), ("textOnly", Property("boolean")), ("maxDepth", Property("integer")), ("timeout", Timeout())), ["selector"], true),
-        Command("click", "Click a DOM element once. A timeout does not authorize replaying the click.", Fields(("selector", Property("string"))), ["selector"]),
-        Command("fill", "Fill an input with literal Unicode text, without shell quoting or command-length limitations.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
+        Command("click", "Click exactly one visible, enabled element once, with pointer intent events and without moving keyboard focus. Ambiguous selectors fail. A timeout does not authorize replay.", Fields(("selector", Property("string"))), ["selector"]),
+        Command("fill", "Fill exactly one visible, enabled input, textarea or select with literal Unicode text and interaction events. Reject ambiguous, read-only and unsupported controls without changing them.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
         Command("evaluate", "Execute JavaScript in the existing preview. code is passed literally, not through a shell.", Fields(("code", Property("string")), ("timeout", Timeout())), ["code"], command: "exec"),
         Command("wait", "Wait for an element in the existing preview.", Fields(("selector", Property("string")), ("timeout", Timeout())), ["selector"], true),
         Command("screenshot", "Capture viewport or fullPage as inline MCP PNG. Optionally save the same artifact as the CLI in the target workspace.", Fields(("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
