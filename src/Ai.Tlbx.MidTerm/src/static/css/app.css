@@ -5402,18 +5402,6 @@ body::before {
 /* Settings panel (each tab's content) */
 .settings-panel {
   max-width: 600px;
-  animation: panel-fade 0.2s ease both;
-}
-
-@keyframes panel-fade {
-  from {
-    opacity: 0;
-    transform: translateX(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
 }
 
 .ai-provider-controls {
@@ -6669,18 +6657,6 @@ body::before {
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 32px var(--shadow-color-lg);
-  animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-@keyframes modal-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.95) translateY(-10px);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
 }
 
 .modal-header {
@@ -7042,18 +7018,6 @@ body::before {
   border-radius: var(--radius-3xl);
   padding: 48px 40px 36px;
   box-shadow: 0 8px 32px var(--shadow-color-md);
-  animation: card-rise 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s both;
-}
-
-@keyframes card-rise {
-  0% {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .login-logo-wrapper {
@@ -7394,7 +7358,6 @@ body::before {
   min-width: 0;
   pointer-events: auto;
   background: var(--bg-elevated-opaque);
-  animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .dialog-content .modal-footer { flex-wrap: wrap; }
@@ -7536,7 +7499,6 @@ body::before {
   max-height: none;
   align-items: stretch;
   justify-content: stretch;
-  animation: modal-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .session-launcher-content {
@@ -8146,7 +8108,6 @@ body::before {
 .dev-error-modal {
   width: min(920px, 94vw);
   max-height: min(85vh, 960px);
-  animation: modal-in 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .dev-error-body {
