@@ -662,13 +662,32 @@ public sealed partial class WebPreviewProxyMiddleware
           // Installed before upstream scripts and always on, so arguments are read
           // without running page getters or toJSON and each entry costs a bounded walk.
           var mtLog=window.__mtLog=[],mtLogDropped=0,mtLogBusy=false,mtLogEntryMax=2000;
+          var mtErrorStackGetter=Object.getOwnPropertyDescriptor(new Error(),"stack");
+          mtErrorStackGetter=mtErrorStackGetter&&mtErrorStackGetter.get;
+          var mtDomNameGetter=Object.getOwnPropertyDescriptor(DOMException.prototype,"name").get;
+          var mtDomMessageGetter=Object.getOwnPropertyDescriptor(DOMException.prototype,"message").get;
+          function mtLogData(v,key){
+            for(var obj=v,n=0;obj&&n<32;obj=Object.getPrototypeOf(obj),n++){
+              var desc=Object.getOwnPropertyDescriptor(obj,key);
+              if(desc)return "value" in desc?desc.value:
+                desc.get&&(desc.get===mtDomNameGetter||desc.get===mtDomMessageGetter)?desc.get.call(v):undefined;
+            }
+          }
           function mtLogValue(v,depth,path,budget){
             var type=typeof v;
             if(type==="string"){var str=v.slice(0,mtLogEntryMax+1);return depth?JSON.stringify(str):str;}
             if(v===null||(type!=="object"&&type!=="function"))return String(v);
-            var tag=Object.prototype.toString.call(v).slice(8,-1);
+            // Object#toString invokes Symbol.toStringTag getters; inspect descriptors first.
+            var customTag=mtLogData(v,Symbol.toStringTag);
+            var tag=typeof customTag==="string"?customTag:
+              Array.isArray(v)?"Array":v instanceof Error?"Error":
+              v instanceof Date?"Date":v instanceof RegExp?"RegExp":type==="function"?"Function":"Object";
             if(tag==="Error"||tag==="DOMException"){
-              var head=v.name+": "+v.message,stack=String(v.stack||"");
+              var name=mtLogData(v,"name"),message=mtLogData(v,"message"),stack=mtLogData(v,"stack");
+              var stackDesc=Object.getOwnPropertyDescriptor(v,"stack");
+              if(typeof name==="string"&&typeof message==="string"&&stackDesc&&mtErrorStackGetter&&stackDesc.get===mtErrorStackGetter)stack=mtErrorStackGetter.call(v);
+              var head=(typeof name==="string"?name:"Error")+": "+(typeof message==="string"?message:"");
+              stack=typeof stack==="string"?stack:"";
               return stack.indexOf(head)===0?stack:stack?head+"\n"+stack:head;
             }
             if(tag==="Date"||tag==="RegExp")return String(v);
