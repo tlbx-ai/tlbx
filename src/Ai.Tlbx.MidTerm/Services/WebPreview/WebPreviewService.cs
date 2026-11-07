@@ -452,7 +452,7 @@ public sealed class WebPreviewService
 
         var effectiveTarget = target ?? state.TargetUri;
         if (effectiveTarget is null
-            || !IsMainServerTarget(effectiveTarget)
+            || !IsCredentialSafeSelfTarget(effectiveTarget)
             || string.IsNullOrWhiteSpace(token))
         {
             return;
@@ -460,7 +460,6 @@ public sealed class WebPreviewService
 
         var cookie = new Cookie(AuthService.SessionCookieName, token)
         {
-            Domain = effectiveTarget.Host,
             Path = "/",
             Secure = effectiveTarget.Scheme == Uri.UriSchemeHttps,
             HttpOnly = true
@@ -1160,6 +1159,13 @@ public sealed class WebPreviewService
             || normalizedRequestPath.Length > normalizedCookiePath.Length
             && normalizedRequestPath[normalizedCookiePath.Length] == '/';
     }
+
+    // Credentials must never follow DNS aliases, even if they currently resolve locally.
+    private bool IsCredentialSafeSelfTarget(Uri uri) =>
+        uri.Scheme == Uri.UriSchemeHttps
+        && uri.Port == _serverPort
+        && (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || IPAddress.TryParse(uri.IdnHost, out var address) && IPAddress.IsLoopback(address));
 
     private bool IsMainServerTarget(Uri uri)
     {

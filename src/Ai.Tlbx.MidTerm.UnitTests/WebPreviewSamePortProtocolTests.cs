@@ -223,4 +223,92 @@ public sealed class WebPreviewSamePortProtocolTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
+    [Fact]
+    [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "One client per isolated loopback authentication fixture.")]
+    public async Task FreshCapabilitySeedsOnlyValidatedNativeCookieForExactSelfListener()
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Skip("This authentication fixture uses Windows settings/DPAPI.");
+        var ct = TestContext.Current.CancellationToken;
+        var directory = Path.Combine(Path.GetTempPath(), "tlbx-preview-bootstrap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var settings = new SettingsService(directory);
+            var values = settings.Load();
+            values.PasswordHash = AuthService.HashPasswordStatic("fixture-local-password");
+            settings.Save(values);
+            var keys = new ApiKeyService(settings);
+            var apiKey = keys.CreateApiKey("fixture").Token;
+            var auth = new AuthService(settings, keys);
+            var token = auth.CreateSessionToken();
+            var registry = new BrowserPreviewRegistry();
+            var service = new WebPreviewService(2000, BrowserPreviewOriginService.Create(2000), Path.Combine(directory, "cookies"));
+            var builder = WebApplication.CreateBuilder();
+            builder.Logging.ClearProviders();
+            builder.Services.AddSingleton(auth);
+            builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
+            await using var app = builder.Build();
+            AuthMiddleware.ConfigureAuthMiddleware(app, settings, auth, new ShareGrantService(settings), registry);
+            BrowserEndpoints.MapPreviewClientEndpoint(app, registry, new BrowserPreviewOwnerService(), BrowserPreviewOriginService.Create(2000), service);
+            await app.StartAsync(ct);
+            var address = Assert.Single(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses);
+            using var handler = new HttpClientHandler { UseCookies = false };
+            using var http = new HttpClient(handler);
+            var scenarios = new (string Url, string? Cookie, bool Key, bool Seed)[]
+            {
+                ("https://localhost:2000/", token, false, true),
+                ("https://127.0.0.1:2000/", token, false, true),
+                ("https://[::1]:2000/", token, false, true),
+                ("https://localhost:2000/", null, true, false),
+                ("https://localhost:2000/", "invalid", true, false),
+                ("https://localhost:2000/", null, false, false),
+                ("https://localhost:2000/", "invalid", false, false),
+                ("https://external.example:2000/", token, false, false),
+                ("https://127.0.0.1.nip.io:2000/", token, false, false),
+                ("https://localhost:2001/", token, false, false),
+                ("http://localhost:2000/", token, false, false)
+            };
+            foreach (var (url, cookie, key, seed) in scenarios)
+            {
+                var name = Guid.NewGuid().ToString("N");
+                Assert.True(service.SetTarget("session", name, url));
+                var preview = service.GetPreviewSession("session", name)!;
+                using var request = new HttpRequestMessage(HttpMethod.Post, address + "/api/browser/preview-client");
+                request.Content = new StringContent("{\"sessionId\":\"session\",\"previewName\":\"" + name + "\"}", System.Text.Encoding.UTF8, "application/json");
+                if (cookie is not null) request.Headers.Add("Cookie", $"{AuthService.SessionCookieName}={cookie}");
+                if (key) request.Headers.Add("X-API-Key", apiKey);
+                using var response = await http.SendAsync(request, ct);
+                Assert.Equal(cookie == token || key ? HttpStatusCode.OK : HttpStatusCode.Unauthorized, response.StatusCode);
+                Assert.DoesNotContain(token, await response.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
+                var cookies = service.GetCookies("session", name).Cookies;
+                Assert.True(seed == cookies.Any(c => c.Name == AuthService.SessionCookieName), url + " seed=" + seed);
+                if (seed)
+                {
+                    var native = Assert.Single(cookies);
+                    Assert.True(native.HttpOnly);
+                    Assert.True(native.Secure);
+                    Assert.Equal(token, native.Value);
+                }
+                Assert.Empty(service.GetBrowserCookies(preview.RouteKey).Cookies);
+                if (seed && url == "https://localhost:2000/")
+                    Assert.True(service.SetCookieFromRaw(preview.RouteKey, "fixture=retained; Path=/; Secure"));
+                service.PersistCookies(preview.RouteKey);
+            }
+            foreach (var file in Directory.EnumerateFiles(Path.Combine(directory, "cookies"), "*", SearchOption.AllDirectories))
+            {
+                var persisted = await File.ReadAllTextAsync(file, ct);
+                Assert.DoesNotContain(token, persisted, StringComparison.Ordinal);
+                Assert.DoesNotContain(AuthService.SessionCookieName, persisted, StringComparison.Ordinal);
+            }
+
+            using var scoped = new HttpRequestMessage(HttpMethod.Post, address + "/api/browser/preview-client");
+            scoped.Content = new StringContent("{\"sessionId\":\"session\"}", System.Text.Encoding.UTF8, "application/json");
+            scoped.Headers.Add("Cookie", $"{AuthService.SessionCookieName}={token}");
+            scoped.Headers.Add("Origin", "null");
+            using var forbidden = await http.SendAsync(scoped, ct);
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
 }
