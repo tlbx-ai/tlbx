@@ -290,7 +290,9 @@ public sealed class BrowserCommandService
             return new BrowserWsResult
             {
                 Success = false,
-                Error = string.Create(CultureInfo.InvariantCulture, $"Command timed out after {timeoutSeconds} seconds.")
+                Error = request.Command == "wait" && request.Value is "attached" or "visible" or "hidden" or "detached"
+                    ? string.Create(CultureInfo.InvariantCulture, $"Command timed out after {timeoutSeconds} seconds, waiting for {request.Value}: {request.Selector}")
+                    : string.Create(CultureInfo.InvariantCulture, $"Command timed out after {timeoutSeconds} seconds.")
             };
         }
         catch (OperationCanceledException)
