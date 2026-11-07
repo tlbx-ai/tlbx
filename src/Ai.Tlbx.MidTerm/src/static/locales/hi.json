@@ -374,6 +374,7 @@
   "auth.password": "पासवर्ड",
   "auth.terminalMultiplexer": "टर्मिनल मल्टीप्लेक्सर",
   "auth.certFingerprint": "प्रमाणपत्र फिंगरप्रिंट",
+  "auth.verifyCertificate": "प्रमाणपत्र सत्यापित करें",
   "auth.certHidePanel": "यह पैनल छिपाएं",
   "auth.certVerifyHint": "सत्यापित करें कि यह सभी डिवाइस पर मेल खाता है। विवरण के लिए सेटिंग्स → सुरक्षा देखें।",
   "trust.title": "इस सर्वर पर भरोसा करें",

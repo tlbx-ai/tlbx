@@ -1149,6 +1149,8 @@
   "auth.password": "Password",
   "auth.terminalMultiplexer": "Terminal Multiplexer",
   "auth.certFingerprint": "Certificate Fingerprint",
+  "auth.verifyCertificate": "Verify certificate",
+  "auth.certificateVerificationWarning": "Before entering your password, compare the SHA-256 fingerprint in your browser’s certificate viewer with the fingerprint obtained directly from this host or its administrator over a trusted channel. A fingerprint displayed by this page alone does not verify the connection.",
   "auth.certHidePanel": "Hide this panel",
   "auth.certVerifyHint": "Verify this matches across devices. See Settings → Security for details.",
   "auth.certFrom": "From",

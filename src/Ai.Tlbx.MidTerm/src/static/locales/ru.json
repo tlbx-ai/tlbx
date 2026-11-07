@@ -374,6 +374,7 @@
   "auth.password": "Пароль",
   "auth.terminalMultiplexer": "Мультиплексор терминала",
   "auth.certFingerprint": "Отпечаток сертификата",
+  "auth.verifyCertificate": "Проверить сертификат",
   "auth.certHidePanel": "Скрыть эту панель",
   "auth.certVerifyHint": "Убедитесь, что это совпадает на всех устройствах. См. Настройки → Безопасность для подробностей.",
   "trust.title": "Доверять этому серверу",

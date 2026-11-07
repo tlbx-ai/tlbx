@@ -377,6 +377,7 @@
   "auth.password": "密码",
   "auth.terminalMultiplexer": "终端多路复用器",
   "auth.certFingerprint": "证书指纹",
+  "auth.verifyCertificate": "验证证书",
   "auth.certHidePanel": "隐藏此面板",
   "auth.certVerifyHint": "验证此指纹在各设备上是否一致。有关详细信息，请参阅「设置 → 安全」。",
   "trust.title": "信任此服务器",
