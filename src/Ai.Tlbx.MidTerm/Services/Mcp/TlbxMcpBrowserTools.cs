@@ -71,7 +71,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         new TlbxMcpBrowserTools("browser_cookies", "Read the target preview's cookie jar, as supported by the full-user CLI.", new(), readOnly: true),
         new TlbxMcpBrowserTools("browser_clear_cookies", "Clear browser-side and server-side preview cookies using the CLI ordering.", new(), destructive: true),
         new TlbxMcpBrowserTools("browser_clear_state", "Clear browser cookies/storage/service workers and server preview state using the CLI ordering.", new(), destructive: true),
-        new TlbxMcpBrowserTools("browser_reload", "Reload in soft, force or hard mode. Hard also clears browser/server cookies before dispatch, as the CLI does.", Fields(("mode", Enum("soft", "force", "hard")))),
+        new TlbxMcpBrowserTools("browser_reload", "Reload in soft, force or hard mode. Soft/force reopen the configured target through its current owner if no iframe bridge exists. Hard also clears browser/server cookies.", Fields(("mode", Enum("soft", "force", "hard")))),
         new TlbxMcpBrowserTools("browser_preview_reset", "Optionally navigate, clear preview state, then perform a hard reload; report partial cleanup warnings instead of replaying actions.", Fields(("url", Property("string"))), destructive: true),
         new TlbxMcpBrowserTools("browser_proxylog", "Read bounded proxy request evidence including failures.", Fields(("limit", PositiveInteger())), readOnly: true),
         new TlbxMcpBrowserTools("browser_proxylog_summary", "Read the same compact proxy summary as the CLI.", Fields(("limit", PositiveInteger())), readOnly: true),
@@ -182,7 +182,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             case "browser_clear_state":
                 return await ClearAsync(commands, previews, target, preview, _tool.Name == "browser_clear_state", ct).ConfigureAwait(false);
             case "browser_reload":
-                return await ReloadAsync(commands, previews, target, preview, OptionalString(args, "mode") ?? "soft", ct).ConfigureAwait(false);
+                return await ReloadAsync(commands, previews, operations, target, preview, previewId, OptionalString(args, "mode") ?? "soft", ct).ConfigureAwait(false);
             case "browser_preview_reset":
                 if (OptionalString(args, "url") is { } newUrl)
                 {
@@ -190,7 +190,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                     if (!navigation.Success) return OperationResult(navigation, target, preview);
                 }
                 var cleared = await ClearAsync(commands, previews, target, preview, true, ct).ConfigureAwait(false);
-                var reloaded = await ReloadAsync(commands, previews, target, preview, "hard", ct).ConfigureAwait(false);
+                var reloaded = await ReloadAsync(commands, previews, operations, target, preview, previewId, "hard", ct).ConfigureAwait(false);
                 if (cleared.IsError == true)
                     reloaded.Content.Add(new TextContentBlock { Text = "State cleanup warning: " + ((TextContentBlock)cleared.Content[0]).Text });
                 return reloaded;
@@ -276,10 +276,19 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         return changed ? Success(target, preview) : Error("TLBX_MCP_BROWSER_NO_TARGET", "Browser cleanup completed but no active server target could be cleared.");
     }
 
-    private static async Task<CallToolResult> ReloadAsync(BrowserCommandService commands, WebPreviewService previews,
-        string target, string? preview, string mode, CancellationToken ct)
+    internal static async Task<CallToolResult> ReloadAsync(BrowserCommandService commands, WebPreviewService previews,
+        BrowserPreviewOperations operations, string target, string? preview, string? previewId, string mode, CancellationToken ct)
     {
         if (mode is not ("soft" or "force" or "hard")) throw new ArgumentException("mode must be soft, force or hard.");
+        var url = previews.GetTargetUrl(target, preview);
+        if (url is null) return Error("TLBX_MCP_BROWSER_NO_TARGET", "No active target.");
+        var status = commands.GetStatus(url, target, preview, previewId);
+        if (!string.IsNullOrEmpty(previewId) && status.DefaultClient is null)
+            return Error("TLBX_MCP_BROWSER_FAILED", status.StatusMessage ?? "The exact preview client is not connected.");
+        // Recover only before dispatch, when no iframe client exists. A lost reload
+        // acknowledgement must never trigger an implicit second navigation.
+        if (mode != "hard" && string.IsNullOrEmpty(previewId) && status.ConnectedClientCount == 0)
+            return OperationResult(await operations.OpenAsync(target, preview, url, false, ct).ConfigureAwait(false), target, preview);
         if (mode == "hard")
         {
             var cleared = await ClearAsync(commands, previews, target, preview, false, ct).ConfigureAwait(false);
@@ -288,7 +297,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         }
         var result = await commands.ExecuteCommandAsync(new BrowserCommandRequest
         {
-            Command = "reload", Value = mode, SessionId = target, PreviewName = preview
+            Command = "reload", Value = mode, SessionId = target, PreviewName = preview, PreviewId = previewId
         }, ct).ConfigureAwait(false);
         return result.Success ? Success(target, preview) : Error("TLBX_MCP_BROWSER_RELOAD_FAILED",
             (result.Error ?? "Reload was not acknowledged.") + " Inspect state before retrying; the reload may already have executed.");
