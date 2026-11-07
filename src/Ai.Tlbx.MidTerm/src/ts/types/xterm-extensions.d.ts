@@ -48,6 +48,7 @@ declare global {
         readonly rootVisible: boolean;
       };
       readonly appServerControl: {
+        inspect: (sessionId: string) => Record<string, unknown> | null;
         readonly scenarios: readonly ('mixed' | 'tables' | 'long' | 'massive' | 'workflow')[];
         showScenario: (
           sessionId: string,
