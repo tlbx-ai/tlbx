@@ -6985,8 +6985,7 @@ body::before {
 /* Login Page */
 .login-page {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow-y: auto;
   min-height: 100vh;
   min-height: 100dvh;
   padding: calc(20px + var(--safe-area-inset-top)) calc(20px + var(--safe-area-inset-right))
@@ -7015,6 +7014,7 @@ body::before {
 .login-container {
   width: 100%;
   max-width: 380px;
+  margin: auto;
   padding: 20px;
 }
 
