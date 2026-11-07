@@ -992,12 +992,17 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"wheel":{
                   var s=(msg.selector||"").trim();
-                  var el=!s||s==="window"||s==="document"||s==="body"
-                    ? (document.scrollingElement||document.documentElement)
-                    : document.querySelector(s);
-                  if(!el){res.success=false;res.error="wheel target not found: "+s;break;}
                   var dy=Number.isFinite(msg.deltaY)?msg.deltaY:120;
                   var dx=Number.isFinite(msg.deltaX)?msg.deltaX:0;
+                  var pageTarget=!s||s==="window"||s==="document"||s==="body";
+                  var el=pageTarget?(document.scrollingElement||document.documentElement):document.querySelector(s);
+                  if(pageTarget&&document.body){
+                    var body=document.body,vertical=Math.abs(dy)>=Math.abs(dx),bodyStyle=getComputedStyle(body);
+                    var bodyRange=vertical?body.scrollHeight-body.clientHeight:body.scrollWidth-body.clientWidth;
+                    var rootRange=vertical?el.scrollHeight-el.clientHeight:el.scrollWidth-el.clientWidth;
+                    if(bodyRange>0&&/^(auto|scroll|overlay)$/.test(vertical?bodyStyle.overflowY:bodyStyle.overflowX)&&(s==="body"||rootRange<=0))el=body;
+                  }
+                  if(!el){res.success=false;res.error="wheel target not found: "+s;break;}
                   var steps=Math.max(1,Math.min(100,Math.trunc(msg.steps||1)));
                   var metrics=function(){
                     var maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
