@@ -704,6 +704,38 @@ public sealed partial class WebPreviewProxyMiddleware
             }).catch(function(err){captureLoad=null;throw err;});
             return captureLoad;
           }
+          function isControlVisible(el){
+            if(!el.isConnected||!el.getClientRects().length)return false;
+            var visibility=getComputedStyle(el).visibility;
+            if(visibility==="hidden"||visibility==="collapse")return false;
+            for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+              var css=getComputedStyle(n);
+              if(n.hidden||n.inert||css.display==="none"||Number(css.opacity)===0)return false;
+            }
+            return true;
+          }
+          function resolveControl(selector){
+            var matches=document.querySelectorAll(selector),visible=[];
+            for(var i=0;i<matches.length;i++)if(isControlVisible(matches[i]))visible.push(matches[i]);
+            if(!visible.length)throw new Error("no visible element: "+selector);
+            if(visible.length!==1)throw new Error("ambiguous selector: "+selector+" ("+visible.length+" visible elements); use a more specific selector");
+            assertControlEnabled(visible[0]);return visible[0];
+          }
+          function assertControlEnabled(el){
+            if(!isControlVisible(el))throw new Error("interaction target became hidden or detached");
+            if(el.matches(":disabled")||el.closest('[aria-disabled="true"]'))throw new Error("interaction target is disabled");
+          }
+          function controlIntent(el){
+            // Match pointer activation without moving keyboard focus or claiming terminal size ownership.
+            var rect=el.getBoundingClientRect(),opts={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2};
+            var mouse=true;
+            if(typeof PointerEvent!=="undefined")mouse=el.dispatchEvent(new PointerEvent("pointerdown",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
+            if(mouse)el.dispatchEvent(new MouseEvent("mousedown",opts));
+            opts.buttons=0;
+            if(typeof PointerEvent!=="undefined")el.dispatchEvent(new PointerEvent("pointerup",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
+            if(mouse)el.dispatchEvent(new MouseEvent("mouseup",opts));
+            assertControlEnabled(el);
+          }
           function setFormControlValue(el,value){
             var proto=null;
             if(typeof HTMLTextAreaElement!=="undefined"&&el instanceof HTMLTextAreaElement)proto=HTMLTextAreaElement.prototype;
@@ -729,9 +761,11 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"click":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var el=document.querySelector(msg.selector);
-                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
-                  el.click();res.result="clicked";
+                  var el=resolveControl(msg.selector);
+                  controlIntent(el);
+                  if(typeof el.click==="function")el.click();
+                  else el.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,composed:true,button:0}));
+                  res.result="clicked";
                   break;}
                 case"scroll":{
                   var s=(msg.selector||"").trim();
@@ -815,9 +849,14 @@ public sealed partial class WebPreviewProxyMiddleware
                   return;}
                 case"fill":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var el=document.querySelector(msg.selector);
-                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
-                  setFormControlValue(el,msg.value||"");
+                  var el=resolveControl(msg.selector),value=msg.value||"";
+                  if(!el.matches("input,textarea,select"))throw new Error("fill requires an input, textarea or select");
+                  if(el.readOnly)throw new Error("fill target is read-only");
+                  if(el.tagName==="INPUT"&&/^(file|checkbox|radio|button|submit|reset|image|hidden)$/i.test(el.type))throw new Error("fill does not support input type "+el.type+"; use the appropriate interaction");
+                  if(el.tagName==="SELECT"&&!Array.from(el.options).some(function(option){return option.value===value&&!option.disabled&&!(option.parentElement.tagName==="OPTGROUP"&&option.parentElement.disabled);}))throw new Error("select has no enabled option with the requested value");
+                  controlIntent(el);
+                  if(el.readOnly)throw new Error("fill target became read-only");
+                  setFormControlValue(el,value);
                   el.dispatchEvent(new Event("input",{bubbles:true}));
                   el.dispatchEvent(new Event("change",{bubbles:true}));
                   res.result="filled";
