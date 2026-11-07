@@ -39,7 +39,7 @@
         <div id="cert-info" class="cert-info">
             <div class="cert-info-header">
                 <span class="cert-info-title" data-i18n="auth.certFingerprint">Certificate Fingerprint</span>
-                <a href="/trust.html" data-i18n="trust.title">Verify certificate</a>
+                <a href="/trust.html" data-i18n="auth.verifyCertificate">Verify certificate</a>
             </div>
             <div>SHA-256</div>
             <div class="cert-fingerprint" id="cert-fingerprint">Loading…</div>
@@ -48,7 +48,7 @@
                 <span id="cert-valid-from"></span>
                 <span id="cert-valid-until"></span>
             </div>
-            <div class="cert-hint">
+            <div class="cert-hint" data-i18n="auth.certificateVerificationWarning">
                 Before entering your password, compare the SHA-256 fingerprint in your browser’s certificate viewer with the fingerprint obtained directly from this host or its administrator over a trusted channel. A fingerprint displayed by this page alone does not verify the connection.
             </div>
         </div>

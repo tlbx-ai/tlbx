@@ -392,6 +392,88 @@ public sealed class TlbxMcpBrowserProtocolTests
         }
     }
 
+    [Theory]
+    [InlineData("soft")]
+    [InlineData("force")]
+    public async Task ReloadRecoversAnUnbridgedPreviewThroughItsExistingOwner(string mode)
+    {
+        var owners = new BrowserPreviewOwnerService();
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners);
+        var previews = new WebPreviewService(2000);
+        var commands = new BrowserCommandService();
+        var operations = new BrowserPreviewOperations(commands, previews, ui, new BrowserPreviewRegistry(), owners);
+        Assert.True(previews.SetTarget("first001", "named", "https://example.invalid/page.html"));
+        Assert.True(previews.SetTarget("second001", "other", "https://other.invalid/app"));
+        var opened = 0;
+        var embeddedReloads = 0;
+        ui.RegisterListener("ui", "desktop", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { },
+            (session, name, url, activate) =>
+            {
+                opened++;
+                Assert.Equal("first001", session);
+                Assert.Equal("named", name);
+                Assert.False(activate);
+                commands.TryRegisterClient("restored", session, name, "frame", message =>
+                {
+                    if (message.Command == "reload") embeddedReloads++;
+                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "restored");
+                }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
+                    ownershipGeneration: owners.GetGeneration(session, name));
+            });
+        try
+        {
+            var result = await TlbxMcpBrowserTools.ReloadAsync(commands, previews, operations, "first001", "named", null, mode, TestContext.Current.CancellationToken);
+            Assert.NotEqual(true, result.IsError);
+            Assert.Equal(1, opened);
+            Assert.Equal(0, embeddedReloads);
+            Assert.Equal("https://other.invalid/app", previews.GetTargetUrl("second001", "other"));
+        }
+        finally { commands.UnregisterClient("restored"); ui.UnregisterListener("ui"); }
+    }
+
+    [Fact]
+    public async Task UncertainReloadIsNeverReplayedAsAnOpen()
+    {
+        var owners = new BrowserPreviewOwnerService();
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners);
+        var previews = new WebPreviewService(2000);
+        var commands = new BrowserCommandService();
+        var operations = new BrowserPreviewOperations(commands, previews, ui, new BrowserPreviewRegistry(), owners);
+        Assert.True(previews.SetTarget("first001", "named", "https://example.invalid/page.html"));
+        var opened = 0;
+        var reloaded = 0;
+        ui.RegisterListener("ui", "desktop", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => opened++);
+        using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        commands.TryRegisterClient("transport", "first001", "named", "exact-preview", message =>
+        {
+            reloaded++;
+            cancelled.Cancel();
+        });
+        try
+        {
+            Assert.Equal("exact-preview", commands.GetStatus(previews.GetTargetUrl("first001", "named"), "first001", "named", "exact-preview").DefaultClient?.PreviewId);
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => TlbxMcpBrowserTools.ReloadAsync(commands, previews, operations,
+                "first001", "named", "exact-preview", "force", cancelled.Token));
+            Assert.Equal(1, reloaded);
+            Assert.Equal(0, opened);
+        }
+        finally { commands.UnregisterClient("transport"); ui.UnregisterListener("ui"); }
+    }
+
+    [Fact]
+    public async Task ReloadDoesNotRecoverAnExplicitStaleClient()
+    {
+        var owners = new BrowserPreviewOwnerService();
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners);
+        var previews = new WebPreviewService(2000);
+        var commands = new BrowserCommandService();
+        var operations = new BrowserPreviewOperations(commands, previews, ui, new BrowserPreviewRegistry(), owners);
+        Assert.True(previews.SetTarget("first001", "named", "https://example.invalid/page.html"));
+        var result = await TlbxMcpBrowserTools.ReloadAsync(commands, previews, operations,
+            "first001", "named", "stale", "force", TestContext.Current.CancellationToken);
+        Assert.True(result.IsError);
+    }
+
     [Fact]
     public async Task SharedOpenVerifiesReadyWithoutActivationAndScopedCancellationStillCloses()
     {

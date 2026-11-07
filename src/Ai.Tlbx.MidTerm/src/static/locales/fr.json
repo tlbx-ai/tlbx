@@ -374,6 +374,7 @@
   "auth.password": "Mot de Passe",
   "auth.terminalMultiplexer": "Multiplexeur de Terminal",
   "auth.certFingerprint": "Empreinte du Certificat",
+  "auth.verifyCertificate": "Vérifier le certificat",
   "auth.certHidePanel": "Masquer ce panneau",
   "auth.certVerifyHint": "Vérifiez que cela correspond sur tous les appareils. Consultez Paramètres → Sécurité pour plus de détails.",
   "trust.title": "Faire Confiance à Ce Serveur",

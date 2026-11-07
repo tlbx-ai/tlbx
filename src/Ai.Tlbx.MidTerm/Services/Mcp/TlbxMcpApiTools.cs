@@ -125,6 +125,10 @@ internal static partial class TlbxMcpApiTools
         yield return Target("agent_interrupt", "POST", "/api/sessions/{id}/agent-control/interrupt", "Interrupt the structured runtime, optionally targeting a specific turnId.", AppJsonContext.Default.AppServerControlInterruptRequest);
         yield return Target("agent_steer", "POST", "/api/sessions/{id}/agent-control/steer", "Steer the exact expected active turn with text/attachments, retaining concurrency checks.", AppJsonContext.Default.AppServerControlSteerRequest);
         yield return Target("agent_compact", "POST", "/api/sessions/{id}/agent-control/compact", "Compact the dedicated structured agent runtime.");
+        yield return Target("agent_request_decide", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/decision", "Accept or decline exactly one open approval from agent_history in the expected turn. Read its exact requested action first; never replay an uncertain decision.")
+            .Path("requestId", "requestId")
+            .With(new McpApiParameter("decision", "decision", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("accept", "decline") }, Required: true),
+                Q("expectedTurnId", required: true));
 
         yield return D("repos_list", "GET", "/api/git/repos", "List the target session's watched repositories and current Git status.").With(SessionQuery());
         yield return ScopedBody("repo_bind", "POST", "/api/git/repos", "Bind a repository path to the target session with the existing role/label contract.", AppJsonContext.Default.GitRepoBindRequest);

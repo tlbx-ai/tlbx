@@ -1008,12 +1008,17 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"wheel":{
                   var s=(msg.selector||"").trim();
-                  var el=!s||s==="window"||s==="document"||s==="body"
-                    ? (document.scrollingElement||document.documentElement)
-                    : document.querySelector(s);
-                  if(!el){res.success=false;res.error="wheel target not found: "+s;break;}
                   var dy=Number.isFinite(msg.deltaY)?msg.deltaY:120;
                   var dx=Number.isFinite(msg.deltaX)?msg.deltaX:0;
+                  var pageTarget=!s||s==="window"||s==="document"||s==="body";
+                  var el=pageTarget?(document.scrollingElement||document.documentElement):document.querySelector(s);
+                  if(pageTarget&&document.body){
+                    var body=document.body,vertical=Math.abs(dy)>=Math.abs(dx),bodyStyle=getComputedStyle(body);
+                    var bodyRange=vertical?body.scrollHeight-body.clientHeight:body.scrollWidth-body.clientWidth;
+                    var rootRange=vertical?el.scrollHeight-el.clientHeight:el.scrollWidth-el.clientWidth;
+                    if(bodyRange>0&&/^(auto|scroll|overlay)$/.test(vertical?bodyStyle.overflowY:bodyStyle.overflowX)&&(s==="body"||rootRange<=0))el=body;
+                  }
+                  if(!el){res.success=false;res.error="wheel target not found: "+s;break;}
                   var steps=Math.max(1,Math.min(100,Math.trunc(msg.steps||1)));
                   var metrics=function(){
                     var maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
@@ -1071,7 +1076,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   if(!msg.value){res.success=false;res.error="js code required";break;}
                   var rv=eval(msg.value);
                   Promise.resolve(rv).then(function(value){
-                    res.result=value===undefined?"undefined":typeof value==="object"?JSON.stringify(value):String(value);
+                    res.result=value===undefined?"undefined":typeof value==="object"?JSON.stringify(value,function(key,item){return typeof item==="bigint"?String(item):item;}):String(value);
                   }).catch(function(error){
                     res.success=false;res.error=(error&&error.message)||String(error);
                   }).finally(function(){
@@ -1748,7 +1753,7 @@ public sealed partial class WebPreviewProxyMiddleware
         if (nextSlash < 0)
         {
             routeKey = normalized[1..];
-            remainingPath = "/";
+            remainingPath = "";
             return !string.IsNullOrWhiteSpace(routeKey);
         }
 
@@ -3264,17 +3269,14 @@ public sealed partial class WebPreviewProxyMiddleware
 
     internal static string BuildUpstreamPath(Uri target, string path)
     {
-        var normalizedPath = string.IsNullOrEmpty(path) ? "/" : path;
-        if (!normalizedPath.StartsWith('/'))
+        // Only the route without a path is an alias for the configured entry.
+        // An explicit slash is an origin-root navigation, including after login.
+        if (string.IsNullOrEmpty(path))
         {
-            normalizedPath = "/" + normalizedPath;
-        }
-
-        if (normalizedPath == "/")
-        {
-            // The bare preview route remains an entry alias for its configured target.
             return string.IsNullOrEmpty(target.AbsolutePath) ? "/" : target.AbsolutePath;
         }
+
+        var normalizedPath = path.StartsWith('/') ? path : "/" + path;
 
         // Relative URLs have already resolved against the injected document base.
         // A rooted path identifies the upstream origin, not a directory under the target.

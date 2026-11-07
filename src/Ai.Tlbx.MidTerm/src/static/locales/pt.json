@@ -374,6 +374,7 @@
   "auth.password": "Senha",
   "auth.terminalMultiplexer": "Multiplexador de Terminal",
   "auth.certFingerprint": "Impressão Digital do Certificado",
+  "auth.verifyCertificate": "Verificar certificado",
   "auth.certHidePanel": "Ocultar este painel",
   "auth.certVerifyHint": "Verifique se isso corresponde entre dispositivos. Veja Configurações → Segurança para detalhes.",
   "trust.title": "Confiar Neste Servidor",

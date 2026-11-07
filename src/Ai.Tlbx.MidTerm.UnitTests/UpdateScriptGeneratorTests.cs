@@ -69,9 +69,14 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
         await File.WriteAllBytesAsync(_currentBinaryPath + ".bak", original, cancellationToken);
         using var adapter = StartProbe(_currentBinaryPath, "mcp --stdio");
         using var quotedAdapter = StartProbe(_currentBinaryPath, "\"mcp\" --stdio");
+        using var worker = StartProbe(_currentBinaryPath, "mcp-process-worker launch.json");
+        using var quotedWorker = StartProbe(_currentBinaryPath, "\"mcp-process-worker\" launch.json");
+        using var invalidWorker = StartProbe(_currentBinaryPath, "mcp-process-worker-extra launch.json");
+        using var workerArgument = StartProbe(_currentBinaryPath, "--label mcp-process-worker");
         using var server = StartProbe(_currentBinaryPath, "--label mcp");
         using var unrelated = StartProbe(Path.Combine(unrelatedDir, "mt.exe"), "--port 1234");
-        var probes = new[] { adapter, quotedAdapter, server, unrelated };
+        var preserved = new[] { adapter, quotedAdapter, worker, quotedWorker };
+        var probes = preserved.Concat([server, invalidWorker, workerArgument, unrelated]).ToArray();
         try
         {
             foreach (var probe in probes) Assert.Equal("ready", await probe.StandardOutput.ReadLineAsync(cancellationToken).AsTask().WaitAsync(TimeSpan.FromSeconds(20), cancellationToken));
@@ -93,9 +98,11 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
             string[] ScriptArgs(string action) => ["-NoProfile", "-File", helper, generated, _currentBinaryPath, payload, Path.Combine(_tempDir, "helper.log"), action];
             await RunAsync("pwsh", ScriptArgs("apply"));
             Assert.True(server.HasExited);
+            Assert.True(invalidWorker.HasExited);
+            Assert.True(workerArgument.HasExited);
             Assert.False(unrelated.HasExited);
             Assert.Equal(original.Length + 1, new FileInfo(_currentBinaryPath).Length);
-            foreach (var probe in new[] { adapter, quotedAdapter })
+            foreach (var probe in preserved)
             {
                 Assert.False(probe.HasExited);
                 await probe.StandardInput.WriteLineAsync("after-update".AsMemory(), cancellationToken);
@@ -104,12 +111,12 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
             }
             await RunAsync("pwsh", ScriptArgs("rollback"));
             Assert.Equal(original, await File.ReadAllBytesAsync(_currentBinaryPath, cancellationToken));
-            Assert.False(adapter.HasExited);
-            Assert.False(quotedAdapter.HasExited);
-            adapter.StandardInput.Close();
-            quotedAdapter.StandardInput.Close();
-            await adapter.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
-            await quotedAdapter.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            foreach (var probe in preserved)
+            {
+                Assert.False(probe.HasExited);
+                probe.StandardInput.Close();
+                await probe.WaitForExitAsync(cancellationToken).WaitAsync(TimeSpan.FromSeconds(5), cancellationToken);
+            }
             await RunAsync("pwsh", ScriptArgs("cleanup"));
             Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(_currentBinaryPath)!, "mt.exe.mcp-*.old"));
         }

@@ -7212,6 +7212,14 @@ body::before {
   margin-bottom: 10px;
 }
 
+@media (max-width: 400px) {
+  .login-page .cert-info-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
 .cert-info-title {
   color: var(--text-secondary);
   font-size: var(--fs-md);
