@@ -90,12 +90,29 @@ public sealed class UpdateScriptGeneratorTests : IDisposable
                 $names=@('Log','IsMcpAdapterProcess','KillProcessByPath','VerifyCopy','SafeCopy','InstallMtBinary','RemoveInactiveMcpImages')
                 $functions=$ast.FindAll({param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -in $names},$true)
                 foreach($function in $functions){Invoke-Expression $function.Extent.Text}
+                if($Action -eq 'exit-race'){
+                    $psi=[Diagnostics.ProcessStartInfo]::new($CurrentMt)
+                    $psi.UseShellExecute=$false;$psi.CreateNoWindow=$true;$psi.RedirectStandardInput=$true
+                    $exited=[Diagnostics.Process]::Start($psi)
+                    try{
+                        $exited.StandardInput.Close()
+                        if(-not $exited.WaitForExit(5000)){throw 'Owned exit probe did not stop'}
+                        function Get-CimInstance { [CmdletBinding()]param([Parameter(Position=0)][string]$ClassName,[string]$Filter) [pscustomobject]@{CommandLine=''} }
+                        if(IsMcpAdapterProcess $exited){throw 'Exited process classified as a live MCP adapter'}
+                        $rejected=$false
+                        try{$null=IsMcpAdapterProcess (Get-Process -Id $PID)}catch{if($_.Exception.Message -like 'Cannot classify mt process*'){$rejected=$true}else{throw}}
+                        if(-not $rejected){throw 'Live unreadable process was not rejected'}
+                    }finally{$exited.Dispose()}
+                    'UPDATER_EXIT_RACE_OK'
+                    exit 0
+                }
                 if($Action -eq 'apply'){KillProcessByPath $CurrentMt -PreserveMcp;InstallMtBinary}
                 elseif($Action -eq 'rollback'){InstallMtBinary "$CurrentMt.bak"}
                 else{RemoveInactiveMcpImages}
                 "UPDATER_HELPERS_OK"
                 """, cancellationToken);
             string[] ScriptArgs(string action) => ["-NoProfile", "-File", helper, generated, _currentBinaryPath, payload, Path.Combine(_tempDir, "helper.log"), action];
+            await RunAsync("pwsh", ScriptArgs("exit-race"));
             await RunAsync("pwsh", ScriptArgs("apply"));
             Assert.True(server.HasExited);
             Assert.True(invalidWorker.HasExited);

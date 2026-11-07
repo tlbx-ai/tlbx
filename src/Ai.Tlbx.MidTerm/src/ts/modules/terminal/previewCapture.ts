@@ -2,6 +2,7 @@ import { sessionTerminals } from '../../state';
 import { $activeSessionId } from '../../stores';
 import { prepareMuxTerminalCapture } from '../comms/muxChannel';
 import { paintTerminalForCapture } from './renderRecovery';
+import { applyTerminalScalingSync } from './scaling';
 
 export async function prepareTerminalPreviewCapture(visibleIds: string[]): Promise<void> {
   const activeId = $activeSessionId.get();
@@ -13,6 +14,11 @@ export async function prepareTerminalPreviewCapture(visibleIds: string[]): Promi
   await prepareMuxTerminalCapture(ids);
   ids.forEach((id) => {
     const state = sessionTerminals.get(id);
-    if (state?.opened) paintTerminalForCapture(state.terminal);
+    if (state?.opened) {
+      // A hidden preview may have missed its animation-frame resize callback.
+      // Reconcile presentation only; canonical PTY dimensions stay unchanged.
+      applyTerminalScalingSync(state);
+      paintTerminalForCapture(state.terminal);
+    }
   });
 }

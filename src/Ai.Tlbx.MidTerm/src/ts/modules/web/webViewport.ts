@@ -42,12 +42,21 @@ export function applyStoredViewportToFrame(frame: HTMLIFrameElement): void {
   frame.style.transform = 'translate(-50%, -50%)';
 }
 
+export function getSessionPreviewFrame(
+  sessionId: string,
+  previewName: string,
+): HTMLIFrameElement | null {
+  const frameKey = `${sessionId}::${previewName}`;
+  return (
+    Array.from(document.querySelectorAll<HTMLIFrameElement>('.web-preview-iframe')).find(
+      (candidate) => candidate.dataset.previewFrameKey === frameKey,
+    ) ?? null
+  );
+}
+
 /** Apply a named preview's stored viewport without changing visibility or focus. */
 export function applySessionViewportToFrame(sessionId: string, previewName: string): boolean {
-  const frameKey = `${sessionId}::${previewName}`;
-  const frame = Array.from(
-    document.querySelectorAll<HTMLIFrameElement>('.web-preview-iframe'),
-  ).find((candidate) => candidate.dataset.previewFrameKey === frameKey);
+  const frame = getSessionPreviewFrame(sessionId, previewName);
   if (!frame) {
     return false;
   }
