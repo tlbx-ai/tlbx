@@ -224,6 +224,7 @@ async function loadHarness() {
   mocks.closePreviewFromServer.mockResolvedValue(undefined);
   mocks.detachPreview.mockResolvedValue({ success: true });
   mocks.applySessionViewportToFrame.mockReturnValue(true);
+  mocks.setViewportSize.mockReturnValue(true);
   mocks.checkVersionAndReload.mockResolvedValue(false);
 
   resetStateChannelRuntimeForTests();
@@ -531,6 +532,36 @@ describe('stateChannel browser-ui handling', () => {
       expect(mocks.setSessionSelectedPreviewName).not.toHaveBeenCalled();
       expect(mocks.selectSession).not.toHaveBeenCalled();
       expect(stores.$activeSessionId.get()).toBe('user1234');
+    },
+  );
+
+  it.each([false, true])(
+    'does not acknowledge a missing preview frame (active=%s)',
+    async (active) => {
+      const { ws } = await loadHarness();
+      mocks.getSessionSelectedPreviewName.mockReturnValue('automation');
+      mocks.applySessionViewportToFrame.mockReturnValue(false);
+      mocks.setViewportSize.mockReturnValue(false);
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: 'browser-ui',
+          command: 'viewport',
+          requestId: 'missing-frame',
+          sessionId: active ? 'user1234' : 'agent5678',
+          previewName: 'automation',
+          width: 400,
+          height: 340,
+        }),
+      } as MessageEvent<string>);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+        requestId: 'missing-frame',
+        command: 'viewport',
+        success: false,
+        error: 'The requested preview frame is not attached.',
+      });
     },
   );
 

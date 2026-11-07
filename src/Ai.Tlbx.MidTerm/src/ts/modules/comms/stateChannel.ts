@@ -963,14 +963,16 @@ async function handleViewportBrowserUiCommand(
     getSessionSelectedPreviewName(target.sessionId) !== target.previewName
   ) {
     await syncBackgroundWebPreview(target.sessionId, target.previewName);
-    applySessionViewportToFrame(target.sessionId, target.previewName);
-    return { success: true };
+    return applySessionViewportToFrame(target.sessionId, target.previewName)
+      ? { success: true }
+      : { success: false, error: 'The requested preview frame is not attached.' };
   }
 
   openWebPreviewDock();
   await syncActiveWebPreview();
-  setViewportSize(width, height);
-  return { success: true };
+  return setViewportSize(width, height)
+    ? { success: true }
+    : { success: false, error: 'The requested preview frame is not attached.' };
 }
 
 function applyDetachedPreviewViewport(
