@@ -294,12 +294,13 @@ public sealed class WebPreviewSamePortProtocolTests
                     Assert.True(service.SetCookieFromRaw(preview.RouteKey, "fixture=retained; Path=/; Secure"));
                 service.PersistCookies(preview.RouteKey);
             }
-            foreach (var file in Directory.EnumerateFiles(Path.Combine(directory, "cookies"), "*", SearchOption.AllDirectories))
-            {
-                var persisted = await File.ReadAllTextAsync(file, ct);
-                Assert.DoesNotContain(token, persisted, StringComparison.Ordinal);
-                Assert.DoesNotContain(AuthService.SessionCookieName, persisted, StringComparison.Ordinal);
-            }
+            var persistedFile = Assert.Single(Directory.EnumerateFiles(
+                Path.Combine(directory, "cookies"), "*", SearchOption.AllDirectories));
+            Assert.Equal(".txt", Path.GetExtension(persistedFile));
+            var persisted = await File.ReadAllTextAsync(persistedFile, ct);
+            Assert.Contains("fixture=retained;", persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain(AuthService.SessionCookieName, persisted, StringComparison.Ordinal);
 
             using var scoped = new HttpRequestMessage(HttpMethod.Post, address + "/api/browser/preview-client");
             scoped.Content = new StringContent("{\"sessionId\":\"session\"}", System.Text.Encoding.UTF8, "application/json");
