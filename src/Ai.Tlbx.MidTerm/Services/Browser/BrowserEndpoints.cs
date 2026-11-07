@@ -71,21 +71,32 @@ public static class BrowserEndpoints
         });
     }
 
-    private static void MapPreviewClientEndpoint(
+    internal static void MapPreviewClientEndpoint(
         WebApplication app,
         BrowserPreviewRegistry previewRegistry,
         BrowserPreviewOwnerService previewOwnerService,
         BrowserPreviewOriginService previewOriginService,
         WebPreviewService webPreviewService)
     {
-        app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request, HttpContext ctx) =>
+        app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request, HttpContext ctx, AuthService authService) =>
         {
             if (string.IsNullOrWhiteSpace(request.SessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
+            if (!RequestAccessContext.HasFullUserAccess(ctx))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
             var preview = webPreviewService.EnsurePreviewSession(request.SessionId, request.PreviewName);
+            var nativeToken = ctx.Request.Cookies[AuthService.SessionCookieName];
+            if (authService.TryValidateSessionToken(nativeToken, out _))
+            {
+                webPreviewService.SyncSessionCookieForSelfTarget(preview.RouteKey, nativeToken);
+            }
+
             var browserId = BrowserIdentity.Build(
                 ctx.Request.Cookies["mt-client-id"],
                 request.TabId ?? ctx.Request.Query["tabId"].FirstOrDefault());

@@ -222,7 +222,8 @@ public static class ServerSetup
             return new WebPreviewService(
                 runtimeOptions.Port,
                 sp.GetRequiredService<BrowserPreviewOriginService>(),
-                cookiesDir);
+                cookiesDir,
+                static () => LoadedCertificate);
         });
 
         builder.Services.AddResponseCompression(options =>
