@@ -5,6 +5,7 @@ import * as state from '../../state';
 import * as stores from '../../stores';
 import {
   probeMuxWebSocket,
+  prepareMuxTerminalCapture,
   connectMuxWebSocket,
   decodeSessionId,
   encodeSessionId,
@@ -317,6 +318,63 @@ async function loadHarness(nowValues: number[]): Promise<Harness> {
 }
 
 describe('muxChannel', () => {
+  it('capture waits for the server recovery boundary, parser callback and synchronized frame end', async () => {
+    vi.useFakeTimers();
+    const h = await loadHarness([0]);
+    const terminal = attachFakeTerminal(h.sessionTerminals, 'sess1234');
+    let finished = false;
+    const capture = prepareMuxTerminalCapture(['sess1234']).then(() => {
+      finished = true;
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(getBrowserTransportSnapshot('sess1234')?.lastRecoveryCause).toBe('browser_capture');
+    const receive = (data: ArrayBuffer) => h.ws.onmessage?.({ data } as MessageEvent<ArrayBuffer>);
+    receive(
+      buildRecoveryBeginMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_BEGIN,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        11,
+        0n,
+        5n,
+      ),
+    );
+    receive(
+      buildSequencedOutputMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_OUTPUT,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        5n,
+        'fresh',
+      ),
+    );
+    receive(
+      buildRecoveryEndMessage(
+        encodeSessionId,
+        constants.MUX_TYPE_RECOVERY_END,
+        constants.MUX_HEADER_SIZE,
+        'sess1234',
+        11,
+        5n,
+        5,
+      ),
+    );
+    await vi.advanceTimersByTimeAsync(50);
+    expect(finished).toBe(false);
+    h.sessionTerminals.get('sess1234')!.terminal.modes.synchronizedOutputMode = true;
+    terminal.pendingCallbacks.splice(0).forEach((callback) => callback());
+    await vi.advanceTimersByTimeAsync(50);
+    expect(getBrowserTransportSnapshot('sess1234')?.renderedSeq).toBe(5n);
+    expect(finished).toBe(false);
+    h.sessionTerminals.get('sess1234')!.terminal.modes.synchronizedOutputMode = false;
+    await vi.advanceTimersByTimeAsync(25);
+    await capture;
+    expect(finished).toBe(true);
+    expect(h.sessionTerminals.get('sess1234')!.terminal.reset).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
   it('probes a healthy mux without replacing it and removes the listener', async () => {
     const { ws: socket } = await loadHarness([0]);
     const remove = vi.spyOn(socket, 'removeEventListener');

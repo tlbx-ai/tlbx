@@ -17,6 +17,25 @@ interface RecoverableRenderService {
 
 const RENDER_RECOVERY_DELAY_MS = 1500;
 
+/** Draw a parsed complete frame for an explicit capture, including hidden previews. */
+export function paintTerminalForCapture(terminal: Terminal): void {
+  if (terminal.modes.synchronizedOutputMode) {
+    throw new Error('Terminal capture cannot paint incomplete synchronized output');
+  }
+  const renderer = (
+    terminal as Terminal & { _core?: { _renderService?: RecoverableRenderService } }
+  )._core?._renderService;
+  if (!renderer) throw new Error('Terminal capture renderer is unavailable');
+  const paused = renderer._isPaused;
+  try {
+    if (paused) renderer._handleIntersectionChange({ isIntersecting: true, intersectionRatio: 1 });
+    renderer._renderDebouncer.dispose();
+    renderer.refreshRows(0, terminal.rows - 1, true);
+  } finally {
+    if (paused) renderer._handleIntersectionChange({ isIntersecting: false, intersectionRatio: 0 });
+  }
+}
+
 function isOnScreen(container: HTMLElement): boolean {
   if (document.visibilityState === 'hidden' || !container.isConnected) return false;
   const rect = container.getBoundingClientRect();

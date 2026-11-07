@@ -21837,3 +21837,19 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .file-browser[data-file-pane="tree"] .file-listing-header { grid-template-columns: minmax(0, 1fr); }
   .file-browser[data-file-pane="tree"] .file-listing-details .tree-node { grid-template-columns: 18px minmax(0, 1fr); }
 }
+
+/* Keep folder navigation usable when a compact launcher needs body scrolling. */
+@media (max-width: 760px) and (max-height: 700px) {
+  .session-launcher-overlay > .session-launcher-modal > .session-launcher-content > .modal-body {
+    overflow-y: auto;
+  }
+
+  .session-launcher-browser {
+    flex: 1 0 auto;
+  }
+
+  .session-launcher-list {
+    flex: none;
+    height: 128px;
+  }
+}

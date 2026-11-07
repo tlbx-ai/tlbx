@@ -544,6 +544,34 @@ export function getBrowserTransportSnapshot(sessionId: string): BrowserTransport
   return browserTransportSnapshots.get(sessionId) ?? null;
 }
 
+/** Await a server recovery boundary and xterm parsing, without resetting output. */
+export async function prepareMuxTerminalCapture(sessionIds: readonly string[]): Promise<void> {
+  const deadline = Date.now() + 8000;
+  const waitUntil = async (ready: () => boolean): Promise<void> => {
+    while (!ready()) {
+      if (Date.now() >= deadline)
+        throw new Error('Terminal capture timed out awaiting fresh output');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  };
+  await waitUntil(() => $muxWsConnected.get());
+  const ids = sessionIds.filter((id) => !isHubSessionId(id) && sessionTerminals.get(id)?.opened);
+  for (const id of ids) {
+    await waitUntil(() => !recoveryRequestsInFlight.has(id) && !activeSessionRecoveries.has(id));
+    const completed = getOrCreateBrowserTransportSnapshot(id).recoveryCompleted;
+    requestBufferRefresh(id, 'quickResume', 'browser_capture');
+    await waitUntil(() => {
+      const snapshot = browserTransportSnapshots.get(id);
+      return (
+        !!snapshot &&
+        snapshot.recoveryCompleted > completed &&
+        snapshot.renderedSeq === snapshot.receivedSeq &&
+        !sessionTerminals.get(id)?.terminal.modes.synchronizedOutputMode
+      );
+    });
+  }
+}
+
 /** Releases every per-session transport owner when a terminal is destroyed. */
 export function forgetMuxSession(sessionId: string): void {
   clearQueuedOutput(sessionId);

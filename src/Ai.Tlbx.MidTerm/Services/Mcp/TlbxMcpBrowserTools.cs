@@ -48,7 +48,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         Command("click", "Click exactly one visible, enabled element once, with pointer intent events and without moving keyboard focus. Ambiguous selectors fail. A timeout does not authorize replay.", Fields(("selector", Property("string"))), ["selector"]),
         Command("fill", "Fill exactly one visible, enabled input, textarea or select with literal Unicode text and interaction events. Reject ambiguous, read-only and unsupported controls without changing them.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
         Command("evaluate", "Execute JavaScript in the existing preview. code is passed literally, not through a shell.", Fields(("code", Property("string")), ("timeout", Timeout())), ["code"], command: "exec"),
-        Command("wait", "Wait for an element in the existing preview.", Fields(("selector", Property("string")), ("timeout", Timeout())), ["selector"], true),
+        Command("wait", "Wait for attached (default), visible, hidden or detached elements before the next interaction. Visibility uses the same checks as click/fill.", Fields(("selector", Property("string")), ("state", Enum("attached", "visible", "hidden", "detached")), ("timeout", Timeout())), ["selector"], true),
         Command("screenshot", "Capture viewport or fullPage as inline MCP PNG. Optionally save the same artifact as the CLI in the target workspace.", Fields(("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
         Command("snapshot", "Return the existing preview HTML directly, optionally also saving the CLI-compatible workspace artifact.", Fields(("saveToWorkspace", Property("boolean")))),
         Command("outline", "Read visible semantic controls with labels, state and unique selectors. Layout wrappers do not consume maxDepth. Optional selector narrows the root; bounded output marks truncation.", Fields(("maxDepth", Property("integer")), ("selector", Property("string"))), readOnly: true),
@@ -362,6 +362,12 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         if (timeout is < 1 or > MaximumTimeoutSeconds) throw new ArgumentException("timeout exceeds the shared browser timer range.");
         if (command is "query" or "click" or "fill" or "wait" or "attrs" or "css")
             selector = RequiredString(args, "selector");
+        if (command == "wait")
+        {
+            value = OptionalString(args, "state") ?? value;
+            if (value is not (null or "attached" or "visible" or "hidden" or "detached"))
+                throw new ArgumentException("Wait state must be attached, visible, hidden or detached.");
+        }
         if (command == "fill") value = RequiredString(args, "value", allowEmpty: true);
         if (command == "exec") value = OptionalString(args, "code", allowEmpty: true) ?? RequiredString(args, "value", allowEmpty: true);
         if (command == "navigate") value = RequiredString(args, "value");
@@ -588,7 +594,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     private static JsonArray Strings(IEnumerable<string> values) => new(values.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray());
     private static JsonObject Enum(params string[] values) => new() { ["type"] = "string", ["enum"] = Strings(values) };
     private static readonly string[] BatchCommands = ["query", "click", "fill", "exec", "evaluate", "wait", "screenshot", "scroll", "wheel", "navigate", "reload", "outline", "attrs", "css", "log", "links", "submit", "forms", "url"];
-    private static readonly string[] BatchPropertyNames = ["command", "selector", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "waitForNavigation"];
+    private static readonly string[] BatchPropertyNames = ["command", "selector", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "state", "waitForNavigation"];
     private static JsonObject BatchFields() => Fields(("commands", new JsonObject
     {
         ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 32,
@@ -600,7 +606,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 ("fullPage", Property("boolean")), ("deltaX", Property("number")), ("deltaY", Property("number")), ("steps", PositiveInteger()),
                 ("direction", Enum("up", "down")), ("to", Enum("top", "bottom", "left", "right")),
                 ("properties", new JsonObject { ["type"] = "array", ["items"] = Property("string") }), ("props", Property("string")),
-                ("filter", Enum("error", "warn", "all")), ("waitForNavigation", Property("boolean")))
+                ("filter", Enum("error", "warn", "all")), ("state", Enum("attached", "visible", "hidden", "detached")), ("waitForNavigation", Property("boolean")))
         }
     }), ("timeout", Timeout(120)), ("saveToWorkspace", Property("boolean")));
     private static JsonObject WithPreviewFields()

@@ -46,6 +46,57 @@ public sealed class TlbxMcpBrowserProtocolTests
         Assert.Equal("({value: `\"'\\n Grüße`})", evaluate.Value);
     }
 
+    [Theory]
+    [InlineData("attached")]
+    [InlineData("visible")]
+    [InlineData("hidden")]
+    [InlineData("detached")]
+    public void VisibilityWaitStatesPreserveTheExactBrowserScope(string state)
+    {
+        var request = TlbxMcpBrowserTools.BuildCommand("wait", Args(new { selector = "#menu", state }), "first001", "alpha", "client-a");
+        Assert.Equal("wait", request.Command);
+        Assert.Equal(state, request.Value);
+        Assert.Equal("#menu", request.Selector);
+        Assert.Equal("first001", request.SessionId);
+        Assert.Equal("alpha", request.PreviewName);
+        Assert.Equal("client-a", request.PreviewId);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("visible")]
+    public async Task ServerWaitDeadlinePreservesTheRequestedState(string? state)
+    {
+        var commands = new BrowserCommandService();
+        Assert.True(commands.TryRegisterClient("wait-timeout", "wait-session", "alpha", "wait-preview", _ => { }));
+        try
+        {
+            var result = await commands.ExecuteCommandAsync(new BrowserCommandRequest
+            {
+                Command = "wait", Selector = "#pending", SessionId = "wait-session", PreviewName = "alpha", Value = state, Timeout = 1
+            }, TestContext.Current.CancellationToken);
+            Assert.False(result.Success);
+            Assert.Contains("timed out", result.Error, StringComparison.Ordinal);
+            if (state is null) Assert.DoesNotContain("waiting for", result.Error, StringComparison.Ordinal);
+            else Assert.Contains("waiting for visible: #pending", result.Error, StringComparison.Ordinal);
+        }
+        finally
+        {
+            commands.UnregisterClient("wait-timeout");
+        }
+    }
+
+    [Fact]
+    public void DefaultWaitRetainsAttachmentAndMalformedWaitStopsTheWholeBatchBeforeDispatch()
+    {
+        var request = TlbxMcpBrowserTools.BuildCommand("wait", Args(new { selector = "#menu" }), "first001", "alpha", null);
+        Assert.Null(request.Value);
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.ParseBatch(Args(new
+        {
+            commands = new object[] { new { command = "click", selector = "#button" }, new { command = "wait", selector = "#menu", state = "visble" } }
+        }), "first001", "alpha"));
+    }
+
     [Fact]
     public void BatchValidationRejectsScopeOverridesAndMalformedLaterStepsBeforeDispatch()
     {
