@@ -1055,7 +1055,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   if(!msg.value){res.success=false;res.error="js code required";break;}
                   var rv=eval(msg.value);
                   Promise.resolve(rv).then(function(value){
-                    res.result=value===undefined?"undefined":typeof value==="object"?JSON.stringify(value):String(value);
+                    res.result=value===undefined?"undefined":typeof value==="object"?JSON.stringify(value,function(key,item){return typeof item==="bigint"?String(item):item;}):String(value);
                   }).catch(function(error){
                     res.success=false;res.error=(error&&error.message)||String(error);
                   }).finally(function(){
