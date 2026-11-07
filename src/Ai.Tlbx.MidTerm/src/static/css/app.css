@@ -21849,6 +21849,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   }
 
   .session-launcher-list {
-    min-height: 128px;
+    flex: none;
+    height: 128px;
   }
 }
