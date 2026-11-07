@@ -4,6 +4,7 @@ using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Browser;
+using Ai.Tlbx.MidTerm.Services.Hosting;
 using Ai.Tlbx.MidTerm.Services.Mcp;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Ai.Tlbx.MidTerm.Services.WebPreview;
@@ -182,6 +183,142 @@ public sealed class TlbxMcpBrowserProtocolTests
             commands.UnregisterClient("client-b");
             ui.UnregisterListener("ui");
             await app.StopAsync(ct);
+        }
+    }
+
+    [Fact]
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "One client belongs to the isolated loopback fixture for all CLI requests.")]
+    public async Task InspectRetainsExplicitClientAcrossStatusDiagnosticsAndScreenshotWithoutFallback()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var root = Path.Combine(Path.GetTempPath(), "tlbx-inspect-protocol-" + Guid.NewGuid().ToString("N"));
+        var manager = new TtyHostSessionManager(expectedVersion: "fixture", minCompatibleVersion: "fixture",
+            instanceIdentity: MidTermInstanceIdentity.Load(root, 0));
+        using var leases = new SessionCliContextService(() => [], _ => (1, new DateTime(2026, 10, 30)), TimeProvider.System);
+        var token = leases.CreateHostLease("first001", 100).Split(':')[1];
+        var owners = new BrowserPreviewOwnerService();
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners);
+        ui.RegisterListener("ui", "desktop", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { }, (_, _, _, _) => { });
+        var previews = new WebPreviewService(2000);
+        var commands = new BrowserCommandService(previewOwnerService: owners);
+        var sent = new System.Collections.Concurrent.ConcurrentQueue<BrowserWsMessage>();
+        void Register(string id, string session = "first001", string preview = "alpha", string browser = "desktop")
+        {
+            Assert.True(commands.TryRegisterClient(id, session, preview, id, message =>
+            {
+                sent.Enqueue(message);
+                commands.ReceiveResult(new BrowserWsResult
+                {
+                    Id = message.Id, Success = true, Result = message.Command == "screenshot" ? Png : id + ":" + message.Command
+                }, id);
+            }, browserId: browser));
+        }
+        Register("client-a");
+        var builder = WebApplication.CreateSlimBuilder();
+        builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0));
+        builder.Services.AddHttpContextAccessor();
+        builder.Services.AddSingleton(leases);
+        builder.Services.AddSingleton(manager);
+        builder.Services.AddSingleton(commands);
+        builder.Services.AddSingleton(previews);
+        builder.Services.AddSingleton(ui);
+        builder.Services.AddSingleton(new BrowserPreviewOperations(commands, previews, ui, new BrowserPreviewRegistry(), owners));
+        builder.Services.AddMcpServer().WithHttpTransport(options => options.SessionMode = HttpServerSessionMode.Stateless)
+            .WithTools(TlbxMcpBrowserTools.CreateTools());
+        await using var app = builder.Build();
+        app.Use(async (context, next) => { RequestAccessContext.SetFullUser(context, true); await next(context); });
+        TlbxMcpEndpoints.Map(app);
+        BrowserEndpoints.MapCliEndpoint(app, commands, manager, previews, ui);
+        await app.StartAsync(ct);
+        try
+        {
+            var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+            await using var transport = new HttpClientTransport(new()
+            {
+                Endpoint = new Uri(address + TlbxMcpEndpoints.Path),
+                AdditionalHeaders = new Dictionary<string, string>(StringComparer.Ordinal) { [SessionCliContextService.LeaseHeader] = token }
+            });
+            await using var client = await McpClient.CreateAsync(transport, cancellationToken: ct);
+            using var http = new HttpClient { BaseAddress = new Uri(address) };
+            async Task<string> CliInspect(params string[] options)
+            {
+                var args = new[] { "inspect", "--session", "first001", "--preview", "alpha" }.Concat(options);
+                using var body = new ByteArrayContent(System.Text.Encoding.UTF8.GetBytes(string.Join('\0', args)));
+                using var response = await http.PostAsync("/api/browser", body, ct);
+                response.EnsureSuccessStatusCode();
+                return await response.Content.ReadAsStringAsync(ct);
+            }
+            // The existing CLI protocol remains usable without a client ID when the scope is unambiguous.
+            var implicitInspect = await CliInspect();
+            Assert.Contains("selected preview: client-a", implicitInspect, StringComparison.Ordinal);
+            Assert.Contains("client-a:exec", implicitInspect, StringComparison.Ordinal);
+            sent.Clear();
+
+            Register("client-b"); // Two clients in the same owner/session/named preview.
+            Register("other-session", session: "second02");
+            Register("other-preview", preview: "beta");
+            Register("other-owner", browser: "different-tab");
+            var inspected = await client.CallToolAsync("browser_inspect", new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["previewName"] = "alpha", ["previewId"] = "client-b", ["screenshot"] = true
+            }, cancellationToken: ct);
+            Assert.NotEqual(true, inspected.IsError);
+            var diagnostics = inspected.StructuredContent!.Value.GetProperty("diagnostics").GetString()!;
+            Assert.Contains("state: ready", diagnostics, StringComparison.Ordinal);
+            Assert.Contains("selected preview: client-b", diagnostics, StringComparison.Ordinal);
+            foreach (var command in new[] { "exec", "outline", "forms", "log" })
+                Assert.Contains("client-b:" + command, diagnostics, StringComparison.Ordinal);
+            Assert.IsType<ImageContentBlock>(inspected.Content.Last());
+            Assert.Equal(new[] { "exec", "outline", "forms", "log", "screenshot" }, sent.Select(message => message.Command), StringComparer.Ordinal);
+            Assert.All(sent, message =>
+            {
+                Assert.Equal("client-b", message.PreviewId);
+                Assert.Equal("first001", message.SessionId);
+                Assert.Equal("alpha", message.PreviewName);
+            });
+            sent.Clear();
+
+            // The shared CLI screenshot path must preserve the same exact identity too.
+            var cliInspect = await CliInspect("--preview-id", "client-b", "--screenshot");
+            Assert.Contains("selected preview: client-b", cliInspect, StringComparison.Ordinal);
+            Assert.Equal(new[] { "exec", "outline", "forms", "log", "screenshot" }, sent.Select(message => message.Command), StringComparer.Ordinal);
+            Assert.All(sent, message => Assert.Equal("client-b", message.PreviewId));
+            sent.Clear();
+
+            foreach (var id in new[] { "missing-client", "other-session", "other-preview", "other-owner" })
+            {
+                var unavailable = await client.CallToolAsync("browser_inspect", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = "alpha", ["previewId"] = id
+                }, cancellationToken: ct);
+                var text = unavailable.StructuredContent!.Value.GetProperty("diagnostics").GetString()!;
+                Assert.Contains("scope: preview '" + id + "'", text, StringComparison.Ordinal);
+                Assert.Contains("controllable: no", text, StringComparison.Ordinal);
+                Assert.Contains("browser: unavailable", text, StringComparison.Ordinal);
+                Assert.DoesNotContain("client-a:exec", text, StringComparison.Ordinal);
+                Assert.DoesNotContain("client-b:exec", text, StringComparison.Ordinal);
+                Assert.Empty(sent);
+            }
+            var missingShot = await client.CallToolAsync("browser_inspect", new Dictionary<string, object?>(StringComparer.Ordinal)
+            {
+                ["previewName"] = "alpha", ["previewId"] = "missing-client", ["screenshot"] = true
+            }, cancellationToken: ct);
+            Assert.True(missingShot.IsError);
+            Assert.DoesNotContain(missingShot.Content, item => item is ImageContentBlock);
+            Assert.Empty(sent);
+            var cliMissing = await CliInspect("--preview-id", "missing-client", "--screenshot");
+            Assert.Contains("browser: unavailable", cliMissing, StringComparison.Ordinal);
+            Assert.DoesNotContain("client-a:exec", cliMissing, StringComparison.Ordinal);
+            Assert.Empty(sent);
+        }
+        finally
+        {
+            commands.CancelAllPending();
+            foreach (var id in new[] { "client-a", "client-b", "other-session", "other-preview", "other-owner" }) commands.UnregisterClient(id);
+            ui.UnregisterListener("ui");
+            await app.StopAsync(ct);
+            await manager.DisposeAsync();
+            Directory.Delete(root, recursive: true);
         }
     }
 

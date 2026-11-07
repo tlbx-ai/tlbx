@@ -212,7 +212,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                     previews.GetTargetUrl(target, preview)), AppJsonContext.Default.BrowserCapabilitiesResponse);
             case "browser_inspect":
                 var diagnostics = await BrowserEndpoints.BuildInspectTextAsync(commands, services.GetRequiredService<TtyHostSessionManager>(),
-                    previews, ui, target, preview, false, ct).ConfigureAwait(false);
+                    previews, ui, target, preview, false, ct, previewId).ConfigureAwait(false);
                 var inspection = new JsonObject { ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview),
                     ["diagnostics"] = diagnostics };
                 CallToolResult? capturedInspection = null;
