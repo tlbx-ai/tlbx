@@ -1720,7 +1720,7 @@ public sealed partial class WebPreviewProxyMiddleware
         if (nextSlash < 0)
         {
             routeKey = normalized[1..];
-            remainingPath = "/";
+            remainingPath = "";
             return !string.IsNullOrWhiteSpace(routeKey);
         }
 
@@ -3236,17 +3236,14 @@ public sealed partial class WebPreviewProxyMiddleware
 
     internal static string BuildUpstreamPath(Uri target, string path)
     {
-        var normalizedPath = string.IsNullOrEmpty(path) ? "/" : path;
-        if (!normalizedPath.StartsWith('/'))
+        // Only the route without a path is an alias for the configured entry.
+        // An explicit slash is an origin-root navigation, including after login.
+        if (string.IsNullOrEmpty(path))
         {
-            normalizedPath = "/" + normalizedPath;
-        }
-
-        if (normalizedPath == "/")
-        {
-            // The bare preview route remains an entry alias for its configured target.
             return string.IsNullOrEmpty(target.AbsolutePath) ? "/" : target.AbsolutePath;
         }
+
+        var normalizedPath = path.StartsWith('/') ? path : "/" + path;
 
         // Relative URLs have already resolved against the injected document base.
         // A rooted path identifies the upstream origin, not a directory under the target.

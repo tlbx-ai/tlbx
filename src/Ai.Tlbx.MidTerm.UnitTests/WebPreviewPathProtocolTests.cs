@@ -85,8 +85,28 @@ public sealed class WebPreviewPathProtocolTests
     [InlineData("http://upstream.example/", "/")]
     public void BarePreviewRouteRetainsTheConfiguredEntryPath(string target, string expected)
     {
-        Assert.Equal(expected, WebPreviewProxyMiddleware.BuildUpstreamPath(new Uri(target), "/"));
         Assert.Equal(expected, WebPreviewProxyMiddleware.BuildUpstreamPath(new Uri(target), ""));
+    }
+
+    [Theory]
+    [InlineData("/webpreview/preview-route", "", "/login.html")]
+    [InlineData("/webpreview/preview-route/", "/", "/")]
+    [InlineData("/webpreview/preview-route/api/bootstrap", "/api/bootstrap", "/api/bootstrap")]
+    public void LoginEntryAndExplicitOriginNavigationRemainDistinct(string proxyPath, string remaining, string upstream)
+    {
+        Assert.True(WebPreviewProxyMiddleware.TryParseProxyRoute(proxyPath, out var route, out var path));
+        Assert.Equal("preview-route", route);
+        Assert.Equal(remaining, path);
+        Assert.Equal(upstream, WebPreviewProxyMiddleware.BuildUpstreamPath(new Uri("https://localhost:2199/login.html"), path));
+    }
+
+    [Theory]
+    [InlineData("http://upstream.example/docs/page.html?tenant=connect#section")]
+    [InlineData("http://upstream.example/docs/")]
+    [InlineData("http://upstream.example/")]
+    public void ExplicitRootNavigationDoesNotReloadTheConfiguredDocument(string target)
+    {
+        Assert.Equal("/", WebPreviewProxyMiddleware.BuildUpstreamPath(new Uri(target), "/"));
     }
 
     [Fact]
