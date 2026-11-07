@@ -1064,12 +1064,22 @@ public sealed partial class WebPreviewProxyMiddleware
                   return;}
                 case"wait":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var to=(msg.timeout||5)*1000,start=Date.now();
+                  var waitState=msg.value||"attached";
+                  if(["attached","visible","hidden","detached"].indexOf(waitState)<0){res.success=false;res.error="invalid wait state: "+waitState;break;}
+                  var to=(msg.timeout||5)*1000,start=Date.now(),waitSocket=bws;
                   (function poll(){
-                    var found=document.querySelector(msg.selector);
-                    if(found){res.result="found";res.matchCount=document.querySelectorAll(msg.selector).length;bws.send(JSON.stringify(res));}
-                    else if(Date.now()-start>to){res.success=false;res.error="timeout waiting for: "+msg.selector;bws.send(JSON.stringify(res));}
-                    else setTimeout(poll,200);
+                    // An old wait cannot answer through a replacement connection.
+                    if(!waitSocket||waitSocket!==bws||waitSocket.readyState!==WebSocket.OPEN)return;
+                    try{
+                      var found=document.querySelectorAll(msg.selector),visible=false;
+                      if(waitState==="visible"||waitState==="hidden"){
+                        for(var wi=0;wi<found.length;wi++)if(isControlVisible(found[wi])){visible=true;break;}
+                      }
+                      var done=waitState==="attached"?found.length>0:waitState==="detached"?found.length===0:waitState==="visible"?visible:!visible;
+                      if(done){res.result=waitState==="attached"?"found":waitState;res.matchCount=found.length;waitSocket.send(JSON.stringify(res));return;}
+                      if(Date.now()-start>=to){res.success=false;res.error="timeout waiting for"+(waitState==="attached"?"":" "+waitState)+": "+msg.selector;waitSocket.send(JSON.stringify(res));return;}
+                    }catch(error){res.success=false;res.error=(error&&error.message)||String(error);waitSocket.send(JSON.stringify(res));return;}
+                    setTimeout(poll,200);
                   })();return;}
                 case"screenshot":{
                   var fullPage=msg.fullPage===true;

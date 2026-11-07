@@ -46,6 +46,33 @@ public sealed class TlbxMcpBrowserProtocolTests
         Assert.Equal("({value: `\"'\\n Grüße`})", evaluate.Value);
     }
 
+    [Theory]
+    [InlineData("attached")]
+    [InlineData("visible")]
+    [InlineData("hidden")]
+    [InlineData("detached")]
+    public void VisibilityWaitStatesPreserveTheExactBrowserScope(string state)
+    {
+        var request = TlbxMcpBrowserTools.BuildCommand("wait", Args(new { selector = "#menu", state }), "first001", "alpha", "client-a");
+        Assert.Equal("wait", request.Command);
+        Assert.Equal(state, request.Value);
+        Assert.Equal("#menu", request.Selector);
+        Assert.Equal("first001", request.SessionId);
+        Assert.Equal("alpha", request.PreviewName);
+        Assert.Equal("client-a", request.PreviewId);
+    }
+
+    [Fact]
+    public void DefaultWaitRetainsAttachmentAndMalformedWaitStopsTheWholeBatchBeforeDispatch()
+    {
+        var request = TlbxMcpBrowserTools.BuildCommand("wait", Args(new { selector = "#menu" }), "first001", "alpha", null);
+        Assert.Null(request.Value);
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.ParseBatch(Args(new
+        {
+            commands = new object[] { new { command = "click", selector = "#button" }, new { command = "wait", selector = "#menu", state = "visble" } }
+        }), "first001", "alpha"));
+    }
+
     [Fact]
     public void BatchValidationRejectsScopeOverridesAndMalformedLaterStepsBeforeDispatch()
     {
