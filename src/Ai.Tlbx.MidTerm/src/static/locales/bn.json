@@ -374,6 +374,7 @@
   "auth.password": "পাসওয়ার্ড",
   "auth.terminalMultiplexer": "টার্মিনাল মাল্টিপ্লেক্সার",
   "auth.certFingerprint": "সার্টিফিকেট ফিঙ্গারপ্রিন্ট",
+  "auth.verifyCertificate": "সার্টিফিকেট যাচাই করুন",
   "auth.certHidePanel": "এই প্যানেল লুকান",
   "auth.certVerifyHint": "সব ডিভাইসে মিলছে কিনা যাচাই করুন। বিস্তারিত জানতে সেটিংস → নিরাপত্তা দেখুন।",
   "trust.title": "এই সার্ভারে বিশ্বাস করুন",

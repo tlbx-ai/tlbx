@@ -21837,3 +21837,11 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .file-browser[data-file-pane="tree"] .file-listing-header { grid-template-columns: minmax(0, 1fr); }
   .file-browser[data-file-pane="tree"] .file-listing-details .tree-node { grid-template-columns: 18px minmax(0, 1fr); }
 }
+
+@media (max-width: 400px) {
+  .login-page .cert-info-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+}

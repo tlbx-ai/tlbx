@@ -415,6 +415,8 @@
   "auth.password": "Passwort",
   "auth.terminalMultiplexer": "Terminal Multiplexer",
   "auth.certFingerprint": "Zertifikat-Fingerabdruck",
+  "auth.verifyCertificate": "Zertifikat prüfen",
+  "auth.certificateVerificationWarning": "Vergleichen Sie vor der Passworteingabe den SHA-256-Fingerabdruck im Zertifikatsdialog Ihres Browsers mit dem Fingerabdruck, den Sie direkt von diesem Rechner oder dessen Administrator über einen vertrauenswürdigen Kanal erhalten haben. Der hier angezeigte Fingerabdruck allein bestätigt die Verbindung nicht.",
   "auth.certHidePanel": "Dieses Panel ausblenden",
   "auth.certVerifyHint": "Überprüfen Sie, ob dies auf allen Geräten übereinstimmt. Siehe Einstellungen → Sicherheit für Details.",
   "trust.title": "Diesem Server vertrauen",

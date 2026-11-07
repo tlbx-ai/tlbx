@@ -374,6 +374,7 @@
   "auth.password": "パスワード",
   "auth.terminalMultiplexer": "ターミナルマルチプレクサ",
   "auth.certFingerprint": "証明書フィンガープリント",
+  "auth.verifyCertificate": "証明書を確認",
   "auth.certHidePanel": "このパネルを隠す",
   "auth.certVerifyHint": "すべてのデバイスで一致するか確認してください。詳細は設定 → セキュリティをご覧ください。",
   "trust.title": "このサーバーを信頼",
