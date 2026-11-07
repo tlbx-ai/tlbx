@@ -62,6 +62,30 @@ public sealed class TlbxMcpBrowserProtocolTests
         Assert.Equal("client-a", request.PreviewId);
     }
 
+    [Theory]
+    [InlineData(null)]
+    [InlineData("visible")]
+    public async Task ServerWaitDeadlinePreservesTheRequestedState(string? state)
+    {
+        var commands = new BrowserCommandService();
+        Assert.True(commands.TryRegisterClient("wait-timeout", "wait-session", "alpha", "wait-preview", _ => { }));
+        try
+        {
+            var result = await commands.ExecuteCommandAsync(new BrowserCommandRequest
+            {
+                Command = "wait", Selector = "#pending", SessionId = "wait-session", PreviewName = "alpha", Value = state, Timeout = 1
+            }, TestContext.Current.CancellationToken);
+            Assert.False(result.Success);
+            Assert.Contains("timed out", result.Error, StringComparison.Ordinal);
+            if (state is null) Assert.DoesNotContain("waiting for", result.Error, StringComparison.Ordinal);
+            else Assert.Contains("waiting for visible: #pending", result.Error, StringComparison.Ordinal);
+        }
+        finally
+        {
+            commands.UnregisterClient("wait-timeout");
+        }
+    }
+
     [Fact]
     public void DefaultWaitRetainsAttachmentAndMalformedWaitStopsTheWholeBatchBeforeDispatch()
     {
