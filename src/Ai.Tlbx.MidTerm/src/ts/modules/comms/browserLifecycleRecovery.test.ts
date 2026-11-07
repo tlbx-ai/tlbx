@@ -7,7 +7,11 @@ import {
   $stateWsConnected,
 } from '../../stores';
 import { connectStateWebSocket, probeStateWebSocket } from './stateChannel';
-import { probeMuxWebSocket, recoverVisibleTerminalsAfterBrowserResume } from './muxChannel';
+import {
+  probeMuxWebSocket,
+  recoverVisibleTerminalsAfterBrowserResume,
+  suspendMuxForBrowserBackground,
+} from './muxChannel';
 vi.mock('../../stores', async () => {
   const { atom } = await import('nanostores');
   return {
@@ -33,13 +37,14 @@ describe('browser transport lifecycle protocol', () => {
   let dispose: (() => void) | undefined;
   let present: ReturnType<typeof vi.fn>;
   let settings: ReturnType<typeof vi.fn>;
-  const start = () =>
+  const start = (prepareTerminalCapture?: () => Promise<void>) =>
     setupBrowserLifecycleRecovery({
       getVisibleTerminalSessionIds: () => ['sess1234'],
       syncMuxTerminalVisibility: vi.fn(),
       applyScrollbackProtection: vi.fn(),
       recoverTerminalPresentationAfterResume: present,
       keepTerminalOutputActiveWhileHidden: () => false,
+      prepareTerminalCapture,
       recoverSettingsAfterResume: settings,
     });
   beforeEach(() => {
@@ -70,6 +75,44 @@ describe('browser transport lifecycle protocol', () => {
     dispose = undefined;
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+  it('borrows hidden terminal transport only through capture and restores suspension without focus or activity', async () => {
+    page.visibilityState = 'hidden';
+    const prepare = vi.fn().mockResolvedValue(undefined);
+    const focused = { isConnected: true, focus: vi.fn() };
+    Object.assign(page, { activeElement: focused });
+    dispose = start(prepare);
+    const hook = (viewport as unknown as { __tlbxBeforeCapture: () => Promise<() => void> })
+      .__tlbxBeforeCapture;
+    expect(suspendMuxForBrowserBackground).toHaveBeenCalledOnce();
+    const release = await hook();
+    expect(prepare).toHaveBeenCalledOnce();
+    expect(recoverVisibleTerminalsAfterBrowserResume).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(suspendMuxForBrowserBackground).toHaveBeenCalledOnce();
+    expect(page.visibilityState).toBe('hidden');
+    expect(present).not.toHaveBeenCalled();
+    Object.assign(page, { activeElement: null });
+    release();
+    release();
+    expect(focused.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
+    expect(suspendMuxForBrowserBackground).toHaveBeenCalledTimes(2);
+  });
+  it('releases failed and abandoned capture activity', async () => {
+    page.visibilityState = 'hidden';
+    dispose = start(vi.fn().mockRejectedValue(new Error('parser timeout')));
+    const hook = () =>
+      (
+        viewport as unknown as { __tlbxBeforeCapture: () => Promise<() => void> }
+      ).__tlbxBeforeCapture();
+    await expect(hook()).rejects.toThrow('parser timeout');
+    expect(suspendMuxForBrowserBackground).toHaveBeenCalledTimes(2);
+    dispose();
+    dispose = start(vi.fn().mockResolvedValue(undefined));
+    await hook();
+    const count = vi.mocked(suspendMuxForBrowserBackground).mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(suspendMuxForBrowserBackground).toHaveBeenCalledTimes(count + 1);
   });
   it('periodically verifies healthy visible transports without replacing them or covering the terminal', async () => {
     dispose = start();
