@@ -192,9 +192,13 @@ function WaitForFileWritable {{
 function IsMcpAdapterProcess {{
     param([System.Diagnostics.Process]$Process)
 
+    if ($Process.HasExited) {{ return $false }}
     $info = Get-CimInstance Win32_Process -Filter ""ProcessId=$($Process.Id)"" -ErrorAction Stop
     if (-not $info) {{ return $false }}
     if ([string]::IsNullOrWhiteSpace($info.CommandLine)) {{
+        # WMI can retain an exiting process briefly with no command line.
+        # A live unreadable process still blocks the update; never guess its mode.
+        if ($Process.WaitForExit(250)) {{ return $false }}
         throw ""Cannot classify mt process $($Process.Id); leaving it running.""
     }}
     # Only the leading subcommand selects MCP mode. Later argument values must
