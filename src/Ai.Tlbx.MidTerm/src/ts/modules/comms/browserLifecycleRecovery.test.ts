@@ -98,6 +98,22 @@ describe('browser transport lifecycle protocol', () => {
     expect(focused.focus).toHaveBeenCalledExactlyOnceWith({ preventScroll: true });
     expect(suspendMuxForBrowserBackground).toHaveBeenCalledTimes(2);
   });
+  it.each(['pointerdown', 'keydown'])(
+    'does not restore old focus after newer %s input during capture',
+    async (eventType) => {
+      const focused = { isConnected: true, focus: vi.fn() };
+      const next = { isConnected: true, focus: vi.fn() };
+      Object.assign(page, { activeElement: focused });
+      dispose = start(vi.fn().mockResolvedValue(undefined));
+      const release = await (
+        viewport as unknown as { __tlbxBeforeCapture: () => Promise<() => void> }
+      ).__tlbxBeforeCapture();
+      page.dispatchEvent(new Event(eventType));
+      Object.assign(page, { activeElement: next });
+      release();
+      expect(focused.focus).not.toHaveBeenCalled();
+    },
+  );
   it('releases failed and abandoned capture activity', async () => {
     page.visibilityState = 'hidden';
     dispose = start(vi.fn().mockRejectedValue(new Error('parser timeout')));

@@ -345,13 +345,25 @@ export function setupBrowserLifecycleRecovery(
     if (pageFrozen) throw new Error('Cannot capture a frozen terminal document');
     capturesActive += 1;
     const focusedElement = document.activeElement as HTMLElement | null;
+    let inputIntent = false;
+    const noteInputIntent = (): void => {
+      inputIntent = true;
+    };
+    document.addEventListener('pointerdown', noteInputIntent, true);
+    document.addEventListener('keydown', noteInputIntent, true);
     let released = false;
     const release = (): void => {
       if (released) return;
       released = true;
       clearTimeout(deadline);
       captureReleases.delete(release);
-      if (focusedElement?.isConnected && document.activeElement !== focusedElement) {
+      document.removeEventListener('pointerdown', noteInputIntent, true);
+      document.removeEventListener('keydown', noteInputIntent, true);
+      if (
+        !inputIntent &&
+        focusedElement?.isConnected &&
+        document.activeElement !== focusedElement
+      ) {
         focusedElement.focus({ preventScroll: true });
       }
       capturesActive -= 1;
