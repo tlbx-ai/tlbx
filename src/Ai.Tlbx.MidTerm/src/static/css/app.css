@@ -2484,6 +2484,12 @@ body::before {
     opacity: 1;
     pointer-events: auto;
   }
+
+  .session-item:focus-within .session-actions {
+    opacity: 1;
+    pointer-events: auto;
+    transition: none;
+  }
 }
 
 .session-item.active .session-actions {
