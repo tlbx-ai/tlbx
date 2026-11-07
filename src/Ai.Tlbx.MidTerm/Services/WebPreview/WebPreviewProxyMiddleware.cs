@@ -659,6 +659,71 @@ public sealed partial class WebPreviewProxyMiddleware
               }
             }
           }).observe(document.documentElement,{childList:true,subtree:true});
+          // Installed before upstream scripts and always on, so arguments are read
+          // without running page getters or toJSON and each entry costs a bounded walk.
+          var mtLog=window.__mtLog=[],mtLogDropped=0,mtLogBusy=false,mtLogEntryMax=2000;
+          function mtLogValue(v,depth,path,budget){
+            var type=typeof v;
+            if(type==="string"){var str=v.slice(0,mtLogEntryMax+1);return depth?JSON.stringify(str):str;}
+            if(v===null||(type!=="object"&&type!=="function"))return String(v);
+            var tag=Object.prototype.toString.call(v).slice(8,-1);
+            if(tag==="Error"||tag==="DOMException"){
+              var head=v.name+": "+v.message,stack=String(v.stack||"");
+              return stack.indexOf(head)===0?stack:stack?head+"\n"+stack:head;
+            }
+            if(tag==="Date"||tag==="RegExp")return String(v);
+            if(tag!=="Array"&&tag!=="Object")return"["+tag+"]";
+            var isArray=tag==="Array",open=isArray?"[":"{",close=isArray?"]":"}";
+            if(path.indexOf(v)>=0)return"[Circular]";
+            if(depth>=4)return open+"..."+close;
+            path.push(v);
+            var keys=isArray?null:Object.keys(v),count=keys?keys.length:v.length,parts=[],start=budget.left;
+            for(var i=0;i<count;i++){
+              if(budget.left<=0){parts.push("...");break;}
+              var key=keys?keys[i]:i,prop=Object.getOwnPropertyDescriptor(v,key);
+              var text=!prop?"undefined":"value" in prop?mtLogValue(prop.value,depth+1,path,budget):"[getter]";
+              budget.left-=text.length+1;
+              parts.push(keys?JSON.stringify(key)+":"+text:text);
+            }
+            path.pop();
+            // The caller charges the returned text once, so release the children's interim charges.
+            budget.left=start;
+            return open+parts.join(",")+close;
+          }
+          function mtLogPush(level,args){
+            if(mtLogBusy)return;
+            mtLogBusy=true;
+            var budget={left:mtLogEntryMax},parts=[];
+            for(var i=0;i<args.length&&budget.left>0;i++){
+              var text;
+              try{text=mtLogValue(args[i],0,[],budget);}catch(e){text="[unserializable]";}
+              budget.left-=text.length+1;
+              parts.push(text);
+            }
+            mtLogBusy=false;
+            // Stack frames carry the proxy route and preview capability; show the upstream origin instead.
+            var message=parts.join(" ")
+              .replace(/https?:\/\/[^\s/]+\/webpreview\/[^\s/?#]+(?:\/_access\/[^\s/?#]+\/[^\s/?#]+)?/g,window.__mtTargetOrigin||"")
+              .replace(/[?&]__mtPreview(?:Id|Token)=[^&\s:)]*/g,"");
+            if(message.length>mtLogEntryMax)message=message.slice(0,mtLogEntryMax)+"...[truncated]";
+            mtLog.push({l:level,m:message,t:Date.now()});
+            if(mtLog.length>50){mtLog.shift();mtLogDropped++;}
+          }
+          ["error","warn","log"].forEach(function(level){
+            var original=console[level];
+            console[level]=function(){
+              mtLogPush(level,arguments);
+              return original.apply(console,arguments);
+            };
+          });
+          window.addEventListener("error",function(ev){
+            mtLogPush("error",ev.error instanceof Error
+              ?["Uncaught",ev.error]
+              :[ev.message+" ("+(ev.filename||"")+":"+(ev.lineno||0)+":"+(ev.colno||0)+")"]);
+          });
+          window.addEventListener("unhandledrejection",function(ev){
+            mtLogPush("error",["Unhandled rejection:",ev.reason]);
+          });
           // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
           var bws,bwsReady=false,captureLoad=null;
           function queryBudget(){return {nodes:4000,chars:40000,truncated:false};}
@@ -1060,25 +1125,11 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result=parts.join("\n---\n");
                   break;}
                 case"log":{
-                  if(!window.__mtLog){
-                    window.__mtLog=[];
-                    var orig={log:console.log,warn:console.warn,error:console.error};
-                    ["error","warn","log"].forEach(function(lvl){
-                      console[lvl]=function(){
-                        var a=[].slice.call(arguments).map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x);}catch(e){return String(x);}}).join(" ");
-                        window.__mtLog.push({l:lvl,m:a,t:Date.now()});
-                        if(window.__mtLog.length>50)window.__mtLog.shift();
-                        orig[lvl].apply(console,arguments);
-                      };
-                    });
-                    window.addEventListener("error",function(ev){
-                      window.__mtLog.push({l:"error",m:ev.message+" ("+(ev.filename||"")+":"+(ev.lineno||0)+")",t:Date.now()});
-                      if(window.__mtLog.length>50)window.__mtLog.shift();
-                    });
-                  }
                   var flt=msg.value||"all";
-                  var ent=window.__mtLog.filter(function(e){return flt==="all"||e.l===flt;});
-                  res.result=ent.length?ent.map(function(e){return"["+e.l+"] "+e.m;}).join("\n"):"(no entries)";
+                  var ent=mtLog.filter(function(e){return flt==="all"||e.l===flt;});
+                  var lines=ent.map(function(e){return"["+e.l+"] "+e.m;});
+                  if(mtLogDropped)lines.unshift("("+mtLogDropped+" older entries dropped)");
+                  res.result=lines.length?lines.join("\n"):"(no entries)";
                   res.matchCount=ent.length;
                   break;}
                 case"links":{
