@@ -255,7 +255,7 @@ public static class BrowserEndpoints
                 statusCode: StatusCodes.Status409Conflict);
     }
 
-    private static void MapCliEndpoint(
+    internal static void MapCliEndpoint(
         WebApplication app,
         BrowserCommandService commandService,
         TtyHostSessionManager sessionManager,
@@ -405,7 +405,8 @@ public static class BrowserEndpoints
                     sessionId,
                     previewName,
                     includeScreenshot,
-                    ctx.RequestAborted);
+                    ctx.RequestAborted,
+                    GetFlagValue(args, "--preview-id"));
                 return Results.Text(text);
             }
 
@@ -760,7 +761,8 @@ public static class BrowserEndpoints
         string? sessionId,
         string? previewName,
         bool includeScreenshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? previewId = null)
     {
         var targetUrl = sessionId is not null
             ? webPreviewService.GetTargetUrl(sessionId, previewName)
@@ -769,11 +771,13 @@ public static class BrowserEndpoints
             targetUrl,
             sessionId,
             previewName,
+            previewId,
             connectedUiClientCount: uiBridge?.ConnectedBrowserCount ?? 0).TrimEnd();
         var status = commandService.GetStatus(
             targetUrl,
             sessionId,
             previewName,
+            previewId,
             connectedUiClientCount: uiBridge?.ConnectedBrowserCount ?? 0);
         var lines = new List<string>
         {
@@ -794,7 +798,8 @@ public static class BrowserEndpoints
         var scope = new BrowserCommandRequest
         {
             SessionId = sessionId,
-            PreviewName = previewName
+            PreviewName = previewName,
+            PreviewId = previewId
         };
 
         var pageInfo = await RunBrowserTextCommandAsync(commandService, scope, "exec", value:
@@ -826,6 +831,7 @@ public static class BrowserEndpoints
                     Command = "screenshot",
                     SessionId = sessionId,
                     PreviewName = previewName,
+                    PreviewId = previewId,
                     Timeout = 30
                 },
                 cancellationToken);
@@ -834,7 +840,7 @@ public static class BrowserEndpoints
                 var screenshotPath = await SaveResultToDiskAsync(
                     "screenshot",
                     screenshotResult,
-                    new BrowserCommandRequest { SessionId = sessionId, PreviewName = previewName },
+                    scope,
                     sessionManager,
                     webPreviewService);
                 lines.Add("screenshot:");
