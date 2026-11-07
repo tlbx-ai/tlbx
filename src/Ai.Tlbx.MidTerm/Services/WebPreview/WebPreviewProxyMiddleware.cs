@@ -1079,7 +1079,9 @@ public sealed partial class WebPreviewProxyMiddleware
                       dpr:1,
                       scale:1,
                       fast:false,
-                      reconcile:true
+                      reconcile:true,
+                      // Image compression awaits bitmap decode(), which never settles in a hidden, never-painted document.
+                      compress:false
                     });
                   }).then(function(capture){
                     return capture.toCanvas();
