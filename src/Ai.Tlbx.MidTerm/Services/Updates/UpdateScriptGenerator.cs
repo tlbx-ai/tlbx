@@ -199,7 +199,7 @@ function IsMcpAdapterProcess {{
     }}
     # Only the leading subcommand selects MCP mode. Later argument values must
     # never exempt a web server from shutdown.
-    return $info.CommandLine -cmatch '^\s*(?:""[^""]+""|[^\s""]+)\s+(?:""mcp""|mcp)(?:\s|$)'
+    return $info.CommandLine -cmatch '^\s*(?:""[^""]+""|[^\s""]+)\s+(?:""(?:mcp|mcp-process-worker)""|(?:mcp|mcp-process-worker))(?:\s|$)'
 }}
 
 function KillProcessByPath {{
@@ -210,7 +210,7 @@ function KillProcessByPath {{
         try {{ $_.Path -eq $FullPath }} catch {{ $false }}
     }} | Where-Object {{
         if ($PreserveMcp -and (IsMcpAdapterProcess $_)) {{
-            Log ""Preserving native MCP adapter (PID: $($_.Id))""
+            Log ""Preserving native MCP process (PID: $($_.Id))""
             $false
         }} else {{ $true }}
     }}
