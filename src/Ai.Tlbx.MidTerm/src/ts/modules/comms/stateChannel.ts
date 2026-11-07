@@ -47,6 +47,7 @@ import { applySessionViewportToFrame } from '../web/webViewport';
 import {
   getSessionPreview,
   getSessionSelectedPreviewName,
+  normalizePreviewName,
   setSessionMode,
   setSessionSelectedPreviewName,
   setSessionViewport,
@@ -943,7 +944,7 @@ function handleDockBrowserUiCommand(msg: BrowserUiMessage): { success: boolean; 
 async function handleViewportBrowserUiCommand(
   msg: BrowserUiMessage,
 ): Promise<{ success: boolean; error?: string }> {
-  const target = resolveBrowserUiTarget(msg);
+  const target = resolveBrowserUiTarget(msg, false);
   if (!target) {
     return { success: false, error: 'No browser preview target could be resolved.' };
   }
@@ -957,7 +958,10 @@ async function handleViewportBrowserUiCommand(
   }
 
   setSessionMode(target.sessionId, target.previewName, 'docked');
-  if ($activeSessionId.get() !== target.sessionId) {
+  if (
+    $activeSessionId.get() !== target.sessionId ||
+    getSessionSelectedPreviewName(target.sessionId) !== target.previewName
+  ) {
     await syncBackgroundWebPreview(target.sessionId, target.previewName);
     applySessionViewportToFrame(target.sessionId, target.previewName);
     return { success: true };
@@ -1001,16 +1005,17 @@ async function handleOpenBrowserUiCommand(
 
 function resolveBrowserUiTarget(
   msg: BrowserUiMessage,
+  selectPreview = true,
 ): { sessionId: string; previewName: string } | null {
   const sessionId = msg.sessionId ?? $activeSessionId.get();
   if (!sessionId) {
     return null;
   }
 
-  const previewName = setSessionSelectedPreviewName(
-    sessionId,
-    msg.previewName ?? getSessionSelectedPreviewName(sessionId),
-  );
+  const requestedName = msg.previewName ?? getSessionSelectedPreviewName(sessionId);
+  const previewName = selectPreview
+    ? setSessionSelectedPreviewName(sessionId, requestedName)
+    : normalizePreviewName(requestedName);
 
   return { sessionId, previewName };
 }
