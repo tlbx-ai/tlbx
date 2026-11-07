@@ -1073,7 +1073,13 @@ public sealed partial class WebPreviewProxyMiddleware
                   })();return;}
                 case"screenshot":{
                   var fullPage=msg.fullPage===true;
-                  ensureCapture().then(function(capture){
+                  var releaseCapture=null;
+                  Promise.resolve().then(function(){
+                    return typeof window.__tlbxBeforeCapture==="function"?window.__tlbxBeforeCapture():null;
+                  }).then(function(release){
+                    releaseCapture=release;
+                    return ensureCapture();
+                  }).then(function(capture){
                     return capture(document.documentElement,{
                       clip:fullPage?null:"viewport",
                       dpr:1,
@@ -1089,6 +1095,8 @@ public sealed partial class WebPreviewProxyMiddleware
                     res.result=canvas.toDataURL("image/png");if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
                   }).catch(function(e){
                     res.success=false;res.error="screenshot failed: "+e.message;if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
+                  }).finally(function(){
+                    if(typeof releaseCapture==="function")releaseCapture();
                   });
                   return;}
                 case"snapshot":{

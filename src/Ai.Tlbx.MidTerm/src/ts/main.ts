@@ -29,6 +29,7 @@ import {
   getBrowserTransportSnapshot,
 } from './modules/comms';
 import { connectInitialSessionTransports } from './modules/comms/initialMuxConnection';
+import { prepareTerminalPreviewCapture } from './modules/terminal/previewCapture';
 import { initBadges } from './modules/badges';
 import {
   preloadTerminalFont,
@@ -748,6 +749,7 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
     applyScrollbackProtection,
     recoverTerminalPresentationAfterResume: scheduleForegroundResizeRecovery,
     keepTerminalOutputActiveWhileHidden: isMobilePiPActive,
+    prepareTerminalCapture: () => prepareTerminalPreviewCapture(getVisibleTerminalSessionIds()),
     stayActiveInBackground: () => $currentSettings.get()?.stayActiveInBackground === true,
     subscribeBackgroundActivity: (listener) =>
       $currentSettings.listen((settings, previous) => {

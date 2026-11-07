@@ -18,6 +18,7 @@ interface BrowserLifecycleRecoveryOptions {
   applyScrollbackProtection: () => void;
   recoverTerminalPresentationAfterResume: () => void | Promise<void>;
   keepTerminalOutputActiveWhileHidden: () => boolean;
+  prepareTerminalCapture?: () => Promise<void>;
   stayActiveInBackground?: () => boolean;
   subscribeBackgroundActivity?: (listener: () => void) => () => void;
   suspendAdditionalTerminalTransport?: () => void;
@@ -56,6 +57,8 @@ export function setupBrowserLifecycleRecovery(
   let probesPending = false;
   let lastTransportProbeAtMs = Date.now();
   let finishingGeneration = -1;
+  let capturesActive = 0;
+  const captureReleases = new Set<() => void>();
   const finishRecovery = (): void => {
     if (
       isDocumentHidden() ||
@@ -194,6 +197,7 @@ export function setupBrowserLifecycleRecovery(
   };
 
   const enterBrowserBackground = (): void => {
+    if (capturesActive > 0 && !pageFrozen) return;
     rememberBackgroundStart();
     if (backgroundLifecycleApplied) return;
 
@@ -332,6 +336,62 @@ export function setupBrowserLifecycleRecovery(
     handleMobilePiPActiveChanged,
   );
 
+  // Optional app-native bridge hook. Only a requested capture borrows terminal
+  // transport; ordinary hidden tabs retain their existing suspension policy.
+  const captureWindow = window as Window & {
+    __tlbxBeforeCapture?: () => Promise<() => void>;
+  };
+  const beforeCapture = async (): Promise<() => void> => {
+    if (pageFrozen) throw new Error('Cannot capture a frozen terminal document');
+    capturesActive += 1;
+    const focusedElement = document.activeElement as HTMLElement | null;
+    let inputIntent = false;
+    const noteInputIntent = (): void => {
+      inputIntent = true;
+    };
+    document.addEventListener('pointerdown', noteInputIntent, true);
+    document.addEventListener('keydown', noteInputIntent, true);
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      clearTimeout(deadline);
+      captureReleases.delete(release);
+      document.removeEventListener('pointerdown', noteInputIntent, true);
+      document.removeEventListener('keydown', noteInputIntent, true);
+      if (
+        !inputIntent &&
+        focusedElement?.isConnected &&
+        document.activeElement !== focusedElement
+      ) {
+        focusedElement.focus({ preventScroll: true });
+      }
+      capturesActive -= 1;
+      if (capturesActive === 0 && isDocumentHidden()) {
+        backgroundLifecycleApplied = false;
+        enterBrowserBackground();
+      }
+    };
+    // The bridge normally releases in finally; also bound abandoned captures.
+    const deadline = setTimeout(release, 30_000);
+    captureReleases.add(release);
+    try {
+      recoverVisibleTerminalsAfterBrowserResume(
+        $activeSessionId.get(),
+        options.getVisibleTerminalSessionIds(),
+        { forceReconnect: forceTransportReconnect },
+      );
+      await options.prepareTerminalCapture?.();
+      const expired = (): boolean => released || pageFrozen;
+      if (expired()) throw new Error('Terminal capture activity expired');
+      return release;
+    } catch (error) {
+      release();
+      throw error;
+    }
+  };
+  if (options.prepareTerminalCapture) captureWindow.__tlbxBeforeCapture = beforeCapture;
+
   document.addEventListener('visibilitychange', handleVisibilityChange);
   window.addEventListener('focus', handleFocus);
   window.addEventListener('online', handleOnline);
@@ -385,6 +445,12 @@ export function setupBrowserLifecycleRecovery(
   }, FOREGROUND_HEARTBEAT_INTERVAL_MS);
 
   return () => {
+    captureReleases.forEach((release) => {
+      release();
+    });
+    if (captureWindow.__tlbxBeforeCapture === beforeCapture) {
+      delete captureWindow.__tlbxBeforeCapture;
+    }
     recoveryGeneration += 1;
     stopStateReadiness();
     stopMuxReadiness();
