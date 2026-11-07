@@ -1,4 +1,5 @@
 using System.Net;
+using Ai.Tlbx.MidTerm.Common.Protocol;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Services;
@@ -19,6 +20,48 @@ public sealed class TlbxMcpApiProtocolTests
 {
     private static Dictionary<string, JsonElement> Args(string json) => JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
     private static McpApiOperation Operation(string name) => TlbxMcpApiTools.Operations().Single(o => o.Name == name);
+
+    [Fact]
+    public void AgentDecisionRequiresExactRequestTurnAndExplicitDecision()
+    {
+        var operation = Operation("agent_request_decide");
+        var args = Args("""{"requestId":"request / Ω","expectedTurnId":"turn / Ω","decision":"decline","targetSessionId":"other"}""");
+        var bound = operation.Bind(args, "self");
+        Assert.Equal("other", bound.Routes["id"]);
+        Assert.Equal("request / Ω", bound.Routes["requestId"]);
+        Assert.Equal("decline", Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(bound.Query.Value!)["decision"].ToString());
+        Assert.Contains("request%20%2F%20%CE%A9", bound.Path, StringComparison.Ordinal);
+        foreach (var name in new[] { "requestId", "expectedTurnId", "decision" })
+        {
+            var missing = new Dictionary<string, JsonElement>(args);
+            missing.Remove(name);
+            Assert.Throws<McpApiArgumentException>(() => operation.Bind(missing, "self"));
+        }
+        var unbound = new Dictionary<string, JsonElement>(args);
+        unbound.Remove("targetSessionId");
+        Assert.Throws<McpApiArgumentException>(() => operation.Bind(unbound, null));
+    }
+
+    [Theory]
+    [InlineData("request", "turn", "turn", "open", true)]
+    [InlineData("missing", "turn", "turn", "open", false)]
+    [InlineData("request", "old-turn", "turn", "open", false)]
+    [InlineData("request", "turn", "old-turn", "open", false)]
+    [InlineData("request", "turn", "turn", "resolved", false)]
+    [InlineData("request", "turn", "turn", "OPEN", false)]
+    [InlineData("request", "", "", "open", false)]
+    [InlineData("", "turn", "turn", "open", false)]
+    public void AgentDecisionRejectsUnavailableStaleAndSettledRequests(
+        string requestId, string expectedTurnId, string requestTurnId, string state, bool expected)
+    {
+        var history = new AppServerControlHistoryWindowResponse
+        {
+            CurrentTurn = new() { TurnId = "turn" },
+            Requests = [new() { RequestId = "request", TurnId = requestTurnId, State = state }]
+        };
+        Assert.Equal(expected, SessionApiEndpoints.IsOpenAgentRequestInTurn(history, requestId, expectedTurnId));
+        Assert.False(SessionApiEndpoints.IsOpenAgentRequestInTurn(null, requestId, expectedTurnId));
+    }
 
     [Fact]
     public void SessionDefaultsAreExplicitAndUnboundOperatorCannotInventSelf()
