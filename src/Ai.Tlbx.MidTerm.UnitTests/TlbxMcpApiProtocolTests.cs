@@ -33,11 +33,11 @@ public sealed class TlbxMcpApiProtocolTests
         Assert.Contains("request%20%2F%20%CE%A9", bound.Path, StringComparison.Ordinal);
         foreach (var name in new[] { "requestId", "expectedTurnId", "decision" })
         {
-            var missing = new Dictionary<string, JsonElement>(args);
+            var missing = new Dictionary<string, JsonElement>(args, StringComparer.Ordinal);
             missing.Remove(name);
             Assert.Throws<McpApiArgumentException>(() => operation.Bind(missing, "self"));
         }
-        var unbound = new Dictionary<string, JsonElement>(args);
+        var unbound = new Dictionary<string, JsonElement>(args, StringComparer.Ordinal);
         unbound.Remove("targetSessionId");
         Assert.Throws<McpApiArgumentException>(() => operation.Bind(unbound, null));
     }
