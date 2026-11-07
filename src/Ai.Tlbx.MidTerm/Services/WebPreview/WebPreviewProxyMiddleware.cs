@@ -1208,7 +1208,8 @@ public sealed partial class WebPreviewProxyMiddleware
                                it==="button"?" \""+(inp.textContent||"").trim()+"\"":
                                " value=\""+((inp.type==="password"?"***":inp.value)||"")+"\"";
                       var ilbl="";
-                      if(inp.id){var le=f.querySelector("label[for="+inp.id+"]");if(le)ilbl=" label=\""+le.textContent.trim()+"\"";}
+                      var labels=inp.labels;
+                      if(labels&&labels.length)ilbl=" label=\""+Array.prototype.map.call(labels,function(le){return le.textContent.trim();}).join(" ")+"\"";
                       if(!ilbl&&inp.closest&&inp.closest("label"))ilbl=" label=\""+inp.closest("label").textContent.trim()+"\"";
                       flines.push("  "+it+iname+itp+ireq+ival+ilbl);
                     }

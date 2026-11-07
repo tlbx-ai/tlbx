@@ -600,7 +600,7 @@ function renderBrowser(elements: BrowserElements, state: BrowserState): void {
     .map(
       (entry) => `
         <button type="button" class="session-launcher-row" data-open-path="${escapeHtml(entry.fullPath)}" title="${escapeHtml(entry.fullPath)}">
-          <span class="session-launcher-row-icon" aria-hidden="true">&#xea83;</span>
+          <span class="icon icon-svg session-launcher-row-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7V5h6l2 2h10v12H3V7Z" /></svg></span>
           <span class="session-launcher-row-label">${escapeHtml(entry.name)}</span>
         </button>
       `,
