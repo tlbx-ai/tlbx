@@ -66,9 +66,9 @@ public sealed class MtAgentHostClaudeIntegrationTests
         await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
         runtime.ReplayClaudeHistory(replay);
         Assert.Equal(new[] { "claude-history:user-a", "claude-history:user-b" },
-            events.Where(e => e.TurnStarted is not null).Select(e => e.TurnId));
+            events.Where(e => e.TurnStarted is not null).Select(e => e.TurnId), StringComparer.Ordinal);
         Assert.Equal(new[] { "user-a", "user-b" },
-            events.Where(e => e.Item?.ItemType == "user_message").Select(e => e.ItemId));
+            events.Where(e => e.Item?.ItemType == "user_message").Select(e => e.ItemId), StringComparer.Ordinal);
         Assert.Contains(events, e => e.ItemId == "answer-a" && e.TurnId == "claude-history:user-a");
         Assert.Contains(events, e => e.ItemId == "answer-b" && e.TurnId == "claude-history:user-b");
         var completed = events.Where(e => e.TurnCompleted is not null).ToArray();
@@ -104,7 +104,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             "clear" => GoalReadReplayWrapper.Replace("<command-args></command-args>", "<command-args>clear</command-args>", StringComparison.Ordinal),
             _ => GoalReadReplayWrapper
         };
-        var user = new Dictionary<string, object?>
+        var user = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["type"] = "user", ["uuid"] = "kept", ["isCompletedLocalCommand"] = true,
             ["message"] = new { content, is_error = scenario == "message-error" }
