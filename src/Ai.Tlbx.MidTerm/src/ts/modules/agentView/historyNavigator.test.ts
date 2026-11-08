@@ -275,11 +275,16 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
       expect(resolveMeasurementBrowseAnchorIndex(state, state.historyViewport!)).toBeNull();
       rowResize(400);
       expect(offset()).toBe(-76.65625);
+      // New content can grow above the reader before the queued render too.
+      // Keep the pixel anchor authoritative until the baseline is complete.
+      shiftRow(50);
+      rowResize(450);
+      expect(offset()).toBe(-76.65625);
       // The real render finalizer releases the guard after all mounted rows were measured.
       completeHistoryReaderMeasurements(state);
       expect(state.historyReaderResizeMeasurementPending).toBe(false);
-      shiftRow(50);
-      rowResize(450); // A later real height change still compensates normally.
+      shiftRow(30);
+      rowResize(480); // A later real height change still compensates normally.
       expect(offset()).toBe(-76.65625);
     },
   );

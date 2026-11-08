@@ -199,6 +199,13 @@ export function confirmHistoryReaderAnchor(state: SessionAppServerControlViewSta
   };
 }
 
+function historyReaderMatchesViewport(
+  anchor: SessionAppServerControlViewState['historyReaderAnchor'],
+  viewport: HTMLDivElement,
+): boolean {
+  return anchor?.width === viewport.clientWidth && anchor.height === viewport.clientHeight;
+}
+
 /** ResizeObserver is post-reflow: never capture its already shifted DOM. */
 export function prepareHistoryReaderResize(state: SessionAppServerControlViewState): boolean {
   const viewport = state.historyViewport;
@@ -208,7 +215,8 @@ export function prepareHistoryReaderResize(state: SessionAppServerControlViewSta
     !anchor ||
     viewport.clientWidth <= 0 ||
     viewport.clientHeight <= 0 ||
-    (anchor.width === viewport.clientWidth && anchor.height === viewport.clientHeight) ||
+    (historyReaderMatchesViewport(anchor, viewport) &&
+      !state.historyReaderResizeMeasurementPending) ||
     state.historyAutoScrollPinned ||
     state.historyPendingJumpTargetIndex != null ||
     state.pendingHistoryPrependAnchor ||
@@ -245,7 +253,7 @@ export function restoreHistoryReaderBeforePaint(state: SessionAppServerControlVi
     state.historyPendingJumpTargetIndex != null ||
     state.pendingHistoryPrependAnchor ||
     !state.pendingHistoryLayoutAnchor ||
-    (anchor.width === viewport.clientWidth && anchor.height === viewport.clientHeight)
+    (historyReaderMatchesViewport(anchor, viewport) && !state.historyReaderResizeMeasurementPending)
   )
     return;
   const node = state.historyRenderedNodes.get(state.pendingHistoryLayoutAnchor.entryId)?.node;
@@ -286,10 +294,11 @@ export function recordHistoryReaderScroll(
     anchor.scrollTop = viewport.scrollTop;
     if (state.pendingHistoryLayoutAnchor) state.pendingHistoryLayoutAnchor.topOffsetPx -= delta;
   }
+  if (historyReaderMatchesViewport(anchor, viewport) && state.historyReaderResizeMeasurementPending)
+    return false;
   if (prepareHistoryReaderResize(state)) return true;
   // Scroll can precede the viewport RO. Do not confirm post-reflow geometry.
-  if (anchor && (anchor.width !== viewport.clientWidth || anchor.height !== viewport.clientHeight))
-    return false;
+  if (anchor && !historyReaderMatchesViewport(anchor, viewport)) return false;
   confirmHistoryReaderAnchor(state);
   return false;
 }
