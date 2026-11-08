@@ -9,6 +9,7 @@ import {
   toAppServerControlAttachmentReference,
 } from './appServerControlAttachments';
 import type { SmartInputComposerDraft, SmartInputComposerPart } from './smartInputComposerDraft';
+import { cloneSmartInputComposerDraft } from './smartInputComposerDraft';
 
 export interface PrepareSmartInputOutboundPromptArgs {
   sessionId: string;
@@ -36,6 +37,7 @@ export interface PrepareSmartInputTerminalTurnArgs {
 export async function prepareSmartInputOutboundPrompt(
   args: PrepareSmartInputOutboundPromptArgs,
 ): Promise<PreparedSmartInputOutboundPrompt> {
+  args = { ...args, draft: cloneSmartInputComposerDraft(args.draft) };
   const ordered = orderedRichAttachments(args.draft, args.attachments);
   const uploadedPaths = await Promise.all(ordered.map((attachment) => ensureUploadedAttachmentPath(args, attachment)));
   const attachmentPathById = new Map<string, string>();
@@ -74,7 +76,7 @@ export function orderedRichAttachments(
   if (!draft.richDoc) return [...attachments];
   const seen = new Set<string>();
   const ordered: AppServerControlComposerDraftAttachment[] = [];
-  for (const part of draft.parts) {
+  for (const part of cloneSmartInputComposerDraft(draft).parts) {
     if (part.kind !== 'reference' || seen.has(part.referenceId)) continue;
     const attachment = attachments.find((entry) => entry.id === part.referenceId);
     if (attachment) { ordered.push(attachment); seen.add(attachment.id); }

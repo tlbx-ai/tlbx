@@ -1,6 +1,10 @@
 export interface AnnotationPoint { x: number; y: number; pressure: number }
 export interface AnnotationStroke { points: AnnotationPoint[]; color: string; width: number }
 
+export function annotationHasChanges(strokes: readonly AnnotationStroke[]): boolean {
+  return strokes.some((stroke) => stroke.points.length > 0);
+}
+
 export function annotationPoint(
   clientX: number, clientY: number, pressure: number,
   rect: Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>,

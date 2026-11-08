@@ -1,20 +1,20 @@
 import { Fragment, Slice, type Node as ProseMirrorNode } from 'prosemirror-model';
-import { EditorState, type Selection, TextSelection, type Command, type SelectionBookmark, type Transaction } from 'prosemirror-state';
+import { EditorState, NodeSelection, type Selection, TextSelection, type Command, type SelectionBookmark, type Transaction } from 'prosemirror-state';
 import { EditorView } from 'prosemirror-view';
 import { baseKeymap, chainCommands, toggleMark } from 'prosemirror-commands';
 import { history, undo, redo, closeHistory } from 'prosemirror-history';
 import { keymap } from 'prosemirror-keymap';
 import { wrapInList, splitListItem, sinkListItem, liftListItem } from 'prosemirror-schema-list';
-import { addColumnAfter, addRowAfter, deleteTable, isInTable, handlePaste as pasteTable, tableEditing } from 'prosemirror-tables';
+import { addColumnAfter, addRowAfter, deleteTable, isInTable, tableEditing } from 'prosemirror-tables';
 import { t } from '../i18n';
 import type { SmartInputComposerDraft } from './smartInputComposerDraft';
 import type { AppServerControlComposerDraftAttachment } from './appServerControlAttachments';
 import { draftFromRichDocument, getRichComposerDocument, richComposerSchema, richNode } from './richComposerDocument';
-import { captureRichClipboard, materializeRichClipboardImages, richClipboardSlice, type RichClipboardData } from './richComposerClipboard';
+import { captureRichClipboard, materializeRichClipboardImages, richClipboardReferenceIds, richClipboardSlice, type RichClipboardData } from './richComposerClipboard';
 import { richAttachmentView } from './richComposerAttachmentView';
 import { openImageAnnotation } from './imageAnnotation';
 import { shouldConvertPastedTextToSmartInputReference } from './smartInputTextReferences';
-import { moveRichTableCell, replaceRichAttachment, richComposerOwnsShortcut, restoreRichComposerSelection, richComposerTrailingParagraph } from './richComposerTransactions';
+import { moveRichTableCell, pasteRichSlice, replaceBookmarkedRichAttachment, richComposerOwnsShortcut, restoreRichComposerSelection, richComposerTrailingParagraph } from './richComposerTransactions';
 
 export interface RichComposerCallbacks {
   changed: (sessionId: string, draft: SmartInputComposerDraft, edited: boolean) => void;
@@ -27,8 +27,8 @@ export interface RichComposerCallbacks {
   open: (sessionId: string, attachment: AppServerControlComposerDraftAttachment) => void;
   pending: (sessionId: string, action: () => Promise<void>) => Promise<void>;
 }
-interface SessionEditor { state: EditorState; draft: SmartInputComposerDraft }
-interface PendingBookmark { sessionId: string; bookmark: SelectionBookmark }
+interface SessionEditor { state: EditorState; draft: SmartInputComposerDraft; generation: object }
+interface PendingBookmark { sessionId: string; bookmark: SelectionBookmark; generation: object }
 
 export class RichComposer {
   readonly host = document.createElement('div');
@@ -93,10 +93,14 @@ export class RichComposer {
     const document = this.withLegacyAttachments(sessionId, draft, doc);
     const state = this.restoreState(saved, document, draft);
     if (saved && !state.doc.eq(saved.state.doc)) {
-      for (const pending of this.bookmarks) if (pending.sessionId === sessionId) this.bookmarks.delete(pending);
+      this.submitting.delete(sessionId);
+      for (const pending of this.bookmarks) if (pending.sessionId === sessionId) {
+        this.bookmarks.delete(pending); this.failures.delete(pending);
+      }
     }
     const canonicalDraft = draftFromRichDocument(draft, state.doc, state.selection.toJSON() as Record<string, unknown>);
-    this.editors.set(sessionId, { state, draft: canonicalDraft }); this.sessionId = sessionId;
+    const generation = saved?.state.doc.eq(document) ? saved.generation : {};
+    this.editors.set(sessionId, { state, draft: canonicalDraft, generation }); this.sessionId = sessionId;
     if (!draft.richDoc) this.callbacks.changed(sessionId, canonicalDraft, false);
     if (!this.view) this.createView(state);
     else if (this.view.state !== state) this.view.updateState(state);
@@ -154,7 +158,8 @@ export class RichComposer {
     view.updateState(next.state);
     const draft = draftFromRichDocument(this.editors.get(id)?.draft ?? { parts: [], nextOrdinalByKind: {} },
       next.state.doc, next.state.selection.toJSON() as Record<string, unknown>);
-    this.editors.set(id, { state: next.state, draft }); this.callbacks.changed(id, draft, next.transactions.some((transaction) => transaction.docChanged)); this.syncTools();
+    const generation = this.editors.get(id)!.generation;
+    this.editors.set(id, { state: next.state, draft, generation }); this.callbacks.changed(id, draft, next.transactions.some((transaction) => transaction.docChanged)); this.syncTools();
   }
 
   private mapBookmarks(sessionId: string, transactions: readonly Transaction[]): void {
@@ -173,6 +178,10 @@ export class RichComposer {
   focus(): void { this.view?.focus(); }
   hasFocus(): boolean { return this.view?.hasFocus() ?? false; }
   isSubmitting(sessionId: string): boolean { return this.submitting.has(sessionId); }
+  captureDocumentGuard(sessionId: string): () => boolean {
+    const generation = this.editors.get(sessionId)?.generation;
+    return () => generation !== undefined && this.editors.get(sessionId)?.generation === generation;
+  }
   setSubmitting(sessionId: string, value: boolean): void {
     if (value) this.submitting.add(sessionId); else this.submitting.delete(sessionId);
     if (this.sessionId === sessionId) {
@@ -241,19 +250,36 @@ export class RichComposer {
   private annotate(position: number, id: string): void {
     const attachment = this.resolve(id); const sessionId = this.sessionId;
     if (!attachment?.previewUrl || !sessionId) return;
+    const saved = this.editors.get(sessionId);
+    if (!saved || saved.state.doc.nodeAt(position)?.attrs.referenceId !== id) return;
+    const pending = { sessionId, generation: saved.generation,
+      bookmark: NodeSelection.create(saved.state.doc, position).getBookmark() };
+    this.bookmarks.add(pending);
     const lifetime = this.lifetimes.get(sessionId);
+    const uploaded = new Map<File, AppServerControlComposerDraftAttachment>();
+    const target = (): SessionEditor => {
+      const current = this.editors.get(sessionId);
+      if (!current || current.generation !== pending.generation || !this.bookmarks.has(pending))
+        throw new Error(t('smartInput.richTargetChanged'));
+      return current;
+    };
     openImageAnnotation({ src: attachment.previewUrl, name: attachment.displayName,
       ...(lifetime ? { signal: lifetime.signal } : {}),
-      save: async (file, signal) => {
+      closed: () => { this.bookmarks.delete(pending); },
+      save: (file, signal) => this.callbacks.pending(sessionId, async () => {
         signal.throwIfAborted();
-        const edited = await this.callbacks.stageFile(sessionId, file, attachment, signal);
+        if (!replaceBookmarkedRichAttachment(target().state, pending.bookmark, id, id))
+          throw new Error(t('smartInput.richTargetChanged'));
+        let edited = uploaded.get(file);
+        if (!edited) {
+          edited = await this.callbacks.stageFile(sessionId, file, attachment, signal);
+          uploaded.set(file, edited);
+        }
         signal.throwIfAborted();
-        const saved = this.editors.get(sessionId);
-        if (!saved) throw new Error(t('smartInput.richTargetChanged'));
-        const tr = replaceRichAttachment(saved.state, position, id, edited.id);
+        const tr = replaceBookmarkedRichAttachment(target().state, pending.bookmark, id, edited.id);
         if (!tr) throw new Error(t('smartInput.richTargetChanged'));
         this.applySessionTransaction(sessionId, tr);
-      } });
+      }) });
   }
 
   private applySessionTransaction(sessionId: string, tr: Transaction): void {
@@ -263,7 +289,7 @@ export class RichComposer {
     this.mapBookmarks(sessionId, applied.transactions);
     const state = applied.state;
     const draft = draftFromRichDocument(saved.draft, state.doc, state.selection.toJSON() as Record<string, unknown>);
-    this.editors.set(sessionId, { state, draft }); this.callbacks.changed(sessionId, draft, tr.docChanged);
+    this.editors.set(sessionId, { state, draft, generation: saved.generation }); this.callbacks.changed(sessionId, draft, tr.docChanged);
   }
 
   hasUnresolvedInput(sessionId: string): boolean {
@@ -283,14 +309,8 @@ export class RichComposer {
   private pasteSlice(sessionId: string, slice: Slice, selection: Selection): void {
     const saved = this.editors.get(sessionId);
     if (!saved) throw new Error(t('smartInput.richTargetChanged'));
-    if (sessionId === this.sessionId && this.view) {
-      this.view.dispatch(closeHistory(this.view.state.tr).setSelection(selection));
-      if (!pasteTable(this.view, new ClipboardEvent('paste'), slice))
-        this.view.dispatch(this.view.state.tr.replaceSelection(slice).scrollIntoView());
-      return;
-    }
-    if (isInTable(saved.state)) throw new Error(t('smartInput.richTargetChanged'));
-    this.applySessionTransaction(sessionId, closeHistory(saved.state.tr).setSelection(selection).replaceSelection(slice));
+    pasteRichSlice(() => this.editors.get(sessionId)!.state,
+      (tr) => { this.applySessionTransaction(sessionId, tr); }, selection, slice);
   }
 
   private handlePaste(event: ClipboardEvent): boolean {
@@ -314,22 +334,29 @@ export class RichComposer {
 
   private insertClipboard(sessionId: string, data: RichClipboardData): void {
     const saved = this.editors.get(sessionId); if (!saved) return;
-    const pending = { sessionId, bookmark: saved.state.selection.getBookmark() };
+    const pending = { sessionId, bookmark: saved.state.selection.getBookmark(), generation: saved.generation };
     this.bookmarks.add(pending);
     const uploaded = new Map<File, AppServerControlComposerDraftAttachment>();
     let resolvedData: RichClipboardData | null = null;
     let textAttachment: AppServerControlComposerDraftAttachment | null = null;
     const signal = this.lifetimes.get(sessionId)?.signal;
-    if (!signal) return;
+    if (!signal) { this.bookmarks.delete(pending); return; }
+    const assertTarget = (): void => {
+      signal.throwIfAborted();
+      if (this.editors.get(sessionId)?.generation !== pending.generation || !this.bookmarks.has(pending))
+        throw new Error(t('smartInput.richTargetChanged'));
+    };
     const stage = async (): Promise<{ data: RichClipboardData; ids: string[] }> => {
+      assertTarget();
       const largeText = !data.html && !data.files.length && shouldConvertPastedTextToSmartInputReference(data.text);
       if (largeText) textAttachment ??= await this.callbacks.stageText(sessionId, data.text, signal);
-      resolvedData ??= largeText ? { html: '', text: '', files: [] } : await materializeRichClipboardImages(data);
+      resolvedData ??= largeText ? { html: '', text: '', files: [] } : materializeRichClipboardImages(data);
       for (const file of resolvedData.files) {
+        assertTarget();
         if (!uploaded.has(file)) uploaded.set(file, await this.callbacks.stageFile(sessionId, file, undefined, signal));
       }
       return { data: resolvedData, ids: textAttachment ? [textAttachment.id] :
-        resolvedData.files.map((file) => uploaded.get(file)?.id ?? '').filter(Boolean) };
+        richClipboardReferenceIds(resolvedData, (file) => uploaded.get(file)?.id ?? '') };
     };
     const action = async (): Promise<void> => {
       try {
@@ -337,20 +364,20 @@ export class RichComposer {
         const staged = await stage();
         signal.throwIfAborted();
         const current = this.editors.get(sessionId);
-        if (!current || !this.bookmarks.has(pending)) throw new Error(t('smartInput.richTargetChanged'));
+        if (!current || current.generation !== pending.generation || !this.bookmarks.has(pending)) throw new Error(t('smartInput.richTargetChanged'));
         const valid = new Set(this.callbacks.attachments(sessionId).map((attachment) => attachment.id));
         const slice = richClipboardSlice(staged.data, staged.ids, valid);
         const selection = pending.bookmark.resolve(current.state.doc);
         this.pasteSlice(sessionId, slice, selection);
         this.failures.delete(pending); this.bookmarks.delete(pending); this.renderError();
       } catch (error) {
-        if (signal.aborted) return;
+        if (signal.aborted || this.editors.get(sessionId)?.generation !== pending.generation) return;
         this.failures.set(pending, {
           message: error instanceof Error ? error.message : t('smartInput.attachmentUploadFailed'),
           retry: () => {
             const current = this.editors.get(sessionId);
-            if (!current) return;
-            if (!this.bookmarks.has(pending)) pending.bookmark = current.state.selection.getBookmark();
+            if (!current || current.generation !== pending.generation) return;
+            if (!this.bookmarks.has(pending)) return;
             this.bookmarks.add(pending); this.failures.delete(pending); this.renderError();
             void this.callbacks.pending(sessionId, action);
           },

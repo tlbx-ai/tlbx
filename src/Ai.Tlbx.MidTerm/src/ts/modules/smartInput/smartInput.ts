@@ -2722,9 +2722,11 @@ async function sendTerminalComposerTurn(
 async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement): Promise<void> {
   const editor = richComposer;
   if (!editor || editor.isSubmitting(sessionId)) return;
+  const isCurrentDocument = editor.captureDocumentGuard(sessionId);
   editor.setSubmitting(sessionId, true);
   try {
     await waitForComposerPasteStagingToSettle(sessionId);
+    if (!isCurrentDocument()) return;
     if (editor.hasUnresolvedInput(sessionId)) throw new Error(t('smartInput.attachmentUploadFailed'));
     const draft = cloneSmartInputComposerDraft(getSessionDraft(sessionId));
     const ids = new Set(getSmartInputComposerReferenceIds(draft));
@@ -2738,15 +2740,23 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     const { queuedTurn } = await submitAppServerControlComposerDraft({
       sessionId, draft, attachments, uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
       attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'), uploadFile,
-      createTurnRequest: createAppServerControlTurnRequest, submitQueuedTurn: enqueueCommandBayTurn,
+      createTurnRequest: createAppServerControlTurnRequest,
+      submitQueuedTurn: (targetSessionId, request) => {
+        if (!isCurrentDocument()) throw new Error(t('smartInput.richTargetChanged'));
+        return enqueueCommandBayTurn(targetSessionId, request);
+      },
     });
     await queuedTurn;
+    if (!isCurrentDocument()) return;
     pushCurrentPromptToHistory(sessionId);
     clearSubmittedSmartInputState(sessionId, ta);
     collapseComposerAfterSuccessfulSend(sessionId);
   } catch (error) {
     showDropToast(error instanceof Error ? error.message : t('smartInput.attachmentSendFailed'));
-  } finally { editor.setSubmitting(sessionId, false); if ($activeSessionId.get() === sessionId) focusSmartInput(); }
+  } finally {
+    if (isCurrentDocument()) editor.setSubmitting(sessionId, false);
+    if ($activeSessionId.get() === sessionId) focusSmartInput();
+  }
 }
 
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {

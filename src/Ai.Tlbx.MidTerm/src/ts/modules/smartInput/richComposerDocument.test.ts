@@ -5,7 +5,13 @@ import { CellSelection, tableEditing, TableMap, isInTable } from 'prosemirror-ta
 import { draftFromRichDocument, getRichComposerDocument, parsePersistedRichDocument, isSafeComposerLink, richComposerSchema, richDocumentToParts, richNode } from './richComposerDocument';
 import { cloneSmartInputComposerDraft, pruneSmartInputComposerReferences } from './smartInputComposerDraft';
 import { loadSmartInputCurrentDraft, persistSmartInputCurrentDraft } from './smartInputDraftStore';
-import { moveRichTableCell, replaceRichAttachment, richComposerOwnsShortcut, restoreRichComposerSelection, richComposerTrailingParagraph } from './richComposerTransactions';
+import { moveRichTableCell, pasteRichSlice, replaceBookmarkedRichAttachment, replaceRichAttachment, richComposerOwnsShortcut, restoreRichComposerSelection, richComposerTrailingParagraph } from './richComposerTransactions';
+import { Slice, Fragment } from 'prosemirror-model';
+import { submitAppServerControlComposerDraft } from './appServerControlAttachmentSubmission';
+import { RichComposer } from './richComposer';
+import type { AppServerControlTurnRequest } from '../../api/types';
+import { openImageAnnotation } from './imageAnnotation';
+vi.mock('./imageAnnotation', () => ({ openImageAnnotation: vi.fn() }));
 import { orderedRichAttachments, prepareSmartInputOutboundPrompt } from './smartInputOutboundReferences';
 import type { AppServerControlComposerDraftAttachment } from './appServerControlAttachments';
 
@@ -33,6 +39,125 @@ function tableState() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('rich composer document contracts', () => {
+  function annotationHarness() {
+    const original = attachment('original', '/original.png'); original.previewUrl = 'original-preview';
+    const doc = richNode('doc').create(null, richNode('paragraph').create(null, [atom('original'), richComposerSchema.text(' after')]));
+    const state = EditorState.create({ doc, plugins: [history()] });
+    const editors = new Map([['source', { state, draft: draftFromRichDocument(draft(), doc), generation: {} }]]);
+    let finish!: (edited: AppServerControlComposerDraftAttachment) => void;
+    const stageFile = vi.fn(() => new Promise<AppServerControlComposerDraftAttachment>((resolve) => { finish = resolve; }));
+    const composer = Object.create(RichComposer.prototype) as RichComposer;
+    Object.assign(composer, { editors, sessionId: 'source', view: null, bookmarks: new Set(),
+      lifetimes: new Map([['source', new AbortController()]]), callbacks: {
+        attachments: () => [original], stageFile, changed: vi.fn(),
+        pending: (_session: string, action: () => Promise<void>) => action(),
+      } });
+    const internal = composer as unknown as {
+      sessionId: string;
+      annotate(position: number, id: string): void;
+      applySessionTransaction(session: string, tr: import('prosemirror-state').Transaction): void;
+    };
+    internal.annotate(1, 'original');
+    const options = vi.mocked(openImageAnnotation).mock.calls.at(-1)![0];
+    return { composer, internal, editors, options, finish: () => finish(attachment('edited', '/edited.png')), stageFile, original };
+  }
+
+  it('commits a delayed annotation to the mapped original session after switching away', async () => {
+    const f = annotationHarness();
+    const save = f.options.save(new File(['png'], 'edited.png'), new AbortController().signal);
+    f.internal.sessionId = 'other';
+    f.internal.applySessionTransaction('source', f.editors.get('source')!.state.tr.insertText('prefix ', 1));
+    f.finish(); await save;
+    expect(f.editors.get('source')!.state.doc.nodeAt(8)?.attrs.referenceId).toBe('edited');
+    expect(f.editors.has('other')).toBe(false);
+    expect(f.original.uploadedPath).toBe('/original.png');
+    expect(f.stageFile).toHaveBeenCalledTimes(1);
+    f.options.closed?.();
+  });
+
+  it.each(['cancel', 'replace', 'close'])('rejects late annotation save after %s without changing the replacement draft', async (kind) => {
+    const f = annotationHarness();
+    const controller = new AbortController();
+    const save = f.options.save(new File(['png'], 'edited.png'), controller.signal);
+    const rejected = expect(save).rejects.toThrow();
+    const original = f.editors.get('source')!;
+    if (kind === 'cancel') { controller.abort(); f.options.closed?.(); }
+    if (kind === 'replace') f.editors.set('source', { ...original, generation: {} });
+    if (kind === 'close') f.editors.delete('source');
+    f.finish(); await rejected;
+    expect(f.editors.get('source')?.state.doc.eq(original.state.doc) ?? true).toBe(true);
+    expect(f.original.uploadedPath).toBe('/original.png');
+  });
+  it('keeps the original session generation across edits and switching, invalidating replacement or closed drafts', () => {
+    const generation = {};
+    const editors = new Map<string, { generation: object }>([['original', { generation }]]);
+    // Exercise the actual lifecycle guard without mounting an EditorView.
+    const composer = Object.create(RichComposer.prototype) as RichComposer;
+    Object.assign(composer, { editors });
+    const valid = composer.captureDocumentGuard('original');
+    editors.set('other-session', { generation: {} });
+    editors.set('original', { generation }); // Ordinary transactions preserve this generation.
+    expect(valid()).toBe(true);
+    editors.set('original', { generation: {} });
+    expect(valid()).toBe(false);
+    const next = composer.captureDocumentGuard('original');
+    editors.delete('original');
+    expect(next()).toBe(false);
+    editors.set('original', { generation: {} });
+    expect(next()).toBe(false);
+  });
+  it('replaces the mapped original annotation atom after intervening edits, never an adjacent equal ID', () => {
+    let state = EditorState.create({ doc: richNode('doc').create(null,
+      richNode('paragraph').create(null, [atom('same'), richComposerSchema.text(' gap '), atom('same')])), plugins: [history()] });
+    let bookmark = NodeSelection.create(state.doc, 1).getBookmark();
+    const prefix = state.tr.insertText('prefix ', 1);
+    bookmark = bookmark.map(prefix.mapping);
+    state = state.applyTransaction(prefix).state;
+    const original = state.doc;
+    state = state.applyTransaction(replaceBookmarkedRichAttachment(state, bookmark, 'same', 'edited')!).state;
+    expect(richDocumentToParts(state.doc).filter((part) => part.kind === 'reference').map((part) => part.referenceId))
+      .toEqual(['edited', 'same']);
+    undo(state, (tr) => { state = state.applyTransaction(tr).state; });
+    expect(state.doc.eq(original)).toBe(true);
+    const deletion = state.tr.delete(8, 9);
+    bookmark = bookmark.map(deletion.mapping);
+    state = state.applyTransaction(deletion).state;
+    expect(replaceBookmarkedRichAttachment(state, bookmark, 'same', 'wrong')).toBeNull();
+  });
+
+  it('pastes through a mapped saved table selection without any mounted/visible editor', () => {
+    let saved = tableState();
+    const other = tableState();
+    let bookmark = CellSelection.create(saved.doc, 2).getBookmark();
+    const edit = saved.tr.insertText('prefix ', saved.doc.content.size - 1);
+    bookmark = bookmark.map(edit.mapping);
+    saved = saved.applyTransaction(edit).state;
+    const slice = new Slice(Fragment.from(paragraph('pasted text')), 0, 0);
+    pasteRichSlice(() => saved, (tr) => { saved = saved.applyTransaction(tr).state; }, bookmark.resolve(saved.doc), slice);
+    saved.doc.check();
+    expect(saved.doc.child(0).child(0).child(0).textContent).toBe('pasted text');
+    expect(other.doc.textContent).not.toContain('pasted text');
+  });
+
+  it('uses rich JSON for outbound refs despite stale parts and retains uploads across failed explicit submits', async () => {
+    const current = draft();
+    current.parts = [{ kind: 'reference', referenceId: 'orphan' }];
+    const registry = [attachment('orphan', '/orphan.png'), attachment('image-A', '/A.png'), attachment('image-B', '/B.png')];
+    const upload = vi.fn();
+    const submit = vi.fn().mockRejectedValueOnce(new Error('queue rejected')).mockResolvedValue(undefined);
+    const create = vi.fn((text: string, attachments: AppServerControlTurnRequest['attachments']) => ({ text, attachments }));
+    const args = { sessionId: 'original-session', draft: current, attachments: registry,
+      uploadFile: upload, uploadFailureMessage: 'upload', attachmentReadFailureMessage: 'read',
+      createTurnRequest: create, submitQueuedTurn: submit };
+    const first = await submitAppServerControlComposerDraft(args);
+    await expect(first.queuedTurn).rejects.toThrow('queue rejected');
+    expect(submit).toHaveBeenCalledTimes(1); // No automatic replay after uncertain delivery.
+    const second = await submitAppServerControlComposerDraft(args);
+    await second.queuedTurn;
+    expect(second.request.attachments.map((entry) => entry.path)).toEqual(['/A.png', '/B.png']);
+    expect(upload).not.toHaveBeenCalled();
+    expect(current.parts).toEqual([{ kind: 'reference', referenceId: 'orphan' }]);
+  });
   it('roundtrips editable table structure, atom IDs and cell selection through the existing draft store', () => {
     const values = new Map<string, string>();
     vi.stubGlobal('localStorage', { getItem: (key: string) => values.get(key) ?? null,

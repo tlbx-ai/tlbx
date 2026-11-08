@@ -1,7 +1,8 @@
-import type { Node as ProseMirrorNode } from 'prosemirror-model';
-import { type EditorState, NodeSelection, Selection, Plugin, type Command, type Transaction } from 'prosemirror-state';
+import type { Node as ProseMirrorNode, Slice } from 'prosemirror-model';
+import { type EditorState, NodeSelection, Selection, Plugin, type Command, type Transaction, type SelectionBookmark } from 'prosemirror-state';
+import type { EditorView } from 'prosemirror-view';
 import { closeHistory } from 'prosemirror-history';
-import { addRowAfter, goToNextCell, isInTable } from 'prosemirror-tables';
+import { addRowAfter, goToNextCell, isInTable, handlePaste as pasteTable } from 'prosemirror-tables';
 import { richNode } from './richComposerDocument';
 
 export function restoreRichComposerSelection(doc: ProseMirrorNode, selection?: Record<string, unknown>): Selection {
@@ -26,6 +27,24 @@ export function replaceRichAttachment(
   const tr = closeHistory(state.tr).replaceWith(position, position + node.nodeSize,
     richNode('attachment').create({ referenceId: replacementId }));
   return tr.setSelection(NodeSelection.create(tr.doc, position));
+}
+
+export function replaceBookmarkedRichAttachment(
+  state: EditorState, bookmark: SelectionBookmark, expectedId: string, replacementId: string,
+): Transaction | null {
+  const selection = bookmark.resolve(state.doc);
+  return selection instanceof NodeSelection
+    ? replaceRichAttachment(state, selection.from, expectedId, replacementId) : null;
+}
+
+export function pasteRichSlice(
+  getState: () => EditorState, dispatch: (tr: Transaction) => void, selection: Selection, slice: Slice,
+): void {
+  dispatch(closeHistory(getState().tr).setSelection(selection));
+  // prosemirror-tables' paste handler uses only state/dispatch, including CellSelection.
+  // Reuse it for a saved session without mounting or retargeting a DOM EditorView.
+  const target = { get state() { return getState(); }, dispatch } as EditorView;
+  if (!pasteTable(target, {} as ClipboardEvent, slice)) dispatch(getState().tr.replaceSelection(slice));
 }
 
 export function moveRichTableCell(direction: -1 | 1): Command {

@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
-import { annotationPoint, undoAnnotationStroke, type AnnotationStroke } from './imageAnnotationModel';
+import { annotationHasChanges, annotationPoint, undoAnnotationStroke, type AnnotationStroke } from './imageAnnotationModel';
 import { uploadRichComposerFile } from './richComposerUpload';
 
 describe('image annotation staging contracts', () => {
+  it('requires actual retained pen marks before exporting or uploading', () => {
+    expect(annotationHasChanges([])).toBe(false);
+    const strokes = [{ color: '#000000', width: 1, points: [{ x: 0, y: 0, pressure: 1 }] }];
+    expect(annotationHasChanges(strokes)).toBe(true);
+    expect(annotationHasChanges(undoAnnotationStroke(strokes))).toBe(false);
+  });
   it('maps pointer pen and touch coordinates independently of viewport scaling and clamps edges', () => {
     expect(annotationPoint(250, 175, 0.7, { left: 100, top: 100, width: 300, height: 150 }))
       .toEqual({ x: 0.5, y: 0.5, pressure: 0.7 });

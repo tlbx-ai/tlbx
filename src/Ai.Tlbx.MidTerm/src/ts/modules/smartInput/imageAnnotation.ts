@@ -1,11 +1,12 @@
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
-import { annotationPoint, drawAnnotationStroke, undoAnnotationStroke, type AnnotationStroke } from './imageAnnotationModel';
+import { annotationHasChanges, annotationPoint, drawAnnotationStroke, undoAnnotationStroke, type AnnotationStroke } from './imageAnnotationModel';
 
 export interface ImageAnnotationOptions {
   src: string;
   name: string;
   signal?: AbortSignal;
+  closed?: () => void;
   save: (file: File, signal: AbortSignal) => Promise<void>;
 }
 
@@ -47,11 +48,13 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
   let pointerId: number | null = null;
   let loaded = false;
   let saving = false;
+  let revision = 0;
+  let exported: { revision: number; file: File } | null = null;
   let releaseBack = (): void => { /* Registered after the modal is mounted. */ };
   const close = (): void => {
     if (isClosed()) return;
     options.signal?.removeEventListener('abort', close);
-    controller.abort(); releaseBack(); overlay.remove(); previousFocus?.focus({ preventScroll: true });
+    controller.abort(); options.closed?.(); releaseBack(); overlay.remove(); previousFocus?.focus({ preventScroll: true });
   };
   const redraw = (): void => {
     const context = canvas.getContext('2d');
@@ -61,12 +64,13 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
     for (const stroke of strokes) drawAnnotationStroke(context, stroke);
     if (current) drawAnnotationStroke(context, current);
     undo.disabled = saving || strokes.length === 0;
+    save.disabled = saving || !annotationHasChanges(strokes);
   };
   const color = document.createElement('input'); color.type = 'color'; color.value = '#ff453a';
   color.setAttribute('aria-label', t('smartInput.richPenColor'));
   const width = document.createElement('input'); width.type = 'range'; width.min = '1'; width.max = '16'; width.value = '3';
   width.setAttribute('aria-label', t('smartInput.richPenWidth'));
-  const undo = button(t('smartInput.richUndo'), () => { strokes = undoAnnotationStroke(strokes); redraw(); });
+  const undo = button(t('smartInput.richUndo'), () => { strokes = undoAnnotationStroke(strokes); revision++; redraw(); });
   undo.disabled = true;
   const save = button(t('smartInput.richSave'), () => { void exportImage(); }); save.disabled = true;
   const cancel = button(t('dialog.cancel'), close);
@@ -82,7 +86,7 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
     if (isClosed()) return;
     if (image.naturalWidth * image.naturalHeight > 32_000_000) { status.textContent = t('smartInput.imageTooLarge'); return; }
     canvas.width = image.naturalWidth; canvas.height = image.naturalHeight;
-    loaded = true; save.disabled = false; redraw();
+    loaded = true; redraw();
   };
   image.onerror = () => { status.textContent = t('smartInput.richImageFailed'); };
   image.src = options.src;
@@ -110,6 +114,7 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
     if (current && keep) {
       current.points.push(annotationPoint(event.clientX, event.clientY, event.pressure, canvas.getBoundingClientRect()));
       strokes.push(current);
+      revision++;
     }
     current = null; pointerId = null;
     if (canvas.hasPointerCapture(event.pointerId)) canvas.releasePointerCapture(event.pointerId);
@@ -117,16 +122,21 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
   }
   async function exportImage(): Promise<void> {
     if (!loaded || saving || current || isClosed()) return;
+    if (!annotationHasChanges(strokes)) return;
     saving = true; save.disabled = true; undo.disabled = true; color.disabled = true; width.disabled = true; status.textContent = t('smartInput.richSaving');
     try {
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob((value) => {
-          if (value) resolve(value);
-          else reject(new Error(t('smartInput.richImageFailed')));
-        }, 'image/png');
-      });
-      const file = new File([blob], `annotated-${crypto.randomUUID()}.png`, { type: 'image/png' });
-      await options.save(file, controller.signal);
+      if (exported?.revision !== revision) {
+        const blob = await new Promise<Blob>((resolve, reject) => {
+          canvas.toBlob((value) => {
+            if (value) resolve(value);
+            else reject(new Error(t('smartInput.richImageFailed')));
+          }, 'image/png');
+        });
+        controller.signal.throwIfAborted();
+        exported = { revision, file: new File([blob], `annotated-${crypto.randomUUID()}.png`, { type: 'image/png' }) };
+      }
+      controller.signal.throwIfAborted();
+      await options.save(exported.file, controller.signal);
       if (!isClosed()) close();
     } catch (error) {
       if (!isClosed()) status.textContent = error instanceof Error ? error.message : t('smartInput.richImageFailed');

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { captureRichClipboard, plainRichClipboardParts } from './richComposerClipboard';
+import { captureRichClipboard, materializeRichClipboardImages, plainRichClipboardParts, richClipboardReferenceIds } from './richComposerClipboard';
 import { draftFromRichDocument, getRichComposerDocument } from './richComposerDocument';
 
 function transfer(files: File[], items: Array<{ kind: string; getAsFile: () => File | null }>) {
@@ -8,6 +8,30 @@ function transfer(files: File[], items: Array<{ kind: string; getAsFile: () => F
 }
 
 describe('trusted rich clipboard capture', () => {
+  it('keeps missing image positions without fetching URLs or discarding the surrounding HTML', () => {
+    const fetch = vi.fn(() => { throw new Error('no network'); });
+    const html = '<p>before</p><table><tr><td>text<img src="https://foreign.test/image.png"></td></tr></table><p>after</p>';
+    vi.stubGlobal('fetch', fetch);
+    // Parsing remains a DOM boundary; this contract checks that image discovery
+    // consumes only event files and never reads src or starts a network request.
+    vi.stubGlobal('document', { createElement: () => ({ innerHTML: '', content: {
+      querySelectorAll: () => [{ getAttribute: () => { throw new Error('URL bytes forbidden'); } }],
+    } }) });
+    try {
+      const data = materializeRichClipboardImages({ html, text: 'before text after', files: [] });
+      expect(data.html).toBe(html);
+      expect(data.text).toBe('before text after');
+      expect(richClipboardReferenceIds(data, () => 'never')).toEqual(['']);
+      expect(fetch).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('reserves unavailable image slots before additional transferred non-image files', () => {
+    const image = new File(['png'], 'image.png', { type: 'image/png' });
+    const file = new File(['txt'], 'text.txt', { type: 'text/plain' });
+    expect(richClipboardReferenceIds({ html: '', text: '', files: [image, file], imageCount: 3 },
+      (entry) => entry === image ? 'image-id' : 'file-id')).toEqual(['', '', '', 'image-id', 'file-id']);
+  });
   it('captures event data once without reading the duplicate item or asynchronous OS clipboard', () => {
     const file = new File(['original'], 'same.png', { type: 'image/png', lastModified: 42 });
     const duplicate = vi.fn(() => file);
