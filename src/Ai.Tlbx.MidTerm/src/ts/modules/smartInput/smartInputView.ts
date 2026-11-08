@@ -632,9 +632,18 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
       optionButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        // An explicit choice also retries an unconfirmed or rejected value.
-        select.value = option.value;
-        select.dispatchEvent(new Event('change', { bubbles: false }));
+        const configureState = select.closest<HTMLElement>('.smart-input-appServerControl-field')
+          ?.dataset.configureState;
+        // Native Codex sends no updated notification for unchanged settings.
+        // Retry the same value only after an explicit failed/unknown outcome.
+        if (
+          select.value !== option.value ||
+          configureState === 'unconfirmed' ||
+          configureState === 'targetUnavailable'
+        ) {
+          select.value = option.value;
+          select.dispatchEvent(new Event('change', { bubbles: false }));
+        }
         syncSelection();
         closeMenu();
       });

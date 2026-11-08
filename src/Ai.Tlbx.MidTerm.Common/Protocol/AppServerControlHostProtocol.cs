@@ -144,6 +144,7 @@ public sealed class AppServerControlCommand
 
 public sealed class AppServerControlThreadSummary
 {
+    public AppServerControlGoalState? Goal { get; set; }
     public string ThreadId { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
@@ -472,7 +473,15 @@ public sealed class AppServerControlTurnRequest
 
 public sealed class AppServerControlGoalSetRequest
 {
-    public string Objective { get; set; } = string.Empty;
+    public string Operation { get; set; } = "set";
+    public string ExpectedThreadId { get; set; } = string.Empty;
+    public string? ExpectedTurnId { get; set; }
+    public string? Objective { get; set; }
+    public string? Status { get; set; }
+    // Missing budget preserves it; an explicit JSON null clears it.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement TokenBudget { get; set; }
+    public bool InterruptActiveTurn { get; set; }
 }
 
 public sealed class AppServerControlAttachmentReference
@@ -564,6 +573,7 @@ public sealed class AppServerControlCommandAcceptedResponse
     public string? RequestId { get; set; }
     public string? TurnId { get; set; }
     public AppServerControlConfigureResponse? Configuration { get; set; }
+    public AppServerControlGoalResponse? Goal { get; set; }
 }
 
 public sealed class AppServerControlHistoryWindowRequest
@@ -769,6 +779,9 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(AppServerControlConfigureRequest))]
 [JsonSerializable(typeof(AppServerControlConfigureResponse))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
+[JsonSerializable(typeof(AppServerControlGoalState))]
+[JsonSerializable(typeof(AppServerControlGoalSummary))]
+[JsonSerializable(typeof(AppServerControlGoalResponse))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]
 [JsonSerializable(typeof(AppServerControlTurnStartResponse))]
 [JsonSerializable(typeof(AppServerControlInterruptRequest))]

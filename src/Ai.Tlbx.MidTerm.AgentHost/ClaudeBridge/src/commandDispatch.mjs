@@ -2,13 +2,15 @@
 export function createSettingsCommandDispatcher(handle) {
   let settings = Promise.resolve();
   const pendingTurns = new Map();
-  return (command) => {
-    if (command.type === "turn.interrupt" && command.turnId) {
-      for (const token of pendingTurns.get(command.turnId) ?? []) token.cancelled = true;
-      pendingTurns.delete(command.turnId);
-    }
+  const cancelTurn = (turnId) => {
+    if (!turnId) return;
+    for (const token of pendingTurns.get(turnId) ?? []) { token.cancelled = true; token.abort.abort(); }
+    pendingTurns.delete(turnId);
+  };
+  const dispatch = (command) => {
+    if (command.type === "turn.interrupt") cancelTurn(command.turnId);
     const isTurnInput = command.type === "turn.start" || command.type === "turn.steer";
-    const token = isTurnInput ? { cancelled: false } : null;
+    const token = isTurnInput ? { cancelled: false, abort: new AbortController() } : null;
     if (token) {
       if (!pendingTurns.has(command.turnId)) pendingTurns.set(command.turnId, new Set());
       pendingTurns.get(command.turnId).add(token);
@@ -16,7 +18,7 @@ export function createSettingsCommandDispatcher(handle) {
     const run = async () => {
       try {
         if (token?.cancelled) return;
-        return await handle(command, () => token?.cancelled === true);
+        return await handle(command, () => token?.cancelled === true, token?.abort.signal);
       } catch (error) {
         // A stopped input may reject its outstanding SDK control afterwards.
         // Do not turn that old cancellation into a failure of a newer turn.
@@ -35,4 +37,6 @@ export function createSettingsCommandDispatcher(handle) {
     settings = pending.catch(() => {});
     return pending;
   };
+  dispatch.cancelTurn = cancelTurn;
+  return dispatch;
 }

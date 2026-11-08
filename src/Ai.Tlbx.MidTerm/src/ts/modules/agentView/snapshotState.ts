@@ -442,9 +442,7 @@ function cloneSnapshotSessionSummary(
 function cloneSnapshotThreadSummary(
   thread: AppServerControlHistorySnapshot['thread'],
 ): AppServerControlHistorySnapshot['thread'] {
-  return {
-    ...thread,
-  };
+  return structuredClone(thread);
 }
 
 function cloneSnapshotTurnSummary(
