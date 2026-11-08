@@ -650,7 +650,7 @@ Status in this branch/work item:
 - implemented: when an ACP agent advertises `promptCapabilities.image`, GIF/JPEG/PNG/WebP and other declared image MIME attachments are sent as bounded ACP `image` content blocks; agents without that capability retain the explicit local-path text fallback
 - implemented: the new-session launcher queries locally installed Agent Controller runtimes and offers detected Codex app-server, Claude Agent SDK, and registered ACP agents; the selected provider profile is preserved by bookmarks and relaunch
 - implemented: Agent Controller Session retains canonical user-facing history rather than a hidden durable raw-event archive
-- implemented: tlbx-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
+- implemented: explicitly configured Agent Controller Session stores write canonical reduced state instead of provider-shaped event logs; the production agent host keeps canonical history and its bounded transient event backlog in memory without creating a disk store
 - implemented: mouseup inside the Agent Controller Session surface no longer routes through terminal focus reclaim, so drag text selection in Agent Controller Session remains intact after the mouse button is released
 - implemented: long non-diff machine-oriented Agent Controller Session bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
 - implemented: explicit diff review suppresses non-essential unified-diff preamble noise and caps visible rendering at 200 lines plus an ellipsis marker; review bodies are now closed by default
