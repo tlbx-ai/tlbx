@@ -212,7 +212,12 @@ internal static class TlbxMcpIsolatedProcessTool
             while ((count = await source.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
             {
                 if (!canWrite) continue;
-                try { await destination.WriteAsync(buffer.AsMemory(0, count)).ConfigureAwait(false); }
+                try
+                {
+                    await destination.WriteAsync(buffer.AsMemory(0, count)).ConfigureAwait(false);
+                    // Small progress chunks must be observable while the child is still running.
+                    await destination.FlushAsync().ConfigureAwait(false);
+                }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failure(ex); canWrite = false; }
             }
             if (canWrite) await destination.FlushAsync().ConfigureAwait(false);
