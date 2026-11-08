@@ -1099,12 +1099,7 @@ function normalizeResumeFolder(path: string): string {
 }
 
 function buildAppServerControlHistoryDedupeKey(profile: string, workingDirectory: string): string {
-  const normalizedPath = workingDirectory
-    .replace(/\\/g, '/')
-    .trim()
-    .replace(/\/+$/, '')
-    .toLowerCase();
-  return `appServerControl|${profile}|${normalizedPath}`;
+  return `appServerControl|${profile}|${normalizeResumeFolder(workingDirectory)}`;
 }
 
 // =============================================================================

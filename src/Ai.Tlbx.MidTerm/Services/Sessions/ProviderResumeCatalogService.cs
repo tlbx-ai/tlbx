@@ -374,7 +374,8 @@ public sealed partial class ProviderResumeCatalogService
         }
 
         var parts = new List<string>();
-        foreach (var item in content.EnumerateArray())
+        using var items = content.EnumerateArray();
+        foreach (var item in items)
         {
             if (item.ValueKind == JsonValueKind.Object &&
                 TryGetString(item, "type") == textType &&
@@ -394,7 +395,7 @@ public sealed partial class ProviderResumeCatalogService
 
     [GeneratedRegex(
         @"^\s*(?:<(?:environment_context|user_instructions|command-name|command-message|command-args|local-command-stdout|local-command-stderr|system-reminder|user-prompt-submit-hook)\b|# AGENTS\.md instructions|Caveat: The messages below were generated)",
-        RegexOptions.CultureInvariant)]
+        RegexOptions.CultureInvariant, 1000)]
     private static partial Regex SyntheticPromptPattern();
 
     private static DateTime Later(DateTime current, JsonElement element)

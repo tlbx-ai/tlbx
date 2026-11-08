@@ -69,16 +69,16 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
             return _profile;
         });
 
-        var codex = Assert.Single(catalog.GetCandidates("Codex", _workspace, includeAllDirectories: false));
+        var codex = Assert.Single(catalog.GetCandidates("Codex", _workspace, includeAllDirectories: false, ct: TestContext.Current.CancellationToken));
         Assert.Equal("codex", requestedProvider);
         Assert.Equal(codexId, codex.SessionId);
         Assert.Equal("Fix the resume picker", codex.Title);
 
-        var claude = Assert.Single(catalog.GetCandidates("claude", _workspace, includeAllDirectories: false));
+        var claude = Assert.Single(catalog.GetCandidates("claude", _workspace, includeAllDirectories: false, ct: TestContext.Current.CancellationToken));
         Assert.Equal(claudeId, claude.SessionId);
         Assert.Equal("Explain the scroll anchor", claude.Title);
 
-        Assert.Empty(new ProviderResumeCatalogService(_ => null).GetCandidates("codex", _workspace, includeAllDirectories: true));
+        Assert.Empty(new ProviderResumeCatalogService(_ => null).GetCandidates("codex", _workspace, includeAllDirectories: true, ct: TestContext.Current.CancellationToken));
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         WriteClaudeLines(Guid.NewGuid().ToString(), ["only", "garbage {", "}"]);
         var catalog = new ProviderResumeCatalogService(_ => _profile);
 
-        var entry = Assert.Single(catalog.GetCandidates("claude", null, includeAllDirectories: true));
+        var entry = Assert.Single(catalog.GetCandidates("claude", null, includeAllDirectories: true, ct: TestContext.Current.CancellationToken));
         Assert.Equal(id, entry.SessionId);
         Assert.Equal("Survives broken neighbours", entry.Title);
     }
@@ -123,7 +123,7 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         Assert.True(window.AllLines.Sum(static line => Encoding.UTF8.GetByteCount(line) + 1)
                     <= ProviderResumeCatalogService.HeadBytes + ProviderResumeCatalogService.TailBytes);
 
-        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile).GetCandidates("codex", _workspace, false));
+        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile).GetCandidates("codex", _workspace, false, ct: TestContext.Current.CancellationToken));
         Assert.Equal(id, entry.SessionId);
         Assert.Equal("First real prompt", entry.Title);
         Assert.Equal("Latest prompt from the tail", entry.PreviewText);
@@ -137,16 +137,16 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         var oldestMatch = WriteCodex(Guid.NewGuid().ToString(), _workspace, "Too old to be scanned", age: TimeSpan.FromDays(30));
         for (var index = 0; index < ProviderResumeCatalogService.MaxScannedFiles; index++)
         {
-            WriteCodex(Guid.NewGuid().ToString(), unrelated, $"Other folder {index}", age: TimeSpan.FromMinutes(10 + index));
+            WriteCodex(Guid.NewGuid().ToString(), unrelated, FormattableString.Invariant($"Other folder {index}"), age: TimeSpan.FromMinutes(10 + index));
         }
 
         var catalog = new ProviderResumeCatalogService(_ => _profile);
-        Assert.Empty(catalog.GetCandidates("codex", _workspace, includeAllDirectories: false));
+        Assert.Empty(catalog.GetCandidates("codex", _workspace, includeAllDirectories: false, ct: TestContext.Current.CancellationToken));
         Assert.True(File.Exists(oldestMatch));
 
-        var all = catalog.GetCandidates("codex", null, includeAllDirectories: true);
+        var all = catalog.GetCandidates("codex", null, includeAllDirectories: true, ct: TestContext.Current.CancellationToken);
         Assert.Equal(ProviderResumeCatalogService.MaxCandidates, all.Count);
-        Assert.Equal(all.OrderByDescending(static entry => entry.UpdatedAtUtc).Select(static entry => entry.SessionId), all.Select(static entry => entry.SessionId));
+        Assert.Equal(all.OrderByDescending(static entry => entry.UpdatedAtUtc).Select(static entry => entry.SessionId), all.Select(static entry => entry.SessionId), StringComparer.Ordinal);
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         var id = Guid.NewGuid().ToString();
         WriteCodex(id, _workspace, "Finished a moment ago", age: TimeSpan.Zero);
 
-        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile).GetCandidates("codex", _workspace, false));
+        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile).GetCandidates("codex", _workspace, false, ct: TestContext.Current.CancellationToken));
         Assert.Equal(id, entry.SessionId);
     }
 
@@ -171,7 +171,7 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         WriteCodex(Guid.NewGuid().ToString(), _workspace, "From the profile default");
 
         var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile, () => codexHome)
-            .GetCandidates("codex", _workspace, false));
+            .GetCandidates("codex", _workspace, false, ct: TestContext.Current.CancellationToken));
         Assert.Equal(id, entry.SessionId);
     }
 
@@ -203,7 +203,7 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
     private string WriteCodexLines(string id, IEnumerable<string> lines, TimeSpan? age = null)
     {
         var directory = Path.Combine(_profile, ".codex", "sessions", "2026", "11", "01");
-        return WriteTranscript(Path.Combine(directory, $"rollout-{_fileCounter++:D4}-{id}.jsonl"), lines, age);
+        return WriteTranscript(Path.Combine(directory, FormattableString.Invariant($"rollout-{_fileCounter++:D4}-{id}.jsonl")), lines, age);
     }
 
     private void WriteClaude(string id, string cwd, string prompt)

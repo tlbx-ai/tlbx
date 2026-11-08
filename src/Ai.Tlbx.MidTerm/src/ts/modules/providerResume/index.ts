@@ -109,7 +109,9 @@ function openProviderResumePickerInternal(
     let activeIndex = 0;
     let activeScope: ProviderResumeScope = hasFolder ? (options.initialScope ?? 'current') : 'all';
     let requestToken = 0;
-    const releaseBackButtonLayer = registerBackButtonLayer(() => close(null));
+    const releaseBackButtonLayer = registerBackButtonLayer(() => {
+      close(null);
+    });
 
     function close(result: ProviderResumeCatalogEntryDto | null): void {
       requestToken += 1;
@@ -131,7 +133,7 @@ function openProviderResumePickerInternal(
     }
 
     function renderStatus(): void {
-      let text = '';
+      let text: string;
       if (loading) {
         text = t('providerResume.loading');
       } else if (errorMessage) {

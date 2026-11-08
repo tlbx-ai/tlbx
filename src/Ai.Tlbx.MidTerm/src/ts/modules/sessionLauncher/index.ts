@@ -289,13 +289,7 @@ async function ensureCommittedLauncherPath(
 ): Promise<string | null> {
   context.clearPendingPathFollow();
   return commitLauncherPathForAction(
-    {
-      getPathDraft: () => context.getPathDraft(),
-      getCurrentPath: () => context.getCurrentPath(),
-      getTargetId: () => context.getTarget().id,
-      loadDirectory: (path) => context.loadDirectory(path),
-      setError: (message) => context.setError(message),
-    },
+    { ...context, getTargetId: () => context.getTarget().id },
     'Path is required',
   );
 }
@@ -930,6 +924,12 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           rootsResponse.entries,
           options?.path,
         );
+        if (!initialPath) {
+          state.loading = false;
+          state.loadingMessage = null;
+          render();
+          return;
+        }
         await loadDirectory(initialPath, {
           recordHistory: false,
           target,

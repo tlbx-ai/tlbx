@@ -32,16 +32,14 @@ export function applyLauncherBrowserDefaults<TEntry>(
   state.homePath = homePath;
   state.startPath = startPath;
   state.roots = roots;
-  const userPath = state.pathDirty ? state.pathDraft.trim() : '';
-  if (!userPath) {
-    state.currentPath = startPath;
-    state.pathDraft = startPath;
-    state.pathHistory = [];
-    state.parentPath = null;
-    state.entries = [];
-  }
+  if (state.pathDirty) return state.pathDraft.trim();
+  state.currentPath = startPath;
+  state.pathDraft = startPath;
+  state.pathHistory = [];
+  state.parentPath = null;
+  state.entries = [];
 
-  return userPath || requestedPath?.trim() || startPath;
+  return requestedPath?.trim() || startPath;
 }
 
 export interface LauncherPathCommitContext {

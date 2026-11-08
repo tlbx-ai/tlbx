@@ -36,6 +36,12 @@ describe('launcher init defaults', () => {
     expect(state.roots).toEqual(['C:\\']);
   });
 
+  it('preserves a cleared path when late home defaults arrive', () => {
+    const state = createState({ currentPath: 'Q:\\repos\\Old', pathDraft: '   ', pathDirty: true });
+    expect(applyLauncherBrowserDefaults(state, defaults, [], 'Q:\\repos\\Preset')).toBe('');
+    expect(state.pathDraft).toBe('   ');
+    expect(state.currentPath).toBe('Q:\\repos\\Old');
+  });
   it('prefers the typed path over an opening preset path', () => {
     const state = createState({ pathDraft: 'Q:\\repos\\Jpa', pathDirty: true });
 
