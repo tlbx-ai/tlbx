@@ -955,6 +955,29 @@ public sealed partial class WebPreviewProxyMiddleware
             if(nv&&nv.set)nv.set.call(el,value);
             else el.value=value;
           }
+          function assertEditableHost(el){
+            assertControlEnabled(el);
+            if(!el.isContentEditable||el.parentElement&&el.parentElement.isContentEditable)throw new Error("fill requires a contenteditable editing host");
+            if(el.closest('[aria-readonly="true"],[readonly],[disabled]'))throw new Error("fill target is read-only or disabled");
+            if(el.querySelector('[contenteditable="false"]'))throw new Error("fill cannot replace non-editable editor content");
+          }
+          function fillEditableHost(el,value){
+            assertEditableHost(el);
+            var command=value===""?"delete":"insertText";
+            if(typeof document.execCommand!=="function"||typeof document.queryCommandSupported!=="function"||!document.queryCommandSupported(command))throw new Error("native text editing is unavailable; rich-editor fill was not attempted");
+            controlIntent(el);
+            el.focus({preventScroll:true});
+            assertEditableHost(el);
+            if(document.activeElement!==el)throw new Error("fill target could not receive focus");
+            var selection=window.getSelection(),range=document.createRange();
+            if(!selection)throw new Error("editor selection is unavailable");
+            range.selectNodeContents(el);
+            selection.removeAllRanges();selection.addRange(range);
+            // Use the browser editing operation: literal text, native input/selection and undo.
+            // Do not write textContent/innerHTML or synthesize a second input event: model-backed
+            // editors observe this edit and reconcile it through their normal input pipeline.
+            if(!document.execCommand(command,false,value))throw new Error("native editor replacement was rejected");
+          }
           function handleBCmd(msg){
             var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null};
             try{
@@ -1068,7 +1091,8 @@ public sealed partial class WebPreviewProxyMiddleware
                 case"fill":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   var el=resolveControl(msg.selector),value=msg.value||"";
-                  if(!el.matches("input,textarea,select"))throw new Error("fill requires an input, textarea or select");
+                  if(el.isContentEditable){fillEditableHost(el,value);res.result="filled";break;}
+                  if(!el.matches("input,textarea,select"))throw new Error("fill requires an input, textarea, select or contenteditable editing host");
                   if(el.readOnly)throw new Error("fill target is read-only");
                   if(el.tagName==="INPUT"&&/^(file|checkbox|radio|button|submit|reset|image|hidden)$/i.test(el.type))throw new Error("fill does not support input type "+el.type+"; use the appropriate interaction");
                   if(el.tagName==="SELECT"&&!Array.from(el.options).some(function(option){return option.value===value&&!option.disabled&&!(option.parentElement.tagName==="OPTGROUP"&&option.parentElement.disabled);}))throw new Error("select has no enabled option with the requested value");
