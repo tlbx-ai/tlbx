@@ -18,3 +18,5 @@ npm run build
 ```
 
 The SDK and bridge dependencies are pinned to the versions verified by tlbx's provider integration tests. Optional platform CLI packages are omitted because tlbx always supplies the locally installed Claude Code executable.
+
+Runtime settings use `runtime.configure` with a request ID and exact observed thread/turn guard. `bridge.configured` is sent only after SDK control promises settle, carries per-field `confirmed`/`errors`, and exposes no invented effective readback. Model/effort use `setModel` / `applyFlagSettings({ effortLevel })`; plan and permissions share `setPermissionMode`, preserving the non-plan restore mode. No prompt, interrupt, resubmit or permission resolution is sent. `src/runtimeSettings.test.mjs` exercises these SDK contracts with a deterministic control double. Rebuild the embedded `dist` bridge before runtime acceptance; changing source alone does not update the embedded runtime.

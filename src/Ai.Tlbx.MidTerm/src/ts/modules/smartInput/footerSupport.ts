@@ -5,6 +5,9 @@ import type {
 } from '../../api/types';
 import { t } from '../i18n';
 import {
+  getAppServerControlRuntimeSettingStatus,
+  type AppServerControlRuntimeSettingStatus,
+  type AppServerControlRuntimeSettingField,
   getAppServerControlQuickSettingsDraft,
   getAppServerControlQuickSettingsEffective,
   getAppServerControlQuickSettingsProvider,
@@ -138,7 +141,7 @@ export function syncAppServerControlQuickSettingsControls(args: {
   const draft = getAppServerControlQuickSettingsDraft(sessionId);
   const effective = getAppServerControlQuickSettingsEffective(sessionId);
   const resolvedProviderModel = getAppServerControlResolvedProviderModel(provider);
-  const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);
+  const nativeConfigLocked = hasInterruptibleAppServerControlTurnWork(sessionId);
   if (dockedBar) {
     dockedBar.dataset.appServerControlSession = 'true';
   }
@@ -147,7 +150,7 @@ export function syncAppServerControlQuickSettingsControls(args: {
     appServerControlQuickSettingsRow,
     sessionId,
     draft.configOptions,
-    quickSettingsLocked,
+    nativeConfigLocked,
   );
 
   setAppServerControlQuickSettingsDropdownOptions(
@@ -174,22 +177,22 @@ export function syncAppServerControlQuickSettingsControls(args: {
   syncAppServerControlQuickSettingSelect(appServerControlEffortSelect, draft.effort ?? '');
   syncAppServerControlQuickSettingSelect(appServerControlPlanSelect, draft.planMode);
   syncAppServerControlQuickSettingSelect(appServerControlPermissionSelect, draft.permissionMode);
-  setAppServerControlQuickSettingsDropdownDisabled(
-    appServerControlModelSelect,
-    quickSettingsLocked,
-  );
-  syncEffortControlAvailability(appServerControlEffortSelect, quickSettingsLocked);
-  setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, quickSettingsLocked);
-  setAppServerControlQuickSettingsDropdownDisabled(
-    appServerControlPermissionSelect,
-    quickSettingsLocked,
-  );
+  setAppServerControlQuickSettingsDropdownDisabled(appServerControlModelSelect, false);
+  syncEffortControlAvailability(appServerControlEffortSelect, false);
+  setAppServerControlQuickSettingsDropdownDisabled(appServerControlPlanSelect, false);
+  setAppServerControlQuickSettingsDropdownDisabled(appServerControlPermissionSelect, false);
   syncAppServerControlFastModeToggle({
     toggle: appServerControlFastToggle,
     available: provider === 'codex',
-    locked: quickSettingsLocked,
+    locked: false,
     enabled: draft.fastMode === 'on',
   });
+
+  syncRuntimeSettingControlStatus(appServerControlModelSelect, sessionId, 'model');
+  syncRuntimeSettingControlStatus(appServerControlEffortSelect, sessionId, 'effort');
+  syncRuntimeSettingControlStatus(appServerControlPlanSelect, sessionId, 'planMode');
+  syncRuntimeSettingControlStatus(appServerControlPermissionSelect, sessionId, 'permissionMode');
+  syncRuntimeSettingControlStatus(appServerControlFastToggle, sessionId, 'fastMode');
 
   if (appServerControlSettingsSummaryBtn) {
     appServerControlSettingsSummaryBtn.textContent = formatAppServerControlQuickSettingsSummary({
@@ -198,6 +201,67 @@ export function syncAppServerControlQuickSettingsControls(args: {
     });
     appServerControlSettingsSummaryBtn.dataset.planMode = draft.planMode;
   }
+}
+
+export function formatRuntimeSettingStatus(
+  status: AppServerControlRuntimeSettingStatus | undefined,
+): string {
+  if (!status) return '';
+  const key =
+    status.state === 'pending'
+      ? 'settingPending'
+      : status.state === 'targetUnavailable'
+        ? 'settingTargetUnavailable'
+        : status.state === 'unconfirmed'
+          ? 'settingUnconfirmed'
+          : status.state === 'partial'
+            ? 'settingPartial'
+            : status.state === 'acknowledged'
+              ? 'settingAcknowledged'
+              : 'settingApplied';
+  if (
+    status.state === 'pending' ||
+    status.state === 'unconfirmed' ||
+    status.state === 'targetUnavailable'
+  )
+    return [t(`smartInput.${key}`), status.detail].filter(Boolean).join(' — ');
+  const scopeKey =
+    status.scope === 'subsequentResponses'
+      ? 'settingScopeResponses'
+      : status.scope === 'subsequentCaptures'
+        ? 'settingScopeCaptures'
+        : 'settingScopeTurns';
+  return [t(`smartInput.${key}`), t(`smartInput.${scopeKey}`), status.detail]
+    .filter(Boolean)
+    .join(' — ');
+}
+
+function syncRuntimeSettingControlStatus(
+  control: HTMLElement | null,
+  sessionId: string,
+  field: AppServerControlRuntimeSettingField,
+): void {
+  const container = control?.closest<HTMLElement>('.smart-input-appServerControl-field');
+  if (!container) return;
+  const status = getAppServerControlRuntimeSettingStatus(sessionId, field);
+  const description = [
+    formatRuntimeSettingStatus(status),
+    field === 'permissionMode' &&
+    getAppServerControlQuickSettingsDraft(sessionId).planMode === 'on' &&
+    getAppServerControlQuickSettingsProvider(sessionId) === 'claude'
+      ? t('smartInput.settingPermissionAfterPlan')
+      : '',
+  ]
+    .filter(Boolean)
+    .join(' — ');
+  container.title = description;
+  container.dataset.configureState = status?.state ?? '';
+  container.setAttribute('aria-busy', status?.state === 'pending' ? 'true' : 'false');
+  const trigger =
+    container.querySelector<HTMLElement>('.smart-input-appServerControl-dropdown-trigger') ??
+    control;
+  if (description) trigger?.setAttribute('aria-description', description);
+  else trigger?.removeAttribute('aria-description');
 }
 
 function syncEffortControlAvailability(select: HTMLSelectElement, locked: boolean): void {
