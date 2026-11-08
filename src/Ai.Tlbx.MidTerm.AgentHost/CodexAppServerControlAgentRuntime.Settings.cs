@@ -78,7 +78,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime
             var actual = await confirmation.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
             response.ThreadStatus = "applied";
             _hasConfiguredThreadDefaults = true;
-            foreach (var property in actual.EnumerateObject())
+            using var actualProperties = actual.EnumerateObject();
+            foreach (var property in actualProperties)
                 response.EffectiveSettings[property.Name] = property.Value.Clone();
         }
         catch (Exception error) when (error is InvalidOperationException or TimeoutException ||
@@ -162,11 +163,13 @@ internal sealed partial class CodexAppServerControlAgentRuntime
         return BuildJsonString(writer =>
         {
             writer.WriteStartObject();
-            foreach (var property in document.RootElement.EnumerateObject())
+            using var properties = document.RootElement.EnumerateObject();
+            foreach (var property in properties)
             {
                 if (property.Name != "params") { property.WriteTo(writer); continue; }
                 writer.WriteStartObject("params");
-                foreach (var parameter in property.Value.EnumerateObject())
+                using var parameters = property.Value.EnumerateObject();
+                foreach (var parameter in parameters)
                 {
                     // Native defaults can be richer than the quick-settings aliases. Do not flatten them.
                     if ((parameter.Name is "approvalPolicy" or "sandboxPolicy") && request.PermissionMode is null) continue;

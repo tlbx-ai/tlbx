@@ -65,9 +65,11 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 response.Status = response.ThreadStatus = response.TurnStatus = "targetUnavailable";
                 return ConfigurationOutcome(command, response);
             }
-            foreach (var property in receipt.GetProperty("confirmed").EnumerateObject())
+            using var confirmedProperties = receipt.GetProperty("confirmed").EnumerateObject();
+            foreach (var property in confirmedProperties)
                 response.ConfirmedSettings[property.Name] = property.Value.Clone();
-            foreach (var property in receipt.GetProperty("errors").EnumerateObject())
+            using var errorProperties = receipt.GetProperty("errors").EnumerateObject();
+            foreach (var property in errorProperties)
             {
                 response.UnconfirmedFields.Add(property.Name);
                 response.FieldErrors[property.Name] = property.Value.GetString() ?? "Provider rejected setting.";

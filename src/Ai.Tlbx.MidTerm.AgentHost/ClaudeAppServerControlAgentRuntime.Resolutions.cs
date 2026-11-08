@@ -85,11 +85,20 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         if (!receipt.TryGetProperty("answers", out var answers) || answers.ValueKind != JsonValueKind.Object)
             throw new InvalidOperationException("Claude did not return the actual answers.");
         var result = new List<AppServerControlAnsweredQuestion>();
-        foreach (var answer in answers.EnumerateObject())
+        using var questions = answers.EnumerateObject();
+        foreach (var answer in questions)
         {
-            if (answer.Value.ValueKind != JsonValueKind.Array || answer.Value.EnumerateArray().Any(v => v.ValueKind != JsonValueKind.String))
+            if (answer.Value.ValueKind != JsonValueKind.Array)
                 throw new InvalidOperationException("Claude returned invalid answers.");
-            result.Add(new() { QuestionId = answer.Name, Answers = answer.Value.EnumerateArray().Select(v => v.GetString()!).ToList() });
+            var selected = new List<string>();
+            using var values = answer.Value.EnumerateArray();
+            foreach (var value in values)
+            {
+                if (value.ValueKind != JsonValueKind.String)
+                    throw new InvalidOperationException("Claude returned invalid answers.");
+                selected.Add(value.GetString()!);
+            }
+            result.Add(new() { QuestionId = answer.Name, Answers = selected });
         }
         return result;
     }
