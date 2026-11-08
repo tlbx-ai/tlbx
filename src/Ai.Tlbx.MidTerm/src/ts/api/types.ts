@@ -166,6 +166,7 @@ export interface AppServerControlQuickSettingsPayload {
 }
 
 export interface AppServerControlQuickSettingsSummary {
+  acknowledgedFields?: string[];
   model?: string | null;
   effort?: string | null;
   planMode: string;

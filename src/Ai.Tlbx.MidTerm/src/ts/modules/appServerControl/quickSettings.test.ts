@@ -505,4 +505,50 @@ describe('runtime quick-settings acknowledgements', () => {
     });
     expect(getAppServerControlQuickSettingsDraft(id).model).toBeNull();
   });
+  it('restores Claude acknowledged defaults after reload without inventing effective inference settings', () => {
+    seed('claude');
+    const before = getAppServerControlQuickSettingsEffective(id);
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'claude', {
+      ...original, model: 'accepted-model', effort: 'high', permissionMode: 'auto',
+      acknowledgedFields: ['model', 'effort', 'permissionMode', 'planMode'],
+    });
+    expect(getAppServerControlQuickSettingsDraft(id).permissionMode).toBe('auto');
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('accepted-model');
+    expect(getAppServerControlQuickSettingsEffective(id).model).toBe(before.model);
+    expect(getAppServerControlQuickSettingsEffective(id).permissionMode).toBe(before.permissionMode);
+    expect(getAppServerControlRuntimeSettingStatus(id, 'permissionMode')).toEqual({
+      state: 'acknowledged', scope: 'subsequentResponses',
+    });
+    expect(api).not.toHaveBeenCalled();
+    const next = createAppServerControlTurnRequestWithQuickSettings(id, 'next prompt');
+    expect(next.permissionMode).toBeUndefined();
+  });
+
+  it('does not let an older canonical acknowledgement undo a newer Claude receipt', async () => {
+    seed('claude');
+    api.mockResolvedValueOnce(receipt({ status: 'acknowledged', threadStatus: 'acknowledged',
+      turnStatus: 'acknowledged', threadScope: 'subsequentResponses', turnScope: 'subsequentResponses',
+      effectiveSettings: {}, confirmedSettings: { permissionMode: 'auto', planMode: 'off' } }));
+    await configureAppServerControlQuickSettings(id, { permissionMode: 'auto' });
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'claude', {
+      ...original, acknowledgedFields: ['permissionMode', 'planMode'],
+    });
+    expect(getAppServerControlQuickSettingsDraft(id).permissionMode).toBe('auto');
+    expect(getAppServerControlQuickSettingsEffective(id).permissionMode).toBe('manual');
+  });
+
+  it('keeps a rejected mode error visible when the canonical stream repeats old acknowledged defaults', async () => {
+    seed('claude');
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'claude', {
+      ...original, acknowledgedFields: ['permissionMode', 'planMode'],
+    });
+    api.mockRejectedValueOnce(new Error('mode rejected'));
+    await configureAppServerControlQuickSettings(id, { permissionMode: 'auto' });
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'claude', {
+      ...original, acknowledgedFields: ['permissionMode', 'planMode'],
+    });
+    expect(getAppServerControlQuickSettingsDraft(id).permissionMode).toBe('manual');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'permissionMode')?.state).toBe('unconfirmed');
+  });
+
 });

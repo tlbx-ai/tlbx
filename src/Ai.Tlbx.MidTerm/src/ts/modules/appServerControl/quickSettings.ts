@@ -503,9 +503,11 @@ export function syncAppServerControlQuickSettingsFromSnapshot(
   );
   syncRuntimeSettingsTarget(state, target);
   const pendingConfigValues = getNativeConfigChanges(state.draft, state.effective);
-  state.effective = normalizeQuickSettings(quickSettings, state.provider);
+  const canonical = normalizeQuickSettings(quickSettings, state.provider);
+  syncAcknowledgedDefaults(state, quickSettings, canonical);
+  state.effective = canonical;
   if (!state.draftDirty) {
-    state.draft = cloneQuickSettings(state.effective);
+    state.draft = getConfirmedQuickSettings(state);
   } else {
     state.draft.configOptions = (state.effective.configOptions ?? []).map((option) => {
       const id = option.configId ?? option.id ?? '';
@@ -533,7 +535,9 @@ export function acceptAppServerControlQuickSettings(
     getOrCreateSessionState(sessionId),
     provider ?? resolveSessionProvider(sessionId),
   );
-  state.effective = normalizeQuickSettings(quickSettings, state.provider);
+  const canonical = normalizeQuickSettings(quickSettings, state.provider);
+  syncAcknowledgedDefaults(state, quickSettings, canonical);
+  state.effective = canonical;
   const pendingDraft = cloneQuickSettings(state.draft);
   state.draft = getConfirmedQuickSettings(state);
   state.draftDirty = false;
@@ -632,6 +636,45 @@ function normalizeSessionQuickSettingsDraft(
   for (const field of runtimeFields) {
     if (state.runtime?.statuses[field]?.state === 'pending')
       assignRuntimeField(state.draft, field, previous[field] ?? null);
+  }
+}
+
+function canImportAcknowledgedDefault(
+  runtime: RuntimeSettingsState,
+  field: AppServerControlRuntimeSettingField,
+  value: string | null,
+): boolean {
+  if (runtime.statuses[field]?.state === 'pending') return false;
+  if (
+    Object.prototype.hasOwnProperty.call(runtime.confirmedDefaults, field) &&
+    !runtime.observedDefaults.has(field) &&
+    runtime.confirmedDefaults[field] !== value
+  )
+    return false;
+  runtime.observedDefaults.add(field);
+  return true;
+}
+
+function syncAcknowledgedDefaults(
+  state: AppServerControlQuickSettingsSessionState,
+  snapshot: Partial<AppServerControlQuickSettingsSummary> | null | undefined,
+  nextEffective: AppServerControlQuickSettingsSummary,
+): void {
+  if (state.provider !== 'claude' || !snapshot?.acknowledgedFields?.length) return;
+  const runtime = getRuntimeSettingsState(state);
+  runtime.managed = true;
+  for (const field of runtimeFields) {
+    if (!snapshot.acknowledgedFields.includes(field)) continue;
+    const value = nextEffective[field] ?? null;
+    if (canImportAcknowledgedDefault(runtime, field, value)) {
+      runtime.confirmedDefaults[field] = value;
+      runtime.confirmedValues[field] = value;
+      const status = runtime.statuses[field]?.state;
+      if (!status || status === 'applied' || status === 'acknowledged')
+        runtime.statuses[field] = { state: 'acknowledged', scope: 'subsequentResponses' };
+    }
+    // Canonical defaults acknowledge a control. They do not observe inference settings.
+    assignRuntimeField(nextEffective, field, state.effective[field] ?? null);
   }
 }
 
@@ -808,7 +851,7 @@ function acceptRelatedRuntimeFields(
     runtime.confirmedValues[field] = accepted.value;
     if (accepted.defaults) {
       runtime.confirmedDefaults[field] = accepted.value;
-      if (accepted.actual) runtime.observedDefaults.delete(field);
+      if (accepted.actual || state.provider === 'claude') runtime.observedDefaults.delete(field);
     }
     if (accepted.actual) assignRuntimeField(state.effective, field, accepted.value);
     if (!fields.includes(field) && runtime.statuses[field]?.state !== 'pending') {
@@ -860,7 +903,7 @@ function acceptRuntimeFieldReceipt(
     runtime.confirmedValues[field] = accepted.value;
     if (accepted.defaults) {
       runtime.confirmedDefaults[field] = accepted.value;
-      if (accepted.actual) runtime.observedDefaults.delete(field);
+      if (accepted.actual || state.provider === 'claude') runtime.observedDefaults.delete(field);
     }
     if (accepted.actual) assignRuntimeField(state.effective, field, accepted.value);
     if (accepted.defaults) {
