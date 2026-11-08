@@ -555,6 +555,10 @@ public sealed class AppServerControlUserInputAnswerRequest
 
 public sealed class AppServerControlCommandAcceptedResponse
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Decision { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppServerControlAnsweredQuestion>? Answers { get; set; }
     public string SessionId { get; set; } = string.Empty;
     public string Status { get; set; } = "accepted";
     public string? RequestId { get; set; }

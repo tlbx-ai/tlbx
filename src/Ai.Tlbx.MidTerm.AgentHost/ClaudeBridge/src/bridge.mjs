@@ -1,4 +1,5 @@
-import { waitForResolution, releasePendingToolApprovals } from "./pendingPermissions.mjs";
+import { createSettingsCommandDispatcher } from "./commandDispatch.mjs";
+import { waitForResolution, releasePendingToolApprovals, SettledDecisions, resolveScopedCallback } from "./pendingPermissions.mjs";
 import { configureRuntime } from "./runtimeSettings.mjs";
 import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { readFile } from "node:fs/promises";
@@ -39,6 +40,7 @@ class AsyncMessageQueue {
 const prompts = new AsyncMessageQueue();
 const pendingPermissions = new Map();
 const pendingUserInputs = new Map();
+const settledDecisions = new SettledDecisions();
 let configuration;
 let runtime;
 let runtimeTask;
@@ -122,6 +124,8 @@ async function canUseTool(toolName, toolInput, options) {
     };
   }
   const requestId = `claude-request-${randomUUID()}`;
+  const scope = { threadId: currentSessionId ?? configuration.resume ?? configuration.sessionId,
+    turnId: activeTurnId, toolName };
   if (toolName === "AskUserQuestion") {
     const questions = Array.isArray(toolInput.questions)
       ? toolInput.questions.map((question, index) => ({
@@ -158,8 +162,12 @@ async function canUseTool(toolName, toolInput, options) {
       requestId,
       options.signal,
       null,
+      scope,
+      () => emit({ type: "bridge.user_input_cancelled", session_id: scope.threadId,
+        turnId: scope.turnId, requestId, decision: "cancel" }),
+      (value) => settledDecisions.remember("user_input", requestId, scope, value),
     );
-    if (answers === null)
+    if (answers === null || options.signal.aborted)
       return { behavior: "deny", message: "User cancelled the question." };
     const sdkAnswers = Object.fromEntries(
       Object.entries(answers).map(([question, values]) => [
@@ -173,8 +181,6 @@ async function canUseTool(toolName, toolInput, options) {
     };
   }
 
-  const scope = { threadId: currentSessionId ?? configuration.resume ?? configuration.sessionId,
-    turnId: activeTurnId, toolName };
   emit({
     type: "bridge.permission_request",
     requestId,
@@ -191,6 +197,7 @@ async function canUseTool(toolName, toolInput, options) {
     scope,
     () => emit({ type: "bridge.permission_cancelled", session_id: scope.threadId,
       turnId: scope.turnId, requestId, decision: "cancel" }),
+    (value) => settledDecisions.remember("permission", requestId, scope, value),
   );
   if (decision === "accept" && !options.signal.aborted)
     return { behavior: "allow", updatedInput: toolInput };
@@ -252,7 +259,7 @@ async function startRuntime(command) {
   })();
 }
 
-async function handle(command) {
+async function handle(command, isCancelled = () => false) {
   switch (command.type) {
     case "initialize":
       if (configuration)
@@ -290,17 +297,38 @@ async function handle(command) {
     case "turn.start":
     case "turn.steer": {
       if (!configuration) throw new Error("Claude bridge is not initialized.");
+      if (isCancelled()) return;
       await startRuntime(command);
+      if (isCancelled()) return;
+      const stopped = () => {
+        if (!isCancelled()) return false;
+        if (activeTurnId === command.turnId) { activeTurnId = null; steeringPending = false; }
+        return true;
+      };
       activeTurnId = command.turnId;
       steeringPending = command.type === "turn.steer";
-      await runtime.setModel(command.model ?? undefined);
-      await runtime.applyFlagSettings({ effortLevel: command.effort ?? null });
-      await runtime.setPermissionMode(
-        permissionMode(command.permissionMode, command.planMode),
-      );
-      confirmedSettings.permissionMode = command.permissionMode ?? "manual";
-      confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
-      prompts.push(await makeUserMessage(command));
+      try {
+        await runtime.setModel(command.model ?? undefined);
+        if (stopped()) return;
+        await runtime.applyFlagSettings({ effortLevel: command.effort ?? null });
+        if (stopped()) return;
+        await runtime.setPermissionMode(
+          permissionMode(command.permissionMode, command.planMode),
+        );
+        if (stopped()) return;
+        confirmedSettings.permissionMode = command.permissionMode ?? "manual";
+        confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
+        const message = await makeUserMessage(command);
+        if (stopped()) return;
+        prompts.push(message);
+      } catch (error) {
+        if (stopped()) return;
+        if (activeTurnId === command.turnId) {
+          activeTurnId = null;
+          steeringPending = false;
+        }
+        throw error;
+      }
       return;
     }
     case "runtime.configure": {
@@ -331,30 +359,19 @@ async function handle(command) {
       });
       return;
     }
-    case "permission.resolve": {
-      const resolve = pendingPermissions.get(command.requestId);
-      if (!resolve || !resolve(command.decision))
-        throw new Error(
-          `Claude permission request was not found: ${command.requestId}`,
-        );
-      emit({
-        type: "bridge.permission_resolved",
-        requestId: command.requestId,
-        decision: command.decision,
-      });
-      return;
-    }
+    case "permission.resolve":
     case "user_input.resolve": {
-      const resolve = pendingUserInputs.get(command.requestId);
-      if (!resolve)
-        throw new Error(
-          `Claude user input request was not found: ${command.requestId}`,
-        );
-      resolve(command.answers ?? {});
-      emit({
-        type: "bridge.user_input_resolved",
-        requestId: command.requestId,
+      const kind = command.type === "permission.resolve" ? "permission" : "user_input";
+      const pending = kind === "permission" ? pendingPermissions : pendingUserInputs;
+      const receipt = resolveScopedCallback(pending, settledDecisions, kind, command, {
+        threadId: currentSessionId ?? configuration.resume ?? configuration.sessionId,
+        turnId: activeTurnId ?? null,
       });
+      const decision = kind === "permission" ? receipt.value : receipt.value === null ? "cancel" : "answered";
+      emit({ type: kind === "permission" ? "bridge.permission_resolved" : "bridge.user_input_resolved",
+        requestId: command.requestId, session_id: receipt.threadId, turnId: receipt.turnId,
+        status: receipt.status, ...(receipt.status === "unconfirmed" ? {} : { decision }),
+        ...(kind === "user_input" && receipt.value !== null && receipt.value !== undefined ? { answers: receipt.value } : {}) });
       return;
     }
     case "shutdown":
@@ -369,6 +386,7 @@ async function handle(command) {
   }
 }
 
+const dispatch = createSettingsCommandDispatcher(handle);
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on("line", (line) => {
   if (!line.trim()) return;
@@ -376,7 +394,7 @@ input.on("line", (line) => {
   void Promise.resolve()
     .then(() => {
       command = JSON.parse(line);
-      return handle(command);
+      return dispatch(command);
     })
     .catch((error) =>
       fail("Claude bridge command failed.", error, {

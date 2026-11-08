@@ -111,9 +111,9 @@ public sealed class ClaudePendingRuntimePermissionsTests
         var events = new List<AppServerControlProviderEvent>();
         await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
         Set(runtime, "_providerThreadId", "own"); Set(runtime, "_activeTurnId", "later-turn");
-        var acks = (ConcurrentDictionary<string, TaskCompletionSource>)typeof(ClaudeAppServerControlAgentRuntime)
+        var acks = (ConcurrentDictionary<string, TaskCompletionSource<JsonElement>>)typeof(ClaudeAppServerControlAgentRuntime)
             .GetField("_bridgeResolutionAcks", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(runtime)!;
-        var manualAck = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var manualAck = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         acks["permission:request"] = manualAck;
         Bridge(runtime, """{"type":"bridge.permission_auto_resolved","session_id":"foreign","turnId":"turn","requestId":"request","decision":"accept"}""");
         Assert.Empty(events);
