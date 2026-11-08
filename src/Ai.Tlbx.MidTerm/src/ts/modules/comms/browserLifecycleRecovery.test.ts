@@ -212,6 +212,65 @@ describe('browser transport lifecycle protocol', () => {
       { forceReconnect: true },
     );
   });
+  it('recovers ACP when stay-active hydrates true after a cold hidden start', () => {
+    page.visibilityState = 'hidden';
+    let stayActive: boolean | undefined;
+    let changed = () => {};
+    const recover = vi.fn();
+    const suspend = vi.fn();
+    dispose = setupBrowserLifecycleRecovery({
+      getVisibleTerminalSessionIds: () => [],
+      syncMuxTerminalVisibility: vi.fn(),
+      applyScrollbackProtection: vi.fn(),
+      recoverTerminalPresentationAfterResume: present,
+      keepTerminalOutputActiveWhileHidden: () => false,
+      stayActiveInBackground: () => stayActive === true,
+      subscribeBackgroundActivity: (listener) => {
+        changed = listener;
+        return () => {};
+      },
+      recoverAppServerControlAfterResume: recover,
+      suspendAppServerControlForBackground: suspend,
+    });
+    expect(suspend).toHaveBeenCalledOnce();
+    expect(recover).not.toHaveBeenCalled();
+    stayActive = true;
+    changed();
+    expect(recover).toHaveBeenCalledOnce();
+    expect(page.visibilityState).toBe('hidden');
+    expect(connectStateWebSocket).not.toHaveBeenCalled();
+    stayActive = false;
+    changed();
+    expect(suspend).toHaveBeenCalledTimes(2);
+    expect(recover).toHaveBeenCalledOnce();
+  });
+
+  it('does not recover a frozen ACP session when stay-active settings hydrate', () => {
+    page.visibilityState = 'hidden';
+    let stayActive = false;
+    let changed = () => {};
+    const recover = vi.fn();
+    const suspend = vi.fn();
+    dispose = setupBrowserLifecycleRecovery({
+      getVisibleTerminalSessionIds: () => [],
+      syncMuxTerminalVisibility: vi.fn(),
+      applyScrollbackProtection: vi.fn(),
+      recoverTerminalPresentationAfterResume: present,
+      keepTerminalOutputActiveWhileHidden: () => false,
+      stayActiveInBackground: () => stayActive,
+      subscribeBackgroundActivity: (listener) => {
+        changed = listener;
+        return () => {};
+      },
+      recoverAppServerControlAfterResume: recover,
+      suspendAppServerControlForBackground: suspend,
+    });
+    page.dispatchEvent(new Event('freeze'));
+    stayActive = true;
+    changed();
+    expect(recover).not.toHaveBeenCalled();
+    expect(suspend).toHaveBeenCalledTimes(2);
+  });
   it('retries failed presentation instead of permanently leaving the recovery cover', async () => {
     present.mockRejectedValueOnce(new Error('renderer warming up'));
     dispose = start();

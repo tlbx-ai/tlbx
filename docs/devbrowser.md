@@ -152,13 +152,21 @@ When the proxied page leaks root-relative asset URLs outside `/webpreview/{route
 
 ## Embedded tlbx Guardrails
 
-When tlbx itself is running inside `/webpreview/`, the nested tlbx UI now treats its own web-preview controls as inactive:
+An independent native preview inside another preview keeps its own registered
+`iframe.name` identity and capability path. When two tlbx proxies inject into
+the same document, the outer injector carries the inner adapter's route metadata
+forward and yields to the deepest matching native route before installing any
+runtime patches. Only a matching route/id/token attachment may override ordinary
+subframe bridge suppression. Location rewriting leaves the marked adapter in
+native transport coordinates; the child socket uses the outer transport prefix
+with its own preview capability and revision. Registry, owner and revision checks
+remain server-side. This requires the corrected outer webhost; updating only the
+inner Source instance behind an older injector does not repair it.
 
-- embedded tlbx pages no-op frontend calls that mutate `/api/webpreview/*`
-- embedded tlbx pages do not create nested browser preview clients through the normal docked-preview path
-- browser-ui `open` / `dock` / `detach` / `viewport` instructions are ignored inside embedded tlbx pages
-
-This prevents the previewed tlbx app from clearing or repointing the host tlbx dev-browser target during bootstrap.
+Embedded tlbx keeps its preview API calls scoped through the transport prefix and
+can register its own docked preview clients. Browser detach is still rejected in
+an embedded UI and must be handled by the top-level tlbx window. Ordinary site
+iframes do not become independent preview clients merely by being nested.
 
 ## Single-port Preview Isolation
 
