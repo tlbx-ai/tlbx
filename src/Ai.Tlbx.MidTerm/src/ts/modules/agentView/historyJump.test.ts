@@ -1,5 +1,89 @@
 import { describe, expect, it } from 'vitest';
-import { buildHistoryJumpVirtualWindow, resolveHistoryJumpEntryIndex } from './historyJump';
+import { alignHistoryJumpTarget, buildHistoryJumpVirtualWindow, clearHistoryJumpTarget, resolveHistoryJumpEntryIndex, setHistoryJumpTarget } from './historyJump';
+import { shouldRefreshHistoryNavigatorFromScroll } from './historyNavigator';
+import type { SessionAppServerControlViewState } from './types';
+
+describe('persistent canonical seek alignment', () => {
+  function fixture() {
+    const layout = { top: 1000, height: 235.78125, viewportHeight: 680 };
+    const viewport = {
+      scrollTop: 0, scrollHeight: 5000,
+      get clientHeight() { return layout.viewportHeight; },
+      getBoundingClientRect: () => ({ top: 40 }),
+    } as HTMLDivElement;
+    const node = { getBoundingClientRect: () => ({
+      top: 40 + layout.top - viewport.scrollTop,
+      bottom: 40 + layout.top - viewport.scrollTop + layout.height,
+      height: layout.height,
+    }) };
+    const history = Array.from({ length: 7 }, (_, index) => ({ entryId: `row-${123 + index}`, order: 123 + index }));
+    const state = {
+      snapshot: { history, historyWindowStart: 122, historyWindowEnd: 129 },
+      historyEntries: [{ id: 'row-123', order: 123 }, { id: 'row-126', order: 126 }, { id: 'busy', order: 126.01 }],
+      historyRenderedNodes: new Map([['row-126', { node }]]),
+      historyPendingJumpTargetIndex: null, historyPendingJumpAlign: null, historyJumpTargetEntryId: null,
+      historyNavigatorMode: 'drag-preview',
+    } as unknown as SessionAppServerControlViewState;
+    return { state, viewport, layout };
+  }
+
+  it('keeps canonical 125 through preview, hydration, preceding-row growth and target reflow', () => {
+    const { state, viewport, layout } = fixture();
+    setHistoryJumpTarget(state, 125, 'center');
+    expect(alignHistoryJumpTarget(viewport, state)).toBe(true);
+    expect(state.historyJumpTargetEntryId).toBe('row-126');
+    const centered = () => layout.top - viewport.scrollTop + layout.height / 2;
+    expect(centered()).toBeCloseTo(340);
+    state.historyNavigatorMode = 'browse';
+    state.snapshot!.historyWindowStart = 88;
+    state.snapshot!.historyWindowEnd = 159;
+    setHistoryJumpTarget(state, 125, 'center'); // Hydration of the same target preserves identity.
+    layout.top += 180;
+    expect(alignHistoryJumpTarget(viewport, state)).toBe(true);
+    expect(centered()).toBeCloseTo(340);
+    layout.viewportHeight = 840;
+    expect(alignHistoryJumpTarget(viewport, state)).toBe(true);
+    expect(centered()).toBeCloseTo(420);
+    layout.height += 100;
+    expect(alignHistoryJumpTarget(viewport, state)).toBe(true);
+    expect(centered()).toBeCloseTo(420);
+    expect(alignHistoryJumpTarget(viewport, state)).toBe(false); // Already aligned, still bound.
+    expect(state.historyPendingJumpTargetIndex).toBe(125);
+    expect(state.historyPendingJumpAlign).toBe('center');
+    expect(state.historyNavigatorAnchorIndex).toBe(125);
+  });
+
+  it('releases the pin synchronously for user movement and replaces it for a new jump', () => {
+    const { state, viewport, layout } = fixture();
+    setHistoryJumpTarget(state, 125, 'center');
+    alignHistoryJumpTarget(viewport, state);
+    // Wheel/touch/navigation-key handlers call this before native pixel movement; no timer gate.
+    clearHistoryJumpTarget(state);
+    const previous = { scrollTop: viewport.scrollTop, scrollHeight: 5000, clientHeight: 680 };
+    viewport.scrollTop += 40;
+    layout.height += 100;
+    expect(alignHistoryJumpTarget(viewport, state)).toBeNull();
+    expect(shouldRefreshHistoryNavigatorFromScroll({
+      now: 100, lastUserIntentAt: 100, intentWindowMs: 900, previous,
+      current: { ...previous, scrollTop: viewport.scrollTop },
+    })).toBe(true);
+    setHistoryJumpTarget(state, 125, 'center');
+    alignHistoryJumpTarget(viewport, state);
+    setHistoryJumpTarget(state, 128, 'bottom');
+    expect(state.historyJumpTargetEntryId).toBeNull();
+    expect(state.historyPendingJumpTargetIndex).toBe(128);
+    clearHistoryJumpTarget(state); // Follow-live uses the same release.
+    expect(state.historyPendingJumpAlign).toBeNull();
+  });
+
+  it('never selects a synthetic row as fallback for a hidden canonical target', () => {
+    const { state } = fixture();
+    expect(resolveHistoryJumpEntryIndex(state.historyEntries, state.snapshot, 125)).toBe(1);
+    expect(resolveHistoryJumpEntryIndex(state.historyEntries, state.snapshot, 126)).toBe(1);
+    state.historyEntries = state.historyEntries.filter((entry) => entry.id === 'busy');
+    expect(resolveHistoryJumpEntryIndex(state.historyEntries, state.snapshot, 125)).toBe(-1);
+  });
+});
 
 describe('canonical history jumps across filtered visual rows', () => {
   const snapshot = { historyWindowStart: 100, historyWindowEnd: 110 };
