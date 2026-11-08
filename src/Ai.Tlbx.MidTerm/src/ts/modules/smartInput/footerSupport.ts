@@ -236,6 +236,22 @@ export function formatRuntimeSettingStatus(
     .join(' — ');
 }
 
+function formatRuntimePermissionHint(
+  sessionId: string,
+  field: AppServerControlRuntimeSettingField,
+  status: AppServerControlRuntimeSettingStatus | undefined,
+): string {
+  if (
+    field !== 'permissionMode' ||
+    getAppServerControlQuickSettingsProvider(sessionId) !== 'claude'
+  )
+    return '';
+  const draft = getAppServerControlQuickSettingsDraft(sessionId);
+  if (draft.planMode === 'on') return t('smartInput.settingPermissionAfterPlan');
+  if (draft.permissionMode === 'auto' && ['acknowledged', 'applied'].includes(status?.state ?? ''))
+    return t('smartInput.settingPermissionAutoPending');
+  return '';
+}
 function syncRuntimeSettingControlStatus(
   control: HTMLElement | null,
   sessionId: string,
@@ -246,11 +262,7 @@ function syncRuntimeSettingControlStatus(
   const status = getAppServerControlRuntimeSettingStatus(sessionId, field);
   const description = [
     formatRuntimeSettingStatus(status),
-    field === 'permissionMode' &&
-    getAppServerControlQuickSettingsDraft(sessionId).planMode === 'on' &&
-    getAppServerControlQuickSettingsProvider(sessionId) === 'claude'
-      ? t('smartInput.settingPermissionAfterPlan')
-      : '',
+    formatRuntimePermissionHint(sessionId, field, status),
   ]
     .filter(Boolean)
     .join(' — ');

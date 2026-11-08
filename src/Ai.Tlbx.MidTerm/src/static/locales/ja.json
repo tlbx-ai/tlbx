@@ -1451,5 +1451,6 @@
   "smartInput.settingScopeTurns": "次のターン以降に適用。実行中の推論は変更されません",
   "smartInput.settingScopeCaptures": "次の設定取得以降に適用。実行中の推論は変更されません",
   "smartInput.settingScopeResponses": "次の応答以降の既定値を受理済み。実行中の推論は変更されません",
+  "smartInput.settingPermissionAutoPending": "自動モードは、このセッションですでに待機中のツールも許可します。質問には引き続き回答が必要です。",
   "smartInput.settingPermissionAfterPlan": "プランモード終了後に使用。プランモードは維持されます"
 }

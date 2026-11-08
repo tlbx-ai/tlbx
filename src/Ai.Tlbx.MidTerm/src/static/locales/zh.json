@@ -1451,5 +1451,6 @@
   "smartInput.settingScopeTurns": "用于后续轮次；当前推理保持不变",
   "smartInput.settingScopeCaptures": "用于后续设置捕获；当前推理保持不变",
   "smartInput.settingScopeResponses": "后续回答的默认设置已接受；当前推理保持不变",
+  "smartInput.settingPermissionAutoPending": "自动模式也会批准此会话中已在等待的工具请求。问题仍需回答。",
   "smartInput.settingPermissionAfterPlan": "退出计划模式后使用；计划模式保持启用"
 }

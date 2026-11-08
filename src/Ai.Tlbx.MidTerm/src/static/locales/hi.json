@@ -1451,5 +1451,6 @@
   "smartInput.settingScopeTurns": "अगले टर्न के लिए; चल रहा अनुमान अपरिवर्तित",
   "smartInput.settingScopeCaptures": "अगली सेटिंग कैप्चर के लिए; चल रहा अनुमान अपरिवर्तित",
   "smartInput.settingScopeResponses": "अगले उत्तरों के डिफ़ॉल्ट स्वीकार किए गए; चल रहा अनुमान अपरिवर्तित",
+  "smartInput.settingPermissionAutoPending": "ऑटो इस सत्र में पहले से प्रतीक्षारत टूल अनुरोधों को भी अनुमति देता है। प्रश्नों का उत्तर अभी भी देना होगा।",
   "smartInput.settingPermissionAfterPlan": "प्लान से बाहर आने पर लागू; प्लान सक्रिय रहता है"
 }

@@ -1714,5 +1714,6 @@
   "smartInput.settingScopeTurns": "For following turns; running inference unchanged",
   "smartInput.settingScopeCaptures": "For subsequent captures; running inference unchanged",
   "smartInput.settingScopeResponses": "Accepted defaults for subsequent responses; running inference unchanged",
+  "smartInput.settingPermissionAutoPending": "Auto releases tool approvals already waiting in this session. Questions still need an answer.",
   "smartInput.settingPermissionAfterPlan": "Used when leaving Plan; Plan remains active"
 }
