@@ -1891,11 +1891,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         };
     }
 
-    private static void BuildLaunchEnvironment(
+    internal static void BuildLaunchEnvironment(
         MidTermSettings settings,
         string? executablePath,
         string? profileDirectory,
-        MidTermInstanceIdentity instanceIdentity,
+        MidTermInstanceIdentity? instanceIdentity,
         out Dictionary<string, string?> environmentOverrides,
         out List<string> pathPrependEntries)
     {
@@ -1941,8 +1941,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
 
         ApplyProviderSettings(environmentOverrides, settings);
-        environmentOverrides["MIDTERM_INSTANCE_ID"] = instanceIdentity.InstanceId;
-        environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
+        if (instanceIdentity is not null)
+        {
+            environmentOverrides["MIDTERM_INSTANCE_ID"] = instanceIdentity.InstanceId;
+            environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
+        }
     }
 
     private static void ApplyProviderSettings(IDictionary<string, string?> environment, MidTermSettings settings)

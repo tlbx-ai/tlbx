@@ -525,7 +525,7 @@ public static partial class SessionApiEndpoints
         app.MapPost("/api/workers/bootstrap", (WorkerBootstrapRequest request, CancellationToken ct) => BootstrapWorker(request, ct));
         BoardSessionEndpoints.Map(app, BootstrapWorker, SubmitPrompt);
 
-        app.MapGet("/api/providers/{provider}/resume-candidates", (
+        app.MapGet("/api/providers/{provider}/resume-candidates", async Task<IResult> (
             string provider,
             string? workingDirectory,
             string? scope,
@@ -539,11 +539,11 @@ public static partial class SessionApiEndpoints
             }
 
             var includeAllDirectories = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);
-            var candidates = providerResumeCatalog.GetCandidates(
+            var candidates = await providerResumeCatalog.GetCandidatesAsync(
                 normalizedProvider,
                 workingDirectory,
                 includeAllDirectories,
-                ct);
+                ct).ConfigureAwait(false);
             return Results.Json(candidates, AppJsonContext.Default.ListProviderResumeCatalogEntryDto);
         });
 

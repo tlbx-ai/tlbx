@@ -2135,11 +2135,9 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     {
         var process = new Process
         {
-            StartInfo = CreateProcessStartInfo(binaryPath, BuildCodexAppServerArguments(), workingDirectory),
+            StartInfo = CreateCodexAppServerStartInfo(binaryPath, workingDirectory, userProfileDirectory),
             EnableRaisingEvents = true
         };
-        AppServerControlProviderRuntimeConfiguration.ApplyUserProfileEnvironment(process.StartInfo, userProfileDirectory);
-        AppServerControlProviderRuntimeConfiguration.ApplyEnvironmentVariables(process.StartInfo, Provider);
 
         if (!process.Start())
         {
@@ -2486,7 +2484,16 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         };
     }
 
-    private static string BuildCodexInitializeRequest(string id)
+    internal static ProcessStartInfo CreateCodexAppServerStartInfo(
+        string binaryPath, string workingDirectory, string? userProfileDirectory)
+    {
+        var startInfo = CreateProcessStartInfo(binaryPath, BuildCodexAppServerArguments(), workingDirectory);
+        AppServerControlProviderRuntimeConfiguration.ApplyUserProfileEnvironment(startInfo, userProfileDirectory);
+        AppServerControlProviderRuntimeConfiguration.ApplyEnvironmentVariables(startInfo, "codex");
+        return startInfo;
+    }
+
+    internal static string BuildCodexInitializeRequest(string id)
     {
         return BuildJsonString(writer =>
         {
@@ -2511,7 +2518,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         });
     }
 
-    private static string BuildCodexInitializedNotification()
+    internal static string BuildCodexInitializedNotification()
     {
         return BuildJsonString(writer =>
         {
@@ -3156,7 +3163,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         return normalized;
     }
 
-    private static string BuildJsonString(Action<Utf8JsonWriter> write)
+    internal static string BuildJsonString(Action<Utf8JsonWriter> write)
     {
         var buffer = new ArrayBufferWriter<byte>();
         using var writer = new Utf8JsonWriter(buffer);
@@ -3165,14 +3172,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
-    private static string? FindExecutableInPath(string commandName)
+    internal static string? FindExecutableInPath(string commandName, string? searchPath = null)
     {
         if (Path.IsPathRooted(commandName) && File.Exists(commandName))
         {
             return commandName;
         }
 
-        var pathVar = Environment.GetEnvironmentVariable("PATH");
+        var pathVar = searchPath ?? Environment.GetEnvironmentVariable("PATH");
         if (string.IsNullOrWhiteSpace(pathVar))
         {
             return null;

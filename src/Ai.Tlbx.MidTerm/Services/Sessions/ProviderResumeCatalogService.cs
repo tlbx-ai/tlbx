@@ -28,14 +28,19 @@ public sealed partial class ProviderResumeCatalogService
             provider => ResolveProviderProfileDirectory(settingsService.Load(), provider),
             () => ResolveConfiguredCodexHome(settingsService.Load()))
     {
+        _nativeCodex = (cwd, ct) => ReadNativeCodexAsync(settingsService.Load(),
+            settingsService.SettingsDirectory, cwd, TtyHostSpawner.TryStartRedirectedProcess,
+            IsCatalogRunningAsSystem, ct);
     }
 
     internal ProviderResumeCatalogService(
         Func<string, string?> resolveProfileDirectory,
-        Func<string?>? resolveConfiguredCodexHome = null)
+        Func<string?>? resolveConfiguredCodexHome = null,
+        Func<string?, CancellationToken, Task<IReadOnlyList<ProviderResumeCatalogEntryDto>?>>? nativeCodex = null)
     {
         _resolveProfileDirectory = resolveProfileDirectory;
         _resolveConfiguredCodexHome = resolveConfiguredCodexHome ?? (static () => null);
+        _nativeCodex = nativeCodex;
     }
 
     /// <summary>
