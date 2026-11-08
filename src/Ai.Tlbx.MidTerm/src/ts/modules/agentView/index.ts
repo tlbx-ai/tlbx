@@ -54,6 +54,8 @@ import { syncNativeCommands } from './nativeCommands';
 import { filterReadingHistory, showAgentTechnicalDetails } from './historyVisibility';
 import {
   createAgentHistoryRender,
+  prepareHistoryViewportResize,
+  recordHistoryReaderScroll,
   readHistoryNavigatorMapping,
   resolveHistoryNavigatorTarget,
 } from './historyRender';
@@ -697,6 +699,8 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
   state.historyNavigatorDragMapping = null;
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
+  state.historyReaderAnchor = null;
+  state.historyReaderResizeMeasurementPending = false;
   state.debugScenarioActive = true;
   state.activationRunId += 1;
   state.streamConnected = true;
@@ -1077,6 +1081,8 @@ function getOrCreateViewState(
     historyMeasurementObserver: null,
     historyViewportResizeObserver: null,
     historyViewportSize: null,
+    historyReaderAnchor: null,
+    historyReaderResizeMeasurementPending: false,
     historyLeadingPlaceholders: [],
     historyTrailingPlaceholders: [],
     historyEmptyState: null,
@@ -1463,28 +1469,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
         return;
       }
 
-      const nextSize = {
-        width: currentViewport.clientWidth,
-        height: currentViewport.clientHeight,
-      };
-      const previousSize = current.historyViewportSize;
-      current.historyViewportSize = nextSize;
-      if (
-        previousSize &&
-        previousSize.width === nextSize.width &&
-        previousSize.height === nextSize.height
-      ) {
-        return;
-      }
-
-      if (
-        !current.historyAutoScrollPinned &&
-        current.historyPendingJumpTargetIndex === null &&
-        current.pendingHistoryPrependAnchor === null &&
-        current.pendingHistoryLayoutAnchor === null
-      ) {
-        historyRender.captureHistoryViewportAnchor(current, 'pendingHistoryLayoutAnchor');
-      }
+      if (!prepareHistoryViewportResize(current)) return;
 
       current.historyLastScrollMetrics = historyRender.readHistoryScrollMetrics(
         currentViewport,
@@ -1765,6 +1750,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       current.historyNavigatorDragTargetIndex = null;
     }
     current.historyLastScrollMetrics = scrollMetrics;
+    if (recordHistoryReaderScroll(current, userInitiated)) scheduleHistoryRender(sessionId);
     historyRender.syncViewportOffset(sessionId, { refreshAnchorFromViewport: userInitiated });
     historyRender.renderScrollToBottomControl(current.panel, current);
     if (current.historyNavigatorMode === 'drag-preview') {
@@ -2165,6 +2151,8 @@ function releaseHiddenAppServerControlRenderState(state: SessionAppServerControl
   state.historyLastVoidSyncScrollTop = null;
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
+  state.historyReaderAnchor = null;
+  state.historyReaderResizeMeasurementPending = false;
   // The identity-only seek survives dropping hidden DOM and measurements.
   state.historyNavigatorDragMapping = null;
   state.historyNavigatorDragTargetIndex = null;

@@ -81,6 +81,8 @@ export interface SessionAppServerControlViewState {
   historyMeasurementObserver: ResizeObserver | null;
   historyViewportResizeObserver: ResizeObserver | null;
   historyViewportSize: HistoryViewportSize | null;
+  historyReaderAnchor: (HistoryViewportAnchor & HistoryViewportSize & { scrollTop: number }) | null;
+  historyReaderResizeMeasurementPending: boolean;
   historyLeadingPlaceholders: HTMLDivElement[];
   historyTrailingPlaceholders: HTMLDivElement[];
   historyEmptyState: HTMLDivElement | null;
