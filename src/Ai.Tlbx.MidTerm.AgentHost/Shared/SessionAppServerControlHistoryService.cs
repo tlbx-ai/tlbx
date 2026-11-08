@@ -792,6 +792,7 @@ public sealed partial class SessionAppServerControlHistoryService
         {
             ApplyRuntimeNotice(state, appServerControlEvent, appServerControlEvent.RuntimeNoticeOnly, timelineVisible: false);
         }
+        PruneInactiveItemIndex(state);
     }
 
     private AppServerControlHistoryWindowResponse CloneSnapshot(
@@ -802,10 +803,7 @@ public sealed partial class SessionAppServerControlHistoryService
         int? historyWindowCount,
         int? viewportWidth)
     {
-        var orderedHistory = state.HistoryEntries.Values
-            .OrderBy(entry => entry.Order)
-            .ToList();
-        var totalHistoryCount = orderedHistory.Count;
+        var totalHistoryCount = state.HistoryOrder.Count;
         var boundedStart = Math.Clamp(historyWindowStart, 0, totalHistoryCount == 0 ? 0 : totalHistoryCount - 1);
         var boundedCount = historyWindowCount is null
             ? totalHistoryCount
@@ -816,11 +814,12 @@ public sealed partial class SessionAppServerControlHistoryService
             boundedCount = 0;
         }
 
-        var historySlice = orderedHistory
-            .Skip(boundedStart)
-            .Take(boundedCount)
-            .Select(entry => CloneHistoryEntry(entry, viewportWidth))
-            .ToList();
+        var sliceCount = Math.Min(boundedCount, totalHistoryCount - boundedStart);
+        var historySlice = new List<AppServerControlHistoryItem>(sliceCount);
+        for (var index = boundedStart; index < boundedStart + sliceCount; index++)
+        {
+            historySlice.Add(CloneHistoryEntry(state.HistoryEntries[state.HistoryOrder.Values[index]], viewportWidth));
+        }
         var historyWindowEnd = boundedStart + historySlice.Count;
 
         return new AppServerControlHistoryWindowResponse
@@ -840,11 +839,11 @@ public sealed partial class SessionAppServerControlHistoryService
             QuickSettings = CloneQuickSettingsSummary(state.QuickSettings),
             Streams = CloneStreamsSummary(state.Streams),
             History = historySlice,
-            Items = state.Items.Values
+            Items = historyWindowCount is not null ? CloneWindowItems(state, historySlice) : state.Items.Values
                 .OrderByDescending(item => item.UpdatedAt)
                 .Select(CloneItemSummary)
                 .ToList(),
-            Requests = state.Requests.Values
+            Requests = historyWindowCount is not null ? CloneWindowRequests(state, historySlice) : state.Requests.Values
                 .OrderByDescending(request => request.UpdatedAt)
                 .Select(CloneRequestSummary)
                 .ToList(),
@@ -937,22 +936,26 @@ public sealed partial class SessionAppServerControlHistoryService
         CopyQuickSettingsSummary(target.QuickSettings, source.QuickSettings);
         CopyStreamsSummary(target.Streams, source.Streams);
 
-        target.HistoryEntries.Clear();
+        ClearHistoryEntries(target);
         foreach (var entry in source.HistoryEntries)
         {
-            target.HistoryEntries[entry.EntryId] = CloneHistoryEntry(entry);
+            SetHistoryEntry(target, CloneHistoryEntry(entry));
         }
 
         target.Items.Clear();
+        target.ItemAliases.Clear();
+        target.ActiveItemIds.Clear();
         foreach (var item in source.Items)
         {
-            target.Items[item.ItemId] = CloneItemSummary(item);
+            SetItemSummary(target, CloneItemSummary(item));
         }
 
         target.Requests.Clear();
+        target.OpenRequestIds.Clear();
         foreach (var request in source.Requests)
         {
             target.Requests[request.RequestId] = CloneRequestSummary(request);
+            RefreshRequestIndex(target, request);
         }
 
         target.ToolRenderStates.Clear();
@@ -983,23 +986,27 @@ public sealed partial class SessionAppServerControlHistoryService
         CopyQuickSettingsSummary(target.QuickSettings, source.QuickSettings);
         CopyStreamsSummary(target.Streams, source.Streams);
 
-        target.HistoryEntries.Clear();
+        ClearHistoryEntries(target);
         foreach (var entry in source.History.OrderBy(static item => item.Order))
         {
-            target.HistoryEntries[entry.EntryId] = CloneHistoryEntry(entry);
+            SetHistoryEntry(target, CloneHistoryEntry(entry));
             target.NextHistoryOrder = Math.Max(target.NextHistoryOrder, entry.Order + 1);
         }
 
         target.Items.Clear();
+        target.ItemAliases.Clear();
+        target.ActiveItemIds.Clear();
         foreach (var item in source.Items)
         {
-            target.Items[item.ItemId] = CloneItemSummary(item);
+            SetItemSummary(target, CloneItemSummary(item));
         }
 
         target.Requests.Clear();
+        target.OpenRequestIds.Clear();
         foreach (var request in source.Requests)
         {
             target.Requests[request.RequestId] = CloneRequestSummary(request);
+            RefreshRequestIndex(target, request);
         }
 
         target.ToolRenderStates.Clear();
@@ -1023,38 +1030,41 @@ public sealed partial class SessionAppServerControlHistoryService
 
         foreach (var historyId in source.HistoryRemovals)
         {
-            target.HistoryEntries.Remove(historyId);
+            RemoveHistoryEntry(target, historyId);
             target.ToolRenderStates.Remove(historyId);
         }
 
         foreach (var entry in source.HistoryUpserts)
         {
-            target.HistoryEntries[entry.EntryId] = CloneHistoryEntry(entry);
+            SetHistoryEntry(target, CloneHistoryEntry(entry));
         }
 
         target.NextHistoryOrder = target.HistoryEntries.Count == 0
             ? 0
-            : target.HistoryEntries.Values.Max(static entry => entry.Order) + 1;
+            : target.HistoryOrder.Keys[target.HistoryOrder.Count - 1].Order + 1;
 
         foreach (var itemId in source.ItemRemovals)
         {
-            target.Items.Remove(itemId);
+            RemoveItemSummary(target, itemId);
         }
 
         foreach (var item in source.ItemUpserts)
         {
-            target.Items[item.ItemId] = CloneItemSummary(item);
+            SetItemSummary(target, CloneItemSummary(item));
         }
 
         foreach (var requestId in source.RequestRemovals)
         {
             target.Requests.Remove(requestId);
+            target.OpenRequestIds.Remove(requestId);
         }
 
         foreach (var request in source.RequestUpserts)
         {
             target.Requests[request.RequestId] = CloneRequestSummary(request);
+            RefreshRequestIndex(target, request);
         }
+        PruneInactiveItemIndex(target);
 
         var noticesById = target.Notices
             .Where(static notice => !string.IsNullOrWhiteSpace(notice.EventId))
@@ -1070,7 +1080,7 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private static bool ShouldSurfaceWorkingHeat(AppServerControlConversationState state)
     {
-        if (state.Requests.Values.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
+        if (state.OpenRequestIds.Count > 0)
         {
             return false;
         }
@@ -1735,6 +1745,7 @@ public sealed partial class SessionAppServerControlHistoryService
                 }
                 break;
         }
+        RefreshItemIndexes(state, item);
     }
 
     private static void ApplyRequestUpdate(AppServerControlConversationState state, AppServerControlProviderEvent appServerControlEvent)
@@ -1791,6 +1802,7 @@ public sealed partial class SessionAppServerControlHistoryService
         entry.Answers = request.Answers.Select(CloneAnsweredQuestion).ToList();
         entry.Streaming = false;
         entry.UpdatedAt = appServerControlEvent.CreatedAt;
+        RefreshRequestIndex(state, request);
     }
 
     private static void ApplyRuntimeNotice(
@@ -2500,7 +2512,7 @@ public sealed partial class SessionAppServerControlHistoryService
             return false;
         }
 
-        state.HistoryEntries.Remove(provisionalEntry.EntryId);
+        RemoveHistoryEntry(state, provisionalEntry.EntryId);
         if (state.ToolRenderStates.Remove(provisionalEntry.EntryId, out var toolState))
         {
             state.ToolRenderStates[canonicalEntryId] = toolState;
@@ -2508,7 +2520,7 @@ public sealed partial class SessionAppServerControlHistoryService
 
         provisionalEntry.EntryId = canonicalEntryId;
         provisionalEntry.ItemId = canonicalItemId;
-        state.HistoryEntries[canonicalEntryId] = provisionalEntry;
+        SetHistoryEntry(state, provisionalEntry);
         return true;
     }
 
@@ -3217,7 +3229,7 @@ public sealed partial class SessionAppServerControlHistoryService
                 CreatedAt = createdAt,
                 UpdatedAt = createdAt
             };
-            state.HistoryEntries[entryId] = entry;
+            SetHistoryEntry(state, entry);
         }
 
         entry.Kind = kind;
@@ -3271,6 +3283,7 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         entry.Order = turnLeadOrder;
+        RebuildHistoryOrderIndex(state);
     }
 
     private static void CompleteStreamingHistoryEntries(AppServerControlConversationState state, string? turnId)
@@ -3736,8 +3749,19 @@ public sealed partial class SessionAppServerControlHistoryService
         public AppServerControlQuickSettingsSummary QuickSettings { get; } = new();
         public AppServerControlStreamsSummary Streams { get; } = new();
         public Dictionary<string, AppServerControlHistoryItem> HistoryEntries { get; } = new(StringComparer.Ordinal);
+        // Monotone appends are the normal case. BCL indexed access avoids sorting/skipping the archive per window.
+        public SortedList<(long Order, string EntryId), string> HistoryOrder { get; } = new(
+            Comparer<(long Order, string EntryId)>.Create(static (left, right) =>
+            {
+                var order = left.Order.CompareTo(right.Order);
+                return order != 0 ? order : StringComparer.Ordinal.Compare(left.EntryId, right.EntryId);
+            }));
+        public Dictionary<string, (long Order, string EntryId)> HistoryOrderKeys { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, AppServerControlItemSummary> Items { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> ItemAliases { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> ActiveItemIds { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, AppServerControlRequestSummary> Requests { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> OpenRequestIds { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, AppServerControlToolRenderState> ToolRenderStates { get; } = new(StringComparer.Ordinal);
         public List<AppServerControlRuntimeNotice> Notices { get; } = [];
         public long NextHistoryOrder { get; set; }
