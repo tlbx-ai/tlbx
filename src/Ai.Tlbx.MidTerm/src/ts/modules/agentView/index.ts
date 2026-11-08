@@ -2308,7 +2308,11 @@ async function loadLatestAppServerControlHistoryWindow(
   sessionId: string,
   state: SessionAppServerControlViewState,
 ): Promise<void> {
-  if (state.refreshInFlight || !state.snapshot?.hasNewerHistory) {
+  if (!state.snapshot?.hasNewerHistory) {
+    return;
+  }
+  if (state.refreshInFlight) {
+    state.historyViewportSyncPending = true;
     return;
   }
 
@@ -2328,8 +2332,11 @@ async function loadLatestAppServerControlHistoryWindow(
       windowRevision,
     );
     traceAppServerControlHistoryFetch(sessionId, nextSnapshot, 'latest');
-    if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
-      renderCurrentAgentView(sessionId);
+    if (
+      state.historyAutoScrollPinned &&
+      applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)
+    ) {
+      renderCurrentAgentView(sessionId, { immediate: true });
     }
   } catch (error) {
     log.warn(
@@ -2421,6 +2428,8 @@ function flushPendingHistoryWindowViewportSync(
   state.historyViewportSyncForcePending = false;
   if (!state.historyAutoScrollPinned) {
     void syncHistoryWindowToViewport(sessionId, state, forceRequest);
+  } else if (state.snapshot?.hasNewerHistory) {
+    void loadLatestAppServerControlHistoryWindow(sessionId, state);
   }
 }
 
