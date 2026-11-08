@@ -161,8 +161,9 @@ public sealed class HistoryWindowTests : IDisposable
             nextSequence = 1,
             state = new
             {
-                source.Provider, source.Session, source.Thread, source.CurrentTurn, source.Streams,
+                source.Provider, source.Session, source.Thread, source.CurrentTurn, source.QuickSettings, source.Streams,
                 historyEntries = source.History, source.Items, source.Requests, source.Notices,
+                toolRenderStates = Array.Empty<object>(),
                 nextHistoryOrder = source.History.Count
             }
         }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
