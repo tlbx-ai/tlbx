@@ -632,9 +632,8 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
       optionButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        const configureState = select.closest<HTMLElement>(
-          '.smart-input-appServerControl-field',
-        )?.dataset.configureState;
+        const configureState = select.closest<HTMLElement>('.smart-input-appServerControl-field')
+          ?.dataset.configureState;
         // Native Codex sends no updated notification for unchanged settings.
         // Retry the same value only after an explicit failed/unknown outcome.
         if (
