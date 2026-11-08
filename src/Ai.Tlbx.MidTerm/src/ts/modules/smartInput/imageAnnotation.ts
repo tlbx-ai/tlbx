@@ -44,6 +44,17 @@ function trapAnnotationFocus(event: KeyboardEvent, overlay: HTMLElement): void {
   }
 }
 
+// Fetch the owned attachment bytes into this document's origin. Direct HTTP
+// images taint the canvas in an opaque preview sandbox and cannot be exported.
+export async function loadAnnotationImageUrl(src: string, signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted();
+  const response = await fetch(src, { signal });
+  if (!response.ok) throw new Error(t('smartInput.richImageFailed'));
+  const blob = await response.blob();
+  signal.throwIfAborted();
+  return URL.createObjectURL(blob);
+}
+
 export function openImageAnnotation(options: ImageAnnotationOptions): void {
   if (options.signal?.aborted) return;
   const previousFocus =
@@ -73,6 +84,7 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
   const footer = document.createElement('div');
   footer.className = 'modal-footer';
   const image = new Image();
+  let imageUrl: string | null = null;
   let strokes: AnnotationStroke[] = [];
   let current: AnnotationStroke | null = null;
   let pointerId: number | null = null;
@@ -87,6 +99,8 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
     if (isClosed()) return;
     options.signal?.removeEventListener('abort', close);
     controller.abort();
+    if (imageUrl) URL.revokeObjectURL(imageUrl);
+    imageUrl = null;
     options.closed?.();
     releaseBack();
     overlay.remove();
@@ -151,9 +165,20 @@ export function openImageAnnotation(options: ImageAnnotationOptions): void {
     redraw();
   };
   image.onerror = () => {
-    status.textContent = t('smartInput.richImageFailed');
+    if (!isClosed()) status.textContent = t('smartInput.richImageFailed');
   };
-  image.src = options.src;
+  void loadAnnotationImageUrl(options.src, controller.signal)
+    .then((url) => {
+      if (isClosed()) {
+        URL.revokeObjectURL(url);
+        return;
+      }
+      imageUrl = url;
+      image.src = url;
+    })
+    .catch(() => {
+      if (!isClosed()) status.textContent = t('smartInput.richImageFailed');
+    });
   cancel.focus();
 
   canvas.addEventListener('pointerdown', (event) => {

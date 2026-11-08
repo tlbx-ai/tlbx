@@ -21805,11 +21805,11 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   border-radius: 8px;
   background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));
   color: var(--command-bay-text, var(--text-primary));
-  font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
-  font-size: var(--terminal-font-size, 16px);
-  font-weight: var(--terminal-font-weight, normal);
-  letter-spacing: var(--terminal-letter-spacing, 0px);
-  font-kerning: none;
+  font-family: var(--font-ui);
+  font-size: 0.95rem;
+  font-weight: 400;
+  letter-spacing: normal;
+  font-kerning: auto;
 }
 
 .smart-input-rich-composer[hidden],
@@ -21843,6 +21843,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 }
 .smart-input-rich-composer .ProseMirror p { margin: 0 0 0.35em; }
 .smart-input-rich-composer .ProseMirror > :last-child { margin-bottom: 0; }
+.smart-input-rich-composer .ProseMirror code,
+.smart-input-rich-composer .ProseMirror pre { font-family: var(--terminal-font-family, var(--font-mono)); }
 .smart-input-rich-composer .ProseMirror ul,
 .smart-input-rich-composer .ProseMirror ol { margin: 0.25em 0; padding-left: 1.6em; }
 .smart-input-rich-composer .ProseMirror table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 0.4em 0; }
@@ -21854,6 +21856,10 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .rich-composer-attachment-preview { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; max-width: 100%; }
 .rich-composer-attachment img { display: block; max-width: min(180px, 38vw); max-height: 112px; width: auto; height: auto; object-fit: contain; }
 .rich-composer-attachment img[hidden] { display: none; }
+@media (max-width: 640px), (pointer: coarse) {
+  .rich-composer-tools button,
+  .rich-composer-attachment button { min-width: 44px; min-height: 44px; }
+}
 .rich-composer-attachment-preview span { font-size: 0.75em; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
 .smart-input-rich-composer .ProseMirror-selectednode { outline: 2px solid var(--accent-blue); }
 .rich-composer-error { color: var(--text-danger, var(--text-primary)); font: inherit; font-size: 0.8em; }
