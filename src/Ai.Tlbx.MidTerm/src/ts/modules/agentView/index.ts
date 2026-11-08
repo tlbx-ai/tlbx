@@ -52,6 +52,10 @@ import { createAgentHistoryDom, isProposedPlanActionDisabled } from './historyDo
 import { syncNativeCommands } from './nativeCommands';
 import { createAgentHistoryRender, resolveHistoryNavigatorTarget } from './historyRender';
 import {
+  resolveCanonicalHistoryCount,
+  shouldRefreshHistoryNavigatorFromScroll,
+} from './historyNavigator';
+import {
   DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG,
   resolveAppServerControlHistoryFetchAheadItems,
   resolveAppServerControlHistoryWindowTargetCount,
@@ -677,6 +681,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
     debugScenario.snapshot.historyWindowEnd - debugScenario.snapshot.historyWindowStart;
   state.historyWindowTargetCount = state.historyWindowCount;
   state.historyNavigatorAnchorIndex = debugScenario.snapshot.historyWindowStart;
+  state.historyNavigatorVisibleCount = null;
   state.historyPendingJumpTargetIndex = null;
   state.historyPendingJumpAlign = null;
   state.pendingHistoryPrependAnchor = null;
@@ -1024,6 +1029,7 @@ function getOrCreateViewState(
     historyWindowViewportWidth: null,
     historyNavigatorMode: 'follow-live',
     historyNavigatorAnchorIndex: null,
+    historyNavigatorVisibleCount: null,
     historyNavigatorDragTargetIndex: null,
     historyNavigatorQueuedTargetIndex: null,
     historyNavigatorQueuedRequestKind: null,
@@ -1140,7 +1146,7 @@ function resolveHistoryJumpAlign(
   state: SessionAppServerControlViewState,
   absoluteIndex: number,
 ): 'top' | 'center' | 'bottom' {
-  const historyCount = Math.max(state.snapshot?.historyCount ?? 0, state.historyEntries.length);
+  const historyCount = resolveCanonicalHistoryCount(state.snapshot);
   if (absoluteIndex <= 0) {
     return 'top';
   }
@@ -1204,7 +1210,7 @@ async function requestHistoryNavigatorWindow(
     return;
   }
 
-  const historyCount = Math.max(snapshot.historyCount, state.historyEntries.length);
+  const historyCount = resolveCanonicalHistoryCount(snapshot);
   if (historyCount <= 0) {
     return;
   }
@@ -1448,6 +1454,10 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
         historyRender.captureHistoryViewportAnchor(current, 'pendingHistoryLayoutAnchor');
       }
 
+      current.historyLastScrollMetrics = historyRender.readHistoryScrollMetrics(
+        currentViewport,
+        current,
+      );
       current.historyWindowTargetCount = resolveAppServerControlHistoryWindowTargetCount(
         currentViewport,
         Math.max(APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE, current.historyWindowCount),
@@ -1476,6 +1486,10 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     current.historyLastUserScrollIntentAt = Date.now();
     if (direction !== 0) {
       current.historyLastUserScrollDirection = direction;
+      current.pendingHistoryPrependAnchor = null;
+      current.pendingHistoryLayoutAnchor = null;
+      current.historyPendingJumpTargetIndex = null;
+      current.historyPendingJumpAlign = null;
     }
     current.historyViewportSyncSuppressUntil = 0;
   };
@@ -1674,35 +1688,43 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       return;
     }
 
-    const viewportSyncSuppressed = Date.now() < current.historyViewportSyncSuppressUntil;
     const scrollMetrics = historyRender.readHistoryScrollMetrics(currentViewport, current);
-    setHistoryScrollMode(
-      current,
-      resolveHistoryScrollMode({
-        previousMode: current.historyScrollMode,
-        previous: current.historyLastScrollMetrics,
-        current: scrollMetrics,
-        userInitiated:
-          Date.now() - current.historyLastUserScrollIntentAt <=
-          USER_HISTORY_SCROLL_INTENT_WINDOW_MS,
-        pendingAnchorRestore:
-          current.pendingHistoryPrependAnchor !== null ||
-          current.pendingHistoryLayoutAnchor !== null,
-        hasNewerHistory: current.snapshot?.hasNewerHistory ?? false,
-      }),
-    );
+    const userInitiated = shouldRefreshHistoryNavigatorFromScroll({
+      now: Date.now(),
+      lastUserIntentAt: current.historyLastUserScrollIntentAt,
+      intentWindowMs: USER_HISTORY_SCROLL_INTENT_WINDOW_MS,
+      previous: current.historyLastScrollMetrics,
+      current: scrollMetrics,
+    });
+    const viewportSyncSuppressed =
+      !userInitiated && Date.now() < current.historyViewportSyncSuppressUntil;
+    if (!viewportSyncSuppressed) {
+      setHistoryScrollMode(
+        current,
+        resolveHistoryScrollMode({
+          previousMode: current.historyScrollMode,
+          previous: current.historyLastScrollMetrics,
+          current: scrollMetrics,
+          userInitiated,
+          pendingAnchorRestore:
+            current.pendingHistoryPrependAnchor !== null ||
+            current.pendingHistoryLayoutAnchor !== null,
+          hasNewerHistory: current.snapshot?.hasNewerHistory ?? false,
+        }),
+      );
+    }
     if (current.historyAutoScrollPinned) {
       current.historyNavigatorMode = 'follow-live';
       current.historyNavigatorDragTargetIndex = null;
     } else if (
-      current.historyNavigatorMode !== 'drag-preview' ||
-      activeHistoryNavigatorPointerId === null
+      userInitiated &&
+      (current.historyNavigatorMode !== 'drag-preview' || activeHistoryNavigatorPointerId === null)
     ) {
       current.historyNavigatorMode = 'browse';
       current.historyNavigatorDragTargetIndex = null;
     }
     current.historyLastScrollMetrics = scrollMetrics;
-    historyRender.syncViewportOffset(sessionId);
+    historyRender.syncViewportOffset(sessionId, { refreshAnchorFromViewport: userInitiated });
     historyRender.renderScrollToBottomControl(current.panel, current);
     if (current.historyNavigatorMode === 'drag-preview') {
       if (historyRender.shouldRenderForViewportScroll(current)) {

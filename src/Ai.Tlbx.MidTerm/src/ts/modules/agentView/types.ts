@@ -41,6 +41,7 @@ export interface SessionAppServerControlViewState {
   historyWindowViewportWidth: number | null;
   historyNavigatorMode: HistoryNavigatorMode;
   historyNavigatorAnchorIndex: number | null;
+  historyNavigatorVisibleCount: number | null;
   historyNavigatorDragTargetIndex: number | null;
   historyNavigatorQueuedTargetIndex: number | null;
   historyNavigatorQueuedRequestKind: HistoryNavigatorRequestKind | null;
