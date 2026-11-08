@@ -3,6 +3,11 @@ import type { AgentControllerInstallation } from '../../api/types';
 import { showTextPrompt } from '../../utils/dialog';
 import { JS_BUILD_VERSION } from '../../constants';
 import { t } from '../i18n';
+import {
+  applyLauncherBrowserDefaults,
+  commitLauncherPathForAction,
+  resolveLauncherProviderChoice,
+} from './launcherInit';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '../hub/runtime';
 import type { HubMachineState } from '../hub/types';
@@ -97,6 +102,8 @@ interface LauncherState {
   startPath: string;
   currentPath: string;
   pathDraft: string;
+  pathDirty: boolean;
+  providersLoaded: boolean;
   pathHistory: string[];
   parentPath: string | null;
   roots: LauncherDirectoryEntry[];
@@ -163,6 +170,7 @@ function buildSessionLauncherProviderControlHtml(
   target: SessionLauncherTarget,
   preferredProvider: LauncherProvider,
   disabled: boolean,
+  providersLoading: boolean,
 ): string {
   const selectedDefinition =
     definitions.find(
@@ -179,7 +187,7 @@ function buildSessionLauncherProviderControlHtml(
   const primaryLabel =
     selectedDefinition.provider === 'terminal'
       ? selectedDefinition.launchLabel
-      : 'New Conversation';
+      : t('sessionLauncher.newConversation');
   const resumeAction =
     selectedDefinition.provider !== 'terminal' && selectedDefinition.supportsResume !== false
       ? `
@@ -190,7 +198,7 @@ function buildSessionLauncherProviderControlHtml(
           data-launch-mode="resume"
           ${disabled ? 'disabled' : ''}
         >
-          Resume Conversation
+          ${escapeHtml(t('providerResume.title'))}
         </button>
       `
       : '';
@@ -204,6 +212,7 @@ function buildSessionLauncherProviderControlHtml(
         id="session-launcher-provider-select"
         class="session-launcher-provider-select"
         data-role="provider-select"
+        ${providersLoading ? 'disabled aria-busy="true"' : ''}
       >
         ${definitions
           .map((definition) => {
@@ -278,20 +287,11 @@ async function promptForLauncherRepositoryUrl(): Promise<string | null> {
 async function ensureCommittedLauncherPath(
   context: LauncherLocalActionContext,
 ): Promise<string | null> {
-  const candidatePath = context.getPathDraft().trim();
-  if (!candidatePath) {
-    context.setError('Path is required');
-    return null;
-  }
-
-  if (candidatePath !== context.getCurrentPath()) {
-    const loaded = await context.loadDirectory(candidatePath);
-    if (!loaded) {
-      return null;
-    }
-  }
-
-  return context.getCurrentPath();
+  context.clearPendingPathFollow();
+  return commitLauncherPathForAction(
+    { ...context, getTargetId: () => context.getTarget().id },
+    'Path is required',
+  );
 }
 
 async function ensureWritableLauncherDirectory(
@@ -486,23 +486,6 @@ function getSelectedTargetOrLocal(
   );
 }
 
-function resetLauncherBrowserState(
-  state: LauncherState,
-  pathResponse: LauncherPathResponse,
-  roots: LauncherDirectoryEntry[],
-): void {
-  const homePath = pathResponse.homePath || pathResponse.path;
-  const startPath = pathResponse.startPath || homePath;
-  state.homePath = homePath;
-  state.startPath = startPath;
-  state.currentPath = startPath;
-  state.pathDraft = startPath;
-  state.pathHistory = [];
-  state.parentPath = null;
-  state.roots = roots;
-  state.entries = [];
-}
-
 function getMajorMinorVersion(version: string | null | undefined): string | null {
   const match = version?.trim().match(/^v?(\d+)\.(\d+)/i);
   return match ? `${match[1]}.${match[2]}` : null;
@@ -573,9 +556,12 @@ function applyLauncherDirectoryResponse(
   response: LauncherDirectoryListResponse,
   previousPath: string,
   recordHistory: boolean | undefined,
+  requestedDraft: string,
 ): void {
   state.currentPath = response.path;
-  state.pathDraft = response.path;
+  if (state.pathDraft === requestedDraft) {
+    state.pathDraft = response.path;
+  }
   state.parentPath = response.parentPath;
   state.entries = response.entries;
   if (
@@ -671,6 +657,8 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       startPath: '',
       currentPath: '',
       pathDraft: '',
+      pathDirty: false,
+      providersLoaded: false,
       pathHistory: [],
       parentPath: null,
       roots: [],
@@ -796,6 +784,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         target,
         state.selectedProvider,
         state.loading || !state.currentPath,
+        !state.providersLoaded,
       );
 
       const targetWarning = getLauncherTargetWarning(target);
@@ -868,11 +857,17 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         recordHistory?: boolean;
         suppressErrors?: boolean;
         target?: SessionLauncherTarget;
+        initial?: boolean;
       },
     ): Promise<boolean> {
+      if (!options?.initial) {
+        state.pathDirty = true;
+      }
+
       const target = options?.target ?? getSelectedTarget();
       const targetId = target.id;
       const previousPath = state.currentPath;
+      const requestedDraft = state.pathDraft;
       const requestToken = beginLauncherDirectoryLoad(state, options?.suppressErrors, render);
 
       try {
@@ -881,7 +876,13 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           return false;
         }
 
-        applyLauncherDirectoryResponse(state, response, previousPath, options?.recordHistory);
+        applyLauncherDirectoryResponse(
+          state,
+          response,
+          previousPath,
+          options?.recordHistory,
+          requestedDraft,
+        );
         return true;
       } catch (error) {
         if (isLauncherRequestStale(state, requestToken, targetId)) {
@@ -917,11 +918,22 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           return;
         }
 
-        resetLauncherBrowserState(state, pathResponse, rootsResponse.entries);
-        const initialPath = options?.path?.trim() || state.startPath;
+        const initialPath = applyLauncherBrowserDefaults(
+          state,
+          pathResponse,
+          rootsResponse.entries,
+          options?.path,
+        );
+        if (!initialPath) {
+          state.loading = false;
+          state.loadingMessage = null;
+          render();
+          return;
+        }
         await loadDirectory(initialPath, {
           recordHistory: false,
           target,
+          initial: true,
         });
       } catch (error) {
         if (requestToken !== state.requestToken || state.selectedTargetId !== target.id) {
@@ -991,6 +1003,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     void fetchAgentControllerInstallations()
       .then((installations) => {
         state.agentControllerInstallations = installations;
+        state.providersLoaded = true;
         const providerExists = getSessionLauncherProviderDefinitions(installations).some(
           (definition) => definition.provider === state.selectedProvider,
         );
@@ -1002,21 +1015,25 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       })
       .catch(() => {
         state.agentControllerInstallations = [];
+        state.providersLoaded = true;
         state.selectedProvider = 'terminal';
         renderProviders();
       });
 
-    function launch(
+    async function launch(
       provider: LauncherProvider,
       launchMode: LauncherLaunchMode,
       resumeThreadId?: string | null,
-    ): void {
+      resumeWorkingDirectory?: string | null,
+    ): Promise<void> {
       const target = getSelectedTarget();
       if (!isProviderSupportedOnTarget(provider, target)) {
         return;
       }
 
-      if (state.loading || !state.currentPath) {
+      const workingDirectory =
+        resumeWorkingDirectory?.trim() || (await ensureCommittedLauncherPath(localActionContext));
+      if (!workingDirectory || state.selectedTargetId !== target.id) {
         return;
       }
 
@@ -1025,7 +1042,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       close({
         provider,
         launchMode,
-        workingDirectory: state.currentPath,
+        workingDirectory,
         resumeThreadId: resumeThreadId?.trim() || null,
         target,
       });
@@ -1042,26 +1059,31 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       const provider = actionEl.dataset.provider as LauncherProvider;
       const launchMode = actionEl.dataset.launchMode as LauncherLaunchMode;
       if (launchMode !== 'resume' || provider === 'terminal') {
-        launch(provider, launchMode);
+        void launch(provider, launchMode);
         return;
       }
 
-      const workingDirectory = state.currentPath;
-      if (!workingDirectory) {
+      const target = getSelectedTarget();
+      if (!isProviderSupportedOnTarget(provider, target)) {
         return;
       }
 
       void (async () => {
+        const workingDirectory = await ensureCommittedLauncherPath(localActionContext);
+        if (!workingDirectory || state.selectedTargetId !== target.id) {
+          return;
+        }
+
         const resumeEntry = await openProviderResumePicker({
           provider: provider as ResumeProvider,
           workingDirectory,
           initialScope: 'current',
         });
-        if (!resumeEntry) {
+        if (!resumeEntry || state.selectedTargetId !== target.id) {
           return;
         }
 
-        launch(provider, 'resume', resumeEntry.sessionId);
+        await launch(provider, 'resume', resumeEntry.sessionId, resumeEntry.workingDirectory);
       })();
     });
 
@@ -1073,7 +1095,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         return;
       }
 
-      state.selectedProvider = providerSelect.value;
+      state.selectedProvider = resolveLauncherProviderChoice(
+        state.selectedProvider,
+        providerSelect.value,
+      );
       rememberSessionLauncherProvider(state.selectedProvider);
       renderProviders();
       safeProvidersEl.querySelector<HTMLSelectElement>('[data-role="provider-select"]')?.focus();
@@ -1089,6 +1114,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
       clearPendingPathFollow();
       state.selectedTargetId = targetId;
+      state.pathDirty = false;
       state.pathHistory = [];
       render();
       void loadSelectedTargetBrowser(getSelectedTarget());
@@ -1116,6 +1142,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     safePathEl.addEventListener('input', () => {
       state.pathDraft = safePathEl.value;
+      state.pathDirty = true;
       queueLauncherPathFollow(
         state,
         clearPendingPathFollow,

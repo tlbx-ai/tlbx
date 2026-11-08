@@ -208,7 +208,8 @@ public sealed class CodexNotificationScopeTests
                             break;
                         case "thread/start":
                         case "thread/resume":
-                            result = new { model = "opened-native-model", reasoningEffort = "high",
+                            result = new { model = "opened-native-model", reasoningEffort = "high", serviceTier = "fast",
+                                collaborationMode = new { mode = "plan", settings = new { model = "opened-native-model" } },
                                 thread = new { id = "canonical-A", status = new { type = "idle" } } };
                             break;
                         case "thread/read":
@@ -266,6 +267,8 @@ public sealed class CodexNotificationScopeTests
             Assert.Equal("canonical-A", ready.Thread.ThreadId);
             Assert.Equal("opened-native-model", ready.QuickSettings.Model);
             Assert.Equal("high", ready.QuickSettings.Effort);
+            Assert.Equal("on", ready.QuickSettings.FastMode);
+            Assert.Equal("on", ready.QuickSettings.PlanMode);
             Assert.DoesNotContain("turn/start", methods, StringComparer.Ordinal);
             using var idlePatch = JsonDocument.Parse("""{"model":"requested-model","planMode":"on"}""");
             using var idleProperties = idlePatch.RootElement.EnumerateObject();
@@ -311,6 +314,7 @@ public sealed class CodexNotificationScopeTests
             Assert.Equal("provider-normalized-model", receipt.EffectiveSettings["model"].GetString());
             Assert.Equal("medium", receipt.EffectiveSettings["effort"].GetString());
             Assert.Contains("collaborationMode", receipt.DeferredFields, StringComparer.Ordinal);
+            Assert.Equal("off", history.GetSnapshotWindow("s")!.QuickSettings.FastMode);
             Assert.Equal(liveStatus == "applied", receipt.ConfirmedSettings.ContainsKey("model"));
             var live = await liveParameters.Task.WaitAsync(ct);
             Assert.Equal("canonical-A", live.GetProperty("threadId").GetString());

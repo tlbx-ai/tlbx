@@ -295,6 +295,16 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         _quickSettings.Model = GetString(threadResult, "model") ?? _quickSettings.Model;
         if (threadResult.TryGetProperty("reasoningEffort", out var openedEffort))
             _quickSettings.Effort = openedEffort.GetString();
+        // thread/start and thread/resume both return the effective serviceTier; only resume returns collaborationMode.
+        if (threadResult.TryGetProperty("serviceTier", out var openedTier))
+            _quickSettings.FastMode = openedTier.ValueKind == JsonValueKind.String && openedTier.GetString() == "fast"
+                ? AppServerControlQuickSettings.FastModeOn
+                : AppServerControlQuickSettings.FastModeOff;
+        if (threadResult.TryGetProperty("collaborationMode", out var openedCollaboration) &&
+            openedCollaboration.ValueKind == JsonValueKind.Object)
+            _quickSettings.PlanMode = GetString(openedCollaboration, "mode") == "plan"
+                ? AppServerControlQuickSettings.PlanModeOn
+                : AppServerControlQuickSettings.PlanModeOff;
         if (resumedExistingThread)
         {
             await ReadCodexThreadHistoryAsync(providerThreadId, ct).ConfigureAwait(false);
