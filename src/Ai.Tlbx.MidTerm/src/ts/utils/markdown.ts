@@ -57,8 +57,34 @@ function replaceEmphasis(text: string, delimiter: '\\*' | '_'): string {
   );
 }
 
+/** Input is already HTML-escaped. Literal escapes and code never become markup. */
+function formatMarkdownInline(text: string): string {
+  const literals: string[] = [];
+  let prefix = '\uE000tlbx-inline:';
+  while (text.includes(prefix)) prefix += ':';
+  let html = text.replace(
+    /\\(&gt;|&lt;|&quot;|&#39;|&amp;|[\\`*{}[\]()#+\-.!_|>~])|(`+)([^\n]*?)\2(?!`)/g,
+    (_match, escaped: string | undefined, _ticks: string, code: string) => {
+      const literal = escaped ?? `<code>${code.replace(/^ (.*\S.*) $/, '$1')}</code>`;
+      literals.push(literal);
+      return `${prefix}${literals.length - 1}\uE001`;
+    },
+  );
+  html = replaceStrong(html, '\\*\\*');
+  html = replaceStrong(html, '__');
+  html = replaceEmphasis(html, '\\*');
+  html = replaceEmphasis(html, '_');
+  html = formatMarkdownLinks(formatMarkdownImages(html));
+  return html.replace(
+    new RegExp(`${prefix}(\\d+)\uE001`, 'g'),
+    (_match, index: string) => literals[Number(index)] ?? '',
+  );
+}
+
 function isMarkdownTableSeparator(line: string): boolean {
-  return /^\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?$/.test(line.trim());
+  return (
+    line.includes('|') && splitMarkdownTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell))
+  );
 }
 
 function isMarkdownTableRow(line: string): boolean {
@@ -68,16 +94,32 @@ function isMarkdownTableRow(line: string): boolean {
   }
 
   const cells = splitMarkdownTableRow(trimmed);
-  return cells.length >= 2;
+  return cells.length >= 1;
 }
 
 function splitMarkdownTableRow(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim());
+  const source = line.trim();
+  const cells: string[] = [];
+  let cell = '';
+  let trailingDelimiter = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index] ?? '';
+    trailingDelimiter = false;
+    // GFM table escaping removes exactly the backslash immediately before a
+    // pipe, including inside code spans. Other backslashes belong to the cell.
+    if (char === '\\' && source[index + 1] === '|') {
+      cell += '|';
+      index += 1;
+    } else if (char === '|') {
+      cells.push(cell.trim());
+      cell = '';
+      trailingDelimiter = true;
+    } else cell += char;
+  }
+  cells.push(cell.trim());
+  if (source.startsWith('|')) cells.shift();
+  if (trailingDelimiter) cells.pop();
+  return cells;
 }
 
 function countUnquotedDelimitedSeparators(line: string, delimiter: string): number {
@@ -384,6 +426,8 @@ function renderStructuredMarkdownTable(args: {
   const isDense = headers.length >= 7;
   const denseAttr = isDense ? ' data-table-density="dense"' : '';
   const sourceAttr = source === 'csv' ? ' data-table-source="csv"' : '';
+  const formatCell = (cell: string): string =>
+    source === 'markdown' ? formatMarkdownInline(cell) : cell;
 
   return `<div class="agent-markdown-table-wrap"><table class="agent-markdown-table"${denseAttr}${sourceAttr}><thead><tr>${headers
     .map((cell, cellIndex) => {
@@ -391,7 +435,7 @@ function renderStructuredMarkdownTable(args: {
       const alignAttr = alignment ? ` data-align="${alignment}"` : '';
       const kindAttr = ` data-col-kind="${columnKinds[cellIndex] ?? 'text'}"`;
       return `<th${alignAttr}${kindAttr} title="${cell}" aria-label="${cell}">${renderMarkdownTableHeaderContent(
-        cell,
+        formatCell(cell),
         columnKinds[cellIndex] ?? 'text',
         isDense,
       )}</th>`;
@@ -405,7 +449,7 @@ function renderStructuredMarkdownTable(args: {
             const alignAttr = alignment ? ` data-align="${alignment}"` : '';
             const kind = columnKinds[cellIndex] ?? 'text';
             const kindAttr = ` data-col-kind="${kind}"`;
-            return `<td${alignAttr}${kindAttr}>${cell}</td>`;
+            return `<td${alignAttr}${kindAttr}>${formatCell(cell)}</td>`;
           })
           .join('')}</tr>`,
     )
@@ -678,7 +722,7 @@ export function wireMarkdownTables(
   });
 }
 
-function renderMarkdownTables(text: string): string {
+function renderMarkdownTables(text: string, preserve: (html: string) => string): string {
   const lines = text.split('\n');
   const rendered: string[] = [];
 
@@ -713,12 +757,14 @@ function renderMarkdownTables(text: string): string {
       Array.from({ length: columnCount }, (_, cellIndex) => row[cellIndex] ?? ''),
     );
     rendered.push(
-      renderStructuredMarkdownTable({
-        headers: normalizedHeaders,
-        rows: normalizedRows,
-        alignments,
-        source: 'markdown',
-      }),
+      preserve(
+        renderStructuredMarkdownTable({
+          headers: normalizedHeaders,
+          rows: normalizedRows,
+          alignments,
+          source: 'markdown',
+        }),
+      ),
     );
   }
 
@@ -750,8 +796,11 @@ function isCsvMarkdownFenceLanguage(language: string): boolean {
 }
 
 function isBlockLevelMarkdownLine(line: string): boolean {
-  return /^<(?:h\d|ul|ol|li|pre|blockquote|hr|table|thead|tbody|tr|th|td|figure|img|figcaption|div)\b/.test(
-    line,
+  return (
+    /^@@MIDTERMMD\d+@@$/.test(line) ||
+    /^<(?:h\d|ul|ol|li|pre|blockquote|hr|table|thead|tbody|tr|th|td|figure|img|figcaption|div)\b/.test(
+      line,
+    )
   );
 }
 
@@ -836,27 +885,24 @@ export function renderMarkdown(text: string): string {
 
   let html = escapeMarkdownHtml(withoutCodeBlocks);
 
-  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  html = renderMarkdownTables(html, (table) => {
+    const token = `@@MIDTERMMD${codeBlocks.length}@@`;
+    codeBlocks.push(table);
+    return token;
+  });
 
   html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
 
-  html = replaceStrong(html, '\\*\\*');
-  html = replaceStrong(html, '__');
-  html = replaceEmphasis(html, '\\*');
-  html = replaceEmphasis(html, '_');
-
-  html = formatMarkdownImages(html);
-  html = formatMarkdownLinks(html);
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
   html = html.replace(/^---$/gm, '<hr>');
   html = html.replace(/^\*\*\*$/gm, '<hr>');
-  html = renderMarkdownTables(html);
 
   html = html.replace(/^- (.+)$/gm, '<li data-list="ul">$1</li>');
   html = html.replace(/^\d+\. (.+)$/gm, '<li data-list="ol">$1</li>');
+  html = formatMarkdownInline(html);
   html = html.replace(/((?:<li data-list="ul">.*?<\/li>\n?)+)/g, (match) => {
     return `<ul>${match.replace(/\n/g, '').replace(/ data-list="ul"/g, '')}</ul>`;
   });

@@ -15,7 +15,7 @@ import {
   shouldShowAppServerControlDevErrorDialog,
 } from './activationHelpers';
 import type {
-  AssistantMarkdownCacheEntry,
+  HistoryMarkdownCacheEntry,
   HistoryRenderedNode,
   AppServerControlHistoryEntry,
   SessionAppServerControlViewState,
@@ -406,7 +406,7 @@ const historyRender = createAgentHistoryRender({
   createHistoryPlaceholderBlock: historyDom.createHistoryPlaceholderBlock,
   syncBusyIndicatorEntry: historyDom.syncBusyIndicatorEntry,
   createRequestActionBlock: historyDom.createRequestActionBlock,
-  pruneAssistantMarkdownCache: historyDom.pruneAssistantMarkdownCache,
+  pruneHistoryMarkdownCache: historyDom.pruneHistoryMarkdownCache,
   renderRuntimeStats: historyDom.renderRuntimeStats,
   syncViewportHistoryWindow: (sessionId) => {
     const state = viewStates.get(sessionId);
@@ -1064,7 +1064,7 @@ function getOrCreateViewState(
     activationActionBusy: false,
     optimisticTurns: [],
     renderDirty: false,
-    assistantMarkdownCache: new Map<string, AssistantMarkdownCacheEntry>(),
+    historyMarkdownCache: new Map<string, HistoryMarkdownCacheEntry>(),
     historyRenderedNodes: new Map<string, HistoryRenderedNode>(),
     historyMeasuredHeights: new Map<string, number>(),
     historyObservedHeights: new Map<string, number>(),
@@ -2136,7 +2136,7 @@ function releaseHiddenAppServerControlRenderState(state: SessionAppServerControl
   state.historyEntries = [];
   state.historyMeasurementObserver?.disconnect();
   state.historyRenderedNodes.clear();
-  state.assistantMarkdownCache.clear();
+  state.historyMarkdownCache.clear();
   state.historyObservedHeights.clear();
   state.historyLeadingPlaceholders = [];
   state.historyTrailingPlaceholders = [];

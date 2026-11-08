@@ -1,9 +1,9 @@
 import { t } from '../i18n';
+import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
 import { isFileChangeHistoryEntry, showAgentTechnicalDetails } from './historyVisibility';
 import { $currentSettings, getSession } from '../../stores';
-import { renderMarkdownFragment, wireMarkdownTables } from '../../utils/markdown';
+import { wireMarkdownTables } from '../../utils/markdown';
 import {
-  buildAssistantEnrichedHtml,
   createAssistantImagePreviewBlock,
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
@@ -30,7 +30,6 @@ import {
 } from './historyContent';
 import { DEFAULT_TOOL_CALL_OUTPUT_LINES, MAX_TOOL_CALL_OUTPUT_LINES } from './historyConstants';
 import type {
-  AssistantMarkdownCacheEntry,
   ArtifactClusterInfo,
   HistoryBodyPresentation,
   AppServerControlHistoryAction,
@@ -661,7 +660,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         body.className = 'agent-history-body agent-history-markdown';
         const content = document.createElement('div');
         content.className = 'agent-history-markdown-content';
-        const cache = getCachedAssistantMarkdown(sessionId, entry);
+        const cache = getCachedHistoryMarkdown(
+          deps.getState(sessionId)?.historyMarkdownCache,
+          entry,
+        );
         content.innerHTML = cache.html;
         collapseSingleParagraphMarkdownBody(content);
         wireAssistantInteractiveContent(content, sessionId);
@@ -1023,71 +1025,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return block;
   }
 
-  function getCachedAssistantMarkdown(
-    sessionId: string,
-    entry: AppServerControlHistoryEntry,
-  ): AssistantMarkdownCacheEntry {
-    const fileMentions = getEntryFileMentions(entry, 'body');
-    const fileMentionToken = fileMentions
-      .map((mention) =>
-        [
-          mention.displayText,
-          mention.path,
-          mention.pathKind,
-          mention.resolvedPath ?? '',
-          mention.exists ? '1' : '0',
-          mention.isDirectory ? '1' : '0',
-        ].join(':'),
-      )
-      .join('|');
-    const state = deps.getState(sessionId);
-    if (!state) {
-      const fallback = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body), fileMentions);
-      return {
-        body: entry.body,
-        html: fallback.html,
-        fileMentionToken,
-      };
-    }
-
-    const existing = state.assistantMarkdownCache.get(entry.id);
-    if (
-      existing &&
-      existing.body === entry.body &&
-      existing.fileMentionToken === fileMentionToken
-    ) {
-      return existing;
-    }
-
-    const enriched = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body), fileMentions);
-    const next: AssistantMarkdownCacheEntry = {
-      body: entry.body,
-      html: enriched.html,
-      fileMentionToken,
-    };
-    state.assistantMarkdownCache.set(entry.id, next);
-    return next;
-  }
-
-  function pruneAssistantMarkdownCache(
-    state: SessionAppServerControlViewState,
-    entries: readonly AppServerControlHistoryEntry[],
-  ): void {
-    if (state.assistantMarkdownCache.size === 0) {
-      return;
-    }
-
-    const activeAssistantIds = new Set(
-      entries.filter((entry) => entry.kind === 'assistant').map((entry) => entry.id),
-    );
-
-    for (const cacheKey of state.assistantMarkdownCache.keys()) {
-      if (!activeAssistantIds.has(cacheKey)) {
-        state.assistantMarkdownCache.delete(cacheKey);
-      }
-    }
-  }
-
   function shouldRenderHistoryBody(entry: AppServerControlHistoryEntry): boolean {
     if (entry.toolPresentation) {
       return true;
@@ -1275,7 +1212,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     createHistoryEntry,
     createHistoryPlaceholderBlock,
     createRequestActionBlock,
-    pruneAssistantMarkdownCache,
+    pruneHistoryMarkdownCache: (
+      state: SessionAppServerControlViewState,
+      entries: readonly AppServerControlHistoryEntry[],
+    ) => {
+      pruneHistoryMarkdownCache(state.historyMarkdownCache, entries);
+    },
     renderRuntimeStats,
     syncBusyIndicatorEntry,
     syncHistoryEntry,

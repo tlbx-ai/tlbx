@@ -248,8 +248,10 @@ export function tokenizeCommandText(commandText: string): CommandToken[] {
   return tokens;
 }
 
-function usesMarkdownPresentation(entry: AppServerControlHistoryEntry): boolean {
-  return entry.kind === 'assistant' || entry.sourceItemType === 'proposed_plan';
+export function usesMarkdownPresentation(entry: AppServerControlHistoryEntry): boolean {
+  return (
+    entry.kind === 'user' || entry.kind === 'assistant' || entry.sourceItemType === 'proposed_plan'
+  );
 }
 
 function shouldCollapseHistoryBody(
