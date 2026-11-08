@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -90,6 +91,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
     public string? AfterHistoryNotificationJson { get; set; }
 
     public int ThreadResumeCount { get; private set; }
+
+    public ConcurrentQueue<JsonElement> ServerRequestResponses { get; } = new();
+    public string? ThreadSettingsUpdateJson { get; set; }
+    public bool RejectThreadSettingsUpdate { get; set; }
+    public Task? ThreadSettingsUpdateGate { get; set; }
+    public TaskCompletionSource ThreadSettingsUpdateReceived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public bool IgnoreGoalReadback { get; set; }
 
@@ -247,6 +254,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                 var root = json.RootElement;
                 if (!root.TryGetProperty("method", out var methodElement) || methodElement.ValueKind != JsonValueKind.String)
                 {
+                    if (root.TryGetProperty("id", out _) && (root.TryGetProperty("result", out _) || root.TryGetProperty("error", out _)))
+                        ServerRequestResponses.Enqueue(root.Clone());
                     continue;
                 }
 
@@ -342,6 +351,22 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
                         await SendProtocolV2SurfaceNotificationsAsync(socket).ConfigureAwait(false);
+                        break;
+
+                    case "thread/settings/update" when id is not null:
+                        ThreadSettingsUpdateReceived.TrySetResult();
+                        if (ThreadSettingsUpdateGate is { } gate) await gate.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                        if (RejectThreadSettingsUpdate)
+                        {
+                            await SendJsonAsync(socket, new { id, error = new { code = -32602, message = "Fixture settings rejection." } }, _shutdown.Token).ConfigureAwait(false);
+                            break;
+                        }
+                        await SendJsonAsync(socket, new { id, result = new { } }, _shutdown.Token).ConfigureAwait(false);
+                        if (ThreadSettingsUpdateJson is { } actual)
+                        {
+                            using var settings = JsonDocument.Parse(actual);
+                            await SendJsonAsync(socket, new { method = "thread/settings/updated", @params = new { threadId = LoadedThreadId, threadSettings = settings.RootElement } }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "thread/goal/get" when id is not null:

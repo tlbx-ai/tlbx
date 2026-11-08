@@ -26,6 +26,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
     private readonly Action<AppServerControlProviderEvent> _emit;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _codexWriteGate = new(1, 1);
     private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonRpcReply>> _pendingRequests = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingCodexApproval> _pendingApprovals = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, PendingCodexUserInput> _pendingUserInputs = new(StringComparer.Ordinal);
@@ -126,6 +127,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         _shutdown.Dispose();
         _gate.Dispose();
+        _codexWriteGate.Dispose();
         _mcpCredentials?.Dispose();
         _mcpCredentials = null;
     }
@@ -248,6 +250,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         _goalNotificationRevision = 0;
         _activeTurnId = null;
         _hasConfiguredThreadDefaults = false;
+        _mcpTurnStartPending = false;
         _remoteEndpoint = attachPoint?.Endpoint;
         _quickSettings = CreateDefaultQuickSettings();
         _usage = null;
@@ -357,6 +360,9 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             throw new InvalidOperationException("App Server Controller turn input must include text or attachments.");
         }
 
+        // Until this start is acknowledged, previous Auto defaults must not answer
+        // approvals for a turn that explicitly requested different permissions.
+        _mcpTurnStartPending = true;
         var turnResult = await SendCodexRequestAsync(
             "turn/start",
             id => PreserveConfiguredDefaults(BuildCodexTurnStartRequest(
@@ -372,6 +378,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         _quickSettings = quickSettings;
         _activeTurnId = GetString(turnResult, "turn", "id");
+        _mcpTurnStartPending = false;
+        await ReleasePendingMcpApprovalsAsync(_providerThreadId!, _activeTurnId).ConfigureAwait(false);
         return new HostCommandOutcome
         {
             Result = new AppServerControlHostCommandResultEnvelope
@@ -496,6 +504,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         }
 
         var decision = NormalizeApprovalDecision(resolution.Decision);
+        if (pending.RequestType == McpToolApprovalType)
+            return await ResolveMcpToolApprovalAsync(command, pending, decision, ct).ConfigureAwait(false);
         await WriteCodexMessageAsync(BuildCodexApprovalResponse(pending, decision), ct).ConfigureAwait(false);
         _pendingApprovals.TryRemove(requestId, out _);
 
@@ -752,6 +762,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
     private void HandleCodexServerRequest(string method, JsonElement jsonRpcId, JsonElement payload)
     {
+        if (TryHandleMcpToolApproval(method, jsonRpcId, payload)) return;
         if (method == "item/tool/requestUserInput")
         {
             var turnId = ResolveTurnId(payload);
@@ -1942,6 +1953,13 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     }
 
     private async Task WriteCodexMessageAsync(string payload, CancellationToken ct)
+    {
+        await _codexWriteGate.WaitAsync(ct).ConfigureAwait(false);
+        try { await WriteCodexMessageCoreAsync(payload, ct).ConfigureAwait(false); }
+        finally { _codexWriteGate.Release(); }
+    }
+
+    private async Task WriteCodexMessageCoreAsync(string payload, CancellationToken ct)
     {
         EnsureAttachedOrStarting();
         if (_webSocket is not null)
@@ -3348,8 +3366,11 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     {
         foreach (var pending in _pendingApprovals.Values)
         {
-            if (turnId is null || string.Equals(pending.TurnId, turnId, StringComparison.Ordinal))
-                _pendingApprovals.TryRemove(pending.RequestId, out _);
+            if ((turnId is null || string.Equals(pending.TurnId, turnId, StringComparison.Ordinal)) &&
+                _pendingApprovals.TryRemove(pending.RequestId, out _) && pending.RequestType == McpToolApprovalType &&
+                string.Equals(pending.ThreadId, _providerThreadId, StringComparison.Ordinal))
+                _emit(CreateEvent("request.resolved", pending.TurnId, null, pending.RequestId, "mtagenthost.codex", "turn/ended", default,
+                    e => e.RequestResolved = new() { RequestType = McpToolApprovalType, Decision = "cancel" }));
         }
         foreach (var pending in _pendingUserInputs.Values)
         {
@@ -3366,7 +3387,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             return false;
         }
 
-        var approval = _pendingApprovals.Values.FirstOrDefault(pending => JsonElement.DeepEquals(pending.JsonRpcId, nativeId));
+        var approval = _pendingApprovals.Values.FirstOrDefault(pending => JsonElement.DeepEquals(pending.JsonRpcId, nativeId) &&
+            (pending.RequestType != McpToolApprovalType || string.Equals(pending.ThreadId, GetString(payload, "threadId"), StringComparison.Ordinal)));
         if (approval is not null && _pendingApprovals.TryRemove(approval.RequestId, out approval))
         {
             _emit(CreateEvent("request.resolved", approval.TurnId, approval.ItemId, approval.RequestId, "codex.app-server.notification", method, payload, appServerControlEvent =>
@@ -4059,6 +4081,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             "file_read_approval" => "File read approval",
             "file_change_approval" => "File change approval",
             "permissions_approval" => "Permissions approval",
+            McpToolApprovalType => "Tool approval",
             "interview" => "Interview",
             _ => requestType
         };
@@ -4173,5 +4196,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         public string? ItemId { get; set; }
         public string? Detail { get; set; }
         public JsonElement Payload { get; set; }
+        public string? ThreadId { get; set; }
+        public int McpResolutionState;
     }
 }

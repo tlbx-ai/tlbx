@@ -121,7 +121,7 @@ public static class AppServerControlProviderEventCompaction
             {
                 RequestType = source.RequestOpened.RequestType,
                 RequestTypeLabel = source.RequestOpened.RequestTypeLabel,
-                Detail = CompactTextMiddle(source.RequestOpened.Detail, MaxRequestDetailChars)
+                Detail = CompactRequestDetail(source.RequestOpened.Detail, source.RequestOpened.RequestType, pending: true)
             },
             RequestResolved = source.RequestResolved is null ? null : new AppServerControlProviderRequestResolvedPayload
             {
@@ -197,6 +197,9 @@ public static class AppServerControlProviderEventCompaction
             _ => detail
         };
     }
+
+    public static string CompactRequestDetail(string? detail, string requestType, bool pending) =>
+        pending && requestType == "mcp_tool_approval" ? detail ?? string.Empty : CompactTextMiddle(detail, MaxRequestDetailChars);
 
     private static string CompactTextMiddle(string? value, int maxChars)
     {

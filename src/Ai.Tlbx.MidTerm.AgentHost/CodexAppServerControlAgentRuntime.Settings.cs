@@ -77,6 +77,12 @@ internal sealed partial class CodexAppServerControlAgentRuntime
             // The RPC result is {}; only the scoped notification carries actual values.
             var actual = await confirmation.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
             response.ThreadStatus = "applied";
+            // Thread defaults do not mutate an inference in flight. Separately answer only
+            // currently waiting typed MCP tool approvals under the acknowledged owned Auto scope.
+            if (threadPatch.ContainsKey("approvalPolicy") && threadPatch.ContainsKey("sandboxPolicy") &&
+                string.Equals(request.ExpectedThreadId, _providerThreadId, StringComparison.Ordinal) &&
+                string.Equals(request.ExpectedTurnId, _activeTurnId, StringComparison.Ordinal)) _mcpTurnStartPending = false;
+            await ReleasePendingMcpApprovalsAsync(request.ExpectedThreadId, request.ExpectedTurnId).ConfigureAwait(false);
             _hasConfiguredThreadDefaults = true;
             using var actualProperties = actual.EnumerateObject();
             foreach (var property in actualProperties)
