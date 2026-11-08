@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Reflection;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -12,6 +14,47 @@ public sealed class HistoryReplayTests : IDisposable
     private readonly SessionAppServerControlHistoryService _history;
 
     public HistoryReplayTests() => _history = new(storeDirectory: _directory, enableScreenLogging: false);
+
+    [Fact]
+    public async Task DefaultHostKeepsReplayAndLiveHistoryInMemoryWithoutStoreOrWriter()
+    {
+        // Match the production host call, including its in-memory file-reference session manager.
+        var history = new SessionAppServerControlHistoryService(sessionManager: new TtyHostSessionManager());
+        var storeField = typeof(SessionAppServerControlHistoryService).GetField("_storeDirectory", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var storePath = (string?)storeField.GetValue(history);
+        try
+        {
+            Assert.False(Directory.Exists(storePath));
+            Assert.Null(storePath);
+            Assert.Null(history.GetSnapshotWindow(Session));
+            history.AppendInitialReplay([Started("past"), Assistant("past", "old", "Restored answer"), Completed("past")]);
+            history.Append(Started("live"));
+            history.Append(Assistant("live", "new", "Current answer"));
+            var snapshot = history.GetSnapshot(Session)!;
+            Assert.Equal(5, snapshot.LatestSequence);
+            Assert.Equal(new[] { "Restored answer", "Current answer" }, snapshot.History.Select(row => row.Body), StringComparer.Ordinal);
+            Assert.Equal("Current answer", snapshot.Streams.AssistantText);
+            Assert.Equal("Restored answer", Assert.Single(history.GetSnapshotWindow(Session, 0, 1)!.History).Body);
+
+            var logs = (IDictionary)typeof(SessionAppServerControlHistoryService)
+                .GetField("_logs", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(history)!;
+            var log = logs[Session]!;
+            Assert.False((bool)log.GetType().GetProperty("PersistenceDirty")!.GetValue(log)!);
+            Assert.False((bool)log.GetType().GetProperty("PersistenceScheduled")!.GetValue(log)!);
+            await Task.Delay(450, TestContext.Current.CancellationToken); // Beyond the old 200ms save timer.
+            Assert.Null(storeField.GetValue(history));
+            Assert.False(Directory.Exists(storePath));
+            Assert.Equal("Current answer", history.GetSnapshot(Session)!.Streams.AssistantText);
+            history.Forget(Session);
+            Assert.Null(history.GetSnapshotWindow(Session));
+        }
+        finally
+        {
+            history.Forget(Session);
+            // Also clean the old implementation's unique test-owned directory on regression failure.
+            if (storePath is not null && Directory.Exists(storePath)) Directory.Delete(storePath, recursive: true);
+        }
+    }
 
     [Fact]
     public void BufferedSessionFallbackNoticeCannotReplaceReadyProviderIdentityButExplicitThreadMetadataCan()
