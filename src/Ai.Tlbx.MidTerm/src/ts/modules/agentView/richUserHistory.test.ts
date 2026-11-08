@@ -248,7 +248,7 @@ describe('rich user input to history', () => {
     async (text) => {
       const doc = richNode('doc').create(null, paragraph(text));
       const html = renderMarkdownFragment((await outbound(doc)).text);
-      expect(html).toBe(text.replace('>', '&gt;'));
+      expect(html).toBe(text.replaceAll('>', '&gt;'));
     },
   );
   it.each([
