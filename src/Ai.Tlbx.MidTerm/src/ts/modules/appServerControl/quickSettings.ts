@@ -606,7 +606,10 @@ export function syncAppServerControlQuickSettingsFromHistory(
     connected,
     sessionState: snapshot.session.state,
   };
-  const state = ensureProviderSeeded(getOrCreateSessionState(snapshot.sessionId), snapshot.provider);
+  const state = ensureProviderSeeded(
+    getOrCreateSessionState(snapshot.sessionId),
+    snapshot.provider,
+  );
   const previous = state.runtime?.target;
   if (!previous?.ready || previous.threadId !== snapshot.thread.threadId) {
     syncAppServerControlQuickSettingsFromSnapshot(
@@ -635,7 +638,7 @@ function readRuntimeSettingsTarget(
   sessionId: string,
   target: RuntimeSettingsSnapshotTarget,
 ): RuntimeSettingsState['target'] {
-  const threadId = target.thread.threadId?.trim() ?? '';
+  const threadId = target.thread.threadId.trim();
   if (!threadId || threadId === sessionId) return null;
   const active = ['running', 'in_progress', 'submitted'].includes(target.currentTurn.state);
   return {
@@ -1046,9 +1049,20 @@ async function waitForUnsentRuntimeTarget(
         runtime.resolveReady = resolve;
       });
   // Every edit queued before the first binding shares that first scope, even if a turn starts meanwhile.
-  return requested ? target : runtime.initialTarget ?? target;
+  return requested ? target : (runtime.initialTarget ?? target);
 }
 
+function isConfigurationForCurrentThread(
+  runtime: RuntimeSettingsState,
+  threadId: string,
+  receipt: AppServerControlConfigureResponse,
+): boolean {
+  return (
+    runtime.target?.threadId === threadId &&
+    receipt.threadId === threadId &&
+    receipt.status !== 'targetUnavailable'
+  );
+}
 export function configureAppServerControlQuickSettings(
   sessionId: string,
   patch: Partial<Pick<AppServerControlQuickSettingsSummary, AppServerControlRuntimeSettingField>>,
@@ -1110,11 +1124,7 @@ export function configureAppServerControlQuickSettings(
         settings: Object.fromEntries(currentFields.map((field) => [field, settings[field]])),
       });
       if (!isCurrentRuntimeState(sessionId, state, runtime)) return;
-      if (
-        runtime.target?.threadId !== target.threadId ||
-        receipt.threadId !== target.threadId ||
-        receipt.status === 'targetUnavailable'
-      ) {
+      if (!isConfigurationForCurrentThread(runtime, target.threadId, receipt)) {
         rejectRuntimeFields(state, runtime, currentFields, revision, 'targetUnavailable');
       } else {
         acceptRelatedRuntimeFields(state, runtime, receipt, currentFields);
