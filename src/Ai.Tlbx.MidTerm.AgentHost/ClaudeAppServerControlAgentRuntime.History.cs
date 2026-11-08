@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
@@ -32,6 +33,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         {
             if (GetString(entry, "parent_tool_use_id") is not null || GetString(entry, "parent_agent_id") is not null)
                 continue;
+            if (IsCompletedLocalGoalRead(entry))
+                continue;
             var type = GetString(entry, "type");
             var entryLine = entry.GetRawText();
             if (type == "user")
@@ -53,6 +56,21 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         }
         if (previous is { } final) CompleteClaudeHistoryTurn(final, final.GetRawText());
     }
+
+    private static bool IsCompletedLocalGoalRead(JsonElement entry)
+    {
+        // The SDK derives this flag from the native local-command caveat/record
+        // sequence. XML-looking user text alone is never evidence of a command.
+        return GetString(entry, "type") == "user"
+            && GetBoolean(entry, "isCompletedLocalCommand")
+            && !GetBoolean(entry, "is_error")
+            && !GetBoolean(entry, "message", "is_error")
+            && Traverse(entry, "message", "content") is { ValueKind: JsonValueKind.String } content
+            && CompletedLocalGoalReadRegex().IsMatch(content.GetString() ?? string.Empty);
+    }
+
+    [GeneratedRegex(@"\A\s*<command-name>/goal</command-name>\s*<command-message>goal</command-message>\s*<command-args>\s*</command-args>\s*\z", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex CompletedLocalGoalReadRegex();
 
     private void StartClaudeHistoryTurn(JsonElement entry, string text, string rawLine)
     {

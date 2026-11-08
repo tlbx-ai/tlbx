@@ -11,6 +11,7 @@ import {
   describeError,
   ensureAppServerControlActivationIsCurrent,
   isStaleAppServerControlActivationError,
+  resumeAppServerControlActivationAfterTransport,
   setActivationState,
   shouldShowAppServerControlDevErrorDialog,
 } from './activationHelpers';
@@ -291,6 +292,7 @@ let appServerControlVisualViewportRecoveryBound = false;
 let appServerControlVisualViewportRecoveryHandle: number | null = null;
 let appServerControlSettingsRenderBound = false;
 let appServerControlExistingPanelRecoveryBound = false;
+let appServerControlBrowserRecoveryGeneration = 0;
 
 function createHistoryWindowRevision(sessionId: string): string {
   return `${sessionId}:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 10)}`;
@@ -1897,8 +1899,19 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
 }
 
 export function recoverAppServerControlAfterBrowserResume(): void {
+  const generation = ++appServerControlBrowserRecoveryGeneration;
   const sessionId = $activeSessionId.get();
   const state = sessionId && getActiveTab(sessionId) === 'agent' ? viewStates.get(sessionId) : null;
+  const activationRunId = state?.activationRunId;
+  const pendingActivation = sessionId ? activationFlights.get(sessionId) : undefined;
+  const isCurrent = (): boolean =>
+    generation === appServerControlBrowserRecoveryGeneration &&
+    !!state &&
+    !!sessionId &&
+    $activeSessionId.get() === sessionId &&
+    getActiveTab(sessionId) === 'agent' &&
+    viewStates.get(sessionId) === state &&
+    state.activationRunId === activationRunId;
   if (state && sessionId) {
     state.streamConnected = false;
     disconnectAppServerControlQuickSettingsRuntime(sessionId);
@@ -1906,9 +1919,16 @@ export function recoverAppServerControlAfterBrowserResume(): void {
     renderCurrentAgentView(sessionId, { immediate: true });
   }
 
-  void recoverAppServerControlConnection().catch((error: unknown) => {
+  void resumeAppServerControlActivationAfterTransport(
+    recoverAppServerControlConnection,
+    pendingActivation,
+    isCurrent,
+    async () => {
+      if (sessionId) await activateAgentView(sessionId);
+    },
+  ).catch((error: unknown) => {
     log.warn(() => `Failed to recover AppServerControl after browser resume: ${String(error)}`);
-    if (!state || !sessionId || viewStates.get(sessionId) !== state) {
+    if (!isCurrent() || !state || !sessionId) {
       return;
     }
 
@@ -1919,6 +1939,7 @@ export function recoverAppServerControlAfterBrowserResume(): void {
 }
 
 export function suspendAppServerControlForBrowserBackground(): void {
+  appServerControlBrowserRecoveryGeneration += 1;
   viewStates.forEach((state, sessionId) => {
     state.streamConnected = false;
     disconnectAppServerControlQuickSettingsRuntime(sessionId);
