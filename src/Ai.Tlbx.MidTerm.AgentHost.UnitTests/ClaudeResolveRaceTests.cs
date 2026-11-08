@@ -121,7 +121,7 @@ public sealed class ClaudeResolveRaceTests
             SessionId = "session", CommandId = "answer", Type = "user-input.resolve",
             ResolveUserInput = new() { RequestId = "question", Answers = [new() { QuestionId = "q", Answers = ["new"] }] }
         }, CancellationToken.None);
-        Bridge(runtime, """{"type":"bridge.user_input_resolved","requestId":"question","session_id":"own","turnId":"turn","status":"alreadySettled","decision":"answered","answers":{"q":["original"]}}""".Replace("alreadySettled", status));
+        Bridge(runtime, """{"type":"bridge.user_input_resolved","requestId":"question","session_id":"own","turnId":"turn","status":"alreadySettled","decision":"answered","answers":{"q":["original"]}}""".Replace("alreadySettled", status, StringComparison.Ordinal));
         var outcome = await pending;
         Assert.Equal("original", Assert.Single(Assert.Single(outcome.Result.Accepted!.Answers!).Answers));
         if (status == "alreadySettled") Assert.Empty(outcome.Events);

@@ -49,7 +49,7 @@ public sealed class HistoryReplayTests : IDisposable
     public void InitialReplayRetainsArchiveButPublishesOneBoundedTailWithPendingExternalIds(int count)
     {
         var events = new List<AppServerControlProviderEvent> { Started("past") };
-        for (var i = 0; i < count; i++) events.Add(Item("past", $"tool-{i}", "command_execution", "completed", "Completed command"));
+        for (var i = 0; i < count; i++) events.Add(Item("past", $"tool-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", "command_execution", "completed", "Completed command"));
         events.Add(Completed("past"));
         events.Add(Started("current"));
         events.Add(Item("current", "external/active", "command_execution", "running", "Current work"));
@@ -60,8 +60,8 @@ public sealed class HistoryReplayTests : IDisposable
         var usage = Event("agent.metadata.updated", "current");
         usage.AgentMetadataUpdated = new() { Usage = new() { InputTokens = 123456 } };
         events.Add(usage);
-        using var patches = _history.SubscribeHistoryPatches(Session);
-        using var raw = _history.SubscribeProviderEvents(Session, 0);
+        using var patches = _history.SubscribeHistoryPatches(Session, TestContext.Current.CancellationToken);
+        using var raw = _history.SubscribeProviderEvents(Session, 0, TestContext.Current.CancellationToken);
 
         _history.AppendInitialReplay(events);
 
@@ -81,7 +81,7 @@ public sealed class HistoryReplayTests : IDisposable
         var first = _history.GetSnapshotWindow(Session, 0, 1)!;
         Assert.Equal(count + 2, first.HistoryCount);
         Assert.Equal("tool:tool-0", first.History[0].EntryId);
-        Assert.Equal($"tool:tool-{count / 2}", _history.GetSnapshotWindow(Session, count / 2, 1)!.History[0].EntryId);
+        Assert.Equal($"tool:tool-{(count / 2).ToString(System.Globalization.CultureInfo.InvariantCulture)}", _history.GetSnapshotWindow(Session, count / 2, 1)!.History[0].EntryId);
 
         var resolved = Event("request.resolved", "older");
         resolved.RequestId = pending.RequestId;
@@ -89,7 +89,7 @@ public sealed class HistoryReplayTests : IDisposable
         _history.Append(resolved);
         Assert.True(patches.Reader.TryRead(out var live));
         Assert.Single(live!.RequestUpserts);
-        Assert.NotEqual("open", live.RequestUpserts[0].State);
+        Assert.NotEqual("open", live.RequestUpserts[0].State, StringComparer.Ordinal);
         Assert.True(raw.Reader.TryRead(out var liveRaw));
         Assert.Equal(resolved.EventId, liveRaw!.EventId);
         Assert.Equal(events.Count + 1, live.LatestSequence);
@@ -102,18 +102,18 @@ public sealed class HistoryReplayTests : IDisposable
         var events = new List<AppServerControlProviderEvent>();
         for (var i = 0; i < turns; i++)
         {
-            var turn = $"turn-{i}";
+            var turn = $"turn-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
             events.Add(Started(turn));
-            events.Add(Item(turn, $"user-{i}", "user_message", "completed", $"question-{i}"));
-            events.Add(Item(turn, $"tool-{i}", "command_execution", "completed", "done"));
-            events.Add(Assistant(turn, $"assistant-{i}", $"answer-{i}"));
+            events.Add(Item(turn, $"user-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", "user_message", "completed", $"question-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
+            events.Add(Item(turn, $"tool-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", "command_execution", "completed", "done"));
+            events.Add(Assistant(turn, $"assistant-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", $"answer-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
             events.Add(Completed(turn));
         }
         _history.AppendInitialReplay(events);
         var last = _history.GetSnapshotWindow(Session, turns * 3 - 3, 3)!;
         Assert.Equal(turns * 3, last.HistoryCount);
-        Assert.Equal(new[] { "user", "tool", "assistant" }, last.History.Select(row => row.Kind));
-        Assert.Equal($"answer-{turns - 1}", last.Streams.AssistantText);
+        Assert.Equal(new[] { "user", "tool", "assistant" }, last.History.Select(row => row.Kind), StringComparer.Ordinal);
+        Assert.Equal($"answer-{(turns - 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}", last.Streams.AssistantText);
         Assert.All(last.History, row => Assert.False(row.Streaming));
         Assert.Equal("user:turn-0", _history.GetSnapshotWindow(Session, 0, 1)!.History[0].EntryId);
     }
@@ -139,7 +139,7 @@ public sealed class HistoryReplayTests : IDisposable
         Assert.All(snapshot.History, row => Assert.False(row.Streaming));
         Assert.Equal(snapshot.History.Count, snapshot.History.Select(row => row.Order).Distinct().Count());
         Assert.Single(snapshot.History.Where(row => row.Kind == "user"));
-        Assert.Contains("native/user", Assert.Single(snapshot.Items.Where(item => item.ItemType == "user_message")).AliasItemIds);
+        Assert.Contains("native/user", Assert.Single(snapshot.Items.Where(item => item.ItemType == "user_message")).AliasItemIds, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -148,8 +148,8 @@ public sealed class HistoryReplayTests : IDisposable
         const int budget = 262144;
         const string marker = "... earlier output omitted ...\n";
         var events = new List<AppServerControlProviderEvent> { Started("turn") };
-        var bodies = Enumerable.Range(0, 100).Select(i => $"message-{i}:" + new string('x', 3990)).ToArray();
-        for (var i = 0; i < bodies.Length; i++) events.Add(Assistant("turn", $"a-{i}", bodies[i]));
+        var bodies = Enumerable.Range(0, 100).Select(i => $"message-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}:" + new string('x', 3990)).ToArray();
+        for (var i = 0; i < bodies.Length; i++) events.Add(Assistant("turn", $"a-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", bodies[i]));
         bodies[99] = "replaced final message";
         events.Add(Assistant("turn", "a-99", bodies[99]));
         _history.AppendInitialReplay(events);
@@ -197,7 +197,7 @@ public sealed class HistoryReplayTests : IDisposable
                 historyEntries = reset.History, reset.Items, reset.Requests, reset.Notices,
                 toolRenderStates = Array.Empty<object>(), nextHistoryOrder = 2
             }
-        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        }, JsonSerializerOptions.Web));
         var recovered = new SessionAppServerControlHistoryService(storeDirectory: recoveryDirectory, enableScreenLogging: false);
         try
         {

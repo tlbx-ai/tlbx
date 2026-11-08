@@ -28,7 +28,7 @@ public sealed class HistoryWindowTests : IDisposable
         Assert.Equal(totalCount, window.HistoryCount);
         Assert.Equal(5000, window.HistoryWindowStart);
         Assert.Equal(5007, window.HistoryWindowEnd);
-        Assert.Equal(Enumerable.Range(5000, 7).Select(i => $"entry-{i}"), window.History.Select(row => row.EntryId));
+        Assert.Equal(Enumerable.Range(5000, 7).Select(i => $"entry-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}"), window.History.Select(row => row.EntryId), StringComparer.Ordinal);
         Assert.Equal(8, window.Items.Count);
         Assert.Equal(8, window.Requests.Count);
         Assert.Contains(window.Items, item => item.ItemId == "active");
@@ -37,12 +37,12 @@ public sealed class HistoryWindowTests : IDisposable
         Assert.Equal(123456, window.Session.Usage!.InputTokens);
         Assert.Equal(source.Streams.AssistantText, window.Streams.AssistantText);
         var json = JsonSerializer.Serialize(window, AppServerControlHostJsonContext.Default.AppServerControlHistoryWindowResponse);
-        Assert.True(json.Length < 50_000, $"Small-window JSON unexpectedly retained archive-sized data: {json.Length}");
+        Assert.True(json.Length < 50_000, $"Small-window JSON unexpectedly retained archive-sized data: {json.Length.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         using var parsed = JsonDocument.Parse(json);
         Assert.Equal(7, parsed.RootElement.GetProperty("history").GetArrayLength());
         var tail = service.GetSnapshotWindow(SessionId, totalCount - 1, 1)!;
         Assert.Equal(totalCount, tail.HistoryCount);
-        Assert.Equal($"entry-{totalCount - 1}", Assert.Single(tail.History).EntryId);
+        Assert.Equal($"entry-{(totalCount - 1).ToString(System.Globalization.CultureInfo.InvariantCulture)}", Assert.Single(tail.History).EntryId);
         Assert.Equal(80, service.GetSnapshotWindow(SessionId)!.History.Count);
     }
 
@@ -52,7 +52,7 @@ public sealed class HistoryWindowTests : IDisposable
         var source = CreateHistory(30);
         source.Items[10].AliasItemIds.Add("native-alias");
         source.History[10].ItemId = "native-alias";
-        source.Notices = Enumerable.Range(0, 64).Select(i => new AppServerControlRuntimeNotice { EventId = $"notice-{i}" }).ToList();
+        source.Notices = Enumerable.Range(0, 64).Select(i => new AppServerControlRuntimeNotice { EventId = $"notice-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}" }).ToList();
         var service = SeedPersisted(source);
         var window = service.GetSnapshotWindow(SessionId, 10, 1)!;
         Assert.Equal("item-10", Assert.Single(window.Items).ItemId);
@@ -68,7 +68,7 @@ public sealed class HistoryWindowTests : IDisposable
         Assert.Equal(30, recovered.GetSnapshot(SessionId)!.Items.Count);
         Assert.Equal("item-10", Assert.Single(recovered.GetSnapshotWindow(SessionId, 10, 1)!.Items).ItemId);
         window.Items[0].AliasItemIds.Clear();
-        Assert.Contains("native-alias", service.GetSnapshotWindow(SessionId, 10, 1)!.Items[0].AliasItemIds);
+        Assert.Contains("native-alias", service.GetSnapshotWindow(SessionId, 10, 1)!.Items[0].AliasItemIds, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -86,13 +86,13 @@ public sealed class HistoryWindowTests : IDisposable
             ]
         });
         var full = service.GetSnapshot(SessionId)!;
-        Assert.Equal(new[] { "entry-4", "entry-0", "entry-2", "entry-new", "entry-3" }, full.History.Select(row => row.EntryId));
+        Assert.Equal(new[] { "entry-4", "entry-0", "entry-2", "entry-new", "entry-3" }, full.History.Select(row => row.EntryId), StringComparer.Ordinal);
         Assert.Equal("replaced", full.History[1].Body);
         Assert.Equal(full.History.Skip(1).Take(2).Select(row => row.EntryId),
-            service.GetSnapshotWindow(SessionId, 1, 2)!.History.Select(row => row.EntryId));
+            service.GetSnapshotWindow(SessionId, 1, 2)!.History.Select(row => row.EntryId), StringComparer.Ordinal);
         service.ImportHistoryWindow(CreateHistory(2));
         var reset = service.GetSnapshotWindow(SessionId, 0, 10)!;
-        Assert.Equal(new[] { "entry-0", "entry-1" }, reset.History.Select(row => row.EntryId));
+        Assert.Equal(new[] { "entry-0", "entry-1" }, reset.History.Select(row => row.EntryId), StringComparer.Ordinal);
         Assert.Equal(2, reset.HistoryCount);
         Assert.Equal(2, reset.Items.Count);
         Assert.DoesNotContain(reset.Items, item => item.ItemId == "item-4");
@@ -137,7 +137,7 @@ public sealed class HistoryWindowTests : IDisposable
         });
         Assert.Equal("user:turn", service.GetSnapshotWindow(SessionId, 0, 1)!.History[0].EntryId);
         Assert.Equal(new long[] { 1, 2, 3, 4 }, service.GetSnapshot(SessionId)!.History.Select(row => row.Order));
-        using var subscription = service.SubscribeHistoryPatches(SessionId);
+        using var subscription = service.SubscribeHistoryPatches(SessionId, TestContext.Current.CancellationToken);
         service.Append(new()
         {
             SessionId = SessionId, EventId = "new-tool", TurnId = "turn", ItemId = "new-tool",
@@ -166,7 +166,7 @@ public sealed class HistoryWindowTests : IDisposable
                 toolRenderStates = Array.Empty<object>(),
                 nextHistoryOrder = source.History.Count
             }
-        }, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+        }, JsonSerializerOptions.Web));
         var service = new SessionAppServerControlHistoryService(storeDirectory: _directory, enableScreenLogging: false);
         _services.Add(service);
         return service;
@@ -181,9 +181,9 @@ public sealed class HistoryWindowTests : IDisposable
         };
         for (var i = 0; i < count; i++)
         {
-            source.History.Add(new() { EntryId = $"entry-{i}", Order = i + 1, ItemId = $"item-{i}", RequestId = $"request-{i}", Body = "Canonical content" });
-            source.Items.Add(new() { ItemId = $"item-{i}", TurnId = "turn", Status = "completed", Detail = "Completed tool in the same active turn" });
-            source.Requests.Add(new() { RequestId = $"request-{i}", TurnId = "turn", State = "resolved" });
+            source.History.Add(new() { EntryId = $"entry-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", Order = i + 1, ItemId = $"item-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", RequestId = $"request-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", Body = "Canonical content" });
+            source.Items.Add(new() { ItemId = $"item-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", TurnId = "turn", Status = "completed", Detail = "Completed tool in the same active turn" });
+            source.Requests.Add(new() { RequestId = $"request-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", TurnId = "turn", State = "resolved" });
         }
         return source;
     }

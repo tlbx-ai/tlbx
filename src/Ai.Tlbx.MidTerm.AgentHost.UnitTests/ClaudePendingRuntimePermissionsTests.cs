@@ -34,7 +34,7 @@ public sealed class ClaudePendingRuntimePermissionsTests
         {
             CommandId = "configure", SessionId = "session", Type = "runtime.configure",
             Configure = new() { ExpectedThreadId = "own", ExpectedTurnId = "turn",
-                Settings = new() { ["permissionMode"] = value.RootElement.Clone() } }
+                Settings = new(StringComparer.Ordinal) { ["permissionMode"] = value.RootElement.Clone() } }
         };
     }
 
@@ -56,8 +56,8 @@ public sealed class ClaudePendingRuntimePermissionsTests
         Assert.Empty(receipt.EffectiveSettings);
         var payload = Assert.Single(events).QuickSettingsUpdated!;
         Assert.Equal("auto", payload.PermissionMode);
-        Assert.Contains("permissionMode", payload.AcknowledgedFields);
-        Assert.Contains("planMode", payload.AcknowledgedFields);
+        Assert.Contains("permissionMode", payload.AcknowledgedFields, StringComparer.Ordinal);
+        Assert.Contains("planMode", payload.AcknowledgedFields, StringComparer.Ordinal);
     }
 
     [Fact]
@@ -144,7 +144,7 @@ public sealed class ClaudePendingRuntimePermissionsTests
         SessionAppServerControlHistoryService? loaded = null;
         try
         {
-            using var patches = history.SubscribeHistoryPatches("session");
+            using var patches = history.SubscribeHistoryPatches("session", TestContext.Current.CancellationToken);
             history.Append(new() { SessionId = "session", Provider = "claude", ThreadId = "own", TurnId = "turn", RequestId = "request",
                 Type = "request.opened", RequestOpened = new() { RequestType = "tool_approval", Detail = "Bash: marker write" } });
             history.Append(new() { SessionId = "session", Provider = "claude", ThreadId = "own", TurnId = "turn", RequestId = "request",
@@ -155,14 +155,14 @@ public sealed class ClaudePendingRuntimePermissionsTests
             AppServerControlHistoryPatch? last = null;
             while (patches.Reader.TryRead(out var patch)) last = patch;
             Assert.Equal("auto", last!.QuickSettings.PermissionMode);
-            Assert.Contains("permissionMode", last.QuickSettings.AcknowledgedFields);
+            Assert.Contains("permissionMode", last.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(5));
             while (!File.Exists(Path.Combine(directory, "session.json"))) await Task.Delay(20, timeout.Token);
             loaded = new SessionAppServerControlHistoryService(storeDirectory: directory);
             var snapshot = loaded.GetSnapshot("session")!;
             Assert.Equal("auto", snapshot.QuickSettings.PermissionMode);
-            Assert.Contains("permissionMode", snapshot.QuickSettings.AcknowledgedFields);
+            Assert.Contains("permissionMode", snapshot.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
             Assert.Equal("resolved", Assert.Single(snapshot.Requests).State);
         }
         finally

@@ -36,7 +36,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             using var initialization = JsonDocument.Parse(lines.First(line => line.Contains("initialize", StringComparison.Ordinal)));
             var nativeId = initialization.RootElement.GetProperty("sessionId").GetString()!;
             Assert.True(Guid.TryParse(nativeId, out _));
-            Assert.NotEqual(sessionId, nativeId);
+            Assert.NotEqual(sessionId, nativeId, StringComparer.Ordinal);
             Assert.Equal(JsonValueKind.Null, initialization.RootElement.GetProperty("resume").ValueKind);
             if (rejectInitialize)
             {
@@ -52,10 +52,10 @@ public sealed class MtAgentHostClaudeIntegrationTests
             Assert.Empty(ready.History);
             foreach (var settings in new[]
             {
-                new Dictionary<string, JsonElement> { ["model"] = JsonSerializer.SerializeToElement("claude-test") },
-                new Dictionary<string, JsonElement> { ["effort"] = JsonSerializer.SerializeToElement("high") },
-                new Dictionary<string, JsonElement> { ["planMode"] = JsonSerializer.SerializeToElement("on") },
-                new Dictionary<string, JsonElement> { ["permissionMode"] = JsonSerializer.SerializeToElement("auto") }
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["model"] = JsonSerializer.SerializeToElement("claude-test") },
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["effort"] = JsonSerializer.SerializeToElement("high") },
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["planMode"] = JsonSerializer.SerializeToElement("on") },
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["permissionMode"] = JsonSerializer.SerializeToElement("auto") }
             })
             {
                 var id = "fresh-configure-" + settings.Keys.Single();
@@ -67,7 +67,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 var configured = (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, id)).Configured!;
                 Assert.Equal("acknowledged", configured.Status);
                 Assert.Equal(nativeId, configured.ThreadId);
-                Assert.Contains(settings.Keys.Single(), configured.ConfirmedSettings.Keys);
+                Assert.Contains(settings.Keys.Single(), configured.ConfirmedSettings.Keys, StringComparer.Ordinal);
                 Assert.Empty(configured.EffectiveSettings);
             }
             lines = await File.ReadAllLinesAsync(Path.Combine(fakeClaude.Root, "runtime-contract.jsonl"), TestContext.Current.CancellationToken);
@@ -457,7 +457,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
             var afterDuplicate = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
                 process.StandardOutput, process.StandardInput, pendingPatches, sessionId,
                 _ => true, TimeSpan.FromSeconds(5), count: 96);
-            Assert.NotEqual("error", afterDuplicate.Session.State);
+            Assert.NotEqual("error", afterDuplicate.Session.State, StringComparer.Ordinal);
             Assert.Equal("completed", afterDuplicate.CurrentTurn.State);
             Assert.False(process.HasExited);
         }
