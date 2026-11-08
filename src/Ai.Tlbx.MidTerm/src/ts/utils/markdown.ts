@@ -134,7 +134,12 @@ function formatMarkdownInline(text: string): string {
     .map((line) =>
       protectMarkdownInlineLine(line, (literal) => {
         literals.push(literal);
-        return `${prefix}${literals.length - 1}\uE001`;
+        // An escaped underscore is still a word character. A nonword token
+        // boundary would turn the remaining underscores of \__init_\_ into
+        // emphasis. Other escaped punctuation must retain its nonword boundary.
+        return literal === '_'
+          ? `X${prefix}word:${literals.length - 1}\uE001X`
+          : `${prefix}${literals.length - 1}\uE001`;
       }),
     )
     .join('\n');
@@ -144,8 +149,9 @@ function formatMarkdownInline(text: string): string {
   html = replaceEmphasis(html, '_');
   html = formatMarkdownLinks(formatMarkdownImages(html));
   return html.replace(
-    new RegExp(`${prefix}(\\d+)\uE001`, 'g'),
-    (_match, index: string) => literals[Number(index)] ?? '',
+    new RegExp(`X${prefix}word:(\\d+)\uE001X|${prefix}(\\d+)\uE001`, 'g'),
+    (_match, wordIndex: string | undefined, index: string | undefined) =>
+      literals[Number(wordIndex ?? index)] ?? '',
   );
 }
 

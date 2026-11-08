@@ -45,6 +45,65 @@ function paragraph(text: string, code = false) {
 }
 
 describe('rich user input to history', () => {
+  it.each([
+    String.raw`C:\temp\__init__.py`,
+    '/tmp/__init__.py',
+    '__init__',
+    '_name_',
+    'file_name',
+    '___triple___',
+  ])('retains literal underscore boundaries next to real marks: %s', async (text) => {
+    const content = richNode('paragraph').create(null, [
+      richComposerSchema.text(text + ' '),
+      richComposerSchema.text('bold', [richComposerSchema.marks.strong!.create()]),
+      richComposerSchema.text(' '),
+      richComposerSchema.text('emphasis', [richComposerSchema.marks.em!.create()]),
+    ]);
+    for (const table of [false, true]) {
+      const doc = richNode('doc').create(
+        null,
+        table
+          ? richNode('table').create(null, [
+              richNode('table_row').create(
+                null,
+                richNode('table_header').create(null, paragraph('Path')),
+              ),
+              richNode('table_row').create(null, richNode('table_cell').create(null, content)),
+            ])
+          : content,
+      );
+      const result = await outbound(doc);
+      // The provider projection is valid Markdown; restoring it retains both
+      // literal path text and the real adjacent marks. History must do the same.
+      const restored = getRichComposerDocument({
+        parts: [{ kind: 'text', text: result.text }],
+        nextOrdinalByKind: {},
+      });
+      expect(restored.textContent).toBe(doc.textContent);
+      const html = getCachedHistoryMarkdown(undefined, entry('user', result.text)).html;
+      const rendered = table ? [...html.matchAll(/<td\b[^>]*>(.*?)<\/td>/g)][0]?.[1] : html;
+      expect(rendered).toBe(`${text} <strong>bold</strong> <em>emphasis</em>`);
+    }
+  });
+
+  it('keeps real emphasis beside escaped punctuation without introducing word boundaries', () => {
+    expect(renderMarkdownFragment('\\**real*')).toBe('*<em>real</em>');
+    expect(renderMarkdownFragment('*real*\\*')).toBe('<em>real</em>*');
+    expect(renderMarkdownFragment('__bold__ _emphasis_')).toBe(
+      '<strong>bold</strong> <em>emphasis</em>',
+    );
+  });
+
+  it('preserves the already-stored partial underscore escapes in paragraphs and table cells', () => {
+    const wire = String.raw`C:\\temp\\\__init_\_.py **bold** *em*`;
+    const expected = String.raw`C:\temp\__init__.py <strong>bold</strong> <em>em</em>`;
+    expect(renderMarkdownFragment(wire)).toBe(expected);
+    const table = renderMarkdownFragment(`| Path |\n| --- |\n| ${wire} |`);
+    expect([...table.matchAll(/<td\b[^>]*>(.*?)<\/td>/g)].map((match) => match[1])).toEqual([
+      expected,
+    ]);
+  });
+
   it.each(['|', '||', '| |', '| : |', '| -- |'])(
     'does not promote a partial pipe separator to a table: %s',
     (separator) => {
@@ -128,6 +187,7 @@ describe('rich user input to history', () => {
     String.raw`a\|b`,
     String.raw`a\\|b`,
     '**literal**',
+    String.raw`C:\temp\__init__.py`,
     '`tick`',
     '<img src=x onerror=alert(1)>',
   ])('preserves code semantics inside a projected table cell: %s', async (text) => {
