@@ -36,19 +36,12 @@ export interface PrepareSmartInputTerminalTurnArgs {
 export async function prepareSmartInputOutboundPrompt(
   args: PrepareSmartInputOutboundPromptArgs,
 ): Promise<PreparedSmartInputOutboundPrompt> {
-  const uploadedPaths = await Promise.all(
-    args.attachments.map((attachment) => ensureUploadedAttachmentPath(args, attachment)),
-  );
+  const ordered = orderedRichAttachments(args.draft, args.attachments);
+  const uploadedPaths = await Promise.all(ordered.map((attachment) => ensureUploadedAttachmentPath(args, attachment)));
   const attachmentPathById = new Map<string, string>();
-  args.attachments.forEach((attachment, index) => {
-    attachmentPathById.set(attachment.id, uploadedPaths[index] ?? '');
-  });
-
-  const attachments = args.attachments
-    .filter((attachment) => attachment.referenceKind !== 'text')
-    .map((attachment, index) =>
-      toAppServerControlAttachmentReference(attachment, uploadedPaths[index] ?? ''),
-    );
+  ordered.forEach((attachment, index) => attachmentPathById.set(attachment.id, uploadedPaths[index] ?? ''));
+  const attachments = ordered.filter((attachment) => attachment.referenceKind !== 'text')
+    .map((attachment) => toAppServerControlAttachmentReference(attachment, attachmentPathById.get(attachment.id) ?? ''));
 
   const referencedTextBlocks: string[] = [];
   const seenExtraReferenceIds = new Set<string>();
@@ -73,6 +66,20 @@ export async function prepareSmartInputOutboundPrompt(
     attachments,
     text: sections.join('\n\n'),
   };
+}
+
+export function orderedRichAttachments(
+  draft: SmartInputComposerDraft, attachments: readonly AppServerControlComposerDraftAttachment[],
+): AppServerControlComposerDraftAttachment[] {
+  if (!draft.richDoc) return [...attachments];
+  const seen = new Set<string>();
+  const ordered: AppServerControlComposerDraftAttachment[] = [];
+  for (const part of draft.parts) {
+    if (part.kind !== 'reference' || seen.has(part.referenceId)) continue;
+    const attachment = attachments.find((entry) => entry.id === part.referenceId);
+    if (attachment) { ordered.push(attachment); seen.add(attachment.id); }
+  }
+  return ordered;
 }
 
 export async function prepareSmartInputTerminalTurn(

@@ -21860,3 +21860,81 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
     height: 128px;
   }
 }
+
+/* ACP composer only. Terminal keeps its native textarea and raw-text editing. */
+.smart-input-rich-composer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--command-bay-textbox-border, var(--border-subtle));
+  border-radius: 8px;
+  background: var(--command-bay-ui-reactive-surface, var(--text-input-background, var(--bg-input)));
+  color: var(--command-bay-text, var(--text-primary));
+  font-family: var(--terminal-font-family, var(--agent-history-mono-font-family, var(--font-mono)));
+  font-size: var(--terminal-font-size, 16px);
+  font-weight: var(--terminal-font-weight, normal);
+  letter-spacing: var(--terminal-letter-spacing, 0px);
+  font-kerning: none;
+}
+
+.smart-input-rich-composer[hidden],
+.adaptive-footer-dock .smart-input-textarea[hidden] { display: none; }
+
+.smart-input-rich-composer:focus-within { border-color: var(--command-bay-textbox-border-focus, var(--accent-blue)); }
+.rich-composer-tools { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px 30px 0 5px; }
+.rich-composer-tools button,
+.rich-composer-attachment button {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  min-width: 28px;
+  min-height: 28px;
+}
+.rich-composer-tools button:hover,
+.rich-composer-attachment button:hover { background: var(--bg-hover); }
+.smart-input-rich-composer .ProseMirror {
+  min-height: 56px;
+  max-height: min(34dvh, 300px);
+  padding: 6px 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  outline: none;
+  line-height: 1.45;
+  overscroll-behavior: contain;
+}
+.smart-input-rich-composer .ProseMirror p { margin: 0 0 0.35em; }
+.smart-input-rich-composer .ProseMirror > :last-child { margin-bottom: 0; }
+.smart-input-rich-composer .ProseMirror ul,
+.smart-input-rich-composer .ProseMirror ol { margin: 0.25em 0; padding-left: 1.6em; }
+.smart-input-rich-composer .ProseMirror table { border-collapse: collapse; table-layout: fixed; width: 100%; margin: 0.4em 0; }
+.smart-input-rich-composer .ProseMirror td,
+.smart-input-rich-composer .ProseMirror th { border: 1px solid var(--border-color); padding: 5px; min-width: 3em; vertical-align: top; position: relative; }
+.smart-input-rich-composer .ProseMirror th { background: var(--bg-hover); }
+.smart-input-rich-composer .ProseMirror .selectedCell::after { content: ''; position: absolute; inset: 0; background: color-mix(in srgb, var(--accent-blue) 18%, transparent); pointer-events: none; }
+.rich-composer-attachment { display: inline-flex; align-items: center; max-width: 100%; vertical-align: middle; border: 1px solid var(--border-subtle); border-radius: 5px; margin: 2px; }
+.rich-composer-attachment-preview { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; max-width: 100%; }
+.rich-composer-attachment img { display: block; max-width: min(180px, 38vw); max-height: 112px; width: auto; height: auto; object-fit: contain; }
+.rich-composer-attachment img[hidden] { display: none; }
+.rich-composer-attachment-preview span { font-size: 0.75em; max-width: 18ch; overflow: hidden; text-overflow: ellipsis; }
+.smart-input-rich-composer .ProseMirror-selectednode { outline: 2px solid var(--accent-blue); }
+.rich-composer-error { color: var(--text-danger, var(--text-primary)); font: inherit; font-size: 0.8em; }
+.rich-composer-error:empty { display: none; }
+.rich-image-annotation { width: min(94vw, 1000px); max-height: 90dvh; }
+.rich-image-annotation .modal-body { text-align: center; }
+.rich-image-annotation canvas { display: block; margin: auto; max-width: 100%; max-height: 60dvh; width: auto; height: auto; touch-action: none; cursor: crosshair; }
+.rich-image-annotation .modal-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.rich-image-annotation input[type='range'] { min-width: 60px; max-width: 110px; }
+.adaptive-footer-dock[data-composer-expanded='true'] .smart-input-rich-composer { height: 100%; }
+.adaptive-footer-dock[data-composer-expanded='true'] .smart-input-rich-composer .ProseMirror { flex: 1; max-height: none; min-height: 160px; }
+@media (pointer: coarse) {
+  .rich-composer-tools button,
+  .rich-composer-attachment button { min-width: 44px; min-height: 44px; }
+}
+
+.rich-composer-content { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }

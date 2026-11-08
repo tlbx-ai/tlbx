@@ -1,3 +1,4 @@
+import { draftFromRichDocument, getRichComposerDocument, pruneRichComposerDraft, type SmartInputRichDocument } from './richComposerDocument';
 export type SmartInputComposerReferenceKind = 'image' | 'file' | 'text';
 
 export interface SmartInputComposerSelection {
@@ -25,6 +26,7 @@ export interface SmartInputComposerReferencePart {
 export type SmartInputComposerPart = SmartInputComposerReferencePart | SmartInputComposerTextPart;
 
 export interface SmartInputComposerDraft {
+  richDoc?: SmartInputRichDocument;
   nextOrdinalByKind: Partial<Record<SmartInputComposerReferenceKind, number>>;
   parts: SmartInputComposerPart[];
 }
@@ -50,6 +52,7 @@ export function createSmartInputComposerDraft(text: string = ''): SmartInputComp
 export function cloneSmartInputComposerDraft(
   draft: SmartInputComposerDraft,
 ): SmartInputComposerDraft {
+  if (draft.richDoc) return draftFromRichDocument(draft, getRichComposerDocument(draft), draft.richDoc.selection);
   return {
     nextOrdinalByKind: { ...draft.nextOrdinalByKind },
     parts: draft.parts.map((part) => ({ ...part })),
@@ -231,6 +234,7 @@ export function pruneSmartInputComposerReferences(
   draft: SmartInputComposerDraft,
   validReferenceIds: ReadonlySet<string>,
 ): SmartInputComposerDraft {
+  if (draft.richDoc) return pruneRichComposerDraft(draft, validReferenceIds);
   return {
     nextOrdinalByKind: { ...draft.nextOrdinalByKind },
     parts: normalizeSmartInputComposerParts(
