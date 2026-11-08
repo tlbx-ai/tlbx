@@ -454,7 +454,12 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 pendingPatches,
                 "approve-already-resolved");
             Assert.Equal("rejected", duplicateResolution.Status);
-            Assert.Contains("was not found", duplicateResolution.Message, StringComparison.Ordinal);
+            var afterDuplicate = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, sessionId,
+                _ => true, TimeSpan.FromSeconds(5), count: 96);
+            Assert.NotEqual("error", afterDuplicate.Session.State);
+            Assert.Equal("completed", afterDuplicate.CurrentTurn.State);
+            Assert.False(process.HasExited);
         }
         finally
         {

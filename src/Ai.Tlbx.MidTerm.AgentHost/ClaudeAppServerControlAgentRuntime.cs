@@ -1559,7 +1559,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             : AppServerControlQuickSettings.PermissionModeManual;
         var settings = AppServerControlQuickSettings.CreateSummary(
             request.Model ?? _quickSettings.Model ?? AppServerControlProviderRuntimeConfiguration.GetClaudeDefaultModel(),
-            request.Effort ?? _quickSettings.Effort,
+            // An explicit model is a turn settings snapshot; null effort resets its override.
+            // Runtime-managed prompts omit model and retain the acknowledged SDK defaults.
+            request.Effort ?? (request.Model is null ? _quickSettings.Effort : null),
             request.PlanMode ?? _quickSettings.PlanMode,
             request.PermissionMode ?? _quickSettings.PermissionMode,
             defaultPermissionMode);
