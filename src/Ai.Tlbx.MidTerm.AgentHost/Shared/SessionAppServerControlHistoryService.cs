@@ -725,7 +725,13 @@ public sealed partial class SessionAppServerControlHistoryService
             state.Provider = appServerControlEvent.Provider;
         }
 
-        if (!string.IsNullOrWhiteSpace(appServerControlEvent.ThreadId))
+        // Pre-attach notices carry the session ID as a fallback. Replay publishes them after
+        // authoritative thread metadata; they must not replace that established provider ID.
+        // Explicit ThreadState metadata is still applied below, including legitimate replacements.
+        if (!string.IsNullOrWhiteSpace(appServerControlEvent.ThreadId) &&
+            (!string.Equals(appServerControlEvent.ThreadId, appServerControlEvent.SessionId, StringComparison.Ordinal) ||
+             string.IsNullOrWhiteSpace(state.Thread.ThreadId) ||
+             string.Equals(state.Thread.ThreadId, appServerControlEvent.SessionId, StringComparison.Ordinal)))
         {
             state.Thread.ThreadId = appServerControlEvent.ThreadId;
         }

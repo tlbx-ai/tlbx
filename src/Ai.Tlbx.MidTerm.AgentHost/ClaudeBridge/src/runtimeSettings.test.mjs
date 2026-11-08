@@ -80,6 +80,7 @@ test("Auto resolves existing scoped tool callbacks once, only after SDK acknowle
   assert.equal(receipt.confirmed.permissionMode, "auto");
   assert.equal(Object.hasOwn(receipt, "effective"), false);
   assert.deepEqual(f.events, [{ type: "bridge.permission_auto_resolved", session_id: "own", turnId: "turn", requestId: "tool", decision: "accept" }]);
+  f.runtime.setPermissionMode = async () => {};
   await f.configure({ permissionMode: "auto" });
   assert.equal(f.events.length, 1);
 });

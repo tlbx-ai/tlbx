@@ -1,12 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../api/client', () => ({
+  AppServerControlHttpError: class extends Error {},
   configureAppServerControlRuntime: vi.fn(),
   updateSettings: vi.fn().mockResolvedValue({ response: { ok: true } }),
+  updateAppServerControlHistoryStreamWindow: vi.fn(),
 }));
+vi.mock('../i18n', () => ({ t: (key: string) => key }));
 
 import { configureAppServerControlRuntime, updateSettings } from '../../api/client';
-import type { AppServerControlConfigureResponse, MidTermSettingsPublic } from '../../api/types';
+import type { AppServerControlConfigureResponse, AppServerControlHistorySnapshot, MidTermSettingsPublic } from '../../api/types';
+import { applyFetchedAppServerControlHistoryWindow, applyLiveAppServerControlHistoryDelta } from '../agentView/historyWindowState';
+import type { SessionAppServerControlViewState } from '../agentView/types';
 import { $currentSettings, $sessions } from '../../stores';
 import {
   configureAppServerControlQuickSettings,
@@ -17,6 +22,7 @@ import {
   removeAppServerControlQuickSettingsSessionState,
   setAppServerControlQuickSettingsDraft,
   syncAppServerControlQuickSettingsFromSnapshot,
+  syncAppServerControlQuickSettingsFromHistory,
 } from './quickSettings';
 
 function createMemoryStorage(): Storage {
@@ -225,6 +231,7 @@ describe('runtime quick-settings acknowledgements', () => {
       thread: { threadId, state: 'active', stateLabel: 'Active' },
       currentTurn: { turnId: 'turn-A', state: running ? 'running' : 'completed', stateLabel: '' },
       connected: true,
+      sessionState: 'ready',
     });
   }
   function receipt(
@@ -265,6 +272,174 @@ describe('runtime quick-settings acknowledgements', () => {
     removeAppServerControlQuickSettingsSessionState(id);
     $sessions.set({});
     vi.unstubAllGlobals();
+  });
+
+  function startupSnapshot(threadId = id, sessionState = 'starting'): AppServerControlHistorySnapshot {
+    return {
+      sessionId: id, provider: 'codex', latestSequence: 1, generatedAt: '',
+      historyCount: 0, historyWindowStart: 0, historyWindowEnd: 0,
+      hasOlderHistory: false, hasNewerHistory: false,
+      session: { state: sessionState, stateLabel: '' },
+      thread: { threadId, state: 'active', stateLabel: '' },
+      currentTurn: { turnId: null, state: '', stateLabel: '' },
+      quickSettings: original,
+      streams: { assistantText: '', reasoningText: '', reasoningSummaryText: '', planText: '', commandOutput: '', fileChangeOutput: '', unifiedDiff: '' },
+      history: [], items: [], requests: [], notices: [],
+    };
+  }
+
+  it('keeps all four pre-prompt selections pending until canonical attach-ready metadata arrives without paint', async () => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    const state = { snapshot: null, streamConnected: true, historyWindowTargetCount: 80 } as unknown as SessionAppServerControlViewState;
+    const raf = vi.fn();
+    vi.stubGlobal('requestAnimationFrame', raf);
+    applyFetchedAppServerControlHistoryWindow(id, state, startupSnapshot());
+    api.mockResolvedValue(receipt({
+      threadId: 'provider-real', turnId: null,
+      effectiveSettings: { ...receipt().effectiveSettings, collaborationMode: { mode: 'plan' }, approvalPolicy: 'never', sandboxPolicy: { type: 'dangerFullAccess' } },
+    }));
+    const operations = [
+      configureAppServerControlQuickSettings(id, { model: 'provider-B' }),
+      configureAppServerControlQuickSettings(id, { effort: 'high' }),
+      configureAppServerControlQuickSettings(id, { planMode: 'on' }),
+      configureAppServerControlQuickSettings(id, { permissionMode: 'auto' }),
+    ];
+    await Promise.resolve();
+    expect(api).not.toHaveBeenCalled();
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('provider-B');
+    for (const field of ['model', 'effort', 'planMode', 'permissionMode'] as const)
+      expect(getAppServerControlRuntimeSettingStatus(id, field)?.state).toBe('pending');
+    // A ready label cannot make the session fallback ID an authoritative provider target.
+    applyFetchedAppServerControlHistoryWindow(id, state, startupSnapshot(id, 'ready'));
+    applyFetchedAppServerControlHistoryWindow(id, state, startupSnapshot('provider-real', 'starting'));
+    await Promise.resolve();
+    expect(api).not.toHaveBeenCalled();
+    const readyWindow = startupSnapshot('provider-real', 'ready');
+    readyWindow.thread.state = 'idle';
+    applyFetchedAppServerControlHistoryWindow(id, state, readyWindow);
+    await Promise.all(operations);
+    expect(api).toHaveBeenCalledTimes(4);
+    for (const [, request] of api.mock.calls) {
+      expect(request.expectedThreadId).toBe('provider-real');
+      expect(request.expectedTurnId).toBeNull();
+    }
+    expect(api.mock.calls.map(([, request]) => request.settings)).toEqual([
+      { model: 'provider-B' }, { effort: 'high' }, { planMode: 'on' }, { permissionMode: 'auto' },
+    ]);
+    for (let i = 0; i < 3; i++) syncAppServerControlQuickSettingsFromHistory(state.snapshot!, true);
+    await Promise.resolve();
+    expect(api).toHaveBeenCalledTimes(4);
+    expect(raf).not.toHaveBeenCalled();
+  });
+
+  it('drops superseded startup choices and sends only the latest after the first binding', async () => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot(), true);
+    const first = configureAppServerControlQuickSettings(id, { model: 'B' });
+    const second = configureAppServerControlQuickSettings(id, { model: 'C' });
+    api.mockResolvedValue(receipt({ threadId: 'provider-real', turnId: null }));
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot('provider-real', 'ready'), true);
+    await Promise.all([first, second]);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(api.mock.calls[0]?.[1].settings.model).toBe('C');
+  });
+
+  it('waits for connection readiness without changing a known target guard', async () => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    const snapshot = startupSnapshot('thread-A', 'ready');
+    syncAppServerControlQuickSettingsFromHistory(snapshot, false);
+    const pending = configureAppServerControlQuickSettings(id, { model: 'B' });
+    await Promise.resolve();
+    expect(api).not.toHaveBeenCalled();
+    api.mockResolvedValue(receipt({ turnId: null }));
+    syncAppServerControlQuickSettingsFromHistory(snapshot, true);
+    await pending;
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(api.mock.calls[0]?.[1]).toMatchObject({ expectedThreadId: 'thread-A', expectedTurnId: null });
+  });
+
+  it('binds all startup edits to the same first-ready scope rather than a later busy turn', async () => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot(), true);
+    let resolve!: (value: AppServerControlConfigureResponse) => void;
+    api.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
+    const first = configureAppServerControlQuickSettings(id, { model: 'B' });
+    const second = configureAppServerControlQuickSettings(id, { effort: 'high' });
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot('thread-A', 'ready'), true);
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    const busy = startupSnapshot('thread-A', 'running');
+    busy.currentTurn = { turnId: 'new-turn', state: 'running', stateLabel: '' };
+    syncAppServerControlQuickSettingsFromHistory(busy, true);
+    resolve(receipt({ turnId: null }));
+    await Promise.all([first, second]);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(api.mock.calls[0]?.[1].expectedTurnId).toBeNull();
+    expect(getAppServerControlRuntimeSettingStatus(id, 'effort')?.state).toBe('targetUnavailable');
+  });
+
+  it('does not replace runtime identity when a stale history window is rejected', async () => {
+    const state = { snapshot: null, streamConnected: true, historyWindowTargetCount: 80 } as unknown as SessionAppServerControlViewState;
+    const current = { ...startupSnapshot('thread-A', 'ready'), latestSequence: 10 };
+    applyFetchedAppServerControlHistoryWindow(id, state, current);
+    const stale = { ...startupSnapshot('stale-thread', 'ready'), latestSequence: 9 };
+    expect(applyFetchedAppServerControlHistoryWindow(id, state, stale)).toBe(false);
+    api.mockResolvedValue(receipt({ turnId: null }));
+    await configureAppServerControlQuickSettings(id, { effort: 'high' });
+    expect(api.mock.calls[0]?.[1]).toMatchObject({ expectedThreadId: 'thread-A', expectedTurnId: null });
+  });
+
+  it('releases an unsent startup waiter on close and never transfers it to a replacement', async () => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot(), true);
+    const pending = configureAppServerControlQuickSettings(id, { model: 'B' });
+    await Promise.resolve();
+    removeAppServerControlQuickSettingsSessionState(id);
+    seed('codex', false, 'replacement');
+    await pending;
+    expect(api).not.toHaveBeenCalled();
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')).toBeUndefined();
+  });
+
+  it('cancels an unsent known-thread change on replacement and reports failed attach without replay', async () => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot('provider-A'), true);
+    const pending = configureAppServerControlQuickSettings(id, { model: 'B' });
+    await Promise.resolve();
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot('provider-B', 'ready'), true);
+    await pending;
+    expect(api).not.toHaveBeenCalled();
+    removeAppServerControlQuickSettingsSessionState(id);
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot(), true);
+    const failed = configureAppServerControlQuickSettings(id, { model: 'C' });
+    await Promise.resolve();
+    syncAppServerControlQuickSettingsFromHistory(startupSnapshot(id, 'error'), true);
+    await failed;
+    expect(api).not.toHaveBeenCalled();
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')?.state).toBe('targetUnavailable');
+  });
+
+  it('uses the latest ingested busy-turn guard without waiting for a render', async () => {
+    seed('codex', false);
+    const snapshot = startupSnapshot('thread-A', 'running');
+    const state = { snapshot, streamConnected: true, historyWindowTargetCount: 80 } as unknown as SessionAppServerControlViewState;
+    applyLiveAppServerControlHistoryDelta(state, {
+      ...snapshot, latestSequence: 2,
+      currentTurn: { turnId: 'busy-now', state: 'running', stateLabel: '' },
+      historyUpserts: [], historyRemovals: [], itemUpserts: [], itemRemovals: [],
+      requestUpserts: [], requestRemovals: [], noticeUpserts: [],
+    });
+    api.mockResolvedValue(receipt({ turnId: 'busy-now' }));
+    await configureAppServerControlQuickSettings(id, { effort: 'high' });
+    expect(api.mock.calls[0]?.[1].expectedTurnId).toBe('busy-now');
+  });
+
+  it('does not replay a mutation with unknown outcome when readiness is observed again', async () => {
+    api.mockRejectedValueOnce(new Error('lost after send'));
+    await configureAppServerControlQuickSettings(id, { model: 'B' });
+    for (let i = 0; i < 3; i++) seed();
+    await Promise.resolve();
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')?.state).toBe('unconfirmed');
   });
 
   it('sends exact canonical busy guards independently of a prompt and displays normalized readback', async () => {

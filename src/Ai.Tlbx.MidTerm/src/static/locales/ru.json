@@ -1451,5 +1451,6 @@
   "smartInput.settingScopeTurns": "Для следующих ходов; текущий вывод не меняется",
   "smartInput.settingScopeCaptures": "Для последующих снимков настроек; текущий вывод не меняется",
   "smartInput.settingScopeResponses": "Принятые настройки для следующих ответов; текущий вывод не меняется",
+  "smartInput.settingPermissionAutoPending": "Авто разрешает уже ожидающие инструменты в этой сессии. На вопросы по-прежнему нужен ответ.",
   "smartInput.settingPermissionAfterPlan": "Применяется после выхода из режима плана; план остаётся активным"
 }
