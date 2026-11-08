@@ -723,6 +723,7 @@ public static class BrowserEndpoints
             Notes =
             [
                 "Browser commands require a configured preview target, an attached tlbx UI on /ws/state, and an injected /ws/browser bridge from the preview frame.",
+                "fill accepts one visible enabled form control or contenteditable editing host. Rich fill uses native literal-text editing and undo, requires browser editing-command support, and rejects read-only hosts and non-editable descendants; it never accesses the clipboard.",
                 "mt_inspect is the lowest-token first diagnostic command; mt_proxylog_summary is the lowest-token proxy diagnostic command.",
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
