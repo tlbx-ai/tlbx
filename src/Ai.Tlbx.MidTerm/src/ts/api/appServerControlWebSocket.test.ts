@@ -351,6 +351,82 @@ describe('appServerControlWebSocket', () => {
     expect(onOpen).toHaveBeenCalledTimes(2);
     disconnect();
   });
+
+  it('recovers a cold background-suspended activation with attach/read/subscribe only', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const api = await import('./appServerControlWebSocket');
+    const { resumeAppServerControlActivationAfterTransport } =
+      await import('../modules/agentView/activationHelpers');
+    api.suspendAppServerControlWebSocketForBrowserBackground();
+    let initialError: unknown;
+    const oldActivation = api.attachAppServerControlSession('session-1').catch((error: unknown) => {
+      initialError = error;
+    });
+    await oldActivation;
+    expect(String(initialError)).toContain('suspended in background');
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    const ready = vi.fn();
+    let disconnect = () => {};
+    const restored = {
+      sessionId: 'session-1',
+      latestSequence: 12,
+      historyCount: 1,
+      history: [{ entryId: 'old-message', order: 1 }],
+      thread: { threadId: 'same-native-thread' },
+    };
+    let history: unknown;
+    const recovered = resumeAppServerControlActivationAfterTransport(
+      api.recoverAppServerControlWebSocket,
+      oldActivation,
+      () => true,
+      async () => {
+        await api.attachAppServerControlSession('session-1');
+        history = await api.getAppServerControlHistoryWindowWs('session-1', undefined, 80);
+        disconnect = api.openAppServerControlHistorySocket(
+          'session-1',
+          12,
+          undefined,
+          80,
+          undefined,
+          { onPatch: vi.fn(), onOpen: ready },
+        );
+      },
+    );
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const attach = JSON.parse(socket.sent[0]!);
+    expect(attach.action).toBe('attach');
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'ack',
+        id: attach.id,
+        action: 'attach',
+        sessionId: 'session-1',
+      }),
+    } as MessageEvent);
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    const read = JSON.parse(socket.sent[1]!);
+    expect(read.action).toBe('history.window.get');
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'history.window',
+        id: read.id,
+        sessionId: 'session-1',
+        historyWindow: restored,
+      }),
+    } as MessageEvent);
+    await recovered;
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce());
+    expect(history).toMatchObject(restored);
+    expect(
+      socket.sent.map((message) => {
+        const value = JSON.parse(message);
+        return value.action ?? value.type;
+      }),
+    ).toEqual(['attach', 'history.window.get', 'subscribe']);
+    disconnect();
+  });
   it('sends a guarded configure patch with null intact and waits for the correlated provider receipt', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
     const { configureAppServerControlRuntimeWs } = await import('./appServerControlWebSocket');
