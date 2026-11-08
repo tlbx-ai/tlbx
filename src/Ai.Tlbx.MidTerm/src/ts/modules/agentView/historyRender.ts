@@ -1425,7 +1425,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     return [
       entry.kind,
       entry.tone,
-      resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.provider),
+      resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.session.agentName),
       entry.title,
       entry.body,
       entry.meta,

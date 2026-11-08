@@ -247,8 +247,7 @@ function parseMarkdownTableAlignments(line: string): Array<'left' | 'center' | '
   });
 }
 
-type MarkdownTableColumnKind = 'key' | 'tag' | 'numeric' | 'notes' | 'text';
-type MarkdownTableCellTone = 'default' | 'positive' | 'warning' | 'attention' | 'info' | 'muted';
+type MarkdownTableColumnKind = 'key' | 'numeric' | 'notes' | 'text';
 
 function normalizeMarkdownTableHeader(cell: string): string {
   return cell.trim().toLowerCase().replace(/\s+/g, ' ');
@@ -321,10 +320,6 @@ function inferMarkdownTableColumnKinds(
       /^(lane|metric|surface|render mode|step|item|session|worker|thread)$/.test(normalizedHeader)
     ) {
       return 'key';
-    }
-
-    if (/^(mode|state|owner|status|provider|kind|profile|model)$/.test(normalizedHeader)) {
-      return 'tag';
     }
 
     return 'text';
@@ -410,93 +405,11 @@ function renderStructuredMarkdownTable(args: {
             const alignAttr = alignment ? ` data-align="${alignment}"` : '';
             const kind = columnKinds[cellIndex] ?? 'text';
             const kindAttr = ` data-col-kind="${kind}"`;
-            return `<td${alignAttr}${kindAttr}>${renderMarkdownTableCellContent(
-              headers[cellIndex] ?? '',
-              cell,
-              kind,
-            )}</td>`;
+            return `<td${alignAttr}${kindAttr}>${cell}</td>`;
           })
           .join('')}</tr>`,
     )
     .join('')}</tbody></table></div>`;
-}
-
-function inferMarkdownTableCellTone(
-  kind: MarkdownTableColumnKind,
-  header: string,
-  value: string,
-): MarkdownTableCellTone {
-  const normalizedHeader = normalizeMarkdownTableHeader(header);
-  const normalizedValue = value.trim().toLowerCase();
-
-  if (!normalizedValue) {
-    return 'muted';
-  }
-
-  if (
-    /(blocked|failed|error|degraded|unavailable|stalled|down|denied|timeout|timed out)/.test(
-      normalizedValue,
-    )
-  ) {
-    return 'attention';
-  }
-
-  if (/(good|ok|healthy|ready|completed|active|streaming|live|restored)/.test(normalizedValue)) {
-    return 'positive';
-  }
-
-  if (/(replaying|pending|queued|starting|running|attaching|reconnecting)/.test(normalizedValue)) {
-    return 'warning';
-  }
-
-  if (/(idle|none|human|terminal|shell|unknown|n\/a)/.test(normalizedValue)) {
-    return 'muted';
-  }
-
-  if (
-    kind === 'tag' ||
-    /^(mode|state|owner|status|provider|kind|profile|model)$/.test(normalizedHeader) ||
-    /(?:appServerControl|codex|claude|gpt|opus|mini|terminal|pwsh|bash)/.test(normalizedValue)
-  ) {
-    return 'info';
-  }
-
-  return 'default';
-}
-
-function shouldRenderMarkdownTableCellAsPill(
-  kind: MarkdownTableColumnKind,
-  header: string,
-  value: string,
-): boolean {
-  const normalizedHeader = normalizeMarkdownTableHeader(header);
-  const normalizedValue = value.trim();
-  if (!normalizedValue) {
-    return false;
-  }
-
-  return (
-    kind === 'tag' ||
-    /^(owner|status|state|mode|provider|profile|model)$/.test(normalizedHeader) ||
-    normalizedValue.length <= 18
-  );
-}
-
-function renderMarkdownTableCellContent(
-  header: string,
-  value: string,
-  kind: MarkdownTableColumnKind,
-): string {
-  if (kind === 'notes' || kind === 'numeric') {
-    return value;
-  }
-
-  if (!shouldRenderMarkdownTableCellAsPill(kind, header, value)) {
-    return value;
-  }
-
-  const tone = inferMarkdownTableCellTone(kind, header, value);
-  return `<span class="agent-markdown-cell-pill" data-cell-tone="${tone}" data-cell-kind="${kind}">${value}</span>`;
 }
 
 type MarkdownTableSortDirection = 'none' | 'ascending' | 'descending';
@@ -658,6 +571,8 @@ function cycleMarkdownTableSortDirection(
   return 'none';
 }
 
+const MARKDOWN_TABLE_INTERACTIVE_MIN_ROWS = 10;
+
 export function wireMarkdownTables(
   container: ParentNode,
   labels: Partial<MarkdownTableUiLabels> = {},
@@ -684,7 +599,7 @@ export function wireMarkdownTables(
     const table = wrap.querySelector<HTMLTableElement>('table.agent-markdown-table');
     const headerRow = table?.tHead?.rows.item(0);
     const body = table?.tBodies.item(0);
-    if (!table || !headerRow || !body) {
+    if (!table || !headerRow || !body || body.rows.length < MARKDOWN_TABLE_INTERACTIVE_MIN_ROWS) {
       return;
     }
 
@@ -726,6 +641,7 @@ export function wireMarkdownTables(
 
       const filter = document.createElement('input');
       filter.type = 'search';
+      filter.size = 8;
       filter.className = 'agent-markdown-table-filter';
       filter.placeholder = resolvedLabels.filterPlaceholder;
       filter.autocomplete = 'off';
