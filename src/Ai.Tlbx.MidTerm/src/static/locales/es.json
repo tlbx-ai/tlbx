@@ -1441,5 +1441,17 @@
   "connect.sidebar.identityVerified": "Clave verificada",
   "connect.sidebar.signalingConnected": "Link · WSS activo",
   "connect.sidebar.signalingMissing": "No indicado",
-  "connect.sidebar.signalingHint": "La conexión de señalización permanece abierta durante el uso. La ruta de los datos de la aplicación se muestra en Ruta."
+  "connect.sidebar.signalingHint": "La conexión de señalización permanece abierta durante el uso. La ruta de los datos de la aplicación se muestra en Ruta.",
+  "smartInput.settingPending": "Aplicando…",
+  "smartInput.settingApplied": "Confirmado por el proveedor",
+  "smartInput.settingAcknowledged": "Aceptado por el proveedor; valor efectivo sin verificar",
+  "smartInput.settingPartial": "Confirmado parcialmente; consulte el alcance",
+  "smartInput.settingUnconfirmed": "Sin confirmar; se muestra el último valor confirmado",
+  "smartInput.settingTargetUnavailable": "El destino cambió; no aplicado",
+  "smartInput.settingScopeTurns": "Para los turnos siguientes; inferencia actual sin cambios",
+  "smartInput.settingScopeCaptures": "Para las capturas siguientes; inferencia actual sin cambios",
+  "smartInput.settingScopeResponses": "Valores predeterminados aceptados para próximas respuestas; inferencia actual sin cambios",
+  "smartInput.settingPermissionAutoPending": "Auto autoriza también las herramientas que ya están esperando en esta sesión. Las preguntas siguen necesitando respuesta.",
+  "smartInput.modelInherit": "Sin modelo fijado",
+  "smartInput.settingPermissionAfterPlan": "Se usa al salir de Plan; Plan sigue activo"
 }

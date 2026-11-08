@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
@@ -29,16 +30,16 @@ public sealed class AppServerControlBridgeCacheTests
             cached = SessionAppServerControlHostRuntimeService.AcceptCachedHistoryWindow(cached, incoming);
             var patch = Patch(cached);
             patch.HistoryCount++;
-            patch.HistoryUpserts = [new() { EntryId = $"off-window-{step}", Order = count + step + 1, ItemId = $"completed-{step}" }];
-            patch.ItemUpserts = [new() { ItemId = $"completed-{step}", TurnId = "turn/current", Status = "completed" }];
-            patch.RequestUpserts = [new() { RequestId = $"resolved-{step}", State = "resolved" }];
+            patch.HistoryUpserts = [new() { EntryId = $"off-window-{step.ToString(CultureInfo.InvariantCulture)}", Order = count + step + 1, ItemId = $"completed-{step.ToString(CultureInfo.InvariantCulture)}" }];
+            patch.ItemUpserts = [new() { ItemId = $"completed-{step.ToString(CultureInfo.InvariantCulture)}", TurnId = "turn/current", Status = "completed" }];
+            patch.RequestUpserts = [new() { RequestId = $"resolved-{step.ToString(CultureInfo.InvariantCulture)}", State = "resolved" }];
 
             cached = SessionAppServerControlHostRuntimeService.ApplyCachedHistoryPatch(cached, patch);
 
             Assert.Equal(8, cached.History.Count);
             Assert.Equal(9, cached.Items.Count);
             Assert.Equal(9, cached.Requests.Count);
-            Assert.DoesNotContain(cached.Items, item => item.ItemId == $"completed-{step}");
+            Assert.DoesNotContain(cached.Items, item => item.ItemId == $"completed-{step.ToString(CultureInfo.InvariantCulture)}");
             Assert.Contains(cached.Items, item => item.ItemId == ActiveId);
             Assert.Contains(cached.Requests, request => request.RequestId == PendingId && request.TurnId == "older/external-turn");
             Assert.Equal(patch.HistoryCount, cached.HistoryCount);
@@ -180,7 +181,7 @@ public sealed class AppServerControlBridgeCacheTests
         };
         for (var i = start; i < start + count; i++)
         {
-            source.History.Add(new() { EntryId = $"entry-{i}", Order = i + 1, ItemId = $"item-{i}", RequestId = $"request-{i}", Body = "retained canonical row" });
+            source.History.Add(new() { EntryId = $"entry-{i.ToString(CultureInfo.InvariantCulture)}", Order = i + 1, ItemId = $"item-{i.ToString(CultureInfo.InvariantCulture)}", RequestId = $"request-{i.ToString(CultureInfo.InvariantCulture)}", Body = "retained canonical row" });
             source.Items.Add(Item(i, true));
             source.Requests.Add(Request(i));
         }
@@ -196,12 +197,12 @@ public sealed class AppServerControlBridgeCacheTests
 
     private static AppServerControlItemSummary Item(int i, bool retained) => new()
     {
-        ItemId = $"item-{i}", TurnId = "turn/current", Status = "completed",
+        ItemId = $"item-{i.ToString(CultureInfo.InvariantCulture)}", TurnId = "turn/current", Status = "completed",
         Detail = retained ? "window summary" : "ARCHIVE_DETAIL"
     };
 
     private static AppServerControlRequestSummary Request(int i) => new()
     {
-        RequestId = $"request-{i}", State = "resolved", TurnId = "turn/current"
+        RequestId = $"request-{i.ToString(CultureInfo.InvariantCulture)}", State = "resolved", TurnId = "turn/current"
     };
 }

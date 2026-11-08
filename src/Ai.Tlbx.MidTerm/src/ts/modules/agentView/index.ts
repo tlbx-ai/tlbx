@@ -34,7 +34,6 @@ import {
   withTurnDurationNotes,
 } from './historyProcessing';
 import {
-  applyCanonicalAppServerControlDelta,
   applyAppServerControlHistoryWindowState,
   collapseSnapshotToLatestWindow,
 } from './snapshotState';
@@ -67,6 +66,7 @@ import {
 } from './historyVirtualizer';
 import {
   applyFetchedAppServerControlHistoryWindow,
+  applyLiveAppServerControlHistoryDelta,
   hasRenderableAppServerControlHistory,
 } from './historyWindowState';
 import {
@@ -107,7 +107,9 @@ import {
 } from '../appServerControl/input';
 import {
   removeAppServerControlQuickSettingsSessionState,
+  syncAppServerControlQuickSettingsFromHistory,
   syncAppServerControlQuickSettingsFromSnapshot,
+  disconnectAppServerControlQuickSettingsRuntime,
 } from '../appServerControl/quickSettings';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import { captureViewportAnchor } from '../../utils/virtualizer';
@@ -759,6 +761,7 @@ async function activateAgentViewCore(sessionId: string): Promise<void> {
 
   state.snapshot = null;
   state.streamConnected = false;
+  disconnectAppServerControlQuickSettingsRuntime(sessionId);
   state.activationTrace = [];
   state.activationError = null;
   state.activationIssue = null;
@@ -857,6 +860,8 @@ async function activateAgentViewCore(sessionId: string): Promise<void> {
     renderCurrentAgentView(sessionId);
     state.snapshot = snapshot;
     state.streamConnected = false;
+    disconnectAppServerControlQuickSettingsRuntime(sessionId);
+    syncAppServerControlQuickSettingsFromHistory(snapshot, false);
     renderCurrentAgentView(sessionId, { immediate: true });
     openLiveAppServerControlStream(sessionId, snapshot.latestSequence);
   } catch (error) {
@@ -930,6 +935,7 @@ async function resumeAppServerControlFromHistory(
 ): Promise<void> {
   ensureAppServerControlActivationIsCurrent(state, activationRunId);
   state.streamConnected = false;
+  disconnectAppServerControlQuickSettingsRuntime(sessionId);
   renderCurrentAgentView(sessionId);
 
   try {
@@ -979,6 +985,7 @@ async function tryLoadReadonlyAppServerControlHistory(
 
     applyFetchedAppServerControlHistoryWindow(sessionId, state, snapshot);
     state.streamConnected = false;
+    disconnectAppServerControlQuickSettingsRuntime(sessionId);
     state.activationTrace = [];
     return true;
   } catch (error) {
@@ -1893,6 +1900,7 @@ export function recoverAppServerControlAfterBrowserResume(): void {
   const state = sessionId && getActiveTab(sessionId) === 'agent' ? viewStates.get(sessionId) : null;
   if (state && sessionId) {
     state.streamConnected = false;
+    disconnectAppServerControlQuickSettingsRuntime(sessionId);
     prepareAppServerControlForForeground(state);
     renderCurrentAgentView(sessionId, { immediate: true });
   }
@@ -1904,13 +1912,15 @@ export function recoverAppServerControlAfterBrowserResume(): void {
     }
 
     state.streamConnected = false;
+    disconnectAppServerControlQuickSettingsRuntime(sessionId);
     renderCurrentAgentView(sessionId);
   });
 }
 
 export function suspendAppServerControlForBrowserBackground(): void {
-  viewStates.forEach((state) => {
+  viewStates.forEach((state, sessionId) => {
     state.streamConnected = false;
+    disconnectAppServerControlQuickSettingsRuntime(sessionId);
   });
   suspendAppServerControlConnectionForBrowserBackground();
 }
@@ -2034,6 +2044,7 @@ function openLiveAppServerControlStream(sessionId: string, afterSequence: number
       }
 
       current.streamConnected = true;
+      if (current.snapshot) syncAppServerControlQuickSettingsFromHistory(current.snapshot, true);
       current.activationIssue = null;
       current.activationError = null;
       setActivationState(
@@ -2077,7 +2088,7 @@ function openLiveAppServerControlStream(sessionId: string, afterSequence: number
       }
 
       traceAppServerControlHistoryPush(sessionId, delta, current.snapshot);
-      const requiresWindowRefresh = applyCanonicalAppServerControlDelta(current, delta);
+      const requiresWindowRefresh = applyLiveAppServerControlHistoryDelta(current, delta);
       if (requiresWindowRefresh) {
         if (!current.historyAutoScrollPinned && current.historyNavigatorMode !== 'drag-preview') {
           queueUrgentHistoryWindowViewportSync(sessionId, current);
@@ -2098,6 +2109,7 @@ function openLiveAppServerControlStream(sessionId: string, afterSequence: number
       }
 
       current.streamConnected = false;
+      disconnectAppServerControlQuickSettingsRuntime(sessionId);
       renderCurrentAgentView(sessionId);
     },
   });
@@ -2112,6 +2124,7 @@ function closeAppServerControlStream(sessionId: string): void {
   state.disconnectStream?.();
   state.disconnectStream = null;
   state.streamConnected = false;
+  disconnectAppServerControlQuickSettingsRuntime(sessionId);
 }
 
 function releaseHiddenAppServerControlRenderState(state: SessionAppServerControlViewState): void {
@@ -2272,6 +2285,7 @@ async function refreshAppServerControlSnapshot(
     );
     if (state.snapshot) {
       state.streamConnected = false;
+      disconnectAppServerControlQuickSettingsRuntime(sessionId);
       renderCurrentAgentView(sessionId);
       return;
     }

@@ -139,6 +139,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "runtime.configure" => await ConfigureAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactThreadAsync(command, ct).ConfigureAwait(false),
@@ -244,6 +245,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         _providerThreadId = null;
         _activeTurnId = null;
+        _hasConfiguredThreadDefaults = false;
         _remoteEndpoint = attachPoint?.Endpoint;
         _quickSettings = CreateDefaultQuickSettings();
         _usage = null;
@@ -282,6 +284,11 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         }
 
         _providerThreadId = providerThreadId;
+        // model/list describes catalog defaults, not this opened thread's config.
+        // Adopt the native start/resume readback before publishing ready controls.
+        _quickSettings.Model = GetString(threadResult, "model") ?? _quickSettings.Model;
+        if (threadResult.TryGetProperty("reasoningEffort", out var openedEffort))
+            _quickSettings.Effort = openedEffort.GetString();
         if (resumedExistingThread)
         {
             await ReadCodexThreadHistoryAsync(providerThreadId, ct).ConfigureAwait(false);
@@ -349,7 +356,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         var turnResult = await SendCodexRequestAsync(
             "turn/start",
-            id => BuildCodexTurnStartRequest(
+            id => PreserveConfiguredDefaults(BuildCodexTurnStartRequest(
                 id,
                 _providerThreadId!,
                 input,
@@ -357,7 +364,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 quickSettings.Effort,
                 quickSettings.FastMode,
                 quickSettings.PlanMode,
-                quickSettings.PermissionMode),
+                quickSettings.PermissionMode), request),
             ct).ConfigureAwait(false);
 
         _quickSettings = quickSettings;
@@ -924,24 +931,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
             case "thread/settings/updated":
             {
-                var model = AppServerControlQuickSettings.NormalizeOptionalValue(
-                    GetString(payload, "threadSettings", "model"));
-                var effort = AppServerControlQuickSettings.NormalizeOptionalValue(
-                    GetString(payload, "threadSettings", "effort"));
-                if (model is not null)
+                if (string.Equals(threadId, _providerThreadId, StringComparison.Ordinal) &&
+                    payload.TryGetProperty("threadSettings", out var actual))
                 {
-                    _quickSettings.Model = model;
+                    ApplyConfirmedThreadSettings(actual);
+                    _settingsUpdated?.TrySetResult(actual.Clone());
+                    _emit(CreateQuickSettingsUpdatedEvent(_quickSettings,
+                        "codex.app-server.notification", method, payload));
                 }
-
-                if (effort is not null)
-                {
-                    _quickSettings.Effort = effort;
-                }
-                _emit(CreateQuickSettingsUpdatedEvent(
-                    _quickSettings,
-                    "codex.app-server.notification",
-                    method,
-                    payload));
                 break;
             }
 
@@ -3051,11 +3048,11 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             AppServerControlProviderRuntimeConfiguration.GetCodexDefaultModel(),
             AppServerControlQuickSettings.NormalizeOptionalValue(request.Effort) ??
             _quickSettings.Effort ??
-            "medium",
-            request.PlanMode,
-            request.PermissionMode,
+            (_hasConfiguredThreadDefaults ? null : "medium"),
+            request.PlanMode ?? _quickSettings.PlanMode,
+            request.PermissionMode ?? _quickSettings.PermissionMode,
             defaultPermissionMode,
-            request.FastMode);
+            request.FastMode ?? _quickSettings.FastMode);
         quickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         quickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.EffortOptions);
         return quickSettings;

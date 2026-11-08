@@ -1,6 +1,6 @@
 {
-  "web": "10.26.28-dev",
-  "pty": "10.26.28-dev",
+  "web": "10.26.29-dev",
+  "pty": "10.26.29-dev",
   "protocol": 1,
-  "minCompatiblePty": "10.26.28-dev"
+  "minCompatiblePty": "10.26.29-dev"
 }

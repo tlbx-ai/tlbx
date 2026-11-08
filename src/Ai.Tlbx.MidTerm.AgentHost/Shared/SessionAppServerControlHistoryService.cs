@@ -725,7 +725,13 @@ public sealed partial class SessionAppServerControlHistoryService
             state.Provider = appServerControlEvent.Provider;
         }
 
-        if (!string.IsNullOrWhiteSpace(appServerControlEvent.ThreadId))
+        // Pre-attach notices carry the session ID as a fallback. Replay publishes them after
+        // authoritative thread metadata; they must not replace that established provider ID.
+        // Explicit ThreadState metadata is still applied below, including legitimate replacements.
+        if (!string.IsNullOrWhiteSpace(appServerControlEvent.ThreadId) &&
+            (!string.Equals(appServerControlEvent.ThreadId, appServerControlEvent.SessionId, StringComparison.Ordinal) ||
+             string.IsNullOrWhiteSpace(state.Thread.ThreadId) ||
+             string.Equals(state.Thread.ThreadId, appServerControlEvent.SessionId, StringComparison.Ordinal)))
         {
             state.Thread.ThreadId = appServerControlEvent.ThreadId;
         }
@@ -1234,6 +1240,7 @@ public sealed partial class SessionAppServerControlHistoryService
         state.QuickSettings.PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(quickSettings.PermissionMode);
         state.QuickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.ModelOptions);
         state.QuickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.EffortOptions);
+        state.QuickSettings.AcknowledgedFields = [.. quickSettings.AcknowledgedFields];
         state.QuickSettings.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(quickSettings.ConfigOptions);
     }
 
@@ -1950,6 +1957,7 @@ public sealed partial class SessionAppServerControlHistoryService
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions),
+                AcknowledgedFields = [.. source.QuickSettingsUpdated.AcknowledgedFields],
                 ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
@@ -2116,6 +2124,7 @@ public sealed partial class SessionAppServerControlHistoryService
             FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode),
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            AcknowledgedFields = [.. source.AcknowledgedFields],
             ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }
@@ -2129,6 +2138,7 @@ public sealed partial class SessionAppServerControlHistoryService
         target.FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.FastMode);
         target.ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions);
         target.EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions);
+        target.AcknowledgedFields = [.. source.AcknowledgedFields];
         target.ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions);
     }
 

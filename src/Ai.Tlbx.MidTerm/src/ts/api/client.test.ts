@@ -10,6 +10,27 @@ describe('api client appServerControl helpers', () => {
     vi.resetModules();
   });
 
+  it('routes live runtime configuration through the websocket with its exact patch and receipt', async () => {
+    const receipt = { sessionId: 's', threadId: 't', turnId: null, status: 'unconfirmed' };
+    const configure = vi.fn().mockResolvedValue(receipt);
+    vi.doMock('./appServerControlWebSocket', async (importOriginal) => ({
+      ...(await importOriginal<typeof import('./appServerControlWebSocket')>()),
+      configureAppServerControlRuntimeWs: configure,
+    }));
+    try {
+      const { configureAppServerControlRuntime } = await import('./client');
+      const request = {
+        expectedThreadId: 't',
+        expectedTurnId: null,
+        settings: { model: null, serviceTier: null },
+      };
+      expect(await configureAppServerControlRuntime('s', request)).toBe(receipt);
+      expect(configure).toHaveBeenCalledExactlyOnceWith('s', request);
+    } finally {
+      vi.doUnmock('./appServerControlWebSocket');
+    }
+  });
+
   it('surfaces structured session launch problem details', async () => {
     vi.stubGlobal(
       'fetch',

@@ -589,6 +589,23 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<AppServerControlConfigureResponse> ConfigureAsync(
+        string sessionId, AppServerControlConfigureRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(state, commandId => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = commandId, SessionId = sessionId, Type = "runtime.configure", Configure = request
+            }, ct).ConfigureAwait(false);
+            return result.Configured ?? throw new InvalidOperationException("Runtime did not acknowledge configuration.");
+        }
+        finally { state.Gate.Release(); }
+    }
+
     public async Task<AppServerControlCommandAcceptedResponse> SteerTurnAsync(
         string sessionId,
         AppServerControlSteerRequest request,
@@ -1113,6 +1130,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             var timeout = command.Type switch
             {
                 "runtime.attach" => TimeSpan.FromSeconds(120),
+                "runtime.configure" => TimeSpan.FromSeconds(60),
                 "turn.start" => TimeSpan.FromSeconds(60),
                 "turn.steer" => TimeSpan.FromSeconds(90),
                 "turn.interrupt" => TimeSpan.FromSeconds(20),
@@ -1654,6 +1672,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             FastMode = source.FastMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            AcknowledgedFields = [.. source.AcknowledgedFields],
             ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }

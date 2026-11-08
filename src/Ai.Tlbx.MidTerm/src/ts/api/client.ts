@@ -29,6 +29,8 @@ import type {
   AppServerControlInterruptRequest,
   AppServerControlGoalSetRequest,
   AppServerControlCommandAcceptedResponse,
+  AppServerControlConfigureRequest,
+  AppServerControlConfigureResponse,
   AppServerControlHistoryDelta,
   AppServerControlRequestDecisionRequest,
   AppServerControlUserInputAnswerRequest,
@@ -46,6 +48,7 @@ import type {
 } from './types';
 import {
   approveAppServerControlRequestWs,
+  configureAppServerControlRuntimeWs,
   attachAppServerControlSession,
   declineAppServerControlRequestWs,
   detachAppServerControlSession,
@@ -719,6 +722,13 @@ export async function interruptAppServerControlTurn(
   request: AppServerControlInterruptRequest,
 ): Promise<AppServerControlCommandAcceptedResponse> {
   return interruptAppServerControlTurnWs(id, request);
+}
+
+export async function configureAppServerControlRuntime(
+  id: string,
+  request: AppServerControlConfigureRequest,
+): Promise<AppServerControlConfigureResponse> {
+  return configureAppServerControlRuntimeWs(id, request);
 }
 
 export async function setAppServerControlGoal(

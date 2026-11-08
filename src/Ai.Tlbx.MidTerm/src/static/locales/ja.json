@@ -1441,5 +1441,17 @@
   "connect.sidebar.identityVerified": "キー検証済み",
   "connect.sidebar.signalingConnected": "Link · WSS 有効",
   "connect.sidebar.signalingMissing": "報告なし",
-  "connect.sidebar.signalingHint": "使用中はシグナリング接続が維持されます。アプリケーションデータの経路は「経路」に表示されます。"
+  "connect.sidebar.signalingHint": "使用中はシグナリング接続が維持されます。アプリケーションデータの経路は「経路」に表示されます。",
+  "smartInput.settingPending": "設定中…",
+  "smartInput.settingApplied": "プロバイダーが確認済み",
+  "smartInput.settingAcknowledged": "プロバイダーが受理済み。実効値は未取得",
+  "smartInput.settingPartial": "一部を確認済み。適用範囲を確認してください",
+  "smartInput.settingUnconfirmed": "未確認。最後に確認された値を表示",
+  "smartInput.settingTargetUnavailable": "対象が変更されたため未適用",
+  "smartInput.settingScopeTurns": "次のターン以降に適用。実行中の推論は変更されません",
+  "smartInput.settingScopeCaptures": "次の設定取得以降に適用。実行中の推論は変更されません",
+  "smartInput.settingScopeResponses": "次の応答以降の既定値を受理済み。実行中の推論は変更されません",
+  "smartInput.settingPermissionAutoPending": "自動モードは、このセッションですでに待機中のツールも許可します。質問には引き続き回答が必要です。",
+  "smartInput.modelInherit": "モデルを指定しない",
+  "smartInput.settingPermissionAfterPlan": "プランモード終了後に使用。プランモードは維持されます"
 }
