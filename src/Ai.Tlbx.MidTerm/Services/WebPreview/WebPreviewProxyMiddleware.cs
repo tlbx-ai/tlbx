@@ -32,12 +32,43 @@ public sealed partial class WebPreviewProxyMiddleware
     // to /webpreview/_ext?u=... so all requests go through the MT proxy.
     // Patches: fetch, XHR, element .src/.href setters, setAttribute, window.open.
     private const string UrlRewriteScript = """
-        <script>(function(){
+        <script data-mt-proxy-route="__MT_PROXY_ROUTE_ATTRIBUTE__">(function(){
+          var mtInjectionRoute="__MT_PROXY_ROUTE__";
+          var mtInnerAdapterRoutes=/*__MT_INNER_ADAPTER_ROUTES__*/[];
+          function mtRoutePosition(route){
+            if(typeof route!=="string"||!/^\/webpreview\/[^/]+(?:\/_access\/[^/]+\/[^/]+)?$/.test(route))return -1;
+            var path=location.pathname||"",index=path.indexOf(route+"/");
+            return index>=0?index:(path.endsWith(route)?path.length-route.length:-1);
+          }
+          // The outer transport prepends its adapter. Only the innermost matching
+          // native adapter may patch this document; this marker grants no authority.
+          function mtHasInnerAdapter(){
+            var own=mtRoutePosition(mtInjectionRoute);
+            if(own<0)return false;
+            for(var i=0;i<mtInnerAdapterRoutes.length;i++){
+              if(mtRoutePosition(mtInnerAdapterRoutes[i])>own)return true;
+            }
+            return false;
+          }
+          if(/^\/webpreview\/[^/]+\/_access\/[^/]+\/[^/]+$/.test(mtInjectionRoute)&&mtRoutePosition(mtInjectionRoute)<0)return;
+          if(mtHasInnerAdapter())return;
           if(window.__mtProxy)return;window.__mtProxy=1;
           // Save the real parent for navigation and cookie bridge notifications.
           var _realParent=window.parent;
           var mtNestedPreview=new URLSearchParams(location.search).get("__mtSubframe")==="1";
           try{mtNestedPreview=mtNestedPreview||!!_realParent.__mtProxy;}catch(e){}
+          function mtOwnNativeAttachment(){
+            try{
+              var parts=mtInjectionRoute.match(/^\/webpreview\/([^/]+)\/_access\/([^/]+)\/([^/]+)$/);
+              if(!parts||mtRoutePosition(mtInjectionRoute)<0)return false;
+              var saved=window.name?JSON.parse(window.name):null;
+              return !!saved&&saved.routeKey===decodeURIComponent(parts[1])
+                &&saved.previewId===decodeURIComponent(parts[2])&&saved.previewToken===decodeURIComponent(parts[3]);
+            }catch(e){return false;}
+          }
+          // A registered child attachment is independent of its parent's preview.
+          // Ordinary site frames lack this identity and keep subframe suppression.
+          if(mtOwnNativeAttachment())mtNestedPreview=false;
           var mtCtx=null;
           function mtReadCookie(name){
             try{
@@ -53,7 +84,9 @@ public sealed partial class WebPreviewProxyMiddleware
               var params=new URLSearchParams(location.search);
               var previewId=params.get("__mtPreviewId")||"";
               var previewToken=params.get("__mtPreviewToken")||"";
-              if(!previewId||!previewToken){
+              var ownAccess=mtInjectionRoute.match(/^\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)$/);
+              if(ownAccess){previewId=decodeURIComponent(ownAccess[1]);previewToken=decodeURIComponent(ownAccess[2]);}
+              else if(!previewId||!previewToken){
                 var access=(location.pathname||"").match(/\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)(?:\/|$)/);
                 if(access){previewId=access[1];previewToken=access[2];}
               }
@@ -75,6 +108,8 @@ public sealed partial class WebPreviewProxyMiddleware
             try{
               var match=(location.pathname||"").match(/^\/webpreview\/[^/]+/);
               var cookiePath=match?match[0]+"/":"/";
+              var ownPosition=mtRoutePosition(mtInjectionRoute);
+              if(ownPosition>=0)cookiePath=location.pathname.slice(0,ownPosition)+mtInjectionRoute+"/";
               document.cookie="mt-preview-ctx="+encodeURIComponent(JSON.stringify(mtCtx))+"; path="+cookiePath+"; secure; samesite=lax";
             }catch(e){}
           }
@@ -1440,9 +1475,23 @@ public sealed partial class WebPreviewProxyMiddleware
         })();</script>
         """;
 
-    private static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "")
+    [GeneratedRegex(@"<script\b[^>]*\sdata-mt-proxy-route=""(/webpreview/[^/""]+)""[^>]*>", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ProxyAdapterRouteRegex();
+
+    internal static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "", string upstreamHtml = "")
     {
+        // The parser has not reached the inner script when our prepended script
+        // runs. Carry only its route key forward, never capabilities or context.
+        var accessIndex = routePrefix.IndexOf("/_access/", StringComparison.Ordinal);
+        var adapterRoute = accessIndex < 0 ? routePrefix : routePrefix[..accessIndex];
+        var innerRoutes = ProxyAdapterRouteRegex().Matches(upstreamHtml)
+            .Select(match => WebUtility.HtmlDecode(match.Groups[1].Value))
+            .Distinct(StringComparer.Ordinal)
+            .Select(route => $"\"{JsonEncodedText.Encode(route)}\"");
         return UrlRewriteScript.Replace(
+            "__MT_PROXY_ROUTE_ATTRIBUTE__", WebUtility.HtmlEncode(adapterRoute), StringComparison.Ordinal).Replace(
+            "__MT_PROXY_ROUTE__", JsonEncodedText.Encode(routePrefix).ToString(), StringComparison.Ordinal).Replace(
+            "/*__MT_INNER_ADAPTER_ROUTES__*/[]", "[" + string.Join(",", innerRoutes) + "]", StringComparison.Ordinal).Replace(
             "var P=\"/webpreview\"",
             $"var P=\"{routePrefix}\"",
             StringComparison.Ordinal).Replace(
@@ -2076,7 +2125,7 @@ public sealed partial class WebPreviewProxyMiddleware
         html = MarkSubframeSources(html);
         html = InjectHeadContent(html,
             $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix,
-                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "") + redirectPathScript);
+                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "", html) + redirectPathScript);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
@@ -2856,7 +2905,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var baseHref = ComputeBaseHref(routePrefix, requestedFileUri.ToString());
         var targetOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = InjectHeadContent(html, $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix));
+        html = InjectHeadContent(html, $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix, upstreamHtml: html));
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.ContentType = "text/html; charset=utf-8";

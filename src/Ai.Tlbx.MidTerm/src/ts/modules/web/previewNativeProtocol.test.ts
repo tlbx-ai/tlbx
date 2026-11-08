@@ -114,6 +114,7 @@ describe('preview navigation attachment metadata', () => {
   function read(saved: Record<string, unknown>) {
     return runInNewContext(`${bootstrap} mtReadBootstrapContext();`, {
       URLSearchParams,
+      mtInjectionRoute: nativePrefix,
       location: new URL(`https://native${nativePrefix}/_access/id/token/docs/next`),
       window: { name: JSON.stringify(saved) },
     }) as Record<string, unknown>;
@@ -136,5 +137,24 @@ describe('preview navigation attachment metadata', () => {
       previewId: 'id',
       previewToken: 'token',
     });
+  });
+  it('reads its own capability through an outer proxy and ignores conflicting bootstrap credentials', () => {
+    const own = `${nativePrefix}/_access/id/token`;
+    const saved = {
+      previewId: 'id',
+      previewToken: 'token',
+      routeKey: route,
+      sessionId: 'child-session',
+      targetRevision: 7,
+    };
+    const context = runInNewContext(`${bootstrap} mtReadBootstrapContext();`, {
+      URLSearchParams,
+      mtInjectionRoute: own,
+      location: new URL(
+        `https://native/webpreview/outer/_access/parent/parent-token${own}/next?__mtPreviewId=parent&__mtPreviewToken=parent-token`,
+      ),
+      window: { name: JSON.stringify(saved) },
+    });
+    expect(context).toEqual(saved);
   });
 });
