@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   setViewportSize: vi.fn(),
   openWebPreviewDock: vi.fn(),
   getWebPreviewTarget: vi.fn(),
-  applySessionViewportToFrame: vi.fn(() => true),
   getSessionPreview: vi.fn(() => null),
   getSessionSelectedPreviewName: vi.fn(() => 'default'),
   setSessionMode: vi.fn(),
@@ -111,11 +110,6 @@ vi.mock('../web/webDock', () => ({
 vi.mock('../web/webApi', () => ({
   getWebPreviewTarget: mocks.getWebPreviewTarget,
 }));
-
-vi.mock('../web/webViewport', () => ({
-  applySessionViewportToFrame: mocks.applySessionViewportToFrame,
-}));
-
 vi.mock('../web/webSessionState', () => ({
   getSessionPreview: mocks.getSessionPreview,
   getSessionSelectedPreviewName: mocks.getSessionSelectedPreviewName,
@@ -223,7 +217,6 @@ async function loadHarness() {
   mocks.syncBackgroundWebPreview.mockResolvedValue(undefined);
   mocks.closePreviewFromServer.mockResolvedValue(undefined);
   mocks.detachPreview.mockResolvedValue({ success: true });
-  mocks.applySessionViewportToFrame.mockReturnValue(true);
   mocks.setViewportSize.mockReturnValue(true);
   mocks.checkVersionAndReload.mockResolvedValue(false);
 
@@ -488,9 +481,12 @@ describe('stateChannel browser-ui handling', () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    expect(mocks.setSessionViewport).toHaveBeenCalledWith('agent5678', 'default', 390, 844);
-    expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default');
-    expect(mocks.applySessionViewportToFrame).toHaveBeenCalledWith('agent5678', 'default');
+    expect(mocks.setViewportSize).toHaveBeenCalledWith(390, 844, {
+      sessionId: 'agent5678', previewName: 'default',
+    });
+    expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
+    expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+    expect(mocks.setSessionMode).not.toHaveBeenCalled();
     expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
     expect(mocks.selectSession).not.toHaveBeenCalled();
     expect(stores.$activeSessionId.get()).toBe('user1234');
@@ -517,21 +513,19 @@ describe('stateChannel browser-ui handling', () => {
       } as MessageEvent<string>);
 
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-      expect(mocks.setSessionViewport).toHaveBeenCalledWith('user1234', 'automation', 400, 340);
-      if (selected) {
-        expect(mocks.syncActiveWebPreview).toHaveBeenCalled();
-        expect(mocks.setViewportSize).toHaveBeenCalledWith(400, 340);
-        expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
-      } else {
-        expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('user1234', 'automation');
-        expect(mocks.applySessionViewportToFrame).toHaveBeenCalledWith('user1234', 'automation');
-        expect(mocks.setViewportSize).not.toHaveBeenCalled();
-        expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
-        expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
-      }
+      expect(mocks.setViewportSize).toHaveBeenCalledWith(400, 340, {
+        sessionId: 'user1234', previewName: 'automation',
+      });
+      expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
+      expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+      expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+      expect(mocks.setSessionMode).not.toHaveBeenCalled();
       expect(mocks.setSessionSelectedPreviewName).not.toHaveBeenCalled();
       expect(mocks.selectSession).not.toHaveBeenCalled();
       expect(stores.$activeSessionId.get()).toBe('user1234');
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+        requestId: 'named-viewport', command: 'viewport', success: true,
+      });
     },
   );
 
@@ -540,7 +534,6 @@ describe('stateChannel browser-ui handling', () => {
     async (active) => {
       const { ws } = await loadHarness();
       mocks.getSessionSelectedPreviewName.mockReturnValue('automation');
-      mocks.applySessionViewportToFrame.mockReturnValue(false);
       mocks.setViewportSize.mockReturnValue(false);
       const fetchMock = vi.fn().mockResolvedValue({ ok: true });
       vi.stubGlobal('fetch', fetchMock);
@@ -556,6 +549,7 @@ describe('stateChannel browser-ui handling', () => {
         }),
       } as MessageEvent<string>);
       await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(mocks.setSessionViewport).not.toHaveBeenCalled();
       expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
         requestId: 'missing-frame',
         command: 'viewport',

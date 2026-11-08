@@ -1792,6 +1792,8 @@ public sealed partial class SessionAppServerControlHistoryService
             request.KindLabel = PreferNonEmpty(request.KindLabel, HumanizeRequestType(request.Kind));
             request.State = "resolved";
             request.Decision = appServerControlEvent.RequestResolved.Decision;
+            if (request.Kind == "mcp_tool_approval")
+                request.Detail = AppServerControlProviderEventCompaction.CompactRequestDetail(request.Detail, request.Kind, pending: false);
         }
 
         if (appServerControlEvent.UserInputRequested is not null)
