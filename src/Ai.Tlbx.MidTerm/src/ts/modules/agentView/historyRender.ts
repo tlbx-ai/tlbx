@@ -137,7 +137,10 @@ export function resolveHistoryRetainedWindowDescriptor(
   const windowStart = Math.max(0, Math.min(totalCount, snapshot?.historyWindowStart ?? 0));
   return {
     windowStart,
-    windowEnd: Math.max(windowStart, Math.min(totalCount, snapshot?.historyWindowEnd ?? windowStart)),
+    windowEnd: Math.max(
+      windowStart,
+      Math.min(totalCount, snapshot?.historyWindowEnd ?? windowStart),
+    ),
     totalCount,
   };
 }
@@ -608,7 +611,7 @@ function resolveHistoryNavigatorAnchorIndex(
         options.visibleRange ?? null,
       )
     : null;
-  if (concreteAnchorIndex !== null && Number.isFinite(concreteAnchorIndex)) {
+  if (concreteAnchorIndex !== null) {
     return clampHistoryAbsoluteIndex(concreteAnchorIndex, retainedWindow.totalCount);
   }
 
