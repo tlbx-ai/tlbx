@@ -119,3 +119,35 @@ test("a queued mutation is never retargeted after the actual provider session ch
   assert.equal(f.manager.state.goal, null);
   assert.equal(f.manager.state.confirmation, "unknown");
 });
+
+test("Stop also interrupts its delivered Set when actual Goal work starts after the first interrupt", async (t) => {
+  let interrupts = 0;
+  const f = await fixture(t, async () => { interrupts++; return {}; });
+  f.command("set", { objective: "Delivered but not started" }); await flush();
+  const setInput = f.inputs.at(-1);
+  f.command("clear", { interruptActiveTurn: true }); await flush();
+  assert.equal(interrupts, 1);
+  assert.equal(f.inputs.at(-1), setInput);
+  f.start(setInput); f.manager.consume(assistant("Goal set: Delivered but not started")); await flush();
+  assert.equal(interrupts, 2);
+  await flush(); assert.equal(interrupts, 2);
+  assert.equal(f.inputs.at(-1), setInput);
+  f.manager.consume(result("", { terminal_reason: "aborted_streaming" })); await flush();
+  assert.equal(f.inputs.at(-1).message.content, "/goal clear");
+  f.start(); f.finish("Goal cleared: Delivered but not started");
+  await flush(); f.start(); f.finish(emptyGoal);
+  assert.equal(f.manager.state.goal, null);
+});
+
+test("the same Stop guards a manual /goal Set whose model work begins later in the same host turn", async (t) => {
+  let interrupts = 0;
+  const f = await fixture(t, async () => { interrupts++; return {}; });
+  f.manager.noteInput({ uuid: "manual-goal" }, "/goal Keep", "manual-turn");
+  f.command("clear", { interruptActiveTurn: true }); await flush();
+  assert.equal(interrupts, 1);
+  f.start({ uuid: "manual-goal" });
+  f.manager.consume(assistant("Goal set: Keep")); await flush();
+  assert.equal(f.manager.turnId, "manual-turn");
+  assert.equal(interrupts, 2);
+  await flush(); assert.equal(interrupts, 2);
+});

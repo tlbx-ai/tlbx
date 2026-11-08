@@ -76,11 +76,11 @@ export class NativeGoalCommands {
     if (command.operation === "set" && (!command.objective?.trim() || command.objective.length > 4000 || clearWords.has(command.objective.trim().toLowerCase())))
       throw new Error("Goal condition is empty, too long, or a reserved native clear command.");
     if (command.operation === "clear") this.discardWaitingMutations();
-    const entry = { operation: command.operation, objective: command.objective, requestId: command.requestId, threadId: command.expectedThreadId };
+    const entry = { operation: command.operation, objective: command.objective, requestId: command.requestId, threadId: command.expectedThreadId, interruptActiveTurn: command.interruptActiveTurn };
     if (command.operation === "clear") this.queue.unshift(entry); else this.queue.push(entry);
     this.publish({ pendingOperation: command.operation, detail: this.busy ? "waitingForTurn" : null });
     this.emit({ type: "bridge.goal.receipt", requestId: command.requestId, status: "pending", state: this.state });
-    if (this.busy && command.operation === "clear" && command.interruptActiveTurn) this.interruptForClear(entry);
+    this.interruptPendingClear();
     this.schedule();
   }
 
@@ -88,14 +88,29 @@ export class NativeGoalCommands {
     this.queue = this.queue.filter((entry) => entry.operation === "get");
   }
 
+  currentGoalWorkId() {
+    return this.current?.operation === "set" && this.current.work ? this.current.uuid : null;
+  }
+
+  interruptPendingClear() {
+    const entry = this.queue.find((value) => value.operation === "clear" && value.interruptActiveTurn);
+    if (!entry || !this.busy || this.stopping) return;
+    if (entry.interruptedTurnId !== this.turnId || entry.interruptedWorkId !== this.currentGoalWorkId())
+      this.interruptForClear(entry);
+  }
+
   interruptForClear(entry) {
     if (this.stopping) return;
     this.stopping = entry;
     const turnId = this.turnId;
+    entry.interruptedTurnId = turnId;
+    entry.interruptedWorkId = this.currentGoalWorkId();
     this.emit({ type: "bridge.goal.interrupting", turnId: this.turnId });
     void this.runtime().interrupt().then(() => {
       if (this.stopping !== entry) return;
-      this.stopping = null; this.schedule();
+      this.stopping = null;
+      this.interruptPendingClear();
+      this.schedule();
     }).catch((error) => {
       this.stopping = null;
       this.emit({ type: "bridge.goal.interrupt.failed", turnId });
@@ -182,6 +197,9 @@ export class NativeGoalCommands {
       frame.turnId = `goal-${frame.uuid}`; this.turnId = frame.turnId;
       this.emit({ type: "bridge.goal.turn.started", turnId: frame.turnId });
     }
+    // A delivered Set can start model work after Stop first interrupted an idle
+    // input queue. The same explicit Stop covers that newly observed owned turn.
+    this.interruptPendingClear();
   }
 
   goalAssistant(frame, message) {
@@ -247,6 +265,7 @@ export class NativeGoalCommands {
     if (!this.busy && this.state.goal && message.type === "stream_event" && message.event?.type === "message_start") {
       this.busy = true; this.turnId = `goal-native-${randomUUID()}`;
       this.emit({ type: "bridge.goal.turn.started", turnId: this.turnId });
+      this.interruptPendingClear();
     }
     if (message.type !== "result") return false;
     if (Number(message.queued_turn_count ?? 0) > 0) return false;
