@@ -97,13 +97,13 @@ function appServerControlFormat(
 
 function resolveHistoryBadgeTextForEntry(
   entry: AppServerControlHistoryEntry,
-  provider: string | null | undefined,
+  agentName: string | null | undefined,
 ): string {
   if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {
     return entry.label.trim();
   }
 
-  return resolveHistoryBadgeLabel(entry.kind, provider);
+  return resolveHistoryBadgeLabel(entry.kind, agentName);
 }
 
 function normalizeHistoryTitle(entry: AppServerControlHistoryEntry): string {
@@ -568,7 +568,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     badge.className = `agent-history-badge agent-history-badge-${entry.kind}`;
     badge.textContent = resolveHistoryBadgeTextForEntry(
       entry,
-      deps.getState(sessionId)?.snapshot?.provider,
+      deps.getState(sessionId)?.snapshot?.session.agentName,
     );
     if (entry.kind === 'assistant' && showAssistantBadge) {
       badge.dataset.visible = 'true';

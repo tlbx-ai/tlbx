@@ -13638,11 +13638,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
     var(--text-muted) 46%
   );
   --agent-appServerControl-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
-  --agent-history-message-font-family: var(
-    --terminal-font-family,
-    var(--agent-history-mono-font-family, var(--font-mono))
-  );
+  --agent-history-message-font-family: var(--font-ui);
   --agent-history-user-font-family: var(--agent-history-message-font-family);
+  --agent-history-prose-font-size: 0.95rem;
+  --agent-history-prose-line-height: 1.55;
+  --agent-history-prose-measure: 80ch;
   --agent-history-assistant-font-family: var(--agent-history-message-font-family);
   --agent-appServerControl-ready: color-mix(in srgb, var(--accent-green) 74%, white 10%);
   --agent-appServerControl-live: color-mix(in srgb, var(--accent-blue) 82%, white 10%);
@@ -14055,10 +14055,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-user {
   align-self: stretch;
   width: 100%;
-  padding: 8px 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
 }
 
 .agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-tool,
@@ -14201,12 +14197,25 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   color: var(--text-muted);
 }
 
+.agent-history-badge-user,
+.agent-history-badge-assistant[data-visible='true'] {
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+}
+
 .agent-history-badge-user {
-  display: none;
+  color: var(--agent-appServerControl-user-label);
 }
 
 .agent-history-badge-assistant {
   display: none;
+}
+
+.agent-history-badge-assistant[data-visible='true'] {
+  color: var(--agent-appServerControl-assistant-label);
 }
 
 .agent-history-badge-tool {
@@ -14241,26 +14250,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-badge-reasoning {
   display: inline-flex;
-}
-
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-badge-user,
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-badge-assistant {
-  font-size: 9px;
-}
-
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-badge-user {
-  display: inline-flex;
-  color: var(--agent-appServerControl-user-label);
-}
-
-.agent-view-panel[data-appServerControl-layout='full-width-left'] .agent-history-badge-assistant {
-  display: none;
-}
-
-.agent-view-panel[data-appServerControl-layout='full-width-left']
-  .agent-history-badge-assistant[data-visible='true'] {
-  display: inline-flex;
-  color: var(--agent-appServerControl-assistant-label);
 }
 
 .agent-view-panel[data-appServerControl-layout='full-width-left']
@@ -14365,32 +14354,47 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   max-width: 100%;
 }
 
-.agent-history-user .agent-history-body {
-  color: var(--agent-appServerControl-user-text);
-  font-family: var(--agent-history-user-font-family);
-  font-size: var(--terminal-font-size, 16px);
-  font-weight: var(--terminal-font-weight, normal);
-  letter-spacing: var(--terminal-letter-spacing, 0px);
-  font-kerning: none;
-  line-height: var(--terminal-line-height, 1);
+.agent-history-user .agent-history-body,
+.agent-history-assistant .agent-history-body {
+  max-inline-size: var(--agent-history-prose-measure);
+  font-size: var(--agent-history-prose-font-size);
+  font-weight: 400;
+  letter-spacing: normal;
+  line-height: var(--agent-history-prose-line-height);
 }
 
-.agent-view-panel[data-appServerControl-layout='full-width-left']
-  .agent-history-user
-  .agent-history-body {
+.agent-history-user .agent-history-body {
   color: color-mix(in srgb, var(--agent-appServerControl-user-text) 92%, var(--text-secondary) 8%);
-  font-size: var(--terminal-font-size, 16px);
-  line-height: var(--terminal-line-height, 1);
+  font-family: var(--agent-history-user-font-family);
 }
 
 .agent-history-assistant .agent-history-body {
   color: var(--agent-appServerControl-assistant-text);
   font-family: var(--agent-history-assistant-font-family);
-  font-size: var(--terminal-font-size, 16px);
-  font-weight: var(--terminal-font-weight, normal);
-  letter-spacing: var(--terminal-letter-spacing, 0px);
-  font-kerning: none;
-  line-height: var(--terminal-line-height, 1);
+}
+
+.agent-history-assistant .agent-history-body.agent-history-markdown {
+  max-inline-size: 100%;
+}
+
+.agent-history-markdown-content:not(:has(> :is(.agent-markdown-table-wrap, pre, figure))),
+.agent-history-markdown-content > :is(p, ul, ol, blockquote, h1, h2, h3, h4) {
+  max-inline-size: var(--agent-history-prose-measure);
+}
+
+.agent-view-panel .agent-history-entry.agent-history-user {
+  padding: 22px 0 8px 12px;
+}
+
+.agent-history-user::before {
+  content: '';
+  position: absolute;
+  inset-block: 22px 8px;
+  inset-inline-start: 0;
+  inline-size: 2px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--agent-appServerControl-user-label) 55%, transparent);
+  pointer-events: none;
 }
 
 .agent-history-busy-indicator {
@@ -14490,7 +14494,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-markdown {
   overflow: visible;
-  line-height: 1.38;
+  line-height: var(--agent-history-prose-line-height);
   white-space: normal;
 }
 
@@ -14724,8 +14728,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-markdown .agent-markdown-gap {
   display: block;
-  height: calc(0.25em * var(--agent-markdown-gap-lines, 1));
-  min-height: 0.25em;
+  height: calc(0.7em * min(var(--agent-markdown-gap-lines, 1), 2));
 }
 
 .agent-history-markdown ul,
@@ -14744,7 +14747,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   margin: 0;
   position: relative;
   padding-inline-start: 1.65rem;
-  line-height: 1.26;
+  line-height: var(--agent-history-prose-line-height);
   list-style: none;
 }
 
@@ -14777,15 +14780,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-history-markdown li + li {
-  margin-top: 0;
+  margin-top: 0.2em;
 }
 
 .agent-history-markdown li > p {
   margin: 0;
-}
-
-.agent-history-markdown br {
-  line-height: 1.08;
 }
 
 .agent-history-markdown a {
@@ -14824,33 +14823,41 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-markdown strong {
   color: var(--agent-appServerControl-assistant-text);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .agent-history-markdown code {
-  padding: 0;
-  border-radius: 0;
-  background: transparent;
+  padding: 0.08em 0.36em;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
   color: color-mix(in srgb, var(--text-primary) 96%, white 4%);
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
-  font-size: 0.92em;
+  font-size: 0.88em;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
 }
 
 .agent-history-markdown pre {
-  overflow-x: auto;
-  padding: 8px 0 0;
-  border-radius: 0;
-  background: transparent;
-  border: 0;
+  margin: 0.35em 0 0.6em;
+  overflow: auto hidden;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--text-primary) 7%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  scrollbar-width: thin;
 }
 
 .agent-history-markdown pre code {
+  display: block;
+  inline-size: max-content;
+  min-inline-size: 100%;
   padding: 0;
   border-radius: 0;
   background: transparent;
-  color: color-mix(in srgb, var(--text-primary) 88%, transparent);
+  color: color-mix(in srgb, var(--text-primary) 90%, transparent);
   font-size: 0.86rem;
   line-height: 1.55;
+  white-space: pre;
   font-family: var(--agent-history-mono-font-family, var(--font-mono));
 }
 
@@ -14901,9 +14908,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   inline-size: fit-content;
   max-inline-size: 100%;
   overflow: auto hidden;
-  border: 1px solid color-mix(in srgb, var(--text-primary) 8%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--bg-dialog-chrome) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--text-primary) 9%, transparent);
+  border-radius: 6px;
+  background: transparent;
   scrollbar-width: thin;
   scrollbar-color: color-mix(in srgb, var(--text-primary) 18%, transparent) transparent;
 }
@@ -14978,10 +14985,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   text-transform: none;
 }
 
-.agent-history-markdown thead {
-  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
-}
-
 .agent-history-markdown th,
 .agent-history-markdown td {
   min-width: 0;
@@ -15006,13 +15009,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   position: sticky;
   top: 0;
   z-index: 1;
-  padding: 0;
-  background: color-mix(in srgb, var(--bg-dialog-chrome) 88%, var(--accent-blue-08));
+  background: color-mix(in srgb, var(--text-primary) 5%, var(--bg-dialog-chrome));
   color: var(--text-primary);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.03em;
+  font-size: 0.84rem;
+  font-weight: 600;
   white-space: nowrap;
+}
+
+.agent-history-markdown th:has(> .agent-markdown-table-header-shell) {
+  padding: 0;
 }
 
 .agent-history-markdown .agent-markdown-table-header-shell {
@@ -15076,138 +15081,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-markdown td {
   color: color-mix(in srgb, var(--text-primary) 92%, transparent);
-  font-size: 0.84rem;
+  font-size: 0.9rem;
   line-height: 1.45;
   word-break: normal;
   overflow-wrap: normal;
 }
 
-.agent-history-markdown tbody tr:nth-child(even) td {
-  background: color-mix(in srgb, var(--text-primary) 2.5%, transparent);
-}
-
-.agent-history-markdown tbody tr:hover td {
-  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
-}
-
-.agent-history-markdown th:first-child {
-  left: 0;
-  z-index: 3;
-  background: color-mix(in srgb, var(--bg-dialog-chrome) 82%, var(--accent-blue-10));
-  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--text-primary) 6%, transparent);
-}
-
-.agent-history-markdown td:first-child {
-  position: sticky;
-  left: 0;
-  z-index: 1;
-  background: color-mix(in srgb, var(--bg-dialog-chrome) 96%, transparent);
-  box-shadow: inset -1px 0 0 color-mix(in srgb, var(--text-primary) 5%, transparent);
-  color: var(--text-primary);
-}
-
-.agent-history-markdown tbody tr:nth-child(even) td:first-child {
-  background: color-mix(in srgb, var(--bg-dialog-chrome) 94%, var(--text-primary) 3%);
-}
-
-.agent-history-markdown tbody tr:hover td:first-child {
-  background: color-mix(in srgb, var(--bg-dialog-chrome) 82%, var(--accent-blue) 18%);
-}
-
 .agent-history-markdown th[data-col-kind='key'],
 .agent-history-markdown td[data-col-kind='key'] {
   min-width: 6rem;
-}
-
-.agent-history-markdown td[data-col-kind='key'] {
-  color: var(--text-primary);
-  font-weight: 600;
-}
-
-.agent-history-markdown th[data-col-kind='tag'],
-.agent-history-markdown td[data-col-kind='tag'] {
-  min-width: 5.25rem;
-}
-
-.agent-history-markdown td[data-col-kind='tag'] {
-  color: color-mix(in srgb, var(--text-primary) 82%, var(--accent-blue) 18%);
-  text-align: center;
-}
-
-.agent-history-markdown .agent-markdown-cell-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 1.8rem;
-  max-width: 100%;
-  padding: 0.16rem 0.64rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--text-primary) 12%, transparent);
-  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
-  color: var(--text-primary);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.2;
-  white-space: nowrap;
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--text-primary) 7%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--shadow-color) 24%, transparent);
-}
-
-.agent-history-markdown .agent-markdown-cell-pill[data-cell-kind='tag'] {
-  padding: 0.18rem 0.68rem;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='positive'] {
-  border-color: color-mix(in srgb, var(--accent-green) 42%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-green) 28%, transparent),
-    color-mix(in srgb, var(--accent-green) 16%, transparent)
-  );
-  color: color-mix(in srgb, var(--accent-green) 46%, var(--text-primary) 54%);
-}
-
-.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='warning'] {
-  border-color: color-mix(in srgb, var(--accent-orange) 42%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-orange) 30%, transparent),
-    color-mix(in srgb, var(--accent-orange) 16%, transparent)
-  );
-  color: color-mix(in srgb, var(--accent-orange) 50%, var(--text-primary) 50%);
-}
-
-.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='attention'] {
-  border-color: color-mix(in srgb, var(--accent-red) 46%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-red) 34%, transparent),
-    color-mix(in srgb, var(--accent-red) 18%, transparent)
-  );
-  color: color-mix(in srgb, var(--accent-red) 46%, var(--text-primary) 54%);
-}
-
-.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='info'] {
-  border-color: color-mix(in srgb, var(--accent-blue) 40%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--accent-blue) 28%, transparent),
-    color-mix(in srgb, var(--accent-blue) 14%, transparent)
-  );
-  color: color-mix(in srgb, var(--accent-blue) 46%, var(--text-primary) 54%);
-}
-
-.agent-history-markdown .agent-markdown-cell-pill[data-cell-tone='muted'] {
-  border-color: color-mix(in srgb, var(--text-primary) 14%, transparent);
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--text-primary) 8%, transparent),
-    color-mix(in srgb, var(--text-primary) 4%, transparent)
-  );
-  color: color-mix(in srgb, var(--text-primary) 86%, transparent);
 }
 
 .agent-history-markdown th[data-col-kind='numeric'],

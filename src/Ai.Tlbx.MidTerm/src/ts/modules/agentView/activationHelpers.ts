@@ -385,17 +385,7 @@ export function historyLabel(kind: HistoryKind): string {
 
 export function resolveHistoryBadgeLabel(
   kind: HistoryKind,
-  provider: string | null | undefined,
+  agentName: string | null | undefined,
 ): string {
-  if (resolveAppServerControlLayoutMode(provider) === 'full-width-left') {
-    if (kind === 'user') {
-      return appServerControlText('appServerControl.label.userShort', 'User');
-    }
-
-    if (kind === 'assistant') {
-      return appServerControlText('appServerControl.label.agent', 'Agent');
-    }
-  }
-
-  return historyLabel(kind);
+  return kind === 'assistant' && agentName?.trim() ? agentName.trim() : historyLabel(kind);
 }
