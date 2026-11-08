@@ -135,24 +135,35 @@ function setRetainedReferences(
 }
 
 describe('canonical history patch summary arrays', () => {
-  it.each([0, 10_000])('retains array identity for empty summary deltas with %i entries', (count) => {
-    const state = createState();
-    const snapshot = state.snapshot!;
-    const items = (snapshot.items = Array.from({ length: count }, (_, i) => item(`item-${i}`)));
-    const requests = (snapshot.requests = Array.from({ length: count }, (_, i) => request(`req-${i}`)));
-    const notices = (snapshot.notices = Array.from({ length: count }, (_, i) => notice(`notice-${i}`)));
-    setRetainedReferences(state, items.map((value) => value.itemId), requests.map((value) => value.requestId));
-    Object.freeze(items);
-    Object.freeze(requests);
-    Object.freeze(notices);
+  it.each([0, 10_000])(
+    'retains array identity for empty summary deltas with %i entries',
+    (count) => {
+      const state = createState();
+      const snapshot = state.snapshot!;
+      const items = (snapshot.items = Array.from({ length: count }, (_, i) => item(`item-${i}`)));
+      const requests = (snapshot.requests = Array.from({ length: count }, (_, i) =>
+        request(`req-${i}`),
+      ));
+      const notices = (snapshot.notices = Array.from({ length: count }, (_, i) =>
+        notice(`notice-${i}`),
+      ));
+      setRetainedReferences(
+        state,
+        items.map((value) => value.itemId),
+        requests.map((value) => value.requestId),
+      );
+      Object.freeze(items);
+      Object.freeze(requests);
+      Object.freeze(notices);
 
-    applyCanonicalAppServerControlDelta(state, createDelta(snapshot));
+      applyCanonicalAppServerControlDelta(state, createDelta(snapshot));
 
-    expect(snapshot.items).toBe(items);
-    expect(snapshot.requests).toBe(requests);
-    expect(snapshot.notices).toBe(notices);
-    expect(snapshot.latestSequence).toBe(2);
-  });
+      expect(snapshot.items).toBe(items);
+      expect(snapshot.requests).toBe(requests);
+      expect(snapshot.notices).toBe(notices);
+      expect(snapshot.latestSequence).toBe(2);
+    },
+  );
 
   it('still applies streamed text, history and turn changes when summary deltas are empty', () => {
     const state = createState();
@@ -262,38 +273,45 @@ describe('canonical history patch summary arrays', () => {
     expect(retainedRequest.answers[0]!.answers).toEqual(['original']);
   });
 
-  it.each([10_000, 100_000])('bounds cached summaries with %i completed tools in one active turn', (count) => {
-    const state = createState();
-    const snapshot = state.snapshot!;
-    setRetainedReferences(state, ['item-0', 'item-1']);
-    state.historyAutoScrollPinned = false;
-    snapshot.historyCount = count;
-    snapshot.hasNewerHistory = true;
-    snapshot.items = Array.from({ length: count }, (_, i) => ({
-      ...item(`item-${i}`), turnId: 'turn',
-    }));
-    snapshot.items.push({ ...item('active'), turnId: 'turn', status: 'running' });
-    snapshot.requests = [request('pending'), { ...request('resolved'), state: 'resolved' }];
-    snapshot.requests[0]!.state = 'open';
-    const delta = createDelta(snapshot);
-    delta.streams = { ...snapshot.streams, assistantText: 'Still working outside the browse window' };
-    delta.session = { ...snapshot.session, usage: { inputTokens: 123456 } };
-    applyCanonicalAppServerControlDelta(state, delta);
+  it.each([10_000, 100_000])(
+    'bounds cached summaries with %i completed tools in one active turn',
+    (count) => {
+      const state = createState();
+      const snapshot = state.snapshot!;
+      setRetainedReferences(state, ['item-0', 'item-1']);
+      state.historyAutoScrollPinned = false;
+      snapshot.historyCount = count;
+      snapshot.hasNewerHistory = true;
+      snapshot.items = Array.from({ length: count }, (_, i) => ({
+        ...item(`item-${i}`),
+        turnId: 'turn',
+      }));
+      snapshot.items.push({ ...item('active'), turnId: 'turn', status: 'running' });
+      snapshot.requests = [request('pending'), { ...request('resolved'), state: 'resolved' }];
+      snapshot.requests[0]!.state = 'open';
+      const delta = createDelta(snapshot);
+      delta.streams = {
+        ...snapshot.streams,
+        assistantText: 'Still working outside the browse window',
+      };
+      delta.session = { ...snapshot.session, usage: { inputTokens: 123456 } };
+      applyCanonicalAppServerControlDelta(state, delta);
 
-    expect(snapshot.items.map((value) => value.itemId)).toEqual(['item-0', 'item-1', 'active']);
-    expect(snapshot.requests.map((value) => value.requestId)).toEqual(['pending']);
-    expect(snapshot.history).toHaveLength(2);
-    expect(snapshot.historyCount).toBe(count);
-    expect(snapshot.session.usage!.inputTokens).toBe(123456);
-    expect(snapshot.streams.assistantText).toBe(delta.streams.assistantText);
-    expect(JSON.stringify(snapshot).length).toBeLessThan(10_000);
-    const settled = createDelta(snapshot);
-    settled.currentTurn = { ...snapshot.currentTurn, state: 'completed' };
-    settled.requestUpserts = [{ ...snapshot.requests[0]!, state: 'resolved' }];
-    applyCanonicalAppServerControlDelta(state, settled);
-    expect(snapshot.items.map((value) => value.itemId)).toEqual(['item-0', 'item-1']);
-    expect(snapshot.requests).toEqual([]);
-  });
+      expect(snapshot.items.map((value) => value.itemId)).toEqual(['item-0', 'item-1', 'active']);
+      expect(snapshot.requests.map((value) => value.requestId)).toEqual(['pending']);
+      expect(snapshot.history).toHaveLength(2);
+      expect(snapshot.historyCount).toBe(count);
+      expect(snapshot.session.usage!.inputTokens).toBe(123456);
+      expect(snapshot.streams.assistantText).toBe(delta.streams.assistantText);
+      expect(JSON.stringify(snapshot).length).toBeLessThan(10_000);
+      const settled = createDelta(snapshot);
+      settled.currentTurn = { ...snapshot.currentTurn, state: 'completed' };
+      settled.requestUpserts = [{ ...snapshot.requests[0]!, state: 'resolved' }];
+      applyCanonicalAppServerControlDelta(state, settled);
+      expect(snapshot.items.map((value) => value.itemId)).toEqual(['item-0', 'item-1']);
+      expect(snapshot.requests).toEqual([]);
+    },
+  );
 
   it('evicts completed summaries as full live patches roll the retained history window forward', () => {
     const state = createState();
@@ -302,9 +320,14 @@ describe('canonical history patch summary arrays', () => {
     for (let i = 1; i <= 200; i++) {
       const delta = createDelta(snapshot);
       delta.historyCount = i + 1;
-      delta.historyUpserts = [{
-        ...historyEntry('Completed tool'), entryId: `tool-${i}`, order: i + 1, itemId: `item-${i}`,
-      }];
+      delta.historyUpserts = [
+        {
+          ...historyEntry('Completed tool'),
+          entryId: `tool-${i}`,
+          order: i + 1,
+          itemId: `item-${i}`,
+        },
+      ];
       delta.itemUpserts = [{ ...item(`item-${i}`), turnId: 'turn' }];
       applyCanonicalAppServerControlDelta(state, delta);
       expect(snapshot.history.length).toBeLessThanOrEqual(5);
@@ -323,5 +346,37 @@ describe('canonical history patch summary arrays', () => {
     applyCanonicalAppServerControlDelta(state, delta);
     expect(snapshot.notices).toHaveLength(64);
     expect(snapshot.notices[0]!.eventId).toBe('latest-notice');
+  });
+  it('retains Goal and acknowledged defaults with independent nested copies across canonical patches', () => {
+    const state = createState();
+    const delta = createDelta(state.snapshot!);
+    delta.thread = {
+      ...delta.thread,
+      goal: {
+        threadId: 'thread',
+        confirmation: 'confirmed',
+        scope: 'thread',
+        goal: { objective: 'Keep', status: 'active', iterations: 1 },
+      },
+    };
+    delta.quickSettings = {
+      ...delta.quickSettings,
+      permissionMode: 'auto',
+      acknowledgedFields: ['permissionMode'],
+    };
+    applyCanonicalAppServerControlDelta(state, delta);
+    delta.thread.goal!.goal!.objective = 'mutated incoming';
+    delta.quickSettings.acknowledgedFields!.length = 0;
+    expect(state.snapshot!.thread.goal!.goal!.objective).toBe('Keep');
+    expect(state.snapshot!.quickSettings.acknowledgedFields).toEqual(['permissionMode']);
+    const clear = createDelta(state.snapshot!);
+    clear.latestSequence++;
+    clear.thread = {
+      ...clear.thread,
+      goal: { threadId: 'thread', confirmation: 'confirmed', scope: 'thread', goal: null },
+    };
+    applyCanonicalAppServerControlDelta(state, clear);
+    expect(state.snapshot!.thread.goal!.goal).toBeNull();
+    expect(state.snapshot!.quickSettings.acknowledgedFields).toEqual(['permissionMode']);
   });
 });

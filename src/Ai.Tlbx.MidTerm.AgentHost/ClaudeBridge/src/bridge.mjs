@@ -1,3 +1,4 @@
+import { NativeGoalCommands, assertGoalRecoverySession } from "./nativeGoals.mjs";
 import { createSettingsCommandDispatcher } from "./commandDispatch.mjs";
 import { waitForResolution, releasePendingToolApprovals, SettledDecisions, resolveScopedCallback } from "./pendingPermissions.mjs";
 import { configureRuntime } from "./runtimeSettings.mjs";
@@ -47,10 +48,33 @@ let runtimeTask;
 let currentSessionId;
 let activeTurnId;
 let steeringPending = false;
+const goals = new NativeGoalCommands({
+  interrupt: (turnId) => { dispatch.cancelTurn(turnId); return runtime.interrupt(); },
+  isIntermediateResult,
+  runtime: () => runtime, push: (value) => prompts.push(value),
+  sessionId: () => currentSessionId ?? configuration?.resume ?? configuration?.sessionId,
+  emit: (event) => {
+    if (event.type === "bridge.goal.turn.started") { activeTurnId = event.turnId; steeringPending = false; }
+    forwardProviderMessage(event);
+  } });
 const confirmedSettings = { permissionMode: "manual", planMode: "off" };
 
 function emit(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
+}
+
+function isIntermediateResult(message) {
+  return Number(message.queued_turn_count ?? 0) > 0 ||
+    (steeringPending && !goals.hasPendingStop(activeTurnId) &&
+      ["aborted_streaming", "aborted_tools"].includes(message.terminal_reason));
+}
+
+function forwardProviderMessage(message) {
+  if (message.type === "result" && !isIntermediateResult(message)) {
+    activeTurnId = null;
+    steeringPending = false;
+  }
+  emit(message);
 }
 
 function fail(message, detail, context = {}) {
@@ -98,6 +122,7 @@ async function makeUserMessage(command) {
   }
   return {
     type: "user",
+    uuid: randomUUID(),
     session_id: currentSessionId ?? configuration.sessionId,
     parent_tool_use_id: null,
     ...(command.type === "turn.steer" ? { priority: "now" } : {}),
@@ -243,23 +268,24 @@ async function startRuntime(command) {
   runtimeTask = (async () => {
     try {
       for await (const message of runtime) {
+        assertGoalRecoverySession(configuration, message.session_id);
         if (typeof message.session_id === "string" && message.session_id)
           currentSessionId = message.session_id;
-        if (message.type === "result" && Number(message.queued_turn_count ?? 0) === 0 &&
-            !(steeringPending && ["aborted_streaming", "aborted_tools"].includes(message.terminal_reason))) {
-          activeTurnId = null;
-          steeringPending = false;
-        }
-        emit(message);
+        goals.observeSession(currentSessionId);
+        if (!goals.consume(message)) forwardProviderMessage(message);
       }
+      goals.close();
       emit({ type: "bridge.closed" });
     } catch (error) {
+      goals.publish({ confirmation: "unconfirmed", pendingOperation: null, detail: String(error.message) });
+      goals.close();
+      runtime.close();
       fail("Claude Agent SDK stream failed.", error);
     }
   })();
 }
 
-async function handle(command, isCancelled = () => false) {
+async function handle(command, isCancelled = () => false, signal) {
   switch (command.type) {
     case "initialize":
       if (configuration)
@@ -293,12 +319,18 @@ async function handle(command, isCancelled = () => false) {
         models: initialized.models ?? [],
         commands: initialized.commands ?? [],
       });
+      goals.setSupported((initialized.commands ?? []).some((command) =>
+        (typeof command === "string" ? command : command.name)?.replace(/^\//, "") === "goal"));
+      return;
+    case "thread.goal":
+      goals.control(command);
       return;
     case "turn.start":
     case "turn.steer": {
       if (!configuration) throw new Error("Claude bridge is not initialized.");
       if (isCancelled()) return;
       await startRuntime(command);
+      if (command.type === "turn.start") await goals.beforeInput(signal);
       if (isCancelled()) return;
       const stopped = () => {
         if (!isCancelled()) return false;
@@ -320,6 +352,7 @@ async function handle(command, isCancelled = () => false) {
         confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
         const message = await makeUserMessage(command);
         if (stopped()) return;
+        goals.noteInput(message, command.prompt ?? "", command.turnId);
         prompts.push(message);
       } catch (error) {
         if (stopped()) return;
@@ -375,6 +408,7 @@ async function handle(command, isCancelled = () => false) {
       return;
     }
     case "shutdown":
+      goals.close();
       prompts.close();
       if (runtime) runtime.close();
       await runtimeTask;
@@ -396,14 +430,22 @@ input.on("line", (line) => {
       command = JSON.parse(line);
       return dispatch(command);
     })
-    .catch((error) =>
+    .catch((error) => {
+      if (error.code === "goalInputBlocked") {
+        emit({ type: "bridge.input_rejected", commandType: command?.type,
+          turnId: command?.turnId, session_id: currentSessionId ?? configuration?.resume ?? configuration?.sessionId,
+          message: error.message, reason: error.reason });
+        return;
+      }
       fail("Claude bridge command failed.", error, {
         commandType: command?.type,
         requestId: command?.requestId ?? command?.turnId,
-      }),
+      });
+    },
     );
 });
 input.on("close", () => {
+  goals.close();
   prompts.close();
   if (runtime) runtime.close();
 });

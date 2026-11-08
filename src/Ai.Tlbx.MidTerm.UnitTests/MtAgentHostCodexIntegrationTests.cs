@@ -8,6 +8,67 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostCodexIntegrationTests
 {
+    [Fact]
+    public async Task MtAgentHost_GoalReadTimeoutDoesNotFailCodexAttachOrNextTurn()
+    {
+        await using var fakeServer = FakeCodexWebSocketServer.Start("thread-goal-timeout", "Still usable.");
+        fakeServer.IgnoreGoalReadback = true;
+        using var process = StartAgentHost(ResolveAgentHostDll());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            var attach = new AppServerControlHostCommandEnvelope
+            {
+                CommandId = "attach-goal-timeout",
+                SessionId = "session-goal-timeout",
+                Type = "runtime.attach",
+                AttachRuntime = new AppServerControlAttachRuntimeRequest
+                {
+                    SessionId = "session-goal-timeout",
+                    Provider = "codex",
+                    WorkingDirectory = AppContext.BaseDirectory,
+                    ResumeThreadId = "thread-goal-timeout",
+                    AttachPoint = new SessionAgentAttachPoint
+                    {
+                        Provider = "codex",
+                        TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport,
+                        Endpoint = fakeServer.Endpoint,
+                        SharedRuntime = true
+                    }
+                }
+            };
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, attach);
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, patches, attach.CommandId)).Status);
+            var ready = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, attach.SessionId,
+                history => history.Session.State == "ready", TimeSpan.FromSeconds(30));
+            Assert.Equal("thread-goal-timeout", ready.Thread.ThreadId);
+            Assert.Equal("unconfirmed", ready.Thread.Goal!.Confirmation);
+            Assert.Equal("timeout", ready.Thread.Goal.Detail);
+            Assert.Equal(1, fakeServer.GoalReadCount);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput,
+                new AppServerControlHostCommandEnvelope
+                {
+                    CommandId = "turn-after-goal-timeout",
+                    SessionId = attach.SessionId,
+                    Type = "turn.start",
+                    StartTurn = new AppServerControlTurnRequest { Text = "Continue after the goal read timed out." }
+                });
+            Assert.Equal("accepted", (await AppServerControlHostTestClient.ReadResultAsync(
+                process.StandardOutput, patches, "turn-after-goal-timeout")).Status);
+            var completed = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, patches, attach.SessionId,
+                history => history.Streams.AssistantText == "Still usable.", TimeSpan.FromSeconds(10));
+            Assert.Equal("thread-goal-timeout", completed.Thread.ThreadId);
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+        }
+    }
+
     [Theory]
     [InlineData("completed", false)]
     [InlineData("inProgress", false)]

@@ -21793,3 +21793,14 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
     height: 128px;
   }
 }
+
+/* Independent native Goal editor: the normal composer retains its own draft. */
+.modal-overlay > .modal.agent-goal-editor { width: min(94vw, 620px); max-height: 90dvh; background: var(--bg-elevated-opaque); --text-primary: var(--workspace-reading-text-primary, #d4d7e8); --text-secondary: var(--workspace-reading-text-secondary, #a0a4b8); }
+.agent-goal-editor .modal-body { display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+.agent-goal-editor .modal-body p { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.agent-goal-objective { width: 100%; min-height: 100px; resize: vertical; box-sizing: border-box; font: inherit; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px; }
+.agent-goal-editor select, .agent-goal-editor input { font: inherit; color: var(--text-primary); background: var(--bg-input); border: 1px solid var(--border-color); padding: 6px; }
+.agent-goal-editor [hidden] { display: none; }
+.modal-overlay > .agent-goal-editor .modal-footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0; }
+.agent-goal-status, .agent-goal-scope { color: var(--text-secondary); font-size: var(--fs-sm); }
+.agent-goal-editor button, .agent-goal-editor select, .agent-goal-editor input { min-height: 44px; }

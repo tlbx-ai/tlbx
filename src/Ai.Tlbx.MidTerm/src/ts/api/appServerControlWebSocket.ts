@@ -6,6 +6,7 @@ import {
   type AppServerControlHistoryPatch,
   type AppServerControlHistorySnapshot,
   type AppServerControlGoalSetRequest,
+  type AppServerControlGoalResponse,
   type AppServerControlHistoryWindowResponse,
   type AppServerControlInterruptRequest,
   type AppServerControlRequestDecisionRequest,
@@ -24,7 +25,10 @@ type AppServerControlWsRequestAction =
   | 'turn.submit'
   | 'turn.interrupt'
   | 'runtime.configure'
+  | 'runtime.recover'
   | 'thread.goal.set'
+  | 'thread.goal.get'
+  | 'thread.goal.clear'
   | 'request.approve'
   | 'request.decline'
   | 'request.resolve'
@@ -563,7 +567,9 @@ async function requestCommandAccepted(
   });
   armPendingTimeout(
     id,
-    action === 'runtime.configure' ? 65000 : APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS,
+    action === 'runtime.configure' || action === 'runtime.recover'
+      ? 65000
+      : APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS,
   );
   sendRaw({
     type: 'request',
@@ -673,8 +679,23 @@ export async function configureAppServerControlRuntimeWs(
 export async function setAppServerControlGoalWs(
   sessionId: string,
   request: AppServerControlGoalSetRequest,
-): Promise<AppServerControlCommandAcceptedResponse> {
-  return requestCommandAccepted('thread.goal.set', sessionId, { goalSet: request });
+): Promise<AppServerControlGoalResponse> {
+  const response = await requestCommandAccepted(
+    request.operation === 'recover'
+      ? 'runtime.recover'
+      : `thread.goal.${request.operation ?? 'set'}`,
+    sessionId,
+    { goalSet: request },
+  );
+  const receipt = response.goal;
+  if (
+    !receipt ||
+    receipt.sessionId !== sessionId ||
+    (receipt.status !== 'targetUnavailable' &&
+      (receipt.threadId !== request.expectedThreadId || receipt.turnId !== request.expectedTurnId))
+  )
+    throw createAppServerControlWsError('Native goal acknowledgement did not match its target.');
+  return receipt;
 }
 
 export async function approveAppServerControlRequestWs(

@@ -733,6 +733,7 @@ public sealed partial class SessionAppServerControlHistoryService
              string.IsNullOrWhiteSpace(state.Thread.ThreadId) ||
              string.Equals(state.Thread.ThreadId, appServerControlEvent.SessionId, StringComparison.Ordinal)))
         {
+            if (!string.Equals(state.Thread.ThreadId, appServerControlEvent.ThreadId, StringComparison.Ordinal)) state.Thread.Goal = null;
             state.Thread.ThreadId = appServerControlEvent.ThreadId;
         }
 
@@ -743,6 +744,9 @@ public sealed partial class SessionAppServerControlHistoryService
             if (metadata.Usage is not null) state.Session.Usage = metadata.Usage.Clone();
             if (metadata.AvailableCommands is not null) state.Session.AvailableCommands = AppServerControlCommand.CloneMany(metadata.AvailableCommands);
         }
+        if (appServerControlEvent.GoalUpdated is { } goal &&
+            string.Equals(goal.ThreadId, state.Thread.ThreadId, StringComparison.Ordinal))
+            state.Thread.Goal = goal.Clone();
         ApplySessionState(state, appServerControlEvent);
         ApplyThreadState(state, appServerControlEvent);
 
@@ -1356,6 +1360,7 @@ public sealed partial class SessionAppServerControlHistoryService
         state.Thread.StateLabel = appServerControlEvent.ThreadState.StateLabel;
         if (!string.IsNullOrWhiteSpace(appServerControlEvent.ThreadState.ProviderThreadId))
         {
+            if (!string.Equals(state.Thread.ThreadId, appServerControlEvent.ThreadState.ProviderThreadId, StringComparison.Ordinal)) state.Thread.Goal = null;
             state.Thread.ThreadId = appServerControlEvent.ThreadState.ProviderThreadId;
         }
     }
@@ -1890,6 +1895,7 @@ public sealed partial class SessionAppServerControlHistoryService
                 StateLabel = source.SessionState.StateLabel,
                 Reason = source.SessionState.Reason
             },
+            GoalUpdated = source.GoalUpdated?.Clone(),
             ThreadState = source.ThreadState is null ? null : new AppServerControlProviderThreadStatePayload
             {
                 State = source.ThreadState.State,
@@ -2076,6 +2082,7 @@ public sealed partial class SessionAppServerControlHistoryService
         return new AppServerControlThreadSummary
         {
             ThreadId = source.ThreadId,
+            Goal = source.Goal?.Clone(),
             State = source.State,
             StateLabel = source.StateLabel
         };
@@ -2084,6 +2091,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private static void CopyThreadSummary(AppServerControlThreadSummary target, AppServerControlThreadSummary source)
     {
         target.ThreadId = source.ThreadId;
+        target.Goal = source.Goal?.Clone();
         target.State = source.State;
         target.StateLabel = source.StateLabel;
     }

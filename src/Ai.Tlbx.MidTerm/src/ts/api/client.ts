@@ -28,6 +28,7 @@ import type {
   AppServerControlTurnStartResponse,
   AppServerControlInterruptRequest,
   AppServerControlGoalSetRequest,
+  AppServerControlGoalResponse,
   AppServerControlCommandAcceptedResponse,
   AppServerControlConfigureRequest,
   AppServerControlConfigureResponse,
@@ -734,7 +735,7 @@ export async function configureAppServerControlRuntime(
 export async function setAppServerControlGoal(
   id: string,
   request: AppServerControlGoalSetRequest,
-): Promise<AppServerControlCommandAcceptedResponse> {
+): Promise<AppServerControlGoalResponse> {
   return setAppServerControlGoalWs(id, request);
 }
 
