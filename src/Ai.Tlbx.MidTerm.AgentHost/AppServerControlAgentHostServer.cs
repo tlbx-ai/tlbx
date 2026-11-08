@@ -435,6 +435,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "turn.interrupt",
                     "thread.compact",
                     "thread.goal.set",
+                    "thread.goal.get",
+                    "thread.goal.clear",
                     "request.resolve",
                     "user-input.resolve",
                     "history.window.get",
@@ -736,6 +738,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Message = appServerControlEvent.RuntimeMessage.Message,
                 Detail = appServerControlEvent.RuntimeMessage.Detail
             },
+            GoalUpdated = appServerControlEvent.GoalUpdated?.Clone(),
             RuntimeNoticeOnly = appServerControlEvent.RuntimeNoticeOnly is null ? null : new AppServerControlProviderRuntimeMessagePayload
             {
                 Message = appServerControlEvent.RuntimeNoticeOnly.Message,

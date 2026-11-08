@@ -44,6 +44,7 @@ public static class AppServerControlProviderEventCompaction
                 StateLabel = source.SessionState.StateLabel,
                 Reason = source.SessionState.Reason
             },
+            GoalUpdated = source.GoalUpdated?.Clone(),
             ThreadState = source.ThreadState is null ? null : new AppServerControlProviderThreadStatePayload
             {
                 State = source.ThreadState.State,

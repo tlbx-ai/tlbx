@@ -21,7 +21,7 @@ import {
   $settingsOpen,
   $voiceAvailable,
 } from '../../stores';
-import { setAppServerControlGoal } from '../../api/client';
+import { GOAL_CHANGED_EVENT, goalControlLabel, goalControlTitle, openAppServerControlGoalEditor } from '../appServerControl/goals';
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
@@ -177,7 +177,6 @@ let isRecording = false;
 let pendingMicPinSessionId: string | null = null;
 let lastSessionId: string | null = null;
 let appServerControlQuickSettingsSheetOpen = false;
-let appServerControlGoalComposeSessionId: string | null = null;
 let sendAutoSendLongPressTimer: number | null = null;
 let suppressNextSendClick = false;
 let suppressNextToolsToggleClick = false;
@@ -1058,6 +1057,11 @@ export function initSmartInput(): void {
     if ($activeSessionId.get() === sessionId) {
       syncSmartInputVisibility();
     }
+  });
+
+  window.addEventListener(GOAL_CHANGED_EVENT, () => {
+    const sessionId = $activeSessionId.get();
+    if (sessionId) syncAppServerControlQuickSettingsActions(sessionId);
   });
 
   bindSmartInputGlobalKeyBindings({
@@ -1982,16 +1986,16 @@ function syncAppServerControlQuickSettingsActions(sessionId: string): void {
       { pressed: draft.planMode === 'on' },
     ),
   );
-  if (provider === 'codex') {
+  if (provider === 'codex' || provider === 'claude') {
     appServerControlQuickSettingsActions.appendChild(
       createAppServerControlActionButton(
-        'Goal',
-        t('smartInput.appServerControlGoalCommand'),
+        goalControlLabel(sessionId),
+        goalControlTitle(sessionId),
         () => {
-          void prepareAppServerControlGoal(sessionId);
+          openAppServerControlGoalEditor(sessionId);
         },
         false,
-        { pressed: appServerControlGoalComposeSessionId === sessionId },
+        { pressed: false },
       ),
     );
   }
@@ -2029,50 +2033,6 @@ function createAppServerControlActionButton(
     }
   });
   return button;
-}
-
-async function prepareAppServerControlGoal(sessionId: string): Promise<void> {
-  if (!activeTextarea) {
-    return;
-  }
-
-  if (appServerControlGoalComposeSessionId === sessionId) {
-    appServerControlGoalComposeSessionId = null;
-    activeTextarea.placeholder = t(
-      isMobileViewport() ? 'smartInput.placeholderMobile' : 'smartInput.placeholder',
-    );
-    activeTextarea.focus({ preventScroll: true });
-    syncAppServerControlQuickSettingsActions(sessionId);
-    return;
-  }
-
-  const currentText = activeTextarea.value.trim();
-  if (currentText.length === 0) {
-    appServerControlGoalComposeSessionId = sessionId;
-    activeTextarea.placeholder = 'Set AppServerControl goal...';
-    activeTextarea.focus({ preventScroll: true });
-    syncAppServerControlQuickSettingsActions(sessionId);
-    return;
-  }
-
-  await submitAppServerControlGoal(sessionId, currentText, activeTextarea);
-}
-
-async function submitAppServerControlGoal(
-  sessionId: string,
-  objective: string,
-  textarea: HTMLTextAreaElement,
-): Promise<void> {
-  try {
-    await setAppServerControlGoal(sessionId, { objective });
-    appServerControlGoalComposeSessionId = null;
-    pushCurrentPromptToHistory(sessionId);
-    clearSubmittedSmartInputState(sessionId, textarea);
-    showDropToast('Goal set.');
-    syncAppServerControlQuickSettingsActions(sessionId);
-  } catch (error) {
-    showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
-  }
 }
 
 function setToolsPanelOpen(open: boolean): void {
@@ -2664,16 +2624,6 @@ async function sendText(ta: HTMLTextAreaElement): Promise<void> {
     } catch (error) {
       showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
     }
-    return;
-  }
-
-  if (appServerControlGoalComposeSessionId === sessionId) {
-    if (appServerControlAttachments.length > 0) {
-      showDropToast('Goals use text only.');
-      return;
-    }
-
-    await submitAppServerControlGoal(sessionId, renderedText, ta);
     return;
   }
 

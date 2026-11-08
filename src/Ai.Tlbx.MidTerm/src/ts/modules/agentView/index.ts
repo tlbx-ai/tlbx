@@ -1,3 +1,4 @@
+import { syncAppServerControlGoal } from '../appServerControl/goals';
 /* eslint-disable max-lines -- AppServerControl activation/runtime orchestration remains consolidated here until the active path is split into smaller modules. */
 import { createLogger } from '../logging';
 import {
@@ -2662,6 +2663,7 @@ function renderAgentView(
     snapshot.quickSettings,
     { thread: snapshot.thread, currentTurn: snapshot.currentTurn, connected: streamConnected },
   );
+  syncAppServerControlGoal(snapshot, streamConnected);
   syncAgentViewPresentation(panel, snapshot.provider);
   syncNativeCommands(
     panel,

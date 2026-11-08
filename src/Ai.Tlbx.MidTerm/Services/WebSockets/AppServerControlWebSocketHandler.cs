@@ -448,10 +448,14 @@ public sealed class AppServerControlWebSocketHandler
                 }
 
                 case "thread.goal.set":
+                case "thread.goal.get":
+                case "thread.goal.clear":
                 {
+                    var goalRequest = request.GoalSet ?? new AppServerControlGoalSetRequest();
+                    goalRequest.Operation = request.Action["thread.goal.".Length..];
                     var response = await _appServerControlRuntime.SetGoalAsync(
                         request.SessionId,
-                        request.GoalSet ?? new AppServerControlGoalSetRequest(),
+                        goalRequest,
                         CancellationToken.None).ConfigureAwait(false);
                     await sendCommandAccepted(
                         new AppServerControlWsCommandAcceptedMessage

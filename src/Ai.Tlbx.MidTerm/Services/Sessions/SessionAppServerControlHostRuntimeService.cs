@@ -727,7 +727,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 {
                     CommandId = commandId,
                     SessionId = sessionId,
-                    Type = "thread.goal.set",
+                    Type = "thread.goal." + request.Operation,
                     SetGoal = request
                 },
                 ct).ConfigureAwait(false);
@@ -1621,6 +1621,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         return new AppServerControlThreadSummary
         {
             ThreadId = source.ThreadId,
+            Goal = source.Goal?.Clone(),
             State = source.State,
             StateLabel = source.StateLabel
         };

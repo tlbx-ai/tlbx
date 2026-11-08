@@ -141,7 +141,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactThreadAsync(command, ct).ConfigureAwait(false),
-                "thread.goal.set" => await SetGoalAsync(command, ct).ConfigureAwait(false),
+                "thread.goal.set" or "thread.goal.get" or "thread.goal.clear" => await ControlGoalAsync(command, ct).ConfigureAwait(false),
                 "request.resolve" => await ResolveRequestAsync(command, ct).ConfigureAwait(false),
                 "user-input.resolve" => await ResolveUserInputAsync(command, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported Codex command '{command.Type}'.")
@@ -242,6 +242,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         }
 
         _providerThreadId = null;
+        _latestCodexGoal = null;
+        _goalNotificationRevision = 0;
         _activeTurnId = null;
         _hasConfiguredThreadDefaults = false;
         _remoteEndpoint = attachPoint?.Endpoint;
@@ -286,6 +288,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         {
             await ReadCodexThreadHistoryAsync(providerThreadId, ct).ConfigureAwait(false);
         }
+        await ReadInitialCodexGoalAsync(ct).ConfigureAwait(false);
 
         var events = new List<AppServerControlProviderEvent>
         {
@@ -474,31 +477,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             id => BuildCodexThreadCompactRequest(id, _providerThreadId!),
             ct).ConfigureAwait(false);
         return Accepted(command.CommandId, command.SessionId);
-    }
-
-    private async Task<HostCommandOutcome> SetGoalAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
-    {
-        EnsureAttached();
-        var request = command.SetGoal ?? throw new InvalidOperationException("thread.goal.set payload is required.");
-        var objective = AppServerControlQuickSettings.NormalizeOptionalValue(request.Objective);
-        if (objective is null)
-        {
-            throw new InvalidOperationException("Goal objective is required.");
-        }
-
-        await SendCodexRequestAsync(
-            "thread/goal/set",
-            id => BuildCodexThreadGoalSetRequest(id, _providerThreadId!, objective),
-            ct).ConfigureAwait(false);
-
-        return Accepted(
-            command.CommandId,
-            command.SessionId,
-            accepted: new AppServerControlCommandAcceptedResponse
-            {
-                SessionId = command.SessionId,
-                Status = "accepted"
-            });
     }
 
     private async Task<HostCommandOutcome> ResolveRequestAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
@@ -952,35 +930,13 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             }
 
             case "thread/goal/updated":
-            {
-                var objective = GetString(payload, "goal", "objective") ?? "Goal updated.";
-                var status = GetString(payload, "goal", "status");
-                var statusSuffix = string.IsNullOrWhiteSpace(status)
-                    ? string.Empty
-                    : $" ({status})";
-                _emit(CreateEvent("thread.goal.updated", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
-                {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
-                    {
-                        Message = $"Goal updated{statusSuffix}: {objective}",
-                        Detail = BuildCompactJsonDetail(payload)
-                    };
-                }));
+                if (!string.Equals(GetString(payload, "threadId"), _providerThreadId, StringComparison.Ordinal)) break;
+                PublishCodexGoal(payload.GetProperty("goal"), method, payload, notification: true);
                 break;
-            }
-
             case "thread/goal/cleared":
-            {
-                _emit(CreateEvent("thread.goal.cleared", null, null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
-                {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
-                    {
-                        Message = "Goal cleared.",
-                        Detail = GetString(payload, "reason")
-                    };
-                }));
+                if (!string.Equals(GetString(payload, "threadId"), _providerThreadId, StringComparison.Ordinal)) break;
+                PublishCodexGoal(null, method, payload, notification: true);
                 break;
-            }
 
             case "turn/started":
             {
@@ -1035,6 +991,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                         Reason = errorMessage ?? $"Codex turn {turnState}."
                     };
                 }));
+                if (_providerThreadId is { } goalThreadId) _ = RefreshCodexGoalAfterTurnAsync(goalThreadId);
                 break;
             }
 
@@ -2550,23 +2507,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
             writer.WriteBoolean("experimentalRawEvents", false);
             writer.WriteBoolean("persistExtendedHistory", false);
             AppServerControlMcpConfiguration.WriteCodex(writer, mcpServer);
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-        });
-    }
-
-    private static string BuildCodexThreadGoalSetRequest(string id, string threadId, string objective)
-    {
-        return BuildJsonString(writer =>
-        {
-            writer.WriteStartObject();
-            writer.WriteString("jsonrpc", "2.0");
-            writer.WriteString("id", id);
-            writer.WriteString("method", "thread/goal/set");
-            writer.WritePropertyName("params");
-            writer.WriteStartObject();
-            writer.WriteString("threadId", threadId);
-            writer.WriteString("objective", objective);
             writer.WriteEndObject();
             writer.WriteEndObject();
         });

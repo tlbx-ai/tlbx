@@ -1,3 +1,4 @@
+import { NativeGoalCommands } from "./nativeGoals.mjs";
 import { configureRuntime } from "./runtimeSettings.mjs";
 import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { readFile } from "node:fs/promises";
@@ -43,6 +44,12 @@ let runtime;
 let runtimeTask;
 let currentSessionId;
 let activeTurnId;
+const goals = new NativeGoalCommands({ runtime: () => runtime, push: (value) => prompts.push(value),
+  sessionId: () => currentSessionId ?? configuration?.resume ?? configuration?.sessionId,
+  emit: (event) => {
+    if (event.type === "bridge.goal.turn.started") activeTurnId = event.turnId;
+    emit(event);
+  } });
 const confirmedSettings = { permissionMode: "manual", planMode: "off" };
 
 function emit(value) {
@@ -94,6 +101,7 @@ async function makeUserMessage(command) {
   }
   return {
     type: "user",
+    uuid: randomUUID(),
     session_id: currentSessionId ?? configuration.sessionId,
     parent_tool_use_id: null,
     ...(command.type === "turn.steer" ? { priority: "now" } : {}),
@@ -245,10 +253,14 @@ async function startRuntime(command) {
       for await (const message of runtime) {
         if (typeof message.session_id === "string" && message.session_id)
           currentSessionId = message.session_id;
-        emit(message);
+        goals.observeSession(currentSessionId);
+        if (!goals.consume(message)) emit(message);
       }
+      goals.close();
       emit({ type: "bridge.closed" });
     } catch (error) {
+      goals.publish({ confirmation: "unconfirmed", pendingOperation: null, detail: String(error.message) });
+      goals.close();
       fail("Claude Agent SDK stream failed.", error);
     }
   })();
@@ -288,11 +300,17 @@ async function handle(command) {
         models: initialized.models ?? [],
         commands: initialized.commands ?? [],
       });
+      goals.setSupported((initialized.commands ?? []).some((command) =>
+        (typeof command === "string" ? command : command.name)?.replace(/^\//, "") === "goal"));
+      return;
+    case "thread.goal":
+      goals.control(command);
       return;
     case "turn.start":
     case "turn.steer": {
       if (!configuration) throw new Error("Claude bridge is not initialized.");
       await startRuntime(command);
+      if (command.type === "turn.start") await goals.beforeInput();
       activeTurnId = command.turnId;
       await runtime.setModel(command.model ?? undefined);
       await runtime.applyFlagSettings({ effortLevel: command.effort ?? null });
@@ -301,7 +319,9 @@ async function handle(command) {
       );
       confirmedSettings.permissionMode = command.permissionMode ?? "manual";
       confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
-      prompts.push(await makeUserMessage(command));
+      const message = await makeUserMessage(command);
+      goals.noteInput(message, command.prompt ?? "", command.turnId);
+      prompts.push(message);
       return;
     }
     case "runtime.configure": {
@@ -353,6 +373,7 @@ async function handle(command) {
       return;
     }
     case "shutdown":
+      goals.close();
       prompts.close();
       if (runtime) runtime.close();
       await runtimeTask;
@@ -381,6 +402,7 @@ input.on("line", (line) => {
     );
 });
 input.on("close", () => {
+  goals.close();
   prompts.close();
   if (runtime) runtime.close();
 });

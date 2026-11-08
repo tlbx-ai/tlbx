@@ -77,6 +77,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.goal.set" or "thread.goal.get" or "thread.goal.clear" => await ControlGoalAsync(command, ct).ConfigureAwait(false),
                 "runtime.configure" => await ConfigureAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
@@ -135,6 +136,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         _nativeModels.Clear();
         _nativeCommands = [];
         _terminalCommands.Clear();
+        _goalState = null;
+        _goalStopTurnId = null;
         _usage = null;
         _messageInputTokens = null;
         _messageOutputTokens = null;
@@ -188,6 +191,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             throw new InvalidOperationException("Claude already has an active App Server Controller turn.");
         }
 
+        if (_goalState?.PendingOperation is not null) throw new InvalidOperationException("A native goal command is pending confirmation.");
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
         var prompt = BuildPromptInput(request, out var addDirectories);
@@ -605,6 +609,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     private void HandleBridgeMessage(string type, JsonElement root, string rawLine)
     {
+        if (HandleGoalBridgeMessage(type, root)) return;
         switch (type)
         {
             case "bridge.configured":
@@ -698,6 +703,12 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                     if (GetString(root, "requestId") is { } configurationId &&
                         _configurationAcks.TryGetValue(configurationId, out var configurationAck))
                         configurationAck.TrySetException(new InvalidOperationException(detail ?? message));
+                    break;
+                }
+                if (GetString(root, "commandType") == "thread.goal")
+                {
+                    if (GetString(root, "requestId") is { } goalId && _goalReceipts.TryGetValue(goalId, out var goalReceipt))
+                        goalReceipt.TrySetException(new InvalidOperationException(detail ?? message));
                     break;
                 }
                 _bridgeReady.TrySetException(new InvalidOperationException(detail ?? message));
@@ -1098,23 +1109,26 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         var completedTurnId = _activeTurnId;
+        var goalStopped = string.Equals(_goalStopTurnId, completedTurnId, StringComparison.Ordinal) &&
+            terminalReason is "aborted_streaming" or "aborted_tools";
+        _goalStopTurnId = null;
         ResetTurnState();
         _emit(CreateEvent("turn.completed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
             {
-                State = isError ? "failed" : "completed",
-                StateLabel = isError ? "Failed" : "Completed",
-                StopReason = subtype,
-                ErrorMessage = errorMessage
+                State = goalStopped ? "aborted" : isError ? "failed" : "completed",
+                StateLabel = goalStopped ? "Aborted" : isError ? "Failed" : "Completed",
+                StopReason = goalStopped ? "goal_stop" : subtype,
+                ErrorMessage = goalStopped ? null : errorMessage
             };
         }, rawLine));
         _emit(CreateEvent("session.state.changed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
             {
-                State = isError ? "error" : "ready",
-                StateLabel = isError ? "Error" : "Ready",
+                State = isError && !goalStopped ? "error" : "ready",
+                StateLabel = isError && !goalStopped ? "Error" : "Ready",
                 Reason = string.IsNullOrWhiteSpace(resultText)
                     ? (isError ? "Claude turn failed." : "Claude turn completed.")
                     : resultText
