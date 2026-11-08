@@ -25,7 +25,7 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class TlbxMcpNativeProcessLifetimeTests
 {
     [Fact]
-    public async Task RealNativeAdapterSavesCompleteArtifactAndExitsBeforeDetachedWorkerAndChildComplete()
+    public async Task RealNativeAdapterReportsLiveProgressAndExitsBeforeDetachedWorkerAndChildComplete()
     {
         // getcwd resolves ancestor symlinks (notably macOS /var -> /private/var).
         // Start from that same physical directory so exact cwd/state-path checks
@@ -36,6 +36,9 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         var script = Path.Combine(cwd, OperatingSystem.IsWindows() ? "child.ps1" : "child.sh");
         File.WriteAllText(script, OperatingSystem.IsWindows() ? """
             [Console]::WriteLine('child-started')
+            [Console]::Error.Write('child-stderr-started')
+            [Console]::Out.Flush()
+            [Console]::Error.Flush()
             [IO.File]::WriteAllLines('context-hints.txt', @($env:MT_BASE_URL,$env:MT_SESSION_ID,$env:MT_PREVIEW_NAME))
             $deadline = [DateTime]::UtcNow.AddSeconds(25)
             while (!(Test-Path -LiteralPath $args[0])) {
@@ -46,6 +49,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             [Console]::Error.Write('separate-child-stderr')
             """ : """
             printf 'child-started\n'
+            printf child-stderr-started >&2
             printf '%s\n%s\n%s\n' "$MT_BASE_URL" "$MT_SESSION_ID" "$MT_PREVIEW_NAME" > context-hints.txt
             count=0
             while [ ! -f "$1" ]; do
@@ -219,6 +223,24 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             AssertAlive(state.WorkerPid, state.WorkerStartedTicks);
             AssertAlive(state.TargetPid, state.TargetStartedTicks);
 
+            // Both small writes must be readable before the still-closed gate
+            // allows the process to exit, rather than only after a 4 KiB flush.
+            string ReadLiveLog(string name)
+            {
+                using var file = new FileStream(Path.Combine(state.RunDirectory, name),
+                    FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(file, Encoding.UTF8);
+                return reader.ReadToEnd();
+            }
+            var progressDeadline = Stopwatch.StartNew();
+            while ((ReadLiveLog("stdout.log").Length == 0 || ReadLiveLog("stderr.log").Length == 0)
+                && progressDeadline.Elapsed < TimeSpan.FromSeconds(5))
+                await Task.Delay(25, ct);
+            Assert.Equal("child-started" + Environment.NewLine, ReadLiveLog("stdout.log"));
+            Assert.Equal("child-stderr-started", ReadLiveLog("stderr.log"));
+            Assert.Null(TlbxMcpIsolatedProcessTool.ReadState(state.RunDirectory)!.CompletedAt);
+            AssertAlive(state.TargetPid, state.TargetStartedTicks);
+
             var status = await client.CallToolAsync("process_wait", new Dictionary<string, object?>(StringComparer.Ordinal)
                 { ["statePath"] = statePath, ["timeoutSeconds"] = 0 }, cancellationToken: ct);
             Assert.False(status.IsError);
@@ -256,7 +278,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             Assert.Null(state.Error);
             Assert.Equal(0, state.ExitCode);
             Assert.Equal("child-started" + Environment.NewLine + "after-native-adapter-exit", File.ReadAllText(outcome.GetProperty("stdoutPath").GetString()!));
-            Assert.Equal("separate-child-stderr", File.ReadAllText(outcome.GetProperty("stderrPath").GetString()!));
+            Assert.Equal("child-stderr-startedseparate-child-stderr", File.ReadAllText(outcome.GetProperty("stderrPath").GetString()!));
             Assert.Equal(new[] { address, "target01", "native-callback" }, File.ReadAllLines(Path.Combine(cwd, "context-hints.txt")));
             Assert.Equal(1, contextReads);
             // A fresh native adapter can observe the original run after its
