@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { EditorState, NodeSelection, TextSelection, Selection } from 'prosemirror-state';
 import { history, undo, redo, closeHistory } from 'prosemirror-history';
 import { CellSelection, tableEditing, TableMap, isInTable } from 'prosemirror-tables';
-import { draftFromRichDocument, getRichComposerDocument, parsePersistedRichDocument, isSafeComposerLink, richComposerSchema, richDocumentToParts, richNode } from './richComposerDocument';
+import { draftFromRichDocument, getRichComposerDocument, parsePersistedRichDocument, isSafeComposerLink, richComposerSchema, richDocumentFromClipboardSlice, richDocumentToParts, richNode } from './richComposerDocument';
 import { cloneSmartInputComposerDraft, pruneSmartInputComposerReferences } from './smartInputComposerDraft';
 import { loadSmartInputCurrentDraft, persistSmartInputCurrentDraft } from './smartInputDraftStore';
 import { moveRichTableCell, pasteRichSlice, replaceBookmarkedRichAttachment, replaceRichAttachment, richComposerOwnsShortcut, restoreRichComposerSelection, richComposerTrailingParagraph } from './richComposerTransactions';
@@ -39,6 +39,46 @@ function tableState() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('rich composer document contracts', () => {
+  it.each([
+    [0, 1, ['0:0', '0:1'], ['1:0', '1:1']],
+    [0, 2, ['0:0', '1:0'], ['0:1', '1:1']],
+    [2, 3, ['1:0', '1:1'], ['0:0', '0:1']],
+    [0, 0, ['0:0'], ['0:1', '1:0', '1:1']],
+    [0, 3, ['0:0', '0:1', '1:0', '1:1'], []],
+  ] as const)('copies selected table cells %s..%s without including other cells', (anchor, head, selected, omitted) => {
+    const original = tableState().doc;
+    const before = original.toJSON();
+    const map = TableMap.get(original.child(0));
+    const selection = CellSelection.create(original, 1 + map.map[anchor]!, 1 + map.map[head]!);
+    const copied = richDocumentFromClipboardSlice(selection.content());
+    const parts = richDocumentToParts(copied);
+    copied.check();
+    const text = parts.map((part) => part.kind === 'text' ? part.text : '').join('');
+    for (const value of selected) expect(text).toContain(value);
+    for (const value of omitted) expect(text).not.toContain(value);
+    expect(text).not.toContain('after');
+    const restored = getRichComposerDocument({ parts, nextOrdinalByKind: {} });
+    restored.check();
+    expect(restored.firstChild?.type.name).toBe('table');
+    expect(original.toJSON()).toEqual(before);
+  });
+  it('keeps attachment identities and rich marks in copied cells without copying other rows', () => {
+    const selectedCell = richNode('paragraph').create(null, [atom('image-A'),
+      richComposerSchema.text('selected', [richComposerSchema.marks.strong!.create()])]);
+    const source = richNode('doc').create(null, richNode('table').create(null, [
+      richNode('table_row').create(null, [richNode('table_header').create(null, selectedCell),
+        richNode('table_header').create(null, paragraph('other selected'))]),
+      richNode('table_row').create(null, [richNode('table_cell').create(null, richNode('paragraph').create(null, atom('image-B'))),
+        richNode('table_cell').create(null, paragraph('unselected'))]),
+    ]));
+    const map = TableMap.get(source.firstChild!);
+    const selected = CellSelection.create(source, 1 + map.map[0]!, 1 + map.map[1]!);
+    const parts = richDocumentToParts(richDocumentFromClipboardSlice(selected.content()));
+    expect(parts.filter((part) => part.kind === 'reference').map((part) => part.referenceId)).toEqual(['image-A']);
+    const text = parts.filter((part) => part.kind === 'text').map((part) => part.text).join('');
+    expect(text).toContain('**selected**');
+    expect(text).not.toContain('unselected');
+  });
   it.each(['a|b', String.raw`a\|b`, String.raw`a\\|b`, String.raw`C:\temp\file`, '<script>alert(1)</script>'])
     ('preserves literal table characters through provider Markdown: %s', (text) => {
       const doc = richNode('doc').create(null, richNode('table').create(null, [

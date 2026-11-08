@@ -1,4 +1,10 @@
-import { Fragment, Schema, type Node as ProseMirrorNode, type NodeType } from 'prosemirror-model';
+import {
+  Fragment,
+  Schema,
+  type Node as ProseMirrorNode,
+  type NodeType,
+  type Slice,
+} from 'prosemirror-model';
 import {
   defaultMarkdownParser,
   defaultMarkdownSerializer,
@@ -120,6 +126,16 @@ export function richNode(name: string): NodeType {
   const type = richComposerSchema.nodes[name];
   if (!type) throw new RangeError(`Unknown composer node ${name}`);
   return type;
+}
+
+export function richDocumentFromClipboardSlice(slice: Slice): ProseMirrorNode {
+  // A partial native CellSelection contains table rows, not their table.
+  // Restore that parent for the plain-text projection without changing its cells.
+  const content =
+    slice.content.firstChild?.type.name === 'table_row'
+      ? richNode('table').create(null, slice.content)
+      : slice.content;
+  return richNode('doc').create(null, content);
 }
 
 function record(value: unknown): value is Record<string, unknown> {

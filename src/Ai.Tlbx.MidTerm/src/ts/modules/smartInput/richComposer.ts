@@ -27,6 +27,7 @@ import type { AppServerControlComposerDraftAttachment } from './appServerControl
 import {
   draftFromRichDocument,
   getRichComposerDocument,
+  richDocumentFromClipboardSlice,
   richComposerSchema,
   richNode,
 } from './richComposerDocument';
@@ -280,7 +281,7 @@ export class RichComposer {
         },
       },
       clipboardTextSerializer: (slice) => {
-        const doc = richNode('doc').create(null, slice.content);
+        const doc = richDocumentFromClipboardSlice(slice);
         return draftFromRichDocument({ parts: [], nextOrdinalByKind: {} }, doc)
           .parts.map((part) =>
             part.kind === 'text'
