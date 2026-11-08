@@ -45,6 +45,41 @@ function paragraph(text: string, code = false) {
 }
 
 describe('rich user input to history', () => {
+  it.each(['|', '||', '| |', '| : |', '| -- |'])(
+    'does not promote a partial pipe separator to a table: %s',
+    (separator) => {
+      const html = renderMarkdownFragment(`a|b\n${separator}`);
+      expect(html).toBe(`a|b<br>${separator}`);
+    },
+  );
+
+  it.each([1, 2, 17, 129])(
+    'matches exact backtick run lengths without formatting code: %s',
+    (length) => {
+      const delimiter = '`'.repeat(length);
+      const content = `a${'`'.repeat(length + 1)} **literal** [link](https://example.test/)`;
+      expect(renderMarkdownFragment(`${delimiter}${content}${delimiter} *outside*`)).toBe(
+        `<code>${content}</code> <em>outside</em>`,
+      );
+    },
+  );
+
+  it('preserves escaped openers and treats backslashes literally inside code', () => {
+    expect(renderMarkdownFragment('\\``a`')).toBe('`<code>a</code>');
+    expect(renderMarkdownFragment('\\`literal and ``code`inside``')).toBe(
+      '`literal and <code>code`inside</code>',
+    );
+    expect(renderMarkdownFragment('`a\\`')).toBe('<code>a\\</code>');
+    expect(renderMarkdownFragment('` code ` and `  `')).toBe(
+      '<code>code</code> and <code>  </code>',
+    );
+  });
+
+  it('leaves a bounded sequence of distinct unmatched delimiter runs as literal text', () => {
+    const input = Array.from({ length: 24 }, (_, index) => `${'`'.repeat(index + 1)}x`).join(' ');
+    expect(renderMarkdownFragment(input)).toBe(input);
+  });
+
   it.each(['# literal', '- literal', '> literal', '1. literal'])(
     'does not promote a literal paragraph to block markup: %s',
     async (text) => {

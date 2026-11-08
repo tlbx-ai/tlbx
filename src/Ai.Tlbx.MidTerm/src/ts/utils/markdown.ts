@@ -57,19 +57,87 @@ function replaceEmphasis(text: string, delimiter: '\\*' | '_'): string {
   );
 }
 
+function markdownEscapeAt(text: string, index: number): string | null {
+  if (text[index] !== '\\') return null;
+  const entity = ['&gt;', '&lt;', '&quot;', '&#39;', '&amp;'].find((value) =>
+    text.startsWith(value, index + 1),
+  );
+  if (entity) return entity;
+  const char = text[index + 1];
+  return char && '\\`*{}[]()#+-.!_|>~'.includes(char) ? char : null;
+}
+
+function markdownBacktickPositions(line: string): Map<number, number[]> {
+  const positions = new Map<number, number[]>();
+  for (let index = 0; index < line.length;) {
+    if (line[index] !== '`') {
+      index += 1;
+      continue;
+    }
+    const start = index;
+    while (line[index] === '`') index += 1;
+    const length = index - start;
+    const starts = positions.get(length) ?? [];
+    starts.push(start);
+    positions.set(length, starts);
+  }
+  return positions;
+}
+
+function protectMarkdownInlineLine(line: string, preserve: (literal: string) => string): string {
+  // Index every full run, including escaped ones: backslashes are literal inside
+  // code. Each length's cursor only advances, so unmatched openers never rescan
+  // the suffix. Both indexing and matching are linear in the input length.
+  const positions = markdownBacktickPositions(line);
+  const cursors = new Map<number, number>();
+  const output: string[] = [];
+  for (let index = 0; index < line.length;) {
+    const escaped = markdownEscapeAt(line, index);
+    if (escaped !== null) {
+      output.push(preserve(escaped));
+      index += escaped.length + 1;
+      continue;
+    }
+    if (line[index] !== '`') {
+      output.push(line[index] ?? '');
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (line[end] === '`') end += 1;
+    const length = end - index;
+    const starts = positions.get(length) ?? [];
+    let cursor = cursors.get(length) ?? 0;
+    while (cursor < starts.length && (starts[cursor] ?? 0) <= index) cursor += 1;
+    cursors.set(length, cursor);
+    const close = starts[cursor];
+    if (close === undefined) {
+      output.push(line.slice(index, end));
+      index = end;
+      continue;
+    }
+    const code = line.slice(end, close);
+    const padded = code.startsWith(' ') && code.endsWith(' ') && code.trim().length > 0;
+    output.push(preserve(`<code>${padded ? code.slice(1, -1) : code}</code>`));
+    index = close + length;
+  }
+  return output.join('');
+}
+
 /** Input is already HTML-escaped. Literal escapes and code never become markup. */
 function formatMarkdownInline(text: string): string {
   const literals: string[] = [];
   let prefix = '\uE000tlbx-inline:';
   while (text.includes(prefix)) prefix += ':';
-  let html = text.replace(
-    /\\(&gt;|&lt;|&quot;|&#39;|&amp;|[\\`*{}[\]()#+\-.!_|>~])|(`+)([^\n]*?)\2(?!`)/g,
-    (_match, escaped: string | undefined, _ticks: string, code: string) => {
-      const literal = escaped ?? `<code>${code.replace(/^ (.*\S.*) $/, '$1')}</code>`;
-      literals.push(literal);
-      return `${prefix}${literals.length - 1}\uE001`;
-    },
-  );
+  let html = text
+    .split('\n')
+    .map((line) =>
+      protectMarkdownInlineLine(line, (literal) => {
+        literals.push(literal);
+        return `${prefix}${literals.length - 1}\uE001`;
+      }),
+    )
+    .join('\n');
   html = replaceStrong(html, '\\*\\*');
   html = replaceStrong(html, '__');
   html = replaceEmphasis(html, '\\*');
@@ -82,9 +150,8 @@ function formatMarkdownInline(text: string): string {
 }
 
 function isMarkdownTableSeparator(line: string): boolean {
-  return (
-    line.includes('|') && splitMarkdownTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell))
-  );
+  const cells = splitMarkdownTableRow(line);
+  return line.includes('|') && cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
 function isMarkdownTableRow(line: string): boolean {
