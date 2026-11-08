@@ -50,6 +50,7 @@ import {
 } from './historyMeasurements';
 import { createAgentHistoryDom, isProposedPlanActionDisabled } from './historyDom';
 import { syncNativeCommands } from './nativeCommands';
+import { filterReadingHistory, showAgentTechnicalDetails } from './historyVisibility';
 import { createAgentHistoryRender, resolveHistoryNavigatorTarget } from './historyRender';
 import {
   DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG,
@@ -2661,22 +2662,23 @@ function renderAgentView(
     state.optimisticTurns,
   );
   state.optimisticTurns = optimistic.optimisticTurns;
-  const renderedEntries = stabilizeHistoryEntryOrder(
-    withTurnDurationNotes(
+  const enrichedEntries = withTurnDurationNotes(
+    snapshot,
+    withTrailingBusyIndicator(
       snapshot,
-      withTrailingBusyIndicator(
+      withLiveAssistantState(
         snapshot,
-        withLiveAssistantState(
-          snapshot,
-          withActivationIssueNotice(
-            withInlineAppServerControlStatus(snapshot, optimistic.entries, streamConnected),
-            state.activationIssue,
-          ),
+        withActivationIssueNotice(
+          withInlineAppServerControlStatus(snapshot, optimistic.entries, streamConnected),
+          state.activationIssue,
         ),
-        snapshot.requests,
       ),
-      state,
+      snapshot.requests,
     ),
+    state,
+  );
+  const renderedEntries = stabilizeHistoryEntryOrder(
+    filterReadingHistory(enrichedEntries, snapshot.requests, showAgentTechnicalDetails()),
   );
   syncBusyIndicatorTicker({
     snapshot,

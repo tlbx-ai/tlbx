@@ -7,6 +7,32 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class MidTermSettingsPublicTests
 {
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("{\"ShowUnknownAgentMessages\":true}")]
+    [InlineData("{\"ShowUnknownAgentMessages\":false}")]
+    public void AgentTechnicalDetails_MissingNewPreferenceUsesQuietDefault(string json)
+    {
+        var settings = JsonSerializer.Deserialize<MidTermSettings>(json)!;
+        Assert.False(settings.ShowAgentTechnicalDetails);
+        Assert.False(MidTermSettingsPublic.FromSettings(settings).ShowAgentTechnicalDetails);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void AgentTechnicalDetails_ExplicitPreferenceSurvivesPatchAndJsonRoundTrip(bool enabled)
+    {
+        var settings = new MidTermSettings();
+        using var patch = JsonDocument.Parse(JsonSerializer.Serialize(new { showAgentTechnicalDetails = enabled }));
+        MidTermSettingsPatch.Merge(MidTermSettingsPublic.FromSettings(settings), patch.RootElement).ApplyTo(settings);
+        var saved = JsonSerializer.Deserialize<MidTermSettings>(JsonSerializer.Serialize(settings))!;
+        Assert.Equal(enabled, MidTermSettingsPublic.FromSettings(saved).ShowAgentTechnicalDetails);
+        using var unrelatedPatch = JsonDocument.Parse("""{"showAgentMessageTimestamps":true}""");
+        MidTermSettingsPatch.Merge(MidTermSettingsPublic.FromSettings(saved), unrelatedPatch.RootElement).ApplyTo(saved);
+        Assert.Equal(enabled, saved.ShowAgentTechnicalDetails);
+    }
+
     [Fact]
     public void SidebarVisibility_MissingSettingsUseQuietDefaults()
     {

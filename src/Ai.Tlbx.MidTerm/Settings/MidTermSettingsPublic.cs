@@ -21,7 +21,7 @@ public sealed partial class MidTermSettingsPublic
     public string CodexEnvironmentVariables { get; set; } = "";
     public string AgentMessageFontFamily { get; set; } = "default";
     public bool ShowAgentMessageTimestamps { get; set; } = false;
-    public bool ShowUnknownAgentMessages { get; set; } = true;
+    public bool ShowAgentTechnicalDetails { get; set; } = false;
     public int ToolCallOutputLines { get; set; } = 5;
 
     // Terminal Appearance

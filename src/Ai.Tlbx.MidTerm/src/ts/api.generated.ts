@@ -5021,7 +5021,7 @@ export interface components {
       codexEnvironmentVariables: string;
       agentMessageFontFamily: string;
       showAgentMessageTimestamps: boolean;
-      showUnknownAgentMessages: boolean;
+      showAgentTechnicalDetails: boolean;
       /** Format: int32 */
       toolCallOutputLines: number;
       /** Format: int32 */

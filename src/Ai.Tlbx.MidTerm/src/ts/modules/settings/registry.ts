@@ -154,10 +154,10 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     },
   ),
   controlEntry(
-    'showUnknownAgentMessages',
-    'setting-show-unknown-agent-messages',
+    'showAgentTechnicalDetails',
+    'setting-show-agent-technical-details',
     'checkbox',
-    true,
+    false,
     {
       editable: true,
       storage: 'settings.json',
