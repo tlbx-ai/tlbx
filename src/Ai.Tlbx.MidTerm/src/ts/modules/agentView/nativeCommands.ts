@@ -2,6 +2,7 @@ import type { AppServerControlCommand, AppServerControlHistorySnapshot } from '.
 import { submitAppServerControlTurn } from '../appServerControl/input';
 import { createAppServerControlTurnRequestWithQuickSettings } from '../appServerControl/quickSettings';
 import { t } from '../i18n';
+import { showAgentTechnicalDetails } from './historyVisibility';
 
 export function syncNativeCommands(
   panel: HTMLElement,
@@ -11,7 +12,8 @@ export function syncNativeCommands(
   const host = panel.querySelector<HTMLElement>('[data-agent-field="native-controls"]');
   if (!host) return;
   const commands = snapshot.session.availableCommands ?? [];
-  host.hidden = !snapshot.session.agentName && commands.length === 0;
+  host.hidden =
+    !showAgentTechnicalDetails() || (!snapshot.session.agentName && commands.length === 0);
   if (host.hidden) {
     host.replaceChildren();
     delete host.dataset.signature;

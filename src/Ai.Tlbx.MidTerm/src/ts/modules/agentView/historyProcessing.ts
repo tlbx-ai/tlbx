@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isHistoryError } from './historyVisibility';
 import type {
   AppServerControlHistoryRequestSummary,
   AppServerControlHistoryRuntimeNotice,
@@ -13,7 +14,6 @@ import type {
   AppServerControlQuestion,
   AppServerControlUsageSummary,
 } from '../../api/types';
-import { $currentSettings } from '../../stores';
 import {
   formatAbsoluteTime,
   historyLabel,
@@ -200,8 +200,9 @@ export function buildAppServerControlHistoryEntries(
   return historyEntries
     .filter((entry) => !isRepeatedStructuredWarning(entry, historyEntries))
     .map(mapSnapshotHistoryEntry)
-    .filter((entry) => shouldShowUnknownAgentMessages() || !isUnknownAgentFallbackEntry(entry))
-    .filter((entry) => !isSuppressedAppServerControlRuntimeNoticeEntry(entry))
+    .filter(
+      (entry) => isHistoryError(entry) || !isSuppressedAppServerControlRuntimeNoticeEntry(entry),
+    )
     .sort((left, right) => left.order - right.order)
     .reduce<AppServerControlHistoryEntry[]>(mergeCommandOutputHistoryEntries, [])
     .filter(
@@ -379,16 +380,6 @@ function isPersistentCommandEntry(entry: AppServerControlHistoryEntry): boolean 
   }
 
   return COMMAND_HISTORY_ITEM_TYPES.has(normalizeHistoryItemType(entry.sourceItemType));
-}
-
-function shouldShowUnknownAgentMessages(): boolean {
-  return $currentSettings.get()?.showUnknownAgentMessages !== false;
-}
-
-function isUnknownAgentFallbackEntry(
-  entry: Pick<AppServerControlHistoryEntry, 'sourceItemType'>,
-): boolean {
-  return normalizeHistoryItemType(entry.sourceItemType) === 'unknownagentmessage';
 }
 
 function buildPersistentCommandKeys(entry: AppServerControlHistoryEntry): string[] {

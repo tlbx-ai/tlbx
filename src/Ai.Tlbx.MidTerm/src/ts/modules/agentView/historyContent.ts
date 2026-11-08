@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isFileChangeHistoryEntry, isHistoryError } from './historyVisibility';
 import {
   COLLAPSIBLE_HISTORY_BODY_MIN_CHARS,
   COLLAPSIBLE_HISTORY_BODY_MIN_LINES,
@@ -267,7 +268,7 @@ export function resolveHistoryBodyPresentation(
     const evidenceLines = countHistoryBodyLines(entry.toolPresentation.evidence ?? '');
     return {
       mode: 'tool',
-      collapsedByDefault: false,
+      collapsedByDefault: isFileChangeHistoryEntry(entry) && !isHistoryError(entry),
       lineCount: Math.max(1, evidenceLines + 1),
       preview: '',
     };
@@ -286,17 +287,19 @@ export function resolveHistoryBodyPresentation(
     entry.kind === 'diff' ? 'diff' : isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
   const lineCount = countHistoryBodyLines(entry.body);
   const collapsedByDefault =
-    mode === 'monospace' &&
-    !entry.live &&
-    !entry.pending &&
-    (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
-      entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS);
+    !isHistoryError(entry) &&
+    (mode === 'diff' ||
+      (mode === 'monospace' &&
+        !entry.live &&
+        !entry.pending &&
+        (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
+          entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS)));
 
   return {
     mode,
     collapsedByDefault,
     lineCount,
-    preview: collapsedByDefault ? buildHistoryBodyPreview(entry.body) : '',
+    preview: collapsedByDefault && mode !== 'diff' ? buildHistoryBodyPreview(entry.body) : '',
   };
 }
 
