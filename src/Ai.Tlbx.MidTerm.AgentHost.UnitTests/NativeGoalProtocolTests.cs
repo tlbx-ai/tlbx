@@ -3,7 +3,7 @@ using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
 
-namespace Ai.Tlbx.MidTerm.UnitTests;
+namespace Ai.Tlbx.MidTerm.AgentHost.UnitTests;
 
 public sealed class NativeGoalProtocolTests
 {
@@ -47,7 +47,7 @@ public sealed class NativeGoalProtocolTests
         var imported = new SessionAppServerControlHistoryService(storeDirectory: Path.Combine(directory, "import"));
         try
         {
-            using var subscription = history.SubscribeHistoryPatches("session");
+            using var subscription = history.SubscribeHistoryPatches("session", TestContext.Current.CancellationToken);
             var state = new AppServerControlGoalState
             {
                 ThreadId = "own", Confirmation = "confirmed",

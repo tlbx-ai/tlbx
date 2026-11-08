@@ -28,11 +28,15 @@ function changed(sessionId: string): void {
 }
 
 function goalConfirmationSettled(state: AppServerControlGoalState | null): boolean {
-  return Boolean(state && state.confirmation === 'confirmed' && !state.pendingOperation && !state.detail);
+  return Boolean(
+    state && state.confirmation === 'confirmed' && !state.pendingOperation && !state.detail,
+  );
 }
 
-function nextGoalView(target: Pick<GoalView, 'provider' | 'threadId' | 'turnId' | 'connected' | 'state'>,
-  previous: GoalView | undefined): GoalView {
+function nextGoalView(
+  target: Pick<GoalView, 'provider' | 'threadId' | 'turnId' | 'connected' | 'state'>,
+  previous: GoalView | undefined,
+): GoalView {
   const revision = previous ? previous.revision : 0;
   const sameState = previous && JSON.stringify(previous.state) === JSON.stringify(target.state);
   const sameThread = previous && previous.threadId === target.threadId;
@@ -42,7 +46,8 @@ function nextGoalView(target: Pick<GoalView, 'provider' | 'threadId' | 'turnId' 
     commandRevision: previous ? previous.commandRevision : 0,
     commandOperation: previous ? previous.commandOperation : null,
     pending: sameThread ? previous.pending : false,
-    error: sameThread && (sameState || !goalConfirmationSettled(target.state)) ? previous.error : '',
+    error:
+      sameThread && (sameState || !goalConfirmationSettled(target.state)) ? previous.error : '',
   };
 }
 
@@ -55,7 +60,7 @@ export function syncAppServerControlGoal(
   const target = {
     provider: snapshot.provider,
     threadId: snapshot.thread.threadId,
-    turnId: active ? snapshot.currentTurn.turnId ?? null : null,
+    turnId: active ? (snapshot.currentTurn.turnId ?? null) : null,
     connected,
     state: snapshot.thread.goal ?? null,
   };
@@ -68,28 +73,41 @@ export function syncAppServerControlGoal(
 export function goalControlLabel(sessionId: string): string {
   const view = views.get(sessionId);
   if (!view) return t('goal.label');
-  if (view.pending || view.state?.pendingOperation) return `${t('goal.label')} · ${t('goal.pending')}`;
+  if (view.pending || view.state?.pendingOperation)
+    return `${t('goal.label')} · ${t('goal.pending')}`;
   const goal = view.state?.goal;
   return goal ? `${t('goal.label')} · ${t(`goal.state.${goal.status}`)}` : t('goal.label');
 }
 
 export function goalControlTitle(sessionId: string): string {
   const view = views.get(sessionId);
-  return view ? [view.state?.goal?.objective, goalStatusText(view)].filter(Boolean).join('\n') : t('goal.editor');
+  return view
+    ? [view.state?.goal?.objective, goalStatusText(view)].filter(Boolean).join('\n')
+    : t('goal.editor');
 }
 
-export function goalGuard(view: Pick<GoalView, 'threadId' | 'turnId' | 'connected'>): Pick<AppServerControlGoalSetRequest, 'expectedThreadId' | 'expectedTurnId'> {
+export function goalGuard(
+  view: Pick<GoalView, 'threadId' | 'turnId' | 'connected'>,
+): Pick<AppServerControlGoalSetRequest, 'expectedThreadId' | 'expectedTurnId'> {
   if (!view.connected || !view.threadId) throw new Error(t('goal.targetUnavailable'));
   return { expectedThreadId: view.threadId, expectedTurnId: view.turnId };
 }
 
-function currentGoalCommand(sessionId: string, threadId: string, revision: number): GoalView | null {
+function currentGoalCommand(
+  sessionId: string,
+  threadId: string,
+  revision: number,
+): GoalView | null {
   const current = views.get(sessionId);
-  if (!current || current.threadId !== threadId || current.commandRevision !== revision) return null;
+  if (!current || current.threadId !== threadId || current.commandRevision !== revision)
+    return null;
   return current;
 }
 
-export async function controlAppServerControlGoal(sessionId: string, patch: Omit<AppServerControlGoalSetRequest, 'expectedThreadId' | 'expectedTurnId'>): Promise<void> {
+export async function controlAppServerControlGoal(
+  sessionId: string,
+  patch: Omit<AppServerControlGoalSetRequest, 'expectedThreadId' | 'expectedTurnId'>,
+): Promise<void> {
   const view = views.get(sessionId);
   if (!view) return;
   const revision = view.revision;
@@ -119,8 +137,11 @@ export async function controlAppServerControlGoal(sessionId: string, patch: Omit
 
 function goalStatusText(view: GoalView): string {
   const state = view.state;
-  const parts = [view.error, view.pending || state?.pendingOperation ? t('goal.pending') : '',
-    t(`goal.${state?.confirmation ?? 'unknown'}`)];
+  const parts = [
+    view.error,
+    view.pending || state?.pendingOperation ? t('goal.pending') : '',
+    t(`goal.${state?.confirmation ?? 'unknown'}`),
+  ];
   if (state?.goal) parts.push(...goalMetrics(state.goal));
   if (state?.detail) parts.push(goalDetail(state.detail));
   return parts.filter(Boolean).join(' · ');
@@ -136,12 +157,17 @@ function goalDetail(detail: string): string {
 
 function goalMetrics(goal: NonNullable<AppServerControlGoalState['goal']>): string[] {
   const parts = [`${t('goal.status')}: ${t(`goal.state.${goal.status}`)}`];
-  const fields = [['iterations', 'iterations'], ['tokensUsed', 'tokens'], ['timeUsedSeconds', 'seconds']] as const;
+  const fields = [
+    ['iterations', 'iterations'],
+    ['tokensUsed', 'tokens'],
+    ['timeUsedSeconds', 'seconds'],
+  ] as const;
   for (const [field, label] of fields) {
     const value = goal[field];
     if (value !== null && value !== undefined) parts.push(`${t(`goal.${label}`)}: ${value}`);
   }
-  if (goal.tokenBudget !== null && goal.tokenBudget !== undefined) parts.push(`${t('goal.budget')}: ${goal.tokenBudget}`);
+  if (goal.tokenBudget !== null && goal.tokenBudget !== undefined)
+    parts.push(`${t('goal.budget')}: ${goal.tokenBudget}`);
   if (goal.lastReason) parts.push(goal.lastReason);
   return parts;
 }
@@ -149,7 +175,14 @@ function goalMetrics(goal: NonNullable<AppServerControlGoalState['goal']>): stri
 function goalStatusSelect(view: GoalView): HTMLSelectElement {
   const status = document.createElement('select');
   status.ariaLabel = t('goal.status');
-  for (const value of ['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited', 'complete']) {
+  for (const value of [
+    'active',
+    'paused',
+    'blocked',
+    'usageLimited',
+    'budgetLimited',
+    'complete',
+  ]) {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = t(`goal.state.${value}`);
@@ -181,12 +214,27 @@ function button(label: string, action: () => void): HTMLButtonElement {
 }
 
 function focusGuard(event: KeyboardEvent, modal: HTMLElement, close: () => void): void {
-  if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    close();
+    return;
+  }
   if (event.key !== 'Tab') return;
-  const controls = Array.from(modal.querySelectorAll<HTMLElement>('button:not(:disabled),textarea,select:not([hidden]),input:not([hidden])'));
-  const first = controls[0]; const last = controls[controls.length - 1];
-  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
-  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+  const controls = Array.from(
+    modal.querySelectorAll<HTMLElement>(
+      'button:not(:disabled),textarea,select:not([hidden]),input:not([hidden])',
+    ),
+  );
+  const first = controls[0];
+  const last = controls[controls.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
 }
 
 interface GoalEditorFields {
@@ -198,7 +246,10 @@ interface GoalEditorFields {
   budgetEdited: boolean;
 }
 
-function syncGoalEditorFields(fields: GoalEditorFields, state: AppServerControlGoalState | null): void {
+function syncGoalEditorFields(
+  fields: GoalEditorFields,
+  state: AppServerControlGoalState | null,
+): void {
   const goal = state?.goal;
   if (!fields.edited && goal) fields.objective.value = goal.objective;
   if (!fields.statusEdited) fields.status.value = goal?.status ?? 'active';
@@ -208,10 +259,14 @@ function syncGoalEditorFields(fields: GoalEditorFields, state: AppServerControlG
 function saveGoalEditor(sessionId: string, provider: string, fields: GoalEditorFields): void {
   const objective = fields.objective.value.trim();
   if (!objective) throw new Error(t('goal.objectiveRequired'));
-  const patch: Omit<AppServerControlGoalSetRequest, 'expectedThreadId' | 'expectedTurnId'> = { operation: 'set', objective };
+  const patch: Omit<AppServerControlGoalSetRequest, 'expectedThreadId' | 'expectedTurnId'> = {
+    operation: 'set',
+    objective,
+  };
   if (provider === 'codex') {
     const value = fields.budget.value ? Number(fields.budget.value) : null;
-    if (value !== null && (!Number.isSafeInteger(value) || value < 0)) throw new Error(t('goal.invalidBudget'));
+    if (value !== null && (!Number.isSafeInteger(value) || value < 0))
+      throw new Error(t('goal.invalidBudget'));
     patch.status = fields.status.value;
     patch.tokenBudget = value;
   }
@@ -232,51 +287,108 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
   const initial = views.get(sessionId);
   if (!initial) return;
   const priorFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  const overlay = document.createElement('div'); overlay.className = 'modal-overlay agent-goal-overlay';
-  const modal = document.createElement('div'); modal.className = 'modal agent-goal-editor';
-  modal.setAttribute('role', 'dialog'); modal.setAttribute('aria-modal', 'true'); modal.ariaLabel = t('goal.editor');
-  const header = document.createElement('div'); header.className = 'modal-header'; header.textContent = t('goal.editor');
-  const body = document.createElement('div'); body.className = 'modal-body';
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay agent-goal-overlay';
+  const modal = document.createElement('div');
+  modal.className = 'modal agent-goal-editor';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.ariaLabel = t('goal.editor');
+  const header = document.createElement('div');
+  header.className = 'modal-header';
+  header.textContent = t('goal.editor');
+  const body = document.createElement('div');
+  body.className = 'modal-body';
   const current = document.createElement('p');
-  const readback = document.createElement('p'); readback.className = 'agent-goal-status'; readback.setAttribute('role', 'status');
-  const scope = document.createElement('p'); scope.className = 'agent-goal-scope';
+  const readback = document.createElement('p');
+  readback.className = 'agent-goal-status';
+  readback.setAttribute('role', 'status');
+  const scope = document.createElement('p');
+  scope.className = 'agent-goal-scope';
   scope.textContent = t(initial.provider === 'claude' ? 'goal.scopeClaude' : 'goal.scopeCodex');
-  const objective = document.createElement('textarea'); objective.className = 'agent-goal-objective'; objective.rows = 4;
-  objective.ariaLabel = t('goal.objective'); objective.placeholder = t('goal.objective');
+  const objective = document.createElement('textarea');
+  objective.className = 'agent-goal-objective';
+  objective.rows = 4;
+  objective.ariaLabel = t('goal.objective');
+  objective.placeholder = t('goal.objective');
   objective.value = drafts.get(sessionId) ?? initial.state?.goal?.objective ?? '';
 
   const status = goalStatusSelect(initial);
   const budget = goalBudgetInput(initial);
-  const fields: GoalEditorFields = { objective, status, budget, edited: drafts.has(sessionId), statusEdited: false, budgetEdited: false };
-  objective.addEventListener('input', () => { fields.edited = true; drafts.set(sessionId, objective.value); });
-  status.addEventListener('change', () => { fields.statusEdited = true; });
-  budget.addEventListener('input', () => { fields.budgetEdited = true; });
-  const footer = document.createElement('div'); footer.className = 'modal-footer';
-  let release = (): void => { /* Registered after mounting. */ };
-  const close = (): void => { drafts.set(sessionId, objective.value); window.removeEventListener(GOAL_CHANGED_EVENT, render);
-    release(); overlay.remove(); if (priorFocus?.isConnected) priorFocus.focus({ preventScroll: true }); };
+  const fields: GoalEditorFields = {
+    objective,
+    status,
+    budget,
+    edited: drafts.has(sessionId),
+    statusEdited: false,
+    budgetEdited: false,
+  };
+  objective.addEventListener('input', () => {
+    fields.edited = true;
+    drafts.set(sessionId, objective.value);
+  });
+  status.addEventListener('change', () => {
+    fields.statusEdited = true;
+  });
+  budget.addEventListener('input', () => {
+    fields.budgetEdited = true;
+  });
+  const footer = document.createElement('div');
+  footer.className = 'modal-footer';
+  let release = (): void => {
+    /* Registered after mounting. */
+  };
+  const close = (): void => {
+    drafts.set(sessionId, objective.value);
+    window.removeEventListener(GOAL_CHANGED_EVENT, render);
+    release();
+    overlay.remove();
+    if (priorFocus?.isConnected) priorFocus.focus({ preventScroll: true });
+  };
   const save = button(t('goal.apply'), () => {
-    try { saveGoalEditor(sessionId, initial.provider, fields); }
-    catch (error) { readback.textContent = error instanceof Error ? error.message : t('goal.unconfirmed'); }
+    try {
+      saveGoalEditor(sessionId, initial.provider, fields);
+    } catch (error) {
+      readback.textContent = error instanceof Error ? error.message : t('goal.unconfirmed');
+    }
   });
-  const refresh = button(t('goal.refresh'), () => { void controlAppServerControlGoal(sessionId, { operation: 'get' }); });
-  const stop = button(t(initial.provider === 'claude' ? 'goal.interruptAndStop' : 'goal.stop'), () => {
-    void controlAppServerControlGoal(sessionId, { operation: 'clear', interruptActiveTurn: initial.provider === 'claude' });
+  const refresh = button(t('goal.refresh'), () => {
+    void controlAppServerControlGoal(sessionId, { operation: 'get' });
   });
+  const stop = button(
+    t(initial.provider === 'claude' ? 'goal.interruptAndStop' : 'goal.stop'),
+    () => {
+      void controlAppServerControlGoal(sessionId, {
+        operation: 'clear',
+        interruptActiveTurn: initial.provider === 'claude',
+      });
+    },
+  );
   footer.append(refresh, button(t('dialog.cancel'), close), stop, save);
-  body.append(current, readback, scope, objective, status, budget); modal.append(header, body, footer); overlay.append(modal);
+  body.append(current, readback, scope, objective, status, budget);
+  modal.append(header, body, footer);
+  overlay.append(modal);
   function render(): void {
-    const view = views.get(sessionId); if (!view) return;
+    const view = views.get(sessionId);
+    if (!view) return;
     const goal = view.state?.goal;
     syncGoalEditorFields(fields, view.state);
-    current.textContent = goal ? `${t('goal.current')}: ${goal.objective}` : t(view.state?.confirmation === 'confirmed' ? 'goal.none' : 'goal.unknown');
+    current.textContent = goal
+      ? `${t('goal.current')}: ${goal.objective}`
+      : t(view.state?.confirmation === 'confirmed' ? 'goal.none' : 'goal.unknown');
     readback.textContent = goalStatusText(view);
     const waiting = view.pending || Boolean(view.state?.pendingOperation);
     save.disabled = refresh.disabled = goalEditorUnavailable(view) || waiting;
     stop.disabled = !canStopGoal(view);
   }
-  overlay.addEventListener('keydown', (event) => { focusGuard(event, modal, close); });
-  document.body.append(overlay); release = registerBackButtonLayer(close);
-  window.addEventListener(GOAL_CHANGED_EVENT, render); render(); objective.focus();
-  if (!initial.pending && !initial.state?.pendingOperation) void controlAppServerControlGoal(sessionId, { operation: 'get' });
+  overlay.addEventListener('keydown', (event) => {
+    focusGuard(event, modal, close);
+  });
+  document.body.append(overlay);
+  release = registerBackButtonLayer(close);
+  window.addEventListener(GOAL_CHANGED_EVENT, render);
+  render();
+  objective.focus();
+  if (!initial.pending && !initial.state?.pendingOperation)
+    void controlAppServerControlGoal(sessionId, { operation: 'get' });
 }

@@ -21,7 +21,12 @@ import {
   $settingsOpen,
   $voiceAvailable,
 } from '../../stores';
-import { GOAL_CHANGED_EVENT, goalControlLabel, goalControlTitle, openAppServerControlGoalEditor } from '../appServerControl/goals';
+import {
+  GOAL_CHANGED_EVENT,
+  goalControlLabel,
+  goalControlTitle,
+  openAppServerControlGoalEditor,
+} from '../appServerControl/goals';
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';

@@ -28,7 +28,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime
             var state = _latestCodexGoal?.Clone() ?? new AppServerControlGoalState { ThreadId = threadId };
             state.Confirmation = "unconfirmed";
             state.Detail = error.Message;
-            _emit(CreateEvent("thread.goal.changed", null, null, null, "codex.app-server", "thread/goal/get", new { error = error.Message },
+            _emit(CreateEvent("thread.goal.changed", null, null, null, "codex.app-server", "thread/goal/get", default,
                 e => e.GoalUpdated = state));
         }
     }

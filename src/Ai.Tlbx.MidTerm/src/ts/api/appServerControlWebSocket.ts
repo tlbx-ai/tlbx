@@ -677,10 +677,18 @@ export async function setAppServerControlGoalWs(
   sessionId: string,
   request: AppServerControlGoalSetRequest,
 ): Promise<AppServerControlGoalResponse> {
-  const response = await requestCommandAccepted(`thread.goal.${request.operation ?? 'set'}`, sessionId, { goalSet: request });
+  const response = await requestCommandAccepted(
+    `thread.goal.${request.operation ?? 'set'}`,
+    sessionId,
+    { goalSet: request },
+  );
   const receipt = response.goal;
-  if (!receipt || receipt.sessionId !== sessionId || (receipt.status !== 'targetUnavailable' &&
-      (receipt.threadId !== request.expectedThreadId || receipt.turnId !== request.expectedTurnId)))
+  if (
+    !receipt ||
+    receipt.sessionId !== sessionId ||
+    (receipt.status !== 'targetUnavailable' &&
+      (receipt.threadId !== request.expectedThreadId || receipt.turnId !== request.expectedTurnId))
+  )
     throw createAppServerControlWsError('Native goal acknowledgement did not match its target.');
   return receipt;
 }
