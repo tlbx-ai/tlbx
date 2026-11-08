@@ -34,7 +34,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private const string TailRetentionMarker = "... earlier output omitted ...";
     private const string HeadRetentionMarker = "... output truncated ...";
     private readonly ConcurrentDictionary<string, SessionAppServerControlHistoryLog> _logs = new(StringComparer.Ordinal);
-    private readonly string _storeDirectory;
+    private readonly string? _storeDirectory;
     private readonly bool _screenLoggingEnabled;
     private readonly string? _screenLogDirectory;
 
@@ -51,8 +51,8 @@ public sealed partial class SessionAppServerControlHistoryService
         _storeDirectory = storeDirectory ??
                           (settingsService is not null
                               ? Path.Combine(settingsService.SettingsDirectory, "appServerControl-history")
-                              : Path.Combine(Path.GetTempPath(), "midterm-appServerControl-history", Guid.NewGuid().ToString("N")));
-        Directory.CreateDirectory(_storeDirectory);
+                              : null);
+        if (_storeDirectory is not null) Directory.CreateDirectory(_storeDirectory);
 
         _screenLoggingEnabled = enableScreenLogging ??
                                 (settingsService is not null &&
@@ -443,6 +443,7 @@ public sealed partial class SessionAppServerControlHistoryService
     private bool TryLoadLog(string sessionId, out SessionAppServerControlHistoryLog log)
     {
         log = new SessionAppServerControlHistoryLog(sessionId);
+        if (_storeDirectory is null) return false;
         if (TryLoadPersistedState(sessionId, log))
         {
             return true;
@@ -524,6 +525,11 @@ public sealed partial class SessionAppServerControlHistoryService
         var shouldSchedule = false;
         lock (log.SyncRoot)
         {
+            if (_storeDirectory is null)
+            {
+                log.PersistenceDirty = false;
+                return;
+            }
             if (!log.PersistenceScheduled)
             {
                 log.PersistenceScheduled = true;
@@ -583,6 +589,7 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private void TryDeleteStore(string sessionId)
     {
+        if (_storeDirectory is null) return;
         var statePath = GetStateStorePath(sessionId);
         if (File.Exists(statePath))
         {
@@ -617,13 +624,13 @@ public sealed partial class SessionAppServerControlHistoryService
     private string GetStateStorePath(string sessionId)
     {
         var safeName = Uri.EscapeDataString(sessionId);
-        return Path.Combine(_storeDirectory, $"{safeName}.json");
+        return Path.Combine(_storeDirectory ?? throw new InvalidOperationException("History persistence is disabled."), $"{safeName}.json");
     }
 
     private string GetLegacyEventStorePath(string sessionId)
     {
         var safeName = Uri.EscapeDataString(sessionId);
-        return Path.Combine(_storeDirectory, $"{safeName}.ndjson");
+        return Path.Combine(_storeDirectory ?? throw new InvalidOperationException("History persistence is disabled."), $"{safeName}.ndjson");
     }
 
     private void PersistScreenLogDelta(SessionAppServerControlHistoryLog log, AppServerControlHistoryPatch delta)
