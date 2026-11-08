@@ -39,11 +39,21 @@ export async function prepareSmartInputOutboundPrompt(
 ): Promise<PreparedSmartInputOutboundPrompt> {
   args = { ...args, draft: cloneSmartInputComposerDraft(args.draft) };
   const ordered = orderedRichAttachments(args.draft, args.attachments);
-  const uploadedPaths = await Promise.all(ordered.map((attachment) => ensureUploadedAttachmentPath(args, attachment)));
+  const uploadedPaths = await Promise.all(
+    ordered.map((attachment) => ensureUploadedAttachmentPath(args, attachment)),
+  );
   const attachmentPathById = new Map<string, string>();
-  ordered.forEach((attachment, index) => attachmentPathById.set(attachment.id, uploadedPaths[index] ?? ''));
-  const attachments = ordered.filter((attachment) => attachment.referenceKind !== 'text')
-    .map((attachment) => toAppServerControlAttachmentReference(attachment, attachmentPathById.get(attachment.id) ?? ''));
+  ordered.forEach((attachment, index) =>
+    attachmentPathById.set(attachment.id, uploadedPaths[index] ?? ''),
+  );
+  const attachments = ordered
+    .filter((attachment) => attachment.referenceKind !== 'text')
+    .map((attachment) =>
+      toAppServerControlAttachmentReference(
+        attachment,
+        attachmentPathById.get(attachment.id) ?? '',
+      ),
+    );
 
   const referencedTextBlocks: string[] = [];
   const seenExtraReferenceIds = new Set<string>();
@@ -71,7 +81,8 @@ export async function prepareSmartInputOutboundPrompt(
 }
 
 export function orderedRichAttachments(
-  draft: SmartInputComposerDraft, attachments: readonly AppServerControlComposerDraftAttachment[],
+  draft: SmartInputComposerDraft,
+  attachments: readonly AppServerControlComposerDraftAttachment[],
 ): AppServerControlComposerDraftAttachment[] {
   if (!draft.richDoc) return [...attachments];
   const seen = new Set<string>();
@@ -79,7 +90,10 @@ export function orderedRichAttachments(
   for (const part of cloneSmartInputComposerDraft(draft).parts) {
     if (part.kind !== 'reference' || seen.has(part.referenceId)) continue;
     const attachment = attachments.find((entry) => entry.id === part.referenceId);
-    if (attachment) { ordered.push(attachment); seen.add(attachment.id); }
+    if (attachment) {
+      ordered.push(attachment);
+      seen.add(attachment.id);
+    }
   }
   return ordered;
 }

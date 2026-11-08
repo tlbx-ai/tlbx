@@ -1,4 +1,9 @@
-import { draftFromRichDocument, getRichComposerDocument, pruneRichComposerDraft, type SmartInputRichDocument } from './richComposerDocument';
+import {
+  draftFromRichDocument,
+  getRichComposerDocument,
+  pruneRichComposerDraft,
+  type SmartInputRichDocument,
+} from './richComposerDocument';
 export type SmartInputComposerReferenceKind = 'image' | 'file' | 'text';
 
 export interface SmartInputComposerSelection {
@@ -52,7 +57,8 @@ export function createSmartInputComposerDraft(text: string = ''): SmartInputComp
 export function cloneSmartInputComposerDraft(
   draft: SmartInputComposerDraft,
 ): SmartInputComposerDraft {
-  if (draft.richDoc) return draftFromRichDocument(draft, getRichComposerDocument(draft), draft.richDoc.selection);
+  if (draft.richDoc)
+    return draftFromRichDocument(draft, getRichComposerDocument(draft), draft.richDoc.selection);
   return {
     nextOrdinalByKind: { ...draft.nextOrdinalByKind },
     parts: draft.parts.map((part) => ({ ...part })),

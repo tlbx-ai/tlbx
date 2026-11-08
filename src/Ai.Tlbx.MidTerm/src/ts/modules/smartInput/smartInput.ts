@@ -513,7 +513,10 @@ function createCurrentPromptHistoryEntry(sessionId: string): SmartInputPromptHis
   return {
     composerDraft: cloneSmartInputComposerDraft(getSessionDraft(sessionId)),
     attachments: cloneAppServerControlComposerDraftAttachments(
-      orderedRichAttachments(getSessionDraft(sessionId), getAppServerControlDraftAttachments(sessionId)),
+      orderedRichAttachments(
+        getSessionDraft(sessionId),
+        getAppServerControlDraftAttachments(sessionId),
+      ),
     ),
     quickSettings: getPromptHistoryQuickSettingsSnapshot(sessionId),
   };
@@ -612,17 +615,34 @@ function handleRichComposerKeydown(event: KeyboardEvent): boolean {
     else if (sessionId) void handleAppServerControlEscape(sessionId);
     return true;
   }
-  if (shouldInsertLineBreakOnEnter(event)) { event.preventDefault(); richComposer?.insertText('\n'); return true; }
-  if (shouldSubmitSmartInputOnEnter(event) && activeTextarea) { event.preventDefault(); void sendText(activeTextarea); return true; }
+  if (shouldInsertLineBreakOnEnter(event)) {
+    event.preventDefault();
+    richComposer?.insertText('\n');
+    return true;
+  }
+  if (shouldSubmitSmartInputOnEnter(event) && activeTextarea) {
+    event.preventDefault();
+    void sendText(activeTextarea);
+    return true;
+  }
   return false;
 }
 
 async function stageRichComposerFile(
-  sessionId: string, file: File, original?: AppServerControlComposerDraftAttachment, signal?: AbortSignal,
+  sessionId: string,
+  file: File,
+  original?: AppServerControlComposerDraftAttachment,
+  signal?: AbortSignal,
 ): Promise<AppServerControlComposerDraftAttachment> {
-  const path = await uploadRichComposerFile({ sessionId, file, uploadFile,
-    ...(original ? { originalPath: original.uploadedPath } : {}), ...(signal ? { signal } : {}),
-    tooLarge: t('smartInput.imageTooLarge'), failed: t('smartInput.attachmentUploadFailed') });
+  const path = await uploadRichComposerFile({
+    sessionId,
+    file,
+    uploadFile,
+    ...(original ? { originalPath: original.uploadedPath } : {}),
+    ...(signal ? { signal } : {}),
+    tooLarge: t('smartInput.imageTooLarge'),
+    failed: t('smartInput.attachmentUploadFailed'),
+  });
   const attachment = isAppServerControlComposerImageFile(file)
     ? createImageDraftAttachmentWithReference(sessionId, file, path)
     : createAppServerControlComposerDraftAttachment(sessionId, file, path);
@@ -631,27 +651,45 @@ async function stageRichComposerFile(
     attachment.referenceOrdinal = allocateSessionReferenceOrdinal(sessionId, 'file');
     attachment.referenceLabel = formatSmartInputReferenceLabel('file', attachment.referenceOrdinal);
   }
-  setAppServerControlDraftAttachments(sessionId, [...getAppServerControlDraftAttachments(sessionId), attachment]);
+  setAppServerControlDraftAttachments(sessionId, [
+    ...getAppServerControlDraftAttachments(sessionId),
+    attachment,
+  ]);
   return attachment;
 }
 
 async function stageRichComposerText(
-  sessionId: string, text: string, signal: AbortSignal,
+  sessionId: string,
+  text: string,
+  signal: AbortSignal,
 ): Promise<AppServerControlComposerDraftAttachment> {
   const file = buildSmartInputTextReferenceFile(text);
-  const path = await uploadRichComposerFile({ sessionId, file, uploadFile, signal,
-    tooLarge: t('smartInput.imageTooLarge'), failed: t('smartInput.attachmentUploadFailed') });
+  const path = await uploadRichComposerFile({
+    sessionId,
+    file,
+    uploadFile,
+    signal,
+    tooLarge: t('smartInput.imageTooLarge'),
+    failed: t('smartInput.attachmentUploadFailed'),
+  });
   const attachment = createTextDraftAttachmentWithReference(sessionId, file, path, text);
-  setAppServerControlDraftAttachments(sessionId, [...getAppServerControlDraftAttachments(sessionId), attachment]);
+  setAppServerControlDraftAttachments(sessionId, [
+    ...getAppServerControlDraftAttachments(sessionId),
+    attachment,
+  ]);
   return attachment;
 }
 
 function syncRichComposerInputLock(): void {
   const sessionId = $activeSessionId.get();
-  const locked = Boolean(sessionId && richComposer?.isActive(sessionId) && richComposer.isSubmitting(sessionId));
+  const locked = Boolean(
+    sessionId && richComposer?.isActive(sessionId) && richComposer.isSubmitting(sessionId),
+  );
   if (sharedAttachInput) sharedAttachInput.disabled = locked;
   if (sharedPhotoInput) sharedPhotoInput.disabled = locked;
-  for (const button of footerDock?.querySelectorAll<HTMLButtonElement>('[data-tool="attach"], [data-tool="photo"]') ?? [])
+  for (const button of footerDock?.querySelectorAll<HTMLButtonElement>(
+    '[data-tool="attach"], [data-tool="photo"]',
+  ) ?? [])
     button.disabled = locked;
 }
 
@@ -661,16 +699,28 @@ function initializeRichComposer(textarea: HTMLTextAreaElement): void {
       if (edited) resetPromptHistoryNavigation(sessionId);
       const previous = getSessionDraft(sessionId);
       for (const kind of ['image', 'file', 'text'] as const)
-        draft.nextOrdinalByKind[kind] = Math.max(draft.nextOrdinalByKind[kind] ?? 1, previous.nextOrdinalByKind[kind] ?? 1);
+        draft.nextOrdinalByKind[kind] = Math.max(
+          draft.nextOrdinalByKind[kind] ?? 1,
+          previous.nextOrdinalByKind[kind] ?? 1,
+        );
       setSessionDraft(sessionId, draft);
       if ($activeSessionId.get() === sessionId) textarea.value = getSessionDraftText(sessionId);
       queueFooterReserveSync();
     },
     keydown: handleRichComposerKeydown,
     submissionChanged: syncRichComposerInputLock,
-    focus: () => { queueFooterReserveSync(); requestAnimationFrame(() => { scrollFooterDockForTextareaFocus(); }); },
-    stageFile: stageRichComposerFile, stageText: stageRichComposerText, attachments: getAppServerControlDraftAttachments,
-    open: (sessionId, attachment) => { void openAppServerControlDraftAttachment(sessionId, attachment); },
+    focus: () => {
+      queueFooterReserveSync();
+      requestAnimationFrame(() => {
+        scrollFooterDockForTextareaFocus();
+      });
+    },
+    stageFile: stageRichComposerFile,
+    stageText: stageRichComposerText,
+    attachments: getAppServerControlDraftAttachments,
+    open: (sessionId, attachment) => {
+      void openAppServerControlDraftAttachment(sessionId, attachment);
+    },
     pending: enqueueComposerPendingOperation,
   });
   textarea.before(richComposer.host);
@@ -683,8 +733,16 @@ function getSessionDraft(sessionId: string | null): SmartInputComposerDraft {
 
   if (!sessionDrafts.has(sessionId)) {
     const persisted = loadSmartInputCurrentDraft(sessionId);
-    if (persisted) sessionDrafts.set(sessionId, pruneSmartInputComposerReferences(persisted,
-      new Set(getAppServerControlDraftAttachments(sessionId).map((attachment) => attachment.id))));
+    if (persisted)
+      sessionDrafts.set(
+        sessionId,
+        pruneSmartInputComposerReferences(
+          persisted,
+          new Set(
+            getAppServerControlDraftAttachments(sessionId).map((attachment) => attachment.id),
+          ),
+        ),
+      );
   }
   return sessionDrafts.get(sessionId) ?? createSmartInputComposerDraft();
 }
@@ -1214,7 +1272,8 @@ export function hideSmartInput(): void {
 }
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   ensureFooterHosts();
-  const preserveTextareaFocus = document.activeElement === activeTextarea || (richComposer?.hasFocus() ?? false);
+  const preserveTextareaFocus =
+    document.activeElement === activeTextarea || (richComposer?.hasFocus() ?? false);
 
   const layoutState = getAdaptiveFooterLayoutState();
   if (!layoutState.showFooter) {
@@ -1324,7 +1383,8 @@ function syncComposerExpandedPresentation(layoutState: AdaptiveFooterLayoutState
 
   const textarea = activeTextarea;
   const preserveScrollTop = textarea.scrollTop;
-  const preserveComposerFocus = document.activeElement === textarea || (richComposer?.hasFocus() ?? false);
+  const preserveComposerFocus =
+    document.activeElement === textarea || (richComposer?.hasFocus() ?? false);
   requestAnimationFrame(() => {
     resizeSmartInputTextarea(textarea, { preserveScrollTop });
     if (preserveComposerFocus || shouldAllowProgrammaticSmartInputFocus()) {
@@ -2261,7 +2321,10 @@ function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {
 
 function renderAppServerControlAttachmentDrafts(sessionId: string | null): void {
   renderAppServerControlAttachmentDraftView({
-    attachments: sessionId && !isAppServerControlActiveSession(sessionId) ? getAppServerControlDraftAttachments(sessionId) : [],
+    attachments:
+      sessionId && !isAppServerControlActiveSession(sessionId)
+        ? getAppServerControlDraftAttachments(sessionId)
+        : [],
     host: appServerControlAttachmentHost,
     onOpenAttachment: (currentSessionId, attachment) => {
       void openAppServerControlDraftAttachment(currentSessionId, attachment);
@@ -2283,7 +2346,10 @@ function finalizeInsertedComposerReferences(
   selection: SmartInputComposerSelection,
   insertedReferenceIds: readonly string[],
 ): void {
-  if (richComposer?.isActive(sessionId)) { richComposer.insertReferences(sessionId, insertedReferenceIds); return; }
+  if (richComposer?.isActive(sessionId)) {
+    richComposer.insertReferences(sessionId, insertedReferenceIds);
+    return;
+  }
   if (insertedReferenceIds.length === 0) {
     if ($activeSessionId.get() === sessionId) {
       renderSessionDraftIntoTextarea(sessionId, activeTextarea);
@@ -2317,7 +2383,10 @@ async function addAppServerControlComposerFiles(
   files: readonly File[],
   selection: SmartInputComposerSelection | null = null,
 ): Promise<void> {
-  if (richComposer?.isActive(sessionId)) { richComposer.insertFiles(sessionId, files); return; }
+  if (richComposer?.isActive(sessionId)) {
+    richComposer.insertFiles(sessionId, files);
+    return;
+  }
   resetPromptHistoryNavigation(sessionId);
   const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
   const nextSelection =
@@ -2513,7 +2582,10 @@ function insertComposerTextAtSelection(
   textarea: HTMLTextAreaElement | null,
   text: string,
 ): void {
-  if (richComposer?.isActive(sessionId)) { richComposer.insertText(text); return; }
+  if (richComposer?.isActive(sessionId)) {
+    richComposer.insertText(text);
+    return;
+  }
   resetPromptHistoryNavigation(sessionId);
   const targetTextarea = textarea ?? activeTextarea;
   if (!targetTextarea) {
@@ -2692,15 +2764,22 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
   try {
     await waitForComposerPasteStagingToSettle(sessionId);
     if (!isCurrentDocument()) return;
-    if (editor.hasUnresolvedInput(sessionId)) throw new Error(t('smartInput.attachmentUploadFailed'));
+    if (editor.hasUnresolvedInput(sessionId))
+      throw new Error(t('smartInput.attachmentUploadFailed'));
     const draft = cloneSmartInputComposerDraft(getSessionDraft(sessionId));
     const ids = new Set(getSmartInputComposerReferenceIds(draft));
-    const attachments = cloneAppServerControlComposerDraftAttachments(getAppServerControlDraftAttachments(sessionId).filter((entry) => ids.has(entry.id)));
+    const attachments = cloneAppServerControlComposerDraftAttachments(
+      getAppServerControlDraftAttachments(sessionId).filter((entry) => ids.has(entry.id)),
+    );
     const text = getSessionDraftText(sessionId);
     if (!text && attachments.length === 0) return;
     const { queuedTurn } = await submitAppServerControlComposerDraft({
-      sessionId, draft, attachments, uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
-      attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'), uploadFile,
+      sessionId,
+      draft,
+      attachments,
+      uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
+      attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
+      uploadFile,
       createTurnRequest: createAppServerControlTurnRequest,
       submitQueuedTurn: (targetSessionId, request) => {
         if (!isCurrentDocument()) throw new Error(t('smartInput.richTargetChanged'));
@@ -2723,10 +2802,18 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
 async function sendText(ta: HTMLTextAreaElement): Promise<void> {
   const sessionId = $activeSessionId.get();
   if (!sessionId) return;
-  if (isAppServerControlActiveSession(sessionId)) { await sendRichComposerTurn(sessionId, ta); return; }
+  if (isAppServerControlActiveSession(sessionId)) {
+    await sendRichComposerTurn(sessionId, ta);
+    return;
+  }
   await waitForComposerPasteStagingToSettle(sessionId);
   try {
-    await sendTerminalComposerTurn(sessionId, ta, getSessionDraft(sessionId), getAppServerControlDraftAttachments(sessionId));
+    await sendTerminalComposerTurn(
+      sessionId,
+      ta,
+      getSessionDraft(sessionId),
+      getAppServerControlDraftAttachments(sessionId),
+    );
   } catch (error) {
     showDropToast(error instanceof Error ? error.message : String(error));
   }

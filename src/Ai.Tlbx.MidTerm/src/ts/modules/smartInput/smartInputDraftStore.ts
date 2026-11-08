@@ -1,4 +1,8 @@
-import { draftFromRichDocument, getRichComposerDocument, parsePersistedRichDocument } from './richComposerDocument';
+import {
+  draftFromRichDocument,
+  getRichComposerDocument,
+  parsePersistedRichDocument,
+} from './richComposerDocument';
 import type { AppServerControlQuickSettingsSummary } from '../../api/types';
 import type { AppServerControlComposerDraftAttachment } from './appServerControlAttachments';
 import {
@@ -277,8 +281,14 @@ function tryParseComposerDraft(value: unknown): SmartInputComposerDraft | null {
   }
 
   const richDoc = parsePersistedRichDocument(draft.richDoc);
-  const result: SmartInputComposerDraft = { nextOrdinalByKind, parts, ...(richDoc ? { richDoc } : {}) };
-  return richDoc ? draftFromRichDocument(result, getRichComposerDocument(result), richDoc.selection) : result;
+  const result: SmartInputComposerDraft = {
+    nextOrdinalByKind,
+    parts,
+    ...(richDoc ? { richDoc } : {}),
+  };
+  return richDoc
+    ? draftFromRichDocument(result, getRichComposerDocument(result), richDoc.selection)
+    : result;
 }
 
 function tryParsePromptHistoryQuickSettings(
@@ -539,13 +549,22 @@ export function applySessionDraftToTextarea(
 
 export function loadSmartInputCurrentDraft(sessionId: string): SmartInputComposerDraft | null {
   try {
-    return tryParseComposerDraft(JSON.parse(localStorage.getItem(`smartinput-composer:${sessionId}`) ?? 'null') as unknown);
-  } catch { return null; }
+    return tryParseComposerDraft(
+      JSON.parse(localStorage.getItem(`smartinput-composer:${sessionId}`) ?? 'null') as unknown,
+    );
+  } catch {
+    return null;
+  }
 }
 
-export function persistSmartInputCurrentDraft(sessionId: string, draft: SmartInputComposerDraft | null): void {
+export function persistSmartInputCurrentDraft(
+  sessionId: string,
+  draft: SmartInputComposerDraft | null,
+): void {
   try {
     if (draft) localStorage.setItem(`smartinput-composer:${sessionId}`, JSON.stringify(draft));
     else localStorage.removeItem(`smartinput-composer:${sessionId}`);
-  } catch { /* Keep the in-memory draft usable if browser storage is unavailable. */ }
+  } catch {
+    /* Keep the in-memory draft usable if browser storage is unavailable. */
+  }
 }

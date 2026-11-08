@@ -39,6 +39,12 @@ function tableState() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('rich composer document contracts', () => {
+  it('supports headings with attachment atoms after replacing the Markdown image node', () => {
+    const doc = richNode('doc').create(null, richNode('heading').create({ level: 2 },
+      [richComposerSchema.text('Heading '), atom('image-A')]));
+    doc.check();
+    expect(richDocumentToParts(doc).some((part) => part.kind === 'reference' && part.referenceId === 'image-A')).toBe(true);
+  });
   function annotationHarness() {
     const original = attachment('original', '/original.png'); original.previewUrl = 'original-preview';
     const doc = richNode('doc').create(null, richNode('paragraph').create(null, [atom('original'), richComposerSchema.text(' after')]));

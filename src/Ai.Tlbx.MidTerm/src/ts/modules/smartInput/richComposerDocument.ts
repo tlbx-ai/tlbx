@@ -1,5 +1,12 @@
-import { Fragment, Schema, type Node as ProseMirrorNode } from 'prosemirror-model';
-import { defaultMarkdownParser, defaultMarkdownSerializer, schema as markdownSchema, MarkdownParser, MarkdownSerializer, type MarkdownSerializerState } from 'prosemirror-markdown';
+import { Fragment, Schema, type Node as ProseMirrorNode, type NodeType } from 'prosemirror-model';
+import {
+  defaultMarkdownParser,
+  defaultMarkdownSerializer,
+  schema as markdownSchema,
+  MarkdownParser,
+  MarkdownSerializer,
+  type MarkdownSerializerState,
+} from 'prosemirror-markdown';
 import MarkdownIt from 'markdown-it';
 import { TableMap, tableNodes } from 'prosemirror-tables';
 import type { SmartInputComposerDraft, SmartInputComposerPart } from './smartInputComposerDraft';
@@ -11,30 +18,64 @@ export interface SmartInputRichDocument {
 }
 
 export function isSafeComposerLink(value: unknown): value is string {
-  if (typeof value !== 'string' || /[\\\u0000-\u0020]/.test(value) || value.startsWith('//')) return false;
+  if (
+    typeof value !== 'string' ||
+    value.includes('\\') ||
+    Array.from(value).some((char) => char.charCodeAt(0) <= 0x20) ||
+    value.startsWith('//')
+  )
+    return false;
   const scheme = /^([a-z][a-z0-9+.-]*):/i.exec(value)?.[1];
   return !scheme || ['http', 'https', 'mailto'].includes(scheme.toLowerCase());
 }
 
 const attachmentSpec = {
-  inline: true, group: 'inline', atom: true, draggable: true,
+  inline: true,
+  group: 'inline',
+  atom: true,
+  draggable: true,
   attrs: { referenceId: { validate: 'string' } },
-  toDOM: (node: ProseMirrorNode): [string, Record<string, string>, string] =>
-    ['span', { 'data-staging-ref': String(node.attrs.referenceId) }, '\uFFFC'],
-  parseDOM: [{ tag: 'span[data-staging-ref]', getAttrs: (node: HTMLElement) =>
-    ({ referenceId: node.getAttribute('data-staging-ref') ?? '' }) }],
+  toDOM: (node: ProseMirrorNode): [string, Record<string, string>, string] => [
+    'span',
+    { 'data-staging-ref': String(node.attrs.referenceId) },
+    '\uFFFC',
+  ],
+  parseDOM: [
+    {
+      tag: 'span[data-staging-ref]',
+      getAttrs: (node: HTMLElement) => ({
+        referenceId: node.getAttribute('data-staging-ref') ?? '',
+      }),
+    },
+  ],
 };
 const linkSpec = {
   ...markdownSchema.spec.marks.get('link'),
-  attrs: { href: { validate: (href: unknown) => {
-    if (!isSafeComposerLink(href)) throw new RangeError('Invalid composer link');
-  } }, title: { default: null } },
-  parseDOM: [{ tag: 'a[href]', getAttrs: (node: HTMLElement) =>
-    isSafeComposerLink(node.getAttribute('href')) ? { href: node.getAttribute('href') } : false }],
+  attrs: {
+    href: {
+      validate: (href: unknown) => {
+        if (!isSafeComposerLink(href)) throw new RangeError('Invalid composer link');
+      },
+    },
+    title: { default: null },
+  },
+  parseDOM: [
+    {
+      tag: 'a[href]',
+      getAttrs: (node: HTMLElement) =>
+        isSafeComposerLink(node.getAttribute('href')) ? { href: node.getAttribute('href') } : false,
+    },
+  ],
 };
 export const richComposerSchema = new Schema({
-  nodes: markdownSchema.spec.nodes.remove('image').addBefore('text', 'attachment', attachmentSpec)
-    .append(tableNodes({ tableGroup: 'block', cellContent: 'block+' })),
+  nodes: markdownSchema.spec.nodes
+    .remove('image')
+    .update('heading', {
+      ...markdownSchema.spec.nodes.get('heading'),
+      content: '(text | attachment)*',
+    })
+    .addBefore('text', 'attachment', attachmentSpec)
+    .append(tableNodes({ tableGroup: 'block', cellContent: 'block+', cellAttributes: {} })),
   marks: markdownSchema.spec.marks.update('link', linkSpec),
 });
 const tokenizer = new MarkdownIt('commonmark', { html: false }).enable('table');
@@ -42,8 +83,13 @@ const tokenizer = new MarkdownIt('commonmark', { html: false }).enable('table');
 // a paragraph inside every cell. Normalize tokens through the published core API.
 tokenizer.core.ruler.after('block', 'tlbx_table_cell_paragraphs', (state) => {
   state.tokens = state.tokens.flatMap((token, index, tokens) => {
-    if (token.type !== 'inline' || !['th_open', 'td_open'].includes(tokens[index - 1]?.type ?? '')) return [token];
-    return [new state.Token('paragraph_open', 'p', 1), token, new state.Token('paragraph_close', 'p', -1)];
+    if (token.type !== 'inline' || !['th_open', 'td_open'].includes(tokens[index - 1]?.type ?? ''))
+      return [token];
+    return [
+      new state.Token('paragraph_open', 'p', 1),
+      token,
+      new state.Token('paragraph_close', 'p', -1),
+    ];
   });
 });
 // An unstaged Markdown URL is text, not permission to fetch an external image.
@@ -60,12 +106,17 @@ tokenizer.core.ruler.after('inline', 'tlbx_unstaged_image_text', (state) => {
   }
 });
 const markdown = new MarkdownParser(richComposerSchema, tokenizer, {
-  ...defaultMarkdownParser.tokens, image: { ignore: true, noCloseToken: true },
-  table: { block: 'table' }, thead: { ignore: true }, tbody: { ignore: true },
-  tr: { block: 'table_row' }, th: { block: 'table_header' }, td: { block: 'table_cell' },
+  ...defaultMarkdownParser.tokens,
+  image: { ignore: true, noCloseToken: true },
+  table: { block: 'table' },
+  thead: { ignore: true },
+  tbody: { ignore: true },
+  tr: { block: 'table_row' },
+  th: { block: 'table_header' },
+  td: { block: 'table_cell' },
 });
 
-export function richNode(name: string): import('prosemirror-model').NodeType {
+export function richNode(name: string): NodeType {
   const type = richComposerSchema.nodes[name];
   if (!type) throw new RangeError(`Unknown composer node ${name}`);
   return type;
@@ -81,9 +132,14 @@ export function parsePersistedRichDocument(value: unknown): SmartInputRichDocume
     const doc = richComposerSchema.nodeFromJSON(value.doc);
     doc.check();
     if (doc.type !== richComposerSchema.topNodeType) return null;
-    return { version: 1, doc: doc.toJSON() as Record<string, unknown>,
-      ...(record(value.selection) ? { selection: value.selection } : {}) };
-  } catch { return null; }
+    return {
+      version: 1,
+      doc: doc.toJSON() as Record<string, unknown>,
+      ...(record(value.selection) ? { selection: value.selection } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function placeholderPrefix(text: string): string {
@@ -92,7 +148,11 @@ function placeholderPrefix(text: string): string {
   return prefix;
 }
 
-function replacePlaceholderText(node: ProseMirrorNode, prefix: string, ids: readonly string[]): ProseMirrorNode[] {
+function replacePlaceholderText(
+  node: ProseMirrorNode,
+  prefix: string,
+  ids: readonly string[],
+): ProseMirrorNode[] {
   if (!node.isText) {
     const children: ProseMirrorNode[] = [];
     node.forEach((child) => children.push(...replacePlaceholderText(child, prefix, ids)));
@@ -107,7 +167,8 @@ function replacePlaceholderText(node: ProseMirrorNode, prefix: string, ids: read
   for (const match of text.matchAll(pattern)) {
     const id = ids[Number(match[1])];
     if (!id) continue;
-    if (match.index > offset) result.push(richComposerSchema.text(text.slice(offset, match.index), node.marks));
+    if (match.index > offset)
+      result.push(richComposerSchema.text(text.slice(offset, match.index), node.marks));
     result.push(richNode('attachment').create({ referenceId: id }));
     offset = match.index + match[0].length;
   }
@@ -119,9 +180,15 @@ function plainLegacyDocument(parts: readonly SmartInputComposerPart[]): ProseMir
   const paragraphs: ProseMirrorNode[] = [];
   let inline: ProseMirrorNode[] = [];
   for (const part of parts) {
-    if (part.kind === 'reference') { inline.push(richNode('attachment').create({ referenceId: part.referenceId })); continue; }
+    if (part.kind === 'reference') {
+      inline.push(richNode('attachment').create({ referenceId: part.referenceId }));
+      continue;
+    }
     part.text.split(/\r\n?|\n/).forEach((line, index) => {
-      if (index > 0) { paragraphs.push(richNode('paragraph').create(null, inline)); inline = []; }
+      if (index > 0) {
+        paragraphs.push(richNode('paragraph').create(null, inline));
+        inline = [];
+      }
       if (line) inline.push(richComposerSchema.text(line));
     });
   }
@@ -132,13 +199,20 @@ function plainLegacyDocument(parts: readonly SmartInputComposerPart[]): ProseMir
 export function getRichComposerDocument(draft: SmartInputComposerDraft): ProseMirrorNode {
   const persisted = parsePersistedRichDocument(draft.richDoc);
   if (persisted) return richComposerSchema.nodeFromJSON(persisted.doc);
-  const prefix = placeholderPrefix(draft.parts.filter((part) => part.kind === 'text').map((part) => part.text).join(''));
+  const prefix = placeholderPrefix(
+    draft.parts
+      .filter((part) => part.kind === 'text')
+      .map((part) => part.text)
+      .join(''),
+  );
   const ids: string[] = [];
-  const text = draft.parts.map((part) => {
-    if (part.kind === 'text') return part.text;
-    ids.push(part.referenceId);
-    return `${prefix}${ids.length - 1}\uE001`;
-  }).join('');
+  const text = draft.parts
+    .map((part) => {
+      if (part.kind === 'text') return part.text;
+      ids.push(part.referenceId);
+      return `${prefix}${ids.length - 1}\uE001`;
+    })
+    .join('');
   const parsed = markdown.parse(text);
   const result = replacePlaceholderText(parsed, prefix, ids)[0] ?? plainLegacyDocument(draft.parts);
   const refs: string[] = [];
@@ -150,7 +224,10 @@ export function getRichComposerDocument(draft: SmartInputComposerDraft): ProseMi
   return refs.length === ids.length ? result : plainLegacyDocument(draft.parts);
 }
 
-function tableMarkdown(node: ProseMirrorNode, renderCell: (cell: ProseMirrorNode) => string): string {
+function tableMarkdown(
+  node: ProseMirrorNode,
+  renderCell: (cell: ProseMirrorNode) => string,
+): string {
   const map = TableMap.get(node);
   const seen = new Set<number>();
   const rows: string[] = [];
@@ -171,17 +248,27 @@ function tableMarkdown(node: ProseMirrorNode, renderCell: (cell: ProseMirrorNode
 export function richDocumentToParts(doc: ProseMirrorNode): SmartInputComposerPart[] {
   const prefix = placeholderPrefix(doc.textContent);
   const ids: string[] = [];
-  const serializer = new MarkdownSerializer({ ...defaultMarkdownSerializer.nodes,
-    attachment: (state: MarkdownSerializerState, node: ProseMirrorNode) => {
-      ids.push(String(node.attrs.referenceId));
-      state.write(`${prefix}${ids.length - 1}\uE001`);
+  const serializer = new MarkdownSerializer(
+    {
+      ...defaultMarkdownSerializer.nodes,
+      attachment: (state: MarkdownSerializerState, node: ProseMirrorNode) => {
+        ids.push(String(node.attrs.referenceId));
+        state.write(`${prefix}${ids.length - 1}\uE001`);
+      },
+      table: (state: MarkdownSerializerState, node: ProseMirrorNode) => {
+        state.write(
+          tableMarkdown(node, (cell) =>
+            serializer
+              .serialize(richNode('doc').create(null, cell.content))
+              .replace(/\|/g, '\\|')
+              .replace(/\n+/g, '<br>'),
+          ),
+        );
+        state.closeBlock(node);
+      },
     },
-    table: (state: MarkdownSerializerState, node: ProseMirrorNode) => {
-      state.write(tableMarkdown(node, (cell) => serializer.serialize(richNode('doc').create(null, cell.content))
-        .replace(/\|/g, '\\|').replace(/\n+/g, '<br>')));
-      state.closeBlock(node);
-    },
-  }, defaultMarkdownSerializer.marks);
+    defaultMarkdownSerializer.marks,
+  );
   const text = serializer.serialize(doc);
   const parts: SmartInputComposerPart[] = [];
   const pattern = new RegExp(`${prefix}(\\d+)\uE001`, 'g');
@@ -197,10 +284,19 @@ export function richDocumentToParts(doc: ProseMirrorNode): SmartInputComposerPar
 }
 
 export function draftFromRichDocument(
-  draft: SmartInputComposerDraft, doc: ProseMirrorNode, selection?: Record<string, unknown>,
+  draft: SmartInputComposerDraft,
+  doc: ProseMirrorNode,
+  selection?: Record<string, unknown>,
 ): SmartInputComposerDraft {
-  return { nextOrdinalByKind: { ...draft.nextOrdinalByKind }, parts: richDocumentToParts(doc),
-    richDoc: { version: 1, doc: structuredClone(doc.toJSON() as Record<string, unknown>), ...(selection ? { selection: structuredClone(selection) } : {}) } };
+  return {
+    nextOrdinalByKind: { ...draft.nextOrdinalByKind },
+    parts: richDocumentToParts(doc),
+    richDoc: {
+      version: 1,
+      doc: structuredClone(doc.toJSON() as Record<string, unknown>),
+      ...(selection ? { selection: structuredClone(selection) } : {}),
+    },
+  };
 }
 
 function pruneRichNode(node: ProseMirrorNode, ids: ReadonlySet<string>): ProseMirrorNode[] {
@@ -211,7 +307,10 @@ function pruneRichNode(node: ProseMirrorNode, ids: ReadonlySet<string>): ProseMi
   return [node.copy(Fragment.fromArray(children))];
 }
 
-export function pruneRichComposerDraft(draft: SmartInputComposerDraft, ids: ReadonlySet<string>): SmartInputComposerDraft {
+export function pruneRichComposerDraft(
+  draft: SmartInputComposerDraft,
+  ids: ReadonlySet<string>,
+): SmartInputComposerDraft {
   const doc = getRichComposerDocument(draft);
   return draftFromRichDocument(draft, pruneRichNode(doc, ids)[0] ?? doc, draft.richDoc?.selection);
 }

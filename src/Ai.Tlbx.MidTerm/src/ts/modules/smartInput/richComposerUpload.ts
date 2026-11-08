@@ -1,4 +1,7 @@
-import { MAX_APP_SERVER_CONTROL_IMAGE_BYTES, isAppServerControlComposerImageFile } from './appServerControlAttachments';
+import {
+  MAX_APP_SERVER_CONTROL_IMAGE_BYTES,
+  isAppServerControlComposerImageFile,
+} from './appServerControlAttachments';
 
 export interface RichComposerUploadOptions {
   sessionId: string;
@@ -16,7 +19,10 @@ function assertNotCancelled(signal: AbortSignal | undefined): void {
 
 export async function uploadRichComposerFile(options: RichComposerUploadOptions): Promise<string> {
   assertNotCancelled(options.signal);
-  if (isAppServerControlComposerImageFile(options.file) && options.file.size > MAX_APP_SERVER_CONTROL_IMAGE_BYTES)
+  if (
+    isAppServerControlComposerImageFile(options.file) &&
+    options.file.size > MAX_APP_SERVER_CONTROL_IMAGE_BYTES
+  )
     throw new Error(options.tooLarge);
   const path = await options.uploadFile(options.sessionId, options.file);
   assertNotCancelled(options.signal);
