@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   applyLauncherBrowserDefaults,
+  commitLauncherPathForAction,
   resolveLauncherProviderChoice,
   type LauncherBrowserPathState,
+  type LauncherPathCommitContext,
 } from './launcherInit';
 
 const defaults = { path: 'C:\\Users\\owner', homePath: 'C:\\Users\\owner', startPath: '' };
@@ -55,5 +57,82 @@ describe('launcher init defaults', () => {
   it('keeps the chosen provider when the select reports no valid option', () => {
     expect(resolveLauncherProviderChoice('codex', '')).toBe('codex');
     expect(resolveLauncherProviderChoice('codex', 'claude')).toBe('claude');
+  });
+});
+
+function createCommitHarness(draft: string) {
+  const launcher = { currentPath: '/home/owner', pathDraft: draft, targetId: 'local' };
+  const errors: string[] = [];
+  let finishLoad: (loaded: boolean) => void = () => {};
+  const context: LauncherPathCommitContext = {
+    getPathDraft: () => launcher.pathDraft,
+    getCurrentPath: () => launcher.currentPath,
+    getTargetId: () => launcher.targetId,
+    loadDirectory: (path) =>
+      new Promise<boolean>((resolve) => {
+        finishLoad = (loaded) => {
+          if (loaded) {
+            launcher.currentPath = path;
+            if (launcher.pathDraft === draft) launcher.pathDraft = path;
+          }
+          resolve(loaded);
+        };
+      }),
+    setError: (message) => errors.push(message),
+  };
+  return { launcher, errors, context, finishLoad: (loaded: boolean) => finishLoad(loaded) };
+}
+
+describe('launcher path commit before create or resume', () => {
+  it('waits for the typed path to validate instead of launching the stale home path', async () => {
+    const harness = createCommitHarness('/repos/jpa');
+    let result: string | null | undefined;
+    const pending = commitLauncherPathForAction(harness.context, 'Path is required').then(
+      (value) => {
+        result = value;
+      },
+    );
+
+    await Promise.resolve();
+    expect(result).toBeUndefined();
+    harness.finishLoad(true);
+    await pending;
+    expect(result).toBe('/repos/jpa');
+  });
+
+  it('does not launch an unreachable path and keeps the home path untouched', async () => {
+    const harness = createCommitHarness('/missing');
+    const pending = commitLauncherPathForAction(harness.context, 'Path is required');
+    harness.finishLoad(false);
+
+    expect(await pending).toBeNull();
+    expect(harness.launcher.currentPath).toBe('/home/owner');
+    expect(harness.launcher.pathDraft).toBe('/missing');
+  });
+
+  it('does not launch for the old target when the target changes during validation', async () => {
+    const harness = createCommitHarness('/repos/jpa');
+    const pending = commitLauncherPathForAction(harness.context, 'Path is required');
+    harness.launcher.targetId = 'hub:other';
+    harness.finishLoad(true);
+
+    expect(await pending).toBeNull();
+  });
+
+  it('keeps newer typing and does not launch the path validated before it', async () => {
+    const harness = createCommitHarness('/repos/jpa');
+    const pending = commitLauncherPathForAction(harness.context, 'Path is required');
+    harness.launcher.pathDraft = '/repos/jpa/agent';
+    harness.finishLoad(true);
+
+    expect(await pending).toBeNull();
+    expect(harness.launcher.pathDraft).toBe('/repos/jpa/agent');
+  });
+
+  it('reports a missing path without loading anything', async () => {
+    const harness = createCommitHarness('   ');
+
+    expect(await commitLauncherPathForAction(harness.context, 'Path is required')).toBeNull();
+    expect(harness.errors).toEqual(['Path is required']);
   });
 });

@@ -44,6 +44,39 @@ export function applyLauncherBrowserDefaults<TEntry>(
   return userPath || requestedPath?.trim() || startPath;
 }
 
+export interface LauncherPathCommitContext {
+  getPathDraft: () => string;
+  getCurrentPath: () => string;
+  getTargetId: () => string;
+  loadDirectory: (path: string) => Promise<boolean>;
+  setError: (message: string) => void;
+}
+
+/**
+ * Validates the typed path before a create/resume action uses it. Returns null when the path is
+ * missing or unreachable, the target changed, or the user kept typing while it was validated.
+ */
+export async function commitLauncherPathForAction(
+  context: LauncherPathCommitContext,
+  requiredMessage: string,
+): Promise<string | null> {
+  const targetId = context.getTargetId();
+  const candidatePath = context.getPathDraft().trim();
+  if (!candidatePath) {
+    context.setError(requiredMessage);
+    return null;
+  }
+
+  if (candidatePath !== context.getCurrentPath() && !(await context.loadDirectory(candidatePath))) {
+    return null;
+  }
+
+  const committedPath = context.getCurrentPath();
+  return context.getTargetId() === targetId && context.getPathDraft().trim() === committedPath
+    ? committedPath
+    : null;
+}
+
 export function resolveLauncherProviderChoice(current: string, selectedValue: string): string {
   return selectedValue.trim() ? selectedValue : current;
 }

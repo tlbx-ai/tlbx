@@ -3,7 +3,11 @@ import type { AgentControllerInstallation } from '../../api/types';
 import { showTextPrompt } from '../../utils/dialog';
 import { JS_BUILD_VERSION } from '../../constants';
 import { t } from '../i18n';
-import { applyLauncherBrowserDefaults, resolveLauncherProviderChoice } from './launcherInit';
+import {
+  applyLauncherBrowserDefaults,
+  commitLauncherPathForAction,
+  resolveLauncherProviderChoice,
+} from './launcherInit';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '../hub/runtime';
 import type { HubMachineState } from '../hub/types';
@@ -283,20 +287,17 @@ async function promptForLauncherRepositoryUrl(): Promise<string | null> {
 async function ensureCommittedLauncherPath(
   context: LauncherLocalActionContext,
 ): Promise<string | null> {
-  const candidatePath = context.getPathDraft().trim();
-  if (!candidatePath) {
-    context.setError('Path is required');
-    return null;
-  }
-
-  if (candidatePath !== context.getCurrentPath()) {
-    const loaded = await context.loadDirectory(candidatePath);
-    if (!loaded) {
-      return null;
-    }
-  }
-
-  return context.getCurrentPath();
+  context.clearPendingPathFollow();
+  return commitLauncherPathForAction(
+    {
+      getPathDraft: () => context.getPathDraft(),
+      getCurrentPath: () => context.getCurrentPath(),
+      getTargetId: () => context.getTarget().id,
+      loadDirectory: (path) => context.loadDirectory(path),
+      setError: (message) => context.setError(message),
+    },
+    'Path is required',
+  );
 }
 
 async function ensureWritableLauncherDirectory(
@@ -561,9 +562,12 @@ function applyLauncherDirectoryResponse(
   response: LauncherDirectoryListResponse,
   previousPath: string,
   recordHistory: boolean | undefined,
+  requestedDraft: string,
 ): void {
   state.currentPath = response.path;
-  state.pathDraft = response.path;
+  if (state.pathDraft === requestedDraft) {
+    state.pathDraft = response.path;
+  }
   state.parentPath = response.parentPath;
   state.entries = response.entries;
   if (
@@ -869,6 +873,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       const target = options?.target ?? getSelectedTarget();
       const targetId = target.id;
       const previousPath = state.currentPath;
+      const requestedDraft = state.pathDraft;
       const requestToken = beginLauncherDirectoryLoad(state, options?.suppressErrors, render);
 
       try {
@@ -877,7 +882,13 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           return false;
         }
 
-        applyLauncherDirectoryResponse(state, response, previousPath, options?.recordHistory);
+        applyLauncherDirectoryResponse(
+          state,
+          response,
+          previousPath,
+          options?.recordHistory,
+          requestedDraft,
+        );
         return true;
       } catch (error) {
         if (isLauncherRequestStale(state, requestToken, targetId)) {
@@ -1009,18 +1020,20 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         renderProviders();
       });
 
-    function launch(
+    async function launch(
       provider: LauncherProvider,
       launchMode: LauncherLaunchMode,
       resumeThreadId?: string | null,
       resumeWorkingDirectory?: string | null,
-    ): void {
+    ): Promise<void> {
       const target = getSelectedTarget();
       if (!isProviderSupportedOnTarget(provider, target)) {
         return;
       }
 
-      if (state.loading || !state.currentPath) {
+      const workingDirectory =
+        resumeWorkingDirectory?.trim() || (await ensureCommittedLauncherPath(localActionContext));
+      if (!workingDirectory || state.selectedTargetId !== target.id) {
         return;
       }
 
@@ -1029,7 +1042,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       close({
         provider,
         launchMode,
-        workingDirectory: resumeWorkingDirectory?.trim() || state.currentPath,
+        workingDirectory,
         resumeThreadId: resumeThreadId?.trim() || null,
         target,
       });
@@ -1046,26 +1059,31 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       const provider = actionEl.dataset.provider as LauncherProvider;
       const launchMode = actionEl.dataset.launchMode as LauncherLaunchMode;
       if (launchMode !== 'resume' || provider === 'terminal') {
-        launch(provider, launchMode);
+        void launch(provider, launchMode);
         return;
       }
 
-      const workingDirectory = state.currentPath;
-      if (!workingDirectory || !isProviderSupportedOnTarget(provider, getSelectedTarget())) {
+      const target = getSelectedTarget();
+      if (!isProviderSupportedOnTarget(provider, target)) {
         return;
       }
 
       void (async () => {
+        const workingDirectory = await ensureCommittedLauncherPath(localActionContext);
+        if (!workingDirectory || state.selectedTargetId !== target.id) {
+          return;
+        }
+
         const resumeEntry = await openProviderResumePicker({
           provider: provider as ResumeProvider,
           workingDirectory,
           initialScope: 'current',
         });
-        if (!resumeEntry) {
+        if (!resumeEntry || state.selectedTargetId !== target.id) {
           return;
         }
 
-        launch(provider, 'resume', resumeEntry.sessionId, resumeEntry.workingDirectory);
+        await launch(provider, 'resume', resumeEntry.sessionId, resumeEntry.workingDirectory);
       })();
     });
 
