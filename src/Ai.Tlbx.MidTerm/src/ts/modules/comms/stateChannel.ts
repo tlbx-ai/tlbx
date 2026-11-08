@@ -43,7 +43,6 @@ import {
 } from '../web/webDetach';
 import { setViewportSize, openWebPreviewDock } from '../web/webDock';
 import { getWebPreviewTarget } from '../web/webApi';
-import { applySessionViewportToFrame } from '../web/webViewport';
 import {
   getSessionPreview,
   getSessionSelectedPreviewName,
@@ -941,9 +940,9 @@ function handleDockBrowserUiCommand(msg: BrowserUiMessage): { success: boolean; 
   return { success: true };
 }
 
-async function handleViewportBrowserUiCommand(
+function handleViewportBrowserUiCommand(
   msg: BrowserUiMessage,
-): Promise<{ success: boolean; error?: string }> {
+): { success: boolean; error?: string } {
   const target = resolveBrowserUiTarget(msg, false);
   if (!target) {
     return { success: false, error: 'No browser preview target could be resolved.' };
@@ -951,26 +950,12 @@ async function handleViewportBrowserUiCommand(
 
   const width = msg.width ?? 0;
   const height = msg.height ?? 0;
-  setSessionViewport(target.sessionId, target.previewName, width, height);
-
   if (applyDetachedPreviewViewport(target.sessionId, target.previewName, width, height)) {
+    setSessionViewport(target.sessionId, target.previewName, width, height);
     return { success: true };
   }
 
-  setSessionMode(target.sessionId, target.previewName, 'docked');
-  if (
-    $activeSessionId.get() !== target.sessionId ||
-    getSessionSelectedPreviewName(target.sessionId) !== target.previewName
-  ) {
-    await syncBackgroundWebPreview(target.sessionId, target.previewName);
-    return applySessionViewportToFrame(target.sessionId, target.previewName)
-      ? { success: true }
-      : { success: false, error: 'The requested preview frame is not attached.' };
-  }
-
-  openWebPreviewDock();
-  await syncActiveWebPreview();
-  return setViewportSize(width, height)
+  return setViewportSize(width, height, target)
     ? { success: true }
     : { success: false, error: 'The requested preview frame is not attached.' };
 }
