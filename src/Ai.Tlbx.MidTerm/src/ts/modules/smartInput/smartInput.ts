@@ -120,7 +120,11 @@ import {
   updateAutoSendVisibility as updateAutoSendVisibilitySupport,
   updateFooterReservedHeight as updateFooterReservedHeightSupport,
 } from './footerSupport';
-import { createAppServerControlResumeButton } from './appServerControlResumeButton';
+import {
+  createAppServerControlResumeButton,
+  getAppServerControlResumeArgs,
+} from './appServerControlResumeButton';
+import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import {
   insertSmartInputLineBreak,
   shouldInsertLineBreakOnEnter,
@@ -2116,36 +2120,63 @@ function shouldUseCompactAppServerControlStatusRail(
 }
 
 function syncAppServerControlQuickSettingsActions(sessionId: string): void {
-  if (!appServerControlQuickSettingsActions) {
-    return;
-  }
-
-  appServerControlQuickSettingsActions.replaceChildren();
+  if (!appServerControlQuickSettingsActions) return;
+  const actions: Array<{
+    key: string;
+    label: string;
+    title: string;
+    create: () => HTMLButtonElement;
+  }> = [];
   const provider = getAppServerControlQuickSettingsProvider(sessionId);
   if (provider === 'codex' || provider === 'claude') {
-    appServerControlQuickSettingsActions.appendChild(
-      createAppServerControlActionButton(
-        goalControlLabel(sessionId),
-        goalControlTitle(sessionId),
-        () => {
-          openAppServerControlGoalEditor(sessionId);
-        },
-        false,
-        { pressed: false },
-      ),
-    );
+    const label = goalControlLabel(sessionId);
+    const title = goalControlTitle(sessionId);
+    actions.push({
+      key: `${sessionId}:goal:${provider}`,
+      label,
+      title,
+      create: () =>
+        createAppServerControlActionButton(
+          label,
+          title,
+          () => {
+            openAppServerControlGoalEditor(sessionId);
+          },
+          false,
+          { pressed: false },
+        ),
+    });
   }
-  const resumeButton = createAppServerControlResumeButton(
-    sessionId,
-    appServerControlResumeConversationHandler,
-  );
-  if (resumeButton) {
-    appServerControlQuickSettingsActions.appendChild(resumeButton);
+  const resume = appServerControlResumeConversationHandler
+    ? getAppServerControlResumeArgs(sessionId)
+    : null;
+  if (resume) {
+    actions.push({
+      key: `${sessionId}:resume:${resume.provider}:${resume.workingDirectory}`,
+      label: t('smartInput.resume'),
+      title: `${t('smartInput.resumeConversation')} ${
+        resume.provider === 'claude'
+          ? t('sessionLauncher.claudeTitle')
+          : t('sessionLauncher.codexTitle')
+      }`,
+      create: () =>
+        createAppServerControlResumeButton(resume, (args) => {
+          void appServerControlResumeConversationHandler?.(args);
+        }),
+    });
   }
-  appServerControlQuickSettingsActions.hidden =
-    appServerControlQuickSettingsActions.childElementCount === 0;
+  reconcileKeyedChildren(appServerControlQuickSettingsActions, actions, {
+    key: (action) => action.key,
+    create: (action) => action.create(),
+    patch: (button, action) => {
+      if (button.textContent !== action.label) button.textContent = action.label;
+      if (button.title !== action.title) button.title = action.title;
+      if (button.getAttribute('aria-label') !== action.title)
+        button.setAttribute('aria-label', action.title);
+    },
+  });
+  appServerControlQuickSettingsActions.hidden = actions.length === 0;
 }
-
 function createAppServerControlActionButton(
   label: string,
   title: string,

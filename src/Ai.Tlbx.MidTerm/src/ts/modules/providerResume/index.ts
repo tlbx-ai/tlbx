@@ -42,6 +42,7 @@ function openProviderResumePickerInternal(
   options: OpenProviderResumePickerOptions,
 ): Promise<ProviderResumeCatalogEntryDto | null> {
   return new Promise((resolve) => {
+    const returnFocus = document.activeElement;
     const providerLabel = getProviderLabel(options.provider);
     const hasFolder = Boolean(options.workingDirectory?.trim());
     const overlay = document.createElement('div');
@@ -102,6 +103,7 @@ function openProviderResumePickerInternal(
     const status = statusEl;
     const list = listEl;
     const scope = scopeEl;
+    const refresh = refreshButton;
     let loading = false;
     let errorMessage: string | null = null;
     let entries: ProviderResumeCatalogEntryDto[] = [];
@@ -118,6 +120,9 @@ function openProviderResumePickerInternal(
       document.removeEventListener('keydown', onKeyDown, true);
       releaseBackButtonLayer();
       overlay.remove();
+      if (returnFocus instanceof HTMLElement && returnFocus.isConnected) {
+        returnFocus.focus({ preventScroll: true });
+      }
       resolve(result);
     }
 
@@ -149,6 +154,8 @@ function openProviderResumePickerInternal(
       status.textContent = text;
       status.classList.toggle('error', Boolean(errorMessage));
       list.setAttribute('aria-busy', loading ? 'true' : 'false');
+      list.inert = loading;
+      refresh.disabled = loading;
       for (const button of scope.querySelectorAll<HTMLElement>('[data-scope]')) {
         const isActive = button.dataset.scope === activeScope;
         button.classList.toggle('active', isActive);
@@ -250,6 +257,14 @@ function openProviderResumePickerInternal(
         return;
       }
 
+      if (loading) {
+        if (event.key === 'Enter' || LIST_KEY_STEPS[event.key] !== undefined) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
+        return;
+      }
+
       const step = LIST_KEY_STEPS[event.key];
       if (step !== undefined && visible.length > 0) {
         event.preventDefault();
@@ -283,11 +298,12 @@ function openProviderResumePickerInternal(
       void loadEntries();
     });
 
-    refreshButton.addEventListener('click', () => {
+    refresh.addEventListener('click', () => {
       void loadEntries();
     });
 
     list.addEventListener('click', (event) => {
+      if (loading) return;
       const row = (event.target as HTMLElement | null)?.closest<HTMLElement>('[role="option"]');
       const entry = row ? visible[Number(row.dataset.index)] : undefined;
       if (entry) {

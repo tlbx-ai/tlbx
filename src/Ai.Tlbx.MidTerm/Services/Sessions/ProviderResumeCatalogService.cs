@@ -313,9 +313,10 @@ public sealed partial class ProviderResumeCatalogService
         string? lastPrompt,
         DateTime updatedAtUtc)
     {
-        var title = NormalizeDisplayText(titleSource, TitleLength) ?? BuildDirectoryLabel(workingDirectory);
-        var preview = NormalizeDisplayText(lastPrompt, PreviewLength);
-        if (preview is not null && NormalizeDisplayText(lastPrompt, TitleLength) == title)
+        var title = NormalizeDisplayText(ReadRichDisplayText(titleSource, preferProse: true), TitleLength)
+                    ?? BuildDirectoryLabel(workingDirectory);
+        var preview = NormalizeDisplayText(ReadRichDisplayText(lastPrompt, preferProse: false), PreviewLength);
+        if (preview is not null && NormalizeDisplayText(preview, TitleLength) == title)
         {
             preview = null;
         }

@@ -7858,14 +7858,27 @@ body::before {
 }
 
 .provider-resume-picker-content {
+  width: 100%;
+  max-width: none;
+  max-height: inherit;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   min-height: 0;
   font-family: var(--font-ui);
 }
 
+.provider-resume-picker-modal .modal-close {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+}
+
 .provider-resume-picker-body {
   display: flex;
+  flex: 1;
+  overflow: hidden;
   flex-direction: column;
   gap: 10px;
   min-height: 0;
@@ -7945,6 +7958,7 @@ body::before {
 
 .provider-resume-picker-list {
   display: flex;
+  flex: 1;
   flex-direction: column;
   min-height: 0;
   overflow: auto;
@@ -8032,18 +8046,43 @@ body::before {
   justify-content: space-between;
 }
 
+.provider-resume-picker-footer button {
+  min-height: 44px;
+}
+
 .provider-resume-picker-hint {
   color: var(--text-muted);
   font-size: var(--fs-sm);
 }
 
 @media (max-width: 760px) {
+  .provider-resume-picker-overlay {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
   .provider-resume-picker-overlay > .provider-resume-picker-modal {
+    align-items: stretch;
+    justify-content: stretch;
     width: 100vw;
     max-width: none;
     height: 100dvh;
     max-height: none;
     border-radius: 0;
+  }
+
+  .provider-resume-picker-content {
+    height: 100%;
+    max-height: none;
+    border-radius: 0;
+  }
+
+  .provider-resume-picker-content > .modal-header {
+    padding-top: calc(16px + var(--safe-area-inset-top));
+  }
+
+  .provider-resume-picker-footer {
+    padding-bottom: calc(16px + var(--safe-area-inset-bottom));
   }
 
   .provider-resume-picker-hint {

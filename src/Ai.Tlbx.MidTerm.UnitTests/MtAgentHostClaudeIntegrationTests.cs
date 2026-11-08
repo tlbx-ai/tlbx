@@ -10,6 +10,127 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostClaudeIntegrationTests
 {
+    private const string GoalReadReplayWrapper = "<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args></command-args>";
+
+    [Fact]
+    public async Task ClaudeHistory_PreservesMarkedToolErrorsContainingGoalReadWrappers()
+    {
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                new { type = "user", uuid = "user", message = new { content = "Check the command" } },
+                new { type = "assistant", uuid = "assistant", message = new { id = "assistant", content = new object[]
+                {
+                    new { type = "tool_use", id = "tool", name = "Bash", input = new { command = "check" } }
+                } } },
+                new { type = "user", uuid = "tool-error", isCompletedLocalCommand = true, message = new { content = new object[]
+                {
+                    new { type = "tool_result", tool_use_id = "tool", is_error = true, content = "Failed: " + GoalReadReplayWrapper }
+                } } }
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        Assert.Single(events.Where(e => e.TurnStarted is not null));
+        Assert.Single(events.Where(e => e.Item?.ItemType == "user_message"));
+        Assert.Contains(events, e => e.ItemId == "tool" && e.Item?.Status == "failed"
+            && e.Item.ToolPresentation?.Evidence?.Contains(GoalReadReplayWrapper, StringComparison.Ordinal) == true);
+        Assert.Single(events.Where(e => e.TurnCompleted is not null));
+    }
+
+    [Fact]
+    public async Task ClaudeHistory_OmitsCompletedLocalGoalReadsWithoutCreatingOrAdvancingTurns()
+    {
+        object Read(string id) => new
+        {
+            type = "user", uuid = id, isCompletedLocalCommand = true,
+            timestamp = "2030-01-01T00:00:00Z", message = new { content = GoalReadReplayWrapper }
+        };
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                Read("before"),
+                new { type = "user", uuid = "user-a", timestamp = "2026-11-08T10:00:00Z", message = new { content = "Question one" } },
+                Read("inside"),
+                new { type = "assistant", uuid = "a", timestamp = "2026-11-08T10:01:00Z", message = new { id = "answer-a", content = new[] { new { type = "text", text = "Answer one" } } } },
+                Read("between"),
+                new { type = "user", uuid = "user-b", timestamp = "2026-11-08T10:02:00Z", message = new { content = "Question two" } },
+                new { type = "assistant", uuid = "b", timestamp = "2026-11-08T10:03:00Z", message = new { id = "answer-b", content = new[] { new { type = "text", text = "Answer two" } } } },
+                Read("trailing")
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        Assert.Equal(new[] { "claude-history:user-a", "claude-history:user-b" },
+            events.Where(e => e.TurnStarted is not null).Select(e => e.TurnId));
+        Assert.Equal(new[] { "user-a", "user-b" },
+            events.Where(e => e.Item?.ItemType == "user_message").Select(e => e.ItemId));
+        Assert.Contains(events, e => e.ItemId == "answer-a" && e.TurnId == "claude-history:user-a");
+        Assert.Contains(events, e => e.ItemId == "answer-b" && e.TurnId == "claude-history:user-b");
+        var completed = events.Where(e => e.TurnCompleted is not null).ToArray();
+        Assert.Equal(2, completed.Length);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-08T10:01:00Z", CultureInfo.InvariantCulture), completed[0].CreatedAt);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-08T10:03:00Z", CultureInfo.InvariantCulture), completed[1].CreatedAt);
+        Assert.DoesNotContain(events, e => e.Item?.Detail?.Contains("<command-name>", StringComparison.Ordinal) == true);
+    }
+
+    [Theory]
+    [InlineData("unmarked")]
+    [InlineData("false-flag")]
+    [InlineData("string-flag")]
+    [InlineData("mixed-prefix")]
+    [InlineData("mixed-suffix")]
+    [InlineData("quoted")]
+    [InlineData("mixed-blocks")]
+    [InlineData("image-block")]
+    [InlineData("set")]
+    [InlineData("clear")]
+    [InlineData("error")]
+    [InlineData("message-error")]
+    public async Task ClaudeHistory_PreservesUserContentGoalWorkAndErrorsAroundLocalReadWrappers(string scenario)
+    {
+        object content = scenario switch
+        {
+            "mixed-prefix" => "User explanation\n" + GoalReadReplayWrapper,
+            "mixed-suffix" => GoalReadReplayWrapper + "\nUser explanation",
+            "quoted" => "```xml\n" + GoalReadReplayWrapper + "\n```",
+            "mixed-blocks" => new object[] { new { type = "text", text = GoalReadReplayWrapper }, new { type = "text", text = "User explanation" } },
+            "image-block" => new object[] { new { type = "text", text = GoalReadReplayWrapper }, new { type = "image" } },
+            "set" => GoalReadReplayWrapper.Replace("<command-args></command-args>", "<command-args>Finish the user's task</command-args>", StringComparison.Ordinal),
+            "clear" => GoalReadReplayWrapper.Replace("<command-args></command-args>", "<command-args>clear</command-args>", StringComparison.Ordinal),
+            _ => GoalReadReplayWrapper
+        };
+        var user = new Dictionary<string, object?>
+        {
+            ["type"] = "user", ["uuid"] = "kept", ["isCompletedLocalCommand"] = true,
+            ["message"] = new { content, is_error = scenario == "message-error" }
+        };
+        if (scenario == "unmarked") user.Remove("isCompletedLocalCommand");
+        if (scenario == "false-flag") user["isCompletedLocalCommand"] = false;
+        if (scenario == "string-flag") user["isCompletedLocalCommand"] = "true";
+        if (scenario == "error") user["is_error"] = true;
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                user,
+                new { type = "assistant", uuid = "answer", message = new { id = "actual-work", content = new[] { new { type = "text", text = "Actual model work or error explanation" } } } }
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        Assert.Single(events.Where(e => e.TurnStarted is not null));
+        var item = Assert.Single(events.Where(e => e.Item?.ItemType == "user_message"));
+        Assert.Contains("<command-name>/goal</command-name>", item.Item!.Detail, StringComparison.Ordinal);
+        Assert.Contains(events, e => e.ItemId == "actual-work" && e.TurnId == "claude-history:kept");
+        Assert.Single(events.Where(e => e.TurnCompleted is not null));
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

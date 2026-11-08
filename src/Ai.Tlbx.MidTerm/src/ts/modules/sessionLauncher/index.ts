@@ -187,7 +187,7 @@ function buildSessionLauncherProviderControlHtml(
   const primaryLabel =
     selectedDefinition.provider === 'terminal'
       ? selectedDefinition.launchLabel
-      : 'New Conversation';
+      : t('sessionLauncher.newConversation');
   const resumeAction =
     selectedDefinition.provider !== 'terminal' && selectedDefinition.supportsResume !== false
       ? `

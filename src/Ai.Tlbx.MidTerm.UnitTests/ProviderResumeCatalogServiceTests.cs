@@ -195,6 +195,74 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         Assert.EndsWith("…", truncated, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData("codex")]
+    [InlineData("claude")]
+    public void RichFirstPromptsPreferReadableProseBeforeTruncation(string provider)
+    {
+        const string prompt = """
+            | Provider | Wert |
+            | --- | --- |
+            | Codex | 42 |
+            [Image #1]
+            ![attachment](https://example.invalid/image.png)
+            ## **Repair the resume picker**
+            Keep `Q:\src\__init__.py` and [the error](https://example.invalid/error).
+            """;
+        var id = Guid.NewGuid().ToString();
+        if (provider == "codex") WriteCodex(id, _workspace, prompt);
+        else WriteClaude(id, _workspace, prompt);
+
+        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile)
+            .GetCandidates(provider, _workspace, false, ct: TestContext.Current.CancellationToken));
+        Assert.Equal(id, entry.SessionId);
+        Assert.Equal("Repair the resume picker", entry.Title);
+        Assert.Contains("Provider · Wert Codex · 42", entry.PreviewText, StringComparison.Ordinal);
+        Assert.Contains(@"Q:\src\__init__.py", entry.PreviewText, StringComparison.Ordinal);
+        Assert.Contains("the error", entry.PreviewText, StringComparison.Ordinal);
+        Assert.DoesNotContain("Image", entry.PreviewText!, StringComparison.Ordinal);
+        Assert.DoesNotContain("https://", entry.PreviewText!, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("codex")]
+    [InlineData("claude")]
+    public void TableOnlyPromptsKeepCellValuesAndAttachmentOnlyPromptsUseTheFolder(string provider)
+    {
+        var tableId = Guid.NewGuid().ToString();
+        var imageId = Guid.NewGuid().ToString();
+        const string table = "|Name|Value|\n|---|---:|\n|Pen|19|";
+        const string image = "[Image 1]\n![capture](https://example.invalid/image.png)";
+        if (provider == "codex")
+        {
+            WriteCodex(tableId, _workspace, table);
+            WriteCodex(imageId, _workspace, image);
+        }
+        else
+        {
+            WriteClaude(tableId, _workspace, table);
+            WriteClaude(imageId, _workspace, image);
+        }
+        var entries = new ProviderResumeCatalogService(_ => _profile)
+            .GetCandidates(provider, _workspace, false, ct: TestContext.Current.CancellationToken);
+        Assert.Equal("Name · Value Pen · 19", Assert.Single(entries, entry => entry.SessionId == tableId).Title);
+        Assert.Equal(Path.GetFileName(_workspace), Assert.Single(entries, entry => entry.SessionId == imageId).Title);
+    }
+
+    [Fact]
+    public void RichDisplayCleanupPreservesEscapedPipeValuesAndTheLatestRealError()
+    {
+        var id = Guid.NewGuid().ToString();
+        WriteCodexLines(id, [
+            CodexMeta(id, _workspace, "2026-11-01T08:00:00Z"),
+            CodexResponseUser("|Name|Value|\n|---|---|\n|Path|a\\|b|"),
+            CodexResponseUser("HTTP 409: <literal_error> Keep __init__.py and code `E_ACCESS`"),
+        ]);
+        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile)
+            .GetCandidates("codex", _workspace, false, ct: TestContext.Current.CancellationToken));
+        Assert.Equal("Name · Value Path · a|b", entry.Title);
+        Assert.Equal("HTTP 409: <literal_error> Keep __init__.py and code E_ACCESS", entry.PreviewText);
+    }
     private string WriteCodex(string id, string cwd, string prompt, TimeSpan? age = null)
     {
         return WriteCodexLines(id, [CodexMeta(id, cwd, "2026-11-01T08:00:00Z"), CodexResponseUser(prompt)], age);
