@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -90,6 +91,18 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
     public string? AfterHistoryNotificationJson { get; set; }
 
     public int ThreadResumeCount { get; private set; }
+
+    public ConcurrentQueue<JsonElement> ServerRequestResponses { get; } = new();
+    public string? ThreadSettingsUpdateJson { get; set; }
+    public bool RejectThreadSettingsUpdate { get; set; }
+    public Task? ThreadSettingsUpdateGate { get; set; }
+    public TaskCompletionSource ThreadSettingsUpdateReceived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    public string[] BeforeTurnStartAckMessages { get; set; } = [];
+    public Task? TurnStartAckGate { get; set; }
+    public TaskCompletionSource TurnStartPreAckMessagesSent { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public bool SkipTurnWorkAfterAck { get; set; }
+    public bool RejectTurnStart { get; set; }
 
     public bool IgnoreGoalReadback { get; set; }
 
@@ -247,6 +260,8 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                 var root = json.RootElement;
                 if (!root.TryGetProperty("method", out var methodElement) || methodElement.ValueKind != JsonValueKind.String)
                 {
+                    if (root.TryGetProperty("id", out _) && (root.TryGetProperty("result", out _) || root.TryGetProperty("error", out _)))
+                        ServerRequestResponses.Enqueue(root.Clone());
                     continue;
                 }
 
@@ -342,6 +357,22 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
                         await SendProtocolV2SurfaceNotificationsAsync(socket).ConfigureAwait(false);
+                        break;
+
+                    case "thread/settings/update" when id is not null:
+                        ThreadSettingsUpdateReceived.TrySetResult();
+                        if (ThreadSettingsUpdateGate is { } gate) await gate.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                        if (RejectThreadSettingsUpdate)
+                        {
+                            await SendJsonAsync(socket, new { id, error = new { code = -32602, message = "Fixture settings rejection." } }, _shutdown.Token).ConfigureAwait(false);
+                            break;
+                        }
+                        await SendJsonAsync(socket, new { id, result = new { } }, _shutdown.Token).ConfigureAwait(false);
+                        if (ThreadSettingsUpdateJson is { } actual)
+                        {
+                            using var settings = JsonDocument.Parse(actual);
+                            await SendJsonAsync(socket, new { method = "thread/settings/updated", @params = new { threadId = LoadedThreadId, threadSettings = settings.RootElement } }, _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "thread/goal/get" when id is not null:
@@ -479,6 +510,18 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 : null;
                         var turnId = "turn-remote-1";
                         var turnText = ReadTurnText(@params) ?? "Continue from the shared thread.";
+                        foreach (var earlyMessage in BeforeTurnStartAckMessages)
+                        {
+                            using var early = JsonDocument.Parse(earlyMessage);
+                            await SendJsonAsync(socket, early.RootElement, _shutdown.Token).ConfigureAwait(false);
+                        }
+                        TurnStartPreAckMessagesSent.TrySetResult();
+                        if (TurnStartAckGate is { } startGate) await startGate.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                        if (RejectTurnStart)
+                        {
+                            await SendJsonAsync(socket, new { id, error = new { code = -32602, message = "Fixture start rejection." } }, _shutdown.Token).ConfigureAwait(false);
+                            break;
+                        }
                         await SendJsonAsync(socket, new
                         {
                             id,
@@ -490,6 +533,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (SkipTurnWorkAfterAck) break;
                         await SendJsonAsync(socket, new
                         {
                             method = "turn/started",

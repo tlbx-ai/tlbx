@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { runInNewContext } from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 // Execute the actual injected URL protocol functions, rather than duplicating
 // their logic or starting a UI. Both native and Connect documents use this code.
@@ -156,5 +156,152 @@ describe('preview navigation attachment metadata', () => {
       window: { name: JSON.stringify(saved) },
     });
     expect(context).toEqual(saved);
+  });
+});
+
+describe('shared preview fill editing protocol', () => {
+  // Exercise the injected dispatcher and guards. The native edit is a boundary spy,
+  // not a browser/ProseMirror undo simulation; that acceptance belongs in the browser.
+  function fixture() {
+    const replies: { success: boolean; result: string | null; error: string | null }[] = [];
+    const order: string[] = [];
+    const selection = {
+      removeAllRanges: vi.fn(() => order.push('clear-selection')),
+      addRange: vi.fn(() => order.push('select')),
+    };
+    const target = {
+      isConnected: true,
+      isContentEditable: true,
+      parentElement: null as { isContentEditable: boolean } | null,
+      hidden: false,
+      inert: false,
+      disabled: false,
+      readOnly: false,
+      nonEditableChild: false,
+      nodeType: 1,
+      getClientRects: () => [{}],
+      getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 30 }),
+      matches: (selector: string): boolean => selector === ':disabled' && target.disabled,
+      closest: (selector: string): object | null => {
+        if (selector.includes('readonly') && target.readOnly) return target;
+        return null;
+      },
+      querySelector: (): object | null => (target.nonEditableChild ? {} : null),
+      dispatchEvent: vi.fn(() => true),
+      focus: vi.fn((): void => {
+        order.push('focus');
+        document.activeElement = target;
+      }),
+      // Any direct content write fails this contract instead of mimicking editor state.
+      set textContent(_: string) {
+        throw new Error('direct textContent write');
+      },
+      set innerHTML(_: string) {
+        throw new Error('HTML write');
+      },
+    };
+    let matches = [target];
+    const range = { selectNodeContents: vi.fn(() => order.push('range')) };
+    const document = {
+      activeElement: null as typeof target | null,
+      querySelectorAll: () => matches,
+      createRange: () => range,
+      queryCommandSupported: vi.fn(() => true),
+      execCommand: vi.fn((_command: string, _ui: boolean, _value: string) => {
+        order.push('edit');
+        return true;
+      }),
+    };
+    const dispatch = runInNewContext(
+      `${section('function isControlVisible(el){', 'function handleBCmd(msg){')}
+       ${section('function handleBCmd(msg){', 'var bwsReconnectTimer=')}
+       handleBCmd;`,
+      {
+        document,
+        window: { getSelection: () => selection },
+        getComputedStyle: () => ({ visibility: 'visible', display: 'block', opacity: '1' }),
+        MouseEvent: class {},
+        mtCtx: { sessionId: 'owned-session', previewId: 'owned-preview' },
+        bws: { send: (value: string) => replies.push(JSON.parse(value)) },
+      },
+    ) as (message: object) => void;
+    return {
+      target,
+      document,
+      range,
+      selection,
+      order,
+      duplicate: () => {
+        matches = [target, target];
+      },
+      fill(value: string) {
+        dispatch({ id: 'fill', command: 'fill', selector: '#editor', value });
+        return replies.at(-1)!;
+      },
+    };
+  }
+
+  it.each(['Grüße 東京 👩🏽‍💻\n<em>literal</em>\t&', ' \t\n', ''])(
+    'delegates literal %j as one native replacement after focusing and selecting only the host',
+    (value) => {
+      const f = fixture();
+      expect(f.fill(value)).toMatchObject({ success: true, result: 'filled' });
+      expect(f.range.selectNodeContents).toHaveBeenCalledWith(f.target);
+      expect(f.order).toEqual(['focus', 'range', 'clear-selection', 'select', 'edit']);
+      expect(f.document.execCommand).toHaveBeenCalledExactlyOnceWith(
+        value === '' ? 'delete' : 'insertText',
+        false,
+        value,
+      );
+      // Only pointer intent is dispatched here; native editing owns the input event.
+      expect(f.target.dispatchEvent).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each([
+    'readonly',
+    'disabled',
+    'hidden',
+    'ambiguous',
+    'nested',
+    'noneditable',
+    'noteditable',
+    'unsupported',
+  ])(
+    'rejects %s before focus, selection or native editing',
+    (kind) => {
+      const f = fixture();
+      if (kind === 'readonly') f.target.readOnly = true;
+      if (kind === 'disabled') f.target.disabled = true;
+      if (kind === 'hidden') f.target.hidden = true;
+      if (kind === 'ambiguous') f.duplicate();
+      if (kind === 'nested') f.target.parentElement = { isContentEditable: true };
+      if (kind === 'noneditable') f.target.nonEditableChild = true;
+      if (kind === 'noteditable') f.target.isContentEditable = false;
+      if (kind === 'unsupported') f.document.queryCommandSupported.mockReturnValue(false);
+      expect(f.fill('never')).toMatchObject({ success: false });
+      expect(f.target.focus).not.toHaveBeenCalled();
+      expect(f.selection.addRange).not.toHaveBeenCalled();
+      expect(f.document.execCommand).not.toHaveBeenCalled();
+    },
+  );
+
+  it('reports native rejection without falling back to DOM writes or duplicate input', () => {
+    const f = fixture();
+    f.document.execCommand.mockReturnValue(false);
+    expect(f.fill('literal')).toMatchObject({ success: false });
+    expect(f.document.execCommand).toHaveBeenCalledTimes(1);
+    expect(f.target.dispatchEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it('rechecks editability after activation before changing selection or text', () => {
+    const f = fixture();
+    f.target.focus.mockImplementation(() => {
+      f.document.activeElement = f.target;
+      f.target.readOnly = true;
+    });
+    expect(f.fill('never')).toMatchObject({ success: false });
+    expect(f.selection.addRange).not.toHaveBeenCalled();
+    expect(f.document.execCommand).not.toHaveBeenCalled();
   });
 });
