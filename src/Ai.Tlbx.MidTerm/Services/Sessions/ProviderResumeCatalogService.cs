@@ -18,19 +18,40 @@ public sealed partial class ProviderResumeCatalogService
     private const int MaxCachedTranscripts = 2048;
     private const int TitleLength = 100;
     private const int PreviewLength = 240;
-    private static readonly TimeSpan HotSessionCooldown = TimeSpan.FromSeconds(12);
 
     private readonly Func<string, string?> _resolveProfileDirectory;
+    private readonly Func<string?> _resolveConfiguredCodexHome;
     private readonly ConcurrentDictionary<string, CachedTranscript> _cache = new(StringComparer.OrdinalIgnoreCase);
 
     public ProviderResumeCatalogService(SettingsService settingsService)
-        : this(provider => ResolveProviderProfileDirectory(settingsService.Load(), provider))
+        : this(
+            provider => ResolveProviderProfileDirectory(settingsService.Load(), provider),
+            () => ResolveConfiguredCodexHome(settingsService.Load()))
     {
     }
 
-    internal ProviderResumeCatalogService(Func<string, string?> resolveProfileDirectory)
+    internal ProviderResumeCatalogService(
+        Func<string, string?> resolveProfileDirectory,
+        Func<string?>? resolveConfiguredCodexHome = null)
     {
         _resolveProfileDirectory = resolveProfileDirectory;
+        _resolveConfiguredCodexHome = resolveConfiguredCodexHome ?? (static () => null);
+    }
+
+    /// <summary>
+    /// The Codex runtime applies the owner-configured Codex environment variables after the
+    /// profile defaults, so a fully qualified CODEX_HOME there is where its threads are stored.
+    /// The service process environment is deliberately not consulted.
+    /// </summary>
+    internal static string? ResolveConfiguredCodexHome(MidTermSettings settings)
+    {
+        var variables = TerminalEnvironmentVariableParser.Parse(settings.CodexEnvironmentVariables);
+        return variables is not null &&
+               variables.TryGetValue("CODEX_HOME", out var value) &&
+               value?.Trim() is { Length: > 0 } codexHome &&
+               Path.IsPathFullyQualified(codexHome)
+            ? codexHome
+            : null;
     }
 
     internal static string? ResolveProviderProfileDirectory(MidTermSettings settings, string provider)
@@ -65,7 +86,7 @@ public sealed partial class ProviderResumeCatalogService
         }
 
         var root = isCodex
-            ? Path.Combine(home, ".codex", "sessions")
+            ? Path.Combine(_resolveConfiguredCodexHome() ?? Path.Combine(home, ".codex"), "sessions")
             : Path.Combine(home, ".claude", "projects");
         var directoryFilter = includeAllDirectories ? null : NormalizePathOrNull(workingDirectory);
         if (!Directory.Exists(root) || (!includeAllDirectories && directoryFilter is null))
@@ -73,11 +94,9 @@ public sealed partial class ProviderResumeCatalogService
             return [];
         }
 
-        var cooldownCutoffUtc = DateTime.UtcNow - HotSessionCooldown;
         var candidates = new List<ProviderResumeCatalogEntryDto>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var file in EnumerateTranscripts(root, excludeSubagents: !isCodex)
-                     .Where(file => file.LastWriteTimeUtc <= cooldownCutoffUtc)
                      .OrderByDescending(static file => file.LastWriteTimeUtc)
                      .Take(MaxScannedFiles))
         {

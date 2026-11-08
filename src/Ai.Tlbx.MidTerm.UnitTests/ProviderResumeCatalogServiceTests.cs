@@ -150,6 +150,43 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
     }
 
     [Fact]
+    public void JustFinishedConversationsAreListedWithoutAModificationTimeCooldown()
+    {
+        var id = Guid.NewGuid().ToString();
+        WriteCodex(id, _workspace, "Finished a moment ago", age: TimeSpan.Zero);
+
+        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile).GetCandidates("codex", _workspace, false));
+        Assert.Equal(id, entry.SessionId);
+    }
+
+    [Fact]
+    public void ConfiguredCodexHomeReplacesTheProfileCodexDirectory()
+    {
+        var codexHome = Path.Combine(_profile, "custom-codex-home");
+        var id = Guid.NewGuid().ToString();
+        WriteTranscript(
+            Path.Combine(codexHome, "sessions", "2026", "11", "08", $"rollout-{id}.jsonl"),
+            [CodexMeta(id, _workspace, "2026-11-08T08:00:00Z"), CodexResponseUser("From the configured home")],
+            null);
+        WriteCodex(Guid.NewGuid().ToString(), _workspace, "From the profile default");
+
+        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile, () => codexHome)
+            .GetCandidates("codex", _workspace, false));
+        Assert.Equal(id, entry.SessionId);
+    }
+
+    [Fact]
+    public void OnlyAFullyQualifiedConfiguredCodexHomeIsUsed()
+    {
+        var absolute = Path.Combine(_profile, "codex-home");
+        Assert.Equal(absolute, ProviderResumeCatalogService.ResolveConfiguredCodexHome(
+            new MidTermSettings { CodexEnvironmentVariables = $"OTHER=1\nCODEX_HOME={absolute}" }));
+        Assert.Null(ProviderResumeCatalogService.ResolveConfiguredCodexHome(
+            new MidTermSettings { CodexEnvironmentVariables = "CODEX_HOME=relative\\codex" }));
+        Assert.Null(ProviderResumeCatalogService.ResolveConfiguredCodexHome(new MidTermSettings()));
+    }
+
+    [Fact]
     public void DisplayTextIsCompactedStrippedOfControlCharactersAndTruncated()
     {
         Assert.Equal("a b c", ProviderResumeCatalogService.NormalizeDisplayText("  a\r\n\tb\u0007 c  ", 20));

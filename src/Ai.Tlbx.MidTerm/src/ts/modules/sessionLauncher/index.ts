@@ -3,6 +3,7 @@ import type { AgentControllerInstallation } from '../../api/types';
 import { showTextPrompt } from '../../utils/dialog';
 import { JS_BUILD_VERSION } from '../../constants';
 import { t } from '../i18n';
+import { applyLauncherBrowserDefaults, resolveLauncherProviderChoice } from './launcherInit';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
 import { getLaunchableHubMachines, refreshHubState, subscribeHubState } from '../hub/runtime';
 import type { HubMachineState } from '../hub/types';
@@ -97,6 +98,8 @@ interface LauncherState {
   startPath: string;
   currentPath: string;
   pathDraft: string;
+  pathDirty: boolean;
+  providersLoaded: boolean;
   pathHistory: string[];
   parentPath: string | null;
   roots: LauncherDirectoryEntry[];
@@ -163,6 +166,7 @@ function buildSessionLauncherProviderControlHtml(
   target: SessionLauncherTarget,
   preferredProvider: LauncherProvider,
   disabled: boolean,
+  providersLoading: boolean,
 ): string {
   const selectedDefinition =
     definitions.find(
@@ -204,6 +208,7 @@ function buildSessionLauncherProviderControlHtml(
         id="session-launcher-provider-select"
         class="session-launcher-provider-select"
         data-role="provider-select"
+        ${providersLoading ? 'disabled aria-busy="true"' : ''}
       >
         ${definitions
           .map((definition) => {
@@ -486,23 +491,6 @@ function getSelectedTargetOrLocal(
   );
 }
 
-function resetLauncherBrowserState(
-  state: LauncherState,
-  pathResponse: LauncherPathResponse,
-  roots: LauncherDirectoryEntry[],
-): void {
-  const homePath = pathResponse.homePath || pathResponse.path;
-  const startPath = pathResponse.startPath || homePath;
-  state.homePath = homePath;
-  state.startPath = startPath;
-  state.currentPath = startPath;
-  state.pathDraft = startPath;
-  state.pathHistory = [];
-  state.parentPath = null;
-  state.roots = roots;
-  state.entries = [];
-}
-
 function getMajorMinorVersion(version: string | null | undefined): string | null {
   const match = version?.trim().match(/^v?(\d+)\.(\d+)/i);
   return match ? `${match[1]}.${match[2]}` : null;
@@ -671,6 +659,8 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       startPath: '',
       currentPath: '',
       pathDraft: '',
+      pathDirty: false,
+      providersLoaded: false,
       pathHistory: [],
       parentPath: null,
       roots: [],
@@ -796,6 +786,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         target,
         state.selectedProvider,
         state.loading || !state.currentPath,
+        !state.providersLoaded,
       );
 
       const targetWarning = getLauncherTargetWarning(target);
@@ -868,8 +859,13 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         recordHistory?: boolean;
         suppressErrors?: boolean;
         target?: SessionLauncherTarget;
+        initial?: boolean;
       },
     ): Promise<boolean> {
+      if (!options?.initial) {
+        state.pathDirty = true;
+      }
+
       const target = options?.target ?? getSelectedTarget();
       const targetId = target.id;
       const previousPath = state.currentPath;
@@ -917,11 +913,16 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           return;
         }
 
-        resetLauncherBrowserState(state, pathResponse, rootsResponse.entries);
-        const initialPath = options?.path?.trim() || state.startPath;
+        const initialPath = applyLauncherBrowserDefaults(
+          state,
+          pathResponse,
+          rootsResponse.entries,
+          options?.path,
+        );
         await loadDirectory(initialPath, {
           recordHistory: false,
           target,
+          initial: true,
         });
       } catch (error) {
         if (requestToken !== state.requestToken || state.selectedTargetId !== target.id) {
@@ -991,6 +992,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
     void fetchAgentControllerInstallations()
       .then((installations) => {
         state.agentControllerInstallations = installations;
+        state.providersLoaded = true;
         const providerExists = getSessionLauncherProviderDefinitions(installations).some(
           (definition) => definition.provider === state.selectedProvider,
         );
@@ -1002,6 +1004,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       })
       .catch(() => {
         state.agentControllerInstallations = [];
+        state.providersLoaded = true;
         state.selectedProvider = 'terminal';
         renderProviders();
       });
@@ -1048,7 +1051,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       }
 
       const workingDirectory = state.currentPath;
-      if (!workingDirectory) {
+      if (!workingDirectory || !isProviderSupportedOnTarget(provider, getSelectedTarget())) {
         return;
       }
 
@@ -1074,7 +1077,10 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
         return;
       }
 
-      state.selectedProvider = providerSelect.value;
+      state.selectedProvider = resolveLauncherProviderChoice(
+        state.selectedProvider,
+        providerSelect.value,
+      );
       rememberSessionLauncherProvider(state.selectedProvider);
       renderProviders();
       safeProvidersEl.querySelector<HTMLSelectElement>('[data-role="provider-select"]')?.focus();
@@ -1090,6 +1096,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
       clearPendingPathFollow();
       state.selectedTargetId = targetId;
+      state.pathDirty = false;
       state.pathHistory = [];
       render();
       void loadSelectedTargetBrowser(getSelectedTarget());
@@ -1117,6 +1124,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
 
     safePathEl.addEventListener('input', () => {
       state.pathDraft = safePathEl.value;
+      state.pathDirty = true;
       queueLauncherPathFollow(
         state,
         clearPendingPathFollow,

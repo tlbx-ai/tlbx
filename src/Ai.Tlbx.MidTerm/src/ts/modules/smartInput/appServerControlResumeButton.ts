@@ -1,4 +1,5 @@
 import { getSession } from '../../stores';
+import { isHubSessionId } from '../hub/runtime';
 import { t } from '../i18n';
 import type { ResumeProvider } from '../providerResume';
 
@@ -16,6 +17,7 @@ export function createAppServerControlResumeButton(
   const provider = normalizeResumeProvider(session?.profileHint);
   const workingDirectory = session?.workspacePath?.trim() || session?.currentDirectory?.trim();
   if (
+    isHubSessionId(sessionId) ||
     !provider ||
     !workingDirectory ||
     !session?.appServerControlOnly ||
