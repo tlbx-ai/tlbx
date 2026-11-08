@@ -27,6 +27,7 @@ public sealed class CodexNotificationScopeTests
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
         var ct = timeout.Token;
         var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+        var initialBatches = new List<IReadOnlyList<AppServerControlProviderEvent>>();
         var ownCompleted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var scope = new AppServerControlMcpRuntimeScope();
         var nextTarget = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -63,7 +64,15 @@ public sealed class CodexNotificationScopeTests
                             result = new { thread = new { id = "canonical-A", status = new { type = "idle" } } };
                             break;
                         case "thread/read":
-                            result = new { thread = new { id = "canonical-A", turns = Array.Empty<object>() } };
+                            result = new { thread = new { id = "canonical-A", turns = new[]
+                            {
+                                new { id = "history-turn", status = "completed", items = new object[]
+                                {
+                                    new { id = "history-user", type = "userMessage", content = new[] { new { type = "inputText", text = "Historical question" } } },
+                                    new { id = "history-tool", type = "commandExecution", command = "echo historic", aggregatedOutput = "historic output", exitCode = 0 },
+                                    new { id = "history-assistant", type = "agentMessage", text = "Historical answer" }
+                                } }
+                            } } };
                             break;
                         case "model/list":
                         case "thread/turns/list":
@@ -86,11 +95,16 @@ public sealed class CodexNotificationScopeTests
         });
         await app.StartAsync(ct);
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-        var runtime = new CodexAppServerControlAgentRuntime(e =>
+        void Observe(AppServerControlProviderEvent e)
         {
             events.Enqueue(e);
             scope.Observe(e);
             if (e.Type == "turn.completed" && e.TurnId == "own-turn") ownCompleted.TrySetResult();
+        }
+        var runtime = new CodexAppServerControlAgentRuntime(Observe, batch =>
+        {
+            initialBatches.Add(batch);
+            foreach (var e in batch) Observe(e);
         });
         try
         {
@@ -107,6 +121,12 @@ public sealed class CodexNotificationScopeTests
                     }
                 }
             }, ct);
+            var initialBatch = Assert.Single(initialBatches);
+            var replay = initialBatch.Where(e => e.TurnId == "history-turn").ToArray();
+            Assert.Equal(new[] { "turn.started", "item.completed", "item.completed", "content.delta", "item.completed", "turn.completed" },
+                replay.Select(e => e.Type));
+            Assert.True(replay[0].TurnStarted!.IsReplay);
+            Assert.Equal("Historical answer", replay[3].ContentDelta!.Delta);
             var originalScope = scope.Identity;
             foreach (var notification in new[]
             {
@@ -124,6 +144,7 @@ public sealed class CodexNotificationScopeTests
                 """{"method":"turn/completed","params":{"threadId":"canonical-A","turn":{"id":"own-turn","status":"completed"}}}"""
             }) await SendAsync(connected!, notification, ct);
             await ownCompleted.Task.WaitAsync(ct);
+            Assert.Single(initialBatches); // Post-attach events use the ordinary live callback.
             Assert.Equal(originalScope, scope.Identity);
             Assert.All(events.Where(e => e.ThreadState is not null), e => Assert.Equal("canonical-A", e.ThreadState!.ProviderThreadId));
             Assert.DoesNotContain(events, e => e.TurnId == "sibling-turn" || e.ItemId == "sibling-item" || e.AgentMetadataUpdated?.Usage is not null);

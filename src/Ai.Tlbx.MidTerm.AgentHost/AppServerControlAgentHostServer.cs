@@ -518,7 +518,11 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
         if (string.Equals(provider, "codex", StringComparison.Ordinal))
         {
-            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent);
+            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent, events =>
+            {
+                foreach (var value in events) _mcpScope.Observe(value);
+                _history.AppendInitialReplay(events);
+            });
             return _runtime;
         }
 

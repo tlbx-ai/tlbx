@@ -6,6 +6,7 @@ public sealed partial class SessionAppServerControlHistoryService
 {
     private static void SetHistoryEntry(AppServerControlConversationState state, AppServerControlHistoryItem entry)
     {
+        RefreshHistoryIndexes(state, entry);
         var key = (entry.Order, entry.EntryId);
         if (state.HistoryOrderKeys.TryGetValue(entry.EntryId, out var previousKey))
         {
@@ -25,6 +26,7 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private static void RemoveHistoryEntry(AppServerControlConversationState state, string entryId)
     {
+        RemoveHistoryIndexes(state, entryId);
         if (state.HistoryOrderKeys.Remove(entryId, out var key)) state.HistoryOrder.Remove(key);
         state.HistoryEntries.Remove(entryId);
     }
@@ -34,6 +36,11 @@ public sealed partial class SessionAppServerControlHistoryService
         state.HistoryEntries.Clear();
         state.HistoryOrder.Clear();
         state.HistoryOrderKeys.Clear();
+        state.HistoryByTurn.Clear();
+        state.HistoryByTurnKind.Clear();
+        state.HistoryIndexKeys.Clear();
+        state.StreamingHistoryIds.Clear();
+        state.ProvisionalToolIds.Clear();
     }
 
     private static void RebuildHistoryOrderIndex(AppServerControlConversationState state)
@@ -42,6 +49,11 @@ public sealed partial class SessionAppServerControlHistoryService
         // SortedList arrays for every changed key (quadratic for a large promoted range).
         state.HistoryOrder.Clear();
         state.HistoryOrderKeys.Clear();
+        state.HistoryByTurn.Clear();
+        state.HistoryByTurnKind.Clear();
+        state.HistoryIndexKeys.Clear();
+        state.StreamingHistoryIds.Clear();
+        state.ProvisionalToolIds.Clear();
         foreach (var entry in state.HistoryEntries.Values.OrderBy(entry => entry.Order)
                      .ThenBy(entry => entry.EntryId, StringComparer.Ordinal))
         {
@@ -64,6 +76,23 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private static void RefreshItemIndexes(AppServerControlConversationState state, AppServerControlItemSummary item)
     {
+        if (state.UserItemTurns.TryGetValue(item.ItemId, out var oldTurn) &&
+            (item.ItemType != "user_message" || oldTurn != (item.TurnId ?? string.Empty)))
+        {
+            state.UserItemTurns.Remove(item.ItemId);
+            if (state.UserItemsByTurn.TryGetValue(oldTurn, out var oldIds))
+            {
+                oldIds.Remove(item.ItemId);
+                if (oldIds.Count == 0) state.UserItemsByTurn.Remove(oldTurn);
+            }
+        }
+        if (item.ItemType == "user_message")
+        {
+            var turn = item.TurnId ?? string.Empty;
+            if (!state.UserItemsByTurn.TryGetValue(turn, out var ids)) state.UserItemsByTurn[turn] = ids = new(StringComparer.Ordinal);
+            ids.Add(item.ItemId);
+            state.UserItemTurns[item.ItemId] = turn;
+        }
         foreach (var alias in item.AliasItemIds)
         {
             if (alias != item.ItemId) state.ItemAliases[alias] = item.ItemId;
@@ -74,6 +103,11 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private static void RemoveItemSummary(AppServerControlConversationState state, string itemId)
     {
+        if (state.UserItemTurns.Remove(itemId, out var turn) && state.UserItemsByTurn.TryGetValue(turn, out var ids))
+        {
+            ids.Remove(itemId);
+            if (ids.Count == 0) state.UserItemsByTurn.Remove(turn);
+        }
         if (state.Items.Remove(itemId, out var previous))
         {
             foreach (var alias in previous.AliasItemIds.Append(itemId))
@@ -132,5 +166,63 @@ public sealed partial class SessionAppServerControlHistoryService
         }
         return ids.Select(id => state.Requests[id]).OrderByDescending(request => request.UpdatedAt)
             .Select(CloneRequestSummary).ToList();
+    }
+
+    private static void RemoveHistoryIndexes(AppServerControlConversationState state, string id)
+    {
+        if (state.HistoryIndexKeys.Remove(id, out var previous) && state.HistoryByTurn.TryGetValue(previous.Turn, out var entries))
+        {
+            entries.Remove((previous.Order, id));
+            if (entries.Count == 0) state.HistoryByTurn.Remove(previous.Turn);
+            var kindKey = (previous.Turn, previous.Kind);
+            if (state.HistoryByTurnKind.TryGetValue(kindKey, out var kindEntries))
+            {
+                kindEntries.Remove((previous.Order, id));
+                if (kindEntries.Count == 0) state.HistoryByTurnKind.Remove(kindKey);
+            }
+        }
+        state.StreamingHistoryIds.Remove(id);
+        state.ProvisionalToolIds.Remove(id);
+    }
+
+    private static void RefreshHistoryIndexes(AppServerControlConversationState state, AppServerControlHistoryItem entry)
+    {
+        RemoveHistoryIndexes(state, entry.EntryId);
+        var turn = entry.TurnId ?? string.Empty;
+        if (!state.HistoryByTurn.TryGetValue(turn, out var entries))
+            state.HistoryByTurn[turn] = entries = new(state.HistoryOrder.Comparer);
+        entries.Add((entry.Order, entry.EntryId));
+        if (entry.Kind is "assistant" or "reasoning" && entry.Body.Length > 0)
+        {
+            var kindKey = (turn, entry.Kind);
+            if (!state.HistoryByTurnKind.TryGetValue(kindKey, out var kindEntries))
+                state.HistoryByTurnKind[kindKey] = kindEntries = new(state.HistoryOrder.Comparer);
+            kindEntries.Add((entry.Order, entry.EntryId));
+        }
+        state.HistoryIndexKeys[entry.EntryId] = (turn, entry.Kind, entry.Order);
+        if (entry.Streaming) state.StreamingHistoryIds.Add(entry.EntryId);
+        if (entry.Kind == "tool" && entry.Streaming && string.IsNullOrWhiteSpace(entry.ItemId))
+            state.ProvisionalToolIds.Add(entry.EntryId);
+    }
+
+    private static string CollectTurnStreamTail(AppServerControlConversationState state, AppServerControlHistoryItem entry, int budget)
+    {
+        RefreshHistoryIndexes(state, entry);
+        if (!state.HistoryByTurnKind.TryGetValue((entry.TurnId ?? string.Empty, entry.Kind), out var entries)) return string.Empty;
+        var parts = new List<string>();
+        // Normalization can halve CRLF input. Retain enough raw tail to preserve the exact
+        // existing normalized truncation/marker result, including imported unnormalized bodies.
+        var remaining = (budget + 1) * 2;
+        foreach (var key in entries.Reverse())
+        {
+            var candidate = state.HistoryEntries[key.EntryId];
+            if (candidate.Kind != entry.Kind || candidate.Body.Length == 0) continue;
+            var take = Math.Min(remaining, candidate.Body.Length);
+            parts.Add(candidate.Body[^take..]);
+            remaining -= take;
+            if (remaining == 0) break;
+        }
+        parts.Reverse();
+        return string.Concat(parts);
     }
 }

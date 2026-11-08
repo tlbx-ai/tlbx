@@ -793,6 +793,10 @@ public sealed partial class SessionAppServerControlHistoryService
             ApplyRuntimeNotice(state, appServerControlEvent, appServerControlEvent.RuntimeNoticeOnly, timelineVisible: false);
         }
         PruneInactiveItemIndex(state);
+        foreach (var id in CollectTouchedHistoryIds(state, appServerControlEvent))
+        {
+            if (state.HistoryEntries.TryGetValue(id, out var entry)) RefreshHistoryIndexes(state, entry);
+        }
     }
 
     private AppServerControlHistoryWindowResponse CloneSnapshot(
@@ -943,6 +947,8 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         target.Items.Clear();
+        target.UserItemsByTurn.Clear();
+        target.UserItemTurns.Clear();
         target.ItemAliases.Clear();
         target.ActiveItemIds.Clear();
         foreach (var item in source.Items)
@@ -994,6 +1000,8 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         target.Items.Clear();
+        target.UserItemsByTurn.Clear();
+        target.UserItemTurns.Clear();
         target.ItemAliases.Clear();
         target.ActiveItemIds.Clear();
         foreach (var item in source.Items)
@@ -1464,9 +1472,8 @@ public sealed partial class SessionAppServerControlHistoryService
             }
             if (string.Equals(entry.TurnId, state.CurrentTurn.TurnId, StringComparison.Ordinal))
             {
-                var text = string.Concat(state.HistoryEntries.Values
-                    .Where(item => item.Kind == historyKind && item.TurnId == entry.TurnId)
-                    .OrderBy(item => item.Order).Select(item => item.Body));
+                var text = CollectTurnStreamTail(state, entry,
+                    historyKind == "assistant" ? MaxAssistantStreamChars : MaxReasoningStreamChars);
                 if (historyKind == "assistant") state.Streams.AssistantText = AppendAssistantDelta(string.Empty, text);
                 if (historyKind == "reasoning") state.Streams.ReasoningText = AppendRetainedHistoryChunk(string.Empty, text, MaxReasoningStreamChars, retainHead: false);
             }
@@ -1649,7 +1656,7 @@ public sealed partial class SessionAppServerControlHistoryService
 
         var normalizedType = NormalizeItemType(appServerControlEvent.Item.ItemType);
         var historyKind = HistoryKindFromItem(normalizedType);
-        var canonicalItemId = ResolveCanonicalItemId(state.Items, appServerControlEvent, historyKind);
+        var canonicalItemId = ResolveCanonicalItemId(state, appServerControlEvent, historyKind);
         var item = GetOrCreateItemSummary(state.Items, canonicalItemId, appServerControlEvent.TurnId);
         item.TurnId = appServerControlEvent.TurnId ?? item.TurnId;
         item.ItemType = normalizedType;
@@ -2332,7 +2339,7 @@ public sealed partial class SessionAppServerControlHistoryService
         {
             var normalizedType = NormalizeItemType(appServerControlEvent.Item.ItemType);
             var historyKind = HistoryKindFromItem(normalizedType);
-            var canonicalItemId = ResolveCanonicalItemId(state.Items, appServerControlEvent, historyKind);
+            var canonicalItemId = ResolveCanonicalItemId(state, appServerControlEvent, historyKind);
             historyIds.Add(ResolveHistoryEntryIdForItem(state, appServerControlEvent, historyKind, canonicalItemId));
         }
 
@@ -2364,7 +2371,7 @@ public sealed partial class SessionAppServerControlHistoryService
 
         var normalizedType = NormalizeItemType(appServerControlEvent.Item.ItemType);
         var historyKind = HistoryKindFromItem(normalizedType);
-        itemIds.Add(ResolveCanonicalItemId(state.Items, appServerControlEvent, historyKind));
+        itemIds.Add(ResolveCanonicalItemId(state, appServerControlEvent, historyKind));
         return itemIds;
     }
 
@@ -2411,11 +2418,11 @@ public sealed partial class SessionAppServerControlHistoryService
     }
 
     private static string ResolveCanonicalItemId(
-        IReadOnlyDictionary<string, AppServerControlItemSummary> items,
+        AppServerControlConversationState state,
         AppServerControlProviderEvent appServerControlEvent,
         string historyKind)
     {
-        if (historyKind == "user") return ResolveCanonicalUserItemId(items, appServerControlEvent);
+        if (historyKind == "user") return ResolveCanonicalUserItemId(state, appServerControlEvent);
 
         if (!string.IsNullOrWhiteSpace(appServerControlEvent.ItemId))
         {
@@ -2498,7 +2505,7 @@ public sealed partial class SessionAppServerControlHistoryService
             return false;
         }
 
-        var provisionalEntry = state.HistoryEntries.Values
+        var provisionalEntry = state.ProvisionalToolIds.Select(id => state.HistoryEntries[id])
             .Where(entry =>
                 string.Equals(entry.Kind, "tool", StringComparison.Ordinal) &&
                 string.Equals(entry.TurnId, appServerControlEvent.TurnId, StringComparison.Ordinal) &&
@@ -2725,13 +2732,14 @@ public sealed partial class SessionAppServerControlHistoryService
     }
 
     private static string ResolveCanonicalUserItemId(
-        IReadOnlyDictionary<string, AppServerControlItemSummary> items,
+        AppServerControlConversationState state,
         AppServerControlProviderEvent providerEvent)
     {
         var incomingId = providerEvent.ItemId ?? $"local-user:{providerEvent.TurnId ?? providerEvent.EventId}";
-        if (items.ContainsKey(incomingId)) return incomingId;
-        var candidates = items.Values.Where(item => item.ItemType == "user_message" &&
-            string.Equals(item.TurnId, providerEvent.TurnId, StringComparison.Ordinal)).ToArray();
+        if (state.Items.ContainsKey(incomingId)) return incomingId;
+        var candidates = state.UserItemsByTurn.TryGetValue(providerEvent.TurnId ?? string.Empty, out var ids)
+            ? ids.Select(id => state.Items[id]).Where(item =>
+                string.Equals(item.TurnId, providerEvent.TurnId, StringComparison.Ordinal)).ToArray() : [];
         var matched = candidates.FirstOrDefault(item => item.AliasItemIds.Contains(incomingId, StringComparer.Ordinal));
         if (matched is not null) return matched.ItemId;
 
@@ -3252,16 +3260,19 @@ public sealed partial class SessionAppServerControlHistoryService
             return;
         }
 
+        RefreshHistoryIndexes(state, entry);
         var turnLeadOrder = long.MaxValue;
-        foreach (var candidate in state.HistoryEntries.Values)
+        foreach (var key in state.HistoryByTurn[entry.TurnId])
         {
+            var candidate = state.HistoryEntries[key.EntryId];
             if (ReferenceEquals(candidate, entry) ||
                 !string.Equals(candidate.TurnId, entry.TurnId, StringComparison.Ordinal))
             {
                 continue;
             }
 
-            turnLeadOrder = Math.Min(turnLeadOrder, candidate.Order);
+            turnLeadOrder = candidate.Order;
+            break;
         }
 
         if (turnLeadOrder == long.MaxValue || entry.Order <= turnLeadOrder)
@@ -3288,8 +3299,9 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private static void CompleteStreamingHistoryEntries(AppServerControlConversationState state, string? turnId)
     {
-        foreach (var entry in state.HistoryEntries.Values)
+        foreach (var id in state.StreamingHistoryIds.ToArray())
         {
+            var entry = state.HistoryEntries[id];
             if (!entry.Streaming)
             {
                 continue;
@@ -3302,6 +3314,8 @@ public sealed partial class SessionAppServerControlHistoryService
             }
 
             entry.Streaming = false;
+            state.StreamingHistoryIds.Remove(id);
+            state.ProvisionalToolIds.Remove(id);
             if (string.IsNullOrWhiteSpace(entry.Status) ||
                 string.Equals(entry.Status, "streaming", StringComparison.OrdinalIgnoreCase))
             {
@@ -3757,8 +3771,15 @@ public sealed partial class SessionAppServerControlHistoryService
                 return order != 0 ? order : StringComparer.Ordinal.Compare(left.EntryId, right.EntryId);
             }));
         public Dictionary<string, (long Order, string EntryId)> HistoryOrderKeys { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, SortedSet<(long Order, string EntryId)>> HistoryByTurn { get; } = new(StringComparer.Ordinal);
+        public Dictionary<(string Turn, string Kind), SortedSet<(long Order, string EntryId)>> HistoryByTurnKind { get; } = new();
+        public Dictionary<string, (string Turn, string Kind, long Order)> HistoryIndexKeys { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> StreamingHistoryIds { get; } = new(StringComparer.Ordinal);
+        public HashSet<string> ProvisionalToolIds { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, AppServerControlItemSummary> Items { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, string> ItemAliases { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, HashSet<string>> UserItemsByTurn { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, string> UserItemTurns { get; } = new(StringComparer.Ordinal);
         public HashSet<string> ActiveItemIds { get; } = new(StringComparer.Ordinal);
         public Dictionary<string, AppServerControlRequestSummary> Requests { get; } = new(StringComparer.Ordinal);
         public HashSet<string> OpenRequestIds { get; } = new(StringComparer.Ordinal);
