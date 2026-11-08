@@ -632,10 +632,9 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
       optionButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (select.value !== option.value) {
-          select.value = option.value;
-          select.dispatchEvent(new Event('change', { bubbles: false }));
-        }
+        // An explicit choice also retries an unconfirmed or rejected value.
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: false }));
         syncSelection();
         closeMenu();
       });
