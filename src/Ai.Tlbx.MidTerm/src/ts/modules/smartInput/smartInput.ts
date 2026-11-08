@@ -24,7 +24,12 @@ import {
   $settingsOpen,
   $voiceAvailable,
 } from '../../stores';
-import { setAppServerControlGoal } from '../../api/client';
+import {
+  GOAL_CHANGED_EVENT,
+  goalControlLabel,
+  goalControlTitle,
+  openAppServerControlGoalEditor,
+} from '../appServerControl/goals';
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
@@ -181,7 +186,6 @@ let isRecording = false;
 let pendingMicPinSessionId: string | null = null;
 let lastSessionId: string | null = null;
 let appServerControlQuickSettingsSheetOpen = false;
-let appServerControlGoalComposeSessionId: string | null = null;
 let sendAutoSendLongPressTimer: number | null = null;
 let suppressNextSendClick = false;
 let suppressNextToolsToggleClick = false;
@@ -1146,6 +1150,11 @@ export function initSmartInput(): void {
     }
   });
 
+  window.addEventListener(GOAL_CHANGED_EVENT, () => {
+    const sessionId = $activeSessionId.get();
+    if (sessionId) syncAppServerControlQuickSettingsActions(sessionId);
+  });
+
   bindSmartInputGlobalKeyBindings({
     closeFooterTransientUi,
     endRecording,
@@ -2053,16 +2062,16 @@ function syncAppServerControlQuickSettingsActions(sessionId: string): void {
 
   appServerControlQuickSettingsActions.replaceChildren();
   const provider = getAppServerControlQuickSettingsProvider(sessionId);
-  if (provider === 'codex') {
+  if (provider === 'codex' || provider === 'claude') {
     appServerControlQuickSettingsActions.appendChild(
       createAppServerControlActionButton(
-        'Goal',
-        t('smartInput.appServerControlGoalCommand'),
+        goalControlLabel(sessionId),
+        goalControlTitle(sessionId),
         () => {
-          void prepareAppServerControlGoal(sessionId);
+          openAppServerControlGoalEditor(sessionId);
         },
         false,
-        { pressed: appServerControlGoalComposeSessionId === sessionId },
+        { pressed: false },
       ),
     );
   }
@@ -2100,50 +2109,6 @@ function createAppServerControlActionButton(
     }
   });
   return button;
-}
-
-async function prepareAppServerControlGoal(sessionId: string): Promise<void> {
-  if (!activeTextarea) {
-    return;
-  }
-
-  if (appServerControlGoalComposeSessionId === sessionId) {
-    appServerControlGoalComposeSessionId = null;
-    activeTextarea.placeholder = t(
-      isMobileViewport() ? 'smartInput.placeholderMobile' : 'smartInput.placeholder',
-    );
-    focusSmartInput();
-    syncAppServerControlQuickSettingsActions(sessionId);
-    return;
-  }
-
-  const currentText = activeTextarea.value.trim();
-  if (currentText.length === 0) {
-    appServerControlGoalComposeSessionId = sessionId;
-    activeTextarea.placeholder = 'Set AppServerControl goal...';
-    focusSmartInput();
-    syncAppServerControlQuickSettingsActions(sessionId);
-    return;
-  }
-
-  await submitAppServerControlGoal(sessionId, currentText, activeTextarea);
-}
-
-async function submitAppServerControlGoal(
-  sessionId: string,
-  objective: string,
-  textarea: HTMLTextAreaElement,
-): Promise<void> {
-  try {
-    await setAppServerControlGoal(sessionId, { objective });
-    appServerControlGoalComposeSessionId = null;
-    pushCurrentPromptToHistory(sessionId);
-    clearSubmittedSmartInputState(sessionId, textarea);
-    showDropToast('Goal set.');
-    syncAppServerControlQuickSettingsActions(sessionId);
-  } catch (error) {
-    showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
-  }
 }
 
 function setToolsPanelOpen(open: boolean): void {
@@ -2733,10 +2698,6 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     const attachments = cloneAppServerControlComposerDraftAttachments(getAppServerControlDraftAttachments(sessionId).filter((entry) => ids.has(entry.id)));
     const text = getSessionDraftText(sessionId);
     if (!text && attachments.length === 0) return;
-    if (appServerControlGoalComposeSessionId === sessionId) {
-      if (attachments.length) throw new Error(t('smartInput.richGoalTextOnly'));
-      await submitAppServerControlGoal(sessionId, text, ta); return;
-    }
     const { queuedTurn } = await submitAppServerControlComposerDraft({
       sessionId, draft, attachments, uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
       attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'), uploadFile,

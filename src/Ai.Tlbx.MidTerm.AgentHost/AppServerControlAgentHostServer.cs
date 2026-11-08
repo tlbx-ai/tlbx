@@ -314,9 +314,29 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             _historySessions.SetWorkingDirectory(command.SessionId, command.AttachRuntime.WorkingDirectory);
         }
 
+        var recoveryWindow = command.Type == "runtime.recover" ? _history.GetSnapshotWindow(command.SessionId, 0, 1) : null;
         var runtime = await GetRuntimeAsync(command).ConfigureAwait(false);
-        var outcome = await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false);
+        HostCommandOutcome outcome;
+        try { outcome = await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false); }
+        catch
+        {
+            if (recoveryWindow is not null && _history.GetSnapshotWindow(command.SessionId, 0, 1)?.Thread.Goal?.Detail == "recoveryFailed")
+                CancelRecoveredRequests(command, recoveryWindow, runtime.Provider);
+            throw;
+        }
+        if (recoveryWindow is not null && outcome.Result.Accepted?.Goal?.Status == "pending")
+            CancelRecoveredRequests(command, recoveryWindow, runtime.Provider);
         return MaybeAppendSubmittedUserMessage(command, outcome, runtime.Provider);
+    }
+
+    private void CancelRecoveredRequests(AppServerControlHostCommandEnvelope command, AppServerControlHistoryWindowResponse window, string provider)
+    {
+        if (!string.Equals(window.Thread.ThreadId, command.SetGoal?.ExpectedThreadId, StringComparison.Ordinal)) return;
+        foreach (var request in window.Requests.Where(request => request.State == "open"))
+            StoreRuntimeEvent(new() { SessionId = command.SessionId, Provider = provider,
+                ThreadId = window.Thread.ThreadId, TurnId = request.TurnId, RequestId = request.RequestId,
+                EventId = Guid.NewGuid().ToString("N"), CreatedAt = DateTimeOffset.UtcNow, Type = "request.resolved",
+                RequestResolved = new() { RequestType = request.Kind, Decision = "cancel" } });
     }
 
     private AppServerControlHistoryWindowResponse? GetHistoryWindow(
@@ -435,6 +455,8 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "turn.interrupt",
                     "thread.compact",
                     "thread.goal.set",
+                    "thread.goal.get",
+                    "thread.goal.clear",
                     "request.resolve",
                     "user-input.resolve",
                     "history.window.get",
@@ -741,6 +763,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Message = appServerControlEvent.RuntimeMessage.Message,
                 Detail = appServerControlEvent.RuntimeMessage.Detail
             },
+            GoalUpdated = appServerControlEvent.GoalUpdated?.Clone(),
             RuntimeNoticeOnly = appServerControlEvent.RuntimeNoticeOnly is null ? null : new AppServerControlProviderRuntimeMessagePayload
             {
                 Message = appServerControlEvent.RuntimeNoticeOnly.Message,

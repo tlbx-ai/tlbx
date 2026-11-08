@@ -18,6 +18,7 @@ public sealed class AppServerControlProviderEvent
     public AppServerControlProviderSessionStatePayload? SessionState { get; set; }
     public AppServerControlProviderAgentMetadataPayload? AgentMetadataUpdated { get; set; }
     public AppServerControlProviderThreadStatePayload? ThreadState { get; set; }
+    public AppServerControlGoalState? GoalUpdated { get; set; }
     public AppServerControlProviderTurnStartedPayload? TurnStarted { get; set; }
     public AppServerControlProviderTurnCompletedPayload? TurnCompleted { get; set; }
     public AppServerControlProviderContentDeltaPayload? ContentDelta { get; set; }

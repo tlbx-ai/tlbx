@@ -450,4 +450,67 @@ describe('appServerControlWebSocket', () => {
     await rejection;
     expect(socket.sent).toHaveLength(1);
   });
+  it.each(['set', 'get', 'clear', 'recover'] as const)(
+    'sends native Goal %s with its guard and preserves a pending receipt',
+    async (operation) => {
+      vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+      const { setAppServerControlGoalWs } = await import('./appServerControlWebSocket');
+      const request = {
+        operation,
+        expectedThreadId: 'thread-A',
+        expectedTurnId: 'turn-A',
+        objective: 'Keep',
+        tokenBudget: null,
+      };
+      const pending = setAppServerControlGoalWs('session-1', request);
+      await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+      const socket = FakeWebSocket.instances[0]!;
+      const sent = JSON.parse(socket.sent[0]!);
+      expect(sent).toMatchObject({
+        action: operation === 'recover' ? 'runtime.recover' : `thread.goal.${operation}`,
+        goalSet: request,
+      });
+      expect(sent).not.toHaveProperty('turn');
+      const receipt = {
+        sessionId: 'session-1',
+        threadId: 'thread-A',
+        turnId: 'turn-A',
+        status: 'pending',
+      };
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: 'commandAccepted',
+          id: sent.id,
+          sessionId: 'session-1',
+          response: { goal: receipt },
+        }),
+      } as MessageEvent);
+      expect(await pending).toEqual(receipt);
+      expect(socket.sent).toHaveLength(1);
+    },
+  );
+
+  it('does not turn a generic accepted response into native Goal success', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { setAppServerControlGoalWs } = await import('./appServerControlWebSocket');
+    const pending = setAppServerControlGoalWs('session-1', {
+      operation: 'get',
+      expectedThreadId: 'thread-A',
+      expectedTurnId: null,
+    });
+    const rejection = expect(pending).rejects.toThrow('did not match its target');
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { status: 'accepted' },
+      }),
+    } as MessageEvent);
+    await rejection;
+    expect(socket.sent).toHaveLength(1);
+  });
 });

@@ -209,6 +209,65 @@ public sealed class HistoryReplayTests : IDisposable
         finally { recovered.Forget(Session); }
     }
 
+    [Fact]
+    public async Task GoalAndAcknowledgedDefaultsSurviveBoundedInitialReplayWindowsPatchesAndReload()
+    {
+        var events = new List<AppServerControlProviderEvent> { Started("past") };
+        for (var i = 0; i < 100; i++)
+            events.Add(Item("past", $"tool-{i.ToString(System.Globalization.CultureInfo.InvariantCulture)}", "command_execution", "completed", "Completed command"));
+        events.Add(Completed("past"));
+        var goal = Event("thread.goal.changed", "past");
+        goal.GoalUpdated = new() { ThreadId = "thread", Confirmation = "confirmed",
+            Goal = new() { Objective = "Keep", Status = "active", Iterations = 1, LastReason = "Waiting" } };
+        events.Add(goal);
+        var settings = Event("quick-settings.updated", "past");
+        settings.QuickSettingsUpdated = new() { Model = "accepted-model", PermissionMode = "auto", AcknowledgedFields = ["model", "permissionMode"] };
+        events.Add(settings);
+        using var patches = _history.SubscribeHistoryPatches(Session, TestContext.Current.CancellationToken);
+        _history.AppendInitialReplay(events);
+        Assert.True(patches.Reader.TryRead(out var patch));
+        Assert.False(patches.Reader.TryRead(out _));
+        Assert.Equal(100, patch!.HistoryCount);
+        Assert.True(patch.HistoryUpserts.Count <= 80);
+        Assert.Equal("Keep", patch.Thread.Goal!.Goal!.Objective);
+        Assert.Contains("permissionMode", patch.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
+        goal.GoalUpdated.Goal!.Objective = "mutated source";
+        settings.QuickSettingsUpdated.AcknowledgedFields.Clear();
+        patch.QuickSettings.AcknowledgedFields.Clear();
+        Assert.Contains("model", _history.GetSnapshotWindow(Session, 0, 1)!.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
+        patch.Thread.Goal.Goal.Objective = "mutated patch";
+        Assert.Equal("Keep", _history.GetSnapshotWindow(Session, 0, 1)!.Thread.Goal!.Goal!.Objective);
+        Assert.Equal("Keep", _history.GetSnapshotWindow(Session, 99, 1)!.Thread.Goal!.Goal!.Objective);
+        var cloneDirectory = Path.Combine(_directory, "import");
+        var imported = new SessionAppServerControlHistoryService(storeDirectory: cloneDirectory, enableScreenLogging: false);
+        try
+        {
+            imported.ImportHistoryWindow(_history.GetSnapshotWindow(Session, 0, 1)!);
+            Assert.Equal("Keep", imported.GetSnapshot(Session)!.Thread.Goal!.Goal!.Objective);
+            Assert.Contains("model", imported.GetSnapshot(Session)!.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            while (!File.Exists(Path.Combine(_directory, Session + ".json"))) await Task.Delay(20, timeout.Token);
+            var loaded = new SessionAppServerControlHistoryService(storeDirectory: _directory, enableScreenLogging: false);
+            try
+            {
+                var restored = loaded.GetSnapshotWindow(Session, 0, 1)!;
+                Assert.Equal("Keep", restored.Thread.Goal!.Goal!.Objective);
+                Assert.Equal(1, restored.Thread.Goal.Goal.Iterations);
+                Assert.Equal("auto", restored.QuickSettings.PermissionMode);
+                Assert.Contains("permissionMode", restored.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
+                _history.Append(new() { SessionId = Session, Provider = "codex", ThreadId = "thread", Type = "thread.goal.changed",
+                    GoalUpdated = new() { ThreadId = "thread", Confirmation = "confirmed", Goal = null } });
+                Assert.True(patches.Reader.TryRead(out var cleared));
+                imported.ApplyHistoryPatch(cleared!);
+                Assert.Null(imported.GetSnapshot(Session)!.Thread.Goal!.Goal);
+                Assert.Contains("model", imported.GetSnapshot(Session)!.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
+            }
+            finally { loaded.Forget(Session); }
+        }
+        finally { imported.Forget(Session); }
+    }
+
     private static AppServerControlProviderEvent Event(string type, string turn) => new()
     {
         SessionId = Session, Provider = "codex", ThreadId = "thread", TurnId = turn,

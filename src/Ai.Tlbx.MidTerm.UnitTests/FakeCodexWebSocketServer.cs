@@ -91,6 +91,10 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
 
     public int ThreadResumeCount { get; private set; }
 
+    public bool IgnoreGoalReadback { get; set; }
+
+    public int GoalReadCount { get; private set; }
+
     public bool EmitUsageNotifications { get; set; }
 
     public bool PaginatedHistory { get; set; }
@@ -338,6 +342,15 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                             }, _shutdown.Token).ConfigureAwait(false);
                         }
                         await SendProtocolV2SurfaceNotificationsAsync(socket).ConfigureAwait(false);
+                        break;
+
+                    case "thread/goal/get" when id is not null:
+                        GoalReadCount++;
+                        if (!IgnoreGoalReadback)
+                        {
+                            await SendJsonAsync(socket, new { id, result = new { goal = (object?)null } },
+                                _shutdown.Token).ConfigureAwait(false);
+                        }
                         break;
 
                     case "thread/read" when id is not null:

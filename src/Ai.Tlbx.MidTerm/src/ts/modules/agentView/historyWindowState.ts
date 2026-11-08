@@ -1,3 +1,4 @@
+import { syncAppServerControlGoal } from '../appServerControl/goals';
 import {
   updateAppServerControlHistoryStreamWindow,
   type AppServerControlHistorySnapshot,
@@ -18,6 +19,7 @@ export function applyLiveAppServerControlHistoryDelta(
   const requiresRefresh = applyCanonicalAppServerControlDelta(state, delta);
   if (state.snapshot) {
     syncAppServerControlQuickSettingsFromHistory(state.snapshot, state.streamConnected);
+    syncAppServerControlGoal(state.snapshot, state.streamConnected);
   }
   return requiresRefresh;
 }
@@ -67,6 +69,7 @@ export function applyFetchedAppServerControlHistoryWindow(
   applyAppServerControlHistoryWindowState(state, snapshot);
   state.snapshot = snapshot;
   syncAppServerControlQuickSettingsFromHistory(snapshot, state.streamConnected);
+  syncAppServerControlGoal(snapshot, state.streamConnected);
   state.historyWindowRevision = windowRevision ?? state.historyWindowRevision;
   if (state.disconnectStream) {
     if (state.historyWindowViewportWidth == null) {

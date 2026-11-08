@@ -174,6 +174,16 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         }
                     }).ConfigureAwait(false);
                     continue;
+                case "thread/goal/get":
+                    RecordMethod(launchCapture, method);
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new { goal = (object?)null }
+                    }).ConfigureAwait(false);
+                    continue;
                 case "thread/read":
                     await WriteJsonAsync(new
                     {
