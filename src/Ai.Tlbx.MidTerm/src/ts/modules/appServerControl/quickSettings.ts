@@ -603,7 +603,9 @@ function syncRuntimeSettingsTarget(
     if (current.target && current.target.turnId !== turnId) {
       for (const field of runtimeFields) {
         if (!Object.prototype.hasOwnProperty.call(current.confirmedDefaults, field)) {
-          delete current.confirmedValues[field];
+          current.confirmedValues = Object.fromEntries(
+            Object.entries(current.confirmedValues).filter(([key]) => key !== field),
+          );
           const status = current.statuses[field];
           if (status && status.state !== 'pending')
             current.statuses[field] = { state: 'unconfirmed', scope: 'subsequentTurns' };
