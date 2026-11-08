@@ -125,6 +125,8 @@ export interface AppServerControlConfigureResponse {
 }
 
 export interface AppServerControlCommandAcceptedResponse {
+  decision?: string | null;
+  answers?: AppServerControlAnsweredQuestion[] | null;
   configuration?: AppServerControlConfigureResponse | null;
   sessionId: string;
   status: string;

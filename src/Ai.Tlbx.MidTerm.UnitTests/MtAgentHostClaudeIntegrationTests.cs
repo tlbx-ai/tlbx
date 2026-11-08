@@ -10,6 +10,76 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostClaudeIntegrationTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FreshClaudePublishesInitializedNativeUuidAndConfiguresBeforeAnyPrompt(bool rejectInitialize)
+    {
+        using var fakeClaude = FakeClaudePathScope.Create();
+        await File.WriteAllTextAsync(Path.Combine(fakeClaude.Root, "capture-runtime-contract"), "fixture", TestContext.Current.CancellationToken);
+        if (rejectInitialize)
+            await File.WriteAllTextAsync(Path.Combine(fakeClaude.Root, "reject-initialize"), "fixture", TestContext.Current.CancellationToken);
+        using var process = StartAgentHost(ResolveAgentHostPath());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "fresh-8-character-host-session";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new()
+            {
+                CommandId = "fresh-attach", SessionId = sessionId, Type = "runtime.attach",
+                AttachRuntime = new() { SessionId = sessionId, Provider = "claude", RuntimeKind = "claude-agent-sdk",
+                    ExecutablePath = fakeClaude.ExecutablePath, WorkingDirectory = fakeClaude.Root }
+            });
+            var attached = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "fresh-attach");
+            var lines = await File.ReadAllLinesAsync(Path.Combine(fakeClaude.Root, "runtime-contract.jsonl"), TestContext.Current.CancellationToken);
+            using var initialization = JsonDocument.Parse(lines.First(line => line.Contains("initialize", StringComparison.Ordinal)));
+            var nativeId = initialization.RootElement.GetProperty("sessionId").GetString()!;
+            Assert.True(Guid.TryParse(nativeId, out _));
+            Assert.NotEqual(sessionId, nativeId);
+            Assert.Equal(JsonValueKind.Null, initialization.RootElement.GetProperty("resume").ValueKind);
+            if (rejectInitialize)
+            {
+                Assert.Equal("rejected", attached.Status);
+                Assert.DoesNotContain(patches, p => p.Patch.Session.State == "ready" || p.Patch.Thread.ThreadId == nativeId);
+                return;
+            }
+            Assert.Equal("accepted", attached.Status);
+            var ready = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput, patches,
+                sessionId, h => h.Session.State == "ready" && h.Thread.ThreadId == nativeId, TimeSpan.FromSeconds(10));
+            Assert.Equal("active", ready.Thread.State);
+            Assert.Null(ready.CurrentTurn.TurnId);
+            Assert.Empty(ready.History);
+            foreach (var settings in new[]
+            {
+                new Dictionary<string, JsonElement> { ["model"] = JsonSerializer.SerializeToElement("claude-test") },
+                new Dictionary<string, JsonElement> { ["effort"] = JsonSerializer.SerializeToElement("high") },
+                new Dictionary<string, JsonElement> { ["planMode"] = JsonSerializer.SerializeToElement("on") },
+                new Dictionary<string, JsonElement> { ["permissionMode"] = JsonSerializer.SerializeToElement("auto") }
+            })
+            {
+                var id = "fresh-configure-" + settings.Keys.Single();
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new()
+                {
+                    CommandId = id, SessionId = sessionId, Type = "runtime.configure",
+                    Configure = new() { ExpectedThreadId = nativeId, ExpectedTurnId = null, Settings = settings }
+                });
+                var configured = (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, id)).Configured!;
+                Assert.Equal("acknowledged", configured.Status);
+                Assert.Equal(nativeId, configured.ThreadId);
+                Assert.Contains(settings.Keys.Single(), configured.ConfirmedSettings.Keys);
+                Assert.Empty(configured.EffectiveSettings);
+            }
+            lines = await File.ReadAllLinesAsync(Path.Combine(fakeClaude.Root, "runtime-contract.jsonl"), TestContext.Current.CancellationToken);
+            Assert.DoesNotContain(lines, line => line.Contains("\"type\":\"user\"", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
     [Fact]
     public async Task ClaudeHistory_RestoresNativeMessagesAndToolsWithoutCurrentModelOrInteractiveRequests()
     {

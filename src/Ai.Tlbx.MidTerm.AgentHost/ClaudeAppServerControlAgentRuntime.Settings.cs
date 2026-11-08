@@ -107,7 +107,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         return ConfigurationOutcome(command, response);
     }
 
-    private void HandlePendingPermissionSettlement(JsonElement root, string decision)
+    private void HandlePendingPermissionSettlement(JsonElement root, string decision, string requestType = "tool_approval")
     {
         var requestId = GetString(root, "requestId");
         var turnId = GetString(root, "turnId");
@@ -117,7 +117,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         // This is an actual callback settlement, not an ACK to a host resolve command.
         // Keep its captured turn even if completion has since moved the active turn.
         _emit(CreateEvent("request.resolved", turnId, null, requestId, "claude.agent-sdk", "canUseTool/callback-settled", root,
-            e => e.RequestResolved = new() { RequestType = "tool_approval", Decision = decision }));
+            e => e.RequestResolved = new() { RequestType = requestType, Decision = decision }));
     }
 
     private static HostCommandOutcome ConfigurationOutcome(AppServerControlHostCommandEnvelope command, AppServerControlConfigureResponse response)
