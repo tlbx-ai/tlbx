@@ -1075,8 +1075,11 @@ function getOrCreateViewState(
   return created;
 }
 
-function syncHistoryProgressNavigator(sessionId: string): void {
-  historyRender.syncViewportOffset(sessionId);
+function syncHistoryProgressNavigator(
+  sessionId: string,
+  options: { refreshVisibleRange?: boolean } = {},
+): void {
+  historyRender.syncViewportOffset(sessionId, options);
 }
 
 function resolveHistoryKeyboardStepPx(state: SessionAppServerControlViewState): number {
@@ -1420,7 +1423,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   viewport.style.overflow = 'hidden auto';
   syncHistoryProgressNavigator(sessionId);
 
-  state.historyViewportSize = {
+  state.historyViewportSize ??= {
     width: viewport.clientWidth,
     height: viewport.clientHeight,
   };
@@ -1463,7 +1466,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
         Math.max(APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE, current.historyWindowCount),
         current.historyObservedHeights.values(),
       );
-      syncHistoryProgressNavigator(sessionId);
+      syncHistoryProgressNavigator(sessionId, { refreshVisibleRange: true });
       syncLiveHistoryWindowViewport(sessionId, current);
       scheduleHistoryRender(sessionId);
     });
@@ -1917,7 +1920,7 @@ function bindAppServerControlVisualViewportRecovery(): void {
       Math.max(APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE, state.historyWindowCount),
       state.historyObservedHeights.values(),
     );
-    syncHistoryProgressNavigator(sessionId);
+    syncHistoryProgressNavigator(sessionId, { refreshVisibleRange: true });
     queueUrgentHistoryWindowViewportSync(sessionId, state);
     renderCurrentAgentView(sessionId, { immediate: true });
   };

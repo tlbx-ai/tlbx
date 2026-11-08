@@ -10,6 +10,7 @@ import {
   createAgentHistoryRender,
   resolveHistoryNavigatorTarget,
   resolveHistoryRetainedWindowDescriptor,
+  resolveMeasurementBrowseAnchorIndex,
 } from './historyRender';
 import type { SessionAppServerControlViewState } from './types';
 
@@ -37,21 +38,24 @@ describe('canonical scrollbar geometry', () => {
     expect(geometry(0.1, 0).travelPx).toBe(0);
   });
 
-  it.each([0, 1, 499, 998, 999])('roundtrips canonical index %i at any grab offset', (anchorIndex) => {
-    const geometry = resolveHistoryNavigatorGeometry({
-      trackHeightPx: 400,
-      historyCount: 1000,
-      visibleCount: 100,
-      anchorIndex,
-    });
-    for (const grabOffset of [0, geometry.thumbHeightPx / 2, geometry.thumbHeightPx]) {
-      expect(
-        resolveHistoryNavigatorPointerIndex(geometry, geometry.topPx + grabOffset, grabOffset),
-      ).toBe(anchorIndex);
-    }
-    expect(resolveHistoryNavigatorPointerIndex(geometry, -100)).toBe(0);
-    expect(resolveHistoryNavigatorPointerIndex(geometry, 500)).toBe(999);
-  });
+  it.each([0, 1, 499, 998, 999])(
+    'roundtrips canonical index %i at any grab offset',
+    (anchorIndex) => {
+      const geometry = resolveHistoryNavigatorGeometry({
+        trackHeightPx: 400,
+        historyCount: 1000,
+        visibleCount: 100,
+        anchorIndex,
+      });
+      for (const grabOffset of [0, geometry.thumbHeightPx / 2, geometry.thumbHeightPx]) {
+        expect(
+          resolveHistoryNavigatorPointerIndex(geometry, geometry.topPx + grabOffset, grabOffset),
+        ).toBe(anchorIndex);
+      }
+      expect(resolveHistoryNavigatorPointerIndex(geometry, -100)).toBe(0);
+      expect(resolveHistoryNavigatorPointerIndex(geometry, 500)).toBe(999);
+    },
+  );
 
   it('does not seek when all history fits on the track', () => {
     const geometry = resolveHistoryNavigatorGeometry({
@@ -159,6 +163,23 @@ describe('navigator rendering across passive layout and hydration', () => {
     return { state, render, rowRect, thumb, attributes };
   }
 
+  it('compensates resize against the stored reader, not the row that grew into view', () => {
+    const { state } = fixture();
+    state.pendingHistoryPrependAnchor = null;
+    state.pendingHistoryLayoutAnchor = null;
+    const viewport = state.historyViewport!;
+    viewport.getBoundingClientRect = vi.fn(() => {
+      throw new Error('Already-reflowed geometry is not the reader anchor');
+    });
+    expect(resolveMeasurementBrowseAnchorIndex(state, viewport)).toBe(500);
+    state.historyNavigatorAnchorIndex = 5000;
+    expect(resolveMeasurementBrowseAnchorIndex(state, viewport)).toBe(5000);
+    state.pendingHistoryLayoutAnchor = { key: 'row', absoluteIndex: 100, offsetPx: 10 };
+    expect(resolveMeasurementBrowseAnchorIndex(state, viewport)).toBeNull();
+    state.pendingHistoryLayoutAnchor = null;
+    state.historyAutoScrollPinned = true;
+    expect(resolveMeasurementBrowseAnchorIndex(state, viewport)).toBeNull();
+  });
   it('redraws the stored anchor and span without remeasuring passive layout changes', () => {
     const { state, render, rowRect, thumb, attributes } = fixture();
     render.syncViewportOffset('session');
@@ -174,6 +195,22 @@ describe('navigator rendering across passive layout and hydration', () => {
     expect(rowRect).not.toHaveBeenCalled();
   });
 
+  it('remeasures the visible fraction on viewport resize without moving the canonical anchor', () => {
+    const { state, render, rowRect, attributes } = fixture();
+    render.syncViewportOffset('session', { refreshVisibleRange: true });
+    expect(state.historyNavigatorVisibleCount).toBe(0.5);
+    expect(state.historyNavigatorAnchorIndex).toBe(500);
+    expect(attributes.get('aria-valuenow')).toBe('501');
+    state.historyViewport!.clientHeight = 200;
+    rowRect.mockReturnValue({ top: 0, bottom: 200 });
+    render.syncViewportOffset('session', { refreshVisibleRange: true });
+    expect(state.historyNavigatorVisibleCount).toBe(1);
+    expect(state.historyNavigatorAnchorIndex).toBe(500);
+    state.historyViewport!.clientHeight = 50;
+    render.syncViewportOffset('session', { refreshVisibleRange: true });
+    expect(state.historyNavigatorVisibleCount).toBe(0.25);
+    expect(state.historyNavigatorAnchorIndex).toBe(500);
+  });
   it('updates the measured span and anchor only on explicit viewport movement', () => {
     const { state, render, thumb } = fixture();
     render.syncViewportOffset('session', { refreshAnchorFromViewport: true });
@@ -252,28 +289,31 @@ describe('navigator rendering across passive layout and hydration', () => {
     });
   });
 
-  it.each([0, 1, 2])('keeps count %i authoritative with empty or entirely filtered visual rows', (count) => {
-    const { state, render, attributes } = fixture();
-    state.snapshot!.historyCount = count;
-    state.snapshot!.historyWindowStart = 0;
-    state.snapshot!.historyWindowEnd = count;
-    state.historyEntries = [];
-    render.syncViewportOffset('session');
-    expect(attributes.get('aria-valuemax')).toBe(String(count));
-    expect(resolveCanonicalHistoryCount(state.snapshot)).toBe(count);
-    expect(resolveHistoryRetainedWindowDescriptor([], state)).toEqual({
-      windowStart: 0,
-      windowEnd: count,
-      totalCount: count,
-    });
-    const target = resolveHistoryNavigatorTarget({ state, clientY: 412 });
-    if (count === 0) {
-      expect(target).toBeNull();
-      expect(state.historyNavigatorAnchorIndex).toBeNull();
-    } else {
-      expect(target!.targetIndex).toBeLessThan(count);
-    }
-  });
+  it.each([0, 1, 2])(
+    'keeps count %i authoritative with empty or entirely filtered visual rows',
+    (count) => {
+      const { state, render, attributes } = fixture();
+      state.snapshot!.historyCount = count;
+      state.snapshot!.historyWindowStart = 0;
+      state.snapshot!.historyWindowEnd = count;
+      state.historyEntries = [];
+      render.syncViewportOffset('session');
+      expect(attributes.get('aria-valuemax')).toBe(String(count));
+      expect(resolveCanonicalHistoryCount(state.snapshot)).toBe(count);
+      expect(resolveHistoryRetainedWindowDescriptor([], state)).toEqual({
+        windowStart: 0,
+        windowEnd: count,
+        totalCount: count,
+      });
+      const target = resolveHistoryNavigatorTarget({ state, clientY: 412 });
+      if (count === 0) {
+        expect(target).toBeNull();
+        expect(state.historyNavigatorAnchorIndex).toBeNull();
+      } else {
+        expect(target!.targetIndex).toBeLessThan(count);
+      }
+    },
+  );
 
   it('never expands canonical metadata from synthetic or filtered visual orders', () => {
     const { state, render, attributes } = fixture();

@@ -185,10 +185,10 @@ function updateBusyIndicatorElapsedInState(
   return false;
 }
 
-function resolveMeasurementBrowseAnchor(
+export function resolveMeasurementBrowseAnchorIndex(
   state: SessionAppServerControlViewState,
   viewport: HTMLDivElement,
-): VirtualizerAnchor | null {
+): number | null {
   if (
     state.historyAutoScrollPinned ||
     state.pendingHistoryPrependAnchor !== null ||
@@ -197,14 +197,21 @@ function resolveMeasurementBrowseAnchor(
     return null;
   }
 
-  return captureViewportAnchor({
-    viewport,
-    renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
-      key: entryId,
-      node: rendered.node,
-      absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
-    })),
-  });
+  // ResizeObserver runs after reflow; a fresh DOM anchor may already be the expanded row.
+  const stableAnchor = state.historyNavigatorAnchorIndex;
+  if (stableAnchor !== null && Number.isFinite(stableAnchor)) {
+    return stableAnchor;
+  }
+  return (
+    captureViewportAnchor({
+      viewport,
+      renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+        key: entryId,
+        node: rendered.node,
+        absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+      })),
+    })?.absoluteIndex ?? null
+  );
 }
 
 function collectHistoryMeasurementChanges(args: {
@@ -238,7 +245,7 @@ function collectHistoryMeasurementChanges(args: {
 
     const nextSize = resolveHistoryViewportEntryHeight(entry, state, viewport.clientWidth);
     changes.push({
-      absoluteIndex: (state.snapshot?.historyWindowStart ?? 0) + relativeIndex,
+      absoluteIndex: Math.max(0, Math.round(entry.order) - 1),
       previousSize,
       nextSize,
     });
@@ -269,7 +276,7 @@ function syncHistoryMeasurementObserver(args: {
       return;
     }
 
-    const browseAnchor = resolveMeasurementBrowseAnchor(current, viewport);
+    const browseAnchorIndex = resolveMeasurementBrowseAnchorIndex(current, viewport);
     const measurementChanges = collectHistoryMeasurementChanges({
       state: current,
       viewport,
@@ -281,7 +288,7 @@ function syncHistoryMeasurementObserver(args: {
 
     const compensationDelta = resolveScrollCompensationDelta({
       changes: measurementChanges,
-      anchorAbsoluteIndex: browseAnchor?.absoluteIndex,
+      anchorAbsoluteIndex: browseAnchorIndex ?? undefined,
     });
     const activelyScrollingEarlier =
       Date.now() - current.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS &&
@@ -725,13 +732,13 @@ function applyHistoryProgressNavigatorPosition(args: {
 
 function syncHistoryProgressNavigatorUi(
   state: SessionAppServerControlViewState | undefined,
-  options: { refreshAnchorFromViewport?: boolean } = {},
+  options: { refreshAnchorFromViewport?: boolean; refreshVisibleRange?: boolean } = {},
 ): void {
-  const host = state?.historyProgressNav;
-  const thumb = state?.historyProgressThumb;
-  if (!state || !host || !thumb) {
+  if (!state?.historyProgressNav || !state.historyProgressThumb) {
     return;
   }
+  const host = state.historyProgressNav;
+  const thumb = state.historyProgressThumb;
 
   const snapshot = state.snapshot;
   const historyCount = resolveCanonicalHistoryCount(snapshot);
@@ -746,7 +753,9 @@ function syncHistoryProgressNavigatorUi(
     options.refreshAnchorFromViewport === true && state.historyNavigatorMode !== 'drag-preview';
   const visibleRange =
     state.historyNavigatorMode !== 'drag-preview' &&
-    (refreshFromViewport || state.historyNavigatorVisibleCount === null)
+    (refreshFromViewport ||
+      options.refreshVisibleRange === true ||
+      state.historyNavigatorVisibleCount === null)
       ? readHistoryNavigatorVisibleRange(state)
       : null;
   if (visibleRange) {
@@ -1930,7 +1939,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
   function syncViewportOffset(
     sessionId: string,
-    options: { refreshAnchorFromViewport?: boolean } = {},
+    options: { refreshAnchorFromViewport?: boolean; refreshVisibleRange?: boolean } = {},
   ): void {
     const state = deps.getState(sessionId);
     if (!state) {
