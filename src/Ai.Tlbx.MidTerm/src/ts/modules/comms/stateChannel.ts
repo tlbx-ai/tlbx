@@ -819,7 +819,7 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         result = handleDockBrowserUiCommand(msg);
         break;
       case 'viewport':
-        result = await handleViewportBrowserUiCommand(msg);
+        result = handleViewportBrowserUiCommand(msg);
         break;
       case 'open':
         result = await handleOpenBrowserUiCommand(msg);
@@ -940,9 +940,10 @@ function handleDockBrowserUiCommand(msg: BrowserUiMessage): { success: boolean; 
   return { success: true };
 }
 
-function handleViewportBrowserUiCommand(
-  msg: BrowserUiMessage,
-): { success: boolean; error?: string } {
+function handleViewportBrowserUiCommand(msg: BrowserUiMessage): {
+  success: boolean;
+  error?: string;
+} {
   const target = resolveBrowserUiTarget(msg, false);
   if (!target) {
     return { success: false, error: 'No browser preview target could be resolved.' };

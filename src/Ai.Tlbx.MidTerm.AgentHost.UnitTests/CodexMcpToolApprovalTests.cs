@@ -435,4 +435,26 @@ public sealed class CodexMcpToolApprovalTests
         }
         finally { history.Forget("s"); if (Directory.Exists(directory)) Directory.Delete(directory, true); }
     }
+
+    [Fact]
+    public async Task CancelledStartScopeWriteIsUnconfirmedAndNeverClaimsProviderCancellation()
+    {
+        await using var server = FakeCodexWebSocketServer.Start("own", "unused");
+        var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+        await using var runtime = new CodexAppServerControlAgentRuntime(events.Enqueue);
+        await AttachAsync(runtime, server);
+        var type = typeof(CodexAppServerControlAgentRuntime);
+        type.GetField("_mcpTurnStartPending", BindingFlags.NonPublic | BindingFlags.Instance)!.SetValue(runtime, true);
+        Request(runtime);
+        using var cancelled = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        cancelled.Cancel();
+        await (Task)type.GetMethod("ReconcileMcpStartApprovalsAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(runtime, ["own", null, cancelled.Token])!;
+        Assert.Empty(server.ServerRequestResponses);
+        Assert.Equal("unconfirmed", Assert.Single(events.Where(e => e.RequestResolved is not null)).RequestResolved!.Decision);
+        Assert.Contains(events, e => e.Type == "runtime.warning" && e.RuntimeNoticeOnly!.Message!.Contains("unconfirmed", StringComparison.Ordinal));
+        var opened = Assert.Single(events.Where(e => e.RequestOpened is not null));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Resolve(runtime, opened.RequestId!, "accept"));
+        Assert.Empty(server.ServerRequestResponses);
+    }
 }

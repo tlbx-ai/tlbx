@@ -115,13 +115,17 @@ internal sealed partial class CodexAppServerControlAgentRuntime
                 continue;
             }
             if (!_pendingApprovals.TryRemove(pending.RequestId, out _) || pending.ThreadId != _providerThreadId) continue;
+            var sent = true;
             try { await WriteCodexMessageAsync(BuildMcpToolApprovalResponse(pending, "cancel"), ct).ConfigureAwait(false); }
             catch (Exception error) when (error is InvalidOperationException or IOException or System.Net.WebSockets.WebSocketException or OperationCanceledException)
             {
-                // The local start was not acknowledged for this ID; never retry an uncertain cancellation.
+                sent = false;
+                // Close the invalid local scope without claiming delivery or retrying the wire operation.
+                _emit(CreateEvent("runtime.warning", pending.TurnId, null, pending.RequestId, "mtagenthost.codex", "turn/start-scope", default,
+                    e => e.RuntimeNoticeOnly = new() { Message = "MCP tool cancellation delivery is unconfirmed; no automatic retry was performed." }));
             }
             _emit(CreateEvent("request.resolved", pending.TurnId, null, pending.RequestId, "mtagenthost.codex", "turn/start-scope", default,
-                e => e.RequestResolved = new() { RequestType = McpToolApprovalType, Decision = "cancel" }));
+                e => e.RequestResolved = new() { RequestType = McpToolApprovalType, Decision = sent ? "cancel" : "unconfirmed" }));
         }
     }
 

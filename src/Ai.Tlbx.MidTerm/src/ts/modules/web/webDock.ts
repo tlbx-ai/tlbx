@@ -366,9 +366,10 @@ export function setViewportSize(
 ): boolean {
   const activeSessionId = $activeSessionId.get();
   const sessionId = target?.sessionId ?? activeSessionId;
+  if (!sessionId) return false;
   const previewName = target?.previewName ?? getActivePreviewName();
-  const iframe = sessionId ? getSessionPreviewFrame(sessionId, previewName) : null;
-  if (!iframe || !sessionId) return false;
+  const iframe = getSessionPreviewFrame(sessionId, previewName);
+  if (!iframe) return false;
 
   setSessionViewport(sessionId, previewName, width, height);
   applyStoredViewportToFrame(iframe);
