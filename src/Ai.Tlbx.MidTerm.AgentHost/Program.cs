@@ -20,6 +20,11 @@ public static class Program
             return 0;
         }
 
+        if (args.Contains("--codex-thread-list", StringComparer.Ordinal))
+        {
+            return await CodexThreadCatalogCommand.RunAsync(ReadOption(args, "--cwd")).ConfigureAwait(false);
+        }
+
         var syntheticProvider = ReadOption(args, "--synthetic");
         var instanceId = ReadOption(args, "--instance-id");
         var ownerToken = ReadOption(args, "--owner-token");
@@ -78,6 +83,7 @@ public static class Program
               mtagenthost --stdio --synthetic <provider>
               mtagenthost --ipc --session-id <id> --instance-id <id> --owner-token <token>
               mtagenthost --version
+              mtagenthost --codex-thread-list [--cwd <path>]
               mtagenthost --help
 
             Current scope:

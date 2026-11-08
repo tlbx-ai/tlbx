@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Ai.Tlbx.MidTerm\Ai.Tlbx.MidTerm.csproj" />
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.TtyHost\Ai.Tlbx.MidTerm.TtyHost.csproj" />
+    <ProjectReference Include="..\Ai.Tlbx.MidTerm.FakeCodex\Ai.Tlbx.MidTerm.FakeCodex.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
