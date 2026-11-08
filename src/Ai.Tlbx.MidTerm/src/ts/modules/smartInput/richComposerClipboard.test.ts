@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import DOMPurify from 'dompurify';
+vi.mock('dompurify', () => ({ default: { sanitize: vi.fn() } }));
 import { captureRichClipboard, materializeRichClipboardImages, plainRichClipboardParts, richClipboardReferenceIds } from './richComposerClipboard';
 import { draftFromRichDocument, getRichComposerDocument } from './richComposerDocument';
 
@@ -14,9 +16,9 @@ describe('trusted rich clipboard capture', () => {
     vi.stubGlobal('fetch', fetch);
     // Parsing remains a DOM boundary; this contract checks that image discovery
     // consumes only event files and never reads src or starts a network request.
-    vi.stubGlobal('document', { createElement: () => ({ innerHTML: '', content: {
+    vi.mocked(DOMPurify.sanitize).mockReturnValue({
       querySelectorAll: () => [{ getAttribute: () => { throw new Error('URL bytes forbidden'); } }],
-    } }) });
+    } as unknown as DocumentFragment);
     try {
       const data = materializeRichClipboardImages({ html, text: 'before text after', files: [] });
       expect(data.html).toBe(html);

@@ -1,3 +1,4 @@
+import DOMPurify from 'dompurify';
 import { t } from '../i18n';
 import { isAppServerControlComposerImageFile } from './appServerControlAttachments';
 import { DOMParser as ProseMirrorDOMParser, type Slice } from 'prosemirror-model';
@@ -56,29 +57,19 @@ const allowed = new Set([
   'A',
   'SPAN',
 ]);
-const removed = new Set([
-  'SCRIPT',
-  'STYLE',
-  'IFRAME',
-  'OBJECT',
-  'EMBED',
-  'META',
-  'LINK',
-  'FORM',
-  'INPUT',
-  'SVG',
-  'MATH',
-]);
+function clipboardHtmlFragment(html: string): DocumentFragment {
+  // Retain image positions but never their URLs. No untrusted markup is assigned
+  // to a live DOM sink; ProseMirror receives only this sanitized inert fragment.
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: [...Array.from(allowed, (tag) => tag.toLowerCase()), 'img'],
+    ALLOWED_ATTR: ['href', 'colspan', 'rowspan', 'data-staging-ref', 'alt'],
+    ALLOW_DATA_ATTR: false,
+    ALLOW_ARIA_ATTR: false,
+    RETURN_DOM_FRAGMENT: true,
+  });
+}
 
 function cleanElement(element: Element, validIds: ReadonlySet<string>): void {
-  if (removed.has(element.tagName)) {
-    element.remove();
-    return;
-  }
-  if (!allowed.has(element.tagName)) {
-    element.replaceWith(...Array.from(element.childNodes));
-    return;
-  }
   for (const attribute of Array.from(element.attributes)) {
     const href =
       attribute.name === 'href' && element.tagName === 'A' && isSafeComposerLink(attribute.value);
@@ -142,14 +133,11 @@ export function richClipboardSlice(
   imageIds: readonly string[],
   validIds: ReadonlySet<string>,
 ): Slice {
-  const template = document.createElement('template');
-  let imageIndex = 0;
-  if (data.html) template.innerHTML = data.html;
-  else {
-    template.content.append(plainClipboardContent(data.text, imageIds));
-    imageIndex = imageIds.length;
-  }
-  for (const image of Array.from(template.content.querySelectorAll('img'))) {
+  const content = data.html
+    ? clipboardHtmlFragment(data.html)
+    : plainClipboardContent(data.text, imageIds);
+  let imageIndex = data.html ? 0 : imageIds.length;
+  for (const image of Array.from(content.querySelectorAll('img'))) {
     const id = imageIds[imageIndex++];
     const span = document.createElement('span');
     if (id) {
@@ -165,24 +153,23 @@ export function richClipboardSlice(
     for (const id of remainder) {
       paragraph.append(referenceElement(id));
     }
-    template.content.append(paragraph);
+    content.append(paragraph);
   }
-  // Work from descendants outward so unwrapping an unknown tag cannot bypass sanitization.
-  for (const element of Array.from(template.content.querySelectorAll('*')).reverse())
+  // Apply the composer-specific link, table-span and scoped attachment rules.
+  for (const element of Array.from(content.querySelectorAll('*')).reverse())
     cleanElement(element, validIds);
-  return ProseMirrorDOMParser.fromSchema(richComposerSchema).parseSlice(template.content);
+  return ProseMirrorDOMParser.fromSchema(richComposerSchema).parseSlice(content);
 }
 
 export function materializeRichClipboardImages(data: RichClipboardData): RichClipboardData {
   if (!data.html || !/<img\b/i.test(data.html)) return data;
-  const template = document.createElement('template');
-  template.innerHTML = data.html;
+  const content = clipboardHtmlFragment(data.html);
   const supplied = data.files.filter(isAppServerControlComposerImageFile);
   // HTML describes placement, never permission to fetch image bytes. Only the
   // trusted paste event's transferred files are upload sources, including data URLs.
   return {
     ...data,
-    imageCount: template.content.querySelectorAll('img').length,
+    imageCount: content.querySelectorAll('img').length,
     files: [
       ...supplied,
       ...data.files.filter((file) => !isAppServerControlComposerImageFile(file)),

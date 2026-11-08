@@ -39,6 +39,28 @@ function tableState() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe('rich composer document contracts', () => {
+  it.each(['a|b', String.raw`a\|b`, String.raw`a\\|b`, String.raw`C:\temp\file`, '<script>alert(1)</script>'])
+    ('preserves literal table characters through provider Markdown: %s', (text) => {
+      const doc = richNode('doc').create(null, richNode('table').create(null, [
+        richNode('table_row').create(null, richNode('table_header').create(null, paragraph('Header'))),
+        richNode('table_row').create(null, richNode('table_cell').create(null, paragraph(text))),
+      ]));
+      const restored = getRichComposerDocument({ parts: richDocumentToParts(doc), nextOrdinalByKind: {} });
+      expect(restored.child(0).child(1).childCount).toBe(1);
+      expect(restored.child(0).child(1).child(0).textContent).toBe(text);
+    });
+  it.each(['a|b', String.raw`a\|b`, String.raw`a\\|b`])
+    ('preserves inline-code table characters through provider Markdown: %s', (text) => {
+      const code = richNode('paragraph').create(null, richComposerSchema.text(text, [richComposerSchema.marks.code!.create()]));
+      const doc = richNode('doc').create(null, richNode('table').create(null, [
+        richNode('table_row').create(null, richNode('table_header').create(null, paragraph('Header'))),
+        richNode('table_row').create(null, richNode('table_cell').create(null, code)),
+      ]));
+      const restored = getRichComposerDocument({ parts: richDocumentToParts(doc), nextOrdinalByKind: {} });
+      const cell = restored.child(0).child(1).child(0);
+      expect(cell.textContent).toBe(text);
+      expect(cell.child(0).child(0).marks[0]?.type.name).toBe('code');
+    });
   it('supports headings with attachment atoms after replacing the Markdown image node', () => {
     const doc = richNode('doc').create(null, richNode('heading').create({ level: 2 },
       [richComposerSchema.text('Heading '), atom('image-A')]));

@@ -260,7 +260,9 @@ export function richDocumentToParts(doc: ProseMirrorNode): SmartInputComposerPar
           tableMarkdown(node, (cell) =>
             serializer
               .serialize(richNode('doc').create(null, cell.content))
-              .replace(/\|/g, '\\|')
+              // Backslashes have already been escaped by the Markdown serializer.
+              // Retain them while adding the table delimiter's extra escape.
+              .replace(/(\\*)\|/g, '$1\\|')
               .replace(/\n+/g, '<br>'),
           ),
         );
