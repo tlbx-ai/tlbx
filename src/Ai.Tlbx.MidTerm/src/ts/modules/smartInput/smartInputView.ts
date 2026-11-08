@@ -553,6 +553,11 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
   const menu = document.createElement('div');
   menu.className = 'manager-bar-action-popover smart-input-appServerControl-dropdown-menu hidden';
 
+  const statusDescription = document.createElement('p');
+  statusDescription.className = 'smart-input-appServerControl-setting-description';
+  statusDescription.hidden = true;
+  statusDescription.setAttribute('role', 'status');
+
   const closeMenu = (): void => {
     menu.classList.add('hidden');
     wrapper.classList.remove('smart-input-appServerControl-dropdown-open-up');
@@ -578,17 +583,38 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
     const viewportPadding = 12;
     const gap = 8;
     const triggerRect = trigger.getBoundingClientRect();
+    const availableBelow = Math.max(
+      0,
+      window.innerHeight - triggerRect.bottom - viewportPadding - gap,
+    );
+    const availableAbove = Math.max(0, triggerRect.top - viewportPadding - gap);
+    // Fixed viewport coordinates escape the mobile settings sheet's scroll clipping.
+    menu.style.position = 'fixed';
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
+    menu.style.maxWidth = `${window.innerWidth - 2 * viewportPadding}px`;
+    menu.style.maxHeight = `${Math.max(availableBelow, availableAbove)}px`;
     const menuRect = menu.getBoundingClientRect();
-    const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
-    const availableAbove = triggerRect.top - viewportPadding - gap;
     const openUp =
       availableBelow < Math.min(menuRect.height, 220) && availableAbove > availableBelow;
-
+    menu.style.maxHeight = `${openUp ? availableAbove : availableBelow}px`;
+    const height = menu.getBoundingClientRect().height;
+    menu.style.left = `${Math.max(
+      viewportPadding,
+      Math.min(
+        triggerRect.right - menuRect.width,
+        window.innerWidth - viewportPadding - menuRect.width,
+      ),
+    )}px`;
+    menu.style.top = `${Math.max(
+      viewportPadding,
+      openUp ? triggerRect.top - gap - height : triggerRect.bottom + gap,
+    )}px`;
     wrapper.classList.toggle('smart-input-appServerControl-dropdown-open-up', openUp);
   };
 
   const rebuildMenu = (): void => {
-    menu.replaceChildren();
+    menu.replaceChildren(statusDescription);
     for (const option of [...select.options]) {
       const optionButton = document.createElement('button');
       optionButton.type = 'button';
@@ -654,6 +680,9 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
       return;
     }
 
+    statusDescription.textContent =
+      wrapper.closest<HTMLElement>('.smart-input-appServerControl-field')?.title ?? '';
+    statusDescription.hidden = !statusDescription.textContent;
     menu.classList.remove('hidden');
     updateMenuPlacement();
     trigger.setAttribute('aria-expanded', 'true');
