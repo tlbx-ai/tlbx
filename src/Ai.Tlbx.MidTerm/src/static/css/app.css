@@ -21858,10 +21858,32 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .smart-input-rich-composer .ProseMirror-selectednode { outline: 2px solid var(--accent-blue); }
 .rich-composer-error { color: var(--text-danger, var(--text-primary)); font: inherit; font-size: 0.8em; }
 .rich-composer-error:empty { display: none; }
-.rich-image-annotation { width: min(94vw, 1000px); max-height: 90dvh; }
-.rich-image-annotation .modal-body { text-align: center; }
+.modal-overlay > .modal.rich-image-annotation {
+  --text-primary: var(--workspace-reading-text-primary, #d4d7e8);
+  --text-secondary: var(--workspace-reading-text-secondary, #a0a4b8);
+  width: min(94vw, 1000px);
+  max-height: 90dvh;
+  background: var(--bg-elevated-opaque);
+  color: var(--text-primary);
+}
+.rich-image-annotation .modal-body { min-height: 0; text-align: center; }
 .rich-image-annotation canvas { display: block; margin: auto; max-width: 100%; max-height: 60dvh; width: auto; height: auto; touch-action: none; cursor: crosshair; }
-.rich-image-annotation .modal-footer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.modal-overlay > .modal.rich-image-annotation .modal-footer {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 0;
+}
+.rich-image-annotation .modal-footer > button,
+.rich-image-annotation .modal-footer > input {
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  max-width: 100%;
+}
+.rich-image-annotation .modal-footer > button { white-space: normal; overflow-wrap: anywhere; }
 .rich-image-annotation input[type='range'] { min-width: 60px; max-width: 110px; }
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-rich-composer { height: 100%; }
 .adaptive-footer-dock[data-composer-expanded='true'] .smart-input-rich-composer .ProseMirror { flex: 1; max-height: none; min-height: 160px; }
