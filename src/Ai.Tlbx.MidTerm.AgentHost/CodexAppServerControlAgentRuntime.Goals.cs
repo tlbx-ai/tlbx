@@ -21,13 +21,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime
                 revision != Interlocked.Read(ref _goalNotificationRevision)) return;
             PublishCodexGoal(goal.ValueKind == JsonValueKind.Null ? null : goal, "thread/goal/get", result);
         }
-        catch (Exception error) when (error is not OperationCanceledException)
+        catch (Exception error) when (error is not OperationCanceledException ||
+            (!ct.IsCancellationRequested && !_shutdown.IsCancellationRequested))
         {
             if (!string.Equals(threadId, _providerThreadId, StringComparison.Ordinal) ||
                 revision != Interlocked.Read(ref _goalNotificationRevision)) return;
             var state = _latestCodexGoal?.Clone() ?? new AppServerControlGoalState { ThreadId = threadId };
             state.Confirmation = "unconfirmed";
-            state.Detail = error.Message;
+            state.Detail = error is OperationCanceledException ? "timeout" : error.Message;
             _emit(CreateEvent("thread.goal.changed", null, null, null, "codex.app-server", "thread/goal/get", default,
                 e => e.GoalUpdated = state));
         }
