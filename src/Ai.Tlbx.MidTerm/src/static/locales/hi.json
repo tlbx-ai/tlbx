@@ -1443,5 +1443,17 @@
   "connect.sidebar.identityVerified": "कुंजी सत्यापित",
   "connect.sidebar.signalingConnected": "Link · WSS सक्रिय",
   "connect.sidebar.signalingMissing": "नहीं बताया गया",
-  "connect.sidebar.signalingHint": "उपयोग के दौरान सिग्नलिंग कनेक्शन खुला रहता है। ऐप डेटा का मार्ग “मार्ग” के अंतर्गत दिखाया जाता है।"
+  "connect.sidebar.signalingHint": "उपयोग के दौरान सिग्नलिंग कनेक्शन खुला रहता है। ऐप डेटा का मार्ग “मार्ग” के अंतर्गत दिखाया जाता है।",
+  "providerResume.title": "बातचीत फिर से शुरू करें",
+  "providerResume.search": "बातचीत खोजें",
+  "providerResume.scopeFolder": "यह फ़ोल्डर",
+  "providerResume.scopeAll": "सभी फ़ोल्डर",
+  "providerResume.refresh": "रीफ़्रेश करें",
+  "providerResume.loading": "बातचीत लोड हो रही है…",
+  "providerResume.empty": "फिर से शुरू करने योग्य कोई बातचीत नहीं मिली।",
+  "providerResume.emptyFolder": "इस फ़ोल्डर में कोई बातचीत नहीं है। “सभी फ़ोल्डर” आज़माएँ।",
+  "providerResume.noMatches": "खोज से कोई बातचीत मेल नहीं खाती।",
+  "providerResume.loadFailed": "बातचीत लोड नहीं हो सकी: {error}",
+  "providerResume.count": "{count} बातचीत",
+  "providerResume.keyboardHint": "↑↓ चुनें · Enter फिर से शुरू करें · Esc बंद करें"
 }

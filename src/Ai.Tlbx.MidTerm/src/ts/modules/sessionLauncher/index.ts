@@ -190,7 +190,7 @@ function buildSessionLauncherProviderControlHtml(
           data-launch-mode="resume"
           ${disabled ? 'disabled' : ''}
         >
-          Resume Conversation
+          ${escapeHtml(t('providerResume.title'))}
         </button>
       `
       : '';
@@ -1010,6 +1010,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       provider: LauncherProvider,
       launchMode: LauncherLaunchMode,
       resumeThreadId?: string | null,
+      resumeWorkingDirectory?: string | null,
     ): void {
       const target = getSelectedTarget();
       if (!isProviderSupportedOnTarget(provider, target)) {
@@ -1025,7 +1026,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
       close({
         provider,
         launchMode,
-        workingDirectory: state.currentPath,
+        workingDirectory: resumeWorkingDirectory?.trim() || state.currentPath,
         resumeThreadId: resumeThreadId?.trim() || null,
         target,
       });
@@ -1061,7 +1062,7 @@ async function openSessionLauncherInternal(): Promise<SessionLauncherSelection |
           return;
         }
 
-        launch(provider, 'resume', resumeEntry.sessionId);
+        launch(provider, 'resume', resumeEntry.sessionId, resumeEntry.workingDirectory);
       })();
     });
 

@@ -1443,5 +1443,17 @@
   "connect.sidebar.identityVerified": "Clé vérifiée",
   "connect.sidebar.signalingConnected": "Link · WSS actif",
   "connect.sidebar.signalingMissing": "Non indiqué",
-  "connect.sidebar.signalingHint": "La connexion de signalisation reste ouverte pendant l’utilisation. Le trajet des données de l’application est affiché sous Trajet."
+  "connect.sidebar.signalingHint": "La connexion de signalisation reste ouverte pendant l’utilisation. Le trajet des données de l’application est affiché sous Trajet.",
+  "providerResume.title": "Reprendre la conversation",
+  "providerResume.search": "Rechercher des conversations",
+  "providerResume.scopeFolder": "Ce dossier",
+  "providerResume.scopeAll": "Tous les dossiers",
+  "providerResume.refresh": "Actualiser",
+  "providerResume.loading": "Chargement des conversations…",
+  "providerResume.empty": "Aucune conversation à reprendre.",
+  "providerResume.emptyFolder": "Aucune conversation dans ce dossier. Essayez « Tous les dossiers ».",
+  "providerResume.noMatches": "Aucune conversation ne correspond à la recherche.",
+  "providerResume.loadFailed": "Impossible de charger les conversations : {error}",
+  "providerResume.count": "{count} conversations",
+  "providerResume.keyboardHint": "↑↓ sélectionner · Entrée reprendre · Échap fermer"
 }

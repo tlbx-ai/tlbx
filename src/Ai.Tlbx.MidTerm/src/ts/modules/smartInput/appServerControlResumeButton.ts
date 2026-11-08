@@ -16,10 +16,9 @@ export function createAppServerControlResumeButton(
   const provider = normalizeResumeProvider(session?.profileHint);
   const workingDirectory = session?.workspacePath?.trim() || session?.currentDirectory?.trim();
   if (
-    !session?.spaceId ||
     !provider ||
     !workingDirectory ||
-    !session.appServerControlOnly ||
+    !session?.appServerControlOnly ||
     !appServerControlResumeConversationHandler
   ) {
     return null;

@@ -1,28 +1,48 @@
+using System.Buffers;
+using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Ai.Tlbx.MidTerm.Models.Sessions;
+using Ai.Tlbx.MidTerm.Settings;
 
 namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
-public sealed class ProviderResumeCatalogService
+public sealed partial class ProviderResumeCatalogService
 {
-    private static readonly TimeSpan CodexHotSessionCooldown = TimeSpan.FromSeconds(12);
-    private readonly string _codexHome;
-    private readonly string _claudeProjectsRoot;
+    internal const int MaxScannedFiles = 200;
+    internal const int MaxCandidates = 60;
+    internal const int HeadBytes = 128 * 1024;
+    internal const int TailBytes = 128 * 1024;
+    private const int MaxCachedTranscripts = 2048;
+    private const int TitleLength = 100;
+    private const int PreviewLength = 240;
+    private static readonly TimeSpan HotSessionCooldown = TimeSpan.FromSeconds(12);
 
-    public ProviderResumeCatalogService()
-        : this(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile))
+    private readonly Func<string, string?> _resolveProfileDirectory;
+    private readonly ConcurrentDictionary<string, CachedTranscript> _cache = new(StringComparer.OrdinalIgnoreCase);
+
+    public ProviderResumeCatalogService(SettingsService settingsService)
+        : this(provider => ResolveProviderProfileDirectory(settingsService.Load(), provider))
     {
     }
 
-    internal ProviderResumeCatalogService(string userProfileDirectory)
+    internal ProviderResumeCatalogService(Func<string, string?> resolveProfileDirectory)
     {
-        var home = string.IsNullOrWhiteSpace(userProfileDirectory)
-            ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-            : userProfileDirectory;
-        _codexHome = Path.Combine(home, ".codex");
-        _claudeProjectsRoot = Path.Combine(home, ".claude", "projects");
+        _resolveProfileDirectory = resolveProfileDirectory;
+    }
+
+    internal static string? ResolveProviderProfileDirectory(MidTermSettings settings, string provider)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return LauncherPathResolver.ResolveHomePath(settings);
+        }
+
+        var configuredProfile = AppServerControlHostEnvironmentResolver.ResolveConfiguredWindowsProfileDirectory(settings);
+        var executablePath = AiCliCommandLocator.FindExecutableInPath(provider, configuredProfile);
+        return AppServerControlHostEnvironmentResolver.ResolvePreferredWindowsProfileDirectory(settings, executablePath);
     }
 
     public IReadOnlyList<ProviderResumeCatalogEntryDto> GetCandidates(
@@ -31,345 +51,374 @@ public sealed class ProviderResumeCatalogService
         bool includeAllDirectories,
         CancellationToken ct = default)
     {
-        var normalizedProvider = NormalizeProvider(provider);
-        var normalizedWorkingDirectory = NormalizePathOrNull(workingDirectory);
-        return normalizedProvider switch
-        {
-            AiCliProfileService.CodexProfile => GetCodexCandidates(normalizedWorkingDirectory, includeAllDirectories, ct),
-            AiCliProfileService.ClaudeProfile => GetClaudeCandidates(normalizedWorkingDirectory, includeAllDirectories, ct),
-            _ => []
-        };
-    }
-
-    private IReadOnlyList<ProviderResumeCatalogEntryDto> GetClaudeCandidates(
-        string? normalizedWorkingDirectory,
-        bool includeAllDirectories,
-        CancellationToken ct)
-    {
-        if (!Directory.Exists(_claudeProjectsRoot))
+        var normalizedProvider = (provider ?? string.Empty).Trim().ToLowerInvariant();
+        var isCodex = normalizedProvider == AiCliProfileService.CodexProfile;
+        if (!isCodex && normalizedProvider != AiCliProfileService.ClaudeProfile)
         {
             return [];
         }
 
-        var cooldownCutoffUtc = DateTimeOffset.UtcNow - CodexHotSessionCooldown;
+        var home = _resolveProfileDirectory(normalizedProvider);
+        if (string.IsNullOrWhiteSpace(home))
+        {
+            return [];
+        }
+
+        var root = isCodex
+            ? Path.Combine(home, ".codex", "sessions")
+            : Path.Combine(home, ".claude", "projects");
+        var directoryFilter = includeAllDirectories ? null : NormalizePathOrNull(workingDirectory);
+        if (!Directory.Exists(root) || (!includeAllDirectories && directoryFilter is null))
+        {
+            return [];
+        }
+
+        var cooldownCutoffUtc = DateTime.UtcNow - HotSessionCooldown;
         var candidates = new List<ProviderResumeCatalogEntryDto>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var file in Directory.EnumerateFiles(_claudeProjectsRoot, "*.jsonl", SearchOption.AllDirectories)
-                     .Where(path => !path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                         .Contains("subagents", StringComparer.OrdinalIgnoreCase))
-                     .Select(static path => new FileInfo(path))
-                     .Where(file => file.LastWriteTimeUtc <= cooldownCutoffUtc.UtcDateTime)
+        foreach (var file in EnumerateTranscripts(root, excludeSubagents: !isCodex)
+                     .Where(file => file.LastWriteTimeUtc <= cooldownCutoffUtc)
                      .OrderByDescending(static file => file.LastWriteTimeUtc)
-                     .Take(400))
+                     .Take(MaxScannedFiles))
         {
             ct.ThrowIfCancellationRequested();
-            var candidate = TryReadClaudeCandidate(file, normalizedWorkingDirectory, includeAllDirectories);
-            if (candidate is null || !seen.Add(candidate.SessionId))
+            var metadata = GetMetadata(file, isCodex);
+            if (metadata is null ||
+                (directoryFilter is not null &&
+                 !string.Equals(NormalizePathOrNull(metadata.WorkingDirectory), directoryFilter, StringComparison.OrdinalIgnoreCase)) ||
+                !seen.Add(metadata.SessionId))
             {
                 continue;
             }
 
-            candidates.Add(candidate);
-            if (candidates.Count >= 60)
+            candidates.Add(new ProviderResumeCatalogEntryDto
+            {
+                Provider = normalizedProvider,
+                SessionId = metadata.SessionId,
+                WorkingDirectory = metadata.WorkingDirectory,
+                Title = metadata.Title,
+                PreviewText = metadata.PreviewText,
+                UpdatedAtUtc = metadata.UpdatedAtUtc
+            });
+            if (candidates.Count >= MaxCandidates)
             {
                 break;
             }
         }
 
-        return candidates;
+        return candidates.OrderByDescending(static candidate => candidate.UpdatedAtUtc).ToList();
     }
 
-    private static ProviderResumeCatalogEntryDto? TryReadClaudeCandidate(
-        FileInfo file,
-        string? normalizedWorkingDirectory,
-        bool includeAllDirectories)
+    private static IEnumerable<FileInfo> EnumerateTranscripts(string root, bool excludeSubagents)
     {
-        using var reader = OpenSharedReaderOrNull(file.FullName);
-        if (reader is null)
+        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
+        var files = new DirectoryInfo(root).EnumerateFiles("*.jsonl", options);
+        return excludeSubagents
+            ? files.Where(static file => !file.FullName
+                .Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                .Contains("subagents", StringComparer.OrdinalIgnoreCase))
+            : files;
+    }
+
+    private TranscriptMetadata? GetMetadata(FileInfo file, bool isCodex)
+    {
+        if (_cache.TryGetValue(file.FullName, out var cached) &&
+            cached.Length == file.Length &&
+            cached.LastWriteTimeUtc == file.LastWriteTimeUtc)
+        {
+            return cached.Metadata;
+        }
+
+        var window = ReadTranscriptWindow(file.FullName);
+        var metadata = window is null
+            ? null
+            : isCodex
+                ? ParseCodex(window, file.LastWriteTimeUtc)
+                : ParseClaude(window, file);
+        if (_cache.Count >= MaxCachedTranscripts)
+        {
+            _cache.Clear();
+        }
+
+        _cache[file.FullName] = new CachedTranscript(file.Length, file.LastWriteTimeUtc, metadata);
+        return metadata;
+    }
+
+    internal static TranscriptWindow? ReadTranscriptWindow(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            var length = stream.Length;
+            var headLength = (int)Math.Min(HeadBytes, length);
+            var head = ReadLines(stream, 0, headLength, dropTrailingPartial: length > headLength);
+            var tailStart = Math.Max(headLength, length - TailBytes);
+            var tail = tailStart < length
+                ? ReadLines(stream, tailStart, (int)(length - tailStart), dropTrailingPartial: false)
+                : [];
+            return new TranscriptWindow(head, tail);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             return null;
         }
+    }
 
+    private static List<string> ReadLines(FileStream stream, long offset, int count, bool dropTrailingPartial)
+    {
+        var lines = new List<string>();
+        var startsMidLine = offset > 0;
+        var readOffset = startsMidLine ? offset - 1 : offset;
+        var readCount = startsMidLine ? count + 1 : count;
+        var buffer = ArrayPool<byte>.Shared.Rent(readCount);
+        try
+        {
+            stream.Position = readOffset;
+            stream.ReadExactly(buffer, 0, readCount);
+            var span = buffer.AsSpan(0, readCount);
+            if (startsMidLine)
+            {
+                var firstBreak = span.IndexOf((byte)'\n');
+                span = firstBreak < 0 ? [] : span[(firstBreak + 1)..];
+            }
+
+            while (!span.IsEmpty)
+            {
+                var lineBreak = span.IndexOf((byte)'\n');
+                if (lineBreak < 0)
+                {
+                    if (!dropTrailingPartial)
+                    {
+                        lines.Add(Encoding.UTF8.GetString(span).TrimEnd('\r'));
+                    }
+
+                    break;
+                }
+
+                lines.Add(Encoding.UTF8.GetString(span[..lineBreak]).TrimEnd('\r'));
+                span = span[(lineBreak + 1)..];
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        return lines;
+    }
+
+    private static TranscriptMetadata? ParseClaude(TranscriptWindow window, FileInfo file)
+    {
         string? sessionId = null;
         string? workingDirectory = null;
-        string? lastUserMessage = null;
-        DateTime updatedAtUtc = file.LastWriteTimeUtc;
-        while (reader.ReadLine() is { } line)
+        string? summary = null;
+        string? firstPrompt = null;
+        string? lastPrompt = null;
+        var updatedAtUtc = file.LastWriteTimeUtc;
+        foreach (var line in window.AllLines)
         {
-            if (string.IsNullOrWhiteSpace(line))
+            using var json = TryParse(line);
+            if (json is null)
             {
                 continue;
             }
 
-            try
+            var root = json.RootElement;
+            sessionId ??= TryGetString(root, "sessionId");
+            workingDirectory ??= TryGetString(root, "cwd");
+            updatedAtUtc = Later(updatedAtUtc, root);
+            if (TryGetString(root, "type") == "summary" && TryGetString(root, "summary") is { } parsedSummary)
             {
-                using var json = JsonDocument.Parse(line);
-                var root = json.RootElement;
-                sessionId ??= TryGetString(root, "sessionId", out var parsedSessionId) ? parsedSessionId : null;
-                workingDirectory ??= TryGetString(root, "cwd", out var parsedCwd) ? parsedCwd : null;
-                if (TryGetString(root, "timestamp", out var timestampText) &&
-                    DateTimeOffset.TryParse(timestampText, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp) &&
-                    timestamp.UtcDateTime > updatedAtUtc)
-                {
-                    updatedAtUtc = timestamp.UtcDateTime;
-                }
-
-                if (TryReadClaudeUserMessage(root, out var message))
-                {
-                    lastUserMessage = message;
-                }
+                summary = parsedSummary;
             }
-            catch (JsonException)
+
+            if (TryReadClaudeUserMessage(root) is { } prompt)
             {
+                firstPrompt ??= prompt;
+                lastPrompt = prompt;
             }
         }
 
-        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(workingDirectory))
-        {
-            return null;
-        }
-
-        if (!includeAllDirectories &&
-            !string.Equals(NormalizePathOrNull(workingDirectory), normalizedWorkingDirectory, StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        return CreateCandidate(
-            AiCliProfileService.ClaudeProfile,
-            sessionId,
-            workingDirectory,
-            lastUserMessage,
-            updatedAtUtc);
+        sessionId ??= Guid.TryParse(Path.GetFileNameWithoutExtension(file.Name), out _)
+            ? Path.GetFileNameWithoutExtension(file.Name)
+            : null;
+        return sessionId is null || workingDirectory is null
+            ? null
+            : CreateMetadata(sessionId, workingDirectory, summary ?? firstPrompt, lastPrompt, updatedAtUtc);
     }
 
-    private static bool TryReadClaudeUserMessage(JsonElement root, out string? message)
+    private static TranscriptMetadata? ParseCodex(TranscriptWindow window, DateTime lastWriteTimeUtc)
     {
-        message = null;
-        if (!TryGetString(root, "type", out var type) ||
-            !string.Equals(type, "user", StringComparison.Ordinal) ||
-            !root.TryGetProperty("message", out var messageObject) ||
-            messageObject.ValueKind != JsonValueKind.Object ||
-            !messageObject.TryGetProperty("content", out var content))
+        string? sessionId = null;
+        string? workingDirectory = null;
+        string? firstPrompt = null;
+        string? lastPrompt = null;
+        var updatedAtUtc = lastWriteTimeUtc;
+        foreach (var line in window.AllLines)
         {
-            return false;
+            using var json = TryParse(line);
+            if (json is null)
+            {
+                continue;
+            }
+
+            var root = json.RootElement;
+            updatedAtUtc = Later(updatedAtUtc, root);
+            if (sessionId is null &&
+                TryGetString(root, "type") == "session_meta" &&
+                root.TryGetProperty("payload", out var meta) &&
+                meta.ValueKind == JsonValueKind.Object)
+            {
+                sessionId = TryGetString(meta, "id");
+                workingDirectory = TryGetString(meta, "cwd");
+                updatedAtUtc = Later(updatedAtUtc, meta);
+                continue;
+            }
+
+            if (TryReadCodexUserMessage(root) is { } prompt)
+            {
+                firstPrompt ??= prompt;
+                lastPrompt = prompt;
+            }
         }
 
-        if (content.ValueKind == JsonValueKind.String)
+        return sessionId is null || workingDirectory is null
+            ? null
+            : CreateMetadata(sessionId, workingDirectory, firstPrompt, lastPrompt, updatedAtUtc);
+    }
+
+    private static TranscriptMetadata CreateMetadata(
+        string sessionId,
+        string workingDirectory,
+        string? titleSource,
+        string? lastPrompt,
+        DateTime updatedAtUtc)
+    {
+        var title = NormalizeDisplayText(titleSource, TitleLength) ?? BuildDirectoryLabel(workingDirectory);
+        var preview = NormalizeDisplayText(lastPrompt, PreviewLength);
+        if (preview is not null && NormalizeDisplayText(lastPrompt, TitleLength) == title)
         {
-            message = content.GetString();
-            return !string.IsNullOrWhiteSpace(message);
+            preview = null;
         }
 
+        return new TranscriptMetadata(
+            sessionId,
+            workingDirectory,
+            title,
+            preview,
+            DateTime.SpecifyKind(updatedAtUtc, DateTimeKind.Utc));
+    }
+
+    private static string? TryReadClaudeUserMessage(JsonElement root)
+    {
+        if (TryGetString(root, "type") != "user" ||
+            (root.TryGetProperty("isMeta", out var isMeta) && isMeta.ValueKind == JsonValueKind.True) ||
+            !root.TryGetProperty("message", out var message) ||
+            message.ValueKind != JsonValueKind.Object ||
+            !message.TryGetProperty("content", out var content))
+        {
+            return null;
+        }
+
+        return content.ValueKind == JsonValueKind.String
+            ? RealPromptOrNull(content.GetString())
+            : JoinTextParts(content, "text");
+    }
+
+    private static string? TryReadCodexUserMessage(JsonElement root)
+    {
+        if (!root.TryGetProperty("payload", out var payload) || payload.ValueKind != JsonValueKind.Object)
+        {
+            return null;
+        }
+
+        var rootType = TryGetString(root, "type");
+        var payloadType = TryGetString(payload, "type");
+        if (rootType == "event_msg" && payloadType == "user_message")
+        {
+            return RealPromptOrNull(TryGetString(payload, "message"));
+        }
+
+        return rootType == "response_item" &&
+               payloadType == "message" &&
+               TryGetString(payload, "role") == "user" &&
+               payload.TryGetProperty("content", out var content)
+            ? JoinTextParts(content, "input_text")
+            : null;
+    }
+
+    private static string? JoinTextParts(JsonElement content, string textType)
+    {
         if (content.ValueKind != JsonValueKind.Array)
         {
-            return false;
+            return null;
         }
 
         var parts = new List<string>();
-        using var items = content.EnumerateArray();
-        while (items.MoveNext())
+        foreach (var item in content.EnumerateArray())
         {
-            var item = items.Current;
             if (item.ValueKind == JsonValueKind.Object &&
-                TryGetString(item, "type", out var itemType) &&
-                string.Equals(itemType, "text", StringComparison.Ordinal) &&
-                TryGetString(item, "text", out var text))
+                TryGetString(item, "type") == textType &&
+                TryGetString(item, "text") is { } text)
             {
                 parts.Add(text);
             }
         }
 
-        message = parts.Count == 0 ? null : string.Join(" ", parts);
-        return !string.IsNullOrWhiteSpace(message);
+        return RealPromptOrNull(string.Join(" ", parts));
     }
 
-    private IReadOnlyList<ProviderResumeCatalogEntryDto> GetCodexCandidates(
-        string? normalizedWorkingDirectory,
-        bool includeAllDirectories,
-        CancellationToken ct)
+    private static string? RealPromptOrNull(string? text)
     {
-        var sessionsRoot = Path.Combine(_codexHome, "sessions");
-        if (!Directory.Exists(sessionsRoot))
-        {
-            return [];
-        }
-
-        var cooldownCutoffUtc = DateTimeOffset.UtcNow - CodexHotSessionCooldown;
-        var candidates = new List<ProviderResumeCatalogEntryDto>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-
-        foreach (var file in Directory.EnumerateFiles(sessionsRoot, "*.jsonl", SearchOption.AllDirectories)
-                     .Select(static path => new FileInfo(path))
-                     .Where(file => file.LastWriteTimeUtc <= cooldownCutoffUtc.UtcDateTime)
-                     .OrderByDescending(static file => file.LastWriteTimeUtc)
-                     .Take(400))
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var candidate = TryReadCodexCandidate(file, normalizedWorkingDirectory, includeAllDirectories);
-            if (candidate is null || !seen.Add(candidate.SessionId))
-            {
-                continue;
-            }
-
-            candidates.Add(candidate);
-            if (candidates.Count >= 60)
-            {
-                break;
-            }
-        }
-
-        return candidates;
+        return string.IsNullOrWhiteSpace(text) || SyntheticPromptPattern().IsMatch(text) ? null : text;
     }
 
-    private static ProviderResumeCatalogEntryDto? TryReadCodexCandidate(
-        FileInfo file,
-        string? normalizedWorkingDirectory,
-        bool includeAllDirectories)
+    [GeneratedRegex(
+        @"^\s*(?:<(?:environment_context|user_instructions|command-name|command-message|command-args|local-command-stdout|local-command-stderr|system-reminder|user-prompt-submit-hook)\b|# AGENTS\.md instructions|Caveat: The messages below were generated)",
+        RegexOptions.CultureInvariant)]
+    private static partial Regex SyntheticPromptPattern();
+
+    private static DateTime Later(DateTime current, JsonElement element)
     {
-        using var reader = OpenSharedReaderOrNull(file.FullName);
-        if (reader is null)
+        return TryGetString(element, "timestamp") is { } text &&
+               DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp) &&
+               timestamp.UtcDateTime > current
+            ? timestamp.UtcDateTime
+            : current;
+    }
+
+    private static JsonDocument? TryParse(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
         {
             return null;
         }
 
-        CodexMetaCandidate? meta = null;
-        string? lastUserMessage = null;
-
-        while (reader.ReadLine() is { } line)
+        try
         {
-            if (string.IsNullOrWhiteSpace(line))
+            var document = JsonDocument.Parse(line);
+            if (document.RootElement.ValueKind == JsonValueKind.Object)
             {
-                continue;
+                return document;
             }
 
-            try
-            {
-                using var json = JsonDocument.Parse(line);
-                var root = json.RootElement;
-                if (meta is null && TryReadCodexMeta(root, out var parsedMeta))
-                {
-                    meta = parsedMeta;
-                    if (!includeAllDirectories &&
-                        !string.Equals(parsedMeta.NormalizedWorkingDirectory, normalizedWorkingDirectory, StringComparison.OrdinalIgnoreCase))
-                    {
-                        return null;
-                    }
-
-                    continue;
-                }
-
-                if (meta is null || !TryReadCodexUserMessage(root, out var message))
-                {
-                    continue;
-                }
-
-                lastUserMessage = message;
-            }
-            catch
-            {
-            }
+            document.Dispose();
+            return null;
         }
-
-        if (meta is null)
+        catch (JsonException)
         {
             return null;
         }
-
-        var resolvedMeta = meta.Value;
-        var updatedAtUtc = resolvedMeta.TimestampUtc > file.LastWriteTimeUtc
-            ? resolvedMeta.TimestampUtc
-            : file.LastWriteTimeUtc;
-        return CreateCandidate(
-            AiCliProfileService.CodexProfile,
-            resolvedMeta.SessionId,
-            resolvedMeta.WorkingDirectory,
-            lastUserMessage,
-            updatedAtUtc);
     }
 
-    private static ProviderResumeCatalogEntryDto CreateCandidate(
-        string provider,
-        string sessionId,
-        string workingDirectory,
-        string? previewText,
-        DateTime updatedAtUtc)
+    private static string? TryGetString(JsonElement element, string propertyName)
     {
-        var normalizedPreview = NormalizePreview(previewText);
-        return new ProviderResumeCatalogEntryDto
-        {
-            Provider = provider,
-            SessionId = sessionId,
-            WorkingDirectory = workingDirectory,
-            Title = normalizedPreview ?? BuildDirectoryLabel(workingDirectory),
-            PreviewText = normalizedPreview,
-            UpdatedAtUtc = DateTime.SpecifyKind(updatedAtUtc, DateTimeKind.Utc)
-        };
-    }
-
-    private static bool TryReadCodexMeta(JsonElement root, out CodexMetaCandidate meta)
-    {
-        meta = default;
-        if (!TryGetString(root, "type", out var rootType) ||
-            !string.Equals(rootType, "session_meta", StringComparison.Ordinal) ||
-            !root.TryGetProperty("payload", out var payload) ||
-            payload.ValueKind != JsonValueKind.Object ||
-            !TryGetString(payload, "id", out var sessionId) ||
-            !TryGetString(payload, "cwd", out var workingDirectory) ||
-            !TryGetString(payload, "timestamp", out var timestampText) ||
-            !DateTimeOffset.TryParse(timestampText, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var timestamp))
-        {
-            return false;
-        }
-
-        meta = new CodexMetaCandidate(
-            sessionId,
-            workingDirectory,
-            NormalizePathOrNull(workingDirectory) ?? string.Empty,
-            timestamp.UtcDateTime);
-        return true;
-    }
-
-    private static bool TryReadCodexUserMessage(JsonElement root, out string? message)
-    {
-        message = null;
-        if (!TryGetString(root, "type", out var rootType) ||
-            !string.Equals(rootType, "response_item", StringComparison.Ordinal) ||
-            !root.TryGetProperty("payload", out var payload) ||
-            payload.ValueKind != JsonValueKind.Object ||
-            !TryGetString(payload, "type", out var payloadType) ||
-            !string.Equals(payloadType, "message", StringComparison.Ordinal) ||
-            !TryGetString(payload, "role", out var role) ||
-            !string.Equals(role, "user", StringComparison.Ordinal) ||
-            !payload.TryGetProperty("content", out var content) ||
-            content.ValueKind != JsonValueKind.Array)
-        {
-            return false;
-        }
-
-        var parts = new List<string>();
-        using var items = content.EnumerateArray();
-        foreach (var item in items)
-        {
-            if (item.ValueKind != JsonValueKind.Object ||
-                !TryGetString(item, "type", out var itemType) ||
-                !string.Equals(itemType, "input_text", StringComparison.Ordinal) ||
-                !TryGetString(item, "text", out var text))
-            {
-                continue;
-            }
-
-            parts.Add(text);
-        }
-
-        message = parts.Count == 0 ? null : string.Join(" ", parts);
-        return !string.IsNullOrWhiteSpace(message);
-    }
-
-    private static string NormalizeProvider(string provider)
-    {
-        return (provider ?? string.Empty).Trim().ToLowerInvariant();
+        return element.TryGetProperty(propertyName, out var property) &&
+               property.ValueKind == JsonValueKind.String &&
+               property.GetString() is { } value &&
+               !string.IsNullOrWhiteSpace(value)
+            ? value
+            : null;
     }
 
     private static string? NormalizePathOrNull(string? path)
@@ -381,10 +430,9 @@ public sealed class ProviderResumeCatalogService
 
         try
         {
-            return Path.GetFullPath(path)
-                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return Path.GetFullPath(path).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
-        catch
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
             return path.Trim().TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
@@ -392,67 +440,55 @@ public sealed class ProviderResumeCatalogService
 
     private static string BuildDirectoryLabel(string workingDirectory)
     {
-        var trimmed = workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var leaf = Path.GetFileName(trimmed);
+        var leaf = Path.GetFileName(workingDirectory.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
         return string.IsNullOrWhiteSpace(leaf) ? workingDirectory : leaf;
     }
 
-    private static string? NormalizePreview(string? text)
+    internal static string? NormalizeDisplayText(string? text, int maxLength)
     {
         if (string.IsNullOrWhiteSpace(text))
         {
             return null;
         }
 
-        var compact = string.Join(
-            " ",
-            text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
-        if (compact.Length <= 160)
+        var builder = new StringBuilder(Math.Min(text.Length, maxLength + 1));
+        var pendingSpace = false;
+        foreach (var character in text)
         {
-            return compact;
+            if (char.IsWhiteSpace(character) || char.IsControl(character))
+            {
+                pendingSpace = builder.Length > 0;
+                continue;
+            }
+
+            if (pendingSpace)
+            {
+                builder.Append(' ');
+                pendingSpace = false;
+            }
+
+            builder.Append(character);
+            if (builder.Length > maxLength)
+            {
+                builder.Length = maxLength - 1;
+                return builder.ToString().TrimEnd() + "…";
+            }
         }
 
-        return compact[..157] + "...";
+        return builder.Length == 0 ? null : builder.ToString();
     }
 
-    private static bool TryGetString(JsonElement element, string propertyName, out string value)
+    internal sealed record TranscriptWindow(IReadOnlyList<string> Head, IReadOnlyList<string> Tail)
     {
-        value = string.Empty;
-        if (!element.TryGetProperty(propertyName, out var property) || property.ValueKind != JsonValueKind.String)
-        {
-            return false;
-        }
-
-        var result = property.GetString();
-        if (string.IsNullOrWhiteSpace(result))
-        {
-            return false;
-        }
-
-        value = result;
-        return true;
+        public IEnumerable<string> AllLines => Head.Concat(Tail);
     }
 
-    private static StreamReader? OpenSharedReaderOrNull(string path)
-    {
-        try
-        {
-            var stream = new FileStream(
-                path,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.ReadWrite | FileShare.Delete);
-            return new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private readonly record struct CodexMetaCandidate(
+    private sealed record TranscriptMetadata(
         string SessionId,
         string WorkingDirectory,
-        string NormalizedWorkingDirectory,
-        DateTime TimestampUtc);
+        string Title,
+        string? PreviewText,
+        DateTime UpdatedAtUtc);
+
+    private readonly record struct CachedTranscript(long Length, DateTime LastWriteTimeUtc, TranscriptMetadata? Metadata);
 }

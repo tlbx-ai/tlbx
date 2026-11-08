@@ -1443,5 +1443,17 @@
   "connect.sidebar.identityVerified": "Ключ проверен",
   "connect.sidebar.signalingConnected": "Link · WSS активно",
   "connect.sidebar.signalingMissing": "Не сообщается",
-  "connect.sidebar.signalingHint": "Сигнальное соединение остаётся открытым во время использования. Маршрут данных приложения указан в поле «Маршрут»."
+  "connect.sidebar.signalingHint": "Сигнальное соединение остаётся открытым во время использования. Маршрут данных приложения указан в поле «Маршрут».",
+  "providerResume.title": "Продолжить разговор",
+  "providerResume.search": "Поиск разговоров",
+  "providerResume.scopeFolder": "Эта папка",
+  "providerResume.scopeAll": "Все папки",
+  "providerResume.refresh": "Обновить",
+  "providerResume.loading": "Загрузка разговоров…",
+  "providerResume.empty": "Нет разговоров для продолжения.",
+  "providerResume.emptyFolder": "В этой папке нет разговоров. Попробуйте «Все папки».",
+  "providerResume.noMatches": "Нет разговоров, соответствующих поиску.",
+  "providerResume.loadFailed": "Не удалось загрузить разговоры: {error}",
+  "providerResume.count": "Разговоров: {count}",
+  "providerResume.keyboardHint": "↑↓ выбрать · Enter продолжить · Esc закрыть"
 }

@@ -298,7 +298,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
             await DisposeStateAsync(state, terminateHost: false).ConfigureAwait(false);
             var settings = _settingsService.Load();
-            var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
+            var userProfileDirectory = AppServerControlHostEnvironmentResolver.ResolveConfiguredWindowsProfileDirectory(settings);
             var isCodex = string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal);
             var isClaude = string.Equals(profile, AiCliProfileService.ClaudeProfile, StringComparison.Ordinal);
             ResolvedAcpAgentDefinition? acpAgent = null;
@@ -313,7 +313,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             }
 
             executablePath ??= acpAgent?.ExecutablePath;
-            var preferredProfileDirectory = ResolvePreferredProfileDirectory(settings, executablePath);
+            var preferredProfileDirectory = AppServerControlHostEnvironmentResolver.ResolvePreferredWindowsProfileDirectory(settings, executablePath);
             BuildLaunchEnvironment(
                 settings,
                 executablePath,
@@ -1880,30 +1880,6 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         ApplyProviderSettings(environmentOverrides, settings);
         environmentOverrides["MIDTERM_INSTANCE_ID"] = instanceIdentity.InstanceId;
         environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
-    }
-
-    private static string? ResolveConfiguredUserProfileDirectory(MidTermSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
-        {
-            return null;
-        }
-
-        return AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
-    }
-
-    private static string? ResolvePreferredProfileDirectory(MidTermSettings settings, string? executablePath)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        if (!OperatingSystem.IsWindows())
-        {
-            return null;
-        }
-
-        return ResolveConfiguredUserProfileDirectory(settings)
-               ?? AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(executablePath)
-               ?? AppServerControlHostEnvironmentResolver.ResolveCurrentWindowsProfileDirectory();
     }
 
     private static void ApplyProviderSettings(IDictionary<string, string?> environment, MidTermSettings settings)

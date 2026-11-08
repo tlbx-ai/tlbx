@@ -125,6 +125,32 @@ internal static class AppServerControlHostEnvironmentResolver
         return Directory.Exists(profileDirectory) ? profileDirectory : null;
     }
 
+    internal static string? ResolveConfiguredWindowsProfileDirectory(MidTermSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return OperatingSystem.IsWindows() && !string.IsNullOrWhiteSpace(settings.RunAsUser)
+            ? ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid)
+            : null;
+    }
+
+    /// <summary>
+    /// The profile a provider runtime is launched with: the configured run-as user, else the
+    /// profile owning the provider executable, else the current process profile. Under an
+    /// installed LocalSystem service the current profile is the system profile, so it is last.
+    /// </summary>
+    internal static string? ResolvePreferredWindowsProfileDirectory(MidTermSettings settings, string? executablePath)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        if (!OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        return ResolveConfiguredWindowsProfileDirectory(settings)
+               ?? ResolveWindowsProfileDirectoryFromExecutablePath(executablePath)
+               ?? ResolveCurrentWindowsProfileDirectory();
+    }
+
     internal static string? ResolveWindowsProfileDirectory(string? userName, string? userSid)
     {
         if (!OperatingSystem.IsWindows())
