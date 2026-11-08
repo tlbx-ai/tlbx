@@ -208,4 +208,59 @@ public sealed class ProviderResumeNativeCodexTests
         try { using var process = Process.GetProcessById(pid.Value); Assert.True(process.HasExited); }
         catch (ArgumentException) { }
     }
+
+    [Theory]
+    [InlineData(@"ACP\_READER13\_CODEX\_OK", "ACP_READER13_CODEX_OK")]
+    [InlineData(@"C:\\temp\\\_\_init\_\_.py", @"C:\temp\__init__.py")]
+    [InlineData(@"C:\temp\__init__.py", @"C:\temp\__init__.py")]
+    [InlineData(@"open \\server\share\a_b now", @"open \\server\share\a_b now")]
+    [InlineData(@"run `a\_b **x**` exactly", @"run a\_b **x** exactly")]
+    [InlineData(@"\*\*literal\*\* and prefix**FETT**suffix", "**literal** and prefixFETTsuffix")]
+    [InlineData(@"odd ** marker stays", "odd ** marker stays")]
+    public void RichEscapesDisplayCleanWhileRawPathsAndCodeStayLiteral(string text, string expected) =>
+        Assert.Equal(expected, ProviderResumeCatalogService.PlainMarkdownText(text));
+
+    [Fact]
+    public void RichEscapedLatestPromptAndPlainNativeNameReachTheCatalog()
+    {
+        var cwd = Path.GetFullPath("workspace");
+        var json = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                id = "own", cwd, name = (string?)@"Fix **this** \_ok | now", preview = "First prompt",
+                latestUserTexts = new[] { @"Antworte ACP\_READER13\_CODEX\_OK für C:\\temp\\\_\_init\_\_.py" },
+                updatedAt = 1
+            }
+        });
+        var row = Assert.Single(ProviderResumeCatalogService.ParseNativeCodexCatalog(json, cwd));
+        Assert.Equal(@"Fix **this** \_ok | now", row.Title);
+        Assert.Equal(@"Antworte ACP_READER13_CODEX_OK für C:\temp\__init__.py", row.PreviewText);
+    }
+
+    [Fact]
+    public void InjectedNativePreviewIsNotUsedAsTitle()
+    {
+        var cwd = Path.GetFullPath("workspace");
+        var json = JsonSerializer.Serialize(new[]
+        {
+            new
+            {
+                id = "own", cwd, name = (string?)null, preview = "<environment_context>\n<cwd>x</cwd>\n</environment_context>",
+                latestUserTexts = new[] { "Real latest prompt" }, updatedAt = 1
+            }
+        });
+        var row = Assert.Single(ProviderResumeCatalogService.ParseNativeCodexCatalog(json, cwd));
+        Assert.Equal("workspace", row.Title);
+        Assert.Equal("Real latest prompt", row.PreviewText);
+    }
+
+    [Fact]
+    public void DisplayTruncationNeverLeavesALoneSurrogate()
+    {
+        var label = ProviderResumeCatalogService.NormalizeDisplayText(new string('a', 8) + "\U0001F600tail", 10);
+        Assert.Equal("aaaaaaaa…", label);
+        Assert.Equal("ab", Ai.Tlbx.MidTerm.Common.Text.Utf16Text.Truncate("ab\U0001F600", 3));
+        Assert.Equal("ab\U0001F600", Ai.Tlbx.MidTerm.Common.Text.Utf16Text.Truncate("ab\U0001F600", 4));
+    }
 }

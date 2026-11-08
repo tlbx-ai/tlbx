@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Ai.Tlbx.MidTerm.Common.Text;
 using Ai.Tlbx.MidTerm.Models.Sessions;
 using Ai.Tlbx.MidTerm.Settings;
 
@@ -316,9 +317,12 @@ public sealed partial class ProviderResumeCatalogService
         string workingDirectory,
         string? titleSource,
         string? lastPrompt,
-        DateTime updatedAtUtc)
+        DateTime updatedAtUtc,
+        string? plainTitle = null)
     {
-        var title = NormalizeDisplayText(ReadRichDisplayText(titleSource, preferProse: true), TitleLength)
+        // A provider's own thread name is plain text, never Markdown to strip.
+        var title = NormalizeDisplayText(plainTitle, TitleLength)
+                    ?? NormalizeDisplayText(ReadRichDisplayText(titleSource, preferProse: true), TitleLength)
                     ?? BuildDirectoryLabel(workingDirectory);
         var preview = NormalizeDisplayText(ReadRichDisplayText(lastPrompt, preferProse: false), PreviewLength);
         if (preview is not null && NormalizeDisplayText(preview, TitleLength) == title)
@@ -496,7 +500,7 @@ public sealed partial class ProviderResumeCatalogService
             builder.Append(character);
             if (builder.Length > maxLength)
             {
-                builder.Length = maxLength - 1;
+                Utf16Text.Truncate(builder, maxLength - 1);
                 return builder.ToString().TrimEnd() + "…";
             }
         }

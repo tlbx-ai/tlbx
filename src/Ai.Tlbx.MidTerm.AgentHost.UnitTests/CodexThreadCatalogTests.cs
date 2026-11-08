@@ -170,4 +170,30 @@ public sealed class CodexThreadCatalogTests
         try { using var process = Process.GetProcessById(pid); Assert.True(process.HasExited); }
         catch (ArgumentException) { /* Reaped process has no remaining OS entry. */ }
     }
+
+    [Fact]
+    public void CatalogTruncationKeepsJsonWritableAtTheSurrogateBoundary()
+    {
+        var truncated = CodexThreadCatalogCommand.Truncate(new string('x', 4095) + "\U0001F600y");
+        Assert.Equal(4095, truncated!.Length);
+        var json = CodexAppServerControlAgentRuntime.BuildJsonString(writer => writer.WriteStringValue(truncated));
+        Assert.Equal(truncated, JsonSerializer.Deserialize<string>(json));
+
+        using var turns = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            data = new[]
+            {
+                new
+                {
+                    items = new object[]
+                    {
+                        new { type = "userMessage", content = new[] { new { type = "text", text = new string('z', 4095) + "\U0001F600" } } }
+                    }
+                }
+            }
+        }));
+        var latest = Assert.Single(CodexThreadCatalogCommand.ReadLatestUserTexts(turns.RootElement));
+        Assert.Equal(4095, latest.Length);
+        Assert.False(char.IsHighSurrogate(latest[^1]));
+    }
 }

@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Process;
+using Ai.Tlbx.MidTerm.Common.Text;
 
 namespace Ai.Tlbx.MidTerm.AgentHost;
 
@@ -168,7 +169,7 @@ internal static class CodexThreadCatalogCommand
 
     private sealed class CatalogRequestException : IOException { }
 
-    private static IReadOnlyList<string> ReadLatestUserTexts(JsonElement turns)
+    internal static IReadOnlyList<string> ReadLatestUserTexts(JsonElement turns)
     {
         var texts = new List<string>();
         var data = turns.GetProperty("data");
@@ -188,7 +189,7 @@ internal static class CodexThreadCatalogCommand
                 var value = part.GetProperty("text").GetString();
                 if (string.IsNullOrEmpty(value)) continue;
                 if (text.Length > 0) text.Append('\n');
-                text.Append(value.AsSpan(0, Math.Min(value.Length, 4096 - text.Length)));
+                text.Append(value.AsSpan(0, Utf16Text.SafeLength(value, 4096 - text.Length)));
                 if (text.Length >= 4096) break;
             }
             if (!string.IsNullOrWhiteSpace(text.ToString())) texts.Add(text.ToString());
@@ -196,5 +197,5 @@ internal static class CodexThreadCatalogCommand
         return texts;
     }
 
-    private static string? Truncate(string? value) => value is { Length: > 4096 } ? value[..4096] : value;
+    internal static string? Truncate(string? value) => value is null ? null : Utf16Text.Truncate(value, 4096);
 }
