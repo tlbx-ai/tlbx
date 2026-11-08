@@ -15518,8 +15518,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   display: block;
   max-width: 100%;
   max-height: 148px;
-  width: auto;
-  height: auto;
+  width: 100%;
+  height: 148px;
   object-fit: contain;
   border-radius: 6px;
 }
