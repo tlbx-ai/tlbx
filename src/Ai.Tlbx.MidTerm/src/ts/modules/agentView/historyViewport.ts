@@ -95,6 +95,7 @@ export function setHistoryScrollMode(
 ): HistoryScrollMode {
   state.historyScrollMode = mode;
   state.historyAutoScrollPinned = isHistoryScrollModePinned(mode);
+  if (state.historyAutoScrollPinned) state.historyReaderAnchor = null;
   return mode;
 }
 
