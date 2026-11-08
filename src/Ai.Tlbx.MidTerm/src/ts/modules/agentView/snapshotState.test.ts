@@ -114,6 +114,26 @@ function createDelta(snapshot: AppServerControlHistorySnapshot): AppServerContro
   };
 }
 
+function setRetainedReferences(
+  state: SessionAppServerControlViewState,
+  itemIds: readonly string[],
+  requestIds: readonly string[] = itemIds,
+): void {
+  const snapshot = state.snapshot!;
+  const count = Math.max(itemIds.length, requestIds.length);
+  snapshot.history = Array.from({ length: count }, (_, i) => ({
+    ...historyEntry('Retained canonical row'),
+    entryId: `entry-${i}`,
+    order: i + 1,
+    itemId: itemIds[i] ?? null,
+    requestId: requestIds[i] ?? null,
+  }));
+  snapshot.historyCount = count;
+  snapshot.historyWindowEnd = count;
+  state.historyWindowCount = count;
+  state.historyWindowTargetCount = Math.max(1, count);
+}
+
 describe('canonical history patch summary arrays', () => {
   it.each([0, 10_000])('retains array identity for empty summary deltas with %i entries', (count) => {
     const state = createState();
@@ -121,6 +141,7 @@ describe('canonical history patch summary arrays', () => {
     const items = (snapshot.items = Array.from({ length: count }, (_, i) => item(`item-${i}`)));
     const requests = (snapshot.requests = Array.from({ length: count }, (_, i) => request(`req-${i}`)));
     const notices = (snapshot.notices = Array.from({ length: count }, (_, i) => notice(`notice-${i}`)));
+    setRetainedReferences(state, items.map((value) => value.itemId), requests.map((value) => value.requestId));
     Object.freeze(items);
     Object.freeze(requests);
     Object.freeze(notices);
@@ -157,6 +178,7 @@ describe('canonical history patch summary arrays', () => {
     const snapshot = state.snapshot!;
     const items = (snapshot.items = [item('keep'), item('remove', later)]);
     const requests = (snapshot.requests = [request('keep'), request('remove', later)]);
+    setRetainedReferences(state, ['keep', 'remove']);
     Object.freeze(items);
     Object.freeze(requests);
     const delta = createDelta(snapshot);
@@ -177,6 +199,7 @@ describe('canonical history patch summary arrays', () => {
     const items = (snapshot.items = [item('old'), item('replace')]);
     const requests = (snapshot.requests = [request('old'), request('replace')]);
     const notices = (snapshot.notices = [notice('old'), notice('replace')]);
+    setRetainedReferences(state, ['old', 'replace', 'new']);
     const previous = structuredClone({ items, requests, notices });
     Object.freeze(items);
     Object.freeze(requests);
@@ -218,6 +241,7 @@ describe('canonical history patch summary arrays', () => {
     ];
     snapshot.items = [retainedItem, item('replace'), item('remove')];
     snapshot.requests = [retainedRequest, request('replace'), request('remove')];
+    setRetainedReferences(state, ['replace', 'retained', 'remove']);
     const delta = createDelta(snapshot);
     delta.itemRemovals = ['replace', 'remove'];
     delta.requestRemovals = ['replace', 'remove'];
@@ -236,5 +260,68 @@ describe('canonical history patch summary arrays', () => {
     expect(retainedItem.attachments[0]!.path).toBe('/retained.txt');
     expect(upsertRequest.questions[0]!.options[0]!.label).toBe('Yes');
     expect(retainedRequest.answers[0]!.answers).toEqual(['original']);
+  });
+
+  it.each([10_000, 100_000])('bounds cached summaries with %i completed tools in one active turn', (count) => {
+    const state = createState();
+    const snapshot = state.snapshot!;
+    setRetainedReferences(state, ['item-0', 'item-1']);
+    state.historyAutoScrollPinned = false;
+    snapshot.historyCount = count;
+    snapshot.hasNewerHistory = true;
+    snapshot.items = Array.from({ length: count }, (_, i) => ({
+      ...item(`item-${i}`), turnId: 'turn',
+    }));
+    snapshot.items.push({ ...item('active'), turnId: 'turn', status: 'running' });
+    snapshot.requests = [request('pending'), { ...request('resolved'), state: 'resolved' }];
+    snapshot.requests[0]!.state = 'open';
+    const delta = createDelta(snapshot);
+    delta.streams = { ...snapshot.streams, assistantText: 'Still working outside the browse window' };
+    delta.session = { ...snapshot.session, usage: { inputTokens: 123456 } };
+    applyCanonicalAppServerControlDelta(state, delta);
+
+    expect(snapshot.items.map((value) => value.itemId)).toEqual(['item-0', 'item-1', 'active']);
+    expect(snapshot.requests.map((value) => value.requestId)).toEqual(['pending']);
+    expect(snapshot.history).toHaveLength(2);
+    expect(snapshot.historyCount).toBe(count);
+    expect(snapshot.session.usage!.inputTokens).toBe(123456);
+    expect(snapshot.streams.assistantText).toBe(delta.streams.assistantText);
+    expect(JSON.stringify(snapshot).length).toBeLessThan(10_000);
+    const settled = createDelta(snapshot);
+    settled.currentTurn = { ...snapshot.currentTurn, state: 'completed' };
+    settled.requestUpserts = [{ ...snapshot.requests[0]!, state: 'resolved' }];
+    applyCanonicalAppServerControlDelta(state, settled);
+    expect(snapshot.items.map((value) => value.itemId)).toEqual(['item-0', 'item-1']);
+    expect(snapshot.requests).toEqual([]);
+  });
+
+  it('evicts completed summaries as full live patches roll the retained history window forward', () => {
+    const state = createState();
+    const snapshot = state.snapshot!;
+    state.historyWindowTargetCount = 5;
+    for (let i = 1; i <= 200; i++) {
+      const delta = createDelta(snapshot);
+      delta.historyCount = i + 1;
+      delta.historyUpserts = [{
+        ...historyEntry('Completed tool'), entryId: `tool-${i}`, order: i + 1, itemId: `item-${i}`,
+      }];
+      delta.itemUpserts = [{ ...item(`item-${i}`), turnId: 'turn' }];
+      applyCanonicalAppServerControlDelta(state, delta);
+      expect(snapshot.history.length).toBeLessThanOrEqual(5);
+      expect(snapshot.items.length).toBeLessThanOrEqual(5);
+    }
+    expect(snapshot.items.some((value) => value.itemId === 'item-1')).toBe(false);
+    expect(snapshot.items.some((value) => value.itemId === 'item-200')).toBe(true);
+  });
+
+  it('keeps the browser notice projection aligned with the host existing 64-notice bound', () => {
+    const state = createState();
+    const snapshot = state.snapshot!;
+    snapshot.notices = Array.from({ length: 64 }, (_, i) => notice(`notice-${i}`));
+    const delta = createDelta(snapshot);
+    delta.noticeUpserts = [notice('latest-notice', later)];
+    applyCanonicalAppServerControlDelta(state, delta);
+    expect(snapshot.notices).toHaveLength(64);
+    expect(snapshot.notices[0]!.eventId).toBe('latest-notice');
   });
 });
