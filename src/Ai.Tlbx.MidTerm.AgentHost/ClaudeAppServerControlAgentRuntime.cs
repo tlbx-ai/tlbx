@@ -77,6 +77,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "runtime.configure" => await ConfigureAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
@@ -307,8 +308,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             prompt,
             turnRequest.Attachments,
             addDirectories,
-            _activeTurnModel,
-            _activeTurnEffort,
+            _quickSettings.Model,
+            _quickSettings.Effort,
             _quickSettings.PlanMode,
             _quickSettings.PermissionMode,
             ct).ConfigureAwait(false);
@@ -606,6 +607,13 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     {
         switch (type)
         {
+            case "bridge.configured":
+            {
+                if (GetString(root, "requestId") is { } configurationId &&
+                    _configurationAcks.TryGetValue(configurationId, out var configurationAck))
+                    configurationAck.TrySetResult(root.Clone());
+                break;
+            }
             case "bridge.ready":
                 ApplyClaudeNativeCatalogue(root, rawLine);
                 _bridgeReady.TrySetResult();
@@ -685,6 +693,13 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                     GetString(root, "commandType"),
                     GetString(root, "requestId"),
                     new InvalidOperationException(detail ?? message));
+                if (GetString(root, "commandType") == "runtime.configure")
+                {
+                    if (GetString(root, "requestId") is { } configurationId &&
+                        _configurationAcks.TryGetValue(configurationId, out var configurationAck))
+                        configurationAck.TrySetException(new InvalidOperationException(detail ?? message));
+                    break;
+                }
                 _bridgeReady.TrySetException(new InvalidOperationException(detail ?? message));
                 EmitRuntimeMessage("runtime.error", message, detail);
                 if (!string.IsNullOrWhiteSpace(_activeTurnId))
@@ -1602,10 +1617,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             ? AppServerControlQuickSettings.PermissionModeAuto
             : AppServerControlQuickSettings.PermissionModeManual;
         var settings = AppServerControlQuickSettings.CreateSummary(
-            request.Model ?? AppServerControlProviderRuntimeConfiguration.GetClaudeDefaultModel(),
-            request.Effort,
-            request.PlanMode,
-            request.PermissionMode,
+            request.Model ?? _quickSettings.Model ?? AppServerControlProviderRuntimeConfiguration.GetClaudeDefaultModel(),
+            request.Effort ?? _quickSettings.Effort,
+            request.PlanMode ?? _quickSettings.PlanMode,
+            request.PermissionMode ?? _quickSettings.PermissionMode,
             defaultPermissionMode);
         settings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         settings.EffortOptions = ReadClaudeEffortOptions(settings.Model);

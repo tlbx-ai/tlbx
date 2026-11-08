@@ -119,6 +119,8 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(List<ProviderResumeCatalogEntryDto>))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
 [JsonSerializable(typeof(AppServerControlSteerRequest))]
+[JsonSerializable(typeof(AppServerControlConfigureRequest))]
+[JsonSerializable(typeof(AppServerControlConfigureResponse))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]
 [JsonSerializable(typeof(List<AppServerControlAttachmentReference>))]
