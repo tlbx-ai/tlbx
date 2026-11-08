@@ -166,7 +166,8 @@ public sealed partial class ProviderResumeCatalogService
             start = index + 3;
         }
         else if (index + 2 < text.Length && text[index] == '\\' && text[index + 1] == '\\' &&
-                 char.IsAsciiLetterOrDigit(text[index + 2]))
+                 char.IsAsciiLetterOrDigit(text[index + 2]) &&
+                 (char.IsWhiteSpace(previous) || previous is '(' or '[' or '<' or '"' or '\''))
         {
             start = index + 2;
         }
