@@ -1,4 +1,8 @@
-import type { HistoryJumpAlign, HistoryVirtualWindow, SessionAppServerControlViewState } from './types';
+import type {
+  HistoryJumpAlign,
+  HistoryVirtualWindow,
+  SessionAppServerControlViewState,
+} from './types';
 import { syncViewportScrollPosition } from '../../utils/virtualizer';
 
 type JumpState = Pick<
@@ -6,7 +10,11 @@ type JumpState = Pick<
   'historyPendingJumpTargetIndex' | 'historyPendingJumpAlign' | 'historyJumpTargetEntryId'
 >;
 
-export function setHistoryJumpTarget(state: JumpState, index: number, align: HistoryJumpAlign): void {
+export function setHistoryJumpTarget(
+  state: JumpState,
+  index: number,
+  align: HistoryJumpAlign,
+): void {
   if (state.historyPendingJumpTargetIndex !== index) state.historyJumpTargetEntryId = null;
   state.historyPendingJumpTargetIndex = index;
   state.historyPendingJumpAlign = align;
@@ -83,7 +91,9 @@ export function resolveHistoryJumpEntryIndex(
     return -1;
   }
 
-  const canonicalIds = snapshot.history ? new Set(snapshot.history.map((entry) => entry.entryId)) : null;
+  const canonicalIds = snapshot.history
+    ? new Set(snapshot.history.map((entry) => entry.entryId))
+    : null;
   let preceding = -1;
   for (let index = 0; index < entries.length; index += 1) {
     const entry = entries[index];

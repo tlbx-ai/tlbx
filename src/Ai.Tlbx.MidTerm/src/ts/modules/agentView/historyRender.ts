@@ -636,11 +636,7 @@ function resolveHistoryNavigatorAnchorIndex(
   }
 
   const concreteAnchorIndex = options.refreshFromViewport
-    ? resolveHistoryNavigatorConcreteAnchorIndex(
-        state,
-        viewport,
-        retainedWindow.totalCount,
-      )
+    ? resolveHistoryNavigatorConcreteAnchorIndex(state, viewport, retainedWindow.totalCount)
     : null;
   if (concreteAnchorIndex !== null) {
     return clampHistoryAbsoluteIndex(concreteAnchorIndex, retainedWindow.totalCount);
@@ -851,12 +847,12 @@ export function readHistoryNavigatorMapping(
   state: SessionAppServerControlViewState,
 ): HistoryNavigatorMapping {
   const host = state.historyProgressNav;
-  const paintedCount = Number(host?.getAttribute?.('aria-valuemax'));
+  const paintedCount = Number(host?.getAttribute('aria-valuemax'));
   const count =
     Number.isFinite(paintedCount) && paintedCount > 0
       ? paintedCount
       : resolveCanonicalHistoryCount(state.snapshot);
-  const height = state.historyProgressThumb?.getBoundingClientRect?.().height;
+  const height = state.historyProgressThumb?.getBoundingClientRect().height;
   return {
     trackTopPx: (host?.getBoundingClientRect().top ?? 0) + HISTORY_PROGRESS_THUMB_INSET_PX,
     geometry: resolveHistoryNavigatorGeometry({
@@ -1062,12 +1058,13 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
   resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number;
 }): HistoryVirtualWindow {
   const { entries, virtualWindow, state, resolveEntryHeight } = args;
-  const jumpEntryIndex = state?.historyJumpTargetEntryId
+  if (!state) return virtualWindow;
+  const jumpEntryIndex = state.historyJumpTargetEntryId
     ? entries.findIndex((entry) => entry.id === state.historyJumpTargetEntryId)
     : resolveHistoryJumpEntryIndex(
         entries,
-        state?.snapshot ?? null,
-        state?.historyPendingJumpTargetIndex,
+        state.snapshot ?? null,
+        state.historyPendingJumpTargetIndex,
       );
   if (jumpEntryIndex >= 0) {
     return buildHistoryJumpVirtualWindow(
@@ -1079,7 +1076,7 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
     );
   }
   const anchorEntryId =
-    state?.pendingHistoryPrependAnchor?.entryId ?? state?.pendingHistoryLayoutAnchor?.entryId;
+    state.pendingHistoryPrependAnchor?.entryId ?? state.pendingHistoryLayoutAnchor?.entryId;
   if (!anchorEntryId) {
     return virtualWindow;
   }
@@ -1368,9 +1365,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   ): void {
     const jumpResult = state ? restorePendingHistoryJumpTarget(viewport, state) : null;
     const jumpViewportAdjusted = jumpResult === true;
-    const browseViewportAdjusted = jumpResult !== null
-      ? false
-      : adjustBrowseViewportIfNeeded(sessionId, viewport, state);
+    const browseViewportAdjusted =
+      jumpResult !== null ? false : adjustBrowseViewportIfNeeded(sessionId, viewport, state);
     const hasPlaceholderRanges =
       state !== undefined &&
       (state.historyLeadingPlaceholders.length > 0 || state.historyTrailingPlaceholders.length > 0);

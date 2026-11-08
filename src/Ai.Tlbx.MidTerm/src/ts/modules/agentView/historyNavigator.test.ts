@@ -25,15 +25,19 @@ vi.mock('./activationHelpers', () => ({ resolveHistoryBadgeLabel: vi.fn() }));
 
 describe('canonical scrollbar geometry', () => {
   it('chooses a visible central row across sparse canonical gaps', () => {
-    expect(measureHistoryNavigatorAnchor(40, 680, [
-      { absoluteIndex: 122, top: 100, bottom: 200 },
-      { absoluteIndex: 125, top: 261.984375, bottom: 497.765625 },
-      { absoluteIndex: 128, top: 900, bottom: 1000 },
-    ])).toBe(125);
-    expect(measureHistoryNavigatorAnchor(0, 100, [
-      { absoluteIndex: 122, top: 0, bottom: 30 },
-      { absoluteIndex: 128, top: 60, bottom: 100 },
-    ])).toBe(128); // The center lies in a gap; 125 is not a rendered row.
+    expect(
+      measureHistoryNavigatorAnchor(40, 680, [
+        { absoluteIndex: 122, top: 100, bottom: 200 },
+        { absoluteIndex: 125, top: 261.984375, bottom: 497.765625 },
+        { absoluteIndex: 128, top: 900, bottom: 1000 },
+      ]),
+    ).toBe(125);
+    expect(
+      measureHistoryNavigatorAnchor(0, 100, [
+        { absoluteIndex: 122, top: 0, bottom: 30 },
+        { absoluteIndex: 128, top: 60, bottom: 100 },
+      ]),
+    ).toBe(128); // The center lies in a gap; 125 is not a rendered row.
     expect(measureHistoryNavigatorAnchor(0, 100, [])).toBeNull();
   });
   it('sizes the thumb proportionally, with a small minimum bounded by the actual track', () => {
@@ -148,7 +152,12 @@ describe('navigator rendering across passive layout and hydration', () => {
       getAttribute: (key: string) => attributes.get(key) ?? null,
       getBoundingClientRect: () => ({ top: 0, height: 412 }),
     };
-    const thumb = { style: { top: '', height: '' } };
+    const thumb = {
+      style: { top: '', height: '' },
+      getBoundingClientRect: (): { height: number } => ({
+        height: Number.parseFloat(thumb.style.height) || 0,
+      }),
+    };
     const state = {
       snapshot: {
         historyCount: 1000,
@@ -260,7 +269,10 @@ describe('navigator rendering across passive layout and hydration', () => {
     state.historyViewport!.getBoundingClientRect = () => ({ top: 40 }) as DOMRect;
     state.historyRenderedNodes = new Map([
       ['tool', { node: { getBoundingClientRect: () => ({ top: 100, bottom: 200 }) } }],
-      ['assistant', { node: { getBoundingClientRect: () => ({ top: 261.984375, bottom: 497.765625 }) } }],
+      [
+        'assistant',
+        { node: { getBoundingClientRect: () => ({ top: 261.984375, bottom: 497.765625 }) } },
+      ],
       ['busy', { node: { getBoundingClientRect: () => ({ top: 300, bottom: 450 }) } }],
     ]) as unknown as SessionAppServerControlViewState['historyRenderedNodes'];
     render.syncViewportOffset('session', { refreshAnchorFromViewport: true });
@@ -312,7 +324,10 @@ describe('navigator rendering across passive layout and hydration', () => {
       ['assistant', { node: { getBoundingClientRect: () => ({ top: 230, bottom: 317.97 }) } }],
       ['busy', { node: { getBoundingClientRect: () => ({ top: 0, bottom: 100000 }) } }],
     ]) as unknown as SessionAppServerControlViewState['historyRenderedNodes'];
-    expect(render.getUnderfilledHistoryWindowRequest(state)).toEqual({ startIndex: 358, count: 80 });
+    expect(render.getUnderfilledHistoryWindowRequest(state)).toEqual({
+      startIndex: 358,
+      count: 80,
+    });
     state.historyNavigatorMode = 'drag-preview';
     expect(render.getUnderfilledHistoryWindowRequest(state)).toBeNull();
   });

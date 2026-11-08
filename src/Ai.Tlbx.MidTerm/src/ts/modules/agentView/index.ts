@@ -1245,7 +1245,11 @@ async function requestHistoryNavigatorWindow(
     isHistoryIndexInsideCurrentWindow(state, clampedTargetIndex) &&
     state.historyWindowCount >= requestCount;
 
-  setHistoryJumpTarget(state, clampedTargetIndex, resolveHistoryJumpAlign(state, clampedTargetIndex));
+  setHistoryJumpTarget(
+    state,
+    clampedTargetIndex,
+    resolveHistoryJumpAlign(state, clampedTargetIndex),
+  );
   if (kind === 'hydrate') {
     state.historyWindowTargetCount = requestCount;
   }
@@ -2559,7 +2563,9 @@ async function fillHistoryViewportIfNeeded(
       renderCurrentAgentView(sessionId, { immediate: true });
     }
   } catch (error) {
-    log.warn(() => `Failed to fill AppServerControl history viewport for ${sessionId}: ${String(error)}`);
+    log.warn(
+      () => `Failed to fill AppServerControl history viewport for ${sessionId}: ${String(error)}`,
+    );
   } finally {
     state.refreshInFlight = false;
     if (!flushQueuedHistoryNavigatorRequest(sessionId, state)) {

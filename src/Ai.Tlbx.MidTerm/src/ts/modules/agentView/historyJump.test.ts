@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { alignHistoryJumpTarget, buildHistoryJumpVirtualWindow, clearHistoryJumpTarget, resolveHistoryJumpEntryIndex, setHistoryJumpTarget } from './historyJump';
+import {
+  alignHistoryJumpTarget,
+  buildHistoryJumpVirtualWindow,
+  clearHistoryJumpTarget,
+  resolveHistoryJumpEntryIndex,
+  setHistoryJumpTarget,
+} from './historyJump';
 import { shouldRefreshHistoryNavigatorFromScroll } from './historyNavigator';
 import type { SessionAppServerControlViewState } from './types';
 
@@ -7,21 +13,35 @@ describe('persistent canonical seek alignment', () => {
   function fixture() {
     const layout = { top: 1000, height: 235.78125, viewportHeight: 680 };
     const viewport = {
-      scrollTop: 0, scrollHeight: 5000,
-      get clientHeight() { return layout.viewportHeight; },
+      scrollTop: 0,
+      scrollHeight: 5000,
+      get clientHeight() {
+        return layout.viewportHeight;
+      },
       getBoundingClientRect: () => ({ top: 40 }),
     } as HTMLDivElement;
-    const node = { getBoundingClientRect: () => ({
-      top: 40 + layout.top - viewport.scrollTop,
-      bottom: 40 + layout.top - viewport.scrollTop + layout.height,
-      height: layout.height,
-    }) };
-    const history = Array.from({ length: 7 }, (_, index) => ({ entryId: `row-${123 + index}`, order: 123 + index }));
+    const node = {
+      getBoundingClientRect: () => ({
+        top: 40 + layout.top - viewport.scrollTop,
+        bottom: 40 + layout.top - viewport.scrollTop + layout.height,
+        height: layout.height,
+      }),
+    };
+    const history = Array.from({ length: 7 }, (_, index) => ({
+      entryId: `row-${123 + index}`,
+      order: 123 + index,
+    }));
     const state = {
       snapshot: { history, historyWindowStart: 122, historyWindowEnd: 129 },
-      historyEntries: [{ id: 'row-123', order: 123 }, { id: 'row-126', order: 126 }, { id: 'busy', order: 126.01 }],
+      historyEntries: [
+        { id: 'row-123', order: 123 },
+        { id: 'row-126', order: 126 },
+        { id: 'busy', order: 126.01 },
+      ],
       historyRenderedNodes: new Map([['row-126', { node }]]),
-      historyPendingJumpTargetIndex: null, historyPendingJumpAlign: null, historyJumpTargetEntryId: null,
+      historyPendingJumpTargetIndex: null,
+      historyPendingJumpAlign: null,
+      historyJumpTargetEntryId: null,
       historyNavigatorMode: 'drag-preview',
     } as unknown as SessionAppServerControlViewState;
     return { state, viewport, layout };
@@ -63,10 +83,15 @@ describe('persistent canonical seek alignment', () => {
     viewport.scrollTop += 40;
     layout.height += 100;
     expect(alignHistoryJumpTarget(viewport, state)).toBeNull();
-    expect(shouldRefreshHistoryNavigatorFromScroll({
-      now: 100, lastUserIntentAt: 100, intentWindowMs: 900, previous,
-      current: { ...previous, scrollTop: viewport.scrollTop },
-    })).toBe(true);
+    expect(
+      shouldRefreshHistoryNavigatorFromScroll({
+        now: 100,
+        lastUserIntentAt: 100,
+        intentWindowMs: 900,
+        previous,
+        current: { ...previous, scrollTop: viewport.scrollTop },
+      }),
+    ).toBe(true);
     setHistoryJumpTarget(state, 125, 'center');
     alignHistoryJumpTarget(viewport, state);
     setHistoryJumpTarget(state, 128, 'bottom');
