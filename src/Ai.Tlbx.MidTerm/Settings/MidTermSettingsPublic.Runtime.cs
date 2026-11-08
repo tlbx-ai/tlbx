@@ -58,7 +58,7 @@ public sealed partial class MidTermSettingsPublic
             CodexEnvironmentVariables = settings.CodexEnvironmentVariables,
             AgentMessageFontFamily = NormalizeAgentMessageFontFamily(settings.AgentMessageFontFamily),
             ShowAgentMessageTimestamps = settings.ShowAgentMessageTimestamps,
-            ShowUnknownAgentMessages = settings.ShowUnknownAgentMessages,
+            ShowAgentTechnicalDetails = settings.ShowAgentTechnicalDetails,
             ToolCallOutputLines = NormalizeToolCallOutputLines(settings.ToolCallOutputLines),
             FontSize = settings.FontSize,
             FontFamily = settings.FontFamily,
@@ -167,7 +167,7 @@ public sealed partial class MidTermSettingsPublic
             AgentMessageFontFamily,
             DefaultAgentMessageFontFamily);
         settings.ShowAgentMessageTimestamps = ShowAgentMessageTimestamps;
-        settings.ShowUnknownAgentMessages = ShowUnknownAgentMessages;
+        settings.ShowAgentTechnicalDetails = ShowAgentTechnicalDetails;
         settings.ToolCallOutputLines = NormalizeToolCallOutputLines(ToolCallOutputLines);
         settings.FontSize = FontSize;
         settings.FontFamily = FontFamily;

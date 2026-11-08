@@ -401,13 +401,13 @@ The canonical history contract must satisfy the following:
 - Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
 - Assistant-only semantic tinting should remain subtle. Numbers and plain-text table outline characters may be muted to improve scanability, but those accents must never overpower the message body or leak into command, diff, or other machine-oriented artifact rows.
 - Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Agent Controller Session should interpret them as session telemetry instead of timeline content.
-- Agent Controller Session should expose that telemetry in a compact hovering stats display that stays out of the reading flow while surfacing context-window usage as a percent-of-limit summary plus accumulated session input/output token totals.
+- The default reading view hides telemetry and the provider command catalogue. The single `Show technical details` setting reveals those controls and technical history rows; telemetry then uses the existing compact hovering stats display.
 - If the provider notice only exposes cumulative session token totals rather than reliable live context occupancy, Agent Controller Session must not fake a context percent; it should fall back to the window limit plus session in/out totals instead.
 - Virtualizer diagnostics should stay in traces, tests, and developer tooling rather than as a persistent Agent Controller Session overlay. The Agent Controller Session surface should stay focused on history, navigation, and operator controls.
 
 ### Tool, reasoning, plan, system, and notice rows
 
-- Tool activity should be visible, but compressed by default.
+- The default reading view shows user/assistant messages, current working feedback, pending approvals/questions and real errors. Routine tool/protocol/reasoning/system rows and resolved request details stay out of the reading flow; do not replace each hidden tool with another activity summary.
 - Starts, progress, completion, and failure should read as one evolving activity line or block where possible.
 - Tool, reasoning, plan, diff, request, and system rows should share one restrained structural language instead of mixing rail markers, unrelated borders, and unrelated card treatments.
 - Raw transport noise must not leak into the UI.
@@ -416,8 +416,8 @@ The canonical history contract must satisfy the following:
 - Provider CLI/runtime error blocks that arrive outside the normal assistant stream, including multi-line stderr startup failures and deprecation errors, should map into canonical `Agent Error` notice rows with stronger red emphasis than ordinary system rows.
 - When a provider emits an unknown structured event, tlbx should preserve bounded source/method diagnostics as a canonical history item instead of silently dropping it; the raw payload remains transient and omitted.
 - Those fallback unknown-agent rows must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
-- Agent Controller Session should expose a user setting to hide or show those unknown-agent fallback rows, and the default should favor showing them so new provider capabilities are inspectable before tlbx ships a dedicated mapping.
-- Long machine-oriented bodies such as command output, file-change output, reasoning blocks, and similar tool-style details should collapse into unfoldable disclosure panels by default once they are stable.
+- `showAgentTechnicalDetails` defaults to false and opts into technical rows, including unknown-agent fallback rows. It replaces the narrower `showUnknownAgentMessages` control. The old true value was also the old server default and must not be interpreted as explicit consent to the broader display; explicit values of the new preference persist normally.
+- Long machine-oriented bodies shown through technical opt-in should collapse into disclosure panels once stable; real errors remain visible and unfolded. File review is independently available through its closed disclosure.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
 - Command/file-read noise should be summarized for screen use instead of dumping full raw terminal-like output into Agent Controller Session history.
@@ -452,7 +452,7 @@ The canonical history contract must satisfy the following:
 
 - Diffs should be surfaced as first-class work artifacts, not buried in generic tool logs.
 - Unified diffs should render as actual diffs with added and removed lines visually separated by green/red treatments, not as undifferentiated plain monospace blocks.
-- Diff rows should stay expanded by default instead of hiding behind the generic machine-output disclosure treatment.
+- File changes remain available in the quiet view behind a closed `Review changes` disclosure. Mount the bounded diff/tool body only after explicit expansion; do not inject hundreds of diff lines into the reading flow by default.
 - Agent Controller Session should trim non-essential unified-diff preamble noise where possible and prioritize the file header plus actual hunk content.
 - When unified diff hunks provide old/new coordinates, Agent Controller Session should show a subtle old/new line-number gutter beside the diff text.
 - That diff line-number gutter should stay structurally consistent across context, removed, and added lines; do not switch between doubled columns, stretched single columns, or other per-row numbering layouts that make the gutter look accidental.
@@ -535,7 +535,7 @@ The canonical history contract must satisfy the following:
 - Live Agent Controller Session transport should flow as `provider event -> mtagenthost canonization -> mt bridge -> frontend history window fetch / delta -> visible row patch`.
 - Item updates should target stable DOM anchors keyed by canonical identity.
 - Virtual scrolling must remove old items from the live DOM when the history becomes large.
-- Rich tool/log items should support collapsed rendering by default, but working diffs should stay expanded with a bounded visible body.
+- Technical tool/log items are opt-in; file review stays available through a closed disclosure with a bounded body mounted on demand.
 - High-volume provider chatter should be reduced before transport so the browser receives canonical history deltas, not raw-event floods.
 - The browser should request history as explicit index windows and should not receive arbitrary unseen history by default.
 - Multiple browsers attached to one Agent Controller Session should share the same canonical history while independently fetching only the windows each browser currently needs.
@@ -609,7 +609,7 @@ Status in this branch/work item:
 - implemented: tlbx-side Agent Controller Session persistence now writes canonical reduced session state instead of appending provider-shaped event logs, while transient live event backlog stays bounded in memory only
 - implemented: mouseup inside the Agent Controller Session surface no longer routes through terminal focus reclaim, so drag text selection in Agent Controller Session remains intact after the mouse button is released
 - implemented: long non-diff machine-oriented Agent Controller Session bodies collapse into unfoldable disclosure panels by default, with line-count and preview context for quick scanning
-- implemented: Agent Controller Session diff rows stay expanded by default, suppress non-essential unified-diff preamble noise where possible, and cap visible diff rendering at 200 lines plus an ellipsis marker
+- implemented: explicit diff review suppresses non-essential unified-diff preamble noise and caps visible rendering at 200 lines plus an ellipsis marker; review bodies are now closed by default
 - implemented: Agent Controller Session diff rows remove artificial blank spacing between lines and show old/new hunk line numbers when the diff provides them
 - implemented: tool-style titles and bodies use the configured terminal monospace stack consistently
 - implemented: dev mode writes one GUID-named per-session Agent Controller Session screen log derived from canonical history deltas and render hints
