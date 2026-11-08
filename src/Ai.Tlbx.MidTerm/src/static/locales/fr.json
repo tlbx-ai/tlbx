@@ -1441,5 +1441,15 @@
   "connect.sidebar.identityVerified": "Clé vérifiée",
   "connect.sidebar.signalingConnected": "Link · WSS actif",
   "connect.sidebar.signalingMissing": "Non indiqué",
-  "connect.sidebar.signalingHint": "La connexion de signalisation reste ouverte pendant l’utilisation. Le trajet des données de l’application est affiché sous Trajet."
+  "connect.sidebar.signalingHint": "La connexion de signalisation reste ouverte pendant l’utilisation. Le trajet des données de l’application est affiché sous Trajet.",
+  "smartInput.settingPending": "Application…",
+  "smartInput.settingApplied": "Confirmé par le fournisseur",
+  "smartInput.settingAcknowledged": "Accepté par le fournisseur ; valeur effective non relue",
+  "smartInput.settingPartial": "Partiellement confirmé ; voir la portée",
+  "smartInput.settingUnconfirmed": "Non confirmé ; dernière valeur confirmée affichée",
+  "smartInput.settingTargetUnavailable": "La cible a changé ; non appliqué",
+  "smartInput.settingScopeTurns": "Pour les tours suivants ; inférence en cours inchangée",
+  "smartInput.settingScopeCaptures": "Pour les captures suivantes ; inférence en cours inchangée",
+  "smartInput.settingScopeResponses": "Valeurs par défaut acceptées pour les prochaines réponses ; inférence en cours inchangée",
+  "smartInput.settingPermissionAfterPlan": "Utilisé à la sortie du mode Plan ; Plan reste actif"
 }
