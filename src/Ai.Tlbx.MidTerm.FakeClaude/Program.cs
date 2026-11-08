@@ -19,11 +19,25 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
     using var document = JsonDocument.Parse(line);
     var root = document.RootElement;
     var type = GetString(root, "type");
+    if (File.Exists("capture-runtime-contract"))
+        await File.AppendAllTextAsync("runtime-contract.jsonl", JsonSerializer.Serialize(new
+        {
+            type, subtype = GetString(root, "request", "subtype"),
+            sessionId = ReadOption(args, "--session-id"), resume = ReadOption(args, "--resume")
+        }) + Environment.NewLine).ConfigureAwait(false);
+
 
     if (string.Equals(type, "control_request", StringComparison.Ordinal))
     {
         var requestId = GetString(root, "request_id") ?? string.Empty;
         var subtype = GetString(root, "request", "subtype");
+        if (subtype == "initialize" && File.Exists("reject-initialize"))
+        {
+            await WriteJsonAsync(new { type = "control_response", response = new
+                { subtype = "error", request_id = requestId, error = "Fixture initialization rejected." } }).ConfigureAwait(false);
+            continue;
+        }
+
         if (subtype == "apply_flag_settings" && root.GetProperty("request").TryGetProperty("settings", out var settings) &&
             settings.TryGetProperty("effortLevel", out var effort))
             currentEffort = effort.ValueKind == JsonValueKind.String ? effort.GetString() : null;

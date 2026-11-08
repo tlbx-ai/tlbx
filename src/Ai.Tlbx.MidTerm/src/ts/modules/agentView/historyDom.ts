@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isFileChangeHistoryEntry, showAgentTechnicalDetails } from './historyVisibility';
 import { $currentSettings, getSession } from '../../stores';
 import { renderMarkdownFragment, wireMarkdownTables } from '../../utils/markdown';
 import {
@@ -96,13 +97,13 @@ function appServerControlFormat(
 
 function resolveHistoryBadgeTextForEntry(
   entry: AppServerControlHistoryEntry,
-  provider: string | null | undefined,
+  agentName: string | null | undefined,
 ): string {
   if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {
     return entry.label.trim();
   }
 
-  return resolveHistoryBadgeLabel(entry.kind, provider);
+  return resolveHistoryBadgeLabel(entry.kind, agentName);
 }
 
 function normalizeHistoryTitle(entry: AppServerControlHistoryEntry): string {
@@ -374,7 +375,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return;
     }
 
-    if (!stats) {
+    if (!stats || !showAgentTechnicalDetails()) {
       host.hidden = true;
       host.replaceChildren();
       if (typeof host.removeAttribute === 'function') {
@@ -567,7 +568,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     badge.className = `agent-history-badge agent-history-badge-${entry.kind}`;
     badge.textContent = resolveHistoryBadgeTextForEntry(
       entry,
-      deps.getState(sessionId)?.snapshot?.provider,
+      deps.getState(sessionId)?.snapshot?.session.agentName,
     );
     if (entry.kind === 'assistant' && showAssistantBadge) {
       badge.dataset.visible = 'true';
@@ -909,7 +910,9 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     summary.className = 'agent-history-disclosure-summary';
     const label = document.createElement('span');
     label.className = 'agent-history-disclosure-label';
-    label.textContent = appServerControlText('appServerControl.panel.details', 'Details');
+    label.textContent = isFileChangeHistoryEntry(entry)
+      ? appServerControlText('appServerControl.panel.reviewChanges', 'Review changes')
+      : appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
     const meta = document.createElement('span');
     meta.className = 'agent-history-disclosure-meta';
@@ -923,7 +926,21 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       preview.textContent = presentation.preview;
       summary.appendChild(preview);
     }
+    let bodyMounted = false;
+    const mountBody = () => {
+      if (!bodyMounted) {
+        details.appendChild(createHistoryBodyContent(entry, sessionId, presentation));
+        bodyMounted = true;
+      }
+    };
+    details.appendChild(summary);
+    if (details.open) {
+      mountBody();
+    }
     details.addEventListener('toggle', () => {
+      if (details.open) {
+        mountBody();
+      }
       const state = deps.getState(sessionId);
       if (!state) {
         return;
@@ -934,7 +951,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         state.historyExpandedEntries.delete(entry.id);
       }
     });
-    details.append(summary, createHistoryBodyContent(entry, sessionId, presentation));
     wrapper.appendChild(details);
     return wrapper;
   }

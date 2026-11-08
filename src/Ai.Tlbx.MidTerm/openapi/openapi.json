@@ -6622,7 +6622,7 @@
           "codexEnvironmentVariables",
           "agentMessageFontFamily",
           "showAgentMessageTimestamps",
-          "showUnknownAgentMessages",
+          "showAgentTechnicalDetails",
           "toolCallOutputLines",
           "fontSize",
           "fontFamily",
@@ -6742,7 +6742,7 @@
           "showAgentMessageTimestamps": {
             "type": "boolean"
           },
-          "showUnknownAgentMessages": {
+          "showAgentTechnicalDetails": {
             "type": "boolean"
           },
           "toolCallOutputLines": {

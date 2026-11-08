@@ -36,7 +36,7 @@ public sealed class AppServerControlHostProtocolTests
             Configured = new()
             {
                 Status = "partial", ThreadStatus = "applied", TurnStatus = "targetUnavailable",
-                EffectiveSettings = new() { ["model"] = actual.RootElement.Clone() },
+                EffectiveSettings = new(StringComparer.Ordinal) { ["model"] = actual.RootElement.Clone() },
                 DeferredFields = ["collaborationMode"]
             }
         };

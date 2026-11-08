@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isFileChangeHistoryEntry, isHistoryError } from './historyVisibility';
 import {
   COLLAPSIBLE_HISTORY_BODY_MIN_CHARS,
   COLLAPSIBLE_HISTORY_BODY_MIN_LINES,
@@ -251,6 +252,21 @@ function usesMarkdownPresentation(entry: AppServerControlHistoryEntry): boolean 
   return entry.kind === 'assistant' || entry.sourceItemType === 'proposed_plan';
 }
 
+function shouldCollapseHistoryBody(
+  entry: AppServerControlHistoryEntry,
+  mode: HistoryBodyPresentation['mode'],
+  lineCount: number,
+): boolean {
+  return (
+    !isHistoryError(entry) &&
+    (mode === 'diff' ||
+      (mode === 'monospace' &&
+        !entry.live &&
+        !entry.pending &&
+        (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
+          entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS)))
+  );
+}
 export function resolveHistoryBodyPresentation(
   entry: AppServerControlHistoryEntry,
 ): HistoryBodyPresentation {
@@ -267,7 +283,7 @@ export function resolveHistoryBodyPresentation(
     const evidenceLines = countHistoryBodyLines(entry.toolPresentation.evidence ?? '');
     return {
       mode: 'tool',
-      collapsedByDefault: false,
+      collapsedByDefault: isFileChangeHistoryEntry(entry) && !isHistoryError(entry),
       lineCount: Math.max(1, evidenceLines + 1),
       preview: '',
     };
@@ -285,18 +301,13 @@ export function resolveHistoryBodyPresentation(
   const mode =
     entry.kind === 'diff' ? 'diff' : isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
   const lineCount = countHistoryBodyLines(entry.body);
-  const collapsedByDefault =
-    mode === 'monospace' &&
-    !entry.live &&
-    !entry.pending &&
-    (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
-      entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS);
+  const collapsedByDefault = shouldCollapseHistoryBody(entry, mode, lineCount);
 
   return {
     mode,
     collapsedByDefault,
     lineCount,
-    preview: collapsedByDefault ? buildHistoryBodyPreview(entry.body) : '',
+    preview: collapsedByDefault && mode !== 'diff' ? buildHistoryBodyPreview(entry.body) : '',
   };
 }
 

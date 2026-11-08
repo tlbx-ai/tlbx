@@ -840,12 +840,14 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     public bool TryGetCachedHistoryWindow(string sessionId, out AppServerControlHistoryWindowResponse historyWindow)
     {
         historyWindow = default!;
-        if (!_states.TryGetValue(sessionId, out var state) || state.CachedHistoryWindow is null)
+        if (!_states.TryGetValue(sessionId, out var state))
         {
             return false;
         }
 
-        historyWindow = CloneHistoryWindow(state.CachedHistoryWindow);
+        var cached = state.CachedHistoryWindow;
+        if (cached is null) return false;
+        historyWindow = CloneHistoryWindow(cached);
         return true;
     }
 
@@ -881,7 +883,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 return null;
             }
 
-            UpdateCachedHistoryWindow(state, result.HistoryWindow, replaceHistory: true);
+            UpdateCachedHistoryWindow(state, result.HistoryWindow);
             return CloneHistoryWindow(result.HistoryWindow);
         }
         finally
@@ -1296,7 +1298,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         if (result.HistoryWindow is not null)
         {
-            UpdateCachedHistoryWindow(state, result.HistoryWindow, replaceHistory: true);
+            UpdateCachedHistoryWindow(state, result.HistoryWindow);
             return;
         }
 
@@ -1311,64 +1313,83 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     private static void ApplyHistoryPatchToState(HostRuntimeState state, AppServerControlHistoryPatch patch)
     {
-        state.LastError = patch.Session.LastError ?? state.LastError;
-
-        if (state.CachedHistoryWindow is not null &&
-            patch.LatestSequence < state.CachedHistoryWindow.LatestSequence)
+        lock (state.HistoryCacheSync)
         {
-            return;
-        }
-
-        if (state.CachedHistoryWindow is null)
-        {
-            state.CachedHistoryWindow = new AppServerControlHistoryWindowResponse
+            if (state.CachedHistoryWindow is not null &&
+                patch.LatestSequence < state.CachedHistoryWindow.LatestSequence)
             {
-                SessionId = patch.SessionId,
-                Provider = patch.Provider,
-                GeneratedAt = patch.GeneratedAt,
-                LatestSequence = patch.LatestSequence,
-                HistoryCount = patch.HistoryCount,
-                Session = CloneSessionSummary(patch.Session),
-                Thread = CloneThreadSummary(patch.Thread),
-                CurrentTurn = CloneTurnSummary(patch.CurrentTurn),
-                QuickSettings = CloneQuickSettings(patch.QuickSettings),
-                Streams = CloneStreams(patch.Streams),
-                Requests = patch.RequestUpserts.Select(CloneRequestSummary).ToList(),
-                Items = patch.ItemUpserts.Select(CloneItemSummary).ToList(),
-                Notices = patch.NoticeUpserts.Select(CloneNotice).ToList(),
-            };
-        }
-        else
-        {
-            var cached = state.CachedHistoryWindow;
-            cached.Provider = string.IsNullOrWhiteSpace(patch.Provider) ? cached.Provider : patch.Provider;
-            cached.GeneratedAt = patch.GeneratedAt;
-            cached.LatestSequence = Math.Max(cached.LatestSequence, patch.LatestSequence);
-            cached.HistoryCount = Math.Max(cached.HistoryCount, patch.HistoryCount);
-            cached.Session = CloneSessionSummary(patch.Session);
-            cached.Thread = CloneThreadSummary(patch.Thread);
-            cached.CurrentTurn = CloneTurnSummary(patch.CurrentTurn);
-            cached.QuickSettings = CloneQuickSettings(patch.QuickSettings);
-            cached.Streams = CloneStreams(patch.Streams);
-            cached.Items = MergeItemSummaries(cached.Items, patch.ItemUpserts, patch.ItemRemovals);
-            cached.Requests = MergeRequestSummaries(cached.Requests, patch.RequestUpserts, patch.RequestRemovals);
-            cached.Notices = MergeNotices(cached.Notices, patch.NoticeUpserts);
-        }
+                return;
+            }
 
-        RefreshRuntimeStatusFromHistory(state);
+            state.CachedHistoryWindow = ApplyCachedHistoryPatch(state.CachedHistoryWindow, patch);
+            RefreshRuntimeStatusFromHistory(state);
+        }
         FanOutHistoryPatch(state, patch);
     }
 
-    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow, bool replaceHistory)
+    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow)
     {
-        var next = CloneHistoryWindow(historyWindow);
-        if (!replaceHistory && state.CachedHistoryWindow is not null)
+        lock (state.HistoryCacheSync)
         {
-            next.History = state.CachedHistoryWindow.History;
+            state.CachedHistoryWindow = AcceptCachedHistoryWindow(state.CachedHistoryWindow, historyWindow);
+            RefreshRuntimeStatusFromHistory(state);
         }
+    }
 
-        state.CachedHistoryWindow = next;
-        RefreshRuntimeStatusFromHistory(state);
+    internal static AppServerControlHistoryWindowResponse AcceptCachedHistoryWindow(
+        AppServerControlHistoryWindowResponse? current, AppServerControlHistoryWindowResponse incoming)
+    {
+        // A delayed window response must not resurrect a request closed by a newer live patch.
+        return current is not null && current.LatestSequence > incoming.LatestSequence
+            ? current
+            : CloneHistoryWindow(incoming);
+    }
+
+    internal static AppServerControlHistoryWindowResponse ApplyCachedHistoryPatch(
+        AppServerControlHistoryWindowResponse? current, AppServerControlHistoryPatch patch)
+    {
+        if (current is not null && patch.LatestSequence < current.LatestSequence) return current;
+        var next = new AppServerControlHistoryWindowResponse
+        {
+            SessionId = patch.SessionId,
+            Provider = string.IsNullOrWhiteSpace(patch.Provider) ? current?.Provider ?? string.Empty : patch.Provider,
+            GeneratedAt = patch.GeneratedAt,
+            LatestSequence = patch.LatestSequence,
+            HistoryCount = Math.Max(0, patch.HistoryCount),
+            HistoryWindowStart = current?.HistoryWindowStart ?? 0,
+            Session = CloneSessionSummary(patch.Session),
+            Thread = CloneThreadSummary(patch.Thread),
+            CurrentTurn = CloneTurnSummary(patch.CurrentTurn),
+            QuickSettings = CloneQuickSettings(patch.QuickSettings),
+            Streams = CloneStreams(patch.Streams),
+            History = MergeCachedHistory(current, patch)
+        };
+        next.HistoryWindowStart = Math.Clamp(next.HistoryWindowStart, 0, next.HistoryCount);
+        next.HistoryWindowEnd = next.HistoryWindowStart + next.History.Count;
+        next.HasOlderHistory = next.HistoryWindowStart > 0;
+        next.HasNewerHistory = next.HistoryWindowEnd < next.HistoryCount;
+        next.Items = MergeItemSummaries(current?.Items ?? [], patch.ItemUpserts, patch.ItemRemovals, next);
+        next.Requests = MergeRequestSummaries(current?.Requests ?? [], patch.RequestUpserts, patch.RequestRemovals, next);
+        next.Notices = MergeNotices(current?.Notices ?? [], patch.NoticeUpserts);
+        return next;
+    }
+
+    private static List<AppServerControlHistoryItem> MergeCachedHistory(
+        AppServerControlHistoryWindowResponse? current, AppServerControlHistoryPatch patch)
+    {
+        if (current is null || current.History.Count == 0 || patch.HistoryCount < current.HistoryWindowEnd) return [];
+        var removals = patch.HistoryRemovals.ToHashSet(StringComparer.Ordinal);
+        var retainedIds = current.History.Select(entry => entry.EntryId).ToHashSet(StringComparer.Ordinal);
+        var upserts = new Dictionary<string, AppServerControlHistoryItem>(StringComparer.Ordinal);
+        foreach (var entry in patch.HistoryUpserts)
+        {
+            if (retainedIds.Contains(entry.EntryId)) upserts[entry.EntryId] = entry;
+        }
+        // Only the fetched kernel belongs to this cache. Off-window live history stays in the fanout.
+        return current.History
+            .Where(entry => !removals.Contains(entry.EntryId) || upserts.ContainsKey(entry.EntryId))
+            .Select(entry => CloneHistoryEntry(upserts.GetValueOrDefault(entry.EntryId) ?? entry))
+            .OrderBy(entry => entry.Order).ToList();
     }
 
     private static AppServerControlHistoryWindowResponse BuildPlaceholderHistoryWindow(HostRuntimeState state)
@@ -1498,9 +1519,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             QuickSettings = CloneQuickSettings(source.QuickSettings),
             Streams = CloneStreams(source.Streams),
             History = source.History.Select(CloneHistoryEntry).ToList(),
-            Items = source.Items.Select(CloneItemSummary).ToList(),
-            Requests = source.Requests.Select(CloneRequestSummary).ToList(),
-            Notices = source.Notices.Select(CloneNotice).ToList()
+            Items = MergeItemSummaries([], source.Items, [], source),
+            Requests = MergeRequestSummaries([], source.Requests, [], source),
+            Notices = MergeNotices([], source.Notices)
         };
     }
 
@@ -1651,6 +1672,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             FastMode = source.FastMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            AcknowledgedFields = [.. source.AcknowledgedFields],
             ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }
@@ -1738,9 +1760,14 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private static List<AppServerControlItemSummary> MergeItemSummaries(
         IReadOnlyList<AppServerControlItemSummary> current,
         IReadOnlyList<AppServerControlItemSummary> upserts,
-        IReadOnlyList<string> removals)
+        IReadOnlyList<string> removals,
+        AppServerControlHistoryWindowResponse window)
     {
-        var next = current.ToDictionary(item => item.ItemId, CloneItemSummary, StringComparer.Ordinal);
+        var retainedIds = window.History.Where(entry => entry.ItemId is not null)
+            .Select(entry => entry.ItemId!).ToHashSet(StringComparer.Ordinal);
+        bool Retain(AppServerControlItemSummary item) => retainedIds.Contains(item.ItemId) ||
+            item.AliasItemIds.Any(retainedIds.Contains) || IsCurrentActivityItem(window.CurrentTurn, item);
+        var next = current.Where(Retain).ToDictionary(item => item.ItemId, StringComparer.Ordinal);
         foreach (var removal in removals)
         {
             next.Remove(removal);
@@ -1748,18 +1775,24 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         foreach (var upsert in upserts)
         {
-            next[upsert.ItemId] = CloneItemSummary(upsert);
+            if (Retain(upsert)) next[upsert.ItemId] = upsert;
+            else next.Remove(upsert.ItemId);
         }
 
-        return next.Values.OrderByDescending(item => item.UpdatedAt).ToList();
+        return next.Values.OrderByDescending(item => item.UpdatedAt).Select(CloneItemSummary).ToList();
     }
 
     private static List<AppServerControlRequestSummary> MergeRequestSummaries(
         IReadOnlyList<AppServerControlRequestSummary> current,
         IReadOnlyList<AppServerControlRequestSummary> upserts,
-        IReadOnlyList<string> removals)
+        IReadOnlyList<string> removals,
+        AppServerControlHistoryWindowResponse window)
     {
-        var next = current.ToDictionary(request => request.RequestId, CloneRequestSummary, StringComparer.Ordinal);
+        var retainedIds = window.History.Where(entry => entry.RequestId is not null)
+            .Select(entry => entry.RequestId!).ToHashSet(StringComparer.Ordinal);
+        bool Retain(AppServerControlRequestSummary request) => retainedIds.Contains(request.RequestId) ||
+            string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase);
+        var next = current.Where(Retain).ToDictionary(request => request.RequestId, StringComparer.Ordinal);
         foreach (var removal in removals)
         {
             next.Remove(removal);
@@ -1767,23 +1800,34 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         foreach (var upsert in upserts)
         {
-            next[upsert.RequestId] = CloneRequestSummary(upsert);
+            if (Retain(upsert)) next[upsert.RequestId] = upsert;
+            else next.Remove(upsert.RequestId);
         }
 
-        return next.Values.OrderByDescending(request => request.UpdatedAt).ToList();
+        return next.Values.OrderByDescending(request => request.UpdatedAt).Select(CloneRequestSummary).ToList();
+    }
+
+    private static bool IsCurrentActivityItem(AppServerControlTurnSummary turn, AppServerControlItemSummary item)
+    {
+        if (turn.State.Trim().ToLowerInvariant() is "completed" or "resolved" or "failed" or "stopped" or "error" or "cancelled")
+            return false;
+        if (!string.IsNullOrWhiteSpace(turn.TurnId) && !string.IsNullOrWhiteSpace(item.TurnId) &&
+            !string.Equals(turn.TurnId, item.TurnId, StringComparison.Ordinal)) return false;
+        return item.Status.Trim().ToLowerInvariant() is "active" or "in progress" or "inprogress" or
+            "in_progress" or "open" or "running" or "starting" or "started" or "streaming";
     }
 
     private static List<AppServerControlRuntimeNotice> MergeNotices(
         IReadOnlyList<AppServerControlRuntimeNotice> current,
         IReadOnlyList<AppServerControlRuntimeNotice> upserts)
     {
-        var next = current.ToDictionary(notice => notice.EventId, CloneNotice, StringComparer.Ordinal);
+        var next = current.ToDictionary(notice => notice.EventId, StringComparer.Ordinal);
         foreach (var upsert in upserts)
         {
-            next[upsert.EventId] = CloneNotice(upsert);
+            next[upsert.EventId] = upsert;
         }
 
-        return next.Values.OrderByDescending(notice => notice.CreatedAt).ToList();
+        return next.Values.OrderByDescending(notice => notice.CreatedAt).Take(64).Select(CloneNotice).ToList();
     }
 
     private static string NormalizeMode(string? mode)
@@ -2295,6 +2339,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public StreamReader? Error { get; private set; }
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
+        public Lock HistoryCacheSync { get; } = new();
         public AppServerControlHistoryWindowResponse? CachedHistoryWindow { get; set; }
         public Lock HistorySubscribersSync { get; } = new();
         public List<AppServerControlHistoryPatchSubscriber> HistoryPatchSubscribers { get; } = [];

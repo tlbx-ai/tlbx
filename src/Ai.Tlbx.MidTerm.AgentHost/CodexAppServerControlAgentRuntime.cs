@@ -48,8 +48,10 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private long _sequence;
     private int _nextRequestId;
 
-    public CodexAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit)
+    public CodexAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit,
+        Action<IReadOnlyList<AppServerControlProviderEvent>>? publishInitialReplay = null)
     {
+        _publishInitialReplay = publishInitialReplay;
         _emit = e =>
         {
             lock (_attachEventLock)
@@ -282,6 +284,11 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         }
 
         _providerThreadId = providerThreadId;
+        // model/list describes catalog defaults, not this opened thread's config.
+        // Adopt the native start/resume readback before publishing ready controls.
+        _quickSettings.Model = GetString(threadResult, "model") ?? _quickSettings.Model;
+        if (threadResult.TryGetProperty("reasoningEffort", out var openedEffort))
+            _quickSettings.Effort = openedEffort.GetString();
         if (resumedExistingThread)
         {
             await ReadCodexThreadHistoryAsync(providerThreadId, ct).ConfigureAwait(false);

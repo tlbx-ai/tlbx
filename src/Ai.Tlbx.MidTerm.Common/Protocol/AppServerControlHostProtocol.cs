@@ -10,6 +10,7 @@ public static class AppServerControlHostProtocol
 
 public sealed class AppServerControlQuickSettingsPayload
 {
+    public List<string> AcknowledgedFields { get; set; } = [];
     public string? Model { get; set; }
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
@@ -247,6 +248,7 @@ public static class AppServerControlQuickSettings
             FastMode = NormalizeFastMode(summary.FastMode),
             ModelOptions = CloneOptions(summary.ModelOptions),
             EffortOptions = CloneOptions(summary.EffortOptions),
+            AcknowledgedFields = [.. summary.AcknowledgedFields],
             ConfigOptions = CloneConfigOptions(summary.ConfigOptions)
         };
     }
@@ -276,6 +278,7 @@ public static class AppServerControlQuickSettings
 
 public sealed class AppServerControlQuickSettingsSummary
 {
+    public List<string> AcknowledgedFields { get; set; } = [];
     public string? Model { get; set; }
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
@@ -552,6 +555,10 @@ public sealed class AppServerControlUserInputAnswerRequest
 
 public sealed class AppServerControlCommandAcceptedResponse
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Decision { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppServerControlAnsweredQuestion>? Answers { get; set; }
     public string SessionId { get; set; } = string.Empty;
     public string Status { get; set; } = "accepted";
     public string? RequestId { get; set; }

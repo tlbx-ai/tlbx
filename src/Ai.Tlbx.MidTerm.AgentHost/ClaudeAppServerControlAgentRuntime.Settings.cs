@@ -16,7 +16,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         {
             SessionId = command.SessionId, ThreadId = _providerThreadId!, TurnId = request.ExpectedTurnId,
             ThreadScope = "subsequentResponses", TurnScope = "subsequentResponses",
-            Detail = "SDK control acknowledgements apply to subsequent responses; the SDK returns no effective-settings readback. Effort may be clamped by model or organization policy."
+            Detail = "SDK controls acknowledge defaults, not effective-settings readback. Model/effort apply to subsequent responses and may be clamped. Auto with Plan off also releases scoped waiting tool approvals."
         };
         if (string.IsNullOrEmpty(request.ExpectedThreadId) ||
             !string.Equals(request.ExpectedThreadId, _providerThreadId, StringComparison.Ordinal) ||
@@ -65,12 +65,19 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 response.Status = response.ThreadStatus = response.TurnStatus = "targetUnavailable";
                 return ConfigurationOutcome(command, response);
             }
-            foreach (var property in receipt.GetProperty("confirmed").EnumerateObject())
+            using var confirmedProperties = receipt.GetProperty("confirmed").EnumerateObject();
+            foreach (var property in confirmedProperties)
                 response.ConfirmedSettings[property.Name] = property.Value.Clone();
-            foreach (var property in receipt.GetProperty("errors").EnumerateObject())
+            using var errorProperties = receipt.GetProperty("errors").EnumerateObject();
+            foreach (var property in errorProperties)
             {
                 response.UnconfirmedFields.Add(property.Name);
                 response.FieldErrors[property.Name] = property.Value.GetString() ?? "Provider rejected setting.";
+            }
+            if (!string.Equals(request.ExpectedThreadId, _providerThreadId, StringComparison.Ordinal))
+            {
+                response.Status = response.ThreadStatus = response.TurnStatus = "targetUnavailable";
+                return ConfigurationOutcome(command, response);
             }
             response.ThreadStatus = response.ConfirmedSettings.Count > 0 ? "acknowledged" : "unconfirmed";
             response.TurnStatus = request.ExpectedTurnId is null ? "notRequested" :
@@ -85,6 +92,11 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 _quickSettings.Effort = effort.GetString();
             if (response.ConfirmedSettings.TryGetValue("planMode", out var plan)) _quickSettings.PlanMode = plan.GetString()!;
             if (response.ConfirmedSettings.TryGetValue("permissionMode", out var permission)) _quickSettings.PermissionMode = permission.GetString()!;
+            if (response.ConfirmedSettings.Count > 0)
+            {
+                _quickSettings.AcknowledgedFields = _quickSettings.AcknowledgedFields.Union(response.ConfirmedSettings.Keys, StringComparer.Ordinal).ToList();
+                _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "claude.agent-sdk", "runtime.configure/acknowledged-defaults", receipt));
+            }
         }
         catch (Exception error) when (error is TimeoutException or InvalidOperationException)
         {
@@ -93,8 +105,21 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
             response.Detail = error.Message;
         }
         finally { _configurationAcks.TryRemove(command.CommandId, out _); }
-        // No quick-settings event: void SDK acknowledgements are not effective-settings readback.
+        // Canonical defaults carry AcknowledgedFields; EffectiveSettings stays empty.
         return ConfigurationOutcome(command, response);
+    }
+
+    private void HandlePendingPermissionSettlement(JsonElement root, string decision, string requestType = "tool_approval")
+    {
+        var requestId = GetString(root, "requestId");
+        var turnId = GetString(root, "turnId");
+        if (string.IsNullOrWhiteSpace(requestId) || string.IsNullOrWhiteSpace(turnId) ||
+            !string.Equals(GetString(root, "session_id"), _providerThreadId, StringComparison.Ordinal) ||
+            GetString(root, "decision") != decision) return;
+        // This is an actual callback settlement, not an ACK to a host resolve command.
+        // Keep its captured turn even if completion has since moved the active turn.
+        _emit(CreateEvent("request.resolved", turnId, null, requestId, "claude.agent-sdk", "canUseTool/callback-settled", root,
+            e => e.RequestResolved = new() { RequestType = requestType, Decision = decision }));
     }
 
     private static HostCommandOutcome ConfigurationOutcome(AppServerControlHostCommandEnvelope command, AppServerControlConfigureResponse response)

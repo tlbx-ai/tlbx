@@ -1,5 +1,5 @@
 // SDK 0.3.300 Query controls return void: these are acknowledgements, not readback.
-export async function configureRuntime(runtime, settings, state) {
+export async function configureRuntime(runtime, settings, state, onAutoPermission = () => {}) {
   const confirmed = {};
   const errors = {};
   const apply = async (key, action) => {
@@ -13,6 +13,7 @@ export async function configureRuntime(runtime, settings, state) {
   if (Object.hasOwn(settings, "planMode") || Object.hasOwn(settings, "permissionMode")) {
     const nextPlan = settings.planMode ?? state.planMode;
     const nextPermission = settings.permissionMode ?? state.permissionMode;
+    let acknowledged = false;
     try {
       await runtime.setPermissionMode(nextPlan === "on" ? "plan" :
         nextPermission === "auto" ? "bypassPermissions" : "default");
@@ -20,10 +21,12 @@ export async function configureRuntime(runtime, settings, state) {
       state.permissionMode = nextPermission;
       confirmed.planMode = nextPlan;
       confirmed.permissionMode = nextPermission;
+      acknowledged = true;
     } catch (error) {
       errors.permissionMode = String(error?.message ?? error);
       if (Object.hasOwn(settings, "planMode")) errors.planMode = errors.permissionMode;
     }
+    if (acknowledged && nextPlan === "off" && nextPermission === "auto") onAutoPermission();
   }
   return { confirmed, errors };
 }
