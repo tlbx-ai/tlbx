@@ -70,7 +70,7 @@ export interface SessionAppServerControlViewState {
   activationActionBusy: boolean;
   optimisticTurns: PendingAppServerControlTurn[];
   renderDirty: boolean;
-  assistantMarkdownCache: Map<string, AssistantMarkdownCacheEntry>;
+  historyMarkdownCache: Map<string, HistoryMarkdownCacheEntry>;
   historyRenderedNodes: Map<string, HistoryRenderedNode>;
   historyMeasuredHeights: Map<string, number>;
   historyObservedHeights: Map<string, number>;
@@ -126,7 +126,9 @@ export interface AppServerControlActivationTraceEntry {
   detail: string;
 }
 
-export interface AssistantMarkdownCacheEntry {
+export interface HistoryMarkdownCacheEntry {
+  kind: HistoryKind;
+  sourceItemType: AppServerControlHistoryEntry['sourceItemType'];
   body: string;
   html: string;
   fileMentionToken: string;

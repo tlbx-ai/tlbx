@@ -1,3 +1,13 @@
+import MarkdownIt from 'markdown-it';
+
+export interface MarkdownRenderOptions {
+  preserveRawWindowsPaths?: boolean;
+}
+
+// Reuse the composer's installed delimiter parser for balanced, nested marks.
+// All other inline rules stay disabled; HTML/link/image safety remains below.
+const emphasisParser = new MarkdownIt('zero', { html: false }).enable('emphasis');
+
 function escapeMarkdownHtml(text: string): string {
   return text
     .replace(/&/g, '&amp;')
@@ -43,22 +53,158 @@ function formatMarkdownLinks(escapedText: string): string {
   });
 }
 
-function replaceStrong(text: string, delimiter: '\\*\\*' | '__'): string {
-  return text.replace(
-    new RegExp(`(^|[^\\w])${delimiter}([^\\n]+?)${delimiter}(?=$|[^\\w])`, 'gm'),
-    (_match, prefix: string, content: string) => `${prefix}<strong>${content.trim()}</strong>`,
-  );
+function formatMarkdownEmphasis(text: string): string {
+  return emphasisParser
+    .parseInline(text, {})
+    .flatMap((token) => token.children ?? [])
+    .map((token) => {
+      switch (token.type) {
+        case 'strong_open':
+          return '<strong>';
+        case 'strong_close':
+          return '</strong>';
+        case 'em_open':
+          return '<em>';
+        case 'em_close':
+          return '</em>';
+        default:
+          return token.content; // Already HTML-escaped or generated safe markup.
+      }
+    })
+    .join('');
 }
 
-function replaceEmphasis(text: string, delimiter: '\\*' | '_'): string {
-  return text.replace(
-    new RegExp(`(^|[^\\w])${delimiter}([^\\n]+?)${delimiter}(?=$|[^\\w])`, 'gm'),
-    (_match, prefix: string, content: string) => `${prefix}<em>${content.trim()}</em>`,
+function markdownEscapeAt(text: string, index: number): string | null {
+  if (text[index] !== '\\') return null;
+  const entity = ['&gt;', '&lt;', '&quot;', '&#39;', '&amp;'].find((value) =>
+    text.startsWith(value, index + 1),
+  );
+  if (entity) return entity;
+  const char = text[index + 1];
+  return char && '\\`*{}[]()#+-.!_|>~'.includes(char) ? char : null;
+}
+
+function markdownBacktickPositions(line: string): Map<number, number[]> {
+  const positions = new Map<number, number[]>();
+  for (let index = 0; index < line.length;) {
+    if (line[index] !== '`') {
+      index += 1;
+      continue;
+    }
+    const start = index;
+    while (line[index] === '`') index += 1;
+    const length = index - start;
+    const starts = positions.get(length) ?? [];
+    starts.push(start);
+    positions.set(length, starts);
+  }
+  return positions;
+}
+
+function rawWindowsPathEnd(line: string, index: number): number | null {
+  if (
+    !/[a-z]/i.test(line[index] ?? '') ||
+    line[index + 1] !== ':' ||
+    line[index + 2] !== '\\' ||
+    line[index + 3] === '\\' ||
+    (index > 0 && /\w/.test(line[index - 1] ?? ''))
+  )
+    return null;
+  let end = index + 3;
+  while (end < line.length && !/[\s<>:"|?*]/.test(line[end] ?? '')) end += 1;
+  return end > index + 3 ? end : null;
+}
+
+function markdownLiteralAt(
+  line: string,
+  index: number,
+  options: MarkdownRenderOptions,
+): { text: string; end: number } | null {
+  const pathEnd = options.preserveRawWindowsPaths ? rawWindowsPathEnd(line, index) : null;
+  if (pathEnd !== null) return { text: line.slice(index, pathEnd), end: pathEnd };
+  const escaped = markdownEscapeAt(line, index);
+  return escaped === null ? null : { text: escaped, end: index + escaped.length + 1 };
+}
+
+function protectMarkdownInlineLine(
+  line: string,
+  preserve: (literal: string) => string,
+  options: MarkdownRenderOptions,
+): string {
+  // Index every full run, including escaped ones: backslashes are literal inside
+  // code. Each length's cursor only advances, so unmatched openers never rescan
+  // the suffix. Both indexing and matching are linear in the input length.
+  const positions = markdownBacktickPositions(line);
+  const cursors = new Map<number, number>();
+  const output: string[] = [];
+  for (let index = 0; index < line.length;) {
+    const literal = markdownLiteralAt(line, index, options);
+    if (literal !== null) {
+      output.push(preserve(literal.text));
+      index = literal.end;
+      continue;
+    }
+    if (line[index] !== '`') {
+      output.push(line[index] ?? '');
+      index += 1;
+      continue;
+    }
+    let end = index;
+    while (line[end] === '`') end += 1;
+    const length = end - index;
+    const starts = positions.get(length) ?? [];
+    let cursor = cursors.get(length) ?? 0;
+    while (cursor < starts.length && (starts[cursor] ?? 0) <= index) cursor += 1;
+    cursors.set(length, cursor);
+    const close = starts[cursor];
+    if (close === undefined) {
+      output.push(line.slice(index, end));
+      index = end;
+      continue;
+    }
+    const code = line.slice(end, close);
+    const padded = code.startsWith(' ') && code.endsWith(' ') && code.trim().length > 0;
+    output.push(preserve(`<code>${padded ? code.slice(1, -1) : code}</code>`));
+    index = close + length;
+  }
+  return output.join('');
+}
+
+/** Input is already HTML-escaped. Literal escapes and code never become markup. */
+function formatMarkdownInline(text: string, options: MarkdownRenderOptions = {}): string {
+  const literals: string[] = [];
+  let prefix = '\uE000tlbx-inline:';
+  while (text.includes(prefix)) prefix += ':';
+  let html = text
+    .split('\n')
+    .map((line) =>
+      protectMarkdownInlineLine(
+        line,
+        (literal) => {
+          literals.push(literal);
+          // An escaped underscore is still a word character. A nonword token
+          // boundary would turn the remaining underscores of \__init_\_ into
+          // emphasis. Other escaped punctuation must retain its nonword boundary.
+          return literal === '_'
+            ? `X${prefix}word:${literals.length - 1}\uE001X`
+            : `${prefix}${literals.length - 1}\uE001`;
+        },
+        options,
+      ),
+    )
+    .join('\n');
+  html = formatMarkdownEmphasis(html);
+  html = formatMarkdownLinks(formatMarkdownImages(html));
+  return html.replace(
+    new RegExp(`X${prefix}word:(\\d+)\uE001X|${prefix}(\\d+)\uE001`, 'g'),
+    (_match, wordIndex: string | undefined, index: string | undefined) =>
+      literals[Number(wordIndex ?? index)] ?? '',
   );
 }
 
 function isMarkdownTableSeparator(line: string): boolean {
-  return /^\|?(?:\s*:?-{3,}:?\s*\|)+\s*:?-{3,}:?\s*\|?$/.test(line.trim());
+  const cells = splitMarkdownTableRow(line);
+  return line.includes('|') && cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
 function isMarkdownTableRow(line: string): boolean {
@@ -68,16 +214,32 @@ function isMarkdownTableRow(line: string): boolean {
   }
 
   const cells = splitMarkdownTableRow(trimmed);
-  return cells.length >= 2;
+  return cells.length >= 1;
 }
 
 function splitMarkdownTableRow(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|/, '')
-    .replace(/\|$/, '')
-    .split('|')
-    .map((cell) => cell.trim());
+  const source = line.trim();
+  const cells: string[] = [];
+  let cell = '';
+  let trailingDelimiter = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index] ?? '';
+    trailingDelimiter = false;
+    // GFM table escaping removes exactly the backslash immediately before a
+    // pipe, including inside code spans. Other backslashes belong to the cell.
+    if (char === '\\' && source[index + 1] === '|') {
+      cell += '|';
+      index += 1;
+    } else if (char === '|') {
+      cells.push(cell.trim());
+      cell = '';
+      trailingDelimiter = true;
+    } else cell += char;
+  }
+  cells.push(cell.trim());
+  if (source.startsWith('|')) cells.shift();
+  if (trailingDelimiter) cells.pop();
+  return cells;
 }
 
 function countUnquotedDelimitedSeparators(line: string, delimiter: string): number {
@@ -378,12 +540,15 @@ function renderStructuredMarkdownTable(args: {
   rows: readonly string[][];
   alignments: ReadonlyArray<'left' | 'center' | 'right' | ''>;
   source: MarkdownStructuredTableSource;
+  options?: MarkdownRenderOptions;
 }): string {
   const { headers, rows, alignments, source } = args;
   const columnKinds = inferMarkdownTableColumnKinds(headers, rows, alignments);
   const isDense = headers.length >= 7;
   const denseAttr = isDense ? ' data-table-density="dense"' : '';
   const sourceAttr = source === 'csv' ? ' data-table-source="csv"' : '';
+  const formatCell = (cell: string): string =>
+    source === 'markdown' ? formatMarkdownInline(cell, args.options) : cell;
 
   return `<div class="agent-markdown-table-wrap"><table class="agent-markdown-table"${denseAttr}${sourceAttr}><thead><tr>${headers
     .map((cell, cellIndex) => {
@@ -391,7 +556,7 @@ function renderStructuredMarkdownTable(args: {
       const alignAttr = alignment ? ` data-align="${alignment}"` : '';
       const kindAttr = ` data-col-kind="${columnKinds[cellIndex] ?? 'text'}"`;
       return `<th${alignAttr}${kindAttr} title="${cell}" aria-label="${cell}">${renderMarkdownTableHeaderContent(
-        cell,
+        formatCell(cell),
         columnKinds[cellIndex] ?? 'text',
         isDense,
       )}</th>`;
@@ -405,7 +570,7 @@ function renderStructuredMarkdownTable(args: {
             const alignAttr = alignment ? ` data-align="${alignment}"` : '';
             const kind = columnKinds[cellIndex] ?? 'text';
             const kindAttr = ` data-col-kind="${kind}"`;
-            return `<td${alignAttr}${kindAttr}>${cell}</td>`;
+            return `<td${alignAttr}${kindAttr}>${formatCell(cell)}</td>`;
           })
           .join('')}</tr>`,
     )
@@ -678,7 +843,11 @@ export function wireMarkdownTables(
   });
 }
 
-function renderMarkdownTables(text: string): string {
+function renderMarkdownTables(
+  text: string,
+  preserve: (html: string) => string,
+  options: MarkdownRenderOptions,
+): string {
   const lines = text.split('\n');
   const rendered: string[] = [];
 
@@ -713,12 +882,15 @@ function renderMarkdownTables(text: string): string {
       Array.from({ length: columnCount }, (_, cellIndex) => row[cellIndex] ?? ''),
     );
     rendered.push(
-      renderStructuredMarkdownTable({
-        headers: normalizedHeaders,
-        rows: normalizedRows,
-        alignments,
-        source: 'markdown',
-      }),
+      preserve(
+        renderStructuredMarkdownTable({
+          headers: normalizedHeaders,
+          rows: normalizedRows,
+          alignments,
+          source: 'markdown',
+          options,
+        }),
+      ),
     );
   }
 
@@ -750,8 +922,11 @@ function isCsvMarkdownFenceLanguage(language: string): boolean {
 }
 
 function isBlockLevelMarkdownLine(line: string): boolean {
-  return /^<(?:h\d|ul|ol|li|pre|blockquote|hr|table|thead|tbody|tr|th|td|figure|img|figcaption|div)\b/.test(
-    line,
+  return (
+    /^@@MIDTERMMD\d+@@$/.test(line) ||
+    /^<(?:h\d|ul|ol|li|pre|blockquote|hr|table|thead|tbody|tr|th|td|figure|img|figcaption|div)\b/.test(
+      line,
+    )
   );
 }
 
@@ -810,7 +985,7 @@ function wrapMarkdownParagraphs(text: string): string {
   return rendered.join('\n');
 }
 
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, options: MarkdownRenderOptions = {}): string {
   const codeBlocks: string[] = [];
   const normalized = text.replace(/\r\n?/g, '\n');
   const withoutCodeBlocks = normalized.replace(
@@ -836,27 +1011,28 @@ export function renderMarkdown(text: string): string {
 
   let html = escapeMarkdownHtml(withoutCodeBlocks);
 
-  html = html.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+  html = renderMarkdownTables(
+    html,
+    (table) => {
+      const token = `@@MIDTERMMD${codeBlocks.length}@@`;
+      codeBlocks.push(table);
+      return token;
+    },
+    options,
+  );
 
   html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
 
-  html = replaceStrong(html, '\\*\\*');
-  html = replaceStrong(html, '__');
-  html = replaceEmphasis(html, '\\*');
-  html = replaceEmphasis(html, '_');
-
-  html = formatMarkdownImages(html);
-  html = formatMarkdownLinks(html);
   html = html.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
   html = html.replace(/^---$/gm, '<hr>');
   html = html.replace(/^\*\*\*$/gm, '<hr>');
-  html = renderMarkdownTables(html);
 
   html = html.replace(/^- (.+)$/gm, '<li data-list="ul">$1</li>');
   html = html.replace(/^\d+\. (.+)$/gm, '<li data-list="ol">$1</li>');
+  html = formatMarkdownInline(html, options);
   html = html.replace(/((?:<li data-list="ul">.*?<\/li>\n?)+)/g, (match) => {
     return `<ul>${match.replace(/\n/g, '').replace(/ data-list="ul"/g, '')}</ul>`;
   });
@@ -878,8 +1054,8 @@ export function renderMarkdown(text: string): string {
   return html;
 }
 
-export function renderMarkdownFragment(text: string): string {
-  const html = renderMarkdown(text).trim();
+export function renderMarkdownFragment(text: string, options: MarkdownRenderOptions = {}): string {
+  const html = renderMarkdown(text, options).trim();
   const singleParagraph = html.match(/^<p>([\s\S]*)<\/p>$/);
   if (singleParagraph) {
     return singleParagraph[1] ?? '';

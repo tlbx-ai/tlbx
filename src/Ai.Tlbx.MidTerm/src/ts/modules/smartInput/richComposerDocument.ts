@@ -270,6 +270,10 @@ export function richDocumentToParts(doc: ProseMirrorNode): SmartInputComposerPar
       },
     },
     defaultMarkdownSerializer.marks,
+    // Default esc() leaves intraword underscores bare, which can expose an
+    // inner emphasis pair after escaping only the ends of __init__. Escape
+    // those remaining underscores too; code and mark delimiters bypass esc().
+    { escapeExtraCharacters: /(?<!\\)_/g },
   );
   const text = serializer.serialize(doc);
   const parts: SmartInputComposerPart[] = [];
