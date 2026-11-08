@@ -727,7 +727,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 {
                     CommandId = commandId,
                     SessionId = sessionId,
-                    Type = "thread.goal." + request.Operation,
+                    Type = request.Operation == "recover" ? "runtime.recover" : "thread.goal." + request.Operation,
                     SetGoal = request
                 },
                 ct).ConfigureAwait(false);
@@ -1130,7 +1130,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             var timeout = command.Type switch
             {
                 "runtime.attach" => TimeSpan.FromSeconds(120),
-                "runtime.configure" => TimeSpan.FromSeconds(60),
+                "runtime.configure" or "runtime.recover" => TimeSpan.FromSeconds(60),
                 "turn.start" => TimeSpan.FromSeconds(60),
                 "turn.steer" => TimeSpan.FromSeconds(90),
                 "turn.interrupt" => TimeSpan.FromSeconds(20),

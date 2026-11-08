@@ -140,7 +140,7 @@ export interface AppServerControlInterruptRequest {
 }
 
 export interface AppServerControlGoalSetRequest {
-  operation?: 'set' | 'get' | 'clear';
+  operation?: 'set' | 'get' | 'clear' | 'recover';
   expectedThreadId: string;
   expectedTurnId: string | null;
   objective?: string;

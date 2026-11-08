@@ -1662,5 +1662,9 @@
   "goal.state.blocked": "Blockiert",
   "goal.state.usageLimited": "Nutzungslimit",
   "goal.state.budgetLimited": "Budgetlimit",
-  "goal.state.complete": "Abgeschlossen"
+  "goal.state.complete": "Abgeschlossen",
+  "goal.recover": "Session unterbrechen und Goal wiederherstellen",
+  "goal.recoverScope": "Unterbricht die Arbeit dieser Agent-Session, verbindet denselben nativen Thread erneut und liest dessen Goal; keine Eingabe oder Goal-Änderung wird wiederholt.",
+  "goal.recovering": "Native Verbindung und Goal-Abfrage laufen…",
+  "goal.recoveryFailed": "Wiederherstellung fehlgeschlagen; natives Goal bleibt unbestätigt."
 }

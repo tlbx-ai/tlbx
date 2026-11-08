@@ -2,6 +2,11 @@ import { randomUUID } from "node:crypto";
 
 const clearWords = new Set(["clear", "stop", "off", "reset", "none", "cancel"]);
 
+export function assertGoalRecoverySession(configuration, sessionId) {
+  if (configuration.recoverGoal && sessionId && sessionId !== configuration.resume)
+    throw new Error("Goal recovery returned a different native thread; no input was replayed.");
+}
+
 export function classifyGoalCommand(text) {
   const match = /^\/goal(?:\s+([\s\S]*))?$/.exec(text.trim());
   if (!match) return null;
@@ -33,7 +38,8 @@ function assistantText(message) {
 // Only our UUID-correlated native local commands are parsed. Normal model text
 // never establishes goal state. No control RPC, remote-mode flag or TUI scraping.
 export class NativeGoalCommands {
-  constructor({ runtime, push, sessionId, emit, interrupt, isIntermediateResult = (message) => Number(message.queued_turn_count ?? 0) > 0 }) {
+  constructor({ runtime, push, sessionId, emit, interrupt, waitTimeoutMs = 30_000, commandTimeoutMs = 30_000, isIntermediateResult = (message) => Number(message.queued_turn_count ?? 0) > 0 }) {
+    this.waitTimeoutMs = waitTimeoutMs; this.commandTimeoutMs = commandTimeoutMs; this.blocked = false;
     this.interrupt = interrupt ?? (() => runtime().interrupt());
     this.isIntermediateResult = isIntermediateResult;
     this.runtime = runtime; this.push = push; this.sessionId = sessionId; this.emit = emit;
@@ -45,6 +51,7 @@ export class NativeGoalCommands {
   observeSession(threadId) {
     if (!threadId || !this.state.threadId || this.state.threadId === threadId) return;
     this.clearFrames(); this.current = null; this.queue = []; this.busy = false; this.turnId = null;
+    this.blocked = false; this.rejectWaiters();
     this.publish({ goal: null, confirmation: "unknown", pendingOperation: null, detail: "targetUnavailable" });
     this.refresh();
   }
@@ -127,11 +134,31 @@ export class NativeGoalCommands {
     });
   }
 
-  async beforeInput() {
-    if (this.closed) throw new Error("Claude goal adapter is closed.");
+  async beforeInput(signal) {
+    if (signal?.aborted) throw this.waitError("cancelled");
+    if (this.closed || this.blocked) throw this.waitError("recoveryRequired");
     if (!this.current?.internal && !this.queue.length) return;
-    await new Promise((resolve) => this.waiters.push(resolve));
-    if (this.closed) throw new Error("Claude goal adapter is closed.");
+    await new Promise((resolve, reject) => {
+      const finish = (error) => {
+        clearTimeout(timer); signal?.removeEventListener("abort", cancel);
+        this.waiters = this.waiters.filter((waiter) => waiter !== finish);
+        if (error) reject(error); else resolve();
+      };
+      const cancel = () => finish(this.waitError("cancelled"));
+      const timer = setTimeout(() => finish(this.waitError("timeout")), this.waitTimeoutMs);
+      this.waiters.push(finish); signal?.addEventListener("abort", cancel, { once: true });
+      if (signal?.aborted) cancel();
+    });
+    if (this.closed || this.blocked) throw this.waitError("recoveryRequired");
+  }
+
+  waitError(code) {
+    return Object.assign(new Error(`Native goal input wait: ${code}. Read back or explicitly recover this adapter; no input was submitted.`),
+      { code: "goalInputBlocked", reason: code });
+  }
+
+  rejectWaiters() {
+    for (const finish of this.waiters.splice(0)) finish(this.waitError("recoveryRequired"));
   }
 
   noteInput(message, prompt, turnId) {
@@ -157,9 +184,10 @@ export class NativeGoalCommands {
     const frame = { ...entry, threadId: this.sessionId(), internal: true, uuid, started: false, ack: false, text: "", work: false };
     this.frames.set(uuid, frame); this.current = frame; this.busy = true;
     frame.timer = setTimeout(() => {
+      this.blocked = true; this.rejectWaiters();
       this.publish({ confirmation: "unconfirmed", pendingOperation: null, detail: "timeout" });
       // A late native result can still arrive. Do not replay, retarget, or declare idle.
-    }, 30_000);
+    }, this.commandTimeoutMs);
     frame.timer.unref?.();
     this.publish({ pendingOperation: entry.operation, detail: null });
     const content = entry.operation === "get" ? "/goal" : entry.operation === "clear" ? "/goal clear" : `/goal ${entry.objective}`;
@@ -170,7 +198,10 @@ export class NativeGoalCommands {
     if (message.type === "command_lifecycle") {
       if (message.state === "started") {
         const frame = this.frames.get(message.command_uuid);
-        if (frame) { this.current = frame; frame.started = true; }
+        if (frame && (!frame.threadId || frame.threadId === this.sessionId())) {
+          frame.started = true;
+          if (!this.current) this.current = frame;
+        }
       }
       return !!this.frames.get(message.command_uuid)?.operation;
     }
@@ -181,10 +212,8 @@ export class NativeGoalCommands {
       // Without the observed UUID lifecycle, local command text proves nothing.
       if (message.type === "result") {
         this.publish({ confirmation: "unconfirmed", pendingOperation: null, detail: "Native goal lifecycle missing." });
-        clearTimeout(frame.timer); this.frames.delete(frame.uuid); this.current = null;
-        this.busy = Number(message.queued_turn_count ?? 0) > 0;
-        if (!this.busy) this.turnId = null;
-        this.schedule();
+        // An uncorrelated late result cannot settle or release a different command.
+        this.blocked = true; this.rejectWaiters();
       }
       return frame.internal;
     }
@@ -223,7 +252,13 @@ export class NativeGoalCommands {
 
   goalResult(frame, message) {
     if (frame.work && this.isIntermediateResult(message)) return false;
-    clearTimeout(frame.timer);
+    if ((frame.operation === "get" && !parseGoalReadback(frame.text, this.state.goal?.objective)) ||
+        (frame.operation === "clear" && !(frame.text.startsWith("Goal cleared: ") || frame.text === "No goal set"))) {
+      this.blocked = true; this.rejectWaiters();
+      this.publish({ confirmation: "unconfirmed", pendingOperation: null, detail: "Native local goal acknowledgement missing." });
+      return true;
+    }
+    clearTimeout(frame.timer); this.blocked = false;
     if (frame.operation === "get") this.finishReadback(frame, message);
     else if (frame.operation === "clear") this.finishClear(frame, message);
     else if (!frame.ack) this.publish({ confirmation: "unconfirmed", pendingOperation: null, detail: frame.text || "Native goal acknowledgement missing." });
@@ -265,8 +300,7 @@ export class NativeGoalCommands {
   }
 
   close() {
-    this.closed = true; this.clearFrames(); this.queue = [];
-    for (const resolve of this.waiters.splice(0)) resolve();
+    this.closed = true; this.clearFrames(); this.queue = []; this.rejectWaiters();
   }
 
   normalMessage(message) {

@@ -1,5 +1,7 @@
+import { readGoalDraft, writeGoalDraft, clearGoalDraft, type GoalDraft } from './goalDrafts';
 import type {
   AppServerControlGoalSetRequest,
+  AppServerControlGoalResponse,
   AppServerControlGoalState,
   AppServerControlHistorySnapshot,
 } from '../../api/types';
@@ -21,9 +23,32 @@ interface GoalView {
   error: string;
 }
 const views = new Map<string, GoalView>();
-const drafts = new Map<string, string>();
+interface GoalMutation {
+  threadId: string;
+  patch: Omit<AppServerControlGoalSetRequest, 'expectedThreadId' | 'expectedTurnId'>;
+  draft: GoalDraft | null;
+  revision: number;
+}
+const mutations = new Map<string, GoalMutation>();
+function clearConfirmedDraft(sessionId: string, view: GoalView): void {
+  const sent = mutations.get(sessionId);
+  if (!sent || sent.threadId !== view.threadId || !goalConfirmationSettled(view.state)) return;
+  const goal = view.state?.goal;
+  const matches =
+    sent.patch.operation === 'clear'
+      ? !goal
+      : goal &&
+        goal.objective === sent.patch.objective &&
+        (sent.patch.status === undefined || goal.status === sent.patch.status) &&
+        (sent.patch.tokenBudget === undefined ||
+          (goal.tokenBudget ?? null) === sent.patch.tokenBudget);
+  if (!matches || view.revision <= sent.revision) return;
+  clearGoalDraft(sessionId, view.threadId, sent.draft);
+  mutations.delete(sessionId);
+}
 
 function changed(sessionId: string): void {
+  if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent(GOAL_CHANGED_EVENT, { detail: { sessionId } }));
 }
 
@@ -59,7 +84,7 @@ export function syncAppServerControlGoal(
   const active = ['running', 'in_progress', 'submitted'].includes(snapshot.currentTurn.state);
   const target = {
     provider: snapshot.provider,
-    threadId: snapshot.thread.threadId,
+    threadId: snapshot.thread.threadId === snapshot.sessionId ? '' : snapshot.thread.threadId,
     turnId: active ? (snapshot.currentTurn.turnId ?? null) : null,
     connected,
     state: snapshot.thread.goal ?? null,
@@ -67,6 +92,7 @@ export function syncAppServerControlGoal(
   const next = nextGoalView(target, previous);
   if (JSON.stringify(next) === JSON.stringify(previous)) return;
   views.set(snapshot.sessionId, next);
+  clearConfirmedDraft(snapshot.sessionId, next);
   changed(snapshot.sessionId);
 }
 
@@ -115,6 +141,13 @@ export async function controlAppServerControlGoal(
   view.commandOperation = patch.operation ?? 'set';
   try {
     const guard = goalGuard(view);
+    if (patch.operation === 'set' || patch.operation === 'clear')
+      mutations.set(sessionId, {
+        threadId: view.threadId,
+        patch,
+        draft: readGoalDraft(sessionId, view.threadId),
+        revision,
+      });
     view.pending = true;
     view.error = '';
     changed(sessionId);
@@ -122,17 +155,34 @@ export async function controlAppServerControlGoal(
     const current = currentGoalCommand(sessionId, guard.expectedThreadId, commandRevision);
     if (!current) return;
     if (receipt.status === 'targetUnavailable') throw new Error(t('goal.targetUnavailable'));
-    if (current.revision === revision && receipt.state) current.state = receipt.state;
-    current.pending = false;
-    if (receipt.status === 'unconfirmed') current.error = t('goal.unconfirmed');
+    applyGoalReceipt(sessionId, current, revision, receipt);
   } catch (error) {
     const current = currentGoalCommand(sessionId, view.threadId, commandRevision);
     if (current) {
+      mutations.delete(sessionId);
       current.pending = false;
       current.error = error instanceof Error ? error.message : t('goal.unconfirmed');
     }
   }
   changed(sessionId);
+}
+
+function applyGoalReceipt(
+  sessionId: string,
+  current: GoalView,
+  revision: number,
+  receipt: AppServerControlGoalResponse,
+): void {
+  if (current.revision === revision && receipt.state) current.state = receipt.state;
+  current.pending = false;
+  if (receipt.status === 'unconfirmed') {
+    current.error = t('goal.unconfirmed');
+    mutations.delete(sessionId);
+  }
+  if (receipt.status === 'applied' && goalConfirmationSettled(receipt.state ?? null)) {
+    current.revision++;
+    clearConfirmedDraft(sessionId, current);
+  }
 }
 
 function goalStatusText(view: GoalView): string {
@@ -151,6 +201,8 @@ function goalDetail(detail: string): string {
   if (detail === 'targetUnavailable') return t('goal.targetUnavailable');
   if (detail === 'waitingForTurn') return t('goal.waitingForTurn');
   if (detail === 'timeout') return t('goal.timeout');
+  if (detail === 'recovering') return t('goal.recovering');
+  if (detail === 'recoveryFailed') return t('goal.recoveryFailed');
   if (detail === 'clearReadbackMismatch') return t('goal.clearReadbackMismatch');
   return detail;
 }
@@ -251,7 +303,7 @@ function syncGoalEditorFields(
   state: AppServerControlGoalState | null,
 ): void {
   const goal = state?.goal;
-  if (!fields.edited && goal) fields.objective.value = goal.objective;
+  if (!fields.edited) fields.objective.value = goal?.objective ?? '';
   if (!fields.statusEdited) fields.status.value = goal?.status ?? 'active';
   if (!fields.budgetEdited) fields.budget.value = goal?.tokenBudget?.toString() ?? '';
 }
@@ -283,9 +335,18 @@ function canStopGoal(view: GoalView): boolean {
   return Boolean(view.state?.goal || view.pending || view.state?.pendingOperation);
 }
 
+function goalRecoveryAvailable(view: GoalView): boolean {
+  return (
+    view.provider === 'claude' &&
+    (view.state?.confirmation === 'unconfirmed' || Boolean(view.state?.pendingOperation))
+  );
+}
+
 export function openAppServerControlGoalEditor(sessionId: string): void {
   const initial = views.get(sessionId);
   if (!initial) return;
+  const editorThreadId = initial.threadId;
+  const editorProvider = initial.provider;
   const priorFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay agent-goal-overlay';
@@ -305,33 +366,49 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
   readback.setAttribute('role', 'status');
   const scope = document.createElement('p');
   scope.className = 'agent-goal-scope';
-  scope.textContent = t(initial.provider === 'claude' ? 'goal.scopeClaude' : 'goal.scopeCodex');
+  scope.textContent =
+    t(editorProvider === 'claude' ? 'goal.scopeClaude' : 'goal.scopeCodex') +
+    (editorProvider === 'claude' ? ` ${t('goal.recoverScope')}` : '');
   const objective = document.createElement('textarea');
   objective.className = 'agent-goal-objective';
   objective.rows = 4;
   objective.ariaLabel = t('goal.objective');
   objective.placeholder = t('goal.objective');
-  objective.value = drafts.get(sessionId) ?? initial.state?.goal?.objective ?? '';
+  const draft = readGoalDraft(sessionId, editorThreadId);
+  objective.value = draft?.objective ?? initial.state?.goal?.objective ?? '';
 
   const status = goalStatusSelect(initial);
   const budget = goalBudgetInput(initial);
+  if (draft) {
+    status.value = draft.status;
+    budget.value = draft.budget;
+  }
   const fields: GoalEditorFields = {
     objective,
     status,
     budget,
-    edited: drafts.has(sessionId),
-    statusEdited: false,
-    budgetEdited: false,
+    edited: Boolean(draft),
+    statusEdited: Boolean(draft),
+    budgetEdited: Boolean(draft),
+  };
+  const persist = (): void => {
+    writeGoalDraft(sessionId, editorThreadId, {
+      objective: objective.value,
+      status: status.value,
+      budget: budget.value,
+    });
   };
   objective.addEventListener('input', () => {
     fields.edited = true;
-    drafts.set(sessionId, objective.value);
+    persist();
   });
   status.addEventListener('change', () => {
     fields.statusEdited = true;
+    persist();
   });
   budget.addEventListener('input', () => {
     fields.budgetEdited = true;
+    persist();
   });
   const footer = document.createElement('div');
   footer.className = 'modal-footer';
@@ -339,7 +416,6 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
     /* Registered after mounting. */
   };
   const close = (): void => {
-    drafts.set(sessionId, objective.value);
     window.removeEventListener(GOAL_CHANGED_EVENT, render);
     release();
     overlay.remove();
@@ -347,7 +423,7 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
   };
   const save = button(t('goal.apply'), () => {
     try {
-      saveGoalEditor(sessionId, initial.provider, fields);
+      saveGoalEditor(sessionId, editorProvider, fields);
     } catch (error) {
       readback.textContent = error instanceof Error ? error.message : t('goal.unconfirmed');
     }
@@ -356,21 +432,32 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
     void controlAppServerControlGoal(sessionId, { operation: 'get' });
   });
   const stop = button(
-    t(initial.provider === 'claude' ? 'goal.interruptAndStop' : 'goal.stop'),
+    t(editorProvider === 'claude' ? 'goal.interruptAndStop' : 'goal.stop'),
     () => {
       void controlAppServerControlGoal(sessionId, {
         operation: 'clear',
-        interruptActiveTurn: initial.provider === 'claude',
+        interruptActiveTurn: editorProvider === 'claude',
       });
     },
   );
-  footer.append(refresh, button(t('dialog.cancel'), close), stop, save);
+  const recover = button(t('goal.recover'), () => {
+    void controlAppServerControlGoal(sessionId, { operation: 'recover' });
+  });
+  recover.hidden = editorProvider !== 'claude';
+  recover.title = t('goal.recoverScope');
+  footer.append(refresh, button(t('dialog.cancel'), close), recover, stop, save);
   body.append(current, readback, scope, objective, status, budget);
   modal.append(header, body, footer);
   overlay.append(modal);
   function render(): void {
     const view = views.get(sessionId);
-    if (!view) return;
+    if (!view || view.threadId !== editorThreadId) {
+      close();
+      return;
+    }
+    if (!readGoalDraft(sessionId, editorThreadId)) {
+      fields.edited = fields.statusEdited = fields.budgetEdited = false;
+    }
     const goal = view.state?.goal;
     syncGoalEditorFields(fields, view.state);
     current.textContent = goal
@@ -380,6 +467,8 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
     const waiting = view.pending || Boolean(view.state?.pendingOperation);
     save.disabled = refresh.disabled = goalEditorUnavailable(view) || waiting;
     stop.disabled = !canStopGoal(view);
+    recover.disabled = goalEditorUnavailable(view) || view.pending;
+    recover.hidden = !goalRecoveryAvailable(view);
   }
   overlay.addEventListener('keydown', (event) => {
     focusGuard(event, modal, close);

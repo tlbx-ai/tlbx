@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createSettingsCommandDispatcher } from "./commandDispatch.mjs";
-import { NativeGoalCommands, classifyGoalCommand, parseGoalReadback } from "./nativeGoals.mjs";
+import { NativeGoalCommands, assertGoalRecoverySession, classifyGoalCommand, parseGoalReadback } from "./nativeGoals.mjs";
 
 const emptyGoal = "No goal set. Usage: `/goal <condition>`";
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
@@ -216,4 +216,89 @@ test("model text matching the native Set phrase cannot substitute for its missin
   assert.notEqual(f.manager.state.confirmation, "acknowledged");
   f.manager.consume(result());
   assert.equal(f.manager.state.confirmation, "unconfirmed");
+});
+
+
+test("lost local result rejects waiters, retains unknown outcome, and never replays a mutation", async (t) => {
+  const f = await fixture(t, undefined, { commandTimeoutMs: 5, waitTimeoutMs: 100 });
+  f.command("set", { objective: "Lost" }); await flush(); f.start();
+  await assert.rejects(f.manager.beforeInput(), { code: "goalInputBlocked" });
+  assert.equal(f.manager.state.confirmation, "unconfirmed");
+  assert.equal(f.manager.busy, true); assert.ok(f.manager.current);
+  await assert.rejects(f.manager.beforeInput(), { code: "goalInputBlocked" });
+  assert.equal(f.inputs.filter((input) => input.message.content === "/goal Lost").length, 1);
+  f.manager.consume(assistant("Goal set: Lost")); f.manager.consume(result()); await flush();
+  f.start(); f.finish("Goal active: Lost (1 turn)\nLast check: Waiting");
+  await flush(); await f.manager.beforeInput();
+});
+
+test("input waiting has its own bound even during ongoing native Goal inference", async (t) => {
+  const f = await fixture(t, undefined, { waitTimeoutMs: 5 });
+  f.command("set", { objective: "Working" }); await flush(); f.start();
+  f.manager.consume(assistant("Goal set: Working"));
+  await assert.rejects(f.manager.beforeInput(), { code: "goalInputBlocked", reason: "timeout" });
+  assert.equal(f.manager.waiters.length, 0); assert.equal(f.manager.busy, true);
+});
+
+test("out-of-band cancellation releases a Goal wait before any result and unblocks settings", async (t) => {
+  const f = await fixture(t); const calls = [];
+  f.command("get"); await flush();
+  const dispatch = createSettingsCommandDispatcher(async (command, cancelled, signal) => {
+    if (command.type === "turn.start") { await f.manager.beforeInput(signal); if (!cancelled()) calls.push("prompt"); }
+    else calls.push(command.type);
+  });
+  const input = dispatch({ type: "turn.start", turnId: "old" }); await flush();
+  await dispatch({ type: "turn.interrupt", turnId: "old" }); await input;
+  await dispatch({ type: "runtime.configure" });
+  assert.deepEqual(calls, ["turn.interrupt", "runtime.configure"]);
+  assert.equal(f.manager.waiters.length, 0);
+  f.start(); f.finish(emptyGoal); await flush();
+  await dispatch({ type: "turn.start", turnId: "fresh" });
+  assert.equal(calls.at(-1), "prompt");
+});
+
+test("late lifecycle of another queued UUID and an unstarted result cannot take over the current Goal", async (t) => {
+  const f = await fixture(t);
+  f.command("set", { objective: "Current" }); await flush(); f.start();
+  const current = f.manager.current;
+  f.manager.noteInput({ uuid: "steer" }, "normal steer", "own-turn");
+  f.start({ uuid: "steer" });
+  assert.equal(f.manager.current, current);
+  current.started = false;
+  f.manager.consume(result());
+  assert.equal(f.manager.current, current); assert.equal(f.manager.busy, true);
+  assert.equal(f.manager.state.confirmation, "unconfirmed");
+});
+
+test("explicit recovery creates only a same-thread readback and cannot replay old Set or Clear", async (t) => {
+  const f = await fixture(t);
+  f.command("set", { objective: "Uncertain" }); await flush();
+  f.command("clear", { interruptActiveTurn: true });
+  f.manager.close();
+  const recovered = await fixture(t);
+  assert.equal(recovered.inputs.length, 1);
+  assert.equal(recovered.inputs[0].session_id, "own-thread");
+  assert.equal(recovered.inputs[0].message.content, "/goal");
+  const oldId = f.inputs.at(-1).uuid;
+  recovered.start({ uuid: oldId });
+  assert.equal(recovered.manager.current, null);
+});
+
+
+test("recovery refuses a different native session instead of retargeting the readback", () => {
+  assert.doesNotThrow(() => assertGoalRecoverySession({ recoverGoal: true, resume: "own-thread" }, "own-thread"));
+  assert.throws(() => assertGoalRecoverySession({ recoverGoal: true, resume: "own-thread" }, "different"), /different native thread/);
+  assert.doesNotThrow(() => assertGoalRecoverySession({ resume: "own-thread" }, "different"));
+});
+
+
+test("a late model result cannot finish a started local readback without its native assistant acknowledgement", async (t) => {
+  const f = await fixture(t);
+  f.command("get"); await flush(); f.start();
+  const current = f.manager.current;
+  f.manager.consume(result("old model result"));
+  assert.equal(f.manager.current, current); assert.equal(f.manager.busy, true);
+  assert.equal(f.manager.state.confirmation, "unconfirmed");
+  f.finish(emptyGoal); await flush(); await f.manager.beforeInput();
+  assert.equal(f.manager.state.confirmation, "confirmed");
 });

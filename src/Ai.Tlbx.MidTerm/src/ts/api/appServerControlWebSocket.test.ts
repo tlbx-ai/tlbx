@@ -450,7 +450,7 @@ describe('appServerControlWebSocket', () => {
     await rejection;
     expect(socket.sent).toHaveLength(1);
   });
-  it.each(['set', 'get', 'clear'] as const)(
+  it.each(['set', 'get', 'clear', 'recover'] as const)(
     'sends native Goal %s with its guard and preserves a pending receipt',
     async (operation) => {
       vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
@@ -466,7 +466,10 @@ describe('appServerControlWebSocket', () => {
       await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
       const socket = FakeWebSocket.instances[0]!;
       const sent = JSON.parse(socket.sent[0]!);
-      expect(sent).toMatchObject({ action: `thread.goal.${operation}`, goalSet: request });
+      expect(sent).toMatchObject({
+        action: operation === 'recover' ? 'runtime.recover' : `thread.goal.${operation}`,
+        goalSet: request,
+      });
       expect(sent).not.toHaveProperty('turn');
       const receipt = {
         sessionId: 'session-1',

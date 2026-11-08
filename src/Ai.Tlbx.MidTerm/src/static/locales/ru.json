@@ -1486,5 +1486,9 @@
   "goal.state.blocked": "Заблокирована",
   "goal.state.usageLimited": "Лимит использования",
   "goal.state.budgetLimited": "Лимит бюджета",
-  "goal.state.complete": "Завершена"
+  "goal.state.complete": "Завершена",
+  "goal.recover": "Прервать сессию и восстановить Goal",
+  "goal.recoverScope": "Прерывает работу этой сессии, подключает тот же нативный поток и читает Goal; ввод и изменения Goal не повторяются.",
+  "goal.recovering": "Подключение и чтение нативного Goal…",
+  "goal.recoveryFailed": "Восстановление не удалось; нативный Goal не подтверждён."
 }

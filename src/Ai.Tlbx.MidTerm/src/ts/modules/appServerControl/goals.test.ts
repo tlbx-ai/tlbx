@@ -1,3 +1,4 @@
+import { readGoalDraft, writeGoalDraft } from './goalDrafts';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type {
   AppServerControlGoalResponse,
@@ -7,13 +8,14 @@ import type {
 
 vi.mock('../../api/client', () => ({ setAppServerControlGoal: vi.fn() }));
 vi.mock('../i18n', () => ({ t: (key: string) => key }));
-vi.mock('../navigation/backButtonGuard', () => ({ registerBackButtonLayer: vi.fn() }));
+vi.mock('../navigation/backButtonGuard', () => ({ registerBackButtonLayer: vi.fn(() => vi.fn()) }));
 import { setAppServerControlGoal } from '../../api/client';
 import {
   controlAppServerControlGoal,
   goalControlLabel,
   goalControlTitle,
   goalGuard,
+  openAppServerControlGoalEditor,
   syncAppServerControlGoal,
 } from './goals';
 
@@ -135,5 +137,99 @@ describe('native Goal state', () => {
     await controlAppServerControlGoal('error', { operation: 'set', objective: 'Wrong' });
     expect(goalControlTitle('error')).toContain('Original');
     expect(goalControlTitle('error')).toContain('goal.targetUnavailable');
+  });
+  it('ingests canonical state without a DOM', () => {
+    vi.stubGlobal('window', undefined);
+    expect(() => seed('no-dom')).not.toThrow();
+    expect(goalControlTitle('no-dom')).toContain('Original');
+  });
+
+  it('clears only a confirmed mutation draft, preserving newer objective/status/budget edits', async () => {
+    seed('draft-confirm');
+    const draft = { objective: 'Sent', status: 'paused', budget: '123' };
+    writeGoalDraft('draft-confirm', 'own', draft);
+    api.mockResolvedValue(receipt('draft-confirm', state('Original', 'set')));
+    await controlAppServerControlGoal('draft-confirm', { operation: 'set', objective: 'Sent' });
+    expect(readGoalDraft('draft-confirm', 'own')).toMatchObject(draft);
+    const newer = { ...draft, objective: 'Newer', status: 'blocked', budget: '456' };
+    writeGoalDraft('draft-confirm', 'own', newer);
+    seed('draft-confirm', state('Sent'));
+    expect(readGoalDraft('draft-confirm', 'own')).toMatchObject(newer);
+    api.mockResolvedValue({
+      ...receipt('draft-confirm', { ...state(), goal: null }),
+      status: 'applied',
+    });
+    await controlAppServerControlGoal('draft-confirm', {
+      operation: 'clear',
+      interruptActiveTurn: true,
+    });
+    expect(readGoalDraft('draft-confirm', 'own')).toBeNull();
+  });
+
+  it('keeps drafts on unconfirmed responses and rejects session fallback identity', async () => {
+    seed('draft-unknown');
+    const draft = { objective: 'Unknown', status: 'active', budget: '' };
+    writeGoalDraft('draft-unknown', 'own', draft);
+    api.mockResolvedValue({ ...receipt('draft-unknown'), status: 'unconfirmed' });
+    await controlAppServerControlGoal('draft-unknown', { operation: 'set', objective: 'Unknown' });
+    seed('draft-unknown', state('Unknown'));
+    expect(readGoalDraft('draft-unknown', 'own')).toMatchObject(draft);
+    syncAppServerControlGoal(
+      {
+        sessionId: 'fallback',
+        provider: 'claude',
+        thread: { threadId: 'fallback' },
+        currentTurn: { state: 'completed' },
+      } as AppServerControlHistorySnapshot,
+      true,
+    );
+    const count = api.mock.calls.length;
+    await controlAppServerControlGoal('fallback', { operation: 'get' });
+    expect(api).toHaveBeenCalledTimes(count);
+  });
+  it('closes the open editor on canonical thread replacement without applying its draft to that thread', () => {
+    class Element extends EventTarget {
+      children: Element[] = [];
+      className = '';
+      textContent = '';
+      value = '';
+      removed = false;
+      append(...children: Element[]): void {
+        this.children.push(...children);
+      }
+      setAttribute(): void {
+        /* Minimal editor DOM fixture. */
+      }
+      focus(): void {
+        /* Focus is owned by the real browser acceptance. */
+      }
+      remove(): void {
+        this.removed = true;
+      }
+    }
+    const body = new Element();
+    vi.stubGlobal('HTMLElement', Element);
+    vi.stubGlobal('document', { body, activeElement: null, createElement: () => new Element() });
+    seed('open-scope');
+    api.mockResolvedValue(receipt('open-scope'));
+    openAppServerControlGoalEditor('open-scope');
+    const overlay = body.children[0]!;
+    const objective = overlay.children[0]!.children[1]!.children[3]!;
+    objective.value = 'Old thread only';
+    objective.dispatchEvent(new Event('input'));
+    expect(readGoalDraft('open-scope', 'own')?.objective).toBe('Old thread only');
+    const calls = api.mock.calls.length;
+    syncAppServerControlGoal(
+      {
+        sessionId: 'open-scope',
+        provider: 'claude',
+        thread: { threadId: 'replacement', goal: null },
+        currentTurn: { state: 'completed' },
+      } as AppServerControlHistorySnapshot,
+      true,
+    );
+    expect(overlay.removed).toBe(true);
+    expect(readGoalDraft('open-scope', 'replacement')).toBeNull();
+    expect(api).toHaveBeenCalledTimes(calls);
   });
 });

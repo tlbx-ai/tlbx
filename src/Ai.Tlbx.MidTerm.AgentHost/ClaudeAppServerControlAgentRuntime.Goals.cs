@@ -91,6 +91,73 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         }
     }
 
+    private async Task<HostCommandOutcome> RecoverGoalAdapterAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    {
+        EnsureAttached();
+        var request = command.SetGoal ?? throw new InvalidOperationException("Recovery scope is required.");
+        string threadId;
+        string? interruptedTurnId;
+        lock (_bridgeReadSync)
+        {
+            if (!AppServerControlGoals.Matches(request, _providerThreadId, _activeTurnId))
+                return ClaudeGoalOutcome(command, new() { SessionId = command.SessionId, ThreadId = _providerThreadId ?? string.Empty,
+                    TurnId = request.ExpectedTurnId, Status = "targetUnavailable" });
+            // Capture native identity and exclude old pipe events atomically before terminating this owned adapter.
+            threadId = _providerThreadId!; interruptedTurnId = _activeTurnId;
+            ++_bridgeGeneration;
+        }
+        await DisposeProcessAsync().ConfigureAwait(false);
+        _providerThreadId = threadId;
+        _goalStopTurnId = null;
+        _goalState = new() { ThreadId = threadId, Confirmation = "unconfirmed", PendingOperation = "get",
+            Goal = _goalState?.Goal?.Clone(), Detail = "recovering" };
+        _emit(CreateEvent("thread.goal.changed", null, null, null, "mtagenthost.claude", "runtime.recover", request,
+            e => e.GoalUpdated = _goalState.Clone()));
+        if (interruptedTurnId is not null)
+            _emit(CreateEvent("turn.completed", interruptedTurnId, null, null, "mtagenthost.claude", "runtime.recover", request,
+                e => e.TurnCompleted = new() { State = "aborted", StateLabel = "Aborted", StopReason = "goal_recovery" }));
+        try
+        {
+            await EnsureClaudeBridgeAsync(ct, loadHistory: false).ConfigureAwait(false);
+            // The new Query acknowledged its initialization defaults; these are not inference/settings readback.
+            _quickSettings.AcknowledgedFields = ["model", "effort", "planMode", "permissionMode"];
+            _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "mtagenthost.claude", "runtime.recover", request));
+            _emit(CreateEvent("session.state.changed", null, null, null, "mtagenthost.claude", "runtime.recover", request,
+                e => e.SessionState = new() { State = "ready", StateLabel = "Ready" }));
+        }
+        catch
+        {
+            _goalState.Confirmation = "unconfirmed"; _goalState.PendingOperation = null; _goalState.Detail = "recoveryFailed";
+            _emit(CreateEvent("thread.goal.changed", null, null, null, "mtagenthost.claude", "runtime.recover", request,
+                e => e.GoalUpdated = _goalState.Clone()));
+            _emit(CreateEvent("session.state.changed", null, null, null, "mtagenthost.claude", "runtime.recover", request,
+                e => e.SessionState = new() { State = "error", StateLabel = "Error", Reason = "Goal adapter recovery failed." }));
+            throw;
+        }
+        return ClaudeGoalOutcome(command, new() { SessionId = command.SessionId, ThreadId = threadId,
+            TurnId = request.ExpectedTurnId, Status = "pending", State = _goalState.Clone() });
+    }
+
+    private void HandleBlockedGoalInput(JsonElement root, string rawLine)
+    {
+        if (!string.Equals(GetString(root, "session_id"), _providerThreadId, StringComparison.Ordinal)) return;
+        var turnId = GetString(root, "turnId");
+        // An unsent steer failure must never finalize the inference it tried to steer.
+        if (GetString(root, "commandType") == "turn.start" && !_turnStarted && turnId is not null &&
+            string.Equals(turnId, _activeTurnId, StringComparison.Ordinal))
+        {
+            ResetTurnState();
+            _emit(CreateEvent("turn.completed", turnId, null, null, "claude.agent-sdk", "goal/input-rejected", root,
+                e => e.TurnCompleted = new() { State = "failed", StateLabel = "Failed", StopReason = "goal_input_blocked",
+                    ErrorMessage = GetString(root, "message") }, rawLine));
+            _emit(CreateEvent("session.state.changed", turnId, null, null, "claude.agent-sdk", "goal/input-rejected", root,
+                e => e.SessionState = new() { State = "ready", StateLabel = "Ready", Reason = GetString(root, "message") }));
+        }
+        _emit(CreateEvent("runtime.warning", turnId, null, null, "claude.agent-sdk", "goal/input-rejected", root,
+            e => e.RuntimeMessage = new() { Message = "Input was not submitted while native Goal outcome is unresolved.",
+                Detail = GetString(root, "message") }, rawLine));
+    }
+
     private static HostCommandOutcome ClaudeGoalOutcome(AppServerControlHostCommandEnvelope command, AppServerControlGoalResponse response) =>
         new() { Result = new() { CommandId = command.CommandId, SessionId = command.SessionId, Status = "accepted",
             Accepted = new() { SessionId = command.SessionId, Status = "accepted", Goal = response } } };

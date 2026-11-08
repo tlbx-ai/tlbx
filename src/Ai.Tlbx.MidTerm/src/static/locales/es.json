@@ -1486,5 +1486,9 @@
   "goal.state.blocked": "Bloqueado",
   "goal.state.usageLimited": "Límite de uso",
   "goal.state.budgetLimited": "Límite de presupuesto",
-  "goal.state.complete": "Completado"
+  "goal.state.complete": "Completado",
+  "goal.recover": "Interrumpir sesión y recuperar Goal",
+  "goal.recoverScope": "Interrumpe el trabajo de esta sesión, reconecta el mismo hilo nativo y consulta su Goal; no repite entradas ni cambios de Goal.",
+  "goal.recovering": "Reconectando y consultando Goal nativo…",
+  "goal.recoveryFailed": "La recuperación falló; el Goal nativo sigue sin confirmar."
 }

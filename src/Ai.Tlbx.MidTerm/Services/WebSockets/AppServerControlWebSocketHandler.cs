@@ -450,9 +450,10 @@ public sealed class AppServerControlWebSocketHandler
                 case "thread.goal.set":
                 case "thread.goal.get":
                 case "thread.goal.clear":
+                case "runtime.recover":
                 {
                     var goalRequest = request.GoalSet ?? new AppServerControlGoalSetRequest();
-                    goalRequest.Operation = request.Action["thread.goal.".Length..];
+                    goalRequest.Operation = request.Action == "runtime.recover" ? "recover" : request.Action["thread.goal.".Length..];
                     var response = await _appServerControlRuntime.SetGoalAsync(
                         request.SessionId,
                         goalRequest,

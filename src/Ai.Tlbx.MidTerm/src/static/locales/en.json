@@ -1749,5 +1749,9 @@
   "goal.state.blocked": "Blocked",
   "goal.state.usageLimited": "Usage limited",
   "goal.state.budgetLimited": "Budget limited",
-  "goal.state.complete": "Complete"
+  "goal.state.complete": "Complete",
+  "goal.recover": "Interrupt session and recover Goal",
+  "goal.recoverScope": "This interrupts work in this Agent Session, reconnects the same native thread and reads its Goal; no input or Goal change is replayed.",
+  "goal.recovering": "Reconnecting and reading native Goal…",
+  "goal.recoveryFailed": "Recovery failed; native Goal remains unconfirmed."
 }

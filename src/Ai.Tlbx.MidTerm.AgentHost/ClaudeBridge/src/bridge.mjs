@@ -1,4 +1,4 @@
-import { NativeGoalCommands } from "./nativeGoals.mjs";
+import { NativeGoalCommands, assertGoalRecoverySession } from "./nativeGoals.mjs";
 import { createSettingsCommandDispatcher } from "./commandDispatch.mjs";
 import { waitForResolution, releasePendingToolApprovals, SettledDecisions, resolveScopedCallback } from "./pendingPermissions.mjs";
 import { configureRuntime } from "./runtimeSettings.mjs";
@@ -268,6 +268,7 @@ async function startRuntime(command) {
   runtimeTask = (async () => {
     try {
       for await (const message of runtime) {
+        assertGoalRecoverySession(configuration, message.session_id);
         if (typeof message.session_id === "string" && message.session_id)
           currentSessionId = message.session_id;
         goals.observeSession(currentSessionId);
@@ -278,12 +279,13 @@ async function startRuntime(command) {
     } catch (error) {
       goals.publish({ confirmation: "unconfirmed", pendingOperation: null, detail: String(error.message) });
       goals.close();
+      runtime.close();
       fail("Claude Agent SDK stream failed.", error);
     }
   })();
 }
 
-async function handle(command, isCancelled = () => false) {
+async function handle(command, isCancelled = () => false, signal) {
   switch (command.type) {
     case "initialize":
       if (configuration)
@@ -328,7 +330,7 @@ async function handle(command, isCancelled = () => false) {
       if (!configuration) throw new Error("Claude bridge is not initialized.");
       if (isCancelled()) return;
       await startRuntime(command);
-      if (command.type === "turn.start") await goals.beforeInput();
+      if (command.type === "turn.start") await goals.beforeInput(signal);
       if (isCancelled()) return;
       const stopped = () => {
         if (!isCancelled()) return false;
@@ -428,11 +430,18 @@ input.on("line", (line) => {
       command = JSON.parse(line);
       return dispatch(command);
     })
-    .catch((error) =>
+    .catch((error) => {
+      if (error.code === "goalInputBlocked") {
+        emit({ type: "bridge.input_rejected", commandType: command?.type,
+          turnId: command?.turnId, session_id: currentSessionId ?? configuration?.resume ?? configuration?.sessionId,
+          message: error.message, reason: error.reason });
+        return;
+      }
       fail("Claude bridge command failed.", error, {
         commandType: command?.type,
         requestId: command?.requestId ?? command?.turnId,
-      }),
+      });
+    },
     );
 });
 input.on("close", () => {

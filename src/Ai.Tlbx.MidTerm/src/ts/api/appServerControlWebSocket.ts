@@ -25,6 +25,7 @@ type AppServerControlWsRequestAction =
   | 'turn.submit'
   | 'turn.interrupt'
   | 'runtime.configure'
+  | 'runtime.recover'
   | 'thread.goal.set'
   | 'thread.goal.get'
   | 'thread.goal.clear'
@@ -566,7 +567,9 @@ async function requestCommandAccepted(
   });
   armPendingTimeout(
     id,
-    action === 'runtime.configure' ? 65000 : APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS,
+    action === 'runtime.configure' || action === 'runtime.recover'
+      ? 65000
+      : APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS,
   );
   sendRaw({
     type: 'request',
@@ -678,7 +681,9 @@ export async function setAppServerControlGoalWs(
   request: AppServerControlGoalSetRequest,
 ): Promise<AppServerControlGoalResponse> {
   const response = await requestCommandAccepted(
-    `thread.goal.${request.operation ?? 'set'}`,
+    request.operation === 'recover'
+      ? 'runtime.recover'
+      : `thread.goal.${request.operation ?? 'set'}`,
     sessionId,
     { goalSet: request },
   );
