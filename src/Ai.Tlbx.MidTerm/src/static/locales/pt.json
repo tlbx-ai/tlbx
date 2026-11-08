@@ -1452,5 +1452,6 @@
   "smartInput.settingScopeCaptures": "Para as próximas capturas; inferência atual inalterada",
   "smartInput.settingScopeResponses": "Padrões aceitos para próximas respostas; inferência atual inalterada",
   "smartInput.settingPermissionAutoPending": "Auto também autoriza as ferramentas já em espera nesta sessão. As perguntas ainda precisam de resposta.",
+  "smartInput.modelInherit": "Sem modelo definido",
   "smartInput.settingPermissionAfterPlan": "Usado ao sair do modo Plano; o Plano permanece ativo"
 }

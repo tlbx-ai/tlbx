@@ -1452,5 +1452,6 @@
   "smartInput.settingScopeCaptures": "পরবর্তী সেটিং ক্যাপচারের জন্য; চলমান ইনফারেন্স অপরিবর্তিত",
   "smartInput.settingScopeResponses": "পরবর্তী উত্তরের ডিফল্ট গৃহীত; চলমান ইনফারেন্স অপরিবর্তিত",
   "smartInput.settingPermissionAutoPending": "অটো এই সেশনে ইতিমধ্যে অপেক্ষমাণ টুলের অনুরোধও অনুমোদন করে। প্রশ্নের উত্তর এখনও দিতে হবে।",
+  "smartInput.modelInherit": "মডেল নির্দিষ্ট নয়",
   "smartInput.settingPermissionAfterPlan": "পরিকল্পনা মোড ছাড়ার পর ব্যবহৃত হবে; পরিকল্পনা মোড সক্রিয় থাকবে"
 }

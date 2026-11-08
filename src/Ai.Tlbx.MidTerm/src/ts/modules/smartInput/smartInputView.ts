@@ -591,8 +591,12 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
     const usableWidth = Math.max(1, right - left);
     const usableHeight = Math.max(1, bottom - top);
     const triggerRect = trigger.getBoundingClientRect();
-    const availableBelow = Math.max(0, bottom - triggerRect.bottom - gap);
-    const availableAbove = Math.max(0, triggerRect.top - gap - top);
+    const anchorRect =
+      wrapper
+        .closest<HTMLElement>('.smart-input-appServerControl-field')
+        ?.getBoundingClientRect() ?? triggerRect;
+    const availableBelow = Math.max(0, bottom - anchorRect.bottom - gap);
+    const availableAbove = Math.max(0, anchorRect.top - gap - top);
     // Fixed viewport coordinates escape the sheet; keyboard insets still bound the menu.
     menu.style.position = 'fixed';
     menu.style.right = 'auto';
@@ -608,7 +612,7 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
     menu.style.top = `${Math.max(
       top,
       Math.min(
-        openUp ? triggerRect.top - gap - menuRect.height : triggerRect.bottom + gap,
+        openUp ? anchorRect.top - gap - menuRect.height : anchorRect.bottom + gap,
         bottom - menuRect.height,
       ),
     )}px`;

@@ -158,7 +158,7 @@ export function syncAppServerControlQuickSettingsControls(args: {
     getAppServerControlModelOptions({
       provider,
       currentValues: [draft.model, effective.model],
-      defaultLabel: resolvedProviderModel,
+      defaultLabel: t('smartInput.modelInherit'),
       catalogOptions: preferQuickSettingsOptions(draft, effective, 'modelOptions'),
     }),
   );

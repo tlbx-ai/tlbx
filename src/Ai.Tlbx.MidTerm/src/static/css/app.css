@@ -19091,6 +19091,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
     justify-content: flex-end;
     min-height: 44px;
   }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-actions::before { display: none; }
   .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-actions button {
     min-height: 44px;
     min-width: 44px;
