@@ -20,7 +20,14 @@ function receipt(id: string, goal = state()): AppServerControlGoalResponse {
 }
 
 describe('native Goal state', () => {
-  beforeEach(() => { api.mockReset(); vi.stubGlobal('window', new EventTarget()); });
+  beforeEach(() => {
+    api.mockReset();
+    vi.stubGlobal('window', new EventTarget());
+    vi.stubGlobal('CustomEvent', class extends Event {
+      readonly detail: unknown;
+      constructor(type: string, init: CustomEventInit) { super(type); this.detail = init.detail; }
+    });
+  });
   afterEach(() => { vi.unstubAllGlobals(); });
 
   it('guards the exact canonical turn including idle and refuses disconnected targets', () => {

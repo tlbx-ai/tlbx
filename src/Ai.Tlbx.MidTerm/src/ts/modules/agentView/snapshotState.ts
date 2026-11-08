@@ -55,6 +55,7 @@ export function collapseSnapshotToLatestWindow(
   state.historyWindowStart = snapshot.historyWindowStart;
   state.historyWindowCount = retainedEntries.length;
   state.historyWindowTargetCount = Math.max(1, targetWindowCount);
+  retainWindowSummaries(snapshot);
 }
 
 export function applyCanonicalAppServerControlDelta(
@@ -83,13 +84,62 @@ export function applyCanonicalAppServerControlDelta(
     delta.requestRemovals,
   );
   snapshot.notices = upsertSnapshotNotices(snapshot.notices, delta.noticeUpserts);
-  return applyHistoryWindowDelta(
+  const requiresWindowRefresh = applyHistoryWindowDelta(
     state,
     snapshot,
     previousHistoryCount,
     delta.historyUpserts,
     delta.historyRemovals,
   );
+  retainWindowSummaries(snapshot);
+  return requiresWindowRefresh;
+}
+
+function retainWindowSummaries(snapshot: AppServerControlHistorySnapshot): void {
+  const itemIds = new Set(
+    snapshot.history.flatMap((entry) => (entry.itemId ? [entry.itemId] : [])),
+  );
+  const requestIds = new Set(
+    snapshot.history.flatMap((entry) => (entry.requestId ? [entry.requestId] : [])),
+  );
+  const keepItem = (item: AppServerControlHistorySnapshot['items'][number]) =>
+    itemIds.has(item.itemId) ||
+    item.aliasItemIds?.some((alias) => itemIds.has(alias)) === true ||
+    isCurrentActivityItem(snapshot, item);
+  const keepRequest = (request: AppServerControlHistorySnapshot['requests'][number]) =>
+    requestIds.has(request.requestId) || request.state.toLowerCase() === 'open';
+  // A no-op patch keeps identity. Evict only browser-owned summaries, never canonical host data.
+  if (!snapshot.items.every(keepItem)) {
+    snapshot.items = snapshot.items.filter(keepItem);
+  }
+  if (!snapshot.requests.every(keepRequest)) {
+    snapshot.requests = snapshot.requests.filter(keepRequest);
+  }
+}
+
+function isCurrentActivityItem(
+  snapshot: AppServerControlHistorySnapshot,
+  item: AppServerControlHistorySnapshot['items'][number],
+): boolean {
+  if (
+    ['completed', 'resolved', 'failed', 'stopped', 'error', 'cancelled'].includes(
+      snapshot.currentTurn.state.toLowerCase(),
+    ) ||
+    (item.turnId && snapshot.currentTurn.turnId && item.turnId !== snapshot.currentTurn.turnId)
+  ) {
+    return false;
+  }
+  return [
+    'active',
+    'in progress',
+    'inprogress',
+    'in_progress',
+    'open',
+    'running',
+    'starting',
+    'started',
+    'streaming',
+  ].includes(item.status.trim().toLowerCase());
 }
 
 function applyHistoryWindowDelta(
@@ -319,9 +369,9 @@ function upsertSnapshotNotices(
     next.set(notice.eventId, cloneSnapshotRuntimeNotice(notice));
   }
 
-  return Array.from(next.values()).sort(
-    (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
-  );
+  return Array.from(next.values())
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, 64);
 }
 
 function cloneSnapshotHistoryEntry(
@@ -392,9 +442,7 @@ function cloneSnapshotSessionSummary(
 function cloneSnapshotThreadSummary(
   thread: AppServerControlHistorySnapshot['thread'],
 ): AppServerControlHistorySnapshot['thread'] {
-  return {
-    ...thread,
-  };
+  return structuredClone(thread);
 }
 
 function cloneSnapshotTurnSummary(

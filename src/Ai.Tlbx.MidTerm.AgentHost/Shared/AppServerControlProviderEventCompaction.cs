@@ -114,6 +114,7 @@ public static class AppServerControlProviderEventCompaction
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(source.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(source.QuickSettingsUpdated.EffortOptions),
+                AcknowledgedFields = [.. source.QuickSettingsUpdated.AcknowledgedFields],
                 ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = source.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload

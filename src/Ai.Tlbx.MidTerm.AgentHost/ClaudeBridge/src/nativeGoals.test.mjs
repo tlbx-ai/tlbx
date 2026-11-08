@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createSettingsCommandDispatcher } from "./commandDispatch.mjs";
 import { NativeGoalCommands, classifyGoalCommand, parseGoalReadback } from "./nativeGoals.mjs";
 
 const emptyGoal = "No goal set. Usage: `/goal <condition>`";
@@ -7,10 +8,10 @@ const flush = async () => { await Promise.resolve(); await Promise.resolve(); };
 const assistant = (text) => ({ type: "assistant", message: { content: [{ type: "text", text }] } });
 const result = (text = "", extra = {}) => ({ type: "result", subtype: "success", is_error: false, result: text, ...extra });
 
-async function fixture(t, interrupt = async () => ({})) {
+async function fixture(t, interrupt = async () => ({}), options = {}) {
   const inputs = []; const events = [];
   const manager = new NativeGoalCommands({ runtime: () => ({ interrupt }), push: (input) => inputs.push(input),
-    sessionId: () => "own-thread", emit: (event) => events.push(event) });
+    sessionId: () => "own-thread", emit: (event) => events.push(event), ...options });
   t.after(() => manager.close());
   const start = (input = inputs.at(-1)) => manager.consume({ type: "command_lifecycle", state: "started", command_uuid: input.uuid });
   const finish = (text, extra) => { manager.consume(assistant(text)); return manager.consume(result(text, extra)); };
@@ -150,4 +151,69 @@ test("the same Stop guards a manual /goal Set whose model work begins later in t
   assert.equal(f.manager.turnId, "manual-turn");
   assert.equal(interrupts, 2);
   await flush(); assert.equal(interrupts, 2);
+});
+
+test("intermediate steering result keeps Goal work and guard until the final native result", async (t) => {
+  const f = await fixture(t, undefined, { isIntermediateResult: (message) =>
+    Number(message.queued_turn_count ?? 0) > 0 || message.terminal_reason === "aborted_streaming" });
+  f.command("set", { objective: "Keep" }); await flush(); f.start();
+  f.manager.consume(assistant("Goal set: Keep"));
+  const turnId = f.manager.turnId; const count = f.inputs.length;
+  assert.equal(f.manager.consume(result("", { terminal_reason: "aborted_streaming" })), false);
+  assert.equal(f.manager.turnId, turnId); assert.equal(f.manager.busy, true);
+  await flush(); assert.equal(f.inputs.length, count);
+  f.manager.consume(result()); await flush();
+  assert.equal(f.inputs.at(-1).message.content, "/goal");
+  f.start(); f.finish("Goal active: Keep (1 turn)\nLast check: Waiting");
+  assert.equal(f.manager.state.goal.status, "active");
+});
+
+test("Goal Stop cancels queued steer through the Runtime dispatcher and still verifies Clear", async (t) => {
+  let release; const prompts = []; let interrupts = 0;
+  const dispatch = createSettingsCommandDispatcher(async (command) => {
+    if (command.type === "runtime.configure") await new Promise((resolve) => { release = resolve; });
+    else prompts.push(command.turnId);
+  });
+  let f;
+  f = await fixture(t, undefined, { interrupt: async (turnId) => { dispatch.cancelTurn(turnId); interrupts++; },
+    isIntermediateResult: (message) => Number(message.queued_turn_count ?? 0) > 0 ||
+      (message.terminal_reason === "aborted_streaming" && !f.manager.hasPendingStop(f.manager.turnId)) });
+  f.manager.publish({ goal: { objective: "Keep", status: "active" } });
+  f.manager.noteInput({ uuid: "normal" }, "normal", "own-turn"); f.start({ uuid: "normal" });
+  const configure = dispatch({ type: "runtime.configure" }); await flush();
+  const steer = dispatch({ type: "turn.steer", turnId: "own-turn" });
+  f.command("clear", { interruptActiveTurn: true }); await flush();
+  assert.equal(interrupts, 1);
+  release(); await Promise.all([configure, steer]); assert.deepEqual(prompts, []);
+  f.manager.consume(result("", { terminal_reason: "aborted_streaming" })); await flush();
+  assert.equal(f.inputs.at(-1).message.content, "/goal clear");
+  f.start(); f.finish("Goal cleared: Keep"); await flush(); f.start(); f.finish(emptyGoal);
+  assert.equal(f.manager.state.goal, null); assert.equal(f.manager.state.confirmation, "confirmed");
+});
+
+test("cancelled normal input waiting for Goal readback never submits a late prompt", async (t) => {
+  const f = await fixture(t); const prompts = [];
+  f.command("get"); await flush();
+  const dispatch = createSettingsCommandDispatcher(async (command, cancelled) => {
+    if (command.type === "turn.interrupt") return;
+    await f.manager.beforeInput();
+    if (!cancelled()) prompts.push(command.turnId);
+  });
+  const start = dispatch({ type: "turn.start", turnId: "waiting" }); await flush();
+  await dispatch({ type: "turn.interrupt", turnId: "waiting" });
+  f.start(); f.finish(emptyGoal); await start;
+  assert.deepEqual(prompts, []);
+  await dispatch({ type: "turn.start", turnId: "fresh" });
+  assert.deepEqual(prompts, ["fresh"]);
+});
+
+test("model text matching the native Set phrase cannot substitute for its missing local acknowledgement", async (t) => {
+  const f = await fixture(t);
+  f.command("set", { objective: "Keep" }); await flush(); f.start();
+  f.manager.consume({ type: "stream_event", event: { type: "message_start" } });
+  assert.equal(f.manager.consume(assistant("Goal set: Keep")), false);
+  assert.equal(f.manager.state.goal, null);
+  assert.notEqual(f.manager.state.confirmation, "acknowledged");
+  f.manager.consume(result());
+  assert.equal(f.manager.state.confirmation, "unconfirmed");
 });

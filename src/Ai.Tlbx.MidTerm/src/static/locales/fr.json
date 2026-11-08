@@ -1451,6 +1451,8 @@
   "smartInput.settingScopeTurns": "Pour les tours suivants ; inférence en cours inchangée",
   "smartInput.settingScopeCaptures": "Pour les captures suivantes ; inférence en cours inchangée",
   "smartInput.settingScopeResponses": "Valeurs par défaut acceptées pour les prochaines réponses ; inférence en cours inchangée",
+  "smartInput.settingPermissionAutoPending": "Auto autorise aussi les outils déjà en attente dans cette session. Les questions demandent toujours une réponse.",
+  "smartInput.modelInherit": "Sans modèle imposé",
   "smartInput.settingPermissionAfterPlan": "Utilisé à la sortie du mode Plan ; Plan reste actif",
   "goal.label": "Objectif",
   "goal.editor": "Objectif natif",

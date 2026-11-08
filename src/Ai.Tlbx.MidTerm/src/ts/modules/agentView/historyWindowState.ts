@@ -1,10 +1,28 @@
+import { syncAppServerControlGoal } from '../appServerControl/goals';
 import {
   updateAppServerControlHistoryStreamWindow,
   type AppServerControlHistorySnapshot,
 } from '../../api/client';
 import type { SessionAppServerControlViewState } from './types';
 import { buildAppServerControlHistoryEntries } from './historyProcessing';
-import { applyAppServerControlHistoryWindowState } from './snapshotState';
+import {
+  applyAppServerControlHistoryWindowState,
+  applyCanonicalAppServerControlDelta,
+} from './snapshotState';
+import { syncAppServerControlQuickSettingsFromHistory } from '../appServerControl/quickSettings';
+import type { AppServerControlHistoryDelta } from '../../api/types';
+
+export function applyLiveAppServerControlHistoryDelta(
+  state: SessionAppServerControlViewState,
+  delta: AppServerControlHistoryDelta,
+): boolean {
+  const requiresRefresh = applyCanonicalAppServerControlDelta(state, delta);
+  if (state.snapshot) {
+    syncAppServerControlQuickSettingsFromHistory(state.snapshot, state.streamConnected);
+    syncAppServerControlGoal(state.snapshot, state.streamConnected);
+  }
+  return requiresRefresh;
+}
 
 export function hasRenderableAppServerControlHistory(
   snapshot: AppServerControlHistorySnapshot | null | undefined,
@@ -50,6 +68,8 @@ export function applyFetchedAppServerControlHistoryWindow(
 
   applyAppServerControlHistoryWindowState(state, snapshot);
   state.snapshot = snapshot;
+  syncAppServerControlQuickSettingsFromHistory(snapshot, state.streamConnected);
+  syncAppServerControlGoal(snapshot, state.streamConnected);
   state.historyWindowRevision = windowRevision ?? state.historyWindowRevision;
   if (state.disconnectStream) {
     if (state.historyWindowViewportWidth == null) {

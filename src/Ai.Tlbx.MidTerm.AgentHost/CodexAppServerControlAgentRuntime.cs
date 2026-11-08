@@ -48,8 +48,10 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
     private long _sequence;
     private int _nextRequestId;
 
-    public CodexAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit)
+    public CodexAppServerControlAgentRuntime(Action<AppServerControlProviderEvent> emit,
+        Action<IReadOnlyList<AppServerControlProviderEvent>>? publishInitialReplay = null)
     {
+        _publishInitialReplay = publishInitialReplay;
         _emit = e =>
         {
             lock (_attachEventLock)

@@ -125,6 +125,8 @@ export interface AppServerControlConfigureResponse {
 }
 
 export interface AppServerControlCommandAcceptedResponse {
+  decision?: string | null;
+  answers?: AppServerControlAnsweredQuestion[] | null;
   configuration?: AppServerControlConfigureResponse | null;
   goal?: AppServerControlGoalResponse | null;
   sessionId: string;
@@ -202,6 +204,7 @@ export interface AppServerControlQuickSettingsPayload {
 }
 
 export interface AppServerControlQuickSettingsSummary {
+  acknowledgedFields?: string[];
   model?: string | null;
   effort?: string | null;
   planMode: string;

@@ -33,7 +33,9 @@ function assistantText(message) {
 // Only our UUID-correlated native local commands are parsed. Normal model text
 // never establishes goal state. No control RPC, remote-mode flag or TUI scraping.
 export class NativeGoalCommands {
-  constructor({ runtime, push, sessionId, emit }) {
+  constructor({ runtime, push, sessionId, emit, interrupt, isIntermediateResult = (message) => Number(message.queued_turn_count ?? 0) > 0 }) {
+    this.interrupt = interrupt ?? (() => runtime().interrupt());
+    this.isIntermediateResult = isIntermediateResult;
     this.runtime = runtime; this.push = push; this.sessionId = sessionId; this.emit = emit;
     this.supported = false; this.closed = false; this.frames = new Map(); this.queue = []; this.current = null; this.busy = false;
     this.turnId = null; this.waiters = []; this.stopping = null;
@@ -88,6 +90,11 @@ export class NativeGoalCommands {
     this.queue = this.queue.filter((entry) => entry.operation === "get");
   }
 
+  hasPendingStop(turnId) {
+    return !!turnId && this.queue.some((entry) => entry.operation === "clear" &&
+      entry.interruptActiveTurn && entry.interruptedTurnId === turnId);
+  }
+
   currentGoalWorkId() {
     return this.current?.operation === "set" && this.current.work ? this.current.uuid : null;
   }
@@ -106,7 +113,7 @@ export class NativeGoalCommands {
     entry.interruptedTurnId = turnId;
     entry.interruptedWorkId = this.currentGoalWorkId();
     this.emit({ type: "bridge.goal.interrupting", turnId: this.turnId });
-    void this.runtime().interrupt().then(() => {
+    void this.interrupt(turnId).then(() => {
       if (this.stopping !== entry) return;
       this.stopping = null;
       this.interruptPendingClear();
@@ -204,7 +211,7 @@ export class NativeGoalCommands {
 
   goalAssistant(frame, message) {
     const text = assistantText(message);
-    if (frame.operation === "set" && text === `Goal set: ${frame.objective}`) {
+    if (frame.operation === "set" && !frame.work && text === `Goal set: ${frame.objective}`) {
       frame.ack = true;
       this.publish({ confirmation: "acknowledged", goal: { objective: frame.objective, status: "active" }, detail: null });
       this.startGoalWork(frame);
@@ -215,6 +222,7 @@ export class NativeGoalCommands {
   }
 
   goalResult(frame, message) {
+    if (frame.work && this.isIntermediateResult(message)) return false;
     clearTimeout(frame.timer);
     if (frame.operation === "get") this.finishReadback(frame, message);
     else if (frame.operation === "clear") this.finishClear(frame, message);
@@ -268,7 +276,7 @@ export class NativeGoalCommands {
       this.interruptPendingClear();
     }
     if (message.type !== "result") return false;
-    if (Number(message.queued_turn_count ?? 0) > 0) return false;
+    if (this.isIntermediateResult(message)) return false;
     this.clearFrames();
     this.busy = false; this.current = null; this.turnId = null;
     this.refresh();

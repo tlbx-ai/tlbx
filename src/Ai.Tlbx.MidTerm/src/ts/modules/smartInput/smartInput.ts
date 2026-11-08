@@ -35,7 +35,6 @@ import {
 import {
   APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT,
   configureAppServerControlQuickSettings,
-  getAppServerControlRuntimeSettingStatus,
   getAppServerControlQuickSettingsDraft,
   getAppServerControlQuickSettingsProvider,
   setAppServerControlQuickSettingsDraft,
@@ -107,7 +106,6 @@ import {
   getMicButtons as getMicButtonsSupport,
   queueFooterReserveSync as queueFooterReserveSyncSupport,
   shouldIgnoreFooterTransientUiDocumentClick as shouldIgnoreFooterTransientUiDocumentClickSupport,
-  formatRuntimeSettingStatus,
   syncAppServerControlQuickSettingsControls as syncAppServerControlQuickSettingsControlsSupport,
   syncVoiceInputAvailability as syncVoiceInputAvailabilitySupport,
   updateAutoSendVisibility as updateAutoSendVisibilitySupport,
@@ -1968,24 +1966,7 @@ function syncAppServerControlQuickSettingsActions(sessionId: string): void {
   }
 
   appServerControlQuickSettingsActions.replaceChildren();
-  const draft = getAppServerControlQuickSettingsDraft(sessionId);
   const provider = getAppServerControlQuickSettingsProvider(sessionId);
-  appServerControlQuickSettingsActions.appendChild(
-    createAppServerControlActionButton(
-      'Plan',
-      [
-        t('smartInput.appServerControlPlanCommand'),
-        formatRuntimeSettingStatus(getAppServerControlRuntimeSettingStatus(sessionId, 'planMode')),
-      ]
-        .filter(Boolean)
-        .join(' — '),
-      () => {
-        toggleAppServerControlPlanMode(sessionId);
-      },
-      false,
-      { pressed: draft.planMode === 'on' },
-    ),
-  );
   if (provider === 'codex' || provider === 'claude') {
     appServerControlQuickSettingsActions.appendChild(
       createAppServerControlActionButton(
