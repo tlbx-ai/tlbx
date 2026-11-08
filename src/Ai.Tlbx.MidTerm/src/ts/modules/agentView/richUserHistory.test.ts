@@ -45,6 +45,110 @@ function paragraph(text: string, code = false) {
 }
 
 describe('rich user input to history', () => {
+  it('preserves the native pasted in-word bold and italic paragraph', async () => {
+    const doc = richNode('doc').create(
+      null,
+      richNode('paragraph').create(null, [
+        richComposerSchema.text('prefix'),
+        richComposerSchema.text('FETT', [richComposerSchema.marks.strong!.create()]),
+        richComposerSchema.text('suffix und vor'),
+        richComposerSchema.text('kursiv', [richComposerSchema.marks.em!.create()]),
+        richComposerSchema.text('nach.'),
+      ]),
+    );
+    const result = await outbound(doc);
+    expect(getCachedHistoryMarkdown(undefined, entry('user', result.text)).html).toBe(
+      'prefix<strong>FETT</strong>suffix und vor<em>kursiv</em>nach.',
+    );
+  });
+
+  it.each(['strong', 'em', 'both', 'strong-around-em', 'em-around-strong'])(
+    'preserves genuine in-word and nested rich marks through projection: %s',
+    async (shape) => {
+      const strong = richComposerSchema.marks.strong!.create();
+      const em = richComposerSchema.marks.em!.create();
+      const marked =
+        shape === 'strong'
+          ? [richComposerSchema.text('FETT', [strong])]
+          : shape === 'em'
+            ? [richComposerSchema.text('kursiv', [em])]
+            : shape === 'both'
+              ? [richComposerSchema.text('beides', [em, strong])]
+              : shape === 'strong-around-em'
+                ? [
+                    richComposerSchema.text('a', [strong]),
+                    richComposerSchema.text('b', [em, strong]),
+                    richComposerSchema.text('c', [strong]),
+                  ]
+                : [
+                    richComposerSchema.text('a', [em]),
+                    richComposerSchema.text('b', [em, strong]),
+                    richComposerSchema.text('c', [em]),
+                  ];
+      const content = richNode('paragraph').create(null, [
+        richComposerSchema.text('prefix'),
+        ...marked,
+        richComposerSchema.text('suffix'),
+      ]);
+      const expected =
+        shape === 'strong'
+          ? ['prefix<strong>FETT</strong>suffix']
+          : shape === 'em'
+            ? ['prefix<em>kursiv</em>suffix']
+            : shape === 'both'
+              ? [
+                  'prefix<em><strong>beides</strong></em>suffix',
+                  'prefix<strong><em>beides</em></strong>suffix',
+                ]
+              : shape === 'strong-around-em'
+                ? ['prefix<strong>a<em>b</em>c</strong>suffix']
+                : ['prefix<em>a<strong>b</strong>c</em>suffix'];
+      for (const table of [false, true]) {
+        const doc = richNode('doc').create(
+          null,
+          table
+            ? richNode('table').create(null, [
+                richNode('table_row').create(
+                  null,
+                  richNode('table_header').create(null, paragraph('Marks')),
+                ),
+                richNode('table_row').create(null, richNode('table_cell').create(null, content)),
+              ])
+            : content,
+        );
+        const result = await outbound(doc);
+        expect(
+          getRichComposerDocument({
+            parts: [{ kind: 'text', text: result.text }],
+            nextOrdinalByKind: {},
+          }).toJSON(),
+        ).toEqual(doc.toJSON());
+        const html = getCachedHistoryMarkdown(undefined, entry('user', result.text)).html;
+        const rendered = table ? [...html.matchAll(/<td\b[^>]*>(.*?)<\/td>/g)][0]?.[1] : html;
+        expect(expected).toContain(rendered);
+      }
+    },
+  );
+
+  it('preserves recognized legacy raw Windows paths only for user prose and cells', () => {
+    const path = String.raw`Q:\repos\Jpa\.tlbx\uploads\__init__.py`;
+    const body = `${path} **bold** and \\*literal\\*`;
+    expect(getCachedHistoryMarkdown(undefined, entry('user', body)).html).toBe(
+      `${path} <strong>bold</strong> and *literal*`,
+    );
+    const table = getCachedHistoryMarkdown(
+      undefined,
+      entry('user', `| Path |\n| --- |\n| ${path} |`),
+    ).html;
+    expect([...table.matchAll(/<td\b[^>]*>(.*?)<\/td>/g)].map((match) => match[1])).toEqual([path]);
+    expect(getCachedHistoryMarkdown(undefined, entry('user', '`' + path + '`')).html).toBe(
+      `<code>${path}</code>`,
+    );
+    expect(renderMarkdownFragment(String.raw`Q:\repos\Jpa\.tlbx`)).toBe(
+      String.raw`Q:\repos\Jpa.tlbx`,
+    );
+  });
+
   it.each([
     String.raw`C:\temp\__init__.py`,
     '/tmp/__init__.py',

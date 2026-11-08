@@ -7,7 +7,9 @@ function renderHistoryMarkdown(
   entry: AppServerControlHistoryEntry,
   fileMentions: NonNullable<AppServerControlHistoryEntry['fileMentions']>,
 ): string {
-  const html = renderMarkdownFragment(entry.body);
+  const html = renderMarkdownFragment(entry.body, {
+    preserveRawWindowsPaths: entry.kind === 'user',
+  });
   return entry.kind === 'user' ? html : buildAssistantEnrichedHtml(html, fileMentions).html;
 }
 
