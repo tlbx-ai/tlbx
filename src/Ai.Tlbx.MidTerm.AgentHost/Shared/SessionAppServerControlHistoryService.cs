@@ -1238,6 +1238,7 @@ public sealed partial class SessionAppServerControlHistoryService
         state.QuickSettings.Effort = AppServerControlQuickSettings.NormalizeOptionalValue(quickSettings.Effort);
         state.QuickSettings.PlanMode = AppServerControlQuickSettings.NormalizePlanMode(quickSettings.PlanMode);
         state.QuickSettings.PermissionMode = AppServerControlQuickSettings.NormalizePermissionMode(quickSettings.PermissionMode);
+        state.QuickSettings.FastMode = AppServerControlQuickSettings.NormalizeFastMode(quickSettings.FastMode);
         state.QuickSettings.ModelOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.ModelOptions);
         state.QuickSettings.EffortOptions = AppServerControlQuickSettings.CloneOptions(quickSettings.EffortOptions);
         state.QuickSettings.AcknowledgedFields = [.. quickSettings.AcknowledgedFields];
