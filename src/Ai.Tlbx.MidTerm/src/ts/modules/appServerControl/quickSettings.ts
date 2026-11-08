@@ -10,6 +10,7 @@ import type {
   AppServerControlConfigureResponse,
   AppServerControlThreadSummary,
   AppServerControlTurnSummary,
+  AppServerControlHistorySnapshot,
 } from '../../api/types';
 import { configureAppServerControlRuntime, updateSettings } from '../../api/client';
 import * as stores from '../../stores';
@@ -43,7 +44,10 @@ export interface AppServerControlRuntimeSettingStatus {
   detail?: string | undefined;
 }
 interface RuntimeSettingsState {
-  target: { threadId: string; turnId: string | null; connected: boolean } | null;
+  target: { threadId: string; turnId: string | null; connected: boolean; ready: boolean } | null;
+  resolveReady: ((target: RuntimeSettingsState['target']) => void) | null;
+  initialTarget: RuntimeSettingsState['target'];
+  unavailable: boolean;
   revision: number;
   revisions: Partial<Record<AppServerControlRuntimeSettingField, number>>;
   statuses: Partial<
@@ -430,6 +434,7 @@ function ensureProviderSeeded(
           ? providerSeed
           : nextEffective,
       );
+  cancelRuntimeReadinessWait(state.runtime);
   delete state.runtime;
   state.provider = provider;
   state.effective = nextEffective;
@@ -475,6 +480,7 @@ export function setAppServerControlQuickSettingsDraft(
   );
   if (state.runtime) {
     const target = state.runtime.target;
+    cancelRuntimeReadinessWait(state.runtime);
     delete state.runtime;
     getRuntimeSettingsState(state).target = target;
   }
@@ -491,17 +497,13 @@ export function syncAppServerControlQuickSettingsFromSnapshot(
   sessionId: string,
   provider: string | null | undefined,
   quickSettings: Partial<AppServerControlQuickSettingsSummary> | null | undefined,
-  target?: {
-    thread: AppServerControlThreadSummary;
-    currentTurn: AppServerControlTurnSummary;
-    connected?: boolean;
-  },
+  target?: RuntimeSettingsSnapshotTarget,
 ): void {
   const state = ensureProviderSeeded(
     getOrCreateSessionState(sessionId),
     provider ?? resolveSessionProvider(sessionId),
   );
-  syncRuntimeSettingsTarget(state, target);
+  syncRuntimeSettingsTarget(sessionId, state, target);
   const pendingConfigValues = getNativeConfigChanges(state.draft, state.effective);
   state.effective = normalizeQuickSettings(quickSettings, state.provider);
   if (!state.draftDirty) {
@@ -552,6 +554,7 @@ export function removeAppServerControlQuickSettingsSessionState(sessionId: strin
     return;
   }
 
+  cancelRuntimeReadinessWait(state.runtime);
   sessionStates.delete(sessionId);
   dispatchQuickSettingsChange(sessionId, state, 'remove');
 }
@@ -585,42 +588,107 @@ type RuntimeSettingsSnapshotTarget = {
   thread: AppServerControlThreadSummary;
   currentTurn: AppServerControlTurnSummary;
   connected?: boolean;
+  sessionState: string;
 };
 
+/** Canonical data ingestion owns readiness; painting the history must not be required. */
+export function syncAppServerControlQuickSettingsFromHistory(
+  snapshot: AppServerControlHistorySnapshot,
+  connected: boolean,
+): void {
+  const target = {
+    thread: snapshot.thread,
+    currentTurn: snapshot.currentTurn,
+    connected,
+    sessionState: snapshot.session.state,
+  };
+  const state = ensureProviderSeeded(getOrCreateSessionState(snapshot.sessionId), snapshot.provider);
+  const previous = state.runtime?.target;
+  if (!previous?.ready || previous.threadId !== snapshot.thread.threadId) {
+    syncAppServerControlQuickSettingsFromSnapshot(
+      snapshot.sessionId,
+      snapshot.provider,
+      snapshot.quickSettings,
+      target,
+    );
+  } else {
+    // Text deltas still update scope immediately without normalizing catalogs or writing storage per token.
+    syncRuntimeSettingsTarget(snapshot.sessionId, state, target);
+  }
+}
+
+export function disconnectAppServerControlQuickSettingsRuntime(sessionId: string): void {
+  const runtime = sessionStates.get(sessionId)?.runtime;
+  if (runtime?.target) runtime.target = { ...runtime.target, connected: false, ready: false };
+}
+
+function cancelRuntimeReadinessWait(runtime: RuntimeSettingsState | undefined): void {
+  runtime?.resolveReady?.(null);
+  if (runtime) runtime.resolveReady = null;
+}
+
+function readRuntimeSettingsTarget(
+  sessionId: string,
+  target: RuntimeSettingsSnapshotTarget,
+): RuntimeSettingsState['target'] {
+  const threadId = target.thread.threadId?.trim() ?? '';
+  if (!threadId || threadId === sessionId) return null;
+  const active = ['running', 'in_progress', 'submitted'].includes(target.currentTurn.state);
+  return {
+    threadId,
+    turnId: active ? (target.currentTurn.turnId ?? null) : null,
+    connected: target.connected === true,
+    ready:
+      target.connected === true &&
+      ['active', 'idle', 'compacted'].includes(target.thread.state) &&
+      ['ready', 'idle', 'running', 'completed'].includes(target.sessionState),
+  };
+}
+
 function syncRuntimeSettingsTarget(
+  sessionId: string,
   state: AppServerControlQuickSettingsSessionState,
   target: RuntimeSettingsSnapshotTarget | undefined,
 ): void {
   if (target) {
     const runtime = getRuntimeSettingsState(state);
-    if (runtime.target && runtime.target.threadId !== target.thread.threadId) {
+    const next = readRuntimeSettingsTarget(sessionId, target);
+    if (runtime.target && next && runtime.target.threadId !== next.threadId) {
+      cancelRuntimeReadinessWait(runtime);
       delete state.runtime;
       state.draftDirty = false;
     }
     const current = getRuntimeSettingsState(state);
-    const active = ['running', 'in_progress', 'submitted'].includes(target.currentTurn.state);
-    const turnId = active ? (target.currentTurn.turnId ?? null) : null;
-    if (current.target && current.target.turnId !== turnId) {
-      for (const field of runtimeFields) {
-        if (!Object.prototype.hasOwnProperty.call(current.confirmedDefaults, field)) {
-          current.confirmedValues = Object.fromEntries(
-            Object.entries(current.confirmedValues).filter(([key]) => key !== field),
-          );
-          const status = current.statuses[field];
-          if (status && status.state !== 'pending')
-            current.statuses[field] = { state: 'unconfirmed', scope: 'subsequentTurns' };
-        } else {
-          const status = current.statuses[field];
-          if (status?.scope === 'subsequentCaptures')
-            current.statuses[field] = { ...status, scope: 'subsequentTurns' };
-        }
-      }
+    current.unavailable =
+      ['error', 'stopped', 'exited'].includes(target.sessionState) ||
+      ['closed', 'archived', 'error'].includes(target.thread.state);
+    syncRuntimeTurnScope(current, next?.turnId ?? null);
+    current.target =
+      next ?? (current.target ? { ...current.target, connected: false, ready: false } : null);
+    if (current.unavailable) cancelRuntimeReadinessWait(current);
+    else if (current.target?.ready) {
+      current.initialTarget ??= { ...current.target };
+      current.resolveReady?.({ ...current.target });
+      current.resolveReady = null;
     }
-    current.target = {
-      threadId: target.thread.threadId,
-      turnId,
-      connected: target.connected !== false,
-    };
+  }
+}
+
+function syncRuntimeTurnScope(runtime: RuntimeSettingsState, turnId: string | null): void {
+  if (!runtime.target || runtime.target.turnId === turnId) return;
+  for (const field of runtimeFields) {
+    if (!Object.prototype.hasOwnProperty.call(runtime.confirmedDefaults, field)) {
+      runtime.confirmedValues = Object.fromEntries(
+        Object.entries(runtime.confirmedValues).filter(([key]) => key !== field),
+      );
+      const status = runtime.statuses[field];
+      if (status && status.state !== 'pending')
+        runtime.statuses[field] = { state: 'unconfirmed', scope: 'subsequentTurns' };
+    } else {
+      const status = runtime.statuses[field];
+      if (status?.scope === 'subsequentCaptures')
+        runtime.statuses[field] = { ...status, scope: 'subsequentTurns' };
+    }
   }
 }
 
@@ -672,6 +740,9 @@ function getRuntimeSettingsState(
 ): RuntimeSettingsState {
   return (state.runtime ??= {
     target: null,
+    resolveReady: null,
+    initialTarget: null,
+    unavailable: false,
     revision: 0,
     revisions: {},
     statuses: {},
@@ -898,14 +969,41 @@ function getRuntimeTargetProblem(
   runtime: RuntimeSettingsState,
   target: RuntimeSettingsState['target'],
   provider: string | null,
+  requested: RuntimeSettingsState['target'],
 ): 'targetUnavailable' | 'unconfirmed' | null {
-  if (!target?.threadId || !target.connected || !['codex', 'claude'].includes(provider ?? ''))
+  if (runtime.unavailable) return 'targetUnavailable';
+  if (
+    requested &&
+    target &&
+    (requested.threadId !== target.threadId || requested.turnId !== target.turnId)
+  ) {
+    return 'targetUnavailable';
+  }
+  if (!target?.ready || !target.connected || !['codex', 'claude'].includes(provider ?? '')) {
     return 'unconfirmed';
+  }
   const current = runtime.target;
-  if (!current) return 'targetUnavailable';
+  if (!current || !current.ready) return 'targetUnavailable';
   return current.threadId !== target.threadId || current.turnId !== target.turnId
     ? 'targetUnavailable'
     : null;
+}
+
+async function waitForUnsentRuntimeTarget(
+  runtime: RuntimeSettingsState,
+  requested: RuntimeSettingsState['target'],
+  provider: string | null,
+): Promise<RuntimeSettingsState['target']> {
+  if (requested?.ready || runtime.unavailable || !['codex', 'claude'].includes(provider ?? ''))
+    return requested;
+  if (!requested && runtime.initialTarget) return { ...runtime.initialTarget };
+  const target = runtime.target?.ready
+    ? { ...runtime.target }
+    : await new Promise<RuntimeSettingsState['target']>((resolve) => {
+        runtime.resolveReady = resolve;
+      });
+  // Every edit queued before the first binding shares that first scope, even if a turn starts meanwhile.
+  return requested ? target : runtime.initialTarget ?? target;
 }
 
 export function configureAppServerControlQuickSettings(
@@ -949,10 +1047,11 @@ export function configureAppServerControlQuickSettings(
 
   const apply = async (): Promise<void> => {
     if (!isCurrentRuntimeState(sessionId, state, runtime)) return;
+    const target = await waitForUnsentRuntimeTarget(runtime, requestedTarget, state.provider);
+    if (!isCurrentRuntimeState(sessionId, state, runtime)) return;
     const currentFields = fields.filter((field) => runtime.revisions[field] === revision);
     if (!currentFields.length) return;
-    const target = requestedTarget;
-    const problem = getRuntimeTargetProblem(runtime, target, state.provider);
+    const problem = getRuntimeTargetProblem(runtime, target, state.provider, requestedTarget);
     if (problem || !target) {
       rejectRuntimeFields(state, runtime, currentFields, revision, problem ?? 'unconfirmed');
       state.draftDirty = Object.values(runtime.statuses).some(
@@ -968,7 +1067,11 @@ export function configureAppServerControlQuickSettings(
         settings: Object.fromEntries(currentFields.map((field) => [field, settings[field]])),
       });
       if (!isCurrentRuntimeState(sessionId, state, runtime)) return;
-      if (runtime.target?.threadId !== target.threadId || receipt.status === 'targetUnavailable') {
+      if (
+        runtime.target?.threadId !== target.threadId ||
+        receipt.threadId !== target.threadId ||
+        receipt.status === 'targetUnavailable'
+      ) {
         rejectRuntimeFields(state, runtime, currentFields, revision, 'targetUnavailable');
       } else {
         acceptRelatedRuntimeFields(state, runtime, receipt, currentFields);

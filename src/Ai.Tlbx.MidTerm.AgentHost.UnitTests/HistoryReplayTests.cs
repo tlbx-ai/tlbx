@@ -13,6 +13,36 @@ public sealed class HistoryReplayTests : IDisposable
 
     public HistoryReplayTests() => _history = new(storeDirectory: _directory, enableScreenLogging: false);
 
+    [Fact]
+    public void BufferedSessionFallbackNoticeCannotReplaceReadyProviderIdentityButExplicitThreadMetadataCan()
+    {
+        var ready = Event("session.ready", "");
+        ready.ThreadId = "provider/opaque!id";
+        ready.SessionState = new() { State = "ready", StateLabel = "Ready" };
+        var bound = Event("thread.started", "");
+        bound.ThreadId = ready.ThreadId;
+        bound.ThreadState = new() { ProviderThreadId = ready.ThreadId, State = "active", StateLabel = "Active" };
+        var buffered = Event("agent.state", "");
+        buffered.ThreadId = Session;
+        buffered.RuntimeNoticeOnly = new() { Message = "MCP startup completed before provider binding" };
+
+        _history.AppendInitialReplay([ready, bound, buffered]);
+
+        var snapshot = _history.GetSnapshotWindow(Session)!;
+        Assert.Equal(ready.ThreadId, snapshot.Thread.ThreadId);
+        Assert.Equal("ready", snapshot.Session.State);
+        Assert.Single(snapshot.Notices);
+        Assert.Empty(snapshot.History);
+        _history.Append(buffered);
+        Assert.Equal(ready.ThreadId, _history.GetSnapshotWindow(Session)!.Thread.ThreadId);
+
+        var replacement = Event("thread.started", "");
+        replacement.ThreadId = Session; // Explicit metadata, not the header, selects the new identity.
+        replacement.ThreadState = new() { ProviderThreadId = "next-provider:opaque", State = "active" };
+        _history.Append(replacement);
+        Assert.Equal("next-provider:opaque", _history.GetSnapshotWindow(Session)!.Thread.ThreadId);
+    }
+
     [Theory]
     [InlineData(10_000)]
     [InlineData(100_000)]
