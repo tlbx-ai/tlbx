@@ -104,7 +104,11 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
         var condition = prompt.Length > 5 ? prompt[6..] : null;
         if (condition == "clear") File.Delete(goalPath);
         else if (condition is not null) await File.WriteAllTextAsync(goalPath, condition).ConfigureAwait(false);
-        if (condition is not null && condition != "clear" && File.Exists("lose-goal-result")) continue;
+        if (condition is not null && condition != "clear" && File.Exists("lose-goal-result"))
+        {
+            await File.WriteAllTextAsync("goal-result-withheld", string.Empty).ConfigureAwait(false);
+            continue;
+        }
         var text = condition == "clear" ? "No goal set" : condition is not null ? "Goal set: " + condition :
             File.Exists(goalPath) ? "Goal active: " + await File.ReadAllTextAsync(goalPath).ConfigureAwait(false) + " (not yet evaluated)" : "No goal set. Usage: `/goal <condition>`";
         await WriteJsonAsync(new { type = "assistant", session_id = sessionId, message = new { id = Guid.NewGuid().ToString(), content = new[] { new { type = "text", text } } } }).ConfigureAwait(false);

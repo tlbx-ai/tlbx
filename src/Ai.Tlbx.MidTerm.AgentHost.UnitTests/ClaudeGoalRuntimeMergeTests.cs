@@ -94,7 +94,7 @@ public sealed class ClaudeGoalRuntimeMergeTests
         await runtime.ExecuteAsync(new() { SessionId = "host", CommandId = "set", Type = "thread.goal.set",
             SetGoal = new() { Operation = "set", Objective = "Keep", ExpectedThreadId = threadId } }, ct);
         var inputsPath = Path.Combine(fixture.Root, "goal-inputs.jsonl");
-        while ((await File.ReadAllLinesAsync(inputsPath, timeout.Token)).Length < 2) await Task.Delay(20, timeout.Token);
+        while (!File.Exists(Path.Combine(fixture.Root, "goal-result-withheld"))) await Task.Delay(20, timeout.Token);
         var recovered = await runtime.ExecuteAsync(new() { SessionId = "host", CommandId = "recover", Type = "runtime.recover",
             SetGoal = new() { Operation = "recover", ExpectedThreadId = threadId } }, ct);
         Assert.Equal(threadId, recovered.Result.Accepted!.Goal!.ThreadId);
