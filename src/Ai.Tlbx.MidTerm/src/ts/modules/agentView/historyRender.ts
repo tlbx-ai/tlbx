@@ -169,12 +169,16 @@ function toHistoryViewportAnchor(
 function readHistoryReaderAnchor(state: SessionAppServerControlViewState) {
   const viewport = state.historyViewport;
   if (!viewport || viewport.clientWidth <= 0 || viewport.clientHeight <= 0) return null;
-  return toHistoryViewportAnchor(captureViewportAnchor({
-    viewport,
-    renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
-      key: entryId, node: rendered.node, absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
-    })),
-  }));
+  return toHistoryViewportAnchor(
+    captureViewportAnchor({
+      viewport,
+      renderedNodes: Array.from(state.historyRenderedNodes, ([entryId, rendered]) => ({
+        key: entryId,
+        node: rendered.node,
+        absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
+      })),
+    }),
+  );
 }
 
 /** Call only after a settled render/restore or a scroll at the confirmed size. */
@@ -187,20 +191,35 @@ export function confirmHistoryReaderAnchor(state: SessionAppServerControlViewSta
   const viewport = state.historyViewport;
   const anchor = readHistoryReaderAnchor(state);
   if (!viewport || !anchor) return;
-  state.historyReaderAnchor = { ...anchor, scrollTop: viewport.scrollTop,
-    width: viewport.clientWidth, height: viewport.clientHeight };
+  state.historyReaderAnchor = {
+    ...anchor,
+    scrollTop: viewport.scrollTop,
+    width: viewport.clientWidth,
+    height: viewport.clientHeight,
+  };
 }
 
 /** ResizeObserver is post-reflow: never capture its already shifted DOM. */
 export function prepareHistoryReaderResize(state: SessionAppServerControlViewState): boolean {
   const viewport = state.historyViewport;
   const anchor = state.historyReaderAnchor;
-  if (!viewport || !anchor || viewport.clientWidth <= 0 || viewport.clientHeight <= 0
-    || (anchor.width === viewport.clientWidth && anchor.height === viewport.clientHeight)
-    || state.historyAutoScrollPinned || state.historyPendingJumpTargetIndex != null
-    || state.pendingHistoryPrependAnchor || state.pendingHistoryLayoutAnchor) return false;
-  state.pendingHistoryLayoutAnchor = { entryId: anchor.entryId,
-    topOffsetPx: anchor.topOffsetPx, absoluteIndex: anchor.absoluteIndex };
+  if (
+    !viewport ||
+    !anchor ||
+    viewport.clientWidth <= 0 ||
+    viewport.clientHeight <= 0 ||
+    (anchor.width === viewport.clientWidth && anchor.height === viewport.clientHeight) ||
+    state.historyAutoScrollPinned ||
+    state.historyPendingJumpTargetIndex != null ||
+    state.pendingHistoryPrependAnchor ||
+    state.pendingHistoryLayoutAnchor
+  )
+    return false;
+  state.pendingHistoryLayoutAnchor = {
+    entryId: anchor.entryId,
+    topOffsetPx: anchor.topOffsetPx,
+    absoluteIndex: anchor.absoluteIndex,
+  };
   return true;
 }
 
@@ -211,8 +230,35 @@ export function prepareHistoryViewportResize(state: SessionAppServerControlViewS
   const previous = state.historyViewportSize;
   if (previous && previous.width === next.width && previous.height === next.height) return false;
   prepareHistoryReaderResize(state);
+  restoreHistoryReaderBeforePaint(state);
   state.historyViewportSize = next;
   return true;
+}
+
+export function restoreHistoryReaderBeforePaint(state: SessionAppServerControlViewState): void {
+  const viewport = state.historyViewport;
+  const anchor = state.historyReaderAnchor;
+  if (
+    !viewport ||
+    !anchor ||
+    state.historyAutoScrollPinned ||
+    state.historyPendingJumpTargetIndex != null ||
+    state.pendingHistoryPrependAnchor ||
+    !state.pendingHistoryLayoutAnchor ||
+    (anchor.width === viewport.clientWidth && anchor.height === viewport.clientHeight)
+  )
+    return;
+  const node = state.historyRenderedNodes.get(state.pendingHistoryLayoutAnchor.entryId)?.node;
+  if (!node || !node.isConnected) return;
+  // The other RO can still carry old-width measurements. Keep recording them,
+  // but do not sum a second scroll correction before the render remeasures all rows.
+  state.historyReaderResizeMeasurementPending = true;
+  restorePendingHistoryAnchor(viewport, state, 'pendingHistoryLayoutAnchor');
+}
+
+export function completeHistoryReaderMeasurements(state: SessionAppServerControlViewState): void {
+  state.historyReaderResizeMeasurementPending = false;
+  confirmHistoryReaderAnchor(state);
 }
 
 export function recordHistoryReaderScroll(
@@ -231,7 +277,10 @@ export function recordHistoryReaderScroll(
     // Reflow may clamp scrollTop before its queued scroll event, even while a
     // recent input timestamp is still active. Only movement beyond that clamp
     // belongs to wheel/touch/key momentum.
-    const baseline = Math.max(0, Math.min(anchor.scrollTop, viewport.scrollHeight - viewport.clientHeight));
+    const baseline = Math.max(
+      0,
+      Math.min(anchor.scrollTop, viewport.scrollHeight - viewport.clientHeight),
+    );
     const delta = viewport.scrollTop - baseline;
     anchor.topOffsetPx -= delta;
     anchor.scrollTop = viewport.scrollTop;
@@ -239,7 +288,8 @@ export function recordHistoryReaderScroll(
   }
   if (prepareHistoryReaderResize(state)) return true;
   // Scroll can precede the viewport RO. Do not confirm post-reflow geometry.
-  if (anchor && (anchor.width !== viewport.clientWidth || anchor.height !== viewport.clientHeight)) return false;
+  if (anchor && (anchor.width !== viewport.clientWidth || anchor.height !== viewport.clientHeight))
+    return false;
   confirmHistoryReaderAnchor(state);
   return false;
 }
@@ -271,33 +321,34 @@ function updateBusyIndicatorElapsedInState(
 }
 
 export function restorePendingHistoryAnchor(
-    viewport: HTMLDivElement,
-    state: SessionAppServerControlViewState,
-    key: 'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor',
-  ): boolean {
-    const anchor = state[key];
-    if (!anchor) {
-      return false;
-    }
-
-    state[key] = null;
-    if (key === 'pendingHistoryPrependAnchor') state.pendingHistoryLayoutAnchor = null;
-    setHistoryScrollMode(state, 'browse');
-    suppressViewportWindowSync(state);
-    const adjusted = restoreViewportAnchor({
-      viewport,
-      anchor: {
-        key: anchor.entryId,
-        topOffsetPx: anchor.topOffsetPx,
-        absoluteIndex: anchor.absoluteIndex,
-      },
-      resolveNode: (entryId) => state.historyRenderedNodes.get(entryId)?.node,
-    });
-    state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport, state);
-    confirmHistoryReaderAnchor(state);
-    return adjusted;
+  viewport: HTMLDivElement,
+  state: SessionAppServerControlViewState,
+  key: 'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor',
+): boolean {
+  const anchor = state[key];
+  if (!anchor) {
+    return false;
   }
+  const node = state.historyRenderedNodes.get(anchor.entryId)?.node;
+  if (!node || !node.isConnected || typeof node.getBoundingClientRect !== 'function') return false;
 
+  state[key] = null;
+  if (key === 'pendingHistoryPrependAnchor') state.pendingHistoryLayoutAnchor = null;
+  setHistoryScrollMode(state, 'browse');
+  suppressViewportWindowSync(state);
+  const adjusted = restoreViewportAnchor({
+    viewport,
+    anchor: {
+      key: anchor.entryId,
+      topOffsetPx: anchor.topOffsetPx,
+      absoluteIndex: anchor.absoluteIndex,
+    },
+    resolveNode: (entryId) => state.historyRenderedNodes.get(entryId)?.node,
+  });
+  state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport, state);
+  confirmHistoryReaderAnchor(state);
+  return adjusted;
+}
 
 export function resolveMeasurementBrowseAnchorIndex(
   state: SessionAppServerControlViewState,
@@ -305,6 +356,7 @@ export function resolveMeasurementBrowseAnchorIndex(
 ): number | null {
   if (
     state.historyAutoScrollPinned ||
+    state.historyReaderResizeMeasurementPending ||
     state.pendingHistoryPrependAnchor !== null ||
     state.pendingHistoryLayoutAnchor !== null
   ) {
@@ -372,7 +424,7 @@ function collectHistoryMeasurementChanges(args: {
   return changes;
 }
 
-function syncHistoryMeasurementObserver(args: {
+export function syncHistoryMeasurementObserver(args: {
   sessionId: string;
   state: SessionAppServerControlViewState;
   visibleEntries: readonly HistoryVisibleEntry[];
@@ -391,6 +443,7 @@ function syncHistoryMeasurementObserver(args: {
     }
 
     prepareHistoryReaderResize(current);
+    restoreHistoryReaderBeforePaint(current);
     const browseAnchorIndex = resolveMeasurementBrowseAnchorIndex(current, viewport);
     const measurementChanges = collectHistoryMeasurementChanges({
       state: current,
@@ -1489,7 +1542,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     if (state && viewportHasConcreteRows) {
       state.historyLastVoidSyncScrollTop = null;
-      confirmHistoryReaderAnchor(state);
+      completeHistoryReaderMeasurements(state);
     }
 
     const userScrollInProgress =

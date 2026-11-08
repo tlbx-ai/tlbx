@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   measureHistoryNavigatorRange,
   measureHistoryNavigatorAnchor,
@@ -18,6 +18,8 @@ import {
   prepareHistoryViewportResize,
   recordHistoryReaderScroll,
   restorePendingHistoryAnchor,
+  completeHistoryReaderMeasurements,
+  syncHistoryMeasurementObserver,
 } from './historyRender';
 import type { SessionAppServerControlViewState } from './types';
 
@@ -29,25 +31,43 @@ vi.mock('./historyDom', () => ({
 vi.mock('./activationHelpers', () => ({ resolveHistoryBadgeLabel: vi.fn() }));
 
 describe('confirmed reader anchors across post-reflow viewport notifications', () => {
+  afterEach(() => vi.unstubAllGlobals());
   function readerFixture() {
     const viewport = {
-      clientWidth: 1280, clientHeight: 671, scrollTop: 6904, scrollHeight: 8175,
+      clientWidth: 1280,
+      clientHeight: 671,
+      scrollTop: 6904,
+      scrollHeight: 8175,
       getBoundingClientRect: () => ({ top: 0, bottom: 671 }),
-      scrollTo({ top }: { top: number }) { this.scrollTop = Math.min(top, this.scrollHeight - this.clientHeight); },
+      scrollTo({ top }: { top: number }) {
+        this.scrollTop = Math.min(top, this.scrollHeight - this.clientHeight);
+      },
     };
     let rowTop = 6904 - 76.65625;
     let rowHeight = 900;
-    const node = { isConnected: true, getBoundingClientRect: () => ({
-      top: rowTop - viewport.scrollTop, bottom: rowTop - viewport.scrollTop + rowHeight,
-    }) };
+    const node = {
+      isConnected: true,
+      getBoundingClientRect: () => ({
+        top: rowTop - viewport.scrollTop,
+        bottom: rowTop - viewport.scrollTop + rowHeight,
+      }),
+    };
     const state = {
-      historyViewport: viewport, historyViewportSize: { width: 1280, height: 671 },
-      historyReaderAnchor: null, historyAutoScrollPinned: false, historyScrollMode: 'browse',
-      historyPendingJumpTargetIndex: null, pendingHistoryPrependAnchor: null, pendingHistoryLayoutAnchor: null,
+      historyViewport: viewport,
+      historyViewportSize: { width: 1280, height: 671 },
+      historyReaderAnchor: null,
+      historyReaderResizeMeasurementPending: false,
+      historyAutoScrollPinned: false,
+      historyScrollMode: 'browse',
+      historyPendingJumpTargetIndex: null,
+      pendingHistoryPrependAnchor: null,
+      pendingHistoryLayoutAnchor: null,
       historyEntries: [{ id: 'reader', order: 901 }],
       historyRenderedNodes: new Map([['reader', { node }]]),
       snapshot: { historyCount: 1345, historyWindowStart: 880, historyWindowEnd: 960 },
-      historyNavigatorAnchorIndex: 901, historyLastUserScrollIntentAt: 0, historyLastUserScrollDirection: 0,
+      historyNavigatorAnchorIndex: 901,
+      historyLastUserScrollIntentAt: 0,
+      historyLastUserScrollDirection: 0,
       panel: { querySelector: () => null },
     } as unknown as SessionAppServerControlViewState;
     const reflow = (width: number) => {
@@ -55,11 +75,25 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
       viewport.scrollHeight = width === 1000 ? 8474 : 8175;
       rowTop = width === 1000 ? 6904 + 202.46875 : 6904 - 76.65625;
     };
-    const restore = (key: 'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor' = 'pendingHistoryLayoutAnchor') =>
-      restorePendingHistoryAnchor(viewport as unknown as HTMLDivElement, state, key);
+    const restore = (
+      key:
+        'pendingHistoryPrependAnchor' | 'pendingHistoryLayoutAnchor' = 'pendingHistoryLayoutAnchor',
+    ) => restorePendingHistoryAnchor(viewport as unknown as HTMLDivElement, state, key);
     confirmHistoryReaderAnchor(state);
-    return { state, viewport, node, reflow, restore, offset: () => node.getBoundingClientRect().top,
-      growRow: () => { rowHeight = 1800; } };
+    return {
+      state,
+      viewport,
+      node,
+      reflow,
+      restore,
+      offset: () => node.getBoundingClientRect().top,
+      growRow: () => {
+        rowHeight = 1800;
+      },
+      shiftRow: (delta: number) => {
+        rowTop += delta;
+      },
+    };
   }
 
   it('uses the confirmed partial row when the actual viewport RO planner sees shifted DOM', () => {
@@ -68,9 +102,12 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
     reflow(1000);
     expect(offset()).toBe(202.46875);
     expect(prepareHistoryViewportResize(state)).toBe(true);
-    expect(state.pendingHistoryLayoutAnchor?.topOffsetPx).toBe(-76.65625);
-    expect(resolveMeasurementBrowseAnchorIndex(state, viewport as unknown as HTMLDivElement)).toBeNull();
-    expect(restore()).toBe(true);
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+    expect(offset()).toBe(-76.65625); // Synchronous RO correction, before another frame.
+    expect(
+      resolveMeasurementBrowseAnchorIndex(state, viewport as unknown as HTMLDivElement),
+    ).toBeNull();
+    expect(restore()).toBe(false); // Already consumed; do not correct twice.
     expect(viewport.scrollTop).toBe(7183.125);
     expect(offset()).toBe(-76.65625);
     expect(state.historyReaderAnchor?.width).toBe(1000);
@@ -103,7 +140,8 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
   });
 
   it.each(['before-ro', 'after-ro', 'new-wheel-after-ro'])(
-    'preserves real scroll movement during resize/grace: %s', (phase) => {
+    'preserves real scroll movement during resize/grace: %s',
+    (phase) => {
       const { state, viewport, reflow, restore, offset } = readerFixture();
       state.historyLastUserScrollIntentAt = Date.now();
       state.historyLastUserScrollDirection = -1;
@@ -115,7 +153,7 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
       viewport.scrollTop -= 120;
       recordHistoryReaderScroll(state, true);
       prepareHistoryViewportResize(state);
-      expect(state.pendingHistoryLayoutAnchor?.topOffsetPx).toBe(43.34375);
+      expect(state.historyReaderAnchor?.topOffsetPx).toBe(43.34375);
       restore();
       expect(viewport.scrollTop).toBe(7063.125);
       expect(offset()).toBe(43.34375);
@@ -151,7 +189,7 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
     viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight; // native clamp
     recordHistoryReaderScroll(state, true); // recent intent, but no actual new input
     prepareHistoryViewportResize(state);
-    expect(state.pendingHistoryLayoutAnchor?.topOffsetPx).toBe(expected);
+    expect(state.historyReaderAnchor?.topOffsetPx).toBe(expected);
     restore();
     expect(offset()).toBe(expected);
   });
@@ -163,7 +201,9 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
     prepareHistoryViewportResize(state);
     expect(state.pendingHistoryLayoutAnchor).toBeNull();
     expect(state.historyPendingJumpTargetIndex).toBe(1200);
-    const render = createAgentHistoryRender({ getState: () => state } as Parameters<typeof createAgentHistoryRender>[0]);
+    const render = createAgentHistoryRender({ getState: () => state } as Parameters<
+      typeof createAgentHistoryRender
+    >[0]);
     render.scrollHistoryToBottom('session');
     expect(viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop).toBe(0);
     expect(state.historyReaderAnchor).toBeNull();
@@ -184,6 +224,100 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
     state.historyReaderAnchor = null;
     reflow(1280);
     prepareHistoryViewportResize(state);
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+  });
+
+  it.each(['viewport-first', 'row-first'])(
+    'restores before paint and never compensates old measurements twice: %s',
+    (order) => {
+      const { state, reflow, offset, shiftRow } = readerFixture();
+      const before = {
+        dataset: { appServerControlEntryId: 'before' },
+        getBoundingClientRect: () => ({ top: -600, bottom: -400 }),
+      };
+      state.historyEntries.unshift({
+        id: 'before',
+        order: 900,
+        estimatedHeightPx: 100,
+      } as SessionAppServerControlViewState['historyEntries'][number]);
+      let notify!: (records: ResizeObserverEntry[]) => void;
+      class Observer {
+        constructor(callback: ResizeObserverCallback) {
+          notify = (records) => callback(records, this as unknown as ResizeObserver);
+        }
+        observe() {}
+        disconnect() {}
+        unobserve() {}
+      }
+      vi.stubGlobal('ResizeObserver', Observer);
+      syncHistoryMeasurementObserver({
+        sessionId: 'session',
+        state,
+        visibleEntries: [],
+        getState: () => state,
+        scheduleHistoryRender: vi.fn(),
+      });
+      const rowResize = (height: number) =>
+        notify([
+          {
+            target: before,
+            borderBoxSize: [{ blockSize: height, inlineSize: 1000 }],
+          } as unknown as ResizeObserverEntry,
+        ]);
+      reflow(1000);
+      if (order === 'row-first') rowResize(400);
+      else prepareHistoryViewportResize(state);
+      expect(offset()).toBe(-76.65625); // First observer has already fixed the pre-paint position.
+      if (order === 'row-first') prepareHistoryViewportResize(state);
+      else rowResize(400);
+      expect(offset()).toBe(-76.65625);
+      expect(state.historyReaderResizeMeasurementPending).toBe(true);
+      expect(resolveMeasurementBrowseAnchorIndex(state, state.historyViewport!)).toBeNull();
+      rowResize(400);
+      expect(offset()).toBe(-76.65625);
+      // The real render finalizer releases the guard after all mounted rows were measured.
+      completeHistoryReaderMeasurements(state);
+      expect(state.historyReaderResizeMeasurementPending).toBe(false);
+      shiftRow(50);
+      rowResize(450); // A later real height change still compensates normally.
+      expect(offset()).toBe(-76.65625);
+    },
+  );
+
+  it('retains an unmounted anchor through window shift, then consumes it after remount', () => {
+    const { state, reflow, restore, offset } = readerFixture();
+    const rendered = state.historyRenderedNodes.get('reader')!;
+    state.historyRenderedNodes.delete('reader');
+    reflow(1000);
+    prepareHistoryViewportResize(state);
+    const pending = state.pendingHistoryLayoutAnchor;
+    expect(pending?.topOffsetPx).toBe(-76.65625);
+    expect(restore()).toBe(false);
+    confirmHistoryReaderAnchor(state);
+    expect(state.pendingHistoryLayoutAnchor).toBe(pending);
+    expect(state.historyReaderAnchor?.width).toBe(1280);
+    state.historyRenderedNodes.set('reader', rendered);
+    expect(restore()).toBe(true);
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+    expect(offset()).toBe(-76.65625);
+  });
+
+  it('consumes mounted anchors even when already aligned or physically clamped', () => {
+    const { state, viewport, restore, offset } = readerFixture();
+    state.pendingHistoryLayoutAnchor = {
+      entryId: 'reader',
+      absoluteIndex: 900,
+      topOffsetPx: offset(),
+    };
+    expect(restore()).toBe(false);
+    expect(state.pendingHistoryLayoutAnchor).toBeNull();
+    viewport.scrollTop = viewport.scrollHeight - viewport.clientHeight;
+    state.pendingHistoryLayoutAnchor = {
+      entryId: 'reader',
+      absoluteIndex: 900,
+      topOffsetPx: -100000,
+    };
+    expect(restore()).toBe(false);
     expect(state.pendingHistoryLayoutAnchor).toBeNull();
   });
 });

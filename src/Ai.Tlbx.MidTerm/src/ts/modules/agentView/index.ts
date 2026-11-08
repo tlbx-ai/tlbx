@@ -700,6 +700,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
   state.historyReaderAnchor = null;
+  state.historyReaderResizeMeasurementPending = false;
   state.debugScenarioActive = true;
   state.activationRunId += 1;
   state.streamConnected = true;
@@ -1081,6 +1082,7 @@ function getOrCreateViewState(
     historyViewportResizeObserver: null,
     historyViewportSize: null,
     historyReaderAnchor: null,
+    historyReaderResizeMeasurementPending: false,
     historyLeadingPlaceholders: [],
     historyTrailingPlaceholders: [],
     historyEmptyState: null,
@@ -2150,6 +2152,7 @@ function releaseHiddenAppServerControlRenderState(state: SessionAppServerControl
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
   state.historyReaderAnchor = null;
+  state.historyReaderResizeMeasurementPending = false;
   // The identity-only seek survives dropping hidden DOM and measurements.
   state.historyNavigatorDragMapping = null;
   state.historyNavigatorDragTargetIndex = null;
