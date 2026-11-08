@@ -5,6 +5,7 @@ using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.AgentHost;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Ai.Tlbx.MidTerm.Services.Sessions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -201,6 +202,11 @@ public sealed class CodexNotificationScopeTests
                     object result;
                     switch (method)
                     {
+                        case "initialize":
+                            await SendAsync(socket, """{"method":"mcpServer/startupStatus/updated","params":{"name":"tlbx","status":"ready"}}""", ct);
+                            result = new { };
+                            break;
+                        case "thread/start":
                         case "thread/resume":
                             result = new { thread = new { id = "canonical-A", status = new { type = "idle" } } };
                             break;
@@ -236,7 +242,9 @@ public sealed class CodexNotificationScopeTests
         });
         await app.StartAsync(ct);
         var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
-        var runtime = new CodexAppServerControlAgentRuntime(_ => { });
+        var historyDirectory = Path.Combine(Path.GetTempPath(), "tlbx-ready-controls", Guid.NewGuid().ToString("N"));
+        var history = new SessionAppServerControlHistoryService(storeDirectory: historyDirectory, enableScreenLogging: false);
+        var runtime = new CodexAppServerControlAgentRuntime(history.Append, history.AppendInitialReplay);
         try
         {
             await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
@@ -244,7 +252,7 @@ public sealed class CodexNotificationScopeTests
                 Type = "runtime.attach", CommandId = "attach", SessionId = "s",
                 AttachRuntime = new()
                 {
-                    Provider = "codex", WorkingDirectory = Path.GetTempPath(), ResumeThreadId = "canonical-A",
+                    Provider = "codex", WorkingDirectory = Path.GetTempPath(),
                     AttachPoint = new SessionAgentAttachPoint
                     {
                         Provider = "codex", Endpoint = "ws" + address[4..], SharedRuntime = true,
@@ -252,6 +260,23 @@ public sealed class CodexNotificationScopeTests
                     }
                 }
             }, ct);
+            var ready = history.GetSnapshotWindow("s")!;
+            Assert.Equal("ready", ready.Session.State);
+            Assert.Equal("canonical-A", ready.Thread.ThreadId);
+            Assert.DoesNotContain("turn/start", methods);
+            using var idlePatch = JsonDocument.Parse("""{"model":"requested-model","planMode":"on"}""");
+            var idleConfigured = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
+            {
+                Type = "runtime.configure", CommandId = "configure-before-prompt", SessionId = "s",
+                Configure = new()
+                {
+                    ExpectedThreadId = ready.Thread.ThreadId, ExpectedTurnId = null,
+                    Settings = idlePatch.RootElement.EnumerateObject().ToDictionary(property => property.Name, property => property.Value.Clone())
+                }
+            }, ct);
+            Assert.Equal("applied", idleConfigured.Result.Configured!.ThreadStatus);
+            Assert.Equal("canonical-A", history.GetSnapshotWindow("s")!.Thread.ThreadId);
+            Assert.DoesNotContain("turn/start", methods);
             await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
             {
                 Type = "turn.start", CommandId = "start", SessionId = "s",
@@ -268,7 +293,7 @@ public sealed class CodexNotificationScopeTests
                 }, ct);
                 Assert.Equal("targetUnavailable", rejected.Result.Configured!.Status);
             }
-            Assert.DoesNotContain("thread/settings/update", methods);
+            Assert.Equal(1, methods.Count(method => method == "thread/settings/update"));
             var outcome = await runtime.ExecuteAsync(new AppServerControlHostCommandEnvelope
             {
                 Type = "runtime.configure", CommandId = "configure", SessionId = "s",
@@ -308,6 +333,8 @@ public sealed class CodexNotificationScopeTests
         {
             await runtime.DisposeAsync();
             await app.StopAsync(CancellationToken.None);
+            history.Forget("s");
+            if (Directory.Exists(historyDirectory)) Directory.Delete(historyDirectory, recursive: true);
         }
     }
 
