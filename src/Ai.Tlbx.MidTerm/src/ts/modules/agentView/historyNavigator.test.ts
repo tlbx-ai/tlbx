@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   measureHistoryNavigatorRange,
+  measureHistoryNavigatorAnchor,
   resolveCanonicalHistoryCount,
   resolveHistoryNavigatorGeometry,
   resolveHistoryNavigatorPointerIndex,
@@ -11,6 +12,7 @@ import {
   resolveHistoryNavigatorTarget,
   resolveHistoryRetainedWindowDescriptor,
   resolveMeasurementBrowseAnchorIndex,
+  readHistoryNavigatorMapping,
 } from './historyRender';
 import type { SessionAppServerControlViewState } from './types';
 
@@ -22,6 +24,18 @@ vi.mock('./historyDom', () => ({
 vi.mock('./activationHelpers', () => ({ resolveHistoryBadgeLabel: vi.fn() }));
 
 describe('canonical scrollbar geometry', () => {
+  it('chooses a visible central row across sparse canonical gaps', () => {
+    expect(measureHistoryNavigatorAnchor(40, 680, [
+      { absoluteIndex: 122, top: 100, bottom: 200 },
+      { absoluteIndex: 125, top: 261.984375, bottom: 497.765625 },
+      { absoluteIndex: 128, top: 900, bottom: 1000 },
+    ])).toBe(125);
+    expect(measureHistoryNavigatorAnchor(0, 100, [
+      { absoluteIndex: 122, top: 0, bottom: 30 },
+      { absoluteIndex: 128, top: 60, bottom: 100 },
+    ])).toBe(128); // The center lies in a gap; 125 is not a rendered row.
+    expect(measureHistoryNavigatorAnchor(0, 100, [])).toBeNull();
+  });
   it('sizes the thumb proportionally, with a small minimum bounded by the actual track', () => {
     const geometry = (visibleCount: number, trackHeightPx = 400) =>
       resolveHistoryNavigatorGeometry({
@@ -131,6 +145,7 @@ describe('navigator rendering across passive layout and hydration', () => {
       dataset: {},
       removeAttribute: vi.fn(),
       setAttribute: (key: string, value: string) => attributes.set(key, value),
+      getAttribute: (key: string) => attributes.get(key) ?? null,
       getBoundingClientRect: () => ({ top: 0, height: 412 }),
     };
     const thumb = { style: { top: '', height: '' } };
@@ -221,6 +236,85 @@ describe('navigator rendering across passive layout and hydration', () => {
     expect(
       resolveHistoryNavigatorTarget({ state, clientY: top + 7, thumbDragOffsetPx: 7 })?.targetIndex,
     ).toBe(100);
+  });
+
+  it('labels the actual centered canonical assistant and ignores a synthetic row at the center', () => {
+    const { state, render, attributes } = fixture();
+    const snapshot = state.snapshot!;
+    snapshot.historyCount = 698;
+    snapshot.historyWindowStart = 88;
+    snapshot.historyWindowEnd = 159;
+    const base = snapshot.history[0]!;
+    snapshot.history = [
+      { ...base, entryId: 'tool', order: 123 },
+      { ...base, entryId: 'reasoning-124', order: 124 },
+      { ...base, entryId: 'reasoning-125', order: 125 },
+      { ...base, entryId: 'assistant', order: 126 },
+      { ...base, entryId: 'tool-127', order: 127 },
+      { ...base, entryId: 'reasoning-128', order: 128 },
+      { ...base, entryId: 'tool-129', order: 129 },
+    ];
+    state.historyViewport!.clientHeight = 680;
+    state.historyViewport!.scrollHeight = 3802;
+    state.historyViewport!.scrollTop = 805;
+    state.historyViewport!.getBoundingClientRect = () => ({ top: 40 }) as DOMRect;
+    state.historyRenderedNodes = new Map([
+      ['tool', { node: { getBoundingClientRect: () => ({ top: 100, bottom: 200 }) } }],
+      ['assistant', { node: { getBoundingClientRect: () => ({ top: 261.984375, bottom: 497.765625 }) } }],
+      ['busy', { node: { getBoundingClientRect: () => ({ top: 300, bottom: 450 }) } }],
+    ]) as unknown as SessionAppServerControlViewState['historyRenderedNodes'];
+    render.syncViewportOffset('session', { refreshAnchorFromViewport: true });
+    expect(state.historyNavigatorAnchorIndex).toBe(125);
+    expect(attributes.get('aria-valuenow')).toBe('126');
+  });
+
+  it('maps Roots painted geometry consistently while hidden rendering lags a growing count', () => {
+    const { state, render, attributes } = fixture();
+    attributes.set('aria-valuemax', '698');
+    state.snapshot!.historyCount = 704; // New model state; the rail still displays the earlier count.
+    state.historyProgressNav!.clientHeight = 680;
+    state.historyProgressNav!.getBoundingClientRect = () => ({ top: 40 }) as DOMRect;
+    state.historyProgressThumb!.getBoundingClientRect = () => ({ height: 36.359375 }) as DOMRect;
+    state.historyNavigatorDragMapping = readHistoryNavigatorMapping(state);
+    const args = { state, clientY: 177.45813531205164, thumbDragOffsetPx: 36.359375 / 2 };
+    expect(resolveHistoryNavigatorTarget(args)?.targetIndex).toBe(125);
+    expect(resolveHistoryNavigatorTarget({ ...args, clientY: 175.6328125 })?.targetIndex).toBe(123);
+    state.historyNavigatorMode = 'drag-preview';
+    state.historyNavigatorDragTargetIndex = 125;
+    state.snapshot!.historyCount = 1000;
+    render.syncViewportOffset('session');
+    expect(attributes.get('aria-valuemax')).toBe('698');
+    expect(resolveHistoryNavigatorTarget(args)?.targetIndex).toBe(125);
+    state.historyNavigatorDragMapping = null;
+    state.historyNavigatorMode = 'browse';
+    state.historyNavigatorDragTargetIndex = null;
+    render.syncViewportOffset('session');
+    expect(attributes.get('aria-valuemax')).toBe('1000');
+  });
+
+  it('requests older rows for the measured quiet end instead of counting hidden tools or the busy indicator', () => {
+    const { state, render } = fixture();
+    const snapshot = state.snapshot!;
+    const base = snapshot.history[0]!;
+    snapshot.historyCount = 438;
+    snapshot.historyWindowStart = 433;
+    snapshot.historyWindowEnd = 438;
+    snapshot.history = [
+      { ...base, entryId: 'user', order: 434 },
+      { ...base, entryId: 'hidden-tool-435', order: 435 },
+      { ...base, entryId: 'hidden-reasoning-436', order: 436 },
+      { ...base, entryId: 'hidden-tool-437', order: 437 },
+      { ...base, entryId: 'assistant', order: 438 },
+    ];
+    state.historyViewport!.clientHeight = 680;
+    state.historyRenderedNodes = new Map([
+      ['user', { node: { getBoundingClientRect: () => ({ top: 50, bottom: 230 }) } }],
+      ['assistant', { node: { getBoundingClientRect: () => ({ top: 230, bottom: 317.97 }) } }],
+      ['busy', { node: { getBoundingClientRect: () => ({ top: 0, bottom: 100000 }) } }],
+    ]) as unknown as SessionAppServerControlViewState['historyRenderedNodes'];
+    expect(render.getUnderfilledHistoryWindowRequest(state)).toEqual({ startIndex: 358, count: 80 });
+    state.historyNavigatorMode = 'drag-preview';
+    expect(render.getUnderfilledHistoryWindowRequest(state)).toBeNull();
   });
 
   it('keeps the drag target and geometry through preview hydration and clamps explicit edges', () => {
