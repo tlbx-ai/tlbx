@@ -3301,16 +3301,10 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         };
     }
 
-    private static string BuildCodexAppServerArguments()
-    {
-        var arguments = "-c fast_default_opt_out=false";
-        if (!IsEnvironmentFlagEnabled(CodexRemoteCompactionDisabledEnvironmentVariable))
-        {
-            arguments += " --enable remote_compaction_v2";
-        }
-
-        return arguments + " app-server";
-    }
+    private static string BuildCodexAppServerArguments() =>
+        IsEnvironmentFlagEnabled(CodexRemoteCompactionDisabledEnvironmentVariable)
+            ? "app-server"
+            : "--enable remote_compaction_v2 app-server";
 
     private static bool IsEnvironmentFlagEnabled(string name)
     {

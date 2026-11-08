@@ -424,6 +424,7 @@ The canonical history contract must satisfy the following:
 - Raw transport noise must not leak into the UI.
 - Runtime/system notices should strip raw ANSI/control bytes and de-duplicate repeated message/detail fragments before they render in Agent Controller Session history.
 - Provider startup/runtime state notices that tlbx understands, such as Codex MCP server startup-status updates, should map into quiet canonical `Agent State` system rows instead of falling through as unknown-agent tool rows.
+- Generated Codex app-server launches omit removed CLI configuration keys instead of creating avoidable startup warnings. Runtime settings continue through the existing provider protocol; genuine provider/configuration failures remain visible.
 - Provider CLI/runtime error blocks that arrive outside the normal assistant stream, including multi-line stderr startup failures and deprecation errors, should map into canonical `Agent Error` notice rows with stronger red emphasis than ordinary system rows.
 - When a provider emits an unknown structured event, tlbx should preserve bounded source/method diagnostics as a canonical history item instead of silently dropping it; the raw payload remains transient and omitted.
 - Those fallback unknown-agent rows must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
