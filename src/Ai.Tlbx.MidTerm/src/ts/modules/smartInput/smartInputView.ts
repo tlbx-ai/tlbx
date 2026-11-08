@@ -592,6 +592,8 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
     menu.style.position = 'fixed';
     menu.style.right = 'auto';
     menu.style.bottom = 'auto';
+    menu.style.width = 'max-content';
+    menu.style.minWidth = `${Math.min(Math.max(148, triggerRect.width), window.innerWidth - 2 * viewportPadding)}px`;
     menu.style.maxWidth = `${window.innerWidth - 2 * viewportPadding}px`;
     menu.style.maxHeight = `${Math.max(availableBelow, availableAbove)}px`;
     const menuRect = menu.getBoundingClientRect();
