@@ -1453,5 +1453,17 @@
   "providerResume.noMatches": "没有与搜索匹配的对话。",
   "providerResume.loadFailed": "无法加载对话：{error}",
   "providerResume.count": "{count} 个对话",
-  "providerResume.keyboardHint": "↑↓ 选择 · Enter 恢复 · Esc 关闭"
+  "providerResume.keyboardHint": "↑↓ 选择 · Enter 恢复 · Esc 关闭",
+  "smartInput.settingPending": "正在设置…",
+  "smartInput.settingApplied": "提供方已确认",
+  "smartInput.settingAcknowledged": "提供方已接受；尚未读取实际生效值",
+  "smartInput.settingPartial": "部分已确认；请查看适用范围",
+  "smartInput.settingUnconfirmed": "尚未确认；显示上次确认的值",
+  "smartInput.settingTargetUnavailable": "目标已更改；未应用",
+  "smartInput.settingScopeTurns": "用于后续轮次；当前推理保持不变",
+  "smartInput.settingScopeCaptures": "用于后续设置捕获；当前推理保持不变",
+  "smartInput.settingScopeResponses": "后续回答的默认设置已接受；当前推理保持不变",
+  "smartInput.settingPermissionAutoPending": "自动模式也会批准此会话中已在等待的工具请求。问题仍需回答。",
+  "smartInput.modelInherit": "不指定模型",
+  "smartInput.settingPermissionAfterPlan": "退出计划模式后使用；计划模式保持启用"
 }

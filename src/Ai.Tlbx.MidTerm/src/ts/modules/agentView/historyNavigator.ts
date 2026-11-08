@@ -15,16 +15,25 @@ export function resolveHistoryNavigatorGeometry(args: {
   historyCount: number;
   visibleCount: number;
   anchorIndex: number;
+  renderedThumbHeightPx?: number;
 }) {
   const trackHeightPx = Math.max(0, args.trackHeightPx);
   const historyCount = Math.max(1, args.historyCount);
   const visibleFraction = Math.max(0, Math.min(1, args.visibleCount / historyCount));
-  const thumbHeightPx = Math.min(trackHeightPx, Math.max(18, trackHeightPx * visibleFraction));
+  const thumbHeightPx = Math.min(
+    trackHeightPx,
+    args.renderedThumbHeightPx ?? Math.max(18, trackHeightPx * visibleFraction),
+  );
   const travelPx = trackHeightPx - thumbHeightPx;
   const maximumIndex = historyCount - 1;
   const anchorIndex = Math.max(0, Math.min(maximumIndex, args.anchorIndex));
   const progress = maximumIndex > 0 ? anchorIndex / maximumIndex : 0;
   return { thumbHeightPx, travelPx, topPx: travelPx * progress, maximumIndex, anchorIndex };
+}
+
+export interface HistoryNavigatorMapping {
+  trackTopPx: number;
+  geometry: ReturnType<typeof resolveHistoryNavigatorGeometry>;
 }
 
 export function resolveHistoryNavigatorPointerIndex(
@@ -61,6 +70,37 @@ export function measureHistoryNavigatorRange(
     end = Math.max(end, row.absoluteIndex + Math.min(1, (viewportBottom - row.top) / height));
   }
   return end > start ? { start, end } : null;
+}
+
+/** Choose a real visible row, never an absent index in a sparse projection. */
+export function measureHistoryNavigatorAnchor(
+  viewportTop: number,
+  viewportHeight: number,
+  rows: Iterable<{ absoluteIndex: number; top: number; bottom: number }>,
+): number | null {
+  const center = viewportTop + viewportHeight / 2;
+  const bottom = viewportTop + viewportHeight;
+  let nearest: number | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    if (
+      ![row.absoluteIndex, row.top, row.bottom].every(Number.isFinite) ||
+      row.bottom <= row.top ||
+      row.bottom <= viewportTop ||
+      row.top >= bottom
+    ) {
+      continue;
+    }
+    const distance = Math.max(row.top - center, center - row.bottom, 0);
+    if (
+      distance < nearestDistance ||
+      (distance === nearestDistance && row.absoluteIndex < (nearest ?? Infinity))
+    ) {
+      nearest = row.absoluteIndex;
+      nearestDistance = distance;
+    }
+  }
+  return nearest;
 }
 
 export function shouldRefreshHistoryNavigatorFromScroll(args: {

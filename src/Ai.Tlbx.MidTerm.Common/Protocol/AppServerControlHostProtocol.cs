@@ -10,6 +10,7 @@ public static class AppServerControlHostProtocol
 
 public sealed class AppServerControlQuickSettingsPayload
 {
+    public List<string> AcknowledgedFields { get; set; } = [];
     public string? Model { get; set; }
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
@@ -247,6 +248,7 @@ public static class AppServerControlQuickSettings
             FastMode = NormalizeFastMode(summary.FastMode),
             ModelOptions = CloneOptions(summary.ModelOptions),
             EffortOptions = CloneOptions(summary.EffortOptions),
+            AcknowledgedFields = [.. summary.AcknowledgedFields],
             ConfigOptions = CloneConfigOptions(summary.ConfigOptions)
         };
     }
@@ -276,6 +278,7 @@ public static class AppServerControlQuickSettings
 
 public sealed class AppServerControlQuickSettingsSummary
 {
+    public List<string> AcknowledgedFields { get; set; } = [];
     public string? Model { get; set; }
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
@@ -504,6 +507,35 @@ public sealed class AppServerControlInterruptRequest
     public string? TurnId { get; set; }
 }
 
+/// <summary>Patch keys are presence-sensitive: omitted and explicit JSON null remain distinct.</summary>
+public sealed class AppServerControlConfigureRequest
+{
+    public string ExpectedThreadId { get; set; } = string.Empty;
+    // Null explicitly guards an idle runtime; a non-null value must match the active turn exactly.
+    public string? ExpectedTurnId { get; set; }
+    public Dictionary<string, JsonElement> Settings { get; set; } = new(StringComparer.Ordinal);
+}
+
+public sealed class AppServerControlConfigureResponse
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string ThreadId { get; set; } = string.Empty;
+    public string? TurnId { get; set; }
+    public string Status { get; set; } = "applied";
+    public string ThreadStatus { get; set; } = "notRequested";
+    public string ThreadScope { get; set; } = "subsequentTurns";
+    public string TurnStatus { get; set; } = "notRequested";
+    public string TurnScope { get; set; } = "subsequentCaptures";
+    // Provider readback, never a copy of the browser draft.
+    public Dictionary<string, JsonElement> EffectiveSettings { get; set; } = new(StringComparer.Ordinal);
+    // A control acknowledgement need not provide actual readback (notably Claude effort clamping).
+    public Dictionary<string, JsonElement> ConfirmedSettings { get; set; } = new(StringComparer.Ordinal);
+    public List<string> DeferredFields { get; set; } = [];
+    public List<string> UnconfirmedFields { get; set; } = [];
+    public Dictionary<string, string> FieldErrors { get; set; } = new(StringComparer.Ordinal);
+    public string? Detail { get; set; }
+}
+
 public sealed class AppServerControlSteerRequest
 {
     public string? Text { get; set; }
@@ -523,10 +555,15 @@ public sealed class AppServerControlUserInputAnswerRequest
 
 public sealed class AppServerControlCommandAcceptedResponse
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Decision { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppServerControlAnsweredQuestion>? Answers { get; set; }
     public string SessionId { get; set; } = string.Empty;
     public string Status { get; set; } = "accepted";
     public string? RequestId { get; set; }
     public string? TurnId { get; set; }
+    public AppServerControlConfigureResponse? Configuration { get; set; }
 }
 
 public sealed class AppServerControlHistoryWindowRequest
@@ -551,6 +588,7 @@ public sealed class AppServerControlWsRequestMessage
     public AppServerControlRequestDecisionRequest? RequestDecision { get; set; }
     public AppServerControlUserInputAnswerRequest? UserInputAnswer { get; set; }
     public AppServerControlGoalSetRequest? GoalSet { get; set; }
+    public AppServerControlConfigureRequest? Configure { get; set; }
 }
 
 public sealed class AppServerControlWsSubscriptionMessage
@@ -674,6 +712,7 @@ public sealed class AppServerControlHostCommandEnvelope
     public AppServerControlRequestResolutionCommand? ResolveRequest { get; set; }
     public AppServerControlUserInputResolutionCommand? ResolveUserInput { get; set; }
     public AppServerControlGoalSetRequest? SetGoal { get; set; }
+    public AppServerControlConfigureRequest? Configure { get; set; }
     public AppServerControlHostHistoryWindowRequest? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }
@@ -701,6 +740,7 @@ public sealed class AppServerControlHostCommandResultEnvelope
     public string? Message { get; set; }
     public AppServerControlTurnStartResponse? TurnStarted { get; set; }
     public AppServerControlCommandAcceptedResponse? Accepted { get; set; }
+    public AppServerControlConfigureResponse? Configured { get; set; }
     public AppServerControlHistoryWindowResponse? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }
@@ -726,6 +766,8 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(AppServerControlUserInputResolutionCommand))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
 [JsonSerializable(typeof(AppServerControlSteerRequest))]
+[JsonSerializable(typeof(AppServerControlConfigureRequest))]
+[JsonSerializable(typeof(AppServerControlConfigureResponse))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]
 [JsonSerializable(typeof(AppServerControlTurnStartResponse))]

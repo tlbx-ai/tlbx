@@ -1,3 +1,4 @@
+import type { HistoryNavigatorMapping } from './historyNavigator';
 import type {
   AppServerControlAttachmentReference,
   AppServerControlHistorySnapshot,
@@ -43,6 +44,7 @@ export interface SessionAppServerControlViewState {
   historyNavigatorAnchorIndex: number | null;
   historyNavigatorVisibleCount: number | null;
   historyNavigatorDragTargetIndex: number | null;
+  historyNavigatorDragMapping: HistoryNavigatorMapping | null;
   historyNavigatorQueuedTargetIndex: number | null;
   historyNavigatorQueuedRequestKind: HistoryNavigatorRequestKind | null;
   historyNavigatorPreviewHandle: number | null;
@@ -50,6 +52,7 @@ export interface SessionAppServerControlViewState {
   historyNavigatorLastPreviewRequestAt: number;
   historyPendingJumpTargetIndex: number | null;
   historyPendingJumpAlign: HistoryJumpAlign | null;
+  historyJumpTargetEntryId: string | null;
   historyRenderScheduled: number | null;
   historyRenderBatchHandle: number | null;
   activationState:

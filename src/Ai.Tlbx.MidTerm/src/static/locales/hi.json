@@ -1453,5 +1453,17 @@
   "providerResume.noMatches": "खोज से कोई बातचीत मेल नहीं खाती।",
   "providerResume.loadFailed": "बातचीत लोड नहीं हो सकी: {error}",
   "providerResume.count": "{count} बातचीत",
-  "providerResume.keyboardHint": "↑↓ चुनें · Enter फिर से शुरू करें · Esc बंद करें"
+  "providerResume.keyboardHint": "↑↓ चुनें · Enter फिर से शुरू करें · Esc बंद करें",
+  "smartInput.settingPending": "सेट किया जा रहा है…",
+  "smartInput.settingApplied": "प्रदाता ने पुष्टि की",
+  "smartInput.settingAcknowledged": "प्रदाता ने स्वीकार किया; प्रभावी मान पढ़कर सत्यापित नहीं हुआ",
+  "smartInput.settingPartial": "आंशिक पुष्टि; लागू होने का दायरा देखें",
+  "smartInput.settingUnconfirmed": "अपुष्ट; अंतिम पुष्ट मान दिखाया जा रहा है",
+  "smartInput.settingTargetUnavailable": "लक्ष्य बदल गया; लागू नहीं हुआ",
+  "smartInput.settingScopeTurns": "अगले टर्न के लिए; चल रहा अनुमान अपरिवर्तित",
+  "smartInput.settingScopeCaptures": "अगली सेटिंग कैप्चर के लिए; चल रहा अनुमान अपरिवर्तित",
+  "smartInput.settingScopeResponses": "अगले उत्तरों के डिफ़ॉल्ट स्वीकार किए गए; चल रहा अनुमान अपरिवर्तित",
+  "smartInput.settingPermissionAutoPending": "ऑटो इस सत्र में पहले से प्रतीक्षारत टूल अनुरोधों को भी अनुमति देता है। प्रश्नों का उत्तर अभी भी देना होगा।",
+  "smartInput.modelInherit": "मॉडल निर्दिष्ट नहीं",
+  "smartInput.settingPermissionAfterPlan": "प्लान से बाहर आने पर लागू; प्लान सक्रिय रहता है"
 }

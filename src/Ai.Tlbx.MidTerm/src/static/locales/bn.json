@@ -1453,5 +1453,17 @@
   "providerResume.noMatches": "অনুসন্ধানের সাথে কোনো কথোপকথন মেলেনি।",
   "providerResume.loadFailed": "কথোপকথন লোড করা যায়নি: {error}",
   "providerResume.count": "{count}টি কথোপকথন",
-  "providerResume.keyboardHint": "↑↓ নির্বাচন · Enter আবার শুরু · Esc বন্ধ"
+  "providerResume.keyboardHint": "↑↓ নির্বাচন · Enter আবার শুরু · Esc বন্ধ",
+  "smartInput.settingPending": "সেট করা হচ্ছে…",
+  "smartInput.settingApplied": "প্রদানকারী নিশ্চিত করেছে",
+  "smartInput.settingAcknowledged": "প্রদানকারী গ্রহণ করেছে; কার্যকর মান পড়ে যাচাই করা হয়নি",
+  "smartInput.settingPartial": "আংশিকভাবে নিশ্চিত; প্রয়োগের পরিসর দেখুন",
+  "smartInput.settingUnconfirmed": "অনিশ্চিত; সর্বশেষ নিশ্চিত মান দেখানো হচ্ছে",
+  "smartInput.settingTargetUnavailable": "লক্ষ্য বদলেছে; প্রয়োগ করা হয়নি",
+  "smartInput.settingScopeTurns": "পরবর্তী টার্নের জন্য; চলমান ইনফারেন্স অপরিবর্তিত",
+  "smartInput.settingScopeCaptures": "পরবর্তী সেটিং ক্যাপচারের জন্য; চলমান ইনফারেন্স অপরিবর্তিত",
+  "smartInput.settingScopeResponses": "পরবর্তী উত্তরের ডিফল্ট গৃহীত; চলমান ইনফারেন্স অপরিবর্তিত",
+  "smartInput.settingPermissionAutoPending": "অটো এই সেশনে ইতিমধ্যে অপেক্ষমাণ টুলের অনুরোধও অনুমোদন করে। প্রশ্নের উত্তর এখনও দিতে হবে।",
+  "smartInput.modelInherit": "মডেল নির্দিষ্ট নয়",
+  "smartInput.settingPermissionAfterPlan": "পরিকল্পনা মোড ছাড়ার পর ব্যবহৃত হবে; পরিকল্পনা মোড সক্রিয় থাকবে"
 }

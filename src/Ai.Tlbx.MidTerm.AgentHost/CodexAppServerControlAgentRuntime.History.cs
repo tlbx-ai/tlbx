@@ -7,6 +7,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime
 {
     private readonly object _attachEventLock = new();
     private readonly Action<AppServerControlProviderEvent> _publish;
+    private readonly Action<IReadOnlyList<AppServerControlProviderEvent>>? _publishInitialReplay;
     private List<AppServerControlProviderEvent>? _attachEvents;
     private string? _historyReadRequestId;
     private readonly List<JsonElement> _historyTurnPages = [];
@@ -213,6 +214,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime
     {
         lock (_attachEventLock)
         {
+            if (_publishInitialReplay is not null && _attachEvents is { } replay)
+            {
+                var batch = initialEvents.ToList();
+                batch.AddRange(replay);
+                _publishInitialReplay(batch);
+                _attachEvents = null;
+                return;
+            }
             foreach (var e in initialEvents)
             {
                 _publish(e);

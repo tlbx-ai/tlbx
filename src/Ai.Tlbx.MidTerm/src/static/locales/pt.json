@@ -1453,5 +1453,17 @@
   "providerResume.noMatches": "Nenhuma conversa corresponde à pesquisa.",
   "providerResume.loadFailed": "Não foi possível carregar as conversas: {error}",
   "providerResume.count": "{count} conversas",
-  "providerResume.keyboardHint": "↑↓ selecionar · Enter retomar · Esc fechar"
+  "providerResume.keyboardHint": "↑↓ selecionar · Enter retomar · Esc fechar",
+  "smartInput.settingPending": "Aplicando…",
+  "smartInput.settingApplied": "Confirmado pelo provedor",
+  "smartInput.settingAcknowledged": "Aceito pelo provedor; valor efetivo não consultado",
+  "smartInput.settingPartial": "Parcialmente confirmado; consulte o alcance",
+  "smartInput.settingUnconfirmed": "Não confirmado; exibindo o último valor confirmado",
+  "smartInput.settingTargetUnavailable": "O destino mudou; não aplicado",
+  "smartInput.settingScopeTurns": "Para os próximos turnos; inferência atual inalterada",
+  "smartInput.settingScopeCaptures": "Para as próximas capturas; inferência atual inalterada",
+  "smartInput.settingScopeResponses": "Padrões aceitos para próximas respostas; inferência atual inalterada",
+  "smartInput.settingPermissionAutoPending": "Auto também autoriza as ferramentas já em espera nesta sessão. As perguntas ainda precisam de resposta.",
+  "smartInput.modelInherit": "Sem modelo definido",
+  "smartInput.settingPermissionAfterPlan": "Usado ao sair do modo Plano; o Plano permanece ativo"
 }

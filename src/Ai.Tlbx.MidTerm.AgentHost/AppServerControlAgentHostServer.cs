@@ -431,6 +431,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "mcp.scope.prepare",
                     "turn.start",
                     "turn.steer",
+                    "runtime.configure",
                     "turn.interrupt",
                     "thread.compact",
                     "thread.goal.set",
@@ -518,7 +519,11 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
         if (string.Equals(provider, "codex", StringComparison.Ordinal))
         {
-            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent);
+            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent, events =>
+            {
+                foreach (var value in events) _mcpScope.Observe(value);
+                _history.AppendInitialReplay(events);
+            });
             return _runtime;
         }
 
@@ -709,6 +714,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(appServerControlEvent.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions),
+                AcknowledgedFields = [.. appServerControlEvent.QuickSettingsUpdated.AcknowledgedFields],
                 ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(appServerControlEvent.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = appServerControlEvent.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload

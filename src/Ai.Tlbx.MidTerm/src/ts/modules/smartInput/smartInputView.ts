@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { getSafeViewportBounds } from '../../utils/safeViewport';
 
 export type ToolKind = 'mic' | 'attach' | 'photo';
 
@@ -553,6 +554,11 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
   const menu = document.createElement('div');
   menu.className = 'manager-bar-action-popover smart-input-appServerControl-dropdown-menu hidden';
 
+  const statusDescription = document.createElement('p');
+  statusDescription.className = 'smart-input-appServerControl-setting-description';
+  statusDescription.hidden = true;
+  statusDescription.setAttribute('role', 'status');
+
   const closeMenu = (): void => {
     menu.classList.add('hidden');
     wrapper.classList.remove('smart-input-appServerControl-dropdown-open-up');
@@ -577,18 +583,44 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
 
     const viewportPadding = 12;
     const gap = 8;
+    const bounds = getSafeViewportBounds();
+    const left = bounds.left + viewportPadding;
+    const right = bounds.right - viewportPadding;
+    const top = bounds.top + viewportPadding;
+    const bottom = bounds.bottom - viewportPadding;
+    const usableWidth = Math.max(1, right - left);
+    const usableHeight = Math.max(1, bottom - top);
     const triggerRect = trigger.getBoundingClientRect();
+    const anchorRect =
+      wrapper
+        .closest<HTMLElement>('.smart-input-appServerControl-field')
+        ?.getBoundingClientRect() ?? triggerRect;
+    const availableBelow = Math.max(0, bottom - anchorRect.bottom - gap);
+    const availableAbove = Math.max(0, anchorRect.top - gap - top);
+    // Fixed viewport coordinates escape the sheet; keyboard insets still bound the menu.
+    menu.style.position = 'fixed';
+    menu.style.right = 'auto';
+    menu.style.bottom = 'auto';
+    menu.style.width = 'max-content';
+    menu.style.minWidth = `${Math.min(Math.max(148, triggerRect.width), usableWidth)}px`;
+    menu.style.maxWidth = `${usableWidth}px`;
+    menu.style.maxHeight = `${Math.min(usableHeight, Math.max(88, availableBelow, availableAbove))}px`;
     const menuRect = menu.getBoundingClientRect();
-    const availableBelow = window.innerHeight - triggerRect.bottom - viewportPadding - gap;
-    const availableAbove = triggerRect.top - viewportPadding - gap;
     const openUp =
       availableBelow < Math.min(menuRect.height, 220) && availableAbove > availableBelow;
-
+    menu.style.left = `${Math.max(left, Math.min(triggerRect.right - menuRect.width, right - menuRect.width))}px`;
+    menu.style.top = `${Math.max(
+      top,
+      Math.min(
+        openUp ? anchorRect.top - gap - menuRect.height : anchorRect.bottom + gap,
+        bottom - menuRect.height,
+      ),
+    )}px`;
     wrapper.classList.toggle('smart-input-appServerControl-dropdown-open-up', openUp);
   };
 
   const rebuildMenu = (): void => {
-    menu.replaceChildren();
+    menu.replaceChildren(statusDescription);
     for (const option of [...select.options]) {
       const optionButton = document.createElement('button');
       optionButton.type = 'button';
@@ -600,10 +632,9 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
       optionButton.addEventListener('click', (event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (select.value !== option.value) {
-          select.value = option.value;
-          select.dispatchEvent(new Event('change', { bubbles: false }));
-        }
+        // An explicit choice also retries an unconfirmed or rejected value.
+        select.value = option.value;
+        select.dispatchEvent(new Event('change', { bubbles: false }));
         syncSelection();
         closeMenu();
       });
@@ -654,6 +685,9 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
       return;
     }
 
+    statusDescription.textContent =
+      wrapper.closest<HTMLElement>('.smart-input-appServerControl-field')?.title ?? '';
+    statusDescription.hidden = !statusDescription.textContent;
     menu.classList.remove('hidden');
     updateMenuPlacement();
     trigger.setAttribute('aria-expanded', 'true');
@@ -666,6 +700,8 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
     }
   });
   window.addEventListener('resize', updateMenuPlacement);
+  window.visualViewport?.addEventListener('resize', updateMenuPlacement);
+  window.visualViewport?.addEventListener('scroll', updateMenuPlacement);
   document.addEventListener('scroll', updateMenuPlacement, true);
 
   select.addEventListener('midterm:options', rebuildMenu);

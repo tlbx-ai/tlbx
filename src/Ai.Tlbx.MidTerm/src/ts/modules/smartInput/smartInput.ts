@@ -34,6 +34,7 @@ import {
 } from '../appServerControl/input';
 import {
   APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT,
+  configureAppServerControlQuickSettings,
   getAppServerControlQuickSettingsDraft,
   getAppServerControlQuickSettingsProvider,
   setAppServerControlQuickSettingsDraft,
@@ -1288,7 +1289,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         effort: appServerControlEffortSelect?.value ?? null,
       });
     },
@@ -1299,7 +1300,7 @@ function createDockedDOM(): void {
       }
 
       const draft = getAppServerControlQuickSettingsDraft(sessionId);
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         fastMode: draft.fastMode === 'on' ? 'off' : 'on',
       });
     },
@@ -1309,7 +1310,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         model: appServerControlModelSelect?.value ?? null,
       });
     },
@@ -1319,7 +1320,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         permissionMode: appServerControlPermissionSelect?.value ?? 'manual',
       });
     },
@@ -1329,7 +1330,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         planMode: appServerControlPlanSelect?.value ?? 'off',
       });
       syncSmartInputVisibility();
@@ -1961,20 +1962,7 @@ function syncAppServerControlQuickSettingsActions(sessionId: string): void {
   }
 
   appServerControlQuickSettingsActions.replaceChildren();
-  const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);
-  const draft = getAppServerControlQuickSettingsDraft(sessionId);
   const provider = getAppServerControlQuickSettingsProvider(sessionId);
-  appServerControlQuickSettingsActions.appendChild(
-    createAppServerControlActionButton(
-      'Plan',
-      t('smartInput.appServerControlPlanCommand'),
-      () => {
-        toggleAppServerControlPlanMode(sessionId);
-      },
-      quickSettingsLocked,
-      { pressed: draft.planMode === 'on' },
-    ),
-  );
   if (provider === 'codex') {
     appServerControlQuickSettingsActions.appendChild(
       createAppServerControlActionButton(
@@ -2190,7 +2178,7 @@ function toggleAutoSendEnabled(): void {
 
 function toggleAppServerControlPlanMode(sessionId: string): void {
   const draft = getAppServerControlQuickSettingsDraft(sessionId);
-  setAppServerControlQuickSettingsDraft(sessionId, {
+  void configureAppServerControlQuickSettings(sessionId, {
     planMode: draft.planMode === 'on' ? 'off' : 'on',
   });
   syncSmartInputVisibility();

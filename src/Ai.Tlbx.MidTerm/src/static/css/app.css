@@ -10460,13 +10460,41 @@ body.shared-session-mode .session-tab-bar {
   top: calc(100% + 8px);
   right: 0;
   min-width: max(100%, 148px);
-  z-index: 1;
+  z-index: 80;
+  overflow-y: auto;
+  background: var(--bg-dropdown-opaque, var(--bg-elevated-opaque));
 }
 
 .smart-input-appServerControl-dropdown.smart-input-appServerControl-dropdown-open-up
   .smart-input-appServerControl-dropdown-menu {
   top: auto;
   bottom: calc(100% + 8px);
+}
+
+
+.smart-input-appServerControl-setting-description {
+  max-width: 260px;
+  margin: 0;
+  padding: 8px 10px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: normal;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.smart-input-appServerControl-field[data-configure-state] .smart-input-appServerControl-label::after {
+  margin-left: 5px;
+}
+.smart-input-appServerControl-field[data-configure-state='pending'] .smart-input-appServerControl-label::after {
+  content: '…';
+}
+.smart-input-appServerControl-field:is([data-configure-state='applied'], [data-configure-state='acknowledged']) .smart-input-appServerControl-label::after {
+  content: '✓';
+}
+.smart-input-appServerControl-field:is([data-configure-state='partial'], [data-configure-state='unconfirmed'], [data-configure-state='targetUnavailable']) .smart-input-appServerControl-label::after {
+  content: '!';
+  color: var(--accent-orange);
 }
 
 .smart-input-appServerControl-dropdown-option.is-selected {
@@ -19125,7 +19153,29 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .smart-input-appServerControl-settings-sheet .smart-input-native-config-panel { position: static; width: 100%; box-shadow: none; }
 
 @media (max-width: 768px) {
-  .adaptive-footer-dock .smart-input-appServerControl-settings.smart-input-appServerControl-settings-sheet { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; width: 100%; padding: 12px; overflow: hidden auto; max-height: 50dvh; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings.smart-input-appServerControl-settings-sheet {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    width: 100%;
+    padding: 12px;
+    overflow: hidden auto;
+    max-height: 50dvh;
+    background: var(--bg-elevated-opaque);
+    border: 1px solid var(--border-color);
+    box-shadow: var(--command-bay-shadow);
+  }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-actions {
+    display: flex;
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+    min-height: 44px;
+  }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-actions::before { display: none; }
+  .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-actions button {
+    min-height: 44px;
+    min-width: 44px;
+  }
   .adaptive-footer-dock .smart-input-appServerControl-settings.smart-input-appServerControl-settings-sheet > .smart-input-appServerControl-field { display: flex; flex-direction: column; align-items: stretch; width: 100%; gap: 5px; }
   .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-label { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
   .adaptive-footer-dock .smart-input-appServerControl-settings-sheet .smart-input-appServerControl-dropdown-trigger { width: 100%; min-height: 44px; }
