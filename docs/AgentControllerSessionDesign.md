@@ -169,8 +169,8 @@ The canonical history contract must satisfy the following:
 - Avoid narrow bubble layouts that waste the center column.
 - Long assistant output should read like a document, not like a chat toy.
 - Tool activity should compress well and expand only when detail is useful.
-- Codex Agent Controller Session should use a full-width, left-anchored timeline instead of a centered conversation lane.
-- In Codex Agent Controller Session, user and assistant rows should share the same left edge and be distinguished primarily by subdued small labels rather than opposing alignment or strong bubble chrome.
+- Every provider uses one left-anchored timeline instead of a centered conversation lane. The lane may use the full pane width for tables, code and artifacts, but human prose is limited to a readable measure of roughly 75-85 characters (`--agent-history-prose-measure`, currently `80ch`).
+- User and assistant rows share the same left edge and are distinguished by quiet role labels, a slim user rule and turn spacing rather than opposing alignment, bubbles or cards.
 
 ### 5. Clear hierarchy
 
@@ -214,6 +214,8 @@ The canonical history contract must satisfy the following:
 - When an Agent Controller Session surface becomes hidden or inactive, its rendered history DOM should be dropped and its retained browser-side history should collapse toward a small nearby slice while the runtime keeps ingesting canonical state.
 
 ### 7. Responsive behavior
+
+- Table filter controls must fit narrow tables without imposing the browser's default 20-character input width on every column; controls use the app UI font while numeric data can keep the terminal font.
 
 - Agent Controller Session must remain fully usable on mobile-sized viewports.
 - Mobile Agent Controller Session should preserve history hierarchy, composer usability, and request/approval handling without forcing pinch-zoom or horizontal history reading.
@@ -263,7 +265,8 @@ The canonical history contract must satisfy the following:
 
 ### 11. Terminal-font monospace usage
 
-- Diffs, code blocks, command output, script output, tool text, file-change output, and similar machine-oriented content should use the configured terminal font stack.
+- Diffs, code blocks, inline code, paths, command output, script output, tool text, file-change output, and similar machine-oriented content should use the configured terminal font stack.
+- Human user and assistant prose is not machine-oriented content and uses the app UI font (see Typography).
 - Agent Controller Session must not invent a separate monospace language that diverges from the terminal's configured typography.
 
 ## Visual System
@@ -273,7 +276,7 @@ The canonical history contract must satisfy the following:
 - Use at most 2 to 4 font styles across the Agent Controller Session surface.
 - Reserve stronger styles for true hierarchy boundaries only.
 - Favor readable body text and restrained metadata styling.
-- In Codex Agent Controller Session, user and assistant prompt bodies should follow the configured terminal monospace stack and terminal font size so prompt and response text align with command-oriented work.
+- User and assistant prose for every provider uses the existing app UI font (`--font-ui`) at normal weight, about `0.95rem`, with a line height of about 1.5 (`--agent-history-prose-line-height`). It does not follow the terminal font family, size, weight or line height.
 - Assistant prose uses pure white for maximum legibility. Its body and markdown-content layers must allow glyph ink to overflow vertically so descenders and other font overhangs are never clipped; wide tables and code blocks keep overflow handling on their own dedicated wrappers.
 
 ### Containers
@@ -361,9 +364,9 @@ The canonical history contract must satisfy the following:
 - User prompts should be visually distinct but compact.
 - They should anchor the start of a turn without dominating the screen.
 - Repeated rendering of the same user turn is forbidden.
-- In Codex Agent Controller Session, user rows should place their quiet role label and timestamp above the message body, not below it.
-- In Codex Agent Controller Session, the quiet role label should remain on user rows, while assistant rows should omit a repeated `Agent` label on every message.
-- In Codex Agent Controller Session, user and assistant content should share the same left edge, and user prompt bodies should follow the configured terminal monospace stack and terminal font size.
+- For every provider, user rows place a quiet, clearly visible i18n role label (`appServerControl.label.user`) and any timestamp above the message body.
+- User rows start a turn with extra top spacing and a slim muted rule on the left edge. They must not become a bubble, card or filled block; row spacing stays inside the measured row (padding, not margins) so virtualization measurements remain exact.
+- User and assistant content share the same left edge and the same prose typography; the user text is slightly cooler and muted.
 - If the user message carries staged attachments or image references, those should sit as compact supporting artifacts beneath the prompt rather than exploding the row into a card.
 
 ### Assistant output
@@ -373,7 +376,7 @@ The canonical history contract must satisfy the following:
 - The assistant row should not visually reset between deltas.
 - Streaming assistant text should render through the same markdown surface as settled assistant output.
 - When the final assistant item lands for a turn that already has streamed assistant text, Agent Controller Session should reconcile that into one settled assistant row rather than showing both the streamed row and a second final duplicate.
-- In Codex Agent Controller Session, the first assistant message row of a new turn should show a quiet `Agent` badge so the answer start is visually distinct from the preceding user prompt, but later assistant rows in the same turn should omit that repeated badge.
+- For every provider, the first assistant message row of a turn shows the provider's agent name (`session.agentName`, for example `Claude` or `Codex`, falling back to the i18n assistant label) so the answer start is clearly attributed. Later assistant rows and streaming deltas in the same turn omit that badge.
 - Assistant rows should default to no repeated assistant timestamp; if timestamps are enabled, assistant rows should place any optional timestamp above the message body when that preference is enabled.
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
 - That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
@@ -386,16 +389,16 @@ The canonical history contract must satisfy the following:
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 - Assistant markdown is the canonical assistant body surface for both streaming and settled text.
-- Markdown paragraph and list spacing should be dense and terminal-like. Simple line breaks and bullet lists must not create chat-style empty-line gaps between adjacent lines.
-- Blank-line paragraph breaks in assistant markdown should stay much tighter than prose defaults, roughly closer to a half-line pause than a full chat-paragraph gap.
-- Assistant markdown should model those blank-line pauses explicitly as compact gap markers in the rendered structure instead of relying on ordinary paragraph margins to approximate dense terminal spacing.
-- Bullet and numbered lists should stack compactly, with minimal vertical slack between adjacent items and between the surrounding text and the list block.
+- Simple line breaks stay inside one paragraph. Blank lines form real paragraph breaks with a visible paragraph gap of about `0.7em`, capped at two blank lines, so multi-paragraph answers do not collapse into one block.
+- Assistant markdown models those paragraph breaks as explicit gap markers in the rendered structure.
+- List items use the prose line height with a small item gap; lists must stay readable rather than terminal-dense.
 - List markers must stay fully visible inside the rendered assistant markdown block. Overflow containment in Agent Controller Session must not crop bullet or number markers.
-- Current Codex Agent Controller Session markdown gap markers should stay very tight, roughly a quarter-em pause per blank line rather than the older taller half-em spacing.
 - If settlement later adds higher-confidence file-link or image-preview enrichment, that refinement must preserve the same markdown-rendered body instead of downgrading the row to raw plain text.
 - Markdown tables should stay left-anchored and use intrinsic width when their content is narrow, rather than stretching across the whole history lane by default.
-- Assistant markdown tables should expose compact per-column sort and filter controls in the header row so dense comparison output can be reorganized in place.
-- Fenced CSV blocks in assistant markdown should render through that same interactive table treatment so tabular data is readable without raw code-block noise.
+- Markdown tables render as plain readable tables: a quiet frame, a subtle header row and row separators in the prose font. Cells keep their rendered inline markdown and are never converted into pills, badges or guessed status colors.
+- Per-column sort and filter controls appear only for data-sized tables (10 or more body rows). Short answer tables have no permanent sort arrows or filter fields.
+- Fenced CSV blocks in assistant markdown render through the same table treatment, including the same size threshold for sort and filter controls.
+- Fenced code blocks render as a quiet, clearly recognizable surface: subtle tint, thin border, inner padding, terminal font, unwrapped lines and their own horizontal overflow. Inline code uses a subtle tinted span. Neither may clip glyphs or descenders.
 - Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
 - That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
 - Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
@@ -670,22 +673,23 @@ Status in this branch/work item:
 - implemented: content-only Agent Controller Session history updates preserve the existing keyed row and message-body DOM elements while refreshing their rendered children, so streaming assistant text does not repeatedly destroy and recreate the mobile browser's text/compositor layer
 - implemented: finalized Agent Controller Session history rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Agent Controller Session file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
-- implemented: assistant markdown blank-line gap markers now use a tighter quarter-em pause per blank line instead of the older taller half-em spacing
+- implemented: assistant markdown blank-line gap markers render a real paragraph gap of about 0.7em, capped at two blank lines
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Agent Controller Session body
 - implemented: assistant markdown tables now stay left-anchored at intrinsic width when narrow instead of always stretching across the full history lane
-- implemented: assistant markdown tables now add compact per-column sort and filter controls directly in the header row
-- implemented: fenced CSV code blocks in assistant markdown now render as the same compact sortable/filterable table treatment instead of raw code blocks
+- implemented: assistant markdown tables render plainly without automatic cell pills or guessed tones; sort and filter controls are added only for tables with 10 or more body rows
+- implemented: fenced CSV code blocks in assistant markdown now render through the same table treatment instead of raw code blocks
+- implemented: fenced code blocks render on a quiet tinted surface with padding and their own horizontal overflow; inline code uses a subtle tinted span
 - implemented: Codex Agent Controller Session uses a full-width left-anchored history/composer layout instead of the previous centered lane
 - implemented: Codex Agent Controller Session distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Agent Controller Session row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
 - implemented: Agent Controller Session history headers no longer right-bind labels or timestamps; row badges and any meta text stay left-anchored across user, assistant, tool, diff, request, system, and notice rows
 - implemented: the only animated history activity element is the trailing global busy bubble, now rendered as text-only Working status with a slower mirrored sweep highlight and no spinning glyph
-- implemented: user and assistant rows now use smaller metadata, slightly cooler user labeling/text, and a subtly different font treatment while preserving a shared left edge
+- implemented: user and assistant rows use smaller metadata and slightly cooler user labeling/text while sharing one prose font and left edge
 - implemented: Codex Agent Controller Session now keeps `User`/`Agent` labels and timestamps above the message body and trims that metadata treatment down another pixel for a quieter row header
-- implemented: Codex Agent Controller Session now keeps the quiet role label on user rows while omitting the redundant repeated `Agent` badge on assistant message rows
-- implemented: the first assistant message row in each turn now restores a quiet `Agent` badge so the answer start stays distinguishable from the preceding user prompt without reintroducing repeated badge noise on later assistant rows
+- implemented: user rows show the i18n role label for every provider, plus turn spacing and a slim left rule
+- implemented: the first assistant message row in each turn shows the provider agent name; later assistant rows in that turn omit the badge
 - implemented: assistant-message timestamps are now controlled by an Agent setting, default hidden, while user-row timestamps remain visible above the prompt body
-- implemented: Codex Agent Controller Session user and assistant prompt bodies now follow the configured terminal monospace stack and terminal font size instead of a separate agent-ui font treatment
+- implemented: user and assistant prose uses the app UI font at normal weight with about 1.55 line height and an 80ch reading measure; code, paths, tools and diffs keep the terminal font
 - implemented: tool, reasoning, plan, diff, request, and system rows now share a more uniform low-chrome surface treatment instead of stacked left rails and mixed border patterns
 - implemented: Agent Controller Session diff rows render unified diff lines with dedicated add/delete/hunk/header styling instead of plain raw monospace text
 - implemented: Agent Controller Session diff rows now use console-style `Edited {path}` file headers and tighter green/red hunk blocks with line numbers
