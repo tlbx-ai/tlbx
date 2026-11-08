@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { getSafeViewportBounds } from '../../utils/safeViewport';
 
 export type ToolKind = 'mic' | 'attach' | 'photo';
 
@@ -582,35 +583,34 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
 
     const viewportPadding = 12;
     const gap = 8;
+    const bounds = getSafeViewportBounds();
+    const left = bounds.left + viewportPadding;
+    const right = bounds.right - viewportPadding;
+    const top = bounds.top + viewportPadding;
+    const bottom = bounds.bottom - viewportPadding;
+    const usableWidth = Math.max(1, right - left);
+    const usableHeight = Math.max(1, bottom - top);
     const triggerRect = trigger.getBoundingClientRect();
-    const availableBelow = Math.max(
-      0,
-      window.innerHeight - triggerRect.bottom - viewportPadding - gap,
-    );
-    const availableAbove = Math.max(0, triggerRect.top - viewportPadding - gap);
-    // Fixed viewport coordinates escape the mobile settings sheet's scroll clipping.
+    const availableBelow = Math.max(0, bottom - triggerRect.bottom - gap);
+    const availableAbove = Math.max(0, triggerRect.top - gap - top);
+    // Fixed viewport coordinates escape the sheet; keyboard insets still bound the menu.
     menu.style.position = 'fixed';
     menu.style.right = 'auto';
     menu.style.bottom = 'auto';
     menu.style.width = 'max-content';
-    menu.style.minWidth = `${Math.min(Math.max(148, triggerRect.width), window.innerWidth - 2 * viewportPadding)}px`;
-    menu.style.maxWidth = `${window.innerWidth - 2 * viewportPadding}px`;
-    menu.style.maxHeight = `${Math.max(availableBelow, availableAbove)}px`;
+    menu.style.minWidth = `${Math.min(Math.max(148, triggerRect.width), usableWidth)}px`;
+    menu.style.maxWidth = `${usableWidth}px`;
+    menu.style.maxHeight = `${Math.min(usableHeight, Math.max(88, availableBelow, availableAbove))}px`;
     const menuRect = menu.getBoundingClientRect();
     const openUp =
       availableBelow < Math.min(menuRect.height, 220) && availableAbove > availableBelow;
-    menu.style.maxHeight = `${openUp ? availableAbove : availableBelow}px`;
-    const height = menu.getBoundingClientRect().height;
-    menu.style.left = `${Math.max(
-      viewportPadding,
-      Math.min(
-        triggerRect.right - menuRect.width,
-        window.innerWidth - viewportPadding - menuRect.width,
-      ),
-    )}px`;
+    menu.style.left = `${Math.max(left, Math.min(triggerRect.right - menuRect.width, right - menuRect.width))}px`;
     menu.style.top = `${Math.max(
-      viewportPadding,
-      openUp ? triggerRect.top - gap - height : triggerRect.bottom + gap,
+      top,
+      Math.min(
+        openUp ? triggerRect.top - gap - menuRect.height : triggerRect.bottom + gap,
+        bottom - menuRect.height,
+      ),
     )}px`;
     wrapper.classList.toggle('smart-input-appServerControl-dropdown-open-up', openUp);
   };
@@ -697,6 +697,8 @@ function createAppServerControlQuickSettingsDropdown(select: HTMLSelectElement):
     }
   });
   window.addEventListener('resize', updateMenuPlacement);
+  window.visualViewport?.addEventListener('resize', updateMenuPlacement);
+  window.visualViewport?.addEventListener('scroll', updateMenuPlacement);
   document.addEventListener('scroll', updateMenuPlacement, true);
 
   select.addEventListener('midterm:options', rebuildMenu);
