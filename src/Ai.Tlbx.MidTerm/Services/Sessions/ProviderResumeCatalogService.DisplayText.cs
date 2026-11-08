@@ -21,7 +21,7 @@ public sealed partial class ProviderResumeCatalogService
                 TableDividerPattern().IsMatch(line)) continue;
 
             var tableRow = line.StartsWith('|') && line.EndsWith('|');
-            line = ImageMarkerPattern().Replace(line, string.Empty);
+            line = ImageMarkerPattern().Replace(line, " ");
             line = MarkdownLinkPattern().Replace(line, "$1");
             line = MarkdownMarkPattern().Replace(line, "$1$2$3");
             line = MarkdownLinePrefixPattern().Replace(line, string.Empty).Trim();

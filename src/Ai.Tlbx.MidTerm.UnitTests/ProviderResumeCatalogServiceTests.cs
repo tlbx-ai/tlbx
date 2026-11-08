@@ -263,6 +263,15 @@ public sealed class ProviderResumeCatalogServiceTests : IDisposable
         Assert.Equal("Name · Value Path · a|b", entry.Title);
         Assert.Equal("HTTP 409: <literal_error> Keep __init__.py and code E_ACCESS", entry.PreviewText);
     }
+    [Fact]
+    public void InlineImageMarkersSeparateTheSurroundingWords()
+    {
+        var id = Guid.NewGuid().ToString();
+        WriteCodex(id, _workspace, "Before[Image 1]After");
+        var entry = Assert.Single(new ProviderResumeCatalogService(_ => _profile)
+            .GetCandidates("codex", _workspace, false, ct: TestContext.Current.CancellationToken));
+        Assert.Equal("Before After", entry.Title);
+    }
     private string WriteCodex(string id, string cwd, string prompt, TimeSpan? age = null)
     {
         return WriteCodexLines(id, [CodexMeta(id, cwd, "2026-11-01T08:00:00Z"), CodexResponseUser(prompt)], age);
