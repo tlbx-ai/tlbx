@@ -220,6 +220,29 @@ public sealed class ProviderResumeNativeCodexTests
     public void RichEscapesDisplayCleanWhileRawPathsAndCodeStayLiteral(string text, string expected) =>
         Assert.Equal(expected, ProviderResumeCatalogService.PlainMarkdownText(text));
 
+    [Theory]
+    [InlineData("eins<br>zwei", "eins zwei")]
+    [InlineData("eins<BR />zwei", "eins zwei")]
+    [InlineData(@"\<br\>", "<br>")]
+    [InlineData("`<br>`", "<br>")]
+    [InlineData("<br onclick=evil>", "<br onclick=evil>")]
+    [InlineData("<brown>", "<brown>")]
+    public void TableBreakLabelsKeepEscapedAndCodeTagsLiteral(string text, string expected) =>
+        Assert.Equal(expected, ProviderResumeCatalogService.PlainMarkdownText(text, tableCell: true));
+
+    [Fact]
+    public void NativeTablePreviewUsesWordsForBreaksAndRetainsLiteralTags()
+    {
+        var cwd = Path.GetFullPath("workspace");
+        var json = JsonSerializer.Serialize(new[]
+        {
+            new { id = "own", cwd, name = "Table", preview = "First prompt", updatedAt = 1,
+                latestUserTexts = new[] { "| Head |\n| --- |\n| eins<br>zwei \\<br\\> |" } }
+        });
+        var row = Assert.Single(ProviderResumeCatalogService.ParseNativeCodexCatalog(json, cwd));
+        Assert.Equal("Head eins zwei <br>", row.PreviewText);
+    }
+
     [Fact]
     public void RichEscapedLatestPromptAndPlainNativeNameReachTheCatalog()
     {

@@ -7,7 +7,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 public sealed partial class ProviderResumeCatalogService
 {
     // Same escapable set as the browser's rich history renderer (utils/markdown.ts).
-    private const string MarkdownEscapable = "\\`*{}[]()#+-.!_|>~";
+    private const string MarkdownEscapable = "\\`*{}[]()#+-.!_|<>~";
 
     // Catalog labels are plain text. Keep the real prompt/transcript untouched.
     // Prefer prose over a leading rich table, retaining readable table text as
@@ -60,12 +60,12 @@ public sealed partial class ProviderResumeCatalogService
             }
             else if (body[index] == '|')
             {
-                cells.Add(PlainMarkdownText(cell.ToString()).Trim());
+                cells.Add(PlainMarkdownText(cell.ToString(), tableCell: true).Trim());
                 cell.Clear();
             }
             else cell.Append(body[index]);
         }
-        cells.Add(PlainMarkdownText(cell.ToString()).Trim());
+        cells.Add(PlainMarkdownText(cell.ToString(), tableCell: true).Trim());
         return string.Join(" · ", cells).Trim();
     }
 
@@ -73,7 +73,7 @@ public sealed partial class ProviderResumeCatalogService
     /// Removes Markdown escapes and paired strong/strike delimiters. Code spans and raw
     /// Windows drive or UNC paths stay literal, so unescaped backslashes are never lost.
     /// </summary>
-    internal static string PlainMarkdownText(string line)
+    internal static string PlainMarkdownText(string line, bool tableCell = false)
     {
         var output = new StringBuilder(line.Length);
         var strong = new List<int>();
@@ -113,6 +113,13 @@ public sealed partial class ProviderResumeCatalogService
                 continue;
             }
 
+            if (tableCell && character == '<' && TableBreakEnd(line, index) is { } breakEnd)
+            {
+                output.Append(' ');
+                index = breakEnd;
+                continue;
+            }
+
             if (character is ('*' or '~') && index + 1 < line.Length && line[index + 1] == character)
             {
                 (character == '*' ? strong : strike).Add(output.Length);
@@ -129,6 +136,15 @@ public sealed partial class ProviderResumeCatalogService
             .OrderDescending();
         foreach (var position in removals) output.Remove(position, 2);
         return output.ToString();
+    }
+
+    private static int? TableBreakEnd(string text, int start)
+    {
+        if (!text.AsSpan(start).StartsWith("<br", StringComparison.OrdinalIgnoreCase)) return null;
+        var end = start + 3;
+        while (end < text.Length && text[end] is ' ' or '\t') end++;
+        if (end < text.Length && text[end] == '/') end++;
+        return end < text.Length && text[end] == '>' ? end + 1 : null;
     }
 
     private static int CountRun(string text, int start, char character)
