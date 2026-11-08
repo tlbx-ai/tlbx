@@ -166,6 +166,55 @@ describe('native Goal state', () => {
     expect(readGoalDraft('draft-confirm', 'own')).toBeNull();
   });
 
+  it('consumes the exact draft on native Set acknowledgement before a fast goal finishes', async () => {
+    seed('draft-fast');
+    writeGoalDraft('draft-fast', 'own', { objective: 'Fast', status: 'active', budget: '' });
+    api.mockResolvedValue(receipt('draft-fast', state('Original', 'set')));
+    await controlAppServerControlGoal('draft-fast', { operation: 'set', objective: 'Fast' });
+    expect(readGoalDraft('draft-fast', 'own')).not.toBeNull();
+    seed('draft-fast', { ...state('Fast', 'set'), confirmation: 'acknowledged' });
+    expect(readGoalDraft('draft-fast', 'own')).toBeNull();
+    expect(goalControlLabel('draft-fast')).toContain('goal.pending');
+    seed('draft-fast', { ...state(), goal: null }, null);
+    expect(readGoalDraft('draft-fast', 'own')).toBeNull();
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not mistake an older Set acknowledgement in a queued receipt for new delivery', async () => {
+    const acknowledged = { ...state('Accepted', 'set'), confirmation: 'acknowledged' as const };
+    seed('draft-ack-receipt', acknowledged, null);
+    const draft = { objective: 'Accepted', status: 'active', budget: '' };
+    writeGoalDraft('draft-ack-receipt', 'own', draft);
+    api.mockResolvedValue(receipt('draft-ack-receipt', acknowledged));
+    await controlAppServerControlGoal('draft-ack-receipt', {
+      operation: 'set',
+      objective: 'Accepted',
+    });
+    expect(readGoalDraft('draft-ack-receipt', 'own')).toMatchObject(draft);
+    seed('draft-ack-receipt', acknowledged, null);
+    expect(readGoalDraft('draft-ack-receipt', 'own')).toMatchObject(draft);
+    seed('draft-ack-receipt', { ...state('Accepted'), confirmation: 'unconfirmed' }, null);
+    expect(readGoalDraft('draft-ack-receipt', 'own')).toMatchObject(draft);
+    expect(goalControlLabel('draft-ack-receipt')).not.toContain('goal.pending');
+  });
+
+  it('preserves a newer draft and refuses mismatching or unconfirmed Set acknowledgements', async () => {
+    seed('draft-ack-guards');
+    const draft = { objective: 'Sent', status: 'active', budget: '' };
+    writeGoalDraft('draft-ack-guards', 'own', draft);
+    api.mockResolvedValue(receipt('draft-ack-guards', state('Original', 'set')));
+    await controlAppServerControlGoal('draft-ack-guards', { operation: 'set', objective: 'Sent' });
+    seed('draft-ack-guards', { ...state('Other', 'set'), confirmation: 'acknowledged' });
+    expect(readGoalDraft('draft-ack-guards', 'own')).toMatchObject(draft);
+    seed('draft-ack-guards', { ...state('Sent', 'set'), confirmation: 'unconfirmed' });
+    expect(readGoalDraft('draft-ack-guards', 'own')).toMatchObject(draft);
+    // The user typed again, even if the text has the same value.
+    writeGoalDraft('draft-ack-guards', 'own', draft);
+    const newerRevision = readGoalDraft('draft-ack-guards', 'own')?.revision;
+    seed('draft-ack-guards', { ...state('Sent', 'set'), confirmation: 'acknowledged' });
+    expect(readGoalDraft('draft-ack-guards', 'own')?.revision).toBe(newerRevision);
+  });
+
   it('keeps drafts on unconfirmed responses and rejects session fallback identity', async () => {
     seed('draft-unknown');
     const draft = { objective: 'Unknown', status: 'active', budget: '' };

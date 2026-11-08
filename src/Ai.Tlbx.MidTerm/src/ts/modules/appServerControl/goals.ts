@@ -32,7 +32,11 @@ interface GoalMutation {
 const mutations = new Map<string, GoalMutation>();
 function clearConfirmedDraft(sessionId: string, view: GoalView): void {
   const sent = mutations.get(sessionId);
-  if (!sent || sent.threadId !== view.threadId || !goalConfirmationSettled(view.state)) return;
+  if (!sent || sent.threadId !== view.threadId) return;
+  // Claude's correlated native Set acknowledgement precedes model work. A
+  // fast goal can finish before readback, so waiting for an active readback
+  // would leave the already accepted draft ready to be submitted again.
+  if (!goalMutationAcknowledged(sent, view)) return;
   const goal = view.state?.goal;
   const matches =
     sent.patch.operation === 'clear'
@@ -50,6 +54,21 @@ function clearConfirmedDraft(sessionId: string, view: GoalView): void {
 function changed(sessionId: string): void {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   window.dispatchEvent(new CustomEvent(GOAL_CHANGED_EVENT, { detail: { sessionId } }));
+}
+
+function goalMutationAcknowledged(sent: GoalMutation, view: GoalView): boolean {
+  return (
+    goalConfirmationSettled(view.state) ||
+    (sent.patch.operation === 'set' &&
+      view.provider === 'claude' &&
+      goalSetAcknowledged(view.state))
+  );
+}
+
+function goalSetAcknowledged(state: AppServerControlGoalState | null): boolean {
+  return (
+    state?.confirmation === 'acknowledged' && state.pendingOperation === 'set' && !state.detail
+  );
 }
 
 function goalConfirmationSettled(state: AppServerControlGoalState | null): boolean {
@@ -366,9 +385,8 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
   readback.setAttribute('role', 'status');
   const scope = document.createElement('p');
   scope.className = 'agent-goal-scope';
-  scope.textContent =
-    t(editorProvider === 'claude' ? 'goal.scopeClaude' : 'goal.scopeCodex') +
-    (editorProvider === 'claude' ? ` ${t('goal.recoverScope')}` : '');
+  const scopeText = t(editorProvider === 'claude' ? 'goal.scopeClaude' : 'goal.scopeCodex');
+  scope.textContent = scopeText;
   const objective = document.createElement('textarea');
   objective.className = 'agent-goal-objective';
   objective.rows = 4;
@@ -469,6 +487,7 @@ export function openAppServerControlGoalEditor(sessionId: string): void {
     stop.disabled = !canStopGoal(view);
     recover.disabled = goalEditorUnavailable(view) || view.pending;
     recover.hidden = !goalRecoveryAvailable(view);
+    scope.textContent = scopeText + (recover.hidden ? '' : ` ${t('goal.recoverScope')}`);
   }
   overlay.addEventListener('keydown', (event) => {
     focusGuard(event, modal, close);
