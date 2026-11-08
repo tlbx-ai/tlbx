@@ -2,6 +2,7 @@ import { t } from '../i18n';
 import { buildHistoryJumpVirtualWindow, resolveHistoryJumpEntryIndex } from './historyJump';
 import {
   HISTORY_PROGRESS_THUMB_INSET_PX,
+  resolveCanonicalHistoryCount,
   measureHistoryNavigatorRange,
   resolveHistoryNavigatorGeometry,
   resolveHistoryNavigatorPointerIndex,
@@ -123,65 +124,21 @@ const HISTORY_PLACEHOLDER_MAX_BLOCKS = 10;
 const PROGRAMMATIC_HISTORY_VIEWPORT_SYNC_SUPPRESS_MS = 200;
 const USER_HISTORY_GAP_RECOVERY_GRACE_MS = 900;
 
-function resolveContiguousHistoryEntryWindow(entries: readonly AppServerControlHistoryEntry[]): {
-  windowStart: number;
-  windowEnd: number;
-} | null {
-  if (entries.length === 0) {
-    return null;
-  }
-
-  const firstOrder = Math.max(1, entries[0]?.order ?? 1);
-  const lastOrder = Math.max(firstOrder, entries[entries.length - 1]?.order ?? firstOrder);
-  const inferredWindowStart = firstOrder - 1;
-  const inferredWindowEnd = lastOrder;
-  const inferredCount = Math.max(0, inferredWindowEnd - inferredWindowStart);
-  if (inferredCount !== entries.length) {
-    return null;
-  }
-
-  return {
-    windowStart: inferredWindowStart,
-    windowEnd: inferredWindowEnd,
-  };
-}
-
 export function resolveHistoryRetainedWindowDescriptor(
-  entries: readonly AppServerControlHistoryEntry[],
+  _entries: readonly AppServerControlHistoryEntry[],
   state: SessionAppServerControlViewState | undefined,
 ): {
   windowStart: number;
   windowEnd: number;
   totalCount: number;
 } {
-  const snapshotWindowStart = Math.max(0, state?.snapshot?.historyWindowStart ?? 0);
-  const snapshotWindowEnd = Math.max(
-    snapshotWindowStart,
-    state?.snapshot?.historyWindowEnd ?? snapshotWindowStart + entries.length,
-  );
-  const snapshotTotalCount = Math.max(snapshotWindowEnd, state?.snapshot?.historyCount ?? 0);
-  const contiguousWindow = resolveContiguousHistoryEntryWindow(entries);
-  if (!contiguousWindow) {
-    return {
-      windowStart: snapshotWindowStart,
-      windowEnd: snapshotWindowEnd,
-      totalCount: snapshotTotalCount,
-    };
-  }
-
-  const snapshotWindowSize = Math.max(0, snapshotWindowEnd - snapshotWindowStart);
-  if (snapshotWindowSize > entries.length) {
-    return {
-      windowStart: snapshotWindowStart,
-      windowEnd: snapshotWindowEnd,
-      totalCount: snapshotTotalCount,
-    };
-  }
-
+  const snapshot = state?.snapshot;
+  const totalCount = resolveCanonicalHistoryCount(snapshot);
+  const windowStart = Math.max(0, Math.min(totalCount, snapshot?.historyWindowStart ?? 0));
   return {
-    windowStart: contiguousWindow.windowStart,
-    windowEnd: contiguousWindow.windowEnd,
-    totalCount: Math.max(snapshotTotalCount, contiguousWindow.windowEnd),
+    windowStart,
+    windowEnd: Math.max(windowStart, Math.min(totalCount, snapshot?.historyWindowEnd ?? windowStart)),
+    totalCount,
   };
 }
 
@@ -434,14 +391,17 @@ function resolveAnchorAbsoluteIndex(
   const relativeIndex = state.historyEntries.findIndex((entry) => entry.id === entryId);
   const entryOrder = relativeIndex >= 0 ? state.historyEntries[relativeIndex]?.order : undefined;
   if (typeof entryOrder === 'number' && Number.isFinite(entryOrder) && entryOrder > 0) {
-    return Math.max(0, Math.round(entryOrder) - 1);
+    return clampHistoryAbsoluteIndex(
+      Math.floor(entryOrder) - 1,
+      resolveCanonicalHistoryCount(state.snapshot),
+    );
   }
 
   const historyWindowStart = resolveHistoryRetainedWindowDescriptor(
     state.historyEntries,
     state,
   ).windowStart;
-  return relativeIndex >= 0 ? historyWindowStart + relativeIndex : historyWindowStart;
+  return historyWindowStart;
 }
 
 function buildHistoryAttachmentToken(entry: AppServerControlHistoryEntry): string {
@@ -480,17 +440,22 @@ function readHistoryNavigatorVisibleRange(state: SessionAppServerControlViewStat
   if (!viewport || viewport.clientHeight <= 0) {
     return null;
   }
+  const canonicalOrders = new Map(
+    (state.snapshot?.history ?? []).map((entry) => [entry.entryId, entry.order]),
+  );
   return measureHistoryNavigatorRange(
     viewport.getBoundingClientRect().top,
     viewport.clientHeight,
-    Array.from(state.historyRenderedNodes, ([entryId, rendered]) => {
-      const rect = rendered.node.getBoundingClientRect();
-      return {
-        absoluteIndex: resolveAnchorAbsoluteIndex(state, entryId),
-        top: rect.top,
-        bottom: rect.bottom,
-      };
-    }),
+    Array.from(state.historyRenderedNodes)
+      .filter(([entryId]) => canonicalOrders.has(entryId))
+      .map(([entryId, rendered]) => {
+        const rect = rendered.node.getBoundingClientRect();
+        return {
+          absoluteIndex: Math.max(0, (canonicalOrders.get(entryId) ?? 1) - 1),
+          top: rect.top,
+          bottom: rect.bottom,
+        };
+      }),
   );
 }
 
@@ -545,8 +510,12 @@ function resolveHistoryNavigatorEstimatedAnchorIndex(
     return null;
   }
 
-  const firstVisibleEntry = state.historyEntries[visibleRange.start];
-  const lastVisibleEntry = state.historyEntries[Math.max(visibleRange.start, visibleRange.end - 1)];
+  const canonicalIds = new Set((state.snapshot?.history ?? []).map((entry) => entry.entryId));
+  const visibleCanonicalEntries = state.historyEntries
+    .slice(visibleRange.start, visibleRange.end)
+    .filter((entry) => canonicalIds.has(entry.id));
+  const firstVisibleEntry = visibleCanonicalEntries[0];
+  const lastVisibleEntry = visibleCanonicalEntries[visibleCanonicalEntries.length - 1];
   if (!firstVisibleEntry || !lastVisibleEntry) {
     return null;
   }
@@ -556,17 +525,17 @@ function resolveHistoryNavigatorEstimatedAnchorIndex(
 
   const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
   if (
-    metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
-    retainedWindow.windowStart === 0
-  ) {
-    return 0;
-  }
-
-  if (
     visibleRange.end >= state.historyEntries.length &&
     visibleEnd >= Math.max(0, totalCount - 1)
   ) {
     return Math.max(0, totalCount - 1);
+  }
+
+  if (
+    metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+    retainedWindow.windowStart === 0
+  ) {
+    return 0;
   }
 
   return (visibleStart + visibleEnd) / 2;
@@ -578,25 +547,25 @@ function resolveHistoryNavigatorConcreteAnchorIndex(
   totalCount: number,
   visibleRange: ReturnType<typeof measureHistoryNavigatorRange>,
 ): number | null {
-  if (state.historyEntries.length === 0 || typeof viewport.getBoundingClientRect !== 'function') {
+  if (typeof viewport.getBoundingClientRect !== 'function') {
     return null;
   }
 
   const metrics = readHistoryScrollMetrics(viewport, state);
   const retainedWindow = resolveHistoryRetainedWindowDescriptor(state.historyEntries, state);
-  if (
-    metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
-    retainedWindow.windowStart === 0
-  ) {
-    return 0;
-  }
-
   const distanceFromBottom = metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop;
   if (
     distanceFromBottom <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
     retainedWindow.windowEnd >= totalCount
   ) {
     return Math.max(0, totalCount - 1);
+  }
+
+  if (
+    metrics.scrollTop <= HISTORY_PROGRESS_TOP_ALIGN_THRESHOLD_PX &&
+    retainedWindow.windowStart === 0
+  ) {
+    return 0;
   }
 
   return visibleRange
@@ -672,7 +641,7 @@ function resolveHistoryNavigatorAnchorIndex(
   }
 
   return clampHistoryAbsoluteIndex(
-    retainedWindow.windowStart + Math.floor(state.historyEntries.length / 2),
+    (retainedWindow.windowStart + retainedWindow.windowEnd - 1) / 2,
     retainedWindow.totalCount,
   );
 }
@@ -762,8 +731,10 @@ function syncHistoryProgressNavigatorUi(
   }
 
   const snapshot = state.snapshot;
-  const historyCount = Math.max(snapshot?.historyCount ?? 0, state.historyEntries.length);
+  const historyCount = resolveCanonicalHistoryCount(snapshot);
   if (prepareHistoryProgressNavigator(host, thumb, historyCount)) {
+    state.historyNavigatorAnchorIndex = null;
+    state.historyNavigatorVisibleCount = null;
     return;
   }
 
@@ -804,7 +775,7 @@ export function resolveHistoryNavigatorTarget(args: {
   const { state, clientY, thumbDragOffsetPx } = args;
   const host = state?.historyProgressNav;
   const snapshot = state?.snapshot;
-  const historyCount = Math.max(snapshot?.historyCount ?? 0, state?.historyEntries.length ?? 0);
+  const historyCount = resolveCanonicalHistoryCount(snapshot);
   if (!state || !host || !snapshot || historyCount <= 0) {
     return null;
   }
@@ -1945,7 +1916,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       retainedWindow,
       fetchAheadItems: options.fetchAheadItems,
       resolveItemSize: (entry) => resolveEntryHeight(entry),
-      resolveAbsoluteIndex: (entry) => Math.max(0, Math.round(entry.order) - 1),
+      resolveAbsoluteIndex: (entry) =>
+        clampHistoryAbsoluteIndex(Math.floor(entry.order) - 1, retainedWindow.totalCount),
       edgeDirection,
       navigationDirection: options.navigationDirection,
       anchorAbsoluteIndex: options.anchorAbsoluteIndex,

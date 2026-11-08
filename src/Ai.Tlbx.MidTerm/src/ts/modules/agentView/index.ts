@@ -51,7 +51,10 @@ import {
 import { createAgentHistoryDom, isProposedPlanActionDisabled } from './historyDom';
 import { syncNativeCommands } from './nativeCommands';
 import { createAgentHistoryRender, resolveHistoryNavigatorTarget } from './historyRender';
-import { shouldRefreshHistoryNavigatorFromScroll } from './historyNavigator';
+import {
+  resolveCanonicalHistoryCount,
+  shouldRefreshHistoryNavigatorFromScroll,
+} from './historyNavigator';
 import {
   DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG,
   resolveAppServerControlHistoryFetchAheadItems,
@@ -1143,7 +1146,7 @@ function resolveHistoryJumpAlign(
   state: SessionAppServerControlViewState,
   absoluteIndex: number,
 ): 'top' | 'center' | 'bottom' {
-  const historyCount = Math.max(state.snapshot?.historyCount ?? 0, state.historyEntries.length);
+  const historyCount = resolveCanonicalHistoryCount(state.snapshot);
   if (absoluteIndex <= 0) {
     return 'top';
   }
@@ -1207,7 +1210,7 @@ async function requestHistoryNavigatorWindow(
     return;
   }
 
-  const historyCount = Math.max(snapshot.historyCount, state.historyEntries.length);
+  const historyCount = resolveCanonicalHistoryCount(snapshot);
   if (historyCount <= 0) {
     return;
   }

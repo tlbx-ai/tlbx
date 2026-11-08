@@ -1,11 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   measureHistoryNavigatorRange,
+  resolveCanonicalHistoryCount,
   resolveHistoryNavigatorGeometry,
   resolveHistoryNavigatorPointerIndex,
   shouldRefreshHistoryNavigatorFromScroll,
 } from './historyNavigator';
-import { createAgentHistoryRender, resolveHistoryNavigatorTarget } from './historyRender';
+import {
+  createAgentHistoryRender,
+  resolveHistoryNavigatorTarget,
+  resolveHistoryRetainedWindowDescriptor,
+} from './historyRender';
 import type { SessionAppServerControlViewState } from './types';
 
 vi.mock('../i18n', () => ({ t: (key: string) => key }));
@@ -126,7 +131,12 @@ describe('navigator rendering across passive layout and hydration', () => {
     };
     const thumb = { style: { top: '', height: '' } };
     const state = {
-      snapshot: { historyCount: 1000, historyWindowStart: 100, historyWindowEnd: 110 },
+      snapshot: {
+        historyCount: 1000,
+        historyWindowStart: 100,
+        historyWindowEnd: 110,
+        history: [{ entryId: 'row', order: 101 }],
+      },
       historyEntries: [{ id: 'row', order: 101 }],
       historyProgressNav: host,
       historyProgressThumb: thumb,
@@ -195,5 +205,93 @@ describe('navigator rendering across passive layout and hydration', () => {
     state.historyAutoScrollPinned = true;
     render.syncViewportOffset('session');
     expect(state.historyNavigatorAnchorIndex).toBe(999);
+  });
+
+  it('keeps Root SourceClaude95f6235a two-entry history canonical despite a duration note', () => {
+    // Root observed this after a real 4s turn: 2 canonical rows, 3 visual rows, aria max 3.
+    const { state, render, thumb, attributes } = fixture();
+    const snapshot = state.snapshot!;
+    snapshot.historyCount = 2;
+    snapshot.historyWindowStart = 0;
+    snapshot.historyWindowEnd = 2;
+    snapshot.history = [
+      { ...snapshot.history[0]!, entryId: 'user', order: 1 },
+      { ...snapshot.history[0]!, entryId: 'assistant', order: 2 },
+    ];
+    const base = state.historyEntries[0]!;
+    state.historyEntries = [
+      { ...base, id: 'user', order: 1 },
+      { ...base, id: 'assistant', order: 2 },
+      { ...base, id: 'turn-duration:turn', order: 2.01, turnDurationNote: true },
+    ];
+    const syntheticRect = vi.fn(() => ({ top: 70, bottom: 100 }));
+    state.historyRenderedNodes = new Map([
+      ['user', { node: { getBoundingClientRect: () => ({ top: 0, bottom: 30 }) } }],
+      ['assistant', { node: { getBoundingClientRect: () => ({ top: 30, bottom: 70 }) } }],
+      ['turn-duration:turn', { node: { getBoundingClientRect: syntheticRect } }],
+    ]) as unknown as SessionAppServerControlViewState['historyRenderedNodes'];
+    state.historyViewport!.scrollTop = 0;
+    state.historyViewport!.scrollHeight = 100;
+    state.historyNavigatorVisibleCount = null;
+    render.syncViewportOffset('session', { refreshAnchorFromViewport: true });
+
+    expect(attributes.get('aria-valuemax')).toBe('2');
+    expect(attributes.get('aria-valuenow')).toBe('2');
+    expect(state.historyNavigatorAnchorIndex).toBe(1);
+    expect(state.historyNavigatorVisibleCount).toBe(2);
+    expect(thumb.style.height).toBe('400px');
+    expect(syntheticRect).not.toHaveBeenCalled();
+    expect(resolveHistoryNavigatorTarget({ state, clientY: 412 })).toEqual({
+      targetIndex: 1,
+      atLiveEdge: true,
+    });
+    expect(resolveHistoryRetainedWindowDescriptor(state.historyEntries, state)).toEqual({
+      windowStart: 0,
+      windowEnd: 2,
+      totalCount: 2,
+    });
+  });
+
+  it.each([0, 1, 2])('keeps count %i authoritative with empty or entirely filtered visual rows', (count) => {
+    const { state, render, attributes } = fixture();
+    state.snapshot!.historyCount = count;
+    state.snapshot!.historyWindowStart = 0;
+    state.snapshot!.historyWindowEnd = count;
+    state.historyEntries = [];
+    render.syncViewportOffset('session');
+    expect(attributes.get('aria-valuemax')).toBe(String(count));
+    expect(resolveCanonicalHistoryCount(state.snapshot)).toBe(count);
+    expect(resolveHistoryRetainedWindowDescriptor([], state)).toEqual({
+      windowStart: 0,
+      windowEnd: count,
+      totalCount: count,
+    });
+    const target = resolveHistoryNavigatorTarget({ state, clientY: 412 });
+    if (count === 0) {
+      expect(target).toBeNull();
+      expect(state.historyNavigatorAnchorIndex).toBeNull();
+    } else {
+      expect(target!.targetIndex).toBeLessThan(count);
+    }
+  });
+
+  it('never expands canonical metadata from synthetic or filtered visual orders', () => {
+    const { state, render, attributes } = fixture();
+    state.snapshot!.historyCount = 2;
+    state.snapshot!.historyWindowStart = 0;
+    state.snapshot!.historyWindowEnd = 2;
+    const entries = [{ ...state.historyEntries[0]!, id: 'synthetic', order: 999 }];
+    expect(resolveHistoryRetainedWindowDescriptor(entries, state)).toEqual({
+      windowStart: 0,
+      windowEnd: 2,
+      totalCount: 2,
+    });
+    expect(resolveHistoryRetainedWindowDescriptor(entries, undefined).totalCount).toBe(0);
+    state.historyEntries = entries;
+    state.snapshot!.historyCount = 0;
+    state.snapshot!.historyWindowEnd = 0;
+    render.syncViewportOffset('session');
+    expect(attributes.get('aria-valuemax')).toBe('0');
+    expect(resolveHistoryNavigatorTarget({ state, clientY: 412 })).toBeNull();
   });
 });

@@ -1,6 +1,14 @@
 import type { HistoryScrollMetrics } from './types';
+import type { AppServerControlHistorySnapshot } from '../../api/types';
 
 export const HISTORY_PROGRESS_THUMB_INSET_PX = 6;
+
+export function resolveCanonicalHistoryCount(
+  snapshot: Pick<AppServerControlHistorySnapshot, 'historyCount'> | null | undefined,
+): number {
+  const count = snapshot?.historyCount ?? 0;
+  return Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+}
 
 export function resolveHistoryNavigatorGeometry(args: {
   trackHeightPx: number;
