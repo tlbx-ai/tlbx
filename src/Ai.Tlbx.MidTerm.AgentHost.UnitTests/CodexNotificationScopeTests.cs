@@ -208,7 +208,8 @@ public sealed class CodexNotificationScopeTests
                             break;
                         case "thread/start":
                         case "thread/resume":
-                            result = new { thread = new { id = "canonical-A", status = new { type = "idle" } } };
+                            result = new { model = "opened-native-model", reasoningEffort = "high",
+                                thread = new { id = "canonical-A", status = new { type = "idle" } } };
                             break;
                         case "thread/read":
                             result = new { thread = new { id = "canonical-A", turns = Array.Empty<object>() } };
@@ -263,6 +264,8 @@ public sealed class CodexNotificationScopeTests
             var ready = history.GetSnapshotWindow("s")!;
             Assert.Equal("ready", ready.Session.State);
             Assert.Equal("canonical-A", ready.Thread.ThreadId);
+            Assert.Equal("opened-native-model", ready.QuickSettings.Model);
+            Assert.Equal("high", ready.QuickSettings.Effort);
             Assert.DoesNotContain("turn/start", methods, StringComparer.Ordinal);
             using var idlePatch = JsonDocument.Parse("""{"model":"requested-model","planMode":"on"}""");
             using var idleProperties = idlePatch.RootElement.EnumerateObject();

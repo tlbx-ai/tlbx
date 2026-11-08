@@ -286,6 +286,11 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         }
 
         _providerThreadId = providerThreadId;
+        // model/list describes catalog defaults, not this opened thread's config.
+        // Adopt the native start/resume readback before publishing ready controls.
+        _quickSettings.Model = GetString(threadResult, "model") ?? _quickSettings.Model;
+        if (threadResult.TryGetProperty("reasoningEffort", out var openedEffort))
+            _quickSettings.Effort = openedEffort.GetString();
         if (resumedExistingThread)
         {
             await ReadCodexThreadHistoryAsync(providerThreadId, ct).ConfigureAwait(false);
