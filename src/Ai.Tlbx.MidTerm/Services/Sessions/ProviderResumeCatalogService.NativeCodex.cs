@@ -164,8 +164,9 @@ public sealed partial class ProviderResumeCatalogService
                 !string.Equals(cwd, NormalizePathOrNull(directory),
                     OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))) continue;
             var metadata = CreateMetadata(id, directory,
-                TryGetString(thread, "name") ?? TryGetString(thread, "preview"),
-                ReadNativeLatestUserText(thread), DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime);
+                RealPromptOrNull(TryGetString(thread, "preview")),
+                ReadNativeLatestUserText(thread), DateTimeOffset.FromUnixTimeSeconds(seconds).UtcDateTime,
+                TryGetString(thread, "name"));
             result.Add(new ProviderResumeCatalogEntryDto
             {
                 Provider = "codex",
