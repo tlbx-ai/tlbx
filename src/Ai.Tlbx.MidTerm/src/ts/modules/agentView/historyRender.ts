@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { buildHistoryJumpVirtualWindow, resolveHistoryJumpEntryIndex } from './historyJump';
 import { resolveHistoryBadgeLabel } from './activationHelpers';
 import {
   retainHistoryMeasurementsAcrossWindowShift,
@@ -999,6 +1000,20 @@ function expandHistoryVirtualWindowForPendingAnchor(args: {
   resolveEntryHeight: (entry: AppServerControlHistoryEntry) => number;
 }): HistoryVirtualWindow {
   const { entries, virtualWindow, state, resolveEntryHeight } = args;
+  const jumpEntryIndex = resolveHistoryJumpEntryIndex(
+    entries,
+    state?.snapshot ?? null,
+    state?.historyPendingJumpTargetIndex,
+  );
+  if (jumpEntryIndex >= 0) {
+    return buildHistoryJumpVirtualWindow(
+      entries,
+      virtualWindow,
+      jumpEntryIndex,
+      APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
+      resolveEntryHeight,
+    );
+  }
   const anchorEntryId =
     state?.pendingHistoryPrependAnchor?.entryId ?? state?.pendingHistoryLayoutAnchor?.entryId;
   if (!anchorEntryId) {
@@ -1085,6 +1100,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const renderAnchor =
       state &&
       !state.historyAutoScrollPinned &&
+      state.historyPendingJumpTargetIndex === null &&
       state.historyRenderedNodes.size > 0 &&
       typeof viewport.getBoundingClientRect === 'function' &&
       state.pendingHistoryPrependAnchor === null &&
@@ -1291,12 +1307,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return false;
     }
 
-    const relativeIndex = targetIndex - snapshot.historyWindowStart;
-    if (relativeIndex < 0 || relativeIndex >= state.historyEntries.length) {
+    const entryIndex = resolveHistoryJumpEntryIndex(state.historyEntries, snapshot, targetIndex);
+    if (entryIndex < 0) {
       return false;
     }
 
-    const entry = state.historyEntries[relativeIndex];
+    const entry = state.historyEntries[entryIndex];
     const node = entry ? state.historyRenderedNodes.get(entry.id)?.node : null;
     if (!node || typeof node.getBoundingClientRect !== 'function') {
       return false;
@@ -1307,6 +1323,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     const absoluteTopPx = viewport.scrollTop + rect.top - viewportRect.top;
     const absoluteBottomPx = viewport.scrollTop + rect.bottom - viewportRect.top;
     const align: HistoryJumpAlign = state.historyPendingJumpAlign ?? 'center';
+    state.pendingHistoryPrependAnchor = null;
+    state.pendingHistoryLayoutAnchor = null;
     state.historyPendingJumpTargetIndex = null;
     state.historyPendingJumpAlign = null;
 

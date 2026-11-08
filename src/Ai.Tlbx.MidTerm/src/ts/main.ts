@@ -137,6 +137,7 @@ import {
 import {
   initAgentView,
   getAppServerControlDebugScenarioNames,
+  inspectAppServerControlHistory,
   recoverAppServerControlAfterBrowserResume,
   suspendAppServerControlForBrowserBackground,
   showAppServerControlDebugScenario,
@@ -305,6 +306,7 @@ window.mmDebug = {
     },
   },
   appServerControl: {
+    inspect: inspectAppServerControlHistory,
     get scenarios() {
       return [...getAppServerControlDebugScenarioNames()];
     },

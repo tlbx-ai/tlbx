@@ -231,25 +231,29 @@ function buildMassiveDebugScenario(
     // window while historyCount describes the full 10k-thread extent.
     items: Array.from({ length: 160 }, (_value, index) => {
       const ordinal = 4921 + index;
-      const isUser = index % 4 === 0;
+      // A real canonical window can retain an empty row that the visual projection omits.
+      const isUser = index !== 0 && index % 4 === 0;
       const isTable = ordinal % 31 === 0;
-      const detail = isUser
-        ? `Prompt ${ordinal}: audit long-running lane ${Math.floor(index / 4) + 1} without losing scroll position.`
-        : isTable
-          ? [
-              `Reply ${ordinal}: compact table checkpoint for lane ${Math.floor(index / 4) + 1}.`,
-              '',
-              '| Metric | Value | Budget |',
-              '| :--- | ---: | ---: |',
-              `| retained rows | ${64 + (ordinal % 9)} | 120 |`,
-              `| visible rows | ${8 + (ordinal % 5)} | 24 |`,
-              `| canonical index | ${ordinal} | 10000 |`,
-            ].join('\n')
-          : [
-              `Reply ${ordinal}: lane ${Math.floor(index / 4) + 1} remains readable in a 10k item history.`,
-              '',
-              'The visible DOM should stay bounded, the progress rail should stay index-based, and local scrolling should not snap back while nearby rows materialize.',
-            ].join('\n');
+      const detail =
+        index === 0
+          ? ''
+          : isUser
+            ? `Prompt ${ordinal}: audit long-running lane ${Math.floor(index / 4) + 1} without losing scroll position.`
+            : isTable
+              ? [
+                  `Reply ${ordinal}: compact table checkpoint for lane ${Math.floor(index / 4) + 1}.`,
+                  '',
+                  '| Metric | Value | Budget |',
+                  '| :--- | ---: | ---: |',
+                  `| retained rows | ${64 + (ordinal % 9)} | 120 |`,
+                  `| visible rows | ${8 + (ordinal % 5)} | 24 |`,
+                  `| canonical index | ${ordinal} | 10000 |`,
+                ].join('\n')
+              : [
+                  `Reply ${ordinal}: lane ${Math.floor(index / 4) + 1} remains readable in a 10k item history.`,
+                  '',
+                  'The visible DOM should stay bounded, the progress rail should stay index-based, and local scrolling should not snap back while nearby rows materialize.',
+                ].join('\n');
 
       return createItem(
         `${isUser ? 'user' : 'assistant'}-massive-${ordinal}`,

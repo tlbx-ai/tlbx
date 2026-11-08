@@ -237,6 +237,8 @@ The canonical history contract must satisfy the following:
 
 ### 10. Scroll-follow discipline
 
+- Canonical history jumps resolve by item order after visual filtering, never by an offset into the visual array. A filtered target aligns to the next visible retained row, or the last preceding row at the retained end. The bounded render corridor must include the target before pixel alignment; a jump must not mount the entire traversed span.
+
 - Agent Controller Session should auto-follow the live edge by default.
 - If the user scrolls away from the bottom, automatic scrolling must stop immediately.
 - Automatic scrolling may resume only after the user reaches the bottom again, drags the progress navigator to exact max, or explicitly presses a "back to bottom" control.

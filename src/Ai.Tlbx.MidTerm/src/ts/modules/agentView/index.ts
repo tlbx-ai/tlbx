@@ -608,6 +608,41 @@ export function resetAgentViewRuntimeForTests(): void {
  * Exposes deterministic history fixtures so AppServerControl UI work can be iterated
  * and regression-tested without depending on a live agent runtime.
  */
+export function inspectAppServerControlHistory(sessionId: string): Record<string, unknown> | null {
+  const state = viewStates.get(sessionId);
+  if (!state) return null;
+  const pending = state.historyPendingJumpTargetIndex;
+  return {
+    active: $activeSessionId.get(),
+    visible: isAppServerControlViewVisible(sessionId),
+    canonicalCount: state.snapshot?.historyCount,
+    windowStart: state.snapshot?.historyWindowStart,
+    windowEnd: state.snapshot?.historyWindowEnd,
+    requestedCount: state.historyWindowCount,
+    retainedCount: state.historyEntries.length,
+    summaryCounts: {
+      items: state.snapshot?.items.length,
+      requests: state.snapshot?.requests.length,
+    },
+    renderedCount: state.historyRenderedNodes.size,
+    renderedIds: [...state.historyRenderedNodes.keys()],
+    nearbyTarget:
+      pending === null
+        ? []
+        : state.historyEntries
+            .filter((e) => Math.abs(e.order - 1 - pending) <= 2)
+            .map((e) => ({ id: e.id, order: e.order })),
+    pendingJump: pending,
+    pendingAlign: state.historyPendingJumpAlign,
+    navigatorAnchor: state.historyNavigatorAnchorIndex,
+    mode: state.historyNavigatorMode,
+    debug: state.debugScenarioActive,
+    refreshInFlight: state.refreshInFlight,
+    renderDirty: state.renderDirty,
+    scheduled: state.historyRenderScheduled,
+    batch: state.historyRenderBatchHandle,
+  };
+}
 export function getAppServerControlDebugScenarioNames(): readonly AppServerControlDebugScenarioName[] {
   return APP_SERVER_CONTROL_DEBUG_SCENARIO_NAMES;
 }
@@ -637,6 +672,15 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
     window.location.origin,
   );
   state.snapshot = debugScenario.snapshot;
+  state.historyWindowStart = debugScenario.snapshot.historyWindowStart;
+  state.historyWindowCount =
+    debugScenario.snapshot.historyWindowEnd - debugScenario.snapshot.historyWindowStart;
+  state.historyWindowTargetCount = state.historyWindowCount;
+  state.historyNavigatorAnchorIndex = debugScenario.snapshot.historyWindowStart;
+  state.historyPendingJumpTargetIndex = null;
+  state.historyPendingJumpAlign = null;
+  state.pendingHistoryPrependAnchor = null;
+  state.pendingHistoryLayoutAnchor = null;
   state.debugScenarioActive = true;
   state.activationRunId += 1;
   state.streamConnected = true;
