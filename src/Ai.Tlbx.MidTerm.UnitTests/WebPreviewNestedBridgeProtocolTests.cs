@@ -24,6 +24,15 @@ public sealed class WebPreviewNestedBridgeProtocolTests
     }
 
     [Fact]
+    public async Task IndependentChildBootstrapOutranksDuplicateSharedParentCookies()
+    {
+        var parentContext = JsonSerializer.Serialize(new { previewId = "parent-id", previewToken = "parent-token", sessionId = "parent-session", routeKey = "parent-route" });
+        var childContext = JsonSerializer.Serialize(new { previewId = "child-id", previewToken = "child-token", sessionId = "child-session", routeKey = "child-route" });
+        var cookies = "mt-preview-ctx=" + Uri.EscapeDataString(parentContext) + "; mt-preview-ctx=" + Uri.EscapeDataString(childContext);
+        var html = Document(Parent, "https://parent.example", Document(Child, "https://child.example", "<html><head></head></html>"));
+        await RunAsync(html, "child", true, nested: true, initialCookies: cookies);
+    }
+    [Fact]
     public async Task DeeperAdapterWinsBeforeTheParserHasReachedAnyInnerScript()
     {
         var html = Document(Child, "https://child.example", "<html><head></head></html>");
@@ -56,7 +65,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             + WebPreviewProxyMiddleware.GetUrlRewriteScript(route, upstreamHtml: html));
     }
 
-    private static async Task RunAsync(string html, string identity, bool connected, bool nested, bool middle = false)
+    private static async Task RunAsync(string html, string identity, bool connected, bool nested, bool middle = false, string initialCookies = "")
     {
         // Execute every complete, server-generated script in parser order. No future
         // script nodes are visible to the prepended adapter in this fixture.
@@ -64,7 +73,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             + ";const identity=" + JsonSerializer.Serialize(identity)
             + ";const connected=" + JsonSerializer.Serialize(connected)
             + ";const nested=" + JsonSerializer.Serialize(nested)
-            + ";const middle=" + JsonSerializer.Serialize(middle) + ";";
+            + ";const middle=" + JsonSerializer.Serialize(middle) + ";const initialCookies=" + JsonSerializer.Serialize(initialCookies) + ";";
         var script = setup + """
             const assert=require('node:assert/strict'),vm=require('node:vm');
             const parent='/webpreview/parent-route/_access/parent-id/parent-token';
@@ -82,8 +91,8 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             class Frame extends Element{get src(){return this.value;}set src(value){this.value=value;}}
             class Xhr{open(){}abort(){}send(){}}
             class Socket{constructor(url){sockets.push(new URL(url));this.readyState=0;}send(){}}
-            const document={cookie:'',hidden:false,visibilityState:'visible',documentElement:{},querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{},hasFocus:()=>false,baseURI:location.href};
-            const context={URL,URLSearchParams,location,document,Element,XMLHttpRequest:Xhr,WebSocket:Socket,
+            const document={cookie:initialCookies,hidden:false,visibilityState:'visible',documentElement:{},querySelector:()=>null,querySelectorAll:()=>[],addEventListener:()=>{},hasFocus:()=>false,baseURI:location.href};
+            const context={URL,URLSearchParams,DOMException,location,document,Element,XMLHttpRequest:Xhr,WebSocket:Socket,
               HTMLIFrameElement:Frame,HTMLLinkElement:class extends Element{},HTMLAnchorElement:class extends Element{},HTMLFormElement:class extends Element{},
               HTMLObjectElement:class extends Element{},HTMLVideoElement:class extends Element{},
               MutationObserver:class{observe(){}},navigator:{},fetch:()=>{},open:()=>{},
