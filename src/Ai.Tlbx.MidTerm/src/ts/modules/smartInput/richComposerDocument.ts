@@ -1,4 +1,10 @@
-import { Fragment, Schema, type Node as ProseMirrorNode, type NodeType } from 'prosemirror-model';
+import {
+  Fragment,
+  Schema,
+  type Node as ProseMirrorNode,
+  type NodeType,
+  type Slice,
+} from 'prosemirror-model';
 import {
   defaultMarkdownParser,
   defaultMarkdownSerializer,
@@ -79,6 +85,29 @@ export const richComposerSchema = new Schema({
   marks: markdownSchema.spec.marks.update('link', linkSpec),
 });
 const tokenizer = new MarkdownIt('commonmark', { html: false }).enable('table');
+// Preserve the distinction between an actual table break, escaped literal text
+// and code before Markdown's normal escape processing removes that information.
+tokenizer.inline.ruler.before('text', 'tlbx_table_break', (state, silent) => {
+  if (state.src[state.pos] !== '<') return false;
+  const match = /^<br[ \t]*\/?>/i.exec(state.src.slice(state.pos, state.posMax));
+  if (!match) return false;
+  if (!silent) state.push('tlbx_table_break', 'br', 0).content = match[0];
+  state.pos += match[0].length;
+  return true;
+});
+tokenizer.core.ruler.after('inline', 'tlbx_table_cell_breaks', (state) => {
+  let tableCell = false;
+  for (const token of state.tokens) {
+    if (token.type === 'th_open' || token.type === 'td_open') tableCell = true;
+    if (token.type === 'th_close' || token.type === 'td_close') tableCell = false;
+    for (const child of token.children ?? []) {
+      if (child.type !== 'tlbx_table_break') continue;
+      child.type = tableCell ? 'hardbreak' : 'text';
+      child.tag = tableCell ? 'br' : '';
+      if (tableCell) child.content = '';
+    }
+  }
+});
 // Markdown table cells expose inline tokens; the ProseMirror table schema requires
 // a paragraph inside every cell. Normalize tokens through the published core API.
 tokenizer.core.ruler.after('block', 'tlbx_table_cell_paragraphs', (state) => {
@@ -120,6 +149,16 @@ export function richNode(name: string): NodeType {
   const type = richComposerSchema.nodes[name];
   if (!type) throw new RangeError(`Unknown composer node ${name}`);
   return type;
+}
+
+export function richDocumentFromClipboardSlice(slice: Slice): ProseMirrorNode {
+  // A partial native CellSelection contains table rows, not their table.
+  // Restore that parent for the plain-text projection without changing its cells.
+  const content =
+    slice.content.firstChild?.type.name === 'table_row'
+      ? richNode('table').create(null, slice.content)
+      : slice.content;
+  return richNode('doc').create(null, content);
 }
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -258,7 +297,7 @@ export function richDocumentToParts(doc: ProseMirrorNode): SmartInputComposerPar
       table: (state: MarkdownSerializerState, node: ProseMirrorNode) => {
         state.write(
           tableMarkdown(node, (cell) =>
-            serializer
+            cellSerializer
               .serialize(richNode('doc').create(null, cell.content))
               // Backslashes have already been escaped by the Markdown serializer.
               // Retain them while adding the table delimiter's extra escape.
@@ -274,6 +313,16 @@ export function richDocumentToParts(doc: ProseMirrorNode): SmartInputComposerPar
     // inner emphasis pair after escaping only the ends of __init__. Escape
     // those remaining underscores too; code and mark delimiters bypass esc().
     { escapeExtraCharacters: /(?<!\\)_/g },
+  );
+  const cellSerializer = new MarkdownSerializer(
+    {
+      ...serializer.nodes,
+      hard_break: (state) => {
+        state.write('<br>');
+      },
+    },
+    serializer.marks,
+    { escapeExtraCharacters: /<|(?<!\\)_/g },
   );
   const text = serializer.serialize(doc);
   const parts: SmartInputComposerPart[] = [];

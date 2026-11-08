@@ -691,7 +691,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["-c", "fast_default_opt_out=false", "--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
+            Assert.Equal(["--enable", "remote_compaction_v2", "app-server"], capture.Arguments);
             Assert.Equal(fakeCodex.Root, capture.ProcessWorkingDirectory);
             Assert.Contains("initialize", capture.Methods, StringComparer.Ordinal);
             Assert.Contains("initialized", capture.Methods, StringComparer.Ordinal);
@@ -880,7 +880,7 @@ public sealed class MtAgentHostCodexIntegrationTests
                 static launch => launch.Arguments.Length > 0 &&
                                  !string.IsNullOrWhiteSpace(launch.ThreadStartCwd));
 
-            Assert.Equal(["-c", "fast_default_opt_out=false", "app-server"], capture.Arguments);
+            Assert.Equal(["app-server"], capture.Arguments);
         }
         finally
         {

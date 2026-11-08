@@ -45,6 +45,107 @@ function paragraph(text: string, code = false) {
 }
 
 describe('rich user input to history', () => {
+  it.each(['paragraphs', 'hard-break', 'hard-break-after-path'])(
+    'keeps a genuine table-cell line break through outbound history and replay: %s',
+    async (shape) => {
+      const first = shape === 'hard-break-after-path' ? 'C:\\temp\\' : 'eins';
+      const content =
+        shape === 'paragraphs'
+          ? [paragraph(first), paragraph('zwei')]
+          : [
+              richNode('paragraph').create(null, [
+                richComposerSchema.text(first),
+                richNode('hard_break').create(),
+                richComposerSchema.text('zwei'),
+              ]),
+            ];
+      const doc = richNode('doc').create(
+        null,
+        richNode('table').create(null, [
+          richNode('table_row').create(
+            null,
+            richNode('table_header').create(null, paragraph('Breaks')),
+          ),
+          richNode('table_row').create(null, richNode('table_cell').create(null, content)),
+        ]),
+      );
+      const result = await outbound(doc);
+      const html = getCachedHistoryMarkdown(undefined, entry('user', result.text)).html;
+      expect(html).toContain(`>${first}<br>zwei</td>`);
+      const restored = getRichComposerDocument({
+        parts: [{ kind: 'text', text: result.text }],
+        nextOrdinalByKind: {},
+      });
+      const cell = restored.firstChild!.child(1).firstChild!;
+      let breaks = 0;
+      cell.descendants((node) => {
+        if (node.type.name === 'hard_break') breaks += 1;
+      });
+      expect(breaks).toBe(1);
+      expect(cell.textContent).toBe(first + 'zwei');
+    },
+  );
+
+  it.each([false, true])(
+    'keeps literal br tags literal in a table, including code: %s',
+    async (code) => {
+      const doc = richNode('doc').create(
+        null,
+        richNode('table').create(null, [
+          richNode('table_row').create(
+            null,
+            richNode('table_header').create(null, paragraph('Literal')),
+          ),
+          richNode('table_row').create(
+            null,
+            richNode('table_cell').create(null, paragraph('<br>', code)),
+          ),
+        ]),
+      );
+      const result = await outbound(doc);
+      const html = getCachedHistoryMarkdown(undefined, entry('user', result.text)).html;
+      expect(html).toContain(code ? '<code>&lt;br&gt;</code>' : '>&lt;br&gt;</td>');
+      const restored = getRichComposerDocument({
+        parts: [{ kind: 'text', text: result.text }],
+        nextOrdinalByKind: {},
+      });
+      expect(restored.firstChild!.child(1).firstChild!.textContent).toBe('<br>');
+    },
+  );
+
+  it('accepts only simple native br markup inside tables, never attributes, escaped tags or code', () => {
+    const html = renderMarkdown(
+      '| Value |\n| --- |\n| eins<BR />zwei |\n| \\<br\\> |\n| `<br>` |\n| <br onclick="evil()"> |',
+    );
+    expect(html).toContain('>eins<br>zwei</td>');
+    expect(html).toContain('>&lt;br&gt;</td>');
+    expect(html).toContain('<code>&lt;br&gt;</code>');
+    expect(html).not.toContain('<br onclick');
+    expect(renderMarkdown('literal <br> text')).toContain('literal &lt;br&gt; text');
+  });
+
+  it.each(['> literal', String.raw`\<br>`])(
+    'retains existing literal cell escaping: %s',
+    async (text) => {
+      const doc = richNode('doc').create(
+        null,
+        richNode('table').create(null, [
+          richNode('table_row').create(
+            null,
+            richNode('table_header').create(null, paragraph('Literal')),
+          ),
+          richNode('table_row').create(null, richNode('table_cell').create(null, paragraph(text))),
+        ]),
+      );
+      const result = await outbound(doc);
+      const restored = getRichComposerDocument({
+        parts: [{ kind: 'text', text: result.text }],
+        nextOrdinalByKind: {},
+      });
+      expect(restored.firstChild!.child(1).firstChild!.textContent).toBe(text);
+    },
+  );
+
   it('preserves the native pasted in-word bold and italic paragraph', async () => {
     const doc = richNode('doc').create(
       null,

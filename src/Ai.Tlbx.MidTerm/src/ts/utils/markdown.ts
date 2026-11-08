@@ -171,7 +171,11 @@ function protectMarkdownInlineLine(
 }
 
 /** Input is already HTML-escaped. Literal escapes and code never become markup. */
-function formatMarkdownInline(text: string, options: MarkdownRenderOptions = {}): string {
+function formatMarkdownInline(
+  text: string,
+  options: MarkdownRenderOptions = {},
+  tableCell = false,
+): string {
   const literals: string[] = [];
   let prefix = '\uE000tlbx-inline:';
   while (text.includes(prefix)) prefix += ':';
@@ -193,6 +197,9 @@ function formatMarkdownInline(text: string, options: MarkdownRenderOptions = {})
       ),
     )
     .join('\n');
+  // Code and escaped literal tags are already protected. Only this exact safe
+  // table-cell tag becomes markup; attributes and all other HTML stay escaped.
+  if (tableCell) html = html.replace(/&lt;br[ \t]*\/?&gt;/gi, '<br>');
   html = formatMarkdownEmphasis(html);
   html = formatMarkdownLinks(formatMarkdownImages(html));
   return html.replace(
@@ -548,7 +555,7 @@ function renderStructuredMarkdownTable(args: {
   const denseAttr = isDense ? ' data-table-density="dense"' : '';
   const sourceAttr = source === 'csv' ? ' data-table-source="csv"' : '';
   const formatCell = (cell: string): string =>
-    source === 'markdown' ? formatMarkdownInline(cell, args.options) : cell;
+    source === 'markdown' ? formatMarkdownInline(cell, args.options, true) : cell;
 
   return `<div class="agent-markdown-table-wrap"><table class="agent-markdown-table"${denseAttr}${sourceAttr}><thead><tr>${headers
     .map((cell, cellIndex) => {
