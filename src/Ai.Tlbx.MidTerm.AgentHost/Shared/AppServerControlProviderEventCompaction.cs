@@ -12,6 +12,7 @@ public static class AppServerControlProviderEventCompaction
     private const int MaxCommandTextChars = 2048;
     private const int MaxToolItemDetailChars = 4096;
     private const int MaxRequestDetailChars = 2048;
+    private const int MaxPendingMcpRequestDetailChars = 64 * 1024;
     private const int MaxRuntimeDetailChars = 4096;
     private const int MaxPlanMarkdownChars = 16384;
 
@@ -199,7 +200,7 @@ public static class AppServerControlProviderEventCompaction
     }
 
     public static string CompactRequestDetail(string? detail, string requestType, bool pending) =>
-        pending && requestType == "mcp_tool_approval" ? detail ?? string.Empty : CompactTextMiddle(detail, MaxRequestDetailChars);
+        CompactTextMiddle(detail, pending && requestType == "mcp_tool_approval" ? MaxPendingMcpRequestDetailChars : MaxRequestDetailChars);
 
     private static string CompactTextMiddle(string? value, int maxChars)
     {

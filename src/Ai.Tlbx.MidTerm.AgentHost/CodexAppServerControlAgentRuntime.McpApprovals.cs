@@ -7,6 +7,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 internal sealed partial class CodexAppServerControlAgentRuntime
 {
     private bool _mcpTurnStartPending;
+    private bool _mcpTurnStartUnconfirmed;
     private const string McpToolApprovalType = "mcp_tool_approval";
     private const string McpElicitationMethod = "mcpServer/elicitation/request";
 
@@ -35,16 +36,18 @@ internal sealed partial class CodexAppServerControlAgentRuntime
         var turnId = GetString(payload, "turnId");
         if (string.IsNullOrEmpty(threadId) || string.IsNullOrEmpty(turnId) ||
             !string.Equals(threadId, _providerThreadId, StringComparison.Ordinal) ||
-            !string.Equals(turnId, _activeTurnId, StringComparison.Ordinal)) return true;
+            (!string.Equals(turnId, _activeTurnId, StringComparison.Ordinal) && !_mcpTurnStartPending)) return true;
         if (_pendingApprovals.Values.Any(p => p.RequestType == McpToolApprovalType && p.ThreadId == threadId && p.TurnId == turnId &&
             JsonElement.DeepEquals(p.JsonRpcId, jsonRpcId))) return true;
         var pending = new PendingCodexApproval
         {
             RequestId = "approval-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
             JsonRpcId = jsonRpcId.Clone(), RequestType = McpToolApprovalType, RequestTypeLabel = "Tool approval",
-            ThreadId = threadId, TurnId = turnId, Payload = payload.Clone(),
-            Detail = GetString(payload, "message") + "\n" + GetString(payload, "serverName") + " / " +
-                GetString(payload, "_meta", "tool_name") + "\n" + Traverse(payload, "_meta", "tool_params")!.Value.GetRawText()
+            ThreadId = threadId, TurnId = turnId, McpAwaitingStartAck = _mcpTurnStartPending,
+            Detail = AppServerControlProviderEventCompaction.CompactRequestDetail(
+                GetString(payload, "message") + "\n" + GetString(payload, "serverName") + " / " +
+                GetString(payload, "_meta", "tool_name") + "\n" + Traverse(payload, "_meta", "tool_params")!.Value.GetRawText(),
+                McpToolApprovalType, pending: true)
         };
         _pendingApprovals[pending.RequestId] = pending;
         _emit(CreateEvent("request.opened", turnId, null, pending.RequestId, "codex.app-server.request", method, payload,
@@ -54,11 +57,11 @@ internal sealed partial class CodexAppServerControlAgentRuntime
     }
 
     private bool CanAutoResolveMcpApproval(string threadId, string? turnId) =>
-        !_mcpTurnStartPending && _quickSettings.PermissionMode == "auto" && _quickSettings.PlanMode == "off" && turnId is not null &&
+        !_mcpTurnStartPending && !_mcpTurnStartUnconfirmed && _quickSettings.PermissionMode == "auto" && _quickSettings.PlanMode == "off" && turnId is not null &&
         string.Equals(threadId, _providerThreadId, StringComparison.Ordinal) && string.Equals(turnId, _activeTurnId, StringComparison.Ordinal);
 
     private bool IsCurrentMcpApproval(PendingCodexApproval pending) =>
-        pending.ThreadId is not null && pending.TurnId is not null &&
+        !pending.McpAwaitingStartAck && pending.ThreadId is not null && pending.TurnId is not null &&
         string.Equals(pending.ThreadId, _providerThreadId, StringComparison.Ordinal) &&
         string.Equals(pending.TurnId, _activeTurnId, StringComparison.Ordinal) &&
         _pendingApprovals.TryGetValue(pending.RequestId, out var current) && ReferenceEquals(pending, current);
@@ -73,7 +76,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime
         writer.WriteEndObject(); writer.WriteEndObject();
     });
 
-    private async Task<bool> SendMcpToolApprovalAsync(PendingCodexApproval pending, string decision, bool automatic, CancellationToken ct)
+    private async Task<(bool Sent, bool Published)> SendMcpToolApprovalAsync(PendingCodexApproval pending, string decision, bool automatic, CancellationToken ct)
     {
         if (decision is not ("accept" or "decline" or "cancel"))
             throw new InvalidOperationException("MCP tool approval supports only accept, decline or cancel; persistence was not requested.");
@@ -81,26 +84,61 @@ internal sealed partial class CodexAppServerControlAgentRuntime
         try
         {
             if (!IsCurrentMcpApproval(pending) || automatic && !CanAutoResolveMcpApproval(pending.ThreadId!, pending.TurnId) ||
-                Interlocked.CompareExchange(ref pending.McpResolutionState, 1, 0) != 0) return false;
+                Interlocked.CompareExchange(ref pending.McpResolutionState, 1, 0) != 0) return (false, false);
             // Keep the native request in the map while writing so provider cancellation can win.
             // A failed/uncertain write is never automatically replayed.
             await WriteCodexMessageCoreAsync(BuildMcpToolApprovalResponse(pending, decision), ct).ConfigureAwait(false);
-            if (!_pendingApprovals.TryRemove(pending.RequestId, out _) ||
-                !string.Equals(pending.ThreadId, _providerThreadId, StringComparison.Ordinal)) return false;
-            _emit(CreateEvent("request.resolved", pending.TurnId, null, pending.RequestId, "codex.app-server.request", McpElicitationMethod, default,
-                e => e.RequestResolved = new() { RequestType = McpToolApprovalType, Decision = decision }));
-            return true;
+            return CompleteMcpToolApprovalWrite(pending, decision);
         }
         finally { _codexWriteGate.Release(); }
+    }
+
+    private (bool Sent, bool Published) CompleteMcpToolApprovalWrite(PendingCodexApproval pending, string decision)
+    {
+        // A native resolution or turn-end cancellation may win after the successful write.
+        // Delivery still succeeded; preserve that canonical settlement instead of throwing or replacing it.
+        var published = _pendingApprovals.TryRemove(pending.RequestId, out _) &&
+            string.Equals(pending.ThreadId, _providerThreadId, StringComparison.Ordinal);
+        if (published)
+            _emit(CreateEvent("request.resolved", pending.TurnId, null, pending.RequestId, "codex.app-server.request", McpElicitationMethod, default,
+                e => e.RequestResolved = new() { RequestType = McpToolApprovalType, Decision = decision }));
+        return (true, published);
+    }
+
+    private async Task ReconcileMcpStartApprovalsAsync(string threadId, string? acknowledgedTurnId, CancellationToken ct)
+    {
+        foreach (var pending in _pendingApprovals.Values.Where(p => p.RequestType == McpToolApprovalType && p.McpAwaitingStartAck))
+        {
+            if (pending.ThreadId == threadId && pending.TurnId == acknowledgedTurnId)
+            {
+                pending.McpAwaitingStartAck = false;
+                continue;
+            }
+            if (!_pendingApprovals.TryRemove(pending.RequestId, out _) || pending.ThreadId != _providerThreadId) continue;
+            try { await WriteCodexMessageAsync(BuildMcpToolApprovalResponse(pending, "cancel"), ct).ConfigureAwait(false); }
+            catch (Exception error) when (error is InvalidOperationException or IOException or System.Net.WebSockets.WebSocketException or OperationCanceledException)
+            {
+                // The local start was not acknowledged for this ID; never retry an uncertain cancellation.
+            }
+            _emit(CreateEvent("request.resolved", pending.TurnId, null, pending.RequestId, "mtagenthost.codex", "turn/start-scope", default,
+                e => e.RequestResolved = new() { RequestType = McpToolApprovalType, Decision = "cancel" }));
+        }
     }
 
     private async Task<HostCommandOutcome> ResolveMcpToolApprovalAsync(AppServerControlHostCommandEnvelope command,
         PendingCodexApproval pending, string decision, CancellationToken ct)
     {
-        if (!await SendMcpToolApprovalAsync(pending, decision, automatic: false, ct).ConfigureAwait(false))
+        var outcome = await SendMcpToolApprovalAsync(pending, decision, automatic: false, ct).ConfigureAwait(false);
+        return McpApprovalOutcome(command, pending, decision, outcome);
+    }
+
+    private static HostCommandOutcome McpApprovalOutcome(AppServerControlHostCommandEnvelope command,
+        PendingCodexApproval pending, string decision, (bool Sent, bool Published) outcome)
+    {
+        if (!outcome.Sent)
             throw new InvalidOperationException("MCP tool approval is settled, unconfirmed or outside the current thread/turn; no replacement decision was sent.");
         return Accepted(command.CommandId, command.SessionId, new() { SessionId = command.SessionId, Status = "accepted",
-            RequestId = pending.RequestId, TurnId = pending.TurnId, Decision = decision });
+            RequestId = pending.RequestId, TurnId = pending.TurnId, Decision = outcome.Published ? decision : null });
     }
 
     private async Task AutoResolveMcpApprovalAsync(PendingCodexApproval pending)

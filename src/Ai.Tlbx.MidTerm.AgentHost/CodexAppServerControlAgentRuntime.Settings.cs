@@ -81,7 +81,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime
             // currently waiting typed MCP tool approvals under the acknowledged owned Auto scope.
             if (threadPatch.ContainsKey("approvalPolicy") && threadPatch.ContainsKey("sandboxPolicy") &&
                 string.Equals(request.ExpectedThreadId, _providerThreadId, StringComparison.Ordinal) &&
-                string.Equals(request.ExpectedTurnId, _activeTurnId, StringComparison.Ordinal)) _mcpTurnStartPending = false;
+                string.Equals(request.ExpectedTurnId, _activeTurnId, StringComparison.Ordinal)) _mcpTurnStartUnconfirmed = false;
             await ReleasePendingMcpApprovalsAsync(request.ExpectedThreadId, request.ExpectedTurnId).ConfigureAwait(false);
             _hasConfiguredThreadDefaults = true;
             using var actualProperties = actual.EnumerateObject();

@@ -31,14 +31,14 @@ public sealed class CodexMcpToolApprovalTests
             .Invoke(runtime, ["mcpServer/elicitation/request", rpc.RootElement, json.RootElement]);
     }
 
-    private static async Task AttachAsync(CodexAppServerControlAgentRuntime runtime, FakeCodexWebSocketServer server)
+    private static async Task AttachAsync(CodexAppServerControlAgentRuntime runtime, FakeCodexWebSocketServer server, bool startTurn = true)
     {
         await runtime.ExecuteAsync(new() { SessionId = "session", CommandId = "attach", Type = "runtime.attach",
             AttachRuntime = new() { Provider = "codex", WorkingDirectory = Path.GetTempPath(), ResumeThreadId = "own",
                 AttachPoint = new() { Provider = "codex", Endpoint = server.Endpoint, SharedRuntime = true,
                     TransportKind = SessionAgentAttachPoint.CodexAppServerWebSocketTransport } } }, TestContext.Current.CancellationToken);
         Notification(runtime, "thread/settings/updated", """{"threadId":"own","threadSettings":{"approvalPolicy":"on-request","sandboxPolicy":{"type":"workspaceWrite"},"collaborationMode":{"mode":"default"}}}""");
-        Notification(runtime, "turn/started", """{"threadId":"own","turn":{"id":"turn"}}""");
+        if (startTurn) Notification(runtime, "turn/started", """{"threadId":"own","turn":{"id":"turn"}}""");
     }
 
     private static Task<HostCommandOutcome> Resolve(CodexAppServerControlAgentRuntime runtime, string requestId, string decision) =>
@@ -52,10 +52,10 @@ public sealed class CodexMcpToolApprovalTests
         while (server.ServerRequestResponses.IsEmpty) await Task.Delay(10, timeout.Token);
     }
 
-    private static Task<HostCommandOutcome> ConfigureAutoAsync(CodexAppServerControlAgentRuntime runtime)
+    private static async Task<HostCommandOutcome> ConfigureAutoAsync(CodexAppServerControlAgentRuntime runtime)
     {
         using var value = JsonDocument.Parse("\"auto\"");
-        return runtime.ExecuteAsync(new() { SessionId = "session", CommandId = "configure", Type = "runtime.configure",
+        return await runtime.ExecuteAsync(new() { SessionId = "session", CommandId = "configure", Type = "runtime.configure",
             Configure = new() { ExpectedThreadId = "own", ExpectedTurnId = "turn",
                 Settings = new(StringComparer.Ordinal) { ["permissionMode"] = value.RootElement.Clone() } } }, TestContext.Current.CancellationToken);
     }
@@ -215,6 +215,8 @@ public sealed class CodexMcpToolApprovalTests
         Assert.Empty(server.ServerRequestResponses);
         Notification(runtime, "thread/settings/updated", """{"threadId":"own","threadSettings":{"approvalPolicy":"on-request","sandboxPolicy":{"type":"workspaceWrite"}}}""");
         pending.SetValue(runtime, false);
+        await (Task)typeof(CodexAppServerControlAgentRuntime).GetMethod("ReconcileMcpStartApprovalsAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(runtime, ["own", "turn", TestContext.Current.CancellationToken])!;
         await (Task)typeof(CodexAppServerControlAgentRuntime).GetMethod("ReleasePendingMcpApprovalsAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(runtime, ["own", "turn"])!;
         Assert.Empty(server.ServerRequestResponses);
@@ -305,6 +307,115 @@ public sealed class CodexMcpToolApprovalTests
         await Resolve(runtime, Assert.Single(events.Where(e => e.RequestOpened is not null)).RequestId!, "accept");
         await WaitForResponseAsync(server);
         Assert.Equal(JsonValueKind.Number, Assert.Single(server.ServerRequestResponses).GetProperty("id").ValueKind);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PreAckWebSocketApprovalsWaitForExactTurnMatchAndCancelUnmatchedIds(bool startedFirst)
+    {
+        await using var server = FakeCodexWebSocketServer.Start("own", "unused");
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        server.TurnStartAckGate = release.Task; server.SkipTurnWorkAfterAck = true;
+        var first = JsonSerializer.Serialize(new { id = 0, method = "mcpServer/elicitation/request",
+            @params = System.Text.Json.Nodes.JsonNode.Parse(Elicitation.Replace("\"turn\"", "\"turn-remote-1\"", StringComparison.Ordinal)) });
+        var unmatched = JsonSerializer.Serialize(new { id = 1, method = "mcpServer/elicitation/request",
+            @params = System.Text.Json.Nodes.JsonNode.Parse(Elicitation.Replace("\"turn\"", "\"unmatched\"", StringComparison.Ordinal)) });
+        const string started = """{"method":"turn/started","params":{"threadId":"own","turn":{"id":"turn-remote-1"}}}""";
+        server.BeforeTurnStartAckMessages = startedFirst ? [started, first, unmatched] : [first, unmatched, started];
+        var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+        await using var runtime = new CodexAppServerControlAgentRuntime(events.Enqueue); await AttachAsync(runtime, server, startTurn: false);
+        var start = runtime.ExecuteAsync(new() { SessionId = "session", CommandId = "start", Type = "turn.start",
+            StartTurn = new() { Text = "Fixture input", PermissionMode = "auto" } }, TestContext.Current.CancellationToken);
+        try
+        {
+            await server.TurnStartPreAckMessagesSent.Task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken); timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            while (events.Count(e => e.RequestOpened is not null) < 2) await Task.Delay(10, timeout.Token);
+            Assert.Empty(server.ServerRequestResponses);
+            Assert.DoesNotContain(events, e => e.RequestResolved is not null);
+        }
+        finally { release.TrySetResult(); }
+        await start;
+        using var responsesTimeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken); responsesTimeout.CancelAfter(TimeSpan.FromSeconds(5));
+        while (server.ServerRequestResponses.Count < 2) await Task.Delay(10, responsesTimeout.Token);
+        var replies = server.ServerRequestResponses.ToDictionary(reply => reply.GetProperty("id").GetInt32());
+        Assert.Equal("accept", replies[0].GetProperty("result").GetProperty("action").GetString());
+        Assert.Equal("cancel", replies[1].GetProperty("result").GetProperty("action").GetString());
+        Assert.Single(events.Where(e => e.RequestResolved?.Decision == "accept" && e.TurnId == "turn-remote-1"));
+        Assert.Single(events.Where(e => e.RequestResolved?.Decision == "cancel" && e.TurnId == "unmatched"));
+    }
+
+    [Fact]
+    public async Task FailedStartClosesTheEarlyRequestWindowAndCannotAdmitLaterUnknownTurns()
+    {
+        await using var server = FakeCodexWebSocketServer.Start("own", "unused");
+        server.RejectTurnStart = true;
+        server.BeforeTurnStartAckMessages = [JsonSerializer.Serialize(new { id = 0, method = "mcpServer/elicitation/request",
+            @params = System.Text.Json.Nodes.JsonNode.Parse(Elicitation) })];
+        var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+        await using var runtime = new CodexAppServerControlAgentRuntime(events.Enqueue); await AttachAsync(runtime, server, startTurn: false);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => runtime.ExecuteAsync(new() { SessionId = "session", CommandId = "start", Type = "turn.start",
+            StartTurn = new() { Text = "Fixture input", PermissionMode = "auto" } }, TestContext.Current.CancellationToken));
+        await WaitForResponseAsync(server);
+        Assert.Equal("cancel", Assert.Single(server.ServerRequestResponses).GetProperty("result").GetProperty("action").GetString());
+        var opened = events.Count(e => e.RequestOpened is not null);
+        Request(runtime, Elicitation.Replace("\"turn\"", "\"unknown-after-failure\"", StringComparison.Ordinal), "2");
+        Assert.Equal(opened, events.Count(e => e.RequestOpened is not null));
+        Assert.Single(server.ServerRequestResponses);
+        Assert.False((bool)typeof(CodexAppServerControlAgentRuntime).GetField("_mcpTurnStartPending", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(runtime)!);
+    }
+
+    [Fact]
+    public async Task SuccessfulWriteThenNativeSettlementIsAcceptedWithoutReplacingNativeCanonicalDecision()
+    {
+        await using var server = FakeCodexWebSocketServer.Start("own", "unused");
+        var events = new ConcurrentQueue<AppServerControlProviderEvent>();
+        await using var runtime = new CodexAppServerControlAgentRuntime(events.Enqueue); await AttachAsync(runtime, server); Request(runtime);
+        var type = typeof(CodexAppServerControlAgentRuntime);
+        var map = (System.Collections.IDictionary)type.GetField("_pendingApprovals", BindingFlags.NonPublic | BindingFlags.Instance)!.GetValue(runtime)!;
+        var pending = Assert.Single(map.Values.Cast<object>());
+        var id = Assert.Single(events.Where(e => e.RequestOpened is not null)).RequestId!;
+        var wire = (string)type.GetMethod("BuildMcpToolApprovalResponse", BindingFlags.NonPublic | BindingFlags.Static)!.Invoke(null, [pending, "accept"])!;
+        // Deterministically drive the production write/notification/cleanup phases, rather than relying on socket scheduling.
+        await (Task)type.GetMethod("WriteCodexMessageCoreAsync", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(runtime, [wire, TestContext.Current.CancellationToken])!;
+        await WaitForResponseAsync(server);
+        Notification(runtime, "serverRequest/resolved", """{"threadId":"own","requestId":0}""");
+        var delivery = ((bool Sent, bool Published))type.GetMethod("CompleteMcpToolApprovalWrite", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(runtime, [pending, "accept"])!;
+        var receipt = (HostCommandOutcome)type.GetMethod("McpApprovalOutcome", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, [new AppServerControlHostCommandEnvelope { SessionId = "session", CommandId = "resolve" }, pending, "accept", delivery])!;
+        Assert.True(delivery.Sent); Assert.False(delivery.Published);
+        Assert.Equal("accepted", receipt.Result.Status);
+        Assert.Null(receipt.Result.Accepted!.Decision);
+        Assert.Equal("resolved", Assert.Single(events.Where(e => e.RequestResolved is not null)).RequestResolved!.Decision);
+        Assert.Single(server.ServerRequestResponses);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Resolve(runtime, id, "decline"));
+        Assert.Single(server.ServerRequestResponses);
+    }
+
+    [Fact]
+    public void HugePendingDetailsHaveAnExplicitVisibleBoundAndCompactAgainAfterClose()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "tlbx-mcp-huge-" + Guid.NewGuid().ToString("N"));
+        var history = new SessionAppServerControlHistoryService(storeDirectory: directory, enableScreenLogging: false);
+        var detail = "server/tool " + new string('x', 500_000) + " exact-tail";
+        try
+        {
+            history.Append(new() { SessionId = "s", Provider = "codex", ThreadId = "own", TurnId = "turn", Type = "request.opened", RequestId = "approval",
+                RequestOpened = new() { RequestType = "mcp_tool_approval", Detail = detail } });
+            var pending = Assert.Single(history.GetSnapshotWindow("s", 0, 1)!.Requests).Detail!;
+            Assert.True(pending.Length <= 64 * 1024);
+            Assert.Contains("chars omitted", pending, StringComparison.Ordinal);
+            Assert.StartsWith("server/tool ", pending, StringComparison.Ordinal);
+            Assert.EndsWith(" exact-tail", pending, StringComparison.Ordinal);
+            history.Append(new() { SessionId = "s", Provider = "codex", ThreadId = "own", TurnId = "turn", Type = "request.resolved", RequestId = "approval",
+                RequestResolved = new() { RequestType = "mcp_tool_approval", Decision = "decline" } });
+            var closed = Assert.Single(history.GetSnapshot("s")!.Requests).Detail!;
+            Assert.True(closed.Length <= 2048); Assert.Contains("chars omitted", closed, StringComparison.Ordinal);
+        }
+        finally { history.Forget("s"); if (Directory.Exists(directory)) Directory.Delete(directory, true); }
     }
 
     [Fact]

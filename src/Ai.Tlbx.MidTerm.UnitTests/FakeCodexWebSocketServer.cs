@@ -98,6 +98,12 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
     public Task? ThreadSettingsUpdateGate { get; set; }
     public TaskCompletionSource ThreadSettingsUpdateReceived { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+    public string[] BeforeTurnStartAckMessages { get; set; } = [];
+    public Task? TurnStartAckGate { get; set; }
+    public TaskCompletionSource TurnStartPreAckMessagesSent { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    public bool SkipTurnWorkAfterAck { get; set; }
+    public bool RejectTurnStart { get; set; }
+
     public bool IgnoreGoalReadback { get; set; }
 
     public int GoalReadCount { get; private set; }
@@ -504,6 +510,18 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 : null;
                         var turnId = "turn-remote-1";
                         var turnText = ReadTurnText(@params) ?? "Continue from the shared thread.";
+                        foreach (var earlyMessage in BeforeTurnStartAckMessages)
+                        {
+                            using var early = JsonDocument.Parse(earlyMessage);
+                            await SendJsonAsync(socket, early.RootElement, _shutdown.Token).ConfigureAwait(false);
+                        }
+                        TurnStartPreAckMessagesSent.TrySetResult();
+                        if (TurnStartAckGate is { } startGate) await startGate.WaitAsync(_shutdown.Token).ConfigureAwait(false);
+                        if (RejectTurnStart)
+                        {
+                            await SendJsonAsync(socket, new { id, error = new { code = -32602, message = "Fixture start rejection." } }, _shutdown.Token).ConfigureAwait(false);
+                            break;
+                        }
                         await SendJsonAsync(socket, new
                         {
                             id,
@@ -515,6 +533,7 @@ internal sealed class FakeCodexWebSocketServer : IAsyncDisposable
                                 }
                             }
                         }, _shutdown.Token).ConfigureAwait(false);
+                        if (SkipTurnWorkAfterAck) break;
                         await SendJsonAsync(socket, new
                         {
                             method = "turn/started",

@@ -251,6 +251,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         _activeTurnId = null;
         _hasConfiguredThreadDefaults = false;
         _mcpTurnStartPending = false;
+        _mcpTurnStartUnconfirmed = false;
         _remoteEndpoint = attachPoint?.Endpoint;
         _quickSettings = CreateDefaultQuickSettings();
         _usage = null;
@@ -362,24 +363,39 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         // Until this start is acknowledged, previous Auto defaults must not answer
         // approvals for a turn that explicitly requested different permissions.
+        var startThreadId = _providerThreadId!;
         _mcpTurnStartPending = true;
-        var turnResult = await SendCodexRequestAsync(
-            "turn/start",
-            id => PreserveConfiguredDefaults(BuildCodexTurnStartRequest(
-                id,
-                _providerThreadId!,
-                input,
-                quickSettings.Model,
-                quickSettings.Effort,
-                quickSettings.FastMode,
-                quickSettings.PlanMode,
-                quickSettings.PermissionMode), request),
-            ct).ConfigureAwait(false);
+        _mcpTurnStartUnconfirmed = false;
+        JsonElement turnResult;
+        try
+        {
+            turnResult = await SendCodexRequestAsync(
+                "turn/start",
+                id => PreserveConfiguredDefaults(BuildCodexTurnStartRequest(
+                    id,
+                    startThreadId,
+                    input,
+                    quickSettings.Model,
+                    quickSettings.Effort,
+                    quickSettings.FastMode,
+                    quickSettings.PlanMode,
+                    quickSettings.PermissionMode), request),
+                ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            _mcpTurnStartPending = false;
+            _mcpTurnStartUnconfirmed = true;
+            await ReconcileMcpStartApprovalsAsync(startThreadId, null, ct).ConfigureAwait(false);
+            throw;
+        }
 
         _quickSettings = quickSettings;
-        _activeTurnId = GetString(turnResult, "turn", "id");
+        var acknowledgedTurnId = GetString(turnResult, "turn", "id");
+        _activeTurnId = acknowledgedTurnId;
         _mcpTurnStartPending = false;
-        await ReleasePendingMcpApprovalsAsync(_providerThreadId!, _activeTurnId).ConfigureAwait(false);
+        await ReconcileMcpStartApprovalsAsync(startThreadId, acknowledgedTurnId, ct).ConfigureAwait(false);
+        await ReleasePendingMcpApprovalsAsync(startThreadId, acknowledgedTurnId).ConfigureAwait(false);
         return new HostCommandOutcome
         {
             Result = new AppServerControlHostCommandResultEnvelope
@@ -391,14 +407,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 {
                     SessionId = command.SessionId,
                     Status = "accepted",
-                    TurnId = _activeTurnId
+                    TurnId = acknowledgedTurnId
                 },
                 TurnStarted = new AppServerControlTurnStartResponse
                 {
                     SessionId = command.SessionId,
                     Provider = Provider,
                     ThreadId = _providerThreadId!,
-                    TurnId = _activeTurnId,
+                    TurnId = acknowledgedTurnId,
                     Status = "accepted",
                     QuickSettings = new AppServerControlQuickSettingsSummary
                     {
@@ -4198,5 +4214,6 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         public JsonElement Payload { get; set; }
         public string? ThreadId { get; set; }
         public int McpResolutionState;
+        public bool McpAwaitingStartAck;
     }
 }
