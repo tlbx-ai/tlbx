@@ -215,6 +215,8 @@ The canonical history contract must satisfy the following:
 
 ### 7. Responsive behavior
 
+- Table filter controls must fit narrow tables without imposing the browser's default 20-character input width on every column; controls use the app UI font while numeric data can keep the terminal font.
+
 - Agent Controller Session must remain fully usable on mobile-sized viewports.
 - Mobile Agent Controller Session should preserve history hierarchy, composer usability, and request/approval handling without forcing pinch-zoom or horizontal history reading.
 - On touch-sized viewports, the progress navigator should expose at least a 44px touch target while keeping the visible track/thumb visually quiet; that hit target should overlay reserved right-side history padding instead of consuming a separate layout column, and it should not read as a glowing sidebar.

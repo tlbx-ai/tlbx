@@ -15021,6 +15021,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-history-markdown .agent-markdown-table-header-shell {
+  font-family: var(--font-ui);
   display: flex;
   flex-direction: column;
   align-items: stretch;

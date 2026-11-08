@@ -641,6 +641,7 @@ export function wireMarkdownTables(
 
       const filter = document.createElement('input');
       filter.type = 'search';
+      filter.size = 8;
       filter.className = 'agent-markdown-table-filter';
       filter.placeholder = resolvedLabels.filterPlaceholder;
       filter.autocomplete = 'off';
