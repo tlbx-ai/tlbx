@@ -21816,7 +21816,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .adaptive-footer-dock .smart-input-textarea[hidden] { display: none; }
 
 .smart-input-rich-composer:focus-within { border-color: var(--command-bay-textbox-border-focus, var(--accent-blue)); }
-.rich-composer-tools { display: flex; flex-wrap: wrap; gap: 2px; padding: 3px 30px 0 5px; }
+.rich-composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-height: 44px; padding: 0 48px 0 5px; }
 .rich-composer-tools button,
 .rich-composer-attachment button {
   border: 0;
@@ -21910,3 +21910,27 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .modal-overlay > .agent-goal-editor .modal-footer { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 0; }
 .agent-goal-status, .agent-goal-scope { color: var(--text-secondary); font-size: var(--fs-sm); }
 .agent-goal-editor button, .agent-goal-editor select, .agent-goal-editor input { min-height: 44px; }
+
+
+/* Keep rich editing wide without changing the Terminal textarea layout. */
+.smart-input-textarea-shell:has(.smart-input-rich-composer:not([hidden])) > .smart-input-expand-toggle {
+  width: 44px;
+  height: 44px;
+  top: 1px;
+  right: 1px;
+  transform: none;
+}
+@media (max-width: 640px) {
+  .adaptive-footer-dock:not([data-composer-expanded='true']) .smart-input-row:has(.smart-input-rich-composer:not([hidden])) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    align-items: center;
+  }
+  .adaptive-footer-dock:not([data-composer-expanded='true']) .smart-input-row:has(.smart-input-rich-composer:not([hidden])) > .smart-input-editor {
+    flex-basis: 100%;
+    width: 100%;
+  }
+  .adaptive-footer-dock:not([data-composer-expanded='true']) .smart-input-rich-composer .ProseMirror {
+    max-height: min(calc(34dvh - 44px), 256px);
+  }
+}
