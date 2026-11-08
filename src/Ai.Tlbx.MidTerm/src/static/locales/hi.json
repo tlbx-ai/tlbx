@@ -1441,5 +1441,15 @@
   "connect.sidebar.identityVerified": "कुंजी सत्यापित",
   "connect.sidebar.signalingConnected": "Link · WSS सक्रिय",
   "connect.sidebar.signalingMissing": "नहीं बताया गया",
-  "connect.sidebar.signalingHint": "उपयोग के दौरान सिग्नलिंग कनेक्शन खुला रहता है। ऐप डेटा का मार्ग “मार्ग” के अंतर्गत दिखाया जाता है।"
+  "connect.sidebar.signalingHint": "उपयोग के दौरान सिग्नलिंग कनेक्शन खुला रहता है। ऐप डेटा का मार्ग “मार्ग” के अंतर्गत दिखाया जाता है।",
+  "smartInput.settingPending": "सेट किया जा रहा है…",
+  "smartInput.settingApplied": "प्रदाता ने पुष्टि की",
+  "smartInput.settingAcknowledged": "प्रदाता ने स्वीकार किया; प्रभावी मान पढ़कर सत्यापित नहीं हुआ",
+  "smartInput.settingPartial": "आंशिक पुष्टि; लागू होने का दायरा देखें",
+  "smartInput.settingUnconfirmed": "अपुष्ट; अंतिम पुष्ट मान दिखाया जा रहा है",
+  "smartInput.settingTargetUnavailable": "लक्ष्य बदल गया; लागू नहीं हुआ",
+  "smartInput.settingScopeTurns": "अगले टर्न के लिए; चल रहा अनुमान अपरिवर्तित",
+  "smartInput.settingScopeCaptures": "अगली सेटिंग कैप्चर के लिए; चल रहा अनुमान अपरिवर्तित",
+  "smartInput.settingScopeResponses": "अगले उत्तरों के डिफ़ॉल्ट स्वीकार किए गए; चल रहा अनुमान अपरिवर्तित",
+  "smartInput.settingPermissionAfterPlan": "प्लान से बाहर आने पर लागू; प्लान सक्रिय रहता है"
 }

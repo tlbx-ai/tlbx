@@ -1441,5 +1441,15 @@
   "connect.sidebar.identityVerified": "Ключ проверен",
   "connect.sidebar.signalingConnected": "Link · WSS активно",
   "connect.sidebar.signalingMissing": "Не сообщается",
-  "connect.sidebar.signalingHint": "Сигнальное соединение остаётся открытым во время использования. Маршрут данных приложения указан в поле «Маршрут»."
+  "connect.sidebar.signalingHint": "Сигнальное соединение остаётся открытым во время использования. Маршрут данных приложения указан в поле «Маршрут».",
+  "smartInput.settingPending": "Применение…",
+  "smartInput.settingApplied": "Подтверждено провайдером",
+  "smartInput.settingAcknowledged": "Принято провайдером; фактическое значение не считано",
+  "smartInput.settingPartial": "Подтверждено частично; см. область действия",
+  "smartInput.settingUnconfirmed": "Не подтверждено; показано последнее подтверждённое значение",
+  "smartInput.settingTargetUnavailable": "Цель изменилась; не применено",
+  "smartInput.settingScopeTurns": "Для следующих ходов; текущий вывод не меняется",
+  "smartInput.settingScopeCaptures": "Для последующих снимков настроек; текущий вывод не меняется",
+  "smartInput.settingScopeResponses": "Принятые настройки для следующих ответов; текущий вывод не меняется",
+  "smartInput.settingPermissionAfterPlan": "Применяется после выхода из режима плана; план остаётся активным"
 }

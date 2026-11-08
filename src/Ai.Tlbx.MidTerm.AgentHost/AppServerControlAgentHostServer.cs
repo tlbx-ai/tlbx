@@ -431,6 +431,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "mcp.scope.prepare",
                     "turn.start",
                     "turn.steer",
+                    "runtime.configure",
                     "turn.interrupt",
                     "thread.compact",
                     "thread.goal.set",

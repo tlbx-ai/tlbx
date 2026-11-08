@@ -34,6 +34,8 @@ import {
 } from '../appServerControl/input';
 import {
   APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT,
+  configureAppServerControlQuickSettings,
+  getAppServerControlRuntimeSettingStatus,
   getAppServerControlQuickSettingsDraft,
   getAppServerControlQuickSettingsProvider,
   setAppServerControlQuickSettingsDraft,
@@ -105,6 +107,7 @@ import {
   getMicButtons as getMicButtonsSupport,
   queueFooterReserveSync as queueFooterReserveSyncSupport,
   shouldIgnoreFooterTransientUiDocumentClick as shouldIgnoreFooterTransientUiDocumentClickSupport,
+  formatRuntimeSettingStatus,
   syncAppServerControlQuickSettingsControls as syncAppServerControlQuickSettingsControlsSupport,
   syncVoiceInputAvailability as syncVoiceInputAvailabilitySupport,
   updateAutoSendVisibility as updateAutoSendVisibilitySupport,
@@ -1288,7 +1291,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         effort: appServerControlEffortSelect?.value ?? null,
       });
     },
@@ -1299,7 +1302,7 @@ function createDockedDOM(): void {
       }
 
       const draft = getAppServerControlQuickSettingsDraft(sessionId);
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         fastMode: draft.fastMode === 'on' ? 'off' : 'on',
       });
     },
@@ -1309,7 +1312,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         model: appServerControlModelSelect?.value ?? null,
       });
     },
@@ -1319,7 +1322,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         permissionMode: appServerControlPermissionSelect?.value ?? 'manual',
       });
     },
@@ -1329,7 +1332,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         planMode: appServerControlPlanSelect?.value ?? 'off',
       });
       syncSmartInputVisibility();
@@ -1961,17 +1964,21 @@ function syncAppServerControlQuickSettingsActions(sessionId: string): void {
   }
 
   appServerControlQuickSettingsActions.replaceChildren();
-  const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);
   const draft = getAppServerControlQuickSettingsDraft(sessionId);
   const provider = getAppServerControlQuickSettingsProvider(sessionId);
   appServerControlQuickSettingsActions.appendChild(
     createAppServerControlActionButton(
       'Plan',
-      t('smartInput.appServerControlPlanCommand'),
+      [
+        t('smartInput.appServerControlPlanCommand'),
+        formatRuntimeSettingStatus(getAppServerControlRuntimeSettingStatus(sessionId, 'planMode')),
+      ]
+        .filter(Boolean)
+        .join(' — '),
       () => {
         toggleAppServerControlPlanMode(sessionId);
       },
-      quickSettingsLocked,
+      false,
       { pressed: draft.planMode === 'on' },
     ),
   );
@@ -2190,7 +2197,7 @@ function toggleAutoSendEnabled(): void {
 
 function toggleAppServerControlPlanMode(sessionId: string): void {
   const draft = getAppServerControlQuickSettingsDraft(sessionId);
-  setAppServerControlQuickSettingsDraft(sessionId, {
+  void configureAppServerControlQuickSettings(sessionId, {
     planMode: draft.planMode === 'on' ? 'off' : 'on',
   });
   syncSmartInputVisibility();

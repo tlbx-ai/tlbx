@@ -1441,5 +1441,15 @@
   "connect.sidebar.identityVerified": "Chave verificada",
   "connect.sidebar.signalingConnected": "Link · WSS ativo",
   "connect.sidebar.signalingMissing": "Não informado",
-  "connect.sidebar.signalingHint": "A conexão de sinalização permanece aberta durante o uso. A rota dos dados da aplicação é exibida em Rota."
+  "connect.sidebar.signalingHint": "A conexão de sinalização permanece aberta durante o uso. A rota dos dados da aplicação é exibida em Rota.",
+  "smartInput.settingPending": "Aplicando…",
+  "smartInput.settingApplied": "Confirmado pelo provedor",
+  "smartInput.settingAcknowledged": "Aceito pelo provedor; valor efetivo não consultado",
+  "smartInput.settingPartial": "Parcialmente confirmado; consulte o alcance",
+  "smartInput.settingUnconfirmed": "Não confirmado; exibindo o último valor confirmado",
+  "smartInput.settingTargetUnavailable": "O destino mudou; não aplicado",
+  "smartInput.settingScopeTurns": "Para os próximos turnos; inferência atual inalterada",
+  "smartInput.settingScopeCaptures": "Para as próximas capturas; inferência atual inalterada",
+  "smartInput.settingScopeResponses": "Padrões aceitos para próximas respostas; inferência atual inalterada",
+  "smartInput.settingPermissionAfterPlan": "Usado ao sair do modo Plano; o Plano permanece ativo"
 }
