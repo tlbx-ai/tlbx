@@ -1,5 +1,7 @@
 import {
   type AppServerControlCommandAcceptedResponse,
+  type AppServerControlConfigureRequest,
+  type AppServerControlConfigureResponse,
   type AppServerControlHistoryDelta,
   type AppServerControlHistoryPatch,
   type AppServerControlHistorySnapshot,
@@ -21,6 +23,7 @@ type AppServerControlWsRequestAction =
   | 'history.window.get'
   | 'turn.submit'
   | 'turn.interrupt'
+  | 'runtime.configure'
   | 'thread.goal.set'
   | 'request.approve'
   | 'request.decline'
@@ -558,7 +561,10 @@ async function requestCommandAccepted(
   const request = new Promise<AppServerControlCommandAcceptedResponse>((resolve, reject) => {
     pending.set(id, { resolve, reject, kind: 'commandAccepted' });
   });
-  armPendingTimeout(id, APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS);
+  armPendingTimeout(
+    id,
+    action === 'runtime.configure' ? 65000 : APP_SERVER_CONTROL_COMMAND_REQUEST_TIMEOUT_MS,
+  );
   sendRaw({
     type: 'request',
     id,
@@ -641,6 +647,27 @@ export async function interruptAppServerControlTurnWs(
   request: AppServerControlInterruptRequest,
 ): Promise<AppServerControlCommandAcceptedResponse> {
   return requestCommandAccepted('turn.interrupt', sessionId, { interrupt: request });
+}
+
+export async function configureAppServerControlRuntimeWs(
+  sessionId: string,
+  request: AppServerControlConfigureRequest,
+): Promise<AppServerControlConfigureResponse> {
+  const response = await requestCommandAccepted('runtime.configure', sessionId, {
+    configure: request,
+  });
+  const receipt = response.configuration;
+  if (
+    !receipt ||
+    receipt.sessionId !== sessionId ||
+    (receipt.status !== 'targetUnavailable' &&
+      (receipt.threadId !== request.expectedThreadId || receipt.turnId !== request.expectedTurnId))
+  ) {
+    throw createAppServerControlWsError(
+      'Runtime configuration acknowledgement did not match its target.',
+    );
+  }
+  return receipt;
 }
 
 export async function setAppServerControlGoalWs(

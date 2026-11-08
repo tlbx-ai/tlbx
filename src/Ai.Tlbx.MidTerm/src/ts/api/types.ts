@@ -101,7 +101,31 @@ export interface AppServerControlInlineImagePreview {
   mimeType?: string | null;
 }
 
+export interface AppServerControlConfigureRequest {
+  expectedThreadId: string;
+  expectedTurnId: string | null;
+  settings: Record<string, unknown>;
+}
+
+export interface AppServerControlConfigureResponse {
+  sessionId: string;
+  threadId: string;
+  turnId: string | null;
+  status: string;
+  threadStatus: string;
+  threadScope: string;
+  turnStatus: string;
+  turnScope: string;
+  effectiveSettings: Record<string, unknown>;
+  confirmedSettings: Record<string, unknown>;
+  deferredFields: string[];
+  unconfirmedFields: string[];
+  fieldErrors: Record<string, string>;
+  detail?: string | null;
+}
+
 export interface AppServerControlCommandAcceptedResponse {
+  configuration?: AppServerControlConfigureResponse | null;
   sessionId: string;
   status: string;
   requestId?: string | null;

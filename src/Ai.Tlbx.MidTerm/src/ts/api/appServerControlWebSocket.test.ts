@@ -351,4 +351,103 @@ describe('appServerControlWebSocket', () => {
     expect(onOpen).toHaveBeenCalledTimes(2);
     disconnect();
   });
+  it('sends a guarded configure patch with null intact and waits for the correlated provider receipt', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { configureAppServerControlRuntimeWs } = await import('./appServerControlWebSocket');
+    const request = {
+      expectedThreadId: 'thread-A',
+      expectedTurnId: 'turn-A',
+      settings: { model: 'B', serviceTier: null },
+    };
+    const resolve = vi.fn();
+    const pending = configureAppServerControlRuntimeWs('session-1', request).then(resolve);
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    expect(sent).toMatchObject({
+      type: 'request',
+      action: 'runtime.configure',
+      sessionId: 'session-1',
+      configure: request,
+    });
+    expect(sent).not.toHaveProperty('turn');
+    expect(resolve).not.toHaveBeenCalled();
+    const receipt = {
+      sessionId: 'session-1',
+      threadId: 'thread-A',
+      turnId: 'turn-A',
+      status: 'partial',
+      threadStatus: 'applied',
+      turnStatus: 'targetUnavailable',
+      effectiveSettings: { model: 'provider-B' },
+      confirmedSettings: {},
+      deferredFields: [],
+      unconfirmedFields: [],
+      fieldErrors: {},
+    };
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { sessionId: 'session-1', status: 'partial', configuration: receipt },
+      }),
+    } as MessageEvent);
+    await pending;
+    expect(resolve).toHaveBeenCalledWith(receipt);
+    expect(socket.sent).toHaveLength(1);
+  });
+
+  it('preserves targetUnavailable when the host reports its different current thread', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { configureAppServerControlRuntimeWs } = await import('./appServerControlWebSocket');
+    const pending = configureAppServerControlRuntimeWs('session-1', {
+      expectedThreadId: 'stale-thread',
+      expectedTurnId: 'stale-turn',
+      settings: { model: 'B' },
+    });
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    const receipt = {
+      sessionId: 'session-1',
+      threadId: 'actual-thread',
+      turnId: 'stale-turn',
+      status: 'targetUnavailable',
+    };
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { configuration: receipt },
+      }),
+    } as MessageEvent);
+    expect(await pending).toEqual(receipt);
+    expect(socket.sent).toHaveLength(1);
+  });
+
+  it('rejects a mismatched configure target without replaying a mutation', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { configureAppServerControlRuntimeWs } = await import('./appServerControlWebSocket');
+    const pending = configureAppServerControlRuntimeWs('session-1', {
+      expectedThreadId: 'thread-A',
+      expectedTurnId: null,
+      settings: { effort: null },
+    });
+    const rejection = expect(pending).rejects.toThrow('did not match its target');
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { configuration: { sessionId: 'session-1', threadId: 'sibling', turnId: null } },
+      }),
+    } as MessageEvent);
+    await rejection;
+    expect(socket.sent).toHaveLength(1);
+  });
 });

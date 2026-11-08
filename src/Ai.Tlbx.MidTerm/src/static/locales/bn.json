@@ -1442,5 +1442,15 @@
   "connect.sidebar.identityVerified": "কী যাচাই হয়েছে",
   "connect.sidebar.signalingConnected": "Link · WSS সক্রিয়",
   "connect.sidebar.signalingMissing": "জানানো হয়নি",
-  "connect.sidebar.signalingHint": "ব্যবহারের সময় সিগন্যালিং সংযোগ খোলা থাকে। অ্যাপের ডেটার পথ “পথ”-এর নিচে দেখানো হয়।"
+  "connect.sidebar.signalingHint": "ব্যবহারের সময় সিগন্যালিং সংযোগ খোলা থাকে। অ্যাপের ডেটার পথ “পথ”-এর নিচে দেখানো হয়।",
+  "smartInput.settingPending": "সেট করা হচ্ছে…",
+  "smartInput.settingApplied": "প্রদানকারী নিশ্চিত করেছে",
+  "smartInput.settingAcknowledged": "প্রদানকারী গ্রহণ করেছে; কার্যকর মান পড়ে যাচাই করা হয়নি",
+  "smartInput.settingPartial": "আংশিকভাবে নিশ্চিত; প্রয়োগের পরিসর দেখুন",
+  "smartInput.settingUnconfirmed": "অনিশ্চিত; সর্বশেষ নিশ্চিত মান দেখানো হচ্ছে",
+  "smartInput.settingTargetUnavailable": "লক্ষ্য বদলেছে; প্রয়োগ করা হয়নি",
+  "smartInput.settingScopeTurns": "পরবর্তী টার্নের জন্য; চলমান ইনফারেন্স অপরিবর্তিত",
+  "smartInput.settingScopeCaptures": "পরবর্তী সেটিং ক্যাপচারের জন্য; চলমান ইনফারেন্স অপরিবর্তিত",
+  "smartInput.settingScopeResponses": "পরবর্তী উত্তরের ডিফল্ট গৃহীত; চলমান ইনফারেন্স অপরিবর্তিত",
+  "smartInput.settingPermissionAfterPlan": "পরিকল্পনা মোড ছাড়ার পর ব্যবহৃত হবে; পরিকল্পনা মোড সক্রিয় থাকবে"
 }
