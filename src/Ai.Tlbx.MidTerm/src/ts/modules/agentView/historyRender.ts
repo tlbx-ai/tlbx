@@ -115,7 +115,7 @@ type HistoryRenderDeps = {
     state: SessionAppServerControlViewState,
     surface: 'composer' | 'history',
   ) => HTMLElement;
-  pruneAssistantMarkdownCache: (
+  pruneHistoryMarkdownCache: (
     state: SessionAppServerControlViewState,
     entries: readonly AppServerControlHistoryEntry[],
   ) => void;
@@ -1182,7 +1182,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state.historyEntries = entries;
       state.historyLastScrollMetrics ??= readHistoryScrollMetrics(viewport, state);
       retainHistoryMeasurementsAcrossWindowShift(state);
-      deps.pruneAssistantMarkdownCache(state, entries);
+      deps.pruneHistoryMarkdownCache(state, entries);
       renderScrollToBottomControl(panel, state);
       if (renderAnchor) {
         state.pendingHistoryLayoutAnchor = renderAnchor;
