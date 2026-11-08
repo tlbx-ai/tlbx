@@ -247,6 +247,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                     Status = "accepted",
                     QuickSettings = new AppServerControlQuickSettingsSummary
                     {
+                        AcknowledgedFields = [.. _quickSettings.AcknowledgedFields],
                         Model = _quickSettings.Model,
                         Effort = _quickSettings.Effort,
                         PlanMode = _quickSettings.PlanMode,
@@ -655,6 +656,12 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 }, rawLine));
                 break;
             }
+            case "bridge.permission_auto_resolved":
+                HandlePendingPermissionSettlement(root, "accept");
+                break;
+            case "bridge.permission_cancelled":
+                HandlePendingPermissionSettlement(root, "cancel");
+                break;
             case "bridge.permission_resolved":
                 CompleteBridgeResolutionAck("permission", GetString(root, "requestId"));
                 break;
@@ -1624,6 +1631,11 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             defaultPermissionMode);
         settings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         settings.EffortOptions = ReadClaudeEffortOptions(settings.Model);
+        settings.AcknowledgedFields = [.. _quickSettings.AcknowledgedFields];
+        if (request.Model is not null) settings.AcknowledgedFields.Remove("model");
+        if (request.Effort is not null) settings.AcknowledgedFields.Remove("effort");
+        if (request.PlanMode is not null) settings.AcknowledgedFields.Remove("planMode");
+        if (request.PermissionMode is not null) settings.AcknowledgedFields.Remove("permissionMode");
         return settings;
     }
 

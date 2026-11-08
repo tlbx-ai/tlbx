@@ -1,3 +1,4 @@
+import { waitForResolution, releasePendingToolApprovals } from "./pendingPermissions.mjs";
 import { configureRuntime } from "./runtimeSettings.mjs";
 import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { readFile } from "node:fs/promises";
@@ -43,6 +44,7 @@ let runtime;
 let runtimeTask;
 let currentSessionId;
 let activeTurnId;
+let steeringPending = false;
 const confirmedSettings = { permissionMode: "manual", planMode: "off" };
 
 function emit(value) {
@@ -99,20 +101,6 @@ async function makeUserMessage(command) {
     ...(command.type === "turn.steer" ? { priority: "now" } : {}),
     message: { role: "user", content },
   };
-}
-
-function waitForResolution(map, requestId, signal, fallback) {
-  return new Promise((resolve) => {
-    const complete = (value) => {
-      map.delete(requestId);
-      signal?.removeEventListener("abort", abort);
-      resolve(value);
-    };
-    const abort = () => complete(fallback);
-    map.set(requestId, complete);
-    if (signal?.aborted) abort();
-    else signal?.addEventListener("abort", abort, { once: true });
-  });
 }
 
 async function canUseTool(toolName, toolInput, options) {
@@ -185,6 +173,8 @@ async function canUseTool(toolName, toolInput, options) {
     };
   }
 
+  const scope = { threadId: currentSessionId ?? configuration.resume ?? configuration.sessionId,
+    turnId: activeTurnId, toolName };
   emit({
     type: "bridge.permission_request",
     requestId,
@@ -198,13 +188,16 @@ async function canUseTool(toolName, toolInput, options) {
     requestId,
     options.signal,
     "cancel",
+    scope,
+    () => emit({ type: "bridge.permission_cancelled", session_id: scope.threadId,
+      turnId: scope.turnId, requestId, decision: "cancel" }),
   );
-  if (decision === "accept")
+  if (decision === "accept" && !options.signal.aborted)
     return { behavior: "allow", updatedInput: toolInput };
   return {
     behavior: "deny",
     message:
-      decision === "cancel"
+      decision === "cancel" || options.signal.aborted
         ? "User cancelled tool execution."
         : "User declined tool execution.",
   };
@@ -245,6 +238,11 @@ async function startRuntime(command) {
       for await (const message of runtime) {
         if (typeof message.session_id === "string" && message.session_id)
           currentSessionId = message.session_id;
+        if (message.type === "result" && Number(message.queued_turn_count ?? 0) === 0 &&
+            !(steeringPending && ["aborted_streaming", "aborted_tools"].includes(message.terminal_reason))) {
+          activeTurnId = null;
+          steeringPending = false;
+        }
         emit(message);
       }
       emit({ type: "bridge.closed" });
@@ -294,6 +292,7 @@ async function handle(command) {
       if (!configuration) throw new Error("Claude bridge is not initialized.");
       await startRuntime(command);
       activeTurnId = command.turnId;
+      steeringPending = command.type === "turn.steer";
       await runtime.setModel(command.model ?? undefined);
       await runtime.applyFlagSettings({ effortLevel: command.effort ?? null });
       await runtime.setPermissionMode(
@@ -306,17 +305,24 @@ async function handle(command) {
     }
     case "runtime.configure": {
       if (!runtime) throw new Error("Claude bridge is not initialized.");
-      if (command.expectedThreadId !== (currentSessionId ?? configuration.resume ?? configuration.sessionId)) {
+      if (command.expectedThreadId !== (currentSessionId ?? configuration.resume ?? configuration.sessionId) ||
+          command.expectedTurnId !== (activeTurnId ?? null)) {
         emit({ type: "bridge.configured", requestId: command.requestId, status: "targetUnavailable",
           confirmed: {}, errors: {} });
         return;
       }
-      const receipt = await configureRuntime(runtime, command.settings ?? {}, confirmedSettings);
+      const expected = { threadId: command.expectedThreadId, turnId: command.expectedTurnId };
+      const currentScope = () => ({ threadId: currentSessionId ?? configuration.resume ?? configuration.sessionId,
+        turnId: activeTurnId ?? null });
+      const receipt = await configureRuntime(runtime, command.settings ?? {}, confirmedSettings, () => {
+        releasePendingToolApprovals(pendingPermissions, expected, currentScope, emit);
+      });
       emit({ type: "bridge.configured", requestId: command.requestId, ...receipt,
         effective: {}, scope: "subsequentResponses" });
       return;
     }
     case "turn.interrupt": {
+      steeringPending = false;
       const receipt = runtime ? await runtime.interrupt() : undefined;
       emit({
         type: "bridge.interrupted",
@@ -327,11 +333,10 @@ async function handle(command) {
     }
     case "permission.resolve": {
       const resolve = pendingPermissions.get(command.requestId);
-      if (!resolve)
+      if (!resolve || !resolve(command.decision))
         throw new Error(
           `Claude permission request was not found: ${command.requestId}`,
         );
-      resolve(command.decision);
       emit({
         type: "bridge.permission_resolved",
         requestId: command.requestId,
