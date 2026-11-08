@@ -13809,7 +13809,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-progress-thumb {
   top: 6px;
   width: 6px;
-  min-height: 36px;
+  min-height: 0;
   background: var(--btn-secondary);
   background: color-mix(
     in srgb,
@@ -13890,8 +13890,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   }
 
   .agent-history-progress-track {
-    top: 8px;
-    bottom: 8px;
+    top: 6px;
+    bottom: 6px;
     width: 3px;
     background: color-mix(in srgb, var(--agent-history-progress-accent) 10%, transparent);
     opacity: 0.5;
@@ -13899,7 +13899,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
   .agent-history-progress-thumb {
     width: 12px;
-    min-height: 48px;
     background: color-mix(
       in srgb,
       var(--agent-history-progress-accent) 16%,
