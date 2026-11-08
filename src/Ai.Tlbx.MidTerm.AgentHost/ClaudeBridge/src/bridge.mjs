@@ -1,3 +1,4 @@
+import { configureRuntime } from "./runtimeSettings.mjs";
 import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
@@ -42,6 +43,7 @@ let runtime;
 let runtimeTask;
 let currentSessionId;
 let activeTurnId;
+const confirmedSettings = { permissionMode: "manual", planMode: "off" };
 
 function emit(value) {
   process.stdout.write(`${JSON.stringify(value)}\n`);
@@ -210,7 +212,9 @@ async function canUseTool(toolName, toolInput, options) {
 
 async function startRuntime(command) {
   if (runtime) return;
-  const mode = permissionMode(command.permissionMode, command.planMode);
+  confirmedSettings.permissionMode = command.permissionMode ?? "manual";
+  confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
+  const mode = permissionMode(confirmedSettings.permissionMode, confirmedSettings.planMode === "on" ? "plan" : "off");
   runtime = query({
     prompt: prompts,
     options: {
@@ -295,7 +299,21 @@ async function handle(command) {
       await runtime.setPermissionMode(
         permissionMode(command.permissionMode, command.planMode),
       );
+      confirmedSettings.permissionMode = command.permissionMode ?? "manual";
+      confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
       prompts.push(await makeUserMessage(command));
+      return;
+    }
+    case "runtime.configure": {
+      if (!runtime) throw new Error("Claude bridge is not initialized.");
+      if (command.expectedThreadId !== (currentSessionId ?? configuration.resume ?? configuration.sessionId)) {
+        emit({ type: "bridge.configured", requestId: command.requestId, status: "targetUnavailable",
+          confirmed: {}, errors: {} });
+        return;
+      }
+      const receipt = await configureRuntime(runtime, command.settings ?? {}, confirmedSettings);
+      emit({ type: "bridge.configured", requestId: command.requestId, ...receipt,
+        effective: {}, scope: "subsequentResponses" });
       return;
     }
     case "turn.interrupt": {

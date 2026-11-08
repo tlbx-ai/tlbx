@@ -2659,6 +2659,7 @@ function renderAgentView(
     snapshot.sessionId,
     snapshot.provider,
     snapshot.quickSettings,
+    { thread: snapshot.thread, currentTurn: snapshot.currentTurn, connected: streamConnected },
   );
   syncAgentViewPresentation(panel, snapshot.provider);
   syncNativeCommands(

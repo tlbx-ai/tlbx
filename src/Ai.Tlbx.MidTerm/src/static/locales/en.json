@@ -1705,5 +1705,15 @@
   "connect.setup.empty": "This computer has no Link keys.",
   "connect.setup.signIn": "Sign in locally and confirm your installation password.",
   "connect.setup.requestFailed": "The request failed. Try again locally.",
-  "connect.setup.loadFailed": "Link setup could not be loaded. Open Settings again to retry."
+  "connect.setup.loadFailed": "Link setup could not be loaded. Open Settings again to retry.",
+  "smartInput.settingPending": "Setting…",
+  "smartInput.settingApplied": "Provider confirmed",
+  "smartInput.settingAcknowledged": "Provider accepted; effective value not read back",
+  "smartInput.settingPartial": "Partly confirmed; see scope",
+  "smartInput.settingUnconfirmed": "Unconfirmed; showing the last confirmed value",
+  "smartInput.settingTargetUnavailable": "Target changed; not applied",
+  "smartInput.settingScopeTurns": "For following turns; running inference unchanged",
+  "smartInput.settingScopeCaptures": "For subsequent captures; running inference unchanged",
+  "smartInput.settingScopeResponses": "Accepted defaults for subsequent responses; running inference unchanged",
+  "smartInput.settingPermissionAfterPlan": "Used when leaving Plan; Plan remains active"
 }

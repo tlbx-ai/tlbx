@@ -1618,5 +1618,15 @@
   "connect.setup.empty": "Dieser Computer hat keine Link-Schlüssel.",
   "connect.setup.signIn": "Melde dich lokal an und bestätige dein Installationspasswort.",
   "connect.setup.requestFailed": "Die Anfrage ist fehlgeschlagen. Versuche es lokal erneut.",
-  "connect.setup.loadFailed": "Die Link-Einrichtung konnte nicht geladen werden. Öffne die Einstellungen erneut."
+  "connect.setup.loadFailed": "Die Link-Einrichtung konnte nicht geladen werden. Öffne die Einstellungen erneut.",
+  "smartInput.settingPending": "Wird gesetzt…",
+  "smartInput.settingApplied": "Vom Provider bestätigt",
+  "smartInput.settingAcknowledged": "Vom Provider angenommen; effektiver Wert nicht ausgelesen",
+  "smartInput.settingPartial": "Teilweise bestätigt; Geltungsbereich beachten",
+  "smartInput.settingUnconfirmed": "Unbestätigt; letzter bestätigter Wert wird angezeigt",
+  "smartInput.settingTargetUnavailable": "Ziel geändert; nicht angewendet",
+  "smartInput.settingScopeTurns": "Für folgende Turns; laufende Inferenz unverändert",
+  "smartInput.settingScopeCaptures": "Für nachfolgende Captures; laufende Inferenz unverändert",
+  "smartInput.settingScopeResponses": "Angenommene Defaults ab nächster Antwort; laufende Inferenz unverändert",
+  "smartInput.settingPermissionAfterPlan": "Gilt nach Verlassen von Plan; Plan bleibt aktiv"
 }

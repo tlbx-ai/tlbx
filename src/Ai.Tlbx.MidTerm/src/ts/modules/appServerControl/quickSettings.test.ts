@@ -1,13 +1,17 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../api/client', () => ({
+  configureAppServerControlRuntime: vi.fn(),
   updateSettings: vi.fn().mockResolvedValue({ response: { ok: true } }),
 }));
 
-import { updateSettings } from '../../api/client';
-import type { MidTermSettingsPublic } from '../../api/types';
+import { configureAppServerControlRuntime, updateSettings } from '../../api/client';
+import type { AppServerControlConfigureResponse, MidTermSettingsPublic } from '../../api/types';
 import { $currentSettings, $sessions } from '../../stores';
 import {
+  configureAppServerControlQuickSettings,
+  getAppServerControlQuickSettingsEffective,
+  getAppServerControlRuntimeSettingStatus,
   createAppServerControlTurnRequestWithQuickSettings,
   getAppServerControlQuickSettingsDraft,
   removeAppServerControlQuickSettingsSessionState,
@@ -202,5 +206,303 @@ describe('appServerControl quick settings', () => {
     });
 
     expect(getAppServerControlQuickSettingsDraft('grok-stale').model).toBe('grok-build');
+  });
+});
+
+describe('runtime quick-settings acknowledgements', () => {
+  const id = 'runtime-settings';
+  const api = vi.mocked(configureAppServerControlRuntime);
+  const original = {
+    model: 'model-A',
+    effort: 'medium',
+    planMode: 'off',
+    permissionMode: 'manual',
+    fastMode: 'off',
+  };
+  function seed(provider = 'codex', running = true, threadId = 'thread-A') {
+    $sessions.set({ [id]: { id, profileHint: provider } } as any);
+    syncAppServerControlQuickSettingsFromSnapshot(id, provider, original, {
+      thread: { threadId, state: 'active', stateLabel: 'Active' },
+      currentTurn: { turnId: 'turn-A', state: running ? 'running' : 'completed', stateLabel: '' },
+      connected: true,
+    });
+  }
+  function receipt(
+    patch: Partial<AppServerControlConfigureResponse> = {},
+  ): AppServerControlConfigureResponse {
+    return {
+      sessionId: id,
+      threadId: 'thread-A',
+      turnId: 'turn-A',
+      status: 'applied',
+      threadStatus: 'applied',
+      threadScope: 'subsequentTurns',
+      turnStatus: 'applied',
+      turnScope: 'subsequentCaptures',
+      effectiveSettings: {
+        model: 'provider-B',
+        effort: 'high',
+        collaborationMode: { mode: 'default' },
+        approvalPolicy: 'on-request',
+        sandboxPolicy: { type: 'workspaceWrite' },
+        serviceTier: null,
+      },
+      confirmedSettings: {},
+      deferredFields: [],
+      unconfirmedFields: [],
+      fieldErrors: {},
+      ...patch,
+    };
+  }
+  beforeEach(() => {
+    vi.stubGlobal('localStorage', createMemoryStorage());
+    $currentSettings.set(createSettings());
+    api.mockReset();
+    vi.mocked(updateSettings).mockClear();
+    seed();
+  });
+  afterEach(() => {
+    removeAppServerControlQuickSettingsSessionState(id);
+    $sessions.set({});
+    vi.unstubAllGlobals();
+  });
+
+  it('sends exact canonical busy guards independently of a prompt and displays normalized readback', async () => {
+    let resolve!: (value: AppServerControlConfigureResponse) => void;
+    api.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = configureAppServerControlQuickSettings(id, { model: 'requested-B' });
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')?.state).toBe('pending');
+    expect(getAppServerControlQuickSettingsEffective(id).model).toBe('model-A');
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    expect(api).toHaveBeenCalledWith(id, {
+      expectedThreadId: 'thread-A',
+      expectedTurnId: 'turn-A',
+      settings: { model: 'requested-B' },
+    });
+    resolve(receipt());
+    await pending;
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('provider-B');
+    expect(getAppServerControlQuickSettingsDraft(id).effort).toBe('high');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'effort')?.scope).toBe('subsequentTurns');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')).toMatchObject({
+      state: 'applied',
+      scope: 'subsequentCaptures',
+    });
+    const nextPrompt = createAppServerControlTurnRequestWithQuickSettings(id, 'Continue');
+    expect(nextPrompt).not.toHaveProperty('model');
+    expect(nextPrompt).not.toHaveProperty('planMode');
+    expect(nextPrompt).not.toHaveProperty('permissionMode');
+  });
+
+  it('protects readback from stale snapshots then follows later canonical changes after observing it', async () => {
+    api.mockResolvedValueOnce(receipt());
+    await configureAppServerControlQuickSettings(id, { model: 'requested-B' });
+    seed();
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('provider-B');
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'codex', {
+      ...original,
+      model: 'provider-B',
+      effort: 'high',
+    });
+    syncAppServerControlQuickSettingsFromSnapshot(id, 'codex', {
+      ...original,
+      model: 'external-C',
+      effort: 'low',
+    });
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('external-C');
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains confirmed future defaults when the active target ends, without retrying', async () => {
+    let resolve!: (value: AppServerControlConfigureResponse) => void;
+    api.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = configureAppServerControlQuickSettings(id, { model: 'requested-B' });
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    seed('codex', false);
+    resolve(receipt({ status: 'partial', turnStatus: 'targetUnavailable' }));
+    await pending;
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('provider-B');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')).toMatchObject({
+      state: 'partial',
+      scope: 'subsequentTurns',
+    });
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains an acknowledged active capture when future defaults fail and expires it with the turn', async () => {
+    api.mockResolvedValueOnce(
+      receipt({
+        status: 'partial',
+        threadStatus: 'unconfirmed',
+        turnStatus: 'applied',
+        effectiveSettings: {},
+        confirmedSettings: { model: 'live-B' },
+        unconfirmedFields: ['model'],
+      }),
+    );
+    await configureAppServerControlQuickSettings(id, { model: 'live-B' });
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('live-B');
+    expect(getAppServerControlQuickSettingsEffective(id).model).toBe('model-A');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')).toMatchObject({
+      state: 'partial',
+      scope: 'subsequentCaptures',
+    });
+    seed('codex', false);
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('model-A');
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('rolls back unconfirmed errors and never persists or resubmits the failed draft', async () => {
+    api.mockResolvedValueOnce(
+      receipt({
+        status: 'unconfirmed',
+        threadStatus: 'unconfirmed',
+        turnStatus: 'unconfirmed',
+        effectiveSettings: {},
+      }),
+    );
+    await configureAppServerControlQuickSettings(id, { model: 'failed-model' });
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('model-A');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')?.state).toBe('unconfirmed');
+    expect(updateSettings).not.toHaveBeenCalled();
+    expect(createAppServerControlTurnRequestWithQuickSettings(id, 'Continue')).not.toHaveProperty(
+      'model',
+    );
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a newer selection pending over an older ack and rolls failure back to that ack', async () => {
+    let resolve!: (value: AppServerControlConfigureResponse) => void;
+    api.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const first = configureAppServerControlQuickSettings(id, { model: 'B' });
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    const second = configureAppServerControlQuickSettings(id, { model: 'C' });
+    let rejectSecond!: (error: Error) => void;
+    api.mockReturnValueOnce(
+      new Promise((_done, reject) => {
+        rejectSecond = reject;
+      }),
+    );
+    resolve(receipt());
+    await first;
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('C');
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(2));
+    rejectSecond(new Error('transport lost after send'));
+    await second;
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('provider-B');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')?.state).toBe('unconfirmed');
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retarget a queued explicit change to a new turn after its click-time guard expires', async () => {
+    let resolve!: (value: AppServerControlConfigureResponse) => void;
+    api.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const first = configureAppServerControlQuickSettings(id, { model: 'B' });
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    const second = configureAppServerControlQuickSettings(id, { model: 'C' });
+    seed('codex', false);
+    resolve(receipt({ status: 'partial', turnStatus: 'targetUnavailable' }));
+    await Promise.all([first, second]);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('provider-B');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')?.state).toBe('targetUnavailable');
+  });
+
+  it('drops superseded unsent selections and sends only the latest explicit choice', async () => {
+    api.mockResolvedValueOnce(receipt());
+    const first = configureAppServerControlQuickSettings(id, { model: 'B' });
+    const second = configureAppServerControlQuickSettings(id, { model: 'C' });
+    await Promise.all([first, second]);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(api.mock.calls[0]?.[1].settings.model).toBe('C');
+  });
+
+  it('ignores an old-thread ack after a canonical thread replacement', async () => {
+    let resolve!: (value: AppServerControlConfigureResponse) => void;
+    api.mockReturnValueOnce(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const pending = configureAppServerControlQuickSettings(id, { model: 'B' });
+    await vi.waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    seed('codex', false, 'thread-new');
+    resolve(receipt());
+    await pending;
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('model-A');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')).toBeUndefined();
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+
+  it('labels Claude void-control acceptance for subsequent responses without inventing readback', async () => {
+    seed('claude');
+    api.mockResolvedValueOnce(
+      receipt({
+        status: 'acknowledged',
+        threadStatus: 'acknowledged',
+        turnStatus: 'acknowledged',
+        threadScope: 'subsequentResponses',
+        turnScope: 'subsequentResponses',
+        effectiveSettings: {},
+        confirmedSettings: { model: 'claude-B', planMode: 'on', permissionMode: 'manual' },
+      }),
+    );
+    await configureAppServerControlQuickSettings(id, { model: 'claude-B', planMode: 'on' });
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('claude-B');
+    expect(getAppServerControlQuickSettingsEffective(id).model).toBe('model-A');
+    expect(getAppServerControlRuntimeSettingStatus(id, 'model')).toMatchObject({
+      state: 'acknowledged',
+      scope: 'subsequentResponses',
+    });
+    seed('claude'); // A stale snapshot must not erase accepted defaults.
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBe('claude-B');
+  });
+
+  it('preserves explicit Codex effort null instead of replacing it with the medium UI seed', async () => {
+    api.mockResolvedValueOnce(
+      receipt({ effectiveSettings: { effort: null }, confirmedSettings: { effort: null } }),
+    );
+    await configureAppServerControlQuickSettings(id, { effort: null });
+    expect(api.mock.calls[0]?.[1].settings).toEqual({ effort: null });
+    expect(getAppServerControlQuickSettingsDraft(id).effort).toBeNull();
+  });
+
+  it('uses a null idle guard and preserves an explicit reset', async () => {
+    seed('claude', false);
+    api.mockResolvedValueOnce(
+      receipt({
+        turnId: null,
+        status: 'acknowledged',
+        threadStatus: 'acknowledged',
+        turnStatus: 'notRequested',
+        threadScope: 'subsequentResponses',
+        turnScope: 'subsequentResponses',
+        effectiveSettings: {},
+        confirmedSettings: { model: null },
+      }),
+    );
+    await configureAppServerControlQuickSettings(id, { model: null });
+    expect(api.mock.calls[0]?.[1]).toEqual({
+      expectedThreadId: 'thread-A',
+      expectedTurnId: null,
+      settings: { model: null },
+    });
+    expect(getAppServerControlQuickSettingsDraft(id).model).toBeNull();
   });
 });

@@ -223,6 +223,15 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return await _hostRuntime.InterruptTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
+    public Task<AppServerControlConfigureResponse> ConfigureAsync(
+        string sessionId, AppServerControlConfigureRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!_hostRuntime.OwnsSession(sessionId))
+            throw new InvalidOperationException("App Server Controller runtime is not attached.");
+        return _hostRuntime.ConfigureAsync(sessionId, request, ct);
+    }
+
     public async Task<AppServerControlCommandAcceptedResponse> SteerTurnAsync(
         string sessionId,
         AppServerControlSteerRequest request,
