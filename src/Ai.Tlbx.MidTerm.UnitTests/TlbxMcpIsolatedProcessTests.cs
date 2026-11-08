@@ -44,6 +44,69 @@ public sealed class TlbxMcpIsolatedProcessTests
         Assert.IsType<IOException>(Assert.Single(errors));
     }
 
+    [Theory]
+    [InlineData("stdout.log")]
+    [InlineData("stderr.log")]
+    public async Task SmallProgressIsReadableBeforeTheSourceCloses(string logName)
+    {
+        var path = Path.Combine(Path.GetTempPath(), "tlbx-live-log-" + Guid.NewGuid().ToString("N") + "-" + logName);
+        using var source = new LiveProgressSource(Encoding.UTF8.GetBytes("ready-before-exit\n"));
+        try
+        {
+            await using var destination = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.Read, 4096, useAsync: true);
+            var errors = new List<Exception>();
+            var draining = TlbxMcpIsolatedProcessTool.DrainAsync(source, destination, errors.Add);
+            try
+            {
+                await source.WaitingForClose.Task.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+                Assert.False(draining.IsCompleted);
+                await using var readable = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+                using var reader = new StreamReader(readable, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+                Assert.Equal("ready-before-exit\n", await reader.ReadToEndAsync(TestContext.Current.CancellationToken));
+                Assert.Empty(errors);
+            }
+            finally
+            {
+                source.Complete();
+                await draining.WaitAsync(TimeSpan.FromSeconds(2), TestContext.Current.CancellationToken);
+            }
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public async Task FailedProgressFlushStillDrainsTheChildPipe()
+    {
+        using var source = new MemoryStream(new byte[256 * 1024]);
+        using var destination = new FailedFlushDestination();
+        var errors = new List<Exception>();
+        await TlbxMcpIsolatedProcessTool.DrainAsync(source, destination, errors.Add);
+        Assert.Equal(source.Length, source.Position);
+        Assert.IsType<IOException>(Assert.Single(errors));
+    }
+
+    private sealed class LiveProgressSource(byte[] bytes) : MemoryStream(bytes)
+    {
+        public TaskCompletionSource WaitingForClose { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Complete() => _finished.TrySetResult();
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (Position < Length) return await base.ReadAsync(buffer, cancellationToken);
+            WaitingForClose.TrySetResult();
+            await _finished.Task.WaitAsync(cancellationToken);
+            return 0;
+        }
+    }
+
+    private sealed class FailedFlushDestination : MemoryStream
+    {
+        public override Task FlushAsync(CancellationToken cancellationToken = default)
+            => Task.FromException(new IOException("Simulated progress flush failure."));
+    }
+
     private sealed class FailedDestination : MemoryStream
     {
         public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
