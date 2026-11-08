@@ -254,10 +254,14 @@ function reindexHistoryEntryMap(
 }
 
 function upsertSnapshotItems(
-  current: readonly AppServerControlHistorySnapshot['items'][number][],
+  current: AppServerControlHistorySnapshot['items'],
   upserts: readonly AppServerControlHistorySnapshot['items'][number][],
   removals: readonly string[],
 ): AppServerControlHistorySnapshot['items'] {
+  if (upserts.length === 0 && removals.length === 0) {
+    return current;
+  }
+
   const next = new Map(current.map((item) => [item.itemId, cloneSnapshotItemSummary(item)]));
 
   for (const itemId of removals) {
@@ -274,10 +278,14 @@ function upsertSnapshotItems(
 }
 
 function upsertSnapshotRequests(
-  current: readonly AppServerControlHistorySnapshot['requests'][number][],
+  current: AppServerControlHistorySnapshot['requests'],
   upserts: readonly AppServerControlHistorySnapshot['requests'][number][],
   removals: readonly string[],
 ): AppServerControlHistorySnapshot['requests'] {
+  if (upserts.length === 0 && removals.length === 0) {
+    return current;
+  }
+
   const next = new Map(
     current.map((request) => [request.requestId, cloneSnapshotRequestSummary(request)]),
   );
@@ -296,9 +304,13 @@ function upsertSnapshotRequests(
 }
 
 function upsertSnapshotNotices(
-  current: readonly AppServerControlHistorySnapshot['notices'][number][],
+  current: AppServerControlHistorySnapshot['notices'],
   upserts: readonly AppServerControlHistorySnapshot['notices'][number][],
 ): AppServerControlHistorySnapshot['notices'] {
+  if (upserts.length === 0) {
+    return current;
+  }
+
   const next = new Map(
     current.map((notice) => [notice.eventId, cloneSnapshotRuntimeNotice(notice)]),
   );

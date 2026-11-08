@@ -528,6 +528,7 @@ The canonical history contract must satisfy the following:
 ## Performance Rules
 
 - Streaming must not cause full history/timeline rerenders.
+- Empty item/request/notice summary deltas must retain the existing arrays without cloning or sorting; history, stream and turn updates in the same patch must still be applied.
 - Live Agent Controller Session transport should flow as `provider event -> mtagenthost canonization -> mt bridge -> frontend history window fetch / delta -> visible row patch`.
 - Item updates should target stable DOM anchors keyed by canonical identity.
 - Virtual scrolling must remove old items from the live DOM when the history becomes large.
