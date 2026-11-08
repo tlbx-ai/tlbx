@@ -152,42 +152,6 @@ public sealed class HistoryWindowTests : IDisposable
         Assert.Equal("new-tool", service.GetSnapshotWindow(SessionId, 4, 1)!.Items[0].ItemId);
     }
 
-    [Theory]
-    [InlineData(100)]
-    [InlineData(10_000)]
-    public void OrdinarySaveWritesOnlyNewMutationAndLeavesLargeCheckpointUntouched(int completedRows)
-    {
-        var service = SeedPersisted(CreateHistory(completedRows));
-        Assert.Equal(completedRows, service.GetSnapshotWindow(SessionId)!.HistoryCount);
-        var checkpoint = Path.Combine(_directory, SessionId + ".json");
-        var bytes = File.ReadAllBytes(checkpoint);
-        var oldTime = new DateTime(2020, 1, 2, 3, 4, 6, DateTimeKind.Utc);
-        File.SetLastWriteTimeUtc(checkpoint, oldTime);
-        service.Append(new()
-        {
-            SessionId = SessionId, Provider = "codex", Type = "content.delta", TurnId = "turn", ItemId = "new",
-            EventId = "new-event", CreatedAt = DateTimeOffset.UtcNow,
-            ContentDelta = new() { StreamKind = "assistant_text", Delta = "Only the new response" }
-        });
-        service.FlushPersistence(SessionId);
-        Assert.Equal(oldTime, File.GetLastWriteTimeUtc(checkpoint));
-        Assert.Equal(bytes, File.ReadAllBytes(checkpoint));
-        var journal = Path.Combine(_directory, SessionId + ".journal");
-        Assert.InRange(new FileInfo(journal).Length, 1, 8192);
-
-        // Recovery explicitly pays the archive cost once and compacts the journal.
-        var recovery = Path.Combine(_directory, "recovery");
-        Directory.CreateDirectory(recovery);
-        File.Copy(checkpoint, Path.Combine(recovery, SessionId + ".json"));
-        File.Copy(journal, Path.Combine(recovery, SessionId + ".journal"));
-        var restored = new SessionAppServerControlHistoryService(storeDirectory: recovery, enableScreenLogging: false);
-        _services.Add(restored);
-        var tail = restored.GetSnapshotWindow(SessionId, completedRows, 1)!;
-        Assert.Equal(completedRows + 1, tail.HistoryCount);
-        Assert.Equal("Only the new response", Assert.Single(tail.History).Body);
-        Assert.False(File.Exists(Path.Combine(recovery, SessionId + ".journal")));
-    }
-
     private SessionAppServerControlHistoryService SeedPersisted(AppServerControlHistoryWindowResponse source)
     {
         Directory.CreateDirectory(_directory);
@@ -226,7 +190,7 @@ public sealed class HistoryWindowTests : IDisposable
 
     public void Dispose()
     {
-        // All paths are private; Forget retires any writer before the fixture directory is removed.
+        // All paths are private to this fixture; the read-only large fixtures launch no persistence writer.
         foreach (var service in _services) service.Forget(SessionId);
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
     }

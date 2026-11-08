@@ -1,7 +1,4 @@
-using System.Buffers.Binary;
-using System.Security.Cryptography;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
 using Xunit;
@@ -13,7 +10,6 @@ public sealed class HistoryReplayTests : IDisposable
     private const string Session = "replay";
     private readonly string _directory = Path.Combine(Path.GetTempPath(), "tlbx-replay-tests", Guid.NewGuid().ToString("N"));
     private readonly SessionAppServerControlHistoryService _history;
-    private readonly List<SessionAppServerControlHistoryService> _recovered = [];
 
     public HistoryReplayTests() => _history = new(storeDirectory: _directory, enableScreenLogging: false);
 
@@ -214,7 +210,7 @@ public sealed class HistoryReplayTests : IDisposable
     }
 
     [Fact]
-    public void GoalAndAcknowledgedDefaultsSurviveBoundedInitialReplayWindowsPatchesAndReload()
+    public async Task GoalAndAcknowledgedDefaultsSurviveBoundedInitialReplayWindowsPatchesAndReload()
     {
         var events = new List<AppServerControlProviderEvent> { Started("past") };
         for (var i = 0; i < 100; i++)
@@ -249,8 +245,10 @@ public sealed class HistoryReplayTests : IDisposable
             imported.ImportHistoryWindow(_history.GetSnapshotWindow(Session, 0, 1)!);
             Assert.Equal("Keep", imported.GetSnapshot(Session)!.Thread.Goal!.Goal!.Objective);
             Assert.Contains("model", imported.GetSnapshot(Session)!.QuickSettings.AcknowledgedFields, StringComparer.Ordinal);
-            _history.FlushPersistence(Session);
-            var loaded = Recover();
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+            while (!File.Exists(Path.Combine(_directory, Session + ".json"))) await Task.Delay(20, timeout.Token);
+            var loaded = new SessionAppServerControlHistoryService(storeDirectory: _directory, enableScreenLogging: false);
             try
             {
                 var restored = loaded.GetSnapshotWindow(Session, 0, 1)!;
@@ -268,254 +266,6 @@ public sealed class HistoryReplayTests : IDisposable
             finally { loaded.Forget(Session); }
         }
         finally { imported.Forget(Session); }
-    }
-
-    [Fact]
-    public void JournalRecoversActiveToolAccumulatorRequestsGoalAndSettingsAcrossColdCheckpoints()
-    {
-        var goal = Event("thread.goal.changed", "turn");
-        goal.GoalUpdated = new() { ThreadId = "thread", Confirmation = "confirmed", Goal = new() { Objective = "Keep going", Status = "active" } };
-        var settings = Event("quick-settings.updated", "turn");
-        settings.QuickSettingsUpdated = new() { Model = "accepted", PermissionMode = "manual", AcknowledgedFields = ["model", "permissionMode"] };
-        var request = Event("request.opened", "turn");
-        request.RequestId = "external/approval";
-        request.RequestOpened = new() { RequestType = "mcp_tool_approval", Detail = new string('x', 6000) };
-        var notice = Event("runtime.notice", "turn");
-        notice.RuntimeNoticeOnly = new() { Message = "Retained notice" };
-        _history.AppendInitialReplay([Started("turn"), Item("turn", "tool", "command_execution", "running", "Run marker"),
-            Output("tool", "first\npar"), goal, settings, request, notice]);
-        _history.FlushPersistence(Session);
-        var directory = CopyStore(_directory);
-        var recovered = OpenStore(directory);
-        AssertSnapshotsEqual(_history, recovered);
-        Assert.Equal(6000, Assert.Single(recovered.GetSnapshot(Session)!.Requests).Detail!.Length);
-
-        var continuation = Output("tool", "tial\nlast\n");
-        _history.Append(continuation);
-        recovered.Append(continuation);
-        var decision = Event("request.resolved", "turn");
-        decision.RequestId = request.RequestId;
-        decision.RequestResolved = new() { Decision = "accept" };
-        _history.Append(decision);
-        recovered.Append(decision);
-        AssertSnapshotsEqual(_history, recovered);
-        Assert.Equal(2048, Assert.Single(recovered.GetSnapshot(Session)!.Requests).Detail!.Length);
-        Assert.Contains("partial", recovered.GetSnapshot(Session)!.History.Single(row => row.Kind == "tool").Body, StringComparison.Ordinal);
-        recovered.FlushPersistence(Session);
-
-        var checkpointed = Recover(directory);
-        AssertSnapshotsEqual(recovered, checkpointed);
-        var completed = Item("turn", "tool", "command_execution", "completed", "Finished");
-        recovered.Append(completed);
-        checkpointed.Append(completed);
-        AssertSnapshotsEqual(recovered, checkpointed);
-        Assert.False(checkpointed.GetSnapshot(Session)!.History.Single(row => row.Kind == "tool").Streaming);
-    }
-
-    [Fact]
-    public void SameSequenceImportPatchResetAndBacklogHaveTheirOwnDurableOrder()
-    {
-        var window = new AppServerControlHistoryWindowResponse
-        {
-            SessionId = Session, LatestSequence = 100, Provider = "codex",
-            History = [new() { EntryId = "original", Order = 7, Kind = "assistant", Body = "old" }]
-        };
-        _history.ImportHistoryWindow(window);
-        _history.ApplyHistoryPatch(new() { SessionId = Session, LatestSequence = 100, Provider = "codex",
-            HistoryRemovals = ["original"], HistoryUpserts = [new() { EntryId = "replacement", Order = 2, Kind = "assistant", Body = "new" }] });
-        window.History[0].Body = "mutated caller";
-        var backlog = Event("agent.state", "turn");
-        backlog.Sequence = 90;
-        _history.ImportProviderEvents(Session, 100, [backlog]);
-        _history.FlushPersistence(Session);
-        var recovered = Recover();
-        Assert.Equal(100, recovered.GetSnapshot(Session)!.LatestSequence);
-        Assert.Equal("new", Assert.Single(recovered.GetSnapshot(Session)!.History).Body);
-        using (var subscription = recovered.SubscribeProviderEvents(Session, 0, TestContext.Current.CancellationToken))
-        {
-            Assert.True(subscription.Reader.TryRead(out var retained));
-            Assert.Equal(90, retained!.Sequence);
-            Assert.False(subscription.Reader.TryRead(out _));
-        }
-
-        _history.ImportHistoryWindow(new() { SessionId = Session, LatestSequence = 100 });
-        _history.AppendInitialReplay([Started("next"), Assistant("next", "fresh", "fresh")]);
-        _history.FlushPersistence(Session);
-        var reset = Recover();
-        AssertSnapshotsEqual(_history, reset);
-        Assert.Equal("fresh", Assert.Single(reset.GetSnapshot(Session)!.History).Body);
-        Assert.Equal(102, reset.GetSnapshot(Session)!.LatestSequence);
-    }
-
-    [Theory]
-    [InlineData("header")]
-    [InlineData("payload")]
-    [InlineData("digest")]
-    public void OnlyIncompleteTerminalFrameIsDiscardedAndNextSaveIsReadable(string cut)
-    {
-        _history.Append(Assistant("turn", "first", "first"));
-        _history.FlushPersistence(Session);
-        var boundary = new FileInfo(JournalPath).Length;
-        _history.Append(Assistant("turn", "second", "second"));
-        _history.FlushPersistence(Session);
-        var directory = CopyStore(_directory);
-        var path = Path.Combine(directory, Session + ".journal");
-        using (var file = File.OpenWrite(path)) file.SetLength(cut switch
-        {
-            "header" => boundary + 3,
-            "payload" => boundary + 10,
-            _ => file.Length - 1
-        });
-        var recovered = OpenStore(directory);
-        Assert.Equal("first", Assert.Single(recovered.GetSnapshot(Session)!.History).Body);
-        Assert.False(File.Exists(path));
-        recovered.Append(Assistant("turn", "third", "third"));
-        recovered.FlushPersistence(Session);
-        AssertSnapshotsEqual(recovered, Recover(directory));
-    }
-
-    [Theory]
-    [InlineData("checksum")]
-    [InlineData("header")]
-    [InlineData("formatVersion")]
-    [InlineData("recordNumber")]
-    [InlineData("sessionId")]
-    public void CompleteCorruptUnsupportedOrOutOfScopeJournalFailsWithoutReplacingStore(string defect)
-    {
-        _history.Append(Assistant("turn", "first", "first"));
-        _history.FlushPersistence(Session);
-        var directory = CopyStore(_directory);
-        var path = Path.Combine(directory, Session + ".journal");
-        var bytes = File.ReadAllBytes(path);
-        if (defect == "checksum") bytes[^1] ^= 1;
-        else if (defect == "header") bytes[4] ^= 1;
-        else
-        {
-            var length = BinaryPrimitives.ReadInt32LittleEndian(bytes);
-            var record = JsonNode.Parse(bytes.AsSpan(8, length))!.AsObject();
-            record[defect] = defect switch { "sessionId" => JsonValue.Create("other"), "recordNumber" => JsonValue.Create(2), _ => JsonValue.Create(99) };
-            bytes = Frame(JsonSerializer.SerializeToUtf8Bytes(record, JsonSerializerOptions.Web));
-        }
-        File.WriteAllBytes(path, bytes);
-        var recovered = OpenStore(directory);
-        Assert.Throws<InvalidDataException>(() => recovered.GetSnapshot(Session));
-        Assert.Equal(bytes, File.ReadAllBytes(path));
-        Assert.False(File.Exists(Path.Combine(directory, Session + ".json")));
-    }
-
-    [Fact]
-    public void CheckpointWatermarkSurvivesCrashBeforeOldJournalDeletion()
-    {
-        _history.AppendInitialReplay([Started("turn"), Item("turn", "tool", "command_execution", "running", "Marker"), Output("tool", "first\npartial")]);
-        _history.FlushPersistence(Session);
-        var oldJournal = File.ReadAllBytes(JournalPath);
-        var directory = CopyStore(_directory);
-        var recovered = OpenStore(directory);
-        AssertSnapshotsEqual(_history, recovered); // Cold load committed a full checkpoint.
-        File.WriteAllBytes(Path.Combine(directory, Session + ".journal"), oldJournal); // Crash before delete.
-        AssertSnapshotsEqual(recovered, Recover(directory));
-    }
-
-    [Fact]
-    public void FailedColdCheckpointLeavesJournalRecoverableForNextAttempt()
-    {
-        _history.Append(Assistant("turn", "first", "first"));
-        _history.FlushPersistence(Session);
-        var directory = CopyStore(_directory);
-        var journal = Path.Combine(directory, Session + ".journal");
-        var bytes = File.ReadAllBytes(journal);
-        var blockedTemp = Path.Combine(directory, Session + ".json.tmp");
-        Directory.CreateDirectory(blockedTemp);
-        var recovered = OpenStore(directory);
-        var failure = Record.Exception(() => recovered.GetSnapshot(Session));
-        Assert.True(failure is IOException or UnauthorizedAccessException);
-        Assert.Equal(bytes, File.ReadAllBytes(journal));
-        Directory.Delete(blockedTemp);
-        AssertSnapshotsEqual(_history, recovered);
-        Assert.False(File.Exists(journal));
-    }
-
-    [Fact]
-    public void ActualFileOpenFailureCoalescesFurtherDeltasAndResumesJournalAfterRecoveryCheckpoint()
-    {
-        Directory.CreateDirectory(JournalPath); // A real IO failure, not a mocked writer exception.
-        _history.Append(Assistant("turn", "first", "first"));
-        var failure = Record.Exception(() => _history.FlushPersistence(Session));
-        Assert.True(failure is IOException or UnauthorizedAccessException);
-        Assert.Equal(0, _history.GetPendingPersistenceBytes(Session));
-        _history.Append(Assistant("turn", "second", "second"));
-        for (var i = 0; i < 20; i++) _history.Append(Assistant("turn", "second", new string('x', 6000) + i.ToString(System.Globalization.CultureInfo.InvariantCulture)));
-        Assert.Equal(0, _history.GetPendingPersistenceBytes(Session));
-        Directory.Delete(JournalPath);
-        _history.FlushPersistence(Session);
-        Assert.True(File.Exists(Path.Combine(_directory, Session + ".json")));
-        Assert.False(File.Exists(JournalPath));
-        AssertSnapshotsEqual(_history, Recover());
-        _history.Append(Assistant("turn", "third", "Journal resumed"));
-        _history.FlushPersistence(Session);
-        Assert.InRange(new FileInfo(JournalPath).Length, 1, 8192);
-        AssertSnapshotsEqual(_history, Recover());
-    }
-
-    [Fact]
-    public async Task ForgetRetiresScheduledWriterBeforeReusingSameSessionAndDeletesUnloadedStore()
-    {
-        _history.Append(Assistant("turn", "forgotten", "forgotten"));
-        _history.Forget(Session);
-        Assert.False(File.Exists(JournalPath));
-        _history.Append(Assistant("new", "kept", "kept"));
-        _history.FlushPersistence(Session);
-        await Task.Delay(450, TestContext.Current.CancellationToken); // Let the old scheduled generation wake.
-        var recovered = Recover();
-        Assert.Equal("kept", Assert.Single(recovered.GetSnapshot(Session)!.History).Body);
-        _history.Forget(Session);
-        // Forget must also erase a persisted session that this service never loaded.
-        File.WriteAllText(JournalPath, "unloaded fixture");
-        _history.Forget(Session);
-        await Task.Delay(250, TestContext.Current.CancellationToken);
-        Assert.False(File.Exists(JournalPath));
-        Assert.False(File.Exists(Path.Combine(_directory, Session + ".json")));
-    }
-
-    private string JournalPath => Path.Combine(_directory, Session + ".journal");
-
-    private SessionAppServerControlHistoryService Recover(string? source = null) => OpenStore(CopyStore(source ?? _directory));
-
-    private SessionAppServerControlHistoryService OpenStore(string directory)
-    {
-        var service = new SessionAppServerControlHistoryService(storeDirectory: directory, enableScreenLogging: false);
-        _recovered.Add(service);
-        return service;
-    }
-
-    private string CopyStore(string source)
-    {
-        var destination = Path.Combine(_directory, Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(destination);
-        foreach (var path in Directory.GetFiles(source)) File.Copy(path, Path.Combine(destination, Path.GetFileName(path)));
-        return destination;
-    }
-
-    private static void AssertSnapshotsEqual(SessionAppServerControlHistoryService expected, SessionAppServerControlHistoryService actual) =>
-        Assert.Equal(JsonSerializer.Serialize(expected.GetSnapshot(Session), JsonSerializerOptions.Web),
-            JsonSerializer.Serialize(actual.GetSnapshot(Session), JsonSerializerOptions.Web));
-
-    private static AppServerControlProviderEvent Output(string id, string text)
-    {
-        var e = Event("content.delta", "turn");
-        e.ItemId = id;
-        e.ContentDelta = new() { StreamKind = "command_output", Delta = text };
-        return e;
-    }
-
-    private static byte[] Frame(byte[] payload)
-    {
-        var bytes = new byte[8 + payload.Length + 32];
-        BinaryPrimitives.WriteInt32LittleEndian(bytes, payload.Length);
-        BinaryPrimitives.WriteInt32LittleEndian(bytes.AsSpan(4), ~payload.Length);
-        payload.CopyTo(bytes, 8);
-        SHA256.HashData(payload).CopyTo(bytes, 8 + payload.Length);
-        return bytes;
     }
 
     private static AppServerControlProviderEvent Event(string type, string turn) => new()
@@ -556,7 +306,6 @@ public sealed class HistoryReplayTests : IDisposable
 
     public void Dispose()
     {
-        foreach (var service in _recovered) service.Forget(Session);
         _history.Forget(Session);
         if (Directory.Exists(_directory)) Directory.Delete(_directory, recursive: true);
     }

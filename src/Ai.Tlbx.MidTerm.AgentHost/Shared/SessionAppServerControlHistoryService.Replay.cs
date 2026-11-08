@@ -19,7 +19,7 @@ public sealed partial class SessionAppServerControlHistoryService
         {
             lock (log.SyncRoot)
             {
-                if (log.Forgotten) return;
+                log.PersistenceDirty = true;
                 foreach (var source in events)
                 {
                     var retained = AppServerControlProviderEventCompaction.CloneForRetention(source);
@@ -27,7 +27,6 @@ public sealed partial class SessionAppServerControlHistoryService
                     log.EventBacklog.Add(retained);
                     TrimEventBacklog(log.EventBacklog);
                     ApplyEvent(log.State, retained);
-                    QueueJournalMutation(log, new() { Event = retained });
                 }
 
                 var window = CloneSnapshot(sessionId, log.NextSequence, log.State,
@@ -59,7 +58,7 @@ public sealed partial class SessionAppServerControlHistoryService
         finally
         {
             // Preserve already reduced canonical data even if a malformed later event aborts attach.
-            SchedulePersistence(log);
+            SchedulePersistence(sessionId);
         }
     }
 }

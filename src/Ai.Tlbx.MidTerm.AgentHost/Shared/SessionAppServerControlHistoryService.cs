@@ -34,8 +34,6 @@ public sealed partial class SessionAppServerControlHistoryService
     private const string TailRetentionMarker = "... earlier output omitted ...";
     private const string HeadRetentionMarker = "... output truncated ...";
     private readonly ConcurrentDictionary<string, SessionAppServerControlHistoryLog> _logs = new(StringComparer.Ordinal);
-    // Serializes store lifecycle/IO, never live reduction or archive cloning on ordinary saves.
-    private readonly Lock _storeSync = new();
     private readonly string _storeDirectory;
     private readonly bool _screenLoggingEnabled;
     private readonly string? _screenLogDirectory;
@@ -77,14 +75,13 @@ public sealed partial class SessionAppServerControlHistoryService
         var log = GetOrLoadLog(appServerControlEvent.SessionId);
         lock (log.SyncRoot)
         {
-            if (log.Forgotten) return;
             retainedEvent.Sequence = ++log.NextSequence;
             log.EventBacklog.Add(retainedEvent);
             TrimEventBacklog(log.EventBacklog);
             ApplyEvent(log.State, retainedEvent);
-            QueueJournalMutation(log, new() { Event = retainedEvent });
             var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, retainedEvent);
             PersistScreenLogDelta(log, delta);
+            log.PersistenceDirty = true;
 
             var staleSubscribers = new List<AppServerControlProviderEventSubscriber>();
             foreach (var subscriber in log.Subscribers)
@@ -121,7 +118,7 @@ public sealed partial class SessionAppServerControlHistoryService
             }
         }
 
-        SchedulePersistence(log);
+        SchedulePersistence(log.SessionId);
     }
 
     public AppServerControlProviderEventSubscription SubscribeProviderEvents(string sessionId, long afterSequence, CancellationToken cancellationToken = default)
@@ -327,13 +324,12 @@ public sealed partial class SessionAppServerControlHistoryService
         var log = GetOrLoadLog(historyWindow.SessionId);
         lock (log.SyncRoot)
         {
-            if (log.Forgotten) return;
             ImportHistoryWindow(log.State, historyWindow);
             log.NextSequence = Math.Max(log.NextSequence, Math.Max(1, historyWindow.LatestSequence));
-            QueueJournalMutation(log, new() { Window = historyWindow });
+            log.PersistenceDirty = true;
         }
 
-        SchedulePersistence(log);
+        SchedulePersistence(log.SessionId);
     }
 
     public void ApplyHistoryPatch(AppServerControlHistoryPatch historyPatch)
@@ -344,7 +340,6 @@ public sealed partial class SessionAppServerControlHistoryService
         var log = GetOrLoadLog(historyPatch.SessionId);
         lock (log.SyncRoot)
         {
-            if (log.Forgotten) return;
             if (historyPatch.LatestSequence < log.NextSequence)
             {
                 return;
@@ -352,10 +347,10 @@ public sealed partial class SessionAppServerControlHistoryService
 
             ApplyHistoryPatch(log.State, historyPatch);
             log.NextSequence = Math.Max(log.NextSequence, Math.Max(1, historyPatch.LatestSequence));
-            QueueJournalMutation(log, new() { Patch = historyPatch });
+            log.PersistenceDirty = true;
         }
 
-        SchedulePersistence(log);
+        SchedulePersistence(log.SessionId);
     }
 
     public void ImportProviderEvents(
@@ -369,7 +364,6 @@ public sealed partial class SessionAppServerControlHistoryService
         var log = GetOrLoadLog(sessionId);
         lock (log.SyncRoot)
         {
-            if (log.Forgotten) return;
             log.EventBacklog.Clear();
             foreach (var appServerControlEvent in providerEvents
                          .Where(static appServerControlEvent => !string.IsNullOrWhiteSpace(appServerControlEvent.SessionId))
@@ -384,35 +378,30 @@ public sealed partial class SessionAppServerControlHistoryService
                 Math.Max(
                     latestSequence,
                     log.EventBacklog.Count == 0 ? 0 : log.EventBacklog[^1].Sequence));
-            QueueJournalMutation(log, new() { Backlog = log.EventBacklog.ToList() });
+            log.PersistenceDirty = true;
         }
 
-        SchedulePersistence(log);
+        SchedulePersistence(log.SessionId);
     }
 
     public void Forget(string sessionId)
     {
-        lock (_storeSync)
+        if (_logs.TryRemove(sessionId, out var log))
         {
-            if (_logs.TryRemove(sessionId, out var log))
+            lock (log.SyncRoot)
             {
-                lock (log.SyncRoot)
+                foreach (var subscriber in log.Subscribers)
                 {
-                    log.Forgotten = true;
-                    log.PendingJournal.Clear();
-                    foreach (var subscriber in log.Subscribers)
-                    {
-                        subscriber.Writer.TryComplete();
-                    }
-
-                    foreach (var subscriber in log.DeltaSubscribers)
-                    {
-                        subscriber.Writer.TryComplete();
-                    }
-
-                    log.Subscribers.Clear();
-                    log.DeltaSubscribers.Clear();
+                    subscriber.Writer.TryComplete();
                 }
+
+                foreach (var subscriber in log.DeltaSubscribers)
+                {
+                    subscriber.Writer.TryComplete();
+                }
+
+                log.Subscribers.Clear();
+                log.DeltaSubscribers.Clear();
             }
 
             TryDeleteStore(sessionId);
@@ -426,46 +415,47 @@ public sealed partial class SessionAppServerControlHistoryService
             return true;
         }
 
-        lock (_storeSync)
+        if (TryLoadLog(sessionId, out var loaded))
         {
-            if (_logs.TryGetValue(sessionId, out log!)) return true;
-            if (!TryLoadLog(sessionId, out var loaded))
-            {
-                log = null!;
-                return false;
-            }
-            _logs[sessionId] = log = loaded;
+            log = _logs.GetOrAdd(sessionId, loaded);
             return true;
         }
+
+        log = null!;
+        return false;
     }
 
     private SessionAppServerControlHistoryLog GetOrLoadLog(string sessionId)
     {
-        if (_logs.TryGetValue(sessionId, out var current)) return current;
-        lock (_storeSync)
+        return _logs.GetOrAdd(sessionId, LoadLog);
+    }
+
+    private SessionAppServerControlHistoryLog LoadLog(string sessionId)
+    {
+        if (TryLoadLog(sessionId, out var log))
         {
-            if (_logs.TryGetValue(sessionId, out current)) return current;
-            TryLoadLog(sessionId, out var loaded);
-            _logs[sessionId] = loaded;
-            return loaded;
+            return log;
         }
+
+        return new SessionAppServerControlHistoryLog(sessionId);
     }
 
     private bool TryLoadLog(string sessionId, out SessionAppServerControlHistoryLog log)
     {
         log = new SessionAppServerControlHistoryLog(sessionId);
-        var checkpoint = TryLoadPersistedState(sessionId, log);
-        var legacy = !checkpoint && TryLoadLegacyEventLog(sessionId, log);
-        var journal = ReplayJournal(log);
-        if (legacy || journal)
+        if (TryLoadPersistedState(sessionId, log))
         {
-            // Explicit cold recovery is the only archive-sized checkpoint/compaction path.
-            // Commit its journal watermark before removing old records (crash-safe re-entry).
-            PersistState(sessionId, BuildPersistedState(log));
-            File.Delete(GetJournalStorePath(sessionId));
-            TryDeleteLegacyStore(sessionId);
+            return true;
         }
-        return checkpoint || legacy || journal;
+
+        if (!TryLoadLegacyEventLog(sessionId, log))
+        {
+            return false;
+        }
+
+        PersistState(sessionId, BuildPersistedState(log));
+        TryDeleteLegacyStore(sessionId);
+        return log.NextSequence > 0;
     }
 
     private bool TryLoadPersistedState(string sessionId, SessionAppServerControlHistoryLog log)
@@ -483,19 +473,13 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         var persisted = JsonSerializer.Deserialize(payload, AppServerControlPersistenceJsonContext.Default.AppServerControlPersistedSessionState);
-        if (persisted is null || persisted.NextSequence < 0 || (persisted.NextSequence == 0 && persisted.FormatVersion == 0))
+        if (persisted is null || persisted.NextSequence <= 0)
         {
             return false;
         }
 
-        if (persisted.FormatVersion is < 0 or > JournalFormatVersion || persisted.JournalRecordNumber < 0)
-            throw new InvalidDataException("Unsupported canonical history checkpoint.");
-        log.NextJournalRecord = persisted.JournalRecordNumber;
         log.NextSequence = persisted.NextSequence;
         RestoreConversationState(log.State, persisted.State);
-        // Older canonical checkpoints predate the bounded backlog field.
-        if (persisted.EventBacklog is { } backlog) log.EventBacklog.AddRange(backlog.Select(CloneEvent));
-        TrimEventBacklog(log.EventBacklog);
         return true;
     }
 
@@ -530,16 +514,70 @@ public sealed partial class SessionAppServerControlHistoryService
         return log.NextSequence > 0;
     }
 
+    private void SchedulePersistence(string sessionId)
+    {
+        if (!_logs.TryGetValue(sessionId, out var log))
+        {
+            return;
+        }
+
+        var shouldSchedule = false;
+        lock (log.SyncRoot)
+        {
+            if (!log.PersistenceScheduled)
+            {
+                log.PersistenceScheduled = true;
+                shouldSchedule = true;
+            }
+        }
+
+        if (!shouldSchedule)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(PersistDebounceMilliseconds).ConfigureAwait(false);
+
+                if (!_logs.TryGetValue(sessionId, out var current))
+                {
+                    return;
+                }
+
+                AppServerControlPersistedSessionState? persisted = null;
+                lock (current.SyncRoot)
+                {
+                    if (!current.PersistenceDirty)
+                    {
+                        current.PersistenceScheduled = false;
+                        return;
+                    }
+
+                    current.PersistenceDirty = false;
+                    persisted = BuildPersistedState(current);
+                }
+
+                try
+                {
+                    PersistState(sessionId, persisted);
+                }
+                catch (Exception ex)
+                {
+                    Log.Verbose(() => $"[AppServerControlHistory] Failed to persist canonical AppServerControl state for {sessionId}: {ex.Message}");
+                }
+            }
+        });
+    }
+
     private void PersistState(string sessionId, AppServerControlPersistedSessionState persisted)
     {
         var path = GetStateStorePath(sessionId);
         var tempPath = path + ".tmp";
         var payload = JsonSerializer.Serialize(persisted, AppServerControlPersistenceJsonContext.Default.AppServerControlPersistedSessionState);
-        using (var output = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-            output.Write(Encoding.UTF8.GetBytes(payload));
-            output.Flush(flushToDisk: true);
-        }
+        File.WriteAllText(tempPath, payload, Encoding.UTF8);
         File.Move(tempPath, path, overwrite: true);
     }
 
@@ -551,8 +589,6 @@ public sealed partial class SessionAppServerControlHistoryService
             File.Delete(statePath);
         }
 
-        File.Delete(GetJournalStorePath(sessionId));
-        File.Delete(statePath + ".tmp");
         TryDeleteLegacyStore(sessionId);
     }
 
@@ -860,10 +896,7 @@ public sealed partial class SessionAppServerControlHistoryService
     {
         return new AppServerControlPersistedSessionState
         {
-            FormatVersion = JournalFormatVersion,
-            JournalRecordNumber = log.NextJournalRecord,
             NextSequence = log.NextSequence,
-            EventBacklog = log.EventBacklog.Select(CloneEvent).ToList(),
             State = BuildPersistedConversationState(log.State)
         };
     }
@@ -3735,11 +3768,7 @@ public sealed partial class SessionAppServerControlHistoryService
         public List<AppServerControlProviderEventSubscriber> Subscribers { get; } = [];
         public List<AppServerControlHistoryPatchSubscriber> DeltaSubscribers { get; } = [];
         public AppServerControlConversationState State { get; } = new();
-        public Queue<PendingJournalMutation> PendingJournal { get; } = new();
-        public long NextJournalRecord { get; set; }
-        public long? CommittedJournalLength { get; set; }
-        public bool RecoveryCheckpointRequired { get; set; }
-        public bool Forgotten { get; set; }
+        public bool PersistenceDirty { get; set; }
         public bool PersistenceScheduled { get; set; }
         public string? ScreenLogId { get; set; }
         public string? ScreenLogPath { get; set; }
@@ -3798,10 +3827,7 @@ public sealed partial class SessionAppServerControlHistoryService
 
     private sealed class AppServerControlPersistedSessionState
     {
-        public int FormatVersion { get; init; }
-        public long JournalRecordNumber { get; init; }
         public long NextSequence { get; init; }
-        public List<AppServerControlProviderEvent>? EventBacklog { get; init; }
         public AppServerControlPersistedConversationState State { get; init; } = new();
     }
 
@@ -3894,7 +3920,6 @@ public sealed partial class SessionAppServerControlHistoryService
 
     [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
     [JsonSerializable(typeof(AppServerControlPersistedSessionState))]
-    [JsonSerializable(typeof(HistoryJournalMutation))]
     private sealed partial class AppServerControlPersistenceJsonContext : JsonSerializerContext;
 
     [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
