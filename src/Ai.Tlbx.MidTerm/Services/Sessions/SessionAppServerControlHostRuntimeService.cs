@@ -46,6 +46,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private readonly bool _preserveHostsOnDispose;
     private readonly string _mode;
     private readonly RedirectedProcessLauncher _launcher;
+    private readonly SessionPathAllowlistService? _pathAllowlist;
 
     internal IEnumerable<KeyValuePair<int, string>> GetProcessContextRoots() =>
         _states.Values.Where(state => state.HostPid > 0)
@@ -69,8 +70,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,
         string? mode = null,
-        AcpAgentCatalogService? acpAgentCatalog = null)
-        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog)
+        AcpAgentCatalogService? acpAgentCatalog = null,
+        SessionPathAllowlistService? pathAllowlist = null)
+        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog, pathAllowlist)
     {
     }
 
@@ -79,9 +81,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         MidTermInstanceIdentity? instanceIdentity,
         string? mode,
         RedirectedProcessLauncher? launcher,
-        AcpAgentCatalogService? acpAgentCatalog = null)
+        AcpAgentCatalogService? acpAgentCatalog = null,
+        SessionPathAllowlistService? pathAllowlist = null)
     {
         _settingsService = settingsService;
+        _pathAllowlist = pathAllowlist;
         _acpAgentCatalog = acpAgentCatalog ?? new AcpAgentCatalogService(settingsService);
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
             Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
@@ -1016,6 +1020,30 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         _states.Clear();
     }
 
+    internal static void RegisterHistoryPaths(
+        SessionPathAllowlistService? allowlist,
+        string sessionId,
+        IEnumerable<AppServerControlHistoryItem> history)
+    {
+        if (allowlist is null) return;
+
+        // Canonical host history is trusted IPC. Register its resolved artifacts
+        // before publishing them, just as terminal output registers detected paths.
+        // Use the owning IPC session, never a session ID supplied in the payload.
+        foreach (var entry in history)
+        {
+            foreach (var reference in entry.FileMentions)
+                if (reference.Exists && !string.IsNullOrWhiteSpace(reference.ResolvedPath))
+                    allowlist.RegisterPath(sessionId, reference.ResolvedPath);
+            foreach (var preview in entry.ImagePreviews)
+                if (!string.IsNullOrWhiteSpace(preview.ResolvedPath))
+                    allowlist.RegisterPath(sessionId, preview.ResolvedPath);
+            foreach (var attachment in entry.Attachments)
+                if (Path.IsPathFullyQualified(attachment.Path))
+                    allowlist.RegisterPath(sessionId, attachment.Path);
+        }
+    }
+
     private async Task ReadLoopAsync(HostRuntimeState state)
     {
         try
@@ -1044,6 +1072,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     }
 
                     state.McpScopeIdentity = patchEnvelope.McpScopeIdentity;
+                    RegisterHistoryPaths(_pathAllowlist, state.SessionId, patchEnvelope.Patch.HistoryUpserts);
                     ApplyHistoryPatchToState(state, patchEnvelope.Patch);
                     continue;
                 }
@@ -1058,6 +1087,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     }
 
                     state.McpScopeIdentity = result.McpScopeIdentity;
+                    if (result.HistoryWindow is not null)
+                        RegisterHistoryPaths(_pathAllowlist, state.SessionId, result.HistoryWindow.History);
                     if (!string.IsNullOrEmpty(result.McpProviderThreadId)) state.McpProviderThreadId = result.McpProviderThreadId;
                     if (state.PendingCommands.TryRemove(commandId, out var pending))
                     {
