@@ -50,6 +50,8 @@ $ReservedPorts = @(2000, 2001)
 $CodeWatchRoot = Join-Path $RepoRoot "src"
 $DebugWebOutputDir = Join-Path $WebProjectDir "bin\Debug\net10.0"
 $DevAgentHostRoot = Join-Path $RepoRoot ".dev\bin\mtagenthost"
+$DevWebRoot = Join-Path $RepoRoot ".dev\bin\mt"
+$script:currentWebOutputDir = $null
 $script:currentAgentHostPath = $null
 
 function Test-StableSupervisor {
@@ -236,7 +238,11 @@ function Build-TmuxShim {
 
 function Build-WebServer {
     Write-Host "  Building local mt..." -ForegroundColor DarkGray
-    & dotnet build $WebProjectFile -c Debug --nologo `
+    # Native MCP adapters outlive mt and load its assemblies. Each build gets an
+    # immutable runtime output so surviving adapters never lock the next build.
+    $outputDir = Join-Path $DevWebRoot ([guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    & dotnet build $WebProjectFile -c Debug --nologo --output $outputDir `
         "-p:UseSharedCompilation=false" `
         "-m:1" `
         "--property:SkipFrontendBuild=true" `
@@ -244,6 +250,16 @@ function Build-WebServer {
     if ($LASTEXITCODE -ne 0) {
         throw "mt build failed"
     }
+    if (-not (Test-Path -LiteralPath (Join-Path $outputDir 'mt.dll'))) {
+        throw "Shadow-built mt was not found at $outputDir"
+    }
+    $shimOutputDir = Join-Path (Split-Path -Parent $TmuxShimProjectFile) 'bin/Debug/net10.0'
+    $shimFiles = @(Get-ChildItem -LiteralPath $shimOutputDir -File | Where-Object {
+        $_.Name -eq 'mttmux' -or $_.Name.StartsWith('mttmux.', [StringComparison]::OrdinalIgnoreCase)
+    })
+    if ($shimFiles.Count -eq 0) { throw "Built mttmux payload was not found at $shimOutputDir" }
+    foreach ($shimFile in $shimFiles) { Copy-Item -LiteralPath $shimFile.FullName -Destination $outputDir }
+    $script:currentWebOutputDir = $outputDir
 }
 
 function Start-EsbuildWatch {
@@ -410,20 +426,47 @@ function Stop-StaleSourceServerProcesses {
         return
     }
 
-    $escapedOutputDir = [Regex]::Escape($DebugWebOutputDir)
-    $escapedPort = [Regex]::Escape($Port.ToString())
-    $escapedBind = [Regex]::Escape($BindAddress)
+    $webDll = '(?:' + [Regex]::Escape((Join-Path $DebugWebOutputDir 'mt.dll')) + '|' +
+        [Regex]::Escape($DevWebRoot) + '[\\/][^"\\/\s]+[\\/]mt\.dll)'
+    $webCommand = '^(?:"[^"]+"|\S+)\s+(?:"{0}"|{0})(?=\s|$)' -f $webDll
+    $portArgument = '(?:^|\s)--port\s+(?:"{0}"|{0})(?=\s|$)' -f [Regex]::Escape($Port.ToString())
+    $bindArgument = '(?:^|\s)--bind\s+(?:"{0}"|{0})(?=\s|$)' -f [Regex]::Escape($BindAddress)
     $staleProcesses = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $_.ProcessId -ne $PID -and
+            $_.Name -eq 'dotnet.exe' -and
             $_.CommandLine -and
-            $_.CommandLine -match $escapedOutputDir -and
-            $_.CommandLine -match "--port\s+$escapedPort" -and
-            $_.CommandLine -match "--bind\s+$escapedBind"
+            $_.CommandLine -match $webCommand -and
+            $_.CommandLine -match $portArgument -and
+            $_.CommandLine -match $bindArgument -and
+            [Regex]::Matches($_.CommandLine, '(?i)(?:^|\s)--port(?=\s|=)').Count -eq 1 -and
+            [Regex]::Matches($_.CommandLine, '(?i)(?:^|\s)--bind(?=\s|=)').Count -eq 1
         }
 
     foreach ($staleProcess in $staleProcesses) {
-        Stop-ProcessTree -ProcessId ([int]$staleProcess.ProcessId) -Reason "stale local source tlbx on port $Port"
+        $process = $null
+        try {
+            if ($null -eq $staleProcess.CreationDate) { continue }
+            $process = Get-Process -Id ([int]$staleProcess.ProcessId) -ErrorAction Stop
+            # Pin the process handle before comparing identity, so PID reuse cannot retarget Kill.
+            $null = $process.SafeHandle
+            $started = $process.StartTime.ToUniversalTime().Ticks
+            $observed = ([datetime]$staleProcess.CreationDate).ToUniversalTime().Ticks
+            # CIM CreationDate carries microseconds; Process.StartTime has 100ns ticks.
+            if ($process.Id -ne [int]$staleProcess.ProcessId -or $process.HasExited -or
+                ($started - $started % 10) -ne ($observed - $observed % 10)) {
+                $process.Dispose()
+                continue
+            }
+        }
+        catch {
+            if ($null -ne $process) { $process.Dispose() }
+            continue
+        }
+        try {
+            Stop-DevProcess -state @{ Process = $process } -reason "stale local source tlbx on port $Port" -PreserveChildren
+        }
+        finally { $process.Dispose() }
     }
 }
 
@@ -460,7 +503,7 @@ function Start-DevServer([string]$resolvedTtyHostPath) {
     $psi = [System.Diagnostics.ProcessStartInfo]::new()
     $psi.FileName = "dotnet"
     foreach ($arg in @(
-        (Join-Path $DebugWebOutputDir "mt.dll"),
+        (Join-Path $script:currentWebOutputDir "mt.dll"),
         "--port", $Port.ToString(),
         "--bind", $BindAddress
     )) {
