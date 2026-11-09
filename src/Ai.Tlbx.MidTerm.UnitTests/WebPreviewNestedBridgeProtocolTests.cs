@@ -34,6 +34,41 @@ public sealed class WebPreviewNestedBridgeProtocolTests
     }
 
     [Fact]
+    public async Task LegacyLocationRewritingLeavesNativeChildCoordinatesUsable()
+    {
+        var adapter = WebPreviewProxyMiddleware.GetUrlRewriteScript(Child);
+        var code = adapter[(adapter.IndexOf(">", StringComparison.Ordinal) + 1)..adapter.LastIndexOf("</script>", StringComparison.Ordinal)];
+        var html = "<html><head><script>window.__mtTargetOrigin='https://child.example';</script><script>"
+            + WebPreviewLocationRewriter.Rewrite(code) + "</script></head></html>";
+        await RunAsync(html, "child", true, nested: true, legacyProxy: true, legacyLocation: true);
+    }
+
+    [Theory]
+    [InlineData("child", true)]
+    [InlineData("wrong-token", false)]
+    [InlineData("wrong-route", false)]
+    [InlineData("wrong-id", false)]
+    public async Task ParentContextRestoresAnOwnedAttachmentAfterWindowNameClears(string identity, bool connected)
+    {
+        var html = Document(Child, "https://child.example", "<html><head></head></html>");
+        await RunAsync(html, identity, connected, nested: true, legacyProxy: true, parentHandshake: true);
+    }
+
+    [Fact]
+    public async Task ClearedWindowNameAlsoRecoversWithoutAnOlderOuterAdapter()
+    {
+        var html = Document(Child, "https://child.example", "<html><head></head></html>");
+        await RunAsync(html, "child", true, nested: true, parentHandshake: true);
+    }
+
+    [Fact]
+    public async Task AForeignWindowCannotSupplyNativeParentContext()
+    {
+        var html = Document(Child, "https://child.example", "<html><head></head></html>");
+        await RunAsync(html, "child", false, nested: true, legacyProxy: true, parentHandshake: true, foreignParentHandshake: true);
+    }
+
+    [Fact]
     public async Task IndependentChildBootstrapOutranksDuplicateSharedParentCookies()
     {
         var parentContext = JsonSerializer.Serialize(new { previewId = "parent-id", previewToken = "parent-token", sessionId = "parent-session", routeKey = "parent-route" });
@@ -75,7 +110,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             + WebPreviewProxyMiddleware.GetUrlRewriteScript(route, upstreamHtml: html));
     }
 
-    private static async Task RunAsync(string html, string identity, bool connected, bool nested, bool middle = false, string initialCookies = "", bool legacyProxy = false)
+    private static async Task RunAsync(string html, string identity, bool connected, bool nested, bool middle = false, string initialCookies = "", bool legacyProxy = false, bool legacyLocation = false, bool parentHandshake = false, bool foreignParentHandshake = false)
     {
         // Execute every complete, server-generated script in parser order. No future
         // script nodes are visible to the prepended adapter in this fixture.
@@ -83,7 +118,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             + ";const identity=" + JsonSerializer.Serialize(identity)
             + ";const connected=" + JsonSerializer.Serialize(connected)
             + ";const nested=" + JsonSerializer.Serialize(nested)
-            + ";const legacyProxy=" + JsonSerializer.Serialize(legacyProxy) + ";const middle=" + JsonSerializer.Serialize(middle) + ";const initialCookies=" + JsonSerializer.Serialize(initialCookies) + ";";
+            + ";const foreignParentHandshake=" + JsonSerializer.Serialize(foreignParentHandshake) + ";const parentHandshake=" + JsonSerializer.Serialize(parentHandshake) + ";const legacyLocation=" + JsonSerializer.Serialize(legacyLocation) + ";const legacyProxy=" + JsonSerializer.Serialize(legacyProxy) + ";const middle=" + JsonSerializer.Serialize(middle) + ";const initialCookies=" + JsonSerializer.Serialize(initialCookies) + ";";
         var script = setup + """
             const assert=require('node:assert/strict'),vm=require('node:vm');
             const parent='/webpreview/parent-route/_access/parent-id/parent-token';
@@ -94,7 +129,8 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             let saved=identity==='parent'?{...attachment,routeKey:'parent-route',previewId:'parent-id',previewToken:'parent-token',sessionId:'parent-session'}:{...attachment};
             if(identity==='wrong-token')saved.previewToken='wrong';
             if(identity==='wrong-route')saved.routeKey='wrong';
-            const sockets=[],messages=[];
+            if(identity==='wrong-id')saved.previewId='wrong';
+            const sockets=[],messages=[],listeners=new Map();
             const location=new URL('https://outer.example'+parent+middlePath+(nested?child:'')+'/page?__mtTargetRevision=8'+(nested?'&__mtSubframe=1':''));
             location.assign=()=>{};location.replace=()=>{};location.reload=()=>{};
             class Element{setAttribute(name,value){this[name]=value;}getAttribute(){return null;}hasAttribute(){return false;}}
@@ -107,12 +143,18 @@ public sealed class WebPreviewNestedBridgeProtocolTests
               HTMLObjectElement:class extends Element{},HTMLVideoElement:class extends Element{},
               MutationObserver:class{observe(){}},navigator:{},fetch:()=>{},open:()=>{},
               requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},setTimeout:()=>1,clearTimeout:()=>{},queueMicrotask:()=>{},
-              addEventListener:()=>{},console:{log(){},info(){},warn(){},error(){},debug(){}},
-              __mtProxy:legacyProxy,name:identity?JSON.stringify(saved):'',parent:{__mtProxy:true,postMessage:message=>messages.push(message)},
+              addEventListener:(type,fn)=>listeners.set(type,[...(listeners.get(type)||[]),fn]),
+              removeEventListener:(type,fn)=>listeners.set(type,(listeners.get(type)||[]).filter(f=>f!==fn)),console:{log(){},info(){},warn(){},error(){},debug(){}},
+              __mtProxy:legacyProxy,name:parentHandshake?'':identity?JSON.stringify(saved):'',parent:{__mtProxy:true,postMessage:message=>messages.push(message)},
               history:{state:null,pushState(){},replaceState(_s,_t,url){location.href=new URL(url,location).href;}}};
+            if(legacyLocation)context.__mtPreviewLocation=()=>new URL('https://child.example/page');
             context.window=context;context.self=context;context.top=context.parent;
             vm.createContext(context);
             for(const match of html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/g))vm.runInContext(match[1],context,{timeout:1000});
+            if(parentHandshake){
+              const data={type:'mt-refresh-browser-state',force:true,visible:true,context:{...saved,targetRevision:8}};
+              for(const listener of [...(listeners.get('message')||[])])listener({source:foreignParentHandshake?{}:context.parent,data});
+            }
             assert.equal(sockets.length,connected?1:0);
             if(connected){
               const socket=sockets[0];

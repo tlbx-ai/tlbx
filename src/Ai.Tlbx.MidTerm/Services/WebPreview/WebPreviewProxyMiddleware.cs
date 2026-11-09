@@ -32,12 +32,15 @@ public sealed partial class WebPreviewProxyMiddleware
     // to /webpreview/_ext?u=... so all requests go through the MT proxy.
     // Patches: fetch, XHR, element .src/.href setters, setAttribute, window.open.
     private const string UrlRewriteScript = """
-        <script data-mt-proxy-route="__MT_PROXY_ROUTE_ATTRIBUTE__">(function(){
+        <script data-mt-proxy-route="__MT_PROXY_ROUTE_ATTRIBUTE__">(function mtProxyAdapter(){
           var mtInjectionRoute="__MT_PROXY_ROUTE__";
+          var mtParentContext=arguments.length?arguments[0]:null;
+          // Transport coordinates must stay native beneath an older Location-rewriting proxy.
+          var mtNativeLocation=window["location"];
           var mtInnerAdapterRoutes=/*__MT_INNER_ADAPTER_ROUTES__*/[];
           function mtRoutePosition(route){
             if(typeof route!=="string"||!/^\/webpreview\/[^/]+(?:\/_access\/[^/]+\/[^/]+)?$/.test(route))return -1;
-            var path=location.pathname||"",index=path.indexOf(route+"/");
+            var path=mtNativeLocation.pathname||"",index=path.indexOf(route+"/");
             return index>=0?index:(path.endsWith(route)?path.length-route.length:-1);
           }
           // The outer transport prepends its adapter. Only the innermost matching
@@ -54,17 +57,41 @@ public sealed partial class WebPreviewProxyMiddleware
           if(mtHasInnerAdapter())return;
           // An older outer adapter may already have set its global singleton.
           // Only this registered attachment may establish its own scoped adapter.
-          if(window.__mtProxy&&(!mtOwnNativeAttachment()||window.__mtOwnedProxyRoute===mtInjectionRoute))return;
+          function mtReadNativeParentContext(event){
+            try{
+              var d=event&&event.data,saved=d&&d.context;
+              if(event.source!==window.parent||!d||d.type!=="mt-refresh-browser-state"||!saved)return null;
+              var parts=mtInjectionRoute.match(/^\/webpreview\/([^/]+)\/_access\/([^/]+)\/([^/]+)$/);
+              if(!parts||mtRoutePosition(mtInjectionRoute)<0
+                ||saved.routeKey!==decodeURIComponent(parts[1])||saved.previewId!==decodeURIComponent(parts[2])
+                ||saved.previewToken!==decodeURIComponent(parts[3])||typeof saved.sessionId!=="string"
+                ||typeof saved.previewName!=="string"||!Number.isInteger(saved.targetRevision)||saved.targetRevision<0)return null;
+              return saved;
+            }catch(e){return null;}
+          }
+          if(window.__mtProxy&&window.__mtOwnedProxyRoute===mtInjectionRoute)return;
+          if(window.__mtProxy&&!mtOwnNativeAttachment()){
+            // Opaque cross-origin navigation may clear window.name. The owning
+            // UI repeats the exact registered context in its existing load message.
+            var resume=function(event){
+              var context=mtReadNativeParentContext(event);if(!context)return;
+              window.removeEventListener("message",resume);clearTimeout(resumeTimer);
+              mtProxyAdapter(context);
+            };
+            window.addEventListener("message",resume);
+            var resumeTimer=setTimeout(function(){window.removeEventListener("message",resume);},10000);
+            return;
+          }
           window.__mtProxy=1;window.__mtOwnedProxyRoute=mtInjectionRoute;
           // Save the real parent for navigation and cookie bridge notifications.
           var _realParent=window.parent;
-          var mtNestedPreview=new URLSearchParams(location.search).get("__mtSubframe")==="1";
+          var mtNestedPreview=new URLSearchParams(mtNativeLocation.search).get("__mtSubframe")==="1";
           try{mtNestedPreview=mtNestedPreview||!!_realParent.__mtProxy;}catch(e){}
           function mtOwnNativeAttachment(){
             try{
               var parts=mtInjectionRoute.match(/^\/webpreview\/([^/]+)\/_access\/([^/]+)\/([^/]+)$/);
               if(!parts||mtRoutePosition(mtInjectionRoute)<0)return false;
-              var saved=window.name?JSON.parse(window.name):null;
+              var saved=mtParentContext||(window.name?JSON.parse(window.name):null);
               return !!saved&&saved.routeKey===decodeURIComponent(parts[1])
                 &&saved.previewId===decodeURIComponent(parts[2])&&saved.previewToken===decodeURIComponent(parts[3]);
             }catch(e){return false;}
@@ -84,19 +111,19 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           function mtReadBootstrapContext(){
             try{
-              var params=new URLSearchParams(location.search);
+              var params=new URLSearchParams(mtNativeLocation.search);
               var previewId=params.get("__mtPreviewId")||"";
               var previewToken=params.get("__mtPreviewToken")||"";
               var ownAccess=mtInjectionRoute.match(/^\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)$/);
               if(ownAccess){previewId=decodeURIComponent(ownAccess[1]);previewToken=decodeURIComponent(ownAccess[2]);}
               else if(!previewId||!previewToken){
-                var access=(location.pathname||"").match(/\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)(?:\/|$)/);
+                var access=(mtNativeLocation.pathname||"").match(/\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)(?:\/|$)/);
                 if(access){previewId=access[1];previewToken=access[2];}
               }
               if(!previewId||!previewToken)return null;
               var context={previewId:previewId,previewToken:previewToken};
               try{
-                var saved=window.name?JSON.parse(window.name):null;
+                var saved=mtParentContext||(window.name?JSON.parse(window.name):null);
                 if(saved&&saved.previewId===previewId&&saved.previewToken===previewToken)
                   context=Object.assign({},saved,context);
               }catch(e){}
@@ -109,16 +136,16 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!mtCtx||!mtCtx.previewId||!mtCtx.previewToken)return;
             try{window.name=JSON.stringify(mtCtx);}catch(e){}
             try{
-              var match=(location.pathname||"").match(/^\/webpreview\/[^/]+/);
+              var match=(mtNativeLocation.pathname||"").match(/^\/webpreview\/[^/]+/);
               var cookiePath=match?match[0]+"/":"/";
               var ownPosition=mtRoutePosition(mtInjectionRoute);
-              if(ownPosition>=0)cookiePath=location.pathname.slice(0,ownPosition)+mtInjectionRoute+"/";
+              if(ownPosition>=0)cookiePath=mtNativeLocation.pathname.slice(0,ownPosition)+mtInjectionRoute+"/";
               document.cookie="mt-preview-ctx="+encodeURIComponent(JSON.stringify(mtCtx))+"; path="+cookiePath+"; secure; samesite=lax";
             }catch(e){}
           }
           function mtReadReloadToken(){
             try{
-              var params=new URLSearchParams(location.search);
+              var params=new URLSearchParams(mtNativeLocation.search);
               return params.get("__mtReloadToken")||"";
             }catch(e){}
             return "";
@@ -126,7 +153,7 @@ public sealed partial class WebPreviewProxyMiddleware
           var mtReloadToken=mtReadReloadToken();
           function mtStripBootstrapQuery(){
             try{
-              var url=new URL(location.href);
+              var url=new URL(mtNativeLocation.href);
               if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken")&&!url.searchParams.has("__mtTargetRevision")&&!url.searchParams.has("__mtReloadToken"))return;
               url.searchParams.delete("__mtPreviewId");
               url.searchParams.delete("__mtPreviewToken");
@@ -147,7 +174,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){mtCtx=null;}
           }
           if(mtCtx){
-            var revisionParam=new URLSearchParams(location.search).get("__mtTargetRevision");
+            var revisionParam=new URLSearchParams(mtNativeLocation.search).get("__mtTargetRevision");
             if(revisionParam!==null)mtCtx.targetRevision=Number(revisionParam);
           }
           mtPersistPreviewContext();
@@ -167,7 +194,7 @@ public sealed partial class WebPreviewProxyMiddleware
           // coordination can enter postMessage loops when an embedded frame
           // pretends to be top-level.
           function mtProxyPrefix(){
-            var path=location.pathname||"";
+            var path=mtNativeLocation.pathname||"";
             if(path===P||path.indexOf(P+"/")===0)return "";
             var idx=path.indexOf(P+"/");
             if(idx<0&&path.endsWith(P))idx=path.length-P.length;
@@ -198,7 +225,7 @@ public sealed partial class WebPreviewProxyMiddleware
           function ar(u){
             if((!mtReloadToken&&!mtNestedPreview)||typeof u!=="string")return u;
             try{
-              var parsed=new URL(u,location.href);
+              var parsed=new URL(u,mtNativeLocation.href);
               if(parsed.pathname===PP||parsed.pathname.indexOf(PP+"/")===0){
                 if(mtReloadToken)parsed.searchParams.set("__mtReloadToken",mtReloadToken);
                 if(mtNestedPreview)parsed.searchParams.set("__mtSubframe","1");
@@ -211,7 +238,7 @@ public sealed partial class WebPreviewProxyMiddleware
           function frameUrl(u){
             var rewritten=r(u);
             if(typeof rewritten!=="string"||/^(?:data:|blob:|about:|javascript:|#)/i.test(rewritten))return rewritten;
-            try{var url=new URL(rewritten,location.href);url.searchParams.set("__mtSubframe","1");return url.href;}catch(e){return rewritten;}
+            try{var url=new URL(rewritten,mtNativeLocation.href);url.searchParams.set("__mtSubframe","1");return url.href;}catch(e){return rewritten;}
           }
           function dprop(target,name,getter){
             if(!target)return false;
@@ -290,7 +317,7 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           function mkSwContainer(){
             var reg={
-              scope:(location.origin||"null")+P+"/",
+              scope:(mtNativeLocation.origin||"null")+P+"/",
               active:null,installing:null,waiting:null,
               update:function(){return Promise.resolve();},
               unregister:function(){return Promise.resolve(false);},
@@ -327,10 +354,10 @@ public sealed partial class WebPreviewProxyMiddleware
             if(typeof u!=="string")return u;
             // Non-network schemes must not recurse through relative URL resolution.
             if(u.startsWith("#")||(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:|^wss?:/i.test(u)))return u;
-            if(u.startsWith("//"))return r(location.protocol+u);
+            if(u.startsWith("//"))return r(mtNativeLocation.protocol+u);
             if(BP&&mtProxyUrl(u,P))return ar(BP+u);
-            if(BP&&mtProxyUrl(u,location.origin+P))return ar(location.origin+BP+u.substring(location.origin.length));
-            if(mtProxyUrl(u,PP)||mtProxyUrl(u,location.origin+PP))return ar(u);
+            if(BP&&mtProxyUrl(u,mtNativeLocation.origin+P))return ar(mtNativeLocation.origin+BP+u.substring(mtNativeLocation.origin.length));
+            if(mtProxyUrl(u,PP)||mtProxyUrl(u,mtNativeLocation.origin+PP))return ar(u);
             if(window.__mtExternalDocument){
               try{return ar(E+encodeURIComponent(new URL(u,window.__mtDocumentUrl).href));}catch(e){}
             }
@@ -341,8 +368,8 @@ public sealed partial class WebPreviewProxyMiddleware
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
                 if(window.__mtTargetOrigin&&h.origin===window.__mtTargetOrigin)return ar(PP+h.pathname+h.search+h.hash);
-                if(h.host===location.host&&!h.pathname.startsWith(PP+"/"))return ar(h.protocol+"//"+ h.host+PP+h.pathname+h.search+h.hash);
-                if(h.host!==location.host){
+                if(h.host===mtNativeLocation.host&&!h.pathname.startsWith(PP+"/"))return ar(h.protocol+"//"+ h.host+PP+h.pathname+h.search+h.hash);
+                if(h.host!==mtNativeLocation.host){
                   return ar(E+encodeURIComponent(u));
                 }
               }catch(e){}
@@ -508,23 +535,23 @@ public sealed partial class WebPreviewProxyMiddleware
             return entries.length?"?"+entries.join("&"):"";
           }
           function curU(){
-            if(location.pathname===PP+"/_ext"){
+            if(mtNativeLocation.pathname===PP+"/_ext"){
               try{
-                var ext=new URLSearchParams(location.search).get("u");
+                var ext=new URLSearchParams(mtNativeLocation.search).get("u");
                 if(ext){
                   var external=new URL(ext);
                   external.search=mtUpstreamSearch(external.search);
-                  if(location.hash)external.hash=location.hash;
+                  if(mtNativeLocation.hash)external.hash=mtNativeLocation.hash;
                   return external.href;
                 }
               }catch(e){}
             }
-            var path=location.pathname;
+            var path=mtNativeLocation.pathname;
             if(path.indexOf(PP+"/")==0)path=path.substring(PP.length);
             else if(path===PP)path="/";
-            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(location.search)+location.hash;
+            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(mtNativeLocation.search)+mtNativeLocation.hash;
           }
-          // Frameworks pass document.baseURI together with location.href to the
+          // Frameworks pass document.baseURI together with mtNativeLocation.href to the
           // server. Both must use upstream coordinates or Blazor rejects its circuit.
           function mtDocumentBaseURI(){
             try{
@@ -546,7 +573,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var text=String(value);
             // HTML rewriting may already have converted an inline redirect.
             if(mtProxyUrl(text,P)||mtProxyUrl(text,PP)
-              ||mtProxyUrl(text,location.origin+P)||mtProxyUrl(text,location.origin+PP))return r(text);
+              ||mtProxyUrl(text,mtNativeLocation.origin+P)||mtProxyUrl(text,mtNativeLocation.origin+PP))return r(text);
             return r(new URL(text,curU()).href);
           }
           var mtLocationView={};
@@ -554,13 +581,13 @@ public sealed partial class WebPreviewProxyMiddleware
             Object.defineProperty(mtLocationView,key,{enumerable:true,get:function(){
               return new URL(curU())[key];
             },set:key==="origin"?undefined:function(value){
-              if(key==="href"){location.assign(mtNavigationUrl(value));return;}
-              var next=new URL(curU());next[key]=value;location.assign(r(next.href));
+              if(key==="href"){mtNativeLocation.assign(mtNavigationUrl(value));return;}
+              var next=new URL(curU());next[key]=value;mtNativeLocation.assign(r(next.href));
             }});
           });
-          mtLocationView.assign=function(url){location.assign(mtNavigationUrl(url));};
-          mtLocationView.replace=function(url){location.replace(mtNavigationUrl(url));};
-          mtLocationView.reload=function(){location.reload();};
+          mtLocationView.assign=function(url){mtNativeLocation.assign(mtNavigationUrl(url));};
+          mtLocationView.replace=function(url){mtNativeLocation.replace(mtNavigationUrl(url));};
+          mtLocationView.reload=function(){mtNativeLocation.reload();};
           mtLocationView.toString=function(){return curU();};
           mtLocationView[Symbol.toPrimitive]=function(){return curU();};
           window.__mtPreviewLocation=function(value){
@@ -583,10 +610,10 @@ public sealed partial class WebPreviewProxyMiddleware
           var lastMtNavigationKey="",navNotifyTimer=0;
           function ntfyNow(){
             var upstreamUrl=curU();
-            var navKey=location.href+"\n"+upstreamUrl;
+            var navKey=mtNativeLocation.href+"\n"+upstreamUrl;
             if(navKey===lastMtNavigationKey)return;
             lastMtNavigationKey=navKey;
-            postMt("mt-navigation",{url:location.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:upstreamUrl});
+            postMt("mt-navigation",{url:mtNativeLocation.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:upstreamUrl});
           }
           function ntfy(){
             if(navNotifyTimer)return;
@@ -598,9 +625,9 @@ public sealed partial class WebPreviewProxyMiddleware
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
           history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
           history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
-          var la=location.assign.bind(location),lr=location.replace.bind(location);
-          location.assign=function(u){return la(r(u));};
-          location.replace=function(u){return lr(r(u));};
+          var la=mtNativeLocation.assign.bind(mtNativeLocation),lr=mtNativeLocation.replace.bind(mtNativeLocation);
+          mtNativeLocation.assign=function(u){return la(r(u));};
+          mtNativeLocation.replace=function(u){return lr(r(u));};
           window.addEventListener("popstate",ntfy);
           window.addEventListener("hashchange",ntfy);
           setTimeout(ntfyNow,0);
@@ -1206,20 +1233,20 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"navigate":{
                   if(!msg.value){res.success=false;res.error="url required";break;}
-                  location.href=mtNavigationUrl(msg.value);res.result="navigating";
+                  mtNativeLocation.href=mtNavigationUrl(msg.value);res.result="navigating";
                   break;}
                 case"reload":{
                   if((msg.value||"")==="force"){
                     try{
-                      var reloadUrl=new URL(location.href);
+                      var reloadUrl=new URL(mtNativeLocation.href);
                       mtReloadToken=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
                       reloadUrl.searchParams.set("__mtReloadToken",mtReloadToken);
-                      location.replace(reloadUrl.toString());
+                      mtNativeLocation.replace(reloadUrl.toString());
                     }catch(e){
-                      location.reload();
+                      mtNativeLocation.reload();
                     }
                   }else{
-                    location.reload();
+                    mtNativeLocation.reload();
                   }
                   res.result="reloading";
                   break;}
@@ -1461,6 +1488,11 @@ public sealed partial class WebPreviewProxyMiddleware
           window.addEventListener("message",function(e){
             var d=e&&e.data;
             if(d&&d.type==="mt-refresh-browser-state"){
+              var context=mtReadNativeParentContext(e);
+              if(context&&mtNestedPreview){
+                mtParentContext=context;mtCtx=context;mtNestedPreview=false;
+                mtPersistPreviewContext();connectBws();
+              }
               if(d.visible===true)bwsVisibleOverride=true;
               else if(d.visible===false)bwsVisibleOverride=false;
               mtScheduleBackgroundFrames();
@@ -1471,12 +1503,12 @@ public sealed partial class WebPreviewProxyMiddleware
             if(mtNestedPreview)return;
             try{
               if(bws&&(bws.readyState===0||bws.readyState===1))return;
-              var proto=location.protocol==="https:"?"wss:":"ws:";
+              var proto=mtNativeLocation.protocol==="https:"?"wss:":"ws:";
               var routeMatch=(P||"").match(/^\/webpreview\/([^/]+)/);
               if(!routeMatch){
-                routeMatch=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+                routeMatch=(mtNativeLocation.pathname||"").match(/^\/webpreview\/([^/]+)/);
               }
-              var wsUrl=proto+"//"+location.host+BP+"/ws/browser";
+              var wsUrl=proto+"//"+mtNativeLocation.host+BP+"/ws/browser";
               if(routeMatch&&routeMatch[1]){
                 wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"routeKey="+encodeURIComponent(routeMatch[1]);
               }

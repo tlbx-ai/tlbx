@@ -45,6 +45,7 @@ function exercise(virtualPrefix: string, suffix: string, baseSuffix = '/docs/') 
   const context = {
     P: nativePrefix,
     location,
+    mtNativeLocation: location,
     document,
     URL,
     URLSearchParams,
@@ -114,8 +115,9 @@ describe('preview navigation attachment metadata', () => {
   function read(saved: Record<string, unknown>) {
     return runInNewContext(`${bootstrap} mtReadBootstrapContext();`, {
       URLSearchParams,
+      mtParentContext: null,
       mtInjectionRoute: nativePrefix,
-      location: new URL(`https://native${nativePrefix}/_access/id/token/docs/next`),
+      mtNativeLocation: new URL(`https://native${nativePrefix}/_access/id/token/docs/next`),
       window: { name: JSON.stringify(saved) },
     }) as Record<string, unknown>;
   }
@@ -149,8 +151,9 @@ describe('preview navigation attachment metadata', () => {
     };
     const context = runInNewContext(`${bootstrap} mtReadBootstrapContext();`, {
       URLSearchParams,
+      mtParentContext: null,
       mtInjectionRoute: own,
-      location: new URL(
+      mtNativeLocation: new URL(
         `https://native/webpreview/outer/_access/parent/parent-token${own}/next?__mtPreviewId=parent&__mtPreviewToken=parent-token`,
       ),
       window: { name: JSON.stringify(saved) },
@@ -267,24 +270,21 @@ describe('shared preview fill editing protocol', () => {
     'noneditable',
     'noteditable',
     'unsupported',
-  ])(
-    'rejects %s before focus, selection or native editing',
-    (kind) => {
-      const f = fixture();
-      if (kind === 'readonly') f.target.readOnly = true;
-      if (kind === 'disabled') f.target.disabled = true;
-      if (kind === 'hidden') f.target.hidden = true;
-      if (kind === 'ambiguous') f.duplicate();
-      if (kind === 'nested') f.target.parentElement = { isContentEditable: true };
-      if (kind === 'noneditable') f.target.nonEditableChild = true;
-      if (kind === 'noteditable') f.target.isContentEditable = false;
-      if (kind === 'unsupported') f.document.queryCommandSupported.mockReturnValue(false);
-      expect(f.fill('never')).toMatchObject({ success: false });
-      expect(f.target.focus).not.toHaveBeenCalled();
-      expect(f.selection.addRange).not.toHaveBeenCalled();
-      expect(f.document.execCommand).not.toHaveBeenCalled();
-    },
-  );
+  ])('rejects %s before focus, selection or native editing', (kind) => {
+    const f = fixture();
+    if (kind === 'readonly') f.target.readOnly = true;
+    if (kind === 'disabled') f.target.disabled = true;
+    if (kind === 'hidden') f.target.hidden = true;
+    if (kind === 'ambiguous') f.duplicate();
+    if (kind === 'nested') f.target.parentElement = { isContentEditable: true };
+    if (kind === 'noneditable') f.target.nonEditableChild = true;
+    if (kind === 'noteditable') f.target.isContentEditable = false;
+    if (kind === 'unsupported') f.document.queryCommandSupported.mockReturnValue(false);
+    expect(f.fill('never')).toMatchObject({ success: false });
+    expect(f.target.focus).not.toHaveBeenCalled();
+    expect(f.selection.addRange).not.toHaveBeenCalled();
+    expect(f.document.execCommand).not.toHaveBeenCalled();
+  });
 
   it('reports native rejection without falling back to DOM writes or duplicate input', () => {
     const f = fixture();
