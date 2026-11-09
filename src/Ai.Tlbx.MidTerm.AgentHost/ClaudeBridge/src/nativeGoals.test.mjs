@@ -31,6 +31,20 @@ test("native grammar preserves /goal get as an objective, never an invented get 
   assert.equal(parseGoalReadback("Goal active: X (1 turn)\nLast check: Y (2 turns)"), null);
 });
 
+test("compact replay retains an already consumed local assistant UUID without filtering identical model text", async (t) => {
+  const f = await fixture(t);
+  f.manager.refresh(); await flush(); f.start();
+  const local = { ...assistant(emptyGoal), uuid: "local-readback" };
+  assert.equal(f.manager.consume(local), true);
+  assert.equal(f.manager.consume(result(emptyGoal)), true);
+  await flush();
+  f.manager.noteInput({ uuid: "compact-input" }, "/compact", "compact-turn");
+  f.manager.consume({ type: "command_lifecycle", state: "started", command_uuid: "compact-input" });
+  assert.equal(f.manager.consume(local), true);
+  assert.equal(f.manager.consume({ ...assistant(emptyGoal), uuid: "real-model-reply" }), false);
+  assert.equal(f.manager.consume(result("", { local_command: "compact" })), false);
+});
+
 test("queued and unrelated started UUIDs cannot confirm a Set or leak command text", async (t) => {
   const f = await fixture(t);
   f.command("set", { objective: "Keep waiting" }); await flush();

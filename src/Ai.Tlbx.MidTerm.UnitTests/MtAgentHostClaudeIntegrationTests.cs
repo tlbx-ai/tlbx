@@ -12,6 +12,33 @@ public sealed class MtAgentHostClaudeIntegrationTests
 {
     private const string GoalReadReplayWrapper = "<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args></command-args>";
 
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task ClaudeHistory_ProjectsOnlyCompletedNativeCompactionRecordsAsCommandAndStatus(bool marked, bool error)
+    {
+        const string command = "<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args>focus on selection</command-args>";
+        const string output = "<local-command-stdout>Compacted </local-command-stdout>";
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                new { type = "user", uuid = "compact", isCompletedLocalCommand = marked, is_error = error, message = new { content = command } },
+                new { type = "user", uuid = "output", timestamp = "2026-11-09T10:00:00Z", isCompletedLocalCommand = marked, is_error = error, message = new { content = output } },
+                new { type = "user", uuid = "after", message = new { content = "After compaction" } }
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        var user = events.Where(e => e.Item?.ItemType == "user_message").Select(e => e.Item!.Detail).ToArray();
+        Assert.Equal(marked && !error ? ["/compact focus on selection", "After compaction"] : new[] { command, output, "After compaction" }, user);
+        Assert.Equal(marked && !error, events.Any(e => e.RuntimeMessage?.Message == "Compacted"));
+        if (marked && !error)
+            Assert.Equal(DateTimeOffset.Parse("2026-11-09T10:00:00Z", CultureInfo.InvariantCulture), Assert.Single(events.Where(e => e.RuntimeMessage?.Message == "Compacted")).CreatedAt);
+    }
+
     [Fact]
     public async Task ClaudeHistory_PreservesMarkedToolErrorsContainingGoalReadWrappers()
     {
@@ -304,7 +331,15 @@ public sealed class MtAgentHostClaudeIntegrationTests
                     patches, sessionId, h => h.CurrentTurn.TurnId == compact.TurnStarted!.TurnId && h.CurrentTurn.State == (compactFailure ? "failed" : "completed"),
                     TimeSpan.FromSeconds(10), count: 96);
                 Assert.Contains(compacted.History, item => item.Kind == "user" && item.Body == "/compact");
-                Assert.Contains(compacted.History, item => item.Kind == "assistant" && item.Body == (compactFailure ? "Error during compaction: simulated native failure." : "Native compaction completed."));
+                if (compactFailure)
+                {
+                    Assert.Contains(compacted.History, item => item.Kind == "assistant" && item.Body == "Error during compaction: simulated native failure.");
+                }
+                else
+                {
+                    Assert.DoesNotContain(compacted.History, item => item.Kind == "assistant" && item.TurnId == compact.TurnStarted!.TurnId);
+                    Assert.Contains(compacted.History, item => item.Kind == "system" && item.Body == "Conversation compacted.");
+                }
                 Assert.NotNull(compacted.CurrentTurn.StartedAt);
                 Assert.Equal(compactFailure ? 124 : 11, compacted.Session.Usage?.ContextUsedTokens);
                 if (compactFailure) Assert.Contains("simulated native failure", compacted.Session.LastError, StringComparison.Ordinal);

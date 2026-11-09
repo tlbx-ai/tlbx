@@ -10,6 +10,47 @@ namespace Ai.Tlbx.MidTerm.AgentHost.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class ClaudeGoalRuntimeMergeTests
 {
+    [Theory]
+    [InlineData(false, false, null, "No goal set. Usage: `/goal <condition>`", true)]
+    [InlineData(true, false, null, "No goal set. Usage: `/goal <condition>`", false)]
+    [InlineData(false, false, "compact", "No goal set. Usage: `/goal <condition>`", false)]
+    [InlineData(true, true, null, "Error during compaction: simulated native failure.", false)]
+    public async Task ResultFallbackPreservesOrdinaryRepliesButDoesNotReplayTextAfterNativeCompaction(
+        bool compact, bool error, string? localCommand, string text, bool expectAssistant)
+    {
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        Set(runtime, "_sessionId", "host"); Set(runtime, "_providerThreadId", "own");
+        Set(runtime, "_activeTurnId", "turn"); Set(runtime, "_manualCompactionTurn", compact);
+        Line(runtime, JsonSerializer.Serialize(new
+        {
+            type = "result", session_id = "own", subtype = error ? "error" : "success",
+            is_error = error, result = text, local_command = localCommand
+        }));
+        Assert.Equal(expectAssistant, events.Any(e => e.Item?.ItemType == "assistant_message"));
+        var completed = Assert.Single(events.Where(e => e.TurnCompleted is not null)).TurnCompleted!;
+        Assert.Equal(error ? "failed" : "completed", completed.State);
+        if (error) Assert.Equal(text, completed.ErrorMessage);
+        if ((compact || localCommand == "compact") && !error)
+            Assert.DoesNotContain(events, e => e.SessionState?.Reason == text);
+    }
+
+    [Fact]
+    public async Task CompactionPreservesRealAssistantBlocksAcrossQueuedResultBoundaries()
+    {
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        Set(runtime, "_sessionId", "host"); Set(runtime, "_providerThreadId", "own");
+        Set(runtime, "_activeTurnId", "turn"); Set(runtime, "_manualCompactionTurn", true);
+        Line(runtime, """{"type":"assistant","session_id":"own","message":{"id":"actual","content":[{"type":"text","text":"Actual assistant reply."}]}}""");
+        Line(runtime, """{"type":"result","session_id":"own","subtype":"success","is_error":false,"queued_turn_count":1,"result":"Old local-command output"}""");
+        Assert.DoesNotContain(events, e => e.TurnCompleted is not null);
+        Line(runtime, """{"type":"result","session_id":"own","subtype":"success","is_error":false,"queued_turn_count":0,"result":"Old local-command output"}""");
+        var assistant = Assert.Single(events.Where(e => e.Item?.ItemType == "assistant_message" && e.Item.Status == "completed"));
+        Assert.Equal("Actual assistant reply.", assistant.Item!.Detail);
+        Assert.Single(events.Where(e => e.TurnCompleted is not null));
+    }
+
     private static void Set(ClaudeAppServerControlAgentRuntime runtime, string name, object value) =>
         typeof(ClaudeAppServerControlAgentRuntime).GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(runtime, value);
 

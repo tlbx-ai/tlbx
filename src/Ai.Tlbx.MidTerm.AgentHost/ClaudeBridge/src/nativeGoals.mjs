@@ -45,11 +45,13 @@ export class NativeGoalCommands {
     this.runtime = runtime; this.push = push; this.sessionId = sessionId; this.emit = emit;
     this.supported = false; this.closed = false; this.frames = new Map(); this.queue = []; this.current = null; this.busy = false;
     this.turnId = null; this.waiters = []; this.stopping = null;
+    this.localAssistantIds = new Set();
     this.state = { threadId: "", confirmation: "unknown", scope: "thread", goal: null, pendingOperation: null };
   }
 
   observeSession(threadId) {
     if (!threadId || !this.state.threadId || this.state.threadId === threadId) return;
+    this.localAssistantIds.clear();
     this.clearFrames(); this.current = null; this.queue = []; this.busy = false; this.turnId = null;
     this.blocked = false; this.rejectWaiters();
     this.publish({ goal: null, confirmation: "unknown", pendingOperation: null, detail: "targetUnavailable" });
@@ -195,6 +197,9 @@ export class NativeGoalCommands {
   }
 
   consume(message) {
+    // /compact can replay an earlier local-command assistant with the same SDK UUID.
+    // Preserve its original control-plane ownership instead of publishing it as chat.
+    if (message.type === "assistant" && this.localAssistantIds.has(message.uuid)) return true;
     if (message.type === "command_lifecycle") {
       if (message.state === "started") {
         const frame = this.frames.get(message.command_uuid);
@@ -241,13 +246,23 @@ export class NativeGoalCommands {
   goalAssistant(frame, message) {
     const text = assistantText(message);
     if (frame.operation === "set" && !frame.work && text === `Goal set: ${frame.objective}`) {
+      this.rememberLocalAssistant(message);
       frame.ack = true;
       this.publish({ confirmation: "acknowledged", goal: { objective: frame.objective, status: "active" }, detail: null });
       this.startGoalWork(frame);
       return true;
     }
-    if (frame.operation !== "set" || !frame.work) { frame.text = text; return true; }
+    if (frame.operation !== "set" || !frame.work) {
+      this.rememberLocalAssistant(message); frame.text = text; return true;
+    }
     return false;
+  }
+
+  rememberLocalAssistant(message) {
+    if (typeof message.uuid !== "string" || !message.uuid) return;
+    this.localAssistantIds.add(message.uuid);
+    if (this.localAssistantIds.size > 128)
+      this.localAssistantIds.delete(this.localAssistantIds.values().next().value);
   }
 
   goalResult(frame, message) {
@@ -300,6 +315,7 @@ export class NativeGoalCommands {
   }
 
   close() {
+    this.localAssistantIds.clear();
     this.closed = true; this.clearFrames(); this.queue = []; this.rejectWaiters();
   }
 

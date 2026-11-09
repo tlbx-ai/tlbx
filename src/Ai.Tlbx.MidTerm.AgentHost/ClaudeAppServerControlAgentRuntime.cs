@@ -1042,7 +1042,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         var resultText = GetString(root, "result");
-        var compactFailed = _manualCompactionTurn && (_compactionFailure is not null ||
+        var manualCompactionTurn = _manualCompactionTurn || GetString(root, "local_command") == "compact";
+        var compactFailed = manualCompactionTurn && (_compactionFailure is not null ||
             resultText?.StartsWith("Error during compaction:", StringComparison.OrdinalIgnoreCase) == true);
         var isError = GetBoolean(root, "is_error") || compactFailed;
         var subtype = compactFailed ? "compaction_failed" : GetString(root, "subtype") ?? (isError ? "error" : "success");
@@ -1052,7 +1053,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             EmitClaudeUsage(root, rawLine);
         }
         var errorMessage = isError ? _compactionFailure ?? resultText : null;
+        // Native /compact results are command status and can repeat older local output.
+        // Only real assistant blocks may become chat content for that command.
         if (!isError &&
+            !manualCompactionTurn &&
             !_assistantMessageEmitted &&
             !string.IsNullOrWhiteSpace(resultText))
         {
@@ -1096,9 +1100,11 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             {
                 State = isError && !goalStopped ? "error" : "ready",
                 StateLabel = isError && !goalStopped ? "Error" : "Ready",
-                Reason = string.IsNullOrWhiteSpace(resultText)
-                    ? (isError ? "Claude turn failed." : "Claude turn completed.")
-                    : resultText
+                Reason = manualCompactionTurn
+                    ? (isError ? errorMessage ?? "Claude compaction failed." : "Claude compaction command completed.")
+                    : string.IsNullOrWhiteSpace(resultText)
+                        ? (isError ? "Claude turn failed." : "Claude turn completed.")
+                        : resultText
             };
         }, rawLine));
 
