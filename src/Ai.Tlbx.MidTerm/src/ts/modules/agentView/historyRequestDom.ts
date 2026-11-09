@@ -45,17 +45,13 @@ export function parseApprovalDetail(detail: string | null | undefined): Approval
 
   try {
     const input = JSON.parse(rawInput) as Record<string, unknown>;
-    const description = readApprovalString(input, 'description');
+    const summary = readApprovalString(input, 'description', 'file_path', 'url', 'pattern');
     const technicalDetail =
-      readApprovalString(input, 'command') ??
-      readApprovalString(input, 'cmd') ??
-      readApprovalString(input, 'path') ??
-      readApprovalString(input, 'file_path') ??
-      readApprovalString(input, 'url') ??
+      readApprovalString(input, 'command', 'cmd', 'path', 'file_path', 'url') ??
       JSON.stringify(input, null, 2);
     return {
-      summary: description,
-      technicalDetail,
+      summary,
+      technicalDetail: technicalDetail === summary ? null : technicalDetail,
       tool,
     };
   } catch {
@@ -63,9 +59,12 @@ export function parseApprovalDetail(detail: string | null | undefined): Approval
   }
 }
 
-function readApprovalString(input: Record<string, unknown>, key: string): string | null {
-  const value = input[key];
-  return typeof value === 'string' && value.trim() ? value.trim() : null;
+function readApprovalString(input: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = input[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return null;
 }
 
 export function createRequestActionBlock(args: {

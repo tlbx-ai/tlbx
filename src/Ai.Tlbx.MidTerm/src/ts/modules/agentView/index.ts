@@ -724,6 +724,8 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
 }
 
 async function activateAgentView(sessionId: string): Promise<void> {
+  // Background suspension is a lifecycle state. Foreground recovery starts attach.
+  if (document.visibilityState === 'hidden') return;
   const existing = activationFlights.get(sessionId);
   if (existing) {
     return existing;
@@ -872,7 +874,7 @@ async function activateAgentViewCore(sessionId: string): Promise<void> {
     renderCurrentAgentView(sessionId, { immediate: true });
     openLiveAppServerControlStream(sessionId, snapshot.latestSequence);
   } catch (error) {
-    if (isStaleAppServerControlActivationError(error)) {
+    if (document.hidden || isStaleAppServerControlActivationError(error)) {
       return;
     }
 
@@ -1886,42 +1888,44 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
 
 export function recoverAppServerControlAfterBrowserResume(): void {
   const generation = ++appServerControlBrowserRecoveryGeneration;
-  const sessionId = $activeSessionId.get();
-  const state = sessionId && getActiveTab(sessionId) === 'agent' ? viewStates.get(sessionId) : null;
-  const activationRunId = state?.activationRunId;
-  const pendingActivation = sessionId ? activationFlights.get(sessionId) : undefined;
-  const isCurrent = (): boolean =>
-    generation === appServerControlBrowserRecoveryGeneration &&
-    !!state &&
-    !!sessionId &&
-    $activeSessionId.get() === sessionId &&
-    getActiveTab(sessionId) === 'agent' &&
-    viewStates.get(sessionId) === state &&
-    state.activationRunId === activationRunId;
-  if (state && sessionId) {
+  const visibleStates = [...viewStates].filter(
+    ([sessionId, state]) =>
+      getActiveTab(sessionId) === 'agent' && state.panel.getClientRects().length > 0,
+  );
+  const recovery = recoverAppServerControlConnection();
+  if (!visibleStates.length) {
+    void recovery.catch((error: unknown) => {
+      log.warn(() => `Failed to recover AppServerControl transport: ${String(error)}`);
+    });
+  }
+  for (const [sessionId, state] of visibleStates) {
+    const activationRunId = state.activationRunId;
+    const pendingActivation = activationFlights.get(sessionId);
+    const isCurrent = (): boolean =>
+      generation === appServerControlBrowserRecoveryGeneration &&
+      getActiveTab(sessionId) === 'agent' &&
+      state.panel.getClientRects().length > 0 &&
+      viewStates.get(sessionId) === state &&
+      state.activationRunId === activationRunId;
     state.streamConnected = false;
     disconnectAppServerControlQuickSettingsRuntime(sessionId);
     prepareAppServerControlForForeground(state);
     renderCurrentAgentView(sessionId, { immediate: true });
+
+    void resumeAppServerControlActivationAfterTransport(
+      () => recovery,
+      pendingActivation,
+      isCurrent,
+      () => activateAgentView(sessionId),
+    ).catch((error: unknown) => {
+      log.warn(() => `Failed to recover AppServerControl after browser resume: ${String(error)}`);
+      if (!isCurrent()) return;
+
+      state.streamConnected = false;
+      disconnectAppServerControlQuickSettingsRuntime(sessionId);
+      renderCurrentAgentView(sessionId);
+    });
   }
-
-  void resumeAppServerControlActivationAfterTransport(
-    recoverAppServerControlConnection,
-    pendingActivation,
-    isCurrent,
-    async () => {
-      if (sessionId) await activateAgentView(sessionId);
-    },
-  ).catch((error: unknown) => {
-    log.warn(() => `Failed to recover AppServerControl after browser resume: ${String(error)}`);
-    if (!isCurrent() || !state || !sessionId) {
-      return;
-    }
-
-    state.streamConnected = false;
-    disconnectAppServerControlQuickSettingsRuntime(sessionId);
-    renderCurrentAgentView(sessionId);
-  });
 }
 
 export function suspendAppServerControlForBrowserBackground(): void {

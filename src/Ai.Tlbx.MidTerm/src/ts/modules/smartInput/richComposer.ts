@@ -90,6 +90,7 @@ export class RichComposer {
   private readonly menu = new RichComposerMenu(() => this.view?.focus());
   private readonly fileInput = document.createElement('input');
   private fileTarget: PendingBookmark | null = null;
+  private selectingWithPointer = false;
   private readonly mount = document.createElement('div');
   private readonly error = document.createElement('span');
   private readonly retry = document.createElement('button');
@@ -178,6 +179,23 @@ export class RichComposer {
     this.host.append(this.mount, this.error, this.retry, this.cancelPaste, this.fileInput);
     document.addEventListener('selectionchange', () => {
       this.syncTools();
+    });
+    this.mount.addEventListener('pointerdown', (event) => {
+      if (event.isPrimary && event.button === 0) {
+        this.selectingWithPointer = true;
+        this.toolbar.hidden = true;
+      }
+    });
+    const finishSelection = (): void => {
+      this.selectingWithPointer = false;
+      this.syncTools();
+    };
+    window.addEventListener('pointerup', finishSelection);
+    window.addEventListener('pointercancel', finishSelection);
+    window.addEventListener('blur', finishSelection);
+    this.mount.addEventListener('keydown', (event) => {
+      if (!['Shift', 'Control', 'Alt', 'Meta'].includes(event.key))
+        this.selectingWithPointer = false;
     });
     new ResizeObserver(() => {
       this.syncTools();
@@ -437,7 +455,7 @@ export class RichComposer {
     ))
       button.hidden = !active;
     this.toolbar.hidden = true;
-    if (!view || this.host.hidden || !this.menu.element.hidden) return;
+    if (!view || this.host.hidden || this.selectingWithPointer || !this.menu.element.hidden) return;
     const nativeSelection = view.dom.ownerDocument.getSelection();
     if (
       !nativeSelection ||
