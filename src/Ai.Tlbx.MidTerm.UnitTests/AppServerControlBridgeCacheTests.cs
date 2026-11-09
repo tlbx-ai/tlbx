@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Protocol;
 using Ai.Tlbx.MidTerm.Services.Sessions;
+using Ai.Tlbx.MidTerm.Services;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
@@ -10,6 +11,32 @@ public sealed class AppServerControlBridgeCacheTests
 {
     private const string ActiveId = "external/item@opaque";
     private const string PendingId = "foreign?request/opaque";
+
+    [Fact]
+    public void CanonicalHistoryGrantsOnlyItsOwningSessionAccessToReferencedArtifacts()
+    {
+        var allowlist = new SessionPathAllowlistService();
+        var root = Path.Combine(Path.GetTempPath(), "acp-artifacts", Guid.NewGuid().ToString("N"));
+        var image = Path.Combine(root, "download.jpg");
+        var document = Path.Combine(root, "report.pdf");
+        var attachment = Path.Combine(root, "attachment.png");
+        var missing = Path.Combine(root, "missing.txt");
+        SessionAppServerControlHostRuntimeService.RegisterHistoryPaths(allowlist, "owner", [new()
+        {
+            FileMentions = [new() { Exists = true, ResolvedPath = document }, new() { Exists = false, ResolvedPath = missing }],
+            ImagePreviews = [new() { ResolvedPath = image }],
+            Attachments = [new() { Path = attachment }, new() { Path = "relative.txt" }]
+        }]);
+
+        foreach (var path in new[] { image, document, attachment })
+        {
+            Assert.True(allowlist.IsPathAllowed("owner", path, null));
+            Assert.False(allowlist.IsPathAllowed("other", path, null));
+        }
+        Assert.False(allowlist.IsPathAllowed("owner", missing, null));
+        Assert.False(allowlist.IsPathAllowed("owner", Path.Combine(root, "unrelated.jpg"), null));
+        Assert.Equal(3, allowlist.GetRegisteredPaths("owner").Length);
+    }
 
     [Theory]
     [InlineData(10_000)]
