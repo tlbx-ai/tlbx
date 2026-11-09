@@ -283,6 +283,53 @@ public sealed class ControlPlaneService : IDisposable
         }
     }
 
+    public void ReleaseSession(string sessionId)
+    {
+        var normalizedSessionId = Required(sessionId, 128, nameof(sessionId));
+        lock (_lock)
+        {
+            var changed = ClearSessionStatus(normalizedSessionId);
+            foreach (var item in _document.WorkItems.Where(item =>
+                item.SessionId == normalizedSessionId &&
+                item.State is not (ControlPlaneWorkItemStates.Done or ControlPlaneWorkItemStates.Dismissed)))
+            {
+                // Closing an owner releases responsibility; it is not evidence
+                // that its task was completed or its Git changes were pushed.
+                item.SessionId = null;
+                if (item.State == ControlPlaneWorkItemStates.Active)
+                    item.State = ControlPlaneWorkItemStates.Open;
+                item.UpdatedAt = DateTimeOffset.UtcNow;
+                item.Revision++;
+                AddEventLocked(ControlPlaneEventTypes.WorkItemUpdated, item.Id,
+                    normalizedSessionId, item.State, item.Priority,
+                    "Session closed; work assignment released.", "system");
+                changed = true;
+            }
+            if (changed)
+            {
+                PruneLocked();
+                ScheduleSaveLocked();
+            }
+        }
+    }
+
+    public void ReleaseMissingSessions(Func<string, bool> sessionExists)
+    {
+        ArgumentNullException.ThrowIfNull(sessionExists);
+        lock (_lock)
+        {
+            // Run only after host recovery. Preserved live sessions must retain
+            // their assignments across a web-only restart.
+            var owners = _document.SessionStatuses.Select(status => status.SessionId)
+                .Concat(_document.WorkItems.Where(item =>
+                    item.State is not (ControlPlaneWorkItemStates.Done or ControlPlaneWorkItemStates.Dismissed))
+                    .Select(item => item.SessionId))
+                .OfType<string>().Distinct(StringComparer.Ordinal).ToArray();
+            foreach (var owner in owners)
+                if (!sessionExists(owner)) ReleaseSession(owner);
+        }
+    }
+
     public ControlPlaneCheckpoint CreateCheckpoint(CreateControlPlaneCheckpointRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
