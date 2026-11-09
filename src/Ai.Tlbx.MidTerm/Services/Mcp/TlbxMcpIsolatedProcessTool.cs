@@ -114,6 +114,11 @@ internal static class TlbxMcpIsolatedProcessTool
             WorkingDirectory = cwd, UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
         };
+        // MCP clients may pass only a minimal environment. MSBuild's native
+        // compiler uses OS, so a Windows child must not inherit a missing value.
+        if (OperatingSystem.IsWindows() &&
+            (!info.Environment.TryGetValue("OS", out var os) || string.IsNullOrWhiteSpace(os)))
+            info.Environment["OS"] = "Windows_NT";
         foreach (var arg in argv) info.ArgumentList.Add(arg);
         return info;
     }

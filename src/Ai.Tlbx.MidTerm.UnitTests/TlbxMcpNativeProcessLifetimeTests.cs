@@ -35,6 +35,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
         var gate = Path.Combine(cwd, "release-child");
         var script = Path.Combine(cwd, OperatingSystem.IsWindows() ? "child.ps1" : "child.sh");
         File.WriteAllText(script, OperatingSystem.IsWindows() ? """
+            [IO.File]::WriteAllText('platform-os.txt', $env:OS)
             [Console]::WriteLine('child-started')
             [Console]::Error.Write('child-stderr-started')
             [Console]::Out.Flush()
@@ -159,6 +160,7 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
             var address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
             authorityAddress = address;
             var environment = StdioClientTransportOptions.GetDefaultEnvironmentVariables();
+            environment.Remove("OS"); // Reproduce the minimal native MCP transport environment.
             environment["MT_API_KEY"] = apiKey;
             environment["TLBX_CLI_AUTH_CACHE_DIR"] = Path.Combine(cwd, "auth-cache");
             var nativeBinary = Environment.GetEnvironmentVariable("TLBX_MCP_TEST_NATIVE_BINARY");
@@ -238,6 +240,8 @@ public sealed class TlbxMcpNativeProcessLifetimeTests
                 await Task.Delay(25, ct);
             Assert.Equal("child-started" + Environment.NewLine, ReadLiveLog("stdout.log"));
             Assert.Equal("child-stderr-started", ReadLiveLog("stderr.log"));
+            if (OperatingSystem.IsWindows())
+                Assert.Equal("Windows_NT", File.ReadAllText(Path.Combine(cwd, "platform-os.txt")));
             Assert.Null(TlbxMcpIsolatedProcessTool.ReadState(state.RunDirectory)!.CompletedAt);
             AssertAlive(state.TargetPid, state.TargetStartedTicks);
 
