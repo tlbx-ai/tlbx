@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "Для последующих снимков настроек; текущий вывод не меняется",
   "smartInput.settingScopeResponses": "Принятые настройки для следующих ответов; текущий вывод не меняется",
   "smartInput.settingPermissionAfterPlan": "Применяется после выхода из режима плана; план остаётся активным",
+  "smartInput.richEditing": "Редактирование",
+  "smartInput.richClipboardHint": "Буфер обмена недоступен. Используйте Ctrl/Cmd+C, X или V либо откройте меню браузера, удерживая Shift.",
   "smartInput.richFormatting": "Форматирование",
   "smartInput.richBold": "Полужирный",
   "smartInput.richItalic": "Курсив",

@@ -27,6 +27,26 @@ export function captureRichClipboard(
   return { html: data?.getData('text/html') ?? '', text: data?.getData('text/plain') ?? '', files };
 }
 
+export async function readRichClipboard(): Promise<RichClipboardData> {
+  const data: RichClipboardData = { html: '', text: '', files: [] };
+  const clipboard = navigator.clipboard as Partial<Clipboard> | undefined;
+  if (!clipboard?.read) {
+    if (!clipboard?.readText) throw new Error('Browser clipboard unavailable');
+    data.text = await clipboard.readText();
+    return data;
+  }
+  for (const item of await clipboard.read()) {
+    for (const type of item.types) {
+      if (type !== 'text/html' && type !== 'text/plain' && !type.startsWith('image/')) continue;
+      const blob = await item.getType(type);
+      if (type === 'text/html') data.html += await blob.text();
+      else if (type === 'text/plain') data.text += await blob.text();
+      else data.files.push(new File([blob], `clipboard.${type.split('/')[1] ?? 'png'}`, { type }));
+    }
+  }
+  return data;
+}
+
 const allowed = new Set([
   'P',
   'DIV',

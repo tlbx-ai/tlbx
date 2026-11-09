@@ -14705,34 +14705,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   overflow-wrap: anywhere;
 }
 
-.agent-history-command-prefix {
-  color: var(--text-primary);
-}
-
-.agent-history-command-token-command {
-  color: color-mix(in srgb, var(--accent-gold) 84%, white 10%);
-}
-
-.agent-history-command-token-parameter {
-  color: color-mix(in srgb, var(--accent-blue) 78%, white 12%);
-}
-
-.agent-history-command-token-string {
-  color: color-mix(in srgb, var(--accent-green) 72%, white 10%);
-}
-
-.agent-history-command-token-operator {
-  color: color-mix(in srgb, var(--accent-red) 74%, white 8%);
-}
-
-.agent-history-command-token-text {
-  color: color-mix(in srgb, var(--text-primary) 94%, white 4%);
-}
-
-.agent-history-command-token-whitespace {
-  color: inherit;
-}
-
 .agent-history-command-output-tail {
   margin: 0 0 0 2ch;
   color: color-mix(in srgb, var(--text-muted) 82%, transparent);
@@ -14741,6 +14713,51 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   line-height: 1.4;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.agent-history-command-disclosure > .agent-history-disclosure-summary {
+  flex-wrap: nowrap;
+  min-height: 32px;
+  font-family: var(--font-ui);
+  letter-spacing: normal;
+}
+.agent-history-command-disclosure .agent-history-disclosure-label,
+.agent-history-command-disclosure .agent-history-disclosure-meta {
+  min-width: 0;
+  font: 400 0.875rem/1.5 var(--font-ui);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.agent-history-command-disclosure .agent-history-disclosure-meta {
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-history-command-failed .agent-history-disclosure-meta { color: var(--accent-red); }
+.agent-history-command-disclosure .agent-history-command-body { gap: 8px; padding: 4px 0 8px 16px; }
+.agent-history-command-disclosure pre {
+  margin: 0;
+  padding: 8px 10px;
+  max-height: 20rem;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--bg-elevated-opaque) 55%, transparent);
+  color: var(--workspace-reading-text-primary, var(--text-primary));
+  font: 400 0.875rem/1.55 var(--agent-history-mono-font-family, var(--font-mono));
+  letter-spacing: normal;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 2;
+}
+.agent-history-command-disclosure pre::before {
+  content: attr(aria-label);
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font: 400 0.75rem/1.4 var(--font-ui);
 }
 
 :root:not([data-agent-show-message-timestamps='true'])
@@ -21927,7 +21944,54 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .adaptive-footer-dock .smart-input-textarea[hidden] { display: none; }
 
 .smart-input-rich-composer:focus-within { border-color: var(--command-bay-textbox-border-focus, var(--accent-blue)); }
-.rich-composer-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; min-height: 44px; padding: 0 48px 0 5px; }
+.rich-composer-tools {
+  position: fixed;
+  z-index: 1600;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  min-height: 36px;
+  padding: 4px;
+  box-sizing: border-box;
+  overflow: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-elevated-opaque);
+  color: var(--workspace-reading-text-primary, var(--text-primary));
+  font-family: var(--font-ui);
+  box-shadow: 0 6px 20px #0006;
+}
+.rich-composer-tools[hidden], .rich-composer-menu[hidden] { display: none; }
+.rich-composer-menu {
+  position: fixed;
+  z-index: 1600;
+  display: flex;
+  flex-direction: column;
+  width: 230px;
+  box-sizing: border-box;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-elevated-opaque);
+  color: var(--workspace-reading-text-primary, var(--text-primary));
+  box-shadow: 0 6px 20px #0006;
+}
+.rich-composer-menu button {
+  flex: 0 0 auto;
+  min-height: 36px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.rich-composer-menu button:hover, .rich-composer-menu button:focus-visible { background: var(--hover-bg); }
+.rich-composer-menu button:disabled { opacity: 0.45; cursor: default; }
 .rich-composer-tools button,
 .rich-composer-attachment button {
   border: 0;
@@ -21944,7 +22008,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .smart-input-rich-composer .ProseMirror {
   min-height: 56px;
   max-height: min(34dvh, 300px);
-  padding: 6px 10px;
+  padding: 6px 48px 6px 10px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -21968,6 +22032,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .rich-composer-attachment img { display: block; max-width: min(180px, 38vw); max-height: 112px; width: auto; height: auto; object-fit: contain; }
 .rich-composer-attachment img[hidden] { display: none; }
 @media (max-width: 640px), (pointer: coarse) {
+  .rich-composer-menu button { min-height: 44px; }
   .rich-composer-tools button,
   .rich-composer-attachment button { min-width: 44px; min-height: 44px; }
 }

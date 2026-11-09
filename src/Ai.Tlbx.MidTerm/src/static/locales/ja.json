@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "次の設定取得以降に適用。実行中の推論は変更されません",
   "smartInput.settingScopeResponses": "次の応答以降の既定値を受理済み。実行中の推論は変更されません",
   "smartInput.settingPermissionAfterPlan": "プランモード終了後に使用。プランモードは維持されます",
+  "smartInput.richEditing": "編集",
+  "smartInput.richClipboardHint": "クリップボードを利用できません。Ctrl/Cmd+C、X、Vを使うか、Shiftを押しながらブラウザーのメニューを開いてください。",
   "smartInput.richFormatting": "書式",
   "smartInput.richBold": "太字",
   "smartInput.richItalic": "斜体",

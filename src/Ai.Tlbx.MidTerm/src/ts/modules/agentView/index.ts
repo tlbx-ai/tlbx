@@ -2920,7 +2920,6 @@ export {
   buildRenderedDiffLines,
   estimateHistoryEntryHeight,
   resolveHistoryBodyPresentation,
-  tokenizeCommandText,
 } from './historyContent';
 export {
   applyOptimisticAppServerControlTurns,

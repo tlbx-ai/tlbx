@@ -33,12 +33,14 @@ import {
 } from './richComposerDocument';
 import {
   captureRichClipboard,
+  readRichClipboard,
   materializeRichClipboardImages,
   richClipboardReferenceIds,
   richClipboardSlice,
   type RichClipboardData,
 } from './richComposerClipboard';
 import { richAttachmentView } from './richComposerAttachmentView';
+import { RichComposerMenu, positionComposerPopup } from './richComposerMenu';
 import { openImageAnnotation } from './imageAnnotation';
 import { shouldConvertPastedTextToSmartInputReference } from './smartInputTextReferences';
 import {
@@ -55,6 +57,7 @@ export interface RichComposerCallbacks {
   keydown: (event: KeyboardEvent) => boolean;
   focus: () => void;
   submissionChanged: () => void;
+  notice: (message: string) => void;
   stageFile: (
     sessionId: string,
     file: File,
@@ -84,6 +87,9 @@ interface PendingBookmark {
 export class RichComposer {
   readonly host = document.createElement('div');
   private readonly toolbar = document.createElement('div');
+  private readonly menu = new RichComposerMenu(() => this.view?.focus());
+  private readonly fileInput = document.createElement('input');
+  private fileTarget: PendingBookmark | null = null;
   private readonly mount = document.createElement('div');
   private readonly error = document.createElement('span');
   private readonly retry = document.createElement('button');
@@ -102,6 +108,7 @@ export class RichComposer {
     this.host.className = 'smart-input-rich-composer';
     this.host.hidden = true;
     this.toolbar.className = 'rich-composer-tools';
+    this.toolbar.hidden = true;
     this.toolbar.setAttribute('role', 'toolbar');
     this.toolbar.setAttribute('aria-label', t('smartInput.richFormatting'));
     this.error.className = 'rich-composer-error';
@@ -150,7 +157,54 @@ export class RichComposer {
       },
       true,
     );
-    this.host.append(this.toolbar, this.mount, this.error, this.retry, this.cancelPaste);
+    this.fileInput.type = 'file';
+    this.fileInput.multiple = true;
+    this.fileInput.hidden = true;
+    this.fileInput.addEventListener('change', () => {
+      const target = this.fileTarget;
+      const saved = target ? this.editors.get(target.sessionId) : null;
+      if (target && saved?.generation === target.generation && this.bookmarks.has(target))
+        this.insertClipboard(
+          target.sessionId,
+          { html: '', text: '', files: [...(this.fileInput.files ?? [])] },
+          target.bookmark.resolve(saved.state.doc),
+        );
+      this.clearFileTarget();
+    });
+    this.fileInput.addEventListener('cancel', () => {
+      this.clearFileTarget();
+    });
+    document.body.append(this.toolbar);
+    this.host.append(this.mount, this.error, this.retry, this.cancelPaste, this.fileInput);
+    document.addEventListener('selectionchange', () => {
+      this.syncTools();
+    });
+    new ResizeObserver(() => {
+      this.syncTools();
+    }).observe(this.host);
+    const resize = (): void => {
+      this.menu.reposition();
+      this.syncTools();
+    };
+    window.addEventListener('resize', resize);
+    window.visualViewport?.addEventListener('resize', resize);
+    window.addEventListener(
+      'scroll',
+      (event) => {
+        const target = event.target;
+        if (
+          target instanceof Node &&
+          target !== document &&
+          target !== document.documentElement &&
+          target !== document.body &&
+          !this.host.contains(target)
+        )
+          return;
+        this.menu.close();
+        this.syncTools();
+      },
+      true,
+    );
   }
 
   private addTool(label: string, key: string, action: () => void, tableOnly = false): void {
@@ -186,8 +240,12 @@ export class RichComposer {
   }
 
   sync(sessionId: string | null, draft: SmartInputComposerDraft, active: boolean): void {
+    if (sessionId !== this.sessionId) this.closePopups();
     this.host.hidden = !active;
-    if (!active || !sessionId) return;
+    if (!active || !sessionId) {
+      this.closePopups();
+      return;
+    }
     if (!this.lifetimes.has(sessionId)) this.lifetimes.set(sessionId, new AbortController());
     const doc = getRichComposerDocument(draft);
     const saved = this.editors.get(sessionId);
@@ -271,13 +329,41 @@ export class RichComposer {
         role: 'textbox',
       },
       handleKeyDown: (view, event) => {
+        if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+          event.preventDefault();
+          const point = view.coordsAtPos(view.state.selection.head);
+          this.openContextMenu(point.left, point.bottom);
+          return true;
+        }
         if (!richComposerOwnsShortcut(view.state, event, view.composing)) return false;
         return this.callbacks.keydown(event);
       },
       handleDOMEvents: {
         focus: () => {
           this.callbacks.focus();
+          this.syncTools();
           return false;
+        },
+        blur: () => {
+          queueMicrotask(() => {
+            this.syncTools();
+          });
+          return false;
+        },
+        contextmenu: (view, event) => {
+          if (!view.editable || event.shiftKey) return false;
+          event.preventDefault();
+          const position = view.posAtCoords({ left: event.clientX, top: event.clientY })?.pos;
+          const selection = view.state.selection;
+          if (
+            position !== undefined &&
+            (selection.empty || position < selection.from || position > selection.to)
+          )
+            view.dispatch(
+              view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(position))),
+            );
+          this.openContextMenu(event.clientX, event.clientY);
+          return true;
         },
       },
       clipboardTextSerializer: (slice) => {
@@ -344,15 +430,182 @@ export class RichComposer {
   }
 
   private syncTools(): void {
-    const active = this.view ? isInTable(this.view.state) : false;
+    const view = this.view;
+    const active = view ? isInTable(view.state) : false;
     for (const button of this.toolbar.querySelectorAll<HTMLButtonElement>(
       '[data-table-only="true"]',
     ))
       button.hidden = !active;
+    this.toolbar.hidden = true;
+    if (!view || this.host.hidden || !this.menu.element.hidden) return;
+    const nativeSelection = view.dom.ownerDocument.getSelection();
+    if (
+      !nativeSelection ||
+      nativeSelection.isCollapsed ||
+      !view.dom.contains(nativeSelection.anchorNode)
+    )
+      return;
+    const selection = view.state.selection;
+    if (
+      selection.empty ||
+      selection instanceof NodeSelection ||
+      !view.state.doc.textBetween(selection.from, selection.to) ||
+      !(view.hasFocus() || this.toolbar.contains(document.activeElement))
+    )
+      return;
+    this.toolbar.hidden = false;
+    this.positionTools(view);
+  }
+
+  private positionTools(view: EditorView): void {
+    const bounds = view.dom.getBoundingClientRect();
+    const selection = view.dom.ownerDocument.getSelection();
+    const point = selection?.rangeCount
+      ? [...selection.getRangeAt(0).getClientRects()].find(
+          (rect) =>
+            rect.width > 0 &&
+            rect.height > 0 &&
+            rect.bottom > bounds.top &&
+            rect.top < bounds.bottom,
+        )
+      : undefined;
+    this.toolbar.hidden = !point;
+    if (point)
+      positionComposerPopup(
+        this.toolbar,
+        point.left,
+        point.top - this.toolbar.offsetHeight - 6 < (window.visualViewport?.offsetTop ?? 0) + 6
+          ? point.bottom + 6
+          : point.top - this.toolbar.offsetHeight - 6,
+      );
+  }
+
+  private closePopups(): void {
+    this.toolbar.hidden = true;
+    this.menu.close();
+  }
+
+  private openContextMenu(x: number, y: number): void {
+    const view = this.view;
+    if (!view?.editable) return;
+    const selected = !view.state.selection.empty;
+    const actions = [
+      {
+        label: t('fileBrowser.copy'),
+        disabled: !selected,
+        run: () => {
+          this.clipboardCommand('copy');
+        },
+      },
+      {
+        label: t('fileBrowser.cut'),
+        disabled: !selected,
+        run: () => {
+          this.clipboardCommand('cut');
+        },
+      },
+      {
+        label: t('fileBrowser.paste'),
+        run: () => {
+          void this.pasteFromMenu();
+        },
+      },
+      {
+        label: t('smartInput.richTable'),
+        run: () => {
+          this.insertTable();
+        },
+      },
+      {
+        label: t('smartInput.attach'),
+        run: () => {
+          this.pickFiles();
+        },
+      },
+    ];
+    if (isInTable(view.state))
+      actions.push(
+        {
+          label: t('smartInput.richColumn'),
+          run: () => {
+            this.command(addColumnAfter);
+          },
+        },
+        {
+          label: t('smartInput.richRow'),
+          run: () => {
+            this.command(addRowAfter);
+          },
+        },
+        {
+          label: t('smartInput.richDeleteTable'),
+          run: () => {
+            this.command(deleteTable);
+          },
+        },
+      );
+    this.toolbar.hidden = true;
+    this.menu.open(x, y, t('smartInput.richEditing'), actions);
+  }
+
+  private clipboardCommand(command: 'copy' | 'cut'): void {
+    this.view?.focus();
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-deprecated -- Trusted copy/cut retain native rich clipboard serialization without async clipboard permission.
+      if (document.execCommand(command)) return;
+    } catch {
+      /* Browser policy can block the custom-menu command. */
+    }
+    this.callbacks.notice(t('smartInput.richClipboardHint'));
+  }
+
+  private captureTarget(): PendingBookmark | null {
+    const saved = this.sessionId ? this.editors.get(this.sessionId) : null;
+    if (!saved || !this.sessionId) return null;
+    const target = {
+      sessionId: this.sessionId,
+      bookmark: saved.state.selection.getBookmark(),
+      generation: saved.generation,
+    };
+    this.bookmarks.add(target);
+    return target;
+  }
+
+  private async pasteFromMenu(): Promise<void> {
+    const target = this.captureTarget();
+    if (!target) return;
+    try {
+      const reading = readRichClipboard().catch(() => null);
+      await this.callbacks.pending(target.sessionId, async () => {
+        const data = await reading;
+        if (!data) throw new Error(t('smartInput.richClipboardHint'));
+        const saved = this.editors.get(target.sessionId);
+        if (saved?.generation === target.generation && this.bookmarks.has(target))
+          this.insertClipboard(target.sessionId, data, target.bookmark.resolve(saved.state.doc));
+      });
+    } catch {
+      this.callbacks.notice(t('smartInput.richClipboardHint'));
+    } finally {
+      this.bookmarks.delete(target);
+    }
+  }
+
+  private clearFileTarget(): void {
+    if (this.fileTarget) this.bookmarks.delete(this.fileTarget);
+    this.fileTarget = null;
+    this.fileInput.value = '';
+  }
+
+  private pickFiles(): void {
+    this.clearFileTarget();
+    this.fileTarget = this.captureTarget();
+    this.fileInput.click();
   }
 
   focus(): void {
-    this.view?.focus();
+    if (!this.menu.element.hidden || this.toolbar.contains(document.activeElement)) return;
+    const view = this.view;
+    if (view && !view.hasFocus()) view.focus();
   }
   hasFocus(): boolean {
     return this.view?.hasFocus() ?? false;
@@ -368,9 +621,12 @@ export class RichComposer {
     if (value) this.submitting.add(sessionId);
     else this.submitting.delete(sessionId);
     if (this.sessionId === sessionId) {
+      if (value) this.closePopups();
       this.host.inert = value;
       this.host.setAttribute('aria-busy', value ? 'true' : 'false');
-      this.view?.setProps({ editable: () => !this.submitting.has(sessionId) });
+      if (this.view?.editable === value) {
+        this.view.setProps({ editable: () => !this.submitting.has(sessionId) });
+      }
     }
     this.callbacks.submissionChanged();
   }
@@ -378,6 +634,8 @@ export class RichComposer {
     return !this.host.hidden && this.sessionId === sessionId;
   }
   forget(sessionId: string): void {
+    if (this.sessionId === sessionId) this.closePopups();
+    if (this.fileTarget?.sessionId === sessionId) this.clearFileTarget();
     this.lifetimes.get(sessionId)?.abort();
     this.lifetimes.delete(sessionId);
     this.editors.delete(sessionId);
@@ -604,12 +862,13 @@ export class RichComposer {
     this.insertClipboard(sessionId, { html: '', text: '', files: [...files] });
   }
 
-  private insertClipboard(sessionId: string, data: RichClipboardData): void {
+  private insertClipboard(sessionId: string, data: RichClipboardData, selection?: Selection): void {
+    if (!data.html && !data.text && !data.files.length) return;
     const saved = this.editors.get(sessionId);
     if (!saved) return;
     const pending = {
       sessionId,
-      bookmark: saved.state.selection.getBookmark(),
+      bookmark: (selection ?? saved.state.selection).getBookmark(),
       generation: saved.generation,
     };
     this.bookmarks.add(pending);

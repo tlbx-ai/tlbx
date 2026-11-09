@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "用于后续设置捕获；当前推理保持不变",
   "smartInput.settingScopeResponses": "后续回答的默认设置已接受；当前推理保持不变",
   "smartInput.settingPermissionAfterPlan": "退出计划模式后使用；计划模式保持启用",
+  "smartInput.richEditing": "编辑",
+  "smartInput.richClipboardHint": "无法访问剪贴板。请使用 Ctrl/Cmd+C、X 或 V，或按住 Shift 打开浏览器菜单。",
   "smartInput.richFormatting": "格式",
   "smartInput.richBold": "粗体",
   "smartInput.richItalic": "斜体",

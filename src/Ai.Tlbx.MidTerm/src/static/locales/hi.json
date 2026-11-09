@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "अगली सेटिंग कैप्चर के लिए; चल रहा अनुमान अपरिवर्तित",
   "smartInput.settingScopeResponses": "अगले उत्तरों के डिफ़ॉल्ट स्वीकार किए गए; चल रहा अनुमान अपरिवर्तित",
   "smartInput.settingPermissionAfterPlan": "प्लान से बाहर आने पर लागू; प्लान सक्रिय रहता है",
+  "smartInput.richEditing": "संपादन",
+  "smartInput.richClipboardHint": "क्लिपबोर्ड उपलब्ध नहीं है। Ctrl/Cmd+C, X या V का उपयोग करें, या ब्राउज़र मेनू खोलते समय Shift दबाए रखें।",
   "smartInput.richFormatting": "स्वरूपण",
   "smartInput.richBold": "बोल्ड",
   "smartInput.richItalic": "इटैलिक",
