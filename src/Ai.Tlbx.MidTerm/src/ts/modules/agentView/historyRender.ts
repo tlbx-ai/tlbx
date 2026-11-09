@@ -1,4 +1,6 @@
 import { t } from '../i18n';
+import { getHistoryImagePreviewToken } from './userHistoryReading';
+import { showAgentTechnicalDetails } from './historyVisibility';
 import { resolveUnderfilledHistoryWindowRequest } from './historyWindowSizing';
 import {
   alignHistoryJumpTarget,
@@ -616,13 +618,6 @@ function buildHistoryClusterToken(cluster: ArtifactClusterInfo | null): string {
         ':',
       )
     : '';
-}
-
-function buildAssistantPreviewToken(
-  entry: AppServerControlHistoryEntry,
-  _state: SessionAppServerControlViewState | undefined,
-): string {
-  return (entry.imagePreviews ?? []).map((preview) => preview.resolvedPath).join('|');
 }
 
 function buildHistoryActionToken(entry: AppServerControlHistoryEntry): string {
@@ -1613,6 +1608,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.session.agentName),
       entry.title,
       entry.body,
+      entry.kind === 'user' && entry.imagePreviews?.length
+        ? String(showAgentTechnicalDetails())
+        : '',
       entry.meta,
       entry.pending ? '1' : '0',
       entry.live ? '1' : '0',
@@ -1632,7 +1630,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       (entry.commandOutputTail ?? []).join('\n'),
       entry.kind === 'tool' ? String(resolveToolCallOutputLineLimit()) : '',
       buildHistoryAttachmentToken(entry),
-      buildAssistantPreviewToken(entry, state),
+      getHistoryImagePreviewToken(entry),
       buildHistoryActionToken(entry),
       buildHistoryClusterToken(cluster),
       resolveHistoryEntryBusyToken(entry, state),

@@ -663,6 +663,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         const cache = getCachedHistoryMarkdown(
           deps.getState(sessionId)?.historyMarkdownCache,
           entry,
+          showAgentTechnicalDetails(),
         );
         content.innerHTML = cache.html;
         collapseSingleParagraphMarkdownBody(content);

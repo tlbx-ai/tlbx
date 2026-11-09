@@ -13897,6 +13897,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-history {
+  /* Keep sticky table headers inside the scrolling reading pane. */
+  contain: paint;
   display: flex;
   flex: 1;
   flex-direction: column;

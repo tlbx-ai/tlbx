@@ -9,6 +9,7 @@ import {
 import { prepareSmartInputOutboundPrompt } from '../smartInput/smartInputOutboundReferences';
 import { resolveHistoryBodyPresentation } from './historyContent';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
+import { getHistoryImagePreviewToken } from './userHistoryReading';
 import { buildAssistantEnrichedHtml } from './assistantEnrichment';
 import type { AppServerControlHistoryEntry, HistoryMarkdownCacheEntry } from './types';
 
@@ -506,4 +507,109 @@ describe('role-scoped bounded history Markdown cache', () => {
     pruneHistoryMarkdownCache(cache, [entry('tool', 'replaced')]);
     expect([...cache.keys()]).toEqual([]);
   });
+});
+
+describe('restored image attachment transport in reading history', () => {
+  const imagePath = 'C:\\qa\\Pen_19.png';
+  const secondImagePath = 'C:\\qa\\Bild_zwei.png';
+  const preview = (path = imagePath) => ({
+    displayPath: path,
+    resolvedPath: path,
+    mimeType: 'image/png',
+  });
+  const footer = ['Attached resource:', '- [image] ' + imagePath, '[Image attachment]'].join('\n');
+  const withImage = (body: string) => ({
+    ...entry('user', body),
+    imagePreviews: [preview()],
+  });
+
+  it('hides only a repeated trailing image footer, preserving the canonical text and preview', () => {
+    const raw = '**Betrachte das Bild.**\r\n\r\n' + footer.replace(/\n/g, '\r\n');
+    const message = Object.freeze(withImage(raw));
+    const rendered = getCachedHistoryMarkdown(undefined, message).html;
+    expect(rendered).toBe('<strong>Betrachte das Bild.</strong>');
+    expect(message.body).toBe(raw);
+    expect(message.imagePreviews).toEqual([preview()]);
+  });
+
+  it('keeps image-only messages represented by their existing image previews', () => {
+    const body = [
+      'Attached resources (2):',
+      '- [image] ' + imagePath,
+      '- [image] ' + secondImagePath,
+      '[Image attachment]',
+      '[Image attachment]',
+    ].join('\n');
+    const message = {
+      ...entry('user', body),
+      imagePreviews: [preview(), preview(secondImagePath)],
+    };
+    expect(getCachedHistoryMarkdown(undefined, message).html).toBe('');
+    expect(message.body).toBe(body);
+    expect(message.imagePreviews).toHaveLength(2);
+  });
+
+  it.each([
+    String.fromCharCode(96).repeat(3) + 'text\n',
+    String.fromCharCode(96).repeat(4) + 'text\n',
+    '~~~text\n',
+  ])('preserves attachment-shaped text inside unclosed code: %s', (prefix) => {
+    expect(getCachedHistoryMarkdown(undefined, withImage(prefix + footer)).html).toContain(
+      'Attached resource:',
+    );
+  });
+
+  it('preserves a complete fenced code sample', () => {
+    const fence = String.fromCharCode(96).repeat(3);
+    expect(
+      getCachedHistoryMarkdown(undefined, withImage(fence + '\n' + footer + '\n' + fence)).html,
+    ).toContain('Attached resource:');
+  });
+
+  it.each([
+    footer + '\nWichtiger Nachsatz',
+    'Attached resources (2):\n- [image] ' + imagePath,
+    'Attached resource:\n- [file] ' + imagePath,
+    'Attached resource:\n- [image] C:\\qa\\other.png',
+    '> Attached resource:\n> - [image] ' + imagePath,
+    '- Attached resource:\n  - [image] ' + imagePath,
+  ])('preserves unmatched references, files, quotes, lists and user prose: %s', (raw) => {
+    expect(getCachedHistoryMarkdown(undefined, withImage(raw)).html).toContain('Attached resource');
+  });
+
+  it('retains the footer until all referenced images are actually represented', () => {
+    const raw = 'Bild prüfen.\n\n' + footer;
+    const cache = new Map<string, HistoryMarkdownCacheEntry>();
+    const withoutPreview = entry('user', raw);
+    expect(getCachedHistoryMarkdown(cache, withoutPreview).html).toContain('Attached resource:');
+    expect(getCachedHistoryMarkdown(cache, withImage(raw)).html).not.toContain(
+      'Attached resource:',
+    );
+  });
+
+  it('restores raw details when requested and invalidates the rendered cache on both toggles', () => {
+    const message = withImage('Bild prüfen.\n\n' + footer);
+    const cache = new Map<string, HistoryMarkdownCacheEntry>();
+    expect(getCachedHistoryMarkdown(cache, message, false).html).toBe('Bild prüfen.');
+    expect(getCachedHistoryMarkdown(cache, message, true).html).toContain('Attached resource:');
+    expect(getCachedHistoryMarkdown(cache, message, false).html).toBe('Bild prüfen.');
+    expect(message.body).toContain(footer);
+  });
+});
+
+it('updates the row token and reading body when only a preview display alias changes', () => {
+  const raw = 'Bild prüfen.\n\nAttached resource:\n- [image] Pen_19.png';
+  const resolvedPath = 'C:\\qa\\Pen_19.png';
+  const before = {
+    ...entry('user', raw),
+    imagePreviews: [{ displayPath: 'Pen_19.png', resolvedPath }],
+  };
+  const after = {
+    ...entry('user', raw),
+    imagePreviews: [{ displayPath: 'anderer-name.png', resolvedPath }],
+  };
+  const cache = new Map<string, HistoryMarkdownCacheEntry>();
+  expect(getHistoryImagePreviewToken(after)).not.toBe(getHistoryImagePreviewToken(before));
+  expect(getCachedHistoryMarkdown(cache, before).html).toBe('Bild prüfen.');
+  expect(getCachedHistoryMarkdown(cache, after).html).toContain('Attached resource:');
 });

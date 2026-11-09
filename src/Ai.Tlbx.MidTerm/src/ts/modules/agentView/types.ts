@@ -133,6 +133,8 @@ export interface HistoryMarkdownCacheEntry {
   body: string;
   html: string;
   fileMentionToken: string;
+  imagePreviewToken: string;
+  technicalDetails: boolean;
 }
 
 export type HistoryKind =
