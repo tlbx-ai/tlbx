@@ -1,6 +1,10 @@
 import { t } from '../i18n';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
-import { isFileChangeHistoryEntry, showAgentTechnicalDetails } from './historyVisibility';
+import {
+  isFileChangeHistoryEntry,
+  isHistoryError,
+  showAgentTechnicalDetails,
+} from './historyVisibility';
 import { $currentSettings, getSession } from '../../stores';
 import { wireMarkdownTables } from '../../utils/markdown';
 import {
@@ -26,7 +30,6 @@ import {
   buildRenderedDiffLines,
   hasInlineCommandPresentation,
   resolveHistoryBodyPresentation,
-  tokenizeCommandText,
 } from './historyContent';
 import { DEFAULT_TOOL_CALL_OUTPUT_LINES, MAX_TOOL_CALL_OUTPUT_LINES } from './historyConstants';
 import type {
@@ -651,7 +654,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         return body;
       }
       case 'command':
-        return createCommandHistoryBody(entry, sessionId);
+        return createCommandHistoryBody(entry);
       case 'tool':
         return createProjectedToolHistoryBody(entry, sessionId);
       case 'streaming':
@@ -726,32 +729,22 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function createCommandHistoryBody(
     entry: AppServerControlHistoryEntry,
-    sessionId: string,
+    command = entry.commandText ?? entry.body,
+    outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? []),
   ): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
-    const commandLine = document.createElement('div');
-    commandLine.className = 'agent-history-command-line';
-    const prefix = document.createElement('span');
-    prefix.className = 'agent-history-command-prefix';
-    prefix.textContent = 'Ran ';
-    commandLine.appendChild(prefix);
-
-    for (const token of tokenizeCommandText(entry.commandText ?? entry.body)) {
-      const part = document.createElement('span');
-      part.className = `agent-history-command-token agent-history-command-token-${token.kind}`;
-      part.textContent = token.text;
-      commandLine.appendChild(part);
-    }
-    enrichInteractiveTextContent(commandLine, getEntryFileMentions(entry, 'commandText'));
-    wireAssistantInteractiveContent(commandLine, sessionId);
+    const commandLine = document.createElement('pre');
+    commandLine.className = 'agent-history-command-script';
+    commandLine.setAttribute('aria-label', t('appServerControl.commands.title'));
+    commandLine.textContent = command;
 
     body.appendChild(commandLine);
-    const visibleOutputLines = clampToolCallOutputLines(entry.commandOutputTail ?? []);
-    if (visibleOutputLines.length > 0) {
+    if (outputLines.length > 0) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
-      output.textContent = visibleOutputLines.join('\n');
+      output.setAttribute('aria-label', t('appServerControl.title.commandOutput'));
+      output.textContent = outputLines.join('\n');
       // Keep folded command tails as raw terminal text instead of applying
       // FileRadar-style enrichment or thumbnail previews to noisy output.
       body.appendChild(output);
@@ -771,6 +764,16 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return body;
     }
 
+    const visibleEvidence = selectProjectedToolEvidenceLines(entry);
+    const omitted = Math.max(
+      0,
+      (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
+    );
+    const evidenceLines =
+      omitted > 0 ? [`... ${omitted} lines omitted ...`, ...visibleEvidence] : visibleEvidence;
+    if (presentation.category === 'command')
+      return createCommandHistoryBody(entry, presentation.subject ?? '', evidenceLines);
+
     const outcomeIsError = presentation.evidenceKind === 'error';
     if (outcomeIsError && presentation.outcome) {
       const outcome = document.createElement('div');
@@ -782,16 +785,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     if (presentation.subject) {
       const subject = document.createElement('div');
       subject.className = 'agent-history-command-line';
-      if (presentation.category === 'command') {
-        for (const token of tokenizeCommandText(presentation.subject)) {
-          const part = document.createElement('span');
-          part.className = `agent-history-command-token agent-history-command-token-${token.kind}`;
-          part.textContent = token.text;
-          subject.appendChild(part);
-        }
-      } else {
-        subject.textContent = presentation.subject;
-      }
+      subject.textContent = presentation.subject;
       enrichInteractiveTextContent(subject, getEntryFileMentions(entry, 'body'));
       wireAssistantInteractiveContent(subject, sessionId);
       body.appendChild(subject);
@@ -816,18 +810,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       body.appendChild(outcome);
     }
 
-    const visibleEvidence = selectProjectedToolEvidenceLines(entry);
     if (visibleEvidence.length > 0) {
       const evidence = document.createElement('pre');
       evidence.className = 'agent-history-command-output-tail';
-      const hiddenByPreference = Math.max(
-        0,
-        (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
-      );
-      evidence.textContent =
-        hiddenByPreference > 0
-          ? `... ${hiddenByPreference} lines omitted ...\n${visibleEvidence.join('\n')}`
-          : visibleEvidence.join('\n');
+      evidence.textContent = evidenceLines.join('\n');
       body.appendChild(evidence);
     }
 
@@ -908,20 +894,30 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     wrapper.className = 'agent-history-disclosure-shell';
     const details = document.createElement('details');
     details.className = 'agent-history-disclosure';
+    const command =
+      presentation.mode === 'command' || entry.toolPresentation?.category === 'command';
+    details.classList.toggle('agent-history-command-disclosure', command);
+    details.classList.toggle('agent-history-command-failed', command && isHistoryError(entry));
     details.open = deps.getState(sessionId)?.historyExpandedEntries.has(entry.id) === true;
     const summary = document.createElement('summary');
     summary.className = 'agent-history-disclosure-summary';
     const label = document.createElement('span');
     label.className = 'agent-history-disclosure-label';
-    label.textContent = isFileChangeHistoryEntry(entry)
-      ? appServerControlText('appServerControl.panel.reviewChanges', 'Review changes')
-      : appServerControlText('appServerControl.panel.details', 'Details');
+    label.textContent = command
+      ? entry.toolPresentation?.label ||
+        appServerControlText('appServerControl.title.commandOutput', 'Command output')
+      : isFileChangeHistoryEntry(entry)
+        ? appServerControlText('appServerControl.panel.reviewChanges', 'Review changes')
+        : appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
     const meta = document.createElement('span');
     meta.className = 'agent-history-disclosure-meta';
-    meta.textContent = appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
-      count: presentation.lineCount,
-    });
+    meta.textContent = command
+      ? (entry.toolPresentation?.outcome ?? '')
+      : appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
+          count: presentation.lineCount,
+        });
+    meta.hidden = !meta.textContent;
     summary.appendChild(meta);
     if (presentation.preview) {
       const preview = document.createElement('span');

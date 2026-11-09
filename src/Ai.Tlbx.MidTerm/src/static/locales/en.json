@@ -1728,6 +1728,8 @@
   "smartInput.settingScopeCaptures": "For subsequent captures; running inference unchanged",
   "smartInput.settingScopeResponses": "Accepted defaults for subsequent responses; running inference unchanged",
   "smartInput.settingPermissionAfterPlan": "Used when leaving Plan; Plan remains active",
+  "smartInput.richEditing": "Editing",
+  "smartInput.richClipboardHint": "Clipboard access is unavailable. Use Ctrl/Cmd+C, X or V, or hold Shift while opening the browser menu.",
   "smartInput.richFormatting": "Formatting",
   "smartInput.richBold": "Bold",
   "smartInput.richItalic": "Italic",

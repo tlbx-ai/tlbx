@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "Para las capturas siguientes; inferencia actual sin cambios",
   "smartInput.settingScopeResponses": "Valores predeterminados aceptados para próximas respuestas; inferencia actual sin cambios",
   "smartInput.settingPermissionAfterPlan": "Se usa al salir de Plan; Plan sigue activo",
+  "smartInput.richEditing": "Edición",
+  "smartInput.richClipboardHint": "No se puede acceder al portapapeles. Usa Ctrl/Cmd+C, X o V, o mantén Mayús al abrir el menú del navegador.",
   "smartInput.richFormatting": "Formato",
   "smartInput.richBold": "Negrita",
   "smartInput.richItalic": "Cursiva",

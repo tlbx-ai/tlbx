@@ -699,6 +699,7 @@ function syncRichComposerInputLock(): void {
 
 function initializeRichComposer(textarea: HTMLTextAreaElement): void {
   richComposer = new RichComposer({
+    notice: showDropToast,
     changed: (sessionId, draft, edited) => {
       if (edited) resetPromptHistoryNavigation(sessionId);
       const previous = getSessionDraft(sessionId);

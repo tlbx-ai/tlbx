@@ -280,11 +280,6 @@ export interface ArtifactClusterInfo {
   onlyTools: boolean;
 }
 
-export interface CommandToken {
-  text: string;
-  kind: 'command' | 'parameter' | 'string' | 'operator' | 'text' | 'whitespace';
-}
-
 export interface DiffRenderLine {
   text: string;
   className: string;

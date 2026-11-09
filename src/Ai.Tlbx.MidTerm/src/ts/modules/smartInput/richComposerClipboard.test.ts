@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import DOMPurify from 'dompurify';
 vi.mock('dompurify', () => ({ default: { sanitize: vi.fn() } }));
-import { captureRichClipboard, materializeRichClipboardImages, plainRichClipboardParts, richClipboardReferenceIds } from './richComposerClipboard';
+import { captureRichClipboard, readRichClipboard, materializeRichClipboardImages, plainRichClipboardParts, richClipboardReferenceIds } from './richComposerClipboard';
 import { draftFromRichDocument, getRichComposerDocument } from './richComposerDocument';
 
 function transfer(files: File[], items: Array<{ kind: string; getAsFile: () => File | null }>) {
@@ -10,6 +10,32 @@ function transfer(files: File[], items: Array<{ kind: string; getAsFile: () => F
 }
 
 describe('trusted rich clipboard capture', () => {
+  it('reads rich browser clipboard formats once and retains image bytes without a text-only fallback', async () => {
+    const getType = vi.fn(async (type: string) => new Blob([type === 'text/html' ? '<p><strong>Rich</strong></p>' : type === 'text/plain' ? 'Rich' : 'png-bytes'], { type }));
+    const read = vi.fn(async () => [{ types: ['text/html', 'text/plain', 'image/png'], getType }]);
+    const readText = vi.fn();
+    vi.stubGlobal('navigator', { clipboard: { read, readText } });
+    try {
+      const data = await readRichClipboard();
+      expect(data.html).toBe('<p><strong>Rich</strong></p>');
+      expect(data.text).toBe('Rich');
+      expect(await data.files[0]!.text()).toBe('png-bytes');
+      expect(read).toHaveBeenCalledTimes(1);
+      expect(getType).toHaveBeenCalledTimes(3);
+      expect(readText).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
+  it('preserves denied clipboard access as failure rather than an empty paste or another read', async () => {
+    const denied = new Error('permission denied');
+    const readText = vi.fn();
+    vi.stubGlobal('navigator', { clipboard: { read: vi.fn().mockRejectedValue(denied), readText } });
+    try {
+      await expect(readRichClipboard()).rejects.toBe(denied);
+      expect(readText).not.toHaveBeenCalled();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   it('keeps missing image positions without fetching URLs or discarding the surrounding HTML', () => {
     const fetch = vi.fn(() => { throw new Error('no network'); });
     const html = '<p>before</p><table><tr><td>text<img src="https://foreign.test/image.png"></td></tr></table><p>after</p>';

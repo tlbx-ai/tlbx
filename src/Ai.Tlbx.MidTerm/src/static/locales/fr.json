@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "Pour les captures suivantes ; inférence en cours inchangée",
   "smartInput.settingScopeResponses": "Valeurs par défaut acceptées pour les prochaines réponses ; inférence en cours inchangée",
   "smartInput.settingPermissionAfterPlan": "Utilisé à la sortie du mode Plan ; Plan reste actif",
+  "smartInput.richEditing": "Édition",
+  "smartInput.richClipboardHint": "Le presse-papiers est indisponible. Utilisez Ctrl/Cmd+C, X ou V, ou maintenez Maj pour ouvrir le menu du navigateur.",
   "smartInput.richFormatting": "Mise en forme",
   "smartInput.richBold": "Gras",
   "smartInput.richItalic": "Italique",

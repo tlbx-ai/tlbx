@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "Para as próximas capturas; inferência atual inalterada",
   "smartInput.settingScopeResponses": "Padrões aceitos para próximas respostas; inferência atual inalterada",
   "smartInput.settingPermissionAfterPlan": "Usado ao sair do modo Plano; o Plano permanece ativo",
+  "smartInput.richEditing": "Edição",
+  "smartInput.richClipboardHint": "A área de transferência não está disponível. Use Ctrl/Cmd+C, X ou V, ou mantenha Shift premido ao abrir o menu do navegador.",
   "smartInput.richFormatting": "Formatação",
   "smartInput.richBold": "Negrito",
   "smartInput.richItalic": "Itálico",

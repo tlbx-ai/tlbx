@@ -1465,6 +1465,8 @@
   "smartInput.settingScopeCaptures": "পরবর্তী সেটিং ক্যাপচারের জন্য; চলমান ইনফারেন্স অপরিবর্তিত",
   "smartInput.settingScopeResponses": "পরবর্তী উত্তরের ডিফল্ট গৃহীত; চলমান ইনফারেন্স অপরিবর্তিত",
   "smartInput.settingPermissionAfterPlan": "পরিকল্পনা মোড ছাড়ার পর ব্যবহৃত হবে; পরিকল্পনা মোড সক্রিয় থাকবে",
+  "smartInput.richEditing": "সম্পাদনা",
+  "smartInput.richClipboardHint": "ক্লিপবোর্ড ব্যবহার করা যাচ্ছে না। Ctrl/Cmd+C, X বা V ব্যবহার করুন, অথবা Shift চেপে ব্রাউজার মেনু খুলুন।",
   "smartInput.richFormatting": "বিন্যাস",
   "smartInput.richBold": "গাঢ়",
   "smartInput.richItalic": "তির্যক",

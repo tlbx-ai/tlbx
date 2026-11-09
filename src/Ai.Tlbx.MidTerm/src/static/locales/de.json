@@ -1641,6 +1641,8 @@
   "smartInput.settingScopeCaptures": "Für nachfolgende Captures; laufende Inferenz unverändert",
   "smartInput.settingScopeResponses": "Angenommene Defaults ab nächster Antwort; laufende Inferenz unverändert",
   "smartInput.settingPermissionAfterPlan": "Gilt nach Verlassen von Plan; Plan bleibt aktiv",
+  "smartInput.richEditing": "Bearbeiten",
+  "smartInput.richClipboardHint": "Die Zwischenablage ist hier nicht verfügbar. Verwende Strg/Cmd+C, X oder V oder öffne das Browsermenü mit gedrückter Umschalttaste.",
   "smartInput.richFormatting": "Formatierung",
   "smartInput.richBold": "Fett",
   "smartInput.richItalic": "Kursiv",
