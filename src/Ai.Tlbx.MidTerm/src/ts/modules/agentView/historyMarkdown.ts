@@ -1,7 +1,7 @@
 import { renderMarkdownFragment } from '../../utils/markdown';
 import { buildAssistantEnrichedHtml } from './assistantEnrichment';
 import { usesMarkdownPresentation } from './historyContent';
-import { getUserHistoryReadingBody } from './userHistoryReading';
+import { getHistoryImagePreviewToken, getUserHistoryReadingBody } from './userHistoryReading';
 import type { AppServerControlHistoryEntry, HistoryMarkdownCacheEntry } from './types';
 
 function renderHistoryMarkdown(
@@ -33,9 +33,7 @@ export function getCachedHistoryMarkdown(
       ].join(':'),
     )
     .join('|');
-  const imagePreviewToken = JSON.stringify(
-    (entry.imagePreviews ?? []).map((preview) => [preview.displayPath, preview.resolvedPath]),
-  );
+  const imagePreviewToken = getHistoryImagePreviewToken(entry);
   const existing = cache?.get(entry.id);
   if (
     existing &&

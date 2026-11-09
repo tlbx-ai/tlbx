@@ -8,6 +8,12 @@ const attachmentBlocks = new MarkdownIt('zero', { html: false }).enable([
   'blockquote',
 ]);
 
+export function getHistoryImagePreviewToken(entry: AppServerControlHistoryEntry): string {
+  return JSON.stringify(
+    (entry.imagePreviews ?? []).map((preview) => [preview.displayPath, preview.resolvedPath]),
+  );
+}
+
 function isRepresentedImageTail(
   lines: readonly string[],
   representedPaths: ReadonlySet<string>,

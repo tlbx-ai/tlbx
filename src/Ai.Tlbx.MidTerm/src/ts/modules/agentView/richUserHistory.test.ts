@@ -9,6 +9,7 @@ import {
 import { prepareSmartInputOutboundPrompt } from '../smartInput/smartInputOutboundReferences';
 import { resolveHistoryBodyPresentation } from './historyContent';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
+import { getHistoryImagePreviewToken } from './userHistoryReading';
 import { buildAssistantEnrichedHtml } from './assistantEnrichment';
 import type { AppServerControlHistoryEntry, HistoryMarkdownCacheEntry } from './types';
 
@@ -594,4 +595,21 @@ describe('restored image attachment transport in reading history', () => {
     expect(getCachedHistoryMarkdown(cache, message, false).html).toBe('Bild prüfen.');
     expect(message.body).toContain(footer);
   });
+});
+
+it('updates the row token and reading body when only a preview display alias changes', () => {
+  const raw = 'Bild prüfen.\n\nAttached resource:\n- [image] Pen_19.png';
+  const resolvedPath = 'C:\\qa\\Pen_19.png';
+  const before = {
+    ...entry('user', raw),
+    imagePreviews: [{ displayPath: 'Pen_19.png', resolvedPath }],
+  };
+  const after = {
+    ...entry('user', raw),
+    imagePreviews: [{ displayPath: 'anderer-name.png', resolvedPath }],
+  };
+  const cache = new Map<string, HistoryMarkdownCacheEntry>();
+  expect(getHistoryImagePreviewToken(after)).not.toBe(getHistoryImagePreviewToken(before));
+  expect(getCachedHistoryMarkdown(cache, before).html).toBe('Bild prüfen.');
+  expect(getCachedHistoryMarkdown(cache, after).html).toContain('Attached resource:');
 });
