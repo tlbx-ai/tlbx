@@ -592,7 +592,12 @@ function refreshPreviewBridgeVisibility(frame: HTMLIFrameElement, visible: boole
   const postRefresh = (): void => {
     try {
       frame.contentWindow?.postMessage(
-        { type: 'mt-refresh-browser-state', force: true, visible },
+        {
+          type: 'mt-refresh-browser-state',
+          force: true,
+          visible,
+          context: frame.name ? (JSON.parse(frame.name) as unknown) : null,
+        },
         '*',
       );
     } catch {
