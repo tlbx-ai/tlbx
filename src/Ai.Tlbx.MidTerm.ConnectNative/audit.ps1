@@ -13,7 +13,7 @@ $tool = Join-Path $toolRoot $(if ($IsWindows) { 'grype.exe' } else { 'grype' })
 $archive = Join-Path $security "grype_$($pin.grype.version)_$platform"
 New-Item -ItemType Directory -Force -Path $security, $toolRoot | Out-Null
 if (-not (Test-Path $archive)) {
-    Invoke-WebRequest "https://github.com/anchore/grype/releases/download/v$($pin.grype.version)/grype_$($pin.grype.version)_$platform" -OutFile $archive
+    Invoke-WebRequest "https://github.com/anchore/grype/releases/download/v$($pin.grype.version)/grype_$($pin.grype.version)_$($platform)?download=1" -OutFile $archive -MaximumRetryCount 3 -RetryIntervalSec 5 -TimeoutSec 120
 }
 if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $pin.grype.archives.$platform) {
     throw 'Pinned Grype archive integrity check failed.'
