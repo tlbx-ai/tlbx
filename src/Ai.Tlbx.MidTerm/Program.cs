@@ -341,6 +341,7 @@ public class Program
 
         sessionManager.OnSessionClosed += sessionId =>
         {
+            controlPlaneService.ReleaseSession(sessionId);
             sessionCloseCleanup.ClearSessionState(sessionId);
             shareGrantService.RevokeBySession(sessionId);
             sessionTelemetry.ClearSession(sessionId);
@@ -523,6 +524,7 @@ public class Program
                 // MCP binding validation calls this server's HTTP endpoint. Do
                 // not wait for it before Kestrel has begun accepting requests.
                 await appServerControlRuntime.DiscoverExistingSessionsAsync(sessionManager, shutdownService.Token);
+                controlPlaneService.ReleaseMissingSessions(sessionId => sessionManager.GetSession(sessionId) is not null);
                 await sessionGitMetadata.ReconcileAllAsync(ct: shutdownService.Token);
             }
             catch (OperationCanceledException) when (shutdownService.Token.IsCancellationRequested) { }

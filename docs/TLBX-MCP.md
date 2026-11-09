@@ -101,6 +101,19 @@ session IDs cannot establish identity. See the official
 
 ## Tools and outputs under implementation
 
+When checkout work is complete and pushed, agents should offer the user release
+of the working copy. After acceptance, mark completed work `done` and clear its
+assignment with `work_update(sessionId: "")`, clear the checkout's published
+session status, and remove unneeded repository watches. A watch is not an
+exclusive checkout lock. Do not release assignments for unrelated ongoing work.
+
+Closing a session automatically clears its published status and releases its
+unfinished work assignments. Active work returns to `open`; waiting/blocked
+tasks retain their state, and completed work and checkpoints retain their
+historical attribution. No files, branches or commits are removed. After host
+recovery, startup also releases assignments whose owning session no longer
+exists while preserving live sessions across web-only restarts.
+
 The catalog covers session/terminal operations, queues, control-plane work and
 dispatch, structured agents, input history, repository watches, boards, updates
 and browser automation. Fixed API tools invoke the existing registered C# route
