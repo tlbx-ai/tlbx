@@ -52,7 +52,10 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           if(/^\/webpreview\/[^/]+\/_access\/[^/]+\/[^/]+$/.test(mtInjectionRoute)&&mtRoutePosition(mtInjectionRoute)<0)return;
           if(mtHasInnerAdapter())return;
-          if(window.__mtProxy)return;window.__mtProxy=1;
+          // An older outer adapter may already have set its global singleton.
+          // Only this registered attachment may establish its own scoped adapter.
+          if(window.__mtProxy&&(!mtOwnNativeAttachment()||window.__mtOwnedProxyRoute===mtInjectionRoute))return;
+          window.__mtProxy=1;window.__mtOwnedProxyRoute=mtInjectionRoute;
           // Save the real parent for navigation and cookie bridge notifications.
           var _realParent=window.parent;
           var mtNestedPreview=new URLSearchParams(location.search).get("__mtSubframe")==="1";

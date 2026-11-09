@@ -23,6 +23,16 @@ public sealed class WebPreviewNestedBridgeProtocolTests
         await RunAsync(html, identity, connected, nested: true);
     }
 
+    [Theory]
+    [InlineData("child", true)]
+    [InlineData("wrong-token", false)]
+    [InlineData("", false)]
+    public async Task LegacyOuterSingletonDoesNotSuppressAnOwnedChild(string identity, bool connected)
+    {
+        var html = Document(Child, "https://child.example", "<html><head></head></html>");
+        await RunAsync(html, identity, connected, nested: true, legacyProxy: true);
+    }
+
     [Fact]
     public async Task IndependentChildBootstrapOutranksDuplicateSharedParentCookies()
     {
@@ -65,7 +75,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             + WebPreviewProxyMiddleware.GetUrlRewriteScript(route, upstreamHtml: html));
     }
 
-    private static async Task RunAsync(string html, string identity, bool connected, bool nested, bool middle = false, string initialCookies = "")
+    private static async Task RunAsync(string html, string identity, bool connected, bool nested, bool middle = false, string initialCookies = "", bool legacyProxy = false)
     {
         // Execute every complete, server-generated script in parser order. No future
         // script nodes are visible to the prepended adapter in this fixture.
@@ -73,7 +83,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             + ";const identity=" + JsonSerializer.Serialize(identity)
             + ";const connected=" + JsonSerializer.Serialize(connected)
             + ";const nested=" + JsonSerializer.Serialize(nested)
-            + ";const middle=" + JsonSerializer.Serialize(middle) + ";const initialCookies=" + JsonSerializer.Serialize(initialCookies) + ";";
+            + ";const legacyProxy=" + JsonSerializer.Serialize(legacyProxy) + ";const middle=" + JsonSerializer.Serialize(middle) + ";const initialCookies=" + JsonSerializer.Serialize(initialCookies) + ";";
         var script = setup + """
             const assert=require('node:assert/strict'),vm=require('node:vm');
             const parent='/webpreview/parent-route/_access/parent-id/parent-token';
@@ -98,7 +108,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
               MutationObserver:class{observe(){}},navigator:{},fetch:()=>{},open:()=>{},
               requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},setTimeout:()=>1,clearTimeout:()=>{},queueMicrotask:()=>{},
               addEventListener:()=>{},console:{log(){},info(){},warn(){},error(){},debug(){}},
-              name:identity?JSON.stringify(saved):'',parent:{__mtProxy:true,postMessage:message=>messages.push(message)},
+              __mtProxy:legacyProxy,name:identity?JSON.stringify(saved):'',parent:{__mtProxy:true,postMessage:message=>messages.push(message)},
               history:{state:null,pushState(){},replaceState(_s,_t,url){location.href=new URL(url,location).href;}}};
             context.window=context;context.self=context;context.top=context.parent;
             vm.createContext(context);
@@ -120,7 +130,8 @@ public sealed class WebPreviewNestedBridgeProtocolTests
             }
             // Ordinary site iframe URLs remain explicitly suppressed, including
             // ones with their own /webpreview-looking application path.
-            for(const path of ['/ordinary','/webpreview/application/path']){
+            // The legacy singleton fixture models its already-initialized flag, not its DOM wrappers.
+            if(!legacyProxy||connected)for(const path of ['/ordinary','/webpreview/application/path']){
               const frame=new Frame();frame.src=path;
               assert.equal(new URL(frame.src).searchParams.get('__mtSubframe'),'1');
             }
