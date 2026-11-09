@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { showAgentTechnicalDetails } from './historyVisibility';
 import { resolveUnderfilledHistoryWindowRequest } from './historyWindowSizing';
 import {
   alignHistoryJumpTarget,
@@ -1613,6 +1614,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.session.agentName),
       entry.title,
       entry.body,
+      entry.kind === 'user' && entry.imagePreviews?.length
+        ? String(showAgentTechnicalDetails())
+        : '',
       entry.meta,
       entry.pending ? '1' : '0',
       entry.live ? '1' : '0',
