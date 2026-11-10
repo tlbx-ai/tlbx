@@ -665,7 +665,7 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         var labels = hostPort.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        if (labels.Length < 2 || labels.Any(static label => label.StartsWith('-') || label.EndsWith('-')))
+        if (labels.Length < 2 || labels.Any(static label => label.StartsWith('-', StringComparison.Ordinal) || label.EndsWith('-', StringComparison.Ordinal)))
         {
             return false;
         }

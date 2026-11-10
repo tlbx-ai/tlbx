@@ -311,12 +311,12 @@ internal sealed class ConnectTurnProxy : IAsyncDisposable
         }
         TracePhase("authenticated");
         var authority = request[1];
-        var separator = authority.LastIndexOf(':');
+        var separator = authority.LastIndexOf(':', StringComparison.Ordinal);
         if (separator < 1 || !int.TryParse(authority.AsSpan(separator + 1), NumberStyles.None,
                 CultureInfo.InvariantCulture, out var port) || port is < 1 or > 65535)
             throw new ProxyRequestException(403);
         var host = authority[..separator];
-        var bracketed = host.StartsWith('[') && host.EndsWith(']');
+        var bracketed = host.StartsWith('[', StringComparison.Ordinal) && host.EndsWith(']', StringComparison.Ordinal);
         if (bracketed) host = host[1..^1];
         // libnice emits bare IPv6 CONNECT authorities. The final colon still
         // separates the port; only an exact configured numeric endpoint passes.

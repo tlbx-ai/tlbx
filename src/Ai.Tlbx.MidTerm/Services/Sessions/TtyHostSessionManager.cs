@@ -1511,7 +1511,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         var firstChar = candidate[0];
         if ((firstChar == '"' || firstChar == '\'') && candidate.Length > 1)
         {
-            var closingQuote = candidate.IndexOf(firstChar, 1);
+            var closingQuote = candidate.IndexOf(firstChar, 1, StringComparison.Ordinal);
             if (closingQuote > 1)
             {
                 candidate = candidate[1..closingQuote];
@@ -1531,7 +1531,7 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         if (!_sessionCache.TryGetValue(sessionId, out var info)) return false;
 
         if (!payload.StartsWith("file://", StringComparison.OrdinalIgnoreCase)) return false;
-        var pathStart = payload.IndexOf('/', 7);
+        var pathStart = payload.IndexOf('/', 7, StringComparison.Ordinal);
         if (pathStart < 0) return false;
 
         var path = Uri.UnescapeDataString(payload[pathStart..]);

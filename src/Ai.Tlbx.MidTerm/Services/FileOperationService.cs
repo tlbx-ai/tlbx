@@ -15,7 +15,7 @@ public sealed class FileOperationService(string storageDirectory)
     private readonly string _storage = Path.GetFullPath(Path.Combine(storageDirectory, "file-recovery"));
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static readonly StringComparer Paths = OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal;
-    private static readonly HashSet<string> Actions = ["createFile", "createFolder", "rename", "move", "copy", "duplicate", "delete"];
+    private static readonly HashSet<string> Actions = new(StringComparer.Ordinal) { "createFile", "createFolder", "rename", "move", "copy", "duplicate", "delete" };
     private readonly Dictionary<string, string?> _gitStageDirectories = new(Paths);
     private readonly Dictionary<string, string> _gitFallbackDirectories = new(Paths);
     internal void GrantStorageOwner(string sid) => FileRecoveryStorage.EnsurePrivate(_storage, sid);
@@ -517,7 +517,7 @@ public sealed class FileOperationService(string storageDirectory)
         if (OperatingSystem.IsWindows())
         {
             var stem = name.Split('.')[0].ToUpperInvariant();
-            if (name.EndsWith('.') || name.EndsWith(' ') || stem is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$" ||
+            if (name.EndsWith('.', StringComparison.Ordinal) || name.EndsWith(' ', StringComparison.Ordinal) || stem is "CON" or "PRN" or "AUX" or "NUL" or "CONIN$" or "CONOUT$" ||
                 (stem.Length == 4 && (stem.StartsWith("COM", StringComparison.Ordinal) || stem.StartsWith("LPT", StringComparison.Ordinal)) && char.IsDigit(stem[3])))
                 throw Failure(400, "invalid_name", "This name is reserved by Windows.");
         }

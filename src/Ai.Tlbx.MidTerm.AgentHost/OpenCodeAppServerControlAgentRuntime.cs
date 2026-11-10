@@ -241,7 +241,7 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime : IAppServerC
         }
         var text = request.Text ?? string.Empty;
         var slashEnd = text.IndexOfAny([' ', '\r', '\n']);
-        var slash = text.StartsWith('/') ? text[1..(slashEnd < 0 ? text.Length : slashEnd)] : null;
+        var slash = text.StartsWith('/', StringComparison.Ordinal) ? text[1..(slashEnd < 0 ? text.Length : slashEnd)] : null;
         var nativeCommand = slash is not null && slash != "compact" && _availableCommands.Any(c => c.Name == slash);
         Action<Utf8JsonWriter> body = w =>
         {

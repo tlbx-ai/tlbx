@@ -743,8 +743,8 @@ public static class FileEndpoints
         else
         {
             var separatorIndex = Math.Max(
-                trimmed.LastIndexOf('/'),
-                trimmed.LastIndexOf(':'));
+                trimmed.LastIndexOf('/', StringComparison.Ordinal),
+                trimmed.LastIndexOf(':', StringComparison.Ordinal));
             candidate = separatorIndex >= 0 ? trimmed[(separatorIndex + 1)..] : trimmed;
         }
 

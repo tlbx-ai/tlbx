@@ -48,7 +48,7 @@ internal static partial class SessionProcessContext
             if (OperatingSystem.IsLinux())
             {
                 var stat = File.ReadAllText(string.Create(CultureInfo.InvariantCulture, $"/proc/{pid}/stat"));
-                var fields = stat[(stat.LastIndexOf(')') + 2)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var fields = stat[(stat.LastIndexOf(')', StringComparison.Ordinal) + 2)..].Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 parent = int.Parse(fields[1], CultureInfo.InvariantCulture);
             }
             else if (OperatingSystem.IsMacOS())

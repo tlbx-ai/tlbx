@@ -240,7 +240,7 @@ internal static class GitPatchParser
 
     private static string NormalizePath(string value, bool stripDiffPrefix = false)
     {
-        var trimmed = value.EndsWith('\t') ? value[..^1] : value;
+        var trimmed = value.EndsWith('\t', StringComparison.Ordinal) ? value[..^1] : value;
         if (string.Equals(trimmed, "/dev/null", StringComparison.Ordinal))
         {
             return string.Empty;
@@ -266,7 +266,7 @@ internal static class GitPatchParser
         {
             if (value[i] != '\\')
             {
-                var end = value.IndexOf('\\', i);
+                var end = value.IndexOf('\\', i, StringComparison.Ordinal);
                 if (end < 0) end = value.Length;
                 bytes.AddRange(System.Text.Encoding.UTF8.GetBytes(value[i..end]));
                 i = end;

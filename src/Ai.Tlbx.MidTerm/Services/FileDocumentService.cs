@@ -58,7 +58,7 @@ public sealed class FileDocumentService
         var more = start + bytes.Length < size;
         var content = Decode(bytes, codec.Encoding, more);
         // Keep a CRLF pair together, just as an incomplete multibyte code point.
-        if (more && content.EndsWith('\r')) content = content[..^1];
+        if (more && content.EndsWith('\r', StringComparison.Ordinal)) content = content[..^1];
         var next = start + codec.Encoding.GetByteCount(content);
         var truncated = offset > 0 || next < size;
         var version = !truncated ? Version(resolved, codec.Encoding.GetPreamble().Concat(bytes).ToArray()) : null;

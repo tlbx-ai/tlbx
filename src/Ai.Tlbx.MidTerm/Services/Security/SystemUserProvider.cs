@@ -130,7 +130,7 @@ public static class SystemUserProvider
         }
 
         var normalized = normalizedAccountName;
-        var slashIndex = normalized.LastIndexOf('\\');
+        var slashIndex = normalized.LastIndexOf('\\', StringComparison.Ordinal);
         if (slashIndex >= 0 && slashIndex < normalized.Length - 1)
         {
             normalized = normalized[(slashIndex + 1)..];

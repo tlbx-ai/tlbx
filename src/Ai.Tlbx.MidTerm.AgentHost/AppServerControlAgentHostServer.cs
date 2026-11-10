@@ -895,7 +895,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 {
                     while (state.Outbound.Reader.TryRead(out var line))
                     {
-                        await state.Writer.WriteLineAsync(line).ConfigureAwait(false);
+                        await state.Writer.WriteLineAsync(line.AsMemory(), state.Token).ConfigureAwait(false);
                     }
                 }
             }

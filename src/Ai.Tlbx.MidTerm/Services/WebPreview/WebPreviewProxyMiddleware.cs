@@ -1863,8 +1863,8 @@ public sealed partial class WebPreviewProxyMiddleware
             return false;
         }
 
-        var normalized = value.StartsWith('/') ? value : "/" + value;
-        var nextSlash = normalized.IndexOf('/', 1);
+        var normalized = value.StartsWith('/', StringComparison.Ordinal) ? value : "/" + value;
+        var nextSlash = normalized.IndexOf('/', 1, StringComparison.Ordinal);
         if (nextSlash < 0)
         {
             routeKey = normalized[1..];
@@ -1974,7 +1974,7 @@ public sealed partial class WebPreviewProxyMiddleware
         if (useRootFirst)
         {
             primaryPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
-            if (!primaryPath.StartsWith('/'))
+            if (!primaryPath.StartsWith('/', StringComparison.Ordinal))
                 primaryPath = "/" + primaryPath;
         }
 
@@ -2018,7 +2018,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var fallbackPath = useRootFirst
                 ? BuildUpstreamPath(targetUri, path)
-                : (string.IsNullOrEmpty(path) || path == "/" ? "/" : (path.StartsWith('/') ? path : "/" + path));
+                : (string.IsNullOrEmpty(path) || path == "/" ? "/" : (path.StartsWith('/', StringComparison.Ordinal) ? path : "/" + path));
 
             if (fallbackPath != primaryPath)
             {
@@ -2118,7 +2118,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var prefix = m.Groups[1].Value;
             var url = m.Groups[2].Value;
-            if (url.StartsWith('/') && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+            if (url.StartsWith('/', StringComparison.Ordinal) && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
                 return prefix + AppendReloadTokenToProxyUrl(routePrefix + url, reloadToken);
             return m.Value;
         });
@@ -2205,7 +2205,7 @@ public sealed partial class WebPreviewProxyMiddleware
         DocumentUrlAttributeRegex().Replace(html, match =>
         {
             var value = WebUtility.HtmlDecode(match.Groups[2].Value);
-            if (value.StartsWith('#') || value.StartsWith(routePrefix + "/", StringComparison.Ordinal)
+            if (value.StartsWith('#', StringComparison.Ordinal) || value.StartsWith(routePrefix + "/", StringComparison.Ordinal)
                 || !Uri.TryCreate(documentUri, value, out var url) || url.Scheme is not ("http" or "https"))
                 return match.Value;
             var proxied = routePrefix + "/_ext?u=" + Uri.EscapeDataString(url.ToString());
@@ -2218,7 +2218,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return routePrefix + "/";
 
         var path = finalUri.AbsolutePath;
-        var lastSlash = path.LastIndexOf('/');
+        var lastSlash = path.LastIndexOf('/', StringComparison.Ordinal);
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return routePrefix.TrimEnd('/') + "/" + directory.TrimStart('/');
     }
@@ -2262,7 +2262,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if (basePath.Length == 0 || basePath == "/")
                 return routePrefix + "/";
 
-            return routePrefix + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+            return routePrefix + (basePath.StartsWith('/', StringComparison.Ordinal) ? basePath : "/" + basePath) + "/";
         }
 
         return ComputeBaseHref(routePrefix, finalUrl);
@@ -2276,7 +2276,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         var decodedPath = Uri.UnescapeDataString(requestPath);
-        if (decodedPath.StartsWith('/')
+        if (decodedPath.StartsWith('/', StringComparison.Ordinal)
             && decodedPath.Length >= 4
             && char.IsLetter(decodedPath[1])
             && decodedPath[2] == ':'
@@ -2945,7 +2945,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var prefix = m.Groups[1].Value;
             var url = m.Groups[2].Value;
-            if (url.StartsWith('/') && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+            if (url.StartsWith('/', StringComparison.Ordinal) && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
                 return prefix + AppendReloadTokenToProxyUrl(routePrefix + url, reloadToken);
             return m.Value;
         });
@@ -3179,7 +3179,7 @@ public sealed partial class WebPreviewProxyMiddleware
         if (hasSubpath && ShouldTryRootFirst(routeKey, path, targetBase))
         {
             wsPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
-            if (!wsPath.StartsWith('/'))
+            if (!wsPath.StartsWith('/', StringComparison.Ordinal))
                 wsPath = "/" + wsPath;
         }
         else
@@ -3383,7 +3383,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return string.IsNullOrEmpty(target.AbsolutePath) ? "/" : target.AbsolutePath;
         }
 
-        var normalizedPath = path.StartsWith('/') ? path : "/" + path;
+        var normalizedPath = path.StartsWith('/', StringComparison.Ordinal) ? path : "/" + path;
 
         // Relative URLs have already resolved against the injected document base.
         // A rooted path identifies the upstream origin, not a directory under the target.
@@ -3506,7 +3506,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private static bool PathAlreadyUnderTarget(string path, string targetBase)
     {
         var normalized = string.IsNullOrEmpty(path) ? "/" : path;
-        if (!normalized.StartsWith('/'))
+        if (!normalized.StartsWith('/', StringComparison.Ordinal))
             normalized = "/" + normalized;
         return normalized.StartsWith(targetBase + "/", StringComparison.OrdinalIgnoreCase)
             || normalized.Equals(targetBase, StringComparison.OrdinalIgnoreCase);
@@ -3560,14 +3560,14 @@ public sealed partial class WebPreviewProxyMiddleware
     private static string? GetPathPrefix(string path)
     {
         var normalized = string.IsNullOrEmpty(path) ? "/" : path;
-        if (!normalized.StartsWith('/'))
+        if (!normalized.StartsWith('/', StringComparison.Ordinal))
             normalized = "/" + normalized;
         var queryIdx = normalized.IndexOf('?', StringComparison.Ordinal);
         if (queryIdx >= 0)
             normalized = normalized[..queryIdx];
         if (normalized == "/")
             return null;
-        var secondSlash = normalized.IndexOf('/', 1);
+        var secondSlash = normalized.IndexOf('/', 1, StringComparison.Ordinal);
         return secondSlash > 0 ? normalized[..secondSlash] + "/" : normalized + "/";
     }
 

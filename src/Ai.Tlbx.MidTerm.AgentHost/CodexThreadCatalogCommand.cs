@@ -22,7 +22,7 @@ internal static class CodexThreadCatalogCommand
                 binary, cwd ?? Environment.CurrentDirectory, null);
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(8));
             var result = await QueryAsync(start, cwd, timeout.Token).ConfigureAwait(false);
-            await Console.Out.WriteLineAsync(result).ConfigureAwait(false);
+            await Console.Out.WriteLineAsync(result.AsMemory(), timeout.Token).ConfigureAwait(false);
             return 0;
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or InvalidOperationException or

@@ -24,7 +24,7 @@ public sealed partial class ProviderResumeCatalogService
                 line.StartsWith("~~~", StringComparison.Ordinal) ||
                 TableDividerPattern().IsMatch(line)) continue;
 
-            var tableRow = line.StartsWith('|') && line.EndsWith('|');
+            var tableRow = line.StartsWith('|', StringComparison.Ordinal) && line.EndsWith('|', StringComparison.Ordinal);
             line = ImageMarkerPattern().Replace(line, " ");
             line = MarkdownLinkPattern().Replace(line, "$1");
             line = MarkdownLinePrefixPattern().Replace(line, string.Empty).Trim();

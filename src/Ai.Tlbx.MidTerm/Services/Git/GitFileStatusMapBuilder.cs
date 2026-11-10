@@ -32,12 +32,12 @@ internal static class GitFileStatusMapBuilder
             var badge = StatusToBadge(entry.Status);
             SetIfStronger(map, relativePath, badge);
 
-            var slash = relativePath.LastIndexOf('/');
+            var slash = relativePath.LastIndexOf('/', StringComparison.Ordinal);
             while (slash > 0)
             {
                 var directory = relativePath[..slash];
                 SetIfStronger(map, directory, badge);
-                slash = directory.LastIndexOf('/');
+                slash = directory.LastIndexOf('/', StringComparison.Ordinal);
             }
         }
     }

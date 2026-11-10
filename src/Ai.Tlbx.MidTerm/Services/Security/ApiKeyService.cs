@@ -257,7 +257,7 @@ public sealed class ApiKeyService
             return false;
         }
 
-        var separatorIndex = trimmed.IndexOf('_', TokenPrefix.Length + 1);
+        var separatorIndex = trimmed.IndexOf('_', TokenPrefix.Length + 1, StringComparison.Ordinal);
         if (separatorIndex <= TokenPrefix.Length + 1 || separatorIndex >= trimmed.Length - 1)
         {
             return false;
