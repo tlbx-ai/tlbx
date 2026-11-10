@@ -2066,17 +2066,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (upstreamResponse is null)
         {
-            context.Response.StatusCode = errorCode;
-            if (errorCode == 502)
-            {
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Failed to connect to upstream server.", context.RequestAborted);
-            }
-            else if (errorCode == 504)
-            {
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Upstream server timed out.", context.RequestAborted);
-            }
+            await PreviewProxyFailure.WriteAsync(context, errorCode);
             return;
         }
 
@@ -2450,7 +2440,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (upstreamResponse is null)
         {
-            context.Response.StatusCode = errorCode;
+            await PreviewProxyFailure.WriteAsync(context, errorCode);
             return;
         }
 
@@ -2661,6 +2651,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             catch (HttpRequestException ex)
             {
+                context.Items[typeof(PreviewProxyFailure)] = PreviewProxyFailure.Describe(ex, new Uri(currentUrl));
                 sw.Stop();
                 LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 502, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
@@ -2668,6 +2659,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             catch (TaskCanceledException ex)
             {
+                context.Items[typeof(PreviewProxyFailure)] = PreviewProxyFailure.Describe(ex, new Uri(currentUrl));
                 sw.Stop();
                 LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();

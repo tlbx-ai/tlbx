@@ -1,4 +1,4 @@
-import { SocketReadiness, RESUME_PROBE_TIMEOUT_MS } from './socketReadiness';
+import { SocketReadiness, resumeProbeTimeoutMs } from './socketReadiness';
 import { recordTextActivity } from '../sidebar/heatIndicator';
 /**
  * State Channel Module
@@ -1195,7 +1195,7 @@ export async function probeStateWebSocket(): Promise<boolean> {
         activeSessionId: $activeSessionId.get(),
         activeSurface: getCurrentActiveSurface(),
       },
-      RESUME_PROBE_TIMEOUT_MS,
+      resumeProbeTimeoutMs(),
     );
     return true;
   } catch {

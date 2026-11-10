@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { SOCKET_PROGRESS_TIMEOUT_MS, SocketReadiness } from './socketReadiness';
+import {
+  SOCKET_PROGRESS_TIMEOUT_MS,
+  resumeProbeTimeoutMs,
+  SocketReadiness,
+} from './socketReadiness';
 
 describe('connection readiness deadline', () => {
   let page: EventTarget & { visibilityState: string };
@@ -95,4 +99,28 @@ describe('connection readiness deadline', () => {
     vi.advanceTimersByTime(1);
     expect(reconnect).not.toHaveBeenCalled();
   });
+});
+
+it('allows Link handshake and resume latency but still retires an unresponsive socket', () => {
+  vi.useFakeTimers();
+  vi.stubGlobal('window', { __tlbxConnectPreview: {} });
+  vi.stubGlobal('document', Object.assign(new EventTarget(), { visibilityState: 'visible' }));
+  try {
+    expect(resumeProbeTimeoutMs()).toBe(15000);
+    const reconnect = vi.fn();
+    new SocketReadiness().watch(
+      new EventTarget() as WebSocket,
+      () => true,
+      () => false,
+      reconnect,
+      () => 6000,
+    );
+    vi.advanceTimersByTime(14999);
+    expect(reconnect).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(reconnect).toHaveBeenCalledOnce();
+  } finally {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  }
 });

@@ -6,6 +6,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Services.Hosting;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Services.Browser;
 using Ai.Tlbx.MidTerm.Startup;
 
@@ -122,7 +123,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
                     {
                         Type = "http-result", Id = message.Id, Status = ex is ConnectLocalAccessException ? 403 : 502,
                         Headers = new(StringComparer.OrdinalIgnoreCase) { ["Content-Type"] = "text/plain; charset=utf-8" },
-                        Body = Convert.ToBase64String(Encoding.UTF8.GetBytes("The local tlbx request could not be completed."))
+                        Body = Convert.ToBase64String(Encoding.UTF8.GetBytes(PreviewProxyFailure.Describe(ex, message.Surface == "preview" && _previewOrigin is not null ? _previewOrigin : _origin, "Link tunnel to local tlbx listener")))
                     }
                     : new ConnectEnvelope { Type = "ws-close", Id = message.Id, Code = ex is ConnectLocalAccessException ? 1008 : 1011, Reason = "Local connection failed." },
                     _lifetime.Token);

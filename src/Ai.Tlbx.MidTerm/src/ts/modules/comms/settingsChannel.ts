@@ -17,7 +17,7 @@ import {
 } from '../../stores';
 import { applyReceivedSettings } from '../settings/persistence';
 import { handleUpdateInfo } from '../updating/checker';
-import { RESUME_PROBE_TIMEOUT_MS, SocketReadiness } from './socketReadiness';
+import { resumeProbeTimeoutMs, SocketReadiness } from './socketReadiness';
 
 const log = createLogger('settings-ws');
 const settingsReconnect = new ReconnectController();
@@ -118,7 +118,7 @@ export function recoverSettingsAfterBrowserResume(forceReconnect: boolean): void
   const timeout = setTimeout(() => {
     finish();
     if (settingsWs === socket && document.visibilityState !== 'hidden') connectSettingsWebSocket();
-  }, RESUME_PROBE_TIMEOUT_MS);
+  }, resumeProbeTimeoutMs());
   socket.addEventListener('message', received);
   socket.addEventListener('close', finish, { once: true });
   try {
