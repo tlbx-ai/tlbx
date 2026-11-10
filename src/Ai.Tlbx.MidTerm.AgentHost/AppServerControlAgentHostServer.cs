@@ -314,9 +314,29 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             _historySessions.SetWorkingDirectory(command.SessionId, command.AttachRuntime.WorkingDirectory);
         }
 
+        var recoveryWindow = command.Type == "runtime.recover" ? _history.GetSnapshotWindow(command.SessionId, 0, 1) : null;
         var runtime = await GetRuntimeAsync(command).ConfigureAwait(false);
-        var outcome = await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false);
+        HostCommandOutcome outcome;
+        try { outcome = await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false); }
+        catch
+        {
+            if (recoveryWindow is not null && _history.GetSnapshotWindow(command.SessionId, 0, 1)?.Thread.Goal?.Detail == "recoveryFailed")
+                CancelRecoveredRequests(command, recoveryWindow, runtime.Provider);
+            throw;
+        }
+        if (recoveryWindow is not null && outcome.Result.Accepted?.Goal?.Status == "pending")
+            CancelRecoveredRequests(command, recoveryWindow, runtime.Provider);
         return MaybeAppendSubmittedUserMessage(command, outcome, runtime.Provider);
+    }
+
+    private void CancelRecoveredRequests(AppServerControlHostCommandEnvelope command, AppServerControlHistoryWindowResponse window, string provider)
+    {
+        if (!string.Equals(window.Thread.ThreadId, command.SetGoal?.ExpectedThreadId, StringComparison.Ordinal)) return;
+        foreach (var request in window.Requests.Where(request => request.State == "open"))
+            StoreRuntimeEvent(new() { SessionId = command.SessionId, Provider = provider,
+                ThreadId = window.Thread.ThreadId, TurnId = request.TurnId, RequestId = request.RequestId,
+                EventId = Guid.NewGuid().ToString("N"), CreatedAt = DateTimeOffset.UtcNow, Type = "request.resolved",
+                RequestResolved = new() { RequestType = request.Kind, Decision = "cancel" } });
     }
 
     private AppServerControlHistoryWindowResponse? GetHistoryWindow(
@@ -431,9 +451,12 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "mcp.scope.prepare",
                     "turn.start",
                     "turn.steer",
+                    "runtime.configure",
                     "turn.interrupt",
                     "thread.compact",
                     "thread.goal.set",
+                    "thread.goal.get",
+                    "thread.goal.clear",
                     "request.resolve",
                     "user-input.resolve",
                     "history.window.get",
@@ -518,7 +541,11 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
         if (string.Equals(provider, "codex", StringComparison.Ordinal))
         {
-            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent);
+            _runtime = new CodexAppServerControlAgentRuntime(EmitRuntimeEvent, events =>
+            {
+                foreach (var value in events) _mcpScope.Observe(value);
+                _history.AppendInitialReplay(events);
+            });
             return _runtime;
         }
 
@@ -709,6 +736,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 FastMode = AppServerControlQuickSettings.NormalizeFastMode(appServerControlEvent.QuickSettingsUpdated.FastMode),
                 ModelOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.ModelOptions),
                 EffortOptions = AppServerControlQuickSettings.CloneOptions(appServerControlEvent.QuickSettingsUpdated.EffortOptions),
+                AcknowledgedFields = [.. appServerControlEvent.QuickSettingsUpdated.AcknowledgedFields],
                 ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(appServerControlEvent.QuickSettingsUpdated.ConfigOptions)
             },
             RequestOpened = appServerControlEvent.RequestOpened is null ? null : new AppServerControlProviderRequestOpenedPayload
@@ -735,6 +763,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 Message = appServerControlEvent.RuntimeMessage.Message,
                 Detail = appServerControlEvent.RuntimeMessage.Detail
             },
+            GoalUpdated = appServerControlEvent.GoalUpdated?.Clone(),
             RuntimeNoticeOnly = appServerControlEvent.RuntimeNoticeOnly is null ? null : new AppServerControlProviderRuntimeMessagePayload
             {
                 Message = appServerControlEvent.RuntimeNoticeOnly.Message,
@@ -866,7 +895,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 {
                     while (state.Outbound.Reader.TryRead(out var line))
                     {
-                        await state.Writer.WriteLineAsync(line).ConfigureAwait(false);
+                        await state.Writer.WriteLineAsync(line.AsMemory(), state.Token).ConfigureAwait(false);
                     }
                 }
             }

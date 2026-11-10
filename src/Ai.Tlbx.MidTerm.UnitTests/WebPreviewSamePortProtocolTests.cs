@@ -1,4 +1,6 @@
 using System.Net;
+using System.Net.WebSockets;
+using Ai.Tlbx.MidTerm.Services.Certificates;
 using System.Diagnostics.CodeAnalysis;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Security;
@@ -20,6 +22,32 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class WebPreviewSamePortProtocolTests
 {
+    [Theory]
+    [InlineData("https://localhost:2000/")]
+    [InlineData("https://127.0.0.1:2000/")]
+    [InlineData("https://[::1]:2000/?session=test")]
+    public void MainListenerCanPreviewItsOwnUi(string url)
+    {
+        var service = new WebPreviewService(2000, BrowserPreviewOriginService.Create(2000));
+        Assert.True(service.SetTarget("session", "self", url));
+        var preview = service.GetPreviewSession("session", "self");
+        Assert.NotNull(preview);
+        Assert.True(preview.Active);
+        Assert.Equal(new Uri(url).ToString(), preview.Url);
+    }
+
+    [Theory]
+    [InlineData("https://localhost:2000/webpreview/route/")]
+    [InlineData("https://localhost:2000/%77ebpreview/route/")]
+    [InlineData("https://127.0.0.1:2000/webpreview")]
+    [InlineData("https://[::1]:2000/WebPreview/route/_access/owner/token/")]
+    public void MainListenerRejectsRecursivePreviewRoutes(string url)
+    {
+        var service = new WebPreviewService(2000, BrowserPreviewOriginService.Create(2000));
+        Assert.False(service.SetTarget("session", "self", url));
+        Assert.Null(service.GetPreviewSession("session", "self"));
+    }
+
     [Fact]
     public void CapabilityPathKeepsRelativeResourcesScopedAndRejectsWrongOwnerRoute()
     {
@@ -195,6 +223,234 @@ public sealed class WebPreviewSamePortProtocolTests
             Assert.Equal("false", await preview.Content.ReadAsStringAsync(ct));
         }
         finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Fact]
+    [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "One client per isolated loopback authentication fixture.")]
+    public async Task FreshCapabilitySeedsOnlyValidatedNativeCookieForExactSelfListener()
+    {
+        if (!OperatingSystem.IsWindows()) Assert.Skip("This authentication fixture uses Windows settings/DPAPI.");
+        var ct = TestContext.Current.CancellationToken;
+        var directory = Path.Combine(Path.GetTempPath(), "tlbx-preview-bootstrap-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var settings = new SettingsService(directory);
+            var values = settings.Load();
+            values.PasswordHash = AuthService.HashPasswordStatic("fixture-local-password");
+            settings.Save(values);
+            var keys = new ApiKeyService(settings);
+            var apiKey = keys.CreateApiKey("fixture").Token;
+            var auth = new AuthService(settings, keys);
+            var token = auth.CreateSessionToken();
+            var registry = new BrowserPreviewRegistry();
+            using var mainCertificate = CertificateGenerator.GenerateSelfSigned(["localhost"], ["127.0.0.1"]);
+            var service = new WebPreviewService(2000, BrowserPreviewOriginService.Create(2000), Path.Combine(directory, "cookies"), () => mainCertificate);
+            var builder = WebApplication.CreateBuilder();
+            builder.Logging.ClearProviders();
+            builder.Services.AddSingleton(auth);
+            builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
+            await using var app = builder.Build();
+            AuthMiddleware.ConfigureAuthMiddleware(app, settings, auth, new ShareGrantService(settings), registry);
+            BrowserEndpoints.MapPreviewClientEndpoint(app, registry, new BrowserPreviewOwnerService(), BrowserPreviewOriginService.Create(2000), service);
+            await app.StartAsync(ct);
+            var address = Assert.Single(app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses);
+            using var handler = new HttpClientHandler { UseCookies = false };
+            using var http = new HttpClient(handler);
+            var scenarios = new (string Url, string? Cookie, bool Key, bool Seed)[]
+            {
+                ("https://localhost:2000/", token, false, true),
+                ("https://127.0.0.1:2000/", token, false, true),
+                ("https://[::1]:2000/", token, false, true),
+                ("https://localhost:2000/", null, true, false),
+                ("https://localhost:2000/", "invalid", true, false),
+                ("https://localhost:2000/", null, false, false),
+                ("https://localhost:2000/", "invalid", false, false),
+                ("https://external.example:2000/", token, false, false),
+                ("https://127.0.0.1.nip.io:2000/", token, false, false),
+                ("https://localhost:2001/", token, false, false),
+                ("http://localhost:2000/", token, false, false)
+            };
+            foreach (var (url, cookie, key, seed) in scenarios)
+            {
+                var name = Guid.NewGuid().ToString("N");
+                Assert.True(service.SetTarget("session", name, url));
+                var preview = service.GetPreviewSession("session", name)!;
+                using var request = new HttpRequestMessage(HttpMethod.Post, address + "/api/browser/preview-client");
+                request.Content = new StringContent("{\"sessionId\":\"session\",\"previewName\":\"" + name + "\"}", System.Text.Encoding.UTF8, "application/json");
+                if (cookie is not null) request.Headers.Add("Cookie", $"{AuthService.SessionCookieName}={cookie}");
+                if (key) request.Headers.Add("X-API-Key", apiKey);
+                using var response = await http.SendAsync(request, ct);
+                Assert.Equal(cookie == token || key ? HttpStatusCode.OK : HttpStatusCode.Unauthorized, response.StatusCode);
+                Assert.DoesNotContain(token, await response.Content.ReadAsStringAsync(ct), StringComparison.Ordinal);
+                var cookies = service.GetCookies("session", name).Cookies;
+                Assert.True(seed == cookies.Any(c => c.Name == AuthService.SessionCookieName), url + " seed=" + seed);
+                if (seed)
+                {
+                    var native = Assert.Single(cookies);
+                    Assert.True(native.HttpOnly);
+                    Assert.True(native.Secure);
+                    Assert.Equal(token, native.Value);
+                }
+                Assert.Empty(service.GetBrowserCookies(preview.RouteKey).Cookies);
+                if (seed && url == "https://localhost:2000/")
+                    Assert.True(service.SetCookieFromRaw(preview.RouteKey, "fixture=retained; Path=/; Secure"));
+                service.PersistCookies(preview.RouteKey);
+            }
+            var persistedFile = Assert.Single(Directory.EnumerateFiles(
+                Path.Combine(directory, "cookies"), "*", SearchOption.AllDirectories));
+            Assert.Equal(".txt", Path.GetExtension(persistedFile));
+            var persisted = await File.ReadAllTextAsync(persistedFile, ct);
+            Assert.Contains("fixture=retained;", persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain(token, persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain(AuthService.SessionCookieName, persisted, StringComparison.Ordinal);
+
+            using var scoped = new HttpRequestMessage(HttpMethod.Post, address + "/api/browser/preview-client");
+            scoped.Content = new StringContent("{\"sessionId\":\"session\"}", System.Text.Encoding.UTF8, "application/json");
+            scoped.Headers.Add("Cookie", $"{AuthService.SessionCookieName}={token}");
+            scoped.Headers.Add("Origin", "null");
+            using var forbidden = await http.SendAsync(scoped, ct);
+            Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        }
+        finally { Directory.Delete(directory, recursive: true); }
+    }
+
+    [Theory]
+    [InlineData("127.0.0.2")]
+    [InlineData("::1")]
+    public async Task NativeCookieRequiresMainListenerCertificateForHttpAndWebSocket(string unrelatedAddress)
+    {
+        if (unrelatedAddress == "::1" && !System.Net.Sockets.Socket.OSSupportsIPv6)
+            Assert.Skip("IPv6 is unavailable.");
+        var ct = TestContext.Current.CancellationToken;
+        using var mainCertificate = CertificateGenerator.GenerateSelfSigned(["localhost"], ["127.0.0.1"]);
+        using var unrelatedCertificate = CertificateGenerator.GenerateSelfSigned(["localhost"], [unrelatedAddress]);
+        const string token = "native-cookie-fixture";
+        var mainRequests = 0;
+        var unrelatedRequests = 0;
+        var mainBuilder = WebApplication.CreateBuilder();
+        mainBuilder.Logging.ClearProviders();
+        mainBuilder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0, listen => listen.UseHttps(mainCertificate)));
+        await using var main = mainBuilder.Build();
+        main.UseWebSockets();
+        main.Run(async context =>
+        {
+            var generic = context.Request.Path == "/generic";
+            if (generic) Assert.Null(context.Request.Cookies[AuthService.SessionCookieName]);
+            else
+            {
+                Assert.Equal(token, context.Request.Cookies[AuthService.SessionCookieName]);
+                Interlocked.Increment(ref mainRequests);
+            }
+            if (context.WebSockets.IsWebSocketRequest)
+            {
+                using var socket = await context.WebSockets.AcceptWebSocketAsync();
+                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, "fixture", ct);
+            }
+            else await context.Response.WriteAsync(generic ? "generic-preview" : "authenticated-self", ct);
+        });
+        await main.StartAsync(ct);
+        var address = new Uri(Assert.Single(main.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses));
+        var origins = BrowserPreviewOriginService.Create(address.Port);
+        var certificateAvailable = false;
+        var service = new WebPreviewService(address.Port, origins, mainServerCertificate: () => certificateAvailable ? mainCertificate : null);
+        Assert.True(service.SetTarget("session", "before-certificate", address.AbsoluteUri));
+        var uninitializedRoute = service.GetPreviewSession("session", "before-certificate")!.RouteKey;
+        service.SyncSessionCookieForSelfTarget(uninitializedRoute, token);
+        Assert.Empty(service.GetCookies("session", "before-certificate").Cookies);
+        certificateAvailable = true;
+
+        async Task Exercise(string host, bool allowed)
+        {
+            var target = new UriBuilder("https", host, address.Port).Uri;
+            var name = Guid.NewGuid().ToString("N");
+            Assert.True(service.SetTarget("session", name, target.AbsoluteUri));
+            var route = service.GetPreviewSession("session", name)!.RouteKey;
+            service.SyncSessionCookieForSelfTarget(route, token);
+            if (!allowed)
+                Assert.True(service.SetTarget("session", name, "https://external.example/", preserveCookies: true));
+            var client = service.GetHttpClient(route);
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, target);
+                var nativeHeader = service.GetForwardedCookieHeader(route, target);
+                Assert.Equal(AuthService.SessionCookieName + "=" + token, nativeHeader);
+                request.Headers.Add("Cookie", nativeHeader);
+                if (allowed)
+                {
+                    using var response = await client.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct);
+                    Assert.Equal("authenticated-self", await response.Content.ReadAsStringAsync(ct));
+                }
+                else await Assert.ThrowsAsync<HttpRequestException>(() => client.SendAsync(request, HttpCompletionOption.ResponseContentRead, ct));
+
+                using var socket = new ClientWebSocket();
+                var socketUri = new UriBuilder(target) { Scheme = "wss" }.Uri;
+                service.ConfigureWebSocket(route, socket, socketUri);
+                if (allowed) await socket.ConnectAsync(socketUri, ct);
+                else await Assert.ThrowsAsync<WebSocketException>(() => socket.ConnectAsync(socketUri, ct));
+                socket.Abort();
+                Assert.Null(service.GetForwardedCookieHeader(route, new UriBuilder(target) { Port = address.Port + 1 }.Uri));
+                Assert.Null(service.GetForwardedCookieHeader(route, new UriBuilder(target) { Scheme = "http" }.Uri));
+            }
+            finally { service.ClearTarget("session", name); client.Dispose(); }
+        }
+
+        var genericService = new WebPreviewService(address.Port, origins);
+        var genericTarget = new Uri(address, "/generic");
+        Assert.True(genericService.SetTarget("session", "generic", genericTarget.AbsoluteUri));
+        var genericRoute = genericService.GetPreviewSession("session", "generic")!.RouteKey;
+        genericService.SyncSessionCookieForSelfTarget(genericRoute, token);
+        Assert.Null(genericService.GetForwardedCookieHeader(genericRoute, genericTarget));
+        var genericClient = genericService.GetHttpClient(genericRoute);
+        try
+        {
+            Assert.Equal("generic-preview", await genericClient.GetStringAsync(genericTarget.AbsoluteUri, ct));
+            using var genericSocket = new ClientWebSocket();
+            var genericSocketUri = new UriBuilder(genericTarget) { Scheme = "wss" }.Uri;
+            genericService.ConfigureWebSocket(genericRoute, genericSocket, genericSocketUri);
+            await genericSocket.ConnectAsync(genericSocketUri, ct);
+            genericSocket.Abort();
+        }
+        finally { genericService.ClearTarget("session", "generic"); genericClient.Dispose(); }
+
+        await Exercise("localhost", true);
+        await Exercise("127.0.0.1", true);
+        var otherBuilder = WebApplication.CreateBuilder();
+        otherBuilder.Logging.ClearProviders();
+        otherBuilder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Parse(unrelatedAddress), address.Port, listen => listen.UseHttps(unrelatedCertificate)));
+        await using var other = otherBuilder.Build();
+        other.Run(async context =>
+        {
+            Interlocked.Increment(ref unrelatedRequests);
+            await context.Response.WriteAsync("unrelated", ct);
+        });
+        await other.StartAsync(ct);
+        await Exercise(unrelatedAddress, false);
+        Assert.Equal(4, mainRequests);
+        Assert.Equal(0, unrelatedRequests);
+    }
+
+    [Fact]
+    public void SeededNativeCookieCannotPersistAfterTargetChanges()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "tlbx-preview-cookie-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            using var certificate = CertificateGenerator.GenerateSelfSigned(["localhost"], ["127.0.0.1"]);
+            var service = new WebPreviewService(2000, BrowserPreviewOriginService.Create(2000), directory, () => certificate);
+            Assert.True(service.SetTarget("session", "self", "https://localhost:2000/"));
+            var route = service.GetPreviewSession("session", "self")!.RouteKey;
+            service.SyncSessionCookieForSelfTarget(route, "native-fixture");
+            Assert.True(service.SetTarget("session", "self", "https://external.example/", preserveCookies: true));
+            Assert.True(service.SetCookieFromRaw(route, "fixture=retained; Path=/"));
+            service.PersistCookies(route);
+            var persisted = File.ReadAllText(Assert.Single(Directory.EnumerateFiles(directory)));
+            Assert.Contains("fixture=retained;", persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain("native-fixture", persisted, StringComparison.Ordinal);
+            Assert.DoesNotContain(AuthService.SessionCookieName, persisted, StringComparison.Ordinal);
+            service.ClearTarget("session", "self");
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true); }
     }
 
 }

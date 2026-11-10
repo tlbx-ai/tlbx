@@ -63,7 +63,7 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         Assert.Equal("10.25.29-dev", found.LatestVersion);
         Assert.Equal(Download, found.DownloadUrl);
         Assert.Equal(Digest, found.ArchiveSha256);
-        Assert.Equal(new[] { "/v1/channels/dev/releases.json", "/v1/releases/v10.25.29-dev/win-x64/version.json" }, handler.Paths, StringComparer.Ordinal);
+        Assert.Equal(new[] { "/v1/channels/dev/releases.json", "/v1/channels/main/releases.json", "/v1/releases/v10.25.29-dev/win-x64/version.json" }, handler.Paths, StringComparer.Ordinal);
         clock.Advance(TimeSpan.FromSeconds(29));
         Assert.Same(first, service.CheckForUpdateAsync());
         unavailable = true;
@@ -73,19 +73,19 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         Assert.Equal(found.LatestVersion, failed.LatestVersion);
         Assert.Equal(found.Type, failed.Type);
         Assert.Contains("503", failed.CheckError, StringComparison.Ordinal);
-        Assert.Equal(3, handler.Paths.Count);
+        Assert.Equal(5, handler.Paths.Count);
         clock.Advance(TimeSpan.FromSeconds(119));
         await service.CheckForUpdateAsync();
-        Assert.Equal(3, handler.Paths.Count);
+        Assert.Equal(5, handler.Paths.Count);
         unavailable = false;
         clock.Advance(TimeSpan.FromSeconds(2));
         var repaired = await service.CheckForUpdateAsync();
         Assert.Null(repaired!.CheckError);
-        Assert.Equal(5, handler.Paths.Count);
+        Assert.Equal(8, handler.Paths.Count);
     }
 
     [Fact]
-    public async Task MissingDevPlatformReadsMainCatalogWithoutAnyGithubFallback()
+    public async Task DevChannelReadsBothCatalogsWithoutAnyGithubFallback()
     {
         using var handler = new MirrorHandler((_, _) => Task.FromResult(Json("[]")));
 #pragma warning disable IDISP014
@@ -96,6 +96,41 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         Assert.False(result?.Available ?? false);
         Assert.Null(result?.CheckError);
         Assert.Equal(new[] { "/v1/channels/dev/releases.json", "/v1/channels/main/releases.json" }, handler.Paths, StringComparer.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("dev", "10.25.35-dev", "v10.25.35-dev", "v10.26.0", "10.26.0")]
+    [InlineData("dev", "10.25.28-dev", "v10.25.29-dev", "v10.22.0", "10.25.29-dev")]
+    [InlineData("stable", "10.25.33", "v10.27.0-dev", "v10.26.0", "10.26.0")]
+    public async Task DiscoveryComparesEligibleStableAndDevReleases(
+        string channel, string current, string devTag, string stableTag, string expected)
+    {
+        if (channel == "stable" && UpdateService.IsDevEnvironment)
+            Assert.Skip("THELAIR intentionally forces the dev channel regardless of the saved setting.");
+        using var handler = new MirrorHandler((request, _) => Task.FromResult(Json(request.RequestUri!.AbsolutePath switch
+        {
+            "/v1/channels/dev/releases.json" => CatalogFor(devTag, true),
+            "/v1/channels/main/releases.json" => CatalogFor(stableTag, false),
+            "/v1/releases/v10.26.0/win-x64/version.json" => StableManifest,
+            "/v1/releases/v10.25.29-dev/win-x64/version.json" => VendorManifest,
+            _ => throw new InvalidOperationException("Unexpected update request.")
+        })));
+#pragma warning disable IDISP014 // Each case owns an isolated fake transport.
+        using var http = new HttpClient(handler, disposeHandler: false);
+#pragma warning restore IDISP014
+        var settings = Settings();
+        var values = settings.Load();
+        values.UpdateChannel = channel;
+        settings.Save(values);
+        using var service = new UpdateService(settings, null, http, currentVersion: current);
+        var update = await service.CheckForUpdateAsync();
+        Assert.True(update!.Available);
+        Assert.Null(update.CheckError);
+        Assert.Equal(expected, update.LatestVersion);
+        Assert.Equal(expected.EndsWith("-dev", StringComparison.Ordinal) ? Download : "https://builds.tlbx.ai/main/10.26.0/win-x64/mt-win-x64.zip", update.DownloadUrl);
+        Assert.Equal(channel == "dev", handler.Paths.Contains("/v1/channels/dev/releases.json", StringComparer.Ordinal));
+        Assert.Contains("/v1/channels/main/releases.json", handler.Paths, StringComparer.Ordinal);
+        Assert.Equal(channel == "dev" ? 3 : 2, handler.Paths.Count);
     }
 
     [Fact]
@@ -112,7 +147,7 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         var result = await service.CheckForUpdateAsync();
         Assert.False(result!.Available);
         Assert.Contains("signature", result.CheckError, StringComparison.Ordinal);
-        Assert.Equal(2, handler.Paths.Count);
+        Assert.Equal(3, handler.Paths.Count);
     }
 
     [Fact]
@@ -126,7 +161,7 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         var result = await service.CheckForUpdateAsync();
         Assert.False(result!.Available);
         Assert.NotNull(result.CheckError);
-        Assert.Single(handler.Paths);
+        Assert.Equal(2, handler.Paths.Count);
     }
 
     [Fact]
@@ -150,7 +185,7 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         var result = await checking;
         Assert.False(result!.Available);
         Assert.False(string.IsNullOrWhiteSpace(result.CheckError));
-        Assert.Single(handler.Paths);
+        Assert.Equal(2, handler.Paths.Count);
     }
 
     [Fact]
@@ -167,7 +202,7 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
 #pragma warning restore IDISP014
         using var service = new UpdateService(Settings(), null, http);
         Assert.Contains("too large", (await service.CheckForUpdateAsync())!.CheckError, StringComparison.Ordinal);
-        Assert.Single(handler.Paths);
+        Assert.Equal(2, handler.Paths.Count);
     }
 
     [Theory]
@@ -187,7 +222,7 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
         var result = await service.CheckForUpdateAsync();
         Assert.False(result!.Available);
         Assert.NotNull(result.CheckError);
-        Assert.Single(handler.Paths);
+        Assert.Equal(2, handler.Paths.Count);
     }
 
     [Theory]
@@ -226,6 +261,14 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
             assets = new[] { new { name = Asset, browser_download_url = url, size = 77374373, digest = "sha256:" + Digest } } }
     });
 
+    private static string CatalogFor(string tag, bool prerelease) => JsonSerializer.Serialize(new[]
+    {
+        new { tag_name = tag, draft = false, prerelease, body = "Published package", html_url = "https://github.com/tlbx-ai/tlbx/releases/tag/" + tag,
+            assets = new[] { new { name = Asset,
+                browser_download_url = $"https://builds.tlbx.ai/{(prerelease ? "dev" : "main")}/{tag[1..]}/win-x64/{Asset}",
+                size = 77374373, digest = "sha256:" + Digest } } }
+    });
+
     private sealed class MirrorHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
     {
         public List<string> Paths { get; } = [];
@@ -237,6 +280,29 @@ public sealed class UpdateMirrorProtocolTests : IDisposable
             return send(request, cancellationToken);
         }
     }
+
+    // Original public Stable26 win-x64 metadata, signed by the unchanged vendor key.
+    private const string StableManifest = """
+    {
+      "web": "10.26.0",
+      "pty": "10.25.20",
+      "protocol": 1,
+      "minCompatiblePty": "10.25.20-dev",
+      "webOnly": true,
+      "signatureVersion": 2,
+      "platform": "win-x64",
+      "channel": "stable",
+      "checksums": {
+        "mttmux.exe": "85359457f76c886561d5ca1fe3d52e221c1f960b781a757b4095f5ff89f51bc4",
+        "mt.exe": "eb322bccf7b7d3173407cd1827ac534e105044cc910c1c07683224ef8bf25a24",
+        "mthost.exe": "62540094be93b957ad84dcc934d2013e7f22c04fcde87fac577032b719c9c95a",
+        "mtagenthost.exe": "b079284fe363df477d83ad4ca558aee627d4bd580485b79c2a12b186af5496e6"
+      },
+      "signature": "MGQCMC8UOGIA49ypygTQzLy/hfDuE3CNmTWH0IcTfESUyPqcDZkxnvmpldqYgdljDRPgHwIwf14xHFV6141tgD/mOl6g0m4FrXsaIomEHvmEq6MpC9N/2bdhgHf3ZpY+N7HSR6up",
+      "signedPayload": "eyJzaWduYXR1cmVWZXJzaW9uIjoyLCJ3ZWIiOiIxMC4yNi4wIiwicHR5IjoiMTAuMjUuMjAiLCJwcm90b2NvbCI6MSwibWluQ29tcGF0aWJsZVB0eSI6IjEwLjI1LjIwLWRldiIsIndlYk9ubHkiOnRydWUsInBsYXRmb3JtIjoid2luLXg2NCIsImNoYW5uZWwiOiJzdGFibGUiLCJjaGVja3N1bXMiOnsibXQuZXhlIjoiZWIzMjJiY2NmN2I3ZDMxNzM0MDdjZDE4MjdhYzUzNGUxMDUwNDRjYzkxMGMxYzA3NjgzMjI0ZWY4YmYyNWEyNCIsIm10YWdlbnRob3N0LmV4ZSI6ImIwNzkyODRmZTM2M2RmNDc3ZDgzYWQ0Y2E1NThhZWU2MjdkNGJkNTgwNDg1Yjc5YzJhMTJiMTg2YWY1NDk2ZTYiLCJtdGhvc3QuZXhlIjoiNjI1NDAwOTRiZTkzYjk1N2FkODRkY2M5MzRkMjAxM2U3ZjIyYzA0ZmNkZTg3ZmFjNTc3MDMyYjcxOWM5Yzk1YSIsIm10dG11eC5leGUiOiI4NTM1OTQ1N2Y3NmM4ODY1NjFkNWNhMWZlM2Q1MmUyMjFjMWY5NjBiNzgxYTc1N2I0MDk1ZjVmZjg5ZjUxYmM0In19",
+      "metadataSignature": "MGQCMC7YTk+LGSXrfK/W45CPqz67mCk9XBEhWTh548vd/+e27PojfzemgoKEnDcVtpO4VwIwInbyGDIucmGIed17xgoaBcRXai7k/ZFy/kvzi6TEvumw9Fbt0qPQHMJeze6Pz7uj"
+    }
+    """;
 
     // Original public Dev29 win-x64 metadata, signed by the unchanged vendor key.
     private const string VendorManifest = """

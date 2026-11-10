@@ -7,6 +7,9 @@
  * into unrelated sibling bars.
  */
 
+import { uploadRichComposerFile } from './richComposerUpload';
+import { RichComposer } from './richComposer';
+import { orderedRichAttachments } from './smartInputOutboundReferences';
 import {
   KEYBOARD_REPLACEMENT_CHANGED,
   openKeyboardReplacement,
@@ -21,7 +24,12 @@ import {
   $settingsOpen,
   $voiceAvailable,
 } from '../../stores';
-import { setAppServerControlGoal } from '../../api/client';
+import {
+  GOAL_CHANGED_EVENT,
+  goalControlLabel,
+  goalControlTitle,
+  openAppServerControlGoalEditor,
+} from '../appServerControl/goals';
 import { t } from '../i18n';
 import { enqueueCommandBayTurn } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
@@ -34,6 +42,7 @@ import {
 } from '../appServerControl/input';
 import {
   APP_SERVER_CONTROL_QUICK_SETTINGS_CHANGED_EVENT,
+  configureAppServerControlQuickSettings,
   getAppServerControlQuickSettingsDraft,
   getAppServerControlQuickSettingsProvider,
   setAppServerControlQuickSettingsDraft,
@@ -84,9 +93,10 @@ import {
 import {
   clearAppServerControlDraftAttachmentsForSession,
   cloneSmartInputPromptHistoryEntry,
-  detachAppServerControlDraftAttachmentsForSession,
   getAppServerControlDraftAttachmentsForSession,
   getSmartInputPromptHistoryForSession,
+  loadSmartInputCurrentDraft,
+  persistSmartInputCurrentDraft,
   loadAppServerControlDraftAttachmentsForSession,
   loadSmartInputPromptHistoryForSession,
   pushSmartInputPromptHistoryEntryForSession,
@@ -110,7 +120,11 @@ import {
   updateAutoSendVisibility as updateAutoSendVisibilitySupport,
   updateFooterReservedHeight as updateFooterReservedHeightSupport,
 } from './footerSupport';
-import { createAppServerControlResumeButton } from './appServerControlResumeButton';
+import {
+  createAppServerControlResumeButton,
+  getAppServerControlResumeArgs,
+} from './appServerControlResumeButton';
+import { reconcileKeyedChildren } from '../../utils/domReconcile';
 import {
   insertSmartInputLineBreak,
   shouldInsertLineBreakOnEnter,
@@ -122,6 +136,7 @@ import {
   createSmartInputComposerDraft,
   deleteSmartInputComposerBackward,
   deleteSmartInputComposerForward,
+  getSmartInputComposerReferenceIds,
   getSmartInputComposerReferenceIdsInSelection,
   getSmartInputComposerText,
   hasSmartInputComposerReferences,
@@ -148,6 +163,7 @@ let footerContextHost: HTMLDivElement | null = null;
 let footerStatusHost: HTMLDivElement | null = null;
 let dockedBar: HTMLDivElement | null = null;
 let touchControllerEl: HTMLElement | null = null;
+let richComposer: RichComposer | null = null;
 let activeTextarea: HTMLTextAreaElement | null = null;
 let composerExpandBtn: HTMLButtonElement | null = null;
 let sendBtn: HTMLButtonElement | null = null;
@@ -174,7 +190,6 @@ let isRecording = false;
 let pendingMicPinSessionId: string | null = null;
 let lastSessionId: string | null = null;
 let appServerControlQuickSettingsSheetOpen = false;
-let appServerControlGoalComposeSessionId: string | null = null;
 let sendAutoSendLongPressTimer: number | null = null;
 let suppressNextSendClick = false;
 let suppressNextToolsToggleClick = false;
@@ -469,15 +484,6 @@ function clearAppServerControlDraftAttachments(sessionId: string, revokePreviews
   );
 }
 
-function detachAppServerControlDraftAttachments(
-  sessionId: string,
-): AppServerControlComposerDraftAttachment[] {
-  return detachAppServerControlDraftAttachmentsForSession(
-    appServerControlAttachmentDrafts,
-    sessionId,
-  );
-}
-
 function getSessionPromptHistory(sessionId: string | null): SmartInputPromptHistoryEntry[] {
   if (sessionId && !sessionPromptHistories.has(sessionId)) {
     const persistedHistory = loadSmartInputPromptHistoryForSession(sessionId);
@@ -511,7 +517,10 @@ function createCurrentPromptHistoryEntry(sessionId: string): SmartInputPromptHis
   return {
     composerDraft: cloneSmartInputComposerDraft(getSessionDraft(sessionId)),
     attachments: cloneAppServerControlComposerDraftAttachments(
-      getAppServerControlDraftAttachments(sessionId),
+      orderedRichAttachments(
+        getSessionDraft(sessionId),
+        getAppServerControlDraftAttachments(sessionId),
+      ),
     ),
     quickSettings: getPromptHistoryQuickSettingsSnapshot(sessionId),
   };
@@ -594,11 +603,152 @@ function resolveComposerReference(
   };
 }
 
+function focusSmartInput(): void {
+  const sessionId = $activeSessionId.get();
+  if (sessionId && richComposer?.isActive(sessionId)) richComposer.focus();
+  else activeTextarea?.focus({ preventScroll: true });
+}
+
+function handleRichComposerKeydown(event: KeyboardEvent): boolean {
+  if (handleSmartInputShiftTabShortcut(event)) return true;
+  if (activeTextarea && handlePromptHistoryKeydown(event, activeTextarea)) return true;
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    const sessionId = $activeSessionId.get();
+    if (isComposerExpanded(sessionId)) setActiveSessionComposerExpanded(false);
+    else if (sessionId) void handleAppServerControlEscape(sessionId);
+    return true;
+  }
+  if (shouldInsertLineBreakOnEnter(event)) {
+    event.preventDefault();
+    richComposer?.insertText('\n');
+    return true;
+  }
+  if (shouldSubmitSmartInputOnEnter(event) && activeTextarea) {
+    event.preventDefault();
+    void sendText(activeTextarea);
+    return true;
+  }
+  return false;
+}
+
+async function stageRichComposerFile(
+  sessionId: string,
+  file: File,
+  original?: AppServerControlComposerDraftAttachment,
+  signal?: AbortSignal,
+): Promise<AppServerControlComposerDraftAttachment> {
+  const path = await uploadRichComposerFile({
+    sessionId,
+    file,
+    uploadFile,
+    ...(original ? { originalPath: original.uploadedPath } : {}),
+    ...(signal ? { signal } : {}),
+    tooLarge: t('smartInput.imageTooLarge'),
+    failed: t('smartInput.attachmentUploadFailed'),
+  });
+  const attachment = isAppServerControlComposerImageFile(file)
+    ? createImageDraftAttachmentWithReference(sessionId, file, path)
+    : createAppServerControlComposerDraftAttachment(sessionId, file, path);
+  if (attachment.kind === 'file') {
+    attachment.referenceKind = 'file';
+    attachment.referenceOrdinal = allocateSessionReferenceOrdinal(sessionId, 'file');
+    attachment.referenceLabel = formatSmartInputReferenceLabel('file', attachment.referenceOrdinal);
+  }
+  setAppServerControlDraftAttachments(sessionId, [
+    ...getAppServerControlDraftAttachments(sessionId),
+    attachment,
+  ]);
+  return attachment;
+}
+
+async function stageRichComposerText(
+  sessionId: string,
+  text: string,
+  signal: AbortSignal,
+): Promise<AppServerControlComposerDraftAttachment> {
+  const file = buildSmartInputTextReferenceFile(text);
+  const path = await uploadRichComposerFile({
+    sessionId,
+    file,
+    uploadFile,
+    signal,
+    tooLarge: t('smartInput.imageTooLarge'),
+    failed: t('smartInput.attachmentUploadFailed'),
+  });
+  const attachment = createTextDraftAttachmentWithReference(sessionId, file, path, text);
+  setAppServerControlDraftAttachments(sessionId, [
+    ...getAppServerControlDraftAttachments(sessionId),
+    attachment,
+  ]);
+  return attachment;
+}
+
+function syncRichComposerInputLock(): void {
+  const sessionId = $activeSessionId.get();
+  const locked = Boolean(
+    sessionId && richComposer?.isActive(sessionId) && richComposer.isSubmitting(sessionId),
+  );
+  if (sharedAttachInput) sharedAttachInput.disabled = locked;
+  if (sharedPhotoInput) sharedPhotoInput.disabled = locked;
+  for (const button of footerDock?.querySelectorAll<HTMLButtonElement>(
+    '[data-tool="attach"], [data-tool="photo"]',
+  ) ?? [])
+    button.disabled = locked;
+}
+
+function initializeRichComposer(textarea: HTMLTextAreaElement): void {
+  richComposer = new RichComposer({
+    notice: showDropToast,
+    changed: (sessionId, draft, edited) => {
+      if (edited) resetPromptHistoryNavigation(sessionId);
+      const previous = getSessionDraft(sessionId);
+      for (const kind of ['image', 'file', 'text'] as const)
+        draft.nextOrdinalByKind[kind] = Math.max(
+          draft.nextOrdinalByKind[kind] ?? 1,
+          previous.nextOrdinalByKind[kind] ?? 1,
+        );
+      setSessionDraft(sessionId, draft);
+      if ($activeSessionId.get() === sessionId) textarea.value = getSessionDraftText(sessionId);
+      queueFooterReserveSync();
+    },
+    keydown: handleRichComposerKeydown,
+    submissionChanged: syncRichComposerInputLock,
+    focus: () => {
+      queueFooterReserveSync();
+      requestAnimationFrame(() => {
+        scrollFooterDockForTextareaFocus();
+      });
+    },
+    stageFile: stageRichComposerFile,
+    stageText: stageRichComposerText,
+    attachments: getAppServerControlDraftAttachments,
+    open: (sessionId, attachment) => {
+      void openAppServerControlDraftAttachment(sessionId, attachment);
+    },
+    pending: enqueueComposerPendingOperation,
+  });
+  textarea.before(richComposer.host);
+}
+
 function getSessionDraft(sessionId: string | null): SmartInputComposerDraft {
   if (!sessionId) {
     return createSmartInputComposerDraft();
   }
 
+  if (!sessionDrafts.has(sessionId)) {
+    const persisted = loadSmartInputCurrentDraft(sessionId);
+    if (persisted)
+      sessionDrafts.set(
+        sessionId,
+        pruneSmartInputComposerReferences(
+          persisted,
+          new Set(
+            getAppServerControlDraftAttachments(sessionId).map((attachment) => attachment.id),
+          ),
+        ),
+      );
+  }
   return sessionDrafts.get(sessionId) ?? createSmartInputComposerDraft();
 }
 
@@ -618,14 +768,17 @@ function setSessionDraft(sessionId: string, draft: SmartInputComposerDraft): voi
   );
   const normalizedDraft = pruneSmartInputComposerReferences(draft, validReferenceIds);
   if (
+    !normalizedDraft.richDoc &&
     normalizedDraft.parts.length === 0 &&
     Object.keys(normalizedDraft.nextOrdinalByKind).length === 0
   ) {
     sessionDrafts.delete(sessionId);
+    persistSmartInputCurrentDraft(sessionId, null);
     return;
   }
 
   sessionDrafts.set(sessionId, normalizedDraft);
+  persistSmartInputCurrentDraft(sessionId, normalizedDraft);
 }
 
 function enqueueComposerPendingOperation(
@@ -697,10 +850,10 @@ function setSessionDraftText(sessionId: string, text: string): void {
 }
 
 function isPromptHistoryNavigationStartable(sessionId: string): boolean {
-  return (
-    getSessionDraftText(sessionId).length === 0 &&
-    getAppServerControlDraftAttachments(sessionId).length === 0
-  );
+  if (getSessionDraftText(sessionId).length !== 0) return false;
+  return isAppServerControlActiveSession(sessionId)
+    ? getSmartInputComposerReferenceIds(getSessionDraft(sessionId)).length === 0
+    : getAppServerControlDraftAttachments(sessionId).length === 0;
 }
 
 function applyPromptHistoryEntry(
@@ -769,7 +922,7 @@ function navigatePromptHistory(
 
   const entry = cloneSmartInputPromptHistoryEntry(historyEntry);
   applyPromptHistoryEntry(sessionId, entry, textarea);
-  textarea.focus({ preventScroll: true });
+  focusSmartInput();
   return true;
 }
 
@@ -821,13 +974,16 @@ function renderSessionDraftIntoTextarea(
     return;
   }
 
+  const richActive = Boolean(sessionId && isAppServerControlActiveSession(sessionId));
+  textarea.hidden = richActive;
+  richComposer?.sync(sessionId, getSessionDraft(sessionId), richActive);
   const preserveScrollTop = textarea.scrollTop;
   const nextValue = getSessionDraftText(sessionId);
   if (textarea.value !== nextValue) {
     textarea.value = nextValue;
   }
   resizeSmartInputTextarea(textarea, { preserveScrollTop });
-  if (selection) {
+  if (selection && !richActive) {
     textarea.setSelectionRange(selection.start, selection.end);
   }
 }
@@ -1057,6 +1213,11 @@ export function initSmartInput(): void {
     }
   });
 
+  window.addEventListener(GOAL_CHANGED_EVENT, () => {
+    const sessionId = $activeSessionId.get();
+    if (sessionId) syncAppServerControlQuickSettingsActions(sessionId);
+  });
+
   bindSmartInputGlobalKeyBindings({
     closeFooterTransientUi,
     endRecording,
@@ -1116,7 +1277,8 @@ export function hideSmartInput(): void {
 }
 function syncSmartInputVisibility(focusTextarea: boolean = false): void {
   ensureFooterHosts();
-  const preserveTextareaFocus = document.activeElement === activeTextarea;
+  const preserveTextareaFocus =
+    document.activeElement === activeTextarea || (richComposer?.hasFocus() ?? false);
 
   const layoutState = getAdaptiveFooterLayoutState();
   if (!layoutState.showFooter) {
@@ -1149,7 +1311,7 @@ function syncSmartInputVisibility(focusTextarea: boolean = false): void {
     (preserveTextareaFocus || (focusTextarea && shouldAllowProgrammaticSmartInputFocus()))
   ) {
     requestAnimationFrame(() => {
-      activeTextarea?.focus({ preventScroll: true });
+      focusSmartInput();
     });
   }
 }
@@ -1226,11 +1388,12 @@ function syncComposerExpandedPresentation(layoutState: AdaptiveFooterLayoutState
 
   const textarea = activeTextarea;
   const preserveScrollTop = textarea.scrollTop;
-  const preserveComposerFocus = document.activeElement === textarea;
+  const preserveComposerFocus =
+    document.activeElement === textarea || (richComposer?.hasFocus() ?? false);
   requestAnimationFrame(() => {
     resizeSmartInputTextarea(textarea, { preserveScrollTop });
     if (preserveComposerFocus || shouldAllowProgrammaticSmartInputFocus()) {
-      textarea.focus({ preventScroll: true });
+      focusSmartInput();
     }
     if (!footerResizeObserver) {
       queueFooterReserveSync();
@@ -1288,7 +1451,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         effort: appServerControlEffortSelect?.value ?? null,
       });
     },
@@ -1299,7 +1462,7 @@ function createDockedDOM(): void {
       }
 
       const draft = getAppServerControlQuickSettingsDraft(sessionId);
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         fastMode: draft.fastMode === 'on' ? 'off' : 'on',
       });
     },
@@ -1309,7 +1472,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         model: appServerControlModelSelect?.value ?? null,
       });
     },
@@ -1319,7 +1482,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         permissionMode: appServerControlPermissionSelect?.value ?? 'manual',
       });
     },
@@ -1329,7 +1492,7 @@ function createDockedDOM(): void {
         return;
       }
 
-      setAppServerControlQuickSettingsDraft(sessionId, {
+      void configureAppServerControlQuickSettings(sessionId, {
         planMode: appServerControlPlanSelect?.value ?? 'off',
       });
       syncSmartInputVisibility();
@@ -1545,6 +1708,7 @@ function createDockedDOM(): void {
   appServerControlAttachmentHost = dom.appServerControlAttachmentHost;
   composerExpandBtn = dom.composerExpandBtn;
   activeTextarea = dom.textarea;
+  initializeRichComposer(dom.textarea);
   sendBtn = dom.sendBtn;
   toolsToggleBtn = dom.toolsToggleBtn;
   inlineToolHost = dom.inlineToolHost;
@@ -1565,7 +1729,7 @@ function createDockedDOM(): void {
   nativeKeyboardButton.textContent = 'ABC';
   nativeKeyboardButton.addEventListener('click', () => {
     returnToNativeKeyboard();
-    activeTextarea?.focus({ preventScroll: true });
+    focusSmartInput();
   });
   const closeKeyboardButton = document.createElement('button');
   closeKeyboardButton.type = 'button';
@@ -1759,6 +1923,7 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   }
 
   renderPinnedToolsForSession(layoutState.activeSessionId ?? null);
+  syncRichComposerInputLock();
   toolsToggleBtn?.removeAttribute('hidden');
   syncMobileAuxiliaryTools(layoutState);
   setToolsPanelOpen(toolsPanelOpen);
@@ -1956,49 +2121,63 @@ function shouldUseCompactAppServerControlStatusRail(
 }
 
 function syncAppServerControlQuickSettingsActions(sessionId: string): void {
-  if (!appServerControlQuickSettingsActions) {
-    return;
-  }
-
-  appServerControlQuickSettingsActions.replaceChildren();
-  const quickSettingsLocked = hasInterruptibleAppServerControlTurnWork(sessionId);
-  const draft = getAppServerControlQuickSettingsDraft(sessionId);
+  if (!appServerControlQuickSettingsActions) return;
+  const actions: Array<{
+    key: string;
+    label: string;
+    title: string;
+    create: () => HTMLButtonElement;
+  }> = [];
   const provider = getAppServerControlQuickSettingsProvider(sessionId);
-  appServerControlQuickSettingsActions.appendChild(
-    createAppServerControlActionButton(
-      'Plan',
-      t('smartInput.appServerControlPlanCommand'),
-      () => {
-        toggleAppServerControlPlanMode(sessionId);
-      },
-      quickSettingsLocked,
-      { pressed: draft.planMode === 'on' },
-    ),
-  );
-  if (provider === 'codex') {
-    appServerControlQuickSettingsActions.appendChild(
-      createAppServerControlActionButton(
-        'Goal',
-        t('smartInput.appServerControlGoalCommand'),
-        () => {
-          void prepareAppServerControlGoal(sessionId);
-        },
-        false,
-        { pressed: appServerControlGoalComposeSessionId === sessionId },
-      ),
-    );
+  if (provider === 'codex' || provider === 'claude') {
+    const label = goalControlLabel(sessionId);
+    const title = goalControlTitle(sessionId);
+    actions.push({
+      key: `${sessionId}:goal:${provider}`,
+      label,
+      title,
+      create: () =>
+        createAppServerControlActionButton(
+          label,
+          title,
+          () => {
+            openAppServerControlGoalEditor(sessionId);
+          },
+          false,
+          { pressed: false },
+        ),
+    });
   }
-  const resumeButton = createAppServerControlResumeButton(
-    sessionId,
-    appServerControlResumeConversationHandler,
-  );
-  if (resumeButton) {
-    appServerControlQuickSettingsActions.appendChild(resumeButton);
+  const resume = appServerControlResumeConversationHandler
+    ? getAppServerControlResumeArgs(sessionId)
+    : null;
+  if (resume) {
+    actions.push({
+      key: `${sessionId}:resume:${resume.provider}:${resume.workingDirectory}`,
+      label: t('smartInput.resume'),
+      title: `${t('smartInput.resumeConversation')} ${
+        resume.provider === 'claude'
+          ? t('sessionLauncher.claudeTitle')
+          : t('sessionLauncher.codexTitle')
+      }`,
+      create: () =>
+        createAppServerControlResumeButton(resume, (args) => {
+          void appServerControlResumeConversationHandler?.(args);
+        }),
+    });
   }
-  appServerControlQuickSettingsActions.hidden =
-    appServerControlQuickSettingsActions.childElementCount === 0;
+  reconcileKeyedChildren(appServerControlQuickSettingsActions, actions, {
+    key: (action) => action.key,
+    create: (action) => action.create(),
+    patch: (button, action) => {
+      if (button.textContent !== action.label) button.textContent = action.label;
+      if (button.title !== action.title) button.title = action.title;
+      if (button.getAttribute('aria-label') !== action.title)
+        button.setAttribute('aria-label', action.title);
+    },
+  });
+  appServerControlQuickSettingsActions.hidden = actions.length === 0;
 }
-
 function createAppServerControlActionButton(
   label: string,
   title: string,
@@ -2022,50 +2201,6 @@ function createAppServerControlActionButton(
     }
   });
   return button;
-}
-
-async function prepareAppServerControlGoal(sessionId: string): Promise<void> {
-  if (!activeTextarea) {
-    return;
-  }
-
-  if (appServerControlGoalComposeSessionId === sessionId) {
-    appServerControlGoalComposeSessionId = null;
-    activeTextarea.placeholder = t(
-      isMobileViewport() ? 'smartInput.placeholderMobile' : 'smartInput.placeholder',
-    );
-    activeTextarea.focus({ preventScroll: true });
-    syncAppServerControlQuickSettingsActions(sessionId);
-    return;
-  }
-
-  const currentText = activeTextarea.value.trim();
-  if (currentText.length === 0) {
-    appServerControlGoalComposeSessionId = sessionId;
-    activeTextarea.placeholder = 'Set AppServerControl goal...';
-    activeTextarea.focus({ preventScroll: true });
-    syncAppServerControlQuickSettingsActions(sessionId);
-    return;
-  }
-
-  await submitAppServerControlGoal(sessionId, currentText, activeTextarea);
-}
-
-async function submitAppServerControlGoal(
-  sessionId: string,
-  objective: string,
-  textarea: HTMLTextAreaElement,
-): Promise<void> {
-  try {
-    await setAppServerControlGoal(sessionId, { objective });
-    appServerControlGoalComposeSessionId = null;
-    pushCurrentPromptToHistory(sessionId);
-    clearSubmittedSmartInputState(sessionId, textarea);
-    showDropToast('Goal set.');
-    syncAppServerControlQuickSettingsActions(sessionId);
-  } catch (error) {
-    showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
-  }
 }
 
 function setToolsPanelOpen(open: boolean): void {
@@ -2190,7 +2325,7 @@ function toggleAutoSendEnabled(): void {
 
 function toggleAppServerControlPlanMode(sessionId: string): void {
   const draft = getAppServerControlQuickSettingsDraft(sessionId);
-  setAppServerControlQuickSettingsDraft(sessionId, {
+  void configureAppServerControlQuickSettings(sessionId, {
     planMode: draft.planMode === 'on' ? 'off' : 'on',
   });
   syncSmartInputVisibility();
@@ -2218,13 +2353,16 @@ function handleSmartInputShiftTabShortcut(event: KeyboardEvent): boolean {
 
 function renderAppServerControlAttachmentDrafts(sessionId: string | null): void {
   renderAppServerControlAttachmentDraftView({
-    attachments: sessionId ? getAppServerControlDraftAttachments(sessionId) : [],
+    attachments:
+      sessionId && !isAppServerControlActiveSession(sessionId)
+        ? getAppServerControlDraftAttachments(sessionId)
+        : [],
     host: appServerControlAttachmentHost,
     onOpenAttachment: (currentSessionId, attachment) => {
       void openAppServerControlDraftAttachment(currentSessionId, attachment);
     },
     onFocusTextarea: () => {
-      activeTextarea?.focus({ preventScroll: true });
+      focusSmartInput();
     },
     onRemoveAttachment: removeAppServerControlComposerFile,
     sessionId,
@@ -2240,6 +2378,10 @@ function finalizeInsertedComposerReferences(
   selection: SmartInputComposerSelection,
   insertedReferenceIds: readonly string[],
 ): void {
+  if (richComposer?.isActive(sessionId)) {
+    richComposer.insertReferences(sessionId, insertedReferenceIds);
+    return;
+  }
   if (insertedReferenceIds.length === 0) {
     if ($activeSessionId.get() === sessionId) {
       renderSessionDraftIntoTextarea(sessionId, activeTextarea);
@@ -2273,6 +2415,10 @@ async function addAppServerControlComposerFiles(
   files: readonly File[],
   selection: SmartInputComposerSelection | null = null,
 ): Promise<void> {
+  if (richComposer?.isActive(sessionId)) {
+    richComposer.insertFiles(sessionId, files);
+    return;
+  }
   resetPromptHistoryNavigation(sessionId);
   const nextAttachments = [...getAppServerControlDraftAttachments(sessionId)];
   const nextSelection =
@@ -2317,7 +2463,7 @@ async function addAppServerControlComposerFiles(
   }
 
   if ($activeSessionId.get() === sessionId) {
-    activeTextarea?.focus({ preventScroll: true });
+    focusSmartInput();
   }
 }
 
@@ -2441,7 +2587,7 @@ async function addAppServerControlComposerPasteParts(
   }
 
   if ($activeSessionId.get() === sessionId) {
-    activeTextarea?.focus({ preventScroll: true });
+    focusSmartInput();
   }
 }
 
@@ -2468,6 +2614,10 @@ function insertComposerTextAtSelection(
   textarea: HTMLTextAreaElement | null,
   text: string,
 ): void {
+  if (richComposer?.isActive(sessionId)) {
+    richComposer.insertText(text);
+    return;
+  }
   resetPromptHistoryNavigation(sessionId);
   const targetTextarea = textarea ?? activeTextarea;
   if (!targetTextarea) {
@@ -2599,6 +2749,8 @@ async function handleSmartInputSelectedFiles(files: FileList): Promise<void> {
 function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElement): void {
   resetPromptHistoryNavigation(sessionId);
   sessionDrafts.delete(sessionId);
+  persistSmartInputCurrentDraft(sessionId, null);
+  richComposer?.forget(sessionId);
   ta.value = '';
   clearAppServerControlDraftAttachments(sessionId);
   syncDraftForActiveSession();
@@ -2608,7 +2760,7 @@ function clearSubmittedSmartInputState(sessionId: string, ta: HTMLTextAreaElemen
   if (!footerResizeObserver) {
     queueFooterReserveSync();
   }
-  ta.focus();
+  if ($activeSessionId.get() === sessionId) focusSmartInput();
 }
 
 async function sendTerminalComposerTurn(
@@ -2636,78 +2788,66 @@ async function sendTerminalComposerTurn(
   return true;
 }
 
-async function sendText(ta: HTMLTextAreaElement): Promise<void> {
-  const sessionId = $activeSessionId.get();
-  if (!sessionId) return;
-  await waitForComposerPasteStagingToSettle(sessionId);
-
-  const draft = getSessionDraft(sessionId);
-  const renderedText = getSmartInputComposerText(draft, (referenceId) =>
-    resolveComposerReference(sessionId, referenceId),
-  );
-
-  const appServerControlAttachments = getAppServerControlDraftAttachments(sessionId);
-  if (!renderedText && appServerControlAttachments.length === 0) {
-    return;
-  }
-
-  if (!isAppServerControlActiveSession(sessionId)) {
-    try {
-      await sendTerminalComposerTurn(sessionId, ta, draft, appServerControlAttachments);
-    } catch (error) {
-      showDropToast(error instanceof Error && error.message.trim() ? error.message : String(error));
-    }
-    return;
-  }
-
-  if (appServerControlGoalComposeSessionId === sessionId) {
-    if (appServerControlAttachments.length > 0) {
-      showDropToast('Goals use text only.');
-      return;
-    }
-
-    await submitAppServerControlGoal(sessionId, renderedText, ta);
-    return;
-  }
-
-  const attachmentDrafts = detachAppServerControlDraftAttachments(sessionId);
-  const draftSnapshot = cloneSmartInputComposerDraft(draft);
-  renderAppServerControlAttachmentDrafts($activeSessionId.get());
-
+async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement): Promise<void> {
+  const editor = richComposer;
+  if (!editor || editor.isSubmitting(sessionId)) return;
+  const isCurrentDocument = editor.captureDocumentGuard(sessionId);
+  editor.setSubmitting(sessionId, true);
   try {
+    await waitForComposerPasteStagingToSettle(sessionId);
+    if (!isCurrentDocument()) return;
+    if (editor.hasUnresolvedInput(sessionId))
+      throw new Error(t('smartInput.attachmentUploadFailed'));
+    const draft = cloneSmartInputComposerDraft(getSessionDraft(sessionId));
+    const ids = new Set(getSmartInputComposerReferenceIds(draft));
+    const attachments = cloneAppServerControlComposerDraftAttachments(
+      getAppServerControlDraftAttachments(sessionId).filter((entry) => ids.has(entry.id)),
+    );
+    const text = getSessionDraftText(sessionId);
+    if (!text && attachments.length === 0) return;
     const { queuedTurn } = await submitAppServerControlComposerDraft({
       sessionId,
-      draft: draftSnapshot,
-      attachments: attachmentDrafts,
+      draft,
+      attachments,
       uploadFailureMessage: t('smartInput.attachmentUploadFailed'),
       attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
       uploadFile,
       createTurnRequest: createAppServerControlTurnRequest,
-      submitQueuedTurn: enqueueCommandBayTurn,
+      submitQueuedTurn: (targetSessionId, request) => {
+        if (!isCurrentDocument()) throw new Error(t('smartInput.richTargetChanged'));
+        return enqueueCommandBayTurn(targetSessionId, request);
+      },
     });
-
     await queuedTurn;
+    if (!isCurrentDocument()) return;
     pushCurrentPromptToHistory(sessionId);
     clearSubmittedSmartInputState(sessionId, ta);
     collapseComposerAfterSuccessfulSend(sessionId);
-    releaseAppServerControlComposerDraftAttachmentPreviews(attachmentDrafts);
   } catch (error) {
-    const shouldRestore =
-      !getSessionDraftText(sessionId) &&
-      getAppServerControlDraftAttachments(sessionId).length === 0;
-    if (shouldRestore) {
-      setAppServerControlDraftAttachments(sessionId, attachmentDrafts);
-      setSessionDraft(sessionId, draftSnapshot);
-    } else {
-      releaseAppServerControlComposerDraftAttachmentPreviews(attachmentDrafts);
-    }
-    syncDraftForActiveSession();
-    renderAppServerControlAttachmentDrafts($activeSessionId.get());
-    showDropToast(
-      error instanceof Error && error.message.trim()
-        ? error.message
-        : t('smartInput.attachmentSendFailed'),
+    showDropToast(error instanceof Error ? error.message : t('smartInput.attachmentSendFailed'));
+  } finally {
+    if (isCurrentDocument()) editor.setSubmitting(sessionId, false);
+    if ($activeSessionId.get() === sessionId) focusSmartInput();
+  }
+}
+
+async function sendText(ta: HTMLTextAreaElement): Promise<void> {
+  const sessionId = $activeSessionId.get();
+  if (!sessionId) return;
+  if (isAppServerControlActiveSession(sessionId)) {
+    await sendRichComposerTurn(sessionId, ta);
+    return;
+  }
+  await waitForComposerPasteStagingToSettle(sessionId);
+  try {
+    await sendTerminalComposerTurn(
+      sessionId,
+      ta,
+      getSessionDraft(sessionId),
+      getAppServerControlDraftAttachments(sessionId),
     );
+  } catch (error) {
+    showDropToast(error instanceof Error ? error.message : String(error));
   }
 }
 
@@ -2724,7 +2864,8 @@ function persistDraftForSession(sessionId: string | null, draftOverride?: string
   if (
     !activeTextarea ||
     $activeSessionId.get() !== sessionId ||
-    draftHasInlineReferences(sessionId)
+    draftHasInlineReferences(sessionId) ||
+    richComposer?.isActive(sessionId)
   ) {
     return;
   }
@@ -2747,6 +2888,8 @@ function syncDraftForActiveSession(): void {
 
 export function removeSmartInputSessionState(sessionId: string): void {
   sessionDrafts.delete(sessionId);
+  persistSmartInputCurrentDraft(sessionId, null);
+  richComposer?.forget(sessionId);
   sessionComposerPendingOperations.delete(sessionId);
   clearAppServerControlDraftAttachments(sessionId);
   sessionPromptHistories.delete(sessionId);
@@ -2785,6 +2928,8 @@ function beginRecording(pinOnUse: boolean = false): void {
           return;
         }
 
+        // Streaming deltas already entered the structured document at its selection.
+        if (richComposer?.isActive(sessionId)) return;
         resetPromptHistoryNavigation(sessionId);
         setSessionDraftText(sessionId, completed);
         renderSessionDraftIntoTextarea(sessionId, ta);

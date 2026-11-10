@@ -28,7 +28,7 @@ internal static partial class WebPreviewHtmlSnapshotSanitizer
     [GeneratedRegex(@"<base\s[^>]*>", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex BaseTagRegex();
 
-    [GeneratedRegex(@"<script>\(function\(\)\{.*?window\.__mtProxy.*?</script>", RegexOptions.Singleline, 1000)]
+    [GeneratedRegex(@"<script(?:\s+data-mt-proxy-route=""[^""]*"")?>\(function(?:\s+[A-Za-z_$][\w$]*)?\(\)\{.*?window\.__mtProxy.*?</script>", RegexOptions.Singleline, 1000)]
     private static partial Regex ProxyScriptRegex();
 
     [GeneratedRegex(@"<script[^>]+src=[""']blob:[^""'>]+[""'][^>]*></script>", RegexOptions.IgnoreCase | RegexOptions.Singleline, 1000)]

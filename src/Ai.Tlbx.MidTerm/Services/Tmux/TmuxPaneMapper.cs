@@ -50,7 +50,7 @@ public sealed class TmuxPaneMapper
     /// </summary>
     public string? PaneIdToSessionId(string paneId)
     {
-        var stripped = paneId.StartsWith('%') ? paneId[1..] : paneId;
+        var stripped = paneId.StartsWith('%', StringComparison.Ordinal) ? paneId[1..] : paneId;
         if (!int.TryParse(stripped, CultureInfo.InvariantCulture, out var index))
         {
             return null;

@@ -22,7 +22,7 @@ try
 
     dotnet publish -c Release -r win-x64 /p:IsPublishing=true $ciFlag
 
-    $outPath = "bin\Release\net10.0\win-x64\publish\mt.exe"
+    $outPath = "bin\Release\net11.0\win-x64\publish\mt.exe"
     if (Test-Path $outPath)
     {
         $size = (Get-Item $outPath).Length / 1MB

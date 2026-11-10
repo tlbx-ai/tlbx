@@ -525,7 +525,7 @@ public static partial class SessionApiEndpoints
         app.MapPost("/api/workers/bootstrap", (WorkerBootstrapRequest request, CancellationToken ct) => BootstrapWorker(request, ct));
         BoardSessionEndpoints.Map(app, BootstrapWorker, SubmitPrompt);
 
-        app.MapGet("/api/providers/{provider}/resume-candidates", (
+        app.MapGet("/api/providers/{provider}/resume-candidates", async Task<IResult> (
             string provider,
             string? workingDirectory,
             string? scope,
@@ -539,11 +539,11 @@ public static partial class SessionApiEndpoints
             }
 
             var includeAllDirectories = string.Equals(scope, "all", StringComparison.OrdinalIgnoreCase);
-            var candidates = providerResumeCatalog.GetCandidates(
+            var candidates = await providerResumeCatalog.GetCandidatesAsync(
                 normalizedProvider,
                 workingDirectory,
                 includeAllDirectories,
-                ct);
+                ct).ConfigureAwait(false);
             return Results.Json(candidates, AppJsonContext.Default.ListProviderResumeCatalogEntryDto);
         });
 
@@ -886,6 +886,46 @@ public static partial class SessionApiEndpoints
 
             var response = await appServerControlRuntime.SteerTurnAsync(id, request, ct).ConfigureAwait(false);
             return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+        });
+
+        app.MapPost("/api/sessions/{id}/agent-control/requests/{requestId}/decision", async (
+            string id,
+            string requestId,
+            string decision,
+            string expectedTurnId,
+            CancellationToken ct) =>
+        {
+            if (decision is not ("accept" or "decline") || string.IsNullOrWhiteSpace(expectedTurnId))
+            {
+                return Results.BadRequest("An explicit accept/decline decision and expectedTurnId are required.");
+            }
+
+            if (sessionManager.GetSession(id) is null)
+            {
+                return Results.NotFound();
+            }
+
+            if (!appServerControlRuntime.IsAttached(id))
+            {
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            }
+
+            var history = await appServerControlRuntime.GetHistoryWindowAsync(id, count: 1, ct: ct).ConfigureAwait(false);
+            if (!IsOpenAgentRequestInTurn(history, requestId, expectedTurnId))
+            {
+                return Results.Conflict("The request is not open in the expected active turn. Read agent_history before deciding.");
+            }
+
+            try
+            {
+                var response = await appServerControlRuntime.ResolveRequestAsync(
+                    id, requestId, new AppServerControlRequestDecisionRequest { Decision = decision }, ct).ConfigureAwait(false);
+                return Results.Json(response, AppJsonContext.Default.AppServerControlCommandAcceptedResponse);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Conflict(ex.Message);
+            }
         });
 
         app.MapPost("/api/sessions/{id}/agent-control/compact", async (
@@ -1916,6 +1956,17 @@ public static partial class SessionApiEndpoints
 
         return sessionManager.GetTempDirectory(sessionId);
     }
+
+    internal static bool IsOpenAgentRequestInTurn(
+        AppServerControlHistoryWindowResponse? history, string requestId, string expectedTurnId) =>
+        history is not null
+        && !string.IsNullOrWhiteSpace(requestId)
+        && !string.IsNullOrWhiteSpace(expectedTurnId)
+        && string.Equals(history.CurrentTurn.TurnId, expectedTurnId, StringComparison.Ordinal)
+        && history.Requests.Any(request =>
+            string.Equals(request.RequestId, requestId, StringComparison.Ordinal)
+            && string.Equals(request.TurnId, expectedTurnId, StringComparison.Ordinal)
+            && string.Equals(request.State, "open", StringComparison.Ordinal));
 
     internal static SessionListDto GetSessionListDto(
         TtyHostSessionManager sessionManager,

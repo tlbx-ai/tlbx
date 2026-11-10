@@ -1,3 +1,4 @@
+import type { HistoryNavigatorMapping } from './historyNavigator';
 import type {
   AppServerControlAttachmentReference,
   AppServerControlHistorySnapshot,
@@ -41,7 +42,9 @@ export interface SessionAppServerControlViewState {
   historyWindowViewportWidth: number | null;
   historyNavigatorMode: HistoryNavigatorMode;
   historyNavigatorAnchorIndex: number | null;
+  historyNavigatorVisibleCount: number | null;
   historyNavigatorDragTargetIndex: number | null;
+  historyNavigatorDragMapping: HistoryNavigatorMapping | null;
   historyNavigatorQueuedTargetIndex: number | null;
   historyNavigatorQueuedRequestKind: HistoryNavigatorRequestKind | null;
   historyNavigatorPreviewHandle: number | null;
@@ -49,6 +52,7 @@ export interface SessionAppServerControlViewState {
   historyNavigatorLastPreviewRequestAt: number;
   historyPendingJumpTargetIndex: number | null;
   historyPendingJumpAlign: HistoryJumpAlign | null;
+  historyJumpTargetEntryId: string | null;
   historyRenderScheduled: number | null;
   historyRenderBatchHandle: number | null;
   activationState:
@@ -66,7 +70,7 @@ export interface SessionAppServerControlViewState {
   activationActionBusy: boolean;
   optimisticTurns: PendingAppServerControlTurn[];
   renderDirty: boolean;
-  assistantMarkdownCache: Map<string, AssistantMarkdownCacheEntry>;
+  historyMarkdownCache: Map<string, HistoryMarkdownCacheEntry>;
   historyRenderedNodes: Map<string, HistoryRenderedNode>;
   historyMeasuredHeights: Map<string, number>;
   historyObservedHeights: Map<string, number>;
@@ -77,6 +81,8 @@ export interface SessionAppServerControlViewState {
   historyMeasurementObserver: ResizeObserver | null;
   historyViewportResizeObserver: ResizeObserver | null;
   historyViewportSize: HistoryViewportSize | null;
+  historyReaderAnchor: (HistoryViewportAnchor & HistoryViewportSize & { scrollTop: number }) | null;
+  historyReaderResizeMeasurementPending: boolean;
   historyLeadingPlaceholders: HTMLDivElement[];
   historyTrailingPlaceholders: HTMLDivElement[];
   historyEmptyState: HTMLDivElement | null;
@@ -121,10 +127,14 @@ export interface AppServerControlActivationTraceEntry {
   detail: string;
 }
 
-export interface AssistantMarkdownCacheEntry {
+export interface HistoryMarkdownCacheEntry {
+  kind: HistoryKind;
+  sourceItemType: AppServerControlHistoryEntry['sourceItemType'];
   body: string;
   html: string;
   fileMentionToken: string;
+  imagePreviewToken: string;
+  technicalDetails: boolean;
 }
 
 export type HistoryKind =
@@ -268,11 +278,6 @@ export interface ArtifactClusterInfo {
   label: string | null;
   count: number;
   onlyTools: boolean;
-}
-
-export interface CommandToken {
-  text: string;
-  kind: 'command' | 'parameter' | 'string' | 'operator' | 'text' | 'whitespace';
 }
 
 export interface DiffRenderLine {

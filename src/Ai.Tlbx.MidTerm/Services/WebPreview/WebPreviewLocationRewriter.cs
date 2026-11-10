@@ -129,6 +129,9 @@ internal static partial class WebPreviewLocationRewriter
     internal static string RewriteInlineScripts(string html) => InlineScriptRegex().Replace(html, match =>
     {
         var attributes = match.Groups[1].Value;
+        // This adapter must read the native transport URL, even when another
+        // tlbx instance wraps its HTML. Rewriting it would make it wrap itself.
+        if (ProxyAdapterAttributeRegex().IsMatch(attributes)) return match.Value;
         var type = ScriptTypeRegex().Match(attributes);
         if (type.Success && type.Groups[1].Value.ToLowerInvariant() is not ("module" or "text/javascript" or "application/javascript" or "")) return match.Value;
         return "<script" + attributes + ">" + Rewrite(match.Groups[2].Value) + "</script>";
@@ -139,4 +142,7 @@ internal static partial class WebPreviewLocationRewriter
 
     [GeneratedRegex("(?:^|\\s)type\\s*=\\s*[\\\"']?([^\\\"'\\s>]+)", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ScriptTypeRegex();
+
+    [GeneratedRegex(@"(?:^|\s)data-mt-proxy-route\s*=", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ProxyAdapterAttributeRegex();
 }

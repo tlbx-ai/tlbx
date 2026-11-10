@@ -196,7 +196,7 @@ internal sealed class LogWriter : IDisposable
             RotateIfNeeded(textSize);
             buffer.Clear();
 
-            await _currentWriter!.WriteAsync(text).ConfigureAwait(false);
+            await _currentWriter!.WriteAsync(text.AsMemory(), _cts.Token).ConfigureAwait(false);
             await _currentWriter.FlushAsync(_cts.Token).ConfigureAwait(false);
             _currentFileSize += textSize;
         }
@@ -296,7 +296,7 @@ internal sealed class LogWriter : IDisposable
 
     private static int TryParseSegment(string fileName)
     {
-        var dotIndex = fileName.LastIndexOf('.', fileName.Length - 5);
+        var dotIndex = fileName.LastIndexOf('.', fileName.Length - 5, StringComparison.Ordinal);
         if (dotIndex < 0)
         {
             return -1;

@@ -351,4 +351,242 @@ describe('appServerControlWebSocket', () => {
     expect(onOpen).toHaveBeenCalledTimes(2);
     disconnect();
   });
+
+  it('recovers a cold background-suspended activation with attach/read/subscribe only', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const api = await import('./appServerControlWebSocket');
+    const { resumeAppServerControlActivationAfterTransport } =
+      await import('../modules/agentView/activationHelpers');
+    api.suspendAppServerControlWebSocketForBrowserBackground();
+    let initialError: unknown;
+    const oldActivation = api.attachAppServerControlSession('session-1').catch((error: unknown) => {
+      initialError = error;
+    });
+    await oldActivation;
+    expect(String(initialError)).toContain('suspended in background');
+    expect(FakeWebSocket.instances).toHaveLength(0);
+
+    const ready = vi.fn();
+    let disconnect = () => {};
+    const restored = {
+      sessionId: 'session-1',
+      latestSequence: 12,
+      historyCount: 1,
+      history: [{ entryId: 'old-message', order: 1 }],
+      thread: { threadId: 'same-native-thread' },
+    };
+    let history: unknown;
+    const recovered = resumeAppServerControlActivationAfterTransport(
+      api.recoverAppServerControlWebSocket,
+      oldActivation,
+      () => true,
+      async () => {
+        await api.attachAppServerControlSession('session-1');
+        history = await api.getAppServerControlHistoryWindowWs('session-1', undefined, 80);
+        disconnect = api.openAppServerControlHistorySocket(
+          'session-1',
+          12,
+          undefined,
+          80,
+          undefined,
+          { onPatch: vi.fn(), onOpen: ready },
+        );
+      },
+    );
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent).toHaveLength(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const attach = JSON.parse(socket.sent[0]!);
+    expect(attach.action).toBe('attach');
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'ack',
+        id: attach.id,
+        action: 'attach',
+        sessionId: 'session-1',
+      }),
+    } as MessageEvent);
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(2));
+    const read = JSON.parse(socket.sent[1]!);
+    expect(read.action).toBe('history.window.get');
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'history.window',
+        id: read.id,
+        sessionId: 'session-1',
+        historyWindow: restored,
+      }),
+    } as MessageEvent);
+    await recovered;
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledOnce());
+    expect(history).toMatchObject(restored);
+    expect(
+      socket.sent.map((message) => {
+        const value = JSON.parse(message);
+        return value.action ?? value.type;
+      }),
+    ).toEqual(['attach', 'history.window.get', 'subscribe']);
+    disconnect();
+  });
+  it('sends a guarded configure patch with null intact and waits for the correlated provider receipt', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { configureAppServerControlRuntimeWs } = await import('./appServerControlWebSocket');
+    const request = {
+      expectedThreadId: 'thread-A',
+      expectedTurnId: 'turn-A',
+      settings: { model: 'B', serviceTier: null },
+    };
+    const resolve = vi.fn();
+    const pending = configureAppServerControlRuntimeWs('session-1', request).then(resolve);
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    expect(sent).toMatchObject({
+      type: 'request',
+      action: 'runtime.configure',
+      sessionId: 'session-1',
+      configure: request,
+    });
+    expect(sent).not.toHaveProperty('turn');
+    expect(resolve).not.toHaveBeenCalled();
+    const receipt = {
+      sessionId: 'session-1',
+      threadId: 'thread-A',
+      turnId: 'turn-A',
+      status: 'partial',
+      threadStatus: 'applied',
+      turnStatus: 'targetUnavailable',
+      effectiveSettings: { model: 'provider-B' },
+      confirmedSettings: {},
+      deferredFields: [],
+      unconfirmedFields: [],
+      fieldErrors: {},
+    };
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { sessionId: 'session-1', status: 'partial', configuration: receipt },
+      }),
+    } as MessageEvent);
+    await pending;
+    expect(resolve).toHaveBeenCalledWith(receipt);
+    expect(socket.sent).toHaveLength(1);
+  });
+
+  it('preserves targetUnavailable when the host reports its different current thread', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { configureAppServerControlRuntimeWs } = await import('./appServerControlWebSocket');
+    const pending = configureAppServerControlRuntimeWs('session-1', {
+      expectedThreadId: 'stale-thread',
+      expectedTurnId: 'stale-turn',
+      settings: { model: 'B' },
+    });
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    const receipt = {
+      sessionId: 'session-1',
+      threadId: 'actual-thread',
+      turnId: 'stale-turn',
+      status: 'targetUnavailable',
+    };
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { configuration: receipt },
+      }),
+    } as MessageEvent);
+    expect(await pending).toEqual(receipt);
+    expect(socket.sent).toHaveLength(1);
+  });
+
+  it('rejects a mismatched configure target without replaying a mutation', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { configureAppServerControlRuntimeWs } = await import('./appServerControlWebSocket');
+    const pending = configureAppServerControlRuntimeWs('session-1', {
+      expectedThreadId: 'thread-A',
+      expectedTurnId: null,
+      settings: { effort: null },
+    });
+    const rejection = expect(pending).rejects.toThrow('did not match its target');
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { configuration: { sessionId: 'session-1', threadId: 'sibling', turnId: null } },
+      }),
+    } as MessageEvent);
+    await rejection;
+    expect(socket.sent).toHaveLength(1);
+  });
+  it.each(['set', 'get', 'clear', 'recover'] as const)(
+    'sends native Goal %s with its guard and preserves a pending receipt',
+    async (operation) => {
+      vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+      const { setAppServerControlGoalWs } = await import('./appServerControlWebSocket');
+      const request = {
+        operation,
+        expectedThreadId: 'thread-A',
+        expectedTurnId: 'turn-A',
+        objective: 'Keep',
+        tokenBudget: null,
+      };
+      const pending = setAppServerControlGoalWs('session-1', request);
+      await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+      const socket = FakeWebSocket.instances[0]!;
+      const sent = JSON.parse(socket.sent[0]!);
+      expect(sent).toMatchObject({
+        action: operation === 'recover' ? 'runtime.recover' : `thread.goal.${operation}`,
+        goalSet: request,
+      });
+      expect(sent).not.toHaveProperty('turn');
+      const receipt = {
+        sessionId: 'session-1',
+        threadId: 'thread-A',
+        turnId: 'turn-A',
+        status: 'pending',
+      };
+      socket.onmessage?.({
+        data: JSON.stringify({
+          type: 'commandAccepted',
+          id: sent.id,
+          sessionId: 'session-1',
+          response: { goal: receipt },
+        }),
+      } as MessageEvent);
+      expect(await pending).toEqual(receipt);
+      expect(socket.sent).toHaveLength(1);
+    },
+  );
+
+  it('does not turn a generic accepted response into native Goal success', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
+    const { setAppServerControlGoalWs } = await import('./appServerControlWebSocket');
+    const pending = setAppServerControlGoalWs('session-1', {
+      operation: 'get',
+      expectedThreadId: 'thread-A',
+      expectedTurnId: null,
+    });
+    const rejection = expect(pending).rejects.toThrow('did not match its target');
+    await vi.waitFor(() => expect(FakeWebSocket.instances[0]?.sent.length).toBe(1));
+    const socket = FakeWebSocket.instances[0]!;
+    const sent = JSON.parse(socket.sent[0]!);
+    socket.onmessage?.({
+      data: JSON.stringify({
+        type: 'commandAccepted',
+        id: sent.id,
+        sessionId: 'session-1',
+        response: { status: 'accepted' },
+      }),
+    } as MessageEvent);
+    await rejection;
+    expect(socket.sent).toHaveLength(1);
+  });
 });

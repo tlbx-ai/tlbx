@@ -14,7 +14,7 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $projectPath = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm/Ai.Tlbx.MidTerm.csproj"
 $wwwrootProbe = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm/wwwroot/js/terminal.min.js.br"
 $exeName = if ($Rid.StartsWith("win")) { "mt.exe" } else { "mt" }
-$publishDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm/bin/$Configuration/net10.0/$Rid/publish"
+$publishDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm/bin/$Configuration/net11.0/$Rid/publish"
 $exePath = Join-Path $publishDir $exeName
 
 if (-not $SkipPublish) {

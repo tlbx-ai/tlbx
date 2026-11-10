@@ -2,6 +2,25 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text;
 
+if (args.Contains("--codex-thread-list", StringComparer.Ordinal))
+{
+    var helperScenario = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CATALOG_SCENARIO");
+    if (helperScenario == "helper-hang") await Task.Delay(Timeout.InfiniteTimeSpan);
+    if (helperScenario == "helper-error") return 1;
+    if (helperScenario == "helper-invalid")
+    {
+        await Console.Out.WriteLineAsync("{}");
+        return 0;
+    }
+    await Console.Out.WriteLineAsync(JsonSerializer.Serialize(new[] { new
+    {
+        id = "native-helper-id", cwd = Environment.CurrentDirectory, name = "Native title",
+        preview = "First prompt", latestUserTexts = new[] { "Actual latest prompt" }, updatedAt = 1793527200
+    } }));
+    await Console.Out.FlushAsync();
+    return 0;
+}
+
 var threadId = "thread-fake-1";
 var turnId = "turn-fake-1";
 var approvalRequestId = JsonSerializer.SerializeToElement(101);
@@ -111,6 +130,87 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         }
                     }).ConfigureAwait(false);
                     continue;
+                case "thread/list":
+                    RecordMethod(launchCapture, method);
+                    launchCapture.CatalogListParams = root.GetProperty("params").Clone();
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    var catalogScenario = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CATALOG_SCENARIO");
+                    if (catalogScenario == "hang") await Task.Delay(Timeout.InfiniteTimeSpan);
+                    if (catalogScenario == "malformed")
+                    {
+                        await Console.Out.WriteLineAsync("not-json");
+                        await Console.Out.FlushAsync();
+                        continue;
+                    }
+                    if (catalogScenario == "overflow")
+                    {
+                        await Console.Out.WriteLineAsync(new string('x', 8 * 1024 * 1024 + 1));
+                        await Console.Out.FlushAsync();
+                        continue;
+                    }
+                    if (catalogScenario == "noisy")
+                    {
+                        for (var noise = 0; noise < 32; noise++)
+                            await Console.Error.WriteLineAsync(new string('x', 4096));
+                        await Console.Error.FlushAsync();
+                    }
+                    if (catalogScenario == "error")
+                    {
+                        await WriteJsonAsync(new { id = root.GetProperty("id").ToString(), error = new { code = -32601, message = "unsupported" } });
+                        continue;
+                    }
+                    await WriteJsonAsync(new
+                    {
+                        id = root.GetProperty("id").ToString(),
+                        result = new
+                        {
+                            data = Enumerable.Range(0, catalogScenario is "many" or "many-slow" ? 60 : 1).Select(index => new
+                            {
+                                id = index == 0 ? "catalog-native-thread" : "catalog-native-" + index,
+                                cwd = GetString(root.GetProperty("params"), "cwd") ?? Environment.CurrentDirectory,
+                                name = (string?)null,
+                                preview = "Native first prompt",
+                                updatedAt = 1793527200,
+                                status = new { type = "notLoaded" }
+                            }).ToArray(),
+                            nextCursor = (string?)null
+                        }
+                    });
+                    continue;
+                case "thread/turns/list":
+                    RecordMethod(launchCapture, method);
+                    launchCapture.CatalogTurnsParams = root.GetProperty("params").Clone();
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    if (Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CATALOG_SCENARIO") is "turns-hang" or "many-slow")
+                        await Task.Delay(Timeout.InfiniteTimeSpan);
+                    if (Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CATALOG_SCENARIO") == "turns-overflow")
+                    {
+                        await Console.Out.WriteLineAsync(new string('x', 8 * 1024 * 1024 + 1));
+                        await Console.Out.FlushAsync();
+                        continue;
+                    }
+                    if (Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_CATALOG_SCENARIO") == "turns-error")
+                    {
+                        await WriteJsonAsync(new { id = root.GetProperty("id").ToString(), error = new { code = -32601, message = "unavailable" } });
+                        continue;
+                    }
+                    await WriteJsonAsync(new
+                    {
+                        id = root.GetProperty("id").ToString(),
+                        result = new
+                        {
+                            data = new[] { new
+                        {
+                            id = "catalog-latest-turn", items = new[] { new
+                            {
+                                type = "userMessage", id = "catalog-latest-user",
+                                content = new[] { new { type = "text", text = "Native latest real user prompt" } }
+                            } }
+                        } },
+                            nextCursor = (string?)null
+                        }
+                    });
+                    continue;
                 case "thread/start":
                     RecordMethod(launchCapture, method);
                     if (root.TryGetProperty("params", out var threadStartParams) && threadStartParams.ValueKind == JsonValueKind.Object)
@@ -172,6 +272,16 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
                         {
                             thread = new { id = threadId }
                         }
+                    }).ConfigureAwait(false);
+                    continue;
+                case "thread/goal/get":
+                    RecordMethod(launchCapture, method);
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new { goal = (object?)null }
                     }).ConfigureAwait(false);
                     continue;
                 case "thread/read":
@@ -516,11 +626,14 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
     }
 }
 
+return 0;
+
 static FakeCodexLaunchCapture CreateLaunchCapture()
 {
     var args = Environment.GetCommandLineArgs();
     return new FakeCodexLaunchCapture
     {
+        ProcessId = Environment.ProcessId,
         ExecutablePath = args.Length > 0 ? args[0] : null,
         Arguments = args.Skip(1).ToArray(),
         ProcessWorkingDirectory = Environment.CurrentDirectory,
@@ -673,6 +786,12 @@ internal sealed class FakeCodexLaunchCapture
     public string? Path { get; set; }
 
     public List<string> Methods { get; set; } = [];
+
+    public JsonElement? CatalogListParams { get; set; }
+
+    public int ProcessId { get; set; }
+
+    public JsonElement? CatalogTurnsParams { get; set; }
 
     public string? InitializeClientName { get; set; }
 

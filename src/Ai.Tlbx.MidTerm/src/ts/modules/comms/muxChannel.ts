@@ -1,6 +1,6 @@
 import {
   SocketReadiness,
-  RESUME_PROBE_TIMEOUT_MS,
+  resumeProbeTimeoutMs,
   SOCKET_PROGRESS_TIMEOUT_MS,
 } from './socketReadiness';
 /* eslint-disable max-lines -- Mux transport remains the protocol coordinator; hot-path helpers are split out as they become stable. */
@@ -238,7 +238,7 @@ export function probeMuxWebSocket(): Promise<boolean> {
     };
     const timeout = setTimeout(() => {
       finish(false);
-    }, RESUME_PROBE_TIMEOUT_MS);
+    }, resumeProbeTimeoutMs());
     socket.addEventListener('message', received, { once: true });
     const frame = new Uint8Array(MUX_HEADER_SIZE + 9);
     frame[0] = MUX_TYPE_PING;
@@ -542,6 +542,34 @@ function getOrCreateBrowserTransportSnapshot(sessionId: string): BrowserTranspor
 
 export function getBrowserTransportSnapshot(sessionId: string): BrowserTransportSnapshot | null {
   return browserTransportSnapshots.get(sessionId) ?? null;
+}
+
+/** Await a server recovery boundary and xterm parsing, without resetting output. */
+export async function prepareMuxTerminalCapture(sessionIds: readonly string[]): Promise<void> {
+  const deadline = Date.now() + 8000;
+  const waitUntil = async (ready: () => boolean): Promise<void> => {
+    while (!ready()) {
+      if (Date.now() >= deadline)
+        throw new Error('Terminal capture timed out awaiting fresh output');
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+  };
+  await waitUntil(() => $muxWsConnected.get());
+  const ids = sessionIds.filter((id) => !isHubSessionId(id) && sessionTerminals.get(id)?.opened);
+  for (const id of ids) {
+    await waitUntil(() => !recoveryRequestsInFlight.has(id) && !activeSessionRecoveries.has(id));
+    const completed = getOrCreateBrowserTransportSnapshot(id).recoveryCompleted;
+    requestBufferRefresh(id, 'quickResume', 'browser_capture');
+    await waitUntil(() => {
+      const snapshot = browserTransportSnapshots.get(id);
+      return (
+        !!snapshot &&
+        snapshot.recoveryCompleted > completed &&
+        snapshot.renderedSeq === snapshot.receivedSeq &&
+        !sessionTerminals.get(id)?.terminal.modes.synchronizedOutputMode
+      );
+    });
+  }
 }
 
 /** Releases every per-session transport owner when a terminal is destroyed. */

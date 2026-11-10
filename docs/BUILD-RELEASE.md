@@ -1,5 +1,13 @@
 # Build and release verification
 
+CI installs SDK 10.0.402 and 11.0.100 side by side in every .NET job,
+including the self-hosted signing runner. The repository and all .NET components target .NET 11,
+with SDK 11.0.100 pinned in `global.json`. Build system verification compiles
+and runs a minimal net10.0/net11.0 application on all six package platforms
+(Windows x64/x86, Linux x64/ARM64, macOS x64/ARM64) and checks SDK selection,
+runtime major version and process architecture with `scripts/verify-dotnet-sdks.ps1`.
+
+
 Every release entry point (`release-dev.ps1`, `release-local.ps1`, `release.ps1`,
 `promote.ps1`) requires `-TestCategories`. There is no default or skip-all choice.
 Choose after reviewing **all changes since the previous release**, including shared
@@ -40,9 +48,14 @@ package signing, SBOM/provenance and platform builds remain release gates.
 The frontend and marketing typechecks use TypeScript 7 through the
 `typescript-compiler` npm alias. Their `typescript` dependency supplies the
 JavaScript compiler API required by the current ESLint parser and OpenAPI
-generator; it is not the compiler used by `typecheck`. ASP.NET Core 10 requires
-OpenAPI.NET 2.x, so that generator retains the latest 2.x package until the
-stable ASP.NET integration supports OpenAPI.NET 3.
+generator; it is not the compiler used by `typecheck`. The ASP.NET Core 11
+generator uses OpenAPI.NET 3.x and explicitly keeps OpenAPI 3.1 output for the
+existing TypeScript contract. Native AOT publishing remains enabled for `mt`,
+`mthost` and `mtagenthost`; the migration does not opt into preview features.
+
+Native AOT on macOS Intel uses `-Wl,-no_fixup_chains`: the .NET 11 GSS native
+archive contains two-byte-aligned pointer relocations that Xcode's chained fixup
+encoding rejects. This leaves AOT, signing, notarization and package checks enabled.
 
 Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
 Automated behavioral tests cover protocols, settings, installation and updates.

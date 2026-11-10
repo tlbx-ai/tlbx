@@ -10,6 +10,7 @@ public static class AppServerControlHostProtocol
 
 public sealed class AppServerControlQuickSettingsPayload
 {
+    public List<string> AcknowledgedFields { get; set; } = [];
     public string? Model { get; set; }
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
@@ -143,6 +144,7 @@ public sealed class AppServerControlCommand
 
 public sealed class AppServerControlThreadSummary
 {
+    public AppServerControlGoalState? Goal { get; set; }
     public string ThreadId { get; set; } = string.Empty;
     public string State { get; set; } = string.Empty;
     public string StateLabel { get; set; } = string.Empty;
@@ -247,6 +249,7 @@ public static class AppServerControlQuickSettings
             FastMode = NormalizeFastMode(summary.FastMode),
             ModelOptions = CloneOptions(summary.ModelOptions),
             EffortOptions = CloneOptions(summary.EffortOptions),
+            AcknowledgedFields = [.. summary.AcknowledgedFields],
             ConfigOptions = CloneConfigOptions(summary.ConfigOptions)
         };
     }
@@ -255,7 +258,7 @@ public static class AppServerControlQuickSettings
         options?.Select(static option => option.Clone()).ToList() ?? [];
 
     public static Dictionary<string, JsonElement> CloneConfigValues(IReadOnlyDictionary<string, JsonElement>? values) =>
-        values?.ToDictionary(static entry => entry.Key, static entry => entry.Value.Clone(), StringComparer.Ordinal) ?? [];
+        values?.ToDictionary(static entry => entry.Key, static entry => entry.Value.Clone(), StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
 
     public static string ApplyPlanModePrompt(string? text, string? planMode)
     {
@@ -276,6 +279,7 @@ public static class AppServerControlQuickSettings
 
 public sealed class AppServerControlQuickSettingsSummary
 {
+    public List<string> AcknowledgedFields { get; set; } = [];
     public string? Model { get; set; }
     public string? Effort { get; set; }
     public string PlanMode { get; set; } = AppServerControlQuickSettings.PlanModeOff;
@@ -462,14 +466,22 @@ public sealed class AppServerControlTurnRequest
     public string? PlanMode { get; set; }
     public string? PermissionMode { get; set; }
     public string? FastMode { get; set; }
-    public Dictionary<string, JsonElement> ConfigValues { get; set; } = [];
+    public Dictionary<string, JsonElement> ConfigValues { get; set; } = new(StringComparer.Ordinal);
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
     public List<AppServerControlTerminalReplayStep> TerminalReplay { get; set; } = [];
 }
 
 public sealed class AppServerControlGoalSetRequest
 {
-    public string Objective { get; set; } = string.Empty;
+    public string Operation { get; set; } = "set";
+    public string ExpectedThreadId { get; set; } = string.Empty;
+    public string? ExpectedTurnId { get; set; }
+    public string? Objective { get; set; }
+    public string? Status { get; set; }
+    // Missing budget preserves it; an explicit JSON null clears it.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public JsonElement TokenBudget { get; set; }
+    public bool InterruptActiveTurn { get; set; }
 }
 
 public sealed class AppServerControlAttachmentReference
@@ -504,6 +516,35 @@ public sealed class AppServerControlInterruptRequest
     public string? TurnId { get; set; }
 }
 
+/// <summary>Patch keys are presence-sensitive: omitted and explicit JSON null remain distinct.</summary>
+public sealed class AppServerControlConfigureRequest
+{
+    public string ExpectedThreadId { get; set; } = string.Empty;
+    // Null explicitly guards an idle runtime; a non-null value must match the active turn exactly.
+    public string? ExpectedTurnId { get; set; }
+    public Dictionary<string, JsonElement> Settings { get; set; } = new(StringComparer.Ordinal);
+}
+
+public sealed class AppServerControlConfigureResponse
+{
+    public string SessionId { get; set; } = string.Empty;
+    public string ThreadId { get; set; } = string.Empty;
+    public string? TurnId { get; set; }
+    public string Status { get; set; } = "applied";
+    public string ThreadStatus { get; set; } = "notRequested";
+    public string ThreadScope { get; set; } = "subsequentTurns";
+    public string TurnStatus { get; set; } = "notRequested";
+    public string TurnScope { get; set; } = "subsequentCaptures";
+    // Provider readback, never a copy of the browser draft.
+    public Dictionary<string, JsonElement> EffectiveSettings { get; set; } = new(StringComparer.Ordinal);
+    // A control acknowledgement need not provide actual readback (notably Claude effort clamping).
+    public Dictionary<string, JsonElement> ConfirmedSettings { get; set; } = new(StringComparer.Ordinal);
+    public List<string> DeferredFields { get; set; } = [];
+    public List<string> UnconfirmedFields { get; set; } = [];
+    public Dictionary<string, string> FieldErrors { get; set; } = new(StringComparer.Ordinal);
+    public string? Detail { get; set; }
+}
+
 public sealed class AppServerControlSteerRequest
 {
     public string? Text { get; set; }
@@ -523,10 +564,16 @@ public sealed class AppServerControlUserInputAnswerRequest
 
 public sealed class AppServerControlCommandAcceptedResponse
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Decision { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<AppServerControlAnsweredQuestion>? Answers { get; set; }
     public string SessionId { get; set; } = string.Empty;
     public string Status { get; set; } = "accepted";
     public string? RequestId { get; set; }
     public string? TurnId { get; set; }
+    public AppServerControlConfigureResponse? Configuration { get; set; }
+    public AppServerControlGoalResponse? Goal { get; set; }
 }
 
 public sealed class AppServerControlHistoryWindowRequest
@@ -551,6 +598,7 @@ public sealed class AppServerControlWsRequestMessage
     public AppServerControlRequestDecisionRequest? RequestDecision { get; set; }
     public AppServerControlUserInputAnswerRequest? UserInputAnswer { get; set; }
     public AppServerControlGoalSetRequest? GoalSet { get; set; }
+    public AppServerControlConfigureRequest? Configure { get; set; }
 }
 
 public sealed class AppServerControlWsSubscriptionMessage
@@ -674,6 +722,7 @@ public sealed class AppServerControlHostCommandEnvelope
     public AppServerControlRequestResolutionCommand? ResolveRequest { get; set; }
     public AppServerControlUserInputResolutionCommand? ResolveUserInput { get; set; }
     public AppServerControlGoalSetRequest? SetGoal { get; set; }
+    public AppServerControlConfigureRequest? Configure { get; set; }
     public AppServerControlHostHistoryWindowRequest? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }
@@ -701,6 +750,7 @@ public sealed class AppServerControlHostCommandResultEnvelope
     public string? Message { get; set; }
     public AppServerControlTurnStartResponse? TurnStarted { get; set; }
     public AppServerControlCommandAcceptedResponse? Accepted { get; set; }
+    public AppServerControlConfigureResponse? Configured { get; set; }
     public AppServerControlHistoryWindowResponse? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }
@@ -726,7 +776,12 @@ public sealed class AppServerControlHostHistoryPatchEnvelope
 [JsonSerializable(typeof(AppServerControlUserInputResolutionCommand))]
 [JsonSerializable(typeof(AppServerControlTurnRequest))]
 [JsonSerializable(typeof(AppServerControlSteerRequest))]
+[JsonSerializable(typeof(AppServerControlConfigureRequest))]
+[JsonSerializable(typeof(AppServerControlConfigureResponse))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
+[JsonSerializable(typeof(AppServerControlGoalState))]
+[JsonSerializable(typeof(AppServerControlGoalSummary))]
+[JsonSerializable(typeof(AppServerControlGoalResponse))]
 [JsonSerializable(typeof(AppServerControlAttachmentReference))]
 [JsonSerializable(typeof(AppServerControlTurnStartResponse))]
 [JsonSerializable(typeof(AppServerControlInterruptRequest))]

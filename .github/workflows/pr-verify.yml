@@ -24,7 +24,9 @@ jobs:
           node-version: '26.12.0'
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '10.0.402'
+          dotnet-version: |
+            10.0.402
+            11.0.100
       - run: npm install --global npm@12.2.0 --ignore-scripts
       - run: npm ci --include=dev --no-audit --no-fund
         working-directory: src/Ai.Tlbx.MidTerm
@@ -121,7 +123,9 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
-          dotnet-version: '10.0.402'
+          dotnet-version: |
+            10.0.402
+            11.0.100
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: '26.12.0'
@@ -130,7 +134,7 @@ jobs:
         # This job gates actual macOS process behavior; broad .NET suites run locally.
         run: dotnet build src/Ai.Tlbx.MidTerm.UnitTests -c Release -p:SkipFrontendBuild=true -p:SkipConnectNativeBuild=true -p:RunAnalyzersDuringBuild=false -p:UseSharedCompilation=false
       - name: Verify macOS identity and native stdio artifact/process workflows
-        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net10.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' '*TlbxMcpNativeProcessLifetimeTests' --report-trx --results-directory .artifacts/macos-context
+        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net11.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' '*TlbxMcpNativeProcessLifetimeTests' --report-trx --results-directory .artifacts/macos-context
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

@@ -29,6 +29,7 @@ import {
   getBrowserTransportSnapshot,
 } from './modules/comms';
 import { connectInitialSessionTransports } from './modules/comms/initialMuxConnection';
+import { prepareTerminalPreviewCapture } from './modules/terminal/previewCapture';
 import { initBadges } from './modules/badges';
 import {
   preloadTerminalFont,
@@ -136,6 +137,7 @@ import {
 import {
   initAgentView,
   getAppServerControlDebugScenarioNames,
+  inspectAppServerControlHistory,
   recoverAppServerControlAfterBrowserResume,
   suspendAppServerControlForBrowserBackground,
   showAppServerControlDebugScenario,
@@ -304,6 +306,7 @@ window.mmDebug = {
     },
   },
   appServerControl: {
+    inspect: inspectAppServerControlHistory,
     get scenarios() {
       return [...getAppServerControlDebugScenarioNames()];
     },
@@ -748,6 +751,7 @@ function setupVisibilityChangeHandler(includeSettingsChannel: boolean): void {
     applyScrollbackProtection,
     recoverTerminalPresentationAfterResume: scheduleForegroundResizeRecovery,
     keepTerminalOutputActiveWhileHidden: isMobilePiPActive,
+    prepareTerminalCapture: () => prepareTerminalPreviewCapture(getVisibleTerminalSessionIds()),
     stayActiveInBackground: () => $currentSettings.get()?.stayActiveInBackground === true,
     subscribeBackgroundActivity: (listener) =>
       $currentSettings.listen((settings, previous) => {
@@ -1048,6 +1052,9 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
   });
   if (!candidate) return;
 
+  const workingDirectory = candidate.workingDirectory.trim() || args.workingDirectory;
+  const keepsSourceFolder =
+    normalizeResumeFolder(workingDirectory) === normalizeResumeFolder(args.workingDirectory);
   const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
   const tempId = createPendingSession(cols, rows);
 
@@ -1055,13 +1062,15 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     cols,
     rows,
     shell: resolveLauncherShell(),
-    workingDirectory: args.workingDirectory,
+    workingDirectory,
     agentControlled: false,
     injectGuidance: true,
     profile: args.provider,
     resumeThreadId: candidate.sessionId,
-    spaceId: sourceSession.spaceId ?? null,
-    workspacePath: sourceSession.workspacePath ?? args.workingDirectory,
+    spaceId: keepsSourceFolder ? (sourceSession.spaceId ?? null) : null,
+    workspacePath: keepsSourceFolder
+      ? (sourceSession.workspacePath ?? workingDirectory)
+      : workingDirectory,
     surface: args.provider,
     appServerControlOnly: true,
     launchDelayMs: 0,
@@ -1085,13 +1094,12 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     });
 }
 
+function normalizeResumeFolder(path: string): string {
+  return path.replace(/\\/g, '/').trim().replace(/\/+$/, '').toLowerCase();
+}
+
 function buildAppServerControlHistoryDedupeKey(profile: string, workingDirectory: string): string {
-  const normalizedPath = workingDirectory
-    .replace(/\\/g, '/')
-    .trim()
-    .replace(/\/+$/, '')
-    .toLowerCase();
-  return `appServerControl|${profile}|${normalizedPath}`;
+  return `appServerControl|${profile}|${normalizeResumeFolder(workingDirectory)}`;
 }
 
 // =============================================================================

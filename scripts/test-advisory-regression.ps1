@@ -46,7 +46,7 @@ $lock.packages.'node_modules/braces'.dev = $false
 Reject { Assert-NoAdvisoryRegression @(Convert-NpmAdvisoryFindings $report $lock) $findings 'npm runtime promotion' } 'Lockfile runtime promotion passed.'
 Reject { Convert-NpmAdvisoryFindings $report ('{"packages":{}}' | ConvertFrom-Json -AsHashtable) } 'npm finding absent from lock passed.'
 
-$nuget = '{"version":1,"projects":[{"frameworks":[{"framework":"net10.0","transitivePackages":[{"id":"Fixture","resolvedVersion":"1.0.0","vulnerabilities":[{"severity":"High","advisoryurl":"https://example.test/nuget"}]}]}]}]}' | ConvertFrom-Json
+$nuget = '{"version":1,"projects":[{"frameworks":[{"framework":"net11.0","transitivePackages":[{"id":"Fixture","resolvedVersion":"1.0.0","vulnerabilities":[{"severity":"High","advisoryurl":"https://example.test/nuget"}]}]}]}]}' | ConvertFrom-Json
 $nugetFindings = @(Convert-NuGetAdvisoryFindings $nuget)
 Check ($nugetFindings.Count -eq 1 -and $nugetFindings[0].Rank -eq 3) 'NuGet advisory normalization failed.'
 Reject { Convert-NuGetAdvisoryFindings ('{"version":1,"projects":[],"problems":["source unavailable"]}' | ConvertFrom-Json) } 'Incomplete NuGet audit passed.'

@@ -2004,10 +2004,10 @@ public static class TtyHostSpawner
         // Development fallback: check sibling TtyHost project's output
         var repoRoot = Path.GetFullPath(Path.Combine(dir, "..", "..", "..", ".."));
 #if WINDOWS
-        var devPath = Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.TtyHost", "bin", "Debug", "net10.0", "win-x64", exeName);
+        var devPath = Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.TtyHost", "bin", "Debug", "net11.0", "win-x64", exeName);
 #else
         var rid = OperatingSystem.IsMacOS() ? "osx-arm64" : "linux-x64";
-        var devPath = Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.TtyHost", "bin", "Debug", "net10.0", rid, exeName);
+        var devPath = Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.TtyHost", "bin", "Debug", "net11.0", rid, exeName);
 #endif
         if (File.Exists(devPath))
         {

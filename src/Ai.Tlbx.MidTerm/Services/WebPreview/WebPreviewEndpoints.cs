@@ -86,7 +86,7 @@ public static partial class WebPreviewEndpoints
 
             if (!service.SetTarget(request.SessionId, request.PreviewName, request.Url))
             {
-                return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to this server.");
+                return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to a preview route on this server.");
             }
 
             WriteTlbxCliToActiveSessions(sessionManager);

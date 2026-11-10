@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { isFileChangeHistoryEntry, isHistoryError } from './historyVisibility';
 import {
   COLLAPSIBLE_HISTORY_BODY_MIN_CHARS,
   COLLAPSIBLE_HISTORY_BODY_MIN_LINES,
@@ -7,7 +8,6 @@ import {
   MAX_VISIBLE_DIFF_LINES,
 } from './historyConstants';
 import type {
-  CommandToken,
   DiffRenderLine,
   HistoryBodyPresentation,
   HistoryKind,
@@ -151,106 +151,27 @@ function isCommandOutputOmissionMarker(line: string): boolean {
   );
 }
 
-function readWhitespaceToken(source: string, start: number): number {
-  let end = start + 1;
-  while (end < source.length && /\s/.test(source[end] || '')) {
-    end += 1;
-  }
-
-  return end;
+export function usesMarkdownPresentation(entry: AppServerControlHistoryEntry): boolean {
+  return (
+    entry.kind === 'user' || entry.kind === 'assistant' || entry.sourceItemType === 'proposed_plan'
+  );
 }
 
-function readQuotedToken(source: string, start: number, quote: '"' | "'"): number {
-  let end = start + 1;
-  while (end < source.length) {
-    const value = source[end];
-    if (value === '\\') {
-      end += 2;
-      continue;
-    }
-
-    end += 1;
-    if (value === quote) {
-      break;
-    }
-  }
-
-  return Math.min(end, source.length);
+function shouldCollapseHistoryBody(
+  entry: AppServerControlHistoryEntry,
+  mode: HistoryBodyPresentation['mode'],
+  lineCount: number,
+): boolean {
+  return (
+    !isHistoryError(entry) &&
+    (mode === 'diff' ||
+      (mode === 'monospace' &&
+        !entry.live &&
+        !entry.pending &&
+        (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
+          entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS)))
+  );
 }
-
-function readWordToken(source: string, start: number): number {
-  let end = start + 1;
-  while (end < source.length) {
-    const value = source[end];
-    if (!value || /\s/.test(value) || value === '"' || value === "'") {
-      break;
-    }
-
-    const nextOperator = source.slice(end).match(/^(?:\|\||&&|>>|<<|[><=|&])/);
-    if (nextOperator?.[0]) {
-      break;
-    }
-
-    end += 1;
-  }
-
-  return end;
-}
-
-export function tokenizeCommandText(commandText: string): CommandToken[] {
-  const source = commandText || '';
-  const tokens: CommandToken[] = [];
-  let index = 0;
-  let firstWordSeen = false;
-
-  while (index < source.length) {
-    const current = source[index];
-    if (!current) {
-      break;
-    }
-
-    if (/\s/.test(current)) {
-      const end = readWhitespaceToken(source, index);
-      tokens.push({ text: source.slice(index, end), kind: 'whitespace' });
-      index = end;
-      continue;
-    }
-
-    if (current === '"' || current === "'") {
-      const nextIndex = readQuotedToken(source, index, current);
-      tokens.push({ text: source.slice(index, nextIndex), kind: 'string' });
-      index = nextIndex;
-      continue;
-    }
-
-    const operatorMatch = source.slice(index).match(/^(?:\|\||&&|>>|<<|[><=|&])/);
-    if (operatorMatch?.[0]) {
-      tokens.push({ text: operatorMatch[0], kind: 'operator' });
-      index += operatorMatch[0].length;
-      continue;
-    }
-
-    const end = readWordToken(source, index);
-    const text = source.slice(index, end);
-    const kind: CommandToken['kind'] = !firstWordSeen
-      ? 'command'
-      : text.startsWith('-')
-        ? 'parameter'
-        : 'text';
-    tokens.push({ text, kind });
-    if (!firstWordSeen && text.trim().length > 0) {
-      firstWordSeen = true;
-    }
-    index = end;
-  }
-
-  return tokens;
-}
-
-function usesMarkdownPresentation(entry: AppServerControlHistoryEntry): boolean {
-  return entry.kind === 'assistant' || entry.sourceItemType === 'proposed_plan';
-}
-
 export function resolveHistoryBodyPresentation(
   entry: AppServerControlHistoryEntry,
 ): HistoryBodyPresentation {
@@ -267,7 +188,9 @@ export function resolveHistoryBodyPresentation(
     const evidenceLines = countHistoryBodyLines(entry.toolPresentation.evidence ?? '');
     return {
       mode: 'tool',
-      collapsedByDefault: false,
+      collapsedByDefault:
+        entry.toolPresentation.category === 'command' ||
+        (isFileChangeHistoryEntry(entry) && !isHistoryError(entry)),
       lineCount: Math.max(1, evidenceLines + 1),
       preview: '',
     };
@@ -276,7 +199,7 @@ export function resolveHistoryBodyPresentation(
   if (isToolCommandPresentationEntry(entry)) {
     return {
       mode: 'command',
-      collapsedByDefault: false,
+      collapsedByDefault: true,
       lineCount: 1 + (entry.commandOutputTail?.length ?? 0),
       preview: '',
     };
@@ -285,18 +208,13 @@ export function resolveHistoryBodyPresentation(
   const mode =
     entry.kind === 'diff' ? 'diff' : isMachineHistoryKind(entry.kind) ? 'monospace' : 'plain';
   const lineCount = countHistoryBodyLines(entry.body);
-  const collapsedByDefault =
-    mode === 'monospace' &&
-    !entry.live &&
-    !entry.pending &&
-    (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
-      entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS);
+  const collapsedByDefault = shouldCollapseHistoryBody(entry, mode, lineCount);
 
   return {
     mode,
     collapsedByDefault,
     lineCount,
-    preview: collapsedByDefault ? buildHistoryBodyPreview(entry.body) : '',
+    preview: collapsedByDefault && mode !== 'diff' ? buildHistoryBodyPreview(entry.body) : '',
   };
 }
 

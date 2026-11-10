@@ -19,11 +19,25 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
     using var document = JsonDocument.Parse(line);
     var root = document.RootElement;
     var type = GetString(root, "type");
+    if (File.Exists("capture-runtime-contract"))
+        await File.AppendAllTextAsync("runtime-contract.jsonl", JsonSerializer.Serialize(new
+        {
+            type, subtype = GetString(root, "request", "subtype"),
+            sessionId = ReadOption(args, "--session-id"), resume = ReadOption(args, "--resume")
+        }) + Environment.NewLine).ConfigureAwait(false);
+
 
     if (string.Equals(type, "control_request", StringComparison.Ordinal))
     {
         var requestId = GetString(root, "request_id") ?? string.Empty;
         var subtype = GetString(root, "request", "subtype");
+        if (subtype == "initialize" && File.Exists("reject-initialize"))
+        {
+            await WriteJsonAsync(new { type = "control_response", response = new
+                { subtype = "error", request_id = requestId, error = "Fixture initialization rejected." } }).ConfigureAwait(false);
+            continue;
+        }
+
         if (subtype == "apply_flag_settings" && root.GetProperty("request").TryGetProperty("settings", out var settings) &&
             settings.TryGetProperty("effortLevel", out var effort))
             currentEffort = effort.ValueKind == JsonValueKind.String ? effort.GetString() : null;
@@ -39,10 +53,11 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
                 {
                     commands = new[]
                     {
+                        new { name = "goal", description = "Fixture goal", argumentHint = "<condition>" },
                         new { name = "review", description = "Review changes", argumentHint = "<file>" },
                         new { name = "compact", description = "Compact conversation", argumentHint = "" },
                         new { name = "exit", description = "Exit terminal", argumentHint = "" }
-                    },
+                    }.Where(command => command.name != "goal" || File.Exists("goal-contract-fixture")).ToArray(),
                     models = new[]
                     {
                         new { value = "claude-test", displayName = "Claude Test", description = "Native test model", supportsEffort = true, supportedEffortLevels = new[] { "low", "high" } }
@@ -81,6 +96,25 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } line)
 
     turn++;
     var prompt = ReadUserText(root);
+    if (File.Exists("goal-contract-fixture") && prompt.StartsWith("/goal", StringComparison.Ordinal))
+    {
+        await File.AppendAllTextAsync("goal-inputs.jsonl", JsonSerializer.Serialize(new { sessionId, prompt }) + Environment.NewLine).ConfigureAwait(false);
+        await WriteJsonAsync(new { type = "command_lifecycle", command_uuid = GetString(root, "uuid"), state = "started", uuid = Guid.NewGuid().ToString(), session_id = sessionId }).ConfigureAwait(false);
+        var goalPath = "fixture-goal-" + sessionId;
+        var condition = prompt.Length > 5 ? prompt[6..] : null;
+        if (condition == "clear") File.Delete(goalPath);
+        else if (condition is not null) await File.WriteAllTextAsync(goalPath, condition).ConfigureAwait(false);
+        if (condition is not null && condition != "clear" && File.Exists("lose-goal-result"))
+        {
+            await File.WriteAllTextAsync("goal-result-withheld", string.Empty).ConfigureAwait(false);
+            continue;
+        }
+        var text = condition == "clear" ? "No goal set" : condition is not null ? "Goal set: " + condition :
+            File.Exists(goalPath) ? "Goal active: " + await File.ReadAllTextAsync(goalPath).ConfigureAwait(false) + " (not yet evaluated)" : "No goal set. Usage: `/goal <condition>`";
+        await WriteJsonAsync(new { type = "assistant", session_id = sessionId, message = new { id = Guid.NewGuid().ToString(), content = new[] { new { type = "text", text } } } }).ConfigureAwait(false);
+        await WriteJsonAsync(new { type = "result", session_id = sessionId, subtype = "success", is_error = false, result = text, queued_turn_count = 0 }).ConfigureAwait(false);
+        continue;
+    }
     if (waitingForSteer)
     {
         if (GetString(root, "priority") != "now") throw new InvalidOperationException("Active steering must use native priority now.");
@@ -234,8 +268,9 @@ static async Task WriteJsonAsync<T>(T payload)
 static string ReadUserText(JsonElement root)
 {
     if (!root.TryGetProperty("message", out var message) ||
-        !message.TryGetProperty("content", out var content) ||
-        content.ValueKind != JsonValueKind.Array) return string.Empty;
+        !message.TryGetProperty("content", out var content)) return string.Empty;
+    if (content.ValueKind == JsonValueKind.String) return content.GetString() ?? string.Empty;
+    if (content.ValueKind != JsonValueKind.Array) return string.Empty;
     foreach (var block in content.EnumerateArray())
     {
         if (string.Equals(GetString(block, "type"), "text", StringComparison.Ordinal))

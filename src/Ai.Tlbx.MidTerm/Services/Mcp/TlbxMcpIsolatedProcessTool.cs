@@ -114,6 +114,11 @@ internal static class TlbxMcpIsolatedProcessTool
             WorkingDirectory = cwd, UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true
         };
+        // MCP clients may pass only a minimal environment. MSBuild's native
+        // compiler uses OS, so a Windows child must not inherit a missing value.
+        if (OperatingSystem.IsWindows() &&
+            (!info.Environment.TryGetValue("OS", out var os) || string.IsNullOrWhiteSpace(os)))
+            info.Environment["OS"] = "Windows_NT";
         foreach (var arg in argv) info.ArgumentList.Add(arg);
         return info;
     }
@@ -212,7 +217,12 @@ internal static class TlbxMcpIsolatedProcessTool
             while ((count = await source.ReadAsync(buffer.AsMemory()).ConfigureAwait(false)) > 0)
             {
                 if (!canWrite) continue;
-                try { await destination.WriteAsync(buffer.AsMemory(0, count)).ConfigureAwait(false); }
+                try
+                {
+                    await destination.WriteAsync(buffer.AsMemory(0, count)).ConfigureAwait(false);
+                    // Small progress chunks must be observable while the child is still running.
+                    await destination.FlushAsync().ConfigureAwait(false);
+                }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { failure(ex); canWrite = false; }
             }
             if (canWrite) await destination.FlushAsync().ConfigureAwait(false);

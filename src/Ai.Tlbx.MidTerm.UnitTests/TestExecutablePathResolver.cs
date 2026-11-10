@@ -19,8 +19,8 @@ internal static class TestExecutablePathResolver
         {
             var candidates = new[]
             {
-                Path.Combine(repoRoot, "src", projectDirectoryName, "bin", configuration, "net10.0", "win-x64", executableName),
-                Path.Combine(repoRoot, "src", projectDirectoryName, "bin", configuration, "net10.0", executableName)
+                Path.Combine(repoRoot, "src", projectDirectoryName, "bin", configuration, "net11.0", "win-x64", executableName),
+                Path.Combine(repoRoot, "src", projectDirectoryName, "bin", configuration, "net11.0", executableName)
             };
             var resolved = candidates.FirstOrDefault(File.Exists);
             if (!string.IsNullOrWhiteSpace(resolved))

@@ -412,6 +412,24 @@ public sealed class AppServerControlWebSocketHandler
                     break;
                 }
 
+                case "runtime.configure":
+                {
+                    var response = await _appServerControlRuntime.ConfigureAsync(
+                        request.SessionId,
+                        request.Configure ?? throw new InvalidOperationException("Configure payload is required."),
+                        CancellationToken.None).ConfigureAwait(false);
+                    await sendCommandAccepted(new AppServerControlWsCommandAcceptedMessage
+                    {
+                        Id = request.Id, SessionId = request.SessionId,
+                        Response = new AppServerControlCommandAcceptedResponse
+                        {
+                            SessionId = request.SessionId, Status = response.Status,
+                            TurnId = response.TurnId, Configuration = response
+                        }
+                    }, AppJsonContext.Default.AppServerControlWsCommandAcceptedMessage).ConfigureAwait(false);
+                    break;
+                }
+
                 case "turn.interrupt":
                 {
                     var response = await _appServerControlRuntime.InterruptTurnAsync(
@@ -430,10 +448,15 @@ public sealed class AppServerControlWebSocketHandler
                 }
 
                 case "thread.goal.set":
+                case "thread.goal.get":
+                case "thread.goal.clear":
+                case "runtime.recover":
                 {
+                    var goalRequest = request.GoalSet ?? new AppServerControlGoalSetRequest();
+                    goalRequest.Operation = request.Action == "runtime.recover" ? "recover" : request.Action["thread.goal.".Length..];
                     var response = await _appServerControlRuntime.SetGoalAsync(
                         request.SessionId,
-                        request.GoalSet ?? new AppServerControlGoalSetRequest(),
+                        goalRequest,
                         CancellationToken.None).ConfigureAwait(false);
                     await sendCommandAccepted(
                         new AppServerControlWsCommandAcceptedMessage

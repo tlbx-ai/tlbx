@@ -9,6 +9,46 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class AppServerControlHostProtocolTests
 {
     [Fact]
+    public void ConfigurePatchRoundTripsExplicitNullWithoutInventingOmittedFields()
+    {
+        const string json = """
+            {"commandId":"configure-1","sessionId":"s","type":"runtime.configure",
+             "configure":{"expectedThreadId":"thread","expectedTurnId":null,
+                          "settings":{"serviceTier":null,"effort":"high"}}}
+            """;
+        var command = JsonSerializer.Deserialize(json, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope)!;
+        Assert.Null(command.Configure!.ExpectedTurnId);
+        Assert.Equal(JsonValueKind.Null, command.Configure.Settings["serviceTier"].ValueKind);
+        Assert.False(command.Configure.Settings.ContainsKey("model"));
+        var serialized = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
+        using var document = JsonDocument.Parse(serialized);
+        var patch = document.RootElement.GetProperty("configure").GetProperty("settings");
+        Assert.Equal(JsonValueKind.Null, patch.GetProperty("serviceTier").ValueKind);
+        Assert.False(patch.TryGetProperty("model", out _));
+    }
+
+    [Fact]
+    public void ConfigureAckRetainsSeparateReadbackControlAckAndPartialScopes()
+    {
+        using var actual = JsonDocument.Parse("\"provider-normalized-model\"");
+        var result = new AppServerControlHostCommandResultEnvelope
+        {
+            Configured = new()
+            {
+                Status = "partial", ThreadStatus = "applied", TurnStatus = "targetUnavailable",
+                EffectiveSettings = new(StringComparer.Ordinal) { ["model"] = actual.RootElement.Clone() },
+                DeferredFields = ["collaborationMode"]
+            }
+        };
+        var json = JsonSerializer.Serialize(result, AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope);
+        var decoded = JsonSerializer.Deserialize(json, AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope)!.Configured!;
+        Assert.Equal("targetUnavailable", decoded.TurnStatus);
+        Assert.Equal("provider-normalized-model", decoded.EffectiveSettings["model"].GetString());
+        Assert.Empty(decoded.ConfirmedSettings);
+        Assert.Equal(["collaborationMode"], decoded.DeferredFields);
+    }
+
+    [Fact]
     public void AppServerControlHostProtocol_UsesV3AsTheOnlyCurrentVersion()
     {
         Assert.Equal("app-server-control-host-v3", AppServerControlHostProtocol.CurrentVersion);

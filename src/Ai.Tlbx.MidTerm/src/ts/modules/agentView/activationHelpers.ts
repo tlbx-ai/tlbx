@@ -272,6 +272,24 @@ export function isStaleAppServerControlActivationError(error: unknown): boolean 
   return error instanceof Error && error.message === STALE_APP_SERVER_CONTROL_ACTIVATION;
 }
 
+/** Resume attach/read only after transport recovery and the old activation have settled. */
+export async function resumeAppServerControlActivationAfterTransport(
+  recoverTransport: () => Promise<void>,
+  pendingActivation: Promise<void> | undefined,
+  isCurrent: () => boolean,
+  activate: () => Promise<void>,
+): Promise<void> {
+  await recoverTransport();
+  if (!isCurrent()) return;
+  try {
+    await pendingActivation;
+  } catch (error) {
+    if (isCurrent()) throw error;
+    return;
+  }
+  if (isCurrent()) await activate();
+}
+
 export function toneFromState(state: string | null | undefined): HistoryTone {
   const normalized = (state || '').toLowerCase();
   if (
@@ -385,17 +403,7 @@ export function historyLabel(kind: HistoryKind): string {
 
 export function resolveHistoryBadgeLabel(
   kind: HistoryKind,
-  provider: string | null | undefined,
+  agentName: string | null | undefined,
 ): string {
-  if (resolveAppServerControlLayoutMode(provider) === 'full-width-left') {
-    if (kind === 'user') {
-      return appServerControlText('appServerControl.label.userShort', 'User');
-    }
-
-    if (kind === 'assistant') {
-      return appServerControlText('appServerControl.label.agent', 'Agent');
-    }
-  }
-
-  return historyLabel(kind);
+  return kind === 'assistant' && agentName?.trim() ? agentName.trim() : historyLabel(kind);
 }

@@ -44,14 +44,14 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
 
     internal static IEnumerable<McpServerTool> CreateTools() =>
     [
-        Command("query", "Query DOM elements, with optional textOnly and maxDepth.", Fields(("selector", Property("string")), ("textOnly", Property("boolean")), ("maxDepth", Property("integer")), ("timeout", Timeout())), ["selector"], true),
-        Command("click", "Click a DOM element once. A timeout does not authorize replaying the click.", Fields(("selector", Property("string"))), ["selector"]),
-        Command("fill", "Fill an input with literal Unicode text, without shell quoting or command-length limitations.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
+        Command("query", "Read bounded DOM snippets or text with truthful match counts and explicit truncation. maxDepth limits copied depth; use snapshot for the full document.", Fields(("selector", Property("string")), ("textOnly", Property("boolean")), ("maxDepth", Property("integer")), ("timeout", Timeout())), ["selector"], true),
+        Command("click", "Click exactly one visible, enabled element once, with pointer intent events and without moving keyboard focus. Ambiguous selectors fail. A timeout does not authorize replay.", Fields(("selector", Property("string"))), ["selector"]),
+        Command("fill", "Fill exactly one visible, enabled input, textarea, select or contenteditable editing host with literal Unicode text. Rich editors use native text replacement, selection and undo, without HTML or clipboard access. Reject ambiguous, read-only and unsupported controls without changing them; rich fill requires native editing commands and no non-editable descendants.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
         Command("evaluate", "Execute JavaScript in the existing preview. code is passed literally, not through a shell.", Fields(("code", Property("string")), ("timeout", Timeout())), ["code"], command: "exec"),
-        Command("wait", "Wait for an element in the existing preview.", Fields(("selector", Property("string")), ("timeout", Timeout())), ["selector"], true),
+        Command("wait", "Wait for attached (default), visible, hidden or detached elements before the next interaction. Visibility uses the same checks as click/fill.", Fields(("selector", Property("string")), ("state", Enum("attached", "visible", "hidden", "detached")), ("timeout", Timeout())), ["selector"], true),
         Command("screenshot", "Capture viewport or fullPage as inline MCP PNG. Optionally save the same artifact as the CLI in the target workspace.", Fields(("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
         Command("snapshot", "Return the existing preview HTML directly, optionally also saving the CLI-compatible workspace artifact.", Fields(("saveToWorkspace", Property("boolean")))),
-        Command("outline", "Return the page structure tree, with explicit maxDepth.", Fields(("maxDepth", Property("integer"))), readOnly: true),
+        Command("outline", "Read visible semantic controls with labels, state and unique selectors. Layout wrappers do not consume maxDepth. Optional selector narrows the root; bounded output marks truncation.", Fields(("maxDepth", Property("integer")), ("selector", Property("string"))), readOnly: true),
         Command("attributes", "Read a selected element's attributes.", Fields(("selector", Property("string"))), ["selector"], true, "attrs"),
         Command("css", "Read computed CSS. properties is an array; props also accepts the CLI's comma-separated form.", Fields(("selector", Property("string")), ("properties", new JsonObject { ["type"] = "array", ["items"] = Property("string") }), ("props", Property("string"))), ["selector"], true),
         Command("console", "Read captured console messages by filter: error, warn or all.", Fields(("filter", Enum("error", "warn", "all"))), readOnly: true, command: "log"),
@@ -71,7 +71,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         new TlbxMcpBrowserTools("browser_cookies", "Read the target preview's cookie jar, as supported by the full-user CLI.", new(), readOnly: true),
         new TlbxMcpBrowserTools("browser_clear_cookies", "Clear browser-side and server-side preview cookies using the CLI ordering.", new(), destructive: true),
         new TlbxMcpBrowserTools("browser_clear_state", "Clear browser cookies/storage/service workers and server preview state using the CLI ordering.", new(), destructive: true),
-        new TlbxMcpBrowserTools("browser_reload", "Reload in soft, force or hard mode. Hard also clears browser/server cookies before dispatch, as the CLI does.", Fields(("mode", Enum("soft", "force", "hard")))),
+        new TlbxMcpBrowserTools("browser_reload", "Reload in soft, force or hard mode. Soft/force reopen the configured target through its current owner if no iframe bridge exists. Hard also clears browser/server cookies.", Fields(("mode", Enum("soft", "force", "hard")))),
         new TlbxMcpBrowserTools("browser_preview_reset", "Optionally navigate, clear preview state, then perform a hard reload; report partial cleanup warnings instead of replaying actions.", Fields(("url", Property("string"))), destructive: true),
         new TlbxMcpBrowserTools("browser_proxylog", "Read bounded proxy request evidence including failures.", Fields(("limit", PositiveInteger())), readOnly: true),
         new TlbxMcpBrowserTools("browser_proxylog_summary", "Read the same compact proxy summary as the CLI.", Fields(("limit", PositiveInteger())), readOnly: true),
@@ -182,7 +182,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             case "browser_clear_state":
                 return await ClearAsync(commands, previews, target, preview, _tool.Name == "browser_clear_state", ct).ConfigureAwait(false);
             case "browser_reload":
-                return await ReloadAsync(commands, previews, target, preview, OptionalString(args, "mode") ?? "soft", ct).ConfigureAwait(false);
+                return await ReloadAsync(commands, previews, operations, target, preview, previewId, OptionalString(args, "mode") ?? "soft", ct).ConfigureAwait(false);
             case "browser_preview_reset":
                 if (OptionalString(args, "url") is { } newUrl)
                 {
@@ -190,7 +190,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                     if (!navigation.Success) return OperationResult(navigation, target, preview);
                 }
                 var cleared = await ClearAsync(commands, previews, target, preview, true, ct).ConfigureAwait(false);
-                var reloaded = await ReloadAsync(commands, previews, target, preview, "hard", ct).ConfigureAwait(false);
+                var reloaded = await ReloadAsync(commands, previews, operations, target, preview, previewId, "hard", ct).ConfigureAwait(false);
                 if (cleared.IsError == true)
                     reloaded.Content.Add(new TextContentBlock { Text = "State cleanup warning: " + ((TextContentBlock)cleared.Content[0]).Text });
                 return reloaded;
@@ -212,7 +212,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                     previews.GetTargetUrl(target, preview)), AppJsonContext.Default.BrowserCapabilitiesResponse);
             case "browser_inspect":
                 var diagnostics = await BrowserEndpoints.BuildInspectTextAsync(commands, services.GetRequiredService<TtyHostSessionManager>(),
-                    previews, ui, target, preview, false, ct).ConfigureAwait(false);
+                    previews, ui, target, preview, false, ct, previewId).ConfigureAwait(false);
                 var inspection = new JsonObject { ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview),
                     ["diagnostics"] = diagnostics };
                 CallToolResult? capturedInspection = null;
@@ -276,10 +276,19 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         return changed ? Success(target, preview) : Error("TLBX_MCP_BROWSER_NO_TARGET", "Browser cleanup completed but no active server target could be cleared.");
     }
 
-    private static async Task<CallToolResult> ReloadAsync(BrowserCommandService commands, WebPreviewService previews,
-        string target, string? preview, string mode, CancellationToken ct)
+    internal static async Task<CallToolResult> ReloadAsync(BrowserCommandService commands, WebPreviewService previews,
+        BrowserPreviewOperations operations, string target, string? preview, string? previewId, string mode, CancellationToken ct)
     {
         if (mode is not ("soft" or "force" or "hard")) throw new ArgumentException("mode must be soft, force or hard.");
+        var url = previews.GetTargetUrl(target, preview);
+        if (url is null) return Error("TLBX_MCP_BROWSER_NO_TARGET", "No active target.");
+        var status = commands.GetStatus(url, target, preview, previewId);
+        if (!string.IsNullOrEmpty(previewId) && status.DefaultClient is null)
+            return Error("TLBX_MCP_BROWSER_FAILED", status.StatusMessage ?? "The exact preview client is not connected.");
+        // Recover only before dispatch, when no iframe client exists. A lost reload
+        // acknowledgement must never trigger an implicit second navigation.
+        if (mode != "hard" && string.IsNullOrEmpty(previewId) && status.ConnectedClientCount == 0)
+            return OperationResult(await operations.OpenAsync(target, preview, url, false, ct).ConfigureAwait(false), target, preview);
         if (mode == "hard")
         {
             var cleared = await ClearAsync(commands, previews, target, preview, false, ct).ConfigureAwait(false);
@@ -288,7 +297,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         }
         var result = await commands.ExecuteCommandAsync(new BrowserCommandRequest
         {
-            Command = "reload", Value = mode, SessionId = target, PreviewName = preview
+            Command = "reload", Value = mode, SessionId = target, PreviewName = preview, PreviewId = previewId
         }, ct).ConfigureAwait(false);
         return result.Success ? Success(target, preview) : Error("TLBX_MCP_BROWSER_RELOAD_FAILED",
             (result.Error ?? "Reload was not acknowledged.") + " Inspect state before retrying; the reload may already have executed.");
@@ -362,6 +371,12 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         if (timeout is < 1 or > MaximumTimeoutSeconds) throw new ArgumentException("timeout exceeds the shared browser timer range.");
         if (command is "query" or "click" or "fill" or "wait" or "attrs" or "css")
             selector = RequiredString(args, "selector");
+        if (command == "wait")
+        {
+            value = OptionalString(args, "state") ?? value;
+            if (value is not (null or "attached" or "visible" or "hidden" or "detached"))
+                throw new ArgumentException("Wait state must be attached, visible, hidden or detached.");
+        }
         if (command == "fill") value = RequiredString(args, "value", allowEmpty: true);
         if (command == "exec") value = OptionalString(args, "code", allowEmpty: true) ?? RequiredString(args, "value", allowEmpty: true);
         if (command == "navigate") value = RequiredString(args, "value");
@@ -588,7 +603,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     private static JsonArray Strings(IEnumerable<string> values) => new(values.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray());
     private static JsonObject Enum(params string[] values) => new() { ["type"] = "string", ["enum"] = Strings(values) };
     private static readonly string[] BatchCommands = ["query", "click", "fill", "exec", "evaluate", "wait", "screenshot", "scroll", "wheel", "navigate", "reload", "outline", "attrs", "css", "log", "links", "submit", "forms", "url"];
-    private static readonly string[] BatchPropertyNames = ["command", "selector", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "waitForNavigation"];
+    private static readonly string[] BatchPropertyNames = ["command", "selector", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "state", "waitForNavigation"];
     private static JsonObject BatchFields() => Fields(("commands", new JsonObject
     {
         ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 32,
@@ -600,7 +615,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 ("fullPage", Property("boolean")), ("deltaX", Property("number")), ("deltaY", Property("number")), ("steps", PositiveInteger()),
                 ("direction", Enum("up", "down")), ("to", Enum("top", "bottom", "left", "right")),
                 ("properties", new JsonObject { ["type"] = "array", ["items"] = Property("string") }), ("props", Property("string")),
-                ("filter", Enum("error", "warn", "all")), ("waitForNavigation", Property("boolean")))
+                ("filter", Enum("error", "warn", "all")), ("state", Enum("attached", "visible", "hidden", "detached")), ("waitForNavigation", Property("boolean")))
         }
     }), ("timeout", Timeout(120)), ("saveToWorkspace", Property("boolean")));
     private static JsonObject WithPreviewFields()

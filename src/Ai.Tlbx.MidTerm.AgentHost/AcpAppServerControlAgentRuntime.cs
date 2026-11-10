@@ -1807,7 +1807,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     {
         var blocks = new List<AcpPromptBlock>();
         var input = request.Text?.TrimStart() ?? string.Empty;
-        var commandName = input.StartsWith('/') ? input[1..].Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() : null;
+        var commandName = input.StartsWith('/', StringComparison.Ordinal) ? input[1..].Split((char[]?)null, 2, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() : null;
         var isNativeCommand = commandName is not null && _availableCommands.Any(command => command.Name == commandName);
         var useNativePlanCommand = Provider == "antigravity" && planMode == AppServerControlQuickSettings.PlanModeOn &&
             _availableCommands.Any(command => command.Name == "plan");

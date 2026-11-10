@@ -31,7 +31,7 @@ try {
         $serverPid = (Get-NetTCPConnection -State Listen -LocalPort $port | Select-Object -First 1).OwningProcess
         $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId=$serverPid"
         $launcher = Get-CimInstance Win32_Process -Filter "ProcessId=$($processInfo.ParentProcessId)"
-        if (!$processInfo.CommandLine.Contains((Join-Path $repoRoot 'src\Ai.Tlbx.MidTerm\bin\Debug\net10.0\mt.dll')) -or
+        if (!$processInfo.CommandLine.Contains((Join-Path $repoRoot 'src\Ai.Tlbx.MidTerm\bin\Debug\net11.0\mt.dll')) -or
             !$launcher.CommandLine.Contains([IO.Path]::GetFullPath($SettingsDir))) {
             throw 'Listener does not belong to the isolated test settings directory.'
         }

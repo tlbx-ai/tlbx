@@ -1,5 +1,5 @@
 {
-  "openapi": "3.1.1",
+  "openapi": "3.1.2",
   "info": {
     "title": "tlbx API",
     "description": "tlbx browser control station API",
@@ -4406,10 +4406,7 @@
             "format": "double"
           },
           "results": {
-            "type": [
-              "null",
-              "array"
-            ],
+            "type": "array",
             "items": {
               "$ref": "#/components/schemas/BrowserBatchStepResult"
             }
@@ -6622,7 +6619,7 @@
           "codexEnvironmentVariables",
           "agentMessageFontFamily",
           "showAgentMessageTimestamps",
-          "showUnknownAgentMessages",
+          "showAgentTechnicalDetails",
           "toolCallOutputLines",
           "fontSize",
           "fontFamily",
@@ -6742,7 +6739,7 @@
           "showAgentMessageTimestamps": {
             "type": "boolean"
           },
-          "showUnknownAgentMessages": {
+          "showAgentTechnicalDetails": {
             "type": "boolean"
           },
           "toolCallOutputLines": {
@@ -7830,7 +7827,14 @@
             ]
           },
           "supervisor": {
-            "$ref": "#/components/schemas/SessionSupervisorInfoDto"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SessionSupervisorInfoDto"
+              }
+            ]
           }
         }
       },

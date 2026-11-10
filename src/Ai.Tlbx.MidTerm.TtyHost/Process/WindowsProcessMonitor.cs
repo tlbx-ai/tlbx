@@ -315,7 +315,7 @@ public sealed class WindowsProcessMonitor : IProcessMonitor
                     return null;
 
                 var cwd = Encoding.Unicode.GetString(buffer, 0, cwdLength).TrimEnd('\0');
-                return cwd.EndsWith('\\') && cwd.Length > 3 ? cwd.TrimEnd('\\') : cwd;
+                return cwd.EndsWith('\\', StringComparison.Ordinal) && cwd.Length > 3 ? cwd.TrimEnd('\\') : cwd;
             }
             finally
             {

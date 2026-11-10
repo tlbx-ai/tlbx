@@ -18,7 +18,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Dictionary<int, ClaudeBlockState> _blocks = [];
     private readonly Dictionary<string, ClaudeToolState> _tools = new(StringComparer.Ordinal);
-    private readonly ConcurrentDictionary<string, TaskCompletionSource> _bridgeResolutionAcks = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<JsonElement>> _bridgeResolutionAcks = new(StringComparer.Ordinal);
+    private readonly Lock _bridgeReadSync = new();
+    private int _bridgeGeneration;
     private Process? _process;
     private StreamReader? _output;
     private StreamReader? _error;
@@ -77,6 +79,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             {
                 "runtime.attach" => await AttachAsync(command, ct).ConfigureAwait(false),
                 "turn.start" => await StartTurnAsync(command, ct).ConfigureAwait(false),
+                "thread.goal.set" or "thread.goal.get" or "thread.goal.clear" => await ControlGoalAsync(command, ct).ConfigureAwait(false),
+                "runtime.recover" => await RecoverGoalAdapterAsync(command, ct).ConfigureAwait(false),
+                "runtime.configure" => await ConfigureAsync(command, ct).ConfigureAwait(false),
                 "turn.steer" => await SteerTurnAsync(command, ct).ConfigureAwait(false),
                 "turn.interrupt" => await InterruptTurnAsync(command, ct).ConfigureAwait(false),
                 "thread.compact" => await CompactViaNativeCommandAsync(command, ct).ConfigureAwait(false),
@@ -134,11 +139,16 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         _nativeModels.Clear();
         _nativeCommands = [];
         _terminalCommands.Clear();
+        _goalState = null;
+        _goalStopTurnId = null;
         _usage = null;
         _messageInputTokens = null;
         _messageOutputTokens = null;
 
         await EnsureClaudeBridgeAsync(ct).ConfigureAwait(false);
+        // initializationResult acknowledged the Query created with this exact native
+        // sessionId. Assign only now: assigning before initialize would request resume.
+        _providerThreadId ??= _newProviderSessionId;
 
         var events = new List<AppServerControlProviderEvent>
         {
@@ -165,7 +175,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
         if (!string.IsNullOrWhiteSpace(_providerThreadId))
         {
-            events.Add(CreateEvent("thread.started", null, null, null, "mtagenthost.claude", "runtime.attach", attach, appServerControlEvent =>
+            events.Insert(1, CreateEvent("thread.started", null, null, null, "mtagenthost.claude", "runtime.attach", attach, appServerControlEvent =>
             {
                 appServerControlEvent.ThreadState = new AppServerControlProviderThreadStatePayload
                 {
@@ -187,6 +197,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             throw new InvalidOperationException("Claude already has an active App Server Controller turn.");
         }
 
+        if (_goalState?.PendingOperation is not null) throw new InvalidOperationException("A native goal command is pending confirmation.");
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
         var prompt = BuildPromptInput(request, out var addDirectories);
@@ -246,6 +257,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                     Status = "accepted",
                     QuickSettings = new AppServerControlQuickSettingsSummary
                     {
+                        AcknowledgedFields = [.. _quickSettings.AcknowledgedFields],
                         Model = _quickSettings.Model,
                         Effort = _quickSettings.Effort,
                         PlanMode = _quickSettings.PlanMode,
@@ -307,8 +319,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             prompt,
             turnRequest.Attachments,
             addDirectories,
-            _activeTurnModel,
-            _activeTurnEffort,
+            _quickSettings.Model,
+            _quickSettings.Effort,
             _quickSettings.PlanMode,
             _quickSettings.PermissionMode,
             ct).ConfigureAwait(false);
@@ -394,86 +406,14 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             ]);
     }
 
-    private async Task<HostCommandOutcome> ResolvePermissionRequestAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
+    private async Task ReadLoopAsync(Process process, int generation, CancellationToken ct)
     {
-        var request = command.ResolveRequest ?? throw new InvalidOperationException("request.resolve payload is required.");
-        await WriteBridgeResolutionCommandAsync("permission", request.RequestId, writer =>
-        {
-            writer.WriteStartObject();
-            writer.WriteString("type", "permission.resolve");
-            writer.WriteString("requestId", request.RequestId);
-            writer.WriteString("decision", request.Decision);
-            writer.WriteEndObject();
-        }, ct).ConfigureAwait(false);
-
-        return Accepted(
-            command.CommandId,
-            command.SessionId,
-            new AppServerControlCommandAcceptedResponse
-            {
-                SessionId = command.SessionId,
-                Status = "accepted",
-                RequestId = request.RequestId,
-                TurnId = _activeTurnId
-            },
-            [CreateEvent("request.resolved", _activeTurnId, null, request.RequestId, "claude.agent-sdk", "canUseTool/decision", request, appServerControlEvent =>
-            {
-                appServerControlEvent.RequestResolved = new AppServerControlProviderRequestResolvedPayload
-                {
-                    RequestType = "tool_approval",
-                    Decision = request.Decision
-                };
-            })]);
-    }
-
-    private async Task<HostCommandOutcome> ResolveUserInputAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
-    {
-        var request = command.ResolveUserInput ?? throw new InvalidOperationException("user-input.resolve payload is required.");
-        await WriteBridgeResolutionCommandAsync("user_input", request.RequestId, writer =>
-        {
-            writer.WriteStartObject();
-            writer.WriteString("type", "user_input.resolve");
-            writer.WriteString("requestId", request.RequestId);
-            writer.WriteStartObject("answers");
-            foreach (var answer in request.Answers)
-            {
-                writer.WriteStartArray(answer.QuestionId);
-                foreach (var value in answer.Answers)
-                {
-                    writer.WriteStringValue(value);
-                }
-                writer.WriteEndArray();
-            }
-            writer.WriteEndObject();
-            writer.WriteEndObject();
-        }, ct).ConfigureAwait(false);
-
-        return Accepted(
-            command.CommandId,
-            command.SessionId,
-            new AppServerControlCommandAcceptedResponse
-            {
-                SessionId = command.SessionId,
-                Status = "accepted",
-                RequestId = request.RequestId,
-                TurnId = _activeTurnId
-            },
-            [CreateEvent("user-input.resolved", _activeTurnId, null, request.RequestId, "claude.agent-sdk", "AskUserQuestion/resolved", request, appServerControlEvent =>
-            {
-                appServerControlEvent.UserInputResolved = new AppServerControlProviderUserInputResolvedPayload
-                {
-                    Answers = request.Answers
-                };
-            })]);
-    }
-
-    private async Task ReadLoopAsync(Process process, CancellationToken ct)
-    {
+        var output = _output;
         try
         {
-            while (!ct.IsCancellationRequested && _output is not null)
+            while (!ct.IsCancellationRequested && output is not null && generation == _bridgeGeneration)
             {
-                var line = await _output.ReadLineAsync(ct).ConfigureAwait(false);
+                var line = await output.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null)
                 {
                     break;
@@ -481,7 +421,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    HandleClaudeLine(line);
+                    lock (_bridgeReadSync)
+                    {
+                        if (generation == _bridgeGeneration) HandleClaudeLine(line);
+                    }
                 }
             }
         }
@@ -490,21 +433,25 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
         catch (Exception ex)
         {
-            EmitRuntimeMessage("runtime.error", "Claude App Server Controller stream failed.", ex.Message);
+            lock (_bridgeReadSync)
+            {
+                if (generation == _bridgeGeneration) EmitRuntimeMessage("runtime.error", "Claude App Server Controller stream failed.", ex.Message);
+            }
         }
         finally
         {
-            await FinalizeExitAsync(process).ConfigureAwait(false);
+            if (generation == _bridgeGeneration) await FinalizeExitAsync(process, generation).ConfigureAwait(false);
         }
     }
 
-    private async Task ReadErrorLoopAsync(Process process, CancellationToken ct)
+    private async Task ReadErrorLoopAsync(Process process, int generation, CancellationToken ct)
     {
+        var error = _error;
         try
         {
-            while (!ct.IsCancellationRequested && _error is not null)
+            while (!ct.IsCancellationRequested && error is not null && generation == _bridgeGeneration)
             {
-                var line = await _error.ReadLineAsync(ct).ConfigureAwait(false);
+                var line = await error.ReadLineAsync(ct).ConfigureAwait(false);
                 if (line is null)
                 {
                     break;
@@ -512,7 +459,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
                 if (!string.IsNullOrWhiteSpace(line))
                 {
-                    EmitRuntimeMessage("runtime.warning", line.Trim(), line.Trim());
+                    lock (_bridgeReadSync)
+                    {
+                        if (generation == _bridgeGeneration) EmitRuntimeMessage("runtime.warning", line.Trim(), line.Trim());
+                    }
                 }
             }
         }
@@ -526,7 +476,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
-    private async Task FinalizeExitAsync(Process process)
+    private async Task FinalizeExitAsync(Process process, int generation)
     {
         try
         {
@@ -536,31 +486,35 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         {
         }
 
-        if (!_interruptRequested && !string.IsNullOrWhiteSpace(_activeTurnId) && process.ExitCode != 0)
+        lock (_bridgeReadSync)
         {
-            _emit(CreateEvent("turn.completed", _activeTurnId, null, null, "claude.agent-sdk", "process.exit", new { exitCode = process.ExitCode }, appServerControlEvent =>
+            if (generation != _bridgeGeneration || !ReferenceEquals(_process, process)) return;
+            if (!_interruptRequested && !string.IsNullOrWhiteSpace(_activeTurnId) && process.ExitCode != 0)
             {
-                appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
+                _emit(CreateEvent("turn.completed", _activeTurnId, null, null, "claude.agent-sdk", "process.exit", new { exitCode = process.ExitCode }, appServerControlEvent =>
                 {
-                    State = "failed",
-                    StateLabel = "Failed",
-                    StopReason = "process_exit",
-                    ErrorMessage = $"Claude exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}."
-                };
-            }));
-            EmitRuntimeMessage("runtime.error", "Claude App Server Controller process exited unexpectedly.", $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
-        }
+                    appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
+                    {
+                        State = "failed",
+                        StateLabel = "Failed",
+                        StopReason = "process_exit",
+                        ErrorMessage = $"Claude exited with code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}."
+                    };
+                }));
+                EmitRuntimeMessage("runtime.error", "Claude App Server Controller process exited unexpectedly.", $"Exit code {process.ExitCode.ToString(CultureInfo.InvariantCulture)}.");
+            }
 
-        if (ReferenceEquals(_process, process))
-        {
-            try { _input?.Dispose(); } catch { }
-            try { _output?.Dispose(); } catch { }
-            try { _error?.Dispose(); } catch { }
-            try { _process?.Dispose(); } catch { }
-            _process = null;
-            _input = null;
-            _output = null;
-            _error = null;
+            if (ReferenceEquals(_process, process))
+            {
+                try { _input?.Dispose(); } catch { }
+                try { _output?.Dispose(); } catch { }
+                try { _error?.Dispose(); } catch { }
+                try { _process?.Dispose(); } catch { }
+                _process = null;
+                _input = null;
+                _output = null;
+                _error = null;
+            }
         }
     }
 
@@ -604,10 +558,21 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     private void HandleBridgeMessage(string type, JsonElement root, string rawLine)
     {
+        if (HandleGoalBridgeMessage(type, root)) return;
         switch (type)
         {
+            case "bridge.configured":
+            {
+                if (GetString(root, "requestId") is { } configurationId &&
+                    _configurationAcks.TryGetValue(configurationId, out var configurationAck))
+                    configurationAck.TrySetResult(root.Clone());
+                break;
+            }
             case "bridge.ready":
                 ApplyClaudeNativeCatalogue(root, rawLine);
+                // Goal readbacks can follow ready immediately on this pipe. The Query
+                // has now acknowledged the exact sessionId supplied at initialize.
+                _providerThreadId ??= _newProviderSessionId;
                 _bridgeReady.TrySetResult();
                 break;
             case "bridge.history":
@@ -647,8 +612,17 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                 }, rawLine));
                 break;
             }
+            case "bridge.permission_auto_resolved":
+                HandlePendingPermissionSettlement(root, "accept");
+                break;
+            case "bridge.user_input_cancelled":
+                HandlePendingPermissionSettlement(root, "cancel", "interview");
+                break;
+            case "bridge.permission_cancelled":
+                HandlePendingPermissionSettlement(root, "cancel");
+                break;
             case "bridge.permission_resolved":
-                CompleteBridgeResolutionAck("permission", GetString(root, "requestId"));
+                CompleteBridgeResolutionAck("permission", GetString(root, "requestId"), root);
                 break;
             case "bridge.user_input_request":
             {
@@ -669,13 +643,16 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             }
             case "bridge.interrupted":
                 _interruptHasQueuedWork |= GetBoolean(root, "hasQueuedWork");
-                CompleteBridgeResolutionAck("interrupt", GetString(root, "turnId"));
+                CompleteBridgeResolutionAck("interrupt", GetString(root, "turnId"), root);
                 break;
             case "bridge.user_input_resolved":
-                CompleteBridgeResolutionAck("user_input", GetString(root, "requestId"));
+                CompleteBridgeResolutionAck("user_input", GetString(root, "requestId"), root);
                 break;
             case "bridge.stderr":
                 EmitRuntimeMessage("runtime.warning", "Claude Agent SDK diagnostic", GetString(root, "message"));
+                break;
+            case "bridge.input_rejected":
+                HandleBlockedGoalInput(root, rawLine);
                 break;
             case "bridge.error":
             {
@@ -685,6 +662,20 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
                     GetString(root, "commandType"),
                     GetString(root, "requestId"),
                     new InvalidOperationException(detail ?? message));
+                if (GetString(root, "commandType") is "permission.resolve" or "user_input.resolve") break;
+                if (GetString(root, "commandType") == "runtime.configure")
+                {
+                    if (GetString(root, "requestId") is { } configurationId &&
+                        _configurationAcks.TryGetValue(configurationId, out var configurationAck))
+                        configurationAck.TrySetException(new InvalidOperationException(detail ?? message));
+                    break;
+                }
+                if (GetString(root, "commandType") == "thread.goal")
+                {
+                    if (GetString(root, "requestId") is { } goalId && _goalReceipts.TryGetValue(goalId, out var goalReceipt))
+                        goalReceipt.TrySetException(new InvalidOperationException(detail ?? message));
+                    break;
+                }
                 _bridgeReady.TrySetException(new InvalidOperationException(detail ?? message));
                 EmitRuntimeMessage("runtime.error", message, detail);
                 if (!string.IsNullOrWhiteSpace(_activeTurnId))
@@ -1051,7 +1042,8 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
 
         var resultText = GetString(root, "result");
-        var compactFailed = _manualCompactionTurn && (_compactionFailure is not null ||
+        var manualCompactionTurn = _manualCompactionTurn || GetString(root, "local_command") == "compact";
+        var compactFailed = manualCompactionTurn && (_compactionFailure is not null ||
             resultText?.StartsWith("Error during compaction:", StringComparison.OrdinalIgnoreCase) == true);
         var isError = GetBoolean(root, "is_error") || compactFailed;
         var subtype = compactFailed ? "compaction_failed" : GetString(root, "subtype") ?? (isError ? "error" : "success");
@@ -1061,7 +1053,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             EmitClaudeUsage(root, rawLine);
         }
         var errorMessage = isError ? _compactionFailure ?? resultText : null;
+        // Native /compact results are command status and can repeat older local output.
+        // Only real assistant blocks may become chat content for that command.
         if (!isError &&
+            !manualCompactionTurn &&
             !_assistantMessageEmitted &&
             !string.IsNullOrWhiteSpace(resultText))
         {
@@ -1076,33 +1071,40 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             return;
         }
         if (GetInt32(root, "queued_turn_count") is > 0 ||
-            (_steeringPending && !_interruptRequested && terminalReason is "aborted_streaming" or "aborted_tools"))
+            (_steeringPending && !_interruptRequested &&
+             !string.Equals(_goalStopTurnId, _activeTurnId, StringComparison.Ordinal) &&
+             terminalReason is "aborted_streaming" or "aborted_tools"))
         {
             _assistantMessageEmitted = false;
             return;
         }
 
         var completedTurnId = _activeTurnId;
+        var goalStopped = string.Equals(_goalStopTurnId, completedTurnId, StringComparison.Ordinal) &&
+            terminalReason is "aborted_streaming" or "aborted_tools";
+        _goalStopTurnId = null;
         ResetTurnState();
         _emit(CreateEvent("turn.completed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.TurnCompleted = new AppServerControlProviderTurnCompletedPayload
             {
-                State = isError ? "failed" : "completed",
-                StateLabel = isError ? "Failed" : "Completed",
-                StopReason = subtype,
-                ErrorMessage = errorMessage
+                State = goalStopped ? "aborted" : isError ? "failed" : "completed",
+                StateLabel = goalStopped ? "Aborted" : isError ? "Failed" : "Completed",
+                StopReason = goalStopped ? "goal_stop" : subtype,
+                ErrorMessage = goalStopped ? null : errorMessage
             };
         }, rawLine));
         _emit(CreateEvent("session.state.changed", completedTurnId, null, null, "claude.agent-sdk", "result", root, appServerControlEvent =>
         {
             appServerControlEvent.SessionState = new AppServerControlProviderSessionStatePayload
             {
-                State = isError ? "error" : "ready",
-                StateLabel = isError ? "Error" : "Ready",
-                Reason = string.IsNullOrWhiteSpace(resultText)
-                    ? (isError ? "Claude turn failed." : "Claude turn completed.")
-                    : resultText
+                State = isError && !goalStopped ? "error" : "ready",
+                StateLabel = isError && !goalStopped ? "Error" : "Ready",
+                Reason = manualCompactionTurn
+                    ? (isError ? errorMessage ?? "Claude compaction failed." : "Claude compaction command completed.")
+                    : string.IsNullOrWhiteSpace(resultText)
+                        ? (isError ? "Claude turn failed." : "Claude turn completed.")
+                        : resultText
             };
         }, rawLine));
 
@@ -1229,7 +1231,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
     }
 
-    private async Task EnsureClaudeBridgeAsync(CancellationToken ct)
+    private async Task EnsureClaudeBridgeAsync(CancellationToken ct, bool loadHistory = true)
     {
         if (_process is { HasExited: false })
         {
@@ -1259,8 +1261,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
         _bridgeReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         AttachOwnedProcess(process);
-        _readerTask = Task.Run(() => ReadLoopAsync(process, CancellationToken.None), CancellationToken.None);
-        _errorTask = Task.Run(() => ReadErrorLoopAsync(process, CancellationToken.None), CancellationToken.None);
+        var generation = ++_bridgeGeneration;
+        _readerTask = Task.Run(() => ReadLoopAsync(process, generation, CancellationToken.None), CancellationToken.None);
+        _errorTask = Task.Run(() => ReadErrorLoopAsync(process, generation, CancellationToken.None), CancellationToken.None);
         await WriteBridgeCommandAsync(writer =>
         {
             writer.WriteStartObject();
@@ -1269,7 +1272,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             writer.WriteString("cwd", _workingDirectory);
             writer.WriteString("sessionId", _newProviderSessionId);
             writer.WriteString("permissionMode", _quickSettings.PermissionMode);
-            writer.WriteBoolean("loadHistory", _sessionId is not null && !_hasRetainedConversation(_sessionId));
+            writer.WriteString("planMode", _quickSettings.PlanMode);
+            if (_quickSettings.Effort is not null) writer.WriteString("effort", _quickSettings.Effort);
+            writer.WriteBoolean("recoverGoal", !loadHistory);
+            writer.WriteBoolean("loadHistory", loadHistory && _sessionId is not null && !_hasRetainedConversation(_sessionId));
             AppServerControlMcpConfiguration.WriteClaude(writer, _mcpCredentials?.Server);
             if (_quickSettings.Model is not null) writer.WriteString("model", _quickSettings.Model);
             if (!string.IsNullOrWhiteSpace(_providerThreadId))
@@ -1337,14 +1343,14 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         await input.FlushAsync(ct).ConfigureAwait(false);
     }
 
-    private async Task WriteBridgeResolutionCommandAsync(
+    private async Task<JsonElement> WriteBridgeResolutionCommandAsync(
         string resolutionType,
         string requestId,
         Action<Utf8JsonWriter> write,
         CancellationToken ct)
     {
         var key = BridgeResolutionAckKey(resolutionType, requestId);
-        var ack = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var ack = new TaskCompletionSource<JsonElement>(TaskCreationOptions.RunContinuationsAsynchronously);
         if (!_bridgeResolutionAcks.TryAdd(key, ack))
         {
             throw new InvalidOperationException($"Claude bridge resolution is already pending for request '{requestId}'.");
@@ -1353,7 +1359,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         try
         {
             await WriteBridgeCommandAsync(write, ct).ConfigureAwait(false);
-            await ack.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
+            return await ack.Task.WaitAsync(TimeSpan.FromSeconds(10), ct).ConfigureAwait(false);
         }
         finally
         {
@@ -1361,12 +1367,12 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         }
     }
 
-    private void CompleteBridgeResolutionAck(string resolutionType, string? requestId)
+    private void CompleteBridgeResolutionAck(string resolutionType, string? requestId, JsonElement receipt)
     {
         if (!string.IsNullOrWhiteSpace(requestId) &&
             _bridgeResolutionAcks.TryGetValue(BridgeResolutionAckKey(resolutionType, requestId), out var ack))
         {
-            ack.TrySetResult();
+            ack.TrySetResult(receipt.Clone());
         }
     }
 
@@ -1602,13 +1608,20 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             ? AppServerControlQuickSettings.PermissionModeAuto
             : AppServerControlQuickSettings.PermissionModeManual;
         var settings = AppServerControlQuickSettings.CreateSummary(
-            request.Model ?? AppServerControlProviderRuntimeConfiguration.GetClaudeDefaultModel(),
-            request.Effort,
-            request.PlanMode,
-            request.PermissionMode,
+            request.Model ?? _quickSettings.Model ?? AppServerControlProviderRuntimeConfiguration.GetClaudeDefaultModel(),
+            // An explicit model is a turn settings snapshot; null effort resets its override.
+            // Runtime-managed prompts omit model and retain the acknowledged SDK defaults.
+            request.Effort ?? (request.Model is null ? _quickSettings.Effort : null),
+            request.PlanMode ?? _quickSettings.PlanMode,
+            request.PermissionMode ?? _quickSettings.PermissionMode,
             defaultPermissionMode);
         settings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         settings.EffortOptions = ReadClaudeEffortOptions(settings.Model);
+        settings.AcknowledgedFields = [.. _quickSettings.AcknowledgedFields];
+        if (request.Model is not null) settings.AcknowledgedFields.Remove("model");
+        if (request.Effort is not null) settings.AcknowledgedFields.Remove("effort");
+        if (request.PlanMode is not null) settings.AcknowledgedFields.Remove("planMode");
+        if (request.PermissionMode is not null) settings.AcknowledgedFields.Remove("permissionMode");
         return settings;
     }
 

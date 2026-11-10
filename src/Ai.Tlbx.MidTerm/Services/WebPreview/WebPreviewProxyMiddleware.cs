@@ -32,12 +32,73 @@ public sealed partial class WebPreviewProxyMiddleware
     // to /webpreview/_ext?u=... so all requests go through the MT proxy.
     // Patches: fetch, XHR, element .src/.href setters, setAttribute, window.open.
     private const string UrlRewriteScript = """
-        <script>(function(){
-          if(window.__mtProxy)return;window.__mtProxy=1;
+        <script data-mt-proxy-route="__MT_PROXY_ROUTE_ATTRIBUTE__">(function mtProxyAdapter(){
+          var mtInjectionRoute="__MT_PROXY_ROUTE__";
+          var mtParentContext=arguments.length?arguments[0]:null;
+          // Transport coordinates must stay native beneath an older Location-rewriting proxy.
+          var mtNativeLocation=window["location"];
+          var mtInnerAdapterRoutes=/*__MT_INNER_ADAPTER_ROUTES__*/[];
+          function mtRoutePosition(route){
+            if(typeof route!=="string"||!/^\/webpreview\/[^/]+(?:\/_access\/[^/]+\/[^/]+)?$/.test(route))return -1;
+            var path=mtNativeLocation.pathname||"",index=path.indexOf(route+"/");
+            return index>=0?index:(path.endsWith(route)?path.length-route.length:-1);
+          }
+          // The outer transport prepends its adapter. Only the innermost matching
+          // native adapter may patch this document; this marker grants no authority.
+          function mtHasInnerAdapter(){
+            var own=mtRoutePosition(mtInjectionRoute);
+            if(own<0)return false;
+            for(var i=0;i<mtInnerAdapterRoutes.length;i++){
+              if(mtRoutePosition(mtInnerAdapterRoutes[i])>own)return true;
+            }
+            return false;
+          }
+          if(/^\/webpreview\/[^/]+\/_access\/[^/]+\/[^/]+$/.test(mtInjectionRoute)&&mtRoutePosition(mtInjectionRoute)<0)return;
+          if(mtHasInnerAdapter())return;
+          // An older outer adapter may already have set its global singleton.
+          // Only this registered attachment may establish its own scoped adapter.
+          function mtReadNativeParentContext(event){
+            try{
+              var d=event&&event.data,saved=d&&d.context;
+              if(event.source!==window.parent||!d||d.type!=="mt-refresh-browser-state"||!saved)return null;
+              var parts=mtInjectionRoute.match(/^\/webpreview\/([^/]+)\/_access\/([^/]+)\/([^/]+)$/);
+              if(!parts||mtRoutePosition(mtInjectionRoute)<0
+                ||saved.routeKey!==decodeURIComponent(parts[1])||saved.previewId!==decodeURIComponent(parts[2])
+                ||saved.previewToken!==decodeURIComponent(parts[3])||typeof saved.sessionId!=="string"
+                ||typeof saved.previewName!=="string"||!Number.isInteger(saved.targetRevision)||saved.targetRevision<0)return null;
+              return saved;
+            }catch(e){return null;}
+          }
+          if(window.__mtProxy&&window.__mtOwnedProxyRoute===mtInjectionRoute)return;
+          if(window.__mtProxy&&!mtOwnNativeAttachment()){
+            // Opaque cross-origin navigation may clear window.name. The owning
+            // UI repeats the exact registered context in its existing load message.
+            var resume=function(event){
+              var context=mtReadNativeParentContext(event);if(!context)return;
+              window.removeEventListener("message",resume);clearTimeout(resumeTimer);
+              mtProxyAdapter(context);
+            };
+            window.addEventListener("message",resume);
+            var resumeTimer=setTimeout(function(){window.removeEventListener("message",resume);},10000);
+            return;
+          }
+          window.__mtProxy=1;window.__mtOwnedProxyRoute=mtInjectionRoute;
           // Save the real parent for navigation and cookie bridge notifications.
           var _realParent=window.parent;
-          var mtNestedPreview=new URLSearchParams(location.search).get("__mtSubframe")==="1";
+          var mtNestedPreview=new URLSearchParams(mtNativeLocation.search).get("__mtSubframe")==="1";
           try{mtNestedPreview=mtNestedPreview||!!_realParent.__mtProxy;}catch(e){}
+          function mtOwnNativeAttachment(){
+            try{
+              var parts=mtInjectionRoute.match(/^\/webpreview\/([^/]+)\/_access\/([^/]+)\/([^/]+)$/);
+              if(!parts||mtRoutePosition(mtInjectionRoute)<0)return false;
+              var saved=mtParentContext||(window.name?JSON.parse(window.name):null);
+              return !!saved&&saved.routeKey===decodeURIComponent(parts[1])
+                &&saved.previewId===decodeURIComponent(parts[2])&&saved.previewToken===decodeURIComponent(parts[3]);
+            }catch(e){return false;}
+          }
+          // A registered child attachment is independent of its parent's preview.
+          // Ordinary site frames lack this identity and keep subframe suppression.
+          if(mtOwnNativeAttachment())mtNestedPreview=false;
           var mtCtx=null;
           function mtReadCookie(name){
             try{
@@ -50,17 +111,19 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           function mtReadBootstrapContext(){
             try{
-              var params=new URLSearchParams(location.search);
+              var params=new URLSearchParams(mtNativeLocation.search);
               var previewId=params.get("__mtPreviewId")||"";
               var previewToken=params.get("__mtPreviewToken")||"";
-              if(!previewId||!previewToken){
-                var access=(location.pathname||"").match(/\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)(?:\/|$)/);
+              var ownAccess=mtInjectionRoute.match(/^\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)$/);
+              if(ownAccess){previewId=decodeURIComponent(ownAccess[1]);previewToken=decodeURIComponent(ownAccess[2]);}
+              else if(!previewId||!previewToken){
+                var access=(mtNativeLocation.pathname||"").match(/\/webpreview\/[^/]+\/_access\/([^/]+)\/([^/]+)(?:\/|$)/);
                 if(access){previewId=access[1];previewToken=access[2];}
               }
               if(!previewId||!previewToken)return null;
               var context={previewId:previewId,previewToken:previewToken};
               try{
-                var saved=window.name?JSON.parse(window.name):null;
+                var saved=mtParentContext||(window.name?JSON.parse(window.name):null);
                 if(saved&&saved.previewId===previewId&&saved.previewToken===previewToken)
                   context=Object.assign({},saved,context);
               }catch(e){}
@@ -73,14 +136,16 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!mtCtx||!mtCtx.previewId||!mtCtx.previewToken)return;
             try{window.name=JSON.stringify(mtCtx);}catch(e){}
             try{
-              var match=(location.pathname||"").match(/^\/webpreview\/[^/]+/);
+              var match=(mtNativeLocation.pathname||"").match(/^\/webpreview\/[^/]+/);
               var cookiePath=match?match[0]+"/":"/";
+              var ownPosition=mtRoutePosition(mtInjectionRoute);
+              if(ownPosition>=0)cookiePath=mtNativeLocation.pathname.slice(0,ownPosition)+mtInjectionRoute+"/";
               document.cookie="mt-preview-ctx="+encodeURIComponent(JSON.stringify(mtCtx))+"; path="+cookiePath+"; secure; samesite=lax";
             }catch(e){}
           }
           function mtReadReloadToken(){
             try{
-              var params=new URLSearchParams(location.search);
+              var params=new URLSearchParams(mtNativeLocation.search);
               return params.get("__mtReloadToken")||"";
             }catch(e){}
             return "";
@@ -88,7 +153,7 @@ public sealed partial class WebPreviewProxyMiddleware
           var mtReloadToken=mtReadReloadToken();
           function mtStripBootstrapQuery(){
             try{
-              var url=new URL(location.href);
+              var url=new URL(mtNativeLocation.href);
               if(!url.searchParams.has("__mtPreviewId")&&!url.searchParams.has("__mtPreviewToken")&&!url.searchParams.has("__mtTargetRevision")&&!url.searchParams.has("__mtReloadToken"))return;
               url.searchParams.delete("__mtPreviewId");
               url.searchParams.delete("__mtPreviewToken");
@@ -109,7 +174,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){mtCtx=null;}
           }
           if(mtCtx){
-            var revisionParam=new URLSearchParams(location.search).get("__mtTargetRevision");
+            var revisionParam=new URLSearchParams(mtNativeLocation.search).get("__mtTargetRevision");
             if(revisionParam!==null)mtCtx.targetRevision=Number(revisionParam);
           }
           mtPersistPreviewContext();
@@ -129,7 +194,7 @@ public sealed partial class WebPreviewProxyMiddleware
           // coordination can enter postMessage loops when an embedded frame
           // pretends to be top-level.
           function mtProxyPrefix(){
-            var path=location.pathname||"";
+            var path=mtNativeLocation.pathname||"";
             if(path===P||path.indexOf(P+"/")===0)return "";
             var idx=path.indexOf(P+"/");
             if(idx<0&&path.endsWith(P))idx=path.length-P.length;
@@ -160,7 +225,7 @@ public sealed partial class WebPreviewProxyMiddleware
           function ar(u){
             if((!mtReloadToken&&!mtNestedPreview)||typeof u!=="string")return u;
             try{
-              var parsed=new URL(u,location.href);
+              var parsed=new URL(u,mtNativeLocation.href);
               if(parsed.pathname===PP||parsed.pathname.indexOf(PP+"/")===0){
                 if(mtReloadToken)parsed.searchParams.set("__mtReloadToken",mtReloadToken);
                 if(mtNestedPreview)parsed.searchParams.set("__mtSubframe","1");
@@ -173,7 +238,7 @@ public sealed partial class WebPreviewProxyMiddleware
           function frameUrl(u){
             var rewritten=r(u);
             if(typeof rewritten!=="string"||/^(?:data:|blob:|about:|javascript:|#)/i.test(rewritten))return rewritten;
-            try{var url=new URL(rewritten,location.href);url.searchParams.set("__mtSubframe","1");return url.href;}catch(e){return rewritten;}
+            try{var url=new URL(rewritten,mtNativeLocation.href);url.searchParams.set("__mtSubframe","1");return url.href;}catch(e){return rewritten;}
           }
           function dprop(target,name,getter){
             if(!target)return false;
@@ -252,7 +317,7 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           function mkSwContainer(){
             var reg={
-              scope:(location.origin||"null")+P+"/",
+              scope:(mtNativeLocation.origin||"null")+P+"/",
               active:null,installing:null,waiting:null,
               update:function(){return Promise.resolve();},
               unregister:function(){return Promise.resolve(false);},
@@ -289,10 +354,10 @@ public sealed partial class WebPreviewProxyMiddleware
             if(typeof u!=="string")return u;
             // Non-network schemes must not recurse through relative URL resolution.
             if(u.startsWith("#")||(/^[a-z][a-z0-9+.-]*:/i.test(u)&&!/^https?:|^wss?:/i.test(u)))return u;
-            if(u.startsWith("//"))return r(location.protocol+u);
+            if(u.startsWith("//"))return r(mtNativeLocation.protocol+u);
             if(BP&&mtProxyUrl(u,P))return ar(BP+u);
-            if(BP&&mtProxyUrl(u,location.origin+P))return ar(location.origin+BP+u.substring(location.origin.length));
-            if(mtProxyUrl(u,PP)||mtProxyUrl(u,location.origin+PP))return ar(u);
+            if(BP&&mtProxyUrl(u,mtNativeLocation.origin+P))return ar(mtNativeLocation.origin+BP+u.substring(mtNativeLocation.origin.length));
+            if(mtProxyUrl(u,PP)||mtProxyUrl(u,mtNativeLocation.origin+PP))return ar(u);
             if(window.__mtExternalDocument){
               try{return ar(E+encodeURIComponent(new URL(u,window.__mtDocumentUrl).href));}catch(e){}
             }
@@ -303,8 +368,8 @@ public sealed partial class WebPreviewProxyMiddleware
             if(u.startsWith("http://")||u.startsWith("https://")||u.startsWith("ws://")||u.startsWith("wss://")){
               try{var h=new URL(u);
                 if(window.__mtTargetOrigin&&h.origin===window.__mtTargetOrigin)return ar(PP+h.pathname+h.search+h.hash);
-                if(h.host===location.host&&!h.pathname.startsWith(PP+"/"))return ar(h.protocol+"//"+ h.host+PP+h.pathname+h.search+h.hash);
-                if(h.host!==location.host){
+                if(h.host===mtNativeLocation.host&&!h.pathname.startsWith(PP+"/"))return ar(h.protocol+"//"+ h.host+PP+h.pathname+h.search+h.hash);
+                if(h.host!==mtNativeLocation.host){
                   return ar(E+encodeURIComponent(u));
                 }
               }catch(e){}
@@ -470,23 +535,23 @@ public sealed partial class WebPreviewProxyMiddleware
             return entries.length?"?"+entries.join("&"):"";
           }
           function curU(){
-            if(location.pathname===PP+"/_ext"){
+            if(mtNativeLocation.pathname===PP+"/_ext"){
               try{
-                var ext=new URLSearchParams(location.search).get("u");
+                var ext=new URLSearchParams(mtNativeLocation.search).get("u");
                 if(ext){
                   var external=new URL(ext);
                   external.search=mtUpstreamSearch(external.search);
-                  if(location.hash)external.hash=location.hash;
+                  if(mtNativeLocation.hash)external.hash=mtNativeLocation.hash;
                   return external.href;
                 }
               }catch(e){}
             }
-            var path=location.pathname;
+            var path=mtNativeLocation.pathname;
             if(path.indexOf(PP+"/")==0)path=path.substring(PP.length);
             else if(path===PP)path="/";
-            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(location.search)+location.hash;
+            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(mtNativeLocation.search)+mtNativeLocation.hash;
           }
-          // Frameworks pass document.baseURI together with location.href to the
+          // Frameworks pass document.baseURI together with mtNativeLocation.href to the
           // server. Both must use upstream coordinates or Blazor rejects its circuit.
           function mtDocumentBaseURI(){
             try{
@@ -508,7 +573,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var text=String(value);
             // HTML rewriting may already have converted an inline redirect.
             if(mtProxyUrl(text,P)||mtProxyUrl(text,PP)
-              ||mtProxyUrl(text,location.origin+P)||mtProxyUrl(text,location.origin+PP))return r(text);
+              ||mtProxyUrl(text,mtNativeLocation.origin+P)||mtProxyUrl(text,mtNativeLocation.origin+PP))return r(text);
             return r(new URL(text,curU()).href);
           }
           var mtLocationView={};
@@ -516,13 +581,13 @@ public sealed partial class WebPreviewProxyMiddleware
             Object.defineProperty(mtLocationView,key,{enumerable:true,get:function(){
               return new URL(curU())[key];
             },set:key==="origin"?undefined:function(value){
-              if(key==="href"){location.assign(mtNavigationUrl(value));return;}
-              var next=new URL(curU());next[key]=value;location.assign(r(next.href));
+              if(key==="href"){mtNativeLocation.assign(mtNavigationUrl(value));return;}
+              var next=new URL(curU());next[key]=value;mtNativeLocation.assign(r(next.href));
             }});
           });
-          mtLocationView.assign=function(url){location.assign(mtNavigationUrl(url));};
-          mtLocationView.replace=function(url){location.replace(mtNavigationUrl(url));};
-          mtLocationView.reload=function(){location.reload();};
+          mtLocationView.assign=function(url){mtNativeLocation.assign(mtNavigationUrl(url));};
+          mtLocationView.replace=function(url){mtNativeLocation.replace(mtNavigationUrl(url));};
+          mtLocationView.reload=function(){mtNativeLocation.reload();};
           mtLocationView.toString=function(){return curU();};
           mtLocationView[Symbol.toPrimitive]=function(){return curU();};
           window.__mtPreviewLocation=function(value){
@@ -545,10 +610,10 @@ public sealed partial class WebPreviewProxyMiddleware
           var lastMtNavigationKey="",navNotifyTimer=0;
           function ntfyNow(){
             var upstreamUrl=curU();
-            var navKey=location.href+"\n"+upstreamUrl;
+            var navKey=mtNativeLocation.href+"\n"+upstreamUrl;
             if(navKey===lastMtNavigationKey)return;
             lastMtNavigationKey=navKey;
-            postMt("mt-navigation",{url:location.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:upstreamUrl});
+            postMt("mt-navigation",{url:mtNativeLocation.href,targetOrigin:window.__mtTargetOrigin||"",upstreamUrl:upstreamUrl});
           }
           function ntfy(){
             if(navNotifyTimer)return;
@@ -560,9 +625,9 @@ public sealed partial class WebPreviewProxyMiddleware
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
           history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
           history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
-          var la=location.assign.bind(location),lr=location.replace.bind(location);
-          location.assign=function(u){return la(r(u));};
-          location.replace=function(u){return lr(r(u));};
+          var la=mtNativeLocation.assign.bind(mtNativeLocation),lr=mtNativeLocation.replace.bind(mtNativeLocation);
+          mtNativeLocation.assign=function(u){return la(r(u));};
+          mtNativeLocation.replace=function(u){return lr(r(u));};
           window.addEventListener("popstate",ntfy);
           window.addEventListener("hashchange",ntfy);
           setTimeout(ntfyNow,0);
@@ -626,136 +691,6 @@ public sealed partial class WebPreviewProxyMiddleware
             }
           }catch(e){}
           // === MutationObserver: catch dynamically added elements ===
-          function clampByte(v){
-            v=Math.round(v);
-            if(v<0)return 0;
-            if(v>255)return 255;
-            return v;
-          }
-          function parseSrgbChannel(raw){
-            if(!raw)return null;
-            if(/%$/.test(raw)){
-              var pct=parseFloat(raw);
-              if(!isFinite(pct))return null;
-              return clampByte((pct/100)*255);
-            }
-            var num=parseFloat(raw);
-            if(!isFinite(num))return null;
-            return num<=1?clampByte(num*255):clampByte(num);
-          }
-          function parseSrgbAlpha(raw){
-            if(!raw)return 1;
-            if(/%$/.test(raw)){
-              var pct=parseFloat(raw);
-              if(!isFinite(pct))return 1;
-              return Math.max(0,Math.min(1,pct/100));
-            }
-            var num=parseFloat(raw);
-            if(!isFinite(num))return 1;
-            return Math.max(0,Math.min(1,num));
-          }
-          var captureColorContext=null,captureColorCache=new Map();
-          function normalizeCssColorFunctions(value){
-            if(typeof value!=="string"||!/(?:oklch|oklab|lch|lab|color|color-mix)\(/i.test(value))return value;
-            value=value.replace(/color\(\s*srgb\s+([^\s)\/]+)\s+([^\s)\/]+)\s+([^\s)\/]+)(?:\s*\/\s*([^)]+?))?\s*\)/gi,function(_,r,g,b,a){
-              var rr=parseSrgbChannel(r),gg=parseSrgbChannel(g),bb=parseSrgbChannel(b);
-              if(rr===null||gg===null||bb===null)return _;
-              var aa=parseSrgbAlpha(a);
-              if(aa>=1)return "rgb("+rr+", "+gg+", "+bb+")";
-              var alphaText=(Math.round(aa*1000)/1000).toString();
-              return "rgba("+rr+", "+gg+", "+bb+", "+alphaText+")";
-            });
-            // Let the browser convert modern color spaces to sRGB for html2canvas.
-            // Cache each color; gradients/shadows can contain multiple or nested functions.
-            var pattern=/(?:oklch|oklab|lch|lab|color-mix|color)\(/gi,match,output="",cursor=0;
-            while((match=pattern.exec(value))!==null){
-              var end=pattern.lastIndex,depth=1;
-              while(end<value.length&&depth){var c=value.charAt(end++);if(c==="(")depth++;else if(c===")")depth--;}
-              if(depth)break;
-              var token=value.slice(match.index,end),converted=captureColorCache.get(token);
-              if(!converted){
-                try{
-                  if(!CSS.supports("color",token))throw new Error("Invalid color");
-                  if(!captureColorContext){var canvas=document.createElement("canvas");canvas.width=canvas.height=1;captureColorContext=canvas.getContext("2d",{willReadFrequently:true});}
-                  var ctx=captureColorContext;ctx.clearRect(0,0,1,1);ctx.fillStyle=token;ctx.fillRect(0,0,1,1);
-                  var pixel=ctx.getImageData(0,0,1,1).data;
-                  converted="rgba("+pixel[0]+", "+pixel[1]+", "+pixel[2]+", "+(Math.round(pixel[3]/255*1000)/1000)+")";
-                  captureColorCache.set(token,converted);
-                }catch(e){converted=token;}
-              }
-              output+=value.slice(cursor,match.index)+converted;cursor=end;pattern.lastIndex=end;
-            }
-            return output+value.slice(cursor);
-          }
-          function createNormalizedStyleReader(styles,captureProperties){
-            if(!styles||typeof styles!=="object")return styles;
-            if(typeof Proxy!=="function")return styles;
-            try{
-              // html2canvas copies every enumerated property onto cloned SVG and
-              // custom elements. Computed standard properties already resolve var(),
-              // so copying thousands of inherited design tokens adds no visual value.
-              // Keep direct custom-property reads available to the page itself.
-              if(!captureProperties){
-                captureProperties=[];
-                for(var index=0;index<styles.length;index++){
-                  var name=styles.item(index);
-                  if(name.indexOf("--")!==0)captureProperties.push(name);
-                }
-              }
-              return new Proxy(styles,{
-                get:function(target,prop){
-                  if(prop==="length")return captureProperties.length;
-                  if(typeof prop==="string"&&/^\d+$/.test(prop))return captureProperties[Number(prop)];
-                  if(prop===Symbol.iterator)return captureProperties[Symbol.iterator].bind(captureProperties);
-                  if(prop==="getPropertyValue"){
-                    return function(name){
-                      return normalizeCssColorFunctions(target.getPropertyValue(name));
-                    };
-                  }
-                  if(prop==="setProperty"){
-                    return function(name,value,priority){
-                      return target.setProperty(name,normalizeCssColorFunctions(value),priority);
-                    };
-                  }
-                  if(prop==="getPropertyPriority"){
-                    return function(name){
-                      return target.getPropertyPriority(name);
-                    };
-                  }
-                  if(prop==="item"){
-                    return function(index){
-                      return captureProperties[index]||"";
-                    };
-                  }
-                  var value=target[prop];
-                  if(typeof value==="function")return value.bind(target);
-                  return typeof value==="string"?normalizeCssColorFunctions(value):value;
-                }
-              });
-            }catch(e){}
-            return styles;
-          }
-          function installComputedStyleColorNormalization(view){
-            if(!view||typeof view.getComputedStyle!=="function")return function(){};
-            var current=view.getComputedStyle;
-            if(current&&current.__mtColorNormalized)return function(){};
-            // Standard computed-property names are identical for this browser realm.
-            // Discover them once, not once for every element and pseudo-element.
-            var captureProperties=Array.from(createNormalizedStyleReader(current.call(view,view.document.documentElement)));
-            var wrapped=function(){
-              return createNormalizedStyleReader(current.apply(this,arguments),captureProperties);
-            };
-            try{wrapped.__mtColorNormalized=true;}catch(e){}
-            try{
-              view.getComputedStyle=wrapped;
-              return function(){
-                try{
-                  if(view.getComputedStyle===wrapped)view.getComputedStyle=current;
-                }catch(e){}
-              };
-            }catch(e){}
-            return function(){};
-          }
           function rewriteEl(el){
             if(!el.getAttribute)return;
             ["src","href","action","data","formaction","poster"].forEach(function(attr){
@@ -789,33 +724,243 @@ public sealed partial class WebPreviewProxyMiddleware
               }
             }
           }).observe(document.documentElement,{childList:true,subtree:true});
+          // Installed before upstream scripts and always on, so arguments are read
+          // without running page getters or toJSON and each entry costs a bounded walk.
+          var mtLog=window.__mtLog=[],mtLogDropped=0,mtLogBusy=false,mtLogEntryMax=2000;
+          var mtErrorStackGetter=Object.getOwnPropertyDescriptor(new Error(),"stack");
+          mtErrorStackGetter=mtErrorStackGetter&&mtErrorStackGetter.get;
+          var mtDomNameGetter=Object.getOwnPropertyDescriptor(DOMException.prototype,"name").get;
+          var mtDomMessageGetter=Object.getOwnPropertyDescriptor(DOMException.prototype,"message").get;
+          function mtLogData(v,key){
+            for(var obj=v,n=0;obj&&n<32;obj=Object.getPrototypeOf(obj),n++){
+              var desc=Object.getOwnPropertyDescriptor(obj,key);
+              if(desc)return "value" in desc?desc.value:
+                desc.get&&(desc.get===mtDomNameGetter||desc.get===mtDomMessageGetter)?desc.get.call(v):undefined;
+            }
+          }
+          function mtLogValue(v,depth,path,budget){
+            var type=typeof v;
+            if(type==="string"){var str=v.slice(0,mtLogEntryMax+1);return depth?JSON.stringify(str):str;}
+            if(v===null||(type!=="object"&&type!=="function"))return String(v);
+            // Object#toString invokes Symbol.toStringTag getters; inspect descriptors first.
+            var customTag=mtLogData(v,Symbol.toStringTag);
+            var tag=typeof customTag==="string"?customTag:
+              Array.isArray(v)?"Array":v instanceof Error?"Error":
+              v instanceof Date?"Date":v instanceof RegExp?"RegExp":type==="function"?"Function":"Object";
+            if(tag==="Error"||tag==="DOMException"){
+              var name=mtLogData(v,"name"),message=mtLogData(v,"message"),stack=mtLogData(v,"stack");
+              var stackDesc=Object.getOwnPropertyDescriptor(v,"stack");
+              if(typeof name==="string"&&typeof message==="string"&&stackDesc&&mtErrorStackGetter&&stackDesc.get===mtErrorStackGetter)stack=mtErrorStackGetter.call(v);
+              var head=(typeof name==="string"?name:"Error")+": "+(typeof message==="string"?message:"");
+              stack=typeof stack==="string"?stack:"";
+              return stack.indexOf(head)===0?stack:stack?head+"\n"+stack:head;
+            }
+            if(tag==="Date"||tag==="RegExp")return String(v);
+            if(tag!=="Array"&&tag!=="Object")return"["+tag+"]";
+            var isArray=tag==="Array",open=isArray?"[":"{",close=isArray?"]":"}";
+            if(path.indexOf(v)>=0)return"[Circular]";
+            if(depth>=4)return open+"..."+close;
+            path.push(v);
+            var keys=isArray?null:Object.keys(v),count=keys?keys.length:v.length,parts=[],start=budget.left;
+            for(var i=0;i<count;i++){
+              if(budget.left<=0){parts.push("...");break;}
+              var key=keys?keys[i]:i,prop=Object.getOwnPropertyDescriptor(v,key);
+              var text=!prop?"undefined":"value" in prop?mtLogValue(prop.value,depth+1,path,budget):"[getter]";
+              budget.left-=text.length+1;
+              parts.push(keys?JSON.stringify(key)+":"+text:text);
+            }
+            path.pop();
+            // The caller charges the returned text once, so release the children's interim charges.
+            budget.left=start;
+            return open+parts.join(",")+close;
+          }
+          function mtLogPush(level,args){
+            if(mtLogBusy)return;
+            mtLogBusy=true;
+            var budget={left:mtLogEntryMax},parts=[];
+            for(var i=0;i<args.length&&budget.left>0;i++){
+              var text;
+              try{text=mtLogValue(args[i],0,[],budget);}catch(e){text="[unserializable]";}
+              budget.left-=text.length+1;
+              parts.push(text);
+            }
+            mtLogBusy=false;
+            // Stack frames carry the proxy route and preview capability; show the upstream origin instead.
+            var message=parts.join(" ")
+              .replace(/https?:\/\/[^\s/]+\/webpreview\/[^\s/?#]+(?:\/_access\/[^\s/?#]+\/[^\s/?#]+)?/g,window.__mtTargetOrigin||"")
+              .replace(/[?&]__mtPreview(?:Id|Token)=[^&\s:)]*/g,"");
+            if(message.length>mtLogEntryMax)message=message.slice(0,mtLogEntryMax)+"...[truncated]";
+            mtLog.push({l:level,m:message,t:Date.now()});
+            if(mtLog.length>50){mtLog.shift();mtLogDropped++;}
+          }
+          ["error","warn","log"].forEach(function(level){
+            var original=console[level];
+            console[level]=function(){
+              mtLogPush(level,arguments);
+              return original.apply(console,arguments);
+            };
+          });
+          window.addEventListener("error",function(ev){
+            mtLogPush("error",ev.error instanceof Error
+              ?["Uncaught",ev.error]
+              :[ev.message+" ("+(ev.filename||"")+":"+(ev.lineno||0)+":"+(ev.colno||0)+")"]);
+          });
+          window.addEventListener("unhandledrejection",function(ev){
+            mtLogPush("error",["Unhandled rejection:",ev.reason]);
+          });
           // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
-          var bws,bwsReady=false,h2cLoad=null;
-          function truncDom(el,d,mx){
-            if(d>=mx)return"<!-- ... -->";
-            var t=el.cloneNode(false);
-            if(el.childNodes)for(var i=0;i<el.childNodes.length;i++){
-              var c=el.childNodes[i];
-              if(c.nodeType===1)t.appendChild(truncDom(c,d+1,mx).content?truncDom(c,d+1,mx):document.createRange().createContextualFragment(truncDom(c,d+1,mx)));
-              else if(c.nodeType===3)t.appendChild(c.cloneNode(false));
+          var bws,bwsReady=false,captureLoad=null;
+          function queryBudget(){return {nodes:4000,chars:40000,truncated:false};}
+          function queryText(el,budget){
+            var walker=document.createTreeWalker(el,NodeFilter.SHOW_ALL),parts=[],node;
+            while((node=walker.nextNode())){
+              if(budget.nodes--<=0||budget.chars<=0){budget.truncated=true;break;}
+              if(node.nodeType===3){var text=node.data.slice(0,budget.chars);parts.push(text);budget.chars-=text.length;if(text.length<node.data.length){budget.truncated=true;break;}}
             }
-            return t.outerHTML||t.textContent||"";
+            return parts.join("");
           }
-          function truncEl(el,mx){
-            if(!mx||mx<1)return el.outerHTML;
-            var clone=el.cloneNode(true);
-            function trim(n,d){if(d>=mx){n.innerHTML="<!-- ... -->";return;}
-              for(var i=0;i<n.children.length;i++)trim(n.children[i],d+1);
+          function truncEl(el,mx,budget){
+            function shallow(source){
+              if(budget.nodes--<=0||budget.chars<32){budget.truncated=true;return null;}
+              var copy=source.cloneNode(false),attrs=Array.from(copy.attributes);
+              for(var i=0;i<attrs.length;i++){
+                if(i>=64){copy.removeAttribute(attrs[i].name);budget.truncated=true;}
+                else if(attrs[i].value.length>2048){copy.setAttribute(attrs[i].name,attrs[i].value.slice(0,2048)+"[truncated]");budget.truncated=true;}
+              }
+              var length=copy.outerHTML.length;
+              while(length>budget.chars&&copy.attributes.length){copy.removeAttribute(copy.attributes[copy.attributes.length-1].name);budget.truncated=true;length=copy.outerHTML.length;}
+              if(length>budget.chars){budget.truncated=true;return null;}
+              budget.chars-=length;return copy;
             }
-            trim(clone,0);return clone.outerHTML;
+            var root=shallow(el);if(!root)return "";
+            var stack=[{source:el,copy:root,depth:0,index:0}];
+            while(stack.length){
+              var frame=stack[stack.length-1],source=frame.source.content&&frame.source.tagName==="TEMPLATE"?frame.source.content:frame.source;
+              var parent=frame.copy.content&&frame.copy.tagName==="TEMPLATE"?frame.copy.content:frame.copy;
+              if(mx>0&&frame.depth>=mx){if(source.childNodes.length&&budget.chars>=14){parent.appendChild(document.createComment(" ... "));budget.chars-=14;}stack.pop();continue;}
+              if(frame.index>=source.childNodes.length){stack.pop();continue;}
+              if(budget.nodes<=0||budget.chars<32){budget.truncated=true;break;}
+              var child=source.childNodes[frame.index++];
+              if(child.nodeType===1){var copy=shallow(child);if(!copy)break;parent.appendChild(copy);stack.push({source:child,copy:copy,depth:frame.depth+1,index:0});}
+              else if(child.nodeType===3||child.nodeType===8){
+                budget.nodes--;var text=child.data.slice(0,Math.floor((budget.chars-10)/6));
+                parent.appendChild(child.nodeType===3?document.createTextNode(text):document.createComment(text));budget.chars-=text.length*6+10;
+                if(text.length<child.data.length){budget.truncated=true;break;}
+              }
+            }
+            return root.outerHTML;
           }
-          function ensureH2c(){
-            if(typeof window.html2canvas==="function")return Promise.resolve(window.html2canvas);
-            if(h2cLoad)return h2cLoad;
+          function semanticOutline(root,mx){
+            var lines=[],visited=0,count=0,chars=0,truncated=false,selectorCache=new Map();
+            function unique(selector,el){
+              if(!selectorCache.has(selector)){if(selectorCache.size>=1200)return false;var matches=document.querySelectorAll(selector);selectorCache.set(selector,matches.length===1?matches[0]:null);}
+              return selectorCache.get(selector)===el;
+            }
+            function selectorFor(el){
+              var tag=CSS.escape(el.localName),candidate,classSelector=tag;
+              for(var i=0;i<Math.min(el.classList.length,3);i++){var cls=el.classList.item(i);if(cls.length<=128)classSelector+="."+CSS.escape(cls);}
+              if(el.id&&el.id.length<=256){candidate="#"+CSS.escape(el.id);if(unique(candidate,el))return candidate;}
+              var scope=el.closest("[data-session-id]"),prefix=scope&&scope!==el?'[data-session-id='+CSS.escape(scope.getAttribute("data-session-id"))+'] ':"";
+              for(var attr of ["data-testid","data-request-id","data-session-id","data-action","data-tab","name","aria-label"]){
+                var value=el.getAttribute(attr);if(!value||value.length>256)continue;
+                candidate=tag+"["+attr+"="+CSS.escape(value)+"]";
+                if(prefix&&unique(prefix+candidate,el))return prefix+candidate;
+                if(unique(candidate,el))return candidate;
+                candidate=classSelector+"["+attr+"="+CSS.escape(value)+"]";
+                if(prefix&&unique(prefix+candidate,el))return prefix+candidate;
+                if(unique(candidate,el))return candidate;
+              }
+              candidate=classSelector;
+              if(prefix&&unique(prefix+candidate,el))return prefix+candidate;
+              if(unique(candidate,el))return candidate;
+              var path="";
+              for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+                var index=1;for(var p=n.previousElementSibling;p;p=p.previousElementSibling)if(p.localName===n.localName&&p.namespaceURI===n.namespaceURI)index++;
+                var segment=n.id&&n.id.length<=256&&unique("#"+CSS.escape(n.id),n)?"#"+CSS.escape(n.id):CSS.escape(n.localName)+":nth-of-type("+index+")";
+                path=segment+(path?" > "+path:"");
+                if(path.length>1024)return null;
+                if(unique(path,el))return path;
+              }
+              return null;
+            }
+            function compact(text){return String(text||"").slice(0,160).replace(/[\uE000-\uF8FF]/g,"").replace(/\s+/g," ").trim();}
+            function labelText(el){
+              var walker=document.createTreeWalker(el,NodeFilter.SHOW_ALL),text="",node,seen=0;
+              while((node=walker.nextNode())&&seen++<200&&text.length<160){
+                if(node.nodeType===3&&!node.parentElement.closest('input,textarea,select,script,style,template,[aria-hidden="true"]'))text+=node.data.slice(0,160-text.length)+" ";
+              }
+              return compact(text);
+            }
+            function keyboardTarget(el){return el.hasAttribute("tabindex")&&el.tabIndex>=0||el.hasAttribute("contenteditable")&&el.isContentEditable;}
+            function label(el){
+              var direct=compact(el.getAttribute("aria-label"));if(direct)return direct;
+              if(el.tagName==="DETAILS"){var summary=el.querySelector(":scope > summary");if(summary)return labelText(summary);}
+              var refs=(el.getAttribute("aria-labelledby")||"").slice(0,512).split(/\s+/).slice(0,8),names=[];
+              for(var id of refs){var named=document.getElementById(id);if(named)names.push(labelText(named));}
+              if(names.join("").trim())return compact(names.join(" "));
+              if(el.labels&&el.labels.length)return compact(Array.from(el.labels).slice(0,4).map(labelText).join(" "));
+              var fallback=compact(el.getAttribute("alt")||el.getAttribute("title")||el.getAttribute("data-tooltip")||el.getAttribute("placeholder"));
+              if(/^(BUTTON|A|SUMMARY|H[1-6]|LEGEND|OPTION)$/.test(el.tagName)||/^(button|link|menuitem|tab|option)$/.test(el.getAttribute("role")||"")||keyboardTarget(el))return labelText(el)||fallback;
+              return fallback;
+            }
+            var stack=[{el:root,depth:0,index:-1,nextDepth:0}];
+            while(stack.length){
+              var frame=stack[stack.length-1],el=frame.el;
+              if(frame.index<0){
+                if(visited++>=3000||count>=200||chars>=40000){truncated=true;break;}
+                var css=getComputedStyle(el),role=(el.getAttribute("role")||"").slice(0,80);
+                if(/^(HEAD|SCRIPT|STYLE|LINK|META|TEMPLATE|NOSCRIPT)$/.test(el.tagName)||el.hidden||el.inert||el.getAttribute("aria-hidden")==="true"||css.display==="none"||css.contentVisibility==="hidden"||Number(css.opacity)===0){stack.pop();continue;}
+                if((/^(hidden|clip)$/.test(css.overflowX)&&el.clientWidth===0)||(/^(hidden|clip)$/.test(css.overflowY)&&el.clientHeight===0)){stack.pop();continue;}
+                var semantic=el===root||/^(MAIN|NAV|ASIDE|HEADER|FOOTER|SECTION|ARTICLE|FORM|FIELDSET|DIALOG|H[1-6]|BUTTON|A|INPUT|TEXTAREA|SELECT|DETAILS|SUMMARY|CANVAS)$/.test(el.tagName)||!!role&&role!=="none"&&role!=="presentation"||keyboardTarget(el);
+                var emit=semantic&&(el===root||isControlVisible(el));
+                if(emit&&frame.depth<=mx){
+                  var name=label(el),selector=selectorFor(el),states=[];
+                  if(keyboardTarget(el))states.push("focusable");
+                  if(el.hasAttribute("contenteditable")&&el.isContentEditable)states.push("editable");
+                  if(el.matches(":disabled")||el.closest('[aria-disabled="true"]'))states.push("disabled");
+                  if(el.readOnly)states.push("readonly");
+                  if(el.tagName==="DETAILS")states.push("expanded="+el.open);
+                  for(var state of ["aria-expanded","aria-selected","aria-pressed","aria-checked"]){var value=el.getAttribute(state);if(value!==null)states.push(state.slice(5)+"="+value.slice(0,40));}
+                  if(el.tagName==="INPUT"&&/^(checkbox|radio)$/.test(el.type))states.push("checked="+el.checked);
+                  if(el===document.activeElement)states.push("focused");
+                  var line="  ".repeat(frame.depth)+el.localName+(role?" role="+role:"")+(el.tagName==="INPUT"?" type="+el.type:"")+(name?" "+JSON.stringify(name):"")+(states.length?" ["+states.join(", ")+"]":"")+" selector="+(selector?JSON.stringify(selector):"(path too long; narrow the root)");
+                  if(chars+line.length>40000){truncated=true;break;}
+                  lines.push(line);chars+=line.length+1;count++;
+                }
+                frame.nextDepth=frame.depth+(emit?1:0);frame.index=0;
+                if(emit&&(frame.depth>=mx||/^(BUTTON|A|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)))frame.index=el.children.length;
+              }
+              if(frame.index>=el.children.length){stack.pop();continue;}
+              var child=el.children[frame.index++];
+              if(el.tagName==="DETAILS"&&!el.open&&child.tagName!=="SUMMARY")continue;
+              stack.push({el:child,depth:frame.nextDepth,index:-1,nextDepth:frame.nextDepth});
+            }
+            if(truncated)lines.push("[outline truncated: "+count+" entries, "+visited+" nodes visited; narrow selector or maxDepth]");
+            return {text:lines.join("\n")||"(no visible semantic elements)",count:count};
+          }
+          function settleHiddenCaptureTransitions(){
+            if(!document.hidden||typeof CSSTransition!=="function"||typeof document.getAnimations!=="function")return;
+            document.getAnimations().forEach(function(a){
+              if(a instanceof CSSTransition&&a.playState==="running"&&a.effect&&Number.isFinite(a.effect.getComputedTiming().endTime)){
+                try{a.finish();}catch(e){}
+              }
+            });
+          }
+          function captureBackground(){
+            var root=getComputedStyle(document.documentElement),opaque=/^rgb\([\d\s.,]+\)$/;
+            if(root.backgroundImage!=="none")return undefined;
+            if(opaque.test(root.backgroundColor))return root.backgroundColor;
+            if(root.backgroundColor!=="transparent"&&!/^rgba\([^,]+,[^,]+,[^,]+,\s*0(?:\.0+)?\)$/.test(root.backgroundColor))return undefined;
+            var body=document.body?getComputedStyle(document.body):null;
+            return body&&body.backgroundImage==="none"&&opaque.test(body.backgroundColor)?body.backgroundColor:undefined;
+          }
+          function ensureCapture(){
+            if(window.__tlbxDomCapture&&typeof window.__tlbxDomCapture.snapdom==="function")return Promise.resolve(window.__tlbxDomCapture.snapdom);
+            if(captureLoad)return captureLoad;
             // Keep this host asset inside the authenticated preview route. Link's
             // isolated origin routes root-relative fetches to the upstream site.
-            h2cLoad=F.call(window,PP+"/_assets/html2canvas.min.js",{credentials:"same-origin"}).then(function(resp){
-              if(!resp.ok)throw new Error("failed to fetch html2canvas");
+            captureLoad=F.call(window,PP+"/_assets/dom-capture.min.js",{credentials:"same-origin"}).then(function(resp){
+              if(!resp.ok)throw new Error("failed to fetch screenshot renderer");
               return resp.text();
             }).then(function(text){
               return new Promise(function(resolve,reject){
@@ -825,14 +970,46 @@ public sealed partial class WebPreviewProxyMiddleware
                 scr.src=blobUrl;
                 scr.onload=function(){
                   URL.revokeObjectURL(blobUrl);scr.remove();
-                  if(typeof window.html2canvas!=="function"){reject(new Error("html2canvas did not initialize"));return;}
-                  resolve(window.html2canvas);
+                  if(!window.__tlbxDomCapture||typeof window.__tlbxDomCapture.snapdom!=="function"){reject(new Error("screenshot renderer did not initialize"));return;}
+                  resolve(window.__tlbxDomCapture.snapdom);
                 };
-                scr.onerror=function(){URL.revokeObjectURL(blobUrl);scr.remove();reject(new Error("failed to load html2canvas"));};
+                scr.onerror=function(){URL.revokeObjectURL(blobUrl);scr.remove();reject(new Error("failed to load screenshot renderer"));};
                 document.head.appendChild(scr);
               });
-            }).catch(function(err){h2cLoad=null;throw err;});
-            return h2cLoad;
+            }).catch(function(err){captureLoad=null;throw err;});
+            return captureLoad;
+          }
+          function isControlVisible(el){
+            if(!el.isConnected||!el.getClientRects().length)return false;
+            var visibility=getComputedStyle(el).visibility;
+            if(visibility==="hidden"||visibility==="collapse")return false;
+            for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+              var css=getComputedStyle(n);
+              if(n.hidden||n.inert||css.display==="none"||Number(css.opacity)===0)return false;
+            }
+            return true;
+          }
+          function resolveControl(selector){
+            var matches=document.querySelectorAll(selector),visible=[];
+            for(var i=0;i<matches.length;i++)if(isControlVisible(matches[i]))visible.push(matches[i]);
+            if(!visible.length)throw new Error("no visible element: "+selector);
+            if(visible.length!==1)throw new Error("ambiguous selector: "+selector+" ("+visible.length+" visible elements); use a more specific selector");
+            assertControlEnabled(visible[0]);return visible[0];
+          }
+          function assertControlEnabled(el){
+            if(!isControlVisible(el))throw new Error("interaction target became hidden or detached");
+            if(el.matches(":disabled")||el.closest('[aria-disabled="true"]'))throw new Error("interaction target is disabled");
+          }
+          function controlIntent(el){
+            // Match pointer activation without moving keyboard focus or claiming terminal size ownership.
+            var rect=el.getBoundingClientRect(),opts={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2};
+            var mouse=true;
+            if(typeof PointerEvent!=="undefined")mouse=el.dispatchEvent(new PointerEvent("pointerdown",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
+            if(mouse)el.dispatchEvent(new MouseEvent("mousedown",opts));
+            opts.buttons=0;
+            if(typeof PointerEvent!=="undefined")el.dispatchEvent(new PointerEvent("pointerup",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
+            if(mouse)el.dispatchEvent(new MouseEvent("mouseup",opts));
+            assertControlEnabled(el);
           }
           function setFormControlValue(el,value){
             var proto=null;
@@ -843,6 +1020,29 @@ public sealed partial class WebPreviewProxyMiddleware
             if(nv&&nv.set)nv.set.call(el,value);
             else el.value=value;
           }
+          function assertEditableHost(el){
+            assertControlEnabled(el);
+            if(!el.isContentEditable||el.parentElement&&el.parentElement.isContentEditable)throw new Error("fill requires a contenteditable editing host");
+            if(el.closest('[aria-readonly="true"],[readonly],[disabled]'))throw new Error("fill target is read-only or disabled");
+            if(el.querySelector('[contenteditable="false"]'))throw new Error("fill cannot replace non-editable editor content");
+          }
+          function fillEditableHost(el,value){
+            assertEditableHost(el);
+            var command=value===""?"delete":"insertText";
+            if(typeof document.execCommand!=="function"||typeof document.queryCommandSupported!=="function"||!document.queryCommandSupported(command))throw new Error("native text editing is unavailable; rich-editor fill was not attempted");
+            controlIntent(el);
+            el.focus({preventScroll:true});
+            assertEditableHost(el);
+            if(document.activeElement!==el)throw new Error("fill target could not receive focus");
+            var selection=window.getSelection(),range=document.createRange();
+            if(!selection)throw new Error("editor selection is unavailable");
+            range.selectNodeContents(el);
+            selection.removeAllRanges();selection.addRange(range);
+            // Use the browser editing operation: literal text, native input/selection and undo.
+            // Do not write textContent/innerHTML or synthesize a second input event: model-backed
+            // editors observe this edit and reconcile it through their normal input pipeline.
+            if(!document.execCommand(command,false,value))throw new Error("native editor replacement was rejected");
+          }
           function handleBCmd(msg){
             var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null};
             try{
@@ -851,17 +1051,22 @@ public sealed partial class WebPreviewProxyMiddleware
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   var els=document.querySelectorAll(msg.selector);
                   res.matchCount=els.length;
-                  var parts=[];var mx=msg.maxDepth||0;
+                  var parts=[],mx=msg.maxDepth||0,budget=queryBudget(),shown=0;
+                  if(mx<0)throw new Error("maxDepth must be non-negative");
                   for(var i=0;i<els.length&&i<50;i++){
-                    parts.push(msg.textOnly?els[i].textContent:mx>0?truncEl(els[i],mx):els[i].outerHTML);
+                    if(budget.nodes<=0||budget.chars<32){budget.truncated=true;break;}
+                    parts.push(msg.textOnly?queryText(els[i],budget):truncEl(els[i],mx,budget));shown++;budget.chars-=5;
                   }
+                  if(shown<els.length||budget.truncated)parts.push("[query truncated: "+shown+" of "+els.length+" matches; narrow selector/maxDepth, or use browser_snapshot for the full document]");
                   res.result=parts.join("\n---\n");
                   break;}
                 case"click":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var el=document.querySelector(msg.selector);
-                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
-                  el.click();res.result="clicked";
+                  var el=resolveControl(msg.selector);
+                  controlIntent(el);
+                  if(typeof el.click==="function")el.click();
+                  else el.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,composed:true,button:0}));
+                  res.result="clicked";
                   break;}
                 case"scroll":{
                   var s=(msg.selector||"").trim();
@@ -898,12 +1103,17 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"wheel":{
                   var s=(msg.selector||"").trim();
-                  var el=!s||s==="window"||s==="document"||s==="body"
-                    ? (document.scrollingElement||document.documentElement)
-                    : document.querySelector(s);
-                  if(!el){res.success=false;res.error="wheel target not found: "+s;break;}
                   var dy=Number.isFinite(msg.deltaY)?msg.deltaY:120;
                   var dx=Number.isFinite(msg.deltaX)?msg.deltaX:0;
+                  var pageTarget=!s||s==="window"||s==="document"||s==="body";
+                  var el=pageTarget?(document.scrollingElement||document.documentElement):document.querySelector(s);
+                  if(pageTarget&&document.body){
+                    var body=document.body,vertical=Math.abs(dy)>=Math.abs(dx),bodyStyle=getComputedStyle(body);
+                    var bodyRange=vertical?body.scrollHeight-body.clientHeight:body.scrollWidth-body.clientWidth;
+                    var rootRange=vertical?el.scrollHeight-el.clientHeight:el.scrollWidth-el.clientWidth;
+                    if(bodyRange>0&&/^(auto|scroll|overlay)$/.test(vertical?bodyStyle.overflowY:bodyStyle.overflowX)&&(s==="body"||rootRange<=0))el=body;
+                  }
+                  if(!el){res.success=false;res.error="wheel target not found: "+s;break;}
                   var steps=Math.max(1,Math.min(100,Math.trunc(msg.steps||1)));
                   var metrics=function(){
                     var maxTop=Math.max(0,el.scrollHeight-el.clientHeight);
@@ -945,9 +1155,15 @@ public sealed partial class WebPreviewProxyMiddleware
                   return;}
                 case"fill":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var el=document.querySelector(msg.selector);
-                  if(!el){res.success=false;res.error="element not found: "+msg.selector;break;}
-                  setFormControlValue(el,msg.value||"");
+                  var el=resolveControl(msg.selector),value=msg.value||"";
+                  if(el.isContentEditable){fillEditableHost(el,value);res.result="filled";break;}
+                  if(!el.matches("input,textarea,select"))throw new Error("fill requires an input, textarea, select or contenteditable editing host");
+                  if(el.readOnly)throw new Error("fill target is read-only");
+                  if(el.tagName==="INPUT"&&/^(file|checkbox|radio|button|submit|reset|image|hidden)$/i.test(el.type))throw new Error("fill does not support input type "+el.type+"; use the appropriate interaction");
+                  if(el.tagName==="SELECT"&&!Array.from(el.options).some(function(option){return option.value===value&&!option.disabled&&!(option.parentElement.tagName==="OPTGROUP"&&option.parentElement.disabled);}))throw new Error("select has no enabled option with the requested value");
+                  controlIntent(el);
+                  if(el.readOnly)throw new Error("fill target became read-only");
+                  setFormControlValue(el,value);
                   el.dispatchEvent(new Event("input",{bubbles:true}));
                   el.dispatchEvent(new Event("change",{bubbles:true}));
                   res.result="filled";
@@ -956,7 +1172,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   if(!msg.value){res.success=false;res.error="js code required";break;}
                   var rv=eval(msg.value);
                   Promise.resolve(rv).then(function(value){
-                    res.result=value===undefined?"undefined":typeof value==="object"?JSON.stringify(value):String(value);
+                    res.result=value===undefined?"undefined":typeof value==="object"?JSON.stringify(value,function(key,item){return typeof item==="bigint"?String(item):item;}):String(value);
                   }).catch(function(error){
                     res.success=false;res.error=(error&&error.message)||String(error);
                   }).finally(function(){
@@ -965,47 +1181,51 @@ public sealed partial class WebPreviewProxyMiddleware
                   return;}
                 case"wait":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var to=(msg.timeout||5)*1000,start=Date.now();
+                  var waitState=msg.value||"attached";
+                  if(["attached","visible","hidden","detached"].indexOf(waitState)<0){res.success=false;res.error="invalid wait state: "+waitState;break;}
+                  var to=(msg.timeout||5)*1000,start=Date.now(),waitSocket=bws;
                   (function poll(){
-                    var found=document.querySelector(msg.selector);
-                    if(found){res.result="found";res.matchCount=document.querySelectorAll(msg.selector).length;bws.send(JSON.stringify(res));}
-                    else if(Date.now()-start>to){res.success=false;res.error="timeout waiting for: "+msg.selector;bws.send(JSON.stringify(res));}
-                    else setTimeout(poll,200);
+                    // An old wait cannot answer through a replacement connection.
+                    if(!waitSocket||waitSocket!==bws||waitSocket.readyState!==WebSocket.OPEN)return;
+                    try{
+                      var found=document.querySelectorAll(msg.selector),visible=false;
+                      if(waitState==="visible"||waitState==="hidden"){
+                        for(var wi=0;wi<found.length;wi++)if(isControlVisible(found[wi])){visible=true;break;}
+                      }
+                      var done=waitState==="attached"?found.length>0:waitState==="detached"?found.length===0:waitState==="visible"?visible:!visible;
+                      if(done){res.result=waitState==="attached"?"found":waitState;res.matchCount=found.length;waitSocket.send(JSON.stringify(res));return;}
+                      if(Date.now()-start>=to){res.success=false;res.error="timeout waiting for"+(waitState==="attached"?"":" "+waitState)+": "+msg.selector;waitSocket.send(JSON.stringify(res));return;}
+                    }catch(error){res.success=false;res.error=(error&&error.message)||String(error);waitSocket.send(JSON.stringify(res));return;}
+                    setTimeout(poll,200);
                   })();return;}
                 case"screenshot":{
-                  var restoreComputedStyles=installComputedStyleColorNormalization(window);
                   var fullPage=msg.fullPage===true;
-                  var captureX=window.scrollX,captureY=window.scrollY;
-                  ensureH2c().then(function(){
-                    return window.html2canvas(document.documentElement,{
-                      useCORS:true,
-                      logging:false,
+                  var releaseCapture=null;
+                  Promise.resolve().then(function(){
+                    settleHiddenCaptureTransitions();
+                    return typeof window.__tlbxBeforeCapture==="function"?window.__tlbxBeforeCapture():null;
+                  }).then(function(release){
+                    releaseCapture=release;
+                    return ensureCapture();
+                  }).then(function(capture){
+                    return capture(document.documentElement,{
+                      clip:fullPage?null:"viewport",
+                      dpr:1,
                       scale:1,
-                      x:fullPage?0:captureX,
-                      y:fullPage?0:captureY,
-                      width:fullPage?undefined:window.innerWidth,
-                      height:fullPage?undefined:window.innerHeight,
-                      imageTimeout:1500,
-                      ignoreElements:function(el){
-                        if(fullPage||!el.getBoundingClientRect)return false;
-                        // Prune only below the viewport: removing earlier flow content
-                        // would shift the visible layout in the clone.
-                        if(/^(HTML|HEAD|BODY|STYLE|LINK|SCRIPT)$/.test(el.tagName))return false;
-                        var rect=el.getBoundingClientRect();
-                        return rect.top>=window.innerHeight&&rect.height>0;
-                      },
-                      onclone:function(doc){
-                        try{
-                          installComputedStyleColorNormalization(doc.defaultView||window);
-                        }catch(e){}
-                      }
+                      backgroundColor:captureBackground(),
+                      fast:false,
+                      reconcile:true,
+                      // Image compression awaits bitmap decode(), which never settles in a hidden, never-painted document.
+                      compress:false
                     });
+                  }).then(function(capture){
+                    return capture.toCanvas();
                   }).then(function(canvas){
-                      try{restoreComputedStyles();}catch(e){}
-                      res.result=canvas.toDataURL("image/png");bws.send(JSON.stringify(res));
+                    res.result=canvas.toDataURL("image/png");if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
                   }).catch(function(e){
-                      try{restoreComputedStyles();}catch(x){}
-                      res.success=false;res.error="screenshot failed: "+e.message;bws.send(JSON.stringify(res));
+                    res.success=false;res.error="screenshot failed: "+e.message;if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
+                  }).finally(function(){
+                    if(typeof releaseCapture==="function")releaseCapture();
                   });
                   return;}
                 case"snapshot":{
@@ -1013,44 +1233,28 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"navigate":{
                   if(!msg.value){res.success=false;res.error="url required";break;}
-                  location.href=mtNavigationUrl(msg.value);res.result="navigating";
+                  mtNativeLocation.href=mtNavigationUrl(msg.value);res.result="navigating";
                   break;}
                 case"reload":{
                   if((msg.value||"")==="force"){
                     try{
-                      var reloadUrl=new URL(location.href);
+                      var reloadUrl=new URL(mtNativeLocation.href);
                       mtReloadToken=Date.now().toString(36)+Math.random().toString(36).slice(2,8);
                       reloadUrl.searchParams.set("__mtReloadToken",mtReloadToken);
-                      location.replace(reloadUrl.toString());
+                      mtNativeLocation.replace(reloadUrl.toString());
                     }catch(e){
-                      location.reload();
+                      mtNativeLocation.reload();
                     }
                   }else{
-                    location.reload();
+                    mtNativeLocation.reload();
                   }
                   res.result="reloading";
                   break;}
                 case"outline":{
-                  var mx=msg.maxDepth||4;
-                  function ol(el,d,ind){
-                    if(d>=mx)return"";
-                    var tag=el.tagName.toLowerCase();
-                    var id=el.id?"#"+el.id:"";
-                    var cls=el.className&&typeof el.className==="string"?"."+el.className.trim().split(/\s+/).join("."):"";
-                    var line=ind+tag+id+cls;
-                    var ch=[].slice.call(el.children);
-                    var lines=[line];var ci=0;
-                    while(ci<ch.length){
-                      var ce=ch[ci];var cnt=1;
-                      while(ci+cnt<ch.length&&ch[ci+cnt].tagName===ce.tagName&&(ch[ci+cnt].className||"")===(ce.className||""))cnt++;
-                      if(cnt>2&&!ce.id){
-                        lines.push(ind+"  "+ce.tagName.toLowerCase()+(ce.className&&typeof ce.className==="string"?"."+ce.className.trim().split(/\s+/).join("."):"")+" x"+cnt);
-                        ci+=cnt;
-                      }else{lines.push(ol(ce,d+1,ind+"  "));ci++;}
-                    }
-                    return lines.filter(Boolean).join("\n");
-                  }
-                  res.result=ol(document.documentElement,0,"");
+                  var mx=msg.maxDepth||4,root=document.body||document.documentElement;
+                  if(mx<0)throw new Error("maxDepth must be non-negative");
+                  if(msg.selector){var roots=document.querySelectorAll(msg.selector);if(roots.length!==1)throw new Error("outline selector must match exactly one root");root=roots[0];}
+                  var outline=semanticOutline(root,mx);res.result=outline.text;res.matchCount=outline.count;
                   break;}
                 case"attrs":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
@@ -1079,25 +1283,11 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result=parts.join("\n---\n");
                   break;}
                 case"log":{
-                  if(!window.__mtLog){
-                    window.__mtLog=[];
-                    var orig={log:console.log,warn:console.warn,error:console.error};
-                    ["error","warn","log"].forEach(function(lvl){
-                      console[lvl]=function(){
-                        var a=[].slice.call(arguments).map(function(x){try{return typeof x==="object"?JSON.stringify(x):String(x);}catch(e){return String(x);}}).join(" ");
-                        window.__mtLog.push({l:lvl,m:a,t:Date.now()});
-                        if(window.__mtLog.length>50)window.__mtLog.shift();
-                        orig[lvl].apply(console,arguments);
-                      };
-                    });
-                    window.addEventListener("error",function(ev){
-                      window.__mtLog.push({l:"error",m:ev.message+" ("+(ev.filename||"")+":"+(ev.lineno||0)+")",t:Date.now()});
-                      if(window.__mtLog.length>50)window.__mtLog.shift();
-                    });
-                  }
                   var flt=msg.value||"all";
-                  var ent=window.__mtLog.filter(function(e){return flt==="all"||e.l===flt;});
-                  res.result=ent.length?ent.map(function(e){return"["+e.l+"] "+e.m;}).join("\n"):"(no entries)";
+                  var ent=mtLog.filter(function(e){return flt==="all"||e.l===flt;});
+                  var lines=ent.map(function(e){return"["+e.l+"] "+e.m;});
+                  if(mtLogDropped)lines.unshift("("+mtLogDropped+" older entries dropped)");
+                  res.result=lines.length?lines.join("\n"):"(no entries)";
                   res.matchCount=ent.length;
                   break;}
                 case"links":{
@@ -1147,7 +1337,8 @@ public sealed partial class WebPreviewProxyMiddleware
                                it==="button"?" \""+(inp.textContent||"").trim()+"\"":
                                " value=\""+((inp.type==="password"?"***":inp.value)||"")+"\"";
                       var ilbl="";
-                      if(inp.id){var le=f.querySelector("label[for="+inp.id+"]");if(le)ilbl=" label=\""+le.textContent.trim()+"\"";}
+                      var labels=inp.labels;
+                      if(labels&&labels.length)ilbl=" label=\""+Array.prototype.map.call(labels,function(le){return le.textContent.trim();}).join(" ")+"\"";
                       if(!ilbl&&inp.closest&&inp.closest("label"))ilbl=" label=\""+inp.closest("label").textContent.trim()+"\"";
                       flines.push("  "+it+iname+itp+ireq+ival+ilbl);
                     }
@@ -1297,6 +1488,11 @@ public sealed partial class WebPreviewProxyMiddleware
           window.addEventListener("message",function(e){
             var d=e&&e.data;
             if(d&&d.type==="mt-refresh-browser-state"){
+              var context=mtReadNativeParentContext(e);
+              if(context&&mtNestedPreview){
+                mtParentContext=context;mtCtx=context;mtNestedPreview=false;
+                mtPersistPreviewContext();connectBws();
+              }
               if(d.visible===true)bwsVisibleOverride=true;
               else if(d.visible===false)bwsVisibleOverride=false;
               mtScheduleBackgroundFrames();
@@ -1307,12 +1503,12 @@ public sealed partial class WebPreviewProxyMiddleware
             if(mtNestedPreview)return;
             try{
               if(bws&&(bws.readyState===0||bws.readyState===1))return;
-              var proto=location.protocol==="https:"?"wss:":"ws:";
+              var proto=mtNativeLocation.protocol==="https:"?"wss:":"ws:";
               var routeMatch=(P||"").match(/^\/webpreview\/([^/]+)/);
               if(!routeMatch){
-                routeMatch=(location.pathname||"").match(/^\/webpreview\/([^/]+)/);
+                routeMatch=(mtNativeLocation.pathname||"").match(/^\/webpreview\/([^/]+)/);
               }
-              var wsUrl=proto+"//"+location.host+BP+"/ws/browser";
+              var wsUrl=proto+"//"+mtNativeLocation.host+BP+"/ws/browser";
               if(routeMatch&&routeMatch[1]){
                 wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"routeKey="+encodeURIComponent(routeMatch[1]);
               }
@@ -1338,9 +1534,23 @@ public sealed partial class WebPreviewProxyMiddleware
         })();</script>
         """;
 
-    private static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "")
+    [GeneratedRegex(@"<script\b[^>]*\sdata-mt-proxy-route=""(/webpreview/[^/""]+)""[^>]*>", RegexOptions.IgnoreCase, 1000)]
+    private static partial Regex ProxyAdapterRouteRegex();
+
+    internal static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "", string upstreamHtml = "")
     {
+        // The parser has not reached the inner script when our prepended script
+        // runs. Carry only its route key forward, never capabilities or context.
+        var accessIndex = routePrefix.IndexOf("/_access/", StringComparison.Ordinal);
+        var adapterRoute = accessIndex < 0 ? routePrefix : routePrefix[..accessIndex];
+        var innerRoutes = ProxyAdapterRouteRegex().Matches(upstreamHtml)
+            .Select(match => WebUtility.HtmlDecode(match.Groups[1].Value))
+            .Distinct(StringComparer.Ordinal)
+            .Select(route => $"\"{JsonEncodedText.Encode(route)}\"");
         return UrlRewriteScript.Replace(
+            "__MT_PROXY_ROUTE_ATTRIBUTE__", WebUtility.HtmlEncode(adapterRoute), StringComparison.Ordinal).Replace(
+            "__MT_PROXY_ROUTE__", JsonEncodedText.Encode(routePrefix).ToString(), StringComparison.Ordinal).Replace(
+            "/*__MT_INNER_ADAPTER_ROUTES__*/[]", "[" + string.Join(",", innerRoutes) + "]", StringComparison.Ordinal).Replace(
             "var P=\"/webpreview\"",
             $"var P=\"{routePrefix}\"",
             StringComparison.Ordinal).Replace(
@@ -1426,7 +1636,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 return;
             }
-            if (remainingPath.Equals("/_assets/html2canvas.min.js", StringComparison.Ordinal))
+            if (remainingPath.Equals("/_assets/dom-capture.min.js", StringComparison.Ordinal))
             {
                 if (!HttpMethods.IsGet(context.Request.Method) && !HttpMethods.IsHead(context.Request.Method))
                 {
@@ -1437,7 +1647,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
                 // Resolve only this owned asset through the normal static-file
                 // pipeline, including the embedded Brotli asset in native builds.
-                context.Request.Path = "/js/html2canvas.min.js";
+                context.Request.Path = "/js/dom-capture.min.js";
                 try { await _next(context); }
                 finally { context.Request.Path = path; }
                 return;
@@ -1653,12 +1863,12 @@ public sealed partial class WebPreviewProxyMiddleware
             return false;
         }
 
-        var normalized = value.StartsWith('/') ? value : "/" + value;
-        var nextSlash = normalized.IndexOf('/', 1);
+        var normalized = value.StartsWith('/', StringComparison.Ordinal) ? value : "/" + value;
+        var nextSlash = normalized.IndexOf('/', 1, StringComparison.Ordinal);
         if (nextSlash < 0)
         {
             routeKey = normalized[1..];
-            remainingPath = "/";
+            remainingPath = "";
             return !string.IsNullOrWhiteSpace(routeKey);
         }
 
@@ -1748,7 +1958,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private static bool IsPreviewLocalPath(string path)
     {
-        return path.Equals("/js/html2canvas.min.js", StringComparison.OrdinalIgnoreCase);
+        return path.Equals("/js/dom-capture.min.js", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task ProxyHttpAsync(HttpContext context, string routeKey, Uri targetUri, string path)
@@ -1764,7 +1974,7 @@ public sealed partial class WebPreviewProxyMiddleware
         if (useRootFirst)
         {
             primaryPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
-            if (!primaryPath.StartsWith('/'))
+            if (!primaryPath.StartsWith('/', StringComparison.Ordinal))
                 primaryPath = "/" + primaryPath;
         }
 
@@ -1808,7 +2018,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var fallbackPath = useRootFirst
                 ? BuildUpstreamPath(targetUri, path)
-                : (string.IsNullOrEmpty(path) || path == "/" ? "/" : (path.StartsWith('/') ? path : "/" + path));
+                : (string.IsNullOrEmpty(path) || path == "/" ? "/" : (path.StartsWith('/', StringComparison.Ordinal) ? path : "/" + path));
 
             if (fallbackPath != primaryPath)
             {
@@ -1856,17 +2066,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (upstreamResponse is null)
         {
-            context.Response.StatusCode = errorCode;
-            if (errorCode == 502)
-            {
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Failed to connect to upstream server.", context.RequestAborted);
-            }
-            else if (errorCode == 504)
-            {
-                context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Upstream server timed out.", context.RequestAborted);
-            }
+            await PreviewProxyFailure.WriteAsync(context, errorCode);
             return;
         }
 
@@ -1918,7 +2118,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var prefix = m.Groups[1].Value;
             var url = m.Groups[2].Value;
-            if (url.StartsWith('/') && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+            if (url.StartsWith('/', StringComparison.Ordinal) && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
                 return prefix + AppendReloadTokenToProxyUrl(routePrefix + url, reloadToken);
             return m.Value;
         });
@@ -1974,7 +2174,7 @@ public sealed partial class WebPreviewProxyMiddleware
         html = MarkSubframeSources(html);
         html = InjectHeadContent(html,
             $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix,
-                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "") + redirectPathScript);
+                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "", html) + redirectPathScript);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
@@ -2005,7 +2205,7 @@ public sealed partial class WebPreviewProxyMiddleware
         DocumentUrlAttributeRegex().Replace(html, match =>
         {
             var value = WebUtility.HtmlDecode(match.Groups[2].Value);
-            if (value.StartsWith('#') || value.StartsWith(routePrefix + "/", StringComparison.Ordinal)
+            if (value.StartsWith('#', StringComparison.Ordinal) || value.StartsWith(routePrefix + "/", StringComparison.Ordinal)
                 || !Uri.TryCreate(documentUri, value, out var url) || url.Scheme is not ("http" or "https"))
                 return match.Value;
             var proxied = routePrefix + "/_ext?u=" + Uri.EscapeDataString(url.ToString());
@@ -2018,7 +2218,7 @@ public sealed partial class WebPreviewProxyMiddleware
             return routePrefix + "/";
 
         var path = finalUri.AbsolutePath;
-        var lastSlash = path.LastIndexOf('/');
+        var lastSlash = path.LastIndexOf('/', StringComparison.Ordinal);
         var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
         return routePrefix.TrimEnd('/') + "/" + directory.TrimStart('/');
     }
@@ -2062,7 +2262,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if (basePath.Length == 0 || basePath == "/")
                 return routePrefix + "/";
 
-            return routePrefix + (basePath.StartsWith('/') ? basePath : "/" + basePath) + "/";
+            return routePrefix + (basePath.StartsWith('/', StringComparison.Ordinal) ? basePath : "/" + basePath) + "/";
         }
 
         return ComputeBaseHref(routePrefix, finalUrl);
@@ -2076,7 +2276,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         var decodedPath = Uri.UnescapeDataString(requestPath);
-        if (decodedPath.StartsWith('/')
+        if (decodedPath.StartsWith('/', StringComparison.Ordinal)
             && decodedPath.Length >= 4
             && char.IsLetter(decodedPath[1])
             && decodedPath[2] == ':'
@@ -2240,7 +2440,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (upstreamResponse is null)
         {
-            context.Response.StatusCode = errorCode;
+            await PreviewProxyFailure.WriteAsync(context, errorCode);
             return;
         }
 
@@ -2451,6 +2651,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             catch (HttpRequestException ex)
             {
+                context.Items[typeof(PreviewProxyFailure)] = PreviewProxyFailure.Describe(ex, new Uri(currentUrl));
                 sw.Stop();
                 LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 502, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
@@ -2458,6 +2659,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             catch (TaskCanceledException ex)
             {
+                context.Items[typeof(PreviewProxyFailure)] = PreviewProxyFailure.Describe(ex, new Uri(currentUrl));
                 sw.Stop();
                 LogHttpRequest(context, routeKey, logType ?? "http", originalMethod.Method, startUrl, currentUrl, 504, sw.ElapsedMilliseconds, requestMessage, null, ex.Message);
                 requestMessage.Dispose();
@@ -2743,7 +2945,7 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var prefix = m.Groups[1].Value;
             var url = m.Groups[2].Value;
-            if (url.StartsWith('/') && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+            if (url.StartsWith('/', StringComparison.Ordinal) && !url.StartsWith(routePrefix + "/", StringComparison.Ordinal))
                 return prefix + AppendReloadTokenToProxyUrl(routePrefix + url, reloadToken);
             return m.Value;
         });
@@ -2754,7 +2956,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var baseHref = ComputeBaseHref(routePrefix, requestedFileUri.ToString());
         var targetOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = InjectHeadContent(html, $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix));
+        html = InjectHeadContent(html, $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix, upstreamHtml: html));
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.ContentType = "text/html; charset=utf-8";
@@ -2977,7 +3179,7 @@ public sealed partial class WebPreviewProxyMiddleware
         if (hasSubpath && ShouldTryRootFirst(routeKey, path, targetBase))
         {
             wsPath = string.IsNullOrEmpty(path) || path == "/" ? "/" : path;
-            if (!wsPath.StartsWith('/'))
+            if (!wsPath.StartsWith('/', StringComparison.Ordinal))
                 wsPath = "/" + wsPath;
         }
         else
@@ -3174,17 +3376,14 @@ public sealed partial class WebPreviewProxyMiddleware
 
     internal static string BuildUpstreamPath(Uri target, string path)
     {
-        var normalizedPath = string.IsNullOrEmpty(path) ? "/" : path;
-        if (!normalizedPath.StartsWith('/'))
+        // Only the route without a path is an alias for the configured entry.
+        // An explicit slash is an origin-root navigation, including after login.
+        if (string.IsNullOrEmpty(path))
         {
-            normalizedPath = "/" + normalizedPath;
-        }
-
-        if (normalizedPath == "/")
-        {
-            // The bare preview route remains an entry alias for its configured target.
             return string.IsNullOrEmpty(target.AbsolutePath) ? "/" : target.AbsolutePath;
         }
+
+        var normalizedPath = path.StartsWith('/', StringComparison.Ordinal) ? path : "/" + path;
 
         // Relative URLs have already resolved against the injected document base.
         // A rooted path identifies the upstream origin, not a directory under the target.
@@ -3307,7 +3506,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private static bool PathAlreadyUnderTarget(string path, string targetBase)
     {
         var normalized = string.IsNullOrEmpty(path) ? "/" : path;
-        if (!normalized.StartsWith('/'))
+        if (!normalized.StartsWith('/', StringComparison.Ordinal))
             normalized = "/" + normalized;
         return normalized.StartsWith(targetBase + "/", StringComparison.OrdinalIgnoreCase)
             || normalized.Equals(targetBase, StringComparison.OrdinalIgnoreCase);
@@ -3361,14 +3560,14 @@ public sealed partial class WebPreviewProxyMiddleware
     private static string? GetPathPrefix(string path)
     {
         var normalized = string.IsNullOrEmpty(path) ? "/" : path;
-        if (!normalized.StartsWith('/'))
+        if (!normalized.StartsWith('/', StringComparison.Ordinal))
             normalized = "/" + normalized;
         var queryIdx = normalized.IndexOf('?', StringComparison.Ordinal);
         if (queryIdx >= 0)
             normalized = normalized[..queryIdx];
         if (normalized == "/")
             return null;
-        var secondSlash = normalized.IndexOf('/', 1);
+        var secondSlash = normalized.IndexOf('/', 1, StringComparison.Ordinal);
         return secondSlash > 0 ? normalized[..secondSlash] + "/" : normalized + "/";
     }
 

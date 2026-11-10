@@ -10,6 +10,224 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 [Collection(PathSensitiveEnvironmentCollection.Name)]
 public sealed class MtAgentHostClaudeIntegrationTests
 {
+    private const string GoalReadReplayWrapper = "<command-name>/goal</command-name>\n            <command-message>goal</command-message>\n            <command-args></command-args>";
+
+    [Theory]
+    [InlineData(true, false)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task ClaudeHistory_ProjectsOnlyCompletedNativeCompactionRecordsAsCommandAndStatus(bool marked, bool error)
+    {
+        const string command = "<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args>focus on selection</command-args>";
+        const string output = "<local-command-stdout>Compacted </local-command-stdout>";
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                new { type = "user", uuid = "compact", isCompletedLocalCommand = marked, is_error = error, message = new { content = command } },
+                new { type = "user", uuid = "output", timestamp = "2026-11-09T10:00:00Z", isCompletedLocalCommand = marked, is_error = error, message = new { content = output } },
+                new { type = "user", uuid = "after", message = new { content = "After compaction" } }
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        var user = events.Where(e => e.Item?.ItemType == "user_message").Select(e => e.Item!.Detail).ToArray();
+        Assert.Equal(marked && !error ? ["/compact focus on selection", "After compaction"] : new[] { command, output, "After compaction" }, user);
+        Assert.Equal(marked && !error, events.Any(e => e.RuntimeMessage?.Message == "Compacted"));
+        if (marked && !error)
+            Assert.Equal(DateTimeOffset.Parse("2026-11-09T10:00:00Z", CultureInfo.InvariantCulture), Assert.Single(events.Where(e => e.RuntimeMessage?.Message == "Compacted")).CreatedAt);
+    }
+
+    [Fact]
+    public async Task ClaudeHistory_PreservesMarkedToolErrorsContainingGoalReadWrappers()
+    {
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                new { type = "user", uuid = "user", message = new { content = "Check the command" } },
+                new { type = "assistant", uuid = "assistant", message = new { id = "assistant", content = new object[]
+                {
+                    new { type = "tool_use", id = "tool", name = "Bash", input = new { command = "check" } }
+                } } },
+                new { type = "user", uuid = "tool-error", isCompletedLocalCommand = true, message = new { content = new object[]
+                {
+                    new { type = "tool_result", tool_use_id = "tool", is_error = true, content = "Failed: " + GoalReadReplayWrapper }
+                } } }
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        Assert.Single(events.Where(e => e.TurnStarted is not null));
+        Assert.Single(events.Where(e => e.Item?.ItemType == "user_message"));
+        Assert.Contains(events, e => e.ItemId == "tool" && e.Item?.Status == "failed"
+            && e.Item.ToolPresentation?.Evidence?.Contains(GoalReadReplayWrapper, StringComparison.Ordinal) == true);
+        Assert.Single(events.Where(e => e.TurnCompleted is not null));
+    }
+
+    [Fact]
+    public async Task ClaudeHistory_OmitsCompletedLocalGoalReadsWithoutCreatingOrAdvancingTurns()
+    {
+        object Read(string id) => new
+        {
+            type = "user", uuid = id, isCompletedLocalCommand = true,
+            timestamp = "2030-01-01T00:00:00Z", message = new { content = GoalReadReplayWrapper }
+        };
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                Read("before"),
+                new { type = "user", uuid = "user-a", timestamp = "2026-11-08T10:00:00Z", message = new { content = "Question one" } },
+                Read("inside"),
+                new { type = "assistant", uuid = "a", timestamp = "2026-11-08T10:01:00Z", message = new { id = "answer-a", content = new[] { new { type = "text", text = "Answer one" } } } },
+                Read("between"),
+                new { type = "user", uuid = "user-b", timestamp = "2026-11-08T10:02:00Z", message = new { content = "Question two" } },
+                new { type = "assistant", uuid = "b", timestamp = "2026-11-08T10:03:00Z", message = new { id = "answer-b", content = new[] { new { type = "text", text = "Answer two" } } } },
+                Read("trailing")
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        Assert.Equal(new[] { "claude-history:user-a", "claude-history:user-b" },
+            events.Where(e => e.TurnStarted is not null).Select(e => e.TurnId), StringComparer.Ordinal);
+        Assert.Equal(new[] { "user-a", "user-b" },
+            events.Where(e => e.Item?.ItemType == "user_message").Select(e => e.ItemId), StringComparer.Ordinal);
+        Assert.Contains(events, e => e.ItemId == "answer-a" && e.TurnId == "claude-history:user-a");
+        Assert.Contains(events, e => e.ItemId == "answer-b" && e.TurnId == "claude-history:user-b");
+        var completed = events.Where(e => e.TurnCompleted is not null).ToArray();
+        Assert.Equal(2, completed.Length);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-08T10:01:00Z", CultureInfo.InvariantCulture), completed[0].CreatedAt);
+        Assert.Equal(DateTimeOffset.Parse("2026-11-08T10:03:00Z", CultureInfo.InvariantCulture), completed[1].CreatedAt);
+        Assert.DoesNotContain(events, e => e.Item?.Detail?.Contains("<command-name>", StringComparison.Ordinal) == true);
+    }
+
+    [Theory]
+    [InlineData("unmarked")]
+    [InlineData("false-flag")]
+    [InlineData("string-flag")]
+    [InlineData("mixed-prefix")]
+    [InlineData("mixed-suffix")]
+    [InlineData("quoted")]
+    [InlineData("mixed-blocks")]
+    [InlineData("image-block")]
+    [InlineData("set")]
+    [InlineData("clear")]
+    [InlineData("error")]
+    [InlineData("message-error")]
+    public async Task ClaudeHistory_PreservesUserContentGoalWorkAndErrorsAroundLocalReadWrappers(string scenario)
+    {
+        object content = scenario switch
+        {
+            "mixed-prefix" => "User explanation\n" + GoalReadReplayWrapper,
+            "mixed-suffix" => GoalReadReplayWrapper + "\nUser explanation",
+            "quoted" => "```xml\n" + GoalReadReplayWrapper + "\n```",
+            "mixed-blocks" => new object[] { new { type = "text", text = GoalReadReplayWrapper }, new { type = "text", text = "User explanation" } },
+            "image-block" => new object[] { new { type = "text", text = GoalReadReplayWrapper }, new { type = "image" } },
+            "set" => GoalReadReplayWrapper.Replace("<command-args></command-args>", "<command-args>Finish the user's task</command-args>", StringComparison.Ordinal),
+            "clear" => GoalReadReplayWrapper.Replace("<command-args></command-args>", "<command-args>clear</command-args>", StringComparison.Ordinal),
+            _ => GoalReadReplayWrapper
+        };
+        var user = new Dictionary<string, object?>(StringComparer.Ordinal)
+        {
+            ["type"] = "user", ["uuid"] = "kept", ["isCompletedLocalCommand"] = true,
+            ["message"] = new { content, is_error = scenario == "message-error" }
+        };
+        if (scenario == "unmarked") user.Remove("isCompletedLocalCommand");
+        if (scenario == "false-flag") user["isCompletedLocalCommand"] = false;
+        if (scenario == "string-flag") user["isCompletedLocalCommand"] = "true";
+        if (scenario == "error") user["is_error"] = true;
+        var replay = JsonSerializer.SerializeToElement(new
+        {
+            messages = new object[]
+            {
+                user,
+                new { type = "assistant", uuid = "answer", message = new { id = "actual-work", content = new[] { new { type = "text", text = "Actual model work or error explanation" } } } }
+            }
+        });
+        var events = new List<AppServerControlProviderEvent>();
+        await using var runtime = new ClaudeAppServerControlAgentRuntime(events.Add);
+        runtime.ReplayClaudeHistory(replay);
+        Assert.Single(events.Where(e => e.TurnStarted is not null));
+        var item = Assert.Single(events.Where(e => e.Item?.ItemType == "user_message"));
+        Assert.Contains("<command-name>/goal</command-name>", item.Item!.Detail, StringComparison.Ordinal);
+        Assert.Contains(events, e => e.ItemId == "actual-work" && e.TurnId == "claude-history:kept");
+        Assert.Single(events.Where(e => e.TurnCompleted is not null));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FreshClaudePublishesInitializedNativeUuidAndConfiguresBeforeAnyPrompt(bool rejectInitialize)
+    {
+        using var fakeClaude = FakeClaudePathScope.Create();
+        await File.WriteAllTextAsync(Path.Combine(fakeClaude.Root, "capture-runtime-contract"), "fixture", TestContext.Current.CancellationToken);
+        if (rejectInitialize)
+            await File.WriteAllTextAsync(Path.Combine(fakeClaude.Root, "reject-initialize"), "fixture", TestContext.Current.CancellationToken);
+        using var process = StartAgentHost(ResolveAgentHostPath());
+        var patches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
+        const string sessionId = "fresh-8-character-host-session";
+        try
+        {
+            _ = await AppServerControlHostTestClient.ReadHelloAsync(process.StandardOutput);
+            await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new()
+            {
+                CommandId = "fresh-attach", SessionId = sessionId, Type = "runtime.attach",
+                AttachRuntime = new() { SessionId = sessionId, Provider = "claude", RuntimeKind = "claude-agent-sdk",
+                    ExecutablePath = fakeClaude.ExecutablePath, WorkingDirectory = fakeClaude.Root }
+            });
+            var attached = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, "fresh-attach");
+            var lines = await File.ReadAllLinesAsync(Path.Combine(fakeClaude.Root, "runtime-contract.jsonl"), TestContext.Current.CancellationToken);
+            using var initialization = JsonDocument.Parse(lines.First(line => line.Contains("initialize", StringComparison.Ordinal)));
+            var nativeId = initialization.RootElement.GetProperty("sessionId").GetString()!;
+            Assert.True(Guid.TryParse(nativeId, out _));
+            Assert.NotEqual(sessionId, nativeId, StringComparer.Ordinal);
+            Assert.Equal(JsonValueKind.Null, initialization.RootElement.GetProperty("resume").ValueKind);
+            if (rejectInitialize)
+            {
+                Assert.Equal("rejected", attached.Status);
+                Assert.DoesNotContain(patches, p => p.Patch.Session.State == "ready" || p.Patch.Thread.ThreadId == nativeId);
+                return;
+            }
+            Assert.Equal("accepted", attached.Status);
+            var ready = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(process.StandardOutput, process.StandardInput, patches,
+                sessionId, h => h.Session.State == "ready" && h.Thread.ThreadId == nativeId, TimeSpan.FromSeconds(10));
+            Assert.Equal("active", ready.Thread.State);
+            Assert.Null(ready.CurrentTurn.TurnId);
+            Assert.Empty(ready.History);
+            foreach (var settings in new[]
+            {
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["model"] = JsonSerializer.SerializeToElement("claude-test") },
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["effort"] = JsonSerializer.SerializeToElement("high") },
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["planMode"] = JsonSerializer.SerializeToElement("on") },
+                new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["permissionMode"] = JsonSerializer.SerializeToElement("auto") }
+            })
+            {
+                var id = "fresh-configure-" + settings.Keys.Single();
+                await AppServerControlHostTestClient.WriteCommandAsync(process.StandardInput, new()
+                {
+                    CommandId = id, SessionId = sessionId, Type = "runtime.configure",
+                    Configure = new() { ExpectedThreadId = nativeId, ExpectedTurnId = null, Settings = settings }
+                });
+                var configured = (await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, patches, id)).Configured!;
+                Assert.Equal("acknowledged", configured.Status);
+                Assert.Equal(nativeId, configured.ThreadId);
+                Assert.Contains(settings.Keys.Single(), configured.ConfirmedSettings.Keys, StringComparer.Ordinal);
+                Assert.Empty(configured.EffectiveSettings);
+            }
+            lines = await File.ReadAllLinesAsync(Path.Combine(fakeClaude.Root, "runtime-contract.jsonl"), TestContext.Current.CancellationToken);
+            Assert.DoesNotContain(lines, line => line.Contains("\"type\":\"user\"", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (!process.HasExited) process.Kill(entireProcessTree: true);
+            await process.WaitForExitAsync(TestContext.Current.CancellationToken);
+        }
+    }
+
     [Fact]
     public async Task ClaudeHistory_RestoresNativeMessagesAndToolsWithoutCurrentModelOrInteractiveRequests()
     {
@@ -113,7 +331,15 @@ public sealed class MtAgentHostClaudeIntegrationTests
                     patches, sessionId, h => h.CurrentTurn.TurnId == compact.TurnStarted!.TurnId && h.CurrentTurn.State == (compactFailure ? "failed" : "completed"),
                     TimeSpan.FromSeconds(10), count: 96);
                 Assert.Contains(compacted.History, item => item.Kind == "user" && item.Body == "/compact");
-                Assert.Contains(compacted.History, item => item.Kind == "assistant" && item.Body == (compactFailure ? "Error during compaction: simulated native failure." : "Native compaction completed."));
+                if (compactFailure)
+                {
+                    Assert.Contains(compacted.History, item => item.Kind == "assistant" && item.Body == "Error during compaction: simulated native failure.");
+                }
+                else
+                {
+                    Assert.DoesNotContain(compacted.History, item => item.Kind == "assistant" && item.TurnId == compact.TurnStarted!.TurnId);
+                    Assert.Contains(compacted.History, item => item.Kind == "system" && item.Body == "Conversation compacted.");
+                }
                 Assert.NotNull(compacted.CurrentTurn.StartedAt);
                 Assert.Equal(compactFailure ? 124 : 11, compacted.Session.Usage?.ContextUsedTokens);
                 if (compactFailure) Assert.Contains("simulated native failure", compacted.Session.LastError, StringComparison.Ordinal);
@@ -384,7 +610,12 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 pendingPatches,
                 "approve-already-resolved");
             Assert.Equal("rejected", duplicateResolution.Status);
-            Assert.Contains("was not found", duplicateResolution.Message, StringComparison.Ordinal);
+            var afterDuplicate = await AppServerControlHostTestClient.WaitForHistoryWindowAsync(
+                process.StandardOutput, process.StandardInput, pendingPatches, sessionId,
+                _ => true, TimeSpan.FromSeconds(5), count: 96);
+            Assert.NotEqual("error", afterDuplicate.Session.State, StringComparer.Ordinal);
+            Assert.Equal("completed", afterDuplicate.CurrentTurn.State);
+            Assert.False(process.HasExited);
         }
         finally
         {

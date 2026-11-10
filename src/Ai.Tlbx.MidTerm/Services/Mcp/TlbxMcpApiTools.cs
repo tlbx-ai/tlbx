@@ -45,7 +45,7 @@ internal static partial class TlbxMcpApiTools
             {
                 var text = binding.Body["text"]?.GetValue<string>();
                 if (string.IsNullOrWhiteSpace(text)) throw new McpApiArgumentException("text must contain a slash command.");
-                if (!text.StartsWith('/')) binding.Body["text"] = "/" + text;
+                if (!text.StartsWith('/', StringComparison.Ordinal)) binding.Body["text"] = "/" + text;
             }
         };
 
@@ -85,7 +85,7 @@ internal static partial class TlbxMcpApiTools
         {
             BodyType = AppJsonContext.Default.CreateControlPlaneWorkItemRequest, SessionBody = "sessionId", AllowUnassociatedBody = true
         };
-        yield return Body("work_update", "PATCH", "/api/control-plane/work-items/{id}", "Update work state and optional fields. Omitted fields remain unchanged. An explicit empty string clears optional text such as summary, nextAction, URL or repositoryPath; the existing service returns cleared values as null.", AppJsonContext.Default.UpdateControlPlaneWorkItemRequest).Path("id", "workId");
+        yield return Body("work_update", "PATCH", "/api/control-plane/work-items/{id}", "Update work state and optional fields. Omitted fields remain unchanged. An explicit empty string clears optional text, including sessionId, summary, nextAction, URL or repositoryPath; cleared values return as null. After work is complete and pushed, offer the user release of the checkout. Once accepted, mark completed work done and clear its sessionId; clear the checkout's session status and remove unneeded repo watches. Session close automatically releases unfinished assignments without marking them done.", AppJsonContext.Default.UpdateControlPlaneWorkItemRequest).Path("id", "workId");
         yield return D("work_delete", "DELETE", "/api/control-plane/work-items/{id}", "Delete an explicitly identified work item.").Path("id", "workId");
         yield return new McpApiOperation("status_publish", "PUT", "/api/control-plane/session-status/{sessionId}", "Publish explicit working/waiting/needsInput/blocked/done status for a session.")
         {
@@ -125,9 +125,13 @@ internal static partial class TlbxMcpApiTools
         yield return Target("agent_interrupt", "POST", "/api/sessions/{id}/agent-control/interrupt", "Interrupt the structured runtime, optionally targeting a specific turnId.", AppJsonContext.Default.AppServerControlInterruptRequest);
         yield return Target("agent_steer", "POST", "/api/sessions/{id}/agent-control/steer", "Steer the exact expected active turn with text/attachments, retaining concurrency checks.", AppJsonContext.Default.AppServerControlSteerRequest);
         yield return Target("agent_compact", "POST", "/api/sessions/{id}/agent-control/compact", "Compact the dedicated structured agent runtime.");
+        yield return Target("agent_request_decide", "POST", "/api/sessions/{id}/agent-control/requests/{requestId}/decision", "Accept or decline exactly one open approval from agent_history in the expected turn. Read its exact requested action first; never replay an uncertain decision.")
+            .Path("requestId", "requestId")
+            .With(new McpApiParameter("decision", "decision", new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("accept", "decline") }, Required: true),
+                Q("expectedTurnId", required: true));
 
         yield return D("repos_list", "GET", "/api/git/repos", "List the target session's watched repositories and current Git status.").With(SessionQuery());
-        yield return ScopedBody("repo_bind", "POST", "/api/git/repos", "Bind a repository path to the target session with the existing role/label contract.", AppJsonContext.Default.GitRepoBindRequest);
+        yield return ScopedBody("repo_bind", "POST", "/api/git/repos", "Bind a repository path to the target session with the existing role/label contract. After work is complete and pushed, offer the user release of the checkout; once accepted, clear its control-plane work assignment with work_update(sessionId:'') and remove this watch with repo_remove if no longer needed. A watch alone is not an exclusive checkout lock.", AppJsonContext.Default.GitRepoBindRequest);
         yield return D("repo_remove", "DELETE", "/api/git/repos", "Remove an explicit watched repository binding from the target session.").With(SessionQuery(), Q("repoRoot", required: true));
         yield return ScopedBody("repo_refresh", "POST", "/api/git/repos/refresh", "Refresh repository state for the target session; optionally select one repoRoot.", AppJsonContext.Default.GitRepoRefreshRequest);
 

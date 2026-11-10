@@ -1,8 +1,13 @@
 import { t } from '../i18n';
-import { $currentSettings, getSession } from '../../stores';
-import { renderMarkdownFragment, wireMarkdownTables } from '../../utils/markdown';
+import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
 import {
-  buildAssistantEnrichedHtml,
+  isFileChangeHistoryEntry,
+  isHistoryError,
+  showAgentTechnicalDetails,
+} from './historyVisibility';
+import { $currentSettings, getSession } from '../../stores';
+import { wireMarkdownTables } from '../../utils/markdown';
+import {
   createAssistantImagePreviewBlock,
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
@@ -25,11 +30,9 @@ import {
   buildRenderedDiffLines,
   hasInlineCommandPresentation,
   resolveHistoryBodyPresentation,
-  tokenizeCommandText,
 } from './historyContent';
 import { DEFAULT_TOOL_CALL_OUTPUT_LINES, MAX_TOOL_CALL_OUTPUT_LINES } from './historyConstants';
 import type {
-  AssistantMarkdownCacheEntry,
   ArtifactClusterInfo,
   HistoryBodyPresentation,
   AppServerControlHistoryAction,
@@ -96,13 +99,13 @@ function appServerControlFormat(
 
 function resolveHistoryBadgeTextForEntry(
   entry: AppServerControlHistoryEntry,
-  provider: string | null | undefined,
+  agentName: string | null | undefined,
 ): string {
   if (entry.kind !== 'user' && entry.kind !== 'assistant' && entry.label.trim()) {
     return entry.label.trim();
   }
 
-  return resolveHistoryBadgeLabel(entry.kind, provider);
+  return resolveHistoryBadgeLabel(entry.kind, agentName);
 }
 
 function normalizeHistoryTitle(entry: AppServerControlHistoryEntry): string {
@@ -374,7 +377,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return;
     }
 
-    if (!stats) {
+    if (!stats || !showAgentTechnicalDetails()) {
       host.hidden = true;
       host.replaceChildren();
       if (typeof host.removeAttribute === 'function') {
@@ -567,7 +570,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     badge.className = `agent-history-badge agent-history-badge-${entry.kind}`;
     badge.textContent = resolveHistoryBadgeTextForEntry(
       entry,
-      deps.getState(sessionId)?.snapshot?.provider,
+      deps.getState(sessionId)?.snapshot?.session.agentName,
     );
     if (entry.kind === 'assistant' && showAssistantBadge) {
       badge.dataset.visible = 'true';
@@ -651,7 +654,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         return body;
       }
       case 'command':
-        return createCommandHistoryBody(entry, sessionId);
+        return createCommandHistoryBody(entry);
       case 'tool':
         return createProjectedToolHistoryBody(entry, sessionId);
       case 'streaming':
@@ -660,7 +663,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         body.className = 'agent-history-body agent-history-markdown';
         const content = document.createElement('div');
         content.className = 'agent-history-markdown-content';
-        const cache = getCachedAssistantMarkdown(sessionId, entry);
+        const cache = getCachedHistoryMarkdown(
+          deps.getState(sessionId)?.historyMarkdownCache,
+          entry,
+          showAgentTechnicalDetails(),
+        );
         content.innerHTML = cache.html;
         collapseSingleParagraphMarkdownBody(content);
         wireAssistantInteractiveContent(content, sessionId);
@@ -722,32 +729,22 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function createCommandHistoryBody(
     entry: AppServerControlHistoryEntry,
-    sessionId: string,
+    command = entry.commandText ?? entry.body,
+    outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? []),
   ): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
-    const commandLine = document.createElement('div');
-    commandLine.className = 'agent-history-command-line';
-    const prefix = document.createElement('span');
-    prefix.className = 'agent-history-command-prefix';
-    prefix.textContent = 'Ran ';
-    commandLine.appendChild(prefix);
-
-    for (const token of tokenizeCommandText(entry.commandText ?? entry.body)) {
-      const part = document.createElement('span');
-      part.className = `agent-history-command-token agent-history-command-token-${token.kind}`;
-      part.textContent = token.text;
-      commandLine.appendChild(part);
-    }
-    enrichInteractiveTextContent(commandLine, getEntryFileMentions(entry, 'commandText'));
-    wireAssistantInteractiveContent(commandLine, sessionId);
+    const commandLine = document.createElement('pre');
+    commandLine.className = 'agent-history-command-script';
+    commandLine.setAttribute('aria-label', t('appServerControl.commands.title'));
+    commandLine.textContent = command;
 
     body.appendChild(commandLine);
-    const visibleOutputLines = clampToolCallOutputLines(entry.commandOutputTail ?? []);
-    if (visibleOutputLines.length > 0) {
+    if (outputLines.length > 0) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
-      output.textContent = visibleOutputLines.join('\n');
+      output.setAttribute('aria-label', t('appServerControl.title.commandOutput'));
+      output.textContent = outputLines.join('\n');
       // Keep folded command tails as raw terminal text instead of applying
       // FileRadar-style enrichment or thumbnail previews to noisy output.
       body.appendChild(output);
@@ -767,6 +764,16 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       return body;
     }
 
+    const visibleEvidence = selectProjectedToolEvidenceLines(entry);
+    const omitted = Math.max(
+      0,
+      (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
+    );
+    const evidenceLines =
+      omitted > 0 ? [`... ${omitted} lines omitted ...`, ...visibleEvidence] : visibleEvidence;
+    if (presentation.category === 'command')
+      return createCommandHistoryBody(entry, presentation.subject ?? '', evidenceLines);
+
     const outcomeIsError = presentation.evidenceKind === 'error';
     if (outcomeIsError && presentation.outcome) {
       const outcome = document.createElement('div');
@@ -778,16 +785,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     if (presentation.subject) {
       const subject = document.createElement('div');
       subject.className = 'agent-history-command-line';
-      if (presentation.category === 'command') {
-        for (const token of tokenizeCommandText(presentation.subject)) {
-          const part = document.createElement('span');
-          part.className = `agent-history-command-token agent-history-command-token-${token.kind}`;
-          part.textContent = token.text;
-          subject.appendChild(part);
-        }
-      } else {
-        subject.textContent = presentation.subject;
-      }
+      subject.textContent = presentation.subject;
       enrichInteractiveTextContent(subject, getEntryFileMentions(entry, 'body'));
       wireAssistantInteractiveContent(subject, sessionId);
       body.appendChild(subject);
@@ -812,18 +810,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       body.appendChild(outcome);
     }
 
-    const visibleEvidence = selectProjectedToolEvidenceLines(entry);
     if (visibleEvidence.length > 0) {
       const evidence = document.createElement('pre');
       evidence.className = 'agent-history-command-output-tail';
-      const hiddenByPreference = Math.max(
-        0,
-        (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
-      );
-      evidence.textContent =
-        hiddenByPreference > 0
-          ? `... ${hiddenByPreference} lines omitted ...\n${visibleEvidence.join('\n')}`
-          : visibleEvidence.join('\n');
+      evidence.textContent = evidenceLines.join('\n');
       body.appendChild(evidence);
     }
 
@@ -904,18 +894,30 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     wrapper.className = 'agent-history-disclosure-shell';
     const details = document.createElement('details');
     details.className = 'agent-history-disclosure';
+    const command =
+      presentation.mode === 'command' || entry.toolPresentation?.category === 'command';
+    details.classList.toggle('agent-history-command-disclosure', command);
+    details.classList.toggle('agent-history-command-failed', command && isHistoryError(entry));
     details.open = deps.getState(sessionId)?.historyExpandedEntries.has(entry.id) === true;
     const summary = document.createElement('summary');
     summary.className = 'agent-history-disclosure-summary';
     const label = document.createElement('span');
     label.className = 'agent-history-disclosure-label';
-    label.textContent = appServerControlText('appServerControl.panel.details', 'Details');
+    label.textContent = command
+      ? entry.toolPresentation?.label ||
+        appServerControlText('appServerControl.title.commandOutput', 'Command output')
+      : isFileChangeHistoryEntry(entry)
+        ? appServerControlText('appServerControl.panel.reviewChanges', 'Review changes')
+        : appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
     const meta = document.createElement('span');
     meta.className = 'agent-history-disclosure-meta';
-    meta.textContent = appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
-      count: presentation.lineCount,
-    });
+    meta.textContent = command
+      ? (entry.toolPresentation?.outcome ?? '')
+      : appServerControlFormat('appServerControl.panel.lines', '{count} lines', {
+          count: presentation.lineCount,
+        });
+    meta.hidden = !meta.textContent;
     summary.appendChild(meta);
     if (presentation.preview) {
       const preview = document.createElement('span');
@@ -923,7 +925,21 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       preview.textContent = presentation.preview;
       summary.appendChild(preview);
     }
+    let bodyMounted = false;
+    const mountBody = () => {
+      if (!bodyMounted) {
+        details.appendChild(createHistoryBodyContent(entry, sessionId, presentation));
+        bodyMounted = true;
+      }
+    };
+    details.appendChild(summary);
+    if (details.open) {
+      mountBody();
+    }
     details.addEventListener('toggle', () => {
+      if (details.open) {
+        mountBody();
+      }
       const state = deps.getState(sessionId);
       if (!state) {
         return;
@@ -934,7 +950,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         state.historyExpandedEntries.delete(entry.id);
       }
     });
-    details.append(summary, createHistoryBodyContent(entry, sessionId, presentation));
     wrapper.appendChild(details);
     return wrapper;
   }
@@ -1005,71 +1020,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
     block.appendChild(chip);
     return block;
-  }
-
-  function getCachedAssistantMarkdown(
-    sessionId: string,
-    entry: AppServerControlHistoryEntry,
-  ): AssistantMarkdownCacheEntry {
-    const fileMentions = getEntryFileMentions(entry, 'body');
-    const fileMentionToken = fileMentions
-      .map((mention) =>
-        [
-          mention.displayText,
-          mention.path,
-          mention.pathKind,
-          mention.resolvedPath ?? '',
-          mention.exists ? '1' : '0',
-          mention.isDirectory ? '1' : '0',
-        ].join(':'),
-      )
-      .join('|');
-    const state = deps.getState(sessionId);
-    if (!state) {
-      const fallback = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body), fileMentions);
-      return {
-        body: entry.body,
-        html: fallback.html,
-        fileMentionToken,
-      };
-    }
-
-    const existing = state.assistantMarkdownCache.get(entry.id);
-    if (
-      existing &&
-      existing.body === entry.body &&
-      existing.fileMentionToken === fileMentionToken
-    ) {
-      return existing;
-    }
-
-    const enriched = buildAssistantEnrichedHtml(renderMarkdownFragment(entry.body), fileMentions);
-    const next: AssistantMarkdownCacheEntry = {
-      body: entry.body,
-      html: enriched.html,
-      fileMentionToken,
-    };
-    state.assistantMarkdownCache.set(entry.id, next);
-    return next;
-  }
-
-  function pruneAssistantMarkdownCache(
-    state: SessionAppServerControlViewState,
-    entries: readonly AppServerControlHistoryEntry[],
-  ): void {
-    if (state.assistantMarkdownCache.size === 0) {
-      return;
-    }
-
-    const activeAssistantIds = new Set(
-      entries.filter((entry) => entry.kind === 'assistant').map((entry) => entry.id),
-    );
-
-    for (const cacheKey of state.assistantMarkdownCache.keys()) {
-      if (!activeAssistantIds.has(cacheKey)) {
-        state.assistantMarkdownCache.delete(cacheKey);
-      }
-    }
   }
 
   function shouldRenderHistoryBody(entry: AppServerControlHistoryEntry): boolean {
@@ -1259,7 +1209,12 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     createHistoryEntry,
     createHistoryPlaceholderBlock,
     createRequestActionBlock,
-    pruneAssistantMarkdownCache,
+    pruneHistoryMarkdownCache: (
+      state: SessionAppServerControlViewState,
+      entries: readonly AppServerControlHistoryEntry[],
+    ) => {
+      pruneHistoryMarkdownCache(state.historyMarkdownCache, entries);
+    },
     renderRuntimeStats,
     syncBusyIndicatorEntry,
     syncHistoryEntry,

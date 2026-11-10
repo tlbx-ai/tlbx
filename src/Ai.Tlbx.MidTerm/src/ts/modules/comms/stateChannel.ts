@@ -1,4 +1,4 @@
-import { SocketReadiness, RESUME_PROBE_TIMEOUT_MS } from './socketReadiness';
+import { SocketReadiness, resumeProbeTimeoutMs } from './socketReadiness';
 import { recordTextActivity } from '../sidebar/heatIndicator';
 /**
  * State Channel Module
@@ -43,10 +43,10 @@ import {
 } from '../web/webDetach';
 import { setViewportSize, openWebPreviewDock } from '../web/webDock';
 import { getWebPreviewTarget } from '../web/webApi';
-import { applySessionViewportToFrame } from '../web/webViewport';
 import {
   getSessionPreview,
   getSessionSelectedPreviewName,
+  normalizePreviewName,
   setSessionMode,
   setSessionSelectedPreviewName,
   setSessionViewport,
@@ -819,7 +819,7 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         result = handleDockBrowserUiCommand(msg);
         break;
       case 'viewport':
-        result = await handleViewportBrowserUiCommand(msg);
+        result = handleViewportBrowserUiCommand(msg);
         break;
       case 'open':
         result = await handleOpenBrowserUiCommand(msg);
@@ -940,33 +940,25 @@ function handleDockBrowserUiCommand(msg: BrowserUiMessage): { success: boolean; 
   return { success: true };
 }
 
-async function handleViewportBrowserUiCommand(
-  msg: BrowserUiMessage,
-): Promise<{ success: boolean; error?: string }> {
-  const target = resolveBrowserUiTarget(msg);
+function handleViewportBrowserUiCommand(msg: BrowserUiMessage): {
+  success: boolean;
+  error?: string;
+} {
+  const target = resolveBrowserUiTarget(msg, false);
   if (!target) {
     return { success: false, error: 'No browser preview target could be resolved.' };
   }
 
   const width = msg.width ?? 0;
   const height = msg.height ?? 0;
-  setSessionViewport(target.sessionId, target.previewName, width, height);
-
   if (applyDetachedPreviewViewport(target.sessionId, target.previewName, width, height)) {
+    setSessionViewport(target.sessionId, target.previewName, width, height);
     return { success: true };
   }
 
-  setSessionMode(target.sessionId, target.previewName, 'docked');
-  if ($activeSessionId.get() !== target.sessionId) {
-    await syncBackgroundWebPreview(target.sessionId, target.previewName);
-    applySessionViewportToFrame(target.sessionId, target.previewName);
-    return { success: true };
-  }
-
-  openWebPreviewDock();
-  await syncActiveWebPreview();
-  setViewportSize(width, height);
-  return { success: true };
+  return setViewportSize(width, height, target)
+    ? { success: true }
+    : { success: false, error: 'The requested preview frame is not attached.' };
 }
 
 function applyDetachedPreviewViewport(
@@ -1001,16 +993,17 @@ async function handleOpenBrowserUiCommand(
 
 function resolveBrowserUiTarget(
   msg: BrowserUiMessage,
+  selectPreview = true,
 ): { sessionId: string; previewName: string } | null {
   const sessionId = msg.sessionId ?? $activeSessionId.get();
   if (!sessionId) {
     return null;
   }
 
-  const previewName = setSessionSelectedPreviewName(
-    sessionId,
-    msg.previewName ?? getSessionSelectedPreviewName(sessionId),
-  );
+  const requestedName = msg.previewName ?? getSessionSelectedPreviewName(sessionId);
+  const previewName = selectPreview
+    ? setSessionSelectedPreviewName(sessionId, requestedName)
+    : normalizePreviewName(requestedName);
 
   return { sessionId, previewName };
 }
@@ -1202,7 +1195,7 @@ export async function probeStateWebSocket(): Promise<boolean> {
         activeSessionId: $activeSessionId.get(),
         activeSurface: getCurrentActiveSurface(),
       },
-      RESUME_PROBE_TIMEOUT_MS,
+      resumeProbeTimeoutMs(),
     );
     return true;
   } catch {

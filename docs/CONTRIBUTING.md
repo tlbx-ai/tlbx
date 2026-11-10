@@ -48,7 +48,7 @@ See [CLAUDE.md](ai/CLAUDE.md) for detailed style guidelines.
 ## Development Setup
 
 **Prerequisites:**
-- .NET 10 SDK
+- .NET 11 SDK
 - esbuild (for TypeScript bundling)
 
 ```bash

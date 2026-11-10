@@ -46,6 +46,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private readonly bool _preserveHostsOnDispose;
     private readonly string _mode;
     private readonly RedirectedProcessLauncher _launcher;
+    private readonly SessionPathAllowlistService? _pathAllowlist;
 
     internal IEnumerable<KeyValuePair<int, string>> GetProcessContextRoots() =>
         _states.Values.Where(state => state.HostPid > 0)
@@ -69,8 +70,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         SettingsService settingsService,
         MidTermInstanceIdentity? instanceIdentity = null,
         string? mode = null,
-        AcpAgentCatalogService? acpAgentCatalog = null)
-        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog)
+        AcpAgentCatalogService? acpAgentCatalog = null,
+        SessionPathAllowlistService? pathAllowlist = null)
+        : this(settingsService, instanceIdentity, mode, null, acpAgentCatalog, pathAllowlist)
     {
     }
 
@@ -79,9 +81,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         MidTermInstanceIdentity? instanceIdentity,
         string? mode,
         RedirectedProcessLauncher? launcher,
-        AcpAgentCatalogService? acpAgentCatalog = null)
+        AcpAgentCatalogService? acpAgentCatalog = null,
+        SessionPathAllowlistService? pathAllowlist = null)
     {
         _settingsService = settingsService;
+        _pathAllowlist = pathAllowlist;
         _acpAgentCatalog = acpAgentCatalog ?? new AcpAgentCatalogService(settingsService);
         _instanceIdentity = instanceIdentity ?? MidTermInstanceIdentity.Load(
             Path.Combine(Path.GetTempPath(), "midterm-test-agenthost", Guid.NewGuid().ToString("N")),
@@ -298,7 +302,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
             await DisposeStateAsync(state, terminateHost: false).ConfigureAwait(false);
             var settings = _settingsService.Load();
-            var userProfileDirectory = ResolveConfiguredUserProfileDirectory(settings);
+            var userProfileDirectory = AppServerControlHostEnvironmentResolver.ResolveConfiguredWindowsProfileDirectory(settings);
             var isCodex = string.Equals(profile, AiCliProfileService.CodexProfile, StringComparison.Ordinal);
             var isClaude = string.Equals(profile, AiCliProfileService.ClaudeProfile, StringComparison.Ordinal);
             ResolvedAcpAgentDefinition? acpAgent = null;
@@ -313,7 +317,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             }
 
             executablePath ??= acpAgent?.ExecutablePath;
-            var preferredProfileDirectory = ResolvePreferredProfileDirectory(settings, executablePath);
+            var preferredProfileDirectory = AppServerControlHostEnvironmentResolver.ResolvePreferredWindowsProfileDirectory(settings, executablePath);
             BuildLaunchEnvironment(
                 settings,
                 executablePath,
@@ -589,6 +593,23 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task<AppServerControlConfigureResponse> ConfigureAsync(
+        string sessionId, AppServerControlConfigureRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var result = await SendCommandAsync(state, commandId => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = commandId, SessionId = sessionId, Type = "runtime.configure", Configure = request
+            }, ct).ConfigureAwait(false);
+            return result.Configured ?? throw new InvalidOperationException("Runtime did not acknowledge configuration.");
+        }
+        finally { state.Gate.Release(); }
+    }
+
     public async Task<AppServerControlCommandAcceptedResponse> SteerTurnAsync(
         string sessionId,
         AppServerControlSteerRequest request,
@@ -710,7 +731,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 {
                     CommandId = commandId,
                     SessionId = sessionId,
-                    Type = "thread.goal.set",
+                    Type = request.Operation == "recover" ? "runtime.recover" : "thread.goal." + request.Operation,
                     SetGoal = request
                 },
                 ct).ConfigureAwait(false);
@@ -823,12 +844,14 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     public bool TryGetCachedHistoryWindow(string sessionId, out AppServerControlHistoryWindowResponse historyWindow)
     {
         historyWindow = default!;
-        if (!_states.TryGetValue(sessionId, out var state) || state.CachedHistoryWindow is null)
+        if (!_states.TryGetValue(sessionId, out var state))
         {
             return false;
         }
 
-        historyWindow = CloneHistoryWindow(state.CachedHistoryWindow);
+        var cached = state.CachedHistoryWindow;
+        if (cached is null) return false;
+        historyWindow = CloneHistoryWindow(cached);
         return true;
     }
 
@@ -864,7 +887,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 return null;
             }
 
-            UpdateCachedHistoryWindow(state, result.HistoryWindow, replaceHistory: true);
+            UpdateCachedHistoryWindow(state, result.HistoryWindow);
             return CloneHistoryWindow(result.HistoryWindow);
         }
         finally
@@ -997,6 +1020,30 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         _states.Clear();
     }
 
+    internal static void RegisterHistoryPaths(
+        SessionPathAllowlistService? allowlist,
+        string sessionId,
+        IEnumerable<AppServerControlHistoryItem> history)
+    {
+        if (allowlist is null) return;
+
+        // Canonical host history is trusted IPC. Register its resolved artifacts
+        // before publishing them, just as terminal output registers detected paths.
+        // Use the owning IPC session, never a session ID supplied in the payload.
+        foreach (var entry in history)
+        {
+            foreach (var reference in entry.FileMentions)
+                if (reference.Exists && !string.IsNullOrWhiteSpace(reference.ResolvedPath))
+                    allowlist.RegisterPath(sessionId, reference.ResolvedPath);
+            foreach (var preview in entry.ImagePreviews)
+                if (!string.IsNullOrWhiteSpace(preview.ResolvedPath))
+                    allowlist.RegisterPath(sessionId, preview.ResolvedPath);
+            foreach (var attachment in entry.Attachments)
+                if (Path.IsPathFullyQualified(attachment.Path))
+                    allowlist.RegisterPath(sessionId, attachment.Path);
+        }
+    }
+
     private async Task ReadLoopAsync(HostRuntimeState state)
     {
         try
@@ -1025,6 +1072,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     }
 
                     state.McpScopeIdentity = patchEnvelope.McpScopeIdentity;
+                    RegisterHistoryPaths(_pathAllowlist, state.SessionId, patchEnvelope.Patch.HistoryUpserts);
                     ApplyHistoryPatchToState(state, patchEnvelope.Patch);
                     continue;
                 }
@@ -1039,6 +1087,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     }
 
                     state.McpScopeIdentity = result.McpScopeIdentity;
+                    if (result.HistoryWindow is not null)
+                        RegisterHistoryPaths(_pathAllowlist, state.SessionId, result.HistoryWindow.History);
                     if (!string.IsNullOrEmpty(result.McpProviderThreadId)) state.McpProviderThreadId = result.McpProviderThreadId;
                     if (state.PendingCommands.TryRemove(commandId, out var pending))
                     {
@@ -1103,7 +1153,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             var command = createCommand(commandId);
             var payload = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
-            await state.Input!.WriteLineAsync(payload).ConfigureAwait(false);
+            await state.Input!.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
             await state.Input.FlushAsync(ct).ConfigureAwait(false);
 
             // Attach and settings may require multiple provider round trips. In particular,
@@ -1111,6 +1161,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             var timeout = command.Type switch
             {
                 "runtime.attach" => TimeSpan.FromSeconds(120),
+                "runtime.configure" or "runtime.recover" => TimeSpan.FromSeconds(60),
                 "turn.start" => TimeSpan.FromSeconds(60),
                 "turn.steer" => TimeSpan.FromSeconds(90),
                 "turn.interrupt" => TimeSpan.FromSeconds(20),
@@ -1278,7 +1329,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         if (result.HistoryWindow is not null)
         {
-            UpdateCachedHistoryWindow(state, result.HistoryWindow, replaceHistory: true);
+            UpdateCachedHistoryWindow(state, result.HistoryWindow);
             return;
         }
 
@@ -1293,64 +1344,83 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     private static void ApplyHistoryPatchToState(HostRuntimeState state, AppServerControlHistoryPatch patch)
     {
-        state.LastError = patch.Session.LastError ?? state.LastError;
-
-        if (state.CachedHistoryWindow is not null &&
-            patch.LatestSequence < state.CachedHistoryWindow.LatestSequence)
+        lock (state.HistoryCacheSync)
         {
-            return;
-        }
-
-        if (state.CachedHistoryWindow is null)
-        {
-            state.CachedHistoryWindow = new AppServerControlHistoryWindowResponse
+            if (state.CachedHistoryWindow is not null &&
+                patch.LatestSequence < state.CachedHistoryWindow.LatestSequence)
             {
-                SessionId = patch.SessionId,
-                Provider = patch.Provider,
-                GeneratedAt = patch.GeneratedAt,
-                LatestSequence = patch.LatestSequence,
-                HistoryCount = patch.HistoryCount,
-                Session = CloneSessionSummary(patch.Session),
-                Thread = CloneThreadSummary(patch.Thread),
-                CurrentTurn = CloneTurnSummary(patch.CurrentTurn),
-                QuickSettings = CloneQuickSettings(patch.QuickSettings),
-                Streams = CloneStreams(patch.Streams),
-                Requests = patch.RequestUpserts.Select(CloneRequestSummary).ToList(),
-                Items = patch.ItemUpserts.Select(CloneItemSummary).ToList(),
-                Notices = patch.NoticeUpserts.Select(CloneNotice).ToList(),
-            };
-        }
-        else
-        {
-            var cached = state.CachedHistoryWindow;
-            cached.Provider = string.IsNullOrWhiteSpace(patch.Provider) ? cached.Provider : patch.Provider;
-            cached.GeneratedAt = patch.GeneratedAt;
-            cached.LatestSequence = Math.Max(cached.LatestSequence, patch.LatestSequence);
-            cached.HistoryCount = Math.Max(cached.HistoryCount, patch.HistoryCount);
-            cached.Session = CloneSessionSummary(patch.Session);
-            cached.Thread = CloneThreadSummary(patch.Thread);
-            cached.CurrentTurn = CloneTurnSummary(patch.CurrentTurn);
-            cached.QuickSettings = CloneQuickSettings(patch.QuickSettings);
-            cached.Streams = CloneStreams(patch.Streams);
-            cached.Items = MergeItemSummaries(cached.Items, patch.ItemUpserts, patch.ItemRemovals);
-            cached.Requests = MergeRequestSummaries(cached.Requests, patch.RequestUpserts, patch.RequestRemovals);
-            cached.Notices = MergeNotices(cached.Notices, patch.NoticeUpserts);
-        }
+                return;
+            }
 
-        RefreshRuntimeStatusFromHistory(state);
+            state.CachedHistoryWindow = ApplyCachedHistoryPatch(state.CachedHistoryWindow, patch);
+            RefreshRuntimeStatusFromHistory(state);
+        }
         FanOutHistoryPatch(state, patch);
     }
 
-    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow, bool replaceHistory)
+    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow)
     {
-        var next = CloneHistoryWindow(historyWindow);
-        if (!replaceHistory && state.CachedHistoryWindow is not null)
+        lock (state.HistoryCacheSync)
         {
-            next.History = state.CachedHistoryWindow.History;
+            state.CachedHistoryWindow = AcceptCachedHistoryWindow(state.CachedHistoryWindow, historyWindow);
+            RefreshRuntimeStatusFromHistory(state);
         }
+    }
 
-        state.CachedHistoryWindow = next;
-        RefreshRuntimeStatusFromHistory(state);
+    internal static AppServerControlHistoryWindowResponse AcceptCachedHistoryWindow(
+        AppServerControlHistoryWindowResponse? current, AppServerControlHistoryWindowResponse incoming)
+    {
+        // A delayed window response must not resurrect a request closed by a newer live patch.
+        return current is not null && current.LatestSequence > incoming.LatestSequence
+            ? current
+            : CloneHistoryWindow(incoming);
+    }
+
+    internal static AppServerControlHistoryWindowResponse ApplyCachedHistoryPatch(
+        AppServerControlHistoryWindowResponse? current, AppServerControlHistoryPatch patch)
+    {
+        if (current is not null && patch.LatestSequence < current.LatestSequence) return current;
+        var next = new AppServerControlHistoryWindowResponse
+        {
+            SessionId = patch.SessionId,
+            Provider = string.IsNullOrWhiteSpace(patch.Provider) ? current?.Provider ?? string.Empty : patch.Provider,
+            GeneratedAt = patch.GeneratedAt,
+            LatestSequence = patch.LatestSequence,
+            HistoryCount = Math.Max(0, patch.HistoryCount),
+            HistoryWindowStart = current?.HistoryWindowStart ?? 0,
+            Session = CloneSessionSummary(patch.Session),
+            Thread = CloneThreadSummary(patch.Thread),
+            CurrentTurn = CloneTurnSummary(patch.CurrentTurn),
+            QuickSettings = CloneQuickSettings(patch.QuickSettings),
+            Streams = CloneStreams(patch.Streams),
+            History = MergeCachedHistory(current, patch)
+        };
+        next.HistoryWindowStart = Math.Clamp(next.HistoryWindowStart, 0, next.HistoryCount);
+        next.HistoryWindowEnd = next.HistoryWindowStart + next.History.Count;
+        next.HasOlderHistory = next.HistoryWindowStart > 0;
+        next.HasNewerHistory = next.HistoryWindowEnd < next.HistoryCount;
+        next.Items = MergeItemSummaries(current?.Items ?? [], patch.ItemUpserts, patch.ItemRemovals, next);
+        next.Requests = MergeRequestSummaries(current?.Requests ?? [], patch.RequestUpserts, patch.RequestRemovals, next);
+        next.Notices = MergeNotices(current?.Notices ?? [], patch.NoticeUpserts);
+        return next;
+    }
+
+    private static List<AppServerControlHistoryItem> MergeCachedHistory(
+        AppServerControlHistoryWindowResponse? current, AppServerControlHistoryPatch patch)
+    {
+        if (current is null || current.History.Count == 0 || patch.HistoryCount < current.HistoryWindowEnd) return [];
+        var removals = patch.HistoryRemovals.ToHashSet(StringComparer.Ordinal);
+        var retainedIds = current.History.Select(entry => entry.EntryId).ToHashSet(StringComparer.Ordinal);
+        var upserts = new Dictionary<string, AppServerControlHistoryItem>(StringComparer.Ordinal);
+        foreach (var entry in patch.HistoryUpserts)
+        {
+            if (retainedIds.Contains(entry.EntryId)) upserts[entry.EntryId] = entry;
+        }
+        // Only the fetched kernel belongs to this cache. Off-window live history stays in the fanout.
+        return current.History
+            .Where(entry => !removals.Contains(entry.EntryId) || upserts.ContainsKey(entry.EntryId))
+            .Select(entry => CloneHistoryEntry(upserts.GetValueOrDefault(entry.EntryId) ?? entry))
+            .OrderBy(entry => entry.Order).ToList();
     }
 
     private static AppServerControlHistoryWindowResponse BuildPlaceholderHistoryWindow(HostRuntimeState state)
@@ -1480,9 +1550,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             QuickSettings = CloneQuickSettings(source.QuickSettings),
             Streams = CloneStreams(source.Streams),
             History = source.History.Select(CloneHistoryEntry).ToList(),
-            Items = source.Items.Select(CloneItemSummary).ToList(),
-            Requests = source.Requests.Select(CloneRequestSummary).ToList(),
-            Notices = source.Notices.Select(CloneNotice).ToList()
+            Items = MergeItemSummaries([], source.Items, [], source),
+            Requests = MergeRequestSummaries([], source.Requests, [], source),
+            Notices = MergeNotices([], source.Notices)
         };
     }
 
@@ -1603,6 +1673,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         return new AppServerControlThreadSummary
         {
             ThreadId = source.ThreadId,
+            Goal = source.Goal?.Clone(),
             State = source.State,
             StateLabel = source.StateLabel
         };
@@ -1633,6 +1704,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             FastMode = source.FastMode,
             ModelOptions = AppServerControlQuickSettings.CloneOptions(source.ModelOptions),
             EffortOptions = AppServerControlQuickSettings.CloneOptions(source.EffortOptions),
+            AcknowledgedFields = [.. source.AcknowledgedFields],
             ConfigOptions = AppServerControlQuickSettings.CloneConfigOptions(source.ConfigOptions)
         };
     }
@@ -1720,9 +1792,14 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private static List<AppServerControlItemSummary> MergeItemSummaries(
         IReadOnlyList<AppServerControlItemSummary> current,
         IReadOnlyList<AppServerControlItemSummary> upserts,
-        IReadOnlyList<string> removals)
+        IReadOnlyList<string> removals,
+        AppServerControlHistoryWindowResponse window)
     {
-        var next = current.ToDictionary(item => item.ItemId, CloneItemSummary, StringComparer.Ordinal);
+        var retainedIds = window.History.Where(entry => entry.ItemId is not null)
+            .Select(entry => entry.ItemId!).ToHashSet(StringComparer.Ordinal);
+        bool Retain(AppServerControlItemSummary item) => retainedIds.Contains(item.ItemId) ||
+            item.AliasItemIds.Any(retainedIds.Contains) || IsCurrentActivityItem(window.CurrentTurn, item);
+        var next = current.Where(Retain).ToDictionary(item => item.ItemId, StringComparer.Ordinal);
         foreach (var removal in removals)
         {
             next.Remove(removal);
@@ -1730,18 +1807,24 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         foreach (var upsert in upserts)
         {
-            next[upsert.ItemId] = CloneItemSummary(upsert);
+            if (Retain(upsert)) next[upsert.ItemId] = upsert;
+            else next.Remove(upsert.ItemId);
         }
 
-        return next.Values.OrderByDescending(item => item.UpdatedAt).ToList();
+        return next.Values.OrderByDescending(item => item.UpdatedAt).Select(CloneItemSummary).ToList();
     }
 
     private static List<AppServerControlRequestSummary> MergeRequestSummaries(
         IReadOnlyList<AppServerControlRequestSummary> current,
         IReadOnlyList<AppServerControlRequestSummary> upserts,
-        IReadOnlyList<string> removals)
+        IReadOnlyList<string> removals,
+        AppServerControlHistoryWindowResponse window)
     {
-        var next = current.ToDictionary(request => request.RequestId, CloneRequestSummary, StringComparer.Ordinal);
+        var retainedIds = window.History.Where(entry => entry.RequestId is not null)
+            .Select(entry => entry.RequestId!).ToHashSet(StringComparer.Ordinal);
+        bool Retain(AppServerControlRequestSummary request) => retainedIds.Contains(request.RequestId) ||
+            string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase);
+        var next = current.Where(Retain).ToDictionary(request => request.RequestId, StringComparer.Ordinal);
         foreach (var removal in removals)
         {
             next.Remove(removal);
@@ -1749,23 +1832,34 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         foreach (var upsert in upserts)
         {
-            next[upsert.RequestId] = CloneRequestSummary(upsert);
+            if (Retain(upsert)) next[upsert.RequestId] = upsert;
+            else next.Remove(upsert.RequestId);
         }
 
-        return next.Values.OrderByDescending(request => request.UpdatedAt).ToList();
+        return next.Values.OrderByDescending(request => request.UpdatedAt).Select(CloneRequestSummary).ToList();
+    }
+
+    private static bool IsCurrentActivityItem(AppServerControlTurnSummary turn, AppServerControlItemSummary item)
+    {
+        if (turn.State.Trim().ToLowerInvariant() is "completed" or "resolved" or "failed" or "stopped" or "error" or "cancelled")
+            return false;
+        if (!string.IsNullOrWhiteSpace(turn.TurnId) && !string.IsNullOrWhiteSpace(item.TurnId) &&
+            !string.Equals(turn.TurnId, item.TurnId, StringComparison.Ordinal)) return false;
+        return item.Status.Trim().ToLowerInvariant() is "active" or "in progress" or "inprogress" or
+            "in_progress" or "open" or "running" or "starting" or "started" or "streaming";
     }
 
     private static List<AppServerControlRuntimeNotice> MergeNotices(
         IReadOnlyList<AppServerControlRuntimeNotice> current,
         IReadOnlyList<AppServerControlRuntimeNotice> upserts)
     {
-        var next = current.ToDictionary(notice => notice.EventId, CloneNotice, StringComparer.Ordinal);
+        var next = current.ToDictionary(notice => notice.EventId, StringComparer.Ordinal);
         foreach (var upsert in upserts)
         {
-            next[upsert.EventId] = CloneNotice(upsert);
+            next[upsert.EventId] = upsert;
         }
 
-        return next.Values.OrderByDescending(notice => notice.CreatedAt).ToList();
+        return next.Values.OrderByDescending(notice => notice.CreatedAt).Take(64).Select(CloneNotice).ToList();
     }
 
     private static string NormalizeMode(string? mode)
@@ -1828,11 +1922,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         };
     }
 
-    private static void BuildLaunchEnvironment(
+    internal static void BuildLaunchEnvironment(
         MidTermSettings settings,
         string? executablePath,
         string? profileDirectory,
-        MidTermInstanceIdentity instanceIdentity,
+        MidTermInstanceIdentity? instanceIdentity,
         out Dictionary<string, string?> environmentOverrides,
         out List<string> pathPrependEntries)
     {
@@ -1878,32 +1972,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
 
         ApplyProviderSettings(environmentOverrides, settings);
-        environmentOverrides["MIDTERM_INSTANCE_ID"] = instanceIdentity.InstanceId;
-        environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
-    }
-
-    private static string? ResolveConfiguredUserProfileDirectory(MidTermSettings settings)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(settings.RunAsUser))
+        if (instanceIdentity is not null)
         {
-            return null;
+            environmentOverrides["MIDTERM_INSTANCE_ID"] = instanceIdentity.InstanceId;
+            environmentOverrides["MIDTERM_OWNER_TOKEN"] = instanceIdentity.OwnerToken;
         }
-
-        return AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectory(settings.RunAsUser, settings.RunAsUserSid);
-    }
-
-    private static string? ResolvePreferredProfileDirectory(MidTermSettings settings, string? executablePath)
-    {
-        ArgumentNullException.ThrowIfNull(settings);
-        if (!OperatingSystem.IsWindows())
-        {
-            return null;
-        }
-
-        return ResolveConfiguredUserProfileDirectory(settings)
-               ?? AppServerControlHostEnvironmentResolver.ResolveWindowsProfileDirectoryFromExecutablePath(executablePath)
-               ?? AppServerControlHostEnvironmentResolver.ResolveCurrentWindowsProfileDirectory();
     }
 
     private static void ApplyProviderSettings(IDictionary<string, string?> environment, MidTermSettings settings)
@@ -2031,10 +2104,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             var devDllCandidates = new[]
             {
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "mtagenthost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "mtagenthost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "win-x64", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
             };
             var devDll = devDllCandidates.FirstOrDefault(File.Exists);
             if (!string.IsNullOrWhiteSpace(devDll))
@@ -2112,6 +2185,18 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         return state;
     }
 
+    private static async Task WaitForStreamCompletionAsync(Task task)
+    {
+        try
+        {
+            await task.WaitAsync(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Preserve the previous best-effort shutdown wait, including faulted readers.
+        }
+    }
+
     private static async Task DisposeStreamsAsync(HostRuntimeState state)
     {
         foreach (var pending in state.PendingCommands.Values)
@@ -2125,7 +2210,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         if (state.ReaderTask is not null)
         {
-            await Task.WhenAny(state.ReaderTask, Task.Delay(250)).ConfigureAwait(false);
+            await WaitForStreamCompletionAsync(state.ReaderTask).ConfigureAwait(false);
             state.ReaderTask = null;
         }
     }
@@ -2191,12 +2276,12 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         if (state.ReaderTask is not null)
         {
-            await Task.WhenAny(state.ReaderTask, Task.Delay(250)).ConfigureAwait(false);
+            await WaitForStreamCompletionAsync(state.ReaderTask).ConfigureAwait(false);
         }
 
         if (state.ErrorTask is not null)
         {
-            await Task.WhenAny(state.ErrorTask, Task.Delay(250)).ConfigureAwait(false);
+            await WaitForStreamCompletionAsync(state.ErrorTask).ConfigureAwait(false);
         }
 
         state.Status = HostRuntimeStatus.Stopped;
@@ -2277,6 +2362,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public StreamReader? Error { get; private set; }
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
+        public Lock HistoryCacheSync { get; } = new();
         public AppServerControlHistoryWindowResponse? CachedHistoryWindow { get; set; }
         public Lock HistorySubscribersSync { get; } = new();
         public List<AppServerControlHistoryPatchSubscriber> HistoryPatchSubscribers { get; } = [];

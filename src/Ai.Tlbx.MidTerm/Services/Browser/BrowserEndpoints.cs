@@ -71,21 +71,32 @@ public static class BrowserEndpoints
         });
     }
 
-    private static void MapPreviewClientEndpoint(
+    internal static void MapPreviewClientEndpoint(
         WebApplication app,
         BrowserPreviewRegistry previewRegistry,
         BrowserPreviewOwnerService previewOwnerService,
         BrowserPreviewOriginService previewOriginService,
         WebPreviewService webPreviewService)
     {
-        app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request, HttpContext ctx) =>
+        app.MapPost("/api/browser/preview-client", (BrowserPreviewClientRequest request, HttpContext ctx, AuthService authService) =>
         {
             if (string.IsNullOrWhiteSpace(request.SessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
+            if (!RequestAccessContext.HasFullUserAccess(ctx))
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
             var preview = webPreviewService.EnsurePreviewSession(request.SessionId, request.PreviewName);
+            var nativeToken = ctx.Request.Cookies[AuthService.SessionCookieName];
+            if (authService.TryValidateSessionToken(nativeToken, out _))
+            {
+                webPreviewService.SyncSessionCookieForSelfTarget(preview.RouteKey, nativeToken);
+            }
+
             var browserId = BrowserIdentity.Build(
                 ctx.Request.Cookies["mt-client-id"],
                 request.TabId ?? ctx.Request.Query["tabId"].FirstOrDefault());
@@ -244,7 +255,7 @@ public static class BrowserEndpoints
                 statusCode: StatusCodes.Status409Conflict);
     }
 
-    private static void MapCliEndpoint(
+    internal static void MapCliEndpoint(
         WebApplication app,
         BrowserCommandService commandService,
         TtyHostSessionManager sessionManager,
@@ -394,7 +405,8 @@ public static class BrowserEndpoints
                     sessionId,
                     previewName,
                     includeScreenshot,
-                    ctx.RequestAborted);
+                    ctx.RequestAborted,
+                    GetFlagValue(args, "--preview-id"));
                 return Results.Text(text);
             }
 
@@ -421,7 +433,7 @@ public static class BrowserEndpoints
             }
 
             var output = result.Result ?? "";
-            if (!output.EndsWith('\n'))
+            if (!output.EndsWith('\n', StringComparison.Ordinal))
                 output += "\n";
             return Results.Text(output);
         });
@@ -711,11 +723,12 @@ public static class BrowserEndpoints
             Notes =
             [
                 "Browser commands require a configured preview target, an attached tlbx UI on /ws/state, and an injected /ws/browser bridge from the preview frame.",
+                "fill accepts one visible enabled form control or contenteditable editing host. Rich fill uses native literal-text editing and undo, requires browser editing-command support, and rejects read-only hosts and non-editable descendants; it never accesses the clipboard.",
                 "mt_inspect is the lowest-token first diagnostic command; mt_proxylog_summary is the lowest-token proxy diagnostic command.",
                 "Use mt_topic with a 3-6 word high-level work topic, updating it when the user's work area shifts.",
                 "Use mt_wake for delayed prompts that should stay visible and cancelable in the Command Bay queue.",
                 "Use mt_repo to bind every additional repository you use that is not the current working directory so tlbx shows it in the IDE bar and sidebar.",
-                "Docked screenshots capture the viewport by default; use --full-page for the slower full document. Rendering uses html2canvas; Chrome mobile devices use native CDP capture.",
+                "Docked screenshots capture the viewport by default; use --full-page for the slower full document. Rendering uses native SVG DOM capture inside the preview sandbox; Chrome mobile devices use native CDP capture.",
                 "Chrome mobile device control runs in the optional extension on the owning browser machine, so the tlbx server may remain remote."
             ]
         };
@@ -749,7 +762,8 @@ public static class BrowserEndpoints
         string? sessionId,
         string? previewName,
         bool includeScreenshot,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? previewId = null)
     {
         var targetUrl = sessionId is not null
             ? webPreviewService.GetTargetUrl(sessionId, previewName)
@@ -758,11 +772,13 @@ public static class BrowserEndpoints
             targetUrl,
             sessionId,
             previewName,
+            previewId,
             connectedUiClientCount: uiBridge?.ConnectedBrowserCount ?? 0).TrimEnd();
         var status = commandService.GetStatus(
             targetUrl,
             sessionId,
             previewName,
+            previewId,
             connectedUiClientCount: uiBridge?.ConnectedBrowserCount ?? 0);
         var lines = new List<string>
         {
@@ -783,7 +799,8 @@ public static class BrowserEndpoints
         var scope = new BrowserCommandRequest
         {
             SessionId = sessionId,
-            PreviewName = previewName
+            PreviewName = previewName,
+            PreviewId = previewId
         };
 
         var pageInfo = await RunBrowserTextCommandAsync(commandService, scope, "exec", value:
@@ -815,6 +832,7 @@ public static class BrowserEndpoints
                     Command = "screenshot",
                     SessionId = sessionId,
                     PreviewName = previewName,
+                    PreviewId = previewId,
                     Timeout = 30
                 },
                 cancellationToken);
@@ -823,7 +841,7 @@ public static class BrowserEndpoints
                 var screenshotPath = await SaveResultToDiskAsync(
                     "screenshot",
                     screenshotResult,
-                    new BrowserCommandRequest { SessionId = sessionId, PreviewName = previewName },
+                    scope,
                     sessionManager,
                     webPreviewService);
                 lines.Add("screenshot:");

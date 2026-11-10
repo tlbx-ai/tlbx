@@ -101,7 +101,34 @@ export interface AppServerControlInlineImagePreview {
   mimeType?: string | null;
 }
 
+export interface AppServerControlConfigureRequest {
+  expectedThreadId: string;
+  expectedTurnId: string | null;
+  settings: Record<string, unknown>;
+}
+
+export interface AppServerControlConfigureResponse {
+  sessionId: string;
+  threadId: string;
+  turnId: string | null;
+  status: string;
+  threadStatus: string;
+  threadScope: string;
+  turnStatus: string;
+  turnScope: string;
+  effectiveSettings: Record<string, unknown>;
+  confirmedSettings: Record<string, unknown>;
+  deferredFields: string[];
+  unconfirmedFields: string[];
+  fieldErrors: Record<string, string>;
+  detail?: string | null;
+}
+
 export interface AppServerControlCommandAcceptedResponse {
+  decision?: string | null;
+  answers?: AppServerControlAnsweredQuestion[] | null;
+  configuration?: AppServerControlConfigureResponse | null;
+  goal?: AppServerControlGoalResponse | null;
   sessionId: string;
   status: string;
   requestId?: string | null;
@@ -113,7 +140,42 @@ export interface AppServerControlInterruptRequest {
 }
 
 export interface AppServerControlGoalSetRequest {
+  operation?: 'set' | 'get' | 'clear' | 'recover';
+  expectedThreadId: string;
+  expectedTurnId: string | null;
+  objective?: string;
+  status?: string;
+  tokenBudget?: number | null;
+  interruptActiveTurn?: boolean;
+}
+
+export interface AppServerControlGoalSummary {
   objective: string;
+  status: string;
+  tokenBudget?: number | null;
+  tokensUsed?: number | null;
+  timeUsedSeconds?: number | null;
+  createdAt?: number | null;
+  updatedAt?: number | null;
+  iterations?: number | null;
+  lastReason?: string | null;
+}
+
+export interface AppServerControlGoalState {
+  threadId: string;
+  confirmation: 'unknown' | 'acknowledged' | 'confirmed' | 'unconfirmed';
+  scope: string;
+  pendingOperation?: string | null;
+  detail?: string | null;
+  goal?: AppServerControlGoalSummary | null;
+}
+
+export interface AppServerControlGoalResponse {
+  sessionId: string;
+  threadId: string;
+  turnId: string | null;
+  status: 'pending' | 'applied' | 'unconfirmed' | 'targetUnavailable';
+  state?: AppServerControlGoalState | null;
 }
 
 export interface AppServerControlAnsweredQuestion {
@@ -142,6 +204,7 @@ export interface AppServerControlQuickSettingsPayload {
 }
 
 export interface AppServerControlQuickSettingsSummary {
+  acknowledgedFields?: string[];
   model?: string | null;
   effort?: string | null;
   planMode: string;
@@ -242,6 +305,7 @@ export interface AppServerControlUsageSummary {
 }
 
 export interface AppServerControlThreadSummary {
+  goal?: AppServerControlGoalState | null;
   threadId: string;
   state: string;
   stateLabel: string;

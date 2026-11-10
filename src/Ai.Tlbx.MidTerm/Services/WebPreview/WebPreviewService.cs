@@ -18,6 +18,7 @@ public sealed class WebPreviewService
     private const int MaxLogEntries = 100;
 
     private readonly int _serverPort;
+    private readonly Func<X509Certificate2?>? _mainServerCertificate;
     private readonly BrowserPreviewOriginService? _previewOriginService;
     private readonly string? _cookiesDirectory;
     private readonly ConcurrentDictionary<string, PreviewState> _previews = new(StringComparer.Ordinal);
@@ -32,8 +33,10 @@ public sealed class WebPreviewService
     public WebPreviewService(
         int serverPort,
         BrowserPreviewOriginService? previewOriginService,
-        string? cookiesDirectory = null)
+        string? cookiesDirectory = null,
+        Func<X509Certificate2?>? mainServerCertificate = null)
     {
+        _mainServerCertificate = mainServerCertificate;
         _serverPort = serverPort;
         _previewOriginService = previewOriginService;
         _cookiesDirectory = cookiesDirectory;
@@ -241,7 +244,8 @@ public sealed class WebPreviewService
         }
 
         var isMainServerTarget = IsMainServerTarget(uri);
-        if (IsPreviewServerTarget(uri))
+        // The preview shares the main listener. Reject recursive proxy routes, not the tlbx UI itself.
+        if (isMainServerTarget && PathString.FromUriComponent(uri).StartsWithSegments("/webpreview", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
@@ -406,8 +410,11 @@ public sealed class WebPreviewService
             return;
         }
 
+        var requiresMainCertificate = _mainServerCertificate is not null && upstreamUri.Scheme == "wss"
+            && IsCredentialSafeSelfTarget(new UriBuilder(upstreamUri) { Scheme = "https" }.Uri);
         ws.Options.RemoteCertificateValidationCallback = (sender, certificate, chain, errors) =>
-            ValidateCertificate(state, sender, certificate, chain, errors);
+            requiresMainCertificate ? IsMainServerCertificate(certificate)
+                : ValidateCertificate(state, sender, certificate, chain, errors);
 
         var httpScheme = upstreamUri.Scheme == "wss" ? "https" : "http";
         var cookieLookupUri = new UriBuilder(upstreamUri) { Scheme = httpScheme }.Uri;
@@ -451,7 +458,8 @@ public sealed class WebPreviewService
 
         var effectiveTarget = target ?? state.TargetUri;
         if (effectiveTarget is null
-            || !IsMainServerTarget(effectiveTarget)
+            || _mainServerCertificate?.Invoke() is null
+            || !IsCredentialSafeSelfTarget(effectiveTarget)
             || string.IsNullOrWhiteSpace(token))
         {
             return;
@@ -459,7 +467,6 @@ public sealed class WebPreviewService
 
         var cookie = new Cookie(AuthService.SessionCookieName, token)
         {
-            Domain = effectiveTarget.Host,
             Path = "/",
             Secure = effectiveTarget.Scheme == Uri.UriSchemeHttps,
             HttpOnly = true
@@ -470,6 +477,7 @@ public sealed class WebPreviewService
             try
             {
                 state.CookieContainer.Add(effectiveTarget, cookie);
+                state.HasNativeSessionCookie = true;
             }
             catch (CookieException)
             {
@@ -792,6 +800,7 @@ public sealed class WebPreviewService
         {
             var oldClient = state.HttpClient;
             state.CookieContainer = new CookieContainer();
+            state.HasNativeSessionCookie = false;
             state.HttpClient = CreateHttpClientForState(state, state.CookieContainer);
             oldClient.Dispose();
         }
@@ -815,15 +824,34 @@ public sealed class WebPreviewService
             }
         };
 
+        SocketsHttpHandler? selfHandler = null;
         try
         {
-            var invoker = new PreviewHttpInvoker(handler, TimeSpan.FromMinutes(5));
+            selfHandler = new SocketsHttpHandler
+            {
+                AllowAutoRedirect = false,
+                UseCookies = false,
+                UseProxy = false,
+                AutomaticDecompression = DecompressionMethods.None,
+                ConnectTimeout = TimeSpan.FromSeconds(10),
+                ConnectCallback = static (context, cancellationToken) =>
+                    ConnectPreviewSocketAsync(context.DnsEndPoint.Host, context.DnsEndPoint.Port, cancellationToken),
+                SslOptions = new SslClientAuthenticationOptions
+                {
+                    RemoteCertificateValidationCallback = (_, certificate, _, _) => IsMainServerCertificate(certificate)
+                }
+            };
+            var invoker = new PreviewHttpInvoker(handler, TimeSpan.FromMinutes(5), selfHandler, uri => _mainServerCertificate is not null && IsCredentialSafeSelfTarget(uri));
             handler = null;
+#pragma warning disable IDISP003 // Both handlers are now owned by the returned invoker.
+            selfHandler = null;
+#pragma warning restore IDISP003
             return invoker;
         }
         finally
         {
             handler?.Dispose();
+            selfHandler?.Dispose();
         }
     }
 
@@ -839,6 +867,13 @@ public sealed class WebPreviewService
         _ = chain;
 
         return ShouldAcceptPreviewCertificate(state.TargetUri, sslPolicyErrors);
+    }
+
+    private bool IsMainServerCertificate(X509Certificate? certificate)
+    {
+        var own = _mainServerCertificate?.Invoke();
+        return own is not null && certificate is not null
+            && own.RawData.AsSpan().SequenceEqual(certificate.GetRawCertData());
     }
 
     internal static bool ShouldAcceptPreviewCertificate(Uri? target, SslPolicyErrors sslPolicyErrors)
@@ -925,7 +960,8 @@ public sealed class WebPreviewService
                     continue;
                 }
 
-                if (!ShouldPersistCookie(target, cookie))
+                if (state.HasNativeSessionCookie && cookie.Name == AuthService.SessionCookieName
+                    || !ShouldPersistCookie(target, cookie))
                 {
                     continue;
                 }
@@ -1070,6 +1106,12 @@ public sealed class WebPreviewService
         var cookies = new List<Cookie>();
         foreach (Cookie cookie in state.CookieContainer.GetAllCookies())
         {
+            if (state.HasNativeSessionCookie && cookie.Name == AuthService.SessionCookieName
+                && !IsCredentialSafeSelfTarget(requestUri))
+            {
+                continue;
+            }
+
             if (cookie.Expired)
             {
                 continue;
@@ -1160,15 +1202,16 @@ public sealed class WebPreviewService
             && normalizedRequestPath[normalizedCookiePath.Length] == '/';
     }
 
+    // Credentials must never follow DNS aliases, even if they currently resolve locally.
+    private bool IsCredentialSafeSelfTarget(Uri uri) =>
+        uri.Scheme == Uri.UriSchemeHttps
+        && uri.Port == _serverPort
+        && (uri.Host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || IPAddress.TryParse(uri.IdnHost, out var address) && IPAddress.IsLoopback(address));
+
     private bool IsMainServerTarget(Uri uri)
     {
         return IsThisServerTarget(uri, _serverPort);
-    }
-
-    private bool IsPreviewServerTarget(Uri uri)
-    {
-        return _previewOriginService is { IsEnabled: true }
-            && IsThisServerTarget(uri, _previewOriginService.PreviewPort);
     }
 
     private bool IsThisServerTarget(Uri uri, int port)
@@ -1416,6 +1459,7 @@ public sealed class WebPreviewService
         public string? BoardTargetSignature;
         public long TargetRevision;
         public CookieContainer CookieContainer { get; set; }
+        public bool HasNativeSessionCookie { get; set; }
         public PreviewHttpInvoker HttpClient { get; set; }
 
         public PreviewState(
@@ -1441,11 +1485,15 @@ public sealed class WebPreviewService
     {
         private readonly HttpMessageInvoker _invoker;
         private readonly TimeSpan _timeout;
+        private readonly HttpMessageInvoker _selfInvoker;
+        private readonly Func<Uri, bool> _isSelfTarget;
 
-        public PreviewHttpInvoker(SocketsHttpHandler handler, TimeSpan timeout)
+        public PreviewHttpInvoker(SocketsHttpHandler handler, TimeSpan timeout, SocketsHttpHandler selfHandler, Func<Uri, bool> isSelfTarget)
         {
             _invoker = new HttpMessageInvoker(handler, disposeHandler: true);
             _timeout = timeout;
+            _selfInvoker = new HttpMessageInvoker(selfHandler, disposeHandler: true);
+            _isSelfTarget = isSelfTarget;
         }
 
         public async Task<HttpResponseMessage> SendAsync(
@@ -1456,7 +1504,8 @@ public sealed class WebPreviewService
             _ = completionOption;
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeoutCts.CancelAfter(_timeout);
-            return await _invoker.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
+            var invoker = request.RequestUri is { } uri && _isSelfTarget(uri) ? _selfInvoker : _invoker;
+            return await invoker.SendAsync(request, timeoutCts.Token).ConfigureAwait(false);
         }
 
         public async Task<string> GetStringAsync(string uri, CancellationToken cancellationToken)
@@ -1470,6 +1519,7 @@ public sealed class WebPreviewService
         public void Dispose()
         {
             _invoker.Dispose();
+            _selfInvoker.Dispose();
         }
     }
 }

@@ -16,7 +16,7 @@ import {
   showIframe,
   unloadIframe,
 } from './webPanel';
-import { applyStoredViewportToFrame } from './webViewport';
+import { applyStoredViewportToFrame, getSessionPreviewFrame } from './webViewport';
 import { isDetachedOpenForSession } from './webDetach';
 import { clearWebPreviewTarget } from './webApi';
 import { createLogger } from '../logging';
@@ -359,29 +359,35 @@ export function setupWebPreviewDockResize(): void {
  * Set the web preview iframe to a fixed viewport size for responsive testing.
  * Pass width=0, height=0 to reset to full size.
  */
-export function setViewportSize(width: number, height: number): void {
-  const iframe = document.querySelector<HTMLIFrameElement>('.web-preview-iframe:not(.hidden)');
+export function setViewportSize(
+  width: number,
+  height: number,
+  target?: { sessionId: string; previewName: string },
+): boolean {
+  const activeSessionId = $activeSessionId.get();
+  const sessionId = target?.sessionId ?? activeSessionId;
+  if (!sessionId) return false;
+  const previewName = target?.previewName ?? getActivePreviewName();
+  const iframe = getSessionPreviewFrame(sessionId, previewName);
+  if (!iframe) return false;
+
+  setSessionViewport(sessionId, previewName, width, height);
+  applyStoredViewportToFrame(iframe);
+  // Named background targets must not change the active preview's chrome or stores.
+  if (activeSessionId !== sessionId || getActivePreviewName() !== previewName) return true;
   const body = document.querySelector<HTMLElement>('.web-preview-dock-body');
   const badge = document.getElementById('web-preview-viewport-badge');
-  if (!iframe || !body) return;
-
-  const activeSessionId = $activeSessionId.get();
-  if (activeSessionId) {
-    setSessionViewport(activeSessionId, getActivePreviewName(), width, height);
-  }
 
   if (width <= 0 && height <= 0) {
     $webPreviewViewport.set(null);
-    applyStoredViewportToFrame(iframe);
-    body.classList.remove('viewport-constrained');
+    body?.classList.remove('viewport-constrained');
     if (badge) badge.classList.add('hidden');
     log.info(() => 'Viewport reset to full size');
-    return;
+    return true;
   }
 
   $webPreviewViewport.set({ width, height });
-  applyStoredViewportToFrame(iframe);
-  body.classList.add('viewport-constrained');
+  body?.classList.add('viewport-constrained');
 
   if (badge) {
     badge.textContent = `${width}\u00D7${height}`;
@@ -389,6 +395,7 @@ export function setViewportSize(width: number, height: number): void {
   }
 
   log.info(() => `Viewport set to ${width}\u00D7${height}`);
+  return true;
 }
 
 /** Wire up the viewport reset badge click handler. */

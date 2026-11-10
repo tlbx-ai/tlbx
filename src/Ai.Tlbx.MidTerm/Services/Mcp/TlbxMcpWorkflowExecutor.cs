@@ -64,7 +64,7 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
             {
                 if (obj.Count != 2 || obj["$step"] is not JsonValue step || !step.TryGetValue<int>(out var index)
                     || index < 0 || index >= stepIndex || obj["path"] is not JsonValue path
-                    || !path.TryGetValue<string>(out var pointer) || pointer.Length > 0 && !pointer.StartsWith('/'))
+                    || !path.TryGetValue<string>(out var pointer) || pointer.Length > 0 && !pointer.StartsWith('/', StringComparison.Ordinal))
                     throw new ArgumentException("Result references require an earlier $step and a JSON Pointer path.");
                 return;
             }
@@ -124,7 +124,7 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
             var index = obj["$step"]!.GetValue<int>();
             JsonNode? selected = results[index].StructuredContent is { } content ? JsonNode.Parse(content.GetRawText()) : null;
             var path = obj["path"]!.GetValue<string>();
-            if (path.Length > 0 && !path.StartsWith('/')) throw new ArgumentException("Result path must be a JSON Pointer.");
+            if (path.Length > 0 && !path.StartsWith('/', StringComparison.Ordinal)) throw new ArgumentException("Result path must be a JSON Pointer.");
             foreach (var segment in path.Split('/').Skip(1))
             {
                 var key = segment.Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal);

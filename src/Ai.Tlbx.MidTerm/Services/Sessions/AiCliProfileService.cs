@@ -135,7 +135,7 @@ public sealed class AiCliProfileService
         var firstChar = candidate[0];
         if ((firstChar == '"' || firstChar == '\'') && candidate.Length > 1)
         {
-            var closingQuote = candidate.IndexOf(firstChar, 1);
+            var closingQuote = candidate.IndexOf(firstChar, 1, StringComparison.Ordinal);
             if (closingQuote > 1)
             {
                 candidate = candidate[1..closingQuote];

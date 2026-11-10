@@ -18,7 +18,6 @@ const mocks = vi.hoisted(() => ({
   setViewportSize: vi.fn(),
   openWebPreviewDock: vi.fn(),
   getWebPreviewTarget: vi.fn(),
-  applySessionViewportToFrame: vi.fn(() => true),
   getSessionPreview: vi.fn(() => null),
   getSessionSelectedPreviewName: vi.fn(() => 'default'),
   setSessionMode: vi.fn(),
@@ -111,14 +110,10 @@ vi.mock('../web/webDock', () => ({
 vi.mock('../web/webApi', () => ({
   getWebPreviewTarget: mocks.getWebPreviewTarget,
 }));
-
-vi.mock('../web/webViewport', () => ({
-  applySessionViewportToFrame: mocks.applySessionViewportToFrame,
-}));
-
 vi.mock('../web/webSessionState', () => ({
   getSessionPreview: mocks.getSessionPreview,
   getSessionSelectedPreviewName: mocks.getSessionSelectedPreviewName,
+  normalizePreviewName: (name?: string | null) => name?.trim() || 'default',
   setSessionMode: mocks.setSessionMode,
   setSessionViewport: mocks.setSessionViewport,
   setSessionSelectedPreviewName: mocks.setSessionSelectedPreviewName,
@@ -222,7 +217,7 @@ async function loadHarness() {
   mocks.syncBackgroundWebPreview.mockResolvedValue(undefined);
   mocks.closePreviewFromServer.mockResolvedValue(undefined);
   mocks.detachPreview.mockResolvedValue({ success: true });
-  mocks.applySessionViewportToFrame.mockReturnValue(true);
+  mocks.setViewportSize.mockReturnValue(true);
   mocks.checkVersionAndReload.mockResolvedValue(false);
 
   resetStateChannelRuntimeForTests();
@@ -486,13 +481,83 @@ describe('stateChannel browser-ui handling', () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
-    expect(mocks.setSessionViewport).toHaveBeenCalledWith('agent5678', 'default', 390, 844);
-    expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('agent5678', 'default');
-    expect(mocks.applySessionViewportToFrame).toHaveBeenCalledWith('agent5678', 'default');
+    expect(mocks.setViewportSize).toHaveBeenCalledWith(390, 844, {
+      sessionId: 'agent5678', previewName: 'default',
+    });
+    expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
+    expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+    expect(mocks.setSessionMode).not.toHaveBeenCalled();
     expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
     expect(mocks.selectSession).not.toHaveBeenCalled();
     expect(stores.$activeSessionId.get()).toBe('user1234');
   });
+
+  it.each([false, true])(
+    'routes the viewport to the exact named preview in the active session (selected=%s)',
+    async (selected) => {
+      const { stores, ws } = await loadHarness();
+      mocks.getSessionSelectedPreviewName.mockReturnValue(selected ? 'automation' : 'default');
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: 'browser-ui',
+          command: 'viewport',
+          requestId: 'named-viewport',
+          sessionId: 'user1234',
+          previewName: 'automation',
+          width: 400,
+          height: 340,
+        }),
+      } as MessageEvent<string>);
+
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(mocks.setViewportSize).toHaveBeenCalledWith(400, 340, {
+        sessionId: 'user1234', previewName: 'automation',
+      });
+      expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
+      expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+      expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+      expect(mocks.setSessionMode).not.toHaveBeenCalled();
+      expect(mocks.setSessionSelectedPreviewName).not.toHaveBeenCalled();
+      expect(mocks.selectSession).not.toHaveBeenCalled();
+      expect(stores.$activeSessionId.get()).toBe('user1234');
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+        requestId: 'named-viewport', command: 'viewport', success: true,
+      });
+    },
+  );
+
+  it.each([false, true])(
+    'does not acknowledge a missing preview frame (active=%s)',
+    async (active) => {
+      const { ws } = await loadHarness();
+      mocks.getSessionSelectedPreviewName.mockReturnValue('automation');
+      mocks.setViewportSize.mockReturnValue(false);
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+      vi.stubGlobal('fetch', fetchMock);
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: 'browser-ui',
+          command: 'viewport',
+          requestId: 'missing-frame',
+          sessionId: active ? 'user1234' : 'agent5678',
+          previewName: 'automation',
+          width: 400,
+          height: 340,
+        }),
+      } as MessageEvent<string>);
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      expect(mocks.setSessionViewport).not.toHaveBeenCalled();
+      expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+        requestId: 'missing-frame',
+        command: 'viewport',
+        success: false,
+        error: 'The requested preview frame is not attached.',
+      });
+    },
+  );
 
   it('reports a blocked detach and does not claim detached state', async () => {
     const { ws } = await loadHarness();
