@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.IO.Compression;
 using System.Text;
 using Ai.Tlbx.MidTerm.Common.Protocol;
+using Microsoft.Extensions.ObjectPool;
 
 namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 
@@ -16,6 +17,10 @@ namespace Ai.Tlbx.MidTerm.Services.WebSockets;
 public static class MuxProtocol
 {
     private static readonly ConcurrentDictionary<ulong, string> _sessionIdCache = new();
+    // Reset keeps the native compression state reusable; each caller exclusively
+    // owns its encoder until the synchronous frame write has finished.
+    private static readonly ObjectPool<GZipEncoder> GzipEncoders =
+        new DefaultObjectPoolProvider { MaximumRetained = 4 }.Create(new GzipEncoderPolicy());
 
     public const int HeaderSize = 9; // 1 byte type + 8 bytes sessionId
     public const int OutputHeaderSize = 21; // HeaderSize + seq(8) + dims(4)
@@ -106,10 +111,13 @@ public static class MuxProtocol
         }
     }
 
+    public static int GetMaxCompressedOutputFrameSize(int dataLength) =>
+        checked(CompressedOutputHeaderSize + (int)GZipEncoder.GetMaxCompressedLength(dataLength));
+
     /// <summary>
     /// Writes a compressed output frame into a caller-provided buffer.
     /// Returns the total bytes written. Caller is responsible for buffer lifecycle.
-    /// Buffer must be at least CompressedOutputHeaderSize + data.Length + 100 bytes.
+    /// Size the buffer with GetMaxCompressedOutputFrameSize to cover incompressible input.
     /// </summary>
     public static int WriteCompressedOutputFrameInto(
         string sessionId, ulong sequenceEndExclusive, int cols, int rows, ReadOnlySpan<byte> data,
@@ -122,14 +130,21 @@ public static class MuxProtocol
         BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(19, 2), (ushort)rows);
         BinaryPrimitives.WriteInt32LittleEndian(destination.AsSpan(21, 4), data.Length);
 
-        using var ms = new MemoryStream(destination, CompressedOutputHeaderSize,
-            destination.Length - CompressedOutputHeaderSize);
-        using (var gzip = new GZipStream(ms, CompressionLevel.Fastest, leaveOpen: true))
+        var encoder = GzipEncoders.Get();
+        try
         {
-            gzip.Write(data);
+            var status = encoder.Compress(data, destination.AsSpan(CompressedOutputHeaderSize),
+                out var consumed, out var written, isFinalBlock: true);
+            if (status != OperationStatus.Done || consumed != data.Length)
+            {
+                throw new ArgumentException("The compressed output frame destination is too small.", nameof(destination));
+            }
+            return CompressedOutputHeaderSize + written;
         }
-
-        return CompressedOutputHeaderSize + (int)ms.Position;
+        finally
+        {
+            GzipEncoders.Return(encoder);
+        }
     }
 
     /// <summary>
@@ -148,6 +163,16 @@ public static class MuxProtocol
         BinaryPrimitives.WriteUInt16LittleEndian(destination.AsSpan(19, 2), (ushort)rows);
         data.CopyTo(destination.AsSpan(OutputHeaderSize));
         return OutputHeaderSize + data.Length;
+    }
+
+    private sealed class GzipEncoderPolicy : PooledObjectPolicy<GZipEncoder>
+    {
+        public override GZipEncoder Create() => new(1);
+        public override bool Return(GZipEncoder encoder)
+        {
+            encoder.Reset();
+            return true;
+        }
     }
 
     public static byte[] CreateStateFrame(string sessionId, bool created)

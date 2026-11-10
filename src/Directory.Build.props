@@ -17,6 +17,14 @@
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
+  <!-- .NET 11's libraries already use runtime-managed async. Keep the complete
+       transport/service call chains in the same lowering, including Native AOT.
+       UseRuntimeAsync=false permits clean, controlled comparison builds. -->
+  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
+    <UseRuntimeAsync Condition="'$(UseRuntimeAsync)' == ''">true</UseRuntimeAsync>
+    <Features Condition="'$(UseRuntimeAsync)' == 'true'">$(Features);runtime-async=on</Features>
+  </PropertyGroup>
+
   <ItemGroup Condition="'$(MSBuildProjectExtension)' == '.csproj'">
     <PackageReference Include="Meziantou.Analyzer" Version="3.0.303">
       <PrivateAssets>all</PrivateAssets>

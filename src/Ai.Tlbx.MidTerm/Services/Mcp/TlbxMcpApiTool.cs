@@ -250,17 +250,18 @@ internal sealed class TlbxMcpApiInvoker(IEnumerable<EndpointDataSource> sources)
             if (!header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)
                 && !header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
                 context.Request.Headers[header.Key] = header.Value;
-        await using var input = new MemoryStream(invocation.Body is null ? [] : Encoding.UTF8.GetBytes(invocation.Body));
+        await using var input = new StringStream(invocation.Body ?? string.Empty, Encoding.UTF8);
         context.Request.Body = input;
-        context.Request.ContentLength = input.Length;
+        var inputLength = invocation.Body is null ? 0 : Encoding.UTF8.GetByteCount(invocation.Body);
+        context.Request.ContentLength = inputLength;
         if (invocation.Body is not null) context.Request.ContentType = "application/json; charset=utf-8";
-        context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetection(input.Length != 0));
+        context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetection(inputLength != 0));
         context.SetEndpoint(endpoint);
         await using var output = new MemoryStream();
         context.Response.Body = output;
         await endpoint.RequestDelegate(context).ConfigureAwait(false);
         await context.Response.CompleteAsync().ConfigureAwait(false);
-        var bytes = output.ToArray();
+        var bytes = output.GetBuffer().AsSpan(0, checked((int)output.Length));
         JsonNode? data;
         if (context.Response.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true && bytes.Length != 0)
             data = JsonNode.Parse(bytes);

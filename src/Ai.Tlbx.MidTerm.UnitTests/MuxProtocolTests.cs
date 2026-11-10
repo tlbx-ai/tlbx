@@ -84,6 +84,27 @@ public class MuxProtocolTests
         Assert.Equal(originalData, resultStream.ToArray());
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(8192)]
+    [InlineData(65536)]
+    [InlineData(MuxProtocol.CompressionChunkSize)]
+    public void CompressedReplay_IncompressibleData_FitsDeclaredBoundAndRoundTrips(int length)
+    {
+        var original = new byte[length];
+        new Random(42).NextBytes(original);
+        var frame = new byte[MuxProtocol.GetMaxCompressedOutputFrameSize(length)];
+        var written = MuxProtocol.WriteCompressedOutputFrameInto("abc12345", (ulong)length, 120, 40, original, frame);
+        Assert.InRange(written, MuxProtocol.CompressedOutputHeaderSize, frame.Length);
+        Assert.Equal(length, BinaryPrimitives.ReadInt32LittleEndian(frame.AsSpan(21, 4)));
+        using var input = new MemoryStream(frame, MuxProtocol.CompressedOutputHeaderSize, written - MuxProtocol.CompressedOutputHeaderSize);
+        using var gzip = new GZipStream(input, CompressionMode.Decompress);
+        using var decoded = new MemoryStream();
+        gzip.CopyTo(decoded);
+        Assert.Equal(original, decoded.ToArray());
+    }
+
     [Fact]
     public void TryParseFrame_TruncatedData_ReturnsFalse()
     {
