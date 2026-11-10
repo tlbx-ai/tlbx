@@ -265,7 +265,7 @@ public sealed class ConnectService : BackgroundService
         socket.Options.CollectHttpResponseDetails = true;
         socket.Options.SetRequestHeader("Authorization", $"Bearer {deviceToken}");
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(5);
-        socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(5);
+        socket.Options.KeepAliveTimeout = TimeSpan.FromSeconds(20);
         var origin = new Uri(configuration.ServerUrl);
         var uri = new UriBuilder(new Uri(origin, "/ws/device")) { Scheme = origin.Scheme == "https" ? "wss" : "ws" }.Uri;
         try

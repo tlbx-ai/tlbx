@@ -2,6 +2,20 @@
 export const SOCKET_PROGRESS_TIMEOUT_MS = 1500;
 export const RESUME_PROBE_TIMEOUT_MS = 1000;
 
+// A Link socket includes browser message ports, WebRTC and host dispatch.
+// Keep direct-local recovery fast without treating relay latency as failure.
+export function socketProgressTimeoutMs(): number {
+  return typeof window !== 'undefined' && window.__tlbxConnectPreview
+    ? 15000
+    : SOCKET_PROGRESS_TIMEOUT_MS;
+}
+
+export function resumeProbeTimeoutMs(): number {
+  return typeof window !== 'undefined' && window.__tlbxConnectPreview
+    ? 15000
+    : RESUME_PROBE_TIMEOUT_MS;
+}
+
 export class SocketReadiness {
   private stalledAttempts = 0;
 
@@ -10,7 +24,7 @@ export class SocketReadiness {
     isCurrent: () => boolean,
     isReady: () => boolean,
     reconnect: () => void,
-    progressTimeoutMs: () => number = () => SOCKET_PROGRESS_TIMEOUT_MS,
+    progressTimeoutMs: () => number = socketProgressTimeoutMs,
   ): () => void {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let disposed = false;
@@ -46,6 +60,7 @@ export class SocketReadiness {
           reconnect();
         },
         Math.max(
+          socketProgressTimeoutMs(),
           progressTimeoutMs(),
           Math.min(10000, SOCKET_PROGRESS_TIMEOUT_MS * 2 ** this.stalledAttempts),
         ),

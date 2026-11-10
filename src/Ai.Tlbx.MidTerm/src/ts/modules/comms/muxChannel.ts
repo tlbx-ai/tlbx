@@ -1,6 +1,6 @@
 import {
   SocketReadiness,
-  RESUME_PROBE_TIMEOUT_MS,
+  resumeProbeTimeoutMs,
   SOCKET_PROGRESS_TIMEOUT_MS,
 } from './socketReadiness';
 /* eslint-disable max-lines -- Mux transport remains the protocol coordinator; hot-path helpers are split out as they become stable. */
@@ -238,7 +238,7 @@ export function probeMuxWebSocket(): Promise<boolean> {
     };
     const timeout = setTimeout(() => {
       finish(false);
-    }, RESUME_PROBE_TIMEOUT_MS);
+    }, resumeProbeTimeoutMs());
     socket.addEventListener('message', received, { once: true });
     const frame = new Uint8Array(MUX_HEADER_SIZE + 9);
     frame[0] = MUX_TYPE_PING;
