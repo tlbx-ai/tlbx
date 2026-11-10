@@ -1,5 +1,13 @@
 # Build and release verification
 
+CI installs SDK 10.0.402 and 11.0.100 side by side in every .NET job,
+including the self-hosted signing runner. The repository remains pinned to .NET 10
+in `global.json` until the product migration. Build system verification compiles
+and runs a minimal net10.0/net11.0 application on all six package platforms
+(Windows x64/x86, Linux x64/ARM64, macOS x64/ARM64) and checks SDK selection,
+runtime major version and process architecture with `scripts/verify-dotnet-sdks.ps1`.
+
+
 Every release entry point (`release-dev.ps1`, `release-local.ps1`, `release.ps1`,
 `promote.ps1`) requires `-TestCategories`. There is no default or skip-all choice.
 Choose after reviewing **all changes since the previous release**, including shared
