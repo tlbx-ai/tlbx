@@ -7,7 +7,7 @@ buildscript {
 }
 
 plugins {
-    id("com.android.application") version "9.4.1" apply false
+    id("com.android.application") version "9.5.1" apply false
 }
 
 allprojects {
@@ -22,12 +22,12 @@ allprojects {
             "com.google.protobuf:protobuf-java-util:4.36.2",
             "com.google.protobuf:protobuf-kotlin:4.36.2",
             "commons-io:commons-io:2.22.0",
-            "io.netty:netty-codec:4.2.19.Final",
-            "io.netty:netty-codec-http:4.2.19.Final",
-            "io.netty:netty-codec-http2:4.2.19.Final",
-            "io.netty:netty-common:4.2.19.Final",
-            "io.netty:netty-handler:4.2.19.Final",
-            "io.netty:netty-handler-proxy:4.2.19.Final"
+            "io.netty:netty-codec:4.2.20.Final",
+            "io.netty:netty-codec-http:4.2.20.Final",
+            "io.netty:netty-codec-http2:4.2.20.Final",
+            "io.netty:netty-common:4.2.20.Final",
+            "io.netty:netty-handler:4.2.20.Final",
+            "io.netty:netty-handler-proxy:4.2.20.Final"
         )
         resolutionStrategy.eachDependency {
             when {
