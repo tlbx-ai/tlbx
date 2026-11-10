@@ -2104,10 +2104,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             var devDllCandidates = new[]
             {
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "mtagenthost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "mtagenthost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "win-x64", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
             };
             var devDll = devDllCandidates.FirstOrDefault(File.Exists);
             if (!string.IsNullOrWhiteSpace(devDll))

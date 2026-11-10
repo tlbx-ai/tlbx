@@ -48,7 +48,7 @@ $SettingsDir = if ([string]::IsNullOrWhiteSpace($SettingsDir)) { $DefaultSetting
 $SettingsDir = [System.IO.Path]::GetFullPath($SettingsDir)
 $ReservedPorts = @(2000, 2001)
 $CodeWatchRoot = Join-Path $RepoRoot "src"
-$DebugWebOutputDir = Join-Path $WebProjectDir "bin\Debug\net10.0"
+$DebugWebOutputDir = Join-Path $WebProjectDir "bin\Debug\net11.0"
 $DevAgentHostRoot = Join-Path $RepoRoot ".dev\bin\mtagenthost"
 $DevWebRoot = Join-Path $RepoRoot ".dev\bin\mt"
 $script:currentWebOutputDir = $null
@@ -253,7 +253,7 @@ function Build-WebServer {
     if (-not (Test-Path -LiteralPath (Join-Path $outputDir 'mt.dll'))) {
         throw "Shadow-built mt was not found at $outputDir"
     }
-    $shimOutputDir = Join-Path (Split-Path -Parent $TmuxShimProjectFile) 'bin/Debug/net10.0'
+    $shimOutputDir = Join-Path (Split-Path -Parent $TmuxShimProjectFile) 'bin/Debug/net11.0'
     $shimFiles = @(Get-ChildItem -LiteralPath $shimOutputDir -File | Where-Object {
         $_.Name -eq 'mttmux' -or $_.Name.StartsWith('mttmux.', [StringComparison]::OrdinalIgnoreCase)
     })

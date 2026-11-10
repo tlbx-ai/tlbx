@@ -17,11 +17,11 @@ function Get-RuntimeInputFingerprint {
 
 function Get-RuntimePublishDirectories {
     param([string]$RepoRoot, [string]$Rid, [string]$Configuration)
-    $tfm = if ($Rid.StartsWith('win-')) { 'net10.0-windows10.0.19041.0' } else { 'net10.0' }
+    $tfm = if ($Rid.StartsWith('win-')) { 'net11.0-windows10.0.19041.0' } else { 'net11.0' }
     return @{
         mthost = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.TtyHost/bin/$Configuration/$tfm/$Rid/publish"
-        mtagenthost = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.AgentHost/bin/$Configuration/net10.0/$Rid/publish"
-        mttmux = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.TmuxShim/bin/$Configuration/net10.0/$Rid/publish"
+        mtagenthost = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.AgentHost/bin/$Configuration/net11.0/$Rid/publish"
+        mttmux = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.TmuxShim/bin/$Configuration/net11.0/$Rid/publish"
     }
 }
 

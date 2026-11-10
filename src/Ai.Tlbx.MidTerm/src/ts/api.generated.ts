@@ -4489,7 +4489,7 @@ export interface components {
       error: null | string;
       /** Format: double */
       durationMs: number;
-      results: null | components['schemas']['BrowserBatchStepResult'][];
+      results: components['schemas']['BrowserBatchStepResult'][];
     };
     BrowserBatchStepResult: {
       /** Format: int32 */
@@ -5312,7 +5312,7 @@ export interface components {
       bufferText: null | string;
       bufferBase64: null | string;
       terminalTransport: null | components['schemas']['TerminalTransportDiagnosticsDto'];
-      supervisor: components['schemas']['SessionSupervisorInfoDto'];
+      supervisor: null | components['schemas']['SessionSupervisorInfoDto'];
     };
     SessionSupervisorInfoDto: {
       state: string;

@@ -58,7 +58,7 @@ try {
     $DevWebRoot = Join-Path $testRoot 'shadow mt'
     $WebProjectFile = Join-Path $testRoot 'mt.csproj'
     $TmuxShimProjectFile = Join-Path $testRoot 'shim project/mttmux.csproj'
-    $shimOutput = Join-Path (Split-Path -Parent $TmuxShimProjectFile) 'bin/Debug/net10.0'
+    $shimOutput = Join-Path (Split-Path -Parent $TmuxShimProjectFile) 'bin/Debug/net11.0'
     New-Item -ItemType Directory -Path $shimOutput -Force | Out-Null
     $shimNames = @('mttmux', 'mttmux.exe', 'mttmux.dll', 'mttmux.deps.json', 'mttmux.runtimeconfig.json', 'mttmux.pdb')
     foreach ($name in $shimNames) { [IO.File]::WriteAllText((Join-Path $shimOutput $name), "shim payload: $name") }

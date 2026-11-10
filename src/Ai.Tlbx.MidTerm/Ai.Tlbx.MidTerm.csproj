@@ -2,7 +2,7 @@
   <Import Project="ConnectNative.targets" />
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <AssemblyName>mt</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -83,7 +83,7 @@
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.3.0" />
     <PackageReference Include="Ai.Tlbx.VoiceAssistant.Provider.OpenAi" Version="11.5.0" />
     <PackageReference Include="Ai.Tlbx.Inference" Version="2.6.0" />
-    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="11.0.0" />
     <PackageReference Include="SkiaSharp" Version="$(SkiaSharpVersion)" />
     <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="$(SkiaSharpVersion)" />
     <PackageReference Include="SQLitePCLRaw.config.e_sqlite3" Version="$(SqlitePclRawVersion)" />
@@ -131,8 +131,8 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="10.0.13" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.13" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.WindowsServices" Version="11.0.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="11.0.0" />
   </ItemGroup>
 
   <!-- ============================================ -->

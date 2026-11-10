@@ -160,7 +160,7 @@ public static class TmuxScriptWriter
             Path.GetFullPath(Path.Combine(
                 AppContext.BaseDirectory,
                 "..", "..", "..", "..",
-                "Ai.Tlbx.MidTerm.TmuxShim", "bin", "Debug", "net10.0",
+                "Ai.Tlbx.MidTerm.TmuxShim", "bin", "Debug", "net11.0",
                 fileName))
         };
 
