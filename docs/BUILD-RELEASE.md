@@ -17,7 +17,7 @@ Fresh patch releases skip versions already tagged or reserved in fetched task
 history. Resuming or re-preparing a candidate keeps its exact version and still
 rejects reuse of a published version.
 
-``powershell
+```powershell
 ./scripts/release-dev.ps1 -Bump patch -ReleaseTitle 'Fix terminal layout' `
     -ReleaseNotes @('Keep the terminal input visible after resizing.') `
     -mthostUpdate no -TestCategories assets
@@ -27,7 +27,7 @@ rejects reuse of a published version.
     -mthostUpdate no -TestCategories frontend,server
 
 ./scripts/promote.ps1 -TestCategories all
-``
+```
 
 | Category | Checks | Choose for |
 |---|---|---|
@@ -50,7 +50,7 @@ The frontend and marketing typechecks use TypeScript 7 through the
 JavaScript compiler API required by the current ESLint parser and OpenAPI
 generator; it is not the compiler used by `typecheck`. The ASP.NET Core 11
 generator uses OpenAPI.NET 3.x and explicitly keeps OpenAPI 3.1 output for the
-existing TypeScript contract. Native AOT publishing remains enabled for `mt`, 
+existing TypeScript contract. Native AOT publishing remains enabled for `mt`,
 `mthost` and `mtagenthost`; the migration does not opt into preview features.
 
 Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
@@ -93,7 +93,7 @@ It creates no peer/socket and does not rebuild any Connect dependency.
 For an explicit refresh on the RID's native toolchain host, after changing the recipe
 (repeat build/copy/seal for all affected RIDs before the final --validate-all):
 
-``powershell
+```powershell
 $rid = 'win-x64'
 $native = 'src/Ai.Tlbx.MidTerm.ConnectNative'
 & "$native/build.ps1" -RuntimeIdentifier $rid
@@ -102,7 +102,7 @@ New-Item -ItemType Directory -Force "$native/prebuilt/$rid" | Out-Null
     ForEach-Object { Copy-Item "$native/bin/$rid/$_" "$native/prebuilt/$rid/$_" -Force }
 python "$native/prebuilt.py" --seal $rid
 python "$native/prebuilt.py" --validate-all
-``
+```
 
 `--seal` accepts optional `--source <provenance.json>` for one build-source record.
 Commit the changed recipe, `prebuilt/index.json` and matching RID artifacts together.
@@ -152,12 +152,12 @@ The terminal product does not impose this workflow on repositories it opens.
 
 Start each task in an exclusively owned, clean numbered checkout:
 
-``powershell
+```powershell
 git fetch origin
 git switch dev
 git merge --ff-only origin/dev
 git switch -c fix/short-kebab-description
-``
+```
 
 Use `feat/`, `fix/`, or `chore/` followed by lowercase ASCII words separated by
 hyphens. One task per branch. Open a draft PR once useful work is pushed; mark
