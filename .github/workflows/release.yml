@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 env:
-  DOTNET_VERSION: '10.0.402'
+  DOTNET_VERSION: '11.0.100'
   DOTNET_VERSIONS: |
     10.0.402
     11.0.100
@@ -303,20 +303,20 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging/${{ matrix.rid }}
-          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp src/Ai.Tlbx.MidTerm/bin/Release/net11.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
           cp .artifacts/runtime-inputs/${{ matrix.rid }}/runtime-inputs.json staging/${{ matrix.rid }}/
           if [[ "${{ matrix.rid }}" == win-* ]]; then
-            cp src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/${{ matrix.rid }}/publish/mttmux.exe staging/${{ matrix.rid }}/
+            cp src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net11.0/${{ matrix.rid }}/publish/mttmux.exe staging/${{ matrix.rid }}/
           fi
-          mthost_tfm="net10.0"
-          [[ "${{ matrix.rid }}" == win-* ]] && mthost_tfm="net10.0-windows10.0.19041.0"
+          mthost_tfm="net11.0"
+          [[ "${{ matrix.rid }}" == win-* ]] && mthost_tfm="net11.0-windows10.0.19041.0"
           if [[ -f src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/${mthost_tfm}/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} ]]; then
             cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/${mthost_tfm}/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
           else
             echo "mthost${{ matrix.ext }} not found for ${{ matrix.rid }}; continuing with web-only artifact set"
           fi
-          cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net11.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -513,17 +513,17 @@ jobs:
         shell: bash
         run: |
           mkdir -p staging/${{ matrix.rid }}
-          cp src/Ai.Tlbx.MidTerm/bin/Release/net10.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp src/Ai.Tlbx.MidTerm/bin/Release/net11.0/${{ matrix.rid }}/publish/mt${{ matrix.ext }} staging/${{ matrix.rid }}/
           cp src/version.json staging/${{ matrix.rid }}/
           cp .artifacts/runtime-inputs/${{ matrix.rid }}/runtime-inputs.json staging/${{ matrix.rid }}/
-          mthost_tfm="net10.0"
-          [[ "${{ matrix.rid }}" == win-* ]] && mthost_tfm="net10.0-windows10.0.19041.0"
+          mthost_tfm="net11.0"
+          [[ "${{ matrix.rid }}" == win-* ]] && mthost_tfm="net11.0-windows10.0.19041.0"
           if [[ -f src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/${mthost_tfm}/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} ]]; then
             cp src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/${mthost_tfm}/${{ matrix.rid }}/publish/mthost${{ matrix.ext }} staging/${{ matrix.rid }}/
           else
             echo "mthost${{ matrix.ext }} not found for ${{ matrix.rid }}; continuing with web-only artifact set"
           fi
-          cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
+          cp src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net11.0/${{ matrix.rid }}/publish/mtagenthost${{ matrix.ext }} staging/${{ matrix.rid }}/
 
           if [[ "${{ matrix.rid }}" == osx-* ]]; then
             security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
@@ -684,12 +684,12 @@ jobs:
         run: |
           $rid = '${{ matrix.rid }}'
           New-Item -ItemType Directory -Force "staging/$rid" | Out-Null
-          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
-          Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net11.0/$rid/publish/mt.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net11.0/$rid/publish/mttmux.exe" "staging/$rid/"
           Copy-Item src/version.json "staging/$rid/"
           Copy-Item ".artifacts/runtime-inputs/$rid/runtime-inputs.json" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm/src/static/THIRD-PARTY-LICENSES.txt" "staging/$rid/"
-          $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$rid/publish/mthost.exe"
+          $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net11.0-windows10.0.19041.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {
             Copy-Item $mthostPath "staging/$rid/"
             ./scripts/copy-windows-conpty-runtime.ps1 `
@@ -699,7 +699,7 @@ jobs:
           } else {
             Write-Host "mthost.exe not found for $rid; continuing with web-only artifact set"
           }
-          Copy-Item "src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$rid/publish/mtagenthost.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net11.0/$rid/publish/mtagenthost.exe" "staging/$rid/"
 
       - name: Generate SHA256SUMS
         shell: pwsh
@@ -819,12 +819,12 @@ jobs:
         run: |
           $rid = '${{ matrix.rid }}'
           New-Item -ItemType Directory -Force "staging/$rid" | Out-Null
-          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$rid/publish/mt.exe" "staging/$rid/"
-          Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$rid/publish/mttmux.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm/bin/Release/net11.0/$rid/publish/mt.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net11.0/$rid/publish/mttmux.exe" "staging/$rid/"
           Copy-Item src/version.json "staging/$rid/"
           Copy-Item ".artifacts/runtime-inputs/$rid/runtime-inputs.json" "staging/$rid/"
           Copy-Item "src/Ai.Tlbx.MidTerm/src/static/THIRD-PARTY-LICENSES.txt" "staging/$rid/"
-          $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$rid/publish/mthost.exe"
+          $mthostPath = "src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net11.0-windows10.0.19041.0/$rid/publish/mthost.exe"
           if (Test-Path $mthostPath) {
             Copy-Item $mthostPath "staging/$rid/"
             ./scripts/copy-windows-conpty-runtime.ps1 `
@@ -834,7 +834,7 @@ jobs:
           } else {
             Write-Host "mthost.exe not found for $rid; continuing with web-only artifact set"
           }
-          Copy-Item "src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$rid/publish/mtagenthost.exe" "staging/$rid/"
+          Copy-Item "src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net11.0/$rid/publish/mtagenthost.exe" "staging/$rid/"
 
       - name: Require stable Windows signing inputs
         shell: pwsh

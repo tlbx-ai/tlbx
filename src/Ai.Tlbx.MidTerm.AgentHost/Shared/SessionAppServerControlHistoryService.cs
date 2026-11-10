@@ -3000,7 +3000,7 @@ public sealed partial class SessionAppServerControlHistoryService
             return normalizedChunk;
         }
 
-        if (normalizedExisting.EndsWith('\n') || normalizedChunk.StartsWith('\n'))
+        if (normalizedExisting.EndsWith('\n', StringComparison.Ordinal) || normalizedChunk.StartsWith('\n', StringComparison.Ordinal))
         {
             return normalizedExisting + normalizedChunk;
         }
@@ -3033,8 +3033,8 @@ public sealed partial class SessionAppServerControlHistoryService
         }
 
         var separator = separateWithNewline &&
-                        !normalizedExisting.EndsWith('\n') &&
-                        !normalizedIncoming.StartsWith('\n')
+                        !normalizedExisting.EndsWith('\n', StringComparison.Ordinal) &&
+                        !normalizedIncoming.StartsWith('\n', StringComparison.Ordinal)
             ? "\n"
             : string.Empty;
         return RetainWithinBudget(normalizedExisting + separator + normalizedIncoming, maxChars, retainHead);

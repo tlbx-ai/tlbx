@@ -34,7 +34,7 @@ $projects = @(
         Name = "mthost"
         Path = "src/Ai.Tlbx.MidTerm.TtyHost/Ai.Tlbx.MidTerm.TtyHost.csproj"
         ExtraArgs = @(
-            "-f", $(if ($Rid.StartsWith("win-", [System.StringComparison]::OrdinalIgnoreCase)) { "net10.0-windows10.0.19041.0" } else { "net10.0" }),
+            "-f", $(if ($Rid.StartsWith("win-", [System.StringComparison]::OrdinalIgnoreCase)) { "net11.0-windows10.0.19041.0" } else { "net11.0" }),
             "-p:IsPublishing=true",
             "-p:ContinuousIntegrationBuild=true"
         )
@@ -137,7 +137,7 @@ try {
     }
 
     if ($Rid -in @("win-x64", "win-x86")) {
-        $mthostPublishDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.TtyHost/bin/$Configuration/net10.0-windows10.0.19041.0/$Rid/publish"
+        $mthostPublishDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm.TtyHost/bin/$Configuration/net11.0-windows10.0.19041.0/$Rid/publish"
         $requiredConptyFiles = @("conpty.dll", "x64/OpenConsole.exe", "arm64/OpenConsole.exe")
         if ($Rid -eq "win-x86") {
             $requiredConptyFiles += "x86/OpenConsole.exe"

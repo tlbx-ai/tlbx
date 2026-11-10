@@ -1512,12 +1512,12 @@ internal sealed class TerminalInputReadinessDetector
 
     private bool HasRecognizablePrompt(string value)
     {
-        var lastLineStart = Math.Max(value.LastIndexOf('\r'), value.LastIndexOf('\n')) + 1;
+        var lastLineStart = Math.Max(value.LastIndexOf('\r', StringComparison.Ordinal), value.LastIndexOf('\n', StringComparison.Ordinal)) + 1;
         var lastLine = value[lastLineStart..].TrimEnd();
         return _shellType switch
         {
-            ShellType.Bash => lastLine.EndsWith('$') || lastLine.EndsWith('#'),
-            ShellType.Zsh => lastLine.EndsWith('%') || lastLine.EndsWith('#'),
+            ShellType.Bash => lastLine.EndsWith('$', StringComparison.Ordinal) || lastLine.EndsWith('#', StringComparison.Ordinal),
+            ShellType.Zsh => lastLine.EndsWith('%', StringComparison.Ordinal) || lastLine.EndsWith('#', StringComparison.Ordinal),
             _ => false
         };
     }

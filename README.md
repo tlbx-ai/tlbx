@@ -163,7 +163,7 @@ browser anywhere
    └── HTTPS / WebSocket ──► tlbx on office laptop ─────► agents / repos / apps
 ```
 
-tlbx uses .NET 10 Native AOT, TypeScript and xterm.js.
+tlbx uses .NET 11 Native AOT, TypeScript and xterm.js. The x86/x64 binaries require the [.NET 11 CPU baseline](https://learn.microsoft.com/dotnet/core/compatibility/jit/11/minimum-hardware-requirements), including SSE4.2 and POPCNT.
 
 Previously named **MidTerm**. Existing installations update in place; executable names such as `mt`, `mthost` and `mtagenthost` remain compatible.
 

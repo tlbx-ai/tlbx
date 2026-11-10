@@ -1153,7 +1153,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             var command = createCommand(commandId);
             var payload = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
-            await state.Input!.WriteLineAsync(payload).ConfigureAwait(false);
+            await state.Input!.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
             await state.Input.FlushAsync(ct).ConfigureAwait(false);
 
             // Attach and settings may require multiple provider round trips. In particular,
@@ -2104,10 +2104,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         {
             var devDllCandidates = new[]
             {
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "mtagenthost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "mtagenthost.dll"),
-                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net10.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "win-x64", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "win-x64", "Ai.Tlbx.MidTerm.AgentHost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "mtagenthost.dll"),
+                Path.Combine(repoRoot, "Ai.Tlbx.MidTerm.AgentHost", "bin", configuration, "net11.0", "Ai.Tlbx.MidTerm.AgentHost.dll")
             };
             var devDll = devDllCandidates.FirstOrDefault(File.Exists);
             if (!string.IsNullOrWhiteSpace(devDll))
@@ -2185,6 +2185,18 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         return state;
     }
 
+    private static async Task WaitForStreamCompletionAsync(Task task)
+    {
+        try
+        {
+            await task.WaitAsync(TimeSpan.FromMilliseconds(250)).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Preserve the previous best-effort shutdown wait, including faulted readers.
+        }
+    }
+
     private static async Task DisposeStreamsAsync(HostRuntimeState state)
     {
         foreach (var pending in state.PendingCommands.Values)
@@ -2198,7 +2210,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         if (state.ReaderTask is not null)
         {
-            await Task.WhenAny(state.ReaderTask, Task.Delay(250)).ConfigureAwait(false);
+            await WaitForStreamCompletionAsync(state.ReaderTask).ConfigureAwait(false);
             state.ReaderTask = null;
         }
     }
@@ -2264,12 +2276,12 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         if (state.ReaderTask is not null)
         {
-            await Task.WhenAny(state.ReaderTask, Task.Delay(250)).ConfigureAwait(false);
+            await WaitForStreamCompletionAsync(state.ReaderTask).ConfigureAwait(false);
         }
 
         if (state.ErrorTask is not null)
         {
-            await Task.WhenAny(state.ErrorTask, Task.Delay(250)).ConfigureAwait(false);
+            await WaitForStreamCompletionAsync(state.ErrorTask).ConfigureAwait(false);
         }
 
         state.Status = HostRuntimeStatus.Stopped;

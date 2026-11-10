@@ -2,22 +2,22 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class ManagerBarTrigger
 {
-    private static readonly HashSet<string> ValidKinds =
-    [
+    private static readonly HashSet<string> ValidKinds = new(StringComparer.Ordinal)
+    {
         "fireAndForget",
         "onCooldown",
         "repeatCount",
         "repeatInterval",
         "schedule"
-    ];
+    };
 
-    private static readonly HashSet<string> ValidIntervalUnits =
-    [
+    private static readonly HashSet<string> ValidIntervalUnits = new(StringComparer.Ordinal)
+    {
         "seconds",
         "minutes",
         "hours",
         "days"
-    ];
+    };
 
     public string Kind { get; set; } = "fireAndForget";
     public int RepeatCount { get; set; } = 2;

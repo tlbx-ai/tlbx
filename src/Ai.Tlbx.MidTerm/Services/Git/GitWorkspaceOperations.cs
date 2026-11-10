@@ -93,7 +93,7 @@ internal static partial class GitWorkspaceOperations
     }
     internal static async Task ValidateBranchAsync(string root, string? name, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(name) || name.StartsWith('-') || name.AsSpan().IndexOfAny('\0', '\r', '\n') >= 0)
+        if (string.IsNullOrWhiteSpace(name) || name.StartsWith('-', StringComparison.Ordinal) || name.AsSpan().IndexOfAny('\0', '\r', '\n') >= 0)
             throw new GitOperationException(400, "invalid_branch", "Enter a valid branch name.");
         var result = await GitCommandRunner.ExecuteAsync(root, ["check-ref-format", "--branch", name], ct).ConfigureAwait(false);
         if (result.ExitCode != 0 || result.Stdout.TrimEnd('\r', '\n') != name) throw new GitOperationException(400, "invalid_branch", "Enter a valid literal branch name.");

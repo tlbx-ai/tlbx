@@ -21,7 +21,7 @@ fi
 
 dotnet publish -c Release -r linux-x64 /p:IsPublishing=true $CI_FLAG
 
-OUT_PATH="bin/Release/net10.0/linux-x64/publish/mt"
+OUT_PATH="bin/Release/net11.0/linux-x64/publish/mt"
 echo ""
 echo "Build complete!"
 if [ -f "$OUT_PATH" ]; then

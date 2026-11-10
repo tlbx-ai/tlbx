@@ -482,7 +482,7 @@ public sealed partial class UpdateService : IDisposable
     internal static bool IsDistributionAssetUrl(string? value, string? tag, string assetName)
     {
         if (tag is null || !ReleaseTagRegex().IsMatch(tag) || !Uri.TryCreate(value, UriKind.Absolute, out var uri)) return false;
-        var version = tag.StartsWith('v') ? tag[1..] : tag;
+        var version = tag.StartsWith('v', StringComparison.Ordinal) ? tag[1..] : tag;
         var rid = GetPlatformFromAssetName(assetName);
         if (rid is not ("win-x64" or "win-x86" or "linux-x64" or "linux-arm64" or "osx-x64" or "osx-arm64")) return false;
         var channel = HasPrerelease(version) ? "dev" : "main";
@@ -708,7 +708,7 @@ public sealed partial class UpdateService : IDisposable
 
             var typeFlag = header[156];
 
-            if (typeFlag == '5' || name.EndsWith('/'))
+            if (typeFlag == '5' || name.EndsWith('/', StringComparison.Ordinal))
             {
                 Directory.CreateDirectory(filePath);
             }

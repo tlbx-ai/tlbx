@@ -133,13 +133,13 @@ public static class TmuxCommandParser
             // The first split-window shell-command argument ends tmux options.
             // Its following flags belong to the launched executable, even when
             // they happen to spell tmux flags. -- explicitly marks that boundary.
-            if (splitWindow && (arg == "--" || !arg.StartsWith('-') || arg.Length < 2 || IsNegativeNumber(arg)))
+            if (splitWindow && (arg == "--" || !arg.StartsWith('-', StringComparison.Ordinal) || arg.Length < 2 || IsNegativeNumber(arg)))
             {
                 positional.AddRange(args[(arg == "--" ? i + 1 : i)..]);
                 break;
             }
 
-            if (arg.StartsWith('-') && arg.Length >= 2 && !IsNegativeNumber(arg))
+            if (arg.StartsWith('-', StringComparison.Ordinal) && arg.Length >= 2 && !IsNegativeNumber(arg))
             {
                 // Combined short flags: -ahv → -a, -h, -v (all boolean)
                 // Flags with values: -t %1, -F "format", -c /path

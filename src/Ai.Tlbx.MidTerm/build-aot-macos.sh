@@ -29,7 +29,7 @@ fi
 
 dotnet publish -c Release -r "$RID" /p:IsPublishing=true $CI_FLAG
 
-OUT_PATH="bin/Release/net10.0/$RID/publish/mt"
+OUT_PATH="bin/Release/net11.0/$RID/publish/mt"
 echo ""
 echo "Build complete!"
 if [ -f "$OUT_PATH" ]; then

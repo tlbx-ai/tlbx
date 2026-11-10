@@ -2,15 +2,15 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed class ManagerBarButton
 {
-    private static readonly HashSet<string> ValidActionTypes = ["single", "chain"];
-    private static readonly HashSet<string> ValidTriggerKinds =
-    [
+    private static readonly HashSet<string> ValidActionTypes = new(StringComparer.Ordinal) { "single", "chain" };
+    private static readonly HashSet<string> ValidTriggerKinds = new(StringComparer.Ordinal)
+    {
         "fireAndForget",
         "onCooldown",
         "repeatCount",
         "repeatInterval",
         "schedule"
-    ];
+    };
 
     public string Id { get; set; } = "";
     public string Label { get; set; } = "";

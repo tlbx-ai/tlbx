@@ -127,7 +127,7 @@ public sealed class EmbeddedWebRootFileProvider : IFileProvider
     public IDirectoryContents GetDirectoryContents(string subpath)
     {
         var normalizedPath = subpath.TrimStart('/').Replace('\\', '/');
-        if (normalizedPath.Length > 0 && !normalizedPath.EndsWith('/'))
+        if (normalizedPath.Length > 0 && !normalizedPath.EndsWith('/', StringComparison.Ordinal))
         {
             normalizedPath += "/";
         }

@@ -134,7 +134,7 @@ jobs:
         # This job gates actual macOS process behavior; broad .NET suites run locally.
         run: dotnet build src/Ai.Tlbx.MidTerm.UnitTests -c Release -p:SkipFrontendBuild=true -p:SkipConnectNativeBuild=true -p:RunAnalyzersDuringBuild=false -p:UseSharedCompilation=false
       - name: Verify macOS identity and native stdio artifact/process workflows
-        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net10.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' '*TlbxMcpNativeProcessLifetimeTests' --report-trx --results-directory .artifacts/macos-context
+        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net11.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' '*TlbxMcpNativeProcessLifetimeTests' --report-trx --results-directory .artifacts/macos-context
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

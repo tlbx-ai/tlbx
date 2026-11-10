@@ -45,7 +45,7 @@ internal static partial class TlbxMcpApiTools
             {
                 var text = binding.Body["text"]?.GetValue<string>();
                 if (string.IsNullOrWhiteSpace(text)) throw new McpApiArgumentException("text must contain a slash command.");
-                if (!text.StartsWith('/')) binding.Body["text"] = "/" + text;
+                if (!text.StartsWith('/', StringComparison.Ordinal)) binding.Body["text"] = "/" + text;
             }
         };
 

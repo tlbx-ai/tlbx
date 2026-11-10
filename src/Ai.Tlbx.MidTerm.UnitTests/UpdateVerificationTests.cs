@@ -38,7 +38,7 @@ public sealed class UpdateVerificationTests : IDisposable
     [Fact]
     public void VerifyUpdate_NoChecksums_ReturnsFalse()
     {
-        var manifest = CreateManifest([]);
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal));
         manifest.Checksums = null;
 
         Assert.False(Verify(manifest));
@@ -47,7 +47,7 @@ public sealed class UpdateVerificationTests : IDisposable
     [Fact]
     public void VerifyUpdate_EmptyChecksums_ReturnsFalse()
     {
-        var manifest = CreateManifest([]);
+        var manifest = CreateManifest(new Dictionary<string, string>(StringComparer.Ordinal));
 
         Assert.False(Verify(manifest));
     }

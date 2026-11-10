@@ -73,7 +73,7 @@ The runner `midterm-win-builder` is registered on the developer's Windows machin
 
 Start before a stable release: `C:\actions-runner\run.cmd`
 
-Prerequisites: .NET 10 SDK, SimplySign Desktop (activated), Windows SDK (signtool), PowerShell 7+.
+Prerequisites: .NET 11 SDK, SimplySign Desktop (activated), Windows SDK (signtool), PowerShell 7+.
 
 ### Local testing
 

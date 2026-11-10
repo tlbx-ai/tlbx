@@ -198,12 +198,12 @@ $repoRoot = Split-Path $PSScriptRoot -Parent
 # ===========================================
 Write-Host "Copying to $OutputDir..." -ForegroundColor Gray
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net10.0/$RID/publish/mt.exe" $OutputDir -Force
-$mthostPublishDir = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net10.0-windows10.0.19041.0/$RID/publish"
+Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm/bin/Release/net11.0/$RID/publish/mt.exe" $OutputDir -Force
+$mthostPublishDir = "$repoRoot/src/Ai.Tlbx.MidTerm.TtyHost/bin/Release/net11.0-windows10.0.19041.0/$RID/publish"
 Copy-Item "$mthostPublishDir/mthost.exe" $OutputDir -Force
 & "$PSScriptRoot/copy-windows-conpty-runtime.ps1" -SourceDir $mthostPublishDir -DestinationDir $OutputDir -Rid $RID
-Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net10.0/$RID/publish/mtagenthost.exe" $OutputDir -Force
-Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net10.0/$RID/publish/mttmux.exe" $OutputDir -Force
+Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.AgentHost/bin/Release/net11.0/$RID/publish/mtagenthost.exe" $OutputDir -Force
+Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm.TmuxShim/bin/Release/net11.0/$RID/publish/mttmux.exe" $OutputDir -Force
 Copy-Item "$repoRoot/src/Ai.Tlbx.MidTerm/src/static/THIRD-PARTY-LICENSES.txt" $OutputDir -Force
 
 # Write version.json to output (for update detection)

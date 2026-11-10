@@ -1,7 +1,7 @@
 {
   "version": 1,
   "dependencies": {
-    "net10.0": {
+    "net11.0": {
       "IDisposableAnalyzers": {
         "type": "Direct",
         "requested": "[4.0.8, )",
@@ -15,11 +15,11 @@
         "contentHash": "IBcDi9Gq15J7F7Akw/KCVrxMsms13e7rgA6ssVhoqn+3BWDvCg3RAhzPMK8foJapDMgz5tG4cDHO/JImrnn1cw=="
       }
     },
-    "net10.0/linux-arm64": {},
-    "net10.0/linux-x64": {},
-    "net10.0/osx-arm64": {},
-    "net10.0/osx-x64": {},
-    "net10.0/win-x64": {},
-    "net10.0/win-x86": {}
+    "net11.0/linux-arm64": {},
+    "net11.0/linux-x64": {},
+    "net11.0/osx-arm64": {},
+    "net11.0/osx-x64": {},
+    "net11.0/win-x64": {},
+    "net11.0/win-x86": {}
   }
 }

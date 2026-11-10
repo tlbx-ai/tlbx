@@ -55,7 +55,7 @@ internal static class GitNewFileReview
         file.HasLineStats = !truncated; file.IsTruncated = truncated;
         if (text.Length == 0) return;
         var lines = text.Split('\n').ToList();
-        var endsWithNewline = text.EndsWith('\n');
+        var endsWithNewline = text.EndsWith('\n', StringComparison.Ordinal);
         if (endsWithNewline) lines.RemoveAt(lines.Count - 1);
         file.Additions = lines.Count;
         var patchLines = lines.Select(line => new GitDiffLine { Kind = "add", Text = "+" + line }).ToList();

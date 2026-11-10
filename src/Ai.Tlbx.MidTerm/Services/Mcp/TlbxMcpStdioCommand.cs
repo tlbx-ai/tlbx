@@ -573,7 +573,7 @@ internal sealed class McpStdioCredentials
         foreach (var raw in lines)
         {
             var line = raw.StartsWith("#HttpOnly_", StringComparison.Ordinal) ? raw[10..] : raw;
-            if (line.StartsWith('#')) continue;
+            if (line.StartsWith('#', StringComparison.Ordinal)) continue;
             var parts = line.Split('\t');
             if (parts.Length != 7 || parts[5] != AuthService.SessionCookieName || !CookiePathMatches(origin.AbsolutePath, parts[2]) ||
                 !parts[0].TrimStart('.').Equals(origin.Host, StringComparison.OrdinalIgnoreCase) ||
@@ -584,9 +584,9 @@ internal sealed class McpStdioCredentials
         return result;
     }
 
-    private static bool CookiePathMatches(string requestPath, string cookiePath) => cookiePath.StartsWith('/') &&
+    private static bool CookiePathMatches(string requestPath, string cookiePath) => cookiePath.StartsWith('/', StringComparison.Ordinal) &&
         (requestPath == cookiePath || (requestPath.StartsWith(cookiePath, StringComparison.Ordinal) &&
-            (cookiePath.EndsWith('/') || requestPath.Length > cookiePath.Length && requestPath[cookiePath.Length] == '/')));
+            (cookiePath.EndsWith('/', StringComparison.Ordinal) || requestPath.Length > cookiePath.Length && requestPath[cookiePath.Length] == '/')));
 }
 
 

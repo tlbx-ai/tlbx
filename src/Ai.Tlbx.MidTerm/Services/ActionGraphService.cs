@@ -239,12 +239,12 @@ public sealed class ActionGraphService : IDisposable
             {
                 if (!adjacency.TryGetValue(edge.FromId, out var from))
                 {
-                    from = [];
+                    from = new(Comparer<string>.Default);
                     adjacency[edge.FromId] = from;
                 }
                 if (!adjacency.TryGetValue(edge.ToId, out var to))
                 {
-                    to = [];
+                    to = new(Comparer<string>.Default);
                     adjacency[edge.ToId] = to;
                 }
                 from.Add(edge.ToId);

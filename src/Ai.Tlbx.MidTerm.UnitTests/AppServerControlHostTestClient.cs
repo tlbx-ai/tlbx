@@ -8,7 +8,7 @@ internal static class AppServerControlHostTestClient
 {
     public static async Task WriteCommandAsync(StreamWriter writer, AppServerControlHostCommandEnvelope command)
     {
-        await writer.WriteLineAsync(JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope));
+        await writer.WriteLineAsync(JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope).AsMemory(), Xunit.TestContext.Current.CancellationToken);
         await writer.FlushAsync(Xunit.TestContext.Current.CancellationToken);
     }
 

@@ -4,7 +4,7 @@ namespace Ai.Tlbx.MidTerm.Settings;
 
 public sealed partial class ManagerBarScheduleEntry
 {
-    private static readonly HashSet<string> ValidRepeats = ["daily", "weekdays", "weekends"];
+    private static readonly HashSet<string> ValidRepeats = new(StringComparer.Ordinal) { "daily", "weekdays", "weekends" };
 
     public string TimeOfDay { get; set; } = "09:00";
     public string Repeat { get; set; } = "daily";

@@ -65,7 +65,7 @@ internal static class LauncherPathResolver
             trimmed = trimmed[1..^1];
         }
 
-        if (!string.IsNullOrWhiteSpace(homePath) && trimmed.StartsWith('~'))
+        if (!string.IsNullOrWhiteSpace(homePath) && trimmed.StartsWith('~', StringComparison.Ordinal))
         {
             trimmed = trimmed.Length == 1
                 ? homePath

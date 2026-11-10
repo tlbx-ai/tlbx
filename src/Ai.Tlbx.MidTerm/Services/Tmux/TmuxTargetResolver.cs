@@ -29,14 +29,14 @@ public sealed class TmuxTargetResolver
 
         // Handle full target syntax: session:window.pane
         var paneTarget = target;
-        var dotIndex = target.LastIndexOf('.');
+        var dotIndex = target.LastIndexOf('.', StringComparison.Ordinal);
         if (dotIndex >= 0)
         {
             paneTarget = target[(dotIndex + 1)..];
         }
         else
         {
-            var colonIndex = target.LastIndexOf(':');
+            var colonIndex = target.LastIndexOf(':', StringComparison.Ordinal);
             if (colonIndex >= 0)
             {
                 paneTarget = target[(colonIndex + 1)..];
@@ -44,7 +44,7 @@ public sealed class TmuxTargetResolver
         }
 
         // Try as %N pane ID
-        if (paneTarget.StartsWith('%'))
+        if (paneTarget.StartsWith('%', StringComparison.Ordinal))
         {
             return _paneMapper.PaneIdToSessionId(paneTarget);
         }

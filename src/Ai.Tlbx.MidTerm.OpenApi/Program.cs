@@ -22,6 +22,8 @@ builder.Services.AddSingleton<ISystemHandler, StubSystemHandler>();
 
 builder.Services.AddOpenApi(options =>
 {
+    // Preserve the existing document contract for TypeScript generation.
+    options.OpenApiVersion = OpenApiSpecVersion.OpenApi3_1;
     options.AddDocumentTransformer((document, context, cancellationToken) =>
     {
         document.Info.Title = "tlbx API";

@@ -289,7 +289,7 @@ public sealed class SessionForegroundProcessService
         var firstChar = candidate[0];
         if ((firstChar == '"' || firstChar == '\'') && candidate.Length > 1)
         {
-            var closingQuote = candidate.IndexOf(firstChar, 1);
+            var closingQuote = candidate.IndexOf(firstChar, 1, StringComparison.Ordinal);
             if (closingQuote > 1)
             {
                 candidate = candidate[1..closingQuote];
@@ -310,9 +310,9 @@ public sealed class SessionForegroundProcessService
             return trimmed;
         }
 
-        if (trimmed.StartsWith('"'))
+        if (trimmed.StartsWith('"', StringComparison.Ordinal))
         {
-            var endQuote = trimmed.IndexOf('"', 1);
+            var endQuote = trimmed.IndexOf('"', 1, StringComparison.Ordinal);
             if (endQuote > 1)
             {
                 var quotedPath = trimmed[1..endQuote];
@@ -382,7 +382,7 @@ public sealed class SessionForegroundProcessService
 
     private static string FilenameWithoutExtension(string filename)
     {
-        var dotIndex = filename.LastIndexOf('.');
+        var dotIndex = filename.LastIndexOf('.', StringComparison.Ordinal);
         return dotIndex > 0 ? filename[..dotIndex] : filename;
     }
 

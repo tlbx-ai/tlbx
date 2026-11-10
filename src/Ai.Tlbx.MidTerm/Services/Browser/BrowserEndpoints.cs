@@ -433,7 +433,7 @@ public static class BrowserEndpoints
             }
 
             var output = result.Result ?? "";
-            if (!output.EndsWith('\n'))
+            if (!output.EndsWith('\n', StringComparison.Ordinal))
                 output += "\n";
             return Results.Text(output);
         });

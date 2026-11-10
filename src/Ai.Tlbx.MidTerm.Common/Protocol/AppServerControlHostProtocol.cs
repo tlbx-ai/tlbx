@@ -258,7 +258,7 @@ public static class AppServerControlQuickSettings
         options?.Select(static option => option.Clone()).ToList() ?? [];
 
     public static Dictionary<string, JsonElement> CloneConfigValues(IReadOnlyDictionary<string, JsonElement>? values) =>
-        values?.ToDictionary(static entry => entry.Key, static entry => entry.Value.Clone(), StringComparer.Ordinal) ?? [];
+        values?.ToDictionary(static entry => entry.Key, static entry => entry.Value.Clone(), StringComparer.Ordinal) ?? new(StringComparer.Ordinal);
 
     public static string ApplyPlanModePrompt(string? text, string? planMode)
     {
@@ -466,7 +466,7 @@ public sealed class AppServerControlTurnRequest
     public string? PlanMode { get; set; }
     public string? PermissionMode { get; set; }
     public string? FastMode { get; set; }
-    public Dictionary<string, JsonElement> ConfigValues { get; set; } = [];
+    public Dictionary<string, JsonElement> ConfigValues { get; set; } = new(StringComparer.Ordinal);
     public List<AppServerControlAttachmentReference> Attachments { get; set; } = [];
     public List<AppServerControlTerminalReplayStep> TerminalReplay { get; set; } = [];
 }
