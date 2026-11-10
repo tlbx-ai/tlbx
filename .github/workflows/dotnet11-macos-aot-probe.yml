@@ -1,0 +1,87 @@
+name: Temporary .NET 11 macOS AOT linker probe
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/dotnet-eleven-macos-aot]
+    paths: [.github/workflows/dotnet11-macos-aot-probe.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: '11.0.100'
+      - name: Compare linker modes with the .NET 11 GSS native library
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $false
+          $root = Join-Path $env:RUNNER_TEMP 'tlbx-net11-linker-probe'
+          $evidence = Join-Path $env:GITHUB_WORKSPACE '.artifacts/macos-net11-linker-probe'
+          New-Item -ItemType Directory -Path $root,$evidence -Force | Out-Null
+          Copy-Item global.json $root
+          dotnet --version
+          xcodebuild -version
+          $project = @'
+          <Project Sdk="Microsoft.NET.Sdk">
+            <PropertyGroup>
+              <OutputType>Exe</OutputType>
+              <TargetFramework>net11.0</TargetFramework>
+              <ImplicitUsings>enable</ImplicitUsings>
+              <PublishAot>true</PublishAot>
+              <InvariantGlobalization>true</InvariantGlobalization>
+              <OptimizationPreference>Speed</OptimizationPreference>
+              <StackTraceSupport>false</StackTraceSupport>
+            </PropertyGroup>
+            <ItemGroup Condition="'$(ProbeMode)' == 'legacy-relocations'">
+              <LinkerArg Include="-Wl,-no_fixup_chains" />
+            </ItemGroup>
+          </Project>
+          '@
+          $source = @'
+          using System.Net;
+          using System.Net.Security;
+          if (args.Length > 0)
+          {
+              using var negotiate = new NegotiateAuthentication(new NegotiateAuthenticationClientOptions
+              {
+                  Package = "Negotiate", TargetName = "HTTP/localhost",
+                  Credential = CredentialCache.DefaultNetworkCredentials
+              });
+              Console.WriteLine(negotiate.IsAuthenticated);
+          }
+          using var client = new HttpClient();
+          Console.WriteLine("Native AOT network probe ready");
+          '@
+          $results = @()
+          foreach ($mode in @('classic','modern','legacy-relocations')) {
+            $dir = Join-Path $root $mode
+            New-Item -ItemType Directory -Path $dir | Out-Null
+            $project | Set-Content (Join-Path $dir 'Probe.csproj')
+            $source | Set-Content (Join-Path $dir 'Program.cs')
+            $classic = if ($mode -eq 'modern') { 'false' } else { 'true' }
+            dotnet publish (Join-Path $dir 'Probe.csproj') -c Release -r osx-x64 -o (Join-Path $dir 'out') "-p:UseLdClassicXCodeLinker=$classic" "-p:ProbeMode=$mode" 1> (Join-Path $evidence "$mode.stdout.log") 2> (Join-Path $evidence "$mode.stderr.log")
+            $code = $LASTEXITCODE
+            $runCode = $null
+            if ($code -eq 0) {
+              & (Join-Path $dir 'out/Probe') 1> (Join-Path $evidence "$mode.run.stdout.log") 2> (Join-Path $evidence "$mode.run.stderr.log")
+              $runCode = $LASTEXITCODE
+            }
+            $results += @{ mode=$mode; buildExit=$code; runExit=$runCode; reproducedUnaligned=[bool](Select-String -Path (Join-Path $evidence "$mode.stdout.log"),(Join-Path $evidence "$mode.stderr.log") -Pattern 'unaligned pointer' -Quiet) }
+          }
+          $results | ConvertTo-Json | Tee-Object -FilePath (Join-Path $evidence 'results.json')
+          if (-not @($results | Where-Object { $_.mode -eq 'classic' -and $_.buildExit -ne 0 -and $_.reproducedUnaligned }).Count) { throw 'The exact baseline linker failure did not reproduce.' }
+          if (-not @($results | Where-Object { $_.mode -ne 'classic' -and $_.buildExit -eq 0 -and $_.runExit -eq 0 }).Count) { throw 'No corrected linker mode compiled and executed successfully.' }
+          exit 0
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: macos-net11-linker-probe
+          path: .artifacts/macos-net11-linker-probe/
+          retention-days: 7
