@@ -53,6 +53,10 @@ generator uses OpenAPI.NET 3.x and explicitly keeps OpenAPI 3.1 output for the
 existing TypeScript contract. Native AOT publishing remains enabled for `mt`,
 `mthost` and `mtagenthost`; the migration does not opt into preview features.
 
+Native AOT on macOS Intel uses `-Wl,-no_fixup_chains`: the .NET 11 GSS native
+archive contains two-byte-aligned pointer relocations that Xcode's chained fixup
+encoding rejects. This leaves AOT, signing, notarization and package checks enabled.
+
 Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
 Automated behavioral tests cover protocols, settings, installation and updates.
 Keep UI presentation, layout, Files, Git, Boards and other product logic out of

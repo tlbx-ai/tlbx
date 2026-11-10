@@ -28,6 +28,12 @@
     </PackageReference>
   </ItemGroup>
 
+  <!-- .NET 11's macOS x64 GSS archive has two-byte-aligned pointer relocations.
+       Xcode's chained fixup encoding rejects these in the full Native AOT executables. -->
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'osx-x64'">
+    <LinkerArg Include="-Wl,-no_fixup_chains" />
+  </ItemGroup>
+
   <!--
     For auditors: Build with /p:ContinuousIntegrationBuild=true to get reproducible output.
     Same source + same SDK version + ContinuousIntegrationBuild=true = identical binary hash.
