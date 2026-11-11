@@ -56,6 +56,11 @@ if (-not $Rid.StartsWith("win-", [System.StringComparison]::OrdinalIgnoreCase)) 
     $projects = @($projects | Where-Object { $_.Name -ne "mttmux" })
 }
 
+if ($IsWindows) {
+    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
+    $memory = Get-CimInstance Win32_ComputerSystem
+    Write-Host "Build host: $($cpu.Name); CPUs=$([Environment]::ProcessorCount); RAM=$([Math]::Round($memory.TotalPhysicalMemory / 1GB, 1))GB"
+}
 $processes = @()
 if ($hostsReused) { $projects = @($projects | Where-Object Name -eq 'mt') }
 Push-Location $RepoRoot
@@ -74,7 +79,8 @@ try {
         -r $Rid `
         --no-restore `
         --verbosity minimal `
-        -p:ContinuousIntegrationBuild=true
+        -p:ContinuousIntegrationBuild=true `
+        -p:UseSharedCompilation=false -nr:false
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed for Ai.Tlbx.MidTerm.Common"
     }
@@ -89,13 +95,11 @@ try {
             "-r", $Rid,
             "--verbosity", "minimal",
             "--no-restore",
-            "-p:BuildProjectReferences=false"
+            "-p:BuildProjectReferences=false",
+            "-p:UseSharedCompilation=false",
+            "-nr:false",
+            "-clp:PerformanceSummary"
         ) + $project.ExtraArgs
-        # Limit competing code-generation threads in the smaller Windows hosts.
-        # Runtime code optimization and the large mt compiler stay unchanged.
-        if ($Rid.StartsWith('win-') -and $project.Name -in @('mthost', 'mtagenthost')) {
-            $argumentList += '-p:IlcSingleThreaded=true'
-        }
 
         $startInfo = @{
             FilePath = "dotnet"
