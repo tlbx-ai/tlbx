@@ -44,6 +44,10 @@ function openProviderResumePickerInternal(
   return new Promise((resolve) => {
     const returnFocus = document.activeElement;
     const providerLabel = getProviderLabel(options.provider);
+    const dateFormatter = new Intl.DateTimeFormat(getCurrentLocale(), {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
     const hasFolder = Boolean(options.workingDirectory?.trim());
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay provider-resume-picker-overlay';
@@ -167,8 +171,9 @@ function openProviderResumePickerInternal(
       renderStatus();
       const now = Date.now();
       list.innerHTML = visible
-        .map(
-          (entry, index) => `
+        .map((entry, index) => {
+          const absoluteTime = formatAbsolute(entry.updatedAtUtc, dateFormatter);
+          return `
             <div
               class="provider-resume-picker-row${index === activeIndex ? ' is-active' : ''}"
               id="provider-resume-option-${index}"
@@ -178,7 +183,7 @@ function openProviderResumePickerInternal(
             >
               <span class="provider-resume-picker-row-head">
                 <span class="provider-resume-picker-row-title">${escapeHtml(entry.title)}</span>
-                <time class="provider-resume-picker-row-time" datetime="${escapeHtml(entry.updatedAtUtc)}" title="${escapeHtml(formatAbsolute(entry.updatedAtUtc))}">${escapeHtml(formatRelativeAge(entry.updatedAtUtc, now))}</time>
+                <time class="provider-resume-picker-row-time" datetime="${escapeHtml(entry.updatedAtUtc)}" title="${escapeHtml(absoluteTime)}">${escapeHtml(formatRelativeAge(entry.updatedAtUtc, now))}</time>
               </span>
               ${
                 entry.previewText
@@ -188,11 +193,11 @@ function openProviderResumePickerInternal(
               <span class="provider-resume-picker-row-meta">
                 <span>${escapeHtml(providerLabel)}</span>
                 <span class="provider-resume-picker-row-path" title="${escapeHtml(entry.workingDirectory)}">${escapeHtml(entry.workingDirectory)}</span>
-                <span>${escapeHtml(formatAbsolute(entry.updatedAtUtc))}</span>
+                <span>${escapeHtml(absoluteTime)}</span>
               </span>
             </div>
-          `,
-        )
+          `;
+        })
         .join('');
       syncActiveOption();
     }
@@ -329,12 +334,7 @@ function getProviderLabel(provider: ResumeProvider): string {
   return t(provider === 'claude' ? 'sessionLauncher.claudeTitle' : 'sessionLauncher.codexTitle');
 }
 
-function formatAbsolute(value: string): string {
+function formatAbsolute(value: string, formatter: Intl.DateTimeFormat): string {
   const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? ''
-    : new Intl.DateTimeFormat(getCurrentLocale(), {
-        dateStyle: 'medium',
-        timeStyle: 'short',
-      }).format(date);
+  return Number.isNaN(date.getTime()) ? '' : formatter.format(date);
 }
