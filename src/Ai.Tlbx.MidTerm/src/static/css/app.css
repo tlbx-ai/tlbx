@@ -14815,11 +14815,10 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   color: color-mix(in srgb, var(--text-secondary) 88%, transparent);
   font-size: 0.82rem;
   line-height: 1;
-  transition: transform 120ms ease;
 }
 
 .agent-history-disclosure[open] > .agent-history-disclosure-summary::before {
-  transform: rotate(90deg);
+  content: '▾';
 }
 
 .agent-history-disclosure-summary::-webkit-details-marker {

@@ -74,7 +74,7 @@ function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): 
   if (lines.length <= lineLimit) {
     return lines;
   }
-  if (presentation.evidenceKind === 'error') {
+  if (presentation.evidenceKind === 'error' || presentation.category === 'command') {
     return lines.slice(lines.length - lineLimit);
   }
   if (presentation.category === 'read' || lineLimit === 1) {
@@ -736,12 +736,19 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   ): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
-    const commandLine = document.createElement('pre');
-    commandLine.className = 'agent-history-command-script';
-    commandLine.setAttribute('aria-label', t('appServerControl.commands.title'));
-    commandLine.textContent = command;
-
-    body.appendChild(commandLine);
+    if (command) {
+      const script = Boolean(entry.commandText || entry.toolPresentation?.category === 'command');
+      const commandLine = document.createElement('pre');
+      commandLine.className = script
+        ? 'agent-history-command-script'
+        : 'agent-history-command-output-tail';
+      commandLine.setAttribute(
+        'aria-label',
+        t(script ? 'appServerControl.commands.title' : 'appServerControl.panel.details'),
+      );
+      commandLine.textContent = command;
+      body.appendChild(commandLine);
+    }
     if (outputLines.length > 0) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
@@ -772,7 +779,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
     );
     const evidenceLines =
-      omitted > 0 ? [`... ${omitted} lines omitted ...`, ...visibleEvidence] : visibleEvidence;
+      resolveToolCallOutputLineLimit() <= 0
+        ? []
+        : omitted > 0
+          ? [`... ${omitted} lines omitted ...`, ...visibleEvidence]
+          : visibleEvidence;
     if (presentation.category === 'command')
       return createCommandHistoryBody(entry, presentation.subject ?? '', evidenceLines);
 
