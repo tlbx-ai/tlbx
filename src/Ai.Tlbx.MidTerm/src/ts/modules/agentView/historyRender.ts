@@ -1936,11 +1936,13 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    button.textContent = appServerControlText('appServerControl.scrollToBottom', 'Back to bottom');
-    button.hidden =
+    const label = appServerControlText('appServerControl.scrollToBottom', 'Back to bottom');
+    if (button.textContent !== label) button.textContent = label;
+    const hidden =
       state.historyAutoScrollPinned ||
       state.historyEntries.length === 0 ||
       state.activationState === 'failed';
+    if (button.hidden !== hidden) button.hidden = hidden;
   }
 
   function renderComposerInterruption(
