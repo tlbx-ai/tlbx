@@ -56,31 +56,33 @@ if (-not $Rid.StartsWith("win-", [System.StringComparison]::OrdinalIgnoreCase)) 
     $projects = @($projects | Where-Object { $_.Name -ne "mttmux" })
 }
 
-if ($IsWindows) {
-    $cpu = Get-CimInstance Win32_Processor | Select-Object -First 1
-    $memory = Get-CimInstance Win32_ComputerSystem
-    Write-Host "Build host: $($cpu.Name); CPUs=$([Environment]::ProcessorCount); RAM=$([Math]::Round($memory.TotalPhysicalMemory / 1GB, 1))GB"
-}
 $processes = @()
 if ($hostsReused) { $projects = @($projects | Where-Object Name -eq 'mt') }
 Push-Location $RepoRoot
 try {
-    foreach ($project in $projects) {
-        # Each project declares and locks every RID it publishes. Restore that complete
-        # graph once so the selected-RID publish below cannot rewrite dependency state.
-        & dotnet restore $project.Path --locked-mode --verbosity minimal
-        if ($LASTEXITCODE -ne 0) {
-            throw "dotnet restore failed for $($project.Name)"
+    # One solution restore deduplicates Common and evaluates the complete locked
+    # production graph once, without restoring unrelated test projects.
+    $restoreSolution = Join-Path $logRoot 'runtime-set.slnx'
+    $xml = [Xml.XmlWriter]::Create($restoreSolution)
+    try {
+        $xml.WriteStartElement('Solution')
+        foreach ($project in $projects) {
+            $xml.WriteStartElement('Project')
+            $path = [IO.Path]::GetRelativePath($logRoot, (Join-Path $RepoRoot $project.Path))
+            $xml.WriteAttributeString('Path', $path)
+            $xml.WriteEndElement()
         }
-    }
+        $xml.WriteEndElement()
+    } finally { $xml.Dispose() }
+    & dotnet restore $restoreSolution --locked-mode --verbosity minimal
+    if ($LASTEXITCODE -ne 0) { throw 'Locked production runtime restore failed.' }
 
     & dotnet build "src/Ai.Tlbx.MidTerm.Common/Ai.Tlbx.MidTerm.Common.csproj" `
         -c $Configuration `
         -r $Rid `
         --no-restore `
         --verbosity minimal `
-        -p:ContinuousIntegrationBuild=true `
-        -p:UseSharedCompilation=false -nr:false
+        -p:ContinuousIntegrationBuild=true
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed for Ai.Tlbx.MidTerm.Common"
     }
@@ -96,10 +98,13 @@ try {
             "--verbosity", "minimal",
             "--no-restore",
             "-p:BuildProjectReferences=false",
-            "-p:UseSharedCompilation=false",
-            "-nr:false",
             "-clp:PerformanceSummary"
         ) + $project.ExtraArgs
+        # Limit competing code-generation threads in the smaller Windows hosts.
+        # Runtime code optimization and the large mt compiler stay unchanged.
+        if ($Rid.StartsWith('win-') -and $project.Name -in @('mthost', 'mtagenthost')) {
+            $argumentList += '-p:IlcSingleThreaded=true'
+        }
 
         $startInfo = @{
             FilePath = "dotnet"
