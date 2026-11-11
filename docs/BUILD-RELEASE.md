@@ -1,8 +1,32 @@
 # Build and release verification
 
-CI installs SDK 10.0.402 and 11.0.100 side by side in every .NET job,
+Unit, integration, installer, protocol and build-system behavioral tests run only
+through **Tests (on demand)** (`build-system-verify.yml`, `workflow_dispatch`).
+They are never triggered by pushes, pull requests, builds, tags or publication.
+Select a branch/tag in GitHub, or run:
+
+```powershell
+gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f suite=all
+```
+
+Before a major or main release, remind Johannes to run this workflow for the exact
+candidate and inspect its result. Release scripts display the same reminder;
+they do not dispatch tests. Local `-TestCategories` selection remains explicit.
+Automatic PR/release checks retain compiler/analyzers, typecheck, lint, security
+audits, frozen native artifact verification, signing, SBOMs and package integrity.
+The Windows package job installs pinned SDK11; SDK10+11 baseline compatibility
+is retained in security auditing and the six-platform on-demand suite.
+
+For build timing, manually dispatch `release.yml` against the task branch. It
+builds frontend and the complete Windows-x64 Native AOT runtime set, retains the
+archive/SBOM as workflow artifacts and never creates a tag, release or catalog
+entry. Compare the complete Windows job duration (excluding queue time), with
+rebuild forced; attestation and packaging remain included. Windows ZIPs use fast
+Deflate instead of maximum compression; executable contents are unchanged.
+
+CI retains SDK 10.0.402 and 11.0.100 side by side for baseline verification,
 including the self-hosted signing runner. The repository and all .NET components target .NET 11,
-with SDK 11.0.100 pinned in `global.json`. Build system verification compiles
+with SDK 11.0.100 pinned in `global.json`. The on-demand platform suite compiles
 and runs a minimal net10.0/net11.0 application on all six package platforms
 (Windows x64/x86, Linux x64/ARM64, macOS x64/ARM64) and checks SDK selection,
 runtime major version and process architecture with `scripts/verify-dotnet-sdks.ps1`.
@@ -68,8 +92,8 @@ encoding rejects. This leaves AOT, signing, notarization and package checks enab
 Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
 Automated behavioral tests cover protocols, settings, installation and updates.
 Keep UI presentation, layout, Files, Git, Boards and other product logic out of
-the automated suites. Typechecks, lint, package integrity and installer checks
-remain part of the build/release workflow. Removed tests remain in Git history.
+the automated suites. Typechecks, lint and package integrity remain automatic; installer behavioral
+checks are part of Tests (on demand). Removed tests remain in Git history.
 Use `dotnet test --project <path>`; targeted runs use `--filter-class` and
 `--report-trx`, rather than VSTest filters or loggers.
 
@@ -99,7 +123,7 @@ the matching frozen artifacts and index. macOS inner libraries are signed before
 freezing. Normal releases still compile the .NET NativeAOT executables and sign/
 notarize their macOS packages; those platform compiler/linker tools remain needed.
 Native compiler-identity probes and vcpkg binary caches are not release inputs.
-On native API/input changes, PR Linux compiles only the existing tiny `load.c` probe
+The on-demand native suite compiles the existing tiny `load.c` probe
 and checks the frozen library against every exact C API export in `ConnectNativeApi.cs`.
 It creates no peer/socket and does not rebuild any Connect dependency.
 For an explicit refresh on the RID's native toolchain host, after changing the recipe

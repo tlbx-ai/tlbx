@@ -8,8 +8,13 @@ both interfaces share the existing C# services.
 Keep automated behavioral tests focused on protocols, settings, installation and
 updates. Do not add UI, layout or general product-logic test suites without an
 explicit request. Removed tests can be recovered from Git history.
-Run the broad .NET server/host suite locally when explicitly selected; do not add
-it to PR or release CI. Keep focused CI checks and package builds independent of it.
+All unit, integration and behavioral test runs belong exclusively in the manually
+dispatched Tests (on demand) workflow, build-system-verify.yml. Never call it from
+push, PR, release or artifact publication workflows. Keep compiler/analyzers,
+typecheck, lint, package/signature/SBOM integrity and security audits automatic.
+Before a major or main release, remind Johannes to dispatch suite=all for the exact
+candidate ref and review the result; a reminder must not auto-start or gate tests.
+Local explicitly selected test runs remain supported.
 Tests must exercise a concrete contract or failure. Do not assert source text,
 workflow job layout, documentation wording or arbitrary catalog counts. Reuse
 existing fixtures; keep build/setup costs separate from actual test duration.

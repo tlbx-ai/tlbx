@@ -5,7 +5,8 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$Rid,
 
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [switch]$RebuildHosts
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,13 +16,13 @@ $version = Get-Content (Join-Path $RepoRoot 'src/version.json') -Raw | ConvertFr
 $sdkVersion = (& dotnet --version).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the .NET SDK version.' }
 $fingerprint = Get-RuntimeInputFingerprint $RepoRoot $Rid $Configuration $version.pty $sdkVersion
-$hostsReused = Restore-ReleasedHostRuntimes $RepoRoot $Rid $Configuration $version $fingerprint
+$hostsReused = -not $RebuildHosts -and (Restore-ReleasedHostRuntimes $RepoRoot $Rid $Configuration $version $fingerprint)
 $metadataDir = Join-Path $RepoRoot ".artifacts/runtime-inputs/$Rid"
 New-Item -ItemType Directory -Force $metadataDir | Out-Null
 @{ schema = 1; fingerprint = $fingerprint; rid = $Rid; pty = $version.pty; sdk = $sdkVersion } |
     ConvertTo-Json | Set-Content (Join-Path $metadataDir 'runtime-inputs.json')
 if ($env:GITHUB_ENV) { "TLBX_HOSTS_REUSED=$($hostsReused.ToString().ToLowerInvariant())" | Add-Content $env:GITHUB_ENV }
-$logRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("midterm-publish-" + [Guid]::NewGuid().ToString("N"))
+$logRoot = Join-Path $RepoRoot (".artifacts/runtime-publish/$Rid/" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 
 $projects = @(
@@ -107,6 +108,7 @@ try {
 
         $processes += @{
             Name = $project.Name
+            StartedAt = [DateTime]::UtcNow
             Process = $process
             StdoutPath = $stdoutPath
             StderrPath = $stderrPath
@@ -115,6 +117,8 @@ try {
 
     foreach ($entry in $processes) {
         $null = $entry.Process.WaitForExit()
+        $seconds = [Math]::Round(($entry.Process.ExitTime.ToUniversalTime() - $entry.StartedAt).TotalSeconds, 1)
+        Write-Host "$($entry.Name): ${seconds}s, exit=$($entry.Process.ExitCode); logs=$logRoot"
     }
 
     $failed = $processes | Where-Object { $_.Process.ExitCode -ne 0 }
@@ -152,7 +156,5 @@ try {
 }
 finally {
     Pop-Location
-    if (Test-Path $logRoot) {
-        Remove-Item -LiteralPath $logRoot -Recurse -Force
-    }
+    Write-Host "Publish diagnostics retained: $logRoot"
 }

@@ -68,3 +68,8 @@ function Assert-ReleaseRuntimeSelection {
         throw "Host runtime inputs changed since ${tag}; choose -mthostUpdate yes so installed hosts receive them:`n$($changed -join "`n")"
     }
 }
+
+function Show-OnDemandTestReminder {
+    Write-Warning 'Before a major or main release, remind Johannes to run Tests (on demand) for the exact candidate ref and review its result. Tests are not started automatically.'
+    Write-Host 'gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f suite=all'
+}
