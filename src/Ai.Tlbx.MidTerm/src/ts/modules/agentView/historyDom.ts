@@ -53,9 +53,10 @@ export function resolveToolCallOutputLineLimit(): number {
   return Math.max(0, Math.min(MAX_TOOL_CALL_OUTPUT_LINES, Math.trunc(configured)));
 }
 
-function clampToolCallOutputLines(lines: readonly string[]): string[] {
+function clampToolCallOutputLines(lines: readonly string[], fromEnd = false): string[] {
   const lineLimit = resolveToolCallOutputLineLimit();
-  return lineLimit <= 0 ? [] : lines.slice(0, lineLimit);
+  if (lineLimit <= 0) return [];
+  return fromEnd ? lines.slice(-lineLimit) : lines.slice(0, lineLimit);
 }
 
 function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): string[] {
@@ -730,7 +731,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function createCommandHistoryBody(
     entry: AppServerControlHistoryEntry,
     command = entry.commandText ?? entry.body,
-    outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? []),
+    outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? [], true),
   ): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
