@@ -379,6 +379,8 @@ The canonical history contract must satisfy the following:
 
 ### Assistant output
 
+- Opening a known image or document from the history must not wait for optional directory-navigation metadata. Content loading and hierarchy lookup run independently; late hierarchy results update controls only while their document load is still current.
+
 - Assistant content is the primary reading surface and should have the clearest typography.
 - Streaming text should appear incrementally in place.
 - The assistant row should not visually reset between deltas.
