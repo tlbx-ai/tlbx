@@ -11338,9 +11338,31 @@ body.shared-session-mode .session-tab-bar {
 
 .file-viewer-body > .file-viewer-editor-shell,
 .file-viewer-body > .file-viewer-readonly-shell,
-.file-viewer-body > .file-viewer-code-stack,
-.file-viewer-body > .file-viewer-image-stage {
+.file-viewer-body > .file-viewer-code-stack {
   height: calc(85vh - 80px);
+}
+
+/* Fit image controls to the space left by the actual header and navigation. */
+.file-viewer-modal-content:has(.file-viewer-image-stage):not(.is-maximized) {
+  height: 85vh;
+}
+
+.file-viewer-modal-content:has(.file-viewer-image-stage) .modal-header {
+  flex-shrink: 0;
+}
+
+.file-viewer-body:has(> .file-viewer-image-stage) {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow: hidden;
+}
+
+.file-viewer-body > .file-viewer-image-stage {
+  flex: 1;
+  min-height: 0;
+  height: auto;
 }
 
 .file-viewer-dock-body > .file-viewer-editor-shell,
