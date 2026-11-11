@@ -15592,8 +15592,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   align-items: center;
   justify-content: center;
   width: 100%;
-  min-height: 120px;
-  max-height: 260px;
+  height: clamp(120px, 30vh, 260px);
   padding: 8px;
   border-radius: 10px;
   background: color-mix(in srgb, var(--text-primary) 4%, transparent);
@@ -15604,7 +15603,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-attachment-image-el {
   display: block;
   max-width: 100%;
-  max-height: 244px;
+  max-height: 100%;
   width: auto;
   height: auto;
   object-fit: contain;
@@ -15613,9 +15612,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-attachment-caption {
   color: var(--text-secondary);
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  font-family: var(--agent-history-mono-font-family, var(--font-mono));
+  font-size: 0.75rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .agent-history-attachment-file {
