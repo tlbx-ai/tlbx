@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
 import {
@@ -746,7 +747,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         'aria-label',
         t(script ? 'appServerControl.commands.title' : 'appServerControl.panel.details'),
       );
-      commandLine.textContent = command;
+      if (script) appendHighlightedCommand(commandLine, command);
+      else commandLine.textContent = command;
       body.appendChild(commandLine);
     }
     if (outputLines.length > 0) {
@@ -898,20 +900,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return body;
   }
 
-  function createCollapsedHistoryBody(
+  function createDisclosureSummary(
     entry: AppServerControlHistoryEntry,
-    sessionId: string,
     presentation: HistoryBodyPresentation,
+    command: boolean,
   ): HTMLElement {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'agent-history-disclosure-shell';
-    const details = document.createElement('details');
-    details.className = 'agent-history-disclosure';
-    const command =
-      presentation.mode === 'command' || entry.toolPresentation?.category === 'command';
-    details.classList.toggle('agent-history-command-disclosure', command);
-    details.classList.toggle('agent-history-command-failed', command && isHistoryError(entry));
-    details.open = deps.getState(sessionId)?.historyExpandedEntries.has(entry.id) === true;
     const summary = document.createElement('summary');
     summary.className = 'agent-history-disclosure-summary';
     const label = document.createElement('span');
@@ -932,12 +925,36 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         });
     meta.hidden = !meta.textContent;
     summary.appendChild(meta);
-    if (presentation.preview) {
+    const script = command ? entry.commandText || entry.toolPresentation?.subject || '' : '';
+    if (script || presentation.preview) {
       const preview = document.createElement('span');
       preview.className = 'agent-history-disclosure-preview';
-      preview.textContent = presentation.preview;
-      summary.appendChild(preview);
+      if (script) {
+        appendHighlightedCommand(preview, commandPreview(script));
+        label.hidden = true;
+        summary.insertBefore(preview, meta);
+      } else {
+        preview.textContent = presentation.preview;
+        summary.appendChild(preview);
+      }
     }
+    return summary;
+  }
+
+  function createCollapsedHistoryBody(
+    entry: AppServerControlHistoryEntry,
+    sessionId: string,
+    presentation: HistoryBodyPresentation,
+  ): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'agent-history-disclosure-shell';
+    const details = document.createElement('details');
+    details.className = 'agent-history-disclosure';
+    const command =
+      presentation.mode === 'command' || entry.toolPresentation?.category === 'command';
+    details.classList.toggle('agent-history-command-disclosure', command);
+    details.classList.toggle('agent-history-command-failed', command && isHistoryError(entry));
+    details.open = deps.getState(sessionId)?.historyExpandedEntries.has(entry.id) === true;
     let bodyMounted = false;
     const mountBody = () => {
       if (!bodyMounted) {
@@ -945,7 +962,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         bodyMounted = true;
       }
     };
-    details.appendChild(summary);
+    details.appendChild(createDisclosureSummary(entry, presentation, command));
     if (details.open) {
       mountBody();
     }

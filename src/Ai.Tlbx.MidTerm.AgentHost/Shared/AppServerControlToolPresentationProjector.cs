@@ -7,6 +7,7 @@ namespace Ai.Tlbx.MidTerm.AgentHost;
 public static class AppServerControlToolPresentationProjector
 {
     private const int MaxSubjectChars = 2_048;
+    private const int MaxCommandChars = 32_768;
     private const int MaxOutcomeChars = 320;
     private const int MaxToolNameChars = 160;
     private const int MaxPaths = 12;
@@ -290,7 +291,11 @@ public static class AppServerControlToolPresentationProjector
         {
             value ??= FirstString(primary, "summary", "title") ?? FirstString(fallback, "summary", "title");
         }
-        return BoundSingleLine(value, MaxSubjectChars);
+        // Commands are expandable source, not a one-line subject. In particular,
+        // PowerShell here-strings often start with only the launcher on line one.
+        return category == "command" && !string.IsNullOrWhiteSpace(value)
+            ? Bound(value, MaxCommandChars)
+            : BoundSingleLine(value, MaxSubjectChars);
     }
 
     private static List<string> ExtractPaths(JsonElement primary, JsonElement fallback)

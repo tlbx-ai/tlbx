@@ -156,6 +156,7 @@ The canonical history contract must satisfy the following:
 - Prefer a clean history timeline over chat-card chrome.
 - Do not wrap every event in heavy bordered cards.
 - Avoid redundant labels, duplicate timestamps, duplicate avatars, and repeated status chips.
+- Command disclosures lead with a single-line, ellipsized monospace preview of the script, including while expanded. A known shell launcher may be omitted from that preview; the expanded script retains the exact source. Exit outcomes are quiet trailing metadata, including nonzero exit codes. Expanded scripts use lightweight syntax accents and compact regular-weight monospace text; accessible script/output labels do not become visible section headers. Output is separated with a subtle rule. Touch disclosures retain a 44px hit target.
 - Use separators, spacing, and type hierarchy instead of ornamental containers.
 
 ### 3. One interaction model
@@ -442,12 +443,12 @@ The canonical history contract must satisfy the following:
 - Generic command output should use a deterministic bounded window: at most four head lines and six tail lines, with each retained line capped at 512 characters and an omitted-line marker when necessary.
 - ANSI CSI/OSC sequences and control bytes must be removed while streaming into the bounded accumulator so split escape sequences cannot leak into history and no full-output copy is required.
 - Completed tool accumulator state must be released immediately after the canonical history item is settled; session lifetime must not retain per-tool builders or full provider results.
-- Command-execution rows start as a closed, flat disclosure with the canonical action label and outcome in normal-weight UI typography. Shell launcher paths, wrapper arguments, scripts, path lists and output snippets are technical details, not the default summary. Errors keep a visible failure outcome in that summary; original command and bounded output remain available on expansion. Do not guess a higher-level purpose from shell text or hide the original evidence.
+- Command-execution rows start as a closed, flat disclosure with an ellipsized script preview in small regular-weight terminal monospace. Outcomes remain visible as quiet trailing metadata. Known shell launchers can be omitted from the preview; original command and bounded output remain available on expansion. Do not guess a higher-level purpose from shell text or hide the original evidence.
 - When command output is available immediately after a command-execution row, Agent Controller Session should fold the already bounded canonical evidence inside that same command disclosure in readable terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
 - Reducing the configured output-line count on a retained command tail keeps its newest lines, including the final result or diagnostic. A zero-line preference hides that output; file-read and other head-oriented excerpts retain their existing selection policy.
 - Only explicit command metadata supplies a script block. Untyped historical text remains literal under Details; output-only canonical rows do not create empty scripts, and intentionally empty canonical evidence never falls back to raw provider payloads. The zero-line preference also hides projected omission placeholders. Disclosure indicators show the open state directly without requiring an animation.
-- Expanded commands and output render as separate labeled raw-text blocks on a transparent, borderless surface at the same normal font weight and readable monospace size. Preserve line breaks and use local horizontal overflow for long lines. No syntax coloring, markdown parsing, clickable-path enrichment or thumbnail previews may reinterpret shell strings or source/output text. The existing disclosure expansion state survives updates.
+- Expanded commands and output render as separate accessible raw-text blocks without visible section headings on a transparent, borderless surface at the same normal font weight and readable monospace size. Preserve line breaks and use local horizontal overflow for long lines. Lightweight syntax accents may color script tokens while preserving literal text. No markdown parsing, clickable-path enrichment or thumbnail previews may reinterpret shell strings or source/output text. The existing disclosure expansion state survives updates.
 - When the backend already materializes a command-output history row that contains both the command header and compact output window, Agent Controller Session should normalize that row directly into the same persistent command disclosure instead of depending on adjacency with a separate command-execution row.
 - Canonical command-output history rows should preserve the command header as structured command metadata rather than forcing the browser to recover it from a truncated body.
 - Omission markers such as `... earlier output omitted ...` or `... N earlier lines omitted ...` are output-tail metadata, not command headers, and Agent Controller Session must never render them as the `Ran …` command text.
@@ -673,7 +674,7 @@ Status in this branch/work item:
 - implemented: Agent Controller Session uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
 - implemented: Codex, Claude, and ACP adapters project tools into one bounded canonical `ToolPresentation`; history, screen logs, recovery, and the browser consume that shape without reparsing provider prose
 - implemented: command and file-read tool output is streamed through a four-head/six-tail accumulator with 512-character line bounds, omitted-line counts, and split-safe ANSI/control filtering before it reaches canonical history or the dev screen log
-- implemented: command-execution tool rows use a collapsed action/outcome disclosure; expanded command and output blocks use regular-weight monospace without syntax coloring or path links
+- implemented: command-execution tool rows use a collapsed script preview with quiet outcome metadata; expanded command blocks use regular-weight monospace with literal-safe syntax accents, while output remains plain text without path links
 - implemented: immediate command output is folded into the command row from bounded canonical evidence instead of always rendering as a separate noisy row
 - implemented: raw payload strings are no longer retained in provider events; only source/method metadata and an explicit payload-omitted marker survive reduction, and completed per-tool accumulator state is released
 - implemented: folded command-output tails now stay raw terminal text without assistant-style file-path linkification or inline image previews
@@ -820,6 +821,8 @@ Status in this branch/work item:
 - implemented: Agent Controller Session time rendering reuses one locale formatter, avoiding formatter construction for every row during virtualization; the repeatable 10,000-item scroll profile retained at most 35 concrete rows with no blank samples and reduced long tasks from 24 to 2 in the measured comparison
 
 Still mandatory after this work whenever Agent Controller Session evolves:
+
+- implemented: command disclosures show the script preview before quiet outcome metadata, with lazy, literal-safe syntax accents in the complete expanded script and no visible script/output headings.
 
 - keep this section current
 - add new fundamentals here when they become real feature behavior
