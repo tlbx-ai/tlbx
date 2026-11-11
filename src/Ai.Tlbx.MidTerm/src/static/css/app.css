@@ -14114,10 +14114,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  position: absolute;
-  right: 18px;
-  bottom: 12px;
-  z-index: 2;
+  align-self: flex-end;
+  flex-shrink: 0;
+  margin: 0 18px 8px;
   min-height: var(--command-bay-automation-chip-height, 30.6px);
   padding: 0 11px;
   border: 1px solid
@@ -16220,8 +16219,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   }
 
   .agent-scroll-to-bottom {
-    right: 56px;
-    bottom: 10px;
+    margin: 0 10px 8px;
     min-height: 44px;
   }
 

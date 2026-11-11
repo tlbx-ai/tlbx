@@ -506,7 +506,7 @@ The canonical history contract must satisfy the following:
 - The shared Command Bay / adaptive footer must reserve its own visible rails and panels beneath the active pane instead of floating over Terminal or Agent Controller Session content.
 - Only the prompt textbox's extra multiline growth may expand upward over the pane as overlay chrome; the rest of the Command Bay must remain pane-reserving once the collapsed dock reserve is established.
 - On Android and iOS, the Command Bay must remain visible above the on-screen keyboard; if vertical space tightens, the dock should compress or scroll internally while keeping the prompt row and status awareness reachable.
-- Agent Controller Session floating live-edge affordances such as "Back to bottom" must clear the reserved Command Bay footprint instead of covering the prompt dock on mobile.
+- The Agent Controller Session "Back to bottom" control reserves its own normal-flow row below history while browsing. It must not cover visible history rows, active requests or the reserved Command Bay footprint. Hidden in follow-live mode, it consumes no layout space.
 - The common quick-settings surface should cover:
   - model
   - effort
