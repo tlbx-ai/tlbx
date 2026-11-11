@@ -25,6 +25,13 @@ entry. Compare the complete Windows job duration (excluding queue time), with
 rebuild forced; attestation and packaging remain included. Windows ZIPs use fast
 Deflate instead of maximum compression; executable contents are unchanged.
 
+The five measured full-rebuild Windows x64 jobs took 9:43, 7:46, 6:02, 8:19
+and 6:00 (baseline 7:21). The five-attempt limit is exhausted; the 6:00 profile
+is retained. The under-five-minute target was not reached. This profile uses
+Windows 2022, SDK11 without a NuGet cache transfer, one locked production SLNX
+restore and single-threaded host code generation; application optimization flags
+remain unchanged.
+
 CI retains SDK 10.0.402 and 11.0.100 side by side for baseline verification,
 including the self-hosted signing runner. The repository and all .NET components target .NET 11,
 with SDK 11.0.100 pinned in `global.json`. The on-demand platform suite compiles
@@ -276,7 +283,7 @@ CodeQL `analyze` languages. PR checks run without path filters, so documentation
 and synchronization PRs cannot wait forever for an untriggered required job.
 The broad .NET server/host suite runs locally on demand via
 `./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError`; it is not
-a PR or release CI job. Focused platform checks, builds, audits and package integrity
+a PR or release CI job. Compilation, lint, audits and package integrity
 checks remain in CI.
 No mandatory second-person approval is configured. GitHub still enforces
 required checks, an up-to-date branch and resolved review conversations.
