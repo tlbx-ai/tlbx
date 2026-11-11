@@ -14,7 +14,8 @@ candidate and inspect its result. Release scripts display the same reminder;
 they do not dispatch tests. Local `-TestCategories` selection remains explicit.
 Automatic PR/release checks retain compiler/analyzers, typecheck, lint, security
 audits, frozen native artifact verification, signing, SBOMs and package integrity.
-The Windows package job installs pinned SDK11; SDK10+11 baseline compatibility
+The Windows package job installs pinned SDK11 and restores locked dependencies
+directly, without transferring the large all-RID NuGet cache; SDK10+11 baseline compatibility
 is retained in security auditing and the six-platform on-demand suite.
 
 For build timing, manually dispatch `release.yml` against the task branch. It
