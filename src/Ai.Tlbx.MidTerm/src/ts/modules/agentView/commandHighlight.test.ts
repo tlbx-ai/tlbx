@@ -19,6 +19,7 @@ describe('compact command presentation', () => {
       '$p = "Grüße 😀 <script>alert(1)</script>"; if ($p) { Write-Output $p } # comment',
       "printf '%s' '$literal'; echo 42 | cat\n",
       'x'.repeat(40_000) + '\n$tail = 3',
+      '"' + '`!'.repeat(10_000),
     ]) {
       expect(
         tokenizeCommand(source)

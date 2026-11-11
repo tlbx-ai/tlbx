@@ -22,7 +22,7 @@ export function tokenizeCommand(source: string): CommandToken[] {
   const limit = 32_768;
   const head = source.slice(0, limit);
   const pattern =
-    /#[^\r\n]*|'(?:''|[^'])*'|"(?:`.|\\.|[^"\\])*"|\$(?:\{[^}\r\n]*\}|[\w?:]+)|\b(?:if|then|else|elif|fi|for|foreach|while|do|done|function|return|try|catch|finally|throw|param|in|exit|const|let|await|async)\b|\b\d+(?:\.\d+)?\b|(?:\|\||&&|[|;=<>])/g;
+    /#[^\r\n]*|'(?:''|[^'])*'|"(?:`.|\\.|[^"\\`])*"|\$(?:\{[^}\r\n]*\}|[\w?:]+)|\b(?:if|then|else|elif|fi|for|foreach|while|do|done|function|return|try|catch|finally|throw|param|in|exit|const|let|await|async)\b|\b\d+(?:\.\d+)?\b|(?:\|\||&&|[|;=<>])/g;
   const tokens: CommandToken[] = [];
   let offset = 0;
   for (const match of head.matchAll(pattern)) {
