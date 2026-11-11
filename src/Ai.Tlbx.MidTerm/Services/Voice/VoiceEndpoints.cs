@@ -46,7 +46,7 @@ public static class VoiceEndpoints
             request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
             using var form = new MultipartFormDataContent();
             form.Add(new StringContent("gpt-4o-mini-transcribe"), "model");
-            var audio = new ByteArrayContent(Wave(pcm.ToArray()));
+            var audio = new ByteArrayContent(Wave(pcm.GetBuffer().AsSpan(0, checked((int)pcm.Length))));
             audio.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");
             form.Add(audio, "file", "dictation.wav");
             request.Content = form;
@@ -80,10 +80,10 @@ public static class VoiceEndpoints
             if (data.Length + count > 16384) throw new BadHttpRequestException("AI settings too large.", 413);
             data.Write(buffer, 0, count);
         }
-        return JsonNode.Parse(data.ToArray()) as JsonObject ?? throw new BadHttpRequestException("Invalid AI settings.");
+        return JsonNode.Parse(data.GetBuffer().AsSpan(0, checked((int)data.Length))) as JsonObject ?? throw new BadHttpRequestException("Invalid AI settings.");
     }
 
-    internal static byte[] Wave(byte[] pcm)
+    internal static byte[] Wave(ReadOnlySpan<byte> pcm)
     {
         var wav = new byte[44 + pcm.Length];
         "RIFF"u8.CopyTo(wav); BinaryPrimitives.WriteInt32LittleEndian(wav.AsSpan(4), wav.Length - 8);
@@ -92,6 +92,6 @@ public static class VoiceEndpoints
         BinaryPrimitives.WriteInt32LittleEndian(wav.AsSpan(24), 24000); BinaryPrimitives.WriteInt32LittleEndian(wav.AsSpan(28), 48000);
         BinaryPrimitives.WriteInt16LittleEndian(wav.AsSpan(32), 2); BinaryPrimitives.WriteInt16LittleEndian(wav.AsSpan(34), 16);
         "data"u8.CopyTo(wav.AsSpan(36)); BinaryPrimitives.WriteInt32LittleEndian(wav.AsSpan(40), pcm.Length);
-        pcm.CopyTo(wav, 44); return wav;
+        pcm.CopyTo(wav.AsSpan(44)); return wav;
     }
 }

@@ -1,21 +1,7 @@
 name: Verify build distribution
 on:
-  pull_request:
-    paths:
-      - 'src/Ai.Tlbx.Builds.Server*/**'
-      - 'src/Ai.Tlbx.MidTerm/Services/Updates/UpdateVerification.cs'
-      - 'src/Ai.Tlbx.MidTerm/Models/Update/VersionManifest.cs'
-      - 'scripts/publish-builds.ps1'
-      - 'scripts/test-publish-builds.ps1'
-      - '.github/workflows/build-distribution-verify.yml'
-  push:
-    branches: [dev, main]
-    paths:
-      - 'src/Ai.Tlbx.Builds.Server*/**'
-      - 'src/Ai.Tlbx.MidTerm/Services/Updates/UpdateVerification.cs'
-      - 'src/Ai.Tlbx.MidTerm/Models/Update/VersionManifest.cs'
-      - 'scripts/publish-builds.ps1'
-      - 'scripts/test-publish-builds.ps1'
+  workflow_call:
+
 permissions:
   contents: read
 jobs:

@@ -1,37 +1,7 @@
 name: Verify installers
 
 on:
-  pull_request:
-    paths:
-      - ".github/workflows/installer-verify.yml"
-      - "install*.ps1"
-      - "install*.sh"
-      - "uninstall*.ps1"
-      - "uninstall*.sh"
-      - "scripts/verify-installers.ps1"
-      - "scripts/test-installer-*.ps1"
-      - "scripts/test-installer-*.sh"
-      - "src/Ai.Tlbx.MidTerm.Common/Identity/**"
-      - "src/Ai.Tlbx.MidTerm/Settings/**"
-      - "src/Ai.Tlbx.MidTerm/Startup/**"
-      - "src/Ai.Tlbx.MidTerm/Services/Certificates/**"
-      - "src/Ai.Tlbx.MidTerm/Services/Updates/**"
-  push:
-    branches: [main, dev]
-    paths:
-      - ".github/workflows/installer-verify.yml"
-      - "install*.ps1"
-      - "install*.sh"
-      - "uninstall*.ps1"
-      - "uninstall*.sh"
-      - "scripts/verify-installers.ps1"
-      - "scripts/test-installer-*.ps1"
-      - "scripts/test-installer-*.sh"
-      - "src/Ai.Tlbx.MidTerm.Common/Identity/**"
-      - "src/Ai.Tlbx.MidTerm/Settings/**"
-      - "src/Ai.Tlbx.MidTerm/Startup/**"
-      - "src/Ai.Tlbx.MidTerm/Services/Certificates/**"
-      - "src/Ai.Tlbx.MidTerm/Services/Updates/**"
+  workflow_call:
 
 permissions:
   contents: read

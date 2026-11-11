@@ -75,6 +75,16 @@ public sealed class AiProviderSettingsTests : IDisposable
         Assert.Equal(new byte[] { 0, 1, 2, 3 }, wav[44..]);
     }
 
+    [Fact]
+    public void DictationWaveOwnsOnlyTheSelectedPcmSlice()
+    {
+        byte[] input = [99, 0, 1, 2, 3, 88];
+        var wav = VoiceEndpoints.Wave(input.AsSpan(1, 4));
+        input[1] = 42;
+        Assert.Equal(new byte[] { 0, 1, 2, 3 }, wav[44..]);
+        Assert.Equal(4, BinaryPrimitives.ReadInt32LittleEndian(wav.AsSpan(40)));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_directory)) Directory.Delete(_directory, true);

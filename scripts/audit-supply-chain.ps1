@@ -114,9 +114,6 @@ if ($Scope -in @('server','all')) {
     Invoke-Checked -FilePath "npm" -ArgumentList @("run", "build") -WorkingDirectory (Join-Path $repoRoot "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge")
     Invoke-Checked -FilePath "git" -ArgumentList @("diff", "--exit-code", "--", "src/Ai.Tlbx.MidTerm.AgentHost/ClaudeBridge/dist/claude-agent-sdk-bridge.mjs") -WorkingDirectory $repoRoot
 }
-if ($Scope -in @('tooling','all')) {
-    Invoke-Checked -FilePath "npm" -ArgumentList @("test") -WorkingDirectory (Join-Path $repoRoot "src/npx-launcher")
-}
 if ($Scope -in @('server','all')) {
 
     Write-Host "Supply-chain gate: locked NuGet projects and advisories" -ForegroundColor Cyan

@@ -1,7 +1,5 @@
 using System.Net.WebSockets;
 using System.Globalization;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Models.Browser;
 using Ai.Tlbx.MidTerm.Settings;
@@ -123,7 +121,7 @@ public sealed class BrowserWebSocketHandler
         try
         {
             var buffer = new byte[65536];
-            var messageBuffer = new List<byte>();
+            using var messageBuffer = new MemoryStream();
 
             while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
@@ -135,15 +133,11 @@ public sealed class BrowserWebSocketHandler
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
-                        var existingLen = messageBuffer.Count;
-                        CollectionsMarshal.SetCount(messageBuffer, existingLen + result.Count);
-                        buffer.AsSpan(0, result.Count).CopyTo(
-                            CollectionsMarshal.AsSpan(messageBuffer).Slice(existingLen));
+                        messageBuffer.Write(buffer.AsSpan(0, result.Count));
 
                         if (result.EndOfMessage)
                         {
-                            var json = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
-                            messageBuffer.Clear();
+                            var json = messageBuffer.GetBuffer().AsSpan(0, checked((int)messageBuffer.Length));
 
                             try
                             {
@@ -159,6 +153,10 @@ public sealed class BrowserWebSocketHandler
                             catch (JsonException ex)
                             {
                                 BrowserLog.Error($"Failed to parse browser result: {ex.Message}");
+                            }
+                            finally
+                            {
+                                messageBuffer.SetLength(0);
                             }
                         }
                     }

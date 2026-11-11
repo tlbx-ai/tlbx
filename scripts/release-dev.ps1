@@ -86,6 +86,7 @@ Set-Location (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/release-test-clusters.ps1"
 $selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories)
 Show-ReleaseTestPlan -Categories $selectedCategories
+if ($Bump -eq 'major') { Show-OnDemandTestReminder }
 $currentBranch = Assert-ReleaseTaskBranch
 $pending = Get-ReleaseState $currentBranch
 $retainedCandidate = $null

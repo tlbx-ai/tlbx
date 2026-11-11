@@ -76,13 +76,12 @@ internal static class GitCommandRunner
             psi.ArgumentList.Add("--version");
 
             using var cts = new CancellationTokenSource(CommandTimeout);
-            using var process = Process.Start(psi);
-            if (process is null) return null;
-
-            var stdout = await process.StandardOutput.ReadToEndAsync(cts.Token);
-            await process.WaitForExitAsync(cts.Token);
-
-            return process.ExitCode == 0 ? stdout.Trim() : null;
+            var output = await Process.RunAndCaptureTextAsync(psi, cts.Token);
+            if (output.ExitStatus.Canceled || output.ExitStatus.ExitCode != 0) return null;
+            var stdout = output.StandardOutput;
+            // Match StreamReader's UTF-8 BOM handling for version wrappers.
+            if (stdout.Length > 0 && stdout[0] == '\uFEFF') stdout = stdout[1..];
+            return stdout.Trim();
         }
         catch
         {
@@ -316,7 +315,7 @@ internal static class GitCommandRunner
             "-n", count.ToString(CultureInfo.InvariantCulture), "--skip=" + skip.ToString(CultureInfo.InvariantCulture), revision, "--").ConfigureAwait(false);
         if (exitCode != 0) throw new IOException("Git history could not be read. " + stderr);
         var lines = stdout.Split('\0');
-        var entries = new List<GitLogEntry>();
+        List<GitLogEntry> entries = [with(capacity: Math.Min(count, lines.Length / 5))];
 
         for (var i = 0; i + 4 < lines.Length; i += 5)
         {
