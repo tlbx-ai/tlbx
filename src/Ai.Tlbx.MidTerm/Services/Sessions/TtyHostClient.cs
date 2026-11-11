@@ -586,9 +586,7 @@ public sealed class TtyHostClient : IAsyncDisposable
 
     private Process? GetOriginalHostProcess()
     {
-        Process host;
-        try { host = Process.GetProcessById(_hostPid); }
-        catch (ArgumentException) { return null; }
+        if (!Process.TryGetProcessById(_hostPid, out var host)) return null;
         if (host.HasExited || (_hostStartedAt is { } started && host.StartTime != started))
         {
             host.Dispose();

@@ -1790,8 +1790,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
     {
         try
         {
-            using var process = Process.GetProcessById(processId);
-            return !process.HasExited;
+            using var process = Process.TryGetProcessById(processId, out var found) ? found : null;
+            return process is not null && !process.HasExited;
         }
         catch
         {

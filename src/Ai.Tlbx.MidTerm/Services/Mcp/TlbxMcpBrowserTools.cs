@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -221,7 +222,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                     var shot = new BrowserCommandRequest { Command = "screenshot", SessionId = target, PreviewName = preview, PreviewId = previewId, Timeout = 30 };
                     capturedInspection = await CommandResultAsync(services, shot, await commands.ExecuteCommandAsync(shot, ct).ConfigureAwait(false), Bool(args, "saveToWorkspace")).ConfigureAwait(false);
                     inspection["screenshot"] = capturedInspection.StructuredContent is { } captureMetadata
-                        ? JsonNode.Parse(captureMetadata.GetRawText()) : new JsonObject { ["success"] = false };
+                        ? JsonNode.Parse(JsonMarshal.GetRawUtf8Value(captureMetadata)) : new JsonObject { ["success"] = false };
                 }
                 var inspected = Reply(inspection);
                 if (capturedInspection is not null)
@@ -321,7 +322,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             captures.Add((JsonNode)new JsonObject
             {
                 ["stepIndex"] = step.Index, ["contentIndex"] = imageIndex,
-                ["capture"] = captured.StructuredContent is { } metadata ? JsonNode.Parse(metadata.GetRawText()) : null
+                ["capture"] = captured.StructuredContent is { } metadata ? JsonNode.Parse(JsonMarshal.GetRawUtf8Value(metadata)) : null
             });
             if (captured.IsError == true)
             {
@@ -343,7 +344,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         if (!args.TryGetValue("commands", out var commands) || commands.ValueKind != JsonValueKind.Array
             || commands.GetArrayLength() is < 1 or > 32)
             throw new ArgumentException("commands must contain 1-32 typed browser commands.");
-        var items = new List<BrowserCommandRequest>();
+        List<BrowserCommandRequest> items = [with(capacity: commands.GetArrayLength())];
         using var commandItems = commands.EnumerateArray();
         foreach (var item in commandItems)
         {

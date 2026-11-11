@@ -1401,9 +1401,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         var assembly = Assembly.GetExecutingAssembly();
         using var resource = assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException("Embedded Claude Agent SDK bridge resource was not found.");
-        using var buffer = new MemoryStream();
+        using var buffer = new MemoryStream(checked((int)resource.Length));
         resource.CopyTo(buffer);
-        var bytes = buffer.ToArray();
+        var bytes = buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length));
         var hash = Convert.ToHexStringLower(SHA256.HashData(bytes));
         var directory = Path.Combine(Path.GetTempPath(), "tlbx", "claude-agent-sdk-bridge");
         Directory.CreateDirectory(directory);

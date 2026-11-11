@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Client;
@@ -98,7 +99,7 @@ internal static class TlbxMcpNativeWorkflow
             Params = new JsonObject
             {
                 ["name"] = name,
-                ["arguments"] = new JsonObject(arguments.Select(pair => KeyValuePair.Create(pair.Key, JsonNode.Parse(pair.Value.GetRawText()))))
+                ["arguments"] = new JsonObject(arguments.Select(pair => KeyValuePair.Create(pair.Key, JsonNode.Parse(JsonMarshal.GetRawUtf8Value(pair.Value)))))
             }
         }, McpClientJsonContext.Default.CallToolResult, ct);
 

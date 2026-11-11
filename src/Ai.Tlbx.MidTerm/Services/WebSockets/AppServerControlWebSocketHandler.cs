@@ -1,5 +1,4 @@
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -202,7 +201,7 @@ public sealed class AppServerControlWebSocketHandler
         try
         {
             var buffer = new byte[8192];
-            var messageBuffer = new List<byte>();
+            using var messageBuffer = new MemoryStream();
 
             while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
@@ -230,18 +229,15 @@ public sealed class AppServerControlWebSocketHandler
                     continue;
                 }
 
-                messageBuffer.AddRange(buffer.AsSpan(0, result.Count).ToArray());
+                messageBuffer.Write(buffer.AsSpan(0, result.Count));
                 if (!result.EndOfMessage)
                 {
                     continue;
                 }
 
-                var json = Encoding.UTF8.GetString(messageBuffer.ToArray());
-                messageBuffer.Clear();
-
                 try
                 {
-                    using var document = JsonDocument.Parse(json);
+                    using var document = JsonDocument.Parse(messageBuffer.GetBuffer().AsMemory(0, checked((int)messageBuffer.Length)));
                     var root = document.RootElement;
                     var type = root.TryGetProperty("type", out var typeProperty)
                         ? typeProperty.GetString()
@@ -251,7 +247,7 @@ public sealed class AppServerControlWebSocketHandler
                     {
                         case "subscribe":
                         {
-                            var message = JsonSerializer.Deserialize(root.GetRawText(), AppJsonContext.Default.AppServerControlWsSubscriptionMessage);
+                            var message = JsonSerializer.Deserialize(root, AppJsonContext.Default.AppServerControlWsSubscriptionMessage);
                             if (message is null || string.IsNullOrWhiteSpace(message.SessionId))
                             {
                                 continue;
@@ -265,7 +261,7 @@ public sealed class AppServerControlWebSocketHandler
                         }
                         case "unsubscribe":
                         {
-                            var message = JsonSerializer.Deserialize(root.GetRawText(), AppJsonContext.Default.AppServerControlWsSubscriptionMessage);
+                            var message = JsonSerializer.Deserialize(root, AppJsonContext.Default.AppServerControlWsSubscriptionMessage);
                             if (message is null || string.IsNullOrWhiteSpace(message.SessionId))
                             {
                                 continue;
@@ -276,7 +272,7 @@ public sealed class AppServerControlWebSocketHandler
                         }
                         case "request":
                         {
-                            var request = JsonSerializer.Deserialize(root.GetRawText(), AppJsonContext.Default.AppServerControlWsRequestMessage);
+                            var request = JsonSerializer.Deserialize(root, AppJsonContext.Default.AppServerControlWsRequestMessage);
                             if (request is null)
                             {
                                 continue;
@@ -296,6 +292,11 @@ public sealed class AppServerControlWebSocketHandler
                 catch (JsonException ex)
                 {
                     Log.Verbose(() => $"[AppServerControlWS] Failed to parse client message: {ex.Message}");
+                }
+                finally
+                {
+                    // The document borrows this buffer until its command is done.
+                    messageBuffer.SetLength(0);
                 }
             }
         }

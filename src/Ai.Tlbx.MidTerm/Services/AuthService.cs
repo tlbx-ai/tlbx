@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Net.WebSockets;
@@ -447,9 +448,20 @@ public sealed class AuthService
 
     private static string ComputeHmac(string data, string secret)
     {
-        using var hmac = new HMACSHA256(Convert.FromBase64String(secret));
-        var hash = hmac.ComputeHash(Encoding.UTF8.GetBytes(data));
-        return Convert.ToBase64String(hash);
+        var key = Convert.FromBase64String(secret);
+        var byteCount = Encoding.UTF8.GetByteCount(data);
+        Span<byte> message = byteCount <= 256 ? stackalloc byte[byteCount] : new byte[byteCount];
+        Encoding.UTF8.GetBytes(data, message);
+        Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
+        try
+        {
+            HMACSHA256.HashData(key, message, hash);
+            return Base64.EncodeToString(hash);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(key);
+        }
     }
 
     private static string GetLegacySessionTokenId(string token)

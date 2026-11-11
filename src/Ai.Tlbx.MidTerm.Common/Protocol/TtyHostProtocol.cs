@@ -163,9 +163,9 @@ public static class TtyHostProtocol
 
     public static byte[] CreateResizeMessage(int cols, int rows)
     {
-        var payload = new byte[8];
-        BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(0, 4), cols);
-        BinaryPrimitives.WriteInt32LittleEndian(payload.AsSpan(4, 4), rows);
+        Span<byte> payload = stackalloc byte[8];
+        BinaryPrimitives.WriteInt32LittleEndian(payload.Slice(0, 4), cols);
+        BinaryPrimitives.WriteInt32LittleEndian(payload.Slice(4, 4), rows);
         return CreateFrame(TtyHostMessageType.Resize, payload);
     }
 
@@ -373,7 +373,7 @@ public static class TtyHostProtocol
         return JsonSerializer.Deserialize(payload, TtyHostJsonContext.Default.TtyHostNotificationResponse);
     }
 
-    private static byte[] CreateFrame(TtyHostMessageType type, byte[] payload)
+    private static byte[] CreateFrame(TtyHostMessageType type, ReadOnlySpan<byte> payload)
     {
         var frame = new byte[HeaderSize + payload.Length];
         frame[0] = (byte)type;
@@ -432,26 +432,26 @@ public static class TtyHostProtocol
 
     public static byte[] CreatePing(ReadOnlySpan<byte> payload)
     {
-        return CreateFrame(TtyHostMessageType.Ping, payload.ToArray());
+        return CreateFrame(TtyHostMessageType.Ping, payload);
     }
 
     public static byte[] CreatePong(ReadOnlySpan<byte> payload)
     {
-        return CreateFrame(TtyHostMessageType.Pong, payload.ToArray());
+        return CreateFrame(TtyHostMessageType.Pong, payload);
     }
 
     public static byte[] CreateInputTraceReport(TtyHostInputTraceReport report)
     {
-        var payload = new byte[InputTraceReportPayloadSize];
-        BinaryPrimitives.WriteUInt32LittleEndian(payload.AsSpan(0, 4), report.TraceId);
-        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(4, 8), report.MarkerReceivedAtMs);
-        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(12, 8), report.InputReceivedAtMs);
-        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(20, 8), report.PtyWriteDoneAtMs);
-        BinaryPrimitives.WriteUInt64LittleEndian(payload.AsSpan(28, 8), report.FirstOutputSequenceEndExclusive);
-        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(36, 8), report.PtyOutputReadAtMs);
-        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(44, 8), report.IpcOutputEnqueuedAtMs);
-        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(52, 8), report.IpcOutputWriteDoneAtMs);
-        BinaryPrimitives.WriteInt64LittleEndian(payload.AsSpan(60, 8), report.IpcOutputFlushDoneAtMs);
+        Span<byte> payload = stackalloc byte[InputTraceReportPayloadSize];
+        BinaryPrimitives.WriteUInt32LittleEndian(payload.Slice(0, 4), report.TraceId);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.Slice(4, 8), report.MarkerReceivedAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.Slice(12, 8), report.InputReceivedAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.Slice(20, 8), report.PtyWriteDoneAtMs);
+        BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(28, 8), report.FirstOutputSequenceEndExclusive);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.Slice(36, 8), report.PtyOutputReadAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.Slice(44, 8), report.IpcOutputEnqueuedAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.Slice(52, 8), report.IpcOutputWriteDoneAtMs);
+        BinaryPrimitives.WriteInt64LittleEndian(payload.Slice(60, 8), report.IpcOutputFlushDoneAtMs);
         return CreateFrame(TtyHostMessageType.InputTrace, payload);
     }
 

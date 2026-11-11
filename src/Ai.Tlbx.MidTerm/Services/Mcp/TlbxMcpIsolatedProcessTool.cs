@@ -308,7 +308,7 @@ internal static class TlbxMcpIsolatedProcessTool
     internal static bool IsActive(int pid, long started)
     {
         if (pid <= 0) return false;
-        try { using var process = Process.GetProcessById(pid); return started <= 0 || process.StartTime.ToUniversalTime().Ticks == started; }
+        try { using var process = Process.TryGetProcessById(pid, out var found) ? found : null; return process is not null && (started <= 0 || process.StartTime.ToUniversalTime().Ticks == started); }
         catch (ArgumentException) { return false; }
         catch (InvalidOperationException) { return false; }
         catch (System.ComponentModel.Win32Exception) { return true; }

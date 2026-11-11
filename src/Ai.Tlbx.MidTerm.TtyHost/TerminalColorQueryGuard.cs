@@ -102,8 +102,8 @@ internal sealed class TerminalColorQueryGuard(TimeProvider? timeProvider = null)
 
             if (ShouldSuppressColorResponse(colorIndex))
             {
-                filtered ??= new List<byte>(data.Length);
-                filtered.AddRange(data[copyStart..offset].ToArray());
+                filtered ??= [with(capacity: data.Length)];
+                filtered.AddRange(data[copyStart..offset]);
                 copyStart = offset + responseLength;
             }
 
@@ -115,7 +115,7 @@ internal sealed class TerminalColorQueryGuard(TimeProvider? timeProvider = null)
             return null;
         }
 
-        filtered.AddRange(data[copyStart..].ToArray());
+        filtered.AddRange(data[copyStart..]);
         return filtered.ToArray();
     }
 

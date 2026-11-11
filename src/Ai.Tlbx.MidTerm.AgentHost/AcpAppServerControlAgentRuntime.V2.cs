@@ -103,7 +103,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
                         writer.WriteEndArray();
                         writer.WriteEndObject();
                     }
-                    using var document = JsonDocument.Parse(stream.ToArray());
+                    using var document = JsonDocument.Parse(stream.GetBuffer().AsMemory(0, checked((int)stream.Length)));
                     HandleToolCallUpdate(ResolveV2ToolTurn(update, turnId), document.RootElement, root, raw, appendContent: true);
                 }
                 return true;

@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -103,8 +104,7 @@ internal sealed class TlbxMcpClientContextService
                 throw Failure("RUNTIME_UNAVAILABLE", "A unique canonical provider runtime scope is required.");
             var claims = new McpRuntimeClaims { Mode = "launch", Root = roots[0], RootStartedTicks = process.Started.Ticks,
                 IssuedAt = _clock.GetUtcNow(), Nonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32)) };
-            var data = Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(claims, McpClientJsonContext.Default.McpRuntimeClaims))
-                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+            var data = Base64Url.EncodeToString(JsonSerializer.SerializeToUtf8Bytes(claims, McpClientJsonContext.Default.McpRuntimeClaims));
             var signed = "TLBXMCP-LAUNCH1." + data;
             return signed + "." + Convert.ToHexStringLower(HMACSHA256.HashData(_key(), Encoding.UTF8.GetBytes("tlbx/mcp/launch/v1\0" + signed)));
         }
@@ -119,8 +119,7 @@ internal sealed class TlbxMcpClientContextService
         {
             var expected = HMACSHA256.HashData(_key(), Encoding.UTF8.GetBytes("tlbx/mcp/launch/v1\0" + pieces[0] + "." + pieces[1]));
             if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(pieces[2]), expected)) return null;
-            var data = pieces[1].Replace('-', '+').Replace('_', '/');
-            var claims = JsonSerializer.Deserialize(Convert.FromBase64String(data.PadRight((data.Length + 3) / 4 * 4, '=')), McpClientJsonContext.Default.McpRuntimeClaims);
+            var claims = JsonSerializer.Deserialize(Base64Url.DecodeFromChars(pieces[1]), McpClientJsonContext.Default.McpRuntimeClaims);
             if (claims?.Mode != "launch" || claims.Root is not { Kind: "controller" } root || string.IsNullOrWhiteSpace(root.ThreadIdentity) ||
                 !RootIsCurrent(root, new DateTime(claims.RootStartedTicks)) ||
                 (_revokedBefore.TryGetValue(root.ProcessId, out var revoked) && claims.IssuedAt <= revoked)) return null;
@@ -204,7 +203,7 @@ internal sealed class TlbxMcpClientContextService
         claims.ExpiresAt = claims.IssuedAt + AccessLifetime;
         claims.Nonce = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         var bytes = JsonSerializer.SerializeToUtf8Bytes(claims, McpClientJsonContext.Default.McpRuntimeClaims);
-        var data = Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
+        var data = Base64Url.EncodeToString(bytes);
         var signed = (claims.Mode == "discovery" ? DiscoveryPrefix : TokenPrefix) + "." + data;
         var signature = HMACSHA256.HashData(_key(), Encoding.UTF8.GetBytes((claims.Mode == "discovery" ? "tlbx/mcp/discovery/v1\0" : "tlbx/mcp/runtime/v1\0") + signed));
         return new McpContextResponse { SessionId = claims.Mode == "discovery" ? null : claims.Root?.SessionId, Mode = claims.Mode,
@@ -221,8 +220,7 @@ internal sealed class TlbxMcpClientContextService
             var signature = Convert.FromHexString(pieces[2]);
             var expected = HMACSHA256.HashData(_key(), Encoding.UTF8.GetBytes((pieces[0] == DiscoveryPrefix ? "tlbx/mcp/discovery/v1\0" : "tlbx/mcp/runtime/v1\0") + pieces[0] + "." + pieces[1]));
             if (!CryptographicOperations.FixedTimeEquals(signature, expected)) return null;
-            var base64 = pieces[1].Replace('-', '+').Replace('_', '/');
-            var claims = JsonSerializer.Deserialize(Convert.FromBase64String(base64.PadRight((base64.Length + 3) / 4 * 4, '=')),
+            var claims = JsonSerializer.Deserialize(Base64Url.DecodeFromChars(pieces[1]),
                 McpClientJsonContext.Default.McpRuntimeClaims);
             if (claims is null || (!allowExpired && claims.ExpiresAt <= _clock.GetUtcNow()) ||
                 _process(claims.ProcessId) is not { } caller || caller.Started.Ticks != claims.StartedTicks) return null;

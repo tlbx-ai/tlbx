@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -51,7 +52,7 @@ public static class MidTermSettingsPatch
                 .Select(entry => entry.Key)
                 .FirstOrDefault(name => string.Equals(name, property.Name, StringComparison.OrdinalIgnoreCase));
             var propertyName = existingName ?? property.Name;
-            merged[propertyName] = JsonNode.Parse(property.Value.GetRawText());
+            merged[propertyName] = JsonNode.Parse(JsonMarshal.GetRawUtf8Value(property.Value));
         }
 
         return merged.Deserialize(AppJsonContext.Default.MidTermSettingsPublic)

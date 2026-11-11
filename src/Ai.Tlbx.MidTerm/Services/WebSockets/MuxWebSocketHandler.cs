@@ -435,7 +435,7 @@ public sealed class MuxWebSocketHandler
 
             var useCompression = length > MuxProtocol.CompressionThreshold;
             var maxFrameSize = useCompression
-                ? MuxProtocol.CompressedOutputHeaderSize + length + 100
+                ? MuxProtocol.GetMaxCompressedOutputFrameSize(length)
                 : MuxProtocol.OutputHeaderSize + length;
 
             var frameBuffer = ArrayPool<byte>.Shared.Rent(maxFrameSize);
