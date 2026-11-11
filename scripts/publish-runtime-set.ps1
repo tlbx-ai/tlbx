@@ -91,6 +91,11 @@ try {
             "--no-restore",
             "-p:BuildProjectReferences=false"
         ) + $project.ExtraArgs
+        # Limit competing code-generation threads in the smaller Windows hosts.
+        # Runtime code optimization and the large mt compiler stay unchanged.
+        if ($Rid.StartsWith('win-') -and $project.Name -in @('mthost', 'mtagenthost')) {
+            $argumentList += '-p:IlcSingleThreaded=true'
+        }
 
         $startInfo = @{
             FilePath = "dotnet"

@@ -223,9 +223,8 @@ Do not re-prepare a merged/closed PR or reuse a retired task branch name.
 
 Live milestones and the PR URL are flushed to stderr and appended to
 `.git/tlbx-release-progress.log`, independent of buffered build output. Dev and
-stable releases remain draft until shared frontend and supply-chain checks succeed
-(plus frontend/.NET release tests for stable; dev uses the required PR checks)
-and at least one complete platform archive with its matching SPDX SBOM
+stable releases remain draft until shared frontend lint/build and supply-chain
+checks succeed and at least one complete platform archive with its matching SPDX SBOM
 passes the publication gate. Each platform build may fail independently, including
 signing or Apple notarization, without blocking other complete packages. Every
 included package still passes signing, checksums and attestations before upload.
