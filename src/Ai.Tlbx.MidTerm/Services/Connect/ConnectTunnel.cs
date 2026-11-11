@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Buffers.Binary;
 using System.Net;
@@ -192,11 +193,11 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         if (response.Headers.Location is { IsAbsoluteUri: true } location && location.Authority == destination.Authority)
             headers["Location"] = location.PathAndQuery;
         await using var source = await response.Content.ReadAsStreamAsync(ct);
-        var bytes = await ReadBoundedAsync(source, MaximumBody, ct);
+        var responseBody = await ReadBoundedBase64Async(source, MaximumBody, response.Content.Headers.ContentLength, ct);
         await SendEnvelopeAsync(new ConnectEnvelope
         {
             Type = "http-result", Id = message.Id, Status = (int)response.StatusCode,
-            Headers = headers, Body = Convert.ToBase64String(bytes)
+            Headers = headers, Body = responseBody
         }, ct);
     }
 
@@ -308,17 +309,22 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         finally { _sendGate.Release(); }
     }
 
-    private static async Task<byte[]> ReadBoundedAsync(Stream source, int limit, CancellationToken ct)
+    private static async Task<string> ReadBoundedBase64Async(Stream source, int limit, long? contentLength, CancellationToken ct)
     {
-        using var target = new MemoryStream();
-        var buffer = new byte[48 * 1024];
-        int read;
-        while ((read = await source.ReadAsync(buffer, ct)) > 0)
+        if (contentLength > limit) throw new InvalidDataException("Connect response body is too large.");
+        using var target = new MemoryStream(contentLength is >= 0 ? checked((int)contentLength.Value) : 0);
+        var buffer = ArrayPool<byte>.Shared.Rent(48 * 1024);
+        try
         {
-            if (target.Length > limit - read) throw new InvalidDataException("Connect response body is too large.");
-            target.Write(buffer, 0, read);
+            int read;
+            while ((read = await source.ReadAsync(buffer.AsMemory(0, 48 * 1024), ct)) > 0)
+            {
+                if (target.Length > limit - read) throw new InvalidDataException("Connect response body is too large.");
+                target.Write(buffer, 0, read);
+            }
+            return Convert.ToBase64String(target.GetBuffer(), 0, checked((int)target.Length));
         }
-        return target.ToArray();
+        finally { ArrayPool<byte>.Shared.Return(buffer, clearArray: true); }
     }
 
     public async ValueTask DisposeAsync()

@@ -92,6 +92,18 @@ public sealed class ConnectTunnelHttpBodyTests
         Assert.Equal(0, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task ResponseBeyondDecodedBodyLimitIsRejected()
+    {
+        using var handler = new CaptureHandler(new byte[20 * 1024 * 1024 + 1]);
+        var result = await RoundTripAsync(handler, new ConnectEnvelope
+        {
+            Type = "http", Id = "oversized-response", Method = "GET", Path = "/api/version"
+        });
+        Assert.Equal(502, result.Status);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
     [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "Each protocol fixture owns one isolated capturing handler and client.")]
     private static async Task<ConnectEnvelope> RoundTripAsync(CaptureHandler handler, ConnectEnvelope request)
     {
