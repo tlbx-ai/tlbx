@@ -15,21 +15,22 @@ function element(id: string): HTMLElement {
 }
 
 const params = new URLSearchParams(location.search);
+const assetBaseUrl = new URL('.', import.meta.url);
 document.documentElement.style.colorScheme = params.get('scheme') === 'light' ? 'light' : 'dark';
 const german = params.get('lang')?.startsWith('de');
 document.documentElement.lang = german ? 'de' : 'en';
 const labels: Record<string, string> = german
   ? {
       previous: 'Vorherige Seite',
-      next: 'Nächste Seite',
+      next: 'NÃ¤chste Seite',
       page: 'Seite',
       zoomOut: 'Verkleinern',
-      zoomIn: 'Vergrößern',
+      zoomIn: 'VergrÃ¶ÃŸern',
       zoom: 'Zoom',
       search: 'Im Dokument suchen',
       findPrevious: 'Vorheriger Treffer',
-      findNext: 'Nächster Treffer',
-      selectText: 'Text auswählen',
+      findNext: 'NÃ¤chster Treffer',
+      selectText: 'Text auswÃ¤hlen',
       handTool: 'Handwerkzeug',
       copyText: 'Markierten Text kopieren',
     }
@@ -47,10 +48,10 @@ if (german) {
   zoom.options.item(0)?.replaceChildren('Seitenbreite');
   zoom.options.item(1)?.replaceChildren('Ganze Seite');
   document.querySelector('label[for="password"]')?.replaceChildren('PDF-Passwort');
-  element('passwordSubmit').textContent = 'Öffnen';
+  element('passwordSubmit').textContent = 'Ã–ffnen';
 }
 const status = element('status');
-status.textContent = german ? 'PDF wird geladen…' : 'Loading PDF…';
+status.textContent = german ? 'PDF wird geladenâ€¦' : 'Loading PDFâ€¦';
 const container = element('viewerContainer') as HTMLDivElement;
 const bus = new EventBus();
 const linkService = new PDFLinkService({
@@ -65,10 +66,10 @@ const viewer = new PDFViewer({
   linkService,
   findController,
   annotationMode: AnnotationMode.ENABLE,
-  imageResourcesPath: '/pdf/images/',
+  imageResourcesPath: new URL('images/', assetBaseUrl).href,
 });
 linkService.setViewer(viewer);
-GlobalWorkerOptions.workerSrc = '/pdf/worker.js';
+GlobalWorkerOptions.workerSrc = new URL('worker.js', assetBaseUrl).href;
 const page = element('page') as HTMLInputElement;
 const search = element('search') as HTMLInputElement;
 const copyText = element('copyText') as HTMLButtonElement;
@@ -268,6 +269,10 @@ element('findNext').onclick = () => {
   find(false, true);
 };
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !event.isComposing && window.parent !== window) {
+    // Preview frames may have an opaque origin; the parent checks the exact sending window.
+    window.parent.postMessage('tlbx:pdf:escape', '*');
+  }
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
     event.preventDefault();
     search.focus();
@@ -277,15 +282,22 @@ document.addEventListener('keydown', (event) => {
 
 async function open(): Promise<void> {
   // Only the authenticated file endpoint is accepted; never turn this into a URL proxy.
-  const file = new URL(params.get('file') ?? '', location.origin);
-  if (file.origin !== location.origin || file.pathname !== '/api/files/view')
+  const file = new URL(params.get('file') ?? '', assetBaseUrl.origin);
+  const fileEndpoint = new URL('../api/files/view', assetBaseUrl);
+  if (
+    file.origin !== fileEndpoint.origin ||
+    file.username ||
+    file.password ||
+    (file.pathname !== fileEndpoint.pathname && file.pathname !== '/api/files/view')
+  )
     throw new Error('Invalid PDF URL');
+  fileEndpoint.search = file.search;
   const loading = getDocument({
-    url: file.href,
-    cMapUrl: '/pdf/cmaps/',
+    url: fileEndpoint.href,
+    cMapUrl: new URL('cmaps/', assetBaseUrl).href,
     cMapPacked: true,
-    standardFontDataUrl: '/pdf/standard_fonts/',
-    wasmUrl: '/pdf/wasm/',
+    standardFontDataUrl: new URL('standard_fonts/', assetBaseUrl).href,
+    wasmUrl: new URL('wasm/', assetBaseUrl).href,
   });
   window.addEventListener(
     'pagehide',
@@ -304,7 +316,7 @@ async function open(): Promise<void> {
           ? 'Falsches Passwort.'
           : 'Incorrect password.'
         : german
-          ? 'Dieses PDF ist passwortgeschützt.'
+          ? 'Dieses PDF ist passwortgeschÃ¼tzt.'
           : 'This PDF is password protected.';
     form.hidden = false;
     const password = element('password') as HTMLInputElement;
@@ -327,7 +339,7 @@ void open().catch((error: unknown) => {
   status.hidden = false;
   status.setAttribute('role', 'alert');
   status.textContent = german
-    ? 'PDF konnte nicht geladen werden. Bitte erneut öffnen oder herunterladen.'
+    ? 'PDF konnte nicht geladen werden. Bitte erneut Ã¶ffnen oder herunterladen.'
     : 'Could not load PDF. Please reopen or download the file.';
   createLogger('pdfViewer').error(() => `PDF loading failed: ${String(error)}`);
 });

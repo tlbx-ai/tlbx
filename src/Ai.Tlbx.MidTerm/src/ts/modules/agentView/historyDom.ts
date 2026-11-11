@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { createPdfView } from '../fileViewer/pdfView';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
 import {
   isFileChangeHistoryEntry,
@@ -1056,6 +1057,53 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     );
   }
 
+  function createPdfAttachmentPreview(
+    link: HTMLAnchorElement,
+    attachment: AppServerControlAttachmentReference,
+    viewUrl: string,
+    accessReady: Promise<unknown>,
+  ): HTMLElement {
+    const block = document.createElement('div');
+    block.className = 'agent-history-pdf-attachment';
+    const details = document.createElement('details');
+    details.className = 'agent-history-disclosure agent-history-pdf-disclosure';
+    const summary = document.createElement('summary');
+    summary.className = 'agent-history-disclosure-summary';
+    const label = t('fileViewer.modePreview');
+    const fileName = resolveAttachmentLabel(attachment);
+    summary.textContent = `PDF · ${label}`;
+    summary.setAttribute('aria-label', `${label}: ${fileName}`);
+    const host = document.createElement('div');
+    let generation = 0;
+    details.addEventListener('toggle', () => {
+      const current = ++generation;
+      if (!details.open) {
+        host.replaceChildren();
+        return;
+      }
+      if (host.querySelector('iframe')) return;
+      if (host.childElementCount === 0) {
+        const loading = document.createElement('div');
+        loading.className = 'file-viewer-loading agent-history-inline-pdf-loading';
+        loading.textContent = t('fileViewer.loading');
+        host.appendChild(loading);
+      }
+      void accessReady.then(() => {
+        if (current !== generation || !details.open || !details.isConnected) return;
+        const frame = createPdfView(viewUrl, 'agent-history-inline-pdf', undefined, () => {
+          details.open = false;
+          summary.focus({ preventScroll: true });
+          return true;
+        });
+        frame.title = fileName;
+        host.replaceChildren(frame);
+      });
+    });
+    details.append(summary, host);
+    block.append(link, details);
+    return block;
+  }
+
   function createHistoryAttachmentBlock(
     sessionId: string,
     attachments: readonly AppServerControlAttachmentReference[] | undefined,
@@ -1105,7 +1153,13 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         link.textContent = resolveAttachmentLabel(attachment);
       }
 
-      container.appendChild(link);
+      const isPdf =
+        !isImageAttachment(attachment) &&
+        (attachment.mimeType?.toLowerCase() === 'application/pdf' ||
+          /\.pdf$/i.test(attachment.path));
+      container.appendChild(
+        isPdf ? createPdfAttachmentPreview(link, attachment, previewUrl, accessReady) : link,
+      );
     }
 
     return container;

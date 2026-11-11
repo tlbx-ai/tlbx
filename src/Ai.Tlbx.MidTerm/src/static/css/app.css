@@ -15638,6 +15638,33 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   border-color: color-mix(in srgb, var(--accent-gold) 50%, transparent);
 }
 
+.agent-history-pdf-attachment {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.agent-history-pdf-disclosure {
+  margin-top: 6px;
+}
+
+.agent-history-pdf-disclosure > .agent-history-disclosure-summary {
+  min-height: 44px;
+  font: 400 0.875rem/1.5 var(--font-ui);
+}
+
+.agent-history-inline-pdf,
+.agent-history-inline-pdf-loading {
+  width: 100%;
+  height: min(65vh, 600px);
+  min-height: 260px;
+  margin-top: 8px;
+}
+
+.agent-history-inline-pdf {
+  display: block;
+  border: 0;
+}
+
 .agent-history-placeholder {
   box-sizing: border-box;
   position: relative;
