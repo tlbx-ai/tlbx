@@ -14760,12 +14760,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-command-disclosure .agent-history-command-body { gap: 8px; padding: 4px 0 8px 16px; }
 .agent-history-command-disclosure pre {
   margin: 0;
-  padding: 8px 10px;
+  padding: 4px 0;
   max-height: 20rem;
   overflow: auto;
-  border: 1px solid var(--border-subtle);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--bg-elevated-opaque) 55%, transparent);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--workspace-reading-text-primary, var(--text-primary));
   font: 400 0.875rem/1.55 var(--agent-history-mono-font-family, var(--font-mono));
   letter-spacing: normal;
