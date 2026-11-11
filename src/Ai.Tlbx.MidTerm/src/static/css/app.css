@@ -14759,7 +14759,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 .agent-history-command-disclosure .agent-history-disclosure-label[hidden] { display: none; }
 .agent-history-command-disclosure .agent-history-disclosure-preview,
-.agent-history-command-disclosure[open] .agent-history-disclosure-preview {
+.agent-history-disclosure.agent-history-command-disclosure[open] .agent-history-disclosure-preview {
   display: block;
   flex: 1 1 0;
   color: var(--workspace-reading-text-primary, var(--text-primary));
