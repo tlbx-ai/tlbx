@@ -138,7 +138,7 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
         {
             using var bytes = new MemoryStream();
             using (var writer = new Utf8JsonWriter(bytes)) { body(writer); }
-            request.Content = new ByteArrayContent(bytes.ToArray());
+            request.Content = new ByteArrayContent(bytes.GetBuffer(), 0, checked((int)bytes.Length));
             request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
         }
         using var response = await _http.SendAsync(request, timeout.Token).ConfigureAwait(false);

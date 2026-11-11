@@ -51,7 +51,15 @@ JavaScript compiler API required by the current ESLint parser and OpenAPI
 generator; it is not the compiler used by `typecheck`. The ASP.NET Core 11
 generator uses OpenAPI.NET 3.x and explicitly keeps OpenAPI 3.1 output for the
 existing TypeScript contract. Native AOT publishing remains enabled for `mt`,
-`mthost` and `mtagenthost`; the migration does not opt into preview features.
+`mthost` and `mtagenthost`.
+
+Shared .NET builds enable .NET 11 Runtime Async (`runtime-async=on`), including
+Native AOT. The framework libraries already use this lowering; tlbx validates
+its own transport, cancellation and provider contracts with it as well.
+For controlled comparison builds, pass `-p:UseRuntimeAsync=false` and clean the
+comparison outputs first: changing only a feature property can reuse compiler
+outputs. This opt-in does not require preview language syntax or
+`EnablePreviewFeatures`. See [Runtime Async](https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-11/runtime#runtime-async).
 
 Native AOT on macOS Intel uses `-Wl,-no_fixup_chains`: the .NET 11 GSS native
 archive contains two-byte-aligned pointer relocations that Xcode's chained fixup

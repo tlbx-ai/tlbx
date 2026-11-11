@@ -1295,7 +1295,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                 writePayload(writer);
             }
 
-            await input.WriteLineAsync(Utf8NoBom.GetString(buffer.ToArray()).AsMemory(), ct).ConfigureAwait(false);
+            await input.WriteLineAsync(Utf8NoBom.GetString(buffer.GetBuffer(), 0, checked((int)buffer.Length)).AsMemory(), ct).ConfigureAwait(false);
             await input.FlushAsync(ct).ConfigureAwait(false);
         }
         finally

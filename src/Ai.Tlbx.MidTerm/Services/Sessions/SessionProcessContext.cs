@@ -42,7 +42,8 @@ internal static partial class SessionProcessContext
                     *(int*)info != 259 /* STILL_ACTIVE */ || info[4] != pid) return null;
                 return (checked((int)info[5]), DateTime.FromFileTimeUtc(created));
             }
-            using var process = Process.GetProcessById(pid);
+            using var process = Process.TryGetProcessById(pid, out var found) ? found : null;
+            if (process is null) return null;
             var started = process.StartTime.ToUniversalTime();
             int parent;
             if (OperatingSystem.IsLinux())
@@ -72,7 +73,8 @@ internal static partial class SessionProcessContext
     {
         try
         {
-            using var process = Process.GetProcessById(pid);
+            using var process = Process.TryGetProcessById(pid, out var found) ? found : null;
+            if (process is null) return null;
             if (!string.Equals(process.ProcessName, "codex", StringComparison.OrdinalIgnoreCase)) return false;
             string? command = null;
             if (OperatingSystem.IsWindows())

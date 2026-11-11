@@ -84,7 +84,7 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
                         writer.WriteStartArray(); foreach (var answers in ordered) { writer.WriteStartArray(); foreach (var answer in answers) writer.WriteStringValue(answer); writer.WriteEndArray(); }
                         writer.WriteEndArray();
                     }
-                    using var document = JsonDocument.Parse(buffer.ToArray());
+                    using var document = JsonDocument.Parse(buffer.GetBuffer().AsMemory(0, checked((int)buffer.Length)));
                     CloseRequest(id, "answered", document.RootElement);
                 }
             }

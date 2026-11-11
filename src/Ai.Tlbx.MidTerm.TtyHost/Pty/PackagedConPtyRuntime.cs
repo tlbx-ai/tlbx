@@ -118,9 +118,9 @@ internal static class PackagedConPtyRuntime
     {
         using var resource = typeof(PackagedConPtyRuntime).Assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException($"Embedded ConPTY resource is missing: {resourceName}");
-        using var buffer = new MemoryStream();
+        using var buffer = new MemoryStream(checked((int)resource.Length));
         resource.CopyTo(buffer);
-        var bytes = buffer.ToArray();
+        var bytes = buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length));
 
         if (File.Exists(destinationPath) && HasExpectedHash(destinationPath, bytes))
         {
@@ -151,7 +151,7 @@ internal static class PackagedConPtyRuntime
         }
     }
 
-    private static bool HasExpectedHash(string path, byte[] expectedBytes)
+    private static bool HasExpectedHash(string path, ReadOnlySpan<byte> expectedBytes)
     {
         try
         {

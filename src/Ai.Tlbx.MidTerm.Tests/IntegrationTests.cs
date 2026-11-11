@@ -268,6 +268,47 @@ public sealed class IntegrationTests : IClassFixture<AuthenticatedAppFixture>, I
         }
     }
 
+    [Theory]
+    [InlineData("/ws/state", "command")]
+    [InlineData("/ws/app-server-control", "request")]
+    public async Task WebSocket_FragmentedUtf8CommandsRecoverAfterMalformedJson(string path, string kind)
+    {
+        using var ws = await ConnectWebSocketAsync(path);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(15));
+        await ws.SendAsync("{bad"u8.ToArray().AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
+
+        var id = "fragment-😀-" + new string('ü', 20000);
+        var json = $$"""{"type":"{{kind}}","id":"{{id}}","action":"unused.fragment.contract","sessionId":"missing-fragment-contract-session"}""";
+        var bytes = Encoding.UTF8.GetBytes(json);
+        var split = Encoding.UTF8.GetByteCount(json.AsSpan(0, json.IndexOf("😀", StringComparison.Ordinal))) + 1;
+        await ws.SendAsync(bytes.AsMemory(0, split), WebSocketMessageType.Text, false, timeout.Token);
+        await ws.SendAsync(bytes.AsMemory(split, 1), WebSocketMessageType.Text, false, timeout.Token);
+        await ws.SendAsync(bytes.AsMemory(split + 1), WebSocketMessageType.Text, true, timeout.Token);
+        var reply = await ReadReplyAsync(id);
+        if (kind == "command") Assert.False(reply.GetProperty("success").GetBoolean());
+        else Assert.Equal("error", reply.GetProperty("type").GetString());
+
+        const string nextId = "after-buffer-reuse";
+        var next = Encoding.UTF8.GetBytes($$"""{"type":"{{kind}}","id":"{{nextId}}","action":"unused.fragment.contract","sessionId":"missing-fragment-contract-session"}""");
+        await ws.SendAsync(next.AsMemory(), WebSocketMessageType.Text, true, timeout.Token);
+        _ = await ReadReplyAsync(nextId);
+
+        async Task<System.Text.Json.JsonElement> ReadReplyAsync(string expectedId)
+        {
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(10);
+            while (DateTimeOffset.UtcNow < deadline)
+            {
+                var remaining = deadline - DateTimeOffset.UtcNow;
+                var response = await ReceiveTextMessageAsync(ws, remaining);
+                using var document = System.Text.Json.JsonDocument.Parse(response);
+                if (document.RootElement.TryGetProperty("id", out var value) && value.GetString() == expectedId)
+                    return document.RootElement.Clone();
+            }
+            throw new TimeoutException("Expected command reply was not received.");
+        }
+    }
+
     private async Task<WebSocket> ConnectWebSocketAsync(string path)
     {
         var wsClient = _factory.Server.CreateWebSocketClient();

@@ -1,3 +1,4 @@
+using System.Buffers.Text;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -332,7 +333,7 @@ public sealed class ShareGrantService
 
     private static string CreateSecret()
     {
-        return Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        return Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
     }
 
     private static string ComputeSecretHash(string secret)
@@ -341,11 +342,4 @@ public sealed class ShareGrantService
         return Convert.ToHexString(bytes);
     }
 
-    private static string Base64UrlEncode(byte[] bytes)
-    {
-        return Convert.ToBase64String(bytes)
-            .TrimEnd('=')
-            .Replace('+', '-')
-            .Replace('/', '_');
-    }
 }

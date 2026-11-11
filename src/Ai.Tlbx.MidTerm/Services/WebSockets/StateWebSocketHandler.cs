@@ -1,6 +1,4 @@
 using System.Net.WebSockets;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 using Ai.Tlbx.MidTerm.Common.Logging;
@@ -622,7 +620,7 @@ public sealed class StateWebSocketHandler
             }
 
             var buffer = new byte[8192];
-            var messageBuffer = new List<byte>();
+            using var messageBuffer = new MemoryStream();
 
             while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
@@ -636,15 +634,11 @@ public sealed class StateWebSocketHandler
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
-                        var existingLen = messageBuffer.Count;
-                        CollectionsMarshal.SetCount(messageBuffer, existingLen + result.Count);
-                        buffer.AsSpan(0, result.Count).CopyTo(
-                            CollectionsMarshal.AsSpan(messageBuffer).Slice(existingLen));
+                        messageBuffer.Write(buffer.AsSpan(0, result.Count));
 
                         if (result.EndOfMessage)
                         {
-                            var messageJson = Encoding.UTF8.GetString(CollectionsMarshal.AsSpan(messageBuffer));
-                            messageBuffer.Clear();
+                            var messageJson = messageBuffer.GetBuffer().AsMemory(0, checked((int)messageBuffer.Length));
 
                             await HandleCommandAsync(
                                 messageJson,
@@ -655,6 +649,7 @@ public sealed class StateWebSocketHandler
                                 connectionToken,
                                 shareAccess,
                                 shutdownToken);
+                            messageBuffer.SetLength(0);
                         }
                     }
                 }
@@ -751,7 +746,7 @@ public sealed class StateWebSocketHandler
     }
 
     private async Task HandleCommandAsync(
-        string json,
+        ReadOnlyMemory<byte> json,
         Func<string, bool, object?, string?, Task> sendResponse,
         Action<bool> setStateDeliveryActive,
         string browserId,
@@ -763,7 +758,7 @@ public sealed class StateWebSocketHandler
         WsCommand? cmd;
         try
         {
-            cmd = JsonSerializer.Deserialize(json, AppJsonContext.Default.WsCommand);
+            cmd = JsonSerializer.Deserialize(json.Span, AppJsonContext.Default.WsCommand);
         }
         catch
         {

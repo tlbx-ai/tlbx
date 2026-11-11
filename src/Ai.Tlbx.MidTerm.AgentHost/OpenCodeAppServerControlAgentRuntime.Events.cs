@@ -59,7 +59,7 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
                         writer.WriteString("text", (Text(part, "text") ?? string.Empty) + Text(properties, "delta"));
                         writer.WriteEndObject();
                     }
-                    using var document = JsonDocument.Parse(buffer.ToArray());
+                    using var document = JsonDocument.Parse(buffer.GetBuffer().AsMemory(0, checked((int)buffer.Length)));
                     ProjectPart(document.RootElement);
                 }
                 break;

@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -135,7 +136,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
         foreach (var argument in arguments.Keys)
             if (!properties.ContainsKey(argument)) throw new McpApiArgumentException("Unknown argument: " + argument);
         foreach (var (key, value) in Forced)
-            if (arguments.TryGetValue(key, out var supplied) && !JsonNode.DeepEquals(value, JsonNode.Parse(supplied.GetRawText())))
+            if (arguments.TryGetValue(key, out var supplied) && !JsonNode.DeepEquals(value, JsonNode.Parse(JsonMarshal.GetRawUtf8Value(supplied))))
                 throw new McpApiArgumentException(key + " is fixed by this operation.");
         foreach (var key in (JsonArray)schema["required"]!)
             if (key?.GetValue<string>() is { } required && !arguments.ContainsKey(required) && !Defaults.ContainsKey(required) && !Forced.ContainsKey(required))
@@ -149,7 +150,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
             var bodyProperties = (BodyType.GetJsonSchemaAsNode() as JsonObject)?["properties"] as JsonObject;
             foreach (var (key, value) in arguments)
                 if (bodyProperties?.ContainsKey(key) == true && key != SessionBody)
-                    body[key] = JsonNode.Parse(value.GetRawText());
+                    body[key] = JsonNode.Parse(JsonMarshal.GetRawUtf8Value(value));
             foreach (var (key, value) in Defaults)
                 if (!body.ContainsKey(key)) body[key] = value?.DeepClone();
             foreach (var (key, value) in Forced) body[key] = value?.DeepClone();

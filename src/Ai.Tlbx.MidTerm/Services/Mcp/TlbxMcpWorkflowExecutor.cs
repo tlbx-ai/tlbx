@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -20,7 +21,7 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
             throw new ArgumentException("Unknown workflow argument.");
         if (arguments["steps"] is not JsonArray steps || steps.Count is < 1 or > 64)
             throw new ArgumentException("steps must contain 1-64 named tool calls.");
-        var prepared = new List<Step>();
+        List<Step> prepared = [with(capacity: steps.Count)];
         foreach (var node in steps)
         {
             if (node is not JsonObject step || step.Any(p => p.Key is not ("tool" or "arguments")))
@@ -122,7 +123,7 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
         if (value is JsonObject obj && obj.ContainsKey("$step"))
         {
             var index = obj["$step"]!.GetValue<int>();
-            JsonNode? selected = results[index].StructuredContent is { } content ? JsonNode.Parse(content.GetRawText()) : null;
+            JsonNode? selected = results[index].StructuredContent is { } content ? JsonNode.Parse(JsonMarshal.GetRawUtf8Value(content)) : null;
             var path = obj["path"]!.GetValue<string>();
             if (path.Length > 0 && !path.StartsWith('/', StringComparison.Ordinal)) throw new ArgumentException("Result path must be a JSON Pointer.");
             foreach (var segment in path.Split('/').Skip(1))
@@ -150,8 +151,10 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
         string? failure = null;
         try
         {
-            var arguments = new JsonObject(parameters.Arguments?.Select(p => KeyValuePair.Create(p.Key, JsonNode.Parse(p.Value.GetRawText()))) ?? []);
+            var arguments = new JsonObject(parameters.Arguments?.Select(p => KeyValuePair.Create(p.Key, JsonNode.Parse(JsonMarshal.GetRawUtf8Value(p.Value)))) ?? []);
             var prepared = Prepare(arguments); // all names, scopes and literal argument shapes checked before opening
+            completed.EnsureCapacity(prepared.Count);
+            contents.EnsureCapacity(prepared.Count);
             var seconds = arguments["timeout"]?.GetValue<int>() ?? 180;
             if (seconds is < 1 or > 600) throw new ArgumentException("Workflow timeout must be 1-600 seconds.");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -171,7 +174,7 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
                     evidence.Add((JsonNode)new JsonObject
                     {
                         ["tool"] = step.Tool.Name, ["isError"] = result.IsError == true,
-                        ["structuredContent"] = result.StructuredContent is { } data ? JsonNode.Parse(data.GetRawText()) : null,
+                        ["structuredContent"] = result.StructuredContent is { } data ? JsonNode.Parse(JsonMarshal.GetRawUtf8Value(data)) : null,
                         ["contentStart"] = contents.Count + 1, ["contentCount"] = result.Content.Count
                     });
                     contents.AddRange(result.Content);
