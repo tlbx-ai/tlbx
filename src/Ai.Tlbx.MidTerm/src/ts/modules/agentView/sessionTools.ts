@@ -46,16 +46,22 @@ export function setAgentSessionActionHandler(handler: typeof actionHandler): voi
   actionHandler = handler;
 }
 
-export function findOpenAgentSession(provider: string, threadId: string): string | null {
+export function selectOpenAgentSession(
+  provider: string,
+  threadId: string,
+  select: (sessionId: string) => void,
+): boolean {
   for (const [sessionId, view] of views) {
     if (
       view.snapshot.provider === provider &&
       view.snapshot.thread.threadId === threadId &&
       getSession(sessionId)
-    )
-      return sessionId;
+    ) {
+      select(sessionId);
+      return true;
+    }
   }
-  return null;
+  return false;
 }
 
 export function getAgentSessionCommands(sessionId: string): AgentCommand[] {

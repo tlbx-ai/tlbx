@@ -1,4 +1,4 @@
-import { findOpenAgentSession } from './modules/agentView/sessionTools';
+import { selectOpenAgentSession } from './modules/agentView/sessionTools';
 import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
 import { initBoards, initDetachedBoard } from './modules/boards';
 import { initMobileFullscreen } from './modules/fullscreen';
@@ -828,9 +828,7 @@ const {
   getBookmarkSurfaceType,
   isAppServerControlOnlySession,
 });
-setAppServerControlResumeConversationHandler((args) => {
-  void resumeAppServerControlConversationFromCommandBay(args);
-});
+setAppServerControlResumeConversationHandler(resumeAppServerControlConversationFromCommandBay);
 
 async function createSession(): Promise<void> {
   let selection: SessionLauncherSelection | null;
@@ -1052,11 +1050,7 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     initialScope: 'current',
   });
   if (!candidate) return;
-  const existingSessionId = findOpenAgentSession(args.provider, candidate.sessionId);
-  if (existingSessionId) {
-    selectSession(existingSessionId);
-    return;
-  }
+  if (selectOpenAgentSession(args.provider, candidate.sessionId, selectSession)) return;
 
   const workingDirectory = candidate.workingDirectory.trim() || args.workingDirectory;
   const keepsSourceFolder =
