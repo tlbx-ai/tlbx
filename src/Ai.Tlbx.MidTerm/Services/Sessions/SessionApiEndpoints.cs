@@ -941,6 +941,7 @@ public static partial class SessionApiEndpoints
                 return Results.Json(usage, AppJsonContext.Default.AppServerControlUsageSummary);
             }
             catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while reading usage."); }
         });
 
         app.MapPost("/api/sessions/{id}/agent-control/compact", async (

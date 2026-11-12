@@ -1,3 +1,4 @@
+import { findOpenAgentSession } from './modules/agentView/sessionTools';
 import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
 import { initBoards, initDetachedBoard } from './modules/boards';
 import { initMobileFullscreen } from './modules/fullscreen';
@@ -1051,6 +1052,11 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     initialScope: 'current',
   });
   if (!candidate) return;
+  const existingSessionId = findOpenAgentSession(args.provider, candidate.sessionId);
+  if (existingSessionId) {
+    selectSession(existingSessionId);
+    return;
+  }
 
   const workingDirectory = candidate.workingDirectory.trim() || args.workingDirectory;
   const keepsSourceFolder =

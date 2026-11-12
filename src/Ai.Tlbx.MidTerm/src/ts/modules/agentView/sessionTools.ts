@@ -46,6 +46,18 @@ export function setAgentSessionActionHandler(handler: typeof actionHandler): voi
   actionHandler = handler;
 }
 
+export function findOpenAgentSession(provider: string, threadId: string): string | null {
+  for (const [sessionId, view] of views) {
+    if (
+      view.snapshot.provider === provider &&
+      view.snapshot.thread.threadId === threadId &&
+      getSession(sessionId)
+    )
+      return sessionId;
+  }
+  return null;
+}
+
 export function getAgentSessionCommands(sessionId: string): AgentCommand[] {
   const snapshot = views.get(sessionId)?.snapshot;
   const commands: AgentCommand[] = ['status', 'usage', 'help'].map((name) => ({

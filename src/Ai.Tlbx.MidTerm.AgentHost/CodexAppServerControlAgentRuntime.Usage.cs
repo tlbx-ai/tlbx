@@ -12,18 +12,18 @@ internal sealed partial class CodexAppServerControlAgentRuntime
     {
         lock (_usageSync)
         {
-        var native = GetObject(payload, "tokenUsage") ?? payload;
-        var usage = _usage?.Clone() ?? new AppServerControlUsageSummary();
-        // Last describes the current context. Total accumulates repeated input
-        // across requests and must not be displayed as context occupancy.
-        usage.ContextUsedTokens = ReadCodexUsageCount(native, "last", "totalTokens", "total_tokens");
-        usage.ContextWindowTokens = ReadCodexUsageCount(native, null, "modelContextWindow", "model_context_window");
-        usage.InputTokens = ReadCodexUsageCount(native, "total", "inputTokens", "input_tokens");
-        usage.OutputTokens = ReadCodexUsageCount(native, "total", "outputTokens", "output_tokens");
-        usage.CachedReadTokens = ReadCodexUsageCount(native, "total", "cachedInputTokens", "cached_input_tokens");
-        usage.CachedWriteTokens = ReadCodexUsageCount(native, "total", "cacheWriteInputTokens", "cache_write_input_tokens");
-        usage.ReasoningTokens = ReadCodexUsageCount(native, "total", "reasoningOutputTokens", "reasoning_output_tokens");
-        _usage = usage;
+            var native = GetObject(payload, "tokenUsage") ?? payload;
+            var usage = _usage?.Clone() ?? new AppServerControlUsageSummary();
+            // Last describes the current context. Total accumulates repeated input
+            // across requests and must not be displayed as context occupancy.
+            usage.ContextUsedTokens = ReadCodexUsageCount(native, "last", "totalTokens", "total_tokens");
+            usage.ContextWindowTokens = ReadCodexUsageCount(native, null, "modelContextWindow", "model_context_window");
+            usage.InputTokens = ReadCodexUsageCount(native, "total", "inputTokens", "input_tokens");
+            usage.OutputTokens = ReadCodexUsageCount(native, "total", "outputTokens", "output_tokens");
+            usage.CachedReadTokens = ReadCodexUsageCount(native, "total", "cachedInputTokens", "cached_input_tokens");
+            usage.CachedWriteTokens = ReadCodexUsageCount(native, "total", "cacheWriteInputTokens", "cache_write_input_tokens");
+            usage.ReasoningTokens = ReadCodexUsageCount(native, "total", "reasoningOutputTokens", "reasoning_output_tokens");
+            _usage = usage;
         }
     }
 
@@ -31,14 +31,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime
     {
         lock (_usageSync)
         {
-        var native = GetObject(payload, "rateLimits") ?? payload;
-        var usage = _usage?.Clone() ?? new AppServerControlUsageSummary();
-        ApplyCodexLimits(usage, native);
-        usage.LimitsStatus = "reported";
-        usage.LimitsCheckedAt = DateTimeOffset.UtcNow;
-        usage.PrimaryRateLimitUsedPercent = ReadCodexUsedPercent(native, "primary") ?? usage.PrimaryRateLimitUsedPercent;
-        usage.SecondaryRateLimitUsedPercent = ReadCodexUsedPercent(native, "secondary") ?? usage.SecondaryRateLimitUsedPercent;
-        _usage = usage;
+            var native = GetObject(payload, "rateLimits") ?? payload;
+            var usage = _usage?.Clone() ?? new AppServerControlUsageSummary();
+            ApplyCodexLimits(usage, native);
+            usage.LimitsStatus = "reported";
+            usage.LimitsCheckedAt = DateTimeOffset.UtcNow;
+            usage.PrimaryRateLimitUsedPercent = ReadCodexUsedPercent(native, "primary") ?? usage.PrimaryRateLimitUsedPercent;
+            usage.SecondaryRateLimitUsedPercent = ReadCodexUsedPercent(native, "secondary") ?? usage.SecondaryRateLimitUsedPercent;
+            _usage = usage;
         }
     }
 

@@ -2891,6 +2891,7 @@ async function handleAgentComposerCommand(
 async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement): Promise<void> {
   const editor = richComposer;
   if (!editor || editor.isSubmitting(sessionId)) return;
+  let handledCommand = false;
   const isCurrentDocument = editor.captureDocumentGuard(sessionId);
   editor.setSubmitting(sessionId, true);
   try {
@@ -2905,7 +2906,10 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     );
     const text = getSessionDraftText(sessionId);
     if (!text && attachments.length === 0) return;
-    if (attachments.length === 0 && (await handleAgentComposerCommand(sessionId, text, ta))) return;
+    if (attachments.length === 0) {
+      handledCommand = await handleAgentComposerCommand(sessionId, text, ta);
+      if (handledCommand) return;
+    }
     const { submittedTurn } = await submitAppServerControlComposerDraft({
       sessionId,
       draft,
@@ -2928,7 +2932,7 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     showDropToast(error instanceof Error ? error.message : t('smartInput.attachmentSendFailed'));
   } finally {
     if (isCurrentDocument()) editor.setSubmitting(sessionId, false);
-    if ($activeSessionId.get() === sessionId) focusSmartInput();
+    if (!handledCommand && $activeSessionId.get() === sessionId) focusSmartInput();
   }
 }
 

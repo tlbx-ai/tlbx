@@ -71,6 +71,7 @@ export function createPendingSession(
 }
 
 export function clearPendingSession(tempId: string): void {
-  pendingSessions.delete(tempId);
+  // Keep the marker through synchronous removal notifications.
   removeSession(tempId);
+  pendingSessions.delete(tempId);
 }

@@ -51,7 +51,7 @@ export class AgentCommandPalette {
     if (this.dismissed === signature) return;
     this.sessionId = sessionId;
     this.commands = getAgentSessionCommands(sessionId).filter((command) =>
-      command.name.toLowerCase().includes((match[1] ?? '').toLowerCase()),
+      command.name.toLowerCase().startsWith((match[1] ?? '').toLowerCase()),
     );
     if (this.signature !== signature) this.selected = 0;
     this.signature = signature;

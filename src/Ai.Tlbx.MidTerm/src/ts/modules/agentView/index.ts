@@ -131,7 +131,6 @@ import {
 } from '../../api/client';
 import { t } from '../i18n';
 import { $activeSessionId, getSession } from '../../stores';
-import { pendingSessions } from '../../state';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
@@ -727,7 +726,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
 
 async function activateAgentView(sessionId: string): Promise<void> {
   // Background suspension is a lifecycle state. Foreground recovery starts attach.
-  if (document.visibilityState === 'hidden' || pendingSessions.has(sessionId)) return;
+  if (document.visibilityState === 'hidden' || sessionId.startsWith('pending-')) return;
   const existing = activationFlights.get(sessionId);
   if (existing) {
     return existing;
