@@ -179,6 +179,7 @@ public sealed class ConnectTunnelHttpBodyTests
         public int RequestCount { get; private set; }
         public byte[]? Body { get; private set; }
         public string? ContentType { get; private set; }
+        [SuppressMessage("Usage", "IDISP004:Don't ignore created IDisposable", Justification = "StreamContent owns the non-seekable stream and transfers disposal to the returned HttpResponseMessage.")]
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
