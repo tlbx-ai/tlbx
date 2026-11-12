@@ -3180,7 +3180,15 @@ if ($ServiceMode)
     {
         if ($LogFile)
         {
-            Add-Content -LiteralPath $LogFile -Value ("ERROR: " + $_.ToString()) -Encoding UTF8 -ErrorAction SilentlyContinue
+            $errorText = "ERROR: " + $_.ToString()
+            try
+            {
+                $errorStream = [IO.File]::Open($LogFile, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+                $errorWriter = [IO.StreamWriter]::new($errorStream, [Text.UTF8Encoding]::new($false))
+                try { $errorWriter.WriteLine($errorText) }
+                finally { $errorWriter.Dispose() }
+            }
+            catch { } # Diagnostic failures must never replace the installation error.
         }
         throw
     }
