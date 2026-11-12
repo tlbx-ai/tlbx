@@ -568,6 +568,15 @@ public sealed partial class WebPreviewProxyMiddleware
           Object.defineProperty(mtDocumentView,"baseURI",{get:mtDocumentBaseURI});
           ["URL","documentURI"].forEach(function(key){Object.defineProperty(mtDocumentView,key,{get:curU});});
           window.__mtPreviewDocument=function(value){return value===document?mtDocumentView:value;};
+          // import() does not call window.fetch. Route computed absolute/root
+          // module URLs through this preview; lexical relative imports stay native.
+          // Leave non-string inputs untouched so native coercion/rejection survives.
+          window.__mtPreviewImport=function(value){
+            if(typeof value!=="string"||!/^(?:https?:\/\/|\/)/i.test(value))return value;
+            // A module loader can resolve relative to its script rather than the
+            // document. Hand it an absolute transport URL, including nested proxies.
+            try{return new URL(r(value),mtNativeLocation.href).href;}catch(e){return value;}
+          };
           // Application Location is upstream-facing; the bridge keeps the native proxy URL.
           function mtNavigationUrl(value){
             var text=String(value);

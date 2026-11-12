@@ -17,7 +17,8 @@ internal static partial class WebPreviewLocationRewriter
         if (!source.Contains("location", StringComparison.Ordinal)
             && !source.Contains("baseURI", StringComparison.Ordinal)
             && !source.Contains("documentURI", StringComparison.Ordinal)
-            && !source.Contains("URL", StringComparison.Ordinal)) return source;
+            && !source.Contains("URL", StringComparison.Ordinal)
+            && !source.Contains("import", StringComparison.Ordinal)) return source;
 
         Node root;
         var parser = new Parser();
@@ -31,35 +32,45 @@ internal static partial class WebPreviewLocationRewriter
             catch (ParseErrorException) { return source; }
         }
 
-        var ranges = new SortedDictionary<int, (int End, string Adapter)>();
+        var ranges = new List<(int Start, int End, string Adapter)>();
         var pending = new Stack<Node>();
         pending.Push(root);
         while (pending.TryPop(out var node))
         {
             if (node is MemberExpression member && IsLocationObject(member.Object) && CanAdapt(member))
             {
-                ranges[member.Object.Start] = (member.Object.End, "__mtPreviewLocation");
+                ranges.Add((member.Object.Start, member.Object.End, "__mtPreviewLocation"));
             }
             else if (node is MemberExpression metadata && IsDocumentMetadata(metadata))
             {
-                ranges[metadata.Object.Start] = (metadata.Object.End, "__mtPreviewDocument");
+                ranges.Add((metadata.Object.Start, metadata.Object.End, "__mtPreviewDocument"));
+            }
+            else if (node is ImportExpression import)
+            {
+                // Computed absolute module URLs bypass fetch/XHR interception. Keep
+                // their import operation native, adapting only its URL argument.
+                ranges.Add((import.Source.Start, import.Source.End, "__mtPreviewImport"));
             }
             foreach (var child in node.ChildNodes) pending.Push(child);
         }
         if (ranges.Count == 0) return source;
 
         var result = new StringBuilder(source.Length + ranges.Count * 65);
-        var offset = 0;
-        foreach (var (start, adaptation) in ranges)
+        var insertions = new SortedDictionary<int, List<string>>();
+        foreach (var (start, end, adapter) in ranges.OrderBy(r => r.Start).ThenByDescending(r => r.End))
         {
-            if (start < offset) continue;
-            var (end, adapter) = adaptation;
-            result.Append(source, offset, start - offset);
             // Workers and scripts used outside an injected HTML document keep native behavior.
-            result.Append("((globalThis.").Append(adapter).Append("||((v)=>v))(");
-            result.Append(source, start, end - start);
-            result.Append("))");
-            offset = end;
+            if (!insertions.TryGetValue(start, out var openings)) insertions[start] = openings = [];
+            openings.Add("((globalThis." + adapter + "||((v)=>v))(");
+            if (!insertions.TryGetValue(end, out var closings)) insertions[end] = closings = [];
+            closings.Add("))");
+        }
+        var offset = 0;
+        foreach (var (position, additions) in insertions)
+        {
+            result.Append(source, offset, position - offset);
+            foreach (var addition in additions) result.Append(addition);
+            offset = position;
         }
         return result.Append(source, offset, source.Length - offset).ToString();
     }
