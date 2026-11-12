@@ -197,7 +197,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             throw new InvalidOperationException("Claude already has an active App Server Controller turn.");
         }
 
-        if (_goalState?.PendingOperation is not null) throw new InvalidOperationException("A native goal command is pending confirmation.");
+        // NativeGoalCommands.beforeInput already serializes readbacks before input.
+        // Reject mutations here, but let the first prompt wait for startup /goal.
+        if (_goalState?.PendingOperation is not null and not "get") throw new InvalidOperationException("A native goal command is pending confirmation.");
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
         var prompt = BuildPromptInput(request, out var addDirectories);
