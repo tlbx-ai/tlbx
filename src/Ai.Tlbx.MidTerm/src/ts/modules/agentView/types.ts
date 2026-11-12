@@ -141,7 +141,6 @@ export type HistoryKind =
 
 export type HistoryTone = 'info' | 'positive' | 'warning' | 'attention';
 export type AppServerControlHistoryActionId = 'retry-appServerControl';
-export type AppServerControlLayoutMode = 'default' | 'full-width-left';
 
 export interface AppServerControlHistoryAction {
   id: AppServerControlHistoryActionId;
