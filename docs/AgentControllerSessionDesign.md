@@ -181,7 +181,7 @@ The canonical history contract must satisfy the following:
 - Avoid narrow bubble layouts that waste the center column.
 - Long assistant output should read like a document, not like a chat toy.
 - Tool activity should compress well and expand only when detail is useful.
-- Every provider uses one left-anchored timeline instead of a centered conversation lane. The lane may use the full pane width for tables, code and artifacts, but human prose is limited to a readable measure of roughly 75-85 characters (`--agent-history-prose-measure`, currently `80ch`).
+- Every provider shares one centered reading column, at most `54rem` wide, for prose, code, tables, tool rows and the collapsed composer. Content is left-aligned inside that column. Narrow panes fill their available width; mobile/tablet portrait viewports up to 1100px use the full available width. Wide code and tables scroll within their own wrappers. Expanded composition retains the full workspace.
 - User and assistant rows share the same left edge and are distinguished by quiet role labels, a slim user rule and turn spacing rather than opposing alignment, bubbles or cards.
 
 ### 5. Clear hierarchy
@@ -294,8 +294,8 @@ The canonical history contract must satisfy the following:
 
 - Use at most 2 to 4 font styles across the Agent Controller Session surface.
 - Reserve stronger styles for true hierarchy boundaries only.
-- Favor readable body text and restrained metadata styling.
-- User and assistant prose for every provider uses the existing app UI font (`--font-ui`) at normal weight, about `0.95rem`, with a line height of about 1.5 (`--agent-history-prose-line-height`). It does not follow the terminal font family, size, weight or line height.
+- Favor readable body text and restrained metadata styling. Heading levels have distinct scale and weight, lists have visible item spacing, and consecutive assistant messages have breathing room. Machine disclosures stay compact and readable without uppercase micro-labels.
+- User and assistant prose for every provider uses the existing app UI font (`--font-ui`) at normal weight, `1.0625rem` on desktop and `1rem` on narrow screens, with line heights of 1.7 and 1.65 (`--agent-history-prose-line-height`). It does not follow the terminal font family, size, weight or line height.
 - Assistant prose uses pure white for maximum legibility. Its body and markdown-content layers must allow glyph ink to overflow vertically so descenders and other font overhangs are never clipped; wide tables and code blocks keep overflow handling on their own dedicated wrappers.
 
 ### Containers
@@ -636,6 +636,7 @@ Any significant Agent Controller Session UI change should be checked against the
 3. Is the hierarchy clearer than before?
 4. Did we keep the number of visual patterns low?
 5. Does the design use width and height better than the previous state?
+   Check actual text-line bounds inside paragraphs and lists at desktop and narrow widths, not only container widths; no glyphs may overlap the next block.
 6. Does it avoid heavy card stacks?
 7. Does it preserve a lean DOM and a virtualization path for long sessions?
 8. Did the change keep provider-specific event quirks out of the TypeScript UI layer?
@@ -735,13 +736,13 @@ Status in this branch/work item:
 - implemented: content-only Agent Controller Session history updates preserve the existing keyed row and message-body DOM elements while refreshing their rendered children, so streaming assistant text does not repeatedly destroy and recreate the mobile browser's text/compositor layer
 - implemented: finalized Agent Controller Session history rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Agent Controller Session file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
-- implemented: assistant markdown blank-line gap markers render a real paragraph gap of about 0.7em, capped at two blank lines
+- implemented: assistant markdown blank-line gap markers render a paragraph gap of 0.95em, capped at two blank lines; adjacent block margins do not double that gap
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Agent Controller Session body
 - implemented: assistant markdown tables now stay left-anchored at intrinsic width when narrow instead of always stretching across the full history lane
 - implemented: assistant markdown tables render plainly without automatic cell pills or guessed tones; sort and filter controls are added only for tables with 10 or more body rows
 - implemented: fenced CSV code blocks in assistant markdown now render through the same table treatment instead of raw code blocks
 - implemented: fenced code blocks render on a quiet tinted surface with padding and their own horizontal overflow; inline code uses a subtle tinted span
-- implemented: Codex Agent Controller Session uses a full-width left-anchored history/composer layout instead of the previous centered lane
+- implemented: all Agent Controller providers use the same centered 54rem reading column and aligned collapsed composer, with full-width narrow/portrait layouts; the obsolete Codex-only layout branch is removed
 - implemented: Codex Agent Controller Session distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Agent Controller Session row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
 - implemented: Agent Controller Session history headers no longer right-bind labels or timestamps; row badges and any meta text stay left-anchored across user, assistant, tool, diff, request, system, and notice rows
