@@ -636,6 +636,7 @@ Any significant Agent Controller Session UI change should be checked against the
 3. Is the hierarchy clearer than before?
 4. Did we keep the number of visual patterns low?
 5. Does the design use width and height better than the previous state?
+   Check actual text-line bounds inside paragraphs and lists at desktop and narrow widths, not only container widths; no glyphs may overlap the next block.
 6. Does it avoid heavy card stacks?
 7. Does it preserve a lean DOM and a virtualization path for long sessions?
 8. Did the change keep provider-specific event quirks out of the TypeScript UI layer?
