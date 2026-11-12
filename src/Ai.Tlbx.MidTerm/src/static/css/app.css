@@ -14111,18 +14111,24 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-scroll-to-bottom {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  z-index: 4;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border-radius: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elevated-opaque);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  align-self: flex-end;
   flex-shrink: 0;
-  margin: 0 18px 8px;
-  min-height: var(--command-bay-automation-chip-height, 30.6px);
-  padding: 0 11px;
   border: 1px solid
     var(--command-bay-ui-reactive-border, color-mix(in srgb, var(--bg-surface) 84%, transparent));
-  border-radius: var(--command-bay-pill-radius, 8px);
-  background: var(--bg-elevated);
   color: var(--command-bay-action-ink, color-mix(in srgb, var(--text-secondary) 93%, transparent));
   box-shadow: var(--command-bay-shadow, none);
   font-family: var(--font-ui);
@@ -14638,9 +14644,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   color: color-mix(in srgb, var(--text-secondary) 86%, transparent);
 }
 
-.agent-history-busy-cancel {
-  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
-}
 
 @keyframes agent-history-busy-sweep {
   0% {
@@ -16236,11 +16239,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
   .agent-composer-interruption {
     margin-bottom: 8px;
-  }
-
-  .agent-scroll-to-bottom {
-    margin: 0 10px 8px;
-    min-height: 44px;
   }
 
   .agent-request-panel {
@@ -22157,25 +22155,63 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .agent-goal-editor button, .agent-goal-editor select, .agent-goal-editor input { min-height: 44px; }
 
 
-/* Keep rich editing wide without changing the Terminal textarea layout. */
+/* Agent Controller keeps the editor and its actions in one compact prompt box. */
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
+  grid-template-rows: minmax(0, 1fr) 44px;
+  gap: 0;
+}
+.adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-row {
+  padding: 2px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-input);
+}
+.adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-row:focus-within {
+  border-color: var(--accent-blue);
+}
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-editor {
+  grid-column: 1 / -1;
+  grid-row: 1;
+  width: 100%;
+}
+.adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-rich-composer {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-rich-composer .ProseMirror {
+  min-height: 36px;
+  max-height: min(34dvh, 256px);
+}
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-escape-btn {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+}
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-row > :is(.smart-input-escape-btn, .smart-input-send-btn, .smart-input-tools-toggle) {
+  grid-row: 2;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+}
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-tools-toggle { grid-column: 1; }
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-send-btn { grid-column: 4; }
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-inline-tools { grid-column: 2; grid-row: 2; }
 .smart-input-textarea-shell:has(.smart-input-rich-composer:not([hidden])) > .smart-input-expand-toggle {
   width: 44px;
   height: 44px;
   top: 1px;
   right: 1px;
   transform: none;
-}
-@media (max-width: 640px) {
-  .adaptive-footer-dock:not([data-composer-expanded='true']) .smart-input-row:has(.smart-input-rich-composer:not([hidden])) {
-    flex-wrap: wrap;
-    justify-content: flex-end;
-    align-items: center;
-  }
-  .adaptive-footer-dock:not([data-composer-expanded='true']) .smart-input-row:has(.smart-input-rich-composer:not([hidden])) > .smart-input-editor {
-    flex-basis: 100%;
-    width: 100%;
-  }
-  .adaptive-footer-dock:not([data-composer-expanded='true']) .smart-input-rich-composer .ProseMirror {
-    max-height: min(calc(34dvh - 44px), 256px);
-  }
 }

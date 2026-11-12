@@ -1937,7 +1937,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     }
 
     const label = appServerControlText('appServerControl.scrollToBottom', 'Back to bottom');
-    if (button.textContent !== label) button.textContent = label;
+    if (button.title !== label) button.title = label;
+    if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
     const hidden =
       state.historyAutoScrollPinned ||
       state.historyEntries.length === 0 ||

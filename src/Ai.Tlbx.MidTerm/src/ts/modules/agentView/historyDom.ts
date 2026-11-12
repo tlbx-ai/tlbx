@@ -865,10 +865,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     elapsed.className = 'agent-history-busy-elapsed';
     elapsed.textContent = entry.busyElapsedText ?? '0s';
     status.appendChild(elapsed);
-    const cancelHint = document.createElement('span');
-    cancelHint.className = 'agent-history-busy-cancel';
-    cancelHint.textContent = '(Press Esc to cancel)';
-    status.appendChild(cancelHint);
     bubble.appendChild(status);
     article.appendChild(bubble);
     syncBusyIndicatorEntry(article, entry);

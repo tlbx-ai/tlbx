@@ -58,8 +58,8 @@ export function ensureAgentViewSkeleton(
               <div class="agent-history-progress-track" data-agent-field="history-progress-track"></div>
               <div class="agent-history-progress-thumb" data-agent-field="history-progress-thumb"></div>
             </div>
+          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v16m-6-6 6 6 6-6"/></svg></button>
           </div>
-          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${appServerControlText('appServerControl.scrollToBottom', 'Back to bottom')}</button>
           <section class="agent-composer-shell" data-agent-field="composer-shell" hidden>
             <div class="agent-composer-interruption" data-agent-field="composer-interruption" hidden></div>
             <div class="agent-composer-host" data-agent-field="composer-host"></div>

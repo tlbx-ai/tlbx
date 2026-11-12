@@ -392,7 +392,7 @@ The canonical history contract must satisfy the following:
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
 - That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
 - When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. User-prompt text and assistant-message text must not populate the busy bubble. Only fall back to a generic `Working` label when no meaningful live provider label is available.
-- While a turn is active, that busy bubble should also show a muted wall-clock duration counter plus a quiet `(Press Esc to cancel)` hint immediately after the animated label, not detached against the far edge of the pane.
+- While a turn is active, that busy bubble shows a muted wall-clock duration counter. The composer exposes Stop for cancellation without a duplicate Escape hint in the history.
 - The busy-label animation should sweep smoothly left-to-right and back again without a visible jump reset, and it should remain a pure CSS animation rather than relying on JavaScript timing.
 - The busy-label text highlight should mirror at the right edge and travel back left through the same letters before beginning the next cycle, rather than snapping immediately from the right edge back to the first letter.
 - When the turn settles back to the user, Agent Controller Session should append one muted inline duration note such as `(Turn took 1m 4s)` into the history instead of leaving the elapsed time only in transient chrome.
@@ -508,7 +508,7 @@ The canonical history contract must satisfy the following:
 - The shared Command Bay / adaptive footer must reserve its own visible rails and panels beneath the active pane instead of floating over Terminal or Agent Controller Session content.
 - Only the prompt textbox's extra multiline growth may expand upward over the pane as overlay chrome; the rest of the Command Bay must remain pane-reserving once the collapsed dock reserve is established.
 - On Android and iOS, the Command Bay must remain visible above the on-screen keyboard; if vertical space tightens, the dock should compress or scroll internally while keeping the prompt row and status awareness reachable.
-- The Agent Controller Session "Back to bottom" control reserves its own normal-flow row below history while browsing. It must not cover visible history rows, active requests or the reserved Command Bay footprint. Hidden in follow-live mode, it consumes no layout space.
+- The Agent Controller Session "Back to bottom" control is a labelled 44px floating arrow inside the history shell while browsing. It reserves no normal-flow row and stays clear of active requests and the Command Bay. It is hidden in follow-live mode.
 - The common quick-settings surface should cover:
   - model
   - effort
@@ -567,7 +567,7 @@ The canonical history contract must satisfy the following:
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
 - In Agent Controller Sessions, plain `Esc` anywhere inside the active Agent Controller Session surface should interrupt the active turn instead of sending a literal terminal escape key.
-- The busy-indicator hint `(Press Esc to cancel)` implies a surface-wide shortcut, not a composer-only shortcut.
+- The composer exposes a visible Stop action; Escape remains a surface-wide keyboard shortcut.
 - Composer follow-ups steer immediately. Escape interrupts the active turn; it never releases a hidden prompt queue.
 
 ## Operator API And CLI
@@ -827,3 +827,7 @@ Still mandatory after this work whenever Agent Controller Session evolves:
 - keep this section current
 - add new fundamentals here when they become real feature behavior
 - document temporary violations instead of letting the implementation and spec drift apart
+
+### Compact prompt actions (2026-11-12)
+
+Specified and implemented: the collapsed Agent Controller composer uses one full-width prompt box with a quiet internal action row: tools at the left, Stop and Send at the right. Each action retains a 44px touch target. Stop invokes the existing structured turn interrupt, including a submission in flight; Terminal retains Esc. The expand control stays in the editor corner. Back to bottom is an accessible, labelled 44px floating arrow over the history and consumes no layout row.
