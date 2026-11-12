@@ -23,7 +23,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 .Select(model => new AppServerControlQuickSettingsOption
                 {
                     Value = GetString(model, "resolvedModel") ?? GetString(model, "value")!,
-                    Label = GetString(model, "displayName") ?? GetString(model, "value")!,
+                    Label = GetClaudeModelLabel(model),
                     Description = GetString(model, "description"),
                     IsDefault = GetString(model, "value") == "default",
                     SupportsFastMode = GetBoolean(model, "supportsFastMode"),
@@ -53,6 +53,30 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         }
 
         EmitClaudeCatalogue(root, rawLine);
+    }
+
+    private string GetClaudeModelLabel(JsonElement model)
+    {
+        if (GetString(model, "value") == "default" && GetString(model, "resolvedModel") is { } resolved)
+        {
+            var named = _nativeModels.FirstOrDefault(candidate =>
+                GetString(candidate, "value") != "default" && GetString(candidate, "resolvedModel") == resolved);
+            if (named.ValueKind == JsonValueKind.Object && GetString(named, "displayName") is { } label) return label;
+        }
+        return GetString(model, "displayName") ?? GetString(model, "value")!;
+    }
+
+    private void ApplyClaudeFastModeState(JsonElement root)
+    {
+        var nativeState = GetString(root, "fast_mode_state");
+        if (nativeState is not ("on" or "off" or "cooldown")) return;
+        var previous = _quickSettings.FastMode;
+        _quickSettings.FastMode = nativeState == "off" ? "off" : "on";
+        var acknowledged = _quickSettings.AcknowledgedFields.Remove("fastMode");
+        if (previous != _quickSettings.FastMode || acknowledged)
+            _emit(CreateQuickSettingsUpdatedEvent(_quickSettings, "claude.agent-sdk", "fast-mode/state", root));
+        if (previous == "on" && nativeState == "off" && GetString(root, "fast_mode_disabled_reason") is { } reason)
+            EmitRuntimeMessage("runtime.notice", "Claude fast mode is unavailable.", reason);
     }
 
     private bool SupportsClaudeFastMode(string? model)
@@ -137,12 +161,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
             _quickSettings.Effort = effort.ValueKind == JsonValueKind.String ? effort.GetString() : null;
             _activeTurnEffort = _quickSettings.Effort;
         }
-        var fastState = GetString(root, "fast_mode_state");
-        if (fastState is "on" or "off" or "cooldown")
-        {
-            _quickSettings.FastMode = fastState is "on" or "cooldown" ? "on" : "off";
-            _quickSettings.AcknowledgedFields.Remove("fastMode");
-        }
+        ApplyClaudeFastModeState(root);
         EmitClaudeCatalogue(root, rawLine);
     }
 

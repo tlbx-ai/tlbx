@@ -50,7 +50,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
             response.FieldErrors["fastMode"] = "The selected Claude model does not advertise fast mode support.";
         }
         if (settings.ContainsKey("model") && !SupportsClaudeFastMode(targetModel) && _quickSettings.FastMode == "on")
-            settings["fastMode"] = JsonSerializer.SerializeToElement("off");
+            settings["fastMode"] = JsonSerializer.SerializeToElement("off", AppServerControlHostJsonContext.Default.String);
         if (settings.Count == 0)
         {
             response.Status = "unconfirmed";

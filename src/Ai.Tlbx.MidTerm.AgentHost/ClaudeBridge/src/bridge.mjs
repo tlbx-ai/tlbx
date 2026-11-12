@@ -2,7 +2,8 @@ import { NativeGoalCommands, assertGoalRecoverySession } from "./nativeGoals.mjs
 import { createSettingsCommandDispatcher } from "./commandDispatch.mjs";
 import { waitForResolution, releasePendingToolApprovals, SettledDecisions, resolveScopedCallback } from "./pendingPermissions.mjs";
 import { configureRuntime } from "./runtimeSettings.mjs";
-import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { loadNativeHistory } from "./history.mjs";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
@@ -293,9 +294,7 @@ async function handle(command, isCancelled = () => false, signal) {
         throw new Error("Claude bridge is already initialized.");
       configuration = command;
       if (command.resume && command.loadHistory) {
-        const messages = await getSessionMessages(command.resume, {
-          dir: command.cwd,
-        });
+        const messages = await loadNativeHistory(command.resume, command.cwd);
         emit({ type: "bridge.history", messages });
       }
       await startRuntime(command);

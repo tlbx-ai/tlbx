@@ -1037,6 +1037,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     private void HandleResult(JsonElement root, string rawLine)
     {
+        ApplyClaudeFastModeState(root);
         UpdateClaudeResultUsage(root, rawLine);
         if (string.IsNullOrWhiteSpace(_activeTurnId))
         {
