@@ -85,7 +85,6 @@ export interface SessionAppServerControlViewState {
   historyReaderResizeMeasurementPending: boolean;
   historyLeadingPlaceholders: HTMLDivElement[];
   historyTrailingPlaceholders: HTMLDivElement[];
-  historyEmptyState: HTMLDivElement | null;
   pendingHistoryPrependAnchor: HistoryViewportAnchor | null;
   pendingHistoryLayoutAnchor: HistoryViewportAnchor | null;
   historyLastVirtualWindowKey: string | null;
@@ -245,7 +244,6 @@ export interface HistoryPlaceholderBlock {
 }
 
 export interface HistoryRenderPlan {
-  emptyStateText: string | null;
   virtualWindowKey: string | null;
   leadingPlaceholders: HistoryPlaceholderBlock[];
   trailingPlaceholders: HistoryPlaceholderBlock[];

@@ -130,7 +130,8 @@ import {
   type AppServerControlHistorySnapshot,
 } from '../../api/client';
 import { t } from '../i18n';
-import { $activeSessionId } from '../../stores';
+import { $activeSessionId, getSession } from '../../stores';
+import { pendingSessions } from '../../state';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
@@ -571,7 +572,6 @@ export function destroyAgentView(sessionId: string): void {
   if (state) {
     state.historyLeadingPlaceholders = [];
     state.historyTrailingPlaceholders = [];
-    state.historyEmptyState = null;
     state.historyLastVoidSyncScrollTop = null;
     state.historyExpandedEntries.clear();
   }
@@ -725,7 +725,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
 
 async function activateAgentView(sessionId: string): Promise<void> {
   // Background suspension is a lifecycle state. Foreground recovery starts attach.
-  if (document.visibilityState === 'hidden') return;
+  if (document.visibilityState === 'hidden' || pendingSessions.has(sessionId)) return;
   const existing = activationFlights.get(sessionId);
   if (existing) {
     return existing;
@@ -738,6 +738,18 @@ async function activateAgentView(sessionId: string): Promise<void> {
   });
   activationFlights.set(sessionId, flight);
   return flight;
+}
+
+function tryRestoreExistingAppServerControlHistory(
+  sessionId: string,
+  state: SessionAppServerControlViewState,
+  activationRunId: number,
+): Promise<boolean> {
+  const session = getSession(sessionId);
+  if (!session?.hasAppServerControlHistory && !session?.appServerControlResumeThreadId) {
+    return Promise.resolve(false);
+  }
+  return tryLoadReadonlyAppServerControlHistory(sessionId, state, activationRunId);
 }
 
 async function activateAgentViewCore(sessionId: string): Promise<void> {
@@ -810,7 +822,7 @@ async function activateAgentViewCore(sessionId: string): Promise<void> {
   );
   renderCurrentAgentView(sessionId);
 
-  const restoredReadonlyHistory = await tryLoadReadonlyAppServerControlHistory(
+  const restoredReadonlyHistory = await tryRestoreExistingAppServerControlHistory(
     sessionId,
     state,
     activationRunId,
@@ -1087,7 +1099,6 @@ function getOrCreateViewState(
     historyReaderResizeMeasurementPending: false,
     historyLeadingPlaceholders: [],
     historyTrailingPlaceholders: [],
-    historyEmptyState: null,
     pendingHistoryPrependAnchor: null,
     pendingHistoryLayoutAnchor: null,
     historyLastVirtualWindowKey: null,
@@ -2151,7 +2162,6 @@ function releaseHiddenAppServerControlRenderState(state: SessionAppServerControl
   state.historyObservedHeights.clear();
   state.historyLeadingPlaceholders = [];
   state.historyTrailingPlaceholders = [];
-  state.historyEmptyState = null;
   state.historyLastVoidSyncScrollTop = null;
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;

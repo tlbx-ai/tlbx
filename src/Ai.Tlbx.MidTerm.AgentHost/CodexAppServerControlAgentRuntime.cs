@@ -278,11 +278,12 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
         await SendCodexRequestAsync("initialize", BuildCodexInitializeRequest, ct).ConfigureAwait(false);
         await WriteCodexMessageAsync(BuildCodexInitializedNotification(), ct).ConfigureAwait(false);
-        await TryRefreshModelCatalogAsync(ct).ConfigureAwait(false);
-        var (threadResult, providerThreadId, resumedExistingThread) = await OpenThreadAsync(
-            attach,
-            _quickSettings,
-            ct).ConfigureAwait(false);
+        // These requests are independent after the initialize handshake. Do not
+        // delay thread creation behind model catalogue discovery.
+        var modelCatalogTask = TryRefreshModelCatalogAsync(ct);
+        var openThreadTask = OpenThreadAsync(attach, _quickSettings, ct);
+        await Task.WhenAll(modelCatalogTask, openThreadTask).ConfigureAwait(false);
+        var (threadResult, providerThreadId, resumedExistingThread) = await openThreadTask.ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(providerThreadId))
         {
@@ -308,8 +309,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
         if (resumedExistingThread)
         {
             await ReadCodexThreadHistoryAsync(providerThreadId, ct).ConfigureAwait(false);
+            await ReadInitialCodexGoalAsync(ct).ConfigureAwait(false);
         }
-        await ReadInitialCodexGoalAsync(ct).ConfigureAwait(false);
 
         var events = new List<AppServerControlProviderEvent>
         {
@@ -1466,7 +1467,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 var environmentId = GetString(payload, "environmentId");
                 _emit(CreateEvent("remote-control.status.changed", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload, appServerControlEvent =>
                 {
-                    appServerControlEvent.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload
+                    appServerControlEvent.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload
                     {
                         Message = $"Codex remote-control status: {status}.",
                         Detail = string.IsNullOrWhiteSpace(environmentId) ? null : $"Environment: {environmentId}"
@@ -1642,10 +1643,14 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 break;
             }
 
+            case "skills/changed":
+                _emit(CreateEvent("agent.state", ResolveTurnId(payload), null, null, "codex.app-server.notification", method, payload,
+                    e => e.RuntimeNoticeOnly = new AppServerControlProviderRuntimeMessagePayload { Message = "Codex skills changed." }));
+                break;
+
             case "account/login/completed":
             case "externalAgentConfig/import/completed":
             case "fs/changed":
-            case "skills/changed":
             case "windows/worldWritableWarning":
             case "windowsSandbox/setupCompleted":
             case "hook/started":
