@@ -49,6 +49,8 @@ internal sealed class ConnectEnvelope
     public string? Path { get; set; }
     public Dictionary<string, string>? Headers { get; set; }
     public string? Body { get; set; }
+    public string? AcceptBodyEncoding { get; set; }
+    public string? BodyEncoding { get; set; }
     public int? Status { get; set; }
     public string[]? Protocols { get; set; }
     public string? Protocol { get; set; }

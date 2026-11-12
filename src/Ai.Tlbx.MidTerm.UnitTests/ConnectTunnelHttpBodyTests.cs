@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Net.Http.Headers;
@@ -92,6 +94,52 @@ public sealed class ConnectTunnelHttpBodyTests
         Assert.Equal(0, handler.RequestCount);
     }
 
+    [Fact]
+    public async Task ResponseBeyondDecodedBodyLimitIsRejected()
+    {
+        using var handler = new CaptureHandler(new byte[20 * 1024 * 1024 + 1]);
+        var result = await RoundTripAsync(handler, new ConnectEnvelope
+        {
+            Type = "http", Id = "oversized-response", Method = "GET", Path = "/api/version"
+        });
+        Assert.Equal(502, result.Status);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task NegotiatedCompressionPreservesAllDecodedBytes(bool knownLength)
+    {
+        var response = Encoding.UTF8.GetBytes(string.Concat(Enumerable.Repeat("const text = 'ä binary';\n", 20000)));
+        using var handler = new CaptureHandler(response, knownLength);
+        var result = await RoundTripAsync(handler, new ConnectEnvelope
+        {
+            Type = "http", Id = "gzip-response", Method = "GET", Path = "/js/terminal.min.js", AcceptBodyEncoding = "gzip"
+        });
+        Assert.Equal(200, result.Status);
+        Assert.Equal("gzip", result.BodyEncoding);
+        var compressed = Convert.FromBase64String(result.Body!);
+        Assert.True(compressed.Length < response.Length / 4);
+        using var input = new MemoryStream(compressed);
+        using var gzip = new GZipStream(input, CompressionMode.Decompress);
+        using var decoded = new MemoryStream();
+        await gzip.CopyToAsync(decoded, TestContext.Current.CancellationToken);
+        Assert.Equal(response, decoded.ToArray());
+    }
+
+    [Fact]
+    public async Task CompressedUnknownLengthResponseStillEnforcesOriginalBodyLimit()
+    {
+        using var handler = new CaptureHandler(new byte[20 * 1024 * 1024 + 1], knownLength: false);
+        var result = await RoundTripAsync(handler, new ConnectEnvelope
+        {
+            Type = "http", Id = "gzip-too-large", Method = "GET", Path = "/api/version", AcceptBodyEncoding = "gzip"
+        });
+        Assert.Equal(502, result.Status);
+        Assert.Null(result.BodyEncoding);
+    }
+
     [SuppressMessage("Usage", "IDISP014:Use a single instance of HttpClient", Justification = "Each protocol fixture owns one isolated capturing handler and client.")]
     private static async Task<ConnectEnvelope> RoundTripAsync(CaptureHandler handler, ConnectEnvelope request)
     {
@@ -121,17 +169,25 @@ public sealed class ConnectTunnelHttpBodyTests
         finally { Directory.Delete(directory, recursive: true); }
     }
 
-    private sealed class CaptureHandler(byte[] response) : HttpMessageHandler
+    private sealed class NonSeekableMemoryStream(byte[] bytes) : MemoryStream(bytes, writable: false)
+    {
+        public override bool CanSeek => false;
+    }
+
+    private sealed class CaptureHandler(byte[] response, bool knownLength = true) : HttpMessageHandler
     {
         public int RequestCount { get; private set; }
         public byte[]? Body { get; private set; }
         public string? ContentType { get; private set; }
+        [SuppressMessage("Usage", "IDISP004:Don't ignore created IDisposable", Justification = "StreamContent owns the non-seekable stream and transfers disposal to the returned HttpResponseMessage.")]
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             RequestCount++;
             Body = request.Content is null ? null : await request.Content.ReadAsByteArrayAsync(cancellationToken);
             ContentType = request.Content?.Headers.ContentType?.ToString();
-            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(response) };
+            HttpContent content = knownLength ? new ByteArrayContent(response) : new StreamContent(new NonSeekableMemoryStream(response));
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/javascript");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
         }
     }
 }
