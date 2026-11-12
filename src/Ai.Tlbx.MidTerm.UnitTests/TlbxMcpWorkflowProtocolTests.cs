@@ -368,6 +368,69 @@ public sealed class TlbxMcpWorkflowProtocolTests
         finally { await app.StopAsync(ct); }
     }
 
+    [Fact]
+    public async Task CompactParallelCallsOverlapAndReferencesUseFullOrderedResults()
+    {
+        var tool = new Tool { Name = "echo", InputSchema = JsonSerializer.SerializeToElement(new JsonObject { ["type"] = "object" }, McpJsonContext.Default.JsonObject) };
+        var executor = new TlbxMcpWorkflowExecutor([tool]);
+        var input = JsonNode.Parse("""
+            {"steps":[{"parallel":[["echo",{"value":"first"}],["echo",{"value":"second"}]]},
+              {"tool":"echo","arguments":{"value":{"$step":1,"path":"/value"}},"select":"/value"}]}
+            """)!.AsObject();
+        var values = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        var bothStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var active = 0;
+        async ValueTask<CallToolResult> Invoke(string name, IDictionary<string, JsonElement> args, CancellationToken ct)
+        {
+            var value = args["value"].GetString()!;
+            values.Enqueue(value);
+            if (Interlocked.Increment(ref active) == 2) bothStarted.TrySetResult();
+            await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
+            return McpApiResult.Structured(new JsonObject { ["value"] = value });
+        }
+        var result = await executor.ExecuteAsync(new CallToolRequestParams
+        {
+            Name = "workflow_run", Arguments = input.ToDictionary(p => p.Key, p => JsonDocument.Parse(p.Value!.ToJsonString()).RootElement.Clone(), StringComparer.Ordinal)
+        }, Invoke, (_, _, _, _, _) => throw new InvalidOperationException("No preview expected"), TestContext.Current.CancellationToken);
+        Assert.NotEqual(true, result.IsError);
+        var steps = result.StructuredContent!.Value.GetProperty("steps");
+        Assert.Equal("first", steps[0].GetProperty("structuredContent").GetProperty("value").GetString());
+        Assert.Equal("second", steps[2].GetProperty("structuredContent").GetString());
+        Assert.Equal(3, values.Count);
+        Assert.Single(result.Content); // No duplicate child JSON text.
+    }
+
+    [Fact]
+    public async Task ParallelFailureObservesSiblingsAndStopsDependentCalls()
+    {
+        var tool = new Tool { Name = "noop", InputSchema = JsonSerializer.SerializeToElement(new JsonObject { ["type"] = "object" }, McpJsonContext.Default.JsonObject) };
+        var executor = new TlbxMcpWorkflowExecutor([tool]);
+        var steps = JsonDocument.Parse("""[{"parallel":["noop","noop"]},"noop"]""").RootElement.Clone();
+        var calls = 0;
+        async ValueTask<CallToolResult> Invoke(string name, IDictionary<string, JsonElement> args, CancellationToken ct)
+        {
+            var index = Interlocked.Increment(ref calls);
+            await Task.Yield();
+            return index == 1 ? McpApiResult.Error("failure", "intentional") : McpApiResult.Structured(new JsonObject { ["done"] = true });
+        }
+        var result = await executor.ExecuteAsync(new CallToolRequestParams { Name = "workflow_run", Arguments = new Dictionary<string, JsonElement>(StringComparer.Ordinal) { ["steps"] = steps } },
+            Invoke, (_, _, _, _, _) => throw new InvalidOperationException("No preview expected"), TestContext.Current.CancellationToken);
+        Assert.True(result.IsError);
+        Assert.Equal(2, calls);
+        Assert.Equal(2, result.StructuredContent!.Value.GetProperty("completedSteps").GetInt32());
+    }
+
+    [Fact]
+    public void ParallelSiblingReferencesAreRejectedBeforeDispatch()
+    {
+        var echo = new EchoTool("echo", false);
+        var executor = new TlbxMcpWorkflowExecutor([echo.ProtocolTool]);
+        Assert.Throws<ArgumentException>(() => executor.Prepare(JsonNode.Parse("""
+            {"steps":[{"parallel":[["echo",{"value":"first"}],["echo",{"value":{"$step":0,"path":"/value"}}]]}]}
+            """)!.AsObject()));
+        Assert.Empty(echo.Values);
+    }
+
     private sealed class EchoTool(string name, bool fail) : McpServerTool
     {
         public List<string> Values { get; } = [];

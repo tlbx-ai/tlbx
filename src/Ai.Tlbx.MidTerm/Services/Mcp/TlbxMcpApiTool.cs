@@ -57,10 +57,17 @@ internal sealed class TlbxMcpApiTool : McpServerTool
         {
             var arguments = request.Params?.Arguments?.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
                 ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            if (_operation.Name == "repos_list" && arguments.TryGetValue("details", out var detailValue)
+                && detailValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new McpApiArgumentException("details must be a boolean.");
             var self = context.Items[TlbxMcpEndpoints.SessionItem] as string;
             var invocation = _operation.Bind(arguments, self);
-            return await services.GetRequiredService<TlbxMcpApiInvoker>()
+            var result = await services.GetRequiredService<TlbxMcpApiInvoker>()
                 .InvokeAsync(context, invocation, cancellationToken).ConfigureAwait(false);
+            if (_operation.Name == "repos_list" && result.IsError != true
+                && (!arguments.TryGetValue("details", out var details) || !details.GetBoolean()))
+                return McpApiResult.RepositorySummary(result);
+            return result;
         }
         catch (McpApiArgumentException ex) { return McpApiResult.Error("TLBX_MCP_INVALID_ARGUMENT", ex.Message); }
         catch (BadHttpRequestException ex) { return McpApiResult.Error("TLBX_MCP_INVALID_ARGUMENT", ex.Message); }
@@ -86,9 +93,16 @@ internal sealed class McpApiOperation(string name, string method, string pattern
     internal JsonObject Forced { get; } = new();
     internal Action<McpApiBinding>? Transform { get; init; }
 
-    internal JsonObject BuildSchema()
+    private JsonObject? _schema;
+    private JsonObject? _bodyProperties;
+
+    // Operations are configured before publication; reuse their immutable metadata on every call.
+    internal JsonObject BuildSchema() => _schema ??= CreateSchema();
+
+    private JsonObject CreateSchema()
     {
         var schema = BodyType?.GetJsonSchemaAsNode() as JsonObject ?? new JsonObject();
+        _bodyProperties = schema["properties"]?.DeepClone() as JsonObject;
         schema["type"] = "object";
         schema["additionalProperties"] = false;
         var properties = schema["properties"] as JsonObject ?? new JsonObject();
@@ -106,7 +120,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
             properties["targetSessionId"] = new JsonObject
             {
                 ["type"] = "string", ["minLength"] = 1,
-                ["description"] = "Explicit target session. Omit to use verified self where this operation requires a session. An unbound operator must specify a target."
+                ["description"] = "Target session; defaults to verified self. Operators must specify it."
             };
         foreach (var (route, argument) in Routes)
         {
@@ -123,9 +137,15 @@ internal sealed class McpApiOperation(string name, string method, string pattern
             properties["machineId"] = new JsonObject { ["type"] = "string", ["minLength"] = 1,
                 ["description"] = "Optional registered Hub machine. Omit for this tlbx host." };
         foreach (var (key, value) in Defaults)
+        {
             if (properties[key] is JsonObject property) property["default"] = value?.DeepClone();
-        foreach (var (key, value) in Forced)
-            properties[key] = new JsonObject { ["const"] = value?.DeepClone(), ["description"] = "Fixed by this operation." };
+            RemoveRequired(required, key);
+        }
+        foreach (var (key, _) in Forced)
+        {
+            properties.Remove(key); // The operation supplies fixed values; agents never need to emit them.
+            RemoveRequired(required, key);
+        }
         return schema;
     }
 
@@ -134,7 +154,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
         var schema = BuildSchema();
         var properties = (JsonObject)schema["properties"]!;
         foreach (var argument in arguments.Keys)
-            if (!properties.ContainsKey(argument)) throw new McpApiArgumentException("Unknown argument: " + argument);
+            if (!properties.ContainsKey(argument) && !Forced.ContainsKey(argument)) throw new McpApiArgumentException("Unknown argument: " + argument);
         foreach (var (key, value) in Forced)
             if (arguments.TryGetValue(key, out var supplied) && !JsonNode.DeepEquals(value, JsonNode.Parse(JsonMarshal.GetRawUtf8Value(supplied))))
                 throw new McpApiArgumentException(key + " is fixed by this operation.");
@@ -147,7 +167,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
         var body = new JsonObject();
         if (BodyType is not null)
         {
-            var bodyProperties = (BodyType.GetJsonSchemaAsNode() as JsonObject)?["properties"] as JsonObject;
+            var bodyProperties = _bodyProperties;
             foreach (var (key, value) in arguments)
                 if (bodyProperties?.ContainsKey(key) == true && key != SessionBody)
                     body[key] = JsonNode.Parse(JsonMarshal.GetRawUtf8Value(value));
@@ -285,6 +305,24 @@ internal sealed class TlbxMcpApiInvoker(IEnumerable<EndpointDataSource> sources)
 
 internal static class McpApiResult
 {
+    internal static CallToolResult RepositorySummary(CallToolResult result)
+    {
+        if (result.StructuredContent is not { } content) return result;
+        var root = JsonNode.Parse(JsonMarshal.GetRawUtf8Value(content))!.AsObject();
+        if (root["data"]?["repos"] is not JsonArray repos) return result;
+        foreach (var repo in repos.OfType<JsonObject>())
+        {
+            if (repo["status"] is not JsonObject status) continue;
+            foreach (var field in new[] { "staged", "modified", "untracked", "conflicted", "recentCommits" })
+            {
+                if (status[field] is not JsonArray entries) continue;
+                status[field + "Count"] = entries.Count;
+                status.Remove(field);
+            }
+        }
+        return Structured(root);
+    }
+
     internal static CallToolResult Structured(JsonObject value, bool error = false)
     {
         var data = JsonSerializer.SerializeToElement(value, McpJsonContext.Default.JsonObject);
