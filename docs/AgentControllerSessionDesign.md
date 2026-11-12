@@ -34,6 +34,10 @@ ACP discovery is intentionally local and non-executing: tlbx only presents catal
 
 Native compaction uses Codex's dedicated API or an advertised `/compact` command for SDK/ACP providers. Command-based compaction is retained as a user command and remains interruptible; unsupported providers return a clear request error. Claude compaction failures are failures even when its SDK wraps the command in a nominally successful result, and failed compaction must preserve the last known context usage. Attach-time metadata is published in order before live updates, and a completed turn must release its runtime state before another input can be accepted.
 
+## Startup presentation
+
+Implemented: optimistic pending session IDs are browser-only placeholders and must never attach to a provider. Fresh sessions skip the read-only history recovery probe. A healthy startup leaves the conversation empty before the first user prompt; internal activation traces and a connected/ready notice do not become conversation rows. Startup failures and actionable recovery requests remain visible.
+
 ## Non-Regression Floor
 
 Agent Controller Session is already a usable operator surface. Architectural cleanup may replace any part of the plumbing underneath it, but the visible result after those changes must not regress below the current Agent Controller Session floor.

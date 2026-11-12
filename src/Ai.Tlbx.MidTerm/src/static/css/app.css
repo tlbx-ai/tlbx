@@ -14507,8 +14507,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   color: color-mix(in srgb, var(--text-muted) 88%, transparent);
 }
 
-.agent-history-body,
-.agent-history-empty {
+.agent-history-body {
   margin: 0;
   color: var(--text-secondary);
   font-size: 0.95rem;
@@ -16218,8 +16217,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
     font-size: 8px;
   }
 
-  .agent-history-body,
-  .agent-history-empty {
+  .agent-history-body {
     font-size: 0.88rem;
     line-height: 1.54;
   }

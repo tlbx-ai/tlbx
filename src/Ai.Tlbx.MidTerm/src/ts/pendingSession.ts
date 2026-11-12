@@ -64,8 +64,9 @@ export function createPendingSession(
     agentAttachPoint: null,
   };
 
-  setSession(tempSession);
+  // Store subscribers may open the Agent pane synchronously. Mark it first.
   pendingSessions.add(tempId);
+  setSession(tempSession);
   return tempId;
 }
 

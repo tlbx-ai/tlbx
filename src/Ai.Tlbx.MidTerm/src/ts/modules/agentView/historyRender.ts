@@ -1385,10 +1385,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   ): HistoryRenderPlan {
     if (entries.length === 0) {
       return {
-        emptyStateText: appServerControlText(
-          'appServerControl.emptyHistory',
-          'No history entries yet.',
-        ),
         virtualWindowKey: null,
         leadingPlaceholders: [],
         trailingPlaceholders: [],
@@ -1441,7 +1437,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     ];
 
     return {
-      emptyStateText: null,
       virtualWindowKey: buildHistoryVirtualWindowKey(renderedWindow),
       leadingPlaceholders,
       trailingPlaceholders,
@@ -1688,17 +1683,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    if (plan.emptyStateText) {
-      const emptyNode = ensureEmptyHistoryNode(state, plan.emptyStateText);
-      syncOrderedChildren(container, [emptyNode]);
-      state.historyMeasurementObserver?.disconnect();
-      state.historyRenderedNodes.clear();
-      state.historyLeadingPlaceholders = [];
-      state.historyTrailingPlaceholders = [];
-      return;
-    }
-
-    state.historyEmptyState = null;
     const nextChildren: HTMLElement[] = [];
     nextChildren.push(
       ...resolveHistoryPlaceholderNodes(state, 'leading', plan.leadingPlaceholders),
@@ -1722,19 +1706,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     syncOrderedChildren(container, nextChildren);
     state.historyLastVirtualWindowKey = plan.virtualWindowKey;
-  }
-
-  function ensureEmptyHistoryNode(
-    state: SessionAppServerControlViewState,
-    text: string,
-  ): HTMLDivElement {
-    if (!state.historyEmptyState) {
-      const empty = document.createElement('div');
-      empty.className = 'agent-history-empty';
-      state.historyEmptyState = empty;
-    }
-    state.historyEmptyState.textContent = text;
-    return state.historyEmptyState;
   }
 
   function ensureHistoryPlaceholderNode(
