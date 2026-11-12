@@ -22141,8 +22141,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 /* Agent Controller keeps the editor and its actions in one compact prompt box. */
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-row {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 44px 44px;
-  grid-template-rows: minmax(0, 1fr) 44px;
+  grid-template-columns: minmax(0, 1fr) auto 44px 44px 44px;
+  grid-template-rows: minmax(76px, auto);
   gap: 0;
 }
 .adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-row {
@@ -22155,7 +22155,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   border-color: var(--accent-blue);
 }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-editor {
-  grid-column: 1 / -1;
+  grid-column: 1;
   grid-row: 1;
   width: 100%;
 }
@@ -22165,11 +22165,11 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   box-shadow: none;
 }
 .adaptive-footer-dock[data-surface='appServerControl']:not([data-composer-expanded='true']) .smart-input-rich-composer .ProseMirror {
-  min-height: 36px;
+  min-height: 76px;
   max-height: min(34dvh, 256px);
 }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-escape-btn {
-  grid-column: 3;
+  grid-column: 4;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -22180,7 +22180,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   font-size: 12px;
 }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-row > :is(.smart-input-escape-btn, .smart-input-send-btn, .smart-input-tools-toggle) {
-  grid-row: 2;
+  grid-row: 1;
+  align-self: end;
   width: 44px;
   height: 44px;
   margin: 0;
@@ -22188,9 +22189,9 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   background: transparent;
   color: var(--text-primary);
 }
-.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-tools-toggle { grid-column: 1; }
-.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-send-btn { grid-column: 4; }
-.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-inline-tools { grid-column: 2; grid-row: 2; }
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-tools-toggle { grid-column: 3; }
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-send-btn { grid-column: 5; }
+.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-inline-tools { grid-column: 2; grid-row: 1; align-self: end; }
 .smart-input-textarea-shell:has(.smart-input-rich-composer:not([hidden])) > .smart-input-expand-toggle {
   width: 44px;
   height: 44px;
