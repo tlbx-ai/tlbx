@@ -3145,22 +3145,22 @@ if ($ServiceMode)
             $logWriter.AutoFlush = $true
             try
             {
-            & {
-                Write-Host ""
-                Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
-                Write-Host ""
-                $script:release = Get-LatestRelease -DevChannel $Dev
-                $version = $script:release.tag_name -replace "^v", ""
-                $channelLabel = Get-ReleaseChannel -Release $script:release
-                Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
-                Write-Host ""
-                Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
-            } *>&1 | ForEach-Object {
-                $line = $_.ToString()
-                Write-Host $_
-                $logWriter.WriteLine($line)
-            }
-            }
+                & {
+                    Write-Host ""
+                    Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
+                    Write-Host ""
+                    $script:release = Get-LatestRelease -DevChannel $Dev
+                    $version = $script:release.tag_name -replace "^v", ""
+                    $channelLabel = Get-ReleaseChannel -Release $script:release
+                    Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
+                    Write-Host ""
+                    Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
+                } *>&1 | ForEach-Object {
+                    $line = $_.ToString()
+                    Write-Host $_
+                    $logWriter.WriteLine($line)
+                }
+                }
             finally { $logWriter.Dispose() }
         }
         else
