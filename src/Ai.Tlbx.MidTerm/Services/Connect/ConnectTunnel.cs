@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Buffers.Binary;
@@ -83,7 +84,7 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         {
             _peer.AcceptProof(message);
             _cookie = _auth.CreateSessionToken();
-            await SendEnvelopeAsync(new ConnectEnvelope { Type = "authOk" }, _lifetime.Token);
+            await SendEnvelopeAsync(new ConnectEnvelope { Type = "authOk", BodyEncoding = "gzip" }, _lifetime.Token);
             return;
         }
         if (string.IsNullOrEmpty(message.Id) || message.Id.Length > 100 || message.Id.Any(char.IsControl))
@@ -193,11 +194,15 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         if (response.Headers.Location is { IsAbsoluteUri: true } location && location.Authority == destination.Authority)
             headers["Location"] = location.PathAndQuery;
         await using var source = await response.Content.ReadAsStreamAsync(ct);
-        var responseBody = await ReadBoundedBase64Async(source, MaximumBody, response.Content.Headers.ContentLength, ct);
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        var gzip = message.AcceptBodyEncoding == "gzip" && response.Content.Headers.ContentLength is not < 1024
+            && (mediaType?.StartsWith("text/", StringComparison.OrdinalIgnoreCase) == true
+                || mediaType is "application/javascript" or "application/json" or "application/xml" or "application/wasm" or "image/svg+xml");
+        var responseBody = await ReadBoundedBase64Async(source, MaximumBody, response.Content.Headers.ContentLength, gzip, ct);
         await SendEnvelopeAsync(new ConnectEnvelope
         {
             Type = "http-result", Id = message.Id, Status = (int)response.StatusCode,
-            Headers = headers, Body = responseBody
+            Headers = headers, Body = responseBody, BodyEncoding = gzip ? "gzip" : null
         }, ct);
     }
 
@@ -309,18 +314,26 @@ internal sealed class ConnectTunnel : IAsyncDisposable
         finally { _sendGate.Release(); }
     }
 
-    private static async Task<string> ReadBoundedBase64Async(Stream source, int limit, long? contentLength, CancellationToken ct)
+    private static async Task<string> ReadBoundedBase64Async(Stream source, int limit, long? contentLength, bool gzip, CancellationToken ct)
     {
         if (contentLength > limit) throw new InvalidDataException("Connect response body is too large.");
-        using var target = new MemoryStream(contentLength is >= 0 ? checked((int)contentLength.Value) : 0);
+        var capacity = contentLength is >= 0 ? checked((int)contentLength.Value) : 0;
+        using var target = new MemoryStream(gzip ? Math.Min(capacity, 64 * 1024) : capacity);
         var buffer = ArrayPool<byte>.Shared.Rent(48 * 1024);
         try
         {
-            int read;
-            while ((read = await source.ReadAsync(buffer.AsMemory(0, 48 * 1024), ct)) > 0)
+            var decodedLength = 0;
+            // Bound the original bytes even when the compressed output is tiny.
+            using (var compressor = gzip ? new GZipStream(target, CompressionLevel.Fastest, leaveOpen: true) : null)
             {
-                if (target.Length > limit - read) throw new InvalidDataException("Connect response body is too large.");
-                target.Write(buffer, 0, read);
+                int read;
+                while ((read = await source.ReadAsync(buffer.AsMemory(0, 48 * 1024), ct)) > 0)
+                {
+                    if (decodedLength > limit - read) throw new InvalidDataException("Connect response body is too large.");
+                    decodedLength += read;
+                    if (compressor is null) target.Write(buffer, 0, read);
+                    else compressor.Write(buffer, 0, read);
+                }
             }
             return Convert.ToBase64String(target.GetBuffer(), 0, checked((int)target.Length));
         }
