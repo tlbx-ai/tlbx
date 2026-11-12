@@ -847,3 +847,12 @@ Claude accepts the first prompt while its initial native Goal readback is pendin
 Claude model values use the native catalogue's resolved model IDs, with model-specific effort choices and advertised fast-mode support. The same Model/Effort/Plan/Permissions/Fast controls configure the existing SDK session without synthetic prompts. SDK control acknowledgements remain distinct from effective native state; init frames update actual fast-mode state. Explicit fast mode starts off per session. Steering uses native immediate-priority user messages in the same thread/turn; goals retain native /goal lifecycle confirmation.
 
 Claude cold-resume history normalizes SDK-completed local commands and native commandRun parent-UUID-correlated records, including model and Goal changes, into their readable slash-command forms. Local command output remains status text; unmarked XML-like user content stays literal. Mobile primary-tab labels refresh when late session identity metadata arrives, without following terminal activity updates.
+
+### Large rich histories
+
+- History capacity and per-item rendering are separate bounds. A large table must not mount its entire row set merely because its containing item enters the retained history window.
+- Tables over 100 rows or 600 cells retain all original cell data and mount at most 50 rows and about 300 cells per page. First/previous/next/last navigation, stable numeric sorting and filtering use the complete table data. Original canonical Markdown remains unchanged.
+- Local history image previews and image attachments use a session-protected 320-pixel thumbnail endpoint. Opening the image still opens its original bytes. Preview caching is bounded to 64 entries and 8 MiB, validates file fingerprint and OS read access on hits, and serializes decoding. Encoded inputs are limited to 64 MiB and 64 MP; unsupported preview formats/sizes retain access to the original.
+- Remote Markdown images remain lazy and decode asynchronously; native thumbnails reuse existing file authorization and Windows session impersonation.
+- Table paging is enabled explicitly for Agent Controller history; existing file previews and voice-chat Markdown keep their complete rendering contract.
+- Progress navigation previews coalesce at 16 ms and hydrate after 32 ms of drag idle. The mobile rail clears the compact Search hit target so dragging/jumping at the archive start cannot open the command palette.

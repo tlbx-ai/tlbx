@@ -1523,5 +1523,9 @@
   "goal.recover": "सत्र रोकें और Goal पुनर्प्राप्त करें",
   "goal.recoverScope": "इस सत्र का काम रोककर उसी मूल थ्रेड से फिर जुड़ता है और Goal पढ़ता है; कोई इनपुट या Goal बदलाव दोहराया नहीं जाता।",
   "goal.recovering": "फिर जुड़कर मूल Goal पढ़ा जा रहा है…",
-  "goal.recoveryFailed": "पुनर्प्राप्ति विफल; मूल Goal की पुष्टि नहीं हुई।"
+  "goal.recoveryFailed": "पुनर्प्राप्ति विफल; मूल Goal की पुष्टि नहीं हुई।",
+  "appServerControl.markdownTable.firstPage": "First table rows",
+  "appServerControl.markdownTable.lastPage": "Last table rows",
+  "appServerControl.markdownTable.previousPage": "Previous table rows",
+  "appServerControl.markdownTable.nextPage": "Next table rows"
 }

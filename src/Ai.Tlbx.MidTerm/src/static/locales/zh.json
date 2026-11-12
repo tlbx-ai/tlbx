@@ -1523,5 +1523,9 @@
   "goal.recover": "中断会话并恢复Goal",
   "goal.recoverScope": "中断此会话的工作，重新连接同一原生线程并读取Goal；不会重放输入或Goal更改。",
   "goal.recovering": "正在重新连接并读取原生Goal…",
-  "goal.recoveryFailed": "恢复失败；原生Goal仍未确认。"
+  "goal.recoveryFailed": "恢复失败；原生Goal仍未确认。",
+  "appServerControl.markdownTable.firstPage": "First table rows",
+  "appServerControl.markdownTable.lastPage": "Last table rows",
+  "appServerControl.markdownTable.previousPage": "Previous table rows",
+  "appServerControl.markdownTable.nextPage": "Next table rows"
 }

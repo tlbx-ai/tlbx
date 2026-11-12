@@ -2,6 +2,7 @@ import MarkdownIt from 'markdown-it';
 
 export interface MarkdownRenderOptions {
   preserveRawWindowsPaths?: boolean;
+  paginateTables?: boolean;
 }
 
 // Reuse the composer's installed delimiter parser for balanced, nested marks.
@@ -37,7 +38,7 @@ function formatMarkdownImages(escapedText: string): string {
       }
 
       const caption = altText.trim();
-      return `<figure class="agent-markdown-figure"><img class="agent-markdown-image" src="${trimmedUrl}" alt="${caption}" loading="lazy"${caption ? '' : ' aria-hidden="true"'}>${caption ? `<figcaption class="agent-markdown-figcaption">${caption}</figcaption>` : ''}</figure>`;
+      return `<figure class="agent-markdown-figure"><img class="agent-markdown-image" src="${trimmedUrl}" alt="${caption}" loading="lazy" decoding="async"${caption ? '' : ' aria-hidden="true"'}>${caption ? `<figcaption class="agent-markdown-figcaption">${caption}</figcaption>` : ''}</figure>`;
     },
   );
 }
@@ -176,6 +177,7 @@ function formatMarkdownInline(
   options: MarkdownRenderOptions = {},
   tableCell = false,
 ): string {
+  if (!/[\\`*_[\]!<>&]/.test(text)) return text;
   const literals: string[] = [];
   let prefix = '\uE000tlbx-inline:';
   while (text.includes(prefix)) prefix += ':';
@@ -216,12 +218,7 @@ function isMarkdownTableSeparator(line: string): boolean {
 
 function isMarkdownTableRow(line: string): boolean {
   const trimmed = line.trim();
-  if (!trimmed.includes('|')) {
-    return false;
-  }
-
-  const cells = splitMarkdownTableRow(trimmed);
-  return cells.length >= 1;
+  return trimmed.includes('|') && trimmed !== '|';
 }
 
 function splitMarkdownTableRow(line: string): string[] {
@@ -554,10 +551,26 @@ function renderStructuredMarkdownTable(args: {
   const isDense = headers.length >= 7;
   const denseAttr = isDense ? ' data-table-density="dense"' : '';
   const sourceAttr = source === 'csv' ? ' data-table-source="csv"' : '';
+  const pageSize = Math.max(1, Math.min(50, Math.floor(300 / Math.max(1, headers.length))));
+  const paged =
+    args.options?.paginateTables === true &&
+    (rows.length > 100 || rows.length * headers.length > 600);
+  const dataAttr = paged
+    ? ` data-table-rows="${escapeMarkdownHtml(
+        JSON.stringify({
+          rows,
+          alignments,
+          source,
+          pageSize,
+          options: args.options,
+        }),
+      )}"`
+    : '';
+  const visibleRows = paged ? rows.slice(0, pageSize) : rows;
   const formatCell = (cell: string): string =>
     source === 'markdown' ? formatMarkdownInline(cell, args.options, true) : cell;
 
-  return `<div class="agent-markdown-table-wrap"><table class="agent-markdown-table"${denseAttr}${sourceAttr}><thead><tr>${headers
+  return `<div class="agent-markdown-table-wrap"><table class="agent-markdown-table"${denseAttr}${sourceAttr}${dataAttr}><thead><tr>${headers
     .map((cell, cellIndex) => {
       const alignment = alignments[cellIndex] || '';
       const alignAttr = alignment ? ` data-align="${alignment}"` : '';
@@ -568,7 +581,7 @@ function renderStructuredMarkdownTable(args: {
         isDense,
       )}</th>`;
     })
-    .join('')}</tr></thead><tbody>${rows
+    .join('')}</tr></thead><tbody>${visibleRows
     .map(
       (row) =>
         `<tr>${row
@@ -586,7 +599,179 @@ function renderStructuredMarkdownTable(args: {
 
 type MarkdownTableSortDirection = 'none' | 'ascending' | 'descending';
 
+interface PagedMarkdownTable {
+  rows: string[][];
+  alignments: string[];
+  source: MarkdownStructuredTableSource;
+  pageSize: number;
+  options?: MarkdownRenderOptions;
+  page: number;
+  rendered: boolean;
+  indexes: number[];
+  text?: string[][];
+  first: HTMLButtonElement;
+  last: HTMLButtonElement;
+  previous: HTMLButtonElement;
+  next: HTMLButtonElement;
+  status: HTMLSpanElement;
+  onRowsRendered: ((body: HTMLTableSectionElement) => void) | undefined;
+}
+const pagedMarkdownTables = new WeakMap<HTMLTableElement, PagedMarkdownTable>();
+
+function renderPagedMarkdownTable(table: HTMLTableElement, model: PagedMarkdownTable): void {
+  const body = table.tBodies.item(0);
+  if (!body) return;
+  model.page = Math.max(
+    0,
+    Math.min(model.page, Math.ceil(model.indexes.length / model.pageSize) - 1),
+  );
+  const start = model.page * model.pageSize;
+  const replaceRows = model.rendered;
+  model.rendered = true;
+  // The first page is already formatted, enriched and wired in the initial markup.
+  if (replaceRows)
+    body.innerHTML = model.indexes
+      .slice(start, start + model.pageSize)
+      .map(
+        (index) =>
+          `<tr data-markdown-table-original-index="${index}">${(model.rows[index] ?? [])
+            .map((cell, column) => {
+              const alignment = model.alignments[column] ?? '';
+              const kind = table.tHead?.rows.item(0)?.cells.item(column)?.dataset.colKind ?? 'text';
+              const html =
+                model.source === 'markdown'
+                  ? formatMarkdownInline(cell, model.options, true)
+                  : cell;
+              return `<td data-align="${alignment}" data-col-kind="${kind}">${html}</td>`;
+            })
+            .join('')}</tr>`,
+      )
+      .join('');
+  model.first.disabled = start === 0;
+  model.last.disabled = start + model.pageSize >= model.indexes.length;
+  model.previous.disabled = start === 0;
+  model.next.disabled = start + model.pageSize >= model.indexes.length;
+  model.status.textContent = `${model.indexes.length ? start + 1 : 0}–${Math.min(start + model.pageSize, model.indexes.length)} / ${model.indexes.length}`;
+  if (replaceRows) model.onRowsRendered?.(body);
+}
+
+function applyPagedMarkdownTableState(
+  table: HTMLTableElement,
+  model: PagedMarkdownTable,
+  filters: readonly string[],
+  sortColumn: number,
+  direction: MarkdownTableSortDirection,
+): void {
+  model.page = 0;
+  if (sortColumn >= 0 || filters.some(Boolean)) {
+    // Parse cell text only on an explicit sort/filter, never while seeking history.
+    model.text ??= model.rows.map((row) =>
+      row.map((cell) => {
+        const html =
+          model.source === 'markdown' ? formatMarkdownInline(cell, model.options, true) : cell;
+        return html
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&amp;/g, '&')
+          .trim();
+      }),
+    );
+  }
+  model.indexes = model.rows
+    .map((_, index) => index)
+    .filter((index) =>
+      filters.every(
+        (query, column) =>
+          !query || (model.text?.[index]?.[column] ?? '').toLocaleLowerCase().includes(query),
+      ),
+    );
+  if (sortColumn >= 0 && direction !== 'none') {
+    const kind =
+      (table.tHead?.rows.item(0)?.cells.item(sortColumn)?.dataset.colKind as
+        MarkdownTableColumnKind | undefined) ?? 'text';
+    model.indexes.sort((left, right) => {
+      const comparison = compareMarkdownTableCellValues(
+        model.text?.[left]?.[sortColumn] ?? '',
+        model.text?.[right]?.[sortColumn] ?? '',
+        kind,
+      );
+      return comparison ? comparison * (direction === 'descending' ? -1 : 1) : left - right;
+    });
+  }
+  renderPagedMarkdownTable(table, model);
+}
+
+function wirePagedMarkdownTable(
+  table: HTMLTableElement,
+  wrap: HTMLElement,
+  labels: MarkdownTableUiLabels,
+  onRowsRendered?: (body: HTMLTableSectionElement) => void,
+): void {
+  const data = table.dataset.tableRows;
+  if (!data) return;
+  const source = JSON.parse(data) as Pick<
+    PagedMarkdownTable,
+    'rows' | 'alignments' | 'source' | 'pageSize' | 'options'
+  >;
+  delete table.dataset.tableRows;
+  const pager = document.createElement('div');
+  pager.className = 'agent-markdown-table-pagination';
+  const first = document.createElement('button');
+  const last = document.createElement('button');
+  const previous = document.createElement('button');
+  const next = document.createElement('button');
+  const status = document.createElement('span');
+  first.type = last.type = previous.type = next.type = 'button';
+  first.textContent = '«';
+  last.textContent = '»';
+  first.setAttribute('aria-label', labels.firstPage);
+  last.setAttribute('aria-label', labels.lastPage);
+  previous.textContent = '‹';
+  next.textContent = '›';
+  previous.setAttribute('aria-label', labels.previousPage);
+  next.setAttribute('aria-label', labels.nextPage);
+  status.setAttribute('aria-live', 'polite');
+  const model: PagedMarkdownTable = {
+    ...source,
+    page: 0,
+    rendered: false,
+    indexes: [],
+    first,
+    last,
+    previous,
+    next,
+    status,
+    onRowsRendered,
+  };
+  pagedMarkdownTables.set(table, model);
+  first.addEventListener('click', () => {
+    model.page = 0;
+    renderPagedMarkdownTable(table, model);
+  });
+  last.addEventListener('click', () => {
+    model.page = Math.ceil(model.indexes.length / model.pageSize) - 1;
+    renderPagedMarkdownTable(table, model);
+  });
+  previous.addEventListener('click', () => {
+    model.page -= 1;
+    renderPagedMarkdownTable(table, model);
+  });
+  next.addEventListener('click', () => {
+    model.page += 1;
+    renderPagedMarkdownTable(table, model);
+  });
+  pager.append(first, previous, status, next, last);
+  wrap.appendChild(pager);
+}
+
 export type MarkdownTableUiLabels = {
+  firstPage: string;
+  lastPage: string;
+  previousPage: string;
+  nextPage: string;
   clearSort: (column: string) => string;
   filterByColumn: (column: string) => string;
   filterPlaceholder: string;
@@ -595,6 +780,10 @@ export type MarkdownTableUiLabels = {
 };
 
 const defaultMarkdownTableUiLabels: MarkdownTableUiLabels = {
+  firstPage: 'First table rows',
+  lastPage: 'Last table rows',
+  previousPage: 'Previous table rows',
+  nextPage: 'Next table rows',
   clearSort: (column) => `Clear sorting for ${column}`,
   filterByColumn: (column) => `Filter ${column}`,
   filterPlaceholder: 'Filter',
@@ -678,44 +867,49 @@ function applyMarkdownTableState(table: HTMLTableElement, labels: MarkdownTableU
   const sortColumn = Number.parseInt(table.dataset.sortColumn ?? '-1', 10);
   const sortDirection =
     (table.dataset.sortDirection as MarkdownTableSortDirection | undefined) ?? 'none';
-  const rows = Array.from(body.rows);
-  const sortedRows =
-    sortColumn >= 0 && sortDirection !== 'none'
-      ? [...rows].sort((left, right) => {
-          const header = headers[sortColumn];
-          const kind = (header?.dataset.colKind as MarkdownTableColumnKind | undefined) ?? 'text';
-          const direction = sortDirection === 'descending' ? -1 : 1;
-          const comparison = compareMarkdownTableCellValues(
-            getMarkdownTableCellText(left, sortColumn),
-            getMarkdownTableCellText(right, sortColumn),
-            kind,
+  const paged = pagedMarkdownTables.get(table);
+  if (paged) {
+    applyPagedMarkdownTableState(table, paged, filters, sortColumn, sortDirection);
+  } else {
+    const rows = Array.from(body.rows);
+    const sortedRows =
+      sortColumn >= 0 && sortDirection !== 'none'
+        ? [...rows].sort((left, right) => {
+            const header = headers[sortColumn];
+            const kind = (header?.dataset.colKind as MarkdownTableColumnKind | undefined) ?? 'text';
+            const direction = sortDirection === 'descending' ? -1 : 1;
+            const comparison = compareMarkdownTableCellValues(
+              getMarkdownTableCellText(left, sortColumn),
+              getMarkdownTableCellText(right, sortColumn),
+              kind,
+            );
+            if (comparison !== 0) {
+              return comparison * direction;
+            }
+
+            return (
+              Number.parseInt(left.dataset.markdownTableOriginalIndex ?? '0', 10) -
+              Number.parseInt(right.dataset.markdownTableOriginalIndex ?? '0', 10)
+            );
+          })
+        : [...rows].sort(
+            (left, right) =>
+              Number.parseInt(left.dataset.markdownTableOriginalIndex ?? '0', 10) -
+              Number.parseInt(right.dataset.markdownTableOriginalIndex ?? '0', 10),
           );
-          if (comparison !== 0) {
-            return comparison * direction;
-          }
 
-          return (
-            Number.parseInt(left.dataset.markdownTableOriginalIndex ?? '0', 10) -
-            Number.parseInt(right.dataset.markdownTableOriginalIndex ?? '0', 10)
-          );
-        })
-      : [...rows].sort(
-          (left, right) =>
-            Number.parseInt(left.dataset.markdownTableOriginalIndex ?? '0', 10) -
-            Number.parseInt(right.dataset.markdownTableOriginalIndex ?? '0', 10),
-        );
+    body.append(...sortedRows);
 
-  body.append(...sortedRows);
+    for (const row of sortedRows) {
+      const visible = filters.every((query, columnIndex) => {
+        if (!query) {
+          return true;
+        }
 
-  for (const row of sortedRows) {
-    const visible = filters.every((query, columnIndex) => {
-      if (!query) {
-        return true;
-      }
-
-      return getMarkdownTableCellText(row, columnIndex).toLocaleLowerCase().includes(query);
-    });
-    row.hidden = !visible;
+        return getMarkdownTableCellText(row, columnIndex).toLocaleLowerCase().includes(query);
+      });
+      row.hidden = !visible;
+    }
   }
 
   headers.forEach((header, columnIndex) => {
@@ -748,6 +942,7 @@ const MARKDOWN_TABLE_INTERACTIVE_MIN_ROWS = 10;
 export function wireMarkdownTables(
   container: ParentNode,
   labels: Partial<MarkdownTableUiLabels> = {},
+  onRowsRendered?: (body: HTMLTableSectionElement) => void,
 ): void {
   const isElementContainer = typeof Element !== 'undefined' && container instanceof Element;
   const isDocumentContainer = typeof Document !== 'undefined' && container instanceof Document;
@@ -771,10 +966,16 @@ export function wireMarkdownTables(
     const table = wrap.querySelector<HTMLTableElement>('table.agent-markdown-table');
     const headerRow = table?.tHead?.rows.item(0);
     const body = table?.tBodies.item(0);
-    if (!table || !headerRow || !body || body.rows.length < MARKDOWN_TABLE_INTERACTIVE_MIN_ROWS) {
+    if (
+      !table ||
+      !headerRow ||
+      !body ||
+      (body.rows.length < MARKDOWN_TABLE_INTERACTIVE_MIN_ROWS && !table.dataset.tableRows)
+    ) {
       return;
     }
 
+    wirePagedMarkdownTable(table, wrap, resolvedLabels, onRowsRendered);
     wrap.dataset.tableEnhanced = 'true';
     table.dataset.sortColumn = '-1';
     table.dataset.sortDirection = 'none';
@@ -904,13 +1105,16 @@ function renderMarkdownTables(
   return rendered.join('\n');
 }
 
-function renderDelimitedMarkdownBlock(source: string): string | null {
+function renderDelimitedMarkdownBlock(
+  source: string,
+  options: MarkdownRenderOptions,
+): string | null {
   const rows = detectDelimitedMarkdownRows(source);
   if (!rows) {
     return null;
   }
 
-  const normalized = normalizeStructuredTableRows(rows);
+  const normalized = normalizeStructuredTableRows(rows.map((row) => row.map(escapeMarkdownHtml)));
   if (normalized.headers.length === 0 || normalized.rows.length === 0) {
     return null;
   }
@@ -920,6 +1124,7 @@ function renderDelimitedMarkdownBlock(source: string): string | null {
     rows: normalized.rows,
     alignments: normalized.alignments,
     source: 'csv',
+    options,
   });
 }
 
@@ -1000,7 +1205,7 @@ export function renderMarkdown(text: string, options: MarkdownRenderOptions = {}
     (_match: string, language: string, code: string) => {
       const token = `@@MIDTERMMD${codeBlocks.length}@@`;
       const csvTable = isCsvMarkdownFenceLanguage(language)
-        ? renderDelimitedMarkdownBlock(code.trim())
+        ? renderDelimitedMarkdownBlock(code.trim(), options)
         : null;
       if (csvTable) {
         codeBlocks.push(csvTable);

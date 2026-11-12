@@ -42,17 +42,7 @@ internal static class BackgroundImageEncoder
             // Preserve the existing black backdrop for transparent uploads. Premultiplied
             // decoding prevents hidden RGB from bleeding into the resized edges.
             canvas.Clear(SKColors.Black);
-            canvas.SetMatrix(orientation switch
-            {
-                2 => new SKMatrix(-1, 0, width, 0, 1, 0, 0, 0, 1),
-                3 => new SKMatrix(-1, 0, width, 0, -1, height, 0, 0, 1),
-                4 => new SKMatrix(1, 0, 0, 0, -1, height, 0, 0, 1),
-                5 => new SKMatrix(0, 1, 0, 1, 0, 0, 0, 0, 1),
-                6 => new SKMatrix(0, -1, height, 1, 0, 0, 0, 0, 1),
-                7 => new SKMatrix(0, -1, height, -1, 0, width, 0, 0, 1),
-                8 => new SKMatrix(0, 1, 0, -1, 0, width, 0, 0, 1),
-                _ => SKMatrix.Identity
-            });
+            canvas.SetMatrix(OrientationMatrix(width, height, orientation));
             canvas.DrawImage(image, new SKRect(0, 0, width, height),
                 new SKSamplingOptions(SKFilterMode.Linear, SKMipmapMode.Linear));
         }
@@ -61,4 +51,17 @@ internal static class BackgroundImageEncoder
             new SKWebpEncoderOptions(SKWebpEncoderCompression.Lossy, WebpQuality));
         return encoded?.ToArray() ?? throw new InvalidOperationException("Cannot encode background as WebP.");
     }
+
+    internal static SKMatrix OrientationMatrix(int width, int height, int orientation) =>
+        orientation switch
+        {
+            2 => new SKMatrix(-1, 0, width, 0, 1, 0, 0, 0, 1),
+            3 => new SKMatrix(-1, 0, width, 0, -1, height, 0, 0, 1),
+            4 => new SKMatrix(1, 0, 0, 0, -1, height, 0, 0, 1),
+            5 => new SKMatrix(0, 1, 0, 1, 0, 0, 0, 0, 1),
+            6 => new SKMatrix(0, -1, height, 1, 0, 0, 0, 0, 1),
+            7 => new SKMatrix(0, -1, height, -1, 0, width, 0, 0, 1),
+            8 => new SKMatrix(0, 1, 0, -1, 0, width, 0, 0, 1),
+            _ => SKMatrix.Identity
+        };
 }

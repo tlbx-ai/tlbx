@@ -87,7 +87,7 @@ function isImagePath(path: string): boolean {
 }
 
 function buildFilePreviewUrl(sessionId: string, path: string): string {
-  return `/api/files/view?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`;
+  return `/api/files/thumbnail?path=${encodeURIComponent(path)}&sessionId=${encodeURIComponent(sessionId)}`;
 }
 
 async function openAssistantFile(path: string, info: FilePathInfo): Promise<void> {
@@ -870,6 +870,7 @@ export function createAssistantImagePreviewBlock(
     image.className = 'agent-history-inline-preview-image';
     image.src = buildFilePreviewUrl(sessionId, preview.resolvedPath);
     image.loading = 'lazy';
+    image.decoding = 'async';
     image.alt = preview.displayPath;
     frame.appendChild(image);
     button.appendChild(frame);
