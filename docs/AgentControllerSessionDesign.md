@@ -294,8 +294,8 @@ The canonical history contract must satisfy the following:
 
 - Use at most 2 to 4 font styles across the Agent Controller Session surface.
 - Reserve stronger styles for true hierarchy boundaries only.
-- Favor readable body text and restrained metadata styling. Heading levels have distinct scale and weight, lists have visible item spacing, and consecutive assistant messages have breathing room. Machine disclosures stay compact and readable without uppercase micro-labels.
-- User and assistant prose for every provider uses the existing app UI font (`--font-ui`) at normal weight, `1.0625rem` on desktop and `1rem` on narrow screens, with line heights of 1.7 and 1.65 (`--agent-history-prose-line-height`). It does not follow the terminal font family, size, weight or line height.
+- Favor readable body text and restrained metadata styling. Heading levels have distinct scale and weight, lists have visible item spacing, and consecutive assistant messages use compact 6px top and 8px bottom padding; short progress messages must not create large empty bands. Machine disclosures stay compact and readable without uppercase micro-labels.
+- User and assistant prose for every provider uses the existing app UI font (`--font-ui`) at normal weight, `calc(1.0625rem - 1pt)` on desktop and `calc(1rem - 1pt)` on narrow screens, with line heights of 1.7 and 1.65 (`--agent-history-prose-line-height`). It does not follow the terminal font family, size, weight or line height.
 - Assistant prose uses pure white for maximum legibility. Its body and markdown-content layers must allow glyph ink to overflow vertically so descenders and other font overhangs are never clipped; wide tables and code blocks keep overflow handling on their own dedicated wrappers.
 
 ### Containers
@@ -410,7 +410,7 @@ The canonical history contract must satisfy the following:
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 - Assistant markdown is the canonical assistant body surface for both streaming and settled text.
-- Simple line breaks stay inside one paragraph. Blank lines form real paragraph breaks with a visible paragraph gap of about `0.7em`, capped at two blank lines, so multi-paragraph answers do not collapse into one block.
+- Simple line breaks stay inside one paragraph. Blank lines form real paragraph breaks with a visible paragraph gap of `0.5em`, capped at two blank lines, so multi-paragraph answers do not collapse into one block.
 - Assistant markdown models those paragraph breaks as explicit gap markers in the rendered structure.
 - List items use the prose line height with a small item gap; lists must stay readable rather than terminal-dense.
 - List markers must stay fully visible inside the rendered assistant markdown block. Overflow containment in Agent Controller Session must not crop bullet or number markers.
@@ -636,6 +636,7 @@ Any significant Agent Controller Session UI change should be checked against the
 3. Is the hierarchy clearer than before?
 4. Did we keep the number of visual patterns low?
 5. Does the design use width and height better than the previous state?
+   Check consecutive short assistant messages as well as multi-paragraph answers; compact spacing must apply between rows and inside Markdown.
    Check actual text-line bounds inside paragraphs and lists at desktop and narrow widths, not only container widths; no glyphs may overlap the next block.
 6. Does it avoid heavy card stacks?
 7. Does it preserve a lean DOM and a virtualization path for long sessions?
@@ -736,7 +737,7 @@ Status in this branch/work item:
 - implemented: content-only Agent Controller Session history updates preserve the existing keyed row and message-body DOM elements while refreshing their rendered children, so streaming assistant text does not repeatedly destroy and recreate the mobile browser's text/compositor layer
 - implemented: finalized Agent Controller Session history rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Agent Controller Session file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
-- implemented: assistant markdown blank-line gap markers render a paragraph gap of 0.95em, capped at two blank lines; adjacent block margins do not double that gap
+- implemented: assistant markdown blank-line gap markers render a paragraph gap of 0.5em, capped at two blank lines; adjacent block margins do not double that gap
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Agent Controller Session body
 - implemented: assistant markdown tables now stay left-anchored at intrinsic width when narrow instead of always stretching across the full history lane
 - implemented: assistant markdown tables render plainly without automatic cell pills or guessed tones; sort and filter controls are added only for tables with 10 or more body rows

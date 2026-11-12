@@ -13813,7 +13813,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   --agent-appServerControl-assistant-label: color-mix(in srgb, var(--text-muted) 84%, transparent);
   --agent-history-message-font-family: var(--font-ui);
   --agent-history-user-font-family: var(--agent-history-message-font-family);
-  --agent-history-prose-font-size: 1.0625rem;
+  --agent-history-prose-font-size: calc(1.0625rem - 1pt);
   --agent-history-prose-line-height: 1.7;
   --agent-history-assistant-font-family: var(--agent-history-message-font-family);
   --agent-appServerControl-ready: color-mix(in srgb, var(--accent-green) 74%, white 10%);
@@ -14198,7 +14198,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-assistant {
   align-self: flex-start;
   width: var(--agent-appServerControl-content-width);
-  padding: 16px 0 20px;
+  padding: 6px 0 8px;
   border-bottom: 0;
 }
 
@@ -14853,7 +14853,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-markdown .agent-markdown-gap {
   display: block;
-  height: calc(0.95em * min(var(--agent-markdown-gap-lines, 1), 2));
+  height: calc(0.5em * min(var(--agent-markdown-gap-lines, 1), 2));
 }
 
 .agent-history-markdown-content > :has(+ .agent-markdown-gap) {
@@ -15290,7 +15290,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-markdown pre,
 .agent-history-markdown figure {
   margin-top: 0;
-  margin-bottom: 0.85em;
+  margin-bottom: 0.5em;
 }
 
 .agent-history-caret {
@@ -16110,7 +16110,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 @media (max-width: 720px) {
   .agent-view-panel {
-    --agent-history-prose-font-size: 1rem;
+    --agent-history-prose-font-size: calc(1rem - 1pt);
     --agent-history-prose-line-height: 1.65;
   }
   .agent-history {
