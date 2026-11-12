@@ -28,11 +28,8 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         string? resumeThreadIdOverride = null,
         CancellationToken ct = default)
     {
-        if (IsAttached(sessionId))
-        {
-            return true;
-        }
-
+        // A connected transport may still be initializing its native provider.
+        // The host's gate joins the real attach; ownership alone is not readiness.
         var profile = ResolveAttachProfile(session);
         if (!IsAttachableProfile(profile))
         {

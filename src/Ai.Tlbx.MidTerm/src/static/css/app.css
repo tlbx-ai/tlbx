@@ -22251,7 +22251,8 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
 .agent-session-tabs { display: flex; padding: 0 14px; border-bottom: 1px solid var(--border-color); gap: 18px; }
 .agent-session-tabs button { border-bottom: 2px solid transparent; padding: 6px 0; color: var(--text-secondary); }
 .agent-session-tabs [aria-selected="true"] { border-color: var(--accent-blue); color: inherit; }
-.agent-session-content { padding: 14px 18px; overflow: auto; min-height: 0; overscroll-behavior: contain; }
+.agent-session-details > header, .agent-session-tabs, .agent-session-details > footer { flex: 0 0 auto; }
+.agent-session-content { flex: 1 1 auto; padding: 14px 18px; overflow: auto; min-height: 0; overscroll-behavior: contain; }
 .agent-session-rows { margin: 0; }
 .agent-session-rows > div { display: grid; grid-template-columns: minmax(110px, 0.8fr) minmax(0, 1.4fr); gap: 14px; padding: 9px 0; border-bottom: 1px solid color-mix(in srgb, var(--border-color) 45%, transparent); }
 .agent-session-rows dt { color: var(--workspace-reading-text-secondary, #a0a4b8); }
