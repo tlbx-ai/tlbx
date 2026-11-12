@@ -3160,7 +3160,7 @@ if ($ServiceMode)
                     Write-Host $_
                     $logWriter.WriteLine($line)
                 }
-                }
+            }
             finally { $logWriter.Dispose() }
         }
         else

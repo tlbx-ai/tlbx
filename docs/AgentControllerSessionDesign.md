@@ -840,7 +840,7 @@ Still mandatory after this work whenever Agent Controller Session evolves:
 
 ### Compact prompt actions (2026-11-12)
 
-Specified and implemented: the Agent Controller composer gives the prompt the full height of the box. Tools, Stop and Send sit beside the editor at the right, with no action row beneath the prompt. Each action retains a 44px touch target. Stop uses a square icon with a localized accessible label and tooltip, and invokes the existing structured turn interrupt, including a submission in flight; Terminal retains Esc. The expand control stays in the editor corner. Back to bottom is an accessible, labelled 44px floating arrow over the history and consumes no layout row.
+Specified and implemented: the Agent Controller composer gives the prompt the full height of the box. Tools, Stop and Send sit beside the editor at the right, with no action row beneath the prompt. In the expanded editor on narrow screens, the actions stack along the right edge to preserve text width. Each action retains a 44px touch target. Stop uses a square icon with a localized accessible label and tooltip, and invokes the existing structured turn interrupt, including a submission in flight; Terminal retains Esc. The expand control stays in the editor corner. Back to bottom is an accessible, labelled 44px floating arrow over the history and consumes no layout row.
 
 ### History read latency
 
