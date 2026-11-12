@@ -1523,5 +1523,9 @@
   "goal.recover": "সেশন থামিয়ে Goal পুনরুদ্ধার",
   "goal.recoverScope": "এই সেশনের কাজ থামিয়ে একই নেটিভ থ্রেডে আবার যুক্ত হয়ে Goal পড়ে; কোনো ইনপুট বা Goal পরিবর্তন পুনরায় পাঠায় না।",
   "goal.recovering": "পুনরায় যুক্ত হয়ে নেটিভ Goal পড়া হচ্ছে…",
-  "goal.recoveryFailed": "পুনরুদ্ধার ব্যর্থ; নেটিভ Goal এখনও অনিশ্চিত।"
+  "goal.recoveryFailed": "পুনরুদ্ধার ব্যর্থ; নেটিভ Goal এখনও অনিশ্চিত।",
+  "appServerControl.markdownTable.firstPage": "First table rows",
+  "appServerControl.markdownTable.lastPage": "Last table rows",
+  "appServerControl.markdownTable.previousPage": "Previous table rows",
+  "appServerControl.markdownTable.nextPage": "Next table rows"
 }

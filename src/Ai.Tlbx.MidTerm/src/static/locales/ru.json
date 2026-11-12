@@ -1523,5 +1523,9 @@
   "goal.recover": "Прервать сессию и восстановить Goal",
   "goal.recoverScope": "Прерывает работу этой сессии, подключает тот же нативный поток и читает Goal; ввод и изменения Goal не повторяются.",
   "goal.recovering": "Подключение и чтение нативного Goal…",
-  "goal.recoveryFailed": "Восстановление не удалось; нативный Goal не подтверждён."
+  "goal.recoveryFailed": "Восстановление не удалось; нативный Goal не подтверждён.",
+  "appServerControl.markdownTable.firstPage": "First table rows",
+  "appServerControl.markdownTable.lastPage": "Last table rows",
+  "appServerControl.markdownTable.previousPage": "Previous table rows",
+  "appServerControl.markdownTable.nextPage": "Next table rows"
 }

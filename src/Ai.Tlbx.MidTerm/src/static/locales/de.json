@@ -1699,5 +1699,9 @@
   "goal.recover": "Session unterbrechen und Goal wiederherstellen",
   "goal.recoverScope": "Unterbricht die Arbeit dieser Agent-Session, verbindet denselben nativen Thread erneut und liest dessen Goal; keine Eingabe oder Goal-Änderung wird wiederholt.",
   "goal.recovering": "Native Verbindung und Goal-Abfrage laufen…",
-  "goal.recoveryFailed": "Wiederherstellung fehlgeschlagen; natives Goal bleibt unbestätigt."
+  "goal.recoveryFailed": "Wiederherstellung fehlgeschlagen; natives Goal bleibt unbestätigt.",
+  "appServerControl.markdownTable.firstPage": "Erste Tabellenzeilen",
+  "appServerControl.markdownTable.lastPage": "Letzte Tabellenzeilen",
+  "appServerControl.markdownTable.previousPage": "Vorherige Tabellenzeilen",
+  "appServerControl.markdownTable.nextPage": "Nächste Tabellenzeilen"
 }

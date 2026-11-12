@@ -1786,5 +1786,9 @@
   "goal.recover": "Interrupt session and recover Goal",
   "goal.recoverScope": "This interrupts work in this Agent Session, reconnects the same native thread and reads its Goal; no input or Goal change is replayed.",
   "goal.recovering": "Reconnecting and reading native Goal…",
-  "goal.recoveryFailed": "Recovery failed; native Goal remains unconfirmed."
+  "goal.recoveryFailed": "Recovery failed; native Goal remains unconfirmed.",
+  "appServerControl.markdownTable.firstPage": "First table rows",
+  "appServerControl.markdownTable.lastPage": "Last table rows",
+  "appServerControl.markdownTable.previousPage": "Previous table rows",
+  "appServerControl.markdownTable.nextPage": "Next table rows"
 }

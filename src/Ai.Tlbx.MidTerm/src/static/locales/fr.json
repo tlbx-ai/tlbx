@@ -1523,5 +1523,9 @@
   "goal.recover": "Interrompre la session et récupérer Goal",
   "goal.recoverScope": "Interrompt le travail de cette session, reconnecte le même fil natif et lit son Goal ; aucune entrée ni modification de Goal n’est rejouée.",
   "goal.recovering": "Reconnexion et lecture du Goal natif…",
-  "goal.recoveryFailed": "Échec de récupération ; le Goal natif reste non confirmé."
+  "goal.recoveryFailed": "Échec de récupération ; le Goal natif reste non confirmé.",
+  "appServerControl.markdownTable.firstPage": "First table rows",
+  "appServerControl.markdownTable.lastPage": "Last table rows",
+  "appServerControl.markdownTable.previousPage": "Previous table rows",
+  "appServerControl.markdownTable.nextPage": "Next table rows"
 }

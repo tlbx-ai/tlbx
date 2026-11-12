@@ -1523,5 +1523,9 @@
   "goal.recover": "セッションを中断してGoalを復旧",
   "goal.recoverScope": "このセッションの作業を中断し、同じネイティブスレッドに再接続してGoalを読み取ります。入力やGoalの変更は再送しません。",
   "goal.recovering": "再接続してネイティブGoalを確認中…",
-  "goal.recoveryFailed": "復旧に失敗しました。ネイティブGoalは未確認です。"
+  "goal.recoveryFailed": "復旧に失敗しました。ネイティブGoalは未確認です。",
+  "appServerControl.markdownTable.firstPage": "First table rows",
+  "appServerControl.markdownTable.lastPage": "Last table rows",
+  "appServerControl.markdownTable.previousPage": "Previous table rows",
+  "appServerControl.markdownTable.nextPage": "Next table rows"
 }

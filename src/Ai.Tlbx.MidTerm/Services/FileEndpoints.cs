@@ -17,6 +17,8 @@ public static class FileEndpoints
     {
         var fileService = new FileService(sessionManager, allowlistService, gitWatcher);
         var documents = new FileDocumentService();
+        // Extract/load owned native assets before an impersonated file request.
+        SkiaNativeLoader.EnsureLoaded(settingsService.SettingsDirectory);
         FileOperationEndpoints.Map(app, fileService, settingsService);
         var readers = app.MapGroup("/api/files").AddEndpointFilter(new FileSessionIdentityFilter(fileService, settingsService));
 
@@ -373,6 +375,24 @@ public static class FileEndpoints
             { return DocumentError(ex, sessionId, fileService); }
         }).WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(64 * 1024 * 1024))
             .Produces<FileSaveResponse>().Produces<FileDocumentErrorResponse>(409);
+
+        readers.MapGet("/thumbnail", async (HttpContext context, string path, string? sessionId) =>
+        {
+            var (resolved, error) = await ResolveFileAccessAsync(path, sessionId, fileService);
+            if (error is not null) return error;
+            try
+            {
+                var info = new FileInfo(resolved!);
+                if (!info.Exists) return Results.NotFound();
+                var bytes = await FileImagePreview.GetAsync(info, context.RequestAborted);
+                if (bytes is null) return Results.StatusCode(415);
+                context.Response.Headers.CacheControl = "private, no-cache";
+                return Results.File(bytes, "image/webp", lastModified: info.LastWriteTimeUtc,
+                    entityTag: new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{info.Length:x}-{info.LastWriteTimeUtc.Ticks:x}-320\""));
+            }
+            catch (UnauthorizedAccessException) { return Results.StatusCode(403); }
+            catch (IOException) { return Results.NotFound(); }
+        });
 
         readers.MapGet("/view", async (HttpContext context, string path, string? sessionId) =>
         {

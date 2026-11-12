@@ -11,6 +11,7 @@ import { $currentSettings, getSession } from '../../stores';
 import { wireMarkdownTables } from '../../utils/markdown';
 import {
   createAssistantImagePreviewBlock,
+  buildAssistantEnrichedHtml,
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
 } from './assistantEnrichment';
@@ -674,38 +675,69 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         content.innerHTML = cache.html;
         collapseSingleParagraphMarkdownBody(content);
         wireAssistantInteractiveContent(content, sessionId);
-        wireMarkdownTables(content, {
-          clearSort: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.clearSort',
-              'Clear sorting for {column}',
-              { column },
+        wireMarkdownTables(
+          content,
+          {
+            firstPage: appServerControlText(
+              'appServerControl.markdownTable.firstPage',
+              'First table rows',
             ),
-          filterByColumn: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.filterByColumn',
-              'Filter {column}',
-              { column },
+            lastPage: appServerControlText(
+              'appServerControl.markdownTable.lastPage',
+              'Last table rows',
             ),
-          filterPlaceholder: appServerControlText(
-            'appServerControl.markdownTable.filterPlaceholder',
-            'Filter',
-          ),
-          sortAscending: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.sortAscending',
-              'Sort {column} ascending',
-              { column },
+            previousPage: appServerControlText(
+              'appServerControl.markdownTable.previousPage',
+              'Previous table rows',
             ),
-          sortDescending: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.sortDescending',
-              'Sort {column} descending',
-              {
-                column,
-              },
+            nextPage: appServerControlText(
+              'appServerControl.markdownTable.nextPage',
+              'Next table rows',
             ),
-        });
+            clearSort: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.clearSort',
+                'Clear sorting for {column}',
+                { column },
+              ),
+            filterByColumn: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.filterByColumn',
+                'Filter {column}',
+                { column },
+              ),
+            filterPlaceholder: appServerControlText(
+              'appServerControl.markdownTable.filterPlaceholder',
+              'Filter',
+            ),
+            sortAscending: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.sortAscending',
+                'Sort {column} ascending',
+                { column },
+              ),
+            sortDescending: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.sortDescending',
+                'Sort {column} descending',
+                {
+                  column,
+                },
+              ),
+          },
+          (tableBody) => {
+            // Keep table parsing context: a bare <tr> fragment parsed in a div
+            // loses its row/cell elements during file-link enrichment.
+            const shell = document.createElement('div');
+            shell.innerHTML = buildAssistantEnrichedHtml(
+              `<table><tbody>${tableBody.innerHTML}</tbody></table>`,
+              getEntryFileMentions(entry, 'body'),
+            ).html;
+            const enrichedBody = shell.querySelector('tbody');
+            if (enrichedBody) tableBody.replaceChildren(...enrichedBody.childNodes);
+            wireAssistantInteractiveContent(tableBody, sessionId);
+          },
+        );
         body.appendChild(content);
         appendEntryImagePreviews(body, entry, sessionId);
         return body;
@@ -1162,9 +1194,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         const image = document.createElement('img');
         image.className = 'agent-history-attachment-image-el';
         void accessReady.then(() => {
-          image.src = previewUrl;
+          image.src = previewUrl.replace('/api/files/view?', '/api/files/thumbnail?');
         });
         image.loading = 'lazy';
+        image.decoding = 'async';
         image.alt = resolveAttachmentLabel(attachment);
         frame.appendChild(image);
         link.appendChild(frame);
