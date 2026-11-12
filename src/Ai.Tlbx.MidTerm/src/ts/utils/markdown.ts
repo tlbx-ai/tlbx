@@ -5,10 +5,11 @@ export interface MarkdownRenderOptions {
   paginateTables?: boolean;
 }
 
-// Reuse the composer's delimiter parser and its Markdown hard-break convention.
-// Code and literal escapes are protected before this pass; HTML stays disabled.
-const inlineFormattingParser = new MarkdownIt('zero', { html: false }).enable('emphasis');
-inlineFormattingParser.inline.ruler.before('text', 'tlbx_hard_break', (state, silent) => {
+// Reuse the composer's installed delimiter parser for balanced, nested marks.
+// All other inline rules stay disabled; HTML/link/image safety remains below.
+const emphasisParser = new MarkdownIt('zero', { html: false }).enable('emphasis');
+const hardBreakParser = new MarkdownIt('zero', { html: false });
+hardBreakParser.inline.ruler.before('text', 'tlbx_hard_break', (state, silent) => {
   if (state.src[state.pos] !== '\\' || state.src[state.pos + 1] !== '\n') return false;
   if (!silent) state.push('hardbreak', 'br', 0);
   state.pos += 2;
@@ -60,14 +61,12 @@ function formatMarkdownLinks(escapedText: string): string {
   });
 }
 
-function formatMarkdownProse(text: string): string {
-  return inlineFormattingParser
+function formatMarkdownEmphasis(text: string): string {
+  return emphasisParser
     .parseInline(text, {})
     .flatMap((token) => token.children ?? [])
     .map((token) => {
       switch (token.type) {
-        case 'hardbreak':
-          return '<br>';
         case 'strong_open':
           return '<strong>';
         case 'strong_close':
@@ -135,10 +134,16 @@ function markdownLiteralAt(
   return escaped === null ? null : { text: escaped, end: index + escaped.length + 1 };
 }
 
+function renderMarkdownCodeSpan(code: string): string {
+  const padded = code.startsWith(' ') && code.endsWith(' ') && code.trim().length > 0;
+  return `<code>${padded ? code.slice(1, -1) : code}</code>`;
+}
+
 function protectMarkdownInlineLine(
   line: string,
   preserve: (literal: string) => string,
   options: MarkdownRenderOptions,
+  preserveSource = false,
 ): string {
   // Index every full run, including escaped ones: backslashes are literal inside
   // code. Each length's cursor only advances, so unmatched openers never rescan
@@ -149,7 +154,7 @@ function protectMarkdownInlineLine(
   for (let index = 0; index < line.length;) {
     const literal = markdownLiteralAt(line, index, options);
     if (literal !== null) {
-      output.push(preserve(literal.text));
+      output.push(preserve(preserveSource ? line.slice(index, literal.end) : literal.text));
       index = literal.end;
       continue;
     }
@@ -171,12 +176,46 @@ function protectMarkdownInlineLine(
       index = end;
       continue;
     }
-    const code = line.slice(end, close);
-    const padded = code.startsWith(' ') && code.endsWith(' ') && code.trim().length > 0;
-    output.push(preserve(`<code>${padded ? code.slice(1, -1) : code}</code>`));
+    output.push(
+      preserve(
+        preserveSource
+          ? line.slice(index, close + length)
+          : renderMarkdownCodeSpan(line.slice(end, close)),
+      ),
+    );
     index = close + length;
   }
   return output.join('');
+}
+
+function formatMarkdownHardBreaks(text: string, options: MarkdownRenderOptions): string {
+  if (!text.includes('\\\n')) return text;
+  const literals: string[] = [];
+  let prefix = '\uE000tlbx-break:';
+  while (text.includes(prefix)) prefix += ':';
+  const protectedText = text
+    .split('\n')
+    .map((line) =>
+      protectMarkdownInlineLine(
+        line,
+        (literal) => {
+          literals.push(literal);
+          return `${prefix}${literals.length - 1}\uE001`;
+        },
+        options,
+        true,
+      ),
+    )
+    .join('\n');
+  const html = hardBreakParser
+    .parseInline(protectedText, {})
+    .flatMap((token) => token.children ?? [])
+    .map((token) => (token.type === 'hardbreak' ? '<br>' : token.content))
+    .join('');
+  return html.replace(
+    new RegExp(`${prefix}(\\d+)\uE001`, 'g'),
+    (_match, index: string) => literals[Number(index)] ?? '',
+  );
 }
 
 /** Input is already HTML-escaped. Literal escapes and code never become markup. */
@@ -210,7 +249,7 @@ function formatMarkdownInline(
   // Code and escaped literal tags are already protected. Only this exact safe
   // table-cell tag becomes markup; attributes and all other HTML stay escaped.
   if (tableCell) html = html.replace(/&lt;br[ \t]*\/?&gt;/gi, '<br>');
-  html = formatMarkdownProse(html);
+  html = formatMarkdownEmphasis(html);
   html = formatMarkdownLinks(formatMarkdownImages(html));
   return html.replace(
     new RegExp(`X${prefix}word:(\\d+)\uE001X|${prefix}(\\d+)\uE001`, 'g'),
@@ -1241,6 +1280,9 @@ export function renderMarkdown(text: string, options: MarkdownRenderOptions = {}
     options,
   );
 
+  // Consume hard breaks before block wrappers, so list/quote continuations stay
+  // inside their block instead of leaving a visible marker before a closing tag.
+  html = formatMarkdownHardBreaks(html, options);
   html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
