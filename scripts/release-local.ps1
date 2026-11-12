@@ -187,7 +187,7 @@ Write-Host "  Updated: version.json" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "Building frontend..." -ForegroundColor Gray
 & "$PSScriptRoot/release-frontend-preflight.ps1" -Version $localWebVersion -SkipVerify
-& "$PSScriptRoot/run-release-tests.ps1" -TestCategories $selectedCategories -FrontendInstalled
+& "$PSScriptRoot/run-release-checks.ps1" -TestCategories $selectedCategories -FrontendInstalled
 
 # Use the same checked publish path as CI, including host reuse where eligible.
 $repoRoot = Split-Path $PSScriptRoot -Parent

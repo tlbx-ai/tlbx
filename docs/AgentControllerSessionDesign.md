@@ -492,9 +492,9 @@ The canonical history contract must satisfy the following:
 - Agent Controller Session quick settings should live in the dock status rail rather than as a separate detached manager strip.
 - That Agent Controller Session status rail should stay intentionally small and session-oriented.
 - Normal terminal smart input should reuse the same dock shell while keeping Agent Controller Session-only runtime controls out of ordinary terminal sessions.
-- If the user queues follow-up work from the shared Command Bay, Agent Controller Session should render that queue as a compact vertical stack directly above the composer instead of inventing a separate floating queue surface.
-- Agent Controller Session queue ownership belongs to tlbx, not the browser. Queued Command Bay prompts and queued Automation Bar items must survive browser disconnects and drain only when the current turn has returned control to the user.
-- If the shared Command Bay queue is empty and the active session can accept work immediately, tlbx should fast-track that submission directly to the runtime instead of briefly rendering a one-item queued row before sending. For Agent Controller Sessions this means the turn has returned to the user; for Terminal sessions this means the session is idle enough to pass the cooldown heat gate.
+- Explicitly scheduled prompts and queued Automation Bar items use the compact server-owned queue above the composer and survive browser disconnects.
+- Normal composer and session-text prompts dispatch immediately, independently of heat and pending automation entries. An idle Agent Controller Session starts a turn; an active one receives native steering guarded by its exact current turn identity. The server reads authoritative metadata under its dispatch gate. A race or provider rejection stays visible and preserves the draft; it never silently queues or replays input.
+- Explicitly scheduled prompts retain their time gate without an additional heat/turn wait. Automation buttons keep their configured triggers.
 - On desktop, Agent Controller Session quick settings should read as a low-clutter translucent control rail rather than a full-width form.
 - The model quick setting should use a provider-scoped populated list, while still preserving any current non-preset model already active in the session or draft.
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
@@ -568,7 +568,7 @@ The canonical history contract must satisfy the following:
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
 - In Agent Controller Sessions, plain `Esc` anywhere inside the active Agent Controller Session surface should interrupt the active turn instead of sending a literal terminal escape key.
 - The busy-indicator hint `(Press Esc to cancel)` implies a surface-wide shortcut, not a composer-only shortcut.
-- If the user queued follow-up Agent Controller Session turns while a turn was still running, the first `Esc` should let that queued work drain next, and a second `Esc` should cancel the remaining queued drain.
+- Composer follow-ups steer immediately. Escape interrupts the active turn; it never releases a hidden prompt queue.
 
 ## Operator API And CLI
 
@@ -768,7 +768,7 @@ Status in this branch/work item:
 - implemented: Codex Agent Controller Session exposes `/model`, `/plan`, and `/goal` action buttons inside the quick-settings rail; `/model` opens the Agent Controller Session model picker, `/plan` toggles plan mode, and `/goal` opens a separate native Goal editor for Codex and Claude; guarded native commands and typed Goal snapshots replace the former composer-stealing/runtime-message projection (code prepared; Root owns runtime acceptance)
 - implemented: desktop Agent Controller Session quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Agent Controller Session quick settings remain hidden unless the active session is an explicit Agent Controller Session surface; ordinary terminal sessions and no-session empty states never show Agent Controller Session-only quick controls
-- implemented: Agent Controller Session plain `Esc` now interrupts active Agent Controller Session turns from the composer, touch-controller, focused Agent Controller Session surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap
+- implemented: Agent Controller Session plain `Esc` now interrupts active Agent Controller Session turns from the composer, touch-controller, focused Agent Controller Session surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, including during the turn-start submission gap; no hidden follow-up queue remains
 - implemented: while the shared Command Bay composer is focused, bare `Shift+Tab` now toggles plan mode only for the active Agent Controller Session surface and forwards raw backtab to the active Terminal surface instead of applying one behavior across both surfaces
 - implemented: when terminal transparency is fully opaque, active Agent Controller Sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Agent Controller Session surface
 - implemented: workspace parent shells stay transparent so active Terminal and Agent Controller Session panes sit directly over the app wallpaper without extra translucent backdrop layers
@@ -777,8 +777,8 @@ Status in this branch/work item:
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label, phase-locks both its sweep and spinner animations to a shared wallclock-derived phase, and keeps the existing busy DOM node alive across live label/elapsed updates so redraws do not visibly restart the motion
 - implemented: the trailing busy-label text highlight now mirrors at the right edge and travels back left through the word instead of snapping from the end back to the first letter
 - implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by tlbx-owned persistent queue state rather than browser-local Agent Controller Session-only submission state
-- implemented: explicit Agent Controller Sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
-- implemented: shared Command Bay prompt submissions now bypass the visible queue entirely when that queue is empty and the target session can accept work immediately, so idle Terminal sends and user-turn Agent Controller Session sends do not flash a transient queued row before dispatch
+- implemented: ordinary Command Bay prompts bypass the persistent queue and heat gates. Active Agent Controller turns receive native steering; explicit scheduled prompts use their time gate, while configured automation triggers retain their existing behavior.
+- implemented: composer and session-text prompt sends share immediate server dispatch, even with queued automations or active turns; the obsolete browser follow-up queue/drain implementation is removed.
 - implemented: settled turn-duration notes now render as a quiet near-full-width horizontal end-of-turn marker with the duration label centered between rule segments
 - implemented: runtime/system notice text is sanitized for ANSI/control-byte noise, de-duplicates repeated message/detail payloads, and system rows render with quieter metadata/body emphasis than the main conversation lane
 - implemented: Codex MCP startup-status notifications now reduce into quiet `Agent State` system rows instead of generic unknown-agent fallback tool rows

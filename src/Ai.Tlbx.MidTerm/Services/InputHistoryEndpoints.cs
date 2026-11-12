@@ -112,7 +112,6 @@ public static class InputHistoryEndpoints
                 return Results.NotFound($"Target session '{targetSessionId}' was not found.");
             }
 
-            var queued = false;
             if (entry.Submit)
             {
                 var turn = InputHistoryService.CloneTurn(entry.Turn)
@@ -126,12 +125,11 @@ public static class InputHistoryEndpoints
 
                 var result = await commandBayQueue.SubmitPromptAsync(targetSessionId, turn, ct)
                     .ConfigureAwait(false);
-                if (!result.Accepted)
+                if (!result)
                 {
                     return Results.Conflict("Target session did not accept the prompt.");
                 }
 
-                queued = result.Entry is not null;
                 inputHistory.RecordPrompt(
                     targetSessionId,
                     targetSession.Name,
@@ -192,7 +190,7 @@ public static class InputHistoryEndpoints
                     EntryId = id,
                     TargetSessionId = targetSessionId,
                     Accepted = true,
-                    Queued = queued
+                Queued = false
                 },
                 AppJsonContext.Default.InputHistoryReplayResponse);
         });

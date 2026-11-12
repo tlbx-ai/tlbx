@@ -40,27 +40,15 @@ type AppServerControlTurnLifecycleEventDetail =
   | AppServerControlTurnAcceptedEventDetail
   | AppServerControlTurnFailedEventDetail;
 
-interface QueuedAppServerControlTurn {
-  optimisticId: string;
-  request: AppServerControlTurnRequest;
-  resolve: () => void;
-  reject: (error: Error) => void;
-}
-
-interface AppServerControlTurnQueueState {
+interface AppServerControlTurnExecutionState {
   currentTurnId: string | null;
   currentTurnRunning: boolean;
-  queuedTurns: QueuedAppServerControlTurn[];
   submittingTurn: boolean;
   pendingInterruptAfterSubmit: boolean;
   interruptInFlight: boolean;
-  queueDrainActive: boolean;
-  interruptingForQueuedTurns: boolean;
-  haltQueuedTurns: boolean;
-  activeQueuedTurnId: string | null;
 }
 
-const appServerControlTurnQueueStates = new Map<string, AppServerControlTurnQueueState>();
+const appServerControlTurnStates = new Map<string, AppServerControlTurnExecutionState>();
 
 export function isAppServerControlActiveSession(sessionId: string | null | undefined): boolean {
   if (!sessionId) {
@@ -96,7 +84,7 @@ export async function submitAppServerControlTurn(
 ): Promise<AppServerControlTurnStartResponse> {
   const normalizedRequest = normalizeAppServerControlTurnRequest(request);
   const optimisticId = dispatchSubmittedAppServerControlTurn(sessionId, normalizedRequest);
-  const state = getOrCreateAppServerControlTurnQueueState(sessionId);
+  const state = getOrCreateAppServerControlTurnState(sessionId);
   state.submittingTurn = true;
 
   try {
@@ -117,127 +105,33 @@ export async function submitAppServerControlTurn(
   }
 }
 
-export function submitQueuedAppServerControlTurn(
-  sessionId: string,
-  request: AppServerControlTurnRequest,
-): Promise<void> {
-  const normalizedRequest = normalizeAppServerControlTurnRequest(request);
-  const optimisticId = dispatchSubmittedAppServerControlTurn(sessionId, normalizedRequest);
-  const state = getOrCreateAppServerControlTurnQueueState(sessionId);
-
-  return new Promise<void>((resolve, reject) => {
-    const queuedTurn: QueuedAppServerControlTurn = {
-      optimisticId,
-      request: normalizedRequest,
-      resolve,
-      reject: (error: Error) => {
-        reject(error);
-      },
-    };
-
-    if (shouldQueueAppServerControlTurn(state)) {
-      state.queuedTurns.push(queuedTurn);
-      return;
-    }
-
-    void startQueuedAppServerControlTurn(sessionId, state, queuedTurn, false);
-  });
-}
-
 export async function handleAppServerControlEscape(sessionId: string): Promise<boolean> {
-  const state = getOrCreateAppServerControlTurnQueueState(sessionId);
-  const { hasQueuedWork, hasSubmittingTurn } = getAppServerControlEscapeWorkState(state);
-
-  if (!state.currentTurnRunning && !hasQueuedWork && !hasSubmittingTurn) {
-    return false;
-  }
-
-  if (hasQueuedWork && (state.interruptingForQueuedTurns || state.queueDrainActive)) {
-    state.haltQueuedTurns = true;
-    state.interruptingForQueuedTurns = false;
-    cancelQueuedAppServerControlTurns(state, sessionId, 'Canceled queued AppServerControl turn.');
-
-    if (state.currentTurnRunning) {
-      return requestAppServerControlTurnInterrupt(sessionId, state);
-    }
-
-    if (hasSubmittingTurn) {
-      state.pendingInterruptAfterSubmit = true;
-      return true;
-    }
-
-    resetQueuedDrainState(state);
-    return true;
-  }
-
-  if (state.queuedTurns.length > 0) {
-    state.interruptingForQueuedTurns = true;
-  }
-
-  if (state.currentTurnRunning) {
-    return requestAppServerControlTurnInterrupt(sessionId, state);
-  }
-
-  if (hasSubmittingTurn) {
+  const state = getOrCreateAppServerControlTurnState(sessionId);
+  if (state.currentTurnRunning) return requestAppServerControlTurnInterrupt(sessionId, state);
+  if (state.submittingTurn) {
     state.pendingInterruptAfterSubmit = true;
     return true;
   }
-
-  maybeDrainQueuedAppServerControlTurns(sessionId, state);
-  return true;
+  return false;
 }
 
 export function hasInterruptibleAppServerControlTurnWork(sessionId: string): boolean {
-  const state = getOrCreateAppServerControlTurnQueueState(sessionId);
-  const { hasQueuedWork, hasSubmittingTurn } = getAppServerControlEscapeWorkState(state);
-  return state.currentTurnRunning || hasQueuedWork || hasSubmittingTurn;
+  const state = getOrCreateAppServerControlTurnState(sessionId);
+  return state.currentTurnRunning || state.submittingTurn;
 }
 
 export function syncAppServerControlTurnExecutionState(
   sessionId: string,
   currentTurn: AppServerControlTurnExecutionSummary | null | undefined,
 ): void {
-  const state = getOrCreateAppServerControlTurnQueueState(sessionId);
+  const state = getOrCreateAppServerControlTurnState(sessionId);
   state.currentTurnId = currentTurn?.turnId?.trim() || null;
   state.currentTurnRunning = isRunningAppServerControlTurnState(currentTurn?.state);
-
-  if (state.currentTurnRunning) {
-    if (state.queueDrainActive && !state.activeQueuedTurnId && state.currentTurnId) {
-      state.activeQueuedTurnId = state.currentTurnId;
-    }
-    return;
-  }
-
-  state.interruptInFlight = false;
-
-  if (state.activeQueuedTurnId && state.currentTurnId !== state.activeQueuedTurnId) {
-    state.activeQueuedTurnId = null;
-  }
-
-  if (state.haltQueuedTurns) {
-    cancelQueuedAppServerControlTurns(state, sessionId, 'Canceled queued AppServerControl turn.');
-    resetQueuedDrainState(state);
-    return;
-  }
-
-  if (state.queuedTurns.length > 0) {
-    maybeDrainQueuedAppServerControlTurns(sessionId, state);
-    return;
-  }
-
-  if (!state.activeQueuedTurnId) {
-    resetQueuedDrainState(state);
-  }
+  if (!state.currentTurnRunning) state.interruptInFlight = false;
 }
 
 export function clearAppServerControlTurnSessionState(sessionId: string): void {
-  const state = appServerControlTurnQueueStates.get(sessionId);
-  if (!state) {
-    return;
-  }
-
-  cancelQueuedAppServerControlTurns(state, sessionId, 'AppServerControl session closed.');
-  appServerControlTurnQueueStates.delete(sessionId);
+  appServerControlTurnStates.delete(sessionId);
 }
 
 function dispatchAppServerControlTurnEvent(
@@ -315,141 +209,25 @@ async function sendAppServerControlTurnWithLifecycle(
   }
 }
 
-function getOrCreateAppServerControlTurnQueueState(
+function getOrCreateAppServerControlTurnState(
   sessionId: string,
-): AppServerControlTurnQueueState {
-  const existing = appServerControlTurnQueueStates.get(sessionId);
-  if (existing) {
-    return existing;
-  }
-
-  const created: AppServerControlTurnQueueState = {
+): AppServerControlTurnExecutionState {
+  const existing = appServerControlTurnStates.get(sessionId);
+  if (existing) return existing;
+  const created: AppServerControlTurnExecutionState = {
     currentTurnId: null,
     currentTurnRunning: false,
-    queuedTurns: [],
     submittingTurn: false,
     pendingInterruptAfterSubmit: false,
     interruptInFlight: false,
-    queueDrainActive: false,
-    interruptingForQueuedTurns: false,
-    haltQueuedTurns: false,
-    activeQueuedTurnId: null,
   };
-  appServerControlTurnQueueStates.set(sessionId, created);
+  appServerControlTurnStates.set(sessionId, created);
   return created;
-}
-
-function getAppServerControlEscapeWorkState(state: AppServerControlTurnQueueState): {
-  hasQueuedWork: boolean;
-  hasSubmittingTurn: boolean;
-} {
-  return {
-    hasQueuedWork:
-      state.queuedTurns.length > 0 ||
-      state.queueDrainActive ||
-      state.interruptingForQueuedTurns ||
-      Boolean(state.activeQueuedTurnId),
-    hasSubmittingTurn: state.submittingTurn && !state.currentTurnRunning,
-  };
-}
-
-function shouldQueueAppServerControlTurn(state: AppServerControlTurnQueueState): boolean {
-  return state.currentTurnRunning || state.submittingTurn || state.queuedTurns.length > 0;
-}
-
-async function startQueuedAppServerControlTurn(
-  sessionId: string,
-  state: AppServerControlTurnQueueState,
-  queuedTurn: QueuedAppServerControlTurn,
-  fromQueue: boolean,
-): Promise<void> {
-  state.submittingTurn = true;
-  if (fromQueue) {
-    state.queueDrainActive = true;
-    state.activeQueuedTurnId = queuedTurn.optimisticId;
-  }
-
-  try {
-    const response = await sendAppServerControlTurnWithLifecycle(
-      sessionId,
-      queuedTurn.optimisticId,
-      queuedTurn.request,
-    );
-    state.currentTurnId = response.turnId ?? state.currentTurnId;
-    state.currentTurnRunning = true;
-    if (fromQueue) {
-      state.activeQueuedTurnId = response.turnId ?? queuedTurn.optimisticId;
-    }
-    await maybeInterruptAppServerControlTurnAfterSubmit(sessionId, state);
-    queuedTurn.resolve();
-  } catch (error) {
-    state.pendingInterruptAfterSubmit = false;
-    const normalized = error instanceof Error ? error : new Error(String(error));
-    queuedTurn.reject(normalized);
-    if (fromQueue && !state.haltQueuedTurns) {
-      maybeDrainQueuedAppServerControlTurns(sessionId, state);
-    }
-  } finally {
-    state.submittingTurn = false;
-  }
-}
-
-function maybeDrainQueuedAppServerControlTurns(
-  sessionId: string,
-  state: AppServerControlTurnQueueState,
-): void {
-  if (state.submittingTurn || state.currentTurnRunning) {
-    return;
-  }
-
-  if (state.haltQueuedTurns) {
-    cancelQueuedAppServerControlTurns(state, sessionId, 'Canceled queued AppServerControl turn.');
-    resetQueuedDrainState(state);
-    return;
-  }
-
-  const nextTurn = state.queuedTurns.shift();
-  if (!nextTurn) {
-    if (!state.activeQueuedTurnId) {
-      resetQueuedDrainState(state);
-    }
-    return;
-  }
-
-  state.queueDrainActive = true;
-  state.interruptingForQueuedTurns = false;
-  void startQueuedAppServerControlTurn(sessionId, state, nextTurn, true);
-}
-
-function cancelQueuedAppServerControlTurns(
-  state: AppServerControlTurnQueueState,
-  sessionId: string,
-  errorMessage: string,
-): void {
-  const canceledTurns = state.queuedTurns.splice(0, state.queuedTurns.length);
-  for (const turn of canceledTurns) {
-    dispatchAppServerControlTurnEvent(APP_SERVER_CONTROL_TURN_FAILED_EVENT, {
-      optimisticId: turn.optimisticId,
-      sessionId,
-      request: turn.request,
-      errorMessage,
-    });
-    queueMicrotask(() => {
-      turn.resolve();
-    });
-  }
-}
-
-function resetQueuedDrainState(state: AppServerControlTurnQueueState): void {
-  state.queueDrainActive = false;
-  state.interruptingForQueuedTurns = false;
-  state.haltQueuedTurns = false;
-  state.activeQueuedTurnId = null;
 }
 
 async function requestAppServerControlTurnInterrupt(
   sessionId: string,
-  state: AppServerControlTurnQueueState,
+  state: AppServerControlTurnExecutionState,
 ): Promise<boolean> {
   if (state.interruptInFlight) {
     return true;
@@ -471,7 +249,7 @@ async function requestAppServerControlTurnInterrupt(
 
 async function maybeInterruptAppServerControlTurnAfterSubmit(
   sessionId: string,
-  state: AppServerControlTurnQueueState,
+  state: AppServerControlTurnExecutionState,
 ): Promise<void> {
   if (!state.pendingInterruptAfterSubmit) {
     return;
@@ -483,5 +261,10 @@ async function maybeInterruptAppServerControlTurnAfterSubmit(
 
 function isRunningAppServerControlTurnState(state: string | null | undefined): boolean {
   const normalized = (state || '').trim().toLowerCase();
-  return normalized === 'running' || normalized === 'in_progress' || normalized === 'submitted';
+  return (
+    normalized === 'running' ||
+    normalized === 'in_progress' ||
+    normalized === 'started' ||
+    normalized === 'submitted'
+  );
 }

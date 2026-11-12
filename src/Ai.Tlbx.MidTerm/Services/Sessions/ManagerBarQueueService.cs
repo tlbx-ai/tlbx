@@ -105,23 +105,6 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return entry is null ? null : CloneEntry(entry);
     }
 
-    public ManagerBarQueueEntryDto? EnqueuePrompt(string sessionId, AppServerControlTurnRequest turn)
-    {
-        if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
-        {
-            return null;
-        }
-
-        ManagerBarQueueEntryDto entry;
-        lock (_lock)
-        {
-            entry = EnqueuePromptLocked(trimmedSessionId, normalizedTurn);
-        }
-
-        OnChanged?.Invoke();
-        return CloneEntry(entry);
-    }
-
     public ManagerBarQueueEntryDto? EnqueuePromptAt(
         string sessionId,
         AppServerControlTurnRequest turn,
@@ -155,57 +138,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
         return CloneEntry(entry);
     }
 
-    public async Task<(bool Accepted, ManagerBarQueueEntryDto? Entry)> SubmitPromptAsync(
-        string sessionId,
-        AppServerControlTurnRequest turn,
-        CancellationToken cancellationToken = default)
-    {
-        if (!TryNormalizePromptSubmission(sessionId, turn, out var trimmedSessionId, out var normalizedTurn))
-        {
-            return (false, null);
-        }
-
-        ManagerBarQueueEntryDto? queuedEntry = null;
-        AppServerControlTurnRequest? immediateTurn = null;
-        lock (_lock)
-        {
-            if (CanDispatchImmediatelyLocked(trimmedSessionId))
-            {
-                _activeImmediateDispatchSessions.Add(trimmedSessionId);
-                immediateTurn = CloneTurn(normalizedTurn);
-            }
-            else
-            {
-                queuedEntry = EnqueuePromptLocked(trimmedSessionId, normalizedTurn);
-            }
-        }
-
-        if (queuedEntry is not null)
-        {
-            OnChanged?.Invoke();
-            return (true, CloneEntry(queuedEntry));
-        }
-
-        if (immediateTurn is null)
-        {
-            return (false, null);
-        }
-
-        try
-        {
-            await _runtime.SendTurnAsync(trimmedSessionId, immediateTurn, cancellationToken).ConfigureAwait(false);
-            return (true, null);
-        }
-        finally
-        {
-            lock (_lock)
-            {
-                _activeImmediateDispatchSessions.Remove(trimmedSessionId);
-            }
-        }
-    }
-
-    public async Task<bool> DispatchPromptDirectAsync(
+    public async Task<bool> SubmitPromptAsync(
         string sessionId,
         AppServerControlTurnRequest turn,
         CancellationToken cancellationToken = default)
@@ -215,6 +148,8 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             return false;
         }
 
+        // A user send is current intent, even while the terminal is hot or an
+        // automation is waiting. The runtime steers an active controlled turn.
         await _runtime.SendTurnAsync(trimmedSessionId, normalizedTurn, cancellationToken).ConfigureAwait(false);
         return true;
     }
@@ -565,6 +500,10 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
     private bool IsQueueEntryReady(ManagerBarQueueEntryDto entry, DateTimeOffset now)
     {
         var phase = ParsePhase(entry.Phase);
+        if (string.Equals(entry.Kind, PromptQueueKind, StringComparison.Ordinal))
+        {
+            return IsTimeGateReady(entry, phase, now);
+        }
         if (_runtime.UsesTurnQueue(entry.SessionId))
         {
             if (!IsTimeGateReady(entry, phase, now))

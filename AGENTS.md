@@ -14,7 +14,7 @@ push, PR, release or artifact publication workflows. Keep compiler/analyzers,
 typecheck, lint, package/signature/SBOM integrity and security audits automatic.
 Before a major or main release, remind Johannes to dispatch suite=all for the exact
 candidate ref and review the result; a reminder must not auto-start or gate tests.
-Local explicitly selected test runs remain supported.
+Local build and release scripts also never start test suites. -TestCategories selects build/analysis/integrity checks, not permission to run tests. Use run-release-tests.ps1 separately only when an explicit test run was requested.
 Tests must exercise a concrete contract or failure. Do not assert source text,
 workflow job layout, documentation wording or arbitrary catalog counts. Reuse
 existing fixtures; keep build/setup costs separate from actual test duration.

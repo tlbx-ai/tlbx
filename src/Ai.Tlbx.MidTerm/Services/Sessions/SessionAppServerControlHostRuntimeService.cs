@@ -559,6 +559,54 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task SendComposerTurnAsync(
+        string sessionId,
+        AppServerControlTurnRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            // Read authoritative turn metadata under the same dispatch gate.
+            // This also covers a second send before the first start patch arrives.
+            var current = await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = id,
+                SessionId = sessionId,
+                Type = "history.window.get",
+                HistoryWindow = new AppServerControlHostHistoryWindowRequest { Count = 1 }
+            }, ct).ConfigureAwait(false);
+            var turn = current.HistoryWindow?.CurrentTurn
+                ?? throw new InvalidOperationException("Agent Controller host did not return current turn metadata.");
+            var running = turn.State?.Trim().ToLowerInvariant() is "running" or "in_progress" or "started" or "submitted";
+            if (running && string.IsNullOrWhiteSpace(turn.TurnId))
+            {
+                throw new InvalidOperationException("Active Agent Controller turn has no steering identity.");
+            }
+
+            await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = id,
+                SessionId = sessionId,
+                Type = running ? "turn.steer" : "turn.start",
+                StartTurn = running ? null : request,
+                SteerTurn = running ? new AppServerControlSteerRequest
+                {
+                    Text = request.Text,
+                    Attachments = request.Attachments,
+                    ExpectedTurnId = turn.TurnId
+                } : null
+            }, ct).ConfigureAwait(false);
+            state.Status = HostRuntimeStatus.Running;
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
     public async Task<AppServerControlCommandAcceptedResponse> InterruptTurnAsync(
         string sessionId,
         AppServerControlInterruptRequest request,

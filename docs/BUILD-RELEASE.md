@@ -11,7 +11,10 @@ gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref <candidate-ref
 
 Before a major or main release, remind Johannes to run this workflow for the exact
 candidate and inspect its result. Release scripts display the same reminder;
-they do not dispatch tests. Local `-TestCategories` selection remains explicit.
+they do not dispatch tests. Local build and release entry points also never run
+test suites: `-TestCategories` selects validation scope only. Run
+`scripts/run-release-tests.ps1 -TestCategories ...` separately when a test run is
+explicitly requested, or dispatch Tests (on demand).
 Automatic PR/release checks retain compiler/analyzers, typecheck, lint, security
 audits, frozen native artifact verification, signing, SBOMs and package integrity.
 The Windows package job installs pinned SDK11 and restores locked dependencies
@@ -64,13 +67,13 @@ rejects reuse of a published version.
 | Category | Checks | Choose for |
 |---|---|---|
 | `assets` | TypeScript typecheck and TS/CSS lint | CSS, HTML, text, static assets; also inspect the affected UI |
-| `frontend` | Typecheck, lint, full frontend tests including Kitty graphics | TypeScript behavior and browser contracts |
-| `server` | Server unit and integration suites | Server C# and REST APIs |
-| `runtime` | All three .NET suites, including AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
-| `installers` | Installer contract verification | Install/uninstall, startup, certificates and updater changes |
+| `frontend` | Typecheck and TS/CSS lint | TypeScript behavior and browser contracts |
+| `server` | Server compiler and analyzers, warnings as errors | Server C# and REST APIs |
+| `runtime` | Compiler/analyzers for server, TtyHost and AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
+| `installers` | Published package signature/hash integrity; installer behavior runs on demand | Install/uninstall, startup, certificates and updater changes |
 | `dependencies` | Server npm/NuGet audit, lock/signature checks and Claude bridge build | Server dependencies and lockfiles |
-| `build` | Release script behavioral checks, runtime builds, Windows AOT execution probe | Build/release scripts, packaging, SDK and native dependency changes |
-| `all` | All of the above, without duplicate frontend/.NET suites | Broad changes, uncertain impact; required for stable releases |
+| `build` | Runtime compiler/analyzers; Native AOT publication and package integrity remain mandatory in CI | Build/release scripts, packaging, SDK and native dependency changes |
+| `all` | All validation above, without test-suite dispatch | Broad changes, uncertain impact; required for stable releases |
 
 Use `all` by itself. Otherwise pass one category or a PowerShell array such as
 `-TestCategories frontend,server`. Frontend packaging always runs; its one fresh

@@ -21,7 +21,7 @@ function Resolve-ReleaseTestClusters {
 
 function Show-ReleaseTestPlan {
     param([string[]]$Categories, [string]$BaseVersion)
-    Write-Host "Release test categories: $($Categories -join ', ')" -ForegroundColor Cyan
+    Write-Host "Release validation categories (test suites are on demand): $($Categories -join ', ')" -ForegroundColor Cyan
     Write-Host 'Frontend packaging and hosted package integrity checks remain mandatory.'
     if ($BaseVersion) {
         $base = "refs/tags/v$BaseVersion"

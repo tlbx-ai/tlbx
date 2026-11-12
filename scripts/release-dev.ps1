@@ -390,7 +390,7 @@ catch {
 # Explicitly selected checks; frontend dependencies were installed by preflight.
 try {
     Write-ReleaseProgress "Verifying ${newVersion}: $($selectedCategories -join ', ')"
-    & (Join-Path $PSScriptRoot "run-release-tests.ps1") -TestCategories $selectedCategories -FrontendInstalled
+    & (Join-Path $PSScriptRoot "run-release-checks.ps1") -TestCategories $selectedCategories -FrontendInstalled
 }
 catch {
     Write-Host ""

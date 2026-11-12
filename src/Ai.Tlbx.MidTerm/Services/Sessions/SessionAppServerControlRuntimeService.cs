@@ -208,6 +208,15 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return await _hostRuntime.StartTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
+    public async Task SendComposerTurnAsync(
+        string sessionId,
+        AppServerControlTurnRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        await _hostRuntime.SendComposerTurnAsync(sessionId, request, ct).ConfigureAwait(false);
+    }
+
     public async Task<AppServerControlCommandAcceptedResponse> InterruptTurnAsync(
         string sessionId,
         AppServerControlInterruptRequest request,

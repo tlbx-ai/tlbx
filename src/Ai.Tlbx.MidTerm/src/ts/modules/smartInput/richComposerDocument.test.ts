@@ -216,12 +216,12 @@ describe('rich composer document contracts', () => {
     const create = vi.fn((text: string, attachments: AppServerControlTurnRequest['attachments']) => ({ text, attachments }));
     const args = { sessionId: 'original-session', draft: current, attachments: registry,
       uploadFile: upload, uploadFailureMessage: 'upload', attachmentReadFailureMessage: 'read',
-      createTurnRequest: create, submitQueuedTurn: submit };
+      createTurnRequest: create, submitTurn: submit };
     const first = await submitAppServerControlComposerDraft(args);
-    await expect(first.queuedTurn).rejects.toThrow('queue rejected');
+    await expect(first.submittedTurn).rejects.toThrow('queue rejected');
     expect(submit).toHaveBeenCalledTimes(1); // No automatic replay after uncertain delivery.
     const second = await submitAppServerControlComposerDraft(args);
-    await second.queuedTurn;
+    await second.submittedTurn;
     expect(second.request.attachments.map((entry) => entry.path)).toEqual(['/A.png', '/B.png']);
     expect(upload).not.toHaveBeenCalled();
     expect(current.parts).toEqual([{ kind: 'reference', referenceId: 'orphan' }]);
