@@ -1,3 +1,4 @@
+import { retainHistoryWheelOverflow, resumeHistoryWheelMotion } from './historyWheel';
 import { syncAppServerControlGoal } from '../appServerControl/goals';
 /* eslint-disable max-lines -- AppServerControl activation/runtime orchestration remains consolidated here until the active path is split into smaller modules. */
 import { createLogger } from '../logging';
@@ -656,6 +657,7 @@ export function inspectAppServerControlHistory(sessionId: string): Record<string
     mode: state.historyNavigatorMode,
     debug: state.debugScenarioActive,
     refreshInFlight: state.refreshInFlight,
+    pendingWheelDeltaPx: state.historyPendingWheelDeltaPx,
     renderDirty: state.renderDirty,
     scheduled: state.historyRenderScheduled,
     batch: state.historyRenderBatchHandle,
@@ -1059,6 +1061,7 @@ function getOrCreateViewState(
     historyLastScrollMetrics: null,
     historyLastUserScrollIntentAt: 0,
     historyLastUserScrollDirection: 0,
+    historyPendingWheelDeltaPx: 0,
     historyLastVoidSyncScrollTop: null,
     historyWindowRevision: null,
     historyWindowViewportWidth: null,
@@ -1275,6 +1278,7 @@ async function requestHistoryNavigatorWindow(
     isHistoryIndexInsideCurrentWindow(state, clampedTargetIndex) &&
     state.historyWindowCount >= requestCount;
 
+  state.historyPendingWheelDeltaPx = 0;
   setHistoryJumpTarget(
     state,
     clampedTargetIndex,
@@ -1427,6 +1431,7 @@ function scheduleHistoryNavigatorHydration(
 }
 
 function enterHistoryFollowLive(sessionId: string, state: SessionAppServerControlViewState): void {
+  state.historyPendingWheelDeltaPx = 0;
   clearHistoryNavigatorPreviewTimer(state);
   clearHistoryNavigatorHydrateTimer(state);
   clearQueuedHistoryNavigatorRequest(state);
@@ -1508,13 +1513,15 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   viewport.dataset.appServerControlScrollBound = 'true';
   let lastTouchClientY: number | null = null;
   let wheelPrefetchFrameQueued = false;
-  const markUserScrollIntent = (direction: -1 | 0 | 1 = 0, releaseJump = true) => {
+  let wheelPrefetchDeltaPx = 0;
+  const markUserScrollIntent = (direction: -1 | 0 | 1 = 0, releaseJump = true, wheel = false) => {
     const current = viewStates.get(sessionId);
     if (!current) {
       return;
     }
 
     current.historyLastUserScrollIntentAt = Date.now();
+    if (!wheel) current.historyPendingWheelDeltaPx = 0;
     if (releaseJump) {
       clearHistoryJumpTarget(current);
       current.historyNavigatorDragMapping = null;
@@ -1563,12 +1570,16 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     );
   };
   const queueKernelEdgeWindowSync = (deltaYPx: number) => {
+    if (Math.sign(wheelPrefetchDeltaPx) !== Math.sign(deltaYPx)) wheelPrefetchDeltaPx = 0;
+    wheelPrefetchDeltaPx += deltaYPx;
     if (wheelPrefetchFrameQueued) {
       return;
     }
     wheelPrefetchFrameQueued = true;
     window.requestAnimationFrame(() => {
       wheelPrefetchFrameQueued = false;
+      const frameDeltaYPx = wheelPrefetchDeltaPx;
+      wheelPrefetchDeltaPx = 0;
       const current = viewStates.get(sessionId);
       const currentViewport = current?.historyViewport;
       if (
@@ -1581,7 +1592,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       }
       if (
         shouldPrefetchHistoryWindowForWheel({
-          deltaYPx,
+          deltaYPx: frameDeltaYPx,
           scrollTop: currentViewport.scrollTop,
           scrollHeight: currentViewport.scrollHeight,
           clientHeight: currentViewport.clientHeight,
@@ -1596,8 +1607,11 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   viewport.addEventListener(
     'wheel',
     (event) => {
+      if (event.ctrlKey || event.metaKey || event.defaultPrevented || event.deltaY === 0) return;
       const deltaYPx = resolveHistoryWheelDeltaYPx(event, viewport);
-      markUserScrollIntent(deltaYPx < 0 ? -1 : deltaYPx > 0 ? 1 : 0);
+      markUserScrollIntent(deltaYPx < 0 ? -1 : deltaYPx > 0 ? 1 : 0, true, true);
+      const current = viewStates.get(sessionId);
+      if (current) retainHistoryWheelOverflow(current, deltaYPx);
       const fastWheelThresholdPx = Math.max(
         HISTORY_FAST_WHEEL_DELTA_MIN_PX,
         Math.round(Math.max(1, viewport.clientHeight) * 0.75),
@@ -2152,6 +2166,7 @@ function closeAppServerControlStream(sessionId: string): void {
 }
 
 function releaseHiddenAppServerControlRenderState(state: SessionAppServerControlViewState): void {
+  state.historyPendingWheelDeltaPx = 0;
   clearPendingHistoryRenderBatch(state);
   clearHistoryNavigatorPreviewTimer(state);
   clearHistoryNavigatorHydrateTimer(state);
@@ -2558,8 +2573,21 @@ async function syncHistoryWindowToViewport(
       windowRevision,
     );
     traceAppServerControlHistoryFetch(sessionId, nextSnapshot, 'scroll');
+    historyRender.captureHistoryViewportAnchor(state);
+    const latestAnchorIndex = state.pendingHistoryPrependAnchor?.absoluteIndex;
+    if (
+      latestAnchorIndex != null &&
+      (latestAnchorIndex < nextSnapshot.historyWindowStart ||
+        latestAnchorIndex >= nextSnapshot.historyWindowEnd)
+    ) {
+      // A direction change outran the requested overlap. Keep the current rows and request its new window.
+      state.pendingHistoryPrependAnchor = null;
+      state.historyViewportSyncPending = true;
+      return;
+    }
     if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
       renderCurrentAgentView(sessionId, { immediate: true });
+      if (resumeHistoryWheelMotion(state)) renderCurrentAgentView(sessionId, { immediate: true });
     }
   } catch (error) {
     log.warn(

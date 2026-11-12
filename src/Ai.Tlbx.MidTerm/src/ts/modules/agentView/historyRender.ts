@@ -1545,16 +1545,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       completeHistoryReaderMeasurements(state);
     }
 
-    const userScrollInProgress =
-      state !== undefined &&
-      Date.now() - state.historyLastUserScrollIntentAt <= USER_HISTORY_GAP_RECOVERY_GRACE_MS;
-    if (
-      state &&
-      !state.historyAutoScrollPinned &&
-      entries.length > 0 &&
-      !viewportHasConcreteRows &&
-      !userScrollInProgress
-    ) {
+    if (state && !state.historyAutoScrollPinned && entries.length > 0 && !viewportHasConcreteRows) {
       const roundedScrollTop = Math.round(viewport.scrollTop);
       if (state.historyLastVoidSyncScrollTop !== roundedScrollTop) {
         state.historyLastVoidSyncScrollTop = roundedScrollTop;

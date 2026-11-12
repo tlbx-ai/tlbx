@@ -847,6 +847,10 @@ Specified and implemented: the Agent Controller composer gives the prompt the fu
 
 ### History read latency
 
+- Wheel input remains passive. Retain only native wheel distance clamped at a retained-window edge and continue it after the next window restores the current reader anchor. Reverse direction, touch/key/pointer navigation and returning to live clear pending wheel travel.
+- Coalesce the total wheel distance within a frame for predictive prefetch. Capture the current anchor immediately before applying an asynchronous scroll response; do not restore the earlier request-time position over continuing input. Reject a response whose overlap no longer contains the current reader after a direction change.
+- A viewport with no concrete rows requests recovery immediately, including while the wheel is moving; the 900ms reading-gap grace period may prevent snapping but must never postpone data requests.
+
 - Normal browser history windows start at 80 canonical items and grow only when sparse visible content cannot fill the viewport. Retain the existing nearby reader corridor.
 - Canonical patches are session-wide. Moving a retained window updates reconnect metadata without replacing its patch subscription or fetching the same window again.
 - `mt` reads windows over an authenticated one-shot IPC connection to the owning `mtagenthost`. These reads neither claim the provider control connection nor wait for provider commands. The host advertises `history.window.read`; older hosts require a full runtime update.
