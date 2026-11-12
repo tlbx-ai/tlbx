@@ -5,6 +5,15 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      platform:
+        description: 'On-demand package (no release publication)'
+        type: choice
+        required: true
+        default: win-x64
+        options:
+          - win-x64
+          - osx-x64
 
 env:
   DOTNET_VERSION: '11.0.100'
@@ -211,10 +220,12 @@ jobs:
 
   build-dev:
     needs: [prepare, frontend, supply-chain]
-    if: github.event_name == 'push' && needs.prepare.outputs.is_dev == 'true'
+    if: >-
+      (github.event_name == 'push' && needs.prepare.outputs.is_dev == 'true') ||
+      (github.event_name == 'workflow_dispatch' && inputs.platform == 'osx-x64')
     # A platform failure must not invalidate other complete, verified packages.
     # publish-release remains the required final gate, including shared checks.
-    continue-on-error: true
+    continue-on-error: ${{ github.event_name != 'workflow_dispatch' }}
     permissions:
       contents: write
       id-token: write
@@ -223,19 +234,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: macos-15
-            rid: osx-arm64
-            ext: ''
-          - os: macos-15-intel
-            rid: osx-x64
-            ext: ''
-          - os: ubuntu-24.04
-            rid: linux-x64
-            ext: ''
-          - os: ubuntu-24.04-arm
-            rid: linux-arm64
-            ext: ''
+        include: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '[{"os":"macos-15-intel","rid":"osx-x64","ext":""}]' || '[{"os":"macos-15","rid":"osx-arm64","ext":""},{"os":"ubuntu-24.04","rid":"linux-x64","ext":""},{"os":"ubuntu-24.04-arm","rid":"linux-arm64","ext":""}]') }}
     runs-on: ${{ matrix.os }}
 
     steps:
@@ -385,6 +384,7 @@ jobs:
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
+        if: github.event_name == 'push'
         id: release_upload
         timeout-minutes: 3
         shell: pwsh
@@ -407,6 +407,18 @@ jobs:
             staging/mt-${{ matrix.rid }}.spdx.json
           if-no-files-found: error
           retention-days: 1
+          compression-level: 0
+
+      - name: Retain on-demand macOS Intel package
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: macos-package-${{ matrix.rid }}
+          path: |
+            staging/mt-${{ matrix.rid }}.tar.gz
+            staging/mt-${{ matrix.rid }}.spdx.json
+          if-no-files-found: error
+          retention-days: 3
           compression-level: 0
 
       - name: Clean up keychain
@@ -432,9 +444,6 @@ jobs:
         include:
           - os: macos-15
             rid: osx-arm64
-            ext: ''
-          - os: macos-15-intel
-            rid: osx-x64
             ext: ''
           - os: ubuntu-24.04
             rid: linux-x64
@@ -619,7 +628,7 @@ jobs:
   # ── Build Windows: hosted runner for dev, self-hosted with signing for stable ─
   build-windows-dev:
     needs: [prepare, frontend, supply-chain]
-    if: needs.prepare.outputs.is_dev == 'true'
+    if: needs.prepare.outputs.is_dev == 'true' && (github.event_name != 'workflow_dispatch' || inputs.platform != 'osx-x64')
     continue-on-error: true
     permissions:
       contents: write

@@ -21,12 +21,26 @@ The Windows package job installs pinned SDK11 and restores locked dependencies
 directly, without transferring the large all-RID NuGet cache; SDK10+11 baseline compatibility
 is retained in security auditing and the six-platform on-demand suite.
 
-For build timing, manually dispatch `release.yml` against the task branch. It
-builds frontend and the complete Windows-x64 Native AOT runtime set, retains the
+For build timing, manually dispatch `release.yml` against the task branch with
+`platform=win-x64` (the default). It builds frontend and the complete Windows-x64 Native AOT runtime set, retains the
 archive/SBOM as workflow artifacts and never creates a tag, release or catalog
 entry. Compare the complete Windows job duration (excluding queue time), with
 rebuild forced; attestation and packaging remain included. Windows ZIPs use fast
 Deflate instead of maximum compression; executable contents are unchanged.
+
+Automatic dev and stable releases build Windows x64/x86, Linux x64/ARM64 and
+macOS ARM64. macOS Intel is built only on demand using the same signed,
+notarized Native AOT packaging path:
+
+```powershell
+gh workflow run release.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f platform=osx-x64
+gh run download <run-id> --repo tlbx-ai/tlbx --name macos-package-osx-x64 --dir .artifacts/macos-intel
+```
+
+This builds only macOS Intel plus shared checks/frontend, retaining its tar.gz
+and matching SPDX SBOM as a workflow artifact for three days. It never creates
+or changes a tag, GitHub release or public catalog. On-demand test suites remain
+separate and may still include all six platforms.
 
 The five measured full-rebuild Windows x64 jobs took 9:43, 7:46, 6:02, 8:19
 and 6:00 (baseline 7:21). The five-attempt limit is exhausted; the 6:00 profile
