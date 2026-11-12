@@ -39,7 +39,6 @@ export function ensureAgentViewSkeleton(
     panel.innerHTML = `
       <section class="agent-view">
         <div class="agent-chat-shell">
-          <div class="agent-native-controls" data-agent-field="native-controls" hidden></div>
           <div class="agent-runtime-stats" data-agent-field="runtime-stats" hidden></div>
           <div class="agent-history-shell">
             <div class="agent-history" data-agent-field="history" tabindex="0"></div>

@@ -503,8 +503,7 @@ public sealed class HistoryService : IDisposable
         }
 
         var normalized = profile.Trim().ToLowerInvariant();
-        if (string.Equals(normalized, "claude", StringComparison.Ordinal) ||
-            !IsValidAgentControllerProfile(normalized))
+        if (!IsValidAgentControllerProfile(normalized))
         {
             return null;
         }

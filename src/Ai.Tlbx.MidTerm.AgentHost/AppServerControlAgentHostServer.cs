@@ -187,7 +187,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
 
             // A one-shot authenticated read connection never claims the provider's
             // control connection and never queues behind a slow provider command.
-            var historyRead = !connection.OwnerValidated && command.Type == "history.window.get";
+            var historyRead = !connection.OwnerValidated && command.Type is "history.window.get" or "usage.read";
             if (!connection.OwnerValidated)
             {
                 if (!historyRead && !string.Equals(command.Type, "runtime.attach", StringComparison.Ordinal))
@@ -214,6 +214,26 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             if (!connection.TryBindSession(command.SessionId))
             {
                 await EnqueueRejectedAsync(connection, command, "mtagenthost only serves one App Server Controller session per connection.").ConfigureAwait(false);
+                break;
+            }
+
+            if (historyRead && command.Type == "usage.read")
+            {
+                AppServerControlHostCommandResultEnvelope usageResult;
+                try
+                {
+                    ValidateCommand(command);
+                    var runtime = _runtime ?? throw new InvalidOperationException("Provider is not attached.");
+                    usageResult = (await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false)).Result;
+                }
+                catch (Exception ex)
+                {
+                    usageResult = new() { CommandId = command.CommandId, SessionId = command.SessionId,
+                        Status = "rejected", Message = ex.Message };
+                }
+                await EnqueueAsync(connection, usageResult,
+                    AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope).ConfigureAwait(false);
+                await connection.DrainOutboundAsync().ConfigureAwait(false);
                 break;
             }
 
@@ -471,6 +491,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "turn.start",
                     "turn.steer",
                     "runtime.configure",
+                    "usage.read",
                     "turn.interrupt",
                     "thread.compact",
                     "thread.goal.set",

@@ -49,8 +49,8 @@ import {
   resolveHistoryWindowViewportWidth,
   resolveRepresentativeHistoryEntryHeight,
 } from './historyMeasurements';
-import { createAgentHistoryDom, isProposedPlanActionDisabled } from './historyDom';
-import { syncNativeCommands } from './nativeCommands';
+import { createAgentHistoryDom } from './historyDom';
+import { syncAgentSessionTools, removeAgentSessionTools } from './sessionTools';
 import { filterReadingHistory, showAgentTechnicalDetails } from './historyVisibility';
 import {
   createAgentHistoryRender,
@@ -131,7 +131,6 @@ import {
 } from '../../api/client';
 import { t } from '../i18n';
 import { $activeSessionId, getSession } from '../../stores';
-import { pendingSessions } from '../../state';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
@@ -576,6 +575,7 @@ export function destroyAgentView(sessionId: string): void {
     state.historyExpandedEntries.clear();
   }
 
+  removeAgentSessionTools(sessionId);
   viewStates.delete(sessionId);
   activationFlights.delete(sessionId);
   resetAppServerControlHistoryTrace(sessionId);
@@ -603,6 +603,7 @@ export function resetAgentViewRuntimeForTests(): void {
     state.historyMeasurementObserver?.disconnect();
     state.historyViewportResizeObserver?.disconnect();
     clearAppServerControlTurnSessionState(sessionId);
+    removeAgentSessionTools(sessionId);
     removeAppServerControlQuickSettingsSessionState(sessionId);
   }
 
@@ -725,7 +726,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
 
 async function activateAgentView(sessionId: string): Promise<void> {
   // Background suspension is a lifecycle state. Foreground recovery starts attach.
-  if (document.visibilityState === 'hidden' || pendingSessions.has(sessionId)) return;
+  if (document.visibilityState === 'hidden' || sessionId.startsWith('pending-')) return;
   const existing = activationFlights.get(sessionId);
   if (existing) {
     return existing;
@@ -2790,11 +2791,7 @@ function renderAgentView(
   );
   syncAppServerControlGoal(snapshot, streamConnected);
   syncAgentViewPresentation(panel, snapshot.provider);
-  syncNativeCommands(
-    panel,
-    snapshot,
-    () => !isProposedPlanActionDisabled(snapshot.sessionId, viewStates.get(snapshot.sessionId)),
-  );
+  syncAgentSessionTools(snapshot, streamConnected);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncAppServerControlTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   historyRender.syncRequestInteractionState(state, snapshot.requests);

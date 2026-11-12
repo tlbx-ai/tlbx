@@ -28,11 +28,8 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         string? resumeThreadIdOverride = null,
         CancellationToken ct = default)
     {
-        if (IsAttached(sessionId))
-        {
-            return true;
-        }
-
+        // A connected transport may still be initializing its native provider.
+        // The host's gate joins the real attach; ownership alone is not readiness.
         var profile = ResolveAttachProfile(session);
         if (!IsAttachableProfile(profile))
         {
@@ -231,6 +228,9 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
 
         return await _hostRuntime.InterruptTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
+
+    public Task<AppServerControlUsageSummary> ReadUsageAsync(string sessionId, CancellationToken ct = default) =>
+        _hostRuntime.ReadUsageAsync(sessionId, ct);
 
     public Task<AppServerControlConfigureResponse> ConfigureAsync(
         string sessionId, AppServerControlConfigureRequest request, CancellationToken ct = default)

@@ -930,6 +930,20 @@ public static partial class SessionApiEndpoints
             }
         });
 
+        app.MapGet("/api/sessions/{id}/agent-control/usage", async (string id, CancellationToken ct) =>
+        {
+            if (sessionManager.GetSession(id) is null) return Results.NotFound();
+            if (!appServerControlRuntime.IsAttached(id))
+                return Results.Conflict("Agent Controller runtime is not attached.");
+            try
+            {
+                var usage = await appServerControlRuntime.ReadUsageAsync(id, ct).ConfigureAwait(false);
+                return Results.Json(usage, AppJsonContext.Default.AppServerControlUsageSummary);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+            catch (IOException) { return Results.Conflict("Agent Controller runtime disconnected while reading usage."); }
+        });
+
         app.MapPost("/api/sessions/{id}/agent-control/compact", async (
             string id,
             CancellationToken ct) =>

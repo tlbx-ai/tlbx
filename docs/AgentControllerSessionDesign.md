@@ -38,6 +38,12 @@ Native compaction uses Codex's dedicated API or an advertised `/compact` command
 
 Implemented: optimistic pending session IDs are browser-only placeholders and must never attach to a provider. Fresh sessions skip the read-only history recovery probe. A healthy startup leaves the conversation empty before the first user prompt; internal activation traces and a connected/ready notice do not become conversation rows. Startup failures and actionable recovery requests remain visible.
 
+## Session information and commands
+
+Implemented: the existing footer includes one context/details trigger. It opens a compact anchored session panel on desktop and a bounded sheet on narrow screens. Session, Usage and Commands sections share the same provider-neutral surface. `/status`, `/usage`, `/resume`, `/help` and `/goal` open local UI without a model turn; `/compact` uses native compaction. Advertised provider commands are searchable from `/` in the composer. Arrow keys navigate, Enter/Tab choose and Escape dismisses without interrupting the agent. Unknown command names are retained with an explicit error instead of being silently sent to a model.
+
+Context occupancy, cumulative session tokens/cost and account quota windows remain separate. Missing values say Not reported; native reported costs are labelled. Usage refresh is an authenticated independent read and cannot claim or block the provider control connection. Provider I/O stays in C#: Codex app-server and the Claude SDK populate the common usage model. Other provider parity is deferred. Existing resume selection and model/effort controls are reused. Selecting a conversation already open in this browser reuses its session. Attach joins native initialization before the first history read; Claude SDK bookmarks retain their provider.
+
 ## Non-Regression Floor
 
 Agent Controller Session is already a usable operator surface. Architectural cleanup may replace any part of the plumbing underneath it, but the visible result after those changes must not regress below the current Agent Controller Session floor.

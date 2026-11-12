@@ -72,6 +72,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     public async Task<HostCommandOutcome> ExecuteAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
+        if (command.Type == "usage.read") return await ReadUsageAsync(command, ct).ConfigureAwait(false);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -565,6 +566,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         if (HandleGoalBridgeMessage(type, root)) return;
         switch (type)
         {
+            case "bridge.usage":
+                if (GetString(root, "requestId") is { } usageId && _usageReceipts.TryGetValue(usageId, out var usageReceipt))
+                    usageReceipt.TrySetResult(root.Clone());
+                break;
             case "bridge.configured":
             {
                 if (GetString(root, "requestId") is { } configurationId &&
