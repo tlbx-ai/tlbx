@@ -190,6 +190,7 @@ export interface AppServerControlQuickSettingsOption {
   hidden?: boolean;
   isDefault?: boolean;
   effortOptions?: AppServerControlQuickSettingsOption[] | null;
+  supportsFastMode?: boolean | null;
 }
 
 export interface AppServerControlQuickSettingsPayload {

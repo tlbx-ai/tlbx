@@ -28,18 +28,29 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         var settings = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
         foreach (var (key, value) in request.Settings)
         {
-            if (key is "model" or "effort" or "planMode" or "permissionMode")
+            if (key is "model" or "effort" or "planMode" or "permissionMode" or "fastMode")
             {
                 if (value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
                     throw new InvalidOperationException($"{key} must be a string or null.");
                 if (key == "planMode" && value.GetString() is not ("on" or "off"))
                     throw new InvalidOperationException("planMode must be on or off.");
+                if (key == "fastMode" && value.GetString() is not ("on" or "off"))
+                    throw new InvalidOperationException("fastMode must be on or off.");
                 if (key == "permissionMode" && value.GetString() is not ("auto" or "manual"))
                     throw new InvalidOperationException("permissionMode must be auto or manual.");
                 settings[key] = value;
             }
             else response.UnconfirmedFields.Add(key);
         }
+        var targetModel = settings.TryGetValue("model", out var requestedModel) ? requestedModel.GetString() : _quickSettings.Model;
+        if (settings.TryGetValue("fastMode", out var requestedFast) && requestedFast.GetString() == "on" && !SupportsClaudeFastMode(targetModel))
+        {
+            settings.Remove("fastMode");
+            response.UnconfirmedFields.Add("fastMode");
+            response.FieldErrors["fastMode"] = "The selected Claude model does not advertise fast mode support.";
+        }
+        if (settings.ContainsKey("model") && !SupportsClaudeFastMode(targetModel) && _quickSettings.FastMode == "on")
+            settings["fastMode"] = JsonSerializer.SerializeToElement("off");
         if (settings.Count == 0)
         {
             response.Status = "unconfirmed";
@@ -92,6 +103,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 _quickSettings.Effort = effort.GetString();
             if (response.ConfirmedSettings.TryGetValue("planMode", out var plan)) _quickSettings.PlanMode = plan.GetString()!;
             if (response.ConfirmedSettings.TryGetValue("permissionMode", out var permission)) _quickSettings.PermissionMode = permission.GetString()!;
+            if (response.ConfirmedSettings.TryGetValue("fastMode", out var fast)) _quickSettings.FastMode = fast.GetString()!;
             if (response.ConfirmedSettings.Count > 0)
             {
                 _quickSettings.AcknowledgedFields = _quickSettings.AcknowledgedFields.Union(response.ConfirmedSettings.Keys, StringComparer.Ordinal).ToList();

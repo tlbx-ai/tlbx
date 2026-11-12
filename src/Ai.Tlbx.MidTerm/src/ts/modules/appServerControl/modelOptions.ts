@@ -3,6 +3,7 @@ export interface AppServerControlModelOption {
   label: string;
   description?: string | null;
   isDefault?: boolean;
+  supportsFastMode?: boolean | null;
   effortOptions?: AppServerControlModelOption[] | null;
 }
 
@@ -216,4 +217,19 @@ function normalizeOptionValue(value: string | null | undefined): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+export function supportsAppServerControlFastMode(
+  provider: string | null | undefined,
+  model: string | null | undefined,
+  options: readonly AppServerControlModelOption[] | undefined,
+): boolean {
+  if (provider === 'codex') return true;
+  if (provider !== 'claude') return false;
+  return (
+    options?.some(
+      (option) =>
+        (model ? option.value === model : option.isDefault) && option.supportsFastMode === true,
+    ) ?? false
+  );
 }

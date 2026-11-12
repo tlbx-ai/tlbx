@@ -247,6 +247,7 @@ async function startRuntime(command) {
       pathToClaudeCodeExecutable: configuration.executablePath,
       systemPrompt: { type: "preset", preset: "claude_code" },
       settingSources: ["user", "project", "local"],
+      settings: { fastMode: command.fastMode === "on", fastModePerSessionOptIn: true },
       includePartialMessages: true,
       env: process.env,
       ...(configuration.mcpServers ? { mcpServers: configuration.mcpServers } : {}),
@@ -340,16 +341,20 @@ async function handle(command, isCancelled = () => false, signal) {
       activeTurnId = command.turnId;
       steeringPending = command.type === "turn.steer";
       try {
-        await runtime.setModel(command.model ?? undefined);
-        if (stopped()) return;
-        await runtime.applyFlagSettings({ effortLevel: command.effort ?? null });
-        if (stopped()) return;
-        await runtime.setPermissionMode(
-          permissionMode(command.permissionMode, command.planMode),
-        );
-        if (stopped()) return;
-        confirmedSettings.permissionMode = command.permissionMode ?? "manual";
-        confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
+        // Steering retains the active turn settings; do not delay priority-now
+        // input behind redundant model/effort/permission control round trips.
+        if (command.type === "turn.start") {
+          await runtime.setModel(command.model ?? undefined);
+          if (stopped()) return;
+          await runtime.applyFlagSettings({ effortLevel: command.effort ?? null, fastMode: command.fastMode === "on" });
+          if (stopped()) return;
+          await runtime.setPermissionMode(
+            permissionMode(command.permissionMode, command.planMode),
+          );
+          if (stopped()) return;
+          confirmedSettings.permissionMode = command.permissionMode ?? "manual";
+          confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
+        }
         const message = await makeUserMessage(command);
         if (stopped()) return;
         goals.noteInput(message, command.prompt ?? "", command.turnId);

@@ -22,12 +22,13 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 .Where(model => !string.IsNullOrWhiteSpace(GetString(model, "value")))
                 .Select(model => new AppServerControlQuickSettingsOption
                 {
-                    Value = GetString(model, "value")!,
+                    Value = GetString(model, "resolvedModel") ?? GetString(model, "value")!,
                     Label = GetString(model, "displayName") ?? GetString(model, "value")!,
                     Description = GetString(model, "description"),
                     IsDefault = GetString(model, "value") == "default",
+                    SupportsFastMode = GetBoolean(model, "supportsFastMode"),
                     EffortOptions = ReadClaudeEffortOptions(GetString(model, "value"))
-                }).ToList();
+                }).DistinctBy(option => option.Value, StringComparer.Ordinal).ToList();
             _quickSettings.EffortOptions = ReadClaudeEffortOptions(_quickSettings.Model);
         }
 
@@ -52,6 +53,14 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         }
 
         EmitClaudeCatalogue(root, rawLine);
+    }
+
+    private bool SupportsClaudeFastMode(string? model)
+    {
+        return _nativeModels.Any(candidate =>
+            (string.Equals(GetString(candidate, "value"), model ?? "default", StringComparison.Ordinal) ||
+             string.Equals(GetString(candidate, "resolvedModel"), model, StringComparison.Ordinal)) &&
+            GetBoolean(candidate, "supportsFastMode"));
     }
 
     private List<AppServerControlQuickSettingsOption> ReadClaudeEffortOptions(string? model)
@@ -127,6 +136,12 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
         {
             _quickSettings.Effort = effort.ValueKind == JsonValueKind.String ? effort.GetString() : null;
             _activeTurnEffort = _quickSettings.Effort;
+        }
+        var fastState = GetString(root, "fast_mode_state");
+        if (fastState is "on" or "off" or "cooldown")
+        {
+            _quickSettings.FastMode = fastState is "on" or "cooldown" ? "on" : "off";
+            _quickSettings.AcknowledgedFields.Remove("fastMode");
         }
         EmitClaudeCatalogue(root, rawLine);
     }
