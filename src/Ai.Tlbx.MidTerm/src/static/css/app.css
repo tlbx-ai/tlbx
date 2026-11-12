@@ -14514,9 +14514,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   line-height: 1.64;
   white-space: pre-wrap;
   word-break: break-word;
-}
-
-.agent-history-body {
   font-family: var(--font-ui);
   min-width: 0;
   max-width: 100%;
