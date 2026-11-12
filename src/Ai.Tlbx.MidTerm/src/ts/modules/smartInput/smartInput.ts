@@ -1457,7 +1457,10 @@ function createDockedDOM(): void {
     },
     onAppServerControlFastToggle: () => {
       const sessionId = $activeSessionId.get();
-      if (!sessionId || getAppServerControlQuickSettingsProvider(sessionId) !== 'codex') {
+      if (
+        !sessionId ||
+        !['codex', 'claude'].includes(getAppServerControlQuickSettingsProvider(sessionId) ?? '')
+      ) {
         return;
       }
 

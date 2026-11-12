@@ -233,6 +233,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             _activeTurnEffort,
             _quickSettings.PlanMode,
             _quickSettings.PermissionMode,
+            _quickSettings.FastMode,
             ct).ConfigureAwait(false);
 
         return new HostCommandOutcome
@@ -323,6 +324,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             _quickSettings.Effort,
             _quickSettings.PlanMode,
             _quickSettings.PermissionMode,
+            _quickSettings.FastMode,
             ct).ConfigureAwait(false);
 
         return Accepted(command.CommandId, command.SessionId, new AppServerControlCommandAcceptedResponse
@@ -1035,6 +1037,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     private void HandleResult(JsonElement root, string rawLine)
     {
+        ApplyClaudeFastModeState(root);
         UpdateClaudeResultUsage(root, rawLine);
         if (string.IsNullOrWhiteSpace(_activeTurnId))
         {
@@ -1273,6 +1276,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             writer.WriteString("sessionId", _newProviderSessionId);
             writer.WriteString("permissionMode", _quickSettings.PermissionMode);
             writer.WriteString("planMode", _quickSettings.PlanMode);
+            writer.WriteString("fastMode", _quickSettings.FastMode);
             if (_quickSettings.Effort is not null) writer.WriteString("effort", _quickSettings.Effort);
             writer.WriteBoolean("recoverGoal", !loadHistory);
             writer.WriteBoolean("loadHistory", loadHistory && _sessionId is not null && !_hasRetainedConversation(_sessionId));
@@ -1296,6 +1300,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         string? effort,
         string planMode,
         string permissionMode,
+        string fastMode,
         CancellationToken ct)
     {
         await WriteBridgeCommandAsync(writer =>
@@ -1308,6 +1313,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             if (!string.IsNullOrWhiteSpace(effort)) writer.WriteString("effort", effort);
             writer.WriteString("planMode", string.Equals(planMode, AppServerControlQuickSettings.PlanModeOn, StringComparison.Ordinal) ? "plan" : "off");
             writer.WriteString("permissionMode", permissionMode);
+            writer.WriteString("fastMode", fastMode);
             writer.WriteStartArray("attachments");
             foreach (var attachment in attachments.Where(static value =>
                          string.Equals(value.Kind, "image", StringComparison.OrdinalIgnoreCase) &&
@@ -1614,7 +1620,13 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             request.Effort ?? (request.Model is null ? _quickSettings.Effort : null),
             request.PlanMode ?? _quickSettings.PlanMode,
             request.PermissionMode ?? _quickSettings.PermissionMode,
-            defaultPermissionMode);
+            defaultPermissionMode,
+            request.FastMode ?? _quickSettings.FastMode);
+        if (settings.FastMode == "on" && !SupportsClaudeFastMode(settings.Model))
+        {
+            if (request.FastMode == "on") throw new InvalidOperationException("The selected Claude model does not advertise fast mode support.");
+            settings.FastMode = "off";
+        }
         settings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         settings.EffortOptions = ReadClaudeEffortOptions(settings.Model);
         settings.AcknowledgedFields = [.. _quickSettings.AcknowledgedFields];
@@ -1622,6 +1634,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         if (request.Effort is not null) settings.AcknowledgedFields.Remove("effort");
         if (request.PlanMode is not null) settings.AcknowledgedFields.Remove("planMode");
         if (request.PermissionMode is not null) settings.AcknowledgedFields.Remove("permissionMode");
+        if (request.FastMode is not null) settings.AcknowledgedFields.Remove("fastMode");
         return settings;
     }
 

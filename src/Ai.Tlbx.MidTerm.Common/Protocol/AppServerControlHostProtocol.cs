@@ -28,6 +28,7 @@ public sealed class AppServerControlQuickSettingsOption
     public string? Description { get; set; }
     public bool Hidden { get; set; }
     public bool IsDefault { get; set; }
+    public bool? SupportsFastMode { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<AppServerControlQuickSettingsOption>? EffortOptions { get; set; }
 }
@@ -231,6 +232,7 @@ public static class AppServerControlQuickSettings
                 Description = NormalizeOptionalValue(option.Description),
                 Hidden = option.Hidden,
                 IsDefault = option.IsDefault,
+                SupportsFastMode = option.SupportsFastMode,
                 EffortOptions = option.EffortOptions is null ? null : CloneOptions(option.EffortOptions)
             })
             .ToList();

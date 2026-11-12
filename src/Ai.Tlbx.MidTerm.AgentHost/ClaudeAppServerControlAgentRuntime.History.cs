@@ -28,7 +28,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
     private void ReplayClaudeHistoryEntries(JsonElement messages)
     {
         JsonElement? previous = null;
-        var expectingCompactionOutput = false;
+        var expectingLocalOutput = false;
         using var entries = messages.EnumerateArray();
         foreach (var entry in entries)
         {
@@ -36,34 +36,35 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
                 continue;
             if (IsCompletedLocalGoalRead(entry))
             {
-                expectingCompactionOutput = false;
+                expectingLocalOutput = false;
                 continue;
             }
             var type = GetString(entry, "type");
             var entryLine = entry.GetRawText();
-            var localText = ReadCompletedLocalCommandText(entry);
-            if (expectingCompactionOutput && localText is not null &&
+            var localText = ReadLocalCommandText(entry);
+            if (expectingLocalOutput && localText is not null &&
                 CompletedLocalOutputRegex().Match(localText) is { Success: true } output)
             {
                 var status = output.Groups[1].Value.Trim();
                 if (status.Length > 0)
                     _emit(CreateEvent("runtime.notice", _activeTurnId, null, null, "claude.agent-sdk", "history", entry,
                         e => e.RuntimeMessage = new AppServerControlProviderRuntimeMessagePayload { Message = status }, entryLine));
-                expectingCompactionOutput = false;
+                expectingLocalOutput = false;
                 previous = entry;
                 continue;
             }
-            expectingCompactionOutput = false;
+            expectingLocalOutput = false;
             if (type == "user")
             {
                 HandleUser(entry, entryLine);
                 var text = ReadClaudeHistoryUserText(entry);
                 if (localText is not null &&
-                    CompletedLocalCompactionRegex().Match(localText) is { Success: true } compact)
+                    CompletedLocalCommandRegex().Match(localText) is { Success: true } command)
                 {
-                    var arguments = compact.Groups[1].Value.Trim();
-                    text = arguments.Length == 0 ? "/compact" : "/compact " + arguments;
-                    expectingCompactionOutput = true;
+                    var name = command.Groups["command"].Value;
+                    var arguments = command.Groups["arguments"].Value.Trim();
+                    text = "/" + name + (arguments.Length == 0 ? string.Empty : " " + arguments);
+                    expectingLocalOutput = true;
                 }
                 if (!string.IsNullOrWhiteSpace(text))
                 {
@@ -85,21 +86,21 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime
     {
         // The SDK derives this flag from the native local-command caveat/record
         // sequence. XML-looking user text alone is never evidence of a command.
-        return ReadCompletedLocalCommandText(entry) is { } text && CompletedLocalGoalReadRegex().IsMatch(text);
+        return ReadLocalCommandText(entry) is { } text && CompletedLocalGoalReadRegex().IsMatch(text);
     }
 
-    private static string? ReadCompletedLocalCommandText(JsonElement entry)
+    private static string? ReadLocalCommandText(JsonElement entry)
     {
         return GetString(entry, "type") == "user"
-            && GetBoolean(entry, "isCompletedLocalCommand")
+            && (GetBoolean(entry, "isCompletedLocalCommand") || GetBoolean(entry, "isNativeLocalCommand"))
             && !GetBoolean(entry, "is_error")
             && !GetBoolean(entry, "message", "is_error")
             && Traverse(entry, "message", "content") is { ValueKind: JsonValueKind.String } content
                 ? content.GetString() : null;
     }
 
-    [GeneratedRegex(@"\A\s*<command-name>/compact</command-name>\s*<command-message>compact</command-message>\s*<command-args>([\s\S]*)</command-args>\s*\z", RegexOptions.CultureInvariant, 1000)]
-    private static partial Regex CompletedLocalCompactionRegex();
+    [GeneratedRegex(@"\A\s*<command-name>/(?<command>[a-zA-Z][a-zA-Z0-9_-]*)</command-name>\s*<command-message>\k<command></command-message>\s*<command-args>(?<arguments>[\s\S]*)</command-args>\s*\z", RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex CompletedLocalCommandRegex();
 
     [GeneratedRegex(@"\A\s*<local-command-stdout>([\s\S]*)</local-command-stdout>\s*\z", RegexOptions.CultureInvariant, 1000)]
     private static partial Regex CompletedLocalOutputRegex();
