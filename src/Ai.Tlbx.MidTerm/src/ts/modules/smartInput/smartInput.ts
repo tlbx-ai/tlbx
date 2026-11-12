@@ -1914,6 +1914,14 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   dockedBar.dataset.surface = layoutState.appServerControlActive ? 'appServerControl' : 'terminal';
   dockedBar.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
 
+  const interruptButton = dockedBar.querySelector<HTMLButtonElement>('.smart-input-escape-btn');
+  if (interruptButton) {
+    const label = layoutState.appServerControlActive ? t('commands.stop') : 'Esc';
+    interruptButton.textContent = label;
+    interruptButton.title = layoutState.appServerControlActive ? label : 'Escape';
+    interruptButton.setAttribute('aria-label', interruptButton.title);
+  }
+
   activeTextarea = dockedBar.querySelector('.smart-input-textarea');
   if (activeTextarea) {
     activeTextarea.placeholder = t(
