@@ -171,21 +171,23 @@ public static partial class SessionApiEndpoints
                 }
                 else
                 {
-                    var (accepted, queuedEntry) = await managerBarQueueService
-                        .SubmitPromptAsync(request.SessionId, request.Turn, ct)
-                        .ConfigureAwait(false);
+                    bool accepted;
+                    try
+                    {
+                        accepted = await managerBarQueueService.SubmitPromptAsync(request.SessionId, request.Turn, ct)
+                            .ConfigureAwait(false);
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.Conflict(ex.Message);
+                    }
                     if (!accepted)
                     {
-                        return Results.BadRequest("Only queued command-bay items can be enqueued.");
+                        return Results.BadRequest("Prompt was not accepted.");
                     }
 
                     RecordPromptHistory(request.SessionId, request.Turn, InputHistorySources.CommandBay);
-                    if (queuedEntry is null)
-                    {
-                        return Results.Ok();
-                    }
-
-                    entry = queuedEntry;
+                    return Results.Ok();
                 }
             }
             else

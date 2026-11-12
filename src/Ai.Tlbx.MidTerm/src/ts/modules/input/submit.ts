@@ -1,8 +1,8 @@
+import { sendCommandBayPrompt } from '../commandBay/queue';
 import { sendInput } from '../comms';
 import {
   createAppServerControlTurnRequest,
   isAppServerControlActiveSession,
-  submitQueuedAppServerControlTurn,
 } from '../appServerControl/input';
 import { pasteToTerminal } from '../terminal';
 
@@ -10,10 +10,7 @@ const SESSION_TEXT_SUBMIT_DELAY_MS = 200;
 
 export async function submitSessionText(sessionId: string, text: string): Promise<void> {
   if (isAppServerControlActiveSession(sessionId)) {
-    await submitQueuedAppServerControlTurn(
-      sessionId,
-      createAppServerControlTurnRequest(text, [], sessionId),
-    );
+    await sendCommandBayPrompt(sessionId, createAppServerControlTurnRequest(text, [], sessionId));
     return;
   }
 

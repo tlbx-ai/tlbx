@@ -174,7 +174,7 @@ try {
     New-Item -ItemType Directory scripts | Out-Null
     Copy-Item "$sourceScripts/promote.ps1", "$sourceScripts/release-dev.ps1", "$sourceScripts/release-pr.ps1", "$sourceScripts/release-test-clusters.ps1", "$sourceScripts/verify-release-merge.ps1", "$sourceScripts/advisory-regression.ps1" scripts/
     '$global:TlbxFixturePreflight = $args -join " "' | Set-Content scripts/release-frontend-preflight.ps1
-    'param([string[]]$TestCategories, [switch]$FrontendInstalled) $global:TlbxFixtureTests = $TestCategories -join " "' | Set-Content scripts/run-release-tests.ps1
+    'param([string[]]$TestCategories, [switch]$FrontendInstalled) $global:TlbxFixtureTests = $TestCategories -join " "' | Set-Content scripts/run-release-checks.ps1
     function global:node { $global:LASTEXITCODE=0 }
     Invoke-ReleaseGit add -A
     Invoke-ReleaseGit commit -m 'Fixture build stubs' | Out-Null
@@ -232,8 +232,8 @@ try {
     Invoke-ReleaseGit add correction.txt
     Invoke-ReleaseGit commit -m Correction | Out-Null
     # Failure during re-verification must retain the original candidate request.
-    'param([string[]]$TestCategories, [switch]$FrontendInstalled) if($global:TlbxFixtureFailVerification){throw "fixture verification failure"}' | Set-Content scripts/run-release-tests.ps1
-    Invoke-ReleaseGit add scripts/run-release-tests.ps1
+    'param([string[]]$TestCategories, [switch]$FrontendInstalled) if($global:TlbxFixtureFailVerification){throw "fixture verification failure"}' | Set-Content scripts/run-release-checks.ps1
+    Invoke-ReleaseGit add scripts/run-release-checks.ps1
     Invoke-ReleaseGit commit -m 'Inject controllable verification failure' | Out-Null
     $global:TlbxFixtureFailVerification=$true
     Assert-Rejected { & ./scripts/release-dev.ps1 @devArgs -Reprepare } 'Failed re-verification was accepted.'

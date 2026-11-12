@@ -31,7 +31,7 @@ import {
   openAppServerControlGoalEditor,
 } from '../appServerControl/goals';
 import { t } from '../i18n';
-import { enqueueCommandBayTurn } from '../commandBay/queue';
+import { sendCommandBayPrompt } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import { isBracketedPasteEnabled, sendInput } from '../comms';
 import {
@@ -2781,7 +2781,7 @@ async function sendTerminalComposerTurn(
     return false;
   }
 
-  await enqueueCommandBayTurn(sessionId, request);
+  await sendCommandBayPrompt(sessionId, request);
   pushCurrentPromptToHistory(sessionId);
   clearSubmittedSmartInputState(sessionId, ta);
   collapseComposerAfterSuccessfulSend(sessionId);
@@ -2805,7 +2805,7 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     );
     const text = getSessionDraftText(sessionId);
     if (!text && attachments.length === 0) return;
-    const { queuedTurn } = await submitAppServerControlComposerDraft({
+    const { submittedTurn } = await submitAppServerControlComposerDraft({
       sessionId,
       draft,
       attachments,
@@ -2813,12 +2813,12 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
       attachmentReadFailureMessage: t('smartInput.attachmentSendFailed'),
       uploadFile,
       createTurnRequest: createAppServerControlTurnRequest,
-      submitQueuedTurn: (targetSessionId, request) => {
+      submitTurn: (targetSessionId, request) => {
         if (!isCurrentDocument()) throw new Error(t('smartInput.richTargetChanged'));
-        return enqueueCommandBayTurn(targetSessionId, request);
+        return sendCommandBayPrompt(targetSessionId, request);
       },
     });
-    await queuedTurn;
+    await submittedTurn;
     if (!isCurrentDocument()) return;
     pushCurrentPromptToHistory(sessionId);
     clearSubmittedSmartInputState(sessionId, ta);

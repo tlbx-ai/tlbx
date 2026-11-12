@@ -25,7 +25,7 @@ export async function enqueueCommandBayAction(
   }
 }
 
-export async function enqueueCommandBayTurn(
+export async function sendCommandBayPrompt(
   sessionId: string,
   turn: AppServerControlTurnRequest,
 ): Promise<void> {
@@ -36,7 +36,7 @@ export async function enqueueCommandBayTurn(
   });
 
   if (!response.ok) {
-    throw await readQueueError(response, 'Failed to enqueue prompt.');
+    throw await readQueueError(response, 'Failed to send prompt.');
   }
 }
 

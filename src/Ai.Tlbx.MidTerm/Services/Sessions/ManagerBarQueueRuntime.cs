@@ -166,7 +166,7 @@ public sealed class ManagerBarQueueRuntime : IManagerBarQueueRuntime
             return;
         }
 
-        await _appServerControlRuntime.StartTurnAsync(sessionId, request, cancellationToken).ConfigureAwait(false);
+        await _appServerControlRuntime.SendComposerTurnAsync(sessionId, request, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task SendInputAndRecordAsync(

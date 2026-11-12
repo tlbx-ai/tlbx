@@ -348,7 +348,7 @@ $versionJson | ConvertTo-Json | Set-Content $versionJsonPath
 node (Join-Path $PSScriptRoot 'sync-npx-launcher-version.mjs') $stableVersion
 if ($LASTEXITCODE -ne 0) { throw 'Failed to sync launcher version.' }
 & "$PSScriptRoot/release-frontend-preflight.ps1" -Version $stableVersion -SkipVerify
-& "$PSScriptRoot/run-release-tests.ps1" -TestCategories $selectedCategories -FrontendInstalled
+& "$PSScriptRoot/run-release-checks.ps1" -TestCategories $selectedCategories -FrontendInstalled
 Invoke-ReleaseGit fetch origin main | Out-Host
 if ((Invoke-ReleaseGit rev-parse origin/main) -ne $promotionBase) { throw 'main changed during preparation; synchronize before retrying.' }
 $prBody += "`n`nCandidate dev commit: $candidate. Verified locally: all server release clusters."
