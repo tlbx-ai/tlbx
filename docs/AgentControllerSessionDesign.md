@@ -842,6 +842,8 @@ Specified and implemented: the collapsed Agent Controller composer uses one full
 
 ### Claude settings parity
 
+Claude accepts the first prompt while its initial native Goal readback is pending. The bridge's existing input queue waits for that readback before submitting the prompt; pending Goal mutations still reject a new turn.
+
 Claude model values use the native catalogue's resolved model IDs, with model-specific effort choices and advertised fast-mode support. The same Model/Effort/Plan/Permissions/Fast controls configure the existing SDK session without synthetic prompts. SDK control acknowledgements remain distinct from effective native state; init frames update actual fast-mode state. Explicit fast mode starts off per session. Steering uses native immediate-priority user messages in the same thread/turn; goals retain native /goal lifecycle confirmation.
 
 Claude cold-resume history normalizes SDK-completed local commands and native commandRun parent-UUID-correlated records, including model and Goal changes, into their readable slash-command forms. Local command output remains status text; unmarked XML-like user content stays literal. Mobile primary-tab labels refresh when late session identity metadata arrives, without following terminal activity updates.
