@@ -22186,6 +22186,7 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   max-height: min(34dvh, 256px);
 }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-escape-btn {
+  grid-column: 3;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -22205,7 +22206,6 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   color: var(--text-primary);
 }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-tools-toggle { grid-column: 1; }
-.adaptive-footer-dock[data-surface='appServerControl'] .smart-input-escape-btn { grid-column: 3; }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-send-btn { grid-column: 4; }
 .adaptive-footer-dock[data-surface='appServerControl'] .smart-input-inline-tools { grid-column: 2; grid-row: 2; }
 .smart-input-textarea-shell:has(.smart-input-rich-composer:not([hidden])) > .smart-input-expand-toggle {
