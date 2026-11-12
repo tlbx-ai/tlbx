@@ -818,24 +818,7 @@ export function updateAppServerControlHistorySocketWindow(
     delete subscription.historyWindow;
   }
 
-  const shouldSendSubscribeImmediately = ws?.readyState === WebSocket.OPEN;
-  void ensureConnected()
-    .then(() => {
-      if (!shouldSendSubscribeImmediately) {
-        return;
-      }
-
-      const current = subscriptions.get(sessionId);
-      if (!current) {
-        return;
-      }
-
-      sendRaw({
-        type: 'subscribe',
-        sessionId,
-        afterSequence: current.afterSequence,
-        historyWindow: current.historyWindow,
-      });
-    })
-    .catch(() => {});
+  // Patches cover the canonical history independently of the retained window. Keep
+  // reconnect metadata current without replacing the live subscription or fetching
+  // an identical window again after every scroll/revision update.
 }

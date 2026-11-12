@@ -279,7 +279,7 @@ export async function wheelAgentHistory(args: {
     samples,
   };
 }
-const APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE = 240;
+const APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE = 80;
 const LIVE_HISTORY_RENDER_BATCH_MS = 250;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 const HISTORY_FAST_WHEEL_DELTA_MIN_PX = 480;
@@ -1577,7 +1577,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
           hasNewerHistory: current.snapshot?.hasNewerHistory ?? false,
         })
       ) {
-        queueUrgentHistoryWindowViewportSync(sessionId, current);
+        queueHistoryWindowViewportSync(sessionId, current);
       }
     });
   };
@@ -2506,7 +2506,7 @@ async function syncHistoryWindowToViewport(
         );
         traceAppServerControlHistoryFetch(sessionId, nextSnapshot, 'scroll');
         if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
-          renderCurrentAgentView(sessionId);
+          renderCurrentAgentView(sessionId, { immediate: true });
         }
       } catch (error) {
         log.warn(
@@ -2548,7 +2548,7 @@ async function syncHistoryWindowToViewport(
     );
     traceAppServerControlHistoryFetch(sessionId, nextSnapshot, 'scroll');
     if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
-      renderCurrentAgentView(sessionId);
+      renderCurrentAgentView(sessionId, { immediate: true });
     }
   } catch (error) {
     log.warn(

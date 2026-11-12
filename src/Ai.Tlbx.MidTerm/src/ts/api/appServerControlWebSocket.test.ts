@@ -57,7 +57,7 @@ describe('appServerControlWebSocket', () => {
     vi.resetModules();
   });
 
-  it('does not duplicate subscribe messages or resubscribe for an unchanged history window', async () => {
+  it('keeps one patch subscription when the retained history window changes', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket as unknown as typeof WebSocket);
 
     const { openAppServerControlHistorySocket, updateAppServerControlHistorySocketWindow } =
@@ -89,9 +89,8 @@ describe('appServerControlWebSocket', () => {
     expect(socket.sent).toHaveLength(initialSubscribeCount);
 
     updateAppServerControlHistorySocketWindow('session-1', 10, 80, 'rev-2', 960);
-    await vi.waitFor(() => {
-      expect(socket.sent).toHaveLength(initialSubscribeCount + 1);
-    });
+    await Promise.resolve();
+    expect(socket.sent).toHaveLength(initialSubscribeCount);
 
     disconnect();
   });

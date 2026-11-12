@@ -832,6 +832,14 @@ Still mandatory after this work whenever Agent Controller Session evolves:
 
 Specified and implemented: the collapsed Agent Controller composer uses one full-width prompt box with a quiet internal action row: tools at the left, Stop and Send at the right. Each action retains a 44px touch target. Stop invokes the existing structured turn interrupt, including a submission in flight; Terminal retains Esc. The expand control stays in the editor corner. Back to bottom is an accessible, labelled 44px floating arrow over the history and consumes no layout row.
 
+### History read latency
+
+- Normal browser history windows start at 80 canonical items and grow only when sparse visible content cannot fill the viewport. Retain the existing nearby reader corridor.
+- Canonical patches are session-wide. Moving a retained window updates reconnect metadata without replacing its patch subscription or fetching the same window again.
+- `mt` reads windows over an authenticated one-shot IPC connection to the owning `mtagenthost`. These reads neither claim the provider control connection nor wait for provider commands. The host advertises `history.window.read`; older hosts require a full runtime update.
+- WebSocket requests may progress concurrently (bounded to 32 outstanding requests per connection); provider mutations retain their runtime serialization. Slow provider requests must not block history reads on the browser receive loop.
+- After measuring concrete rows, apply revised spacer estimates on the next frame instead of reconciling the DOM twice before restoring the reader anchor.
+
 ### Claude settings parity
 
 Claude model values use the native catalogue's resolved model IDs, with model-specific effort choices and advertised fast-mode support. The same Model/Effort/Plan/Permissions/Fast controls configure the existing SDK session without synthetic prompts. SDK control acknowledgements remain distinct from effective native state; init frames update actual fast-mode state. Explicit fast mode starts off per session. Steering uses native immediate-priority user messages in the same thread/turn; goals retain native /goal lifecycle confirmation.
