@@ -5,7 +5,6 @@ import type {
   HistoryTone,
   AppServerControlActivationIssue,
   AppServerControlHistoryAction,
-  AppServerControlLayoutMode,
   SessionAppServerControlViewState,
 } from './types';
 import { t } from '../i18n';
@@ -370,12 +369,6 @@ export function resolveAttachmentLabel(attachment: AppServerControlAttachmentRef
 
 export function normalizeAppServerControlProvider(provider: string | null | undefined): string {
   return (provider || '').trim().toLowerCase();
-}
-
-export function resolveAppServerControlLayoutMode(
-  provider: string | null | undefined,
-): AppServerControlLayoutMode {
-  return normalizeAppServerControlProvider(provider) === 'codex' ? 'full-width-left' : 'default';
 }
 
 export function historyLabel(kind: HistoryKind): string {

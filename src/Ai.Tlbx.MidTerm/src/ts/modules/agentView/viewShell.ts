@@ -1,8 +1,5 @@
 import { t } from '../i18n';
-import {
-  normalizeAppServerControlProvider,
-  resolveAppServerControlLayoutMode,
-} from './activationHelpers';
+import { normalizeAppServerControlProvider } from './activationHelpers';
 import type { AppServerControlDebugScenarioName } from './debugScenario';
 
 export const APP_SERVER_CONTROL_DEBUG_SCENARIO_NAMES: readonly AppServerControlDebugScenarioName[] =
@@ -94,5 +91,4 @@ function syncAgentViewPresentation(
   provider: string | null | undefined = null,
 ): void {
   panel.dataset.appServerControlProvider = normalizeAppServerControlProvider(provider);
-  panel.dataset.appServerControlLayout = resolveAppServerControlLayoutMode(provider);
 }
