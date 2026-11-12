@@ -126,7 +126,28 @@ public sealed class AppServerControlUsageSummary
     public double? PrimaryRateLimitUsedPercent { get; set; }
     public double? SecondaryRateLimitUsedPercent { get; set; }
 
-    public AppServerControlUsageSummary Clone() => (AppServerControlUsageSummary)MemberwiseClone();
+    public string? AccountLabel { get; set; }
+    public string? AccountPlan { get; set; }
+    public string? LimitsStatus { get; set; }
+    public DateTimeOffset? LimitsCheckedAt { get; set; }
+    public List<AppServerControlUsageLimit> Limits { get; set; } = [];
+
+    public AppServerControlUsageSummary Clone()
+    {
+        var copy = (AppServerControlUsageSummary)MemberwiseClone();
+        copy.Limits = Limits.Select(static limit => limit.Clone()).ToList();
+        return copy;
+    }
+}
+
+public sealed class AppServerControlUsageLimit
+{
+    public string Id { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public double? UsedPercent { get; set; }
+    public int? WindowMinutes { get; set; }
+    public DateTimeOffset? ResetsAt { get; set; }
+    public AppServerControlUsageLimit Clone() => (AppServerControlUsageLimit)MemberwiseClone();
 }
 
 public sealed class AppServerControlCommand
@@ -753,6 +774,7 @@ public sealed class AppServerControlHostCommandResultEnvelope
     public AppServerControlTurnStartResponse? TurnStarted { get; set; }
     public AppServerControlCommandAcceptedResponse? Accepted { get; set; }
     public AppServerControlConfigureResponse? Configured { get; set; }
+    public AppServerControlUsageSummary? Usage { get; set; }
     public AppServerControlHistoryWindowResponse? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }

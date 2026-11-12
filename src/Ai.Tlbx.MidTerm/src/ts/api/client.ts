@@ -32,6 +32,7 @@ import type {
   AppServerControlCommandAcceptedResponse,
   AppServerControlConfigureRequest,
   AppServerControlConfigureResponse,
+  AppServerControlUsageSummary,
   AppServerControlHistoryDelta,
   AppServerControlRequestDecisionRequest,
   AppServerControlUserInputAnswerRequest,
@@ -723,6 +724,24 @@ export async function interruptAppServerControlTurn(
   request: AppServerControlInterruptRequest,
 ): Promise<AppServerControlCommandAcceptedResponse> {
   return interruptAppServerControlTurnWs(id, request);
+}
+
+export async function getAppServerControlUsage(id: string): Promise<AppServerControlUsageSummary> {
+  return fetchAppServerControlJson(
+    `/api/sessions/${encodeURIComponent(id)}/agent-control/usage`,
+    'Usage read failed.',
+    { signal: AbortSignal.timeout(15000) },
+  );
+}
+
+export async function compactAppServerControlSession(
+  id: string,
+): Promise<AppServerControlCommandAcceptedResponse> {
+  return fetchAppServerControlJson(
+    `/api/sessions/${encodeURIComponent(id)}/agent-control/compact`,
+    'Compaction failed.',
+    { method: 'POST', signal: AbortSignal.timeout(30000) },
+  );
 }
 
 export async function configureAppServerControlRuntime(

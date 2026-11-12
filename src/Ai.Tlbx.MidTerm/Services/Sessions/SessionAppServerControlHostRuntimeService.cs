@@ -911,6 +911,29 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
+        var result = await ReadHostStateAsync(sessionId, "history.window.get", new()
+        {
+            StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
+        }, ct).ConfigureAwait(false);
+        if (result.HistoryWindow is { } window)
+        {
+            RegisterHistoryPaths(_pathAllowlist, sessionId, window.History);
+            UpdateCachedHistoryWindow(state, window);
+        }
+        // The response is owned by this read; only the runtime cache needs a copy.
+        return result.HistoryWindow;
+    }
+
+    public async Task<AppServerControlUsageSummary> ReadUsageAsync(string sessionId, CancellationToken ct = default)
+    {
+        var result = await ReadHostStateAsync(sessionId, "usage.read", null, ct).ConfigureAwait(false);
+        return result.Usage ?? throw new InvalidOperationException("Provider did not return usage information.");
+    }
+
+    private async Task<AppServerControlHostCommandResultEnvelope> ReadHostStateAsync(
+        string sessionId, string type, AppServerControlHostHistoryWindowRequest? historyWindow, CancellationToken ct)
+    {
+        var state = GetRequiredState(sessionId);
         var hostPid = state.HostPid;
         if (hostPid <= 0)
             throw new InvalidOperationException("Agent Controller host is not connected.");
@@ -920,38 +943,29 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             AppServerControlHostJsonContext.Default.AppServerControlHostHello)
             ?? throw new InvalidOperationException("Agent Controller host hello was empty.");
         ValidateHello(hello);
-        if (!hello.Capabilities.Contains("history.window.read", StringComparer.Ordinal))
-            throw new InvalidOperationException("TLBX_HISTORY_HOST_UPDATE_REQUIRED: Update mtagenthost to enable independent history reads.");
+        if (!hello.Capabilities.Contains(type == "usage.read" ? "usage.read" : "history.window.read", StringComparer.Ordinal))
+            throw new InvalidOperationException("Update mtagenthost to enable this independent session read.");
         var command = new AppServerControlHostCommandEnvelope
         {
             CommandId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
             SessionId = sessionId,
-            Type = "history.window.get",
+            Type = type,
             AttachRuntime = new AppServerControlAttachRuntimeRequest
             {
                 InstanceId = _instanceIdentity.InstanceId,
                 OwnerToken = _instanceIdentity.OwnerToken
             },
-            HistoryWindow = new AppServerControlHostHistoryWindowRequest
-            {
-                StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
-            }
+            HistoryWindow = historyWindow
         };
         var payload = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
         await connection.Writer.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
         await connection.Writer.FlushAsync(ct).ConfigureAwait(false);
         var result = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
             AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope)
-            ?? throw new InvalidOperationException("Agent Controller history response was empty.");
+            ?? throw new InvalidOperationException("Agent Controller read response was empty.");
         if (result.CommandId != command.CommandId || result.SessionId != sessionId || result.Status != "accepted")
-            throw new InvalidOperationException(result.Message ?? "Agent Controller history read was rejected.");
-        if (result.HistoryWindow is { } window)
-        {
-            RegisterHistoryPaths(_pathAllowlist, sessionId, window.History);
-            UpdateCachedHistoryWindow(state, window);
-        }
-        // The response is owned by this read; only the runtime cache needs a copy.
-        return result.HistoryWindow;
+            throw new InvalidOperationException(result.Message ?? "Agent Controller read was rejected.");
+        return result;
     }
 
     public AppServerControlHistoryPatchSubscription SubscribeHistoryPatches(

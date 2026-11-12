@@ -121,6 +121,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(AppServerControlSteerRequest))]
 [JsonSerializable(typeof(AppServerControlConfigureRequest))]
 [JsonSerializable(typeof(AppServerControlConfigureResponse))]
+[JsonSerializable(typeof(AppServerControlUsageSummary))]
 [JsonSerializable(typeof(AppServerControlGoalSetRequest))]
 [JsonSerializable(typeof(AppServerControlGoalState))]
 [JsonSerializable(typeof(AppServerControlGoalResponse))]

@@ -134,6 +134,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
     public async Task<HostCommandOutcome> ExecuteAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
+        if (command.Type == "usage.read") return await ReadUsageAsync(command, ct).ConfigureAwait(false);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {

@@ -9,6 +9,16 @@
 
 import { uploadRichComposerFile } from './richComposerUpload';
 import { RichComposer } from './richComposer';
+import { AgentCommandPalette } from './agentCommandPalette';
+import {
+  createAgentSessionInfoButton,
+  getAgentSessionCommands,
+  openAgentSessionDetails,
+  sessionToolText,
+  setAgentSessionActionHandler,
+  type SessionTool,
+} from '../agentView/sessionTools';
+import { compactAppServerControlSession } from '../../api/client';
 import { orderedRichAttachments } from './smartInputOutboundReferences';
 import {
   KEYBOARD_REPLACEMENT_CHANGED,
@@ -211,6 +221,8 @@ const sessionPinnedTools = new Map<string, ToolKind[]>();
 const sessionComposerExpanded = new Map<string, boolean>();
 const sessionComposerPendingOperations = new Map<string, Promise<void>>();
 const sessionComposerLastPasteEventAtMs = new Map<string, number>();
+let agentCommandPalette: AgentCommandPalette | null = null;
+
 let appServerControlResumeConversationHandler:
   | ((args: {
       sessionId: string;
@@ -610,6 +622,7 @@ function focusSmartInput(): void {
 }
 
 function handleRichComposerKeydown(event: KeyboardEvent): boolean {
+  if (agentCommandPalette?.keydown(event)) return true;
   if (handleSmartInputShiftTabShortcut(event)) return true;
   if (activeTextarea && handlePromptHistoryKeydown(event, activeTextarea)) return true;
   if (event.key === 'Escape') {
@@ -697,7 +710,52 @@ function syncRichComposerInputLock(): void {
     button.disabled = locked;
 }
 
+function insertAgentCommand(sessionId: string, text: string): void {
+  if ($activeSessionId.get() !== sessionId || !activeTextarea) return;
+  setSessionDraftText(sessionId, text);
+  renderSessionDraftIntoTextarea(sessionId, activeTextarea);
+  richComposer?.focus();
+}
+
+async function executeAgentSessionTool(sessionId: string, action: SessionTool): Promise<void> {
+  if ($activeSessionId.get() !== sessionId) return;
+  if (action === 'status' || action === 'usage' || action === 'help') {
+    openAgentSessionDetails(sessionId, action);
+    return;
+  }
+  if (action === 'goal') {
+    openAppServerControlGoalEditor(sessionId);
+    return;
+  }
+  if (action === 'compact') {
+    await compactAppServerControlSession(sessionId);
+    return;
+  }
+  const args = getAppServerControlResumeArgs(sessionId);
+  if (args && appServerControlResumeConversationHandler)
+    await appServerControlResumeConversationHandler(args);
+}
+
 function initializeRichComposer(textarea: HTMLTextAreaElement): void {
+  setAgentSessionActionHandler((sessionId, action) =>
+    executeAgentSessionTool(sessionId, action).catch((error: unknown) => {
+      showDropToast(String(error));
+    }),
+  );
+  agentCommandPalette = new AgentCommandPalette((sessionId, command) => {
+    if (command.local) {
+      if (activeTextarea) clearSubmittedSmartInputState(sessionId, activeTextarea);
+      void executeAgentSessionTool(sessionId, command.name as SessionTool).catch(
+        (error: unknown) => {
+          showDropToast(String(error));
+        },
+      );
+    } else insertAgentCommand(sessionId, `/${command.name}${command.inputHint ? ' ' : ''}`);
+  });
+  window.addEventListener('tlbx:insert-agent-command', (event) => {
+    const detail = (event as CustomEvent<{ sessionId: string; text: string }>).detail;
+    insertAgentCommand(detail.sessionId, detail.text);
+  });
   richComposer = new RichComposer({
     notice: showDropToast,
     changed: (sessionId, draft, edited) => {
@@ -711,6 +769,12 @@ function initializeRichComposer(textarea: HTMLTextAreaElement): void {
       setSessionDraft(sessionId, draft);
       if ($activeSessionId.get() === sessionId) textarea.value = getSessionDraftText(sessionId);
       queueFooterReserveSync();
+      if (
+        richComposer &&
+        $activeSessionId.get() === sessionId &&
+        getSmartInputComposerReferenceIds(draft).length === 0
+      )
+        agentCommandPalette?.update(sessionId, getSessionDraftText(sessionId), richComposer.host);
     },
     keydown: handleRichComposerKeydown,
     submissionChanged: syncRichComposerInputLock,
@@ -974,6 +1038,7 @@ function renderSessionDraftIntoTextarea(
     return;
   }
 
+  agentCommandPalette?.close();
   const richActive = Boolean(sessionId && isAppServerControlActiveSession(sessionId));
   textarea.hidden = richActive;
   richComposer?.sync(sessionId, getSessionDraft(sessionId), richActive);
@@ -2084,6 +2149,7 @@ function renderAppServerControlStatusRow(layoutState: AdaptiveFooterLayoutState)
     );
     appServerControlQuickSettingsRow.hidden = false;
     footerStatusHost.appendChild(appServerControlQuickSettingsRow);
+    footerStatusHost.appendChild(createAgentSessionInfoButton(sessionId));
     return;
   }
 
@@ -2104,6 +2170,7 @@ function renderAppServerControlStatusRow(layoutState: AdaptiveFooterLayoutState)
   });
   appServerControlSettingsSummaryBtn = summaryBtn;
   footerStatusHost.appendChild(summaryBtn);
+  footerStatusHost.appendChild(createAgentSessionInfoButton(sessionId));
 
   setAutomationOverflowProxyAnchor(null);
   if (layoutState.isMobile && layoutState.showAutomation) {
@@ -2799,6 +2866,28 @@ async function sendTerminalComposerTurn(
   return true;
 }
 
+async function handleAgentComposerCommand(
+  sessionId: string,
+  text: string,
+  ta: HTMLTextAreaElement,
+): Promise<boolean> {
+  const match = /^\/([a-z][\w-]*)(?:\s+(.*))?$/is.exec(text.trim());
+  if (!match) return false;
+  const name = (match[1] ?? '').toLowerCase();
+  const command = getAgentSessionCommands(sessionId).find((entry) => entry.name === name);
+  if (!command) throw new Error(sessionToolText('unknownCommand'));
+  if (!command.local) return false;
+  if (match[2]?.trim()) throw new Error(sessionToolText('noArguments'));
+  if (name === 'compact') {
+    await executeAgentSessionTool(sessionId, 'compact');
+    clearSubmittedSmartInputState(sessionId, ta);
+  } else {
+    clearSubmittedSmartInputState(sessionId, ta);
+    await executeAgentSessionTool(sessionId, name as SessionTool);
+  }
+  return true;
+}
+
 async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement): Promise<void> {
   const editor = richComposer;
   if (!editor || editor.isSubmitting(sessionId)) return;
@@ -2816,6 +2905,7 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
     );
     const text = getSessionDraftText(sessionId);
     if (!text && attachments.length === 0) return;
+    if (attachments.length === 0 && (await handleAgentComposerCommand(sessionId, text, ta))) return;
     const { submittedTurn } = await submitAppServerControlComposerDraft({
       sessionId,
       draft,

@@ -49,8 +49,8 @@ import {
   resolveHistoryWindowViewportWidth,
   resolveRepresentativeHistoryEntryHeight,
 } from './historyMeasurements';
-import { createAgentHistoryDom, isProposedPlanActionDisabled } from './historyDom';
-import { syncNativeCommands } from './nativeCommands';
+import { createAgentHistoryDom } from './historyDom';
+import { syncAgentSessionTools, removeAgentSessionTools } from './sessionTools';
 import { filterReadingHistory, showAgentTechnicalDetails } from './historyVisibility';
 import {
   createAgentHistoryRender,
@@ -576,6 +576,7 @@ export function destroyAgentView(sessionId: string): void {
     state.historyExpandedEntries.clear();
   }
 
+  removeAgentSessionTools(sessionId);
   viewStates.delete(sessionId);
   activationFlights.delete(sessionId);
   resetAppServerControlHistoryTrace(sessionId);
@@ -603,6 +604,7 @@ export function resetAgentViewRuntimeForTests(): void {
     state.historyMeasurementObserver?.disconnect();
     state.historyViewportResizeObserver?.disconnect();
     clearAppServerControlTurnSessionState(sessionId);
+    removeAgentSessionTools(sessionId);
     removeAppServerControlQuickSettingsSessionState(sessionId);
   }
 
@@ -2790,11 +2792,7 @@ function renderAgentView(
   );
   syncAppServerControlGoal(snapshot, streamConnected);
   syncAgentViewPresentation(panel, snapshot.provider);
-  syncNativeCommands(
-    panel,
-    snapshot,
-    () => !isProposedPlanActionDisabled(snapshot.sessionId, viewStates.get(snapshot.sessionId)),
-  );
+  syncAgentSessionTools(snapshot, streamConnected);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncAppServerControlTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   historyRender.syncRequestInteractionState(state, snapshot.requests);

@@ -322,6 +322,21 @@ async function handle(command, isCancelled = () => false, signal) {
       goals.setSupported((initialized.commands ?? []).some((command) =>
         (typeof command === "string" ? command : command.name)?.replace(/^\//, "") === "goal"));
       return;
+    case "usage.read": {
+      if (!runtime) throw new Error("Claude bridge is not initialized.");
+      try {
+        const [usage, account] = await Promise.all([
+          runtime.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
+          runtime.accountInfo(),
+        ]);
+        emit({ type: "bridge.usage", requestId: command.requestId,
+          available: usage.rate_limits_available, limits: usage.rate_limits,
+          account: { email: account.email, apiProvider: account.apiProvider, subscriptionType: account.subscriptionType } });
+      } catch {
+        emit({ type: "bridge.usage", requestId: command.requestId, available: false });
+      }
+      return;
+    }
     case "thread.goal":
       goals.control(command);
       return;

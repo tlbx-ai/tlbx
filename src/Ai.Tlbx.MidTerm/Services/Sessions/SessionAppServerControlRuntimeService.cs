@@ -232,6 +232,9 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return await _hostRuntime.InterruptTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
+    public Task<AppServerControlUsageSummary> ReadUsageAsync(string sessionId, CancellationToken ct = default) =>
+        _hostRuntime.ReadUsageAsync(sessionId, ct);
+
     public Task<AppServerControlConfigureResponse> ConfigureAsync(
         string sessionId, AppServerControlConfigureRequest request, CancellationToken ct = default)
     {
