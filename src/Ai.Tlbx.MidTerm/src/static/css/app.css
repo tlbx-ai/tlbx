@@ -14851,9 +14851,6 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   margin-bottom: 0;
 }
 
-.agent-history-markdown p,
-.agent-history-markdown ul,
-.agent-history-markdown ol,
 .agent-history-markdown .agent-markdown-gap {
   display: block;
   height: calc(0.95em * min(var(--agent-markdown-gap-lines, 1), 2));
@@ -14913,6 +14910,11 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 
 .agent-history-markdown li + li {
   margin-top: 0.4em;
+}
+
+.agent-history-markdown p,
+.agent-history-markdown li {
+  text-wrap: pretty;
 }
 
 .agent-history-markdown li > p {
@@ -15265,6 +15267,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   font-weight: 700;
   line-height: 1.3;
   letter-spacing: -0.018em;
+  text-wrap: balance;
 }
 
 .agent-history-markdown h1 {
