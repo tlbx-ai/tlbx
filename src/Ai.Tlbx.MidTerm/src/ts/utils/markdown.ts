@@ -5,9 +5,15 @@ export interface MarkdownRenderOptions {
   paginateTables?: boolean;
 }
 
-// Reuse the composer's installed delimiter parser for balanced, nested marks.
-// All other inline rules stay disabled; HTML/link/image safety remains below.
-const emphasisParser = new MarkdownIt('zero', { html: false }).enable('emphasis');
+// Reuse the composer's delimiter parser and its Markdown hard-break convention.
+// Code and literal escapes are protected before this pass; HTML stays disabled.
+const inlineFormattingParser = new MarkdownIt('zero', { html: false }).enable('emphasis');
+inlineFormattingParser.inline.ruler.before('text', 'tlbx_hard_break', (state, silent) => {
+  if (state.src[state.pos] !== '\\' || state.src[state.pos + 1] !== '\n') return false;
+  if (!silent) state.push('hardbreak', 'br', 0);
+  state.pos += 2;
+  return true;
+});
 
 function escapeMarkdownHtml(text: string): string {
   return text
@@ -54,12 +60,14 @@ function formatMarkdownLinks(escapedText: string): string {
   });
 }
 
-function formatMarkdownEmphasis(text: string): string {
-  return emphasisParser
+function formatMarkdownProse(text: string): string {
+  return inlineFormattingParser
     .parseInline(text, {})
     .flatMap((token) => token.children ?? [])
     .map((token) => {
       switch (token.type) {
+        case 'hardbreak':
+          return '<br>';
         case 'strong_open':
           return '<strong>';
         case 'strong_close':
@@ -202,7 +210,7 @@ function formatMarkdownInline(
   // Code and escaped literal tags are already protected. Only this exact safe
   // table-cell tag becomes markup; attributes and all other HTML stay escaped.
   if (tableCell) html = html.replace(/&lt;br[ \t]*\/?&gt;/gi, '<br>');
-  html = formatMarkdownEmphasis(html);
+  html = formatMarkdownProse(html);
   html = formatMarkdownLinks(formatMarkdownImages(html));
   return html.replace(
     new RegExp(`X${prefix}word:(\\d+)\uE001X|${prefix}(\\d+)\uE001`, 'g'),
