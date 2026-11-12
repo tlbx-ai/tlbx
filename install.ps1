@@ -2405,6 +2405,7 @@ function Install-Tlbx
     trap
     {
         $installError = $_
+        Write-Log "Installation failed: $($installError.Exception.Message)" "ERROR"
         $preserveBackup = [bool]$installError.Exception.Data['TlbxPreserveBackupRoot']
         if ($startedUserProcess -and -not $startedUserProcess.HasExited)
         {
@@ -2418,7 +2419,7 @@ function Install-Tlbx
             {
                 if ($AsService)
                 {
-                    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+                    Stop-ExistingInstallProcesses -InstallDir $installDir
                 }
                 Restore-PreviousBinarySet -InstallDir $installDir -BackupRoot $tempRoot
                 if ($settingsSnapshotCreated) { Restore-InstallerSettingsSnapshot -Snapshot $settingsSnapshot }
@@ -3002,6 +3003,21 @@ function Save-ElevatedInstallerFailureLog
     return $savedPath
 }
 
+function Read-ElevatedInstallerLog
+{
+    param([Parameter(Mandatory=$true)][string]$LogPath)
+
+    # The child keeps its writer open. Both handles must explicitly permit
+    # concurrent reading/writing, including on Windows PowerShell 5.1.
+    $stream = [IO.File]::Open($LogPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8)
+    try
+    {
+        while (-not $reader.EndOfStream) { $reader.ReadLine() }
+    }
+    finally { $reader.Dispose() }
+}
+
 function Invoke-ElevatedInstaller
 {
     param(
@@ -3056,7 +3072,7 @@ function Invoke-ElevatedInstaller
         $linesRead = 0
         do
         {
-            $lines = @(Get-Content -LiteralPath $LogPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+            $lines = @(Read-ElevatedInstallerLog -LogPath $LogPath)
             if ($lines.Count -gt $linesRead)
             {
                 $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
@@ -3067,7 +3083,7 @@ function Invoke-ElevatedInstaller
         } while ($true)
         $child.WaitForExit()
         # Drain the last lines after the child has closed its log handle.
-        $lines = @(Get-Content -LiteralPath $LogPath -Encoding UTF8 -ErrorAction SilentlyContinue)
+        $lines = @(Read-ElevatedInstallerLog -LogPath $LogPath)
         if ($lines.Count -gt $linesRead)
         {
             $lines[$linesRead..($lines.Count - 1)] | ForEach-Object { Write-Host $_ }
@@ -3122,25 +3138,30 @@ if ($ServiceMode)
         # If log file specified, redirect all output there for streaming to original terminal
         if ($LogFile)
         {
-            # Clear log file
-            "" | Set-Content -LiteralPath $LogFile -Encoding UTF8 -Force
-
-            # Run the install with all output captured to file
-            & {
-                Write-Host ""
-                Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
-                Write-Host ""
-                $script:release = Get-LatestRelease -DevChannel $Dev
-                $version = $script:release.tag_name -replace "^v", ""
-                $channelLabel = Get-ReleaseChannel -Release $script:release
-                Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
-                Write-Host ""
-                Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
-            } *>&1 | ForEach-Object {
-                $line = $_.ToString()
-                Write-Host $_
-                Add-Content -LiteralPath $LogFile -Value $line -Encoding UTF8
+            # One writer owns the log for the whole pipeline. Reopening it for
+            # each record races with the parent's polling reader in PS 5.1.
+            $logStream = [IO.File]::Open($LogFile, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+            $logWriter = [IO.StreamWriter]::new($logStream, [Text.UTF8Encoding]::new($false))
+            $logWriter.AutoFlush = $true
+            try
+            {
+                & {
+                    Write-Host ""
+                    Write-Host "  Running with administrator privileges..." -ForegroundColor Cyan
+                    Write-Host ""
+                    $script:release = Get-LatestRelease -DevChannel $Dev
+                    $version = $script:release.tag_name -replace "^v", ""
+                    $channelLabel = Get-ReleaseChannel -Release $script:release
+                    Write-Host "  Latest $channelLabel version: $version" -ForegroundColor White
+                    Write-Host ""
+                    Install-Tlbx -AsService $true -Version $version -RunAsUser $RunAsUser -RunAsUserSid $RunAsUserSid -PasswordHash $PasswordHash -Port $Port -BindAddress $BindAddress -ConfigureFirewall:$ConfigureFirewall -TrustCert:$TrustCert
+                } *>&1 | ForEach-Object {
+                    $line = $_.ToString()
+                    Write-Host $_
+                    $logWriter.WriteLine($line)
+                }
             }
+            finally { $logWriter.Dispose() }
         }
         else
         {
@@ -3159,7 +3180,15 @@ if ($ServiceMode)
     {
         if ($LogFile)
         {
-            Add-Content -LiteralPath $LogFile -Value ("ERROR: " + $_.ToString()) -Encoding UTF8 -ErrorAction SilentlyContinue
+            $errorText = "ERROR: " + $_.ToString()
+            try
+            {
+                $errorStream = [IO.File]::Open($LogFile, [IO.FileMode]::Append, [IO.FileAccess]::Write, [IO.FileShare]::ReadWrite)
+                $errorWriter = [IO.StreamWriter]::new($errorStream, [Text.UTF8Encoding]::new($false))
+                try { $errorWriter.WriteLine($errorText) }
+                finally { $errorWriter.Dispose() }
+            }
+            catch { } # Diagnostic failures must never replace the installation error.
         }
         throw
     }

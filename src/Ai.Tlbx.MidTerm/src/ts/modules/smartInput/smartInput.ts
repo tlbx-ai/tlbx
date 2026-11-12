@@ -1985,7 +1985,12 @@ function syncInputRow(layoutState: AdaptiveFooterLayoutState): void {
   const interruptButton = dockedBar.querySelector<HTMLButtonElement>('.smart-input-escape-btn');
   if (interruptButton) {
     const label = layoutState.appServerControlActive ? t('commands.stop') : 'Esc';
-    interruptButton.textContent = label;
+    if (layoutState.appServerControlActive) {
+      interruptButton.innerHTML =
+        '<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true" focusable="false"><rect x="5" y="5" width="14" height="14" rx="1"/></svg>';
+    } else {
+      interruptButton.textContent = label;
+    }
     interruptButton.title = layoutState.appServerControlActive ? label : 'Escape';
     interruptButton.setAttribute('aria-label', interruptButton.title);
   }
