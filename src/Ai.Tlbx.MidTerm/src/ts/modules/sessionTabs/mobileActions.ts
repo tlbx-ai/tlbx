@@ -1,4 +1,4 @@
-import { $activeSessionId, getSession } from '../../stores';
+import { $activeSessionId, $sessionList, getSession } from '../../stores';
 import { t } from '../i18n';
 import { closeBoardsView } from '../boards';
 import { getAgentSurfaceLabel, resolveSessionSurfaceMode } from '../sessionSurface';
@@ -82,6 +82,19 @@ export function closeMobileActionsMenu(): void {
 }
 
 export function bindMobileActionsMenu(): void {
+  let previousSurface = '';
+  $sessionList.subscribe((sessions) => {
+    const activeId = $activeSessionId.get();
+    const session = sessions.find((candidate) => candidate.id === activeId);
+    const surface = [
+      activeId,
+      session?.appServerControlOnly,
+      session?.profileHint ?? session?.supervisor?.profile,
+    ].join(':');
+    if (surface === previousSurface) return;
+    previousSurface = surface;
+    syncMobileTabActionState();
+  });
   const toggleBtn = document.getElementById('btn-mobile-actions-menu');
   const dropdown = document.getElementById('mobile-actions-dropdown');
   const actions = document.getElementById('topbar-actions');

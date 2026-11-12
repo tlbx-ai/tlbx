@@ -18,6 +18,7 @@ import { syncNativeConfigControls } from './nativeConfigControls';
 import {
   getAppServerControlEffortOptions,
   getAppServerControlModelOptions,
+  supportsAppServerControlFastMode,
 } from '../appServerControl/modelOptions';
 import {
   ADAPTIVE_FOOTER_RESERVED_HEIGHT_CHANGED_EVENT,
@@ -183,7 +184,11 @@ export function syncAppServerControlQuickSettingsControls(args: {
   setAppServerControlQuickSettingsDropdownDisabled(appServerControlPermissionSelect, false);
   syncAppServerControlFastModeToggle({
     toggle: appServerControlFastToggle,
-    available: provider === 'codex',
+    available: supportsAppServerControlFastMode(
+      provider,
+      draft.model,
+      preferQuickSettingsOptions(draft, effective, 'modelOptions'),
+    ),
     locked: false,
     enabled: draft.fastMode === 'on',
   });
