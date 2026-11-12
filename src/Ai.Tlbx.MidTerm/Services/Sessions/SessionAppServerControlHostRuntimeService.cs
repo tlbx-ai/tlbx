@@ -911,37 +911,47 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
-        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
-        try
+        var hostPid = state.HostPid;
+        if (hostPid <= 0)
+            throw new InvalidOperationException("Agent Controller host is not connected.");
+        var endpoint = AppServerControlHostEndpoint.GetSessionEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid);
+        using var connection = await HostTransportConnection.ConnectAsync(endpoint, 1000, ct).ConfigureAwait(false);
+        var hello = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
+            AppServerControlHostJsonContext.Default.AppServerControlHostHello)
+            ?? throw new InvalidOperationException("Agent Controller host hello was empty.");
+        ValidateHello(hello);
+        if (!hello.Capabilities.Contains("history.window.read", StringComparer.Ordinal))
+            throw new InvalidOperationException("TLBX_HISTORY_HOST_UPDATE_REQUIRED: Update mtagenthost to enable independent history reads.");
+        var command = new AppServerControlHostCommandEnvelope
         {
-            var result = await SendCommandAsync(
-                state,
-                commandId => new AppServerControlHostCommandEnvelope
-                {
-                    CommandId = commandId,
-                    SessionId = sessionId,
-                    Type = "history.window.get",
-                    HistoryWindow = new AppServerControlHostHistoryWindowRequest
-                    {
-                        StartIndex = startIndex,
-                        Count = count,
-                        ViewportWidth = viewportWidth
-                    }
-                },
-                ct).ConfigureAwait(false);
-
-            if (result.HistoryWindow is null)
+            CommandId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+            SessionId = sessionId,
+            Type = "history.window.get",
+            AttachRuntime = new AppServerControlAttachRuntimeRequest
             {
-                return null;
+                InstanceId = _instanceIdentity.InstanceId,
+                OwnerToken = _instanceIdentity.OwnerToken
+            },
+            HistoryWindow = new AppServerControlHostHistoryWindowRequest
+            {
+                StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
             }
-
-            UpdateCachedHistoryWindow(state, result.HistoryWindow);
-            return CloneHistoryWindow(result.HistoryWindow);
-        }
-        finally
+        };
+        var payload = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
+        await connection.Writer.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
+        await connection.Writer.FlushAsync(ct).ConfigureAwait(false);
+        var result = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
+            AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope)
+            ?? throw new InvalidOperationException("Agent Controller history response was empty.");
+        if (result.CommandId != command.CommandId || result.SessionId != sessionId || result.Status != "accepted")
+            throw new InvalidOperationException(result.Message ?? "Agent Controller history read was rejected.");
+        if (result.HistoryWindow is { } window)
         {
-            state.Gate.Release();
+            RegisterHistoryPaths(_pathAllowlist, sessionId, window.History);
+            UpdateCachedHistoryWindow(state, window);
         }
+        // The response is owned by this read; only the runtime cache needs a copy.
+        return result.HistoryWindow;
     }
 
     public AppServerControlHistoryPatchSubscription SubscribeHistoryPatches(

@@ -1348,8 +1348,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       }
     }
 
-    let metrics = readHistoryViewportMetrics(viewport, state);
-    let renderPlan = buildHistoryRenderPlan(entries, metrics, state);
+    const metrics = readHistoryViewportMetrics(viewport, state);
+    const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
     const measurementChanged = state
       ? measureRenderedHistoryHeights(
@@ -1360,9 +1360,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         )
       : false;
     if (measurementChanged && isVirtualizedHistoryContext(state, entries.length)) {
-      metrics = readHistoryViewportMetrics(viewport, state);
-      renderPlan = buildHistoryRenderPlan(entries, metrics, state);
-      reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
+      // Heights were just read from the concrete rows. Reconcile their updated
+      // spacer estimates next frame instead of writing the DOM a second time and
+      // forcing another synchronous layout when the reader anchor is restored.
+      deps.scheduleHistoryRender(sessionId);
     }
     if (state?.snapshot) {
       traceRenderedAppServerControlHistoryWindow({

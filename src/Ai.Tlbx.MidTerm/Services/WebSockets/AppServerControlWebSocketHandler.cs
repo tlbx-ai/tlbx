@@ -51,6 +51,7 @@ public sealed class AppServerControlWebSocketHandler
         var sendLock = new SemaphoreSlim(1, 1);
         var subscriptions = new Dictionary<string, AppServerControlSocketSubscription>(StringComparer.Ordinal);
         var shutdownToken = _shutdownService.Token;
+        var pendingRequests = new List<Task>();
 
         async Task SendJsonAsync<T>(T payload, JsonTypeInfo<T> typeInfo)
         {
@@ -278,13 +279,20 @@ public sealed class AppServerControlWebSocketHandler
                                 continue;
                             }
 
-                            await HandleRequestAsync(
+                            pendingRequests.RemoveAll(static task => task.IsCompletedSuccessfully);
+                            if (pendingRequests.Count >= 32)
+                            {
+                                await SendErrorAsync(request.Id, request.Action, request.SessionId,
+                                    "Too many concurrent Agent Controller requests.").ConfigureAwait(false);
+                                continue;
+                            }
+                            pendingRequests.Add(HandleRequestAsync(
                                 request,
                                 SendJsonAsync,
                                 SendJsonAsync,
                                 SendJsonAsync,
                                 SendJsonAsync,
-                                SendErrorAsync).ConfigureAwait(false);
+                                SendErrorAsync));
                             continue;
                         }
                     }
@@ -308,6 +316,8 @@ public sealed class AppServerControlWebSocketHandler
             }
 
             subscriptions.Clear();
+            // Requests own their deserialized payloads and finish before their send lock is disposed.
+            await Task.WhenAll(pendingRequests).ConfigureAwait(false);
             sendLock.Dispose();
 
             if (ws.State == WebSocketState.Open)
