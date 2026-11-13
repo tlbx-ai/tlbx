@@ -29,12 +29,14 @@ internal static class PreviewProxyAuthorization
                     context.Response.Headers.AccessControlAllowCredentials = "true";
                     context.Response.Headers.AccessControlAllowMethods = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
                     context.Response.Headers.AccessControlAllowHeaders = context.Request.Headers.AccessControlRequestHeaders;
+                    context.Response.Headers.AccessControlExposeHeaders = WebPreviewProxyMiddleware.UpstreamUrlHeaderName;
                     context.Response.Headers.Vary = "Origin, Access-Control-Request-Method, Access-Control-Request-Headers";
                 }
                 else
                 {
                     context.Response.Headers.Remove("Access-Control-Allow-Origin");
                     context.Response.Headers.Remove("Access-Control-Allow-Credentials");
+                    context.Response.Headers.Remove("Access-Control-Expose-Headers");
                 }
             }
             return Task.CompletedTask;

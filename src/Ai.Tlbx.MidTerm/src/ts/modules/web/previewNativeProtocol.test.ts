@@ -1,4 +1,6 @@
 import { readFileSync } from 'node:fs';
+import { createServer } from 'node:http';
+import { once } from 'node:events';
 import { runInNewContext } from 'node:vm';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -21,15 +23,23 @@ const protocol = [
   section('function ar(u){', 'function frameUrl(u){'),
   section('function mtProxyUrl(u,p){', '// === Network APIs ==='),
   section('function mtUpstreamSearch(search){', '// Application Location is upstream-facing;'),
+  section('function mtResponseUrl(nativeUrl,readHeader){', 'var mtHeadersGet='),
   section('function mtNavigationUrl(value){', 'var mtLocationView={};'),
 ].join('\n');
 const route = '0123456789abcdefabcd';
 const nativePrefix = `/webpreview/${route}`;
 const upstream = 'http://127.0.0.1:53836';
 
-function exercise(virtualPrefix: string, suffix: string, baseSuffix = '/docs/') {
-  const location = new URL(`https://preview.example${virtualPrefix}${nativePrefix}${suffix}`);
-  let base = nativePrefix + baseSuffix;
+function exercise(
+  virtualPrefix: string,
+  suffix: string,
+  baseSuffix = '/docs/',
+  origin = 'https://preview.example',
+  ownRoute = nativePrefix,
+  reloadToken = '',
+) {
+  const location = new URL(`${origin}${virtualPrefix}${ownRoute}${suffix}`);
+  let base = ownRoute + baseSuffix;
   const baseElement = {
     getAttribute: () => base,
     setAttribute: (_: string, value: string) => {
@@ -43,23 +53,29 @@ function exercise(virtualPrefix: string, suffix: string, baseSuffix = '/docs/') 
     },
   };
   const context = {
-    P: nativePrefix,
+    P: ownRoute,
     location,
     mtNativeLocation: location,
     document,
     URL,
     URLSearchParams,
     window: { __mtTargetOrigin: upstream, __mtDocumentUrl: `${upstream}/docs/page.html` },
-    mtReloadToken: '',
+    mtReloadToken: reloadToken,
     mtNestedPreview: false,
   };
   const result = runInNewContext(
-    `${protocol}\nsyncProxyBase();({curU,r,mtNavigationUrl})`,
+    `${protocol}\nsyncProxyBase();({curU,r,mtNavigationUrl,mtResponseUrl,mtInstallResponseUrl})`,
     context,
   ) as {
     curU(): string;
     r(value: string): string;
     mtNavigationUrl(value: string): string;
+    mtResponseUrl(value: string, readHeader: (name: string) => string | null): string;
+    mtInstallResponseUrl(
+      proto: object,
+      key: string,
+      readHeader: (this: object, name: string) => string | null,
+    ): void;
   };
   return {
     ...result,
@@ -103,8 +119,148 @@ describe.each(['', `/p/connection/${route}`])('native preview URL protocol at %s
   it('decodes external upstream URL, query and hash independently of the virtual prefix', () => {
     const external = 'https://other.example/docs?q=a%20b&__mtPreviewToken=hidden#initial';
     const result = exercise(prefix, `/_ext?u=${encodeURIComponent(external)}#changed`);
-    expect(result.curU()).toBe('https://other.example/docs?q=a%20b#changed');
+    expect(result.curU()).toBe('https://other.example/docs?q=a%20b&__mtPreviewToken=hidden#changed');
   });
+});
+
+describe.each(['', `/p/connection/${route}`, '/webpreview/outer/_access/parent/parent-token'])(
+  'preview response URL protocol at %s',
+  (prefix) => {
+    const ownRoute = `${nativePrefix}/_access/id/token`;
+    const header = 'X-Tlbx-Preview-Upstream-Url';
+    const final = 'https://stream.example/redirected/master.m3u8?__mtReloadToken=site&quality=high';
+    function fixture() {
+      return exercise(prefix, '/demo/', '/demo/', 'https://preview.example', ownRoute, 'reload');
+    }
+    function transport(path: string) {
+      return `https://preview.example${prefix}${ownRoute}${path}`;
+    }
+    it('inverts direct and external URLs while removing only outer transport controls', () => {
+      const f = fixture();
+      expect(f.mtResponseUrl(transport('/master.m3u8?quality=high&__mtReloadToken=transport'), () => null))
+        .toBe(`${upstream}/master.m3u8?quality=high`);
+      expect(f.mtResponseUrl(transport(`/_ext?u=${encodeURIComponent(final)}&__mtPreviewToken=transport`), () => null))
+        .toBe(final);
+      expect(f.mtResponseUrl(transport('/master.m3u8'), (name) => name === header ? final : null))
+        .toBe(final);
+      expect(f.mtResponseUrl(transport('/master.m3u8'), () => 'https://user:secret@stream.example/master.m3u8'))
+        .toBe('https://stream.example/master.m3u8');
+      if (prefix) {
+        expect(f.mtResponseUrl(transport('/master.m3u8'), () =>
+          `https://inner-proxy.example${ownRoute}/_ext?u=${encodeURIComponent(final)}&__mtReloadToken=outer`))
+          .toBe(final);
+      }
+      expect(f.r(final)).toContain(`/_ext?u=${encodeURIComponent(final)}`);
+      expect(new URL(f.r(final), 'https://preview.example').searchParams.get('__mtReloadToken'))
+        .toBe('reload');
+    });
+    it('ignores reserved metadata on synthetic, failed, other-route and foreign responses', () => {
+      const f = fixture();
+      for (const url of [
+        '',
+        `https://unrelated.example${prefix}${ownRoute}/master.m3u8`,
+        transport('suffix/result'),
+        'https://preview.example/webpreview/another/_ext?u=https%3A%2F%2Fother.example',
+      ]) {
+        const read = vi.fn(() => final);
+        expect(f.mtResponseUrl(url, read)).toBe(url);
+        expect(read).not.toHaveBeenCalled();
+      }
+      expect(f.mtResponseUrl(transport('/master.m3u8'), () => 'javascript:alert(1)'))
+        .toBe(`${upstream}/master.m3u8`);
+      expect(f.mtResponseUrl(transport('/master.m3u8'), () => { throw new Error('unavailable'); }))
+        .toBe(`${upstream}/master.m3u8`);
+    });
+    it('keeps native XHR receivers, empty/error state and a reused request URL', () => {
+      const state = new WeakMap<object, { url: string; final: string | null }>();
+      class XhrFixture {
+        get responseURL() {
+          const value = state.get(this);
+          if (!value) throw new TypeError('Illegal invocation');
+          return value.url;
+        }
+        getResponseHeader(name: string) {
+          const value = state.get(this);
+          if (!value) throw new TypeError('Illegal invocation');
+          return name === header ? value.final : null;
+        }
+      }
+      fixture().mtInstallResponseUrl(XhrFixture.prototype, 'responseURL', XhrFixture.prototype.getResponseHeader);
+      const xhr = new XhrFixture();
+      state.set(xhr, { url: '', final });
+      expect(xhr.responseURL).toBe('');
+      state.set(xhr, { url: transport('/master.m3u8'), final });
+      expect(xhr.responseURL).toBe(final);
+      state.set(xhr, { url: transport('/next.m3u8'), final: null });
+      expect(xhr.responseURL).toBe(`${upstream}/next.m3u8`);
+      const get = Object.getOwnPropertyDescriptor(XhrFixture.prototype, 'responseURL')!.get!;
+      expect(() => get.call({})).toThrow(TypeError);
+    });
+    it('leaves nonconfigurable native descriptors unchanged', () => {
+      const proto = {};
+      const get = () => transport('/master.m3u8');
+      Object.defineProperty(proto, 'url', { get, configurable: false, enumerable: true });
+      fixture().mtInstallResponseUrl(proto, 'url', () => final);
+      expect(Object.getOwnPropertyDescriptor(proto, 'url')).toEqual({
+        get, set: undefined, configurable: false, enumerable: true,
+      });
+    });
+  },
+);
+
+it('preserves real native Response branding, redirects, clone and streaming bodies', async () => {
+  // Real fetch supplies native URL slots. Only the proxy response is simulated;
+  // no Response wrapper or replacement body implementation participates.
+  const final = 'https://stream.example/levels/master.m3u8?__mtPreviewToken=site';
+  const server = createServer((request, response) => {
+    if (request.url?.endsWith('/redirect')) {
+      response.writeHead(302, { Location: `${nativePrefix}/final` });
+      response.end();
+      return;
+    }
+    response.setHeader('X-Tlbx-Preview-Upstream-Url', final);
+    response.write('#EXTM3U\n');
+    response.end('level.m3u8\n');
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  if (!address || typeof address === 'string') throw new Error('Missing fixture address');
+  const origin = `http://127.0.0.1:${address.port}`;
+  const original = Object.getOwnPropertyDescriptor(Response.prototype, 'url')!;
+  const headers = Object.getOwnPropertyDescriptor(Response.prototype, 'headers')!.get!;
+  const getHeader = Headers.prototype.get;
+  try {
+    exercise('', '/demo/', '/demo/', origin).mtInstallResponseUrl(Response.prototype, 'url', function (name) {
+      return getHeader.call(headers.call(this) as Headers, name);
+    });
+    for (const path of ['/direct', '/redirect']) {
+      const response = await fetch(`${origin}${nativePrefix}${path}`);
+      expect(response).toBeInstanceOf(Response);
+      expect(response.url).toBe(final);
+      expect(response.redirected).toBe(path === '/redirect');
+      const clone = response.clone();
+      expect(clone.url).toBe(final);
+      const reader = response.body!.getReader();
+      const chunks: Uint8Array[] = [];
+      for (;;) {
+        const part = await reader.read();
+        if (part.done) break;
+        chunks.push(part.value);
+      }
+      expect(Buffer.concat(chunks).toString()).toBe('#EXTM3U\nlevel.m3u8\n');
+      expect(response.bodyUsed).toBe(true);
+      expect(await clone.text()).toBe('#EXTM3U\nlevel.m3u8\n');
+      await expect(response.text()).rejects.toThrow(TypeError);
+    }
+    expect(new Response('synthetic', { headers: { 'X-Tlbx-Preview-Upstream-Url': final } }).url).toBe('');
+    expect(Response.error().url).toBe('');
+    expect(() => Object.getOwnPropertyDescriptor(Response.prototype, 'url')!.get!.call({})).toThrow(TypeError);
+  } finally {
+    Object.defineProperty(Response.prototype, 'url', original);
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+  }
 });
 
 describe('preview navigation attachment metadata', () => {
