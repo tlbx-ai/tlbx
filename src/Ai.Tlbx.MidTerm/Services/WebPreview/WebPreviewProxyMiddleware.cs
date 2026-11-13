@@ -1018,22 +1018,85 @@ public sealed partial class WebPreviewProxyMiddleware
           });
           // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
           var bws,bwsReady=false,captureLoad=null;
+          function previewSelectorParts(selector){
+            var parts=[],start=0,quote="",brackets=0,parens=0,comment=false;
+            for(var i=0;i<selector.length;i++){
+              var c=selector[i],next=selector[i+1];
+              if(comment){if(c==="*"&&next==="/"){comment=false;i++;}continue;}
+              if(c==="\\"){i++;continue;}
+              if(quote){if(c===quote)quote="";continue;}
+              if(c==='"'||c==="'"){quote=c;continue;}
+              if(c==="/"&&next==="*"){comment=true;i++;continue;}
+              if(c==="[")brackets++;else if(c==="]")brackets--;
+              else if(c==="(")parens++;else if(c===")")parens--;
+              if(!brackets&&!parens&&selector.slice(i,i+3)===">>>"){
+                parts.push(selector.slice(start,i).trim());start=i+3;i+=2;
+              }
+            }
+            if(!parts.length)return [selector];
+            parts.push(selector.slice(start).trim());
+            if(quote||comment||brackets||parens||parts.some(function(part){return !part;}))throw new Error("invalid open-shadow selector: empty or unbalanced CSS segment");
+            if(parts.length>32)throw new Error("open-shadow selector exceeds 32 CSS segments");
+            return parts;
+          }
+          function previewOpenShadow(el){var root=el.shadowRoot;return root&&root.mode==="open"?root:null;}
+          function previewQueryAll(selector,root){
+            root=root||document;
+            var parts=previewSelectorParts(selector);
+            if(parts.length===1)return root.querySelectorAll(selector);
+            // Validate even a later segment with no matching host. No selectors
+            // or native query methods are rewritten globally.
+            var validation=document.createDocumentFragment();
+            parts.forEach(function(part){validation.querySelectorAll(part);});
+            var roots=[root],matches=[],visited=0;
+            for(var i=0;i<parts.length;i++){
+              matches=[];var seen=new Set();
+              for(var scope of roots){
+                if(++visited>4000)throw new Error("open-shadow traversal limit exceeded; narrow the host selector");
+                for(var el of scope.querySelectorAll(parts[i]))if(!seen.has(el)){seen.add(el);matches.push(el);}
+              }
+              if(i<parts.length-1)roots=matches.map(previewOpenShadow).filter(Boolean);
+            }
+            return matches;
+          }
+          function previewQueryOne(selector,root){return previewQueryAll(selector,root)[0]||null;}
+          function previewParent(el){return el.assignedSlot||el.parentElement||(el.getRootNode&&el.getRootNode().host)||null;}
+          function previewClosest(el,selector){
+            for(var n=el;n;){var match=n.closest(selector);if(match)return match;var root=n.getRootNode&&n.getRootNode();n=root&&root.host;}
+            return null;
+          }
+          function previewActiveElement(){
+            var el=document.activeElement;
+            var root;while(el&&(root=previewOpenShadow(el))&&root.activeElement)el=root.activeElement;
+            return el;
+          }
           function queryBudget(){return {nodes:4000,chars:40000,truncated:false};}
           function queryText(el,budget){
-            var walker=document.createTreeWalker(el,NodeFilter.SHOW_ALL),parts=[],node;
-            while((node=walker.nextNode())){
+            var stack=[{node:el,index:0,shadow:false}],parts=[];
+            while(stack.length){
+              var frame=stack[stack.length-1];
+              if(frame.index>=frame.node.childNodes.length){
+                var shadow=previewOpenShadow(frame.node);
+                if(!frame.shadow&&shadow){frame.shadow=true;stack.push({node:shadow,index:0,shadow:false});continue;}
+                stack.pop();continue;
+              }
+              var node=frame.node.childNodes[frame.index++];
               if(budget.nodes--<=0||budget.chars<=0){budget.truncated=true;break;}
               if(node.nodeType===3){var text=node.data.slice(0,budget.chars);parts.push(text);budget.chars-=text.length;if(text.length<node.data.length){budget.truncated=true;break;}}
+              else if(node.childNodes)stack.push({node:node,index:0,shadow:false});
             }
             return parts.join("");
           }
-          function truncEl(el,mx,budget){
+          function truncEl(el,mx,budget,full){
+            // An inert document avoids invoking custom-element constructors or
+            // fetching resources while producing a copy of the inspected DOM.
+            var cloneDocument=document.implementation.createHTMLDocument("");
             function shallow(source){
               if(budget.nodes--<=0||budget.chars<32){budget.truncated=true;return null;}
-              var copy=source.cloneNode(false),attrs=Array.from(copy.attributes);
+              var copy=cloneDocument.importNode(source,false),attrs=Array.from(copy.attributes);
               for(var i=0;i<attrs.length;i++){
-                if(i>=64){copy.removeAttribute(attrs[i].name);budget.truncated=true;}
-                else if(attrs[i].value.length>2048){copy.setAttribute(attrs[i].name,attrs[i].value.slice(0,2048)+"[truncated]");budget.truncated=true;}
+                if(!full&&i>=64){copy.removeAttribute(attrs[i].name);budget.truncated=true;}
+                else if(!full&&attrs[i].value.length>2048){copy.setAttribute(attrs[i].name,attrs[i].value.slice(0,2048)+"[truncated]");budget.truncated=true;}
               }
               var length=copy.outerHTML.length;
               while(length>budget.chars&&copy.attributes.length){copy.removeAttribute(copy.attributes[copy.attributes.length-1].name);budget.truncated=true;length=copy.outerHTML.length;}
@@ -1045,26 +1108,42 @@ public sealed partial class WebPreviewProxyMiddleware
             while(stack.length){
               var frame=stack[stack.length-1],source=frame.source.content&&frame.source.tagName==="TEMPLATE"?frame.source.content:frame.source;
               var parent=frame.copy.content&&frame.copy.tagName==="TEMPLATE"?frame.copy.content:frame.copy;
-              if(mx>0&&frame.depth>=mx){if(source.childNodes.length&&budget.chars>=14){parent.appendChild(document.createComment(" ... "));budget.chars-=14;}stack.pop();continue;}
+              var shadow=previewOpenShadow(frame.source);
+              if(mx>0&&frame.depth>=mx){if(source.childNodes.length||shadow){budget.truncated=true;if(budget.chars>=14){parent.appendChild(cloneDocument.createComment(" ... "));budget.chars-=14;}}stack.pop();continue;}
+              if(!frame.shadowDone){
+                frame.shadowDone=true;
+                if(shadow){
+                  if(budget.nodes<=0||budget.chars<64){budget.truncated=true;break;}
+                  var template=cloneDocument.createElement("template");template.setAttribute("shadowrootmode","open");
+                  parent.appendChild(template);budget.nodes--;budget.chars-=48;
+                  stack.push({source:shadow,copy:template,depth:frame.depth+1,index:0});continue;
+                }
+              }
               if(frame.index>=source.childNodes.length){stack.pop();continue;}
               if(budget.nodes<=0||budget.chars<32){budget.truncated=true;break;}
               var child=source.childNodes[frame.index++];
               if(child.nodeType===1){var copy=shallow(child);if(!copy)break;parent.appendChild(copy);stack.push({source:child,copy:copy,depth:frame.depth+1,index:0});}
               else if(child.nodeType===3||child.nodeType===8){
                 budget.nodes--;var text=child.data.slice(0,Math.floor((budget.chars-10)/6));
-                parent.appendChild(child.nodeType===3?document.createTextNode(text):document.createComment(text));budget.chars-=text.length*6+10;
+                parent.appendChild(child.nodeType===3?cloneDocument.createTextNode(text):cloneDocument.createComment(text));budget.chars-=text.length*6+10;
                 if(text.length<child.data.length){budget.truncated=true;break;}
               }
             }
             return root.outerHTML;
           }
+          function previewSnapshot(){
+            for(var el of document.querySelectorAll("*"))if(previewOpenShadow(el))return truncEl(document.documentElement,0,{nodes:Infinity,chars:Infinity,truncated:false},true);
+            return document.documentElement.outerHTML;
+          }
           function semanticOutline(root,mx){
-            var lines=[],visited=0,count=0,chars=0,truncated=false,selectorCache=new Map();
+            var lines=[],visited=0,count=0,chars=0,truncated=false,selectorCache=new Map(),selectorChecks=0;
             function unique(selector,el){
-              if(!selectorCache.has(selector)){if(selectorCache.size>=1200)return false;var matches=document.querySelectorAll(selector);selectorCache.set(selector,matches.length===1?matches[0]:null);}
-              return selectorCache.get(selector)===el;
+              var scope=el.getRootNode?el.getRootNode():document,cache=selectorCache.get(scope);
+              if(!cache){cache=new Map();selectorCache.set(scope,cache);}
+              if(!cache.has(selector)){if(selectorChecks++>=1200)return false;var matches=scope.querySelectorAll(selector);cache.set(selector,matches.length===1?matches[0]:null);}
+              return cache.get(selector)===el;
             }
-            function selectorFor(el){
+            function localSelectorFor(el){
               var tag=CSS.escape(el.localName),candidate,classSelector=tag;
               for(var i=0;i<Math.min(el.classList.length,3);i++){var cls=el.classList.item(i);if(cls.length<=128)classSelector+="."+CSS.escape(cls);}
               if(el.id&&el.id.length<=256){candidate="#"+CSS.escape(el.id);if(unique(candidate,el))return candidate;}
@@ -1082,7 +1161,7 @@ public sealed partial class WebPreviewProxyMiddleware
               if(prefix&&unique(prefix+candidate,el))return prefix+candidate;
               if(unique(candidate,el))return candidate;
               var path="";
-              for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+              for(var n=el;n&&n.nodeType===1;n=previewParent(n)){
                 var index=1;for(var p=n.previousElementSibling;p;p=p.previousElementSibling)if(p.localName===n.localName&&p.namespaceURI===n.namespaceURI)index++;
                 var segment=n.id&&n.id.length<=256&&unique("#"+CSS.escape(n.id),n)?"#"+CSS.escape(n.id):CSS.escape(n.localName)+":nth-of-type("+index+")";
                 path=segment+(path?" > "+path:"");
@@ -1090,6 +1169,15 @@ public sealed partial class WebPreviewProxyMiddleware
                 if(unique(path,el))return path;
               }
               return null;
+            }
+            function selectorFor(el){
+              var parts=[];
+              for(var n=el;n;){
+                var local=localSelectorFor(n);if(!local)return null;parts.unshift(local);
+                if(parts.length>32||parts.join(" >>> ").length>4096)return null;
+                var scope=n.getRootNode&&n.getRootNode();n=scope&&scope.host;
+              }
+              return parts.join(" >>> ");
             }
             function compact(text){return String(text||"").slice(0,160).replace(/[\uE000-\uF8FF]/g,"").replace(/\s+/g," ").trim();}
             function labelText(el){
@@ -1104,7 +1192,8 @@ public sealed partial class WebPreviewProxyMiddleware
               var direct=compact(el.getAttribute("aria-label"));if(direct)return direct;
               if(el.tagName==="DETAILS"){var summary=el.querySelector(":scope > summary");if(summary)return labelText(summary);}
               var refs=(el.getAttribute("aria-labelledby")||"").slice(0,512).split(/\s+/).slice(0,8),names=[];
-              for(var id of refs){var named=document.getElementById(id);if(named)names.push(labelText(named));}
+              var labelScope=el.getRootNode?el.getRootNode():document;
+              for(var id of refs){var named=labelScope.getElementById?labelScope.getElementById(id):null;if(named)names.push(labelText(named));}
               if(names.join("").trim())return compact(names.join(" "));
               if(el.labels&&el.labels.length)return compact(Array.from(el.labels).slice(0,4).map(labelText).join(" "));
               var fallback=compact(el.getAttribute("alt")||el.getAttribute("title")||el.getAttribute("data-tooltip")||el.getAttribute("placeholder"));
@@ -1116,34 +1205,37 @@ public sealed partial class WebPreviewProxyMiddleware
               var frame=stack[stack.length-1],el=frame.el;
               if(frame.index<0){
                 if(visited++>=3000||count>=200||chars>=40000){truncated=true;break;}
-                var css=getComputedStyle(el),role=(el.getAttribute("role")||"").slice(0,80);
+                var css=getComputedStyle(el),role=(el.getAttribute("role")||"").slice(0,80),shadow=previewOpenShadow(el);
                 if(/^(HEAD|SCRIPT|STYLE|LINK|META|TEMPLATE|NOSCRIPT)$/.test(el.tagName)||el.hidden||el.inert||el.getAttribute("aria-hidden")==="true"||css.display==="none"||css.contentVisibility==="hidden"||Number(css.opacity)===0){stack.pop();continue;}
                 if((/^(hidden|clip)$/.test(css.overflowX)&&el.clientWidth===0)||(/^(hidden|clip)$/.test(css.overflowY)&&el.clientHeight===0)){stack.pop();continue;}
-                var semantic=el===root||/^(MAIN|NAV|ASIDE|HEADER|FOOTER|SECTION|ARTICLE|FORM|FIELDSET|DIALOG|H[1-6]|BUTTON|A|INPUT|TEXTAREA|SELECT|DETAILS|SUMMARY|CANVAS)$/.test(el.tagName)||!!role&&role!=="none"&&role!=="presentation"||keyboardTarget(el);
+                frame.children=shadow?Array.from(el.children).concat(Array.from(shadow.children)):el.children;
+                var semantic=el===root||!!shadow||/^(MAIN|NAV|ASIDE|HEADER|FOOTER|SECTION|ARTICLE|FORM|FIELDSET|DIALOG|H[1-6]|BUTTON|A|INPUT|TEXTAREA|SELECT|DETAILS|SUMMARY|CANVAS)$/.test(el.tagName)||!!role&&role!=="none"&&role!=="presentation"||keyboardTarget(el);
                 var emit=semantic&&(el===root||isControlVisible(el));
                 if(emit&&frame.depth<=mx){
                   var name=label(el),selector=selectorFor(el),states=[];
+                  if(shadow)states.push("open-shadow-root");
                   if(keyboardTarget(el))states.push("focusable");
                   if(el.hasAttribute("contenteditable")&&el.isContentEditable)states.push("editable");
-                  if(el.matches(":disabled")||el.closest('[aria-disabled="true"]'))states.push("disabled");
+                  if(el.matches(":disabled")||previewClosest(el,'[aria-disabled="true"]'))states.push("disabled");
                   if(el.readOnly)states.push("readonly");
                   if(el.tagName==="DETAILS")states.push("expanded="+el.open);
                   for(var state of ["aria-expanded","aria-selected","aria-pressed","aria-checked"]){var value=el.getAttribute(state);if(value!==null)states.push(state.slice(5)+"="+value.slice(0,40));}
                   if(el.tagName==="INPUT"&&/^(checkbox|radio)$/.test(el.type))states.push("checked="+el.checked);
-                  if(el===document.activeElement)states.push("focused");
-                  var line="  ".repeat(frame.depth)+el.localName+(role?" role="+role:"")+(el.tagName==="INPUT"?" type="+el.type:"")+(name?" "+JSON.stringify(name):"")+(states.length?" ["+states.join(", ")+"]":"")+" selector="+(selector?JSON.stringify(selector):"(path too long; narrow the root)");
+                  if(el===previewActiveElement())states.push("focused");
+                  var line="  ".repeat(frame.depth)+el.localName+(role?" role="+role:"")+(el.tagName==="INPUT"?" type="+el.type:"")+(name?" "+JSON.stringify(name):"")+(states.length?" ["+states.join(", ")+"]":"")+" selector="+(selector?JSON.stringify(selector):"(unique selector unavailable within bounds; narrow the root)");
                   if(chars+line.length>40000){truncated=true;break;}
                   lines.push(line);chars+=line.length+1;count++;
                 }
                 frame.nextDepth=frame.depth+(emit?1:0);frame.index=0;
-                if(emit&&(frame.depth>=mx||/^(BUTTON|A|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)))frame.index=el.children.length;
+                if(emit&&frame.depth>=mx){if(frame.children.length)truncated=true;frame.index=frame.children.length;}
+                else if(emit&&/^(BUTTON|A|INPUT|TEXTAREA|SELECT)$/.test(el.tagName)){frame.children=shadow?shadow.children:[];}
               }
-              if(frame.index>=el.children.length){stack.pop();continue;}
-              var child=el.children[frame.index++];
+              if(frame.index>=frame.children.length){stack.pop();continue;}
+              var child=frame.children[frame.index++];
               if(el.tagName==="DETAILS"&&!el.open&&child.tagName!=="SUMMARY")continue;
               stack.push({el:child,depth:frame.nextDepth,index:-1,nextDepth:frame.nextDepth});
             }
-            if(truncated)lines.push("[outline truncated: "+count+" entries, "+visited+" nodes visited; narrow selector or maxDepth]");
+            if(truncated)lines.push("[outline truncated: "+count+" entries, "+visited+" nodes visited; narrow selector or adjust maxDepth]");
             return {text:lines.join("\n")||"(no visible semantic elements)",count:count};
           }
           function settleHiddenCaptureTransitions(){
@@ -1191,7 +1283,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!el.isConnected||!el.getClientRects().length)return false;
             var visibility=getComputedStyle(el).visibility;
             if(visibility==="hidden"||visibility==="collapse")return false;
-            for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+            for(var n=el;n&&n.nodeType===1;n=previewParent(n)){
               var css=getComputedStyle(n);
               if(n.hidden||n.inert||css.display==="none"||Number(css.opacity)===0)return false;
             }
@@ -1202,7 +1294,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!el.isConnected||!el.getClientRects().length)return false;
             var rect=el.getBoundingClientRect();
             if(rect.width<=0||rect.height<=0)return false;
-            for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+            for(var n=el;n&&n.nodeType===1;n=previewParent(n)){
               var css=getComputedStyle(n);
               if(n.hidden||n.inert||css.display==="none"||css.visibility==="hidden"||css.visibility==="collapse"||n!==el&&Number(css.opacity)===0)return false;
             }
@@ -1211,7 +1303,8 @@ public sealed partial class WebPreviewProxyMiddleware
           function controlHitPoint(el,label){
             if(typeof document.elementFromPoint!=="function")return null;
             var rect=el.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2;
-            var hit=document.elementFromPoint(x,y);
+            var hitRoot=el.getRootNode?el.getRootNode():document;
+            var hit=typeof hitRoot.elementFromPoint==="function"?hitRoot.elementFromPoint(x,y):document.elementFromPoint(x,y);
             if(hit!==el&&(!label||!el.contains(hit)))return null;
             // Clicking a link/button inside a label must not activate its input.
             if(label&&hit!==el&&hit.closest('a,button,input,select,textarea,[contenteditable="true"]'))return null;
@@ -1247,12 +1340,12 @@ public sealed partial class WebPreviewProxyMiddleware
             var control=surface.control;
             if(control){
               if(!isCheckableRendered(control))throw new Error("checkbox/radio target is hidden or detached");
-              if(control.matches(":disabled")||control.closest('[aria-disabled="true"]'))throw new Error("interaction target is disabled");
-              if(control.readOnly||control.closest('[aria-readonly="true"],[readonly]')||surface.target.closest('[aria-readonly="true"],[readonly]'))throw new Error("interaction target is read-only");
+              if(control.matches(":disabled")||previewClosest(control,'[aria-disabled="true"]'))throw new Error("interaction target is disabled");
+              if(control.readOnly||previewClosest(control,'[aria-readonly="true"],[readonly]')||previewClosest(surface.target,'[aria-readonly="true"],[readonly]'))throw new Error("interaction target is read-only");
             }
           }
           function resolveControl(selector,click){
-            var matches=document.querySelectorAll(selector),visible=[];
+            var matches=previewQueryAll(selector),visible=[];
             for(var i=0;i<matches.length;i++)if(click?clickSurface(matches[i]):isControlVisible(matches[i]))visible.push(matches[i]);
             if(!visible.length)throw new Error("no visible element: "+selector);
             if(visible.length!==1)throw new Error("ambiguous selector: "+selector+" ("+visible.length+" visible elements); use a more specific selector");
@@ -1261,7 +1354,7 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           function assertControlEnabled(el){
             if(!isControlVisible(el))throw new Error("interaction target became hidden or detached");
-            if(el.matches(":disabled")||el.closest('[aria-disabled="true"]'))throw new Error("interaction target is disabled");
+            if(el.matches(":disabled")||previewClosest(el,'[aria-disabled="true"]'))throw new Error("interaction target is disabled");
           }
           function controlIntent(el,validate,point){
             // Match pointer activation without moving keyboard focus or claiming terminal size ownership.
@@ -1286,7 +1379,7 @@ public sealed partial class WebPreviewProxyMiddleware
           function assertEditableHost(el){
             assertControlEnabled(el);
             if(!el.isContentEditable||el.parentElement&&el.parentElement.isContentEditable)throw new Error("fill requires a contenteditable editing host");
-            if(el.closest('[aria-readonly="true"],[readonly],[disabled]'))throw new Error("fill target is read-only or disabled");
+            if(previewClosest(el,'[aria-readonly="true"],[readonly],[disabled]'))throw new Error("fill target is read-only or disabled");
             if(el.querySelector('[contenteditable="false"]'))throw new Error("fill cannot replace non-editable editor content");
           }
           function fillEditableHost(el,value){
@@ -1296,7 +1389,7 @@ public sealed partial class WebPreviewProxyMiddleware
             controlIntent(el);
             el.focus({preventScroll:true});
             assertEditableHost(el);
-            if(document.activeElement!==el)throw new Error("fill target could not receive focus");
+            if(previewActiveElement()!==el)throw new Error("fill target could not receive focus");
             var selection=window.getSelection(),range=document.createRange();
             if(!selection)throw new Error("editor selection is unavailable");
             range.selectNodeContents(el);
@@ -1314,7 +1407,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 case"flushstorage":res.result="flushed";break;
                 case"query":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var els=document.querySelectorAll(msg.selector);
+                  var els=previewQueryAll(msg.selector);
                   res.matchCount=els.length;
                   var parts=[],mx=msg.maxDepth||0,budget=queryBudget(),shown=0;
                   if(mx<0)throw new Error("maxDepth must be non-negative");
@@ -1339,7 +1432,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   var s=(msg.selector||"").trim();
                   var el=!s||s==="window"||s==="document"||s==="body"
                     ? (document.scrollingElement||document.documentElement)
-                    : document.querySelector(s);
+                    : previewQueryOne(s);
                   if(!el){res.success=false;res.error="scroll target not found: "+s;break;}
                   var raw=(msg.value||"").trim().toLowerCase();
                   var dx=0,dy=0,mode="by";
@@ -1373,7 +1466,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   var dy=Number.isFinite(msg.deltaY)?msg.deltaY:120;
                   var dx=Number.isFinite(msg.deltaX)?msg.deltaX:0;
                   var pageTarget=!s||s==="window"||s==="document"||s==="body";
-                  var el=pageTarget?(document.scrollingElement||document.documentElement):document.querySelector(s);
+                  var el=pageTarget?(document.scrollingElement||document.documentElement):previewQueryOne(s);
                   if(pageTarget&&document.body){
                     var body=document.body,vertical=Math.abs(dy)>=Math.abs(dx),bodyStyle=getComputedStyle(body);
                     var bodyRange=vertical?body.scrollHeight-body.clientHeight:body.scrollWidth-body.clientWidth;
@@ -1455,7 +1548,7 @@ public sealed partial class WebPreviewProxyMiddleware
                     // An old wait cannot answer through a replacement connection.
                     if(!waitSocket||waitSocket!==bws||waitSocket.readyState!==WebSocket.OPEN)return;
                     try{
-                      var found=document.querySelectorAll(msg.selector),visible=false;
+                      var found=previewQueryAll(msg.selector),visible=false;
                       if(waitState==="visible"||waitState==="hidden"){
                         for(var wi=0;wi<found.length;wi++)if(isControlVisible(found[wi])){visible=true;break;}
                       }
@@ -1467,16 +1560,23 @@ public sealed partial class WebPreviewProxyMiddleware
                   })();return;}
                 case"screenshot":{
                   var fullPage=msg.fullPage===true;
-                  var releaseCapture=null;
+                  var releaseCapture=null,captureTarget=document.documentElement;
                   Promise.resolve().then(function(){
+                    if(msg.selector){
+                      if(fullPage)throw new Error("screenshot selector cannot be combined with fullPage");
+                      var targets=previewQueryAll(msg.selector);
+                      if(targets.length!==1)throw new Error("screenshot selector must match exactly one element");
+                      captureTarget=targets[0];
+                      if(!isControlVisible(captureTarget))throw new Error("screenshot target is hidden or detached");
+                    }
                     settleHiddenCaptureTransitions();
                     return typeof window.__tlbxBeforeCapture==="function"?window.__tlbxBeforeCapture():null;
                   }).then(function(release){
                     releaseCapture=release;
                     return ensureCapture();
                   }).then(function(capture){
-                    return capture(document.documentElement,{
-                      clip:fullPage?null:"viewport",
+                    return capture(captureTarget,{
+                      clip:msg.selector||fullPage?null:"viewport",
                       dpr:1,
                       scale:1,
                       backgroundColor:captureBackground(),
@@ -1496,7 +1596,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   });
                   return;}
                 case"snapshot":{
-                  res.result=document.documentElement.outerHTML;
+                  res.result=previewSnapshot();
                   break;}
                 case"navigate":{
                   if(!msg.value){res.success=false;res.error="url required";break;}
@@ -1518,14 +1618,14 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.result="reloading";
                   break;}
                 case"outline":{
-                  var mx=msg.maxDepth||4,root=document.body||document.documentElement;
+                  var mx=msg.maxDepth==null?4:msg.maxDepth,root=document.body||document.documentElement;
                   if(mx<0)throw new Error("maxDepth must be non-negative");
-                  if(msg.selector){var roots=document.querySelectorAll(msg.selector);if(roots.length!==1)throw new Error("outline selector must match exactly one root");root=roots[0];}
+                  if(msg.selector){var roots=previewQueryAll(msg.selector);if(roots.length!==1)throw new Error("outline selector must match exactly one root");root=roots[0];}
                   var outline=semanticOutline(root,mx);res.result=outline.text;res.matchCount=outline.count;
                   break;}
                 case"attrs":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var els=document.querySelectorAll(msg.selector);
+                  var els=previewQueryAll(msg.selector);
                   res.matchCount=els.length;
                   var parts=[];
                   for(var i=0;i<els.length&&i<30;i++){
@@ -1538,7 +1638,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   if(!msg.value){res.success=false;res.error="css properties required (comma-separated)";break;}
                   var props=msg.value.split(",").map(function(p){return p.trim();});
-                  var els=document.querySelectorAll(msg.selector);
+                  var els=previewQueryAll(msg.selector);
                   res.matchCount=els.length;
                   var parts=[];
                   for(var i=0;i<els.length&&i<20;i++){
@@ -1558,7 +1658,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   res.matchCount=ent.length;
                   break;}
                 case"links":{
-                  var anchors=document.querySelectorAll("a[href]");
+                  var anchors=previewQueryAll("a[href]");
                   var seen={},parts=[];
                   for(var i=0;i<anchors.length;i++){
                     var href=anchors[i].getAttribute("href");
@@ -1573,7 +1673,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"submit":{
                   var fsel=msg.selector||"form";
-                  var f=document.querySelector(fsel);
+                  var f=previewQueryOne(fsel);
                   if(!f){res.success=false;res.error="form not found: "+fsel;break;}
                   rc().finally(function(){
                     res.result="submitted";
@@ -1583,7 +1683,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   return;}
                 case"forms":{
                   var fsel=msg.selector||"form";
-                  var forms=document.querySelectorAll(fsel);
+                  var forms=previewQueryAll(fsel);
                   res.matchCount=forms.length;
                   var parts=[];
                   for(var i=0;i<forms.length;i++){
@@ -1593,7 +1693,7 @@ public sealed partial class WebPreviewProxyMiddleware
                     var fhdr=ftag+fid;
                     if(f.action)fhdr+=" (action="+f.getAttribute("action")+", method="+(f.method||"GET").toUpperCase()+")";
                     var flines=[fhdr];
-                    var inputs=f.querySelectorAll("input,select,textarea,button");
+                    var inputs=previewQueryAll("input,select,textarea,button",f);
                     for(var j=0;j<inputs.length;j++){
                       var inp=inputs[j];
                       var it=inp.tagName.toLowerCase();
