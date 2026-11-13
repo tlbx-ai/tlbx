@@ -119,5 +119,17 @@ public sealed class WebPreviewPathProtocolTests
         Assert.Equal("/docs/relative.js", WebPreviewProxyMiddleware.BuildUpstreamPath(target, asset.AbsolutePath[prefix.Length..]));
         Assert.Equal("?mode=one", asset.Query);
         Assert.Equal("#v2", asset.Fragment);
+
+        var fragment = new Uri(new Uri("https://localhost:2101" + baseHref), "#next");
+        Assert.Equal(prefix + target.AbsolutePath, fragment.AbsolutePath);
+        Assert.Equal(target.Query, fragment.Query);
+        Assert.Equal("#next", fragment.Fragment);
+
+        foreach (var upstreamBase in new[] { "/docs/", "/docs/page.html?x=1&y=2" })
+        {
+            var explicitBase = WebPreviewProxyMiddleware.BuildInjectedBaseHref(prefix, target.AbsoluteUri,
+                System.Net.WebUtility.HtmlEncode(upstreamBase), "<head></head>");
+            Assert.Equal(prefix + upstreamBase, explicitBase);
+        }
     }
 }

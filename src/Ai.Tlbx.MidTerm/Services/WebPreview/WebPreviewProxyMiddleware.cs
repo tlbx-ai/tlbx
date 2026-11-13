@@ -214,7 +214,7 @@ public sealed partial class WebPreviewProxyMiddleware
               else if(baseEl){
                 var baseHref=baseEl.getAttribute("href")||"";
                 if(baseHref.indexOf("/webpreview/")===0&&baseHref.indexOf(P+"/")!==0){
-                  baseEl.setAttribute("href",P+baseHref.replace(/\/?$/,"/"));
+                  baseEl.setAttribute("href",P+baseHref);
                 }
               }
             }catch(e){}
@@ -2182,7 +2182,7 @@ public sealed partial class WebPreviewProxyMiddleware
             : $"<script>history.replaceState(history.state,\"\",\"{JsonEncodedText.Encode(redirectedProxyPath)}\");</script>";
         html = MarkSubframeSources(html);
         html = InjectHeadContent(html,
-            $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix,
+            $"<base href=\"{WebUtility.HtmlEncode(baseHref)}\">{originScript}" + GetUrlRewriteScript(routePrefix,
                 _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "", html) + redirectPathScript);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
@@ -2226,10 +2226,9 @@ public sealed partial class WebPreviewProxyMiddleware
         if (finalUrl is null || !Uri.TryCreate(finalUrl, UriKind.Absolute, out var finalUri))
             return routePrefix + "/";
 
-        var path = finalUri.AbsolutePath;
-        var lastSlash = path.LastIndexOf('/', StringComparison.Ordinal);
-        var directory = lastSlash > 0 ? path[..(lastSlash + 1)] : "/";
-        return routePrefix.TrimEnd('/') + "/" + directory.TrimStart('/');
+        // A document URL is already the correct base for relative resources. Keeping
+        // its filename and query also makes fragment-only links stay on this page.
+        return routePrefix.TrimEnd('/') + finalUri.PathAndQuery;
     }
 
     internal static string? BuildRedirectedProxyPath(
@@ -2267,11 +2266,11 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         if (originalBaseHref is not null)
         {
-            var basePath = originalBaseHref.TrimEnd('/');
+            var basePath = WebUtility.HtmlDecode(originalBaseHref);
             if (basePath.Length == 0 || basePath == "/")
                 return routePrefix + "/";
 
-            return routePrefix + (basePath.StartsWith('/', StringComparison.Ordinal) ? basePath : "/" + basePath) + "/";
+            return routePrefix + (basePath.StartsWith('/', StringComparison.Ordinal) ? basePath : "/" + basePath);
         }
 
         return ComputeBaseHref(routePrefix, finalUrl);
@@ -2965,7 +2964,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var baseHref = ComputeBaseHref(routePrefix, requestedFileUri.ToString());
         var targetOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
-        html = InjectHeadContent(html, $"<base href=\"{baseHref}\">{originScript}" + GetUrlRewriteScript(routePrefix, upstreamHtml: html));
+        html = InjectHeadContent(html, $"<base href=\"{WebUtility.HtmlEncode(baseHref)}\">{originScript}" + GetUrlRewriteScript(routePrefix, upstreamHtml: html));
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.ContentType = "text/html; charset=utf-8";

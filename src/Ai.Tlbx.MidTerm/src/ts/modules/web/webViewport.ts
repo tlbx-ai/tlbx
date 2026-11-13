@@ -1,6 +1,20 @@
 import { $webPreviewViewport } from '../../stores';
 import { getSessionPreview } from './webSessionState';
 
+const observedViewportHosts = new WeakSet<HTMLElement>();
+const viewportObserver =
+  typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver((entries) => {
+        for (const entry of entries) {
+          for (const frame of entry.target.querySelectorAll<HTMLIFrameElement>(
+            '.web-preview-iframe',
+          )) {
+            applyStoredViewportToFrame(frame);
+          }
+        }
+      });
+
 function getFrameViewport(frame: HTMLIFrameElement): { width: number; height: number } | null {
   const frameKey = frame.dataset.previewFrameKey;
   const separator = frameKey?.indexOf('::') ?? -1;
@@ -20,6 +34,11 @@ function getFrameViewport(frame: HTMLIFrameElement): { width: number; height: nu
  */
 export function applyStoredViewportToFrame(frame: HTMLIFrameElement): void {
   const viewport = getFrameViewport(frame);
+  const host = frame.parentElement;
+  if (host && viewportObserver && !observedViewportHosts.has(host)) {
+    observedViewportHosts.add(host);
+    viewportObserver.observe(host);
+  }
   frame.style.setProperty('--preview-background-width', `${viewport?.width ?? 1280}px`);
   frame.style.setProperty('--preview-background-height', `${viewport?.height ?? 720}px`);
   if (!viewport) {
@@ -39,7 +58,13 @@ export function applyStoredViewportToFrame(frame: HTMLIFrameElement): void {
   frame.style.maxHeight = `${viewport.height}px`;
   frame.style.left = '50%';
   frame.style.top = '50%';
-  frame.style.transform = 'translate(-50%, -50%)';
+  // Keep the document viewport exact while fitting its presentation inside the dock.
+  const scale = Math.min(
+    1,
+    (host?.clientWidth || viewport.width) / viewport.width,
+    (host?.clientHeight || viewport.height) / viewport.height,
+  );
+  frame.style.transform = `translate(-50%, -50%) scale(${scale})`;
 }
 
 export function getSessionPreviewFrame(
