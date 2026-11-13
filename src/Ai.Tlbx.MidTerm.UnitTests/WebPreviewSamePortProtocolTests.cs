@@ -23,6 +23,20 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class WebPreviewSamePortProtocolTests
 {
     [Theory]
+    [InlineData("https://stream.example/master.m3u8?quality=high&__mtReloadToken=site", "https://stream.example/master.m3u8?quality=high&__mtReloadToken=site")]
+    [InlineData("https://user:password@stream.example/redirected/master.m3u8", "https://stream.example/redirected/master.m3u8")]
+    [InlineData(null, null)]
+    [InlineData("invalid", null)]
+    [InlineData("file:///private", null)]
+    public void FinalUpstreamMetadataOverwritesSpoofedHeadersAndRemovesCredentials(string? finalUrl, string? expected)
+    {
+        var context = new DefaultHttpContext();
+        context.Response.Headers[WebPreviewProxyMiddleware.UpstreamUrlHeaderName] = "https://spoof.example/";
+        WebPreviewProxyMiddleware.SetUpstreamUrlHeader(context.Response, finalUrl);
+        Assert.Equal(expected, context.Response.Headers[WebPreviewProxyMiddleware.UpstreamUrlHeaderName].FirstOrDefault());
+    }
+
+    [Theory]
     [InlineData("https://localhost:2000/")]
     [InlineData("https://127.0.0.1:2000/")]
     [InlineData("https://[::1]:2000/?session=test")]
@@ -150,6 +164,7 @@ public sealed class WebPreviewSamePortProtocolTests
         app.Run(async context =>
         {
             PreviewProxyAuthorization.ApplyResponsePolicy(context);
+            context.Response.Headers.AccessControlExposeHeaders = "X-Upstream-Spoofed";
             if (!PreviewProxyAuthorization.TryAuthorize(context, registry))
             {
                 context.Response.StatusCode = 401;
@@ -171,6 +186,8 @@ public sealed class WebPreviewSamePortProtocolTests
         Assert.DoesNotContain("allow-same-origin", policy, StringComparison.Ordinal);
         Assert.Contains("sandbox", policy, StringComparison.Ordinal);
         Assert.Equal("null", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
+        Assert.Equal(WebPreviewProxyMiddleware.UpstreamUrlHeaderName,
+            Assert.Single(response.Headers.GetValues("Access-Control-Expose-Headers")));
         Assert.Equal("no-referrer", Assert.Single(response.Headers.GetValues("Referrer-Policy")));
         using var denied = new HttpRequestMessage(HttpMethod.Get, address + "/webpreview/route/document");
         denied.Headers.Add("Origin", "null");
@@ -178,6 +195,7 @@ public sealed class WebPreviewSamePortProtocolTests
         Assert.Equal(HttpStatusCode.Unauthorized, error.StatusCode);
         Assert.DoesNotContain("allow-same-origin", Assert.Single(error.Headers.GetValues("Content-Security-Policy")), StringComparison.Ordinal);
         Assert.False(error.Headers.Contains("Access-Control-Allow-Origin"));
+        Assert.False(error.Headers.Contains("Access-Control-Expose-Headers"));
     }
 
     [Theory]
