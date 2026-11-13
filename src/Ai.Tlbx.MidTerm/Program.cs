@@ -300,6 +300,8 @@ public class Program
 
         sessionManager.OnSessionCreated += (sessionId, _) =>
         {
+            browserPreviewOwnerService.RestoreSession(sessionId);
+            webPreviewService.RestoreSession(sessionId);
             var cwd = sessionManager.GetSession(sessionId)?.CurrentDirectory;
             SyncTlbxDirectoryForCwd(cwd);
         };
@@ -585,6 +587,8 @@ public class Program
             }
         }
         await sessionUpdateStateService.RestoreAsync(sessionManager, gitWatcher, ct: shutdownService.Token);
+        app.Services.GetRequiredService<SessionControlStateService>()
+            .PrunePreviewsToValidSessions(sessionManager.GetAllSessions().Select(session => session.Id));
         await spaceService.ReconcileSessionBindingsAsync(sessionManager, shutdownService.Token);
         managerBarQueueService.PruneToValidSessions(sessionManager.GetAllSessions().Select(s => s.Id));
         managerBarQueueService.Start();

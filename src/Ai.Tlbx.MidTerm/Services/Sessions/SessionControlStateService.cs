@@ -17,6 +17,7 @@ public sealed class SessionControlStateService
     private Dictionary<string, string> _spaceIds = new(StringComparer.Ordinal);
     private Dictionary<string, string> _workspacePaths = new(StringComparer.Ordinal);
     private Dictionary<string, string> _surfaces = new(StringComparer.Ordinal);
+    private Dictionary<string, Dictionary<string, SessionPreviewState>> _previews = new(StringComparer.Ordinal);
 
     public SessionControlStateService(SettingsService settingsService)
         : this(settingsService.SettingsDirectory)
@@ -357,6 +358,81 @@ public sealed class SessionControlStateService
         }
     }
 
+    public Dictionary<string, SessionPreviewState> GetPreviews(string sessionId)
+    {
+        lock (_lock)
+        {
+            return _previews.TryGetValue(sessionId, out var previews)
+                ? new Dictionary<string, SessionPreviewState>(previews, StringComparer.Ordinal)
+                : new Dictionary<string, SessionPreviewState>(StringComparer.Ordinal);
+        }
+    }
+
+    public void SetPreviewTarget(string sessionId, string previewName, string? url, string? localRoot, long targetRevision)
+    {
+        lock (_lock)
+        {
+            var previews = GetOrCreatePreviewsLocked(sessionId);
+            var previous = previews.GetValueOrDefault(previewName) ?? new SessionPreviewState();
+            var next = previous with { Url = url, LocalRoot = localRoot, TargetRevision = targetRevision };
+            if (previous == next && previews.ContainsKey(previewName)) return;
+            previews[previewName] = next;
+            PersistLocked();
+        }
+    }
+
+    public void SetPreviewOwner(string sessionId, string previewName, string? browserId)
+    {
+        lock (_lock)
+        {
+            // Releasing a removed preview must not recreate its recovery record.
+            if (browserId is null && (!_previews.TryGetValue(sessionId, out var existing) || !existing.ContainsKey(previewName))) return;
+            var previews = GetOrCreatePreviewsLocked(sessionId);
+            var previous = previews.GetValueOrDefault(previewName) ?? new SessionPreviewState();
+            var next = previous with { OwnerBrowserId = browserId };
+            if (previous == next) return;
+            previews[previewName] = next;
+            PersistLocked();
+        }
+    }
+
+    public void RemovePreview(string sessionId, string previewName)
+    {
+        lock (_lock)
+        {
+            if (!_previews.TryGetValue(sessionId, out var previews) || !previews.Remove(previewName)) return;
+            if (previews.Count == 0) _previews.Remove(sessionId);
+            PersistLocked();
+        }
+    }
+
+    public void RemoveSessionPreviews(string sessionId)
+    {
+        lock (_lock)
+        {
+            if (_previews.Remove(sessionId)) PersistLocked();
+        }
+    }
+
+    public void PrunePreviewsToValidSessions(IEnumerable<string> sessionIds)
+    {
+        var valid = sessionIds.ToHashSet(StringComparer.Ordinal);
+        lock (_lock)
+        {
+            var removed = false;
+            foreach (var id in _previews.Keys.Where(id => !valid.Contains(id)).ToArray())
+                removed |= _previews.Remove(id);
+            if (removed) PersistLocked();
+        }
+    }
+
+    private Dictionary<string, SessionPreviewState> GetOrCreatePreviewsLocked(string sessionId)
+    {
+        if (!_previews.TryGetValue(sessionId, out var previews))
+            _previews[sessionId] = previews = new Dictionary<string, SessionPreviewState>(StringComparer.Ordinal);
+        return previews;
+    }
+
     public void RemoveSession(string sessionId)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
@@ -374,6 +450,7 @@ public sealed class SessionControlStateService
             changed |= _spaceIds.Remove(sessionId);
             changed |= _workspacePaths.Remove(sessionId);
             changed |= _surfaces.Remove(sessionId);
+            changed |= _previews.Remove(sessionId);
             if (!changed)
             {
                 return;
@@ -423,6 +500,11 @@ public sealed class SessionControlStateService
                 _surfaces = state.Surfaces
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
+                _previews = (state.Previews ?? [])
+                    .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && kvp.Value is not null)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value
+                        .Where(preview => !string.IsNullOrWhiteSpace(preview.Key) && preview.Value is not null)
+                        .ToDictionary(preview => preview.Key, preview => preview.Value, StringComparer.Ordinal), StringComparer.Ordinal);
             }
             catch (Exception ex)
             {
@@ -435,6 +517,7 @@ public sealed class SessionControlStateService
                 _spaceIds = new Dictionary<string, string>(StringComparer.Ordinal);
                 _workspacePaths = new Dictionary<string, string>(StringComparer.Ordinal);
                 _surfaces = new Dictionary<string, string>(StringComparer.Ordinal);
+                _previews = new Dictionary<string, Dictionary<string, SessionPreviewState>>(StringComparer.Ordinal);
             }
         }
     }
@@ -474,11 +557,24 @@ public sealed class SessionControlStateService
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
                 Surfaces = _surfaces
                     .OrderBy(kvp => kvp.Key, StringComparer.Ordinal)
-                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal)
+                    .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal),
+                Previews = _previews
             };
 
-            var json = JsonSerializer.Serialize(snapshot, SessionControlStateJsonContext.Default.SessionControlState);
-            File.WriteAllText(_statePath, json);
+            var temporaryPath = _statePath + ".tmp";
+            try
+            {
+                using (var stream = File.Create(temporaryPath))
+                {
+                    JsonSerializer.Serialize(stream, snapshot, SessionControlStateJsonContext.Default.SessionControlState);
+                    stream.Flush(flushToDisk: true);
+                }
+                File.Move(temporaryPath, _statePath, overwrite: true);
+            }
+            finally
+            {
+                if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+            }
         }
         catch (Exception ex)
         {
