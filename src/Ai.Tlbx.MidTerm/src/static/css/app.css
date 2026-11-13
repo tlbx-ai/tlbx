@@ -22155,6 +22155,24 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .adaptive-footer-dock[data-surface='appServerControl'][data-composer-expanded='true'] .smart-input-send-btn { grid-column: 3; grid-row: 5; }
 }
 
+.adaptive-footer-dock[data-surface='appServerControl'][data-composer-expanded='true'] .smart-input-row.smart-input-row-tools-open .smart-input-tools-surface:not([hidden]) {
+  right: 96px;
+  bottom: 0;
+  left: auto;
+  width: min(280px, calc(100% - 96px));
+  min-width: 0;
+  max-width: calc(100% - 96px);
+  max-height: calc(100% - 8px);
+  overflow-y: auto;
+}
+@media (max-width: 600px) {
+  .adaptive-footer-dock[data-surface='appServerControl'][data-composer-expanded='true'] .smart-input-row.smart-input-row-tools-open .smart-input-tools-surface:not([hidden]) {
+    right: 52px;
+    width: min(280px, calc(100% - 52px));
+    max-width: calc(100% - 52px);
+  }
+}
+
 .agent-markdown-table-pagination { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 4px 0; }
 .agent-markdown-table-pagination button { min-width: 44px; min-height: 44px; color: inherit; background: transparent; border: 1px solid var(--border-color, #555); border-radius: 4px; cursor: pointer; }
 .agent-markdown-table-pagination button:disabled { opacity: 0.4; cursor: default; }

@@ -1119,7 +1119,7 @@ function getOrCreateViewState(
 
 function syncHistoryProgressNavigator(
   sessionId: string,
-  options: { refreshVisibleRange?: boolean } = {},
+  options: { refreshAnchorFromViewport?: boolean; refreshVisibleRange?: boolean } = {},
 ): void {
   historyRender.syncViewportOffset(sessionId, options);
 }
@@ -2588,7 +2588,13 @@ async function syncHistoryWindowToViewport(
     }
     if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
       renderCurrentAgentView(sessionId, { immediate: true });
-      if (resumeHistoryWheelMotion(state)) renderCurrentAgentView(sessionId, { immediate: true });
+      if (resumeHistoryWheelMotion(state)) {
+        renderCurrentAgentView(sessionId, { immediate: true });
+        syncHistoryProgressNavigator(sessionId, {
+          refreshAnchorFromViewport: true,
+          refreshVisibleRange: true,
+        });
+      }
     }
   } catch (error) {
     log.warn(
