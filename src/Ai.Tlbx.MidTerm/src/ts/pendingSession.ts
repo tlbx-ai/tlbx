@@ -64,12 +64,14 @@ export function createPendingSession(
     agentAttachPoint: null,
   };
 
-  setSession(tempSession);
+  // Store subscribers may open the Agent pane synchronously. Mark it first.
   pendingSessions.add(tempId);
+  setSession(tempSession);
   return tempId;
 }
 
 export function clearPendingSession(tempId: string): void {
-  pendingSessions.delete(tempId);
+  // Keep the marker through synchronous removal notifications.
   removeSession(tempId);
+  pendingSessions.delete(tempId);
 }

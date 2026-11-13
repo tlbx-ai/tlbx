@@ -8,6 +8,30 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public class TtyHostProtocolTests
 {
     [Fact]
+    public void ControlFramesPreservePayloadAndOwnTheirBytes()
+    {
+        byte[] payload = [0, 255, 27, 128];
+        var ping = TtyHostProtocol.CreatePing(payload);
+        var pong = TtyHostProtocol.CreatePong(payload);
+        payload.AsSpan().Fill(42);
+        Assert.True(TtyHostProtocol.TryReadHeader(ping, out var pingType, out var pingLength));
+        Assert.True(TtyHostProtocol.TryReadHeader(pong, out var pongType, out var pongLength));
+        Assert.Equal(TtyHostMessageType.Ping, pingType);
+        Assert.Equal(TtyHostMessageType.Pong, pongType);
+        Assert.Equal(4, pingLength);
+        Assert.Equal(4, pongLength);
+        Assert.Equal(new byte[] { 0, 255, 27, 128 }, ping[TtyHostProtocol.HeaderSize..]);
+        Assert.Equal(ping[TtyHostProtocol.HeaderSize..], pong[TtyHostProtocol.HeaderSize..]);
+
+        var resize = TtyHostProtocol.CreateResizeMessage(132, 50);
+        Assert.True(TtyHostProtocol.TryReadHeader(resize, out var resizeType, out var resizeLength));
+        Assert.Equal(TtyHostMessageType.Resize, resizeType);
+        Assert.Equal(8, resizeLength);
+        Assert.Equal(132, BinaryPrimitives.ReadInt32LittleEndian(resize.AsSpan(TtyHostProtocol.HeaderSize, 4)));
+        Assert.Equal(50, BinaryPrimitives.ReadInt32LittleEndian(resize.AsSpan(TtyHostProtocol.HeaderSize + 4, 4)));
+    }
+
+    [Fact]
     public void CreateInfoResponse_RoundTrips_SessionInfo()
     {
         var info = new SessionInfo

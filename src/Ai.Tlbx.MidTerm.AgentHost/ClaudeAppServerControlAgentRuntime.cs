@@ -72,6 +72,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     public async Task<HostCommandOutcome> ExecuteAsync(AppServerControlHostCommandEnvelope command, CancellationToken ct)
     {
+        if (command.Type == "usage.read") return await ReadUsageAsync(command, ct).ConfigureAwait(false);
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
@@ -197,7 +198,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             throw new InvalidOperationException("Claude already has an active App Server Controller turn.");
         }
 
-        if (_goalState?.PendingOperation is not null) throw new InvalidOperationException("A native goal command is pending confirmation.");
+        // NativeGoalCommands.beforeInput already serializes readbacks before input.
+        // Reject mutations here, but let the first prompt wait for startup /goal.
+        if (_goalState?.PendingOperation is not null and not "get") throw new InvalidOperationException("A native goal command is pending confirmation.");
         var request = command.StartTurn ?? throw new InvalidOperationException("turn.start payload is required.");
         var quickSettings = ResolveRequestedQuickSettings(request);
         var prompt = BuildPromptInput(request, out var addDirectories);
@@ -233,6 +236,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             _activeTurnEffort,
             _quickSettings.PlanMode,
             _quickSettings.PermissionMode,
+            _quickSettings.FastMode,
             ct).ConfigureAwait(false);
 
         return new HostCommandOutcome
@@ -323,6 +327,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             _quickSettings.Effort,
             _quickSettings.PlanMode,
             _quickSettings.PermissionMode,
+            _quickSettings.FastMode,
             ct).ConfigureAwait(false);
 
         return Accepted(command.CommandId, command.SessionId, new AppServerControlCommandAcceptedResponse
@@ -561,6 +566,10 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         if (HandleGoalBridgeMessage(type, root)) return;
         switch (type)
         {
+            case "bridge.usage":
+                if (GetString(root, "requestId") is { } usageId && _usageReceipts.TryGetValue(usageId, out var usageReceipt))
+                    usageReceipt.TrySetResult(root.Clone());
+                break;
             case "bridge.configured":
             {
                 if (GetString(root, "requestId") is { } configurationId &&
@@ -1035,6 +1044,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
 
     private void HandleResult(JsonElement root, string rawLine)
     {
+        ApplyClaudeFastModeState(root);
         UpdateClaudeResultUsage(root, rawLine);
         if (string.IsNullOrWhiteSpace(_activeTurnId))
         {
@@ -1273,6 +1283,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             writer.WriteString("sessionId", _newProviderSessionId);
             writer.WriteString("permissionMode", _quickSettings.PermissionMode);
             writer.WriteString("planMode", _quickSettings.PlanMode);
+            writer.WriteString("fastMode", _quickSettings.FastMode);
             if (_quickSettings.Effort is not null) writer.WriteString("effort", _quickSettings.Effort);
             writer.WriteBoolean("recoverGoal", !loadHistory);
             writer.WriteBoolean("loadHistory", loadHistory && _sessionId is not null && !_hasRetainedConversation(_sessionId));
@@ -1296,6 +1307,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         string? effort,
         string planMode,
         string permissionMode,
+        string fastMode,
         CancellationToken ct)
     {
         await WriteBridgeCommandAsync(writer =>
@@ -1308,6 +1320,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             if (!string.IsNullOrWhiteSpace(effort)) writer.WriteString("effort", effort);
             writer.WriteString("planMode", string.Equals(planMode, AppServerControlQuickSettings.PlanModeOn, StringComparison.Ordinal) ? "plan" : "off");
             writer.WriteString("permissionMode", permissionMode);
+            writer.WriteString("fastMode", fastMode);
             writer.WriteStartArray("attachments");
             foreach (var attachment in attachments.Where(static value =>
                          string.Equals(value.Kind, "image", StringComparison.OrdinalIgnoreCase) &&
@@ -1401,9 +1414,9 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         var assembly = Assembly.GetExecutingAssembly();
         using var resource = assembly.GetManifestResourceStream(resourceName)
             ?? throw new InvalidOperationException("Embedded Claude Agent SDK bridge resource was not found.");
-        using var buffer = new MemoryStream();
+        using var buffer = new MemoryStream(checked((int)resource.Length));
         resource.CopyTo(buffer);
-        var bytes = buffer.ToArray();
+        var bytes = buffer.GetBuffer().AsSpan(0, checked((int)buffer.Length));
         var hash = Convert.ToHexStringLower(SHA256.HashData(bytes));
         var directory = Path.Combine(Path.GetTempPath(), "tlbx", "claude-agent-sdk-bridge");
         Directory.CreateDirectory(directory);
@@ -1614,7 +1627,13 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
             request.Effort ?? (request.Model is null ? _quickSettings.Effort : null),
             request.PlanMode ?? _quickSettings.PlanMode,
             request.PermissionMode ?? _quickSettings.PermissionMode,
-            defaultPermissionMode);
+            defaultPermissionMode,
+            request.FastMode ?? _quickSettings.FastMode);
+        if (settings.FastMode == "on" && !SupportsClaudeFastMode(settings.Model))
+        {
+            if (request.FastMode == "on") throw new InvalidOperationException("The selected Claude model does not advertise fast mode support.");
+            settings.FastMode = "off";
+        }
         settings.ModelOptions = AppServerControlQuickSettings.CloneOptions(_quickSettings.ModelOptions);
         settings.EffortOptions = ReadClaudeEffortOptions(settings.Model);
         settings.AcknowledgedFields = [.. _quickSettings.AcknowledgedFields];
@@ -1622,6 +1641,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
         if (request.Effort is not null) settings.AcknowledgedFields.Remove("effort");
         if (request.PlanMode is not null) settings.AcknowledgedFields.Remove("planMode");
         if (request.PermissionMode is not null) settings.AcknowledgedFields.Remove("permissionMode");
+        if (request.FastMode is not null) settings.AcknowledgedFields.Remove("fastMode");
         return settings;
     }
 

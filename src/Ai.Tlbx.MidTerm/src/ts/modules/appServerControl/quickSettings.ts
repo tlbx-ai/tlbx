@@ -153,6 +153,7 @@ function cloneQuickSettingsOptions(
       description: normalizeOptionalValue(option.description),
       hidden: option.hidden === true,
       isDefault: option.isDefault === true,
+      supportsFastMode: option.supportsFastMode ?? null,
       ...(option.effortOptions !== undefined
         ? {
             effortOptions:
@@ -388,7 +389,10 @@ function normalizeQuickSettings(
     permissionMode: normalizePermissionMode(
       settings?.permissionMode ?? resolveDefaultPermissionMode(provider),
     ),
-    fastMode: provider === 'codex' ? normalizeFastMode(settings?.fastMode) : DEFAULT_FAST_MODE,
+    fastMode:
+      provider === 'codex' || provider === 'claude'
+        ? normalizeFastMode(settings?.fastMode)
+        : DEFAULT_FAST_MODE,
     modelOptions: cloneQuickSettingsOptions(settings?.modelOptions),
     effortOptions: cloneQuickSettingsOptions(settings?.effortOptions),
     configOptions: structuredClone(settings?.configOptions ?? []),

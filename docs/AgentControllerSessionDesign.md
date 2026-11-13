@@ -34,6 +34,16 @@ ACP discovery is intentionally local and non-executing: tlbx only presents catal
 
 Native compaction uses Codex's dedicated API or an advertised `/compact` command for SDK/ACP providers. Command-based compaction is retained as a user command and remains interruptible; unsupported providers return a clear request error. Claude compaction failures are failures even when its SDK wraps the command in a nominally successful result, and failed compaction must preserve the last known context usage. Attach-time metadata is published in order before live updates, and a completed turn must release its runtime state before another input can be accepted.
 
+## Startup presentation
+
+Implemented: optimistic pending session IDs are browser-only placeholders and must never attach to a provider. Fresh sessions skip the read-only history recovery probe. A healthy startup leaves the conversation empty before the first user prompt; internal activation traces and a connected/ready notice do not become conversation rows. Startup failures and actionable recovery requests remain visible.
+
+## Session information and commands
+
+Implemented: the existing footer includes one context/details trigger. It opens a compact anchored session panel on desktop and a bounded sheet on narrow screens. Session, Usage and Commands sections share the same provider-neutral surface. `/status`, `/usage`, `/resume`, `/help` and `/goal` open local UI without a model turn; `/compact` uses native compaction. Advertised provider commands are searchable from `/` in the composer. Arrow keys navigate, Enter/Tab choose and Escape dismisses without interrupting the agent. Unknown command names are retained with an explicit error instead of being silently sent to a model.
+
+Context occupancy, cumulative session tokens/cost and account quota windows remain separate. Missing values say Not reported; native reported costs are labelled. Usage refresh is an authenticated independent read and cannot claim or block the provider control connection. Provider I/O stays in C#: Codex app-server and the Claude SDK populate the common usage model. Other provider parity is deferred. Existing resume selection and model/effort controls are reused. Selecting a conversation already open in this browser reuses its session. Attach joins native initialization before the first history read; Claude SDK bookmarks retain their provider.
+
 ## Non-Regression Floor
 
 Agent Controller Session is already a usable operator surface. Architectural cleanup may replace any part of the plumbing underneath it, but the visible result after those changes must not regress below the current Agent Controller Session floor.
@@ -156,6 +166,7 @@ The canonical history contract must satisfy the following:
 - Prefer a clean history timeline over chat-card chrome.
 - Do not wrap every event in heavy bordered cards.
 - Avoid redundant labels, duplicate timestamps, duplicate avatars, and repeated status chips.
+- Command disclosures lead with a single-line, ellipsized monospace preview of the script, including while expanded. A known shell launcher may be omitted from that preview; the expanded script retains the exact source. Exit outcomes are quiet trailing metadata, including nonzero exit codes. Expanded scripts use lightweight syntax accents and compact regular-weight monospace text; accessible script/output labels do not become visible section headers. Output is separated with a subtle rule. Touch disclosures retain a 44px hit target.
 - Use separators, spacing, and type hierarchy instead of ornamental containers.
 
 ### 3. One interaction model
@@ -170,7 +181,7 @@ The canonical history contract must satisfy the following:
 - Avoid narrow bubble layouts that waste the center column.
 - Long assistant output should read like a document, not like a chat toy.
 - Tool activity should compress well and expand only when detail is useful.
-- Every provider uses one left-anchored timeline instead of a centered conversation lane. The lane may use the full pane width for tables, code and artifacts, but human prose is limited to a readable measure of roughly 75-85 characters (`--agent-history-prose-measure`, currently `80ch`).
+- Every provider shares one centered reading column, at most `54rem` wide, for prose, code, tables, tool rows and the collapsed composer. Content is left-aligned inside that column. Narrow panes fill their available width; mobile/tablet portrait viewports up to 1100px use the full available width. Wide code and tables scroll within their own wrappers. Expanded composition retains the full workspace.
 - User and assistant rows share the same left edge and are distinguished by quiet role labels, a slim user rule and turn spacing rather than opposing alignment, bubbles or cards.
 
 ### 5. Clear hierarchy
@@ -283,8 +294,8 @@ The canonical history contract must satisfy the following:
 
 - Use at most 2 to 4 font styles across the Agent Controller Session surface.
 - Reserve stronger styles for true hierarchy boundaries only.
-- Favor readable body text and restrained metadata styling.
-- User and assistant prose for every provider uses the existing app UI font (`--font-ui`) at normal weight, about `0.95rem`, with a line height of about 1.5 (`--agent-history-prose-line-height`). It does not follow the terminal font family, size, weight or line height.
+- Favor readable body text and restrained metadata styling. Heading levels have distinct scale and weight, lists have visible item spacing, and consecutive assistant messages use compact 6px top and 8px bottom padding; short progress messages must not create large empty bands. Machine disclosures stay compact and readable without uppercase micro-labels.
+- User and assistant prose for every provider uses the existing app UI font (`--font-ui`) at normal weight, `calc(1.0625rem - 1pt)` on desktop and `calc(1rem - 1pt)` on narrow screens, with line heights of 1.7 and 1.65 (`--agent-history-prose-line-height`). It does not follow the terminal font family, size, weight or line height.
 - Assistant prose uses pure white for maximum legibility. Its body and markdown-content layers must allow glyph ink to overflow vertically so descenders and other font overhangs are never clipped; wide tables and code blocks keep overflow handling on their own dedicated wrappers.
 
 ### Containers
@@ -379,6 +390,8 @@ The canonical history contract must satisfy the following:
 
 ### Assistant output
 
+- Opening a known image or document from the history must not wait for optional directory-navigation metadata. Content loading and hierarchy lookup run independently; late hierarchy results update controls only while their document load is still current.
+
 - Assistant content is the primary reading surface and should have the clearest typography.
 - Streaming text should appear incrementally in place.
 - The assistant row should not visually reset between deltas.
@@ -389,7 +402,7 @@ The canonical history contract must satisfy the following:
 - The timeline should use one trailing busy bubble as the sole animated activity indicator while the provider is actively working.
 - That trailing busy bubble may carry the only live progress label in the history lane. Completed or in-progress status words must not be repeated inside per-row timestamp/meta text.
 - When the provider exposes a live in-progress task/tool/reasoning detail label, the trailing busy bubble should display that provider-supplied text. User-prompt text and assistant-message text must not populate the busy bubble. Only fall back to a generic `Working` label when no meaningful live provider label is available.
-- While a turn is active, that busy bubble should also show a muted wall-clock duration counter plus a quiet `(Press Esc to cancel)` hint immediately after the animated label, not detached against the far edge of the pane.
+- While a turn is active, that busy bubble shows a muted wall-clock duration counter. The composer exposes Stop for cancellation without a duplicate Escape hint in the history.
 - The busy-label animation should sweep smoothly left-to-right and back again without a visible jump reset, and it should remain a pure CSS animation rather than relying on JavaScript timing.
 - The busy-label text highlight should mirror at the right edge and travel back left through the same letters before beginning the next cycle, rather than snapping immediately from the right edge back to the first letter.
 - When the turn settles back to the user, Agent Controller Session should append one muted inline duration note such as `(Turn took 1m 4s)` into the history instead of leaving the elapsed time only in transient chrome.
@@ -397,7 +410,7 @@ The canonical history contract must satisfy the following:
 - Per-row fake activity indicators should not linger inside older history rows.
 - When the final assistant item lands, the row should settle into its completed state without a hard replace, jump, or scroll jolt.
 - Assistant markdown is the canonical assistant body surface for both streaming and settled text.
-- Simple line breaks stay inside one paragraph. Blank lines form real paragraph breaks with a visible paragraph gap of about `0.7em`, capped at two blank lines, so multi-paragraph answers do not collapse into one block.
+- Simple line breaks stay inside one paragraph. Blank lines form real paragraph breaks with a visible paragraph gap of `0.5em`, capped at two blank lines, so multi-paragraph answers do not collapse into one block.
 - Assistant markdown models those paragraph breaks as explicit gap markers in the rendered structure.
 - List items use the prose line height with a small item gap; lists must stay readable rather than terminal-dense.
 - List markers must stay fully visible inside the rendered assistant markdown block. Overflow containment in Agent Controller Session must not crop bullet or number markers.
@@ -409,7 +422,9 @@ The canonical history contract must satisfy the following:
 - Fenced code blocks render as a quiet, clearly recognizable surface: subtle tint, thin border, inner padding, terminal font, unwrapped lines and their own horizontal overflow. Inline code uses a subtle tinted span. Neither may clip glyphs or descenders.
 - Finalized assistant messages may receive a post-settlement enrichment pass, but streaming assistant text must remain raw, low-latency text with no late token chrome injected mid-stream.
 - That finalized assistant enrichment should stay restrained and high-signal: bare URLs should become proper links, file paths should become clickable file references, likely git commit hashes should be clickable, and existing local image references may surface as compact thumbnail previews beneath the message.
-- Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos.
+- Image previews should preserve the full image bounds inside a bounded frame instead of center-cropping portrait screenshots or photos. Historical image attachments reserve a responsive, bounded frame before their bytes arrive, and constrain the image to its actual content box so loading does not move the following text or clip portrait bounds. Attachment captions retain the original filename case in readable terminal typography and wrap long names within the preview width.
+- The image viewer sizes its stage from the actual remaining space below the header and navigation. Zoom controls stay inside that visible stage at narrow, landscape and maximized sizes; a second vertical scroll area must not be needed to reach them.
+- PDF attachments retain their original file link and offer a closed inline preview using the existing isolated PDF viewer. Create the frame only on expansion, remove it on collapse, and keep late registration work from reopening a closed or pruned preview. Escape inside the preview closes it and returns keyboard focus to its summary.
 - Assistant-only semantic tinting should remain subtle. Numbers and plain-text table outline characters may be muted to improve scanability, but those accents must never overpower the message body or leak into command, diff, or other machine-oriented artifact rows.
 - User messages render their projected Markdown, including tables and code, through the existing safe history surface while retaining user chrome and explicit attachments. Assistant-only inferred file/image decoration does not run on user text. The window-pruned Markdown cache includes the row kind and source type in its reuse guard.
 - Codex runtime bookkeeping notices such as context-window updates and rate-limit updates should not render as history rows. Agent Controller Session should interpret them as session telemetry instead of timeline content.
@@ -438,10 +453,12 @@ The canonical history contract must satisfy the following:
 - Generic command output should use a deterministic bounded window: at most four head lines and six tail lines, with each retained line capped at 512 characters and an omitted-line marker when necessary.
 - ANSI CSI/OSC sequences and control bytes must be removed while streaming into the bounded accumulator so split escape sequences cannot leak into history and no full-output copy is required.
 - Completed tool accumulator state must be released immediately after the canonical history item is settled; session lifetime must not retain per-tool builders or full provider results.
-- Command-execution rows start as a closed, flat disclosure with the canonical action label and outcome in normal-weight UI typography. Shell launcher paths, wrapper arguments, scripts, path lists and output snippets are technical details, not the default summary. Errors keep a visible failure outcome in that summary; original command and bounded output remain available on expansion. Do not guess a higher-level purpose from shell text or hide the original evidence.
+- Command-execution rows start as a closed, flat disclosure with an ellipsized script preview in small regular-weight terminal monospace. Outcomes remain visible as quiet trailing metadata. Known shell launchers can be omitted from the preview; original command and bounded output remain available on expansion. Do not guess a higher-level purpose from shell text or hide the original evidence.
 - When command output is available immediately after a command-execution row, Agent Controller Session should fold the already bounded canonical evidence inside that same command disclosure in readable terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
-- Expanded commands and output are separate raw-text code surfaces at the same normal font weight and readable monospace size. Preserve line breaks and use local horizontal overflow for long lines. No syntax coloring, markdown parsing, clickable-path enrichment or thumbnail previews may reinterpret shell strings or source/output text. The existing disclosure expansion state survives updates.
+- Reducing the configured output-line count on a retained command tail keeps its newest lines, including the final result or diagnostic. A zero-line preference hides that output; file-read and other head-oriented excerpts retain their existing selection policy.
+- Only explicit command metadata supplies a script block. Untyped historical text remains literal under Details; output-only canonical rows do not create empty scripts, and intentionally empty canonical evidence never falls back to raw provider payloads. The zero-line preference also hides projected omission placeholders. Disclosure indicators show the open state directly without requiring an animation.
+- Expanded commands and output render as separate accessible raw-text blocks without visible section headings on a transparent, borderless surface at the same normal font weight and readable monospace size. Preserve line breaks and use local horizontal overflow for long lines. Lightweight syntax accents may color script tokens while preserving literal text. No markdown parsing, clickable-path enrichment or thumbnail previews may reinterpret shell strings or source/output text. The existing disclosure expansion state survives updates.
 - When the backend already materializes a command-output history row that contains both the command header and compact output window, Agent Controller Session should normalize that row directly into the same persistent command disclosure instead of depending on adjacency with a separate command-execution row.
 - Canonical command-output history rows should preserve the command header as structured command metadata rather than forcing the browser to recover it from a truncated body.
 - Omission markers such as `... earlier output omitted ...` or `... N earlier lines omitted ...` are output-tail metadata, not command headers, and Agent Controller Session must never render them as the `Ran …` command text.
@@ -485,9 +502,9 @@ The canonical history contract must satisfy the following:
 - Agent Controller Session quick settings should live in the dock status rail rather than as a separate detached manager strip.
 - That Agent Controller Session status rail should stay intentionally small and session-oriented.
 - Normal terminal smart input should reuse the same dock shell while keeping Agent Controller Session-only runtime controls out of ordinary terminal sessions.
-- If the user queues follow-up work from the shared Command Bay, Agent Controller Session should render that queue as a compact vertical stack directly above the composer instead of inventing a separate floating queue surface.
-- Agent Controller Session queue ownership belongs to tlbx, not the browser. Queued Command Bay prompts and queued Automation Bar items must survive browser disconnects and drain only when the current turn has returned control to the user.
-- If the shared Command Bay queue is empty and the active session can accept work immediately, tlbx should fast-track that submission directly to the runtime instead of briefly rendering a one-item queued row before sending. For Agent Controller Sessions this means the turn has returned to the user; for Terminal sessions this means the session is idle enough to pass the cooldown heat gate.
+- Explicitly scheduled prompts and queued Automation Bar items use the compact server-owned queue above the composer and survive browser disconnects.
+- Normal composer and session-text prompts dispatch immediately, independently of heat and pending automation entries. An idle Agent Controller Session starts a turn; an active one receives native steering guarded by its exact current turn identity. The server reads authoritative metadata under its dispatch gate. A race or provider rejection stays visible and preserves the draft; it never silently queues or replays input.
+- Explicitly scheduled prompts retain their time gate without an additional heat/turn wait. Automation buttons keep their configured triggers.
 - On desktop, Agent Controller Session quick settings should read as a low-clutter translucent control rail rather than a full-width form.
 - The model quick setting should use a provider-scoped populated list, while still preserving any current non-preset model already active in the session or draft.
 - Command Bay controls should use one shared visual language for typography, spacing, radius, border treatment, and hover states; avoid mixing glowy icon buttons, flat chips, and separate pill styles in the same dock.
@@ -501,7 +518,7 @@ The canonical history contract must satisfy the following:
 - The shared Command Bay / adaptive footer must reserve its own visible rails and panels beneath the active pane instead of floating over Terminal or Agent Controller Session content.
 - Only the prompt textbox's extra multiline growth may expand upward over the pane as overlay chrome; the rest of the Command Bay must remain pane-reserving once the collapsed dock reserve is established.
 - On Android and iOS, the Command Bay must remain visible above the on-screen keyboard; if vertical space tightens, the dock should compress or scroll internally while keeping the prompt row and status awareness reachable.
-- Agent Controller Session floating live-edge affordances such as "Back to bottom" must clear the reserved Command Bay footprint instead of covering the prompt dock on mobile.
+- The Agent Controller Session "Back to bottom" control is a labelled 44px floating arrow inside the history shell while browsing. It reserves no normal-flow row and stays clear of active requests and the Command Bay. It is hidden in follow-live mode.
 - The common quick-settings surface should cover:
   - model
   - effort
@@ -545,13 +562,14 @@ The canonical history contract must satisfy the following:
 - While the shared Command Bay composer is focused, bare `Shift+Tab` should toggle Agent Controller Session plan mode for the active Agent Controller Session surface instead of moving browser focus away from the composer.
 - The same shared composer shortcut must remain surface-aware: when the active surface is Terminal, bare `Shift+Tab` should pass through to the terminal as a raw backtab key instead of toggling Agent Controller Session state.
 - Historical inline image previews reserve a nonzero image box before lazy loading; their contained pixels retain the original aspect ratio. An empty intrinsic size must not leave an otherwise visible preview blank.
-- Agent Controller Session uses an editable ProseMirror composer with bold/italic, lists and editable tables in the existing dock. Prose and table cells use the same UI typeface as conversation messages, with normal weight and spacing; inline code and code blocks retain the configured monospace face. Formatting and attachment actions have at least 44px touch targets on narrow screens or coarse pointers. On narrow screens the collapsed rich editor uses the full row width, with actions below; the expanded editor keeps the existing full-height grid. The composer has no permanently visible formatting rail. A floating, opaque formatting toolbar appears only for a text selection and reserves no editor height. Pointer selection keeps it hidden until the gesture ends; modifier keys during a drag do not expose it. The existing expand action keeps its corner position with reserved editable-text padding. Terminal keeps its textarea, raw text and native backtab behavior. Shared send/attachment/history APIs remain authoritative; no provider prompt, interrupt or replay is implied by editing.
+- Agent Controller Session uses an editable ProseMirror composer with bold/italic, lists and editable tables in the existing dock. Prose and table cells use the same UI typeface as conversation messages, with normal weight and spacing; inline code and code blocks retain the configured monospace face. Formatting and attachment actions have at least 44px touch targets on narrow screens or coarse pointers. On narrow screens and desktop, the prompt uses the full composer height with utility actions beside its right edge; the expanded editor keeps the same side-action arrangement. The composer has no permanently visible formatting rail. A floating, opaque formatting toolbar appears only for a text selection and reserves no editor height. Pointer selection keeps it hidden until the gesture ends; modifier keys during a drag do not expose it. The existing expand action keeps its corner position with reserved editable-text padding. Terminal keeps its textarea, raw text and native backtab behavior. Shared send/attachment/history APIs remain authoritative; no provider prompt, interrupt or replay is implied by editing.
 - The ACP draft stores versioned rich-document JSON and selection alongside a derived `ComposerDraftParts` projection. JSON is the editing source of truth; Markdown/text and ordered reference parts are regenerated from it for existing transport. Reload and prompt history restore editable tables, marks and atomic attachment IDs rather than parsing preview HTML or persisting blob URLs.
 - Attachments are inline atomic nodes with previews, open, pencil (images) and remove actions. Nodes carry existing staging-reference IDs; filenames are never replacement keys. Attachment-only turns and additive paste/plus operations remain supported. Deleted/replaced references stay available to draft Undo but are excluded from outgoing attachments; a successful send resets draft Undo so it cannot edit sent history.
 - Clipboard capture uses the trusted paste event's `clipboardData`, preferring its file list over its duplicate item representation. Sanitized HTML preserves table cells, safe links and image positions; plain-text object markers retain image order. Only transferred files supply image bytes: HTML image URLs (including data URLs) never trigger a fetch. Missing bytes become visible unavailable-image text at that position without losing surrounding text/tables. A partial file list cannot identify which HTML images it represents, so those positions stay unavailable and transferred files are appended rather than assigned to guessed URLs. Errors retain a retry/cancel boundary; explicit retry reuses successful uploads. No asynchronous OS clipboard-read permission is required.
 - Right-click or the Context Menu key/Shift+F10 opens an opaque, viewport-clamped editing menu with Copy, Cut, Paste, Insert table and Attach file; table row/column/delete actions remain available inside a table. Escape dismisses the menu and restores the retained editor selection, arrow keys navigate it, and outside clicks dismiss it. Clipboard copy/cut use trusted browser commands and existing rich serialization. Custom-menu Paste reads only the browser clipboard after the user gesture, preserves rich formats/images and uses the existing mapped session/document bookmark and staging pipeline. Denied clipboard access reports the native keyboard/Shift-browser-menu alternative without deleting the selection or changing the draft. Native keyboard paste continues to use its trusted event data without asynchronous clipboard permission. File picking retains its original session and selection.
 - Copying or cutting a native table-cell selection must produce valid text for exactly the selected cells, preserving their marks and staged attachment identities. Partial row fragments regain their table parent for text serialization; the editor document and native HTML clipboard slice stay intact.
 - Table-cell paragraph and hard breaks use the restricted `<br>` Markdown convention through outbound text, history and replay. Literal tags are escaped, inline code stays literal, and attributes or other HTML never become active markup. Plain resume labels convert actual table breaks to word spacing while retaining literal tags.
+- Prose hard breaks serialized as a backslash followed by a newline render as line breaks, including consecutive breaks. Their Markdown markers never appear as chat text. Literal escaped backslashes, Windows paths and code retain their content; canonical prompts remain unchanged.
 - Large plain-text pastes continue to stage as existing text references, inspectable through the existing file viewer. HTML tables remain editable rich structure regardless of line count.
 - Passive footer refreshes must not re-focus an already focused editor, overwrite a pending native selection change, or steal focus from its open editing menu/formatting controls. Popup geometry follows editor resizing, including expanded mode, and unrelated history scrolling never dismisses an editing menu.
 - ProseMirror owns selection, atomic-node editing, composition and Undo/Redo. Tab/Shift+Tab navigate table cells (Tab adds a final row); Enter edits within a table. Outside tables the existing ACP Plan shortcut remains available. In-flight staging tracks a mapped bookmark and the original session/document generation, including table selections while another session is visible. Replacing/closing that draft invalidates pending work; it never retargets the current visible draft. Outbound text and reference IDs derive from rich JSON, excluding unrelated staging entries. Failed sends retain the draft and do not automatically replay; accepted old-generation sends cannot clear a replacement draft.
@@ -560,8 +578,8 @@ The canonical history contract must satisfy the following:
 - Ready-state presentation should be understated, always visible, and never confused with history content.
 - Sending, streaming, awaiting approval, and awaiting user input should each have clear but low-noise state treatment.
 - In Agent Controller Sessions, plain `Esc` anywhere inside the active Agent Controller Session surface should interrupt the active turn instead of sending a literal terminal escape key.
-- The busy-indicator hint `(Press Esc to cancel)` implies a surface-wide shortcut, not a composer-only shortcut.
-- If the user queued follow-up Agent Controller Session turns while a turn was still running, the first `Esc` should let that queued work drain next, and a second `Esc` should cancel the remaining queued drain.
+- The composer exposes a visible Stop action; Escape remains a surface-wide keyboard shortcut.
+- Composer follow-ups steer immediately. Escape interrupts the active turn; it never releases a hidden prompt queue.
 
 ## Operator API And CLI
 
@@ -618,6 +636,8 @@ Any significant Agent Controller Session UI change should be checked against the
 3. Is the hierarchy clearer than before?
 4. Did we keep the number of visual patterns low?
 5. Does the design use width and height better than the previous state?
+   Check consecutive short assistant messages as well as multi-paragraph answers; compact spacing must apply between rows and inside Markdown.
+   Check actual text-line bounds inside paragraphs and lists at desktop and narrow widths, not only container widths; no glyphs may overlap the next block.
 6. Does it avoid heavy card stacks?
 7. Does it preserve a lean DOM and a virtualization path for long sessions?
 8. Did the change keep provider-specific event quirks out of the TypeScript UI layer?
@@ -667,7 +687,7 @@ Status in this branch/work item:
 - implemented: Agent Controller Session uses one artificial trailing busy bubble while a turn is active instead of leaving per-row activity indicators running inside history entries
 - implemented: Codex, Claude, and ACP adapters project tools into one bounded canonical `ToolPresentation`; history, screen logs, recovery, and the browser consume that shape without reparsing provider prose
 - implemented: command and file-read tool output is streamed through a four-head/six-tail accumulator with 512-character line bounds, omitted-line counts, and split-safe ANSI/control filtering before it reaches canonical history or the dev screen log
-- implemented: command-execution tool rows use a collapsed action/outcome disclosure; expanded command and output blocks use regular-weight monospace without syntax coloring or path links
+- implemented: command-execution tool rows use a collapsed script preview with quiet outcome metadata; expanded command blocks use regular-weight monospace with literal-safe syntax accents, while output remains plain text without path links
 - implemented: immediate command output is folded into the command row from bounded canonical evidence instead of always rendering as a separate noisy row
 - implemented: raw payload strings are no longer retained in provider events; only source/method metadata and an explicit payload-omitted marker survive reduction, and completed per-tool accumulator state is released
 - implemented: folded command-output tails now stay raw terminal text without assistant-style file-path linkification or inline image previews
@@ -717,13 +737,13 @@ Status in this branch/work item:
 - implemented: content-only Agent Controller Session history updates preserve the existing keyed row and message-body DOM elements while refreshing their rendered children, so streaming assistant text does not repeatedly destroy and recreate the mobile browser's text/compositor layer
 - implemented: finalized Agent Controller Session history rows now receive canonical C# file-mention enrichment before they reach the browser, so settled title/body/command text can render clickable file and folder references plus server-confirmed image thumbnails without a second browser-only resolution pass
 - implemented: clickable Agent Controller Session file and folder mentions now render as blue dotted-underlined links so file-oriented references stand out from surrounding prose and machine output
-- implemented: assistant markdown blank-line gap markers render a real paragraph gap of about 0.7em, capped at two blank lines
+- implemented: assistant markdown blank-line gap markers render a paragraph gap of 0.5em, capped at two blank lines; adjacent block margins do not double that gap
 - implemented: assistant markdown lists now use in-box custom markers and counters with deeper indent so bullets and numerals stay visible inside the overflow-constrained Agent Controller Session body
 - implemented: assistant markdown tables now stay left-anchored at intrinsic width when narrow instead of always stretching across the full history lane
 - implemented: assistant markdown tables render plainly without automatic cell pills or guessed tones; sort and filter controls are added only for tables with 10 or more body rows
 - implemented: fenced CSV code blocks in assistant markdown now render through the same table treatment instead of raw code blocks
 - implemented: fenced code blocks render on a quiet tinted surface with padding and their own horizontal overflow; inline code uses a subtle tinted span
-- implemented: Codex Agent Controller Session uses a full-width left-anchored history/composer layout instead of the previous centered lane
+- implemented: all Agent Controller providers use the same centered 54rem reading column and aligned collapsed composer, with full-width narrow/portrait layouts; the obsolete Codex-only layout branch is removed
 - implemented: Codex Agent Controller Session distinguishes user and assistant rows with quiet `User` and `Agent` labels rather than right-floating user bubbles
 - implemented: Agent Controller Session row metadata is timestamp-only; transient progress words no longer linger beside older user, assistant, tool, diff, or request rows
 - implemented: Agent Controller Session history headers no longer right-bind labels or timestamps; row badges and any meta text stay left-anchored across user, assistant, tool, diff, request, system, and notice rows
@@ -761,7 +781,7 @@ Status in this branch/work item:
 - implemented: Codex Agent Controller Session exposes `/model`, `/plan`, and `/goal` action buttons inside the quick-settings rail; `/model` opens the Agent Controller Session model picker, `/plan` toggles plan mode, and `/goal` opens a separate native Goal editor for Codex and Claude; guarded native commands and typed Goal snapshots replace the former composer-stealing/runtime-message projection (code prepared; Root owns runtime acceptance)
 - implemented: desktop Agent Controller Session quick-settings menus are allowed to escape the compact rail without being clipped by the rail container
 - implemented: Agent Controller Session quick settings remain hidden unless the active session is an explicit Agent Controller Session surface; ordinary terminal sessions and no-session empty states never show Agent Controller Session-only quick controls
-- implemented: Agent Controller Session plain `Esc` now interrupts active Agent Controller Session turns from the composer, touch-controller, focused Agent Controller Session surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, and queued follow-up turns can be drained or canceled with repeated `Esc`, including during the turn-start submission gap
+- implemented: Agent Controller Session plain `Esc` now interrupts active Agent Controller Session turns from the composer, touch-controller, focused Agent Controller Session surface, and a capture-phase active-session shortcut that takes priority over popup or footer dismissal, including during the turn-start submission gap; no hidden follow-up queue remains
 - implemented: while the shared Command Bay composer is focused, bare `Shift+Tab` now toggles plan mode only for the active Agent Controller Session surface and forwards raw backtab to the active Terminal surface instead of applying one behavior across both surfaces
 - implemented: when terminal transparency is fully opaque, active Agent Controller Sessions render over an opaque terminal-toned underlay so wallpaper and hidden sibling panels do not glow through the Agent Controller Session surface
 - implemented: workspace parent shells stay transparent so active Terminal and Agent Controller Session panes sit directly over the app wallpaper without extra translucent backdrop layers
@@ -770,8 +790,8 @@ Status in this branch/work item:
 - implemented: the trailing busy bubble now ignores in-progress user-prompt items for its label, phase-locks both its sweep and spinner animations to a shared wallclock-derived phase, and keeps the existing busy DOM node alive across live label/elapsed updates so redraws do not visibly restart the motion
 - implemented: the trailing busy-label text highlight now mirrors at the right edge and travels back left through the word instead of snapping from the end back to the first letter
 - implemented: the shared Command Bay queue now renders as a vertical stack above the composer and is backed by tlbx-owned persistent queue state rather than browser-local Agent Controller Session-only submission state
-- implemented: explicit Agent Controller Sessions now drain one queued Command Bay item only after the current turn returns to the user, while Terminal sessions use backend-owned heat gating with rearm between queued items
-- implemented: shared Command Bay prompt submissions now bypass the visible queue entirely when that queue is empty and the target session can accept work immediately, so idle Terminal sends and user-turn Agent Controller Session sends do not flash a transient queued row before dispatch
+- implemented: ordinary Command Bay prompts bypass the persistent queue and heat gates. Active Agent Controller turns receive native steering; explicit scheduled prompts use their time gate, while configured automation triggers retain their existing behavior.
+- implemented: composer and session-text prompt sends share immediate server dispatch, even with queued automations or active turns; the obsolete browser follow-up queue/drain implementation is removed.
 - implemented: settled turn-duration notes now render as a quiet near-full-width horizontal end-of-turn marker with the duration label centered between rule segments
 - implemented: runtime/system notice text is sanitized for ANSI/control-byte noise, de-duplicates repeated message/detail payloads, and system rows render with quieter metadata/body emphasis than the main conversation lane
 - implemented: Codex MCP startup-status notifications now reduce into quiet `Agent State` system rows instead of generic unknown-agent fallback tool rows
@@ -815,6 +835,37 @@ Status in this branch/work item:
 
 Still mandatory after this work whenever Agent Controller Session evolves:
 
+- implemented: command disclosures show the script preview before quiet outcome metadata, with lazy, literal-safe syntax accents in the complete expanded script and no visible script/output headings.
+
 - keep this section current
 - add new fundamentals here when they become real feature behavior
 - document temporary violations instead of letting the implementation and spec drift apart
+
+### Compact prompt actions (2026-11-12)
+
+Specified and implemented: the Agent Controller composer gives the prompt the full height of the box. Tools, Stop and Send sit beside the editor at the right, with no action row beneath the prompt. In the expanded editor on narrow screens, the actions stack along the right edge to preserve text width. Each action retains a 44px touch target. Stop uses a square icon with a localized accessible label and tooltip, and invokes the existing structured turn interrupt, including a submission in flight; Terminal retains Esc. The expand control stays in the editor corner. Back to bottom is an accessible, labelled 44px floating arrow over the history and consumes no layout row.
+
+### History read latency
+
+- Normal browser history windows start at 80 canonical items and grow only when sparse visible content cannot fill the viewport. Retain the existing nearby reader corridor.
+- Canonical patches are session-wide. Moving a retained window updates reconnect metadata without replacing its patch subscription or fetching the same window again.
+- `mt` reads windows over an authenticated one-shot IPC connection to the owning `mtagenthost`. These reads neither claim the provider control connection nor wait for provider commands. The host advertises `history.window.read`; older hosts require a full runtime update.
+- WebSocket requests may progress concurrently (bounded to 32 outstanding requests per connection); provider mutations retain their runtime serialization. Slow provider requests must not block history reads on the browser receive loop.
+- After measuring concrete rows, apply revised spacer estimates on the next frame instead of reconciling the DOM twice before restoring the reader anchor.
+
+### Claude settings parity
+
+Claude accepts the first prompt while its initial native Goal readback is pending. The bridge's existing input queue waits for that readback before submitting the prompt; pending Goal mutations still reject a new turn.
+
+Claude model values use the native catalogue's resolved model IDs, with model-specific effort choices and advertised fast-mode support. The same Model/Effort/Plan/Permissions/Fast controls configure the existing SDK session without synthetic prompts. SDK control acknowledgements remain distinct from effective native state; init frames update actual fast-mode state. Explicit fast mode starts off per session. Steering uses native immediate-priority user messages in the same thread/turn; goals retain native /goal lifecycle confirmation.
+
+Claude cold-resume history normalizes SDK-completed local commands and native commandRun parent-UUID-correlated records, including model and Goal changes, into their readable slash-command forms. Local command output remains status text; unmarked XML-like user content stays literal. Mobile primary-tab labels refresh when late session identity metadata arrives, without following terminal activity updates.
+
+### Large rich histories
+
+- History capacity and per-item rendering are separate bounds. A large table must not mount its entire row set merely because its containing item enters the retained history window.
+- Tables over 100 rows or 600 cells retain all original cell data and mount at most 50 rows and about 300 cells per page. First/previous/next/last navigation, stable numeric sorting and filtering use the complete table data. Original canonical Markdown remains unchanged.
+- Local history image previews and image attachments use a session-protected 320-pixel thumbnail endpoint. Opening the image still opens its original bytes. Preview caching is bounded to 64 entries and 8 MiB, validates file fingerprint and OS read access on hits, and serializes decoding. Encoded inputs are limited to 64 MiB and 64 MP; unsupported preview formats/sizes retain access to the original.
+- Remote Markdown images remain lazy and decode asynchronously; native thumbnails reuse existing file authorization and Windows session impersonation.
+- Table paging is enabled explicitly for Agent Controller history; existing file previews and voice-chat Markdown keep their complete rendering contract.
+- Progress navigation previews coalesce at 16 ms and hydrate after 32 ms of drag idle. The mobile rail clears the compact Search hit target so dragging/jumping at the archive start cannot open the command palette.

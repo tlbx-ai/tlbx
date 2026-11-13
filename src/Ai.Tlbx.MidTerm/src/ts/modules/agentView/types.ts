@@ -85,7 +85,6 @@ export interface SessionAppServerControlViewState {
   historyReaderResizeMeasurementPending: boolean;
   historyLeadingPlaceholders: HTMLDivElement[];
   historyTrailingPlaceholders: HTMLDivElement[];
-  historyEmptyState: HTMLDivElement | null;
   pendingHistoryPrependAnchor: HistoryViewportAnchor | null;
   pendingHistoryLayoutAnchor: HistoryViewportAnchor | null;
   historyLastVirtualWindowKey: string | null;
@@ -142,7 +141,6 @@ export type HistoryKind =
 
 export type HistoryTone = 'info' | 'positive' | 'warning' | 'attention';
 export type AppServerControlHistoryActionId = 'retry-appServerControl';
-export type AppServerControlLayoutMode = 'default' | 'full-width-left';
 
 export interface AppServerControlHistoryAction {
   id: AppServerControlHistoryActionId;
@@ -245,7 +243,6 @@ export interface HistoryPlaceholderBlock {
 }
 
 export interface HistoryRenderPlan {
-  emptyStateText: string | null;
   virtualWindowKey: string | null;
   leadingPlaceholders: HistoryPlaceholderBlock[];
   trailingPlaceholders: HistoryPlaceholderBlock[];

@@ -22,9 +22,9 @@ public static class TmuxEndpoints
         {
             using var ms = new MemoryStream();
             await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
-            var body = ms.ToArray();
+            var body = ms.GetBuffer().AsMemory(0, checked((int)ms.Length));
 
-            var args = TmuxCommandParser.ParseNullDelimitedArgs(body);
+            var args = TmuxCommandParser.ParseNullDelimitedArgs(body.Span);
             if (args.Count == 0)
             {
                 TmuxLog.Error($"Empty request ({body.Length} bytes, no null-delimited args)");
@@ -79,7 +79,7 @@ public static class TmuxEndpoints
 
             using var ms = new MemoryStream();
             await ctx.Request.Body.CopyToAsync(ms, ctx.RequestAborted);
-            var data = ms.ToArray();
+            var data = ms.GetBuffer().AsMemory(0, checked((int)ms.Length));
 
             if (data.Length == 0)
             {

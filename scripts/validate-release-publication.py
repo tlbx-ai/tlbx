@@ -38,11 +38,15 @@ def validate_release(release, expected_tag):
 
     available = []
     unavailable = []
+    on_demand = []
     for rid, pair in platforms.items():
         present = pair & actual_names
         if present and present != pair:
             raise ValueError(f"Incomplete platform {rid}: missing {sorted(pair - present)}")
-        (available if present else unavailable).append(rid)
+        if rid == "osx-x64" and not present:
+            on_demand.append(rid)
+        else:
+            (available if present else unavailable).append(rid)
     if not available:
         raise ValueError("At least one complete platform archive and matching SBOM is required.")
 
@@ -50,9 +54,14 @@ def validate_release(release, expected_tag):
     if not isinstance(release_id, int) or release_id <= 0:
         raise ValueError(f"Invalid GitHub release id: {release_id!r}")
 
+    on_demand_note = (
+        f"On demand: {', '.join(on_demand)} (manual Release workflow, platform=osx-x64).\n\n"
+        if on_demand else ""
+    )
     availability = (
         "## Platform availability\n\n"
         f"Available: {', '.join(available)}.\n\n"
+        f"{on_demand_note}"
         f"Unavailable in this release: {', '.join(unavailable) if unavailable else 'none'}."
     )
     patch = {

@@ -10,6 +10,8 @@ export async function configureRuntime(runtime, settings, state, onAutoPermissio
     await apply("model", () => runtime.setModel(settings.model ?? undefined));
   if (Object.hasOwn(settings, "effort"))
     await apply("effort", () => runtime.applyFlagSettings({ effortLevel: settings.effort }));
+  if (Object.hasOwn(settings, "fastMode"))
+    await apply("fastMode", () => runtime.applyFlagSettings({ fastMode: settings.fastMode === "on" }));
   if (Object.hasOwn(settings, "planMode") || Object.hasOwn(settings, "permissionMode")) {
     const nextPlan = settings.planMode ?? state.planMode;
     const nextPermission = settings.permissionMode ?? state.permissionMode;

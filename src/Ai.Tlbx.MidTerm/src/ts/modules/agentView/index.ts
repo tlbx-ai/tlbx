@@ -49,8 +49,8 @@ import {
   resolveHistoryWindowViewportWidth,
   resolveRepresentativeHistoryEntryHeight,
 } from './historyMeasurements';
-import { createAgentHistoryDom, isProposedPlanActionDisabled } from './historyDom';
-import { syncNativeCommands } from './nativeCommands';
+import { createAgentHistoryDom } from './historyDom';
+import { syncAgentSessionTools, removeAgentSessionTools } from './sessionTools';
 import { filterReadingHistory, showAgentTechnicalDetails } from './historyVisibility';
 import {
   createAgentHistoryRender,
@@ -130,7 +130,7 @@ import {
   type AppServerControlHistorySnapshot,
 } from '../../api/client';
 import { t } from '../i18n';
-import { $activeSessionId } from '../../stores';
+import { $activeSessionId, getSession } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
@@ -279,14 +279,14 @@ export async function wheelAgentHistory(args: {
     samples,
   };
 }
-const APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE = 240;
+const APP_SERVER_CONTROL_HISTORY_WINDOW_SIZE = 80;
 const LIVE_HISTORY_RENDER_BATCH_MS = 250;
 const USER_HISTORY_SCROLL_INTENT_WINDOW_MS = 900;
 const HISTORY_FAST_WHEEL_DELTA_MIN_PX = 480;
 const HISTORY_WHEEL_LINE_DELTA_PX = 40;
 const HISTORY_NAVIGATOR_PREVIEW_COUNT = 5;
-const HISTORY_NAVIGATOR_PREVIEW_THROTTLE_MS = 80;
-const HISTORY_NAVIGATOR_HYDRATE_IDLE_MS = 120;
+const HISTORY_NAVIGATOR_PREVIEW_THROTTLE_MS = 16;
+const HISTORY_NAVIGATOR_HYDRATE_IDLE_MS = 32;
 let appServerControlTurnLifecycleBound = false;
 let appServerControlActiveSessionBound = false;
 let appServerControlSelectionGuardBound = false;
@@ -571,11 +571,11 @@ export function destroyAgentView(sessionId: string): void {
   if (state) {
     state.historyLeadingPlaceholders = [];
     state.historyTrailingPlaceholders = [];
-    state.historyEmptyState = null;
     state.historyLastVoidSyncScrollTop = null;
     state.historyExpandedEntries.clear();
   }
 
+  removeAgentSessionTools(sessionId);
   viewStates.delete(sessionId);
   activationFlights.delete(sessionId);
   resetAppServerControlHistoryTrace(sessionId);
@@ -603,6 +603,7 @@ export function resetAgentViewRuntimeForTests(): void {
     state.historyMeasurementObserver?.disconnect();
     state.historyViewportResizeObserver?.disconnect();
     clearAppServerControlTurnSessionState(sessionId);
+    removeAgentSessionTools(sessionId);
     removeAppServerControlQuickSettingsSessionState(sessionId);
   }
 
@@ -725,7 +726,7 @@ export function showAppServerControlDebugScenario(sessionId: string, scenario = 
 
 async function activateAgentView(sessionId: string): Promise<void> {
   // Background suspension is a lifecycle state. Foreground recovery starts attach.
-  if (document.visibilityState === 'hidden') return;
+  if (document.visibilityState === 'hidden' || sessionId.startsWith('pending-')) return;
   const existing = activationFlights.get(sessionId);
   if (existing) {
     return existing;
@@ -738,6 +739,18 @@ async function activateAgentView(sessionId: string): Promise<void> {
   });
   activationFlights.set(sessionId, flight);
   return flight;
+}
+
+function tryRestoreExistingAppServerControlHistory(
+  sessionId: string,
+  state: SessionAppServerControlViewState,
+  activationRunId: number,
+): Promise<boolean> {
+  const session = getSession(sessionId);
+  if (!session?.hasAppServerControlHistory && !session?.appServerControlResumeThreadId) {
+    return Promise.resolve(false);
+  }
+  return tryLoadReadonlyAppServerControlHistory(sessionId, state, activationRunId);
 }
 
 async function activateAgentViewCore(sessionId: string): Promise<void> {
@@ -810,7 +823,7 @@ async function activateAgentViewCore(sessionId: string): Promise<void> {
   );
   renderCurrentAgentView(sessionId);
 
-  const restoredReadonlyHistory = await tryLoadReadonlyAppServerControlHistory(
+  const restoredReadonlyHistory = await tryRestoreExistingAppServerControlHistory(
     sessionId,
     state,
     activationRunId,
@@ -1087,7 +1100,6 @@ function getOrCreateViewState(
     historyReaderResizeMeasurementPending: false,
     historyLeadingPlaceholders: [],
     historyTrailingPlaceholders: [],
-    historyEmptyState: null,
     pendingHistoryPrependAnchor: null,
     pendingHistoryLayoutAnchor: null,
     historyLastVirtualWindowKey: null,
@@ -1577,7 +1589,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
           hasNewerHistory: current.snapshot?.hasNewerHistory ?? false,
         })
       ) {
-        queueUrgentHistoryWindowViewportSync(sessionId, current);
+        queueHistoryWindowViewportSync(sessionId, current);
       }
     });
   };
@@ -2151,7 +2163,6 @@ function releaseHiddenAppServerControlRenderState(state: SessionAppServerControl
   state.historyObservedHeights.clear();
   state.historyLeadingPlaceholders = [];
   state.historyTrailingPlaceholders = [];
-  state.historyEmptyState = null;
   state.historyLastVoidSyncScrollTop = null;
   state.pendingHistoryPrependAnchor = null;
   state.pendingHistoryLayoutAnchor = null;
@@ -2506,7 +2517,7 @@ async function syncHistoryWindowToViewport(
         );
         traceAppServerControlHistoryFetch(sessionId, nextSnapshot, 'scroll');
         if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
-          renderCurrentAgentView(sessionId);
+          renderCurrentAgentView(sessionId, { immediate: true });
         }
       } catch (error) {
         log.warn(
@@ -2548,7 +2559,7 @@ async function syncHistoryWindowToViewport(
     );
     traceAppServerControlHistoryFetch(sessionId, nextSnapshot, 'scroll');
     if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
-      renderCurrentAgentView(sessionId);
+      renderCurrentAgentView(sessionId, { immediate: true });
     }
   } catch (error) {
     log.warn(
@@ -2780,11 +2791,7 @@ function renderAgentView(
   );
   syncAppServerControlGoal(snapshot, streamConnected);
   syncAgentViewPresentation(panel, snapshot.provider);
-  syncNativeCommands(
-    panel,
-    snapshot,
-    () => !isProposedPlanActionDisabled(snapshot.sessionId, viewStates.get(snapshot.sessionId)),
-  );
+  syncAgentSessionTools(snapshot, streamConnected);
   panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
   syncAppServerControlTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
   historyRender.syncRequestInteractionState(state, snapshot.requests);

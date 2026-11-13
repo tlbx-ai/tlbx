@@ -145,7 +145,7 @@ public static class ControlPlaneEndpoints
 
                 try
                 {
-                    var accepted = await commandBayQueue.DispatchPromptDirectAsync(sessionId, turn, ct).ConfigureAwait(false);
+                    var accepted = await commandBayQueue.SubmitPromptAsync(sessionId, turn, ct).ConfigureAwait(false);
                     if (accepted)
                     {
                         inputHistory.RecordPrompt(

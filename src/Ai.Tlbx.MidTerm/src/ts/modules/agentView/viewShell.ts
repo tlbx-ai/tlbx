@@ -1,8 +1,5 @@
 import { t } from '../i18n';
-import {
-  normalizeAppServerControlProvider,
-  resolveAppServerControlLayoutMode,
-} from './activationHelpers';
+import { normalizeAppServerControlProvider } from './activationHelpers';
 import type { AppServerControlDebugScenarioName } from './debugScenario';
 
 export const APP_SERVER_CONTROL_DEBUG_SCENARIO_NAMES: readonly AppServerControlDebugScenarioName[] =
@@ -39,7 +36,6 @@ export function ensureAgentViewSkeleton(
     panel.innerHTML = `
       <section class="agent-view">
         <div class="agent-chat-shell">
-          <div class="agent-native-controls" data-agent-field="native-controls" hidden></div>
           <div class="agent-runtime-stats" data-agent-field="runtime-stats" hidden></div>
           <div class="agent-history-shell">
             <div class="agent-history" data-agent-field="history" tabindex="0"></div>
@@ -58,7 +54,7 @@ export function ensureAgentViewSkeleton(
               <div class="agent-history-progress-track" data-agent-field="history-progress-track"></div>
               <div class="agent-history-progress-thumb" data-agent-field="history-progress-thumb"></div>
             </div>
-            <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden>${appServerControlText('appServerControl.scrollToBottom', 'Back to bottom')}</button>
+          <button type="button" class="agent-scroll-to-bottom" data-agent-field="scroll-to-bottom" hidden><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 4v16m-6-6 6 6 6-6"/></svg></button>
           </div>
           <section class="agent-composer-shell" data-agent-field="composer-shell" hidden>
             <div class="agent-composer-interruption" data-agent-field="composer-interruption" hidden></div>
@@ -95,5 +91,4 @@ function syncAgentViewPresentation(
   provider: string | null | undefined = null,
 ): void {
   panel.dataset.appServerControlProvider = normalizeAppServerControlProvider(provider);
-  panel.dataset.appServerControlLayout = resolveAppServerControlLayoutMode(provider);
 }

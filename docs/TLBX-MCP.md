@@ -120,11 +120,46 @@ and browser automation. Fixed API tools invoke the existing registered C# route
 handlers with the authenticated caller context. JSON arguments preserve literal
 Unicode, newlines and binary/base64 payloads without shell quoting.
 
+### Short calls and parallel workflows
+
+Omit unused optional arguments, including explicit null/default values. MCP
+`tools/call` accepts omitted `arguments` for parameterless calls. Whether a client
+renders this as `sessions_list()` or requires `sessions_list({})` belongs to the
+client's generated binding, not the server. No dummy parameter is needed.
+
+`sessions_list` returns session identity, topic, cwd, surface and supervision state.
+`repos_list` returns Git status with file/history counts instead of complete lists.
+Pass `details:true` for their full original CLI/API projections. Defaults and
+operation-fixed fields do not require agent-supplied values.
+
+`workflow_run` chains up to 64 calls in one roundtrip. A call can be just a tool
+name, a `[tool, arguments]` pair, or `{tool, arguments?, select?}`. For example:
+
+```json
+{"steps":["context_get",{"parallel":["sessions_list","repos_list"]},["session_set_topic",{"topic":"MCP performance"}]]}
+```
+
+Groups execute in sequence; an explicit parallel group executes up to eight
+independent calls concurrently and observes every dispatched result before
+continuing. Do not put dependent actions, competing writes or browser navigation
+and its reads into the same group. Result order follows input order. A failure
+stops later groups; successful mutations stay committed. No automatic retries or
+rollback. Lost responses are reported as unknown outcomes requiring inspection.
+
+`{$step:0,path:"/id"}` references a full earlier structured result using its flattened
+call index and a JSON Pointer. References to siblings in a parallel group fail
+before execution. `{tool:"session_create",select:"/data/id"}` limits the returned
+result while preserving the complete result internally for later references.
+An invalid result selector reports failure after the call; never repeat a mutation
+to repair its selector. `{$literal:value}` escapes reserved reference objects.
+
+Workflow output omits child text that duplicates structured JSON. Images and other
+nonduplicate content remain available; `verbose:true` retains all original child
+content. No output is silently truncated.
+
 Browser open/close uses the shared REST lifecycle, hidden defaults, readiness and
-existing ownership checks. `previewName` is per call. `workflow_run` executes
-named tools sequentially with earlier-result references, partial results and
-optional ephemeral-preview cleanup. Successful mutations remain committed after
-a later failure; neither workflows nor transports automatically replay them.
+existing ownership checks. `previewName` is per call. A workflow's optional fresh
+`previewUrl` scope is always closed, including after a parallel group fails.
 Native file-input/output wrappers inherit the workflow's preview/session scope
 when calling browser tools. Conflicting wrapped browser targets are rejected;
 explicit non-browser targets remain explicit.

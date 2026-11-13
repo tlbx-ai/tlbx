@@ -25,9 +25,7 @@ export function normalizeHistoryAppServerControlProfile(
   profile: string | null | undefined,
 ): HistoryAppServerControlProfile | null {
   const normalized = (profile ?? '').trim().toLowerCase();
-  return normalized && normalized !== 'claude' && /^[a-z0-9][a-z0-9._-]*$/.test(normalized)
-    ? normalized
-    : null;
+  return normalized && /^[a-z0-9][a-z0-9._-]*$/.test(normalized) ? normalized : null;
 }
 
 export function isAppServerControlHistoryEntry(entry: HistoryModeEntry): boolean {

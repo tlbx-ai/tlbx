@@ -559,6 +559,54 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
+    public async Task SendComposerTurnAsync(
+        string sessionId,
+        AppServerControlTurnRequest request,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var state = GetRequiredState(sessionId);
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            // Read authoritative turn metadata under the same dispatch gate.
+            // This also covers a second send before the first start patch arrives.
+            var current = await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = id,
+                SessionId = sessionId,
+                Type = "history.window.get",
+                HistoryWindow = new AppServerControlHostHistoryWindowRequest { Count = 1 }
+            }, ct).ConfigureAwait(false);
+            var turn = current.HistoryWindow?.CurrentTurn
+                ?? throw new InvalidOperationException("Agent Controller host did not return current turn metadata.");
+            var running = turn.State?.Trim().ToLowerInvariant() is "running" or "in_progress" or "started" or "submitted";
+            if (running && string.IsNullOrWhiteSpace(turn.TurnId))
+            {
+                throw new InvalidOperationException("Active Agent Controller turn has no steering identity.");
+            }
+
+            await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            {
+                CommandId = id,
+                SessionId = sessionId,
+                Type = running ? "turn.steer" : "turn.start",
+                StartTurn = running ? null : request,
+                SteerTurn = running ? new AppServerControlSteerRequest
+                {
+                    Text = request.Text,
+                    Attachments = request.Attachments,
+                    ExpectedTurnId = turn.TurnId
+                } : null
+            }, ct).ConfigureAwait(false);
+            state.Status = HostRuntimeStatus.Running;
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
     public async Task<AppServerControlCommandAcceptedResponse> InterruptTurnAsync(
         string sessionId,
         AppServerControlInterruptRequest request,
@@ -863,37 +911,61 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
-        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
-        try
+        var result = await ReadHostStateAsync(sessionId, "history.window.get", new()
         {
-            var result = await SendCommandAsync(
-                state,
-                commandId => new AppServerControlHostCommandEnvelope
-                {
-                    CommandId = commandId,
-                    SessionId = sessionId,
-                    Type = "history.window.get",
-                    HistoryWindow = new AppServerControlHostHistoryWindowRequest
-                    {
-                        StartIndex = startIndex,
-                        Count = count,
-                        ViewportWidth = viewportWidth
-                    }
-                },
-                ct).ConfigureAwait(false);
+            StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
+        }, ct).ConfigureAwait(false);
+        if (result.HistoryWindow is { } window)
+        {
+            RegisterHistoryPaths(_pathAllowlist, sessionId, window.History);
+            UpdateCachedHistoryWindow(state, window);
+        }
+        // The response is owned by this read; only the runtime cache needs a copy.
+        return result.HistoryWindow;
+    }
 
-            if (result.HistoryWindow is null)
+    public async Task<AppServerControlUsageSummary> ReadUsageAsync(string sessionId, CancellationToken ct = default)
+    {
+        var result = await ReadHostStateAsync(sessionId, "usage.read", null, ct).ConfigureAwait(false);
+        return result.Usage ?? throw new InvalidOperationException("Provider did not return usage information.");
+    }
+
+    private async Task<AppServerControlHostCommandResultEnvelope> ReadHostStateAsync(
+        string sessionId, string type, AppServerControlHostHistoryWindowRequest? historyWindow, CancellationToken ct)
+    {
+        var state = GetRequiredState(sessionId);
+        var hostPid = state.HostPid;
+        if (hostPid <= 0)
+            throw new InvalidOperationException("Agent Controller host is not connected.");
+        var endpoint = AppServerControlHostEndpoint.GetSessionEndpoint(_instanceIdentity.InstanceId, sessionId, hostPid);
+        using var connection = await HostTransportConnection.ConnectAsync(endpoint, 1000, ct).ConfigureAwait(false);
+        var hello = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
+            AppServerControlHostJsonContext.Default.AppServerControlHostHello)
+            ?? throw new InvalidOperationException("Agent Controller host hello was empty.");
+        ValidateHello(hello);
+        if (!hello.Capabilities.Contains(type == "usage.read" ? "usage.read" : "history.window.read", StringComparer.Ordinal))
+            throw new InvalidOperationException("Update mtagenthost to enable this independent session read.");
+        var command = new AppServerControlHostCommandEnvelope
+        {
+            CommandId = Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
+            SessionId = sessionId,
+            Type = type,
+            AttachRuntime = new AppServerControlAttachRuntimeRequest
             {
-                return null;
-            }
-
-            UpdateCachedHistoryWindow(state, result.HistoryWindow);
-            return CloneHistoryWindow(result.HistoryWindow);
-        }
-        finally
-        {
-            state.Gate.Release();
-        }
+                InstanceId = _instanceIdentity.InstanceId,
+                OwnerToken = _instanceIdentity.OwnerToken
+            },
+            HistoryWindow = historyWindow
+        };
+        var payload = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
+        await connection.Writer.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
+        await connection.Writer.FlushAsync(ct).ConfigureAwait(false);
+        var result = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
+            AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope)
+            ?? throw new InvalidOperationException("Agent Controller read response was empty.");
+        if (result.CommandId != command.CommandId || result.SessionId != sessionId || result.Status != "accepted")
+            throw new InvalidOperationException(result.Message ?? "Agent Controller read was rejected.");
+        return result;
     }
 
     public AppServerControlHistoryPatchSubscription SubscribeHistoryPatches(

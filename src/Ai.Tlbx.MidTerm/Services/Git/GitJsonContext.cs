@@ -3,6 +3,7 @@ using Ai.Tlbx.MidTerm.Models.Git;
 
 namespace Ai.Tlbx.MidTerm.Services.Git;
 
+[JsonSerializable(typeof(System.Text.Json.Nodes.JsonObject))]
 [JsonSerializable(typeof(GitStatusResponse))]
 [JsonSerializable(typeof(GitRepoBinding))]
 [JsonSerializable(typeof(GitRepoBinding[]))]

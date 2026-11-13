@@ -1,7 +1,4 @@
-import {
-  normalizeAppServerControlProvider,
-  resolveAppServerControlLayoutMode,
-} from './activationHelpers';
+import { normalizeAppServerControlProvider } from './activationHelpers';
 import { setHistoryScrollMode } from './historyViewport';
 import type { SessionAppServerControlViewState } from './types';
 
@@ -10,7 +7,6 @@ export function syncAgentViewPresentation(
   provider: string | null | undefined = null,
 ): void {
   panel.dataset.appServerControlProvider = normalizeAppServerControlProvider(provider);
-  panel.dataset.appServerControlLayout = resolveAppServerControlLayoutMode(provider);
 }
 
 export function prepareAppServerControlForForeground(

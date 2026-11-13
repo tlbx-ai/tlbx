@@ -2,7 +2,8 @@ import { NativeGoalCommands, assertGoalRecoverySession } from "./nativeGoals.mjs
 import { createSettingsCommandDispatcher } from "./commandDispatch.mjs";
 import { waitForResolution, releasePendingToolApprovals, SettledDecisions, resolveScopedCallback } from "./pendingPermissions.mjs";
 import { configureRuntime } from "./runtimeSettings.mjs";
-import { query, getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
+import { query } from "@anthropic-ai/claude-agent-sdk";
+import { loadNativeHistory } from "./history.mjs";
 import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
@@ -247,6 +248,7 @@ async function startRuntime(command) {
       pathToClaudeCodeExecutable: configuration.executablePath,
       systemPrompt: { type: "preset", preset: "claude_code" },
       settingSources: ["user", "project", "local"],
+      settings: { fastMode: command.fastMode === "on", fastModePerSessionOptIn: true },
       includePartialMessages: true,
       env: process.env,
       ...(configuration.mcpServers ? { mcpServers: configuration.mcpServers } : {}),
@@ -292,9 +294,7 @@ async function handle(command, isCancelled = () => false, signal) {
         throw new Error("Claude bridge is already initialized.");
       configuration = command;
       if (command.resume && command.loadHistory) {
-        const messages = await getSessionMessages(command.resume, {
-          dir: command.cwd,
-        });
+        const messages = await loadNativeHistory(command.resume, command.cwd);
         emit({ type: "bridge.history", messages });
       }
       await startRuntime(command);
@@ -322,6 +322,21 @@ async function handle(command, isCancelled = () => false, signal) {
       goals.setSupported((initialized.commands ?? []).some((command) =>
         (typeof command === "string" ? command : command.name)?.replace(/^\//, "") === "goal"));
       return;
+    case "usage.read": {
+      if (!runtime) throw new Error("Claude bridge is not initialized.");
+      try {
+        const [usage, account] = await Promise.all([
+          runtime.usage_EXPERIMENTAL_MAY_CHANGE_DO_NOT_RELY_ON_THIS_API_YET({ skipBehaviors: true }),
+          runtime.accountInfo(),
+        ]);
+        emit({ type: "bridge.usage", requestId: command.requestId,
+          available: usage.rate_limits_available, limits: usage.rate_limits,
+          account: { email: account.email, apiProvider: account.apiProvider, subscriptionType: account.subscriptionType } });
+      } catch {
+        emit({ type: "bridge.usage", requestId: command.requestId, available: false });
+      }
+      return;
+    }
     case "thread.goal":
       goals.control(command);
       return;
@@ -340,16 +355,20 @@ async function handle(command, isCancelled = () => false, signal) {
       activeTurnId = command.turnId;
       steeringPending = command.type === "turn.steer";
       try {
-        await runtime.setModel(command.model ?? undefined);
-        if (stopped()) return;
-        await runtime.applyFlagSettings({ effortLevel: command.effort ?? null });
-        if (stopped()) return;
-        await runtime.setPermissionMode(
-          permissionMode(command.permissionMode, command.planMode),
-        );
-        if (stopped()) return;
-        confirmedSettings.permissionMode = command.permissionMode ?? "manual";
-        confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
+        // Steering retains the active turn settings; do not delay priority-now
+        // input behind redundant model/effort/permission control round trips.
+        if (command.type === "turn.start") {
+          await runtime.setModel(command.model ?? undefined);
+          if (stopped()) return;
+          await runtime.applyFlagSettings({ effortLevel: command.effort ?? null, fastMode: command.fastMode === "on" });
+          if (stopped()) return;
+          await runtime.setPermissionMode(
+            permissionMode(command.permissionMode, command.planMode),
+          );
+          if (stopped()) return;
+          confirmedSettings.permissionMode = command.permissionMode ?? "manual";
+          confirmedSettings.planMode = command.planMode === "plan" || command.planMode === "on" ? "on" : "off";
+        }
         const message = await makeUserMessage(command);
         if (stopped()) return;
         goals.noteInput(message, command.prompt ?? "", command.turnId);

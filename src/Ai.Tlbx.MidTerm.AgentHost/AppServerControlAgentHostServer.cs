@@ -185,9 +185,12 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 continue;
             }
 
+            // A one-shot authenticated read connection never claims the provider's
+            // control connection and never queues behind a slow provider command.
+            var historyRead = !connection.OwnerValidated && command.Type is "history.window.get" or "usage.read";
             if (!connection.OwnerValidated)
             {
-                if (!string.Equals(command.Type, "runtime.attach", StringComparison.Ordinal))
+                if (!historyRead && !string.Equals(command.Type, "runtime.attach", StringComparison.Ordinal))
                 {
                     await EnqueueRejectedAsync(connection, command, "runtime.attach must be the first command sent to mtagenthost.").ConfigureAwait(false);
                     await connection.DrainOutboundAsync().ConfigureAwait(false);
@@ -202,7 +205,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                 }
 
                 connection.OwnerValidated = true;
-                if (promoteOnAttach)
+                if (promoteOnAttach && !historyRead)
                 {
                     PromoteCurrentClient(connection);
                 }
@@ -212,6 +215,42 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
             {
                 await EnqueueRejectedAsync(connection, command, "mtagenthost only serves one App Server Controller session per connection.").ConfigureAwait(false);
                 break;
+            }
+
+            if (historyRead && command.Type == "usage.read")
+            {
+                AppServerControlHostCommandResultEnvelope usageResult;
+                try
+                {
+                    ValidateCommand(command);
+                    var runtime = _runtime ?? throw new InvalidOperationException("Provider is not attached.");
+                    usageResult = (await runtime.ExecuteAsync(command, _shutdown.Token).ConfigureAwait(false)).Result;
+                }
+                catch (Exception ex)
+                {
+                    usageResult = new() { CommandId = command.CommandId, SessionId = command.SessionId,
+                        Status = "rejected", Message = ex.Message };
+                }
+                await EnqueueAsync(connection, usageResult,
+                    AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope).ConfigureAwait(false);
+                await connection.DrainOutboundAsync().ConfigureAwait(false);
+                break;
+            }
+
+            if (historyRead)
+            {
+                var response = new AppServerControlHostCommandResultEnvelope
+                {
+                    CommandId = command.CommandId,
+                    SessionId = command.SessionId,
+                    Status = "accepted",
+                    HistoryWindow = GetHistoryWindow(command.SessionId, command.HistoryWindow?.StartIndex,
+                        command.HistoryWindow?.Count, command.HistoryWindow?.ViewportWidth)
+                };
+                await EnqueueAsync(connection, response,
+                    AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope).ConfigureAwait(false);
+                await connection.DrainOutboundAsync().ConfigureAwait(false);
+                break; // This transport cannot issue provider mutations or subscribe to patches.
             }
 
             EnsureHistoryPatchForwarder(connection, command.SessionId);
@@ -452,6 +491,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "turn.start",
                     "turn.steer",
                     "runtime.configure",
+                    "usage.read",
                     "turn.interrupt",
                     "thread.compact",
                     "thread.goal.set",
@@ -460,6 +500,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
                     "request.resolve",
                     "user-input.resolve",
                     "history.window.get",
+                    "history.window.read",
                     "session.git-metadata.get",
                     "session.git-metadata.set",
                     "history.patch"

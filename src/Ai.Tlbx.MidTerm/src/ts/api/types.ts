@@ -190,6 +190,7 @@ export interface AppServerControlQuickSettingsOption {
   hidden?: boolean;
   isDefault?: boolean;
   effortOptions?: AppServerControlQuickSettingsOption[] | null;
+  supportsFastMode?: boolean | null;
 }
 
 export interface AppServerControlQuickSettingsPayload {
@@ -290,7 +291,20 @@ export interface AppServerControlCommand {
   input?: unknown;
 }
 
+export interface AppServerControlUsageLimit {
+  id: string;
+  label: string;
+  usedPercent?: number | null;
+  windowMinutes?: number | null;
+  resetsAt?: string | null;
+}
+
 export interface AppServerControlUsageSummary {
+  accountLabel?: string | null;
+  accountPlan?: string | null;
+  limitsStatus?: string | null;
+  limitsCheckedAt?: string | null;
+  limits?: AppServerControlUsageLimit[];
   contextUsedTokens?: number | null;
   contextWindowTokens?: number | null;
   inputTokens?: number | null;

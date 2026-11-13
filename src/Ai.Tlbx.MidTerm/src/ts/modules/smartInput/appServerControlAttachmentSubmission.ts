@@ -15,12 +15,12 @@ export interface SubmitAppServerControlComposerDraftArgs {
     attachments: AppServerControlTurnRequest['attachments'],
     sessionId: string,
   ) => AppServerControlTurnRequest;
-  submitQueuedTurn: (sessionId: string, request: AppServerControlTurnRequest) => Promise<void>;
+  submitTurn: (sessionId: string, request: AppServerControlTurnRequest) => Promise<void>;
 }
 
 export async function submitAppServerControlComposerDraft(
   args: SubmitAppServerControlComposerDraftArgs,
-): Promise<{ request: AppServerControlTurnRequest; queuedTurn: Promise<void> }> {
+): Promise<{ request: AppServerControlTurnRequest; submittedTurn: Promise<void> }> {
   const prepared = await prepareSmartInputOutboundPrompt({
     sessionId: args.sessionId,
     draft: args.draft,
@@ -34,6 +34,6 @@ export async function submitAppServerControlComposerDraft(
 
   return {
     request,
-    queuedTurn: args.submitQueuedTurn(args.sessionId, request),
+    submittedTurn: args.submitTurn(args.sessionId, request),
   };
 }

@@ -203,61 +203,37 @@ public sealed class CircularByteBuffer : IDisposable
         ref TerminalBoundaryScanner scanner)
     {
         var combinedLength = _count + incoming.Length;
-        for (var offset = 0; offset < combinedLength; offset++)
+        var offset = 0;
+        while (offset < combinedLength)
         {
-            var value = offset < _count
-                ? GetLogicalByte(offset)
-                : incoming[offset - _count];
-            scanner.Consume(value);
-
-            var consumed = offset + 1;
-            if (consumed >= minimumDiscard && scanner.IsSafeBoundary)
+            ReadOnlySpan<byte> segment;
+            if (offset < _count)
             {
-                return consumed;
+                var physical = (_tail + offset) % _capacity;
+                segment = _buffer.AsSpan(physical, Math.Min(_count - offset, _capacity - physical));
+            }
+            else
+            {
+                segment = incoming[(offset - _count)..];
+            }
+            offset += scanner.Scan(segment, Math.Max(0, minimumDiscard - offset));
+            if (offset >= minimumDiscard && scanner.IsSafeBoundary)
+            {
+                return offset;
             }
         }
-
         return combinedLength;
     }
 
     private int FindSafeLogicalOffset(int requestedOffset)
     {
-        if (requestedOffset <= 0)
-        {
-            return 0;
-        }
-
+        if (requestedOffset <= 0) return 0;
         var scanner = new TerminalBoundaryScanner();
-        for (var offset = 0; offset < _count; offset++)
-        {
-            scanner.Consume(GetLogicalByte(offset));
-            var consumed = offset + 1;
-            if (consumed >= requestedOffset && scanner.IsSafeBoundary)
-            {
-                return consumed;
-            }
-        }
-
-        return _count;
+        return FindSafeDiscardLength([], requestedOffset, ref scanner);
     }
 
-    private byte GetLogicalByte(int offset) => _buffer[(_tail + offset) % _capacity];
-
-    private static int ScanUntilSafeBoundary(
-        ReadOnlySpan<byte> data,
-        ref TerminalBoundaryScanner scanner)
-    {
-        for (var index = 0; index < data.Length; index++)
-        {
-            scanner.Consume(data[index]);
-            if (scanner.IsSafeBoundary)
-            {
-                return index + 1;
-            }
-        }
-
-        return data.Length;
-    }
+    private static int ScanUntilSafeBoundary(ReadOnlySpan<byte> data, ref TerminalBoundaryScanner scanner) =>
+        scanner.Scan(data, 1);
 
     private struct TerminalBoundaryScanner
     {
@@ -266,6 +242,28 @@ public sealed class CircularByteBuffer : IDisposable
 
         public readonly bool IsSafeBoundary =>
             _state == TerminalParseState.Ground && _utf8ContinuationBytes == 0;
+
+        public int Scan(ReadOnlySpan<byte> data, int minimum)
+        {
+            var offset = 0;
+            if (minimum == 0 && IsSafeBoundary) return 0;
+            while (offset < data.Length)
+            {
+                // Printable ASCII cannot change either parser. Scan contiguous
+                // runs with the runtime's SIMD search, retaining scalar handling
+                // for ANSI controls, UTF-8 and fragments crossing ring segments.
+                if (IsSafeBoundary && offset < minimum)
+                {
+                    var length = Math.Min(minimum - offset, data.Length - offset);
+                    var special = data.Slice(offset, length).IndexOfAnyExceptInRange((byte)0x20, (byte)0x7e);
+                    offset += special < 0 ? length : special;
+                    if (offset >= minimum || offset == data.Length) return offset;
+                }
+                Consume(data[offset++]);
+                if (offset >= minimum && IsSafeBoundary) return offset;
+            }
+            return offset;
+        }
 
         public void Consume(byte value)
         {

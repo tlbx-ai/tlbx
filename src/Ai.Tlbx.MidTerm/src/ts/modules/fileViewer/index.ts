@@ -494,7 +494,7 @@ async function renderInDock(path: string): Promise<void> {
   const load = beginViewerLoad(path, bodyEl);
   parentPath = null;
   updateNavigationButtons();
-  await updateNavigation(load);
+  void updateNavigation(load);
   if (!load.isActive()) return;
   const info = await checkFilePath(load);
   if (!load.isActive()) return;
@@ -577,7 +577,7 @@ export async function openFile(
 
   resetEditState();
   const load = beginViewerLoad(path, bodyEl);
-  await updateNavigation(load);
+  void updateNavigation(load);
   if (!load.isActive()) return;
 
   if (!info) {

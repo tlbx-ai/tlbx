@@ -5,7 +5,8 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$Rid,
 
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [switch]$RebuildHosts
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,13 +16,13 @@ $version = Get-Content (Join-Path $RepoRoot 'src/version.json') -Raw | ConvertFr
 $sdkVersion = (& dotnet --version).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Could not resolve the .NET SDK version.' }
 $fingerprint = Get-RuntimeInputFingerprint $RepoRoot $Rid $Configuration $version.pty $sdkVersion
-$hostsReused = Restore-ReleasedHostRuntimes $RepoRoot $Rid $Configuration $version $fingerprint
+$hostsReused = -not $RebuildHosts -and (Restore-ReleasedHostRuntimes $RepoRoot $Rid $Configuration $version $fingerprint)
 $metadataDir = Join-Path $RepoRoot ".artifacts/runtime-inputs/$Rid"
 New-Item -ItemType Directory -Force $metadataDir | Out-Null
 @{ schema = 1; fingerprint = $fingerprint; rid = $Rid; pty = $version.pty; sdk = $sdkVersion } |
     ConvertTo-Json | Set-Content (Join-Path $metadataDir 'runtime-inputs.json')
 if ($env:GITHUB_ENV) { "TLBX_HOSTS_REUSED=$($hostsReused.ToString().ToLowerInvariant())" | Add-Content $env:GITHUB_ENV }
-$logRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("midterm-publish-" + [Guid]::NewGuid().ToString("N"))
+$logRoot = Join-Path $RepoRoot (".artifacts/runtime-publish/$Rid/" + [Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $logRoot | Out-Null
 
 $projects = @(
@@ -59,14 +60,22 @@ $processes = @()
 if ($hostsReused) { $projects = @($projects | Where-Object Name -eq 'mt') }
 Push-Location $RepoRoot
 try {
-    foreach ($project in $projects) {
-        # Each project declares and locks every RID it publishes. Restore that complete
-        # graph once so the selected-RID publish below cannot rewrite dependency state.
-        & dotnet restore $project.Path --locked-mode --verbosity minimal
-        if ($LASTEXITCODE -ne 0) {
-            throw "dotnet restore failed for $($project.Name)"
+    # One solution restore deduplicates Common and evaluates the complete locked
+    # production graph once, without restoring unrelated test projects.
+    $restoreSolution = Join-Path $logRoot 'runtime-set.slnx'
+    $xml = [Xml.XmlWriter]::Create($restoreSolution)
+    try {
+        $xml.WriteStartElement('Solution')
+        foreach ($project in $projects) {
+            $xml.WriteStartElement('Project')
+            $path = [IO.Path]::GetRelativePath($logRoot, (Join-Path $RepoRoot $project.Path))
+            $xml.WriteAttributeString('Path', $path)
+            $xml.WriteEndElement()
         }
-    }
+        $xml.WriteEndElement()
+    } finally { $xml.Dispose() }
+    & dotnet restore $restoreSolution --locked-mode --verbosity minimal
+    if ($LASTEXITCODE -ne 0) { throw 'Locked production runtime restore failed.' }
 
     & dotnet build "src/Ai.Tlbx.MidTerm.Common/Ai.Tlbx.MidTerm.Common.csproj" `
         -c $Configuration `
@@ -88,8 +97,14 @@ try {
             "-r", $Rid,
             "--verbosity", "minimal",
             "--no-restore",
-            "-p:BuildProjectReferences=false"
+            "-p:BuildProjectReferences=false",
+            "-clp:PerformanceSummary"
         ) + $project.ExtraArgs
+        # Limit competing code-generation threads in the smaller Windows hosts.
+        # Runtime code optimization and the large mt compiler stay unchanged.
+        if ($Rid.StartsWith('win-') -and $project.Name -in @('mthost', 'mtagenthost')) {
+            $argumentList += '-p:IlcSingleThreaded=true'
+        }
 
         $startInfo = @{
             FilePath = "dotnet"
@@ -107,6 +122,7 @@ try {
 
         $processes += @{
             Name = $project.Name
+            StartedAt = [DateTime]::UtcNow
             Process = $process
             StdoutPath = $stdoutPath
             StderrPath = $stderrPath
@@ -115,6 +131,8 @@ try {
 
     foreach ($entry in $processes) {
         $null = $entry.Process.WaitForExit()
+        $seconds = [Math]::Round(($entry.Process.ExitTime.ToUniversalTime() - $entry.StartedAt).TotalSeconds, 1)
+        Write-Host "$($entry.Name): ${seconds}s, exit=$($entry.Process.ExitCode); logs=$logRoot"
     }
 
     $failed = $processes | Where-Object { $_.Process.ExitCode -ne 0 }
@@ -152,7 +170,5 @@ try {
 }
 finally {
     Pop-Location
-    if (Test-Path $logRoot) {
-        Remove-Item -LiteralPath $logRoot -Recurse -Force
-    }
+    Write-Host "Publish diagnostics retained: $logRoot"
 }

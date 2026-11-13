@@ -1,5 +1,19 @@
 import { wrapConnectWorkspaceUrl } from '../web/connectPreview';
 
+const escapeHandlers = new WeakMap<Window, () => boolean>();
+let listeningForEscape = false;
+function registerEscape(frame: HTMLIFrameElement, escape: () => boolean): void {
+  if (!listeningForEscape) {
+    window.addEventListener('message', (event: MessageEvent) => {
+      if (event.data === 'tlbx:pdf:escape' && event.source)
+        escapeHandlers.get(event.source as Window)?.();
+    });
+    listeningForEscape = true;
+  }
+  if (frame.contentWindow)
+    escapeHandlers.set(frame.contentWindow, () => frame.isConnected && escape());
+}
+
 /** Isolate PDF rendering and its worker from the terminal's document/lifecycle. */
 export function createPdfView(
   viewUrl: string,
@@ -18,17 +32,13 @@ export function createPdfView(
   frame.src = wrapConnectWorkspaceUrl(`/pdf/index.html?${params}`);
   if (escape) {
     frame.addEventListener('load', () => {
-      frame.contentDocument?.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape' && escape()) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      });
+      registerEscape(frame, escape);
     });
   }
   signal?.addEventListener(
     'abort',
     () => {
+      if (frame.contentWindow) escapeHandlers.delete(frame.contentWindow);
       frame.remove();
     },
     { once: true },

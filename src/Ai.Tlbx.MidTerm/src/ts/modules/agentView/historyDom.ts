@@ -1,4 +1,6 @@
 import { t } from '../i18n';
+import { appendHighlightedCommand, commandPreview } from './commandHighlight';
+import { createPdfView } from '../fileViewer/pdfView';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
 import {
   isFileChangeHistoryEntry,
@@ -9,6 +11,7 @@ import { $currentSettings, getSession } from '../../stores';
 import { wireMarkdownTables } from '../../utils/markdown';
 import {
   createAssistantImagePreviewBlock,
+  buildAssistantEnrichedHtml,
   enrichInteractiveTextContent,
   wireAssistantInteractiveContent,
 } from './assistantEnrichment';
@@ -53,9 +56,10 @@ export function resolveToolCallOutputLineLimit(): number {
   return Math.max(0, Math.min(MAX_TOOL_CALL_OUTPUT_LINES, Math.trunc(configured)));
 }
 
-function clampToolCallOutputLines(lines: readonly string[]): string[] {
+function clampToolCallOutputLines(lines: readonly string[], fromEnd = false): string[] {
   const lineLimit = resolveToolCallOutputLineLimit();
-  return lineLimit <= 0 ? [] : lines.slice(0, lineLimit);
+  if (lineLimit <= 0) return [];
+  return fromEnd ? lines.slice(-lineLimit) : lines.slice(0, lineLimit);
 }
 
 function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): string[] {
@@ -72,7 +76,7 @@ function selectProjectedToolEvidenceLines(entry: AppServerControlHistoryEntry): 
   if (lines.length <= lineLimit) {
     return lines;
   }
-  if (presentation.evidenceKind === 'error') {
+  if (presentation.evidenceKind === 'error' || presentation.category === 'command') {
     return lines.slice(lines.length - lineLimit);
   }
   if (presentation.category === 'read' || lineLimit === 1) {
@@ -671,38 +675,69 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         content.innerHTML = cache.html;
         collapseSingleParagraphMarkdownBody(content);
         wireAssistantInteractiveContent(content, sessionId);
-        wireMarkdownTables(content, {
-          clearSort: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.clearSort',
-              'Clear sorting for {column}',
-              { column },
+        wireMarkdownTables(
+          content,
+          {
+            firstPage: appServerControlText(
+              'appServerControl.markdownTable.firstPage',
+              'First table rows',
             ),
-          filterByColumn: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.filterByColumn',
-              'Filter {column}',
-              { column },
+            lastPage: appServerControlText(
+              'appServerControl.markdownTable.lastPage',
+              'Last table rows',
             ),
-          filterPlaceholder: appServerControlText(
-            'appServerControl.markdownTable.filterPlaceholder',
-            'Filter',
-          ),
-          sortAscending: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.sortAscending',
-              'Sort {column} ascending',
-              { column },
+            previousPage: appServerControlText(
+              'appServerControl.markdownTable.previousPage',
+              'Previous table rows',
             ),
-          sortDescending: (column) =>
-            appServerControlFormat(
-              'appServerControl.markdownTable.sortDescending',
-              'Sort {column} descending',
-              {
-                column,
-              },
+            nextPage: appServerControlText(
+              'appServerControl.markdownTable.nextPage',
+              'Next table rows',
             ),
-        });
+            clearSort: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.clearSort',
+                'Clear sorting for {column}',
+                { column },
+              ),
+            filterByColumn: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.filterByColumn',
+                'Filter {column}',
+                { column },
+              ),
+            filterPlaceholder: appServerControlText(
+              'appServerControl.markdownTable.filterPlaceholder',
+              'Filter',
+            ),
+            sortAscending: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.sortAscending',
+                'Sort {column} ascending',
+                { column },
+              ),
+            sortDescending: (column) =>
+              appServerControlFormat(
+                'appServerControl.markdownTable.sortDescending',
+                'Sort {column} descending',
+                {
+                  column,
+                },
+              ),
+          },
+          (tableBody) => {
+            // Keep table parsing context: a bare <tr> fragment parsed in a div
+            // loses its row/cell elements during file-link enrichment.
+            const shell = document.createElement('div');
+            shell.innerHTML = buildAssistantEnrichedHtml(
+              `<table><tbody>${tableBody.innerHTML}</tbody></table>`,
+              getEntryFileMentions(entry, 'body'),
+            ).html;
+            const enrichedBody = shell.querySelector('tbody');
+            if (enrichedBody) tableBody.replaceChildren(...enrichedBody.childNodes);
+            wireAssistantInteractiveContent(tableBody, sessionId);
+          },
+        );
         body.appendChild(content);
         appendEntryImagePreviews(body, entry, sessionId);
         return body;
@@ -730,16 +765,24 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   function createCommandHistoryBody(
     entry: AppServerControlHistoryEntry,
     command = entry.commandText ?? entry.body,
-    outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? []),
+    outputLines = clampToolCallOutputLines(entry.commandOutputTail ?? [], true),
   ): HTMLElement {
     const body = document.createElement('div');
     body.className = 'agent-history-body agent-history-command-body';
-    const commandLine = document.createElement('pre');
-    commandLine.className = 'agent-history-command-script';
-    commandLine.setAttribute('aria-label', t('appServerControl.commands.title'));
-    commandLine.textContent = command;
-
-    body.appendChild(commandLine);
+    if (command) {
+      const script = Boolean(entry.commandText || entry.toolPresentation?.category === 'command');
+      const commandLine = document.createElement('pre');
+      commandLine.className = script
+        ? 'agent-history-command-script'
+        : 'agent-history-command-output-tail';
+      commandLine.setAttribute(
+        'aria-label',
+        t(script ? 'appServerControl.commands.title' : 'appServerControl.panel.details'),
+      );
+      if (script) appendHighlightedCommand(commandLine, command);
+      else commandLine.textContent = command;
+      body.appendChild(commandLine);
+    }
     if (outputLines.length > 0) {
       const output = document.createElement('pre');
       output.className = 'agent-history-command-output-tail';
@@ -770,7 +813,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       (presentation.totalLineCount || visibleEvidence.length) - visibleEvidence.length,
     );
     const evidenceLines =
-      omitted > 0 ? [`... ${omitted} lines omitted ...`, ...visibleEvidence] : visibleEvidence;
+      resolveToolCallOutputLineLimit() <= 0
+        ? []
+        : omitted > 0
+          ? [`... ${omitted} lines omitted ...`, ...visibleEvidence]
+          : visibleEvidence;
     if (presentation.category === 'command')
       return createCommandHistoryBody(entry, presentation.subject ?? '', evidenceLines);
 
@@ -850,10 +897,6 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     elapsed.className = 'agent-history-busy-elapsed';
     elapsed.textContent = entry.busyElapsedText ?? '0s';
     status.appendChild(elapsed);
-    const cancelHint = document.createElement('span');
-    cancelHint.className = 'agent-history-busy-cancel';
-    cancelHint.textContent = '(Press Esc to cancel)';
-    status.appendChild(cancelHint);
     bubble.appendChild(status);
     article.appendChild(bubble);
     syncBusyIndicatorEntry(article, entry);
@@ -885,20 +928,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     return body;
   }
 
-  function createCollapsedHistoryBody(
+  function createDisclosureSummary(
     entry: AppServerControlHistoryEntry,
-    sessionId: string,
     presentation: HistoryBodyPresentation,
+    command: boolean,
   ): HTMLElement {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'agent-history-disclosure-shell';
-    const details = document.createElement('details');
-    details.className = 'agent-history-disclosure';
-    const command =
-      presentation.mode === 'command' || entry.toolPresentation?.category === 'command';
-    details.classList.toggle('agent-history-command-disclosure', command);
-    details.classList.toggle('agent-history-command-failed', command && isHistoryError(entry));
-    details.open = deps.getState(sessionId)?.historyExpandedEntries.has(entry.id) === true;
     const summary = document.createElement('summary');
     summary.className = 'agent-history-disclosure-summary';
     const label = document.createElement('span');
@@ -919,12 +953,36 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         });
     meta.hidden = !meta.textContent;
     summary.appendChild(meta);
-    if (presentation.preview) {
+    const script = command ? entry.commandText || entry.toolPresentation?.subject || '' : '';
+    if (script || presentation.preview) {
       const preview = document.createElement('span');
       preview.className = 'agent-history-disclosure-preview';
-      preview.textContent = presentation.preview;
-      summary.appendChild(preview);
+      if (script) {
+        appendHighlightedCommand(preview, commandPreview(script));
+        label.hidden = true;
+        summary.insertBefore(preview, meta);
+      } else {
+        preview.textContent = presentation.preview;
+        summary.appendChild(preview);
+      }
     }
+    return summary;
+  }
+
+  function createCollapsedHistoryBody(
+    entry: AppServerControlHistoryEntry,
+    sessionId: string,
+    presentation: HistoryBodyPresentation,
+  ): HTMLElement {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'agent-history-disclosure-shell';
+    const details = document.createElement('details');
+    details.className = 'agent-history-disclosure';
+    const command =
+      presentation.mode === 'command' || entry.toolPresentation?.category === 'command';
+    details.classList.toggle('agent-history-command-disclosure', command);
+    details.classList.toggle('agent-history-command-failed', command && isHistoryError(entry));
+    details.open = deps.getState(sessionId)?.historyExpandedEntries.has(entry.id) === true;
     let bodyMounted = false;
     const mountBody = () => {
       if (!bodyMounted) {
@@ -932,7 +990,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         bodyMounted = true;
       }
     };
-    details.appendChild(summary);
+    details.appendChild(createDisclosureSummary(entry, presentation, command));
     if (details.open) {
       mountBody();
     }
@@ -1055,6 +1113,53 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     );
   }
 
+  function createPdfAttachmentPreview(
+    link: HTMLAnchorElement,
+    attachment: AppServerControlAttachmentReference,
+    viewUrl: string,
+    accessReady: Promise<unknown>,
+  ): HTMLElement {
+    const block = document.createElement('div');
+    block.className = 'agent-history-pdf-attachment';
+    const details = document.createElement('details');
+    details.className = 'agent-history-disclosure agent-history-pdf-disclosure';
+    const summary = document.createElement('summary');
+    summary.className = 'agent-history-disclosure-summary';
+    const label = t('fileViewer.modePreview');
+    const fileName = resolveAttachmentLabel(attachment);
+    summary.textContent = `PDF · ${label}`;
+    summary.setAttribute('aria-label', `${label}: ${fileName}`);
+    const host = document.createElement('div');
+    let generation = 0;
+    details.addEventListener('toggle', () => {
+      const current = ++generation;
+      if (!details.open) {
+        host.replaceChildren();
+        return;
+      }
+      if (host.querySelector('iframe')) return;
+      if (host.childElementCount === 0) {
+        const loading = document.createElement('div');
+        loading.className = 'file-viewer-loading agent-history-inline-pdf-loading';
+        loading.textContent = t('fileViewer.loading');
+        host.appendChild(loading);
+      }
+      void accessReady.then(() => {
+        if (current !== generation || !details.open || !details.isConnected) return;
+        const frame = createPdfView(viewUrl, 'agent-history-inline-pdf', undefined, () => {
+          details.open = false;
+          summary.focus({ preventScroll: true });
+          return true;
+        });
+        frame.title = fileName;
+        host.replaceChildren(frame);
+      });
+    });
+    details.append(summary, host);
+    block.append(link, details);
+    return block;
+  }
+
   function createHistoryAttachmentBlock(
     sessionId: string,
     attachments: readonly AppServerControlAttachmentReference[] | undefined,
@@ -1089,9 +1194,10 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         const image = document.createElement('img');
         image.className = 'agent-history-attachment-image-el';
         void accessReady.then(() => {
-          image.src = previewUrl;
+          image.src = previewUrl.replace('/api/files/view?', '/api/files/thumbnail?');
         });
         image.loading = 'lazy';
+        image.decoding = 'async';
         image.alt = resolveAttachmentLabel(attachment);
         frame.appendChild(image);
         link.appendChild(frame);
@@ -1104,7 +1210,13 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         link.textContent = resolveAttachmentLabel(attachment);
       }
 
-      container.appendChild(link);
+      const isPdf =
+        !isImageAttachment(attachment) &&
+        (attachment.mimeType?.toLowerCase() === 'application/pdf' ||
+          /\.pdf$/i.test(attachment.path));
+      container.appendChild(
+        isPdf ? createPdfAttachmentPreview(link, attachment, previewUrl, accessReady) : link,
+      );
     }
 
     return container;

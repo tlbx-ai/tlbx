@@ -96,7 +96,7 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
             foreach (var agent in _agents) { writer.WriteStartObject(); writer.WriteString("value", agent); writer.WriteString("name", agent); writer.WriteEndObject(); }
             writer.WriteEndArray(); writer.WriteEndObject();
         }
-        using var document = JsonDocument.Parse(buffer.ToArray());
+        using var document = JsonDocument.Parse(buffer.GetBuffer().AsMemory(0, checked((int)buffer.Length)));
         _settings.ConfigOptions = [document.RootElement.Clone()];
     }
 

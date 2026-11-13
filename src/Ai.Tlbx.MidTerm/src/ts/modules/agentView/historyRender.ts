@@ -1348,8 +1348,8 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       }
     }
 
-    let metrics = readHistoryViewportMetrics(viewport, state);
-    let renderPlan = buildHistoryRenderPlan(entries, metrics, state);
+    const metrics = readHistoryViewportMetrics(viewport, state);
+    const renderPlan = buildHistoryRenderPlan(entries, metrics, state);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
     const measurementChanged = state
       ? measureRenderedHistoryHeights(
@@ -1360,9 +1360,10 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
         )
       : false;
     if (measurementChanged && isVirtualizedHistoryContext(state, entries.length)) {
-      metrics = readHistoryViewportMetrics(viewport, state);
-      renderPlan = buildHistoryRenderPlan(entries, metrics, state);
-      reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
+      // Heights were just read from the concrete rows. Reconcile their updated
+      // spacer estimates next frame instead of writing the DOM a second time and
+      // forcing another synchronous layout when the reader anchor is restored.
+      deps.scheduleHistoryRender(sessionId);
     }
     if (state?.snapshot) {
       traceRenderedAppServerControlHistoryWindow({
@@ -1384,10 +1385,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
   ): HistoryRenderPlan {
     if (entries.length === 0) {
       return {
-        emptyStateText: appServerControlText(
-          'appServerControl.emptyHistory',
-          'No history entries yet.',
-        ),
         virtualWindowKey: null,
         leadingPlaceholders: [],
         trailingPlaceholders: [],
@@ -1440,7 +1437,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
     ];
 
     return {
-      emptyStateText: null,
       virtualWindowKey: buildHistoryVirtualWindowKey(renderedWindow),
       leadingPlaceholders,
       trailingPlaceholders,
@@ -1687,17 +1683,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    if (plan.emptyStateText) {
-      const emptyNode = ensureEmptyHistoryNode(state, plan.emptyStateText);
-      syncOrderedChildren(container, [emptyNode]);
-      state.historyMeasurementObserver?.disconnect();
-      state.historyRenderedNodes.clear();
-      state.historyLeadingPlaceholders = [];
-      state.historyTrailingPlaceholders = [];
-      return;
-    }
-
-    state.historyEmptyState = null;
     const nextChildren: HTMLElement[] = [];
     nextChildren.push(
       ...resolveHistoryPlaceholderNodes(state, 'leading', plan.leadingPlaceholders),
@@ -1721,19 +1706,6 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     syncOrderedChildren(container, nextChildren);
     state.historyLastVirtualWindowKey = plan.virtualWindowKey;
-  }
-
-  function ensureEmptyHistoryNode(
-    state: SessionAppServerControlViewState,
-    text: string,
-  ): HTMLDivElement {
-    if (!state.historyEmptyState) {
-      const empty = document.createElement('div');
-      empty.className = 'agent-history-empty';
-      state.historyEmptyState = empty;
-    }
-    state.historyEmptyState.textContent = text;
-    return state.historyEmptyState;
   }
 
   function ensureHistoryPlaceholderNode(
@@ -1936,11 +1908,14 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
-    button.textContent = appServerControlText('appServerControl.scrollToBottom', 'Back to bottom');
-    button.hidden =
+    const label = appServerControlText('appServerControl.scrollToBottom', 'Back to bottom');
+    if (button.title !== label) button.title = label;
+    if (button.getAttribute('aria-label') !== label) button.setAttribute('aria-label', label);
+    const hidden =
       state.historyAutoScrollPinned ||
       state.historyEntries.length === 0 ||
       state.activationState === 'failed';
+    if (button.hidden !== hidden) button.hidden = hidden;
   }
 
   function renderComposerInterruption(

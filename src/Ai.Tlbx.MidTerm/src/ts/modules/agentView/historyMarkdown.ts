@@ -10,6 +10,7 @@ function renderHistoryMarkdown(
   technicalDetails: boolean,
 ): string {
   const html = renderMarkdownFragment(getUserHistoryReadingBody(entry, technicalDetails), {
+    paginateTables: true,
     preserveRawWindowsPaths: entry.kind === 'user',
   });
   return entry.kind === 'user' ? html : buildAssistantEnrichedHtml(html, fileMentions).html;

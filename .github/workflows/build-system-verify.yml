@@ -1,37 +1,191 @@
-name: Build system verification
+name: Tests (on demand)
 on:
   workflow_dispatch:
-  push:
-    branches: [dev, main]
-    paths:
-      - 'scripts/**'
-      - '.github/workflows/**'
-      - 'global.json'
-      - 'src/Ai.Tlbx.MidTerm.AgentHost/Ai.Tlbx.MidTerm.AgentHost.csproj'
-  pull_request:
-    branches: [dev, main]
+    inputs:
+      suite:
+        description: Test suite to run against the selected branch or tag
+        type: choice
+        default: all
+        options: [all, frontend, server, runtime, installers, build, distribution, native, platform, tooling]
 permissions:
   contents: read
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 jobs:
-  verify:
-    name: Release workflow (${{ matrix.os }})
-    strategy:
-      matrix:
-        os: [ubuntu-24.04, windows-2025]
-    runs-on: ${{ matrix.os }}
+  tests:
+    if: contains(fromJSON('["all","frontend","server","runtime","build"]'), inputs.suite)
+    runs-on: windows-2025
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-      - name: Verify test selection and runtime reuse contracts
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: |
+            10.0.402
+            11.0.100
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.12.0'
+      - run: npm install --global npm@12.2.0 --ignore-scripts
+      - name: Install frontend test dependencies
+        working-directory: src/Ai.Tlbx.MidTerm
+        run: npm ci --include=dev --prefer-offline --no-audit --no-fund
+      - name: Prepare application assets for integration and AOT tests
+        if: inputs.suite != 'frontend'
+        shell: pwsh
+        run: |
+          $version = (Get-Content src/version.json | ConvertFrom-Json).web
+          ./src/Ai.Tlbx.MidTerm/frontend-build.ps1 -Publish -SkipVerify -Version $version
+      - name: Run explicitly selected test clusters
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TEST_SUITE: ${{ inputs.suite }}
+        run: ./scripts/run-release-tests.ps1 -TestCategories $env:TEST_SUITE -FrontendInstalled
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: test-results
+          path: |
+            **/TestResults/**
+            .artifacts/aot-smoke/**
+          retention-days: 7
+  installers:
+    if: inputs.suite == 'all' || inputs.suite == 'installers'
+    uses: ./.github/workflows/installer-verify.yml
+  distribution:
+    if: inputs.suite == 'all' || inputs.suite == 'build' || inputs.suite == 'distribution'
+    uses: ./.github/workflows/build-distribution-verify.yml
+  release-contracts-linux:
+    if: inputs.suite == 'all' || inputs.suite == 'build'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: |
+            10.0.402
+            11.0.100
+      - name: Release workflow behavior
         shell: pwsh
         run: |
           ./scripts/test-release-build-system.ps1
           ./scripts/test-release-pr.ps1
           python ./scripts/test-release-publication.py
           if ($LASTEXITCODE -ne 0) { throw 'Release publication tests failed.' }
-
+  tooling:
+    if: inputs.suite == 'all' || inputs.suite == 'tooling'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: '26.12.0'
+      - name: Launcher contracts
+        working-directory: src/npx-launcher
+        run: npm test
+  native-linux:
+    if: inputs.suite == 'all' || inputs.suite == 'native'
+    name: Native Linux tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    outputs:
+      native: ${{ steps.changes.outputs.native }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: changes
+        run: echo 'native=true' >> "$GITHUB_OUTPUT"
+      - name: Prepare and verify committed native Linux package
+        if: steps.changes.outputs.native == 'true'
+        shell: pwsh
+        run: ./src/Ai.Tlbx.MidTerm.ConnectNative/prepare.ps1 -RuntimeIdentifier linux-x64
+      - name: Verify committed native C API exports
+        if: steps.changes.outputs.native == 'true'
+        shell: bash
+        run: |
+          native_tmp=$(mktemp -d)
+          trap 'rm -rf "$native_tmp"' EXIT
+          cc src/Ai.Tlbx.MidTerm.ConnectNative/smoke/load.c -ldl -o "$native_tmp/load"
+          python3 - "$native_tmp" <<'PY'
+          import json, os, pathlib, re, shutil, subprocess, sys, zipfile
+          root = pathlib.Path('src/Ai.Tlbx.MidTerm.ConnectNative')
+          temporary = pathlib.Path(sys.argv[1])
+          native = temporary / 'native'
+          native.mkdir()
+          with zipfile.ZipFile(root / 'bin/linux-x64/bundle.zip') as bundle:
+              for item in bundle.infolist():
+                  if item.filename != pathlib.Path(item.filename).name or item.filename in ('.', '..') or '\\' in item.filename:
+                      raise ValueError('Unsafe native bundle filename')
+                  with bundle.open(item) as source, (native / item.filename).open('wb') as target:
+                      shutil.copyfileobj(source, target)
+          manifest = json.loads((native / 'manifest.json').read_text())
+          api = pathlib.Path('src/Ai.Tlbx.MidTerm/Services/Connect/ConnectNativeApi.cs').read_text()
+          exports = sorted(set(re.findall(r'NativeLibrary\.GetExport\(\s*library,\s*"(rtc[A-Za-z0-9]+)"\s*\)', api)))
+          if not exports:
+              raise ValueError('No exact native C API export inventory found')
+          env = os.environ.copy()
+          env.pop('LD_LIBRARY_PATH', None)
+          subprocess.run([str(temporary / 'load'), str(native / manifest['entryPoint']), *exports], check=True, timeout=30, env=env)
+          PY
+      - name: Audit native Linux dependencies and artifact binding
+        if: steps.changes.outputs.native == 'true'
+        shell: pwsh
+        run: ./src/Ai.Tlbx.MidTerm.ConnectNative/audit.ps1 -RuntimeIdentifier linux-x64
+  native-url-stdlib:
+    name: Native URL parser (libc++)
+    runs-on: macos-15-intel
+    needs: native-linux
+    timeout-minutes: 5
+    steps:
+      - name: Native input scope
+        env:
+          NATIVE_INPUTS: ${{ needs.native-linux.outputs.native }}
+        run: echo "Native input changes=$NATIVE_INPUTS"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: needs.native-linux.outputs.native == 'true'
+        with:
+          persist-credentials: false
+      - name: Verify native URL parsing with libc++
+        if: needs.native-linux.outputs.native == 'true'
+        run: python3 src/Ai.Tlbx.MidTerm.ConnectNative/smoke/regex.py
+  macos-context:
+    if: inputs.suite == 'all' || inputs.suite == 'native'
+    name: macOS CLI and MCP process identity
+    runs-on: macos-15-intel
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: |
+            10.0.402
+            11.0.100
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '26.12.0'
+      - name: Build the production process identity code and protocol tests
+        # Match macOS release builds: existing Unix host analyzer warnings stay visible.
+        # This job gates actual macOS process behavior; broad .NET suites run locally.
+        run: dotnet build src/Ai.Tlbx.MidTerm.UnitTests -c Release -p:SkipFrontendBuild=true -p:SkipConnectNativeBuild=true -p:RunAnalyzersDuringBuild=false -p:UseSharedCompilation=false
+      - name: Verify macOS identity and native stdio artifact/process workflows
+        run: dotnet src/Ai.Tlbx.MidTerm.UnitTests/bin/Release/net11.0/Ai.Tlbx.MidTerm.UnitTests.dll --filter-class '*MacSessionProcessContextTests' '*SessionCliContextServiceTests' '*TlbxMcpNativeProcessLifetimeTests' --report-trx --results-directory .artifacts/macos-context
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: macos-context-results
+          path: .artifacts/macos-context/
+          retention-days: 7
   dotnet-sdks:
+    if: inputs.suite == 'all' || inputs.suite == 'platform'
     name: .NET 10 + 11 (${{ matrix.rid }})
     timeout-minutes: 15
     strategy:

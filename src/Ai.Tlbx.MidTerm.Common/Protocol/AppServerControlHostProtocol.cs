@@ -28,6 +28,7 @@ public sealed class AppServerControlQuickSettingsOption
     public string? Description { get; set; }
     public bool Hidden { get; set; }
     public bool IsDefault { get; set; }
+    public bool? SupportsFastMode { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public List<AppServerControlQuickSettingsOption>? EffortOptions { get; set; }
 }
@@ -125,7 +126,28 @@ public sealed class AppServerControlUsageSummary
     public double? PrimaryRateLimitUsedPercent { get; set; }
     public double? SecondaryRateLimitUsedPercent { get; set; }
 
-    public AppServerControlUsageSummary Clone() => (AppServerControlUsageSummary)MemberwiseClone();
+    public string? AccountLabel { get; set; }
+    public string? AccountPlan { get; set; }
+    public string? LimitsStatus { get; set; }
+    public DateTimeOffset? LimitsCheckedAt { get; set; }
+    public List<AppServerControlUsageLimit> Limits { get; set; } = [];
+
+    public AppServerControlUsageSummary Clone()
+    {
+        var copy = (AppServerControlUsageSummary)MemberwiseClone();
+        copy.Limits = Limits.Select(static limit => limit.Clone()).ToList();
+        return copy;
+    }
+}
+
+public sealed class AppServerControlUsageLimit
+{
+    public string Id { get; set; } = string.Empty;
+    public string Label { get; set; } = string.Empty;
+    public double? UsedPercent { get; set; }
+    public int? WindowMinutes { get; set; }
+    public DateTimeOffset? ResetsAt { get; set; }
+    public AppServerControlUsageLimit Clone() => (AppServerControlUsageLimit)MemberwiseClone();
 }
 
 public sealed class AppServerControlCommand
@@ -231,6 +253,7 @@ public static class AppServerControlQuickSettings
                 Description = NormalizeOptionalValue(option.Description),
                 Hidden = option.Hidden,
                 IsDefault = option.IsDefault,
+                SupportsFastMode = option.SupportsFastMode,
                 EffortOptions = option.EffortOptions is null ? null : CloneOptions(option.EffortOptions)
             })
             .ToList();
@@ -751,6 +774,7 @@ public sealed class AppServerControlHostCommandResultEnvelope
     public AppServerControlTurnStartResponse? TurnStarted { get; set; }
     public AppServerControlCommandAcceptedResponse? Accepted { get; set; }
     public AppServerControlConfigureResponse? Configured { get; set; }
+    public AppServerControlUsageSummary? Usage { get; set; }
     public AppServerControlHistoryWindowResponse? HistoryWindow { get; set; }
     public AppServerControlHostGitMetadata? GitMetadata { get; set; }
 }

@@ -1,8 +1,57 @@
 # Build and release verification
 
-CI installs SDK 10.0.402 and 11.0.100 side by side in every .NET job,
+Unit, integration, installer, protocol and build-system behavioral tests run only
+through **Tests (on demand)** (`build-system-verify.yml`, `workflow_dispatch`).
+They are never triggered by pushes, pull requests, builds, tags or publication.
+Select a branch/tag in GitHub, or run:
+
+```powershell
+gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f suite=all
+```
+
+Before a major or main release, remind Johannes to run this workflow for the exact
+candidate and inspect its result. Release scripts display the same reminder;
+they do not dispatch tests. Local build and release entry points also never run
+test suites: `-TestCategories` selects validation scope only. Run
+`scripts/run-release-tests.ps1 -TestCategories ...` separately when a test run is
+explicitly requested, or dispatch Tests (on demand).
+Automatic PR/release checks retain compiler/analyzers, typecheck, lint, security
+audits, frozen native artifact verification, signing, SBOMs and package integrity.
+The Windows package job installs pinned SDK11 and restores locked dependencies
+directly, without transferring the large all-RID NuGet cache; SDK10+11 baseline compatibility
+is retained in security auditing and the six-platform on-demand suite.
+
+For build timing, manually dispatch `release.yml` against the task branch with
+`platform=win-x64` (the default). It builds frontend and the complete Windows-x64 Native AOT runtime set, retains the
+archive/SBOM as workflow artifacts and never creates a tag, release or catalog
+entry. Compare the complete Windows job duration (excluding queue time), with
+rebuild forced; attestation and packaging remain included. Windows ZIPs use fast
+Deflate instead of maximum compression; executable contents are unchanged.
+
+Automatic dev and stable releases build Windows x64/x86, Linux x64/ARM64 and
+macOS ARM64. macOS Intel is built only on demand using the same signed,
+notarized Native AOT packaging path:
+
+```powershell
+gh workflow run release.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f platform=osx-x64
+gh run download <run-id> --repo tlbx-ai/tlbx --name macos-package-osx-x64 --dir .artifacts/macos-intel
+```
+
+This builds only macOS Intel plus shared checks/frontend, retaining its tar.gz
+and matching SPDX SBOM as a workflow artifact for three days. It never creates
+or changes a tag, GitHub release or public catalog. On-demand test suites remain
+separate and may still include all six platforms.
+
+The five measured full-rebuild Windows x64 jobs took 9:43, 7:46, 6:02, 8:19
+and 6:00 (baseline 7:21). The five-attempt limit is exhausted; the 6:00 profile
+is retained. The under-five-minute target was not reached. This profile uses
+Windows 2022, SDK11 without a NuGet cache transfer, one locked production SLNX
+restore and single-threaded host code generation; application optimization flags
+remain unchanged.
+
+CI retains SDK 10.0.402 and 11.0.100 side by side for baseline verification,
 including the self-hosted signing runner. The repository and all .NET components target .NET 11,
-with SDK 11.0.100 pinned in `global.json`. Build system verification compiles
+with SDK 11.0.100 pinned in `global.json`. The on-demand platform suite compiles
 and runs a minimal net10.0/net11.0 application on all six package platforms
 (Windows x64/x86, Linux x64/ARM64, macOS x64/ARM64) and checks SDK selection,
 runtime major version and process architecture with `scripts/verify-dotnet-sdks.ps1`.
@@ -32,13 +81,13 @@ rejects reuse of a published version.
 | Category | Checks | Choose for |
 |---|---|---|
 | `assets` | TypeScript typecheck and TS/CSS lint | CSS, HTML, text, static assets; also inspect the affected UI |
-| `frontend` | Typecheck, lint, full frontend tests including Kitty graphics | TypeScript behavior and browser contracts |
-| `server` | Server unit and integration suites | Server C# and REST APIs |
-| `runtime` | All three .NET suites, including AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
-| `installers` | Installer contract verification | Install/uninstall, startup, certificates and updater changes |
+| `frontend` | Typecheck and TS/CSS lint | TypeScript behavior and browser contracts |
+| `server` | Server compiler and analyzers, warnings as errors | Server C# and REST APIs |
+| `runtime` | Compiler/analyzers for server, TtyHost and AgentHost | PTY, AgentHost, shared code, IPC and protocol changes; add frontend for browser protocol changes |
+| `installers` | Published package signature/hash integrity; installer behavior runs on demand | Install/uninstall, startup, certificates and updater changes |
 | `dependencies` | Server npm/NuGet audit, lock/signature checks and Claude bridge build | Server dependencies and lockfiles |
-| `build` | Release script behavioral checks, runtime builds, Windows AOT execution probe | Build/release scripts, packaging, SDK and native dependency changes |
-| `all` | All of the above, without duplicate frontend/.NET suites | Broad changes, uncertain impact; required for stable releases |
+| `build` | Runtime compiler/analyzers; Native AOT publication and package integrity remain mandatory in CI | Build/release scripts, packaging, SDK and native dependency changes |
+| `all` | All validation above, without test-suite dispatch | Broad changes, uncertain impact; required for stable releases |
 
 Use `all` by itself. Otherwise pass one category or a PowerShell array such as
 `-TestCategories frontend,server`. Frontend packaging always runs; its one fresh
@@ -51,7 +100,15 @@ JavaScript compiler API required by the current ESLint parser and OpenAPI
 generator; it is not the compiler used by `typecheck`. The ASP.NET Core 11
 generator uses OpenAPI.NET 3.x and explicitly keeps OpenAPI 3.1 output for the
 existing TypeScript contract. Native AOT publishing remains enabled for `mt`,
-`mthost` and `mtagenthost`; the migration does not opt into preview features.
+`mthost` and `mtagenthost`.
+
+Shared .NET builds enable .NET 11 Runtime Async (`runtime-async=on`), including
+Native AOT. The framework libraries already use this lowering; tlbx validates
+its own transport, cancellation and provider contracts with it as well.
+For controlled comparison builds, pass `-p:UseRuntimeAsync=false` and clean the
+comparison outputs first: changing only a feature property can reuse compiler
+outputs. This opt-in does not require preview language syntax or
+`EnablePreviewFeatures`. See [Runtime Async](https://learn.microsoft.com/en-us/dotnet/core/whats-new/dotnet-11/runtime#runtime-async).
 
 Native AOT on macOS Intel uses `-Wl,-no_fixup_chains`: the .NET 11 GSS native
 archive contains two-byte-aligned pointer relocations that Xcode's chained fixup
@@ -60,8 +117,8 @@ encoding rejects. This leaves AOT, signing, notarization and package checks enab
 Tests use xUnit v3 and Microsoft.Testing.Platform, selected in `global.json`.
 Automated behavioral tests cover protocols, settings, installation and updates.
 Keep UI presentation, layout, Files, Git, Boards and other product logic out of
-the automated suites. Typechecks, lint, package integrity and installer checks
-remain part of the build/release workflow. Removed tests remain in Git history.
+the automated suites. Typechecks, lint and package integrity remain automatic; installer behavioral
+checks are part of Tests (on demand). Removed tests remain in Git history.
 Use `dotnet test --project <path>`; targeted runs use `--filter-class` and
 `--report-trx`, rather than VSTest filters or loggers.
 
@@ -91,7 +148,7 @@ the matching frozen artifacts and index. macOS inner libraries are signed before
 freezing. Normal releases still compile the .NET NativeAOT executables and sign/
 notarize their macOS packages; those platform compiler/linker tools remain needed.
 Native compiler-identity probes and vcpkg binary caches are not release inputs.
-On native API/input changes, PR Linux compiles only the existing tiny `load.c` probe
+The on-demand native suite compiles the existing tiny `load.c` probe
 and checks the frozen library against every exact C API export in `ConnectNativeApi.cs`.
 It creates no peer/socket and does not rebuild any Connect dependency.
 For an explicit refresh on the RID's native toolchain host, after changing the recipe
@@ -191,9 +248,8 @@ Do not re-prepare a merged/closed PR or reuse a retired task branch name.
 
 Live milestones and the PR URL are flushed to stderr and appended to
 `.git/tlbx-release-progress.log`, independent of buffered build output. Dev and
-stable releases remain draft until shared frontend and supply-chain checks succeed
-(plus frontend/.NET release tests for stable; dev uses the required PR checks)
-and at least one complete platform archive with its matching SPDX SBOM
+stable releases remain draft until shared frontend lint/build and supply-chain
+checks succeed and at least one complete platform archive with its matching SPDX SBOM
 passes the publication gate. Each platform build may fail independently, including
 signing or Apple notarization, without blocking other complete packages. Every
 included package still passes signing, checksums and attestations before upload.
@@ -244,7 +300,7 @@ CodeQL `analyze` languages. PR checks run without path filters, so documentation
 and synchronization PRs cannot wait forever for an untriggered required job.
 The broad .NET server/host suite runs locally on demand via
 `./scripts/run-dotnet-test-suite.ps1 -Configuration Release -WarnAsError`; it is not
-a PR or release CI job. Focused platform checks, builds, audits and package integrity
+a PR or release CI job. Compilation, lint, audits and package integrity
 checks remain in CI.
 No mandatory second-person approval is configured. GitHub still enforces
 required checks, an up-to-date branch and resolved review conversations.

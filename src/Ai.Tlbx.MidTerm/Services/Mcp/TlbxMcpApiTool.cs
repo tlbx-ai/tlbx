@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
@@ -56,10 +57,14 @@ internal sealed class TlbxMcpApiTool : McpServerTool
         {
             var arguments = request.Params?.Arguments?.ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal)
                 ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            if (_operation.Name == "repos_list" && arguments.TryGetValue("details", out var detailValue)
+                && detailValue.ValueKind is not (JsonValueKind.True or JsonValueKind.False))
+                throw new McpApiArgumentException("details must be a boolean.");
             var self = context.Items[TlbxMcpEndpoints.SessionItem] as string;
             var invocation = _operation.Bind(arguments, self);
-            return await services.GetRequiredService<TlbxMcpApiInvoker>()
+            var result = await services.GetRequiredService<TlbxMcpApiInvoker>()
                 .InvokeAsync(context, invocation, cancellationToken).ConfigureAwait(false);
+            return result;
         }
         catch (McpApiArgumentException ex) { return McpApiResult.Error("TLBX_MCP_INVALID_ARGUMENT", ex.Message); }
         catch (BadHttpRequestException ex) { return McpApiResult.Error("TLBX_MCP_INVALID_ARGUMENT", ex.Message); }
@@ -85,9 +90,16 @@ internal sealed class McpApiOperation(string name, string method, string pattern
     internal JsonObject Forced { get; } = new();
     internal Action<McpApiBinding>? Transform { get; init; }
 
-    internal JsonObject BuildSchema()
+    private JsonObject? _schema;
+    private JsonObject? _bodyProperties;
+
+    // Operations are configured before publication; reuse their immutable metadata on every call.
+    internal JsonObject BuildSchema() => _schema ??= CreateSchema();
+
+    private JsonObject CreateSchema()
     {
         var schema = BodyType?.GetJsonSchemaAsNode() as JsonObject ?? new JsonObject();
+        _bodyProperties = schema["properties"]?.DeepClone() as JsonObject;
         schema["type"] = "object";
         schema["additionalProperties"] = false;
         var properties = schema["properties"] as JsonObject ?? new JsonObject();
@@ -105,7 +117,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
             properties["targetSessionId"] = new JsonObject
             {
                 ["type"] = "string", ["minLength"] = 1,
-                ["description"] = "Explicit target session. Omit to use verified self where this operation requires a session. An unbound operator must specify a target."
+                ["description"] = "Target session; defaults to verified self. Operators must specify it."
             };
         foreach (var (route, argument) in Routes)
         {
@@ -122,9 +134,16 @@ internal sealed class McpApiOperation(string name, string method, string pattern
             properties["machineId"] = new JsonObject { ["type"] = "string", ["minLength"] = 1,
                 ["description"] = "Optional registered Hub machine. Omit for this tlbx host." };
         foreach (var (key, value) in Defaults)
+        {
             if (properties[key] is JsonObject property) property["default"] = value?.DeepClone();
-        foreach (var (key, value) in Forced)
-            properties[key] = new JsonObject { ["const"] = value?.DeepClone(), ["description"] = "Fixed by this operation." };
+            RemoveRequired(required, key);
+        }
+        foreach (var (key, _) in Forced)
+        {
+            properties.Remove(key); // The operation supplies fixed values; agents never need to emit them.
+            RemoveRequired(required, key);
+        }
+        if (required.Count == 0) schema.Remove("required");
         return schema;
     }
 
@@ -133,11 +152,11 @@ internal sealed class McpApiOperation(string name, string method, string pattern
         var schema = BuildSchema();
         var properties = (JsonObject)schema["properties"]!;
         foreach (var argument in arguments.Keys)
-            if (!properties.ContainsKey(argument)) throw new McpApiArgumentException("Unknown argument: " + argument);
+            if (!properties.ContainsKey(argument) && !Forced.ContainsKey(argument)) throw new McpApiArgumentException("Unknown argument: " + argument);
         foreach (var (key, value) in Forced)
-            if (arguments.TryGetValue(key, out var supplied) && !JsonNode.DeepEquals(value, JsonNode.Parse(supplied.GetRawText())))
+            if (arguments.TryGetValue(key, out var supplied) && !JsonNode.DeepEquals(value, JsonNode.Parse(JsonMarshal.GetRawUtf8Value(supplied))))
                 throw new McpApiArgumentException(key + " is fixed by this operation.");
-        foreach (var key in (JsonArray)schema["required"]!)
+        foreach (var key in schema["required"] as JsonArray ?? [])
             if (key?.GetValue<string>() is { } required && !arguments.ContainsKey(required) && !Defaults.ContainsKey(required) && !Forced.ContainsKey(required))
                 throw new McpApiArgumentException("Required argument: " + required);
 
@@ -146,10 +165,10 @@ internal sealed class McpApiOperation(string name, string method, string pattern
         var body = new JsonObject();
         if (BodyType is not null)
         {
-            var bodyProperties = (BodyType.GetJsonSchemaAsNode() as JsonObject)?["properties"] as JsonObject;
+            var bodyProperties = _bodyProperties;
             foreach (var (key, value) in arguments)
                 if (bodyProperties?.ContainsKey(key) == true && key != SessionBody)
-                    body[key] = JsonNode.Parse(value.GetRawText());
+                    body[key] = JsonNode.Parse(JsonMarshal.GetRawUtf8Value(value));
             foreach (var (key, value) in Defaults)
                 if (!body.ContainsKey(key)) body[key] = value?.DeepClone();
             foreach (var (key, value) in Forced) body[key] = value?.DeepClone();
@@ -250,17 +269,18 @@ internal sealed class TlbxMcpApiInvoker(IEnumerable<EndpointDataSource> sources)
             if (!header.Key.Equals("Content-Length", StringComparison.OrdinalIgnoreCase)
                 && !header.Key.Equals("Content-Type", StringComparison.OrdinalIgnoreCase))
                 context.Request.Headers[header.Key] = header.Value;
-        await using var input = new MemoryStream(invocation.Body is null ? [] : Encoding.UTF8.GetBytes(invocation.Body));
+        await using var input = new StringStream(invocation.Body ?? string.Empty, Encoding.UTF8);
         context.Request.Body = input;
-        context.Request.ContentLength = input.Length;
+        var inputLength = invocation.Body is null ? 0 : Encoding.UTF8.GetByteCount(invocation.Body);
+        context.Request.ContentLength = inputLength;
         if (invocation.Body is not null) context.Request.ContentType = "application/json; charset=utf-8";
-        context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetection(input.Length != 0));
+        context.Features.Set<IHttpRequestBodyDetectionFeature>(new BodyDetection(inputLength != 0));
         context.SetEndpoint(endpoint);
         await using var output = new MemoryStream();
         context.Response.Body = output;
         await endpoint.RequestDelegate(context).ConfigureAwait(false);
         await context.Response.CompleteAsync().ConfigureAwait(false);
-        var bytes = output.ToArray();
+        var bytes = output.GetBuffer().AsSpan(0, checked((int)output.Length));
         JsonNode? data;
         if (context.Response.ContentType?.Contains("json", StringComparison.OrdinalIgnoreCase) == true && bytes.Length != 0)
             data = JsonNode.Parse(bytes);

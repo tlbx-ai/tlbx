@@ -843,25 +843,8 @@ export function withInlineAppServerControlStatus(
   entries: AppServerControlHistoryEntry[],
   streamConnected: boolean,
 ): AppServerControlHistoryEntry[] {
-  const hasConversation = entries.some((entry) =>
-    ['user', 'assistant', 'tool', 'request', 'plan', 'diff'].includes(entry.kind),
-  );
-  const statusBody =
-    snapshot.session.lastError?.trim() ||
-    snapshot.session.reason?.trim() ||
-    (streamConnected
-      ? appServerControlText(
-          'appServerControl.status.connectedWaiting',
-          'AppServerControl is connected to tlbx and waiting for history content.',
-        )
-      : appServerControlText(
-          'appServerControl.status.reconnecting',
-          'AppServerControl is reconnecting to tlbx.',
-        ));
-
-  if ((!statusBody || hasConversation) && !snapshot.session.lastError) {
-    return entries;
-  }
+  const statusBody = snapshot.session.lastError?.trim();
+  if (!statusBody) return entries;
 
   return [
     {
@@ -1249,6 +1232,8 @@ export function withActivationIssueNotice(
 export function buildActivationHistoryEntries(
   state: SessionAppServerControlViewState,
 ): AppServerControlHistoryEntry[] {
+  // Boot diagnostics are not conversation content. Failures still explain recovery.
+  if (state.activationState !== 'failed' && !state.activationIssue) return [];
   if (state.activationTrace.length === 0) {
     return [
       {

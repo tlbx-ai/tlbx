@@ -21,7 +21,7 @@ function Resolve-ReleaseTestClusters {
 
 function Show-ReleaseTestPlan {
     param([string[]]$Categories, [string]$BaseVersion)
-    Write-Host "Release test categories: $($Categories -join ', ')" -ForegroundColor Cyan
+    Write-Host "Release validation categories (test suites are on demand): $($Categories -join ', ')" -ForegroundColor Cyan
     Write-Host 'Frontend packaging and hosted package integrity checks remain mandatory.'
     if ($BaseVersion) {
         $base = "refs/tags/v$BaseVersion"
@@ -67,4 +67,9 @@ function Assert-ReleaseRuntimeSelection {
     if ($changed.Count -gt 0) {
         throw "Host runtime inputs changed since ${tag}; choose -mthostUpdate yes so installed hosts receive them:`n$($changed -join "`n")"
     }
+}
+
+function Show-OnDemandTestReminder {
+    Write-Warning 'Before a major or main release, remind Johannes to run Tests (on demand) for the exact candidate ref and review its result. Tests are not started automatically.'
+    Write-Host 'gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f suite=all'
 }

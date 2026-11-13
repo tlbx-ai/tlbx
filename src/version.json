@@ -1,6 +1,7 @@
 {
-  "web": "11.0.0",
-  "pty": "10.26.51",
+  "web": "11.1.6",
+  "pty": "11.1.0",
   "protocol": 1,
-  "minCompatiblePty": "10.26.51-dev"
+  "minCompatiblePty": "11.1.0-dev",
+  "webOnly": true
 }

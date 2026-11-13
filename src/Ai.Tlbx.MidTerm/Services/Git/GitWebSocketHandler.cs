@@ -1,5 +1,4 @@
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
 using Ai.Tlbx.MidTerm.Common.Logging;
 using Ai.Tlbx.MidTerm.Models.Git;
@@ -113,7 +112,7 @@ public sealed class GitWebSocketHandler
         try
         {
             var buffer = new byte[4096];
-            var messageBuffer = new List<byte>();
+            using var messageBuffer = new MemoryStream();
 
             while (ws.State == WebSocketState.Open && !shutdownToken.IsCancellationRequested)
             {
@@ -127,14 +126,13 @@ public sealed class GitWebSocketHandler
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
-                        messageBuffer.AddRange(buffer.AsSpan(0, result.Count).ToArray());
+                        messageBuffer.Write(buffer.AsSpan(0, result.Count));
 
                         if (result.EndOfMessage)
                         {
-                            var json = Encoding.UTF8.GetString(messageBuffer.ToArray());
-                            messageBuffer.Clear();
-
+                            var json = messageBuffer.GetBuffer().AsMemory(0, checked((int)messageBuffer.Length));
                             await HandleClientMessageAsync(json, subscribedSessions, SendMessageAsync);
+                            messageBuffer.SetLength(0);
                         }
                     }
                 }
@@ -185,7 +183,7 @@ public sealed class GitWebSocketHandler
     }
 
     private async Task HandleClientMessageAsync(
-        string json,
+        ReadOnlyMemory<byte> json,
         HashSet<string> subscribedSessions,
         Func<GitWsMessage, Task> sendMessage)
     {

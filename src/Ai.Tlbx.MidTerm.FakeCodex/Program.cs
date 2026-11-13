@@ -504,6 +504,35 @@ while (await Console.In.ReadLineAsync().ConfigureAwait(false) is { } rawLine)
 
                     continue;
                 }
+                case "mcpServerStatus/list":
+                    RecordMethod(launchCapture, method);
+                    await WriteJsonAsync(new { id = root.GetProperty("id").ToString(), result = new { data = Array.Empty<object>() } }).ConfigureAwait(false);
+                    continue;
+                case "mcpServer/tool/call":
+                    // Explicit protocol-fixture identity only. This is not an MCP
+                    // authorization test and never reads production credentials.
+                    RecordMethod(launchCapture, method);
+                    var fixtureSessionFile = Environment.GetEnvironmentVariable("MIDTERM_FAKE_CODEX_SESSION_FILE");
+                    var fixtureSession = fixtureSessionFile is not null && File.Exists(fixtureSessionFile)
+                        ? JsonSerializer.Deserialize<string[]>(File.ReadAllText(fixtureSessionFile))?.FirstOrDefault()
+                        : null;
+                    await WriteJsonAsync(new { id = root.GetProperty("id").ToString(), result = new { isError = fixtureSession is null, structuredContent = new { sessionId = fixtureSession } } }).ConfigureAwait(false);
+                    continue;
+                case "turn/steer":
+                    RecordMethod(launchCapture, method);
+                    if (!string.Equals(GetString(root, "params", "expectedTurnId"), turnId, StringComparison.Ordinal) ||
+                        !string.Equals(GetString(root, "params", "threadId"), threadId, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException("Steering targeted a different fake thread or turn.");
+                    }
+                    PersistLaunchCapture(capturePath, launchCapture);
+                    await WriteJsonAsync(new
+                    {
+                        jsonrpc = "2.0",
+                        id = root.GetProperty("id").ToString(),
+                        result = new { turnId }
+                    }).ConfigureAwait(false);
+                    continue;
                 case "turn/interrupt":
                     await WriteJsonAsync(new
                     {

@@ -166,6 +166,12 @@ try {
     try {
         & "$fixture/scripts/run-release-tests.ps1" -TestCategories build
         Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'run-runtime-build-verification*' }).Count -eq 1) 'Build cluster duplicated or omitted .NET runtime build coverage.'
+        Copy-Item "$PSScriptRoot/run-release-checks.ps1" "$fixture/scripts/"
+        $global:TlbxBuildTestCalls.Clear()
+        & "$fixture/scripts/run-release-checks.ps1" -TestCategories all -FrontendInstalled
+        Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -match 'npm run (verify|test)|dotnet test|run-dotnet-test-suite|test-release-|test-publish|run-aot-smoke|verify-installers' }).Count -eq 0) 'Automatic release validation dispatched a test suite.'
+        Assert-Check ($global:TlbxBuildTestCalls.Contains('npm run typecheck') -and $global:TlbxBuildTestCalls.Contains('npm run lint')) 'Release validation lost frontend compiler/lint checks.'
+        Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'run-runtime-build-verification*' }).Count -eq 1) 'Release validation lost or duplicated runtime compilation.'
     }
     finally { Remove-Item Function:\python,Function:\dotnet -ErrorAction SilentlyContinue }
     function global:npm { $global:LASTEXITCODE = 1 }

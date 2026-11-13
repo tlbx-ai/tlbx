@@ -25,24 +25,13 @@ public static class TmuxCommandParser
     /// <summary>
     /// Parse null-delimited bytes from the request body into argument strings.
     /// </summary>
-    public static List<string> ParseNullDelimitedArgs(byte[] body)
+    public static List<string> ParseNullDelimitedArgs(ReadOnlySpan<byte> body)
     {
-        var args = new List<string>();
-        var start = 0;
-        for (var i = 0; i < body.Length; i++)
+        List<string> args = [];
+        foreach (var range in body.Split((byte)0))
         {
-            if (body[i] == 0)
-            {
-                if (i > start)
-                {
-                    args.Add(System.Text.Encoding.UTF8.GetString(body, start, i - start));
-                }
-                start = i + 1;
-            }
-        }
-        if (start < body.Length)
-        {
-            args.Add(System.Text.Encoding.UTF8.GetString(body, start, body.Length - start));
+            var argument = body[range];
+            if (!argument.IsEmpty) args.Add(System.Text.Encoding.UTF8.GetString(argument));
         }
         return args;
     }

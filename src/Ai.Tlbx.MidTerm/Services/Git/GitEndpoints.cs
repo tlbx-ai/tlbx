@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Models.Git;
 using Ai.Tlbx.MidTerm.Settings;
 using Ai.Tlbx.MidTerm.Startup;
@@ -108,14 +109,17 @@ public static class GitEndpoints
             return Results.Json(debug, GitJsonContext.Default.GitDebugResponse);
         });
 
-        app.MapGet("/api/git/repos", async (string? sessionId, CancellationToken ct) =>
+        app.MapGet("/api/git/repos", async (string? sessionId, bool? details, CancellationToken ct) =>
         {
             if (string.IsNullOrEmpty(sessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
-            return ToResult(await gitMetadata.GetAsync(sessionId, ct));
+            var result = await gitMetadata.GetAsync(sessionId, ct);
+            return result.IsSuccess && details == false
+                ? Results.Json(SummarizeRepos(result.Repos), GitJsonContext.Default.JsonObject)
+                : ToResult(result);
         });
 
         app.MapPost("/api/git/repos", async (GitRepoBindRequest request, CancellationToken ct) =>
@@ -303,6 +307,27 @@ public static class GitEndpoints
             }).ConfigureAwait(false);
         });
     }
+
+    // Project before serializing: large untracked caches must never be materialized
+    // into a full JSON response only to be discarded by an agent-facing wrapper.
+    private static JsonObject SummarizeRepos(GitRepoBinding[] repos) => new()
+    {
+        ["repos"] = new JsonArray(repos.Select(repo => (JsonNode)new JsonObject
+        {
+            ["repoRoot"] = repo.RepoRoot, ["label"] = repo.Label, ["role"] = repo.Role,
+            ["source"] = repo.Source, ["isPrimary"] = repo.IsPrimary,
+            ["status"] = repo.Status is { } status ? new JsonObject
+            {
+                ["readState"] = status.ReadState, ["errorCode"] = status.ErrorCode, ["errorDetail"] = status.ErrorDetail,
+                ["readAt"] = status.ReadAt, ["branch"] = status.Branch, ["headHash"] = status.HeadHash,
+                ["indexVersion"] = status.IndexVersion, ["ahead"] = status.Ahead, ["behind"] = status.Behind,
+                ["stagedCount"] = status.Staged.Length, ["modifiedCount"] = status.Modified.Length,
+                ["untrackedCount"] = status.Untracked.Length, ["conflictedCount"] = status.Conflicted.Length,
+                ["recentCommitsCount"] = status.RecentCommits.Length, ["stashCount"] = status.StashCount,
+                ["totalAdditions"] = status.TotalAdditions, ["totalDeletions"] = status.TotalDeletions
+            } : null
+        }).ToArray())
+    };
 
     private static IResult ToResult(SessionGitMetadataResult result)
     {
