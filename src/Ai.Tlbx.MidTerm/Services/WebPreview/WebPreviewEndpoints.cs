@@ -183,7 +183,7 @@ public static partial class WebPreviewEndpoints
             {
                 try
                 {
-                    await browserCommandService.ExecuteCommandAsync(
+                    var result = await browserCommandService.ExecuteCommandAsync(
                         new BrowserCommandRequest
                         {
                             Command = "reload",
@@ -192,6 +192,8 @@ public static partial class WebPreviewEndpoints
                             PreviewName = request.PreviewName
                         },
                         cancellationToken);
+                    if (!result.Success)
+                        return Results.Text(result.Error ?? "Preview reload failed.", statusCode: StatusCodes.Status409Conflict);
                 }
                 catch (OperationCanceledException)
                 {

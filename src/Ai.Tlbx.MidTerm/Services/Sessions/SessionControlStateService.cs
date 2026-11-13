@@ -396,6 +396,41 @@ public sealed class SessionControlStateService
         }
     }
 
+    internal Dictionary<string, string> ReadPreviewStorage(string sessionId, string previewName, string storageKey)
+    {
+        lock (_lock)
+        {
+            return _previews.TryGetValue(sessionId, out var previews)
+                && previews.TryGetValue(previewName, out var preview)
+                && preview.Storage.TryGetValue(storageKey, out var values)
+                ? new Dictionary<string, string>(values, StringComparer.Ordinal)
+                : new Dictionary<string, string>(StringComparer.Ordinal);
+        }
+    }
+
+    internal bool WritePreviewStorage(string sessionId, string previewName,
+        IReadOnlyDictionary<string, Dictionary<string, string>> updates)
+    {
+        lock (_lock)
+        {
+            // Storage writes never recreate a closed preview or removed session.
+            if (!_previews.TryGetValue(sessionId, out var previews) || !previews.TryGetValue(previewName, out var previous)) return false;
+            var storage = new Dictionary<string, Dictionary<string, string>>(previous.Storage, StringComparer.Ordinal);
+            foreach (var (key, values) in updates)
+            {
+                if (values.Count == 0) storage.Remove(key);
+                else storage[key] = values;
+            }
+            if (storage.Count > 16) return false;
+            previews[previewName] = previous with { Storage = storage };
+            var total = _previews.Values.SelectMany(p => p.Values).SelectMany(p => p.Storage.Values)
+                .Sum(values => values.Sum(kv => 2L * (kv.Key.Length + kv.Value.Length) + 32));
+            if (total <= 4 * 1024 * 1024 && PersistLocked()) return true;
+            previews[previewName] = previous;
+            return false;
+        }
+    }
+
     public void RemovePreview(string sessionId, string previewName)
     {
         lock (_lock)
@@ -504,7 +539,10 @@ public sealed class SessionControlStateService
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && kvp.Value is not null)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value
                         .Where(preview => !string.IsNullOrWhiteSpace(preview.Key) && preview.Value is not null)
-                        .ToDictionary(preview => preview.Key, preview => preview.Value, StringComparer.Ordinal), StringComparer.Ordinal);
+                        .ToDictionary(preview => preview.Key, preview => preview.Value with
+                        {
+                            Storage = preview.Value.Storage ?? new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal)
+                        }, StringComparer.Ordinal), StringComparer.Ordinal);
             }
             catch (Exception ex)
             {
@@ -522,7 +560,7 @@ public sealed class SessionControlStateService
         }
     }
 
-    private void PersistLocked()
+    private bool PersistLocked()
     {
         try
         {
@@ -575,10 +613,12 @@ public sealed class SessionControlStateService
             {
                 if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
             }
+            return true;
         }
         catch (Exception ex)
         {
             Log.Warn(() => $"Failed to save session control state: {ex.Message}");
+            return false;
         }
     }
 }
