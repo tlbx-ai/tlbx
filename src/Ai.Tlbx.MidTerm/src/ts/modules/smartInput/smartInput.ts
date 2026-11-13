@@ -1425,11 +1425,27 @@ function ensureFooterResizeObserver(): void {
   footerResizeObserver.observe(footerDock);
 }
 
+function syncComposerActionPlacement(appServerControlActive: boolean): void {
+  // Keep resize beside the other ACP actions, outside the editable/scrollable text.
+  const row = activeTextarea?.closest('.smart-input-row');
+  const shell = activeTextarea?.parentElement;
+  if (row && shell && composerExpandBtn && toolsToggleBtn && inlineToolHost && toolsPanel) {
+    if (appServerControlActive && composerExpandBtn.parentElement !== row) {
+      row.insertBefore(toolsToggleBtn, inlineToolHost);
+      row.insertBefore(composerExpandBtn, inlineToolHost);
+    } else if (!appServerControlActive && composerExpandBtn.parentElement !== shell) {
+      shell.appendChild(composerExpandBtn);
+      row.insertBefore(toolsToggleBtn, toolsPanel);
+    }
+  }
+}
+
 function applyFooterPresentation(layoutState: AdaptiveFooterLayoutState): void {
   if (!footerDock) {
     return;
   }
   footerDock.dataset.surface = layoutState.appServerControlActive ? 'appServerControl' : 'terminal';
+  syncComposerActionPlacement(layoutState.appServerControlActive);
   footerDock.dataset.device = layoutState.isMobile ? 'mobile' : 'desktop';
   footerDock.dataset.material = layoutState.glassEnabled ? 'glass' : 'solid';
   footerDock.dataset.inputMode = layoutState.inputMode ?? 'keyboard';

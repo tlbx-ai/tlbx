@@ -26,7 +26,7 @@ public sealed class ConfigCommands
         ["renumber-windows"] = "off",
         ["set-clipboard"] = "external",
         ["focus-events"] = "on",
-        ["allow-passthrough"] = "on",
+        ["allow-passthrough"] = "all",
     }.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>

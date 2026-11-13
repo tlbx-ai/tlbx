@@ -37,6 +37,7 @@ export interface SessionAppServerControlViewState {
   historyLastScrollMetrics: HistoryScrollMetrics | null;
   historyLastUserScrollIntentAt: number;
   historyLastUserScrollDirection: -1 | 0 | 1;
+  historyPendingWheelDeltaPx: number;
   historyLastVoidSyncScrollTop: number | null;
   historyWindowRevision: string | null;
   historyWindowViewportWidth: number | null;
