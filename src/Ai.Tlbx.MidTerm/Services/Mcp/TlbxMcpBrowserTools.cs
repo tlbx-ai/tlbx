@@ -240,7 +240,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                     "browser_dock" => ui.RequestDockAsync(target, preview, ct),
                     _ => ui.RequestViewportAsync(target, preview, Integer(args, "width", 0), Integer(args, "height", 0), ct)
                 }, ct).ConfigureAwait(false);
-                return result.Success ? Success(target, preview) : Error("TLBX_MCP_BROWSER_UI_FAILED", result.Error ?? "Browser UI did not acknowledge the operation.");
+                return result.Success ? Success(target, preview, result.Viewport) : Error("TLBX_MCP_BROWSER_UI_FAILED", result.Error ?? "Browser UI did not acknowledge the operation.");
             case "browser_mobile":
                 return ui.RequestMobileDevice(target, preview, OptionalString(args, "action") ?? "status", OptionalString(args, "profile") ?? "pixel-8", out var mobileError)
                     ? Reply(new JsonObject { ["accepted"] = true, ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview) })
@@ -576,8 +576,13 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         response.IsError = !result.Success;
         return response;
     }
-    private static CallToolResult Success(string target, string? preview) => Reply(new JsonObject { ["success"] = true,
-        ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview) });
+    private static CallToolResult Success(string target, string? preview, BrowserViewportMetrics? viewport = null)
+    {
+        var data = new JsonObject { ["success"] = true, ["sessionId"] = target,
+            ["previewName"] = WebPreviewService.NormalizePreviewName(preview) };
+        if (viewport is not null) data["viewport"] = JsonSerializer.SerializeToNode(viewport, AppJsonContext.Default.BrowserViewportMetrics);
+        return Reply(data);
+    }
     private static CallToolResult Reply<T>(T value, JsonTypeInfo<T> typeInfo) => Reply(JsonSerializer.SerializeToElement(value, typeInfo));
     private static CallToolResult Reply(JsonObject value) => Reply(JsonSerializer.SerializeToElement(value, McpJsonContext.Default.JsonObject));
     private static CallToolResult Reply(JsonElement value) => new() { StructuredContent = value, Content = [new TextContentBlock { Text = value.GetRawText() }] };

@@ -42,6 +42,7 @@ import {
   setDetachedPreviewViewport,
 } from '../web/webDetach';
 import { setViewportSize, openWebPreviewDock } from '../web/webDock';
+import { readPreviewViewportMetrics, type PreviewViewportMetrics } from '../web/webViewport';
 import { getWebPreviewTarget } from '../web/webApi';
 import {
   getSessionPreview,
@@ -810,7 +811,9 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
   }
 
   try {
-    let result: { success: boolean; error?: string } = { success: true };
+    let result: { success: boolean; error?: string; viewport?: PreviewViewportMetrics } = {
+      success: true,
+    };
     switch (msg.command) {
       case 'detach':
         result = await handleDetachBrowserUiCommand(msg);
@@ -853,7 +856,7 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         log.warn(() => result.error ?? 'Unknown browser-ui command');
     }
 
-    await reportBrowserUiCommandResult(msg, result.success, result.error);
+    await reportBrowserUiCommandResult(msg, result.success, result.error, result.viewport);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.warn(() => `Browser UI command failed: ${message}`);
@@ -865,6 +868,7 @@ async function reportBrowserUiCommandResult(
   msg: BrowserUiMessage,
   success: boolean,
   error?: string,
+  viewport?: PreviewViewportMetrics,
 ): Promise<void> {
   if (!msg.requestId) {
     return;
@@ -873,7 +877,13 @@ async function reportBrowserUiCommandResult(
   const response = await fetch('/api/browser/ui-result', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ requestId: msg.requestId, command: msg.command, success, error }),
+    body: JSON.stringify({
+      requestId: msg.requestId,
+      command: msg.command,
+      success,
+      error,
+      viewport,
+    }),
   });
   if (!response.ok) {
     log.warn(() => `Browser UI result delivery failed: HTTP ${response.status}`);
@@ -943,6 +953,7 @@ function handleDockBrowserUiCommand(msg: BrowserUiMessage): { success: boolean; 
 function handleViewportBrowserUiCommand(msg: BrowserUiMessage): {
   success: boolean;
   error?: string;
+  viewport?: PreviewViewportMetrics;
 } {
   const target = resolveBrowserUiTarget(msg, false);
   if (!target) {
@@ -956,9 +967,11 @@ function handleViewportBrowserUiCommand(msg: BrowserUiMessage): {
     return { success: true };
   }
 
-  return setViewportSize(width, height, target)
-    ? { success: true }
-    : { success: false, error: 'The requested preview frame is not attached.' };
+  if (!setViewportSize(width, height, target)) {
+    return { success: false, error: 'The requested preview frame is not attached.' };
+  }
+  const viewport = readPreviewViewportMetrics(target.sessionId, target.previewName);
+  return viewport ? { success: true, viewport } : { success: true };
 }
 
 function applyDetachedPreviewViewport(

@@ -238,7 +238,7 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
                         }
                         var blocks = verbose || result.StructuredContent is null ? result.Content
                             : result.Content.Where(block => block is not TextContentBlock text
-                                || text.Text != result.StructuredContent.Value.GetRawText()).ToList();
+                                || !DuplicatesStructuredText(text, result.StructuredContent.Value)).ToList();
                         evidence.Add((JsonNode)new JsonObject
                         {
                             ["tool"] = step.Tool.Name, ["isError"] = result.IsError == true,
@@ -281,4 +281,16 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
         foreach (var block in contents) response.Content.Add(block);
         return response;
     }
+
+    private static bool DuplicatesStructuredText(TextContentBlock text, JsonElement structured)
+    {
+        if (text.Text == structured.GetRawText()) return true;
+        try
+        {
+            using var document = JsonDocument.Parse(text.Text);
+            return JsonElement.DeepEquals(document.RootElement, structured);
+        }
+        catch (JsonException) { return false; }
+    }
+
 }

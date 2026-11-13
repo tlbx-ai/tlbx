@@ -386,7 +386,9 @@ public sealed class TlbxMcpWorkflowProtocolTests
             values.Enqueue(value);
             if (Interlocked.Increment(ref active) == 2) bothStarted.TrySetResult();
             await bothStarted.Task.WaitAsync(TimeSpan.FromSeconds(5), ct);
-            return McpApiResult.Structured(new JsonObject { ["value"] = value });
+            var response = McpApiResult.Structured(new JsonObject { ["value"] = value });
+            response.Content[0] = new TextContentBlock { Text = "{ \"value\": " + JsonSerializer.Serialize(value) + " }" };
+            return response;
         }
         var result = await executor.ExecuteAsync(new CallToolRequestParams
         {

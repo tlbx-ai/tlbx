@@ -229,9 +229,18 @@ public sealed class BrowserUiBridge
         return true;
     }
 
+    private const string InvalidViewportDimensions = "Viewport width and height must both be positive, or both zero to reset.";
+    private static bool ValidViewportDimensions(int width, int height) =>
+        width == 0 && height == 0 || width > 0 && height > 0;
+
     public bool RequestViewport(string? sessionId, string? previewName, int width, int height, out string error)
     {
         error = "";
+        if (!ValidViewportDimensions(width, height))
+        {
+            error = InvalidViewportDimensions;
+            return false;
+        }
         if (!TryGetTargetListener(sessionId, previewName, out var target, out error))
         {
             return false;
@@ -303,8 +312,11 @@ public sealed class BrowserUiBridge
         string? previewName,
         int width,
         int height,
-        CancellationToken cancellationToken = default) =>
-        RequestUiCommandAsync(
+        CancellationToken cancellationToken = default)
+    {
+        if (!ValidViewportDimensions(width, height))
+            return Task.FromResult(new BrowserUiCommandResult { Command = "viewport", Error = InvalidViewportDimensions });
+        return RequestUiCommandAsync(
             "viewport",
             sessionId,
             previewName,
@@ -319,6 +331,7 @@ public sealed class BrowserUiBridge
                 }
             },
             cancellationToken);
+    }
 
     public Task<BrowserUiCommandResult> RequestOpenAsync(
         string? sessionId,
@@ -402,7 +415,7 @@ public sealed class BrowserUiBridge
             var result = await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
             if (!_previewOwnerService.IsCurrent(sessionId, previewName, target.BrowserId, generation))
                 return new BrowserUiCommandResult { Command = command, Error = "Preview ownership changed while the UI command was in flight. Inspect the current preview before retrying." };
-            return new BrowserUiCommandResult { RequestId = requestId, Command = command, Success = result.Success, Error = result.Error, OwnershipGeneration = generation };
+            return new BrowserUiCommandResult { RequestId = requestId, Command = command, Success = result.Success, Error = result.Error, Viewport = result.Viewport, OwnershipGeneration = generation };
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
