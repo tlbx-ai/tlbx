@@ -390,7 +390,7 @@ public sealed class TlbxMcpWorkflowProtocolTests
         }
         var result = await executor.ExecuteAsync(new CallToolRequestParams
         {
-            Name = "workflow_run", Arguments = input.ToDictionary(p => p.Key, p => JsonDocument.Parse(p.Value!.ToJsonString()).RootElement.Clone(), StringComparer.Ordinal)
+            Name = "workflow_run", Arguments = input.ToDictionary(p => p.Key, p => JsonElement.Parse(p.Value!.ToJsonString()), StringComparer.Ordinal)
         }, Invoke, (_, _, _, _, _) => throw new InvalidOperationException("No preview expected"), TestContext.Current.CancellationToken);
         Assert.NotEqual(true, result.IsError);
         var steps = result.StructuredContent!.Value.GetProperty("steps");
@@ -405,7 +405,7 @@ public sealed class TlbxMcpWorkflowProtocolTests
     {
         var tool = new Tool { Name = "noop", InputSchema = JsonSerializer.SerializeToElement(new JsonObject { ["type"] = "object" }, McpJsonContext.Default.JsonObject) };
         var executor = new TlbxMcpWorkflowExecutor([tool]);
-        var steps = JsonDocument.Parse("""[{"parallel":["noop","noop"]},"noop"]""").RootElement.Clone();
+        var steps = JsonElement.Parse("""[{"parallel":["noop","noop"]},"noop"]""");
         var calls = 0;
         async ValueTask<CallToolResult> Invoke(string name, IDictionary<string, JsonElement> args, CancellationToken ct)
         {

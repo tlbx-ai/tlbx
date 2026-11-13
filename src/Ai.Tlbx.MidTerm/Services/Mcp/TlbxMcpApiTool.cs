@@ -64,9 +64,6 @@ internal sealed class TlbxMcpApiTool : McpServerTool
             var invocation = _operation.Bind(arguments, self);
             var result = await services.GetRequiredService<TlbxMcpApiInvoker>()
                 .InvokeAsync(context, invocation, cancellationToken).ConfigureAwait(false);
-            if (_operation.Name == "repos_list" && result.IsError != true
-                && (!arguments.TryGetValue("details", out var details) || !details.GetBoolean()))
-                return McpApiResult.RepositorySummary(result);
             return result;
         }
         catch (McpApiArgumentException ex) { return McpApiResult.Error("TLBX_MCP_INVALID_ARGUMENT", ex.Message); }
@@ -146,6 +143,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
             properties.Remove(key); // The operation supplies fixed values; agents never need to emit them.
             RemoveRequired(required, key);
         }
+        if (required.Count == 0) schema.Remove("required");
         return schema;
     }
 
@@ -158,7 +156,7 @@ internal sealed class McpApiOperation(string name, string method, string pattern
         foreach (var (key, value) in Forced)
             if (arguments.TryGetValue(key, out var supplied) && !JsonNode.DeepEquals(value, JsonNode.Parse(JsonMarshal.GetRawUtf8Value(supplied))))
                 throw new McpApiArgumentException(key + " is fixed by this operation.");
-        foreach (var key in (JsonArray)schema["required"]!)
+        foreach (var key in schema["required"] as JsonArray ?? [])
             if (key?.GetValue<string>() is { } required && !arguments.ContainsKey(required) && !Defaults.ContainsKey(required) && !Forced.ContainsKey(required))
                 throw new McpApiArgumentException("Required argument: " + required);
 
@@ -305,24 +303,6 @@ internal sealed class TlbxMcpApiInvoker(IEnumerable<EndpointDataSource> sources)
 
 internal static class McpApiResult
 {
-    internal static CallToolResult RepositorySummary(CallToolResult result)
-    {
-        if (result.StructuredContent is not { } content) return result;
-        var root = JsonNode.Parse(JsonMarshal.GetRawUtf8Value(content))!.AsObject();
-        if (root["data"]?["repos"] is not JsonArray repos) return result;
-        foreach (var repo in repos.OfType<JsonObject>())
-        {
-            if (repo["status"] is not JsonObject status) continue;
-            foreach (var field in new[] { "staged", "modified", "untracked", "conflicted", "recentCommits" })
-            {
-                if (status[field] is not JsonArray entries) continue;
-                status[field + "Count"] = entries.Count;
-                status.Remove(field);
-            }
-        }
-        return Structured(root);
-    }
-
     internal static CallToolResult Structured(JsonObject value, bool error = false)
     {
         var data = JsonSerializer.SerializeToElement(value, McpJsonContext.Default.JsonObject);
