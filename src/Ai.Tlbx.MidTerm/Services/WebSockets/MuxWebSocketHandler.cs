@@ -488,7 +488,9 @@ public sealed class MuxWebSocketHandler
                     return new MuxClient.RecoveryResult(false, 0, 0, false);
                 }
 
-                if (RequiresScreenRedraw(sinceSequence, snapshot))
+                if (RequiresScreenRedraw(sinceSequence, snapshot)
+                    || (sinceSequence is null && maxBytes is > 0 && snapshot.SequenceStart > 0
+                        && !IsLikelyLineBasedShell(session)))
                 {
                     Log.Verbose(() => $"[MuxHandler] Refreshing truncated screen replay for {session.Id}");
                     var redrawRequested = false;
@@ -506,13 +508,15 @@ public sealed class MuxWebSocketHandler
                         Log.Warn(() => $"[MuxHandler] Screen redraw failed for {session.Id}: {ex.Message}");
                     }
 
-                    // A bounded initial replay must stay bounded. Its snapshot ends before
-                    // the resize pulse, so the entire repaint follows it through MuxClient's
-                    // ordered live-output lane, including split control strings and images.
-                    // A resize acknowledgement is not a render-completion acknowledgement:
-                    // recapturing a capped tail here could discard the start of that repaint.
-                    // Full Replay and failed redraws retain the complete-history fallback.
-                    if (maxBytes is not > 0 || !redrawRequested)
+                    var boundedRedrawReady = maxBytes is > 0 && redrawRequested
+                        && await HasCompleteRedrawAsync(session.Id, snapshot, reason, recoveryCt).ConfigureAwait(false);
+
+                    // Keep the pre-pulse snapshot so the complete repaint follows through
+                    // MuxClient's ordered live lane. Recapturing a capped tail could cut
+                    // the start of a large image or repaint. A resize acknowledgement alone
+                    // is insufficient: require a fresh complete synchronized full redraw.
+                    // Unsupported, slow or oversized repaints retain full-history recovery.
+                    if (!boundedRedrawReady)
                     {
                         var fullSnapshot = await _sessionManager.GetBufferAsync(
                             session.Id,
@@ -573,6 +577,33 @@ public sealed class MuxWebSocketHandler
                     resetTerminal);
             },
             ct);
+    }
+
+    private async Task<bool> HasCompleteRedrawAsync(
+        string sessionId,
+        TtyHostBufferSnapshot beforeRedraw,
+        TerminalReplayReason reason,
+        CancellationToken ct)
+    {
+        const int probeMaxBytes = 512 * 1024;
+        var afterSequence = beforeRedraw.SequenceStart + (ulong)beforeRedraw.Data.Length;
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            await Task.Delay(50, ct).ConfigureAwait(false);
+            var probe = await _sessionManager.GetBufferAsync(
+                sessionId, maxBytes: probeMaxBytes, reason: reason, ct: ct).ConfigureAwait(false);
+            if (probe is null || probe.SequenceStart > afterSequence)
+            {
+                return false;
+            }
+
+            if (TerminalRedrawDetector.ContainsCompleteRedraw(probe.Data, probe.SequenceStart, afterSequence))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static bool RequiresScreenRedraw(
