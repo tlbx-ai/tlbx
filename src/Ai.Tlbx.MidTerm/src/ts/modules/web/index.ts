@@ -7,7 +7,13 @@
 import { setWebClickHandler } from '../sessionTabs';
 import { forgetPreview, restoreSessionPreviews } from './webPreviewRecovery';
 import { createLogger } from '../logging';
-import { $activeSessionId, $webPreviewDetached, $webPreviewUrl, $sessionList } from '../../stores';
+import {
+  $activeSessionId,
+  $webPreviewDetached,
+  $webPreviewUrl,
+  $sessionList,
+  $stateWsConnected,
+} from '../../stores';
 import {
   toggleWebPreviewDock,
   closeWebPreviewDock,
@@ -69,6 +75,29 @@ export function initWebPreview(): void {
   setupWebPreviewDockResize();
 
   let knownSessionIds = new Set<string>();
+  const recoverPreviews = (id: string): void => {
+    void restoreSessionPreviews(id, async (saved) => {
+      const previews = await listWebPreviewSessions(id);
+      if (!previews || !$sessionList.get().some((s) => s.id === id)) return;
+      syncSessionPreviews(id, previews);
+      const preview = getSessionPreview(id, saved.previewName);
+      if (!preview?.active || preview.targetRevision !== saved.targetRevision) return;
+      setSessionNavigationUrl(id, saved.previewName, saved.url);
+      await syncBackgroundWebPreview(id, saved.previewName);
+    }).catch((error: unknown) => {
+      createLogger('web').warn(() => `Preview recovery failed: ${String(error)}`);
+    });
+  };
+  let hasConnected = false;
+  $stateWsConnected.subscribe((connected) => {
+    if (!connected) return;
+    // A compatible web restart can retain this shell and all session IDs.
+    // Refresh route keys and capabilities without waiting for a page reload.
+    if (hasConnected) {
+      for (const id of knownSessionIds) recoverPreviews(id);
+    }
+    hasConnected = true;
+  });
   $activeSessionId.subscribe(() => {
     void syncActiveWebPreview();
   });
@@ -85,17 +114,7 @@ export function initWebPreview(): void {
     }
     for (const id of ids) {
       if (!knownSessionIds.has(id)) {
-        void restoreSessionPreviews(id, async (saved) => {
-          const previews = await listWebPreviewSessions(id);
-          if (!previews || !$sessionList.get().some((s) => s.id === id)) return;
-          syncSessionPreviews(id, previews);
-          const preview = getSessionPreview(id, saved.previewName);
-          if (!preview?.active || preview.targetRevision !== saved.targetRevision) return;
-          setSessionNavigationUrl(id, saved.previewName, saved.url);
-          await syncBackgroundWebPreview(id, saved.previewName);
-        }).catch((error: unknown) => {
-          createLogger('web').warn(() => `Preview recovery failed: ${String(error)}`);
-        });
+        recoverPreviews(id);
       }
     }
     knownSessionIds = ids;
@@ -167,10 +186,6 @@ export async function syncBackgroundWebPreview(
   sessionId: string,
   previewName: string,
 ): Promise<void> {
-  if ($activeSessionId.get() === sessionId) {
-    return;
-  }
-
   const preview = getSessionPreview(sessionId, previewName);
   if (!preview?.url) {
     return;
