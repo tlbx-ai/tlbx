@@ -13,19 +13,41 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
     internal sealed record PreviewScope(string SessionId, string PreviewName);
     internal delegate Task<bool> PreviewRunner(string? target, string? name, string url,
         Func<PreviewScope, CancellationToken, Task<bool>> body, CancellationToken cancellationToken);
-    internal sealed record Step(Tool Tool, JsonObject Arguments);
+    internal sealed record Step(Tool Tool, JsonObject Arguments, int Group = 0, string? Select = null);
 
     internal IReadOnlyList<Step> Prepare(JsonObject arguments)
     {
-        if (arguments.Any(p => p.Key is not ("steps" or "targetSessionId" or "previewName" or "previewUrl" or "timeout")))
+        if (arguments.Any(p => p.Key is not ("steps" or "targetSessionId" or "previewName" or "previewUrl" or "timeout" or "verbose")))
             throw new ArgumentException("Unknown workflow argument.");
         if (arguments["steps"] is not JsonArray steps || steps.Count is < 1 or > 64)
             throw new ArgumentException("steps must contain 1-64 named tool calls.");
         List<Step> prepared = [with(capacity: steps.Count)];
+        var group = 0;
         foreach (var node in steps)
         {
-            if (node is not JsonObject step || step.Any(p => p.Key is not ("tool" or "arguments")))
-                throw new ArgumentException("Each step requires tool and optional arguments.");
+            var groupStart = prepared.Count;
+            var parallel = node is JsonObject obj ? obj["parallel"] as JsonArray : null;
+            if (parallel is not null && (((JsonObject)node!).Count != 1 || parallel.Count is < 1 or > 8))
+                throw new ArgumentException("A parallel group contains 1-8 independent calls and no other fields.");
+            foreach (var call in parallel ?? new JsonArray(node?.DeepClone()))
+                Add(call, groupStart, group);
+            group++;
+        }
+        return prepared;
+
+        void Add(JsonNode? node, int referenceLimit, int group)
+        {
+            JsonObject step;
+            if (node is JsonValue text && text.TryGetValue<string>(out var toolName))
+                step = new JsonObject { ["tool"] = toolName };
+            else if (node is JsonArray tuple && tuple.Count is 1 or 2 && tuple[0] is JsonValue nameValue
+                && nameValue.TryGetValue<string>(out var tupleName))
+                step = new JsonObject { ["tool"] = tupleName, ["arguments"] = tuple.Count == 2 ? tuple[1]?.DeepClone() : null };
+            else if (node is JsonObject named) step = named;
+            else throw new ArgumentException("A call is a tool name, [tool, arguments], or {tool, arguments?, select?}.");
+            if (step.Any(p => p.Key is not ("tool" or "arguments" or "select")))
+                throw new ArgumentException("Unknown step field.");
+            if (prepared.Count >= 64) throw new ArgumentException("A workflow contains at most 64 calls, including parallel groups.");
             var name = step["tool"]?.GetValue<string>() ?? "";
             if (name is "workflow_run" or "browser_with_preview" or "browser_scope_open" or "browser_scope_close" || !_tools.TryGetValue(name, out var tool))
                 throw new ArgumentException("Unknown or recursive workflow tool: " + name);
@@ -49,11 +71,13 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
                 }
                 values[field] = scope.DeepClone();
             }
-            ValidateReferences(values, prepared.Count);
-            ValidateShape(values, schema, prepared.Count);
-            prepared.Add(new Step(tool, values));
+            var select = step["select"]?.GetValue<string>();
+            if (select is { Length: > 0 } && !select.StartsWith('/', StringComparison.Ordinal))
+                throw new ArgumentException("select must be a JSON Pointer.");
+            ValidateReferences(values, referenceLimit);
+            ValidateShape(values, schema, referenceLimit);
+            prepared.Add(new Step(tool, values, group, select));
         }
-        return prepared;
     }
 
     private static void ValidateReferences(JsonNode? node, int stepIndex)
@@ -141,6 +165,19 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
     }
 
 
+    private static JsonNode? Select(JsonNode? value, string pointer)
+    {
+        foreach (var segment in pointer.Split('/').Skip(1))
+        {
+            var key = segment.Replace("~1", "/", StringComparison.Ordinal).Replace("~0", "~", StringComparison.Ordinal);
+            if (value is JsonObject obj && obj.TryGetPropertyValue(key, out var property)) value = property;
+            else if (value is JsonArray array && int.TryParse(key, NumberStyles.None, CultureInfo.InvariantCulture, out var index)
+                && index >= 0 && index < array.Count) value = array[index];
+            else throw new ArgumentException("Result select pointer could not be resolved: " + pointer);
+        }
+        return value?.DeepClone();
+    }
+
     internal async ValueTask<CallToolResult> ExecuteAsync(CallToolRequestParams parameters,
         Func<string, IDictionary<string, JsonElement>, CancellationToken, ValueTask<CallToolResult>> invoke,
         PreviewRunner withPreview, CancellationToken cancellationToken)
@@ -159,26 +196,59 @@ internal sealed class TlbxMcpWorkflowExecutor(IEnumerable<Tool> tools)
             if (seconds is < 1 or > 600) throw new ArgumentException("Workflow timeout must be 1-600 seconds.");
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             timeout.CancelAfter(TimeSpan.FromSeconds(seconds));
+            var verbose = arguments["verbose"]?.GetValue<bool>() ?? false;
             async Task<bool> Run(CancellationToken ct)
             {
-                foreach (var step in prepared)
+                foreach (var group in prepared.GroupBy(step => step.Group))
                 {
                     ct.ThrowIfCancellationRequested();
-                    var resolved = Resolve(step.Arguments, completed)!.AsObject();
-                    ValidateShape(resolved, step.Tool.InputSchema, 0);
-                    var serialized = JsonSerializer.SerializeToElement(resolved, McpJsonContext.Default.JsonObject);
-                    using var properties = serialized.EnumerateObject();
-                    var values = properties.ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal);
-                    var result = await invoke(step.Tool.Name, values, ct).ConfigureAwait(false);
-                    completed.Add(result);
-                    evidence.Add((JsonNode)new JsonObject
+                    // Resolve every argument before starting any sibling. References may only
+                    // address earlier groups, never racing siblings in this parallel group.
+                    var calls = group.Select(step =>
                     {
-                        ["tool"] = step.Tool.Name, ["isError"] = result.IsError == true,
-                        ["structuredContent"] = result.StructuredContent is { } data ? JsonNode.Parse(JsonMarshal.GetRawUtf8Value(data)) : null,
-                        ["contentStart"] = contents.Count + 1, ["contentCount"] = result.Content.Count
-                    });
-                    contents.AddRange(result.Content);
-                    if (result.IsError == true) { failure = "A step failed. Completed steps were not rolled back."; break; }
+                        var resolved = Resolve(step.Arguments, completed)!.AsObject();
+                        ValidateShape(resolved, step.Tool.InputSchema, 0);
+                        var json = JsonSerializer.SerializeToElement(resolved, McpJsonContext.Default.JsonObject);
+                        using var properties = json.EnumerateObject();
+                        var values = properties.ToDictionary(p => p.Name, p => p.Value, StringComparer.Ordinal);
+                        return (Step: step, Values: values);
+                    }).ToArray();
+                    async Task<CallToolResult> Invoke(Step step, IDictionary<string, JsonElement> values)
+                    {
+                        try { return await invoke(step.Tool.Name, values, ct).ConfigureAwait(false); }
+                        catch (Exception ex)
+                        {
+                            // A lost response is an unknown outcome, not proof that a mutation failed.
+                            return McpApiResult.Error("TLBX_MCP_STEP_OUTCOME_UNKNOWN", ex.Message + " Inspect the outcome before retrying.");
+                        }
+                    }
+                    // All dispatched siblings are observed, even if one fails. No automatic retry,
+                    // rollback or early return that could hide an in-flight mutation's outcome.
+                    var results = await Task.WhenAll(calls.Select(call => Invoke(call.Step, call.Values))).ConfigureAwait(false);
+                    for (var i = 0; i < calls.Length; i++)
+                    {
+                        var step = calls[i].Step;
+                        var result = results[i];
+                        completed.Add(result);
+                        var data = result.StructuredContent is { } structured ? JsonNode.Parse(JsonMarshal.GetRawUtf8Value(structured)) : null;
+                        if (result.IsError != true && step.Select is not null)
+                        {
+                            try { data = Select(data, step.Select); }
+                            catch (ArgumentException ex) { failure ??= ex.Message + " The call already completed; do not replay it."; }
+                        }
+                        var blocks = verbose || result.StructuredContent is null ? result.Content
+                            : result.Content.Where(block => block is not TextContentBlock text
+                                || text.Text != result.StructuredContent.Value.GetRawText()).ToList();
+                        evidence.Add((JsonNode)new JsonObject
+                        {
+                            ["tool"] = step.Tool.Name, ["isError"] = result.IsError == true,
+                            ["structuredContent"] = data,
+                            ["contentStart"] = contents.Count + 1, ["contentCount"] = blocks.Count
+                        });
+                        contents.AddRange(blocks);
+                        if (result.IsError == true) failure ??= "A step failed. Dispatched siblings were observed; completed calls were not rolled back.";
+                    }
+                    if (failure is not null) break;
                 }
                 return true;
             }

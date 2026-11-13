@@ -330,6 +330,9 @@ public static class Program
         env["TMUX"] = tmuxPath;
         env["TMUX_PANE"] = string.Create(CultureInfo.InvariantCulture, $"%{config.PaneIndex ?? 0}");
         env["MT_PORT"] = config.MtPort.Value.ToString(CultureInfo.InvariantCulture);
+        // Avoid dual-stack localhost delays: Codex allows only one second for its tmux probe.
+        // Carry the endpoint per terminal so parallel tlbx instances cannot redirect this host.
+        env["MIDTERM_TMUX_ENDPOINT"] = string.Create(CultureInfo.InvariantCulture, $"https://127.0.0.1:{config.MtPort.Value}/api/tmux");
         env["MT_TOKEN"] = config.MtToken;
         env["MT_SESSION_ID"] = config.SessionId;
         env["MT_PREVIEW_NAME"] = "default";
@@ -1554,6 +1557,7 @@ internal sealed class TerminalSession : IDisposable
     private readonly object _metadataLock = new();
     private readonly SemaphoreSlim _ptyWriteLock = new(1, 1);
     private readonly KittyGraphicsCapabilityResponder _kittyGraphicsResponder = new();
+    private readonly TmuxPassthroughDecoder _tmuxPassthrough = new();
     private readonly TerminalColorQueryGuard _terminalColorQueryGuard = new();
     private readonly TaskCompletionSource<TerminalInputReadiness> _inputReady = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TerminalInputReadinessDetector _inputReadinessDetector;
@@ -1677,7 +1681,8 @@ internal sealed class TerminalSession : IDisposable
                 }
 
                 var ptyOutputReadAtMs = Environment.TickCount64;
-                var data = buffer.AsMemory(0, bytesRead);
+                var data = _tmuxPassthrough.Decode(buffer.AsMemory(0, bytesRead));
+                if (data.IsEmpty) continue;
                 Log.Verbose(() => string.Create(CultureInfo.InvariantCulture, $"[PTY-READ] {bytesRead} bytes"));
                 _terminalColorQueryGuard.ObservePtyOutput(data.Span);
                 var kittyResponses = _kittyGraphicsResponder.Consume(data.Span);
