@@ -45,7 +45,8 @@ public static class Program
                 request.Headers.Add("Cookie", $"mm-session={token}");
             }
 
-            var pane = Environment.GetEnvironmentVariable("TMUX_PANE");
+            var pane = Environment.GetEnvironmentVariable("MT_TMUX_PANE")
+                ?? Environment.GetEnvironmentVariable("TMUX_PANE");
             if (!string.IsNullOrWhiteSpace(pane))
             {
                 request.Headers.Add("X-Tmux-Pane", pane);

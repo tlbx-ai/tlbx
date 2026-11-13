@@ -53,6 +53,23 @@ public sealed class ShellConfigurationsTests
         Assert.DoesNotContain(TerminalEnvironmentOverrides.OverrideKeysEnvironmentVariable, env.Keys, StringComparer.Ordinal);
     }
 
+    [Fact]
+    public void GetEnvironmentVariables_AdvertisesNativeKittyGraphicsWithoutInheritedTmuxIdentity()
+    {
+        using var tmux = new EnvironmentVariableScope("TMUX", "/tmp/parent-tmux,123,0");
+        using var pane = new EnvironmentVariableScope("TMUX_PANE", "%42");
+        using var kitty = new EnvironmentVariableScope("KITTY_WINDOW_ID", "parent-window");
+
+        var env = new PwshShellConfiguration().GetEnvironmentVariables();
+
+        Assert.DoesNotContain("TMUX", env.Keys, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain("TMUX_PANE", env.Keys, StringComparer.OrdinalIgnoreCase);
+        Assert.Equal(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture), env["KITTY_WINDOW_ID"]);
+        Assert.Equal("xterm-256color", env["TERM"]);
+        Assert.Equal("truecolor", env["COLORTERM"]);
+        Assert.Equal("tlbx", env["TERM_PROGRAM"]);
+    }
+
     private sealed class EnvironmentVariableScope : IDisposable
     {
         private readonly string _name;
