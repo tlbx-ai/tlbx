@@ -2444,12 +2444,13 @@ public sealed partial class WebPreviewProxyMiddleware
         await context.Response.WriteAsync(css, context.RequestAborted);
     }
 
-    private async Task ProxyJavaScriptResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse)
+    private async Task ProxyJavaScriptResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var script = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
         var routePrefix = PreviewProxyAuthorization.GetProxyPrefix(context, routeKey);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
-        script = RewriteRootRelativeModuleSpecifiers(script, routePrefix, reloadToken);
+        script = RewriteJavaScriptModuleSpecifiers(
+            script, routePrefix, finalUrl, _service.GetTargetUriByRouteKey(routeKey), reloadToken);
         script = WebPreviewLocationRewriter.Rewrite(script);
 
         context.Response.Headers.Remove("Content-Length");
@@ -2931,7 +2932,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
         else if (contentType is "application/javascript" or "text/javascript")
         {
-            await ProxyJavaScriptResponseAsync(context, routeKey, upstreamResponse);
+            await ProxyJavaScriptResponseAsync(context, routeKey, upstreamResponse, finalUrl);
         }
         else
         {
@@ -4022,6 +4023,37 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return url;
+    }
+
+    internal static string RewriteJavaScriptModuleSpecifiers(
+        string content,
+        string routePrefix,
+        string? finalScriptUrl,
+        Uri? primaryTarget,
+        string? reloadToken = null)
+    {
+        if (string.IsNullOrEmpty(routePrefix)
+            || !Uri.TryCreate(finalScriptUrl, UriKind.Absolute, out var scriptUri)
+            || scriptUri.Scheme is not ("http" or "https")) return content;
+
+        return WebPreviewLocationRewriter.RewriteModuleSpecifiers(content, specifier =>
+        {
+            if (specifier.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+                return AppendReloadTokenToProxyUrl(specifier, reloadToken);
+            // Bare names (including import-map keys such as #alias) stay native.
+            if (!specifier.StartsWith("./", StringComparison.Ordinal)
+                && !specifier.StartsWith("../", StringComparison.Ordinal)
+                && !specifier.StartsWith("/", StringComparison.Ordinal)
+                && !Uri.TryCreate(specifier, UriKind.Absolute, out _)) return specifier;
+            if (!Uri.TryCreate(scriptUri, specifier, out var resolved)
+                || resolved.Scheme is not ("http" or "https")) return specifier;
+
+            // The CDN is the resolution base, never the preview's primary target.
+            if (primaryTarget is not null
+                && resolved.Authority.Equals(primaryTarget.Authority, StringComparison.OrdinalIgnoreCase))
+                return AppendReloadTokenToProxyUrl(routePrefix + resolved.PathAndQuery + resolved.Fragment, reloadToken);
+            return RewriteExternalUrlFromText("", resolved.AbsoluteUri, routePrefix, null, reloadToken);
+        });
     }
 
     internal static string RewriteRootRelativeModuleSpecifiers(

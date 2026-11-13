@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Acornima;
 using Acornima.Ast;
@@ -20,17 +21,8 @@ internal static partial class WebPreviewLocationRewriter
             && !source.Contains("URL", StringComparison.Ordinal)
             && !source.Contains("import", StringComparison.Ordinal)) return source;
 
-        Node root;
-        var parser = new Parser();
-        try
-        {
-            root = parser.ParseModule(source);
-        }
-        catch (ParseErrorException)
-        {
-            try { root = parser.ParseScript(source); }
-            catch (ParseErrorException) { return source; }
-        }
+        var root = Parse(source);
+        if (root is null) return source;
 
         var ranges = new List<(int Start, int End, string Adapter)>();
         var pending = new Stack<Node>();
@@ -73,6 +65,59 @@ internal static partial class WebPreviewLocationRewriter
             offset = position;
         }
         return result.Append(source, offset, source.Length - offset).ToString();
+    }
+
+    internal static string RewriteModuleSpecifiers(string source, Func<string, string> rewrite)
+    {
+        if (!source.Contains("import", StringComparison.Ordinal)
+            && !source.Contains("export", StringComparison.Ordinal)) return source;
+        var root = Parse(source);
+        if (root is null) return source;
+
+        var edits = new List<(int Start, int End, string Value)>();
+        var pending = new Stack<Node>();
+        pending.Push(root);
+        while (pending.TryPop(out var node))
+        {
+            var specifier = node switch
+            {
+                ImportDeclaration import => import.Source,
+                ExportNamedDeclaration export => export.Source,
+                ExportAllDeclaration export => export.Source,
+                ImportExpression { Source: StringLiteral literal } => literal,
+                _ => null
+            };
+            if (specifier is not null)
+            {
+                var value = rewrite(specifier.Value);
+                if (value != specifier.Value)
+                    edits.Add((specifier.Start, specifier.End, JsonSerializer.Serialize(value)));
+            }
+            foreach (var child in node.ChildNodes) pending.Push(child);
+        }
+        if (edits.Count == 0) return source;
+
+        // Only source literals change. Import attributes/options, comments and
+        // unrelated strings retain their original bytes and evaluation order.
+        var result = new StringBuilder(source.Length);
+        var offset = 0;
+        foreach (var (start, end, value) in edits.OrderBy(edit => edit.Start))
+        {
+            result.Append(source, offset, start - offset).Append(value);
+            offset = end;
+        }
+        return result.Append(source, offset, source.Length - offset).ToString();
+    }
+
+    private static Node? Parse(string source)
+    {
+        var parser = new Parser();
+        try { return parser.ParseModule(source); }
+        catch (ParseErrorException)
+        {
+            try { return parser.ParseScript(source); }
+            catch (ParseErrorException) { return null; }
+        }
     }
 
     private static bool IsDocumentMetadata(MemberExpression member)
