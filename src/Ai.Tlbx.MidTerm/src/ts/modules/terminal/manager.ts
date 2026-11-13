@@ -50,6 +50,7 @@ import { showPasteIndicator, hidePasteIndicator } from '../badges';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { ImageAddon } from '@xterm/addon-image';
+import { KittyVirtualImages } from './kittyVirtualImages';
 import { WebglAddon } from '@xterm/addon-webgl';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
@@ -1511,6 +1512,7 @@ export function createTerminalForSession(
               iipSizeLimit: 16_777_216,
             }),
           );
+          terminal.loadAddon(new KittyVirtualImages());
         } catch (error) {
           // Graphics are progressive enhancement. A future xterm/addon mismatch
           // must degrade to text instead of making the session unusable.

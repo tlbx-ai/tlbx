@@ -73,6 +73,8 @@ Use **PowerShell, bash or zsh**, and terminal apps such as `btop`, `vim`, `lazyg
   <img src="docs/marketing/readme/any-terminal.webp" alt="btop system monitor running full-screen in a tlbx terminal session, with CPU, memory, disk, network and process panels" width="100%">
 </p>
 
+Codex fullscreen image previews work through the tmux-compatible passthrough path, including pane-local Kitty Unicode placements. Use Codex 0.168 or later with its fullscreen workspace enabled. This requires a full tlbx runtime update; existing terminal hosts must be refreshed.
+
 ## Working with agents
 
 Keep several agents running and make their work easier to follow:
