@@ -51,7 +51,8 @@ async function fetchServerAssetVersion(): Promise<string | null> {
 
   const html = await response.text();
   const match = html.match(/\/js\/terminal\.min\.js\?v=([^"'\\s>]+)/i);
-  const value = match?.[1]?.trim();
+  // Preview transport parameters are not part of the source asset version.
+  const value = match?.[1]?.split('&', 1)[0]?.trim();
   return value ? decodeURIComponent(value) : null;
 }
 

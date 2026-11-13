@@ -25,6 +25,24 @@ public sealed class BrowserUiCommandResult
     public string Command { get; init; } = "";
     public bool Success { get; init; }
     public string? Error { get; init; }
+    public BrowserViewportMetrics? Viewport { get; init; }
+}
+
+public sealed class BrowserViewportMetrics
+{
+    public int Width { get; init; }
+    public int Height { get; init; }
+    public double Scale { get; init; }
+    // Rectangles are [x, y, width, height] in the owning tlbx document.
+    public double[] Frame { get; init; } = [];
+    public double[] Host { get; init; } = [];
+    public bool Visible { get; init; }
+    public bool Fits => Width > 0 && Height > 0
+        && Frame is { Length: 4 } && Host is { Length: 4 }
+        && Frame[2] > 0 && Frame[3] > 0
+        && Frame[0] >= Host[0] - 0.5 && Frame[1] >= Host[1] - 0.5
+        && Frame[0] + Frame[2] <= Host[0] + Host[2] + 0.5
+        && Frame[1] + Frame[3] <= Host[1] + Host[3] + 0.5;
 }
 
 public sealed class MobileDeviceRequest
