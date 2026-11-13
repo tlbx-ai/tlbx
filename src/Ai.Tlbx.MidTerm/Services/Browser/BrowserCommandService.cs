@@ -153,7 +153,7 @@ public sealed class BrowserCommandService
                     deadline.Token.ThrowIfCancellationRequested();
                     step = await ExecuteCommandAsync(new BrowserCommandRequest
                     {
-                        Command = command.Command, Selector = command.Selector, Value = command.Value,
+                        Command = command.Command, Selector = command.Selector, Frame = command.Frame, Value = command.Value,
                         MaxDepth = command.MaxDepth, TextOnly = command.TextOnly, Timeout = command.Timeout,
                         DeltaX = command.DeltaX, DeltaY = command.DeltaY, Steps = command.Steps, FullPage = command.FullPage,
                         SessionId = request.SessionId, PreviewName = request.PreviewName
@@ -200,6 +200,9 @@ public sealed class BrowserCommandService
         BrowserClient? expectedClient = null,
         long? expectedGeneration = null)
     {
+        if (request.Frame is not null && (string.IsNullOrWhiteSpace(request.Frame) || request.WaitForNavigation
+            || request.Timeout > 15 || request.Command is not ("query" or "exec" or "attrs" or "css" or "click" or "fill")))
+            return new BrowserWsResult { Error = "A cooperative frame supports query/exec/attrs/css/click/fill only, with no navigation wait and at most a 15-second deadline." };
         var (client, error) = await ResolveClientWithAttachGraceAsync(request, deadline, ct).ConfigureAwait(false);
         if (client is null)
         {
@@ -230,7 +233,7 @@ public sealed class BrowserCommandService
         {
             Id = id,
             Command = request.Command,
-            Selector = request.Selector,
+            Selector = request.Selector, Frame = request.Frame,
             Value = request.Value,
             MaxDepth = request.MaxDepth,
             TextOnly = request.TextOnly,

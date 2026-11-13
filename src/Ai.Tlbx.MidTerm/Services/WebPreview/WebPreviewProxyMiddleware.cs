@@ -99,6 +99,7 @@ public sealed partial class WebPreviewProxyMiddleware
           // A registered child attachment is independent of its parent's preview.
           // Ordinary site frames lack this identity and keep subframe suppression.
           if(mtOwnNativeAttachment())mtNestedPreview=false;
+          /*__MT_NESTED_DOM_BRIDGE__*/
           var mtCtx=null;
           function mtReadCookie(name){
             try{
@@ -819,46 +820,7 @@ public sealed partial class WebPreviewProxyMiddleware
           });
           // Browser command channel: WebSocket to /ws/browser for agent-driven interaction
           var bws,bwsReady=false,captureLoad=null;
-          function queryBudget(){return {nodes:4000,chars:40000,truncated:false};}
-          function queryText(el,budget){
-            var walker=document.createTreeWalker(el,NodeFilter.SHOW_ALL),parts=[],node;
-            while((node=walker.nextNode())){
-              if(budget.nodes--<=0||budget.chars<=0){budget.truncated=true;break;}
-              if(node.nodeType===3){var text=node.data.slice(0,budget.chars);parts.push(text);budget.chars-=text.length;if(text.length<node.data.length){budget.truncated=true;break;}}
-            }
-            return parts.join("");
-          }
-          function truncEl(el,mx,budget){
-            function shallow(source){
-              if(budget.nodes--<=0||budget.chars<32){budget.truncated=true;return null;}
-              var copy=source.cloneNode(false),attrs=Array.from(copy.attributes);
-              for(var i=0;i<attrs.length;i++){
-                if(i>=64){copy.removeAttribute(attrs[i].name);budget.truncated=true;}
-                else if(attrs[i].value.length>2048){copy.setAttribute(attrs[i].name,attrs[i].value.slice(0,2048)+"[truncated]");budget.truncated=true;}
-              }
-              var length=copy.outerHTML.length;
-              while(length>budget.chars&&copy.attributes.length){copy.removeAttribute(copy.attributes[copy.attributes.length-1].name);budget.truncated=true;length=copy.outerHTML.length;}
-              if(length>budget.chars){budget.truncated=true;return null;}
-              budget.chars-=length;return copy;
-            }
-            var root=shallow(el);if(!root)return "";
-            var stack=[{source:el,copy:root,depth:0,index:0}];
-            while(stack.length){
-              var frame=stack[stack.length-1],source=frame.source.content&&frame.source.tagName==="TEMPLATE"?frame.source.content:frame.source;
-              var parent=frame.copy.content&&frame.copy.tagName==="TEMPLATE"?frame.copy.content:frame.copy;
-              if(mx>0&&frame.depth>=mx){if(source.childNodes.length&&budget.chars>=14){parent.appendChild(document.createComment(" ... "));budget.chars-=14;}stack.pop();continue;}
-              if(frame.index>=source.childNodes.length){stack.pop();continue;}
-              if(budget.nodes<=0||budget.chars<32){budget.truncated=true;break;}
-              var child=source.childNodes[frame.index++];
-              if(child.nodeType===1){var copy=shallow(child);if(!copy)break;parent.appendChild(copy);stack.push({source:child,copy:copy,depth:frame.depth+1,index:0});}
-              else if(child.nodeType===3||child.nodeType===8){
-                budget.nodes--;var text=child.data.slice(0,Math.floor((budget.chars-10)/6));
-                parent.appendChild(child.nodeType===3?document.createTextNode(text):document.createComment(text));budget.chars-=text.length*6+10;
-                if(text.length<child.data.length){budget.truncated=true;break;}
-              }
-            }
-            return root.outerHTML;
-          }
+          /*__MT_QUERY_HELPERS__*/
           function semanticOutline(root,mx){
             var lines=[],visited=0,count=0,chars=0,truncated=false,selectorCache=new Map();
             function unique(selector,el){
@@ -988,71 +950,10 @@ public sealed partial class WebPreviewProxyMiddleware
             }).catch(function(err){captureLoad=null;throw err;});
             return captureLoad;
           }
-          function isControlVisible(el){
-            if(!el.isConnected||!el.getClientRects().length)return false;
-            var visibility=getComputedStyle(el).visibility;
-            if(visibility==="hidden"||visibility==="collapse")return false;
-            for(var n=el;n&&n.nodeType===1;n=n.parentElement){
-              var css=getComputedStyle(n);
-              if(n.hidden||n.inert||css.display==="none"||Number(css.opacity)===0)return false;
-            }
-            return true;
-          }
-          function resolveControl(selector){
-            var matches=document.querySelectorAll(selector),visible=[];
-            for(var i=0;i<matches.length;i++)if(isControlVisible(matches[i]))visible.push(matches[i]);
-            if(!visible.length)throw new Error("no visible element: "+selector);
-            if(visible.length!==1)throw new Error("ambiguous selector: "+selector+" ("+visible.length+" visible elements); use a more specific selector");
-            assertControlEnabled(visible[0]);return visible[0];
-          }
-          function assertControlEnabled(el){
-            if(!isControlVisible(el))throw new Error("interaction target became hidden or detached");
-            if(el.matches(":disabled")||el.closest('[aria-disabled="true"]'))throw new Error("interaction target is disabled");
-          }
-          function controlIntent(el){
-            // Match pointer activation without moving keyboard focus or claiming terminal size ownership.
-            var rect=el.getBoundingClientRect(),opts={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2};
-            var mouse=true;
-            if(typeof PointerEvent!=="undefined")mouse=el.dispatchEvent(new PointerEvent("pointerdown",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
-            if(mouse)el.dispatchEvent(new MouseEvent("mousedown",opts));
-            opts.buttons=0;
-            if(typeof PointerEvent!=="undefined")el.dispatchEvent(new PointerEvent("pointerup",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
-            if(mouse)el.dispatchEvent(new MouseEvent("mouseup",opts));
-            assertControlEnabled(el);
-          }
-          function setFormControlValue(el,value){
-            var proto=null;
-            if(typeof HTMLTextAreaElement!=="undefined"&&el instanceof HTMLTextAreaElement)proto=HTMLTextAreaElement.prototype;
-            else if(typeof HTMLSelectElement!=="undefined"&&el instanceof HTMLSelectElement)proto=HTMLSelectElement.prototype;
-            else if(typeof HTMLInputElement!=="undefined"&&el instanceof HTMLInputElement)proto=HTMLInputElement.prototype;
-            var nv=proto?Object.getOwnPropertyDescriptor(proto,"value"):null;
-            if(nv&&nv.set)nv.set.call(el,value);
-            else el.value=value;
-          }
-          function assertEditableHost(el){
-            assertControlEnabled(el);
-            if(!el.isContentEditable||el.parentElement&&el.parentElement.isContentEditable)throw new Error("fill requires a contenteditable editing host");
-            if(el.closest('[aria-readonly="true"],[readonly],[disabled]'))throw new Error("fill target is read-only or disabled");
-            if(el.querySelector('[contenteditable="false"]'))throw new Error("fill cannot replace non-editable editor content");
-          }
-          function fillEditableHost(el,value){
-            assertEditableHost(el);
-            var command=value===""?"delete":"insertText";
-            if(typeof document.execCommand!=="function"||typeof document.queryCommandSupported!=="function"||!document.queryCommandSupported(command))throw new Error("native text editing is unavailable; rich-editor fill was not attempted");
-            controlIntent(el);
-            el.focus({preventScroll:true});
-            assertEditableHost(el);
-            if(document.activeElement!==el)throw new Error("fill target could not receive focus");
-            var selection=window.getSelection(),range=document.createRange();
-            if(!selection)throw new Error("editor selection is unavailable");
-            range.selectNodeContents(el);
-            selection.removeAllRanges();selection.addRange(range);
-            // Use the browser editing operation: literal text, native input/selection and undo.
-            // Do not write textContent/innerHTML or synthesize a second input event: model-backed
-            // editors observe this edit and reconcile it through their normal input pipeline.
-            if(!document.execCommand(command,false,value))throw new Error("native editor replacement was rejected");
-          }
+          /*__MT_CONTROL_HELPERS__*/
+          /*__MT_CHILD_PARENT_BRIDGE__*/
           function handleBCmd(msg){
+            if(msg.frame!=null){delegateChildCommand(msg);return;}
             var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null};
             try{
               switch(msg.command){
@@ -1531,7 +1432,7 @@ public sealed partial class WebPreviewProxyMiddleware
               bws=new OWS(wsUrl);
               bws.onopen=function(){bwsReady=true;bwsStateKey=stateKey;refreshBwsState(true);};
               bws.onmessage=function(e){try{handleBCmd(JSON.parse(e.data));}catch(ex){}};
-              bws.onclose=function(){bwsReady=false;bws=null;schedBwsReconnect(3000);};
+              bws.onclose=function(){cancelChildCommands();bwsReady=false;bws=null;schedBwsReconnect(3000);};
               bws.onerror=function(){};
             }catch(e){}
           }
@@ -1556,7 +1457,12 @@ public sealed partial class WebPreviewProxyMiddleware
             .Select(match => WebUtility.HtmlDecode(match.Groups[1].Value))
             .Distinct(StringComparer.Ordinal)
             .Select(route => $"\"{JsonEncodedText.Encode(route)}\"");
-        return UrlRewriteScript.Replace(
+        return UrlRewriteScript.Replace("/*__MT_QUERY_HELPERS__*/", SharedQueryHelpers, StringComparison.Ordinal)
+            .Replace("/*__MT_CONTROL_HELPERS__*/", SharedControlHelpers, StringComparison.Ordinal)
+            .Replace("/*__MT_NESTED_DOM_BRIDGE__*/", "if(mtNestedPreview){" + GetCooperativeChildRuntime() + "}", StringComparison.Ordinal)
+            .Replace("/*__MT_CHILD_PARENT_BRIDGE__*/", CooperativeParentBridge, StringComparison.Ordinal)
+            .Replace("/*__MT_CHILD_BOOTSTRAP_JSON__*/null", "\"" + JsonEncodedText.Encode(GetCooperativeChildScript()) + "\"", StringComparison.Ordinal)
+            .Replace(
             "__MT_PROXY_ROUTE_ATTRIBUTE__", WebUtility.HtmlEncode(adapterRoute), StringComparison.Ordinal).Replace(
             "__MT_PROXY_ROUTE__", JsonEncodedText.Encode(routePrefix).ToString(), StringComparison.Ordinal).Replace(
             "/*__MT_INNER_ADAPTER_ROUTES__*/[]", "[" + string.Join(",", innerRoutes) + "]", StringComparison.Ordinal).Replace(
@@ -2202,13 +2108,20 @@ public sealed partial class WebPreviewProxyMiddleware
         return html.Insert(prefix.Success ? prefix.Length : 0, "<head>" + injection + "</head>");
     }
 
-    internal static string MarkSubframeSources(string html) => IframeSourceRegex().Replace(html, match =>
+    internal static string MarkSubframeSources(string html)
     {
-        var url = WebUtility.HtmlDecode(match.Groups[2].Value);
-        if (!url.Contains("/webpreview/", StringComparison.Ordinal)) return match.Value;
-        var marked = QueryHelpers.AddQueryString(url, PreviewSubframeQueryParam, "1");
-        return match.Groups[1].Value + WebUtility.HtmlEncode(marked) + match.Groups[3].Value;
-    });
+        html = IframeSourceRegex().Replace(html, match =>
+        {
+            var url = WebUtility.HtmlDecode(match.Groups[2].Value);
+            if (!url.Contains("/webpreview/", StringComparison.Ordinal)) return match.Value;
+            var marked = QueryHelpers.AddQueryString(url, PreviewSubframeQueryParam, "1");
+            return match.Groups[1].Value + WebUtility.HtmlEncode(marked) + match.Groups[3].Value;
+        });
+        return SrcdocFrameRegex().Replace(html, match => !match.Groups["prefix"].Success ? match.Value
+            : match.Groups["prefix"].Value + match.Groups["quote"].Value
+                + WebUtility.HtmlEncode(InjectHeadContent(WebUtility.HtmlDecode(match.Groups["value"].Value), GetCooperativeChildScript()))
+                + match.Groups["quote"].Value);
+    }
 
     internal static string RewriteExternalDocumentAttributes(string html, Uri documentUri, string routePrefix) =>
         DocumentUrlAttributeRegex().Replace(html, match =>
@@ -2964,6 +2877,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var baseHref = ComputeBaseHref(routePrefix, requestedFileUri.ToString());
         var targetOrigin = $"{context.Request.Scheme}://{context.Request.Host}";
         var originScript = $"<script>window.__mtTargetOrigin=\"{targetOrigin}\";</script>";
+        html = MarkSubframeSources(html);
         html = InjectHeadContent(html, $"<base href=\"{WebUtility.HtmlEncode(baseHref)}\">{originScript}" + GetUrlRewriteScript(routePrefix, upstreamHtml: html));
 
         context.Response.Headers.Remove("Content-Length");

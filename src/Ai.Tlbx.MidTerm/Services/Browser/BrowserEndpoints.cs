@@ -1005,7 +1005,7 @@ public static class BrowserEndpoints
             : new BrowserCommandRequest
             {
                 Command = request.Command,
-                Selector = request.Selector,
+                Selector = request.Selector, Frame = request.Frame,
                 Value = request.Value,
                 MaxDepth = request.MaxDepth,
                 TextOnly = request.TextOnly,
@@ -1093,7 +1093,7 @@ public static class BrowserEndpoints
         new()
         {
             Command = command,
-            Selector = request.Selector,
+            Selector = request.Selector, Frame = request.Frame,
             Value = request.Value,
             MaxDepth = request.MaxDepth,
             TextOnly = request.TextOnly,

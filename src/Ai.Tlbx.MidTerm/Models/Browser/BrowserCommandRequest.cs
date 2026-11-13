@@ -4,6 +4,7 @@ public sealed class BrowserCommandRequest
 {
     public string Command { get; init; } = "";
     public string? Selector { get; init; }
+    public string? Frame { get; init; }
     public string? Value { get; init; }
     public int? MaxDepth { get; init; }
     public bool TextOnly { get; init; }
