@@ -30,6 +30,16 @@ public sealed class BrowserCommandService
 
     public int ConnectedClientCount => _clients.Count;
 
+    internal void AttachStorageForCurrentClient(string connectionId, WebPreview.WebPreviewStorageService? storage, string? token)
+    {
+        if (storage is null || token is null) return;
+        lock (_clientGate)
+        {
+            if (_clients.TryGetValue(connectionId, out var client))
+                storage.Attach(token, client.PreviewId, client.BrowserId);
+        }
+    }
+
     public bool TryRegisterClient(
         string connectionId,
         string? sessionId,

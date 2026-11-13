@@ -257,25 +257,79 @@ public sealed partial class WebPreviewProxyMiddleware
               var match=P.match(/^\/webpreview\/([^/]+)/);
               if(match&&match[1])route=decodeURIComponent(match[1]);
             }catch(e){}
-            return "__midterm_webpreview__"+route+"__"+name+"__";
+            return "__midterm_webpreview__"+route+"__"+encodeURIComponent(window.__mtTargetOrigin||"null")+"__"+name+"__";
           }
-          function mkMemoryStore(){
-            var data=Object.create(null);
+          var mtStorageBootstrap=/*__MT_STORAGE_BOOTSTRAP__*/null;
+          var mtStorageFetch=window.fetch.bind(window),mtStoragePending=new Map(),mtStorageBatch=null,mtStorageFlight=null,mtStorageSequence=0,mtStorageTimer=0;
+          function mtFlushStorage(){
+            clearTimeout(mtStorageTimer);mtStorageTimer=0;
+            if(mtStorageFlight)return mtStorageFlight.then(mtFlushStorage);
+            if(!mtStorageBatch){
+              if(!mtStoragePending.size)return Promise.resolve();
+              mtStorageBatch={token:mtStorageBootstrap.token,sequence:++mtStorageSequence,operations:Array.from(mtStoragePending.values())};
+              mtStoragePending.clear();
+            }
+            var abort=new AbortController(),timer=setTimeout(function(){abort.abort();},5000);
+            mtStorageFlight=mtStorageFetch(new URL(PP+"/_storage",mtNativeLocation.href).href,{
+              method:"POST",mode:"cors",credentials:"omit",headers:{"Content-Type":"application/json"},
+              body:JSON.stringify(mtStorageBatch),signal:abort.signal
+            }).then(function(response){
+              if(!response.ok)throw new Error("Preview storage was not persisted (HTTP "+response.status+"); reload cancelled.");
+              mtStorageBatch=null;
+            },function(){
+              throw new Error("Preview storage connection failed; reload cancelled.");
+            }).finally(function(){clearTimeout(timer);mtStorageFlight=null;});
+            return mtStorageFlight.then(mtFlushStorage);
+          }
+          function mtQueueStorage(store,action,key,value){
+            if(action==="clear"){
+              mtStoragePending.forEach(function(op,id){if(op.store===store)mtStoragePending.delete(id);});
+            }
+            var id=store+":"+(action==="clear"?"clear":"key:"+key);
+            if(!mtStoragePending.has(id)&&mtStoragePending.size>=258)throw new DOMException("Preview storage pending-write quota exceeded","QuotaExceededError");
+            var units=(key?key.length:0)+(value?value.length:0)+16;
+            mtStoragePending.forEach(function(op,other){if(other!==id)units+=(op.key?op.key.length:0)+(op.value?op.value.length:0)+16;});
+            if(units>131072)throw new DOMException("Preview storage pending-write quota exceeded","QuotaExceededError");
+            mtStoragePending.set(id,{store:store,action:action,key:key,value:value});
+            if(!mtStorageTimer)mtStorageTimer=setTimeout(function(){mtFlushStorage().catch(function(){});},40);
+          }
+          function mkDurableStore(name){
+            var store=name==="localStorage"?"local":"session";
+            var data=Object.assign(Object.create(null),mtStorageBootstrap[store]);
+            function replace(next,action,key,value){
+              var keys=Object.keys(next),units=0;
+              keys.forEach(function(k){units+=k.length+next[k].length+16;});
+              if(keys.length>128||units>65536)throw new DOMException("Preview storage quota exceeded","QuotaExceededError");
+              mtQueueStorage(store,action,key,value);data=next;
+            }
             var api={
               getItem:function(k){k=String(k);return Object.prototype.hasOwnProperty.call(data,k)?data[k]:null;},
-              setItem:function(k,v){data[String(k)]=String(v);},
-              removeItem:function(k){delete data[String(k)];},
-              clear:function(){data=Object.create(null);},
-              key:function(i){var keys=Object.keys(data);return i>=0&&i<keys.length?keys[i]:null;}
+              setItem:function(k,v){k=String(k);v=String(v);var next=Object.assign(Object.create(null),data);next[k]=v;replace(next,"set",k,v);},
+              removeItem:function(k){k=String(k);if(!Object.prototype.hasOwnProperty.call(data,k))return;var next=Object.assign(Object.create(null),data);delete next[k];replace(next,"remove",k);},
+              clear:function(){replace(Object.create(null),"clear");},
+              key:function(i){var keys=Object.keys(data);i=Number(i)>>>0;return i<keys.length?keys[i]:null;}
             };
-            try{Object.defineProperty(api,"length",{configurable:true,get:function(){return Object.keys(data).length;}});}catch(e){}
-            return api;
+            Object.defineProperty(api,"length",{configurable:true,get:function(){return Object.keys(data).length;}});
+            return new Proxy(api,{
+              get:function(t,k){return typeof k!=="string"||k in t?Reflect.get(t,k):api.getItem(k)??undefined;},
+              set:function(t,k,v){if(typeof k!=="string")return false;api.setItem(k,v);return true;},
+              deleteProperty:function(t,k){if(typeof k==="string")api.removeItem(k);return true;},
+              ownKeys:function(){return Object.keys(data);},
+              getOwnPropertyDescriptor:function(t,k){return Object.prototype.hasOwnProperty.call(data,k)?{configurable:true,enumerable:true,writable:true,value:data[k]}:undefined;}
+            });
           }
           function mkStore(name){
+            // An older outer adapter may already expose a per-document memory
+            // object. The real opaque origin must still use the durable seed.
+            if(window.origin==="null"){
+              if(mtStorageBootstrap)return mkDurableStore(name);
+              throw new DOMException("Preview storage requires a registered document navigation","SecurityError");
+            }
             var nativeStore=null,prefix=mtStoragePrefix(name);
             try{nativeStore=window[name];}catch(e){}
             if(!nativeStore||typeof nativeStore.getItem!=="function"||typeof nativeStore.setItem!=="function"){
-              return mkMemoryStore();
+              if(mtStorageBootstrap)return mkDurableStore(name);
+              throw new DOMException("Preview storage requires a registered document navigation","SecurityError");
             }
             var api={
               getItem:function(k){return nativeStore.getItem(prefix+String(k));},
@@ -309,7 +363,8 @@ public sealed partial class WebPreviewProxyMiddleware
             return api;
           }
           function ensureStore(name){
-            var scoped=mkStore(name);
+            var scoped;
+            try{scoped=mkStore(name);}catch(error){dprop(window,name,function(){throw error;});return null;}
             if(!dprop(window,name,function(){return scoped;})){
               try{window[name]=scoped;}catch(e){}
             }
@@ -596,7 +651,7 @@ public sealed partial class WebPreviewProxyMiddleware
           });
           mtLocationView.assign=function(url){mtNativeLocation.assign(mtNavigationUrl(url));};
           mtLocationView.replace=function(url){mtNativeLocation.replace(mtNavigationUrl(url));};
-          mtLocationView.reload=function(){mtNativeLocation.reload();};
+          mtLocationView.reload=function(){mtFlushStorage().then(function(){mtNativeLocation.reload();}).catch(function(e){console.error(e.message);});};
           mtLocationView.toString=function(){return curU();};
           mtLocationView[Symbol.toPrimitive]=function(){return curU();};
           window.__mtPreviewLocation=function(value){
@@ -1052,10 +1107,12 @@ public sealed partial class WebPreviewProxyMiddleware
             // editors observe this edit and reconcile it through their normal input pipeline.
             if(!document.execCommand(command,false,value))throw new Error("native editor replacement was rejected");
           }
-          function handleBCmd(msg){
+          async function handleBCmd(msg){
             var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null};
             try{
+              if(msg.command==="reload"||msg.command==="navigate"||msg.command==="flushstorage")await mtFlushStorage();
               switch(msg.command){
+                case"flushstorage":res.result="flushed";break;
                 case"query":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
                   var els=document.querySelectorAll(msg.selector);
@@ -1382,8 +1439,9 @@ public sealed partial class WebPreviewProxyMiddleware
                       var all=document.cookie.split(";");
                       for(var i=0;i<all.length;i++){var n=all[i].split("=")[0].trim();if(n)document.cookie=n+"=;expires=Thu,01 Jan 1970 00:00:00 GMT;path=/";}
                       cc="";
-                      try{localStorage.clear();}catch(e){}
-                      try{sessionStorage.clear();}catch(e){}
+                      localStorage.clear();
+                      sessionStorage.clear();
+                      await mtFlushStorage();
                       try{
                         if(window.indexedDB&&typeof indexedDB.databases==="function"){
                           var dbs=await indexedDB.databases();
@@ -1488,6 +1546,7 @@ public sealed partial class WebPreviewProxyMiddleware
             bwsStateKey=nextKey;
             if(bws&&bws.readyState===1){
               var state=curBwsState();state.type="browser-state";
+              if(mtStorageBootstrap)state.storageToken=mtStorageBootstrap.token;
               bws.send(JSON.stringify(state));
               return;
             }
@@ -1546,7 +1605,8 @@ public sealed partial class WebPreviewProxyMiddleware
     [GeneratedRegex(@"<script\b[^>]*\sdata-mt-proxy-route=""(/webpreview/[^/""]+)""[^>]*>", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex ProxyAdapterRouteRegex();
 
-    internal static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "", string upstreamHtml = "")
+    internal static string GetUrlRewriteScript(string routePrefix, string initialCookieHeader = "", string upstreamHtml = "",
+        PreviewStorageBootstrap? storage = null)
     {
         // The parser has not reached the inner script when our prepended script
         // runs. Carry only its route key forward, never capabilities or context.
@@ -1560,6 +1620,8 @@ public sealed partial class WebPreviewProxyMiddleware
             "__MT_PROXY_ROUTE_ATTRIBUTE__", WebUtility.HtmlEncode(adapterRoute), StringComparison.Ordinal).Replace(
             "__MT_PROXY_ROUTE__", JsonEncodedText.Encode(routePrefix).ToString(), StringComparison.Ordinal).Replace(
             "/*__MT_INNER_ADAPTER_ROUTES__*/[]", "[" + string.Join(",", innerRoutes) + "]", StringComparison.Ordinal).Replace(
+            "/*__MT_STORAGE_BOOTSTRAP__*/null",
+            $"JSON.parse(\"{JsonEncodedText.Encode(JsonSerializer.Serialize(storage, PreviewStorageJsonContext.Default.PreviewStorageBootstrap))}\")", StringComparison.Ordinal).Replace(
             "var P=\"/webpreview\"",
             $"var P=\"{routePrefix}\"",
             StringComparison.Ordinal).Replace(
@@ -1603,14 +1665,16 @@ public sealed partial class WebPreviewProxyMiddleware
         // WebSocket negotiation headers managed by ClientWebSocket
         "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions",
         "Sec-WebSocket-Protocol",
-        // Browser security headers that would confuse the upstream
-        "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Sec-Fetch-User",
+        // Preserve Mode/Dest so a nested tlbx can distinguish document loads
+        // from script fetches before releasing an origin's storage seed.
+        "Sec-Fetch-Site", "Sec-Fetch-User",
         // Content headers are set on HttpContent, not the request
         "Content-Type", "Content-Length"
     };
 
     private readonly RequestDelegate _next;
     private readonly WebPreviewService _service;
+    private readonly WebPreviewStorageService? _storage;
 
     // Learned path prefixes that should bypass subpath-prefixing and go to the
     // upstream server root. Stored per preview route key so unrelated browser
@@ -1618,10 +1682,11 @@ public sealed partial class WebPreviewProxyMiddleware
     private readonly Dictionary<string, Dictionary<string, bool>> _rootFallbackPrefixesByRoute = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, string?> _rootFallbackTargetsByRoute = new(StringComparer.OrdinalIgnoreCase);
 
-    public WebPreviewProxyMiddleware(RequestDelegate next, WebPreviewService service)
+    public WebPreviewProxyMiddleware(RequestDelegate next, WebPreviewService service, WebPreviewStorageService? storage = null)
     {
         _next = next;
         _service = service;
+        _storage = storage;
     }
 
     public async Task InvokeAsync(HttpContext context)
@@ -1676,6 +1741,11 @@ public sealed partial class WebPreviewProxyMiddleware
             if (remainingPath.Equals("/_cookies", StringComparison.Ordinal))
             {
                 await HandleCookieBridgeAsync(context, routeKey);
+                return;
+            }
+            if (remainingPath.Equals("/_storage", StringComparison.Ordinal))
+            {
+                await HandleStorageWriteAsync(context, routeKey);
                 return;
             }
 
@@ -2183,11 +2253,17 @@ public sealed partial class WebPreviewProxyMiddleware
         html = MarkSubframeSources(html);
         html = InjectHeadContent(html,
             $"<base href=\"{WebUtility.HtmlEncode(baseHref)}\">{originScript}" + GetUrlRewriteScript(routePrefix,
-                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "", html) + redirectPathScript);
+                _service.GetBrowserCookies(routeKey, documentUri ?? targetUri).Header ?? "", html,
+                _storage?.CreateBootstrap(context, routeKey, documentUri ?? targetUri)) + redirectPathScript);
 
         // Send uncompressed — strip Content-Encoding and Content-Length for this response
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");
+        // Every document receives a fresh storage seed/lease. Reusing a cached
+        // bootstrap would roll reads back and restart an already-used sequence.
+        context.Response.Headers.CacheControl = "no-store";
+        context.Response.Headers.Remove("ETag");
+        context.Response.Headers.Remove("Last-Modified");
         context.Response.ContentType = "text/html; charset=utf-8";
         await context.Response.WriteAsync(html, context.RequestAborted);
     }
@@ -2642,6 +2718,11 @@ public sealed partial class WebPreviewProxyMiddleware
         for (var redirect = 0; redirect <= maxRedirects; redirect++)
         {
             var requestMessage = buildRequest(currentMethod, currentUrl);
+            if (context.Request.Headers["Sec-Fetch-Mode"] == "navigate")
+            {
+                requestMessage.Headers.Remove("If-None-Match");
+                requestMessage.Headers.Remove("If-Modified-Since");
+            }
             if (requestMessage.RequestUri is not null)
             {
                 var cookieHeader = _service.GetForwardedCookieHeader(routeKey, requestMessage.RequestUri);
@@ -2999,6 +3080,40 @@ public sealed partial class WebPreviewProxyMiddleware
         var upstreamOriginScheme = wsScheme == "wss" ? "https" : "http";
         var upstreamOrigin = $"{upstreamOriginScheme}://{upstreamUri.Authority}";
         await ProxyWebSocketToUpstreamAsync(context, routeKey, upstreamUri, upstreamOrigin);
+    }
+
+    private async Task HandleStorageWriteAsync(HttpContext context, string routeKey)
+    {
+        context.Response.Headers.CacheControl = "no-store";
+        if (_storage is null || context.Request.Method != HttpMethods.Post)
+        {
+            context.Response.StatusCode = StatusCodes.Status405MethodNotAllowed;
+            return;
+        }
+        const int maximumBodyBytes = 1024 * 1024;
+        using var body = new MemoryStream();
+        var bytes = new byte[8192];
+        while (true)
+        {
+            var read = await context.Request.Body.ReadAsync(bytes, context.RequestAborted);
+            if (read == 0) break;
+            if (body.Length + read > maximumBodyBytes)
+            {
+                context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                return;
+            }
+            body.Write(bytes.AsSpan(0, read));
+        }
+        try
+        {
+            var request = JsonSerializer.Deserialize(body.GetBuffer().AsSpan(0, checked((int)body.Length)), PreviewStorageJsonContext.Default.PreviewStorageWrite);
+            context.Response.StatusCode = request is not null && _storage.Apply(routeKey, request)
+                ? StatusCodes.Status204NoContent : StatusCodes.Status409Conflict;
+        }
+        catch (JsonException)
+        {
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+        }
     }
 
     private async Task HandleCookieBridgeAsync(HttpContext context, string routeKey)

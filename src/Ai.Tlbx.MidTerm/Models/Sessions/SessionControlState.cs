@@ -23,6 +23,7 @@ public sealed record SessionPreviewState
     public string? LocalRoot { get; init; }
     public long TargetRevision { get; init; }
     public string? OwnerBrowserId { get; init; }
+    public Dictionary<string, Dictionary<string, string>> Storage { get; init; } = new(StringComparer.Ordinal);
 }
 
 [JsonSerializable(typeof(SessionControlState))]

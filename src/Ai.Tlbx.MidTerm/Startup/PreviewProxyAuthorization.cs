@@ -11,6 +11,7 @@ internal static class PreviewProxyAuthorization
     internal const string RouteItemKey = "tlbx.authorized-preview-route";
     internal const string PathPrefixItemKey = "tlbx.authorized-preview-path-prefix";
     internal const string ExplicitItemKey = "tlbx.explicit-preview-capability";
+    internal const string RegistrationItemKey = "tlbx.authorized-preview-registration";
 
     internal static void ApplyResponsePolicy(HttpContext context)
     {
@@ -71,6 +72,7 @@ internal static class PreviewProxyAuthorization
             || !string.Equals(registration.RouteKey, routeKey, StringComparison.Ordinal)) return false;
 
         context.Items[RouteItemKey] = routeKey;
+        context.Items[RegistrationItemKey] = registration;
         if (bootstrap) context.Items[ExplicitItemKey] = true;
         if (pathAccess) context.Items[PathPrefixItemKey] = prefix;
         if (bootstrap && !pathAccess)

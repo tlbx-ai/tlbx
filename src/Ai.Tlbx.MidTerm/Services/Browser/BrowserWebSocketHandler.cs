@@ -15,6 +15,7 @@ public sealed class BrowserWebSocketHandler
     private readonly SettingsService _settingsService;
     private readonly AuthService _authService;
     private readonly ShutdownService _shutdownService;
+    private readonly WebPreviewStorageService? _storageService;
 
     public BrowserWebSocketHandler(
         BrowserCommandService commandService,
@@ -22,7 +23,8 @@ public sealed class BrowserWebSocketHandler
         WebPreviewService webPreviewService,
         SettingsService settingsService,
         AuthService authService,
-        ShutdownService shutdownService)
+        ShutdownService shutdownService,
+        WebPreviewStorageService? storageService = null)
     {
         _commandService = commandService;
         _previewRegistry = previewRegistry;
@@ -30,6 +32,7 @@ public sealed class BrowserWebSocketHandler
         _settingsService = settingsService;
         _authService = authService;
         _shutdownService = shutdownService;
+        _storageService = storageService;
     }
 
     public async Task HandleAsync(HttpContext context)
@@ -145,7 +148,10 @@ public sealed class BrowserWebSocketHandler
                                 if (wsResult is not null)
                                 {
                                     if (wsResult.Type == "browser-state")
+                                    {
                                         _commandService.UpdateClientState(connectionId, wsResult);
+                                        _commandService.AttachStorageForCurrentClient(connectionId, _storageService, wsResult.StorageToken);
+                                    }
                                     else
                                         _commandService.ReceiveResult(wsResult, connectionId);
                                 }
