@@ -963,6 +963,26 @@ public sealed partial class WebPreviewProxyMiddleware
             var body=document.body?getComputedStyle(document.body):null;
             return body&&body.backgroundImage==="none"&&opaque.test(body.backgroundColor)?body.backgroundColor:undefined;
           }
+          function captureSurfaceInventory(clip){
+            var region=clip==="viewport"?{x:window.scrollX,y:window.scrollY,width:window.innerWidth,height:window.innerHeight}:clip;
+            var media={frames:0,unreadableFrames:0,canvases:0,videos:0};
+            document.querySelectorAll("iframe,canvas,video").forEach(function(el){
+              var rect=el.getBoundingClientRect(),css=getComputedStyle(el);
+              if(rect.width<=0||rect.height<=0||css.visibility==="hidden"||css.visibility==="collapse")return;
+              for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+                var style=getComputedStyle(n);
+                if(style.display==="none"||Number(style.opacity)===0)return;
+              }
+              var x=rect.left+window.scrollX,y=rect.top+window.scrollY;
+              if(region&&(x+rect.width<=region.x||y+rect.height<=region.y||x>=region.x+region.width||y>=region.y+region.height))return;
+              if(el.tagName==="IFRAME"){
+                media.frames++;
+                try{if(!el.contentDocument||!el.contentDocument.documentElement)media.unreadableFrames++;}catch(e){media.unreadableFrames++;}
+              }else if(el.tagName==="CANVAS")media.canvases++;
+              else media.videos++;
+            });
+            return {renderer:"dom-svg",pixelCoverage:media.unreadableFrames?"partial":"unverified",inventory:"parent-light-dom",mediaPixels:"unverified",nestedMedia:"unknown",media:media};
+          }
           function ensureCapture(){
             if(window.__tlbxDomCapture&&typeof window.__tlbxDomCapture.snapdom==="function")return Promise.resolve(window.__tlbxDomCapture.snapdom);
             if(captureLoad)return captureLoad;
@@ -1210,6 +1230,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 case"screenshot":{
                   var fullPage=msg.fullPage===true;
                   var releaseCapture=null;
+                  var capturedDocument=null;
                   Promise.resolve().then(function(){
                     settleHiddenCaptureTransitions();
                     return typeof window.__tlbxBeforeCapture==="function"?window.__tlbxBeforeCapture():null;
@@ -1230,6 +1251,7 @@ public sealed partial class WebPreviewProxyMiddleware
                       // This preserves ancestor layout, canvas pixels, overlaps and scroll without resizing the page.
                       clip={x:bounds.left+window.scrollX,y:bounds.top+window.scrollY,width:bounds.width,height:bounds.height};
                     }
+                    res.capture=captureSurfaceInventory(clip);
                     return capture(document.documentElement,{
                       clip:clip,
                       dpr:1,
@@ -1241,8 +1263,18 @@ public sealed partial class WebPreviewProxyMiddleware
                       compress:false
                     });
                   }).then(function(capture){
+                    capturedDocument=capture;
                     return capture.toCanvas();
                   }).then(function(canvas){
+                    var warnings=capturedDocument.warnings||[],codes=Object.create(null);
+                    warnings.slice(0,50).forEach(function(w){
+                      var code=w&&w.code;
+                      if(typeof code==="string"&&/^[a-z][a-z0-9-]{0,63}$/.test(code))codes[code]=(codes[code]||0)+1;
+                    });
+                    res.capture.warningCodes=codes;
+                    res.capture.warningsMayBeTruncated=warnings.length>=50;
+                    res.capture.output={width:canvas.width,height:canvas.height};
+                    if(warnings.length)res.capture.pixelCoverage="partial";
                     res.result=canvas.toDataURL("image/png");if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
                   }).catch(function(e){
                     res.success=false;res.error="screenshot failed: "+e.message;if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));

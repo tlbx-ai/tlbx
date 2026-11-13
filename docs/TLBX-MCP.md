@@ -192,6 +192,13 @@ hidden and ambiguous targets fail. Offscreen rendered elements are supported.
 `selector` and `fullPage:true` are mutually exclusive. Without a selector, viewport
 and full-page capture retain their existing behavior. This uses the same DOM/SVG
 renderer and its fidelity limits, rather than a browser compositor capture.
+Screenshot `capture` metadata accompanies inline images, original resources and
+batch steps. `pixelCoverage` is `partial` when unreadable frames or renderer
+degradations are detected, otherwise `unverified`; successful PNG export does not
+prove complete pixels. `media` counts intersecting parent light-DOM surfaces,
+not media inside nested frames or shadow trees. `unreadableFrames` and
+`warningCodes` expose unavailable frame/canvas content; video frames and poster
+fallbacks remain unverified. Renderer warnings are bounded and may be truncated.
 
 Large captures use the private resource cache by default, without an extra
 workspace copy. A failed explicit workspace save reports an error while keeping

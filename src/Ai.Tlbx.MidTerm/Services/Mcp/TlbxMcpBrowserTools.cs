@@ -50,7 +50,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         Command("fill", "Fill exactly one visible, enabled input, textarea, select or contenteditable editing host with literal Unicode text. Rich editors use native text replacement, selection and undo, without HTML or clipboard access. Reject ambiguous, read-only and unsupported controls without changing them; rich fill requires native editing commands and no non-editable descendants.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
         Command("evaluate", "Execute JavaScript in the existing preview. code is passed literally, not through a shell.", Fields(("code", Property("string")), ("timeout", Timeout())), ["code"], command: "exec"),
         Command("wait", "Wait for attached (default), visible, hidden or detached elements before the next interaction. Visibility uses the same checks as click/fill.", Fields(("selector", Property("string")), ("state", Enum("attached", "visible", "hidden", "detached")), ("timeout", Timeout())), ["selector"], true),
-        Command("screenshot", "Capture viewport, fullPage, or exactly one visible element's bounding box as inline MCP PNG at CSS-pixel resolution. Optional selector must be unique and cannot combine with fullPage. Capture preserves scroll and viewport. Optionally save the same artifact in the target workspace.", Fields(("selector", Property("string")), ("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
+        Command("screenshot", "Capture viewport, fullPage, or one visible element's bounding box as inline PNG with DOM reconstruction coverage metadata (partial or unverified). Optional selector must be unique and cannot combine with fullPage. CSS-pixel resolution; preserves scroll and viewport. Optionally save the same artifact in the target workspace.", Fields(("selector", Property("string")), ("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
         Command("snapshot", "Return the existing preview HTML directly, optionally also saving the CLI-compatible workspace artifact.", Fields(("saveToWorkspace", Property("boolean")))),
         Command("outline", "Read visible semantic controls with labels, state and unique selectors. Layout wrappers do not consume maxDepth. Optional selector narrows the root; bounded output marks truncation.", Fields(("maxDepth", Property("integer")), ("selector", Property("string"))), readOnly: true),
         Command("attributes", "Read a selected element's attributes.", Fields(("selector", Property("string"))), ["selector"], true, "attrs"),
@@ -314,7 +314,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         foreach (var step in batch.Results.Where(s => s.Command == "screenshot" && s.Success))
         {
             var shot = new BrowserCommandRequest { Command = "screenshot", SessionId = target, PreviewName = preview };
-            var captured = await CommandResultAsync(services, shot, new BrowserWsResult { Success = true, Result = step.Result }, Bool(args, "saveToWorkspace")).ConfigureAwait(false);
+            var captured = await CommandResultAsync(services, shot, new BrowserWsResult { Success = true, Result = step.Result, Capture = step.Capture }, Bool(args, "saveToWorkspace")).ConfigureAwait(false);
             // The structured-result text is content block 0.
             var imageIndex = images.Count + 1;
             images.AddRange(captured.Content);
@@ -453,6 +453,13 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             ["sessionId"] = request.SessionId, ["previewName"] = WebPreviewService.NormalizePreviewName(request.PreviewName),
             ["matchCount"] = result.MatchCount, ["artifactPath"] = artifact
         };
+        if (request.Command == "screenshot")
+            data["capture"] = result.Capture is { } coverage ? JsonNode.Parse(coverage.GetRawText())
+                : new JsonObject { ["renderer"] = "dom-svg", ["pixelCoverage"] = "unverified" };
+        var partialCapture = result.Capture is { ValueKind: JsonValueKind.Object } capture
+            && capture.TryGetProperty("pixelCoverage", out var pixelCoverage)
+            && pixelCoverage.ValueKind == JsonValueKind.String && pixelCoverage.GetString() == "partial";
+        const string partialCaptureWarning = "Screenshot coverage is partial. Nested-frame or media pixels may be missing or degraded; see capture metadata. This is DOM reconstruction, not a browser framebuffer.";
         ResourceLinkBlock? resource = null;
         if (store is not null && result.Result is { } original)
         {
@@ -478,6 +485,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 var oversized = Reply(data);
                 if (resource is not null) oversized.Content.Add(resource);
                 if (previewImage is not null) oversized.Content.Add(previewImage);
+                if (partialCapture) oversized.Content.Add(new TextContentBlock { Text = partialCaptureWarning });
                 oversized.IsError = workspaceFailed || resource is null && artifact is null;
                 if (workspaceFailed) oversized.Content.Add(new TextContentBlock
                     { Text = "Screenshot captured, but the requested workspace copy could not be saved. Do not replay the browser operation." });
@@ -487,6 +495,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             if (image.IsError == true) return image;
             image.StructuredContent = JsonSerializer.SerializeToElement(data, McpJsonContext.Default.JsonObject);
             if (resource is not null) image.Content.Add(resource);
+            if (partialCapture) image.Content.Add(new TextContentBlock { Text = partialCaptureWarning });
             if (save && artifact is null)
             {
                 image.IsError = true;
