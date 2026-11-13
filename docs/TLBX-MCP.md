@@ -189,6 +189,26 @@ the original resource available; use that resource instead of recapturing.
 HTML snapshots above 65,536 characters return compact metadata and the complete
 original resource instead of inline HTML (`inlineSnapshotAvailable: false`).
 Use `artifact_save` for the full UTF-8 file; no partial HTML is presented as complete.
+
+Browser selectors accept explicit open-shadow paths, e.g.
+`#settings-host >>> button[aria-label="Save"]`. Each segment is ordinary CSS in
+its own root; `>>>` enters only the matched hosts' open `shadowRoot`s. Quoted,
+escaped, bracketed and functional-pseudo text retains native CSS interpretation.
+Plain selectors never search shadow trees automatically. Comma lists belong to
+their segment. Paths are bounded to 32 segments and 4,000 root queries; exceeding
+the traversal bound fails explicitly. Closed and absent roots both yield no
+reachable matches; closed roots are never instrumented or bypassed.
+Query, click, fill, attrs, CSS, forms, submit, scroll/wheel, wait, outline roots and
+selected screenshots share this resolver. Existing control visibility and
+ambiguity checks still apply, including the shadow host's visibility/disabled
+state. A screenshot selector must match exactly one visible element and cannot
+be combined with `fullPage`.
+Outline traverses open roots, marks hosts with `open-shadow-root`, and emits
+unique `>>>` paths. Its depth/node/output limits still apply and omissions are
+reported as truncation. HTML queries and full snapshots serialize reachable open
+roots as inert `<template shadowrootmode="open">` children; bounded queries may
+truncate them, while full snapshots retain the complete available DOM. This is
+DOM serialization, not a computed accessibility tree or closed-root capture.
 Resource handles do not survive a web-server restart. Abrupt termination may leave private
 temporary files; normal disposal removes the generated cache.
 `artifact_read` and `artifacts_list` provide the same owner-checked access through
