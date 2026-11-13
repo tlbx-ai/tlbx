@@ -1139,6 +1139,26 @@ public sealed partial class WebPreviewProxyMiddleware
             var body=document.body?getComputedStyle(document.body):null;
             return body&&body.backgroundImage==="none"&&opaque.test(body.backgroundColor)?body.backgroundColor:undefined;
           }
+          function captureSurfaceInventory(clip){
+            var region=clip==="viewport"?{x:window.scrollX,y:window.scrollY,width:window.innerWidth,height:window.innerHeight}:clip;
+            var media={frames:0,unreadableFrames:0,canvases:0,videos:0};
+            document.querySelectorAll("iframe,canvas,video").forEach(function(el){
+              var rect=el.getBoundingClientRect(),css=getComputedStyle(el);
+              if(rect.width<=0||rect.height<=0||css.visibility==="hidden"||css.visibility==="collapse")return;
+              for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+                var style=getComputedStyle(n);
+                if(style.display==="none"||Number(style.opacity)===0)return;
+              }
+              var x=rect.left+window.scrollX,y=rect.top+window.scrollY;
+              if(region&&(x+rect.width<=region.x||y+rect.height<=region.y||x>=region.x+region.width||y>=region.y+region.height))return;
+              if(el.tagName==="IFRAME"){
+                media.frames++;
+                try{if(!el.contentDocument||!el.contentDocument.documentElement)media.unreadableFrames++;}catch(e){media.unreadableFrames++;}
+              }else if(el.tagName==="CANVAS")media.canvases++;
+              else media.videos++;
+            });
+            return {renderer:"dom-svg",pixelCoverage:media.unreadableFrames?"partial":"unverified",inventory:"parent-light-dom",mediaPixels:"unverified",nestedMedia:"unknown",media:media};
+          }
           function ensureCapture(){
             if(window.__tlbxDomCapture&&typeof window.__tlbxDomCapture.snapdom==="function")return Promise.resolve(window.__tlbxDomCapture.snapdom);
             if(captureLoad)return captureLoad;
@@ -1328,7 +1348,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   })();return;}
                 case"screenshot":{
                   var fullPage=msg.fullPage===true;
-                  var releaseCapture=null,captureCrop=null;
+                  var releaseCapture=null,captureCrop=null,capturedDocument=null;
                   Promise.resolve().then(function(){
                     settleHiddenCaptureTransitions();
                     return typeof window.__tlbxBeforeCapture==="function"?window.__tlbxBeforeCapture():null;
@@ -1336,7 +1356,7 @@ public sealed partial class WebPreviewProxyMiddleware
                     releaseCapture=release;
                     return ensureCapture();
                   }).then(function(capture){
-                    var clip=fullPage?null:"viewport",captureRoot=document.documentElement;
+                    var clip=fullPage?null:"viewport",inventoryClip=clip,captureRoot=document.documentElement;
                     if(msg.selector!=null){
                       if(fullPage)throw new Error("screenshot selector cannot be combined with fullPage");
                       if(typeof msg.selector!=="string"||!msg.selector.trim())throw new Error("screenshot selector must not be empty");
@@ -1348,10 +1368,12 @@ public sealed partial class WebPreviewProxyMiddleware
                       // Capturing the HTML root drops collapsed body margins in the renderer.
                       // Keep the body layout and overlaps, then crop in its capture viewBox.
                       if(document.body&&target!==document.documentElement)captureRoot=document.body;
+                      inventoryClip={x:bounds.left+window.scrollX,y:bounds.top+window.scrollY,width:bounds.width,height:bounds.height};
                       var rootBounds=captureRoot.getBoundingClientRect();
                       captureCrop={x:bounds.left-rootBounds.left,y:bounds.top-rootBounds.top,width:bounds.width,height:bounds.height};
                       clip=null;
                     }
+                    res.capture=captureSurfaceInventory(inventoryClip);
                     return capture(captureRoot,{
                       clip:clip,
                       dpr:1,
@@ -1363,6 +1385,7 @@ public sealed partial class WebPreviewProxyMiddleware
                       compress:false
                     });
                   }).then(function(capture){
+                    capturedDocument=capture;
                     if(captureCrop){
                       var meta=capture.meta||{};
                       captureCrop.x+=Number(meta.contentX)||0;captureCrop.y+=Number(meta.contentY)||0;
@@ -1370,6 +1393,15 @@ public sealed partial class WebPreviewProxyMiddleware
                     }
                     return capture.toCanvas();
                   }).then(function(canvas){
+                    var warnings=capturedDocument.warnings||[],codes=Object.create(null);
+                    warnings.slice(0,50).forEach(function(w){
+                      var code=w&&w.code;
+                      if(typeof code==="string"&&/^[a-z][a-z0-9-]{0,63}$/.test(code))codes[code]=(codes[code]||0)+1;
+                    });
+                    res.capture.warningCodes=codes;
+                    res.capture.warningsMayBeTruncated=warnings.length>=50;
+                    res.capture.output={width:canvas.width,height:canvas.height};
+                    if(warnings.length)res.capture.pixelCoverage="partial";
                     res.result=canvas.toDataURL("image/png");if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
                   }).catch(function(e){
                     res.success=false;res.error="screenshot failed: "+e.message;if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
