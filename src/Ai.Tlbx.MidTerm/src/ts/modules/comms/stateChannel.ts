@@ -978,7 +978,8 @@ function applyDetachedPreviewViewport(
 async function handleOpenBrowserUiCommand(
   msg: BrowserUiMessage,
 ): Promise<{ success: boolean; error?: string }> {
-  const target = resolveBrowserUiTarget(msg);
+  // Resolve scope without changing selection before the target/revision is validated.
+  const target = resolveBrowserUiTarget(msg, false);
   if (!target || !msg.url) {
     return { success: false, error: 'The browser open command is missing its target or URL.' };
   }
@@ -1029,9 +1030,15 @@ async function handleBrowserOpen(
   }
 
   upsertSessionPreview(result);
-  setSessionSelectedPreviewName(sessionId, previewName);
   setSessionMode(sessionId, previewName, 'docked');
-  if (activateSession && $activeSessionId.get() !== sessionId) {
+  if (!activateSession) {
+    // Independent hidden opens must never race through the selected-preview sync
+    // token: a sibling open can supersede it before this exact frame is attached.
+    await syncBackgroundWebPreview(sessionId, previewName);
+    return { success: true };
+  }
+  setSessionSelectedPreviewName(sessionId, previewName);
+  if ($activeSessionId.get() !== sessionId) {
     selectSession(sessionId, { closeSettingsPanel: false });
   }
   if ($activeSessionId.get() !== sessionId) {
