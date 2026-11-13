@@ -46,7 +46,7 @@ public static class TmuxScriptWriter
             var script = $$"""
                 #!/bin/sh
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
-                  -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
+                  -H "X-Tmux-Pane: ${MT_TMUX_PANE:-$TMUX_PANE}" --data-binary @- \
                   "${MIDTERM_TMUX_ENDPOINT:-{{endpointUrl}}}" 2>/dev/null
                 """;
 
@@ -96,7 +96,7 @@ public static class TmuxScriptWriter
             var bashScript = $$"""
                 #!/bin/sh
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
-                  -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
+                  -H "X-Tmux-Pane: ${MT_TMUX_PANE:-$TMUX_PANE}" --data-binary @- \
                   "${MIDTERM_TMUX_ENDPOINT:-{{endpointUrl}}}" 2>/dev/null
                 """;
             File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n", StringComparison.Ordinal));
@@ -121,9 +121,10 @@ public static class TmuxScriptWriter
                 }
                 $tmp = Join-Path $env:TEMP "mt-tmux-$PID.bin"
                 [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
+                $pane = if ($env:MT_TMUX_PANE) { $env:MT_TMUX_PANE } else { $env:TMUX_PANE }
                 $endpoint = if ($env:MIDTERM_TMUX_ENDPOINT) { $env:MIDTERM_TMUX_ENDPOINT } else { "{{endpointUrl}}" }
                 try {
-                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "$endpoint" 2>$null
+                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $pane" --data-binary "@$tmp" "$endpoint" 2>$null
                 } finally {
                     Remove-Item $tmp -ErrorAction SilentlyContinue
                 }

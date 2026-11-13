@@ -25,6 +25,8 @@ public abstract class ShellConfigurationBase : IShellConfiguration
     private static readonly string[] InheritedEnvironmentVariablesToStrip =
     [
         "NO_COLOR",
+        "TMUX",
+        "TMUX_PANE",
         "DOTNET_STARTUP_HOOKS",
         "DOTNET_WATCH",
         "DOTNET_WATCH_ITERATION",
@@ -82,6 +84,10 @@ public abstract class ShellConfigurationBase : IShellConfiguration
         env["TERM"] = "xterm-256color";
         env["COLORTERM"] = "truecolor";
         env["TERM_PROGRAM"] = "tlbx";
+        // Advertise the supported Kitty graphics transport without requiring a nonportable
+        // terminfo entry or changing tlbx's identity. This is a real terminal, not tmux:
+        // automatic helper discovery (including Codex) need not execute our PATH shim.
+        env["KITTY_WINDOW_ID"] = Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture);
         env["FORCE_COLOR"] = "3";
         env["CLICOLOR"] = "1";
         env["CLICOLOR_FORCE"] = "1";
