@@ -26,7 +26,7 @@ internal sealed class TlbxMcpTool : McpServerTool
                 {
                     ["previewName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 128 },
                     ["format"] = new JsonObject { ["type"] = "string", ["enum"] = new JsonArray("json", "text", "bash", "pwsh") }
-                } : new JsonObject(),
+                } : new JsonObject { ["details"] = new JsonObject { ["type"] = "boolean" } },
                 ["additionalProperties"] = false
             }, McpJsonContext.Default.JsonObject),
             Annotations = new ToolAnnotations { ReadOnlyHint = true, OpenWorldHint = false }
@@ -41,7 +41,7 @@ internal sealed class TlbxMcpTool : McpServerTool
         new TlbxMcpTool("context_get", "Get this request's verified tlbx session and server version. Never infer self from cwd or an inherited session ID."),
         new TlbxMcpTool("context_repair", "Revalidate the live process/runtime identity. Native stdio renews its credential before this check. Does not replay the failed operation; retry it explicitly after successful repair."),
         new TlbxMcpTool("context_export", "Export non-secret verified baseUrl/sessionId/previewName as structured JSON or bash/pwsh/text hints for a child shell. Exported session IDs are hints, never authentication or identity proof. Native child MCP connections need their own verified binding."),
-        new TlbxMcpTool("sessions_list", "List live tlbx sessions using the same projection as the CLI. Requires full tlbx authentication and a verified caller or explicit operator mode.")
+        new TlbxMcpTool("sessions_list", "List live sessions compactly. details:true includes process commands, supervisor telemetry and all CLI fields.")
     ];
 
     public override ValueTask<CallToolResult> InvokeAsync(
@@ -60,8 +60,9 @@ internal sealed class TlbxMcpTool : McpServerTool
             services.GetRequiredService<SessionCliContextService>()) is not null)
             return Error("TLBX_MCP_CONTEXT_EXPIRED", "No tool was executed. Obtain a fresh verified context.");
         var arguments = request.Params?.Arguments;
-        if (arguments is not null && arguments.Any(pair => pair.Key is not ("previewName" or "format") ||
-            !_tool.Name.StartsWith("context_", StringComparison.Ordinal)))
+        if (arguments is not null && arguments.Any(pair => _tool.Name == "sessions_list"
+            ? pair.Key != "details" || pair.Value.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
+            : pair.Key is not ("previewName" or "format")))
             return Error("TLBX_MCP_INVALID_ARGUMENT", "Unexpected argument; self is determined by the verified context.");
         var sessionId = http.Items[TlbxMcpEndpoints.SessionItem] as string;
         if (_tool.Name.StartsWith("context_", StringComparison.Ordinal))
@@ -97,7 +98,20 @@ internal sealed class TlbxMcpTool : McpServerTool
                 services.GetRequiredService<TtyHostSessionManager>(),
                 services.GetRequiredService<SessionSupervisorService>(),
                 services.GetRequiredService<SessionAppServerControlRuntimeService>());
-            return Structured(JsonSerializer.SerializeToElement(sessions, AppJsonContext.Default.SessionListDto));
+            var data = JsonSerializer.SerializeToElement(sessions, AppJsonContext.Default.SessionListDto);
+            if (arguments?.TryGetValue("details", out var details) == true && details.GetBoolean()) return Structured(data);
+            var compact = JsonNode.Parse(data.GetRawText())!.AsObject();
+            foreach (var session in ((JsonArray)compact["sessions"]!).OfType<JsonObject>())
+            {
+                foreach (var field in session.Select(p => p.Key).ToArray())
+                    if (field is not ("id" or "name" or "topic" or "currentDirectory" or "isRunning" or "shellType" or "foregroundName" or "surface" or "agentControlled" or "appServerControlOnly" or "supervisor"))
+                        session.Remove(field);
+                if (session["supervisor"] is JsonObject supervisor)
+                    foreach (var field in supervisor.Select(p => p.Key).ToArray())
+                        if (field is not ("state" or "profile" or "needsAttention" or "attentionReason")) supervisor.Remove(field);
+                foreach (var field in session.Where(p => p.Value is null).Select(p => p.Key).ToArray()) session.Remove(field);
+            }
+            return Structured(compact);
         }
 
         return Error("TLBX_MCP_UNKNOWN_TOOL", "Unknown context operation.");
