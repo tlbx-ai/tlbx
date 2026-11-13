@@ -165,6 +165,18 @@ when calling browser tools. Conflicting wrapped browser targets are rejected;
 explicit non-browser targets remain explicit.
 Literal fill values include empty strings (clear the field) and whitespace;
 direct and batch calls preserve them without treating them as missing arguments.
+`browser_query`, `browser_evaluate`, `browser_attributes`, `browser_css`,
+`browser_click` and `browser_fill` accept optional `frame`, a CSS selector matching
+exactly one immediate iframe. The selector/value/code then targets that child's
+document through its injected cooperative bridge. Static proxied `src`/`srcdoc`
+and runtime `srcdoc` property/setAttribute assignments are instrumented; arbitrary
+uninstrumented frames, script-blocking sandboxes/CSP, runtime HTML-string parsing,
+deeper frame paths and child screenshots are unsupported. No parent preview
+identity, token or cookies are sent over this channel; existing proxy resource URL
+authorization is unchanged. Requests bind the exact window, a fresh nonce and child
+document ID, with a maximum 15-second deadline and bounded results. Navigation,
+removal or connection loss cancels pending replies. A write may already have run;
+timeouts/cancellation never authorize replay and cannot stop arbitrary JavaScript.
 Individual browser waits, queries and evaluations use the shared CLI timer range;
 for example, `timeout: 300` is supported. Omitted timeouts use the shared service
 defaults (selector waits retain 15 seconds). Browser batches retain their existing
