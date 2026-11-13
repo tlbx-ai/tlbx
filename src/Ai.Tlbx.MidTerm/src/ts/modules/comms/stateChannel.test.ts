@@ -374,6 +374,66 @@ describe('stateChannel browser-ui handling', () => {
     });
   });
 
+  it('opens parallel hidden named previews independently in the active session without changing selection', async () => {
+    const { stores, ws } = await loadHarness();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    const names = ['qa-life-0', 'qa-life-1', 'qa-life-2', 'qa-life-3'] as const;
+    const resolveTargets = new Map<string, () => void>();
+    mocks.getWebPreviewTarget.mockImplementation((sessionId: string, previewName: string) =>
+      new Promise((resolve) => {
+        resolveTargets.set(previewName, () =>
+          resolve({
+            sessionId,
+            previewName,
+            routeKey: `route-${previewName}`,
+            url: 'https://example.com/',
+            active: true,
+            targetRevision: 1,
+          }),
+        );
+      }),
+    );
+    for (const previewName of names) {
+      ws.onmessage?.({
+        data: JSON.stringify({
+          type: 'browser-ui',
+          command: 'open',
+          requestId: previewName,
+          sessionId: 'user1234',
+          previewName,
+          url: 'https://example.com/',
+          activateSession: false,
+          targetRevision: 1,
+        }),
+      } as MessageEvent<string>);
+    }
+    await vi.waitFor(() => expect(resolveTargets.size).toBe(4));
+    // Resolve siblings out of dispatch order, with one target still pending.
+    for (const name of [names[3], names[1], names[0]]) resolveTargets.get(name)!();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalledWith('user1234', names[2]);
+    resolveTargets.get(names[2])!();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledTimes(4);
+    for (const name of names) {
+      expect(mocks.syncBackgroundWebPreview).toHaveBeenCalledWith('user1234', name);
+      expect(
+        fetchMock.mock.calls.some((call) => {
+          const body = JSON.parse(String(call[1]?.body)) as { requestId: string; success: boolean };
+          return body.requestId === name && body.success;
+        }),
+      ).toBe(true);
+    }
+    expect(mocks.setSessionSelectedPreviewName).not.toHaveBeenCalled();
+    expect(mocks.syncActiveWebPreview).not.toHaveBeenCalled();
+    expect(mocks.openWebPreviewDock).not.toHaveBeenCalled();
+    expect(mocks.selectSession).not.toHaveBeenCalled();
+    expect(mocks.closePreviewFromServer).not.toHaveBeenCalled();
+    expect(stores.$activeSessionId.get()).toBe('user1234');
+    expect(stores.$webPreviewUrl.get()).toBeNull();
+  });
+
   it('rejects an obsolete open command without mutating or rendering the newer target', async () => {
     const { ws } = await loadHarness();
     mocks.getWebPreviewTarget.mockResolvedValue({
@@ -402,6 +462,7 @@ describe('stateChannel browser-ui handling', () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
     expect(mocks.upsertSessionPreview).not.toHaveBeenCalled();
+    expect(mocks.setSessionSelectedPreviewName).not.toHaveBeenCalled();
     expect(mocks.syncBackgroundWebPreview).not.toHaveBeenCalled();
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       requestId: 'open-1',
