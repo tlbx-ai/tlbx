@@ -25,6 +25,24 @@ public sealed class TlbxMcpBrowserProtocolTests
     private const string Png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=";
 
     [Fact]
+    public void DetailScreenshotPreservesSelectorAndRejectsConflictingCaptureModes()
+    {
+        const string selector = "canvas[data-chart='Grüße 東京']";
+        var detail = TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { selector }), "first001", "alpha", "preview-a");
+        Assert.Equal(selector, detail.Selector);
+        Assert.False(detail.FullPage);
+        Assert.Equal("preview-a", detail.PreviewId);
+        var batch = TlbxMcpBrowserTools.ParseBatch(Args(new { commands = new[] { new { command = "screenshot", selector } } }), "first001", "alpha");
+        Assert.Equal(selector, Assert.Single(batch.Commands).Selector);
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { selector, fullPage = true }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { selector = " " }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.ParseBatch(Args(new { commands = new[] { new { command = "screenshot", selector, fullPage = true } } }), "first001", "alpha"));
+        var viewport = TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { }), "first001", "alpha", null);
+        Assert.Null(viewport.Selector);
+        Assert.False(viewport.FullPage);
+    }
+
+    [Fact]
     public void TypedCommandsPreserveUnicodeAndFractionalNumbersWithoutShellParsing()
     {
         var text = "quotes '\" $()`n\0 Grüße 東京\n" + new string('x', 70_000);
@@ -224,6 +242,15 @@ public sealed class TlbxMcpBrowserProtocolTests
                 Assert.NotEqual(true, image.IsError);
                 Assert.IsType<ImageContentBlock>(Assert.Single(image.Content));
                 Assert.True(sent[session].FullPage);
+                var detail = await client.CallToolAsync("browser_screenshot", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = preview, ["selector"] = "canvas[data-chart='Grüße 東京']"
+                }, cancellationToken: ct);
+                Assert.NotEqual(true, detail.IsError);
+                Assert.IsType<ImageContentBlock>(Assert.Single(detail.Content));
+                Assert.Equal("canvas[data-chart='Grüße 東京']", sent[session].Selector);
+                Assert.Equal(preview, sent[session].PreviewName);
+                Assert.False(sent[session].FullPage);
             }
             await Task.WhenAll(Check(first, "first001", "alpha"), Check(second, "second02", "beta"));
         }

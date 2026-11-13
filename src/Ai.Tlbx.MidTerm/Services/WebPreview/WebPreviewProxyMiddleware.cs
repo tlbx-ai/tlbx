@@ -1217,8 +1217,21 @@ public sealed partial class WebPreviewProxyMiddleware
                     releaseCapture=release;
                     return ensureCapture();
                   }).then(function(capture){
+                    var clip=fullPage?null:"viewport";
+                    if(msg.selector!=null){
+                      if(fullPage)throw new Error("screenshot selector cannot be combined with fullPage");
+                      if(typeof msg.selector!=="string"||!msg.selector.trim())throw new Error("screenshot selector must not be empty");
+                      var targets=document.querySelectorAll(msg.selector);
+                      res.matchCount=targets.length;
+                      if(targets.length!==1)throw new Error("screenshot selector must match exactly one element; matched "+targets.length);
+                      var target=targets[0],bounds=target.getBoundingClientRect();
+                      if(!isControlVisible(target)||bounds.width<=0||bounds.height<=0)throw new Error("screenshot target is hidden or has no visible area");
+                      // Clip the existing document instead of relocating/cloning the target as a new root.
+                      // This preserves ancestor layout, canvas pixels, overlaps and scroll without resizing the page.
+                      clip={x:bounds.left+window.scrollX,y:bounds.top+window.scrollY,width:bounds.width,height:bounds.height};
+                    }
                     return capture(document.documentElement,{
-                      clip:fullPage?null:"viewport",
+                      clip:clip,
                       dpr:1,
                       scale:1,
                       backgroundColor:captureBackground(),
