@@ -36,18 +36,18 @@ public static class TmuxScriptWriter
     private static void WriteUnixScript(int port)
     {
         var dir = "/tmp/midterm-bin";
-        var endpointUrl = string.Create(CultureInfo.InvariantCulture, $"https://localhost:{port}/api/tmux");
+        var endpointUrl = string.Create(CultureInfo.InvariantCulture, $"https://127.0.0.1:{port}/api/tmux");
 
         try
         {
             Directory.CreateDirectory(dir);
             var scriptPath = Path.Combine(dir, "tmux");
 
-            var script = $"""
+            var script = $$"""
                 #!/bin/sh
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
-                  "{endpointUrl}" 2>/dev/null
+                  "${MIDTERM_TMUX_ENDPOINT:-{{endpointUrl}}}" 2>/dev/null
                 """;
 
             File.WriteAllText(scriptPath, script);
@@ -72,7 +72,7 @@ public static class TmuxScriptWriter
     private static void WriteWindowsScript(int port)
     {
         var dir = Path.Combine(Path.GetTempPath(), "midterm-bin");
-        var endpointUrl = string.Create(CultureInfo.InvariantCulture, $"https://localhost:{port}/api/tmux");
+        var endpointUrl = string.Create(CultureInfo.InvariantCulture, $"https://127.0.0.1:{port}/api/tmux");
 
         try
         {
@@ -93,11 +93,11 @@ public static class TmuxScriptWriter
 
             // Bash-compatible script (no extension) for Git Bash / MSYS2 / WSL
             var bashPath = Path.Combine(dir, "tmux");
-            var bashScript = $"""
+            var bashScript = $$"""
                 #!/bin/sh
                 printf '%s\0' "$@" | curl -sfk -b "mm-session=$MT_TOKEN" \
                   -H "X-Tmux-Pane: $TMUX_PANE" --data-binary @- \
-                  "{endpointUrl}" 2>/dev/null
+                  "${MIDTERM_TMUX_ENDPOINT:-{{endpointUrl}}}" 2>/dev/null
                 """;
             File.WriteAllText(bashPath, bashScript.Replace("\r\n", "\n", StringComparison.Ordinal));
 
@@ -121,8 +121,9 @@ public static class TmuxScriptWriter
                 }
                 $tmp = Join-Path $env:TEMP "mt-tmux-$PID.bin"
                 [System.IO.File]::WriteAllBytes($tmp, $body.ToArray())
+                $endpoint = if ($env:MIDTERM_TMUX_ENDPOINT) { $env:MIDTERM_TMUX_ENDPOINT } else { "{{endpointUrl}}" }
                 try {
-                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "{{endpointUrl}}" 2>$null
+                    & curl.exe -sfk -b "mm-session=$env:MT_TOKEN" -H "X-Tmux-Pane: $env:TMUX_PANE" --data-binary "@$tmp" "$endpoint" 2>$null
                 } finally {
                     Remove-Item $tmp -ErrorAction SilentlyContinue
                 }
