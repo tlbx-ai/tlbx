@@ -500,7 +500,7 @@ public sealed class SessionControlStateService
                 _surfaces = state.Surfaces
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && !string.IsNullOrWhiteSpace(kvp.Value))
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.Ordinal);
-                _previews = (state.Previews ?? [])
+                _previews = (state.Previews ?? new(StringComparer.Ordinal))
                     .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && kvp.Value is not null)
                     .ToDictionary(kvp => kvp.Key, kvp => kvp.Value
                         .Where(preview => !string.IsNullOrWhiteSpace(preview.Key) && preview.Value is not null)

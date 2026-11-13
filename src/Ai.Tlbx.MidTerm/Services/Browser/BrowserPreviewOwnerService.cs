@@ -19,7 +19,7 @@ public sealed class BrowserPreviewOwnerService
     {
         lock (_lock)
         {
-            foreach (var (name, preview) in _controlState?.GetPreviews(sessionId) ?? [])
+            foreach (var (name, preview) in _controlState?.GetPreviews(sessionId) ?? new(StringComparer.Ordinal))
             {
                 if (string.IsNullOrWhiteSpace(preview.OwnerBrowserId)) continue;
                 var key = PreviewKey.Create(sessionId, name);

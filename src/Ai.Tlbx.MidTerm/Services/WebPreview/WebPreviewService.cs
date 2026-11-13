@@ -54,7 +54,7 @@ public sealed class WebPreviewService
     {
         lock (_targetLock)
         {
-            foreach (var (name, saved) in _controlState?.GetPreviews(sessionId) ?? [])
+            foreach (var (name, saved) in _controlState?.GetPreviews(sessionId) ?? new(StringComparer.Ordinal))
             {
                 if (TryGetState(sessionId, name, out _)) continue;
                 var state = GetOrCreateState(sessionId, name);
@@ -147,9 +147,9 @@ public sealed class WebPreviewService
 
             _routeKeyToPreviewKey.TryRemove(state.RouteKey, out _);
             ClearLeakedPathRoutes(state.RouteKey);
-            state.Dispose();
             _controlState?.RemovePreview(sessionId, state.PreviewName);
             _owners?.Release(sessionId, state.PreviewName);
+            state.Dispose();
             return true;
         }
     }
