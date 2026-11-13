@@ -612,6 +612,7 @@ export function resetAgentViewRuntimeForTests(): void {
   activationFlights.clear();
   resetAppServerControlHistoryTrace();
   appServerControlTurnLifecycleBound = false;
+  document.removeEventListener('visibilitychange', clearHistoryWheelWhenHidden);
   appServerControlActiveSessionBound = false;
   appServerControlSelectionGuardBound = false;
   appServerControlVisualViewportRecoveryBound = false;
@@ -2723,6 +2724,12 @@ function commitAgentViewRender(sessionId: string, force = false): void {
   renderAgentView(state.panel, state.snapshot, state.streamConnected, state);
 }
 
+function clearHistoryWheelWhenHidden(): void {
+  if (document.hidden) {
+    for (const state of viewStates.values()) state.historyPendingWheelDeltaPx = 0;
+  }
+}
+
 function bindActiveAppServerControlSessionRendering(): void {
   if (appServerControlActiveSessionBound) {
     return;
@@ -2749,6 +2756,7 @@ function bindActiveAppServerControlSessionRendering(): void {
 
     renderCurrentAgentView(sessionId, { immediate: true });
   });
+  document.addEventListener('visibilitychange', clearHistoryWheelWhenHidden);
   appServerControlActiveSessionBound = true;
 }
 
