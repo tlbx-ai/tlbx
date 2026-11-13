@@ -8,7 +8,7 @@ public sealed class MidTermSettings
 {
     public const int DefaultScrollbackLines = 10000;
     public const int MaxScrollbackLines = 10000;
-    public const int DefaultScrollbackBytes = 2 * 1024 * 1024;
+    public const int DefaultScrollbackBytes = 8 * 1024 * 1024;
     public const int MinScrollbackBytes = 64 * 1024;
     public const int MaxScrollbackBytes = 10 * 1024 * 1024;
     public const int MinBackgroundKenBurnsZoomPercent = 150;
@@ -94,7 +94,7 @@ public sealed class MidTermSettings
     public bool MobileDenseTerminalMode { get; set; } = false;
     public string StickyMainBrowserId { get; set; } = "";
     public bool KeepSystemAwakeWithActiveSessions { get; set; } = false;
-    public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.FullReplay;
+    public TerminalResumeModeSetting ResumeMode { get; set; } = TerminalResumeModeSetting.QuickResume;
     public bool TryResumeNonAiAgentProcesses { get; set; } = false;
     public bool PreserveTerminalCursorControl { get; set; } = true;
 

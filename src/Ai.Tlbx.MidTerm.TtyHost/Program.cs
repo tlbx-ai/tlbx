@@ -1525,7 +1525,7 @@ internal sealed class TerminalInputReadinessDetector
 
 internal sealed class TerminalSession : IDisposable
 {
-    internal const int DefaultBufferCapacity = 2 * 1024 * 1024; // 2MB fixed buffer
+    internal const int DefaultBufferCapacity = 8 * 1024 * 1024; // 8 MiB retained output
 
     private sealed class InputTraceState
     {

@@ -488,30 +488,16 @@ public sealed class MuxWebSocketHandler
                     return new MuxClient.RecoveryResult(false, 0, 0, false);
                 }
 
-                if (RequiresScreenRedraw(sinceSequence, snapshot))
+                if (RequiresScreenRedraw(sinceSequence, snapshot)
+                    || (sinceSequence is null && maxBytes is > 0 && snapshot.SequenceStart > 0
+                        && !IsLikelyLineBasedShell(session)))
                 {
                     Log.Verbose(() => $"[MuxHandler] Refreshing truncated screen replay for {session.Id}");
+                    var redrawRequested = false;
                     try
                     {
-                        if (await _sessionManager.RedrawSessionAsync(session.Id, recoveryCt).ConfigureAwait(false))
-                        {
-                            // Capture the complete retained ring again so the repaint follows any
-                            // truncated older delta. The resize acknowledgement confirms PTY geometry,
-                            // not application rendering; later repaint bytes remain ordered behind
-                            // this recovery by MuxClient and are delivered when recovery completes.
-                            // Replaying that fresh frame after reset reconstructs static TUI cell
-                            // backgrounds which cannot be inferred from an arbitrary byte-safe tail.
-                            var redrawnSnapshot = await _sessionManager.GetBufferAsync(
-                                session.Id,
-                                maxBytes: null,
-                                reason: reason,
-                                sinceSequence: null,
-                                ct: recoveryCt).ConfigureAwait(false);
-                            if (redrawnSnapshot is not null)
-                            {
-                                snapshot = redrawnSnapshot;
-                            }
-                        }
+                        redrawRequested = await _sessionManager.RedrawSessionAsync(
+                            session.Id, recoveryCt).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (recoveryCt.IsCancellationRequested)
                     {
@@ -519,9 +505,29 @@ public sealed class MuxWebSocketHandler
                     }
                     catch (Exception ex)
                     {
-                        // Redraw is a semantic replay upgrade. Preserve the previous parser-safe
-                        // recovery as a fallback if the foreground process cannot be pulsed.
                         Log.Warn(() => $"[MuxHandler] Screen redraw failed for {session.Id}: {ex.Message}");
+                    }
+
+                    var boundedRedrawReady = maxBytes is > 0 && redrawRequested
+                        && await HasCompleteRedrawAsync(session.Id, snapshot, reason, recoveryCt).ConfigureAwait(false);
+
+                    // Keep the pre-pulse snapshot so the complete repaint follows through
+                    // MuxClient's ordered live lane. Recapturing a capped tail could cut
+                    // the start of a large image or repaint. A resize acknowledgement alone
+                    // is insufficient: require a fresh complete synchronized full redraw.
+                    // Unsupported, slow or oversized repaints retain full-history recovery.
+                    if (!boundedRedrawReady)
+                    {
+                        var fullSnapshot = await _sessionManager.GetBufferAsync(
+                            session.Id,
+                            maxBytes: null,
+                            reason: reason,
+                            sinceSequence: null,
+                            ct: recoveryCt).ConfigureAwait(false);
+                        if (fullSnapshot is not null)
+                        {
+                            snapshot = fullSnapshot;
+                        }
                     }
                 }
 
@@ -571,6 +577,33 @@ public sealed class MuxWebSocketHandler
                     resetTerminal);
             },
             ct);
+    }
+
+    private async Task<bool> HasCompleteRedrawAsync(
+        string sessionId,
+        TtyHostBufferSnapshot beforeRedraw,
+        TerminalReplayReason reason,
+        CancellationToken ct)
+    {
+        const int probeMaxBytes = 512 * 1024;
+        var afterSequence = beforeRedraw.SequenceStart + (ulong)beforeRedraw.Data.Length;
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            await Task.Delay(50, ct).ConfigureAwait(false);
+            var probe = await _sessionManager.GetBufferAsync(
+                sessionId, maxBytes: probeMaxBytes, reason: reason, ct: ct).ConfigureAwait(false);
+            if (probe is null || probe.SequenceStart > afterSequence)
+            {
+                return false;
+            }
+
+            if (TerminalRedrawDetector.ContainsCompleteRedraw(probe.Data, probe.SequenceStart, afterSequence))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     internal static bool RequiresScreenRedraw(

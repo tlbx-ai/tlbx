@@ -963,7 +963,7 @@
   "settings.options.boxDrawingFont": "Use Font",
   "settings.options.boxDrawingStyleClassic": "Classic",
   "settings.options.boxDrawingStyleRounded": "Rounded",
-  "settings.options.resumeModeFullReplay": "Full Replay (Default)",
+  "settings.options.resumeModeFullReplay": "Full Replay",
   "settings.options.resumeModeQuickResume": "Quick Resume (More Sessions के लिए बेहतर)",
   "smartInput.autoSendOnHint": "Transcribed input के लिए auto-send enabled है",
   "smartInput.mic": "बोलने के लिए दबाए रखें",

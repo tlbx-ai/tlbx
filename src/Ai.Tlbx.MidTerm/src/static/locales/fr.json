@@ -963,7 +963,7 @@
   "settings.options.boxDrawingFont": "Utiliser la police",
   "settings.options.boxDrawingStyleClassic": "Classique",
   "settings.options.boxDrawingStyleRounded": "Arrondi",
-  "settings.options.resumeModeFullReplay": "Replay complet (par défaut)",
+  "settings.options.resumeModeFullReplay": "Replay complet",
   "settings.options.resumeModeQuickResume": "Quick Resume (mieux pour plus de sessions)",
   "smartInput.autoSendOnHint": "L’envoi automatique est activé pour la saisie transcrite",
   "smartInput.mic": "Maintenir pour parler",

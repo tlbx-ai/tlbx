@@ -1030,7 +1030,7 @@
   "settings.options.boxDrawingFont": "Schriftart verwenden",
   "settings.options.boxDrawingStyleClassic": "Klassisch",
   "settings.options.boxDrawingStyleRounded": "Abgerundet",
-  "settings.options.resumeModeFullReplay": "Vollständiges Replay (Standard)",
+  "settings.options.resumeModeFullReplay": "Vollständiges Replay",
   "settings.options.resumeModeQuickResume": "Quick Resume (besser für mehr Sessions)",
   "smartInput.autoSendOnHint": "Automatisches Senden ist für transkribierte Eingabe aktiviert",
   "smartInput.mic": "Zum Sprechen gedrückt halten",
