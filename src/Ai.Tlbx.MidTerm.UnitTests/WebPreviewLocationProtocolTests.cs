@@ -7,6 +7,108 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class WebPreviewLocationProtocolTests
 {
     [Fact]
+    public async Task LocationAliasesDestructuringAndCoercionUseUpstreamValuesWithoutChangingReferences()
+    {
+        const string application = """
+            function p(e){var t=e||{},n=t.key,r=t.state,i=window.location,a=i.pathname,o=i.search,s=i.hash,c=a+o+s;return c;}
+            assert.equal(p(), '/explore?local=1#section');
+            const alias = window.location;
+            assert.equal(alias, upstream);
+            const {pathname, search, hash} = window.location;
+            assert.deepEqual([pathname,search,hash], ['/explore','?local=1','#section']);
+            let route;
+            ({pathname:route} = window['location']);
+            assert.equal(route, '/explore');
+            let assigned;
+            assigned = self.location;
+            assert.equal(assigned.pathname, '/explore');
+            assert.equal(new URL(window.location).href, upstream.href);
+            assert.equal(String(location), upstream.href);
+            assert.equal(`${self.location}`, upstream.href);
+            assert.equal(location + '', upstream.href);
+            assert.equal(({route:window.location}).route, upstream);
+            const beforeMember = calls;
+            assert.equal(window.location.pathname, '/explore');
+            assert.equal(calls - beforeMember, 1);
+            const shadow = {pathname:'shadow'};
+            const shorthand = {location};
+            assert.equal(shorthand.location, native);
+            assert.equal(((location)=>location)(shadow), shadow);
+            assert.equal(((window)=>window.location)({location:shadow}), shadow);
+            let reads = 0;
+            const shadowWindow = {get location(){reads++;return shadow;}};
+            assert.equal(((window)=>{const x=window.location;return x;})(shadowWindow), shadow);
+            assert.equal(reads, 1);
+            assert.equal((function(document){const x=document.location;return x;})({location:shadow}), shadow);
+            assert.equal((function(location){location='assigned';return location;})('old'), 'assigned');
+            (function(window){
+              window.location = 'assigned';
+              assert.equal(window.location, 'assigned');
+              ({value:window.location} = {value:'destructured'});
+              assert.equal(window.location, 'destructured');
+              for(window.location of ['first','last']){}
+              assert.equal(window.location, 'last');
+            })({location:'old'});
+            (function(window){
+              const before = calls;
+              assert.equal(window.location++, 2);
+              assert.equal(++window.location, 4);
+              assert.equal(delete window.location, true);
+              assert.equal(calls, before);
+            })({location:2});
+            (function(window){
+              const before = calls;
+              assert.equal(window.location.pathname++, 2);
+              assert.equal(delete window.location.pathname, true);
+              assert.equal(delete window.location?.pathname, true);
+              assert.equal(calls, before);
+            })({location:{pathname:2}});
+            assert.equal(((window)=>window?.location.pathname)(null), undefined);
+            assert.equal(((window)=>window.location?.pathname)({location:undefined}), undefined);
+            assert.equal(((window)=>window?.location)(null), undefined);
+            let evaluated = 0;
+            const optional = null;
+            assert.equal(optional?.[(evaluated++, window.location)], undefined);
+            assert.equal(evaluated, 0);
+            // A unary IIFE must not suppress aliases in the function body.
+            !function(){const x=window.location;assert.equal(x.pathname,'/explore');}();
+            assert.equal(typeof missingLocation, 'undefined');
+            """;
+        var source = WebPreviewLocationRewriter.Rewrite(application);
+        Assert.Equal(source, WebPreviewLocationRewriter.Rewrite(source));
+        var fallback = WebPreviewLocationRewriter.Rewrite("const fallback=window.location;assert.equal(fallback,native);");
+        var prelude = """
+            const assert=require('node:assert/strict');
+            const native=new URL('https://proxy.test/webpreview/route/_access/id/token/explore?transport=1');
+            const upstream=new URL('https://mastodon.social/explore?local=1#section');
+            let location=native;
+            const window={location},self=window;
+            let calls=0;
+            globalThis.__mtPreviewLocation=value=>{calls++;return value===native?upstream:value;};
+            """;
+        var start = new ProcessStartInfo("node") {UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true};
+        start.ArgumentList.Add("-e");
+        start.ArgumentList.Add(prelude + source + ";delete globalThis.__mtPreviewLocation;" + fallback);
+        using var process = Process.Start(start)!;
+        var ct = TestContext.Current.CancellationToken;
+        var output = process.StandardOutput.ReadToEndAsync(ct);
+        var errors = process.StandardError.ReadToEndAsync(ct);
+        try { await process.WaitForExitAsync(ct).WaitAsync(TimeSpan.FromSeconds(5), ct); }
+        finally { if (!process.HasExited) process.Kill(entireProcessTree: true); }
+        await output;
+        Assert.True(process.ExitCode == 0, await errors);
+    }
+
+    [Fact]
+    public void AdapterDefinitionsAndMarkedInlineTransportCodeKeepNativeLocationReads()
+    {
+        const string definition = "globalThis.__mtPreviewLocation=function(value){const native=window.location;return value===native?value:native;};";
+        Assert.Equal(definition, WebPreviewLocationRewriter.Rewrite(definition));
+        const string transport = "<script data-mt-proxy-route='/webpreview/route'>const native=window.location;</script>";
+        Assert.Equal(transport, WebPreviewLocationRewriter.RewriteInlineScripts(transport));
+    }
+
+    [Fact]
     public async Task ComputedImportsPreserveNativeEvaluationAndNestedDocumentAdaptation()
     {
         var source = WebPreviewLocationRewriter.Rewrite("""

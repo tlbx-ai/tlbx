@@ -25,25 +25,46 @@ internal static partial class WebPreviewLocationRewriter
         if (root is null) return source;
 
         var ranges = new List<(int Start, int End, string Adapter)>();
-        var pending = new Stack<Node>();
-        pending.Push(root);
-        while (pending.TryPop(out var node))
+        var pending = new Stack<(Node Node, Node? Parent, bool Mutation)>();
+        pending.Push((root, null, false));
+        while (pending.TryPop(out var item))
         {
-            if (node is MemberExpression member && IsLocationObject(member.Object) && CanAdapt(member))
+            var (node, parent, mutation) = item;
+            // Nested previews can rewrite an already adapted script. Never enter
+            // our adapter calls/definitions or wrap their native identity reads.
+            if (node is CallExpression call && IsAdapterCall(call)
+                || node is AssignmentExpression assignment && IsAdapterReference(assignment.Left)) continue;
+            if (!mutation && node is MemberExpression member && IsLocationObject(member.Object) && CanAdapt(member))
             {
                 ranges.Add((member.Object.Start, member.Object.End, "__mtPreviewLocation"));
+            }
+            else if (!mutation && node is Expression value && IsLocationObject(value) && IsLocationValueRead(value, parent))
+            {
+                ranges.Add((value.Start, value.End, "__mtPreviewLocation"));
             }
             else if (node is MemberExpression metadata && IsDocumentMetadata(metadata))
             {
                 ranges.Add((metadata.Object.Start, metadata.Object.End, "__mtPreviewDocument"));
             }
-            else if (node is ImportExpression import)
+            else if (node is ImportExpression import
+                && !(import.Source is CallExpression adapted && IsAdapterCall(adapted)))
             {
                 // Computed absolute module URLs bypass fetch/XHR interception. Keep
                 // their import operation native, adapting only its URL argument.
                 ranges.Add((import.Source.Start, import.Source.End, "__mtPreviewImport"));
             }
-            foreach (var child in node.ChildNodes) pending.Push(child);
+            // Delete/update act on a reference, not an adapted value. Carry this
+            // exclusion only through its member receiver, not into call arguments,
+            // computed keys or functions evaluated while obtaining that reference.
+            var mutationTarget = node is UpdateExpression
+                || node is UnaryExpression && source.AsSpan(node.Start, node.End - node.Start).StartsWith("delete", StringComparison.Ordinal);
+            foreach (var child in node.ChildNodes)
+            {
+                var childMutation = mutationTarget
+                    || mutation && node is MemberExpression receiver && ReferenceEquals(receiver.Object, child)
+                    || mutation && node is ChainExpression chain && ReferenceEquals(chain.Expression, child);
+                pending.Push((child, node, childMutation));
+            }
         }
         if (ranges.Count == 0) return source;
 
@@ -137,6 +158,39 @@ internal static partial class WebPreviewLocationRewriter
                 Computed: false, Property: Identifier { Name: "document" }
             };
     }
+
+    private static bool IsLocationValueRead(Expression value, Node? parent) => parent switch
+    {
+        VariableDeclarator declaration => ReferenceEquals(declaration.Init, value),
+        AssignmentExpression assignment => ReferenceEquals(assignment.Right, value),
+        AssignmentPattern assignment => ReferenceEquals(assignment.Right, value),
+        ReturnStatement statement => ReferenceEquals(statement.Argument, value),
+        ThrowStatement statement => ReferenceEquals(statement.Argument, value),
+        ArrowFunctionExpression function => ReferenceEquals(function.Body, value),
+        ExpressionStatement statement => ReferenceEquals(statement.Expression, value),
+        CallExpression call => !ReferenceEquals(call.Callee, value),
+        NewExpression call => !ReferenceEquals(call.Callee, value),
+        BinaryExpression or ConditionalExpression or SequenceExpression or ArrayExpression
+            or TemplateLiteral or AwaitExpression or YieldExpression or SpreadElement => true,
+        // A shorthand key needs a different edit shape; do not turn it into an
+        // invalid object literal. Pattern properties and binding IDs stay native.
+        ObjectProperty property => ReferenceEquals(property.Value, value) && property.Key.Start != value.Start,
+        MemberExpression member => member.Computed && ReferenceEquals(member.Property, value),
+        ForInStatement loop => ReferenceEquals(loop.Right, value),
+        ForOfStatement loop => ReferenceEquals(loop.Right, value),
+        _ => false
+    };
+
+    private static bool IsAdapterReference(Node node) => node is MemberExpression
+    {
+        Object: Identifier { Name: "globalThis" or "window" or "self" },
+        Computed: false,
+        Property: Identifier { Name: "__mtPreviewLocation" or "__mtPreviewDocument" or "__mtPreviewImport" }
+    };
+
+    private static bool IsAdapterCall(CallExpression call) => IsAdapterReference(call.Callee)
+        || call.Callee is BinaryExpression { Left: var adapter, Right: ArrowFunctionExpression }
+            && IsAdapterReference(adapter);
 
     private static bool CanAdapt(MemberExpression member)
     {
