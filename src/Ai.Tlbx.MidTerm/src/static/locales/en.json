@@ -722,7 +722,7 @@
   "settings.options.inputKeyboard": "Keyboard",
   "settings.options.inputSmartInput": "Smart Input",
   "settings.options.inputBoth": "Both",
-  "settings.options.resumeModeFullReplay": "Full Replay (Default)",
+  "settings.options.resumeModeFullReplay": "Full Replay",
   "settings.options.resumeModeQuickResume": "Quick Resume (Better for More Sessions)",
   "settings.options.clipboardAuto": "Auto (detect platform)",
   "settings.options.clipboardWindows": "Windows (Ctrl+C/V)",

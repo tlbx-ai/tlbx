@@ -491,27 +491,11 @@ public sealed class MuxWebSocketHandler
                 if (RequiresScreenRedraw(sinceSequence, snapshot))
                 {
                     Log.Verbose(() => $"[MuxHandler] Refreshing truncated screen replay for {session.Id}");
+                    var redrawRequested = false;
                     try
                     {
-                        if (await _sessionManager.RedrawSessionAsync(session.Id, recoveryCt).ConfigureAwait(false))
-                        {
-                            // Capture the complete retained ring again so the repaint follows any
-                            // truncated older delta. The resize acknowledgement confirms PTY geometry,
-                            // not application rendering; later repaint bytes remain ordered behind
-                            // this recovery by MuxClient and are delivered when recovery completes.
-                            // Replaying that fresh frame after reset reconstructs static TUI cell
-                            // backgrounds which cannot be inferred from an arbitrary byte-safe tail.
-                            var redrawnSnapshot = await _sessionManager.GetBufferAsync(
-                                session.Id,
-                                maxBytes: null,
-                                reason: reason,
-                                sinceSequence: null,
-                                ct: recoveryCt).ConfigureAwait(false);
-                            if (redrawnSnapshot is not null)
-                            {
-                                snapshot = redrawnSnapshot;
-                            }
-                        }
+                        redrawRequested = await _sessionManager.RedrawSessionAsync(
+                            session.Id, recoveryCt).ConfigureAwait(false);
                     }
                     catch (OperationCanceledException) when (recoveryCt.IsCancellationRequested)
                     {
@@ -519,9 +503,27 @@ public sealed class MuxWebSocketHandler
                     }
                     catch (Exception ex)
                     {
-                        // Redraw is a semantic replay upgrade. Preserve the previous parser-safe
-                        // recovery as a fallback if the foreground process cannot be pulsed.
                         Log.Warn(() => $"[MuxHandler] Screen redraw failed for {session.Id}: {ex.Message}");
+                    }
+
+                    // A bounded initial replay must stay bounded. Its snapshot ends before
+                    // the resize pulse, so the entire repaint follows it through MuxClient's
+                    // ordered live-output lane, including split control strings and images.
+                    // A resize acknowledgement is not a render-completion acknowledgement:
+                    // recapturing a capped tail here could discard the start of that repaint.
+                    // Full Replay and failed redraws retain the complete-history fallback.
+                    if (maxBytes is not > 0 || !redrawRequested)
+                    {
+                        var fullSnapshot = await _sessionManager.GetBufferAsync(
+                            session.Id,
+                            maxBytes: null,
+                            reason: reason,
+                            sinceSequence: null,
+                            ct: recoveryCt).ConfigureAwait(false);
+                        if (fullSnapshot is not null)
+                        {
+                            snapshot = fullSnapshot;
+                        }
                     }
                 }
 

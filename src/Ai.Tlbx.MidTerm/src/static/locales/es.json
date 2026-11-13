@@ -963,7 +963,7 @@
   "settings.options.boxDrawingFont": "Usar fuente",
   "settings.options.boxDrawingStyleClassic": "Clásico",
   "settings.options.boxDrawingStyleRounded": "Redondeado",
-  "settings.options.resumeModeFullReplay": "Replay completo (predeterminado)",
+  "settings.options.resumeModeFullReplay": "Replay completo",
   "settings.options.resumeModeQuickResume": "Quick Resume (mejor para más sesiones)",
   "smartInput.autoSendOnHint": "El envío automático está activado para la entrada transcrita",
   "smartInput.mic": "Mantén pulsado para hablar",

@@ -963,7 +963,7 @@
   "settings.options.boxDrawingFont": "フォントを使う",
   "settings.options.boxDrawingStyleClassic": "クラシック",
   "settings.options.boxDrawingStyleRounded": "角丸",
-  "settings.options.resumeModeFullReplay": "Full Replay（デフォルト）",
+  "settings.options.resumeModeFullReplay": "Full Replay",
   "settings.options.resumeModeQuickResume": "Quick Resume（より多くの session 向け）",
   "smartInput.autoSendOnHint": "文字起こし入力では自動送信が有効です",
   "smartInput.mic": "押して話す",

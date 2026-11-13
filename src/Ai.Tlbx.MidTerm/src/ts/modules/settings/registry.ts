@@ -400,7 +400,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'integer, UI clamps to 500-10000',
     applyMode: 'immediate',
   }),
-  controlEntry('scrollbackBytes', 'setting-scrollback-bytes', 'int', 2 * 1024 * 1024, {
+  controlEntry('scrollbackBytes', 'setting-scrollback-bytes', 'int', 8 * 1024 * 1024, {
     editable: true,
     storage: 'settings.json',
     validation: 'integer bytes, UI clamps to 65536-10485760',
@@ -502,7 +502,7 @@ export const SETTINGS_REGISTRY: readonly SettingsRegistryEntry[] = [
     validation: 'idle, belowNormal, normal, aboveNormal, high or realTime',
     applyMode: 'server-only',
   }),
-  controlEntry('resumeMode', 'setting-resume-mode', 'select', 'fullReplay', {
+  controlEntry('resumeMode', 'setting-resume-mode', 'select', 'quickResume', {
     editable: true,
     storage: 'settings.json',
     validation: 'fullReplay or quickResume',

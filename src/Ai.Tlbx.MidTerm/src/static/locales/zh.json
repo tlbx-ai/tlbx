@@ -963,7 +963,7 @@
   "settings.options.boxDrawingFont": "使用字体",
   "settings.options.boxDrawingStyleClassic": "经典",
   "settings.options.boxDrawingStyleRounded": "圆角",
-  "settings.options.resumeModeFullReplay": "完整 Replay（默认）",
+  "settings.options.resumeModeFullReplay": "完整 Replay",
   "settings.options.resumeModeQuickResume": "Quick Resume（更适合更多会话）",
   "smartInput.autoSendOnHint": "转写输入已启用自动发送",
   "smartInput.mic": "按住说话",

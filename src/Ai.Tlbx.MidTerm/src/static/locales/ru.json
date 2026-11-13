@@ -963,7 +963,7 @@
   "settings.options.boxDrawingFont": "Использовать шрифт",
   "settings.options.boxDrawingStyleClassic": "Классический",
   "settings.options.boxDrawingStyleRounded": "Скруглённый",
-  "settings.options.resumeModeFullReplay": "Полный replay (по умолчанию)",
+  "settings.options.resumeModeFullReplay": "Полный replay",
   "settings.options.resumeModeQuickResume": "Quick Resume (лучше для большего числа сессий)",
   "smartInput.autoSendOnHint": "Для транскрибированного ввода включена автоотправка",
   "smartInput.mic": "Нажмите и говорите",
