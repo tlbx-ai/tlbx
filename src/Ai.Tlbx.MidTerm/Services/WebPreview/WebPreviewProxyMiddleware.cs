@@ -23,6 +23,7 @@ public sealed partial class WebPreviewProxyMiddleware
     private const string PreviewSubframeQueryParam = "__mtSubframe";
     private const string InternalProxyRequestHeaderName = "X-MidTerm-Internal-Proxy";
     private const string InternalProxyRequestHeaderValue = "1";
+    internal const string UpstreamUrlHeaderName = "X-Tlbx-Preview-Upstream-Url";
     private const int WsBufferSize = 8192;
     private static readonly TimeSpan WsCloseTimeout = TimeSpan.FromSeconds(5);
     private static readonly FileExtensionContentTypeProvider ContentTypeProvider = new();
@@ -377,6 +378,42 @@ public sealed partial class WebPreviewProxyMiddleware
             return ar(u);
           }
           // === Network APIs ===
+          // Patch only metadata getters. Keeping the native receiver preserves
+          // Response branding, clone/body streams, and native illegal-invocation errors.
+          function mtResponseUrl(nativeUrl,readHeader){
+            var upstream=mtUpstreamUrl(nativeUrl,false);
+            if(upstream===null)return nativeUrl;
+            try{
+              var finalUrl=readHeader("X-Tlbx-Preview-Upstream-Url");
+              if(finalUrl){
+                var final=new URL(finalUrl);
+                if(/^https?:$/.test(final.protocol)){
+                  // A nested proxy reports the inner transport as its final URL.
+                  var inner=mtUpstreamUrl(final.href,true);
+                  final=new URL(inner===null?final.href:inner);
+                  final.username="";final.password="";
+                  return final.href;
+                }
+              }
+            }catch(e){}
+            return upstream;
+          }
+          function mtInstallResponseUrl(proto,key,readHeader){
+            if(!proto)return;
+            var descriptor=Object.getOwnPropertyDescriptor(proto,key);
+            if(!descriptor||!descriptor.configurable||!descriptor.get)return;
+            var nativeGet=descriptor.get;
+            Object.defineProperty(proto,key,Object.assign({},descriptor,{get:function(){
+              var self=this,nativeUrl=nativeGet.call(self);
+              return mtResponseUrl(nativeUrl,function(name){return readHeader.call(self,name);});
+            }}));
+          }
+          var mtHeadersGet=window.Headers&&window.Headers.prototype.get;
+          var mtResponseHeaders=window.Response&&Object.getOwnPropertyDescriptor(window.Response.prototype,"headers");
+          if(mtHeadersGet&&mtResponseHeaders&&mtResponseHeaders.get){
+            mtInstallResponseUrl(window.Response.prototype,"url",function(name){return mtHeadersGet.call(mtResponseHeaders.get.call(this),name);});
+          }
+          mtInstallResponseUrl(XMLHttpRequest.prototype,"responseURL",XMLHttpRequest.prototype.getResponseHeader);
           var F=window.fetch;
           function rfq(self,q,o){
             var ru=r(q.url),init={
@@ -534,22 +571,34 @@ public sealed partial class WebPreviewProxyMiddleware
             });
             return entries.length?"?"+entries.join("&"):"";
           }
-          function curU(){
-            if(mtNativeLocation.pathname===PP+"/_ext"){
+          // Invert only this attachment's transport. Never strip controls from
+          // the embedded _ext URL: those query names can belong to the real site.
+          function mtUpstreamUrl(value,innerTransport){
+            if(!value)return null;
+            var transport;
+            try{transport=new URL(value);}catch(e){return null;}
+            var prefix=PP;
+            if(innerTransport&&BP&&mtProxyUrl(transport.pathname,P))prefix=P;
+            else if(transport.origin!==mtNativeLocation.origin)return null;
+            if(!mtProxyUrl(transport.pathname,prefix))return null;
+            if(transport.pathname===prefix+"/_ext"){
               try{
-                var ext=new URLSearchParams(mtNativeLocation.search).get("u");
+                var ext=new URLSearchParams(transport.search).get("u");
                 if(ext){
                   var external=new URL(ext);
-                  external.search=mtUpstreamSearch(external.search);
-                  if(mtNativeLocation.hash)external.hash=mtNativeLocation.hash;
+                  if(!/^https?:$/.test(external.protocol))return null;
+                  external.username="";external.password="";
+                  if(transport.hash)external.hash=transport.hash;
                   return external.href;
                 }
               }catch(e){}
+              return null;
             }
-            var path=mtNativeLocation.pathname;
-            if(path.indexOf(PP+"/")==0)path=path.substring(PP.length);
-            else if(path===PP)path="/";
-            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(mtNativeLocation.search)+mtNativeLocation.hash;
+            var path=transport.pathname.substring(prefix.length)||"/";
+            return (window.__mtTargetOrigin||"")+path+mtUpstreamSearch(transport.search)+transport.hash;
+          }
+          function curU(){
+            return mtUpstreamUrl(mtNativeLocation.href,false)||mtNativeLocation.href;
           }
           // Frameworks pass document.baseURI together with mtNativeLocation.href to the
           // server. Both must use upstream coordinates or Blazor rejects its circuit.
@@ -2635,6 +2684,7 @@ public sealed partial class WebPreviewProxyMiddleware
     {
         const int maxRedirects = 10;
         var currentUrl = startUrl;
+        string? responseUrl = null;
         var currentMethod = originalMethod;
         HttpResponseMessage? upstreamResponse = null;
         var sw = Stopwatch.StartNew();
@@ -2676,6 +2726,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
             if (upstreamResponse is not null && Uri.TryCreate(currentUrl, UriKind.Absolute, out var responseUri))
             {
+                responseUrl = currentUrl;
                 _service.StoreResponseCookies(routeKey, responseUri, upstreamResponse);
             }
 
@@ -2707,7 +2758,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return upstreamResponse is not null
-            ? (upstreamResponse, 0, currentUrl)
+            ? (upstreamResponse, 0, responseUrl)
             : (null, 502, null);
     }
 
@@ -2809,8 +2860,22 @@ public sealed partial class WebPreviewProxyMiddleware
         _service.AddLogEntry(routeKey, entry);
     }
 
+    internal static void SetUpstreamUrlHeader(HttpResponse response, string? finalUrl)
+    {
+        // Called after all upstream headers were copied. An upstream must never
+        // be able to spoof the URL observed by the preview's network clients.
+        response.Headers.Remove(UpstreamUrlHeaderName);
+        if (Uri.TryCreate(finalUrl, UriKind.Absolute, out var uri)
+            && uri.Scheme is "http" or "https")
+        {
+            var safeUrl = new UriBuilder(uri) { UserName = "", Password = "" };
+            response.Headers[UpstreamUrlHeaderName] = safeUrl.Uri.AbsoluteUri;
+        }
+    }
+
     private async Task DispatchResponseBodyAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
+        SetUpstreamUrlHeader(context.Response, finalUrl);
         var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
         if (IsFontResponse(contentType, context.Request.Path.Value))
         {
