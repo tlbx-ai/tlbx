@@ -5,10 +5,28 @@ namespace Ai.Tlbx.MidTerm.Services.Browser;
 public sealed class BrowserPreviewOwnerService
 {
     private readonly TerminalSizeControlService? _sizeControl;
+    private readonly SessionControlStateService? _controlState;
 
-    public BrowserPreviewOwnerService(TerminalSizeControlService? sizeControl = null)
+    public BrowserPreviewOwnerService(TerminalSizeControlService? sizeControl = null, SessionControlStateService? controlState = null)
     {
         _sizeControl = sizeControl;
+        _controlState = controlState;
+    }
+
+    // Called only once the session itself has been rediscovered. An offline exact
+    // tab remains the owner; a sole newly connected UI must not inherit it.
+    public void RestoreSession(string sessionId)
+    {
+        lock (_lock)
+        {
+            foreach (var (name, preview) in _controlState?.GetPreviews(sessionId) ?? new(StringComparer.Ordinal))
+            {
+                if (string.IsNullOrWhiteSpace(preview.OwnerBrowserId)) continue;
+                var key = PreviewKey.Create(sessionId, name);
+                if (_owners.TryAdd(key, preview.OwnerBrowserId))
+                    _generations[key] = ++_generation;
+            }
+        }
     }
 
     private string? GetSizeOwnerBrowserId(string? sessionId) =>
@@ -108,6 +126,7 @@ public sealed class BrowserPreviewOwnerService
             {
                 _owners[key] = sizeOwner;
                 _generations[key] = ++_generation;
+                _controlState?.SetPreviewOwner(key.SessionId, key.PreviewName, sizeOwner);
                 return sizeOwner;
             }
 
@@ -115,6 +134,7 @@ public sealed class BrowserPreviewOwnerService
             {
                 _owners[key] = distinctCandidates[0];
                 _generations[key] = ++_generation;
+                _controlState?.SetPreviewOwner(key.SessionId, key.PreviewName, distinctCandidates[0]);
                 return distinctCandidates[0];
             }
 
@@ -134,6 +154,7 @@ public sealed class BrowserPreviewOwnerService
         {
             _owners[key] = browserId;
             _generations[key] = ++_generation;
+            _controlState?.SetPreviewOwner(key.SessionId, key.PreviewName, browserId);
         }
     }
 
@@ -148,6 +169,7 @@ public sealed class BrowserPreviewOwnerService
         {
             var key = PreviewKey.Create(sessionId, previewName);
             _generations.Remove(key);
+            _controlState?.SetPreviewOwner(key.SessionId, key.PreviewName, null);
             return _owners.Remove(key);
         }
     }
@@ -163,6 +185,7 @@ public sealed class BrowserPreviewOwnerService
             {
                 _owners.Remove(key);
                 _generations.Remove(key);
+                _controlState?.SetPreviewOwner(key.SessionId, key.PreviewName, null);
             }
 
             return keys.Length;

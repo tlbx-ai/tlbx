@@ -905,14 +905,14 @@ export async function loadBackgroundPreview(
   currentTargetRevision: number,
 ): Promise<void> {
   if (!iframeHost) throw new Error('The tlbx preview host is unavailable. Reload the UI.');
-  if ($activeSessionId.get() === sessionId) {
+  if (isStillActivePreviewSession(sessionId, previewName)) {
     await loadPreview();
     return;
   }
 
   const previewClient = await ensureDockedPreviewClient(sessionId, previewName);
   if (!previewClient) throw new Error('Failed to register the browser preview. Reload the UI.');
-  if ($activeSessionId.get() === sessionId) {
+  if (isStillActivePreviewSession(sessionId, previewName)) {
     await loadPreview();
     return;
   }

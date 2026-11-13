@@ -1,5 +1,5 @@
 import { getOrCreateClientId, getOrCreateTabId } from '../../utils/cookies';
-import { getBrowserPreviewStatus, getWebPreviewTarget } from './webApi';
+import { getBrowserPreviewStatus, getWebPreviewTarget, listWebPreviewSessions } from './webApi';
 
 interface SavedPreview {
   sessionId: string;
@@ -65,22 +65,34 @@ export async function restoreSessionPreviews(
   restore: (preview: SavedPreview) => Promise<void>,
 ): Promise<void> {
   const browserId = `${getOrCreateClientId()}:${getOrCreateTabId()}`;
+  const previews = await listWebPreviewSessions(sessionId);
+  if (!previews) return;
+  const remembered = readPreviews().filter((p) => p.sessionId === sessionId);
+  // Recovery starts from the server's surviving targets, including when tab
+  // storage is unavailable. UI caches may refine navigation, never create a target.
+  for (const saved of remembered) {
+    if (!previews.some((p) => p.previewName === saved.previewName && p.active)) {
+      forgetPreview(sessionId, saved.previewName);
+    }
+  }
   await Promise.all(
-    readPreviews()
-      .filter((p) => p.sessionId === sessionId)
-      .map(async (saved) => {
+    previews
+      .filter((p) => p.active && p.url)
+      .map(async (preview) => {
+        const saved = remembered.find((p) => p.previewName === preview.previewName);
         const [status, target] = await Promise.all([
-          getBrowserPreviewStatus(sessionId, saved.previewName),
-          getWebPreviewTarget(sessionId, saved.previewName),
+          getBrowserPreviewStatus(sessionId, preview.previewName),
+          getWebPreviewTarget(sessionId, preview.previewName),
         ]);
         if (!status || !target) return;
         if (status.ownerBrowserId !== browserId || !target.active || !target.url) {
-          forgetPreview(sessionId, saved.previewName);
+          forgetPreview(sessionId, preview.previewName);
           return;
         }
         await restore({
-          ...saved,
-          url: target.targetRevision === saved.targetRevision ? saved.url : target.url,
+          sessionId,
+          previewName: preview.previewName,
+          url: saved && target.targetRevision === saved.targetRevision ? saved.url : target.url,
           targetRevision: target.targetRevision,
         });
       }),

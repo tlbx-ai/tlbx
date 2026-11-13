@@ -223,7 +223,9 @@ public static class ServerSetup
                 runtimeOptions.Port,
                 sp.GetRequiredService<BrowserPreviewOriginService>(),
                 cookiesDir,
-                static () => LoadedCertificate);
+                static () => LoadedCertificate,
+                sp.GetRequiredService<SessionControlStateService>(),
+                sp.GetRequiredService<BrowserPreviewOwnerService>());
         });
 
         builder.Services.AddResponseCompression(options =>

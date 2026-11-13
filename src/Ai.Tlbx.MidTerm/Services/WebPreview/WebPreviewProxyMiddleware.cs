@@ -1360,10 +1360,18 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"ready":{
                   function readyAfterFrame(){
-                    requestAnimationFrame(function(){
+                    // A controllable background document can have suspended animation
+                    // frames. DOM readiness must not wait forever for visible paint.
+                    var completed=false,frame=0,timer=0;
+                    function finishReady(){
+                      if(completed)return;
+                      completed=true;clearTimeout(timer);
+                      if(frame)cancelAnimationFrame(frame);
                       res.result=curU();
                       if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));
-                    });
+                    }
+                    frame=requestAnimationFrame(finishReady);
+                    timer=setTimeout(finishReady,100);
                   }
                   if(document.readyState==="loading"){
                     document.addEventListener("DOMContentLoaded",readyAfterFrame,{once:true});
