@@ -6,10 +6,22 @@ import { describe, expect, it, vi } from 'vitest';
 
 // Execute the actual injected URL protocol functions, rather than duplicating
 // their logic or starting a UI. Both native and Connect documents use this code.
+const cooperativeSource = readFileSync(
+  new URL('../../../../Services/WebPreview/WebPreviewCooperativeFrames.cs', import.meta.url),
+  'utf8',
+);
+function sharedSource(name: string): string {
+  const marker = 'private const string ' + name + ' = """' + '\n';
+  const start = cooperativeSource.indexOf(marker) + marker.length;
+  const end = cooperativeSource.indexOf('        """;', start);
+  if (start < marker.length || end < start) throw new Error('Missing shared protocol: ' + name);
+  return cooperativeSource.slice(start, end);
+}
 const source = readFileSync(
   new URL('../../../../Services/WebPreview/WebPreviewProxyMiddleware.cs', import.meta.url),
   'utf8',
-);
+).replace('/*__MT_QUERY_HELPERS__*/', sharedSource('SharedQueryHelpers'))
+ .replace('/*__MT_CONTROL_HELPERS__*/', sharedSource('SharedControlHelpers'));
 function section(start: string, end: string): string {
   const first = source.indexOf(start);
   const last = source.indexOf(end, first + start.length);
@@ -1086,7 +1098,8 @@ describe('explicit open-shadow selector and serialization protocol', () => {
   it.each([false, true])(
     'uses the shared selector for element screenshots and rejects selector/fullPage conflicts (%s)',
     async (fullPage) => {
-      const target = {};
+      const target = { getBoundingClientRect: () => ({ left: 12, top: 18, width: 80, height: 30 }) };
+      const documentRoot = {};
       const select = vi.fn((_selector: string) => [target]);
       const capture = vi.fn(async (_target: unknown, _options: unknown) => ({
         toCanvas: async () => ({ toDataURL: () => 'data:image/png;base64,fixture' }),
@@ -1095,8 +1108,8 @@ describe('explicit open-shadow selector and serialization protocol', () => {
         const dispatch = runInNewContext(
           `${section(dispatcherStart, 'var bwsReconnectTimer=')};handleBCmd;`,
           {
-            document: { documentElement: {} },
-            window: {},
+            document: { documentElement: documentRoot },
+            window: { scrollX: 0, scrollY: 0 },
             mtCtx: null,
             previewQueryAll: select,
             isControlVisible: () => true,
@@ -1113,7 +1126,7 @@ describe('explicit open-shadow selector and serialization protocol', () => {
       if (fullPage) expect(capture).not.toHaveBeenCalled();
       else {
         expect(select).toHaveBeenCalledExactlyOnceWith('#left >>> button');
-        expect(capture).toHaveBeenCalledWith(target, expect.objectContaining({ clip: null }));
+        expect(capture).toHaveBeenCalledWith(documentRoot, expect.objectContaining({ clip: { x: 12, y: 18, width: 80, height: 30 } }));
       }
     },
   );
