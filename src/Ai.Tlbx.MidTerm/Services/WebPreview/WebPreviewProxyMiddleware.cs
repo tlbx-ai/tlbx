@@ -2868,6 +2868,15 @@ public sealed partial class WebPreviewProxyMiddleware
         _service.AddLogEntry(routeKey, entry);
     }
 
+    internal static void ExposeUpstreamUrlHeader(HttpResponse response)
+    {
+        var exposed = response.Headers.AccessControlExposeHeaders.ToString();
+        if (exposed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Contains(UpstreamUrlHeaderName, StringComparer.OrdinalIgnoreCase)) return;
+        response.Headers.AccessControlExposeHeaders = string.IsNullOrWhiteSpace(exposed)
+            ? UpstreamUrlHeaderName : exposed + ", " + UpstreamUrlHeaderName;
+    }
+
     internal static void SetUpstreamUrlHeader(HttpResponse response, string? finalUrl)
     {
         // Called after all upstream headers were copied. An upstream must never
@@ -2878,6 +2887,8 @@ public sealed partial class WebPreviewProxyMiddleware
         {
             var safeUrl = new UriBuilder(uri) { UserName = "", Password = "" };
             response.Headers[UpstreamUrlHeaderName] = safeUrl.Uri.AbsoluteUri;
+            // An outer proxy must also be able to expose this metadata.
+            ExposeUpstreamUrlHeader(response);
         }
     }
 

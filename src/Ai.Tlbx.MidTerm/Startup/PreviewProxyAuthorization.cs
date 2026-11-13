@@ -29,7 +29,7 @@ internal static class PreviewProxyAuthorization
                     context.Response.Headers.AccessControlAllowCredentials = "true";
                     context.Response.Headers.AccessControlAllowMethods = "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS";
                     context.Response.Headers.AccessControlAllowHeaders = context.Request.Headers.AccessControlRequestHeaders;
-                    context.Response.Headers.AccessControlExposeHeaders = WebPreviewProxyMiddleware.UpstreamUrlHeaderName;
+                    WebPreviewProxyMiddleware.ExposeUpstreamUrlHeader(context.Response);
                     context.Response.Headers.Vary = "Origin, Access-Control-Request-Method, Access-Control-Request-Headers";
                 }
                 else
