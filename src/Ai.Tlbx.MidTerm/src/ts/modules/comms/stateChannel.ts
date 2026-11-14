@@ -839,25 +839,9 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
           await closePreviewFromServer(msg.sessionId, msg.previewName);
         }
         break;
-      case 'mobile-device': {
-        if (
-          !msg.deviceAction ||
-          !msg.sessionId ||
-          !msg.previewName ||
-          msg.targetRevision === undefined
-        ) {
-          throw new Error('Mobile device command requires an exact session, preview and target revision.');
-        }
-        const { controlMobileDeviceCommand } = await import('../web/mobileDeviceController');
-        result.device = await controlMobileDeviceCommand(
-          msg.deviceAction as MobileDeviceAction,
-          msg.sessionId,
-          msg.previewName,
-          msg.targetRevision,
-          msg.deviceProfile,
-        );
+      case 'mobile-device':
+        result.device = await handleMobileBrowserUiCommand(msg);
         break;
-      }
       case 'agent-wheel':
         await handleAgentWheelBrowserUiCommand(msg);
         return;
@@ -866,12 +850,36 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         log.warn(() => result.error ?? 'Unknown browser-ui command');
     }
 
-    await reportBrowserUiCommandResult(msg, result.success, result.error, result.viewport, result.device);
+    await reportBrowserUiCommandResult(
+      msg,
+      result.success,
+      result.error,
+      result.viewport,
+      result.device,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.warn(() => `Browser UI command failed: ${message}`);
     await reportBrowserUiCommandResult(msg, false, message);
   }
+}
+
+async function handleMobileBrowserUiCommand(
+  msg: BrowserUiMessage,
+): Promise<MobileDeviceCommandResult> {
+  if (!msg.deviceAction || !msg.sessionId || !msg.previewName || msg.targetRevision === undefined) {
+    throw new Error(
+      'Mobile device command requires an exact session, preview and target revision.',
+    );
+  }
+  const { controlMobileDeviceCommand } = await import('../web/mobileDeviceController');
+  return controlMobileDeviceCommand(
+    msg.deviceAction as MobileDeviceAction,
+    msg.sessionId,
+    msg.previewName,
+    msg.targetRevision,
+    msg.deviceProfile,
+  );
 }
 
 async function reportBrowserUiCommandResult(

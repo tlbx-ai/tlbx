@@ -166,7 +166,9 @@ export async function controlMobileDevice(
     current &&
     current.targetRevision !== options.expectedTargetRevision
   ) {
-    throw new Error('Preview target changed before mobile device dispatch. Inspect before retrying.');
+    throw new Error(
+      'Preview target changed before mobile device dispatch. Inspect before retrying.',
+    );
   }
   const state = await invokeMobileDevice(action, payload);
   states.set(deviceKey, state);
@@ -202,7 +204,9 @@ export async function controlMobileDeviceCommand(
       target.previewName !== previewName ||
       target.targetRevision !== targetRevision
     ) {
-      throw new Error('Preview target changed during mobile device control. Inspect before retrying.');
+      throw new Error(
+        'Preview target changed during mobile device control. Inspect before retrying.',
+      );
     }
   }
   await assertRevision();
