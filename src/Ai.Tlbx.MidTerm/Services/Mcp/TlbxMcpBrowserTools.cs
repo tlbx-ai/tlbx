@@ -84,7 +84,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         new TlbxMcpBrowserTools("browser_detach", "Detach this preview into its owning browser's popup and wait for acknowledgment.", new()),
         new TlbxMcpBrowserTools("browser_dock", "Dock this preview back in its owning browser and wait for acknowledgment.", new()),
         new TlbxMcpBrowserTools("browser_viewport", "Set iframe width/height in the owning browser. Both zero reset the viewport.", Fields(("width", Property("integer")), ("height", Property("integer")))),
-        new TlbxMcpBrowserTools("browser_mobile", "Control Chrome mobile emulation in the owning browser's optional extension. Actions: open/status/rotate/keyboard/background/foreground/reload/screenshot/close.", Fields(("action", Property("string")), ("profile", Property("string")))),
+        new TlbxMcpBrowserTools("browser_mobile", "Await actual device state from the owning browser's optional Chrome extension. Status reports unavailable when disconnected. Screenshot returns PNG and never pastes into a terminal. Actions: open/status/rotate/keyboard/background/foreground/reload/screenshot/close.", Fields(("action", Property("string")), ("profile", Property("string")), ("saveToWorkspace", Property("boolean")))),
         new TlbxMcpBrowserTools("browser_agent_wheel", "Wheel the visible structured-agent history and return measured progress.", Fields(("direction", Enum("up", "down")), ("deltaY", Property("number")), ("steps", PositiveInteger()))),
         new TlbxMcpBrowserTools("browser_batch", "Run 1-32 typed browser commands with shared owner/revision checks and partial results. No step is automatically replayed.", BatchFields(), ["commands"]),
         new TlbxMcpBrowserTools("browser_with_preview", "Open a fresh ephemeral named preview, execute a typed browser batch, and remove the preview in finally even on failure/cancellation.", WithPreviewFields(), ["url", "commands"]),
@@ -251,9 +251,21 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 }, ct).ConfigureAwait(false);
                 return result.Success ? Success(target, preview, result.Viewport) : Error("TLBX_MCP_BROWSER_UI_FAILED", result.Error ?? "Browser UI did not acknowledge the operation.");
             case "browser_mobile":
-                return ui.RequestMobileDevice(target, preview, OptionalString(args, "action") ?? "status", OptionalString(args, "profile") ?? "pixel-8", out var mobileError)
-                    ? Reply(new JsonObject { ["accepted"] = true, ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview) })
-                    : Error("TLBX_MCP_BROWSER_MOBILE_FAILED", mobileError);
+                var mobileAction = OptionalString(args, "action") ?? "status";
+                var mobileProfile = OptionalString(args, "profile") ?? "pixel-8";
+                var saveMobile = Bool(args, "saveToWorkspace");
+                var mobile = await ui.SerializeTargetOperationAsync(target, preview,
+                    () => ui.RequestMobileDeviceAsync(target, preview, mobileAction, mobileProfile, ct), ct).ConfigureAwait(false);
+                if (!mobile.Success) return Error("TLBX_MCP_BROWSER_MOBILE_FAILED", mobile.Error ?? "Mobile device command failed.");
+                if (mobileAction.Trim().Equals("screenshot", StringComparison.OrdinalIgnoreCase))
+                {
+                    var mobileShot = new BrowserCommandRequest { Command = "screenshot", SessionId = target, PreviewName = preview };
+                    return await CommandResultAsync(services, mobileShot,
+                        new BrowserWsResult { Success = true, Result = mobile.ScreenshotDataUrl }, saveMobile).ConfigureAwait(false);
+                }
+                return Reply(new JsonObject { ["success"] = true, ["sessionId"] = target,
+                    ["previewName"] = WebPreviewService.NormalizePreviewName(preview), ["targetRevision"] = mobile.TargetRevision,
+                    ["device"] = JsonSerializer.SerializeToNode(mobile.MobileDevice, AppJsonContext.Default.BrowserMobileDeviceState) });
             case "browser_agent_wheel":
                 var wheel = await ui.RequestAgentWheelAsync(target, WheelDelta(args), Integer(args, "steps", 1), ct).ConfigureAwait(false);
                 var wheelReply = Reply(wheel, AppJsonContext.Default.AgentHistoryWheelResult);

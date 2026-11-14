@@ -20,12 +20,33 @@ public sealed class BrowserUiInstruction
 
 public sealed class BrowserUiCommandResult
 {
+    public string? SessionId { get; init; }
+    public string? PreviewName { get; init; }
+    public long? TargetRevision { get; init; }
+    public BrowserMobileDeviceState? MobileDevice { get; init; }
+    public string? ScreenshotDataUrl { get; init; }
     public long OwnershipGeneration { get; init; }
     public string RequestId { get; init; } = "";
     public string Command { get; init; } = "";
     public bool Success { get; init; }
     public string? Error { get; init; }
     public BrowserViewportMetrics? Viewport { get; init; }
+}
+
+public sealed class BrowserMobileDeviceState
+{
+    public bool Available { get; init; }
+    public bool Connected { get; init; }
+    public bool? Open { get; init; }
+    public string? Error { get; init; }
+    public string? ProfileId { get; init; }
+    public string? ProfileLabel { get; init; }
+    public string? Orientation { get; init; }
+    public bool? Keyboard { get; init; }
+    public bool? Background { get; init; }
+    public int? Width { get; init; }
+    public int? Height { get; init; }
+    public double? DeviceScaleFactor { get; init; }
 }
 
 public sealed class BrowserViewportMetrics

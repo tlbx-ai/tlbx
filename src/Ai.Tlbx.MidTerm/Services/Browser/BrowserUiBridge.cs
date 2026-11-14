@@ -1,6 +1,7 @@
 namespace Ai.Tlbx.MidTerm.Services.Browser;
 
 using Ai.Tlbx.MidTerm.Models.Browser;
+using Ai.Tlbx.MidTerm.Services.WebPreview;
 
 public sealed class BrowserUiBridge
 {
@@ -9,14 +10,18 @@ public sealed class BrowserUiBridge
     private readonly Dictionary<string, TaskCompletionSource<AgentHistoryWheelResult>> _pendingAgentWheels = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TaskCompletionSource<BrowserUiCommandResult>> _pendingUiCommands = new(StringComparer.Ordinal);
     private readonly Dictionary<string, TargetOperationGate> _targetOperationGates = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, (string BrowserId, string SessionId, string PreviewName, long Revision)> _pendingMobileCommands = new(StringComparer.Ordinal);
+    private readonly WebPreviewService? _previews;
     private readonly MainBrowserService _mainBrowserService;
     private readonly BrowserPreviewOwnerService _previewOwnerService;
 
     public BrowserUiBridge(
         MainBrowserService mainBrowserService,
-        BrowserPreviewOwnerService? previewOwnerService = null)
+        BrowserPreviewOwnerService? previewOwnerService = null,
+        WebPreviewService? previews = null)
     {
         _mainBrowserService = mainBrowserService;
+        _previews = previews;
         _previewOwnerService = previewOwnerService ?? new BrowserPreviewOwnerService();
     }
 
@@ -82,7 +87,6 @@ public sealed class BrowserUiBridge
         Action<string?, string?> dock,
         Action<string?, string?, int, int> viewport,
         Action<string?, string?, string, bool> open,
-        Action<string?, string?, string, string?>? mobileDevice = null,
         Action<string, string, double, int>? agentWheel = null,
         Action<string?, string?>? close = null)
     {
@@ -98,7 +102,6 @@ public sealed class BrowserUiBridge
                 Viewport = viewport,
                 Open = open,
                 Close = close,
-                MobileDevice = mobileDevice,
                 AgentWheel = agentWheel,
                 ConnectedAtUtc = DateTimeOffset.UtcNow
             };
@@ -112,7 +115,7 @@ public sealed class BrowserUiBridge
         Action<string, string?, string?> dock,
         Action<string, string?, string?, int, int> viewport,
         Action<string, string?, string?, string, bool, long?> open,
-        Action<string?, string?, string, string?>? mobileDevice = null,
+        Action<string, string?, string?, string, string?, long>? mobileDevice = null,
         Action<string, string, double, int>? agentWheel = null,
         Action<string, string?, string?>? close = null)
     {
@@ -362,7 +365,7 @@ public sealed class BrowserUiBridge
             },
             cancellationToken);
 
-    public bool CompleteUiCommand(BrowserUiCommandResult result)
+    public bool CompleteUiCommand(BrowserUiCommandResult result, string? browserId = null)
     {
         if (string.IsNullOrWhiteSpace(result.RequestId))
             return false;
@@ -370,6 +373,10 @@ public sealed class BrowserUiBridge
         TaskCompletionSource<BrowserUiCommandResult>? completion;
         lock (_lock)
         {
+            if (_pendingMobileCommands.TryGetValue(result.RequestId, out var mobile)
+                && (result.Command != "mobile-device" || browserId != mobile.BrowserId
+                    || result.SessionId != mobile.SessionId || result.PreviewName != mobile.PreviewName
+                    || result.TargetRevision != mobile.Revision)) return false;
             _pendingUiCommands.TryGetValue(result.RequestId, out completion);
         }
 
@@ -391,7 +398,9 @@ public sealed class BrowserUiBridge
         string? sessionId,
         string? previewName,
         Action<ListenerRegistration, string> dispatch,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<bool>? targetIsCurrent = null,
+        TimeSpan? commandTimeout = null)
     {
         if (!TryGetTargetListener(sessionId, previewName, out var target, out var error))
             return new BrowserUiCommandResult { Command = command, Error = error };
@@ -409,13 +418,19 @@ public sealed class BrowserUiBridge
 
         try
         {
+            if (targetIsCurrent is not null && !targetIsCurrent())
+                return new BrowserUiCommandResult { Command = command, Error = "Preview target changed before dispatch. Inspect before retrying." };
             dispatch(target, requestId);
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeout.CancelAfter(TimeSpan.FromSeconds(10));
+            timeout.CancelAfter(commandTimeout ?? TimeSpan.FromSeconds(10));
             var result = await completion.Task.WaitAsync(timeout.Token).ConfigureAwait(false);
             if (!_previewOwnerService.IsCurrent(sessionId, previewName, target.BrowserId, generation))
                 return new BrowserUiCommandResult { Command = command, Error = "Preview ownership changed while the UI command was in flight. Inspect the current preview before retrying." };
-            return new BrowserUiCommandResult { RequestId = requestId, Command = command, Success = result.Success, Error = result.Error, Viewport = result.Viewport, OwnershipGeneration = generation };
+            if (result.Command != command || targetIsCurrent is not null && !targetIsCurrent())
+                return new BrowserUiCommandResult { Command = command, Error = "Preview target or command correlation changed while the UI command was in flight. Inspect before retrying." };
+            return new BrowserUiCommandResult { RequestId = requestId, Command = command, Success = result.Success, Error = result.Error, Viewport = result.Viewport, OwnershipGeneration = generation,
+                SessionId = sessionId, PreviewName = WebPreviewService.NormalizePreviewName(previewName), TargetRevision = result.TargetRevision,
+                MobileDevice = result.MobileDevice, ScreenshotDataUrl = result.ScreenshotDataUrl };
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -431,6 +446,7 @@ public sealed class BrowserUiBridge
             lock (_lock)
             {
                 _pendingUiCommands.Remove(requestId);
+                _pendingMobileCommands.Remove(requestId);
             }
         }
     }
@@ -499,33 +515,35 @@ public sealed class BrowserUiBridge
         }
     }
 
-    public bool RequestMobileDevice(
-        string? sessionId,
-        string? previewName,
-        string action,
-        string? profile,
-        out string error)
+    public async Task<BrowserUiCommandResult> RequestMobileDeviceAsync(
+        string? sessionId, string? previewName, string action, string? profile,
+        CancellationToken cancellationToken = default)
     {
-        error = "";
+        const string command = "mobile-device";
         if (!IsSupportedMobileDeviceAction(action))
+            return new BrowserUiCommandResult { Command = command, Error = "Unsupported mobile device action. Use status, open, rotate, keyboard, background, foreground, reload, screenshot, or close." };
+        var preview = _previews?.GetPreviewSession(sessionId, previewName);
+        if (preview is null || string.IsNullOrWhiteSpace(sessionId))
+            return new BrowserUiCommandResult { Command = command, Error = "The exact mobile preview target is unavailable." };
+        var revision = preview.TargetRevision;
+        var name = preview.PreviewName;
+        var scopedSession = preview.SessionId;
+        var result = await RequestUiCommandAsync(command, scopedSession, name, (target, requestId) =>
         {
-            error = "Unsupported mobile device action. Use status, open, rotate, keyboard, background, foreground, reload, screenshot, or close.";
-            return false;
-        }
-
-        if (!TryGetTargetListener(sessionId, previewName, out var target, out error))
-        {
-            return false;
-        }
-
-        if (target.MobileDevice is null)
-        {
-            error = "The connected tlbx browser UI does not support mobile device control. Reload it and retry.";
-            return false;
-        }
-
-        target.MobileDevice(sessionId, previewName, action.Trim().ToLowerInvariant(), profile);
-        return true;
+            if (target.MobileDevice is null)
+            {
+                CompleteUiCommand(new BrowserUiCommandResult { RequestId = requestId, Command = command,
+                    Error = "The owning tlbx UI does not support acknowledged mobile device control. Reload it and retry." });
+                return;
+            }
+            lock (_lock) _pendingMobileCommands[requestId] = (target.BrowserId, scopedSession, name, revision);
+            target.MobileDevice(requestId, scopedSession, name, action.Trim().ToLowerInvariant(), profile, revision);
+        }, cancellationToken,
+            () => _previews?.GetPreviewSession(scopedSession, name)?.TargetRevision == revision,
+            TimeSpan.FromSeconds(40)).ConfigureAwait(false);
+        if (result.Success && result.MobileDevice is null)
+            return new BrowserUiCommandResult { Command = command, Error = "Mobile UI acknowledgement contained no device state. Reload the owning UI before retrying." };
+        return result;
     }
 
     private static bool IsSupportedMobileDeviceAction(string action)
@@ -701,7 +719,7 @@ public sealed class BrowserUiBridge
         public Action<string, string?, string?, int, int>? AcknowledgedViewport { get; init; }
         public Action<string, string?, string?, string, bool, long?>? AcknowledgedOpen { get; init; }
         public Action<string, string?, string?>? AcknowledgedClose { get; init; }
-        public Action<string?, string?, string, string?>? MobileDevice { get; init; }
+        public Action<string, string?, string?, string, string?, long>? MobileDevice { get; init; }
         public Action<string, string, double, int>? AgentWheel { get; init; }
         public DateTimeOffset ConnectedAtUtc { get; init; }
     }

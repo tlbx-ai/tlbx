@@ -399,6 +399,13 @@ preview without changing the original preview. Viewport sizing reported exact
 viewer follow-up. Chrome blocked detach popups; MCP reported that failure and
 kept docked control. Optional extension mobile execution remains unverified.
 
+`browser_mobile` awaits the exact owning UI and extension response, bound to the
+named preview's target revision. `status` returns actual device state or
+`available:false` with a diagnostic; dispatch acceptance never proves emulation.
+Action errors and ownership/revision changes fail explicitly; inspect before retrying.
+`screenshot` returns native MCP PNG/resource content (`saveToWorkspace` is optional).
+It never uploads/pastes into a terminal. Screenshot paste remains an explicit local UI action.
+
 Actual state clearing exposed a shared CLI/MCP bug: clearing preview storage
 advanced the target revision without replacing the document, invalidating its
 live bridge. State clearing now preserves that revision; retargeting still
