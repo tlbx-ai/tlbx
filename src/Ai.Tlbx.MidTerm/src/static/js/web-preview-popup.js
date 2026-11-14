@@ -51,6 +51,7 @@
     'allow-forms',
     'allow-popups',
     'allow-modals',
+    'allow-pointer-lock',
     'allow-downloads',
   ];
 
