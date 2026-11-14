@@ -1197,27 +1197,82 @@ public sealed partial class WebPreviewProxyMiddleware
             }
             return true;
           }
-          function resolveControl(selector){
+          function isCheckableControl(el){return !!el&&el.tagName==="INPUT"&&/^(checkbox|radio)$/.test(el.type);}
+          function isCheckableRendered(el){
+            if(!el.isConnected||!el.getClientRects().length)return false;
+            var rect=el.getBoundingClientRect();
+            if(rect.width<=0||rect.height<=0)return false;
+            for(var n=el;n&&n.nodeType===1;n=n.parentElement){
+              var css=getComputedStyle(n);
+              if(n.hidden||n.inert||css.display==="none"||css.visibility==="hidden"||css.visibility==="collapse"||n!==el&&Number(css.opacity)===0)return false;
+            }
+            return true;
+          }
+          function controlHitPoint(el,label){
+            if(typeof document.elementFromPoint!=="function")return null;
+            var rect=el.getBoundingClientRect(),x=rect.left+rect.width/2,y=rect.top+rect.height/2;
+            var hit=document.elementFromPoint(x,y);
+            if(hit!==el&&(!label||!el.contains(hit)))return null;
+            // Clicking a link/button inside a label must not activate its input.
+            if(label&&hit!==el&&hit.closest('a,button,input,select,textarea,[contenteditable="true"]'))return null;
+            return {x:x,y:y};
+          }
+          function clickSurface(el){
+            if(isCheckableControl(el)){
+              if(!isCheckableRendered(el))return null;
+              if(isControlVisible(el))return {target:el,control:el,point:null};
+              var point=controlHitPoint(el,false);
+              if(point)return {target:el,control:el,point:point};
+              var labels=el.labels||[];
+              for(var i=0;i<labels.length;i++){
+                var label=labels[i];
+                if(label.control!==el||!isControlVisible(label))continue;
+                point=controlHitPoint(label,true);
+                if(point)return {target:label,control:el,point:point};
+              }
+              return null;
+            }
+            if(!isControlVisible(el))return null;
+            var label=el.tagName==="LABEL"?el:el.closest("label");
+            var control=label&&isCheckableControl(label.control)?label.control:null;
+            if(control&&el!==label&&el.closest('a,button,input,select,textarea,[contenteditable="true"]'))control=null;
+            var point=control?controlHitPoint(el,true):null;
+            if(control&&!point)return null;
+            return {target:el,control:control,point:point};
+          }
+          function assertClickEnabled(el,surface){
+            var current=clickSurface(el);
+            if(!surface||!current||current.target!==surface.target||current.control!==surface.control)throw new Error("click target became hidden, detached or changed association");
+            if(surface.target!==surface.control||isControlVisible(surface.target))assertControlEnabled(surface.target);
+            var control=surface.control;
+            if(control){
+              if(!isCheckableRendered(control))throw new Error("checkbox/radio target is hidden or detached");
+              if(control.matches(":disabled")||control.closest('[aria-disabled="true"]'))throw new Error("interaction target is disabled");
+              if(control.readOnly||control.closest('[aria-readonly="true"],[readonly]')||surface.target.closest('[aria-readonly="true"],[readonly]'))throw new Error("interaction target is read-only");
+            }
+          }
+          function resolveControl(selector,click){
             var matches=document.querySelectorAll(selector),visible=[];
-            for(var i=0;i<matches.length;i++)if(isControlVisible(matches[i]))visible.push(matches[i]);
+            for(var i=0;i<matches.length;i++)if(click?clickSurface(matches[i]):isControlVisible(matches[i]))visible.push(matches[i]);
             if(!visible.length)throw new Error("no visible element: "+selector);
             if(visible.length!==1)throw new Error("ambiguous selector: "+selector+" ("+visible.length+" visible elements); use a more specific selector");
-            assertControlEnabled(visible[0]);return visible[0];
+            if(click)assertClickEnabled(visible[0],clickSurface(visible[0]));else assertControlEnabled(visible[0]);
+            return visible[0];
           }
           function assertControlEnabled(el){
             if(!isControlVisible(el))throw new Error("interaction target became hidden or detached");
             if(el.matches(":disabled")||el.closest('[aria-disabled="true"]'))throw new Error("interaction target is disabled");
           }
-          function controlIntent(el){
+          function controlIntent(el,validate,point){
             // Match pointer activation without moving keyboard focus or claiming terminal size ownership.
-            var rect=el.getBoundingClientRect(),opts={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:rect.left+rect.width/2,clientY:rect.top+rect.height/2};
+            var rect=el.getBoundingClientRect(),opts={bubbles:true,cancelable:true,composed:true,button:0,buttons:1,clientX:point?point.x:rect.left+rect.width/2,clientY:point?point.y:rect.top+rect.height/2};
             var mouse=true;
             if(typeof PointerEvent!=="undefined")mouse=el.dispatchEvent(new PointerEvent("pointerdown",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
             if(mouse)el.dispatchEvent(new MouseEvent("mousedown",opts));
             opts.buttons=0;
             if(typeof PointerEvent!=="undefined")el.dispatchEvent(new PointerEvent("pointerup",Object.assign({},opts,{pointerId:1,pointerType:"mouse",isPrimary:true})));
             if(mouse)el.dispatchEvent(new MouseEvent("mouseup",opts));
-            assertControlEnabled(el);
+            if(validate)validate();else assertControlEnabled(el);
           }
           function setFormControlValue(el,value){
             var proto=null;
@@ -1272,10 +1327,12 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"click":{
                   if(!msg.selector){res.success=false;res.error="selector required";break;}
-                  var el=resolveControl(msg.selector);
-                  controlIntent(el);
-                  if(typeof el.click==="function")el.click();
-                  else el.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,composed:true,button:0}));
+                  var el=resolveControl(msg.selector,true),surface=clickSurface(el),target=surface.target;
+                  controlIntent(target,function(){assertClickEnabled(el,surface);},surface.point);
+                  // One native activation owns label forwarding, checkbox/radio
+                  // state, bubbling, input/change and preventDefault behavior.
+                  if(typeof target.click==="function")target.click();
+                  else target.dispatchEvent(new MouseEvent("click",{bubbles:true,cancelable:true,composed:true,button:0}));
                   res.result="clicked";
                   break;}
                 case"scroll":{
