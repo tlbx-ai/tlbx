@@ -7,6 +7,20 @@ Keep the existing fallback functional and its protocol checks in place during th
 transition. Both interfaces use the same C# services; preferring MCP does not
 claim that every parity acceptance scenario below has already passed.
 
+## HTTP preview diagnostics
+
+HTTP preview proxy logs are published after body processing finishes or fails.
+`statusCode` and `durationMs` describe the downstream processing result and total
+middleware time, including transformation/body copy; `upstreamStatusCode` and
+`upstreamDurationMs` retain the upstream response and time through its headers.
+`outcome` distinguishes completed, failed, cancelled, incomplete and upstream-only
+fallback attempts. A failure before headers is classified as 500 (client abort:
+499); `responseStarted: false` means this is diagnostic, not a delivered status.
+After headers, the sent status remains unchanged and an interrupted body has an
+error/outcome even when that status is 200. Streaming stays unbuffered; ongoing
+streams appear only when processing ends. Completion does not prove client receipt.
+WebSocket log semantics are unchanged.
+
 ## Transports and identity
 
 `POST /api/mcp` exposes stateless Streamable HTTP using the pinned official C#
