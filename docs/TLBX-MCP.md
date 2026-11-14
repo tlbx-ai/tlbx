@@ -9,6 +9,15 @@ claim that every parity acceptance scenario below has already passed.
 
 ## Transports and identity
 
+Reload/navigation success waits for a ready replacement document, not merely an
+acknowledgement from the old frame. Document identity survives a socket reconnect;
+that reconnect cannot satisfy reload. Fragment navigation and observed history
+transitions can satisfy same-document navigation, followed by a DOM-ready probe.
+`waitForNavigation` on batch actions uses the same barrier; subsequent steps do
+not run after an uncertain timeout. Mutations are never replayed. Readiness means
+DOM readiness, not completion of arbitrary application/network work. Bridges
+without document identity must attach a current bridge before readiness succeeds.
+
 `POST /api/mcp` exposes stateless Streamable HTTP using the pinned official C#
 SDK. `mt mcp --stdio` provides the native provider adapter. Both require existing
 full tlbx authentication. No global provider configuration is changed.

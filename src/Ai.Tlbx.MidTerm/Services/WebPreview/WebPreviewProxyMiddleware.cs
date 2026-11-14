@@ -693,6 +693,9 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!msg)return;
             try{_realParent.postMessage(msg,"*");}catch(e){}
           }
+          // Per-document identity survives WebSocket reconnects, never reloads.
+          var mtDocumentId=Array.from(crypto.getRandomValues(new Uint32Array(4))).join("-"),mtNavigationVersion=0;
+          function mtSameDocumentNavigation(){mtNavigationVersion++;refreshBwsState(true);ntfy();}
           var lastMtNavigationKey="",navNotifyTimer=0;
           function ntfyNow(){
             var upstreamUrl=curU();
@@ -709,13 +712,13 @@ public sealed partial class WebPreviewProxyMiddleware
             },50);
           }
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
-          history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
-          history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
+          history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);mtSameDocumentNavigation();return x;};
+          history.replaceState=function(s,t,u){var before=mtNativeLocation.href,x=hrs(s,t,u?r(u):u);if(mtNativeLocation.href!==before)mtSameDocumentNavigation();return x;};
           var la=mtNativeLocation.assign.bind(mtNativeLocation),lr=mtNativeLocation.replace.bind(mtNativeLocation);
           mtNativeLocation.assign=function(u){return la(r(u));};
           mtNativeLocation.replace=function(u){return lr(r(u));};
-          window.addEventListener("popstate",ntfy);
-          window.addEventListener("hashchange",ntfy);
+          window.addEventListener("popstate",mtSameDocumentNavigation);
+          window.addEventListener("hashchange",mtSameDocumentNavigation);
           setTimeout(ntfyNow,0);
           // === Cookie bridge ===
           var cc=/*__MT_INITIAL_COOKIES__*/"",cookieSeq=0,cookiePending={},cookieRefreshTimer=0;
@@ -1130,7 +1133,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if(!document.execCommand(command,false,value))throw new Error("native editor replacement was rejected");
           }
           function handleBCmd(msg){
-            var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null};
+            var res={id:msg.id,success:true,result:null,error:null,matchCount:null,sessionId:mtCtx&&mtCtx.sessionId?mtCtx.sessionId:null,previewId:mtCtx&&mtCtx.previewId?mtCtx.previewId:null,documentId:mtDocumentId,navigationVersionBefore:mtNavigationVersion};
             try{
               switch(msg.command){
                 case"query":{
@@ -1319,7 +1322,12 @@ public sealed partial class WebPreviewProxyMiddleware
                   break;}
                 case"navigate":{
                   if(!msg.value){res.success=false;res.error="url required";break;}
-                  mtNativeLocation.href=mtNavigationUrl(msg.value);res.result="navigating";
+                  var destination=new URL(mtNavigationUrl(msg.value),mtNativeLocation.href);
+                  var previous=new URL(mtNativeLocation.href);
+                  var fragmentNavigation=destination.href.indexOf("#")>=0&&destination.origin===previous.origin&&destination.pathname===previous.pathname&&destination.search===previous.search;
+                  mtNativeLocation.href=destination.href;
+                  if(fragmentNavigation)res.navigationKind=destination.href===previous.href?"same-document-current":"same-document";
+                  res.result="navigating";
                   break;}
                 case"reload":{
                   if((msg.value||"")==="force"){
@@ -1552,15 +1560,15 @@ public sealed partial class WebPreviewProxyMiddleware
             try{hasFocus=!!document.hasFocus();}catch(e){}
             try{topLevel=window.top===window.self;}catch(e){}
             var visible=bwsVisibleOverride!==null?bwsVisibleOverride:document.visibilityState==="visible";
-            return {visible:visible,focus:hasFocus,topLevel:topLevel};
+            return {visible:visible,focus:hasFocus,topLevel:topLevel,documentId:mtDocumentId,navigationVersion:mtNavigationVersion};
           }
           function curBwsStateKey(){
             var s=curBwsState();
-            return (s.visible?"1":"0")+(s.focus?"1":"0")+(s.topLevel?"1":"0");
+            return (s.visible?"1":"0")+(s.focus?"1":"0")+(s.topLevel?"1":"0")+":"+mtNavigationVersion;
           }
           function withBwsState(wsUrl){
             var s=curBwsState();
-            wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"visible="+(s.visible?"1":"0")+"&focus="+(s.focus?"1":"0")+"&topLevel="+(s.topLevel?"1":"0");
+            wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"visible="+(s.visible?"1":"0")+"&focus="+(s.focus?"1":"0")+"&topLevel="+(s.topLevel?"1":"0")+"&documentId="+encodeURIComponent(mtDocumentId);
             return wsUrl;
           }
           function schedBwsReconnect(delay){

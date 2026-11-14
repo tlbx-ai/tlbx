@@ -76,7 +76,8 @@ public sealed class BrowserWebSocketHandler
                 hasFocus,
                 isTopLevel,
                 long.TryParse(context.Request.Query["targetRevision"].FirstOrDefault(), CultureInfo.InvariantCulture, out var revision) ? revision : null,
-                previewClient?.OwnershipGeneration))
+                previewClient?.OwnershipGeneration,
+                context.Request.Query["documentId"].FirstOrDefault()))
         {
             BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
             await ws.CloseAsync(
