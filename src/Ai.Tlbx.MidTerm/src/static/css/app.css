@@ -14293,12 +14293,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-history-entry.agent-history-tool-activity {
-  padding: 3px 0;
+  padding: 0;
   border: 0;
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 18px;
 }
+
+.agent-history-assistant:has(+ .agent-history-tool-activity) { padding-bottom: 0; }
+.agent-history-tool-activity + .agent-history-assistant { padding-top: 2px; gap: 0; }
 
 .agent-tool-activity > summary {
   display: flex;
@@ -14317,6 +14320,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-tool-activity-list { padding-top: 4px; min-width: 0; }
 .agent-tool-activity-list > .agent-history-entry { max-width: 100%; border: 0; padding-block: 3px; }
 .agent-tool-activity-list .agent-history-title { font-size: 11px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+.agent-tool-activity-list .agent-history-command-disclosure pre {
+  padding: 6px 8px;
+  color: var(--text-primary);
+  background: color-mix(in srgb, var(--bg-primary) 90%, transparent);
+  border-radius: 3px;
+}
 
 @media (pointer: coarse) {
   .agent-tool-activity > summary { min-height: 44px; align-items: center; }
@@ -14808,6 +14817,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-command-number { color: var(--accent-green); }
 .agent-command-operator { color: var(--text-secondary); }
 .agent-command-comment { color: var(--text-muted); }
+.agent-command-flag { color: var(--accent-blue); }
 
 @media (pointer: coarse) {
   .agent-history-command-disclosure > .agent-history-disclosure-summary { min-height: 44px; }
