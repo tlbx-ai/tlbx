@@ -183,8 +183,9 @@ function buildRecoveryBeginMessage(
   sourceSequenceEndExclusive: bigint,
   resetTerminal = false,
   alternateScreenMode = 0,
+  inputModes = 0,
 ): ArrayBuffer {
-  const frame = new Uint8Array(headerSize + 24);
+  const frame = new Uint8Array(headerSize + 26);
   const view = new DataView(frame.buffer);
   frame[0] = recoveryBeginType;
   encodeSessionId(frame, 1, sessionId);
@@ -194,6 +195,7 @@ function buildRecoveryBeginMessage(
   view.setBigUint64(headerSize + 6, sequenceStart, true);
   view.setBigUint64(headerSize + 14, sourceSequenceEndExclusive, true);
   view.setUint16(headerSize + 22, alternateScreenMode, true);
+  view.setUint16(headerSize + 24, inputModes, true);
   return frame.buffer;
 }
 
@@ -1991,6 +1993,7 @@ describe('muxChannel', () => {
           100n + BigInt(length),
           true,
           1049,
+          0x8194,
         ),
       } as MessageEvent<ArrayBuffer>);
       harness.ws.onmessage?.({
@@ -2018,6 +2021,10 @@ describe('muxChannel', () => {
         expect(getBrowserTransportSnapshot('sess1234')?.recoveryCompleted).toBe(1),
       );
       expect(terminal.buffer.active.type).toBe('alternate');
+      expect(terminal.modes.mouseTrackingMode).toBe('any');
+      expect(terminal.modes.bracketedPasteMode).toBe(true);
+      expect(terminal.modes.sendFocusMode).toBe(true);
+      expect(isBracketedPasteEnabled('sess1234')).toBe(true);
       expect(terminal.buffer.active.getLine(0)?.translateToString(true)).toBe('FRESH\u20ac');
       expect(terminal.buffer.active.getLine(0)?.getCell(0)?.getFgColor()).toBe(2);
       expect(harness.sessionTerminals.get('sess1234')?.terminal.reset).toHaveBeenCalledOnce();
@@ -2116,7 +2123,10 @@ describe('muxChannel', () => {
       expect(getBrowserTransportSnapshot(sessionId)?.recoveryCompleted).toBe(1);
     });
     expect(harness.sessionTerminals.has(sessionId)).toBe(false);
-    expect(state.pendingTerminalReplayModes.get(sessionId)).toBe(1049);
+    expect(state.pendingTerminalReplayModes.get(sessionId)).toEqual({
+      alternateScreenMode: 1049,
+      inputModes: 0,
+    });
     expect(state.pendingOutputFrames.get(sessionId)).toHaveLength(1);
   });
 
