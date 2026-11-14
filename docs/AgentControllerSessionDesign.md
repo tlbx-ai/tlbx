@@ -445,7 +445,7 @@ The canonical history contract must satisfy the following:
 - When a provider emits an unknown structured event, tlbx should preserve bounded source/method diagnostics as a canonical history item instead of silently dropping it; the raw payload remains transient and omitted.
 - Those fallback unknown-agent rows must remain clearly marked as unknown tlbx fallback output rather than pretending to be a first-class mapped concept.
 - `showAgentTechnicalDetails` defaults to false and opts into technical rows, including unknown-agent fallback rows. It replaces the narrower `showUnknownAgentMessages` control. The old true value was also the old server default and must not be interpreted as explicit consent to the broader display; explicit values of the new preference persist normally.
-- Long machine-oriented bodies shown through technical opt-in should collapse into disclosure panels once stable; agent error notices remain visible and unfolded. Command rows retain a visible failure outcome while their technical payload is disclosed on demand. File review is independently available through its closed disclosure.
+- Long machine-oriented bodies shown through technical opt-in should collapse into disclosure panels once stable; agent error notices remain visible and unfolded. Command rows retain a visible failure outcome while their technical payload is disclosed on demand. File review remains visible as a compact changed-file list; clicking a filename opens its diff.
 - Collapsed tool-style panels should expose a short preview plus line-count context so the user can scan relevance before expanding.
 - Tool commands, command output, file paths, and other machine-oriented detail should use the configured terminal monospace stack.
 - Command/file-read noise should be summarized for screen use instead of dumping full raw terminal-like output into Agent Controller Session history.
@@ -454,6 +454,7 @@ The canonical history contract must satisfy the following:
 - ANSI CSI/OSC sequences and control bytes must be removed while streaming into the bounded accumulator so split escape sequences cannot leak into history and no full-output copy is required.
 - Completed tool accumulator state must be released immediately after the canonical history item is settled; session lifetime must not retain per-tool builders or full provider results.
 - Command-execution rows start as a closed, flat disclosure with an ellipsized script preview in small regular-weight terminal monospace. Outcomes remain visible as quiet trailing metadata. Known shell launchers can be omitted from the preview; original command and bounded output remain available on expansion. Do not guess a higher-level purpose from shell text or hide the original evidence.
+- Expanded scripts and output wrap within the reading column and grow vertically. Do not cap their height or introduce nested horizontal/vertical scrollbars; long unbroken paths wrap too. The collapsed single-line script preview remains ellipsized.
 - When command output is available immediately after a command-execution row, Agent Controller Session should fold the already bounded canonical evidence inside that same command disclosure in readable terminal monospace instead of rendering a second noisy standalone output row.
 - Once command output has been folded into a command-execution row, that compact tail must remain attached to that historical command even after later commands and outputs arrive in the same turn.
 - Reducing the configured output-line count on a retained command tail keeps its newest lines, including the final result or diagnostic. A zero-line preference hides that output; file-read and other head-oriented excerpts retain their existing selection policy.
@@ -482,7 +483,7 @@ The canonical history contract must satisfy the following:
 
 - Diffs should be surfaced as first-class work artifacts, not buried in generic tool logs.
 - Unified diffs should render as actual diffs with added and removed lines visually separated by green/red treatments, not as undifferentiated plain monospace blocks.
-- File changes remain available in the quiet view behind a closed `Review changes` disclosure. Mount the bounded diff/tool body only after explicit expansion; do not inject hundreds of diff lines into the reading flow by default.
+- Specified and implemented: file changes remain visible in the quiet view as one small `Changed files` label followed immediately by the filename list. Do not wrap that list in a disclosure or add a second review/line-count label. File rows use 2px vertical padding and no artifact-cluster top margin; they sit close to the preceding message. Clicking a filename opens a read-only diff viewer: prefer the recorded patch for that file and turn, otherwise clearly label the current Git diff. Preserve added/deleted colors, line gutters, keyboard dismissal and focus return. No hunks are mounted in the timeline.
 - Agent Controller Session should trim non-essential unified-diff preamble noise where possible and prioritize the file header plus actual hunk content.
 - When unified diff hunks provide old/new coordinates, Agent Controller Session should show a subtle old/new line-number gutter beside the diff text.
 - That diff line-number gutter should stay structurally consistent across context, removed, and added lines; do not switch between doubled columns, stretched single columns, or other per-row numbering layouts that make the gutter look accidental.
@@ -603,7 +604,7 @@ The canonical history contract must satisfy the following:
 - Live Agent Controller Session transport should flow as `provider event -> mtagenthost canonization -> mt bridge -> frontend history window fetch / delta -> visible row patch`.
 - Item updates should target stable DOM anchors keyed by canonical identity.
 - Virtual scrolling must remove old items from the live DOM when the history becomes large.
-- Technical tool/log items are opt-in; file review stays available through a closed disclosure with a bounded body mounted on demand.
+- Technical tool/log items are opt-in; file review stays available as a compact filename list with diffs opened on demand.
 - High-volume provider chatter should be reduced before transport so the browser receives canonical history deltas, not raw-event floods.
 - The browser should request history as explicit index windows and should not receive arbitrary unseen history by default.
 - Multiple browsers attached to one Agent Controller Session should share the same canonical history while independently fetching only the windows each browser currently needs.
