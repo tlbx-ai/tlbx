@@ -3045,6 +3045,15 @@ public sealed partial class WebPreviewProxyMiddleware
             context.Response.Headers["Access-Control-Allow-Origin"] = "*";
         }
 
+        if (IsDocumentNavigation(context.Request) && !IsViewableDocumentNavigation(context.Request, upstreamResponse))
+        {
+            // Downloads, partial representations and bodyless statuses keep their
+            // original representation, even when the resource is HTML/CSS/script.
+            await using var original = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
+            await original.CopyToAsync(context.Response.Body, context.RequestAborted);
+            return;
+        }
+
         if (contentType is "text/html")
         {
             var targetUri = _service.GetTargetUriByRouteKey(routeKey);
@@ -3056,7 +3065,8 @@ public sealed partial class WebPreviewProxyMiddleware
 
             await ProxyHtmlResponseAsync(context, routeKey, targetUri, upstreamResponse, finalUrl);
         }
-        else if (ShouldRenderTextDocument(context.Request, upstreamResponse))
+        else if (ShouldRenderTextDocument(context.Request, upstreamResponse)
+            || ShouldRenderImageDocument(context.Request, upstreamResponse))
         {
             var targetUri = _service.GetTargetUriByRouteKey(routeKey);
             if (targetUri is null)
@@ -3065,9 +3075,31 @@ public sealed partial class WebPreviewProxyMiddleware
                 return;
             }
 
-            var text = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
+            var image = ShouldRenderImageDocument(context.Request, upstreamResponse);
+            var (body, error) = await ReadDocumentBodyAsync(upstreamResponse, image ? 4 * 1024 * 1024 : 1024 * 1024, context.RequestAborted);
+            var originalUrl = finalUrl ?? targetUri.AbsoluteUri;
+            var originalType = upstreamResponse.Content.Headers.ContentType?.ToString() ?? "";
+            string document;
+            if (error is not null)
+                document = RenderTextDocument(error, originalUrl, originalType);
+            else if (image)
+                document = RenderImageDocument(body!, contentType!, originalUrl);
+            else
+            {
+                try
+                {
+                    var charset = upstreamResponse.Content.Headers.ContentType?.CharSet?.Trim('"');
+                    var encoding = string.IsNullOrWhiteSpace(charset) ? Encoding.UTF8 : Encoding.GetEncoding(charset);
+                    using var reader = new StreamReader(new MemoryStream(body!, writable: false), encoding, detectEncodingFromByteOrderMarks: true);
+                    document = RenderTextDocument(await reader.ReadToEndAsync(context.RequestAborted), originalUrl, originalType);
+                }
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+                {
+                    document = RenderTextDocument("Preview unavailable: the response declares an unsupported text charset.", originalUrl, originalType);
+                }
+            }
             await ProxyHtmlResponseAsync(context, routeKey, targetUri, upstreamResponse, finalUrl,
-                RenderTextDocument(text));
+                document);
         }
         else if (contentType is "text/css")
         {
@@ -3087,27 +3119,110 @@ public sealed partial class WebPreviewProxyMiddleware
     internal static bool ShouldRenderTextDocument(HttpRequest request, HttpResponseMessage response)
     {
         // Only browser document navigations get a readable, controllable viewer.
-        // API calls, script loads and downloads retain their original bytes/type.
-        if (!string.Equals(request.Headers["Sec-Fetch-Mode"], "navigate", StringComparison.OrdinalIgnoreCase))
-            return false;
-        var destination = request.Headers["Sec-Fetch-Dest"].ToString();
-        if (destination is not ("document" or "iframe" or "frame"))
-            return false;
-        if (string.Equals(response.Content.Headers.ContentDisposition?.DispositionType, "attachment", StringComparison.OrdinalIgnoreCase))
-            return false;
+        // Subresources keep their existing response/rewrite paths; downloads are not viewers.
+        if (!IsViewableDocumentNavigation(request, response)) return false;
 
         var mediaType = response.Content.Headers.ContentType?.MediaType;
-        return string.Equals(mediaType, "text/plain", StringComparison.OrdinalIgnoreCase)
+        return (mediaType?.StartsWith("text/", StringComparison.OrdinalIgnoreCase) == true
+                && !mediaType.Equals("text/html", StringComparison.OrdinalIgnoreCase))
             || string.Equals(mediaType, "application/json", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(mediaType, "text/json", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/javascript", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/ecmascript", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/x-javascript", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "application/xml", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mediaType, "image/svg+xml", StringComparison.OrdinalIgnoreCase)
             || (mediaType?.StartsWith("application/", StringComparison.OrdinalIgnoreCase) == true
-                && mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
+                && (mediaType.EndsWith("+json", StringComparison.OrdinalIgnoreCase)
+                    || mediaType.EndsWith("+xml", StringComparison.OrdinalIgnoreCase)));
     }
 
-    internal static string RenderTextDocument(string text) =>
+    private static bool IsDocumentNavigation(HttpRequest request) =>
+        HttpMethods.IsGet(request.Method)
+        && string.Equals(request.Headers["Sec-Fetch-Mode"], "navigate", StringComparison.OrdinalIgnoreCase)
+        && request.Headers["Sec-Fetch-Dest"].ToString() is "document" or "iframe" or "frame";
+
+    private static bool IsViewableDocumentNavigation(HttpRequest request, HttpResponseMessage response) =>
+        IsDocumentNavigation(request)
+        && response.StatusCode != HttpStatusCode.PartialContent
+        && response.StatusCode is not (HttpStatusCode.NoContent or HttpStatusCode.ResetContent or HttpStatusCode.NotModified)
+        && response.Content.Headers.ContentRange is null
+        && (!response.Content.Headers.Contains("Content-Disposition")
+            || string.Equals(response.Content.Headers.ContentDisposition?.DispositionType, "inline", StringComparison.OrdinalIgnoreCase));
+
+    internal static bool ShouldRenderImageDocument(HttpRequest request, HttpResponseMessage response) =>
+        IsViewableDocumentNavigation(request, response)
+        && IsRasterImageDocument(response.Content.Headers.ContentType?.MediaType);
+
+    private static bool IsRasterImageDocument(string? mediaType) => mediaType?.ToLowerInvariant() is
+        "image/png" or "image/jpeg" or "image/gif" or "image/webp" or "image/avif" or "image/apng" or "image/bmp" or "image/x-icon" or "image/vnd.microsoft.icon";
+
+    private static string DocumentHeading(string? url, string? contentType)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+            url = new UriBuilder(uri) { UserName = "", Password = "" }.Uri.AbsoluteUri;
+        return "<header><code>" + WebUtility.HtmlEncode(contentType ?? "") + "</code><p>"
+            + WebUtility.HtmlEncode(url ?? "") + "</p></header>";
+    }
+
+    internal static string RenderTextDocument(string text, string? url = null, string? contentType = null) =>
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Response</title>"
         + "<style>body{margin:16px}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>"
-        + "</head><body><pre>" + WebUtility.HtmlEncode(text) + "</pre></body></html>";
+        + "</head><body>" + DocumentHeading(url, contentType) + "<pre>" + WebUtility.HtmlEncode(text) + "</pre></body></html>";
+
+    internal static string RenderImageDocument(byte[] body, string mediaType, string url)
+    {
+        if (!IsRasterImageDocument(mediaType)) throw new ArgumentException("Unsupported image document type.", nameof(mediaType));
+        return "<!doctype html><html><head><meta charset=\"utf-8\"><title>Image</title>"
+            + "<style>body{margin:16px}img{max-width:100%;height:auto}header{overflow-wrap:anywhere}</style>"
+            + "</head><body>" + DocumentHeading(url, mediaType)
+            + "<img alt=\"Response image\" src=\"data:" + mediaType.ToLowerInvariant() + ";base64,"
+            + Convert.ToBase64String(body) + "\"></body></html>";
+    }
+
+    internal static async Task<(byte[]? Body, string? Error)> ReadDocumentBodyAsync(
+        HttpResponseMessage response, int maximumBytes, CancellationToken cancellationToken)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maximumBytes);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
+        try
+        {
+            if (response.Content.Headers.ContentEncoding.Count > 1)
+                return (null, "Preview unavailable: multiple response content encodings are unsupported.");
+            await using var raw = await response.Content.ReadAsStreamAsync(deadline.Token);
+            await using Stream decoded = response.Content.Headers.ContentEncoding.FirstOrDefault()?.ToLowerInvariant() switch
+            {
+                null or "identity" => raw,
+                "gzip" => new GZipStream(raw, CompressionMode.Decompress, leaveOpen: true),
+                "br" => new BrotliStream(raw, CompressionMode.Decompress, leaveOpen: true),
+                "deflate" => new DeflateStream(raw, CompressionMode.Decompress, leaveOpen: true),
+                _ => Stream.Null
+            };
+            if (decoded == Stream.Null) return (null, "Preview unavailable: unsupported response content encoding.");
+            using var copy = new MemoryStream();
+            var buffer = new byte[8192];
+            while (true)
+            {
+                var count = await decoded.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maximumBytes + 1 - (int)copy.Length)), deadline.Token);
+                if (count == 0) return (copy.ToArray(), null);
+                copy.Write(buffer, 0, count);
+                if (copy.Length > maximumBytes)
+                    return (null, $"Preview unavailable: decoded response exceeds the {maximumBytes} byte document limit. The source was not displayed or executed.");
+            }
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            return (null, "Preview unavailable: the response body did not finish within 10 seconds.");
+        }
+        catch (InvalidDataException)
+        {
+            return (null, "Preview unavailable: invalid compressed response body.");
+        }
+        catch (IOException)
+        {
+            return (null, "Preview unavailable: the response body could not be read completely.");
+        }
+    }
 
     private async Task ProxyFileAsync(HttpContext context, string routeKey, Uri targetUri, string path)
     {
