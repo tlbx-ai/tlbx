@@ -359,7 +359,7 @@ public static partial class WebPreviewEndpoints
             foreach (var failure in failures)
             {
                 var error = string.IsNullOrWhiteSpace(failure.Error) ? "" : $" error={TrimForSummary(failure.Error, 80)}";
-                var upstream = failure.UpstreamStatusCode is int upstreamStatus ? $" upstream={upstreamStatus}" : "";
+                var upstream = failure.UpstreamStatusCode is int upstreamStatus ? string.Create(CultureInfo.InvariantCulture, $" upstream={upstreamStatus}") : "";
                 var outcome = failure.Outcome is null ? "" : $" outcome={failure.Outcome}";
                 lines.Add(string.Create(CultureInfo.InvariantCulture, $"  {failure.StatusCode} {failure.Type}{upstream}{outcome} {TrimForSummary(failure.UpstreamUrl, 120)}{error}"));
             }
