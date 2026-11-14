@@ -209,7 +209,7 @@ public sealed class BrowserCommandService
             result.Results.Add(new BrowserBatchStepResult
             {
                 Index = i, Command = command.Command, Success = step.Success, Result = step.Result,
-                Error = step.Error, MatchCount = step.MatchCount, DurationMs = stepClock.Elapsed.TotalMilliseconds
+                Error = step.Error, MatchCount = step.MatchCount, Capture = step.Capture, DurationMs = stepClock.Elapsed.TotalMilliseconds
             });
             if (!step.Success)
             {

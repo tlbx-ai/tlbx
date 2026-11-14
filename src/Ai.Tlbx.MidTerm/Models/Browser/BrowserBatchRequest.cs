@@ -25,5 +25,6 @@ public sealed class BrowserBatchStepResult
     public string? Result { get; set; }
     public string? Error { get; init; }
     public int? MatchCount { get; init; }
+    public BrowserCaptureInfo? Capture { get; init; }
     public double DurationMs { get; init; }
 }

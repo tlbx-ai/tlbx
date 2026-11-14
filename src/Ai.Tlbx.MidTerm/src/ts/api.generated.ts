@@ -4500,8 +4500,38 @@ export interface components {
       error: null | string;
       /** Format: int32 */
       matchCount: null | number;
+      capture: null | components['schemas']['BrowserCaptureInfo'];
       /** Format: double */
       durationMs: number;
+    };
+    BrowserCaptureInfo: {
+      renderer: string;
+      pixelCoverage: string;
+      inventory: null | string;
+      mediaPixels: string;
+      nestedMedia: string;
+      media: null | components['schemas']['BrowserCaptureMedia'];
+      warningCodes: null | {
+        [key: string]: number;
+      };
+      warningsMayBeTruncated: boolean;
+      output: null | components['schemas']['BrowserCaptureOutput'];
+    };
+    BrowserCaptureMedia: {
+      /** Format: int32 */
+      frames: number;
+      /** Format: int32 */
+      unreadableFrames: number;
+      /** Format: int32 */
+      canvases: number;
+      /** Format: int32 */
+      videos: number;
+    };
+    BrowserCaptureOutput: {
+      /** Format: int32 */
+      width: number;
+      /** Format: int32 */
+      height: number;
     };
     BrowserClientInfo: {
       sessionId: null | string;
@@ -4545,6 +4575,7 @@ export interface components {
       error: null | string;
       /** Format: int32 */
       matchCount: null | number;
+      capture: null | components['schemas']['BrowserCaptureInfo'];
     };
     BrowserPreviewClientRequest: {
       sessionId?: null | string;
