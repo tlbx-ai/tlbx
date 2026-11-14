@@ -26,6 +26,27 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class TlbxMcpWorkflowProtocolTests
 {
+    [Theory]
+    [InlineData("""{"steps":["context_get",["sessions_list",{}]],"futureOption":true}""", false)]
+    [InlineData("""{"steps":[{"parallel":["context_get",{"tool":"browser_status"}]}]}""", false)]
+    [InlineData("""{"steps":[["process_run_isolated",{}]]}""", true)]
+    [InlineData("""{"steps":[{"parallel":["context_get","process_wait"]}]}""", true)]
+    [InlineData("""{"steps":[{"tool":"tool_call_from_file","arguments":{"toolName":"sessions_list"}}]}""", true)]
+    [InlineData("""{"steps":["artifact_save"]}""", true)]
+    [InlineData("""{"steps":["tool_call_to_file"]}""", true)]
+    [InlineData("""{"steps":["update_apply"]}""", true)]
+    [InlineData("""{"steps":[{"unclassified":"process_run_isolated"}]}""", true)]
+    public void WorkflowRoutingKeepsCallerFilesProcessesArtifactsAndUpdateRecoveryLocal(string json, bool local)
+    {
+        using var document = JsonDocument.Parse(json);
+        var arguments = document.RootElement.EnumerateObject().ToDictionary(property => property.Name,
+            property => property.Value.Clone(), StringComparer.Ordinal);
+        Assert.Equal(local, TlbxMcpNativeWorkflow.RequiresCallerLocalExecution(new CallToolRequestParams
+        {
+            Name = "workflow_run", Arguments = arguments
+        }));
+    }
+
     [Fact]
     public void PreviewScopeCannotRedirectBrowserButPreservesExplicitCrossDomainTargets()
     {

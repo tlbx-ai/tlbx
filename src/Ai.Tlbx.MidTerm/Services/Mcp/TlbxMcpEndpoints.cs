@@ -71,6 +71,8 @@ internal static class TlbxMcpEndpoints
                 await context.Response.WriteAsync(error.Value.Message, context.RequestAborted);
                 return;
             }
+            context.Response.Headers[McpStdioFreshness.VersionHeader] = Startup.CliCommands.GetVersion();
+            context.Response.Headers[McpStdioFreshness.InstanceHeader] = TlbxMcpTool.ServerInstanceId;
             await next(context);
         });
         app.MapMcp(Path);
