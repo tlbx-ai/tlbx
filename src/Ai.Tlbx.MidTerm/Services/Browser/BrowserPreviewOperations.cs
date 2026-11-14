@@ -150,12 +150,12 @@ public sealed class BrowserPreviewOperations(
                 return new BrowserPreviewOperationResult(false, 409, opened.Error + "\n");
 
             var status = await commands.WaitForControllableAsync(url, sessionId, previewName,
-                requireClientConnectedAfterUtc: started, requireVisibleClient: activateSession,
+                requireClientConnectedAfterUtc: started, requirePanelVisibleClient: activateSession,
                 connectedUiClientCountProvider: () => ui.ConnectedBrowserCount,
                 cancellationToken: cancellationToken, requiredTargetRevision: revision).ConfigureAwait(false);
             var text = commands.GetStatusText(url, sessionId, previewName, connectedUiClientCount: ui.ConnectedBrowserCount);
             var ready = status.Controllable && owners.GetGeneration(sessionId, previewName) == opened.OwnershipGeneration
-                && (!activateSession || status.DefaultClient?.IsVisible == true);
+                && (!activateSession || (status.DefaultClient?.IsPanelVisible ?? status.DefaultClient?.IsVisible) == true);
             if (ready)
             {
                 var probe = await commands.ExecuteCommandAsync(new BrowserCommandRequest

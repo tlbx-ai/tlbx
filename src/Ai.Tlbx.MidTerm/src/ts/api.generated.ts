@@ -4544,6 +4544,9 @@ export interface components {
       connectedAtUtc: string;
       isMainBrowser: boolean;
       isVisible: boolean;
+      isPanelVisible: null | boolean;
+      isDocumentVisible: null | boolean;
+      documentVisibilityState: null | string;
       hasFocus: boolean;
       isTopLevel: boolean;
     };

@@ -33,6 +33,97 @@ function section(start: string, end: string): string {
 const dispatcherStart = source.includes('async function handleBCmd(msg){')
   ? 'async function handleBCmd(msg){'
   : 'function handleBCmd(msg){';
+
+describe('preview visibility transport', () => {
+  function fixture(panel: boolean | null, visible: boolean, detached = false) {
+    const self = {};
+    const context = {
+      bwsPanelVisible: panel,
+      document: {
+        visibilityState: visible ? 'visible' : 'hidden',
+        hidden: !visible,
+        hasFocus: () => false,
+      },
+      window: { self, top: detached ? self : {} },
+    };
+    const api = runInNewContext(
+      `${section('function curBwsState(){', 'function schedBwsReconnect(')}
+       ({curBwsState,curBwsStateKey,withBwsState});`,
+      context,
+    ) as {
+      curBwsState(): {
+        visible: boolean;
+        panelVisible: boolean | null;
+        documentVisible: boolean;
+        documentVisibilityState: string;
+      };
+      curBwsStateKey(): string;
+      withBwsState(url: string): string;
+    };
+    return { context, api };
+  }
+
+  it.each([
+    [true, true],
+    [true, false],
+    [false, true],
+    [false, false],
+  ])('reports panel=%s and document=%s separately', (panel, document) => {
+    const { context, api } = fixture(panel, document);
+    expect(api.curBwsState()).toMatchObject({
+      visible: panel && document,
+      panelVisible: panel,
+      documentVisible: document,
+      documentVisibilityState: document ? 'visible' : 'hidden',
+    });
+    const query = new URL(api.withBwsState('wss://example.test/ws/browser')).searchParams;
+    expect(query.get('visible')).toBe(panel && document ? '1' : '0');
+    expect(query.get('panelVisible')).toBe(panel ? '1' : '0');
+    expect(query.get('documentVisible')).toBe(document ? '1' : '0');
+    expect(context.document.hidden).toBe(!document);
+  });
+
+  it('publishes panel changes while the document remains hidden and uses native visibility for detached windows', () => {
+    const { context, api } = fixture(true, false);
+    const before = api.curBwsStateKey();
+    context.bwsPanelVisible = false;
+    expect(api.curBwsStateKey()).not.toBe(before);
+    expect(api.curBwsState().visible).toBe(false);
+    expect(fixture(null, true).api.curBwsState()).toMatchObject({ panelVisible: null, visible: false });
+    expect(fixture(null, true, true).api.curBwsState()).toMatchObject({ panelVisible: true, visible: true });
+    expect(fixture(null, false, true).api.curBwsState()).toMatchObject({ panelVisible: true, visible: false });
+  });
+
+  it('accepts panel state only from the real parent without changing native document visibility', () => {
+    const parent = {};
+    const handlers: ((event: unknown) => void)[] = [];
+    const context = {
+      _realParent: parent,
+      bwsPanelVisible: null as boolean | null,
+      mtNestedPreview: false,
+      mtReadNativeParentContext: () => null,
+      mtScheduleBackgroundFrames: vi.fn(),
+      refreshBwsState: vi.fn(),
+      document: { visibilityState: 'hidden', hidden: true },
+      window: {
+        addEventListener: (_type: string, handler: (event: unknown) => void) => handlers.push(handler),
+      },
+    };
+    runInNewContext(
+      section('window.addEventListener("message",function(e){', 'function connectBws(){'),
+      context,
+    );
+    const data = { type: 'mt-refresh-browser-state', panelVisible: true, force: true };
+    handlers[0]!({ source: {}, data });
+    expect(context.bwsPanelVisible).toBeNull();
+    expect(context.refreshBwsState).not.toHaveBeenCalled();
+    handlers[0]!({ source: parent, data });
+    expect(context.bwsPanelVisible).toBe(true);
+    expect(context.document).toEqual({ visibilityState: 'hidden', hidden: true });
+    handlers[0]!({ source: parent, data: { ...data, panelVisible: false } });
+    expect(context.bwsPanelVisible).toBe(false);
+  });
+});
 const protocol = [
   section('function mtProxyPrefix(){', 'var P="/webpreview"'),
   'var BP=mtProxyPrefix(),PP=BP+P,E=PP+"/_ext?u=";',
