@@ -384,6 +384,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(BrowserWsResult))]
 [JsonSerializable(typeof(BrowserUiInstruction))]
 [JsonSerializable(typeof(BrowserUiCommandResult))]
+[JsonSerializable(typeof(BrowserMobileDeviceState))]
 [JsonSerializable(typeof(AgentHistoryWheelRequest))]
 [JsonSerializable(typeof(AgentHistoryWheelResult))]
 [JsonSerializable(typeof(AgentHistoryScrollMetrics))]

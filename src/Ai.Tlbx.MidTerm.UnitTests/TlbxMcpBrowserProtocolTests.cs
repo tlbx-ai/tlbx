@@ -24,6 +24,93 @@ public sealed class TlbxMcpBrowserProtocolTests
 {
     private const string Png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=";
 
+    [Theory]
+    [InlineData("status")]
+    [InlineData("screenshot")]
+    public async Task MobileControlAwaitsExactOwnerCommandPreviewAndRevision(string action)
+    {
+        var owners = new BrowserPreviewOwnerService();
+        var previews = new WebPreviewService(2000);
+        Assert.True(previews.SetTarget("mobile-session", "named", "https://example.invalid/"));
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners, previews);
+        string? requestId = null;
+        long revision = -1;
+        ui.RegisterAcknowledgedListener("ui", "desktop:tab", (_, _, _) => { }, (_, _, _) => { },
+            (_, _, _, _, _) => { }, (_, _, _, _, _, _) => { },
+            mobileDevice: (id, session, name, receivedAction, _, targetRevision) =>
+            {
+                Assert.Equal("mobile-session", session); Assert.Equal("named", name);
+                Assert.Equal(action, receivedAction); requestId = id; revision = targetRevision;
+            });
+        owners.Claim("mobile-session", "named", "desktop:tab");
+        try
+        {
+            var pending = ui.RequestMobileDeviceAsync("mobile-session", "named", action, null, TestContext.Current.CancellationToken);
+            Assert.False(pending.IsCompleted);
+            Assert.NotNull(requestId);
+            BrowserUiCommandResult Result(string command = "mobile-device", string session = "mobile-session", long? targetRevision = null) => new()
+            {
+                RequestId = requestId!, Command = command, SessionId = session, PreviewName = "named",
+                TargetRevision = targetRevision ?? revision, Success = true,
+                MobileDevice = new BrowserMobileDeviceState { Available = action == "screenshot", Connected = action == "screenshot", Open = action == "screenshot" ? true : null },
+                ScreenshotDataUrl = action == "screenshot" ? Png : null
+            };
+            Assert.False(ui.CompleteUiCommand(Result(), "desktop:sibling"));
+            Assert.False(ui.CompleteUiCommand(Result("viewport"), "desktop:tab"));
+            Assert.False(ui.CompleteUiCommand(Result(session: "other-session"), "desktop:tab"));
+            Assert.False(ui.CompleteUiCommand(Result(targetRevision: revision + 1), "desktop:tab"));
+            Assert.False(pending.IsCompleted);
+            Assert.True(ui.CompleteUiCommand(Result(), "desktop:tab"));
+            var result = await pending;
+            Assert.True(result.Success);
+            Assert.Equal(action == "screenshot", result.MobileDevice!.Available);
+            Assert.Equal(action == "screenshot" ? Png : null, result.ScreenshotDataUrl);
+            Assert.False(ui.CompleteUiCommand(Result(), "desktop:tab"));
+            if (action == "screenshot")
+            {
+                await using var services = new ServiceCollection().BuildServiceProvider();
+                var image = await TlbxMcpBrowserTools.CommandResultAsync(services,
+                    new BrowserCommandRequest { Command = "screenshot", SessionId = "mobile-session", PreviewName = "named" },
+                    new BrowserWsResult { Success = true, Result = result.ScreenshotDataUrl }, false);
+                Assert.IsType<ImageContentBlock>(Assert.Single(image.Content));
+                Assert.DoesNotContain(image.Content.OfType<TextContentBlock>(), block => block.Text.Contains("base64", StringComparison.Ordinal));
+            }
+        }
+        finally { ui.UnregisterListener("ui"); }
+    }
+
+    [Theory]
+    [InlineData("revision")]
+    [InlineData("owner")]
+    [InlineData("extension-error")]
+    public async Task MobileControlRejectsStaleTargetsAndSurfacesExtensionFailures(string failure)
+    {
+        var owners = new BrowserPreviewOwnerService();
+        var previews = new WebPreviewService(2000);
+        Assert.True(previews.SetTarget("mobile-session", "named", "https://example.invalid/"));
+        var ui = new BrowserUiBridge(new MainBrowserService(), owners, previews);
+        ui.RegisterAcknowledgedListener("ui", "desktop:tab", (_, _, _) => { }, (_, _, _) => { },
+            (_, _, _, _, _) => { }, (_, _, _, _, _, _) => { }, mobileDevice: (id, session, name, _, _, revision) =>
+            {
+                if (failure == "revision") Assert.True(previews.SetTarget("mobile-session", "named", "https://other.invalid/"));
+                if (failure == "owner") owners.Claim("mobile-session", "named", "other:tab");
+                ui.CompleteUiCommand(new BrowserUiCommandResult
+                {
+                    RequestId = id, Command = "mobile-device", SessionId = session, PreviewName = name, TargetRevision = revision,
+                    Success = failure != "extension-error", Error = failure == "extension-error" ? "Chrome bridge disconnected" : null,
+                    MobileDevice = new BrowserMobileDeviceState { Connected = true, Available = true }
+                }, "desktop:tab");
+            });
+        owners.Claim("mobile-session", "named", "desktop:tab");
+        try
+        {
+            var result = await ui.RequestMobileDeviceAsync("mobile-session", "named", "open", null, TestContext.Current.CancellationToken);
+            Assert.False(result.Success);
+            Assert.Contains(failure == "extension-error" ? "Chrome bridge disconnected" : "changed", result.Error, StringComparison.Ordinal);
+        }
+        finally { ui.UnregisterListener("ui"); }
+    }
+
     [Fact]
     public void TypedCommandsPreserveUnicodeAndFractionalNumbersWithoutShellParsing()
     {

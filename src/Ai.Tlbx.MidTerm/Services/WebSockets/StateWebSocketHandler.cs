@@ -527,11 +527,13 @@ public sealed class StateWebSocketHandler
             _ = SendJsonAsync(instruction, AppJsonContext.Default.BrowserUiInstruction);
         }
 
-        void OnMobileDevice(string? sessionId, string? previewName, string action, string? profile)
+        void OnMobileDevice(string requestId, string? sessionId, string? previewName, string action, string? profile, long targetRevision)
         {
             var instruction = new Models.Browser.BrowserUiInstruction
             {
                 Command = "mobile-device",
+                RequestId = requestId,
+                TargetRevision = targetRevision,
                 SessionId = sessionId,
                 PreviewName = previewName,
                 DeviceAction = action,
