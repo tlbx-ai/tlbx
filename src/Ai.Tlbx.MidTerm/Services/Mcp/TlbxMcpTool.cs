@@ -11,7 +11,7 @@ namespace Ai.Tlbx.MidTerm.Services.Mcp;
 internal sealed class TlbxMcpTool : McpServerTool
 {
     // Process identity, deliberately independent of version: same-version reinstalls restart too.
-    private static readonly string ServerInstanceId = Guid.NewGuid().ToString("N");
+    internal static readonly string ServerInstanceId = Guid.NewGuid().ToString("N");
     private readonly Tool _tool;
     private TlbxMcpTool(string name, string description)
     {
