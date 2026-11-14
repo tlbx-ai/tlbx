@@ -111,6 +111,22 @@ function buildDebugScenarioHistory(args: {
       itemType: kind,
       title,
       body,
+      toolPresentation:
+        kind === 'tool' && (title === 'Command output' || title === 'File change output')
+          ? {
+              category: title === 'Command output' ? 'command' : 'edit',
+              label: title === 'Command output' ? 'Ran' : 'Changed files',
+              subject:
+                title === 'Command output'
+                  ? "Get-Content 'Q:\\workspace\\project\\reports\\a-long-script-path-that-needs-to-wrap-at-narrow-widths\\report.md' -Tail 80; Write-Output 'A long diagnostic message that wraps when expanded instead of opening a horizontal scrollbar'"
+                  : 'report.md',
+              evidence: body,
+              evidenceKind: 'text',
+              paths: title === 'Command output' ? [] : ['report.md'],
+              totalLineCount: body.split('\n').length,
+              omittedLineCount: 0,
+            }
+          : null,
       attachments: [],
       streaming: kind === 'assistant' && args.currentTurnState === 'running',
       createdAt: args.generatedAt,

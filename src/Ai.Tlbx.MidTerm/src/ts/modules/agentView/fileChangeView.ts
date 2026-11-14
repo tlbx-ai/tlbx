@@ -28,7 +28,7 @@ export function openHistoryFileDiff(
   close.className = 'btn-secondary';
   close.textContent = t('dialog.close');
   close.addEventListener('click', () => {
-    dialog.close();
+    closeDialog();
   });
   header.append(title, close);
   const scope = document.createElement('p');
@@ -40,18 +40,24 @@ export function openHistoryFileDiff(
   body.className = 'agent-file-diff-content';
   dialog.append(header, scope, body);
   document.body.append(dialog);
-  const releaseBack = registerBackButtonLayer(() => {
-    dialog.close();
+  let disposed = false;
+  const releaseBack = registerBackButtonLayer(closeDialog);
+  function cleanup(): void {
+    if (disposed) return;
+    disposed = true;
+    releaseBack();
+    dialog.remove();
+    if (trigger.isConnected) trigger.focus({ preventScroll: true });
+  }
+  function closeDialog(): void {
+    if (dialog.open) dialog.close();
+    cleanup();
+  }
+  dialog.addEventListener('close', cleanup, { once: true });
+  dialog.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeDialog();
   });
-  dialog.addEventListener(
-    'close',
-    () => {
-      releaseBack();
-      dialog.remove();
-      if (trigger.isConnected) trigger.focus({ preventScroll: true });
-    },
-    { once: true },
-  );
   dialog.addEventListener('keydown', (event) => {
     event.stopPropagation();
   });
@@ -98,6 +104,10 @@ async function loadCurrentDiff(sessionId: string, path: string, body: HTMLElemen
     return;
   }
   body.innerHTML = diff.files.map((file) => renderPatchFile(file, { historical: true })).join('');
+  // This dialog is read-only; Git's optional preview action belongs to its full inspector.
+  body.querySelectorAll('[data-action="open-file-viewer"]').forEach((button) => {
+    button.remove();
+  });
 }
 
 export function createFileChangeHistoryBody(

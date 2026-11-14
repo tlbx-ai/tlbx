@@ -14326,6 +14326,9 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-file-diff-dialog header h3 { min-width: 0; overflow-wrap: anywhere; }
 .agent-file-diff-scope { margin: 0; color: var(--text-secondary); font-size: 12px; }
 .agent-file-diff-content { min-height: 0; overflow: auto; }
+@media (max-width: 600px) {
+  .agent-file-diff-dialog header button { min-height: 44px; }
+}
 
 .agent-history-notice {
   border-top-color: color-mix(in srgb, var(--accent-red) 28%, transparent);
@@ -14751,17 +14754,17 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-history-command-disclosure pre {
   margin: 0;
   padding: 2px 0;
-  max-height: 20rem;
-  overflow: auto;
+  max-height: none;
+  overflow: visible;
   border: 0;
   border-radius: 0;
   background: transparent;
   color: var(--workspace-reading-text-primary, var(--text-primary));
   font: 400 0.76rem/1.5 var(--agent-history-mono-font-family, var(--font-mono));
   letter-spacing: normal;
-  white-space: pre;
-  overflow-wrap: normal;
-  word-break: normal;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   tab-size: 2;
 }
 .agent-history-command-disclosure .agent-history-command-output-tail {
