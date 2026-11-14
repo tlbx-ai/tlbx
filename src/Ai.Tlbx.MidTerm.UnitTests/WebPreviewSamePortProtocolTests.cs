@@ -23,6 +23,93 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 public sealed class WebPreviewSamePortProtocolTests
 {
     [Theory]
+    [InlineData("application/javascript", true, false)]
+    [InlineData("text/javascript", true, false)]
+    [InlineData("text/css", true, false)]
+    [InlineData("text/plain", true, false)]
+    [InlineData("application/problem+json", true, false)]
+    [InlineData("application/xml", true, false)]
+    [InlineData("application/atom+xml", true, false)]
+    [InlineData("image/svg+xml", true, false)]
+    [InlineData("image/png", false, true)]
+    [InlineData("image/webp", false, true)]
+    [InlineData("application/octet-stream", false, false)]
+    [InlineData("text/html", false, false)]
+    public void ResourceViewersRequireActualNavigationAndPreserveDownloadsAndSubresources(string mediaType, bool text, bool image)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Method = "GET";
+        context.Request.Headers["Sec-Fetch-Mode"] = "navigate";
+        context.Request.Headers["Sec-Fetch-Dest"] = "iframe";
+        using var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent([]) };
+        response.Content.Headers.ContentType = new(mediaType);
+        Assert.Equal(text, WebPreviewProxyMiddleware.ShouldRenderTextDocument(context.Request, response));
+        Assert.Equal(image, WebPreviewProxyMiddleware.ShouldRenderImageDocument(context.Request, response));
+        foreach (var destination in new[] { "script", "style", "image", "empty" })
+        {
+            context.Request.Headers["Sec-Fetch-Dest"] = destination;
+            Assert.False(WebPreviewProxyMiddleware.ShouldRenderTextDocument(context.Request, response));
+            Assert.False(WebPreviewProxyMiddleware.ShouldRenderImageDocument(context.Request, response));
+        }
+        context.Request.Headers["Sec-Fetch-Dest"] = "document";
+        context.Request.Headers["Sec-Fetch-Mode"] = "cors";
+        Assert.False(WebPreviewProxyMiddleware.ShouldRenderTextDocument(context.Request, response));
+        Assert.False(WebPreviewProxyMiddleware.ShouldRenderImageDocument(context.Request, response));
+        context.Request.Headers["Sec-Fetch-Mode"] = "navigate";
+        foreach (var disposition in new[] { "attachment", "unknown" })
+        {
+            response.Content.Headers.ContentDisposition = new(disposition);
+            Assert.False(WebPreviewProxyMiddleware.ShouldRenderTextDocument(context.Request, response));
+            Assert.False(WebPreviewProxyMiddleware.ShouldRenderImageDocument(context.Request, response));
+        }
+        response.Content.Headers.ContentDisposition = new("inline");
+        Assert.Equal(text, WebPreviewProxyMiddleware.ShouldRenderTextDocument(context.Request, response));
+        Assert.Equal(image, WebPreviewProxyMiddleware.ShouldRenderImageDocument(context.Request, response));
+        foreach (var status in new[] { HttpStatusCode.PartialContent, HttpStatusCode.NoContent, HttpStatusCode.NotModified })
+        {
+            response.StatusCode = status;
+            Assert.False(WebPreviewProxyMiddleware.ShouldRenderTextDocument(context.Request, response));
+            Assert.False(WebPreviewProxyMiddleware.ShouldRenderImageDocument(context.Request, response));
+        }
+    }
+
+    [Fact]
+    public void SourceDocumentsEscapeActiveMarkupAndImageDocumentsPreserveRasterBytes()
+    {
+        const string source = "</pre><script>alert('source')</script><svg onload='source()'/>&entity; a{background:url(/source.svg)}";
+        var text = WebPreviewProxyMiddleware.RenderTextDocument(source, "https://user:password@example.test/source.js", "application/javascript");
+        var start = text.IndexOf("<pre>", StringComparison.Ordinal) + 5;
+        var end = text.IndexOf("</pre>", start, StringComparison.Ordinal);
+        Assert.Equal(source, WebUtility.HtmlDecode(text[start..end]));
+        Assert.DoesNotContain(source, text, StringComparison.Ordinal);
+        Assert.DoesNotContain("password", text, StringComparison.Ordinal);
+        Assert.Contains("application/javascript", text, StringComparison.Ordinal);
+        var bytes = new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 };
+        var image = WebPreviewProxyMiddleware.RenderImageDocument(bytes, "image/png", "https://example.test/image.png");
+        Assert.Contains("src=\"data:image/png;base64," + Convert.ToBase64String(bytes) + "\"", image, StringComparison.Ordinal);
+        Assert.Throws<ArgumentException>(() => WebPreviewProxyMiddleware.RenderImageDocument(bytes, "image/svg+xml", "https://example.test/image.svg"));
+    }
+
+    [Fact]
+    public async Task DocumentByteLimitAppliesAfterDecompressionWithoutReturningPartialSource()
+    {
+        var bytes = System.Text.Encoding.UTF8.GetBytes(new string('x', 4096));
+        using var packed = new MemoryStream();
+        using (var gzip = new System.IO.Compression.GZipStream(packed, System.IO.Compression.CompressionMode.Compress, leaveOpen: true))
+            gzip.Write(bytes);
+        using var exact = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(packed.ToArray()) };
+        exact.Content.Headers.ContentEncoding.Add("gzip");
+        var complete = await WebPreviewProxyMiddleware.ReadDocumentBodyAsync(exact, bytes.Length, TestContext.Current.CancellationToken);
+        Assert.Null(complete.Error);
+        Assert.Equal(bytes, complete.Body);
+        using var over = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(packed.ToArray()) };
+        over.Content.Headers.ContentEncoding.Add("gzip");
+        var rejected = await WebPreviewProxyMiddleware.ReadDocumentBodyAsync(over, bytes.Length - 1, TestContext.Current.CancellationToken);
+        Assert.Null(rejected.Body);
+        Assert.Contains("exceeds", rejected.Error!, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("https://stream.example/master.m3u8?quality=high&__mtReloadToken=site", "https://stream.example/master.m3u8?quality=high&__mtReloadToken=site")]
     [InlineData("https://user:password@stream.example/redirected/master.m3u8", "https://stream.example/redirected/master.m3u8")]
     [InlineData(null, null)]
