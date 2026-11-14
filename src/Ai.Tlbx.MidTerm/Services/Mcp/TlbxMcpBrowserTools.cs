@@ -261,7 +261,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 {
                     var mobileShot = new BrowserCommandRequest { Command = "screenshot", SessionId = target, PreviewName = preview };
                     return await CommandResultAsync(services, mobileShot,
-                        new BrowserWsResult { Success = true, Result = mobile.ScreenshotDataUrl }, saveMobile).ConfigureAwait(false);
+                        new BrowserWsResult { Success = true, Result = mobile.ScreenshotDataUrl, Capture = new BrowserCaptureInfo { Renderer = "chrome-extension" } }, saveMobile).ConfigureAwait(false);
                 }
                 return Reply(new JsonObject { ["success"] = true, ["sessionId"] = target,
                     ["previewName"] = WebPreviewService.NormalizePreviewName(preview), ["targetRevision"] = mobile.TargetRevision,
