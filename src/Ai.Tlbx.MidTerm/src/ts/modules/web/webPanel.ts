@@ -91,6 +91,7 @@ let previewTabSelectHandler: ((previewName: string) => void) | null = null;
 let previewTabCloseHandler: ((previewName: string) => void) | null = null;
 let activeFrameKey: string | null = null;
 const previewFrames = new Map<string, HTMLIFrameElement>();
+const visibilityRefreshRevision = new WeakMap<HTMLIFrameElement, number>();
 const responsiveFrameByFrame = new Map<string, boolean>();
 let statusRefreshTimer: number | null = null;
 let screenshotInFlight = false;
@@ -589,13 +590,17 @@ function findPreviewIframeByWindow(source: MessageEventSource | null): HTMLIFram
 }
 
 function refreshPreviewBridgeVisibility(frame: HTMLIFrameElement, visible: boolean): void {
+  const revision = (visibilityRefreshRevision.get(frame) ?? 0) + 1;
+  visibilityRefreshRevision.set(frame, revision);
   const postRefresh = (): void => {
+    if (!frame.isConnected || visibilityRefreshRevision.get(frame) !== revision) return;
     try {
       frame.contentWindow?.postMessage(
         {
           type: 'mt-refresh-browser-state',
           force: true,
           visible,
+          panelVisible: visible,
           context: frame.name ? (JSON.parse(frame.name) as unknown) : null,
         },
         '*',

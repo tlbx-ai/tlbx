@@ -1500,7 +1500,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }catch(e){res.success=false;res.error=e.message||String(e);}
             bws.send(JSON.stringify(res));
           }
-          var bwsReconnectTimer=0,bwsStateKey="",bwsVisibleOverride=null;
+          var bwsReconnectTimer=0,bwsStateKey="",bwsPanelVisible=null;
           // Chromium can stop animation frames in an offscreen cross-origin
           // iframe even though its document and automation socket remain live.
           // Keep application rendering progressing for CLI-owned background previews.
@@ -1508,7 +1508,7 @@ public sealed partial class WebPreviewProxyMiddleware
           var mtNativeCancelRaf=window.cancelAnimationFrame.bind(window);
           var mtPendingFrames=new Map(),mtFrameTimer=0;
           function mtBackgroundFrames(){
-            return bwsVisibleOverride===false||document.hidden;
+            return bwsPanelVisible===false||document.hidden;
           }
           function mtScheduleBackgroundFrames(){
             if(mtFrameTimer||!mtPendingFrames.size||!mtBackgroundFrames())return;
@@ -1551,16 +1551,19 @@ public sealed partial class WebPreviewProxyMiddleware
             var hasFocus=false,topLevel=false;
             try{hasFocus=!!document.hasFocus();}catch(e){}
             try{topLevel=window.top===window.self;}catch(e){}
-            var visible=bwsVisibleOverride!==null?bwsVisibleOverride:document.visibilityState==="visible";
-            return {visible:visible,focus:hasFocus,topLevel:topLevel};
+            var documentState=document.visibilityState,documentVisible=documentState==="visible"&&!document.hidden;
+            var panelVisible=bwsPanelVisible!==null?bwsPanelVisible:topLevel?true:null;
+            return {visible:panelVisible===true&&documentVisible,panelVisible:panelVisible,documentVisible:documentVisible,documentVisibilityState:documentState,focus:hasFocus,topLevel:topLevel};
           }
           function curBwsStateKey(){
             var s=curBwsState();
-            return (s.visible?"1":"0")+(s.focus?"1":"0")+(s.topLevel?"1":"0");
+            return JSON.stringify(s);
           }
           function withBwsState(wsUrl){
             var s=curBwsState();
             wsUrl+=(wsUrl.indexOf("?")>=0?"&":"?")+"visible="+(s.visible?"1":"0")+"&focus="+(s.focus?"1":"0")+"&topLevel="+(s.topLevel?"1":"0");
+            if(s.panelVisible!==null)wsUrl+="&panelVisible="+(s.panelVisible?"1":"0");
+            wsUrl+="&documentVisible="+(s.documentVisible?"1":"0")+"&documentVisibilityState="+encodeURIComponent(s.documentVisibilityState);
             return wsUrl;
           }
           function schedBwsReconnect(delay){
@@ -1581,14 +1584,14 @@ public sealed partial class WebPreviewProxyMiddleware
           }
           window.addEventListener("message",function(e){
             var d=e&&e.data;
-            if(d&&d.type==="mt-refresh-browser-state"){
+            if(d&&d.type==="mt-refresh-browser-state"&&e.source===_realParent){
               var context=mtReadNativeParentContext(e);
               if(context&&mtNestedPreview){
                 mtParentContext=context;mtCtx=context;mtNestedPreview=false;
                 mtPersistPreviewContext();connectBws();
               }
-              if(d.visible===true)bwsVisibleOverride=true;
-              else if(d.visible===false)bwsVisibleOverride=false;
+              if(typeof d.panelVisible==="boolean")bwsPanelVisible=d.panelVisible;
+              else if(typeof d.visible==="boolean")bwsPanelVisible=d.visible;
               mtScheduleBackgroundFrames();
               refreshBwsState(d.force===true);
             }

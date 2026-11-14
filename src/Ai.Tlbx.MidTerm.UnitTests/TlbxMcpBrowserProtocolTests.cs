@@ -24,6 +24,49 @@ public sealed class TlbxMcpBrowserProtocolTests
 {
     private const string Png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=";
 
+    [Theory]
+    [InlineData(true, true)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    public async Task VisibilityKeepsPanelAndDocumentTruthSeparateWithoutBlockingHiddenDomCommands(bool panel, bool document)
+    {
+        var commands = new BrowserCommandService();
+        var dispatched = 0;
+        Assert.True(commands.TryRegisterClient("visibility", "visibility-session", "alpha", "visibility-preview", message =>
+        {
+            dispatched++;
+            commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "executed" }, "visibility");
+        }, isVisible: true, panelVisible: panel, documentVisible: document, documentVisibilityState: document ? "visible" : "hidden"));
+        try
+        {
+            var status = commands.GetStatus("https://example.invalid", "visibility-session", "alpha", "visibility-preview");
+            Assert.True(status.Controllable);
+            Assert.Equal(panel && document, status.DefaultClient!.IsVisible);
+            Assert.Equal(panel, status.DefaultClient.IsPanelVisible);
+            Assert.Equal(document, status.DefaultClient.IsDocumentVisible);
+            var activated = await commands.WaitForControllableAsync("https://example.invalid", "visibility-session", "alpha", "visibility-preview",
+                timeout: TimeSpan.Zero, requirePanelVisibleClient: true, cancellationToken: TestContext.Current.CancellationToken);
+            Assert.Equal(panel, activated.Controllable);
+            var result = await commands.ExecuteCommandAsync(new BrowserCommandRequest
+            {
+                Command = "exec", Value = "document.hidden", SessionId = "visibility-session", PreviewName = "alpha", PreviewId = "visibility-preview"
+            }, TestContext.Current.CancellationToken);
+            Assert.True(result.Success);
+            Assert.Equal(1, dispatched);
+            commands.UpdateClientState("visibility", new BrowserWsResult
+            {
+                Type = "browser-state", Visible = true, PanelVisible = !panel, DocumentVisible = true, DocumentVisibilityState = "hidden"
+            });
+            var changed = commands.GetStatus("https://example.invalid", "visibility-session", "alpha", "visibility-preview").DefaultClient!;
+            Assert.Equal(!panel, changed.IsPanelVisible);
+            Assert.False(changed.IsDocumentVisible);
+            Assert.False(changed.IsVisible);
+            Assert.Equal("hidden", changed.DocumentVisibilityState);
+        }
+        finally { commands.UnregisterClient("visibility"); }
+    }
+
     [Fact]
     public void TypedCommandsPreserveUnicodeAndFractionalNumbersWithoutShellParsing()
     {

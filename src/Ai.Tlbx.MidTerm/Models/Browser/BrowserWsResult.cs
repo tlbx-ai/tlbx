@@ -4,6 +4,9 @@ public sealed class BrowserWsResult
 {
     public string? Type { get; init; }
     public bool Visible { get; init; }
+    public bool? PanelVisible { get; init; }
+    public bool? DocumentVisible { get; init; }
+    public string? DocumentVisibilityState { get; init; }
     public bool Focus { get; init; }
     public bool TopLevel { get; init; }
     public string Id { get; init; } = "";
