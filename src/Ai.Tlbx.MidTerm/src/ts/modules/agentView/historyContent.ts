@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { isHistoryError } from './historyVisibility';
+import { isFileChangeHistoryEntry, isHistoryError } from './historyVisibility';
 import {
   COLLAPSIBLE_HISTORY_BODY_MIN_CHARS,
   COLLAPSIBLE_HISTORY_BODY_MIN_LINES,
@@ -164,11 +164,12 @@ function shouldCollapseHistoryBody(
 ): boolean {
   return (
     !isHistoryError(entry) &&
-    mode === 'monospace' &&
-    !entry.live &&
-    !entry.pending &&
-    (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
-      entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS)
+    (mode === 'diff' ||
+      (mode === 'monospace' &&
+        !entry.live &&
+        !entry.pending &&
+        (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
+          entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS)))
   );
 }
 export function resolveHistoryBodyPresentation(
@@ -187,7 +188,9 @@ export function resolveHistoryBodyPresentation(
     const evidenceLines = countHistoryBodyLines(entry.toolPresentation.evidence ?? '');
     return {
       mode: 'tool',
-      collapsedByDefault: entry.toolPresentation.category === 'command',
+      collapsedByDefault:
+        entry.toolPresentation.category === 'command' ||
+        (isFileChangeHistoryEntry(entry) && !isHistoryError(entry)),
       lineCount: Math.max(1, evidenceLines + 1),
       preview: '',
     };
@@ -706,6 +709,18 @@ export function estimateHistoryEntryHeight(
   const contentWidth = Math.max(140, effectiveWidth - horizontalChrome);
   const avgCharWidthPx = resolveHistoryAverageCharWidth(entry.kind);
   const charsPerLine = Math.max(18, Math.floor(contentWidth / avgCharWidthPx));
+  if (isFileChangeHistoryEntry(entry)) {
+    const files = getHistoryChangedFiles(entry);
+    const fileLines = files.reduce(
+      (count, file) => count + Math.max(1, Math.ceil(file.path.length / charsPerLine)),
+      0,
+    );
+    const errorLines = isHistoryError(entry)
+      ? estimateWrappedTextLines(entry.toolPresentation?.evidence || entry.body, charsPerLine)
+      : 0;
+    // Only filenames occupy the timeline; diff hunks are mounted in the viewer on click.
+    return 17 + Math.max(1, fileLines) * 20 + Math.min(420, errorLines * 18);
+  }
   const textLines =
     entry.kind === 'diff'
       ? Math.max(1, buildRenderedDiffLines(entry.body).length)
