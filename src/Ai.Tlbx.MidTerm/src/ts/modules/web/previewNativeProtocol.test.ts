@@ -39,6 +39,8 @@ describe('preview visibility transport', () => {
     const self = {};
     const context = {
       bwsPanelVisible: panel,
+      mtDocumentId: 'fixture-document',
+      mtNavigationVersion: 0,
       document: {
         visibilityState: visible ? 'visible' : 'hidden',
         hidden: !visible,
@@ -89,9 +91,18 @@ describe('preview visibility transport', () => {
     context.bwsPanelVisible = false;
     expect(api.curBwsStateKey()).not.toBe(before);
     expect(api.curBwsState().visible).toBe(false);
-    expect(fixture(null, true).api.curBwsState()).toMatchObject({ panelVisible: null, visible: false });
-    expect(fixture(null, true, true).api.curBwsState()).toMatchObject({ panelVisible: true, visible: true });
-    expect(fixture(null, false, true).api.curBwsState()).toMatchObject({ panelVisible: true, visible: false });
+    expect(fixture(null, true).api.curBwsState()).toMatchObject({
+      panelVisible: null,
+      visible: false,
+    });
+    expect(fixture(null, true, true).api.curBwsState()).toMatchObject({
+      panelVisible: true,
+      visible: true,
+    });
+    expect(fixture(null, false, true).api.curBwsState()).toMatchObject({
+      panelVisible: true,
+      visible: false,
+    });
   });
 
   it('accepts panel state only from the real parent without changing native document visibility', () => {
@@ -106,7 +117,8 @@ describe('preview visibility transport', () => {
       refreshBwsState: vi.fn(),
       document: { visibilityState: 'hidden', hidden: true },
       window: {
-        addEventListener: (_type: string, handler: (event: unknown) => void) => handlers.push(handler),
+        addEventListener: (_type: string, handler: (event: unknown) => void) =>
+          handlers.push(handler),
       },
     };
     runInNewContext(
@@ -673,6 +685,8 @@ describe('shared preview custom checkable click protocol', () => {
         }),
         MouseEvent: IntentEvent,
         PointerEvent: IntentEvent,
+        mtDocumentId: 'fixture-document',
+        mtNavigationVersion: 0,
         mtCtx: { sessionId: 'owned-session', previewId: 'owned-preview' },
         bws: { send: (value: string) => replies.push(JSON.parse(value)) },
       },
@@ -905,6 +919,8 @@ describe('shared preview fill editing protocol', () => {
         window: { getSelection: () => selection },
         getComputedStyle: () => ({ visibility: 'visible', display: 'block', opacity: '1' }),
         MouseEvent: class {},
+        mtDocumentId: 'fixture-document',
+        mtNavigationVersion: 0,
         mtCtx: { sessionId: 'owned-session', previewId: 'owned-preview' },
         bws: { send: (value: string) => replies.push(JSON.parse(value)) },
       },
@@ -1127,6 +1143,8 @@ describe('opaque preview Web Storage protocol', () => {
             await barrier;
             if (!success) throw new Error('storage unavailable');
           },
+          mtDocumentId: 'fixture-document',
+          mtNavigationVersion: 0,
           mtCtx: null,
           mtNativeLocation: { reload },
           bws: { send: (value: string) => replies.push(JSON.parse(value)) },
@@ -1330,11 +1348,14 @@ describe('explicit open-shadow selector and serialization protocol', () => {
           {
             document: { documentElement: documentRoot },
             window: { scrollX: 0, scrollY: 0 },
+            mtDocumentId: 'fixture-document',
+            mtNavigationVersion: 0,
             mtCtx: null,
             previewQueryAll: select,
             isControlVisible: () => true,
             settleHiddenCaptureTransitions: () => undefined,
             captureBackground: () => undefined,
+            captureSurfaceInventory: () => ({ pixelCoverage: 'unverified' }),
             ensureCapture: async () => capture,
             WebSocket: { OPEN: 1 },
             bws: { readyState: 1, send: (value: string) => resolve(JSON.parse(value)) },
