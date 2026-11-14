@@ -467,8 +467,8 @@ describe('shared preview fill editing protocol', () => {
       }),
     };
     const dispatch = runInNewContext(
-      `${section('function isControlVisible(el){', 'function handleBCmd(msg){')}
-       ${section('function handleBCmd(msg){', 'var bwsReconnectTimer=')}
+      `${section('function isControlVisible(el){', 'async function handleBCmd(msg){')}
+       ${section('async function handleBCmd(msg){', 'var bwsReconnectTimer=')}
        handleBCmd;`,
       {
         document,
@@ -555,4 +555,159 @@ describe('shared preview fill editing protocol', () => {
     expect(f.selection.addRange).not.toHaveBeenCalled();
     expect(f.document.execCommand).not.toHaveBeenCalled();
   });
+});
+
+describe('opaque preview Web Storage protocol', () => {
+  function fixture(seed: Record<string, string> = {}) {
+    const fetch = vi.fn(async (_url: string, _init: RequestInit) => ({ ok: true, status: 204 }));
+    const bootstrap = { token: 'fixture-storage-token', local: seed, session: {} };
+    const code = section('function mtStoragePrefix(name){', 'function mkSwContainer(){').replace(
+      '/*__MT_STORAGE_BOOTSTRAP__*/null',
+      `JSON.parse(${JSON.stringify(JSON.stringify(bootstrap))})`,
+    );
+    const protocol = runInNewContext(
+      `${code};({local:mkStore('localStorage'),session:mkStore('sessionStorage'),flush:mtFlushStorage,prefix:mtStoragePrefix})`,
+      {
+        P: '/webpreview/route',
+        PP: '/webpreview/route/_access/fixture/id',
+        mtNativeLocation: new URL('https://tlbx.invalid/webpreview/route/'),
+        window: {
+          fetch,
+          __mtTargetOrigin: 'https://first.invalid',
+          origin: 'null',
+          localStorage: { getItem: () => 'stale outer-adapter memory', setItem: vi.fn() },
+        },
+        URL,
+        DOMException,
+        AbortController,
+        setTimeout: () => 1,
+        clearTimeout: () => undefined,
+      },
+    ) as {
+      local: Storage;
+      session: Storage;
+      flush: () => Promise<void>;
+      prefix: (name: string) => string;
+    };
+    return { ...protocol, fetch };
+  }
+
+  it('seeds reads synchronously and persists named-property TodoMVC writes', async () => {
+    const f = fixture({ todos: '[1]' });
+    expect(f.local.getItem('todos')).toBe('[1]');
+    expect(f.local.todos).toBe('[1]');
+    expect(f.fetch).not.toHaveBeenCalled();
+    f.local.todos = '[1,2]';
+    f.local.setItem('__proto__', 'literal');
+    expect(Object.keys(f.local)).toEqual(['todos', '__proto__']);
+    expect(f.local.length).toBe(2);
+    await f.flush();
+    const request = JSON.parse(String(f.fetch.mock.calls[0]?.[1].body));
+    expect(request.operations).toEqual([
+      { store: 'local', action: 'set', key: 'todos', value: '[1,2]' },
+      { store: 'local', action: 'set', key: '__proto__', value: 'literal' },
+    ]);
+    expect(f.prefix('localStorage')).toContain('https%3A%2F%2Ffirst.invalid');
+  });
+
+  it('treats special seed keys and HTML-looking values as literal storage data', () => {
+    const seed = Object.fromEntries([['__proto__', '</script><script>literal</script>']]);
+    const f = fixture(seed);
+    expect(f.local.getItem('__proto__')).toBe('</script><script>literal</script>');
+    expect(Object.keys(f.local)).toEqual(['__proto__']);
+  });
+
+  it('coalesces pending keys and orders a later batch behind the in-flight acknowledgement', async () => {
+    const f = fixture();
+    let acknowledge: ((response: { ok: boolean; status: number }) => void) | undefined;
+    f.fetch.mockImplementationOnce(
+      () =>
+        new Promise<{ ok: boolean; status: number }>((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
+    f.local.todos = 'first';
+    const flushing = f.flush();
+    f.local.todos = 'second';
+    f.local.todos = 'last';
+    expect(f.fetch).toHaveBeenCalledTimes(1);
+    acknowledge?.({ ok: true, status: 204 });
+    await flushing;
+    expect(f.fetch).toHaveBeenCalledTimes(2);
+    const batches = f.fetch.mock.calls.map((call) => JSON.parse(String(call[1].body)));
+    expect(batches.map((batch) => batch.sequence)).toEqual([1, 2]);
+    expect(batches[1].operations).toEqual([
+      { store: 'local', action: 'set', key: 'todos', value: 'last' },
+    ]);
+  });
+
+  it('retries the same batch after an uncertain response and keeps local and tab storage separate', async () => {
+    const f = fixture();
+    f.local.todos = 'persistent';
+    f.session.todos = 'this-tab';
+    f.fetch.mockRejectedValueOnce(new Error('disconnected'));
+    await expect(f.flush()).rejects.toThrow('storage connection failed');
+    await f.flush();
+    expect(f.fetch.mock.calls[0]?.[1].body).toBe(f.fetch.mock.calls[1]?.[1].body);
+    expect(f.local.todos).toBe('persistent');
+    expect(f.session.todos).toBe('this-tab');
+    expect(() => f.local.setItem('huge', 'x'.repeat(65536))).toThrow(/quota/i);
+    expect(f.local.getItem('huge')).toBeNull();
+  });
+
+  it('orders clear, property deletion and later writes without preserving discarded keys', async () => {
+    const f = fixture({ old: 'value' });
+    f.local.temporary = 'discard';
+    f.local.clear();
+    f.local.todos = 'keep';
+    delete f.local.todos;
+    f.local.todos = 'final';
+    await f.flush();
+    expect(JSON.parse(String(f.fetch.mock.calls[0]?.[1].body)).operations).toEqual([
+      { store: 'local', action: 'clear' },
+      { store: 'local', action: 'set', key: 'todos', value: 'final' },
+    ]);
+    expect(Object.keys(f.local)).toEqual(['todos']);
+  });
+
+  it('bounds pending tombstones even when the live store stays empty', () => {
+    const f = fixture();
+    for (let i = 0; i < 258; i++) {
+      f.local.setItem(`temporary-${i}`, 'value');
+      f.local.removeItem(`temporary-${i}`);
+    }
+    expect(() => f.local.setItem('overflow', 'not committed')).toThrow(/quota/i);
+    expect(f.local.length).toBe(0);
+    expect(f.local.getItem('overflow')).toBeNull();
+  });
+
+  it.each([true, false])(
+    'awaits the flush barrier before controlled reload (success=%s)',
+    async (success) => {
+      const reload = vi.fn();
+      const replies: { success: boolean; error?: string }[] = [];
+      let release: (() => void) | undefined;
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const dispatch = runInNewContext(
+        `${section('async function handleBCmd(msg){', 'var bwsReconnectTimer=')};handleBCmd;`,
+        {
+          mtFlushStorage: async () => {
+            await barrier;
+            if (!success) throw new Error('storage unavailable');
+          },
+          mtCtx: null,
+          mtNativeLocation: { reload },
+          bws: { send: (value: string) => replies.push(JSON.parse(value)) },
+        },
+      ) as (message: object) => Promise<void>;
+      const pending = dispatch({ id: 'reload', command: 'reload', value: 'soft' });
+      expect(reload).not.toHaveBeenCalled();
+      release?.();
+      await pending;
+      expect(reload).toHaveBeenCalledTimes(success ? 1 : 0);
+      expect(replies[0]?.success).toBe(success);
+    },
+  );
 });

@@ -329,6 +329,8 @@ public static class BrowserEndpoints
                     return Results.Text("sessionId required\n", statusCode: 400);
                 }
 
+                var flushed = await commandService.FlushStorageBeforeTargetChangeAsync(sessionId, previewName, ctx.RequestAborted).ConfigureAwait(false);
+                if (!flushed.Success) return Results.Text(flushed.Error ?? "Storage flush failed; owner unchanged.", statusCode: 409);
                 return uiBridge.RequestClaim(sessionId, previewName, out var error, GetFlagValue(args, "--browser"))
                     ? Results.Text($"claimed preview '{previewName ?? WebPreviewService.DefaultPreviewName}' in session '{sessionId}'\n")
                     : Results.Text(error + "\n", statusCode: 409);
@@ -461,7 +463,7 @@ public static class BrowserEndpoints
             return Results.Json(response, AppJsonContext.Default.BrowserCapabilitiesResponse);
         });
 
-        app.MapPost("/api/browser/claim", (Models.WebPreview.WebPreviewSessionRequest request) =>
+        app.MapPost("/api/browser/claim", async (Models.WebPreview.WebPreviewSessionRequest request, CancellationToken cancellationToken) =>
         {
             if (uiBridge is null)
             {
@@ -473,6 +475,9 @@ public static class BrowserEndpoints
                 return Results.BadRequest("sessionId required");
             }
 
+            var flushed = await commandService.FlushStorageBeforeTargetChangeAsync(
+                request.SessionId, request.PreviewName, cancellationToken).ConfigureAwait(false);
+            if (!flushed.Success) return Results.Text(flushed.Error ?? "Storage flush failed; owner unchanged.", statusCode: 409);
             return uiBridge.RequestClaim(
                 NormalizeOptional(request.SessionId),
                 NormalizeOptional(request.PreviewName),

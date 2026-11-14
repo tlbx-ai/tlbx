@@ -101,14 +101,6 @@ export function getLoadedUrl(): string | null {
   return loadedUrl;
 }
 
-function createForceReloadToken(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID();
-  }
-
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-}
-
 /** Register a callback for preview tab selection. */
 export function setPreviewTabSelectHandler(handler: (previewName: string) => void): void {
   previewTabSelectHandler = handler;
@@ -941,29 +933,16 @@ async function handleRefresh(mode: PreviewReloadMode = 'force'): Promise<void> {
     await clearWebPreviewBrowserStateAsync();
   }
 
-  const currentUrl = getActiveUrl() ?? $webPreviewUrl.get();
-  if (currentUrl) {
-    const result = await setWebPreviewTarget(sessionId, previewName, currentUrl);
-    if (!result?.active) {
-      setActionMessage('error', 'Reload failed: tlbx could not refresh the preview target.');
-      log.warn(() => 'Failed to refresh web preview target');
-      return;
-    }
-    upsertSessionPreview(result);
-    setCurrentPreviewUrl(result.url ?? currentUrl, false);
-  }
-
-  if (mode === 'soft') {
-    await reloadWebPreview(sessionId, previewName, mode);
-    await loadPreview();
+  // Keep the current document/revision alive through its storage flush barrier.
+  // Replacing the target first invalidates its pending writes and loses data.
+  if (!(await reloadWebPreview(sessionId, previewName, mode))) {
+    setActionMessage(
+      'error',
+      'Reload cancelled: the preview could not confirm that storage was saved.',
+    );
     return;
   }
-
-  if (mode === 'hard') {
-    await reloadWebPreview(sessionId, previewName, mode);
-  }
-
-  await loadPreview(createForceReloadToken());
+  await refreshBrowserPreviewStatus();
 }
 
 /**

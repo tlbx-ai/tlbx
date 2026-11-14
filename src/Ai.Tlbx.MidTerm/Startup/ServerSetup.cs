@@ -216,6 +216,7 @@ public static class ServerSetup
         builder.Services.AddSingleton<BrowserPreviewOwnerService>();
         builder.Services.AddSingleton<BrowserCommandService>();
         builder.Services.AddSingleton<BrowserUiBridge>();
+        builder.Services.AddSingleton<WebPreviewStorageService>();
         builder.Services.AddSingleton<WebPreviewService>(sp =>
         {
             var cookiesDir = Path.Combine(settingsService.SettingsDirectory, "cookies");

@@ -2,6 +2,7 @@ namespace Ai.Tlbx.MidTerm.Models.Browser;
 
 public sealed class BrowserWsResult
 {
+    public string? StorageToken { get; init; }
     public string? Type { get; init; }
     public bool Visible { get; init; }
     public bool Focus { get; init; }

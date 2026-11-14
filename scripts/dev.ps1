@@ -652,7 +652,9 @@ try {
             # mthost and mtagenthost own terminal and Agent Controller continuity.
             # A source-web rebuild must replace mt only, then let the new mt reconnect.
             Stop-DevProcess -state $serverState -reason "C# change detected: $changedPath" -PreserveChildren
-            Start-Sleep -Milliseconds 300
+            # Coalesce the rest of one save burst before compiling. Events left
+            # queued here would rebuild the already updated sources again.
+            while (Wait-ForCodeChange -Watcher $codeWatcher -TimeoutMilliseconds 300) { }
             $serverState = Start-DevServerAfterBuild
         }
     }

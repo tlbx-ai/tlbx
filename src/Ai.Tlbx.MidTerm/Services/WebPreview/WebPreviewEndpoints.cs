@@ -24,7 +24,7 @@ public static partial class WebPreviewEndpoints
             previewRegistry,
             previewOwnerService,
             browserUiBridge);
-        MapTargetEndpoints(app, webPreviewService, sessionManager);
+        MapTargetEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         MapCookieEndpoints(app, webPreviewService);
         MapActionEndpoints(app, webPreviewService, sessionManager, browserCommandService);
         MapProxyLogEndpoints(app, webPreviewService);
@@ -69,7 +69,7 @@ public static partial class WebPreviewEndpoints
         });
     }
 
-    private static void MapTargetEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager)
+    private static void MapTargetEndpoints(WebApplication app, WebPreviewService service, TtyHostSessionManager sessionManager, BrowserCommandService browserCommandService)
     {
         app.MapGet("/api/webpreview/target", (string sessionId, string? previewName) =>
         {
@@ -77,13 +77,17 @@ public static partial class WebPreviewEndpoints
             return Results.Json(response, AppJsonContext.Default.WebPreviewTargetResponse);
         });
 
-        app.MapPut("/api/webpreview/target", (WebPreviewTargetRequest request) =>
+        app.MapPut("/api/webpreview/target", async (WebPreviewTargetRequest request, CancellationToken cancellationToken) =>
         {
             if (string.IsNullOrWhiteSpace(request.SessionId))
             {
                 return Results.BadRequest("sessionId required");
             }
 
+            var flushed = await browserCommandService.FlushStorageBeforeTargetChangeAsync(
+                request.SessionId, request.PreviewName, cancellationToken).ConfigureAwait(false);
+            if (!flushed.Success)
+                return Results.Text(flushed.Error ?? "Storage flush failed; target unchanged.", statusCode: StatusCodes.Status409Conflict);
             if (!service.SetTarget(request.SessionId, request.PreviewName, request.Url))
             {
                 return Results.BadRequest("Invalid URL. Must be http://, https://, or a local file:/// URL, and cannot point to a preview route on this server.");
@@ -183,7 +187,7 @@ public static partial class WebPreviewEndpoints
             {
                 try
                 {
-                    await browserCommandService.ExecuteCommandAsync(
+                    var result = await browserCommandService.ExecuteCommandAsync(
                         new BrowserCommandRequest
                         {
                             Command = "reload",
@@ -192,6 +196,8 @@ public static partial class WebPreviewEndpoints
                             PreviewName = request.PreviewName
                         },
                         cancellationToken);
+                    if (!result.Success)
+                        return Results.Text(result.Error ?? "Preview reload failed.", statusCode: StatusCodes.Status409Conflict);
                 }
                 catch (OperationCanceledException)
                 {
