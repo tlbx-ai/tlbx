@@ -1,6 +1,7 @@
 import { t } from '../i18n';
 import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
+import { createFileChangeHistoryBody, createHistoryDiffBody } from './fileChangeView';
 import { getCachedHistoryMarkdown, pruneHistoryMarkdownCache } from './historyMarkdown';
 import {
   isFileChangeHistoryEntry,
@@ -29,11 +30,7 @@ import {
   submitAppServerControlTurn,
 } from '../appServerControl/input';
 import { createAppServerControlTurnRequestWithQuickSettings } from '../appServerControl/quickSettings';
-import {
-  buildRenderedDiffLines,
-  hasInlineCommandPresentation,
-  resolveHistoryBodyPresentation,
-} from './historyContent';
+import { hasInlineCommandPresentation, resolveHistoryBodyPresentation } from './historyContent';
 import { DEFAULT_TOOL_CALL_OUTPUT_LINES, MAX_TOOL_CALL_OUTPUT_LINES } from './historyConstants';
 import type {
   ArtifactClusterInfo,
@@ -234,29 +231,6 @@ function createTurnDurationNoteBody(entry: AppServerControlHistoryEntry): HTMLEl
   return body;
 }
 
-function createDiffLineGutterNode(
-  oldLineNumber: number | undefined,
-  newLineNumber: number | undefined,
-): HTMLElement {
-  const gutter = document.createElement('span');
-  gutter.className = 'agent-history-diff-line-gutter';
-  gutter.appendChild(createDiffLineNumberNode(oldLineNumber, 'old'));
-  gutter.appendChild(createDiffLineNumberNode(newLineNumber, 'new'));
-  return gutter;
-}
-
-function createDiffLineNumberNode(value: number | undefined, lane: 'old' | 'new'): HTMLElement {
-  const cell = document.createElement('span');
-  cell.className = `agent-history-diff-line-number agent-history-diff-line-number-${lane}`;
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    cell.textContent = String(value);
-  } else {
-    cell.textContent = '';
-    cell.setAttribute('aria-hidden', 'true');
-  }
-  return cell;
-}
-
 function getEntryFileMentions(
   entry: AppServerControlHistoryEntry,
   field: 'title' | 'body' | 'commandText',
@@ -441,6 +415,19 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     const article = document.createElement('article');
     applyHistoryEntryChrome(article, entry, artifactCluster);
 
+    if (isFileChangeHistoryEntry(entry)) {
+      article.appendChild(
+        createFileChangeHistoryBody(
+          entry,
+          sessionId,
+          getSession(sessionId)?.currentDirectory,
+          () => deps.getState(sessionId)?.historyEntries ?? [],
+          (diff) => createDiffHistoryBody(diff, sessionId),
+        ),
+      );
+      return article;
+    }
+
     if (artifactCluster?.label) {
       article.appendChild(createArtifactClusterLabel(artifactCluster));
     }
@@ -533,6 +520,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     article.className = `agent-history-entry agent-history-${entry.kind} agent-history-${entry.tone}`;
     article.dataset.kind = entry.kind;
     article.dataset.tone = entry.tone;
+    article.classList.toggle('agent-history-file-changes', isFileChangeHistoryEntry(entry));
     if (artifactCluster) {
       article.dataset.artifactPosition = artifactCluster.position;
       article.classList.add('agent-history-artifact');
@@ -904,30 +892,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
   }
 
   function createDiffHistoryBody(bodyText: string, sessionId: string): HTMLElement {
-    const body = document.createElement('div');
-    body.className = 'agent-history-body agent-history-diff-body';
-    const content = document.createElement('pre');
-    content.className = 'agent-history-diff-content';
-    const cwd = getSession(sessionId)?.currentDirectory?.trim();
-    for (const line of buildRenderedDiffLines(bodyText, cwd && cwd.length > 0 ? cwd : null)) {
-      const row = document.createElement('span');
-      row.className = `agent-history-diff-line ${line.className}`;
-      const hasLineNumbers =
-        typeof line.oldLineNumber === 'number' || typeof line.newLineNumber === 'number';
-      if (hasLineNumbers) {
-        row.dataset.hasLineNumbers = 'true';
-        row.appendChild(createDiffLineGutterNode(line.oldLineNumber, line.newLineNumber));
-      }
-      const text = document.createElement('span');
-      text.className = 'agent-history-diff-line-text';
-      text.textContent = line.text || ' ';
-      row.appendChild(text);
-      content.appendChild(row);
-    }
-    body.appendChild(content);
-    return body;
+    return createHistoryDiffBody(bodyText, getSession(sessionId)?.currentDirectory);
   }
-
   function createDisclosureSummary(
     entry: AppServerControlHistoryEntry,
     presentation: HistoryBodyPresentation,
@@ -940,9 +906,7 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     label.textContent = command
       ? entry.toolPresentation?.label ||
         appServerControlText('appServerControl.title.commandOutput', 'Command output')
-      : isFileChangeHistoryEntry(entry)
-        ? appServerControlText('appServerControl.panel.reviewChanges', 'Review changes')
-        : appServerControlText('appServerControl.panel.details', 'Details');
+      : appServerControlText('appServerControl.panel.details', 'Details');
     summary.appendChild(label);
     const meta = document.createElement('span');
     meta.className = 'agent-history-disclosure-meta';

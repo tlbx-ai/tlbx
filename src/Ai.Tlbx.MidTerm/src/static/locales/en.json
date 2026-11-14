@@ -1,4 +1,8 @@
 {
+  "appServerControl.files.changed": "Changed files",
+  "appServerControl.files.recordedDiff": "Recorded changes",
+  "appServerControl.files.noDiff": "No recorded patch or Git diff is available for this file.",
+  "appServerControl.files.currentDiff": "Current Git changes",
   "workspace.title": "Save sessions for a restart",
   "workspace.description": "Save resume hints and close every session on this host before shutting down. Restore them here later. In-progress work is interrupted; shell memory and terminal scrollback are not restored.",
   "workspace.save": "Save and close all sessions",

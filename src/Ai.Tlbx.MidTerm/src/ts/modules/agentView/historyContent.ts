@@ -1,5 +1,5 @@
 import { t } from '../i18n';
-import { isFileChangeHistoryEntry, isHistoryError } from './historyVisibility';
+import { isHistoryError } from './historyVisibility';
 import {
   COLLAPSIBLE_HISTORY_BODY_MIN_CHARS,
   COLLAPSIBLE_HISTORY_BODY_MIN_LINES,
@@ -164,12 +164,11 @@ function shouldCollapseHistoryBody(
 ): boolean {
   return (
     !isHistoryError(entry) &&
-    (mode === 'diff' ||
-      (mode === 'monospace' &&
-        !entry.live &&
-        !entry.pending &&
-        (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
-          entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS)))
+    mode === 'monospace' &&
+    !entry.live &&
+    !entry.pending &&
+    (lineCount >= COLLAPSIBLE_HISTORY_BODY_MIN_LINES ||
+      entry.body.length >= COLLAPSIBLE_HISTORY_BODY_MIN_CHARS)
   );
 }
 export function resolveHistoryBodyPresentation(
@@ -188,9 +187,7 @@ export function resolveHistoryBodyPresentation(
     const evidenceLines = countHistoryBodyLines(entry.toolPresentation.evidence ?? '');
     return {
       mode: 'tool',
-      collapsedByDefault:
-        entry.toolPresentation.category === 'command' ||
-        (isFileChangeHistoryEntry(entry) && !isHistoryError(entry)),
+      collapsedByDefault: entry.toolPresentation.category === 'command',
       lineCount: Math.max(1, evidenceLines + 1),
       preview: '',
     };
@@ -286,7 +283,7 @@ function resolveDiffLineClassName(line: string): string {
   return 'agent-history-diff-line-context';
 }
 
-function buildDiffSections(lines: readonly string[], sessionCwd?: string | null): DiffRenderLine[] {
+function parseDiffSections(lines: readonly string[]): ParsedDiffSection[] {
   const sections: ParsedDiffSection[] = [];
   let current: ParsedDiffSection | null = null;
   let seenHunk = false;
@@ -344,6 +341,46 @@ function buildDiffSections(lines: readonly string[], sessionCwd?: string | null)
     section.lines.push(line);
   }
 
+  return sections;
+}
+
+export interface HistoryChangedFile {
+  path: string;
+  diff: string;
+}
+
+export function getHistoryChangedFiles(
+  entry: AppServerControlHistoryEntry,
+  sessionCwd?: string | null,
+): HistoryChangedFile[] {
+  const files = new Map<string, HistoryChangedFile>();
+  const add = (path: string, diff = '') => {
+    const absolute = resolveDisplayDiffPath(path, sessionCwd);
+    if (!absolute || absolute === '/dev/null') return;
+    const key = /^[a-z]:/i.test(absolute) ? absolute.replace(/\\/g, '/').toLowerCase() : absolute;
+    const previous = files.get(key);
+    files.set(key, { path: absolute, diff: diff || previous?.diff || '' });
+  };
+  for (const section of parseDiffSections(entry.body.replace(/\r\n/g, '\n').split('\n'))) {
+    const path =
+      section.newPath && section.newPath !== '/dev/null' ? section.newPath : section.oldPath;
+    if (path)
+      add(
+        path,
+        section.lines.length
+          ? `--- ${section.oldPath}\n+++ ${section.newPath}\n${section.lines.join('\n')}`
+          : '',
+      );
+  }
+  for (const path of entry.toolPresentation?.paths ?? []) add(path);
+  for (const mention of entry.fileMentions ?? []) {
+    if (!mention.isDirectory) add(mention.resolvedPath || mention.path);
+  }
+  return [...files.values()];
+}
+
+function buildDiffSections(lines: readonly string[], sessionCwd?: string | null): DiffRenderLine[] {
+  const sections = parseDiffSections(lines);
   const rendered: DiffRenderLine[] = [];
   for (const section of sections) {
     if (section.lines.length === 0) {
@@ -567,7 +604,8 @@ function resolveDisplayDiffPath(path: string, sessionCwd?: string | null): strin
     return normalizedPath;
   }
 
-  return `${cwd.replace(/[\\/]+$/g, '')}\\${normalizedPath.replace(/\//g, '\\')}`;
+  const separator = cwd.startsWith('/') ? '/' : '\\';
+  return `${cwd.replace(/[\\/]+$/g, '')}${separator}${normalizedPath.replace(/[\\/]/g, separator)}`;
 }
 
 export function buildRenderedDiffLines(

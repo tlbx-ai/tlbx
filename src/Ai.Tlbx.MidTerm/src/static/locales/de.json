@@ -1,4 +1,8 @@
 {
+  "appServerControl.files.changed": "Geänderte Dateien",
+  "appServerControl.files.recordedDiff": "Aufgezeichnete Änderungen",
+  "appServerControl.files.noDiff": "Für diese Datei ist kein aufgezeichneter Patch oder Git-Diff verfügbar.",
+  "appServerControl.files.currentDiff": "Aktuelle Git-Änderungen",
   "workspace.title": "Sessions vor einem Neustart sichern",
   "workspace.description": "Resume-Hinweise speichern und alle Sessions auf diesem Rechner vor dem Herunterfahren beenden. Hier später wiederherstellen. Laufende Arbeit wird unterbrochen; Shell-Speicher und Terminalverlauf werden nicht wiederhergestellt.",
   "workspace.save": "Alle Sessions sichern und beenden",
