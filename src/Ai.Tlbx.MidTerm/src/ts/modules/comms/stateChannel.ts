@@ -58,6 +58,8 @@ import { isEmbeddedWebPreviewContext } from '../web/webContext';
 import { isSharedSessionRoute } from '../share';
 import { checkVersionAndReload } from '../../utils/versionCheck';
 import type { MobileDeviceAction } from '../web/mobileDeviceBridge';
+import type { MobileDeviceCommandResult } from '../web/mobileDeviceController';
+import { getOrCreateTabId } from '../../utils/cookies';
 import type { TerminalNotificationSignal } from '../terminal/terminalNotifications';
 
 interface TmuxDockMessage {
@@ -811,7 +813,12 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
   }
 
   try {
-    let result: { success: boolean; error?: string; viewport?: PreviewViewportMetrics } = {
+    let result: {
+      success: boolean;
+      error?: string;
+      viewport?: PreviewViewportMetrics;
+      device?: MobileDeviceCommandResult;
+    } = {
       success: true,
     };
     switch (msg.command) {
@@ -833,20 +840,7 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         }
         break;
       case 'mobile-device':
-        if (msg.deviceAction) {
-          void import('../web/mobileDeviceController')
-            .then(({ controlMobileDevice }) =>
-              controlMobileDevice(
-                msg.deviceAction as MobileDeviceAction,
-                msg.sessionId,
-                msg.previewName,
-                msg.deviceProfile,
-              ),
-            )
-            .catch((error: unknown) => {
-              log.warn(() => `Mobile device command failed: ${String(error)}`);
-            });
-        }
+        result.device = await handleMobileBrowserUiCommand(msg);
         break;
       case 'agent-wheel':
         await handleAgentWheelBrowserUiCommand(msg);
@@ -856,7 +850,13 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
         log.warn(() => result.error ?? 'Unknown browser-ui command');
     }
 
-    await reportBrowserUiCommandResult(msg, result.success, result.error, result.viewport);
+    await reportBrowserUiCommandResult(
+      msg,
+      result.success,
+      result.error,
+      result.viewport,
+      result.device,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     log.warn(() => `Browser UI command failed: ${message}`);
@@ -864,11 +864,30 @@ async function handleBrowserUiCommand(msg: BrowserUiMessage): Promise<void> {
   }
 }
 
+async function handleMobileBrowserUiCommand(
+  msg: BrowserUiMessage,
+): Promise<MobileDeviceCommandResult> {
+  if (!msg.deviceAction || !msg.sessionId || !msg.previewName || msg.targetRevision === undefined) {
+    throw new Error(
+      'Mobile device command requires an exact session, preview and target revision.',
+    );
+  }
+  const { controlMobileDeviceCommand } = await import('../web/mobileDeviceController');
+  return controlMobileDeviceCommand(
+    msg.deviceAction as MobileDeviceAction,
+    msg.sessionId,
+    msg.previewName,
+    msg.targetRevision,
+    msg.deviceProfile,
+  );
+}
+
 async function reportBrowserUiCommandResult(
   msg: BrowserUiMessage,
   success: boolean,
   error?: string,
   viewport?: PreviewViewportMetrics,
+  device?: MobileDeviceCommandResult,
 ): Promise<void> {
   if (!msg.requestId) {
     return;
@@ -876,13 +895,18 @@ async function reportBrowserUiCommandResult(
 
   const response = await fetch('/api/browser/ui-result', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-MidTerm-Tab-Id': getOrCreateTabId() },
     body: JSON.stringify({
       requestId: msg.requestId,
       command: msg.command,
       success,
       error,
       viewport,
+      sessionId: msg.sessionId,
+      previewName: msg.previewName,
+      targetRevision: msg.targetRevision,
+      mobileDevice: device?.mobileDevice,
+      screenshotDataUrl: device?.screenshotDataUrl,
     }),
   });
   if (!response.ok) {
