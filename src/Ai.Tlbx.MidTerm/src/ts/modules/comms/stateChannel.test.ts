@@ -38,6 +38,16 @@ const mocks = vi.hoisted(() => ({
   initializeFromSession: vi.fn(),
   selectSession: vi.fn(),
   checkVersionAndReload: vi.fn().mockResolvedValue(false),
+  controlMobileDeviceCommand: vi.fn(),
+}));
+
+vi.mock('../web/mobileDeviceController', () => ({
+  controlMobileDeviceCommand: mocks.controlMobileDeviceCommand,
+}));
+
+vi.mock('../../utils/cookies', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../../utils/cookies')>()),
+  getOrCreateTabId: () => 'exact-tab',
 }));
 
 vi.mock('../../utils', () => ({
@@ -246,6 +256,42 @@ async function loadHarness() {
 }
 
 describe('stateChannel browser-ui handling', () => {
+  it('awaits mobile device state before returning its correlated acknowledgement', async () => {
+    const { ws } = await loadHarness();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    let complete!: (value: { mobileDevice: { connected: boolean; available: boolean } }) => void;
+    mocks.controlMobileDeviceCommand.mockReturnValue(new Promise((resolve) => { complete = resolve; }));
+    ws.onmessage?.({ data: JSON.stringify({ type: 'browser-ui', command: 'mobile-device', requestId: 'device-status',
+      sessionId: 'agent5678', previewName: 'named', targetRevision: 7, deviceAction: 'status' }) } as MessageEvent<string>);
+    await vi.waitFor(() => expect(mocks.controlMobileDeviceCommand).toHaveBeenCalledTimes(1));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.controlMobileDeviceCommand).toHaveBeenCalledWith('status', 'agent5678', 'named', 7, undefined);
+    complete({ mobileDevice: { connected: false, available: false } });
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      requestId: 'device-status', command: 'mobile-device', success: true, sessionId: 'agent5678', previewName: 'named',
+      targetRevision: 7, mobileDevice: { connected: false, available: false },
+    });
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ 'X-MidTerm-Tab-Id': 'exact-tab' });
+  });
+
+  it.each(['extension-error', 'frontend-reload'])('reports mobile %s instead of dispatch acceptance', async (failure) => {
+    const { ws } = await loadHarness();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true });
+    vi.stubGlobal('fetch', fetchMock);
+    mocks.controlMobileDeviceCommand.mockRejectedValue(new Error('Chrome bridge disconnected'));
+    mocks.checkVersionAndReload.mockResolvedValue(failure === 'frontend-reload');
+    ws.onmessage?.({ data: JSON.stringify({ type: 'browser-ui', command: 'mobile-device', requestId: 'device-open',
+      sessionId: 'agent5678', previewName: 'named', targetRevision: 7, deviceAction: 'open' }) } as MessageEvent<string>);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      requestId: 'device-open', command: 'mobile-device', success: false, targetRevision: 7,
+      error: expect.stringContaining(failure === 'frontend-reload' ? 'reloading' : 'disconnected'),
+    });
+    if (failure === 'frontend-reload') expect(mocks.controlMobileDeviceCommand).not.toHaveBeenCalled();
+  });
+
   it('sends current input intent only on a live channel and binds it to the observed epoch', async () => {
     vi.stubGlobal('window', {
       setTimeout: globalThis.setTimeout,
