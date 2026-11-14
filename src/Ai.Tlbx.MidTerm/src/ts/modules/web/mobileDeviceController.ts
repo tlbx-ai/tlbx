@@ -1,6 +1,10 @@
 import { $activeSessionId } from '../../stores';
 import { pasteToTerminal } from '../terminal';
-import { createBrowserPreviewClient, type BrowserPreviewClientResponse } from './webApi';
+import {
+  createBrowserPreviewClient,
+  getWebPreviewTarget,
+  type BrowserPreviewClientResponse,
+} from './webApi';
 import {
   initMobileDeviceBridge,
   invokeMobileDevice,
@@ -141,9 +145,10 @@ export async function controlMobileDevice(
   requestedSessionId?: string,
   requestedPreviewName?: string,
   profileId = 'pixel-8',
+  options: { pasteScreenshot?: boolean; expectedTargetRevision?: number } = {},
 ): Promise<MobileDeviceState> {
   const target = resolveTarget(requestedSessionId, requestedPreviewName);
-  if (!isMobileDeviceBridgeReady()) {
+  if (action !== 'status' && !isMobileDeviceBridgeReady()) {
     throw new Error(
       'Chrome device bridge is not connected. Install it from the preview menu, then click its extension icon in this tlbx tab.',
     );
@@ -155,13 +160,89 @@ export async function controlMobileDevice(
     payload.language = navigator.language;
     await addOpenPayload(payload, target.sessionId, target.previewName);
   }
+  const current = getSessionPreview(target.sessionId, target.previewName);
+  if (
+    options.expectedTargetRevision !== undefined &&
+    current &&
+    current.targetRevision !== options.expectedTargetRevision
+  ) {
+    throw new Error(
+      'Preview target changed before mobile device dispatch. Inspect before retrying.',
+    );
+  }
   const state = await invokeMobileDevice(action, payload);
   states.set(deviceKey, state);
   publishState();
-  if (action === 'screenshot' && state.dataUrl) {
+  if (options.pasteScreenshot && action === 'screenshot' && state.dataUrl) {
     await pasteScreenshot(state.dataUrl, target.sessionId);
   }
   return state;
+}
+
+export type MobileDeviceCommandState = Omit<MobileDeviceState, 'dataUrl'> & {
+  available: boolean;
+  error?: string;
+};
+
+export interface MobileDeviceCommandResult {
+  mobileDevice: MobileDeviceCommandState;
+  screenshotDataUrl?: string;
+}
+
+export async function controlMobileDeviceCommand(
+  action: MobileDeviceAction,
+  sessionId: string,
+  previewName: string,
+  targetRevision: number,
+  profileId?: string,
+): Promise<MobileDeviceCommandResult> {
+  async function assertRevision(): Promise<void> {
+    const target = await getWebPreviewTarget(sessionId, previewName);
+    if (
+      !target ||
+      target.sessionId !== sessionId ||
+      target.previewName !== previewName ||
+      target.targetRevision !== targetRevision
+    ) {
+      throw new Error(
+        'Preview target changed during mobile device control. Inspect before retrying.',
+      );
+    }
+  }
+  await assertRevision();
+  let state: MobileDeviceState;
+  try {
+    state = await controlMobileDevice(action, sessionId, previewName, profileId, {
+      expectedTargetRevision: targetRevision,
+    });
+  } catch (error) {
+    await assertRevision();
+    if (action !== 'status') throw error;
+    states.delete(getDeviceKey(sessionId, previewName));
+    publishState();
+    return {
+      mobileDevice: {
+        available: false,
+        connected: isMobileDeviceBridgeReady(),
+        error: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+  await assertRevision();
+  const { dataUrl, ...device } = state;
+  if (!device.connected && action !== 'status') {
+    throw new Error('Chrome device bridge reported disconnected.');
+  }
+  const result: MobileDeviceCommandResult = {
+    mobileDevice: { ...device, available: device.connected },
+  };
+  if (action === 'screenshot') {
+    if (!dataUrl?.startsWith('data:image/png;base64,')) {
+      throw new Error('Chrome device command returned no PNG screenshot.');
+    }
+    result.screenshotDataUrl = dataUrl;
+  }
+  return result;
 }
 
 export async function captureMobileDeviceScreenshot(

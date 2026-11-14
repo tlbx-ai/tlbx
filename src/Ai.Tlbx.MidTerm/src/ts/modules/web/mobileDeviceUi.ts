@@ -65,7 +65,7 @@ async function runAction(
   options: MobileDeviceUiOptions,
 ): Promise<void> {
   try {
-    await controlMobileDevice(action);
+    await controlMobileDevice(action, undefined, undefined, undefined, { pasteScreenshot: true });
     options.setMessage('info', null);
   } catch (error) {
     options.setMessage('error', `Chrome device failed: ${String(error)}`);
