@@ -23,7 +23,9 @@ const protocol = [
   section('function ar(u){', 'function frameUrl(u){'),
   section('function mtProxyUrl(u,p){', '// === Network APIs ==='),
   section('function mtUpstreamSearch(search){', '// Application Location is upstream-facing;'),
+  section('function mtMetadataUrl(value){', 'function mtResponseUrl(nativeUrl,readHeader){'),
   section('function mtResponseUrl(nativeUrl,readHeader){', 'var mtHeadersGet='),
+  section('function mtInstallScriptUrl(proto){', '          mtInstallScriptUrl(window.HTMLScriptElement'),
   section('function mtNavigationUrl(value){', 'var mtLocationView={};'),
 ].join('\n');
 const route = '0123456789abcdefabcd';
@@ -37,6 +39,7 @@ function exercise(
   origin = 'https://preview.example',
   ownRoute = nativePrefix,
   reloadToken = '',
+  targetOrigin = upstream,
 ) {
   const location = new URL(`${origin}${virtualPrefix}${ownRoute}${suffix}`);
   let base = ownRoute + baseSuffix;
@@ -59,12 +62,13 @@ function exercise(
     document,
     URL,
     URLSearchParams,
-    window: { __mtTargetOrigin: upstream, __mtDocumentUrl: `${upstream}/docs/page.html` },
+    window: { __mtTargetOrigin: targetOrigin, __mtDocumentUrl: `${targetOrigin}/docs/page.html` },
     mtReloadToken: reloadToken,
     mtNestedPreview: false,
+    mtCtx: { origin: 'https://inner-proxy.example' },
   };
   const result = runInNewContext(
-    `${protocol}\nsyncProxyBase();({curU,r,mtNavigationUrl,mtResponseUrl,mtInstallResponseUrl})`,
+    `${protocol}\nsyncProxyBase();({curU,r,mtNavigationUrl,mtResponseUrl,mtInstallResponseUrl,mtInstallScriptUrl,moduleUrl:window.__mtPreviewModuleUrl})`,
     context,
   ) as {
     curU(): string;
@@ -76,6 +80,8 @@ function exercise(
       key: string,
       readHeader: (this: object, name: string) => string | null,
     ): void;
+    mtInstallScriptUrl(proto: object): void;
+    moduleUrl(value: unknown, finalUrl: string): unknown;
   };
   return {
     ...result,
@@ -207,6 +213,95 @@ describe.each(['', `/p/connection/${route}`, '/webpreview/outer/_access/parent/p
     });
   },
 );
+
+describe('composed script and response URL metadata', () => {
+  const outerRoute = '/webpreview/outer/_access/parent/parent-token';
+  const innerRoute = `${nativePrefix}/_access/id/token`;
+  const innerOrigin = 'https://inner-proxy.example';
+  const actual = 'http://localhost:2314/cdn/classic/main.js?site=1';
+  const physical = `https://preview.example${outerRoute}${innerRoute}/_ext?u=${encodeURIComponent(actual)}`;
+  function wrappers() {
+    return {
+      outer: exercise('', '/demo/', '/demo/', 'https://preview.example', outerRoute, '', innerOrigin),
+      inner: exercise(outerRoute, '/demo/', '/demo/', 'https://preview.example', innerRoute),
+    };
+  }
+
+  it('accepts only the exact own capability and registered origin after an outer getter unwraps', () => {
+    const { outer, inner } = wrappers();
+    const unwrapped = outer.mtResponseUrl(physical, () => null);
+    expect(unwrapped).toContain(`${innerOrigin}${innerRoute}/_ext?`);
+    expect(inner.mtResponseUrl(unwrapped, () => null)).toBe(actual);
+    for (const value of [
+      `https://foreign.example${innerRoute}/_ext?u=${encodeURIComponent(actual)}`,
+      `${innerOrigin}/webpreview/another/_access/other/secret/_ext?u=${encodeURIComponent(actual)}`,
+    ]) {
+      const header = vi.fn(() => actual);
+      expect(inner.mtResponseUrl(value, header)).toBe(value);
+      expect(header).not.toHaveBeenCalled();
+    }
+    const changed = new URL('https://application.example/custom.js');
+    expect(inner.moduleUrl(changed, actual)).toBe(changed);
+    expect(inner.moduleUrl('https://application.example/custom.js', actual))
+      .toBe('https://application.example/custom.js');
+    expect(inner.moduleUrl(unwrapped, 'https://user:secret@cdn.example/final/meta.js'))
+      .toBe('https://cdn.example/final/meta.js');
+  });
+
+  it.each(['url', 'responseURL'])('composes existing %s getters without replacing native receivers', (key) => {
+    const state = new WeakMap<object, string>();
+    const proto = {};
+    Object.defineProperty(proto, key, {
+      configurable: true,
+      enumerable: true,
+      get(this: object) {
+        if (!state.has(this)) throw new TypeError('Illegal invocation');
+        return state.get(this);
+      },
+    });
+    const object = Object.create(proto) as Record<string, string>;
+    state.set(object, physical);
+    const { outer, inner } = wrappers();
+    outer.mtInstallResponseUrl(proto, key, () => null);
+    inner.mtInstallResponseUrl(proto, key, () => null);
+    expect(object[key]).toBe(actual);
+    state.set(object, '');
+    expect(object[key]).toBe('');
+    const get = Object.getOwnPropertyDescriptor(proto, key)!.get!;
+    expect(() => get.call({})).toThrow(TypeError);
+  });
+
+  it('keeps currentScript identity, setter branding and relative URLs through composed src getters', () => {
+    const state = new WeakMap<object, string>();
+    class ScriptFixture {
+      get src() {
+        if (!state.has(this)) throw new TypeError('Illegal invocation');
+        return state.get(this)!;
+      }
+      set src(value: string) {
+        if (!state.has(this)) throw new TypeError('Illegal invocation');
+        state.set(this, value);
+      }
+    }
+    const setter = Object.getOwnPropertyDescriptor(ScriptFixture.prototype, 'src')!.set;
+    const script = new ScriptFixture();
+    const document = { currentScript: script };
+    state.set(script, physical);
+    const { outer, inner } = wrappers();
+    outer.mtInstallScriptUrl(ScriptFixture.prototype);
+    inner.mtInstallScriptUrl(ScriptFixture.prototype);
+    expect(document.currentScript).toBe(script);
+    expect(script).toBeInstanceOf(ScriptFixture);
+    expect(script.src).toBe(actual);
+    expect(new URL('./theme.js', document.currentScript.src).href)
+      .toBe('http://localhost:2314/cdn/classic/theme.js');
+    const descriptor = Object.getOwnPropertyDescriptor(ScriptFixture.prototype, 'src')!;
+    expect(descriptor.set).toBe(setter);
+    expect(() => descriptor.get!.call({})).toThrow(TypeError);
+    script.src = 'https://application.example/ordinary.js';
+    expect(script.src).toBe('https://application.example/ordinary.js');
+  });
+});
 
 it('preserves real native Response branding, redirects, clone and streaming bodies', async () => {
   // Real fetch supplies native URL slots. Only the proxy response is simulated;

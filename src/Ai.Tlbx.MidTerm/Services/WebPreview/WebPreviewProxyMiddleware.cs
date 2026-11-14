@@ -380,8 +380,25 @@ public sealed partial class WebPreviewProxyMiddleware
           // === Network APIs ===
           // Patch only metadata getters. Keeping the native receiver preserves
           // Response branding, clone/body streams, and native illegal-invocation errors.
+          function mtMetadataUrl(value){
+            if(typeof value!=="string")return null;
+            var upstream=mtUpstreamUrl(value,false);
+            if(upstream!==null)return upstream;
+            // A previous outer getter may already have removed its envelope.
+            // Only our exact capability prefix at our registered inner origin
+            // can take this fallback; unrelated origins/routes remain native.
+            if(!BP||!/^\/webpreview\/[^/]+\/_access\/[^/]+\/[^/]+$/.test(P))return null;
+            try{
+              if(!mtCtx||!mtCtx.origin||new URL(value).origin!==new URL(mtCtx.origin).origin)return null;
+              return mtUpstreamUrl(value,true);
+            }catch(e){return null;}
+          }
+          window.__mtPreviewModuleUrl=function(value,finalUrl){
+            if(mtMetadataUrl(value)===null)return value;
+            try{var final=new URL(finalUrl);if(!/^https?:$/.test(final.protocol))return value;final.username="";final.password="";return final.href;}catch(e){return value;}
+          };
           function mtResponseUrl(nativeUrl,readHeader){
-            var upstream=mtUpstreamUrl(nativeUrl,false);
+            var upstream=mtMetadataUrl(nativeUrl);
             if(upstream===null)return nativeUrl;
             try{
               var finalUrl=readHeader("X-Tlbx-Preview-Upstream-Url");
@@ -471,6 +488,17 @@ public sealed partial class WebPreviewProxyMiddleware
           };
           if(navigator.sendBeacon){var sb=navigator.sendBeacon.bind(navigator);navigator.sendBeacon=function(u,d){var ok=sb(r(u),d);if(ok)qrc();return ok;};}
           // === Element property setters ===
+          function mtInstallScriptUrl(proto){
+            if(!proto)return;
+            var descriptor=Object.getOwnPropertyDescriptor(proto,"src");
+            if(!descriptor||!descriptor.configurable||!descriptor.get)return;
+            var previousGet=descriptor.get;
+            Object.defineProperty(proto,"src",Object.assign({},descriptor,{get:function(){
+              var value=previousGet.call(this),upstream=mtMetadataUrl(value);
+              return upstream===null?value:upstream;
+            }}));
+          }
+          mtInstallScriptUrl(window.HTMLScriptElement&&window.HTMLScriptElement.prototype);
           // .src on elements that load resources
           ["HTMLScriptElement","HTMLImageElement","HTMLIFrameElement","HTMLSourceElement","HTMLEmbedElement","HTMLVideoElement","HTMLAudioElement","HTMLInputElement","HTMLTrackElement"].forEach(function(n){
             var p=window[n]&&window[n].prototype;if(!p)return;
@@ -1660,8 +1688,9 @@ public sealed partial class WebPreviewProxyMiddleware
         // WebSocket negotiation headers managed by ClientWebSocket
         "Sec-WebSocket-Key", "Sec-WebSocket-Version", "Sec-WebSocket-Extensions",
         "Sec-WebSocket-Protocol",
-        // Browser security headers that would confuse the upstream
-        "Sec-Fetch-Site", "Sec-Fetch-Mode", "Sec-Fetch-Dest", "Sec-Fetch-User",
+        // Site/User describe the supervising page. Mode/Dest must survive so
+        // a nested tlbx can distinguish document navigation from script fetch.
+        "Sec-Fetch-Site", "Sec-Fetch-User",
         // Content headers are set on HttpContent, not the request
         "Content-Type", "Content-Length"
     };
@@ -2444,12 +2473,14 @@ public sealed partial class WebPreviewProxyMiddleware
         await context.Response.WriteAsync(css, context.RequestAborted);
     }
 
-    private async Task ProxyJavaScriptResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse)
+    private async Task ProxyJavaScriptResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var script = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
         var routePrefix = PreviewProxyAuthorization.GetProxyPrefix(context, routeKey);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
-        script = RewriteRootRelativeModuleSpecifiers(script, routePrefix, reloadToken);
+        script = RewriteJavaScriptModuleSpecifiers(
+            script, routePrefix, finalUrl, _service.GetTargetUriByRouteKey(routeKey), reloadToken);
+        script = WebPreviewLocationRewriter.RewriteImportMetaUrlReads(script, finalUrl);
         script = WebPreviewLocationRewriter.Rewrite(script);
 
         context.Response.Headers.Remove("Content-Length");
@@ -2931,7 +2962,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
         else if (contentType is "application/javascript" or "text/javascript")
         {
-            await ProxyJavaScriptResponseAsync(context, routeKey, upstreamResponse);
+            await ProxyJavaScriptResponseAsync(context, routeKey, upstreamResponse, finalUrl);
         }
         else
         {
@@ -4022,6 +4053,37 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         return url;
+    }
+
+    internal static string RewriteJavaScriptModuleSpecifiers(
+        string content,
+        string routePrefix,
+        string? finalScriptUrl,
+        Uri? primaryTarget,
+        string? reloadToken = null)
+    {
+        if (string.IsNullOrEmpty(routePrefix)
+            || !Uri.TryCreate(finalScriptUrl, UriKind.Absolute, out var scriptUri)
+            || scriptUri.Scheme is not ("http" or "https")) return content;
+
+        return WebPreviewLocationRewriter.RewriteModuleSpecifiers(content, specifier =>
+        {
+            if (specifier.StartsWith(routePrefix + "/", StringComparison.Ordinal))
+                return AppendReloadTokenToProxyUrl(specifier, reloadToken);
+            // Bare names (including import-map keys such as #alias) stay native.
+            if (!specifier.StartsWith("./", StringComparison.Ordinal)
+                && !specifier.StartsWith("../", StringComparison.Ordinal)
+                && !specifier.StartsWith("/", StringComparison.Ordinal)
+                && !Uri.TryCreate(specifier, UriKind.Absolute, out _)) return specifier;
+            if (!Uri.TryCreate(scriptUri, specifier, out var resolved)
+                || resolved.Scheme is not ("http" or "https")) return specifier;
+
+            // The CDN is the resolution base, never the preview's primary target.
+            if (primaryTarget is not null
+                && resolved.Authority.Equals(primaryTarget.Authority, StringComparison.OrdinalIgnoreCase))
+                return AppendReloadTokenToProxyUrl(routePrefix + resolved.PathAndQuery + resolved.Fragment, reloadToken);
+            return RewriteExternalUrlFromText("", resolved.AbsoluteUri, routePrefix, null, reloadToken);
+        });
     }
 
     internal static string RewriteRootRelativeModuleSpecifiers(

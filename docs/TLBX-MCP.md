@@ -189,6 +189,17 @@ the original resource available; use that resource instead of recapturing.
 HTML snapshots above 65,536 characters return compact metadata and the complete
 original resource instead of inline HTML (`inlineSnapshotAvailable: false`).
 Use `artifact_save` for the full UTF-8 file; no partial HTML is presented as complete.
+
+External JavaScript maps direct `import.meta.url` / `import.meta['url']` reads
+of the original native value to the final HTTP(S) script URI. Its private helper
+is hoisted for cyclic module evaluation; later mutations keep their values and
+write targets. Aliased/destructured or dynamic-property reads are not rewritten.
+Without the document adapter, modules retain native metadata. Script `src`
+getters keep native receivers and identity, exposing the requested upstream URL
+(not an inferred redirect destination). Nested Response/XHR/script getters
+compose only through their own capability and registered inner origin.
+HTTP forwarding preserves browser-controlled Fetch Mode/Dest for nested document
+loads while still suppressing Fetch Site/User context.
 Resource handles do not survive a web-server restart. Abrupt termination may leave private
 temporary files; normal disposal removes the generated cache.
 `artifact_read` and `artifacts_list` provide the same owner-checked access through
