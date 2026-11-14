@@ -50,7 +50,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         Command("fill", "Fill exactly one visible, enabled input, textarea, select or contenteditable editing host with literal Unicode text. Rich editors use native text replacement, selection and undo, without HTML or clipboard access. Reject ambiguous, read-only and unsupported controls without changing them; rich fill requires native editing commands and no non-editable descendants.", Fields(("selector", Property("string")), ("value", Property("string"))), ["selector", "value"]),
         Command("evaluate", "Execute JavaScript in the existing preview. code is passed literally, not through a shell.", Fields(("code", Property("string")), ("timeout", Timeout())), ["code"], command: "exec"),
         Command("wait", "Wait for attached (default), visible, hidden or detached elements before the next interaction. Visibility uses the same checks as click/fill.", Fields(("selector", Property("string")), ("state", Enum("attached", "visible", "hidden", "detached")), ("timeout", Timeout())), ["selector"], true),
-        Command("screenshot", "Capture viewport or fullPage as inline MCP PNG. Optionally save the same artifact as the CLI in the target workspace.", Fields(("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
+        Command("screenshot", "Capture viewport, fullPage, or exactly one visible element's bounding box as inline MCP PNG at CSS-pixel resolution. Optional selector must be unique and cannot combine with fullPage. Capture preserves scroll and viewport. Optionally save the same artifact in the target workspace.", Fields(("selector", Property("string")), ("fullPage", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
         Command("snapshot", "Return the existing preview HTML directly, optionally also saving the CLI-compatible workspace artifact.", Fields(("saveToWorkspace", Property("boolean")))),
         Command("outline", "Read visible semantic controls with labels, state and unique selectors. Layout wrappers do not consume maxDepth. Optional selector narrows the root; bounded output marks truncation.", Fields(("maxDepth", Property("integer")), ("selector", Property("string"))), readOnly: true),
         Command("attributes", "Read a selected element's attributes.", Fields(("selector", Property("string"))), ["selector"], true, "attrs"),
@@ -381,6 +381,8 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             throw new ArgumentException("frame supports query, evaluate, attributes, css, click and fill only.");
         if (frame is not null && Bool(args, "waitForNavigation"))
             throw new ArgumentException("Child navigation waits are unsupported; inspect the child state after navigation without replaying writes.");
+        if (command == "screenshot" && selector is not null && Bool(args, "fullPage"))
+            throw new ArgumentException("Screenshot selector cannot be combined with fullPage.");
         var value = OptionalString(args, "value", allowEmpty: command is "fill" or "exec");
         int? timeout = args.ContainsKey("timeout") ? Integer(args, "timeout", 0) : command == "wait" ? 15 : null;
         if (timeout is < 1 or > MaximumTimeoutSeconds) throw new ArgumentException("timeout exceeds the shared browser timer range.");
