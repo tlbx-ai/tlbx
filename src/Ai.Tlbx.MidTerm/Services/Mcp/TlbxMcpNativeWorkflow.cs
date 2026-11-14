@@ -94,12 +94,13 @@ internal static class TlbxMcpNativeWorkflow
         if (parameters.Arguments is not { } arguments || !arguments.TryGetValue("steps", out var steps)
             || steps.ValueKind != JsonValueKind.Array)
             return true; // Let the local validator reject an unclassified shape before dispatch.
-        foreach (var step in steps.EnumerateArray())
+        for (var stepIndex = 0; stepIndex < steps.GetArrayLength(); stepIndex++)
         {
+            var step = steps[stepIndex];
             if (step.ValueKind == JsonValueKind.Object && step.TryGetProperty("parallel", out var parallel))
             {
                 if (parallel.ValueKind != JsonValueKind.Array) return true;
-                foreach (var child in parallel.EnumerateArray()) if (Local(child)) return true;
+                for (var childIndex = 0; childIndex < parallel.GetArrayLength(); childIndex++) if (Local(parallel[childIndex])) return true;
             }
             else if (Local(step)) return true;
         }

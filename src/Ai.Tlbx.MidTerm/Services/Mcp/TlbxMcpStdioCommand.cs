@@ -102,7 +102,7 @@ internal static class TlbxMcpStdioCommand
         McpStdioFreshness? freshness = null)
     {
         freshness ??= new McpStdioFreshness(Startup.CliCommands.GetVersion());
-        freshness.Initialize(upstream.ServerInfo.Version);
+        freshness.Initialize(upstream.ServerInfo?.Version ?? "unknown");
         // Forward one protocol request with its original parameters and metadata.
         // Preserve cursors and opaque URIs instead of flattening/prefetching lists.
         builder.Services.Configure<McpServerOptions>(options => options.Capabilities = new ServerCapabilities
