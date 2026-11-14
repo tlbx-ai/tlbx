@@ -3180,6 +3180,16 @@ public sealed partial class WebPreviewProxyMiddleware
             + Convert.ToBase64String(body) + "\"></body></html>";
     }
 
+    // Ownership of a newly created decoder transfers to the caller's await-using scope.
+    private static Stream OpenDecodedDocumentStream(Stream raw, string? encoding) => encoding?.ToLowerInvariant() switch
+    {
+        null or "identity" => raw,
+        "gzip" => new GZipStream(raw, CompressionMode.Decompress, leaveOpen: true),
+        "br" => new BrotliStream(raw, CompressionMode.Decompress, leaveOpen: true),
+        "deflate" => new DeflateStream(raw, CompressionMode.Decompress, leaveOpen: true),
+        _ => Stream.Null
+    };
+
     internal static async Task<(byte[]? Body, string? Error)> ReadDocumentBodyAsync(
         HttpResponseMessage response, int maximumBytes, CancellationToken cancellationToken)
     {
@@ -3191,14 +3201,7 @@ public sealed partial class WebPreviewProxyMiddleware
             if (response.Content.Headers.ContentEncoding.Count > 1)
                 return (null, "Preview unavailable: multiple response content encodings are unsupported.");
             await using var raw = await response.Content.ReadAsStreamAsync(deadline.Token);
-            await using Stream decoded = response.Content.Headers.ContentEncoding.FirstOrDefault()?.ToLowerInvariant() switch
-            {
-                null or "identity" => raw,
-                "gzip" => new GZipStream(raw, CompressionMode.Decompress, leaveOpen: true),
-                "br" => new BrotliStream(raw, CompressionMode.Decompress, leaveOpen: true),
-                "deflate" => new DeflateStream(raw, CompressionMode.Decompress, leaveOpen: true),
-                _ => Stream.Null
-            };
+            await using var decoded = OpenDecodedDocumentStream(raw, response.Content.Headers.ContentEncoding.FirstOrDefault());
             if (decoded == Stream.Null) return (null, "Preview unavailable: unsupported response content encoding.");
             using var copy = new MemoryStream();
             var buffer = new byte[8192];
@@ -3208,7 +3211,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 if (count == 0) return (copy.ToArray(), null);
                 copy.Write(buffer, 0, count);
                 if (copy.Length > maximumBytes)
-                    return (null, $"Preview unavailable: decoded response exceeds the {maximumBytes} byte document limit. The source was not displayed or executed.");
+                    return (null, $"Preview unavailable: decoded response exceeds the {maximumBytes.ToString(CultureInfo.InvariantCulture)} byte document limit. The source was not displayed or executed.");
             }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
