@@ -43,7 +43,8 @@ export function buildBrowserPreviewStatusIndicatorState(
   if (client?.isPanelVisible === false) {
     return {
       severity: 'info',
-      message: 'The preview panel is hidden. The document bridge remains available for DOM commands.',
+      message:
+        'The preview panel is hidden. The document bridge remains available for DOM commands.',
     };
   }
   if (client && !client.isVisible) {
@@ -54,7 +55,10 @@ export function buildBrowserPreviewStatusIndicatorState(
     };
   }
   if (client && !client.hasFocus) {
-    return { severity: 'info', message: 'The preview is visible but does not have keyboard focus.' };
+    return {
+      severity: 'info',
+      message: 'The preview is visible but does not have keyboard focus.',
+    };
   }
 
   return null;
