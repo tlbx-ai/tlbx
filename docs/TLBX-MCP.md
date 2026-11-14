@@ -195,6 +195,16 @@ bytes; snapshots can also become resources. Resource reads are caller-scoped and
 chunked at 4 MiB. Generated copies expire after one hour and are bounded to 128
 captures/512 MiB, except one newest larger original retained in full. Workspace
 copies requested through `saveToWorkspace` survive cache eviction.
+
+`browser_screenshot` accepts an optional CSS `selector` for a detail capture at
+one output pixel per CSS pixel, including canvas content. It clips the document
+to that element's bounding box without scrolling or changing the viewport.
+The selector must match exactly one rendered element with nonzero area; missing,
+hidden and ambiguous targets fail. Offscreen rendered elements are supported.
+`selector` and `fullPage:true` are mutually exclusive. Without a selector, viewport
+and full-page capture retain their existing behavior. This uses the same DOM/SVG
+renderer and its fidelity limits, rather than a browser compositor capture.
+
 Large captures use the private resource cache by default, without an extra
 workspace copy. A failed explicit workspace save reports an error while keeping
 the original resource available; use that resource instead of recapturing.
