@@ -14293,12 +14293,33 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-history-entry.agent-history-tool-activity {
-  margin: 0;
   padding: 3px 0;
   border: 0;
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 18px;
+}
+
+.agent-tool-activity > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.agent-tool-activity > summary::-webkit-details-marker { display: none; }
+.agent-tool-activity > summary::before { content: '▸'; flex: 0 0 auto; }
+.agent-tool-activity[open] > summary::before { content: '▾'; }
+.agent-tool-activity-label { flex: 0 0 auto; }
+.agent-tool-activity-names { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-tool-activity-list { padding-top: 4px; min-width: 0; }
+.agent-tool-activity-list > .agent-history-entry { max-width: 100%; border: 0; padding-block: 3px; }
+.agent-tool-activity-list .agent-history-title { font-size: 11px; font-weight: 400; line-height: 1.5; overflow-wrap: anywhere; }
+
+@media (pointer: coarse) {
+  .agent-tool-activity > summary { min-height: 44px; align-items: center; }
 }
 
 .agent-history-entry.agent-history-file-changes {
