@@ -997,6 +997,7 @@ public sealed partial class WebPreviewProxyMiddleware
             // Stack frames carry the proxy route and preview capability; show the upstream origin instead.
             var message=parts.join(" ")
               .replace(/https?:\/\/[^\s/]+\/webpreview\/[^\s/?#]+(?:\/_access\/[^\s/?#]+\/[^\s/?#]+)?/g,window.__mtTargetOrigin||"")
+              .replace(/\/_access\/[^/\s?#"'<>]+\/[^/\s?#"'<>]+/g,"/_access/[redacted]")
               .replace(/[?&]__mtPreview(?:Id|Token)=[^&\s:)]*/g,"");
             if(message.length>mtLogEntryMax)message=message.slice(0,mtLogEntryMax)+"...[truncated]";
             mtLog.push({l:level,m:message,t:Date.now()});
