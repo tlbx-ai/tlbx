@@ -1,4 +1,6 @@
 {
+  "appServerControl.activity.one": "1 tool call",
+  "appServerControl.activity.many": "{count} tool calls",
   "appServerControl.files.changed": "Changed files",
   "appServerControl.files.recordedDiff": "Recorded changes",
   "appServerControl.files.noDiff": "No recorded patch or Git diff is available for this file.",

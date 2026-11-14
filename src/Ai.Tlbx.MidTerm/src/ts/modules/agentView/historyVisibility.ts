@@ -35,7 +35,7 @@ export function filterReadingHistory(
     return [...entries];
   }
   const requestById = new Map(requests.map((request) => [request.requestId, request]));
-  return entries.filter((entry) => {
+  const visible = entries.filter((entry) => {
     if (entry.kind === 'request') {
       const request = entry.requestId ? requestById.get(entry.requestId) : undefined;
       return request ? request.state === 'open' : /^(open|pending)$/.test(entry.sourceStatus ?? '');
@@ -52,4 +52,41 @@ export function filterReadingHistory(
       isHistoryError(entry)
     );
   });
+  const visibleIds = new Set(visible.map((entry) => entry.id));
+  const result: AppServerControlHistoryEntry[] = [];
+  let summary: AppServerControlHistoryEntry | null = null;
+  const counted = new Set<string>();
+  for (const entry of entries) {
+    if (visibleIds.has(entry.id)) {
+      result.push(entry);
+      if (!entry.busyIndicator) {
+        summary = null;
+        counted.clear();
+      }
+      continue;
+    }
+    if (entry.kind !== 'tool') continue;
+    const identity = `${entry.sourceTurnId ?? ''}:${entry.sourceItemId || entry.id}`;
+    if (counted.has(identity)) continue;
+    counted.add(identity);
+    if (!summary) {
+      summary = {
+        id: `tool-activity:${entry.id}`,
+        order: entry.order,
+        kind: 'notice',
+        tone: 'info',
+        label: '',
+        title: '',
+        body: '',
+        meta: '',
+        sourceTurnId: entry.sourceTurnId ?? null,
+        sourceItemType: 'tool_activity_summary',
+        toolActivityCount: 0,
+      };
+      result.push(summary);
+    }
+    summary.toolActivityCount = (summary.toolActivityCount ?? 0) + 1;
+    summary.body = String(summary.toolActivityCount);
+  }
+  return result;
 }

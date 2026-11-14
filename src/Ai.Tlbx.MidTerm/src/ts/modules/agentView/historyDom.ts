@@ -415,6 +415,18 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     const article = document.createElement('article');
     applyHistoryEntryChrome(article, entry, artifactCluster);
 
+    if (entry.toolActivityCount != null) {
+      article.classList.add('agent-history-tool-activity');
+      article.textContent = appServerControlFormat(
+        entry.toolActivityCount === 1
+          ? 'appServerControl.activity.one'
+          : 'appServerControl.activity.many',
+        entry.toolActivityCount === 1 ? '1 tool call' : '{count} tool calls',
+        { count: entry.toolActivityCount },
+      );
+      return article;
+    }
+
     if (isFileChangeHistoryEntry(entry)) {
       article.appendChild(
         createFileChangeHistoryBody(

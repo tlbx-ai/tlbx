@@ -1,4 +1,6 @@
 {
+  "appServerControl.activity.one": "1 Tool-Aufruf",
+  "appServerControl.activity.many": "{count} Tool-Aufrufe",
   "appServerControl.files.changed": "Geänderte Dateien",
   "appServerControl.files.recordedDiff": "Aufgezeichnete Änderungen",
   "appServerControl.files.noDiff": "Für diese Datei ist kein aufgezeichneter Patch oder Git-Diff verfügbar.",
