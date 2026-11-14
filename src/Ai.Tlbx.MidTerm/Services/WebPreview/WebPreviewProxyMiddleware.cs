@@ -3204,12 +3204,11 @@ public sealed partial class WebPreviewProxyMiddleware
             if (encoding is not (null or "identity" or "gzip" or "br" or "deflate"))
                 return (null, "Preview unavailable: unsupported response content encoding.");
             await using var decoder = OpenDecodedDocumentStream(raw, encoding);
-            var decoded = decoder ?? raw;
             using var copy = new MemoryStream();
             var buffer = new byte[8192];
             while (true)
             {
-                var count = await decoded.ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maximumBytes + 1 - (int)copy.Length)), deadline.Token);
+                var count = await (decoder ?? raw).ReadAsync(buffer.AsMemory(0, Math.Min(buffer.Length, maximumBytes + 1 - (int)copy.Length)), deadline.Token);
                 if (count == 0) return (copy.ToArray(), null);
                 copy.Write(buffer, 0, count);
                 if (copy.Length > maximumBytes)
