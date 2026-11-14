@@ -2412,31 +2412,14 @@ public sealed partial class WebPreviewProxyMiddleware
         return prefixes.Count == 0 ? Array.Empty<string>() : [.. prefixes];
     }
 
-    private async Task ProxyCssResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse)
+    private async Task ProxyCssResponseAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
         var css = await DecompressTextAsync(upstreamResponse, context.RequestAborted);
         var routePrefix = PreviewProxyAuthorization.GetProxyPrefix(context, routeKey);
         var reloadToken = GetPreviewReloadToken(context.Request.Query);
 
-        // Rewrite url(/...) references in CSS to go through the proxy
-        css = RootRelativeCssUrlRegex().Replace(css, m => RewriteRootRelativeCssUrl(m, routePrefix, reloadToken));
-
-        // Rewrite absolute external url() references
-        css = AbsoluteUrlCssRegex().Replace(css, m => RewriteExternalCssUrl(m, routePrefix, null, reloadToken));
-        var targetUri = _service.GetTargetUriByRouteKey(routeKey);
-        css = ProtocolRelativeCssRegex().Replace(css, m =>
-            RewriteProtocolRelativeCssUrl(
-                m,
-                routePrefix,
-                targetUri?.Scheme ?? Uri.UriSchemeHttps,
-                targetUri?.Authority,
-                reloadToken));
-        css = RewriteCssImports(
-            css,
-            routePrefix,
-            targetUri?.Scheme ?? Uri.UriSchemeHttps,
-            targetUri?.Authority,
-            reloadToken);
+        css = RewriteStylesheetResources(css, routePrefix, finalUrl,
+            _service.GetTargetUriByRouteKey(routeKey), reloadToken);
 
         context.Response.Headers.Remove("Content-Length");
         context.Response.Headers.Remove("Content-Encoding");
@@ -2927,7 +2910,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
         else if (contentType is "text/css")
         {
-            await ProxyCssResponseAsync(context, routeKey, upstreamResponse);
+            await ProxyCssResponseAsync(context, routeKey, upstreamResponse, finalUrl);
         }
         else if (contentType is "application/javascript" or "text/javascript")
         {
@@ -3724,6 +3707,11 @@ public sealed partial class WebPreviewProxyMiddleware
     [GeneratedRegex(@"(@import\s+(?:url\(\s*)?[""']?)([^""')\s;]+)([""']?\s*\)?\s*;?)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
     private static partial Regex CssImportRegex();
 
+    // External stylesheets only: consume comments/ordinary strings unchanged,
+    // and isolate actual url() tokens and the string form of @import.
+    [GeneratedRegex("""/\*[\s\S]*?(?:\*/|\z)|(?<prefix>@import\s+)(?<token>"(?:\\[\s\S]|[^"\\\r\n])*"|'(?:\\[\s\S]|[^'\\\r\n])*')|(?<prefix>(?<![\w-])url\(\s*)(?<token>"(?:\\[\s\S]|[^"\\\r\n])*"|'(?:\\[\s\S]|[^'\\\r\n])*'|(?:\\[\s\S]|[^\s"'()\\])*)(?<suffix>\s*\))|"(?:\\[\s\S]|[^"\\\r\n])*(?:"|(?=\r|\n|\z))|'(?:\\[\s\S]|[^'\\\r\n])*(?:'|(?=\r|\n|\z))""", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 1000)]
+    private static partial Regex StylesheetResourceRegex();
+
     [GeneratedRegex(@"\s+\bintegrity\s*=\s*(?:""[^""]*""|'[^']*'|[^\s>]+)", RegexOptions.IgnoreCase, 1000)]
     private static partial Regex StripIntegrityAttributeRegex();
 
@@ -3797,6 +3785,83 @@ public sealed partial class WebPreviewProxyMiddleware
             },
             RegexOptions.CultureInvariant,
             TimeSpan.FromMilliseconds(1000));
+    }
+
+    internal static string RewriteStylesheetResources(
+        string content,
+        string routePrefix,
+        string? finalStylesheetUrl,
+        Uri? primaryTarget,
+        string? reloadToken = null)
+    {
+        if (string.IsNullOrEmpty(content) || string.IsNullOrEmpty(routePrefix)
+            || !Uri.TryCreate(finalStylesheetUrl, UriKind.Absolute, out var stylesheet)
+            || stylesheet.Scheme is not ("http" or "https")) return content;
+
+        return StylesheetResourceRegex().Replace(content, match =>
+        {
+            var token = match.Groups["token"];
+            if (!token.Success) return match.Value;
+            var url = DecodeCssResourceToken(token.Value);
+            if (string.IsNullOrEmpty(url) || url.StartsWith('#')
+                || url == routePrefix || url.StartsWith(routePrefix + "/", StringComparison.Ordinal)
+                || !Uri.TryCreate(stylesheet, url, out var resource)
+                || resource.Scheme is not ("http" or "https")) return match.Value;
+
+            var query = QueryHelpers.ParseQuery(resource.Query);
+            var hasTransportNames = query.ContainsKey(PreviewBootstrapIdQueryParam)
+                || query.ContainsKey(PreviewBootstrapTokenQueryParam) || query.ContainsKey(PreviewTargetRevisionQueryParam)
+                || query.ContainsKey(PreviewReloadTokenQueryParam) || query.ContainsKey(PreviewSubframeQueryParam);
+            string transport;
+            if (!hasTransportNames && primaryTarget is not null
+                && resource.Scheme.Equals(primaryTarget.Scheme, StringComparison.OrdinalIgnoreCase)
+                && resource.Authority.Equals(primaryTarget.Authority, StringComparison.OrdinalIgnoreCase))
+            {
+                transport = routePrefix + resource.PathAndQuery + resource.Fragment;
+            }
+            else
+            {
+                // SVG/font fragments belong on the browser-facing URL too. The
+                // encoded upstream query remains independent of outer controls.
+                var upstream = new UriBuilder(resource) { Fragment = "", UserName = "", Password = "" }.Uri.AbsoluteUri;
+                transport = routePrefix + "/_ext?u=" + Uri.EscapeDataString(upstream) + resource.Fragment;
+            }
+            transport = AppendReloadTokenToProxyUrl(transport, reloadToken);
+            var quoted = "\"" + transport.Replace("\\", "\\\\", StringComparison.Ordinal)
+                .Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+            return match.Groups["prefix"].Value + quoted + match.Groups["suffix"].Value;
+        });
+    }
+
+    private static string? DecodeCssResourceToken(string token)
+    {
+        var quoted = token.Length >= 2 && token[0] is '\'' or '"';
+        var text = quoted ? token.AsSpan(1, token.Length - 2) : token.AsSpan();
+        if (text.IndexOf('\\') < 0) return text.ToString();
+        var value = new StringBuilder(text.Length);
+        for (var index = 0; index < text.Length; index++)
+        {
+            var ch = text[index];
+            if (ch != '\\') { value.Append(ch); continue; }
+            if (++index == text.Length) return null;
+            ch = text[index];
+            if (ch is '\r' or '\n' or '\f')
+            {
+                if (!quoted) return null;
+                if (ch == '\r' && index + 1 < text.Length && text[index + 1] == '\n') index++;
+                continue;
+            }
+            if (!char.IsAsciiHexDigit(ch)) { value.Append(ch); continue; }
+            var start = index;
+            while (index + 1 < text.Length && index - start < 5 && char.IsAsciiHexDigit(text[index + 1])) index++;
+            var code = Convert.ToInt32(text[start..(index + 1)].ToString(), 16);
+            value.Append(char.ConvertFromUtf32(code is 0 or > 0x10FFFF or >= 0xD800 and <= 0xDFFF ? 0xFFFD : code));
+            if (index + 1 < text.Length && text[index + 1] is ' ' or '\t' or '\r' or '\n' or '\f')
+            {
+                if (text[++index] == '\r' && index + 1 < text.Length && text[index + 1] == '\n') index++;
+            }
+        }
+        return value.ToString();
     }
 
     internal static string RewriteCssImports(

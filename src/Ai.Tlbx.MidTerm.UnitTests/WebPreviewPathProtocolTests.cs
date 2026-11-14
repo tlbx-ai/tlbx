@@ -1,12 +1,98 @@
 using Ai.Tlbx.MidTerm.Services.WebPreview;
 using Ai.Tlbx.MidTerm.Startup;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.WebUtilities;
+using System.Text.RegularExpressions;
 using Xunit;
 
 namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class WebPreviewPathProtocolTests
 {
+    [Theory]
+    [InlineData("/webpreview/route/_access/id/token")]
+    [InlineData("/webpreview/outer/_access/parent/secret/webpreview/route/_access/id/token")]
+    public void RedirectedCdnStylesheetsKeepImportsAndImagesAtTheirFinalDirectory(string prefix)
+    {
+        const string css = "@import './child.css';#css-probe{background-image:url('../img/probe.svg');width:200px;height:60px}";
+        var rewritten = WebPreviewProxyMiddleware.RewriteStylesheetResources(css, prefix,
+            "http://localhost:2314/cdn/styles/main.css", new Uri("http://127.0.0.1:2314/css"), "reload");
+        var paths = StylesheetPaths(rewritten);
+        Assert.Equal(2, paths.Length);
+        string[] expected = ["http://localhost:2314/cdn/styles/child.css", "http://localhost:2314/cdn/img/probe.svg"];
+        for (var index = 0; index < paths.Length; index++)
+        {
+            var transport = new Uri("https://preview.example" + paths[index]);
+            Assert.Equal(prefix + "/_ext", transport.AbsolutePath);
+            var query = QueryHelpers.ParseQuery(transport.Query);
+            Assert.Equal(expected[index], query["u"].ToString());
+            Assert.Equal("reload", query["__mtReloadToken"].ToString());
+        }
+        Assert.Equal(rewritten, WebPreviewProxyMiddleware.RewriteStylesheetResources(rewritten, prefix,
+            "http://localhost:2314/cdn/styles/main.css", new Uri("http://127.0.0.1:2314/css"), "reload"));
+    }
+
+    [Theory]
+    [InlineData("a{background:url(/root/image.svg#symbol)}", "https://cdn.example/root/image.svg", "#symbol")]
+    [InlineData("@import url(//fonts.example/style.css) layer(theme) screen;", "https://fonts.example/style.css", "")]
+    [InlineData("@import '?theme=dark';", "https://cdn.example/assets/main.css?theme=dark", "")]
+    [InlineData("a{background:url('./image.svg?__mtReloadToken=site&x=a%20b#symbol')}", "https://cdn.example/assets/image.svg?__mtReloadToken=site&x=a%20b", "#symbol")]
+    [InlineData("@font-face{src:local('Example'),url('../fonts/font.woff2#font') format('woff2')}", "https://cdn.example/fonts/font.woff2", "#font")]
+    [InlineData("a{background:url(image\\ name\\(1\\).svg)}", "https://cdn.example/assets/image%20name(1).svg", "")]
+    [InlineData("@import '.\\2f child.css' supports(display: grid);", "https://cdn.example/assets/child.css", "")]
+    public void StylesheetResourceTokensPreserveUpstreamQueriesFragmentsFontsAndCssEscapes(string css, string expected, string fragment)
+    {
+        var rewritten = WebPreviewProxyMiddleware.RewriteStylesheetResources(css, "/webpreview/route/_access/id/token",
+            "https://cdn.example/assets/main.css?old=1", new Uri("https://primary.example/"), "reload");
+        var transport = new Uri("https://preview.example" + Assert.Single(StylesheetPaths(rewritten)));
+        var query = QueryHelpers.ParseQuery(transport.Query);
+        Assert.Equal(expected, query["u"].ToString());
+        Assert.Equal("reload", query["__mtReloadToken"].ToString());
+        Assert.Equal(fragment, transport.Fragment);
+        if (css.Contains("layer(theme)", StringComparison.Ordinal)) Assert.Contains("layer(theme) screen;", rewritten, StringComparison.Ordinal);
+        if (css.Contains("supports(", StringComparison.Ordinal)) Assert.Contains("supports(display: grid);", rewritten, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PrimaryStylesheetResourcesKeepTheirCapabilityAndRealTransportNamedQueriesStayInsideExternalUrls()
+    {
+        const string prefix = "/webpreview/route/_access/id/token";
+        var rewritten = WebPreviewProxyMiddleware.RewriteStylesheetResources(
+            "a{background:url('../image.svg?mode=one#symbol');mask:url('./mask.svg?__mtPreviewToken=site')}", prefix,
+            "https://primary.example/assets/main.css", new Uri("https://primary.example/app"), "reload");
+        var paths = StylesheetPaths(rewritten);
+        var direct = new Uri("https://preview.example" + paths[0]);
+        Assert.Equal(prefix + "/image.svg", direct.AbsolutePath);
+        Assert.Equal("#symbol", direct.Fragment);
+        Assert.Equal("one", QueryHelpers.ParseQuery(direct.Query)["mode"].ToString());
+        var external = new Uri("https://preview.example" + paths[1]);
+        Assert.Equal(prefix + "/_ext", external.AbsolutePath);
+        Assert.Equal("https://primary.example/assets/mask.svg?__mtPreviewToken=site", QueryHelpers.ParseQuery(external.Query)["u"].ToString());
+    }
+
+    [Theory]
+    [InlineData("a{content:\"url('../text') @import 'text.css'\"}/* url('../comment') */")]
+    [InlineData("/* unterminated comment url('../comment')")]
+    [InlineData("a{mask:url(#local);background:url(data:image/png;base64,abcd);cursor:url(blob:https://site/id)}")]
+    [InlineData("a{background:url(custom:resource);mask:url(about:blank);cursor:url(file:///private)}")]
+    [InlineData("a{background:url('');mask:url(var(--resource))}")]
+    public void StylesheetRewritingPreservesNonresourcesAndOtherSchemes(string css)
+    {
+        Assert.Equal(css, WebPreviewProxyMiddleware.RewriteStylesheetResources(css, "/webpreview/route",
+            "https://cdn.example/assets/main.css", new Uri("https://primary.example/")));
+    }
+
+    [Fact]
+    public void MissingStylesheetBaseDoesNotGuessDocumentCoordinatesAndInlineImportsStayRelative()
+    {
+        const string css = "@import './child.css';a{background:url('../image.svg')}";
+        Assert.Equal(css, WebPreviewProxyMiddleware.RewriteStylesheetResources(css, "/webpreview/route", null, null));
+        Assert.Equal(css, WebPreviewProxyMiddleware.RewriteCssImports(css, "/webpreview/route", "https", "primary.example", null));
+    }
+
+    private static string[] StylesheetPaths(string css) => Regex.Matches(css, "\"(/webpreview/[^\"]+)\"", RegexOptions.CultureInvariant,
+        TimeSpan.FromSeconds(1)).Select(match => match.Groups[1].Value).ToArray();
+
     [Theory]
     [InlineData("GET")]
     [InlineData("HEAD")]
