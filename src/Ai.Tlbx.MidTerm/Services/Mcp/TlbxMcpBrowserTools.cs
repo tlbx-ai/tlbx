@@ -145,7 +145,6 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         switch (_tool.Name)
         {
             case "browser_open":
-            case "browser_navigate":
                 // Validate every typed option before a requested ownership change.
                 var openUrl = RequiredString(args, "url");
                 var shouldClaim = Bool(args, "claim");
@@ -162,8 +161,19 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                         return Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", claimError);
                 }
                 var opened = await operations.OpenAsync(target, preview, openUrl,
-                    _tool.Name == "browser_open" && shouldActivate, ct).ConfigureAwait(false);
+                    shouldActivate, ct).ConfigureAwait(false);
                 return OperationResult(opened, target, preview);
+            case "browser_navigate":
+                var navigationUrl = RequiredString(args, "url");
+                var navigationStatus = commands.GetStatus(previews.GetTargetUrl(target, preview), target, preview, previewId);
+                if (!navigationStatus.Controllable && string.IsNullOrEmpty(previewId) && navigationStatus.ConnectedClientCount == 0)
+                    return OperationResult(await operations.OpenAsync(target, preview, navigationUrl, false, ct).ConfigureAwait(false), target, preview);
+                var navigationRequest = new BrowserCommandRequest
+                {
+                    Command = "navigate", Value = navigationUrl, SessionId = target, PreviewName = preview, PreviewId = previewId
+                };
+                return await CommandResultAsync(services, navigationRequest,
+                    await commands.ExecuteCommandAsync(navigationRequest, ct).ConfigureAwait(false), false).ConfigureAwait(false);
             case "browser_scope_open":
                 var http = services.GetRequiredService<IHttpContextAccessor>().HttpContext!;
                 var scope = await operations.OpenScopeAsync((string)http.Items[TlbxMcpEndpoints.CallerIdentityItem]!, target,

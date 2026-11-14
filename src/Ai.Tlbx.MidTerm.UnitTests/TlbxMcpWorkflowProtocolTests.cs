@@ -106,12 +106,16 @@ public sealed class TlbxMcpWorkflowProtocolTests
         var operations = new BrowserPreviewOperations(commands, previews, ui, new BrowserPreviewRegistry(), owners);
         var mutations = new List<BrowserWsMessage>();
         ui.RegisterListener("native-ui", "desktop", (_, _) => { }, (_, _) => { }, (_, _, _, _) => { },
-            (session, name, _, _) => commands.TryRegisterClient("native-preview", session, name, "frame", message =>
+            (session, name, _, _) =>
             {
-                if (message.Command == "fill") mutations.Add(message);
-                commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "native-preview");
-            }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
-                ownershipGeneration: owners.GetGeneration(session, name)), close: (_, _) => commands.UnregisterClient("native-preview"));
+                var documentId = Guid.NewGuid().ToString("N");
+                commands.TryRegisterClient("native-preview", session, name, "frame", message =>
+                {
+                    if (message.Command == "fill") mutations.Add(message);
+                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready", DocumentId = documentId }, "native-preview");
+                }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
+                    ownershipGeneration: owners.GetGeneration(session, name), documentId: documentId);
+            }, close: (_, _) => commands.UnregisterClient("native-preview"));
         var fail = new EchoTool("intentional_failure", true);
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.ConfigureKestrel(k => k.Listen(IPAddress.Loopback, 0));

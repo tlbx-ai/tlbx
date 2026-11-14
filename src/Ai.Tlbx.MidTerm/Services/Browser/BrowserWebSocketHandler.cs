@@ -82,7 +82,8 @@ public sealed class BrowserWebSocketHandler
                 previewClient?.OwnershipGeneration,
                 ParseOptionalBooleanQuery(context.Request.Query["panelVisible"].FirstOrDefault()),
                 ParseOptionalBooleanQuery(context.Request.Query["documentVisible"].FirstOrDefault()),
-                context.Request.Query["documentVisibilityState"].FirstOrDefault()))
+                context.Request.Query["documentVisibilityState"].FirstOrDefault(),
+                context.Request.Query["documentId"].FirstOrDefault()))
         {
             BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
             await ws.CloseAsync(
