@@ -109,6 +109,87 @@ internal static partial class WebPreviewLocationRewriter
         return result.Append(source, offset, source.Length - offset).ToString();
     }
 
+    internal static string RewriteImportMetaUrlReads(string source, string? finalScriptUrl)
+    {
+        if (!source.Contains("import", StringComparison.Ordinal)
+            || !Uri.TryCreate(finalScriptUrl, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https")) return source;
+        var root = Parse(source);
+        if (root is null) return source;
+
+        var reads = new List<MemberExpression>();
+        var writes = new HashSet<Node>(ReferenceEqualityComparer.Instance);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var pending = new Stack<Node>();
+        pending.Push(root);
+        while (pending.TryPop(out var node))
+        {
+            if (node is Identifier identifier) names.Add(identifier.Name);
+            if (node is MemberExpression { Object: MetaProperty { Meta.Name: "import", Property.Name: "meta" } } member
+                && (member is { Computed: false, Property: Identifier { Name: "url" } }
+                    or { Computed: true, Property: StringLiteral { Value: "url" } })) reads.Add(member);
+            switch (node)
+            {
+                case AssignmentExpression assignment: AddWriteTargets(assignment.Left, writes); break;
+                case UpdateExpression update: AddWriteTargets(update.Argument, writes); break;
+                case UnaryExpression unary when source.AsSpan(unary.Start, unary.Argument.Start - unary.Start)
+                    .TrimStart().StartsWith("delete", StringComparison.Ordinal): AddWriteTargets(unary.Argument, writes); break;
+                case ForInStatement forIn: AddWriteTargets(forIn.Left, writes); break;
+                case ForOfStatement forOf: AddWriteTargets(forOf.Left, writes); break;
+            }
+            foreach (var child in node.ChildNodes) pending.Push(child);
+        }
+        reads.RemoveAll(member => writes.Contains(member));
+        if (reads.Count == 0) return source;
+
+        var name = "__tlbxModuleUrl";
+        for (var index = 0; names.Contains(name); index++) name = "__tlbxModuleUrl" + index;
+        // Capture the original native value before application code can mutate
+        // import.meta. Reads evaluate the current property exactly once; writes,
+        // deletes, updates and aliased access retain their native object/targets.
+        var finalUri = new UriBuilder(uri) { UserName = "", Password = "" }.Uri.AbsoluteUri;
+        // Function declarations are initialized during module instantiation: a
+        // cycle may call an exported hoisted function before this body runs.
+        // Keep the lazy state on that private function, not a const/let in TDZ.
+        var prologue = ";\nfunction " + name + "(value){if(" + name + ".captured!==" + name + "){" + name + ".captured=" + name + ";"
+            + name + ".original=value;}return value===" + name + ".original&&typeof globalThis.__mtPreviewModuleUrl==='function'"
+            + "?globalThis.__mtPreviewModuleUrl(value," + JsonSerializer.Serialize(finalUri) + "):value;}\n"
+            + name + "(import.meta.url);\n";
+        var insertion = source.StartsWith("#!", StringComparison.Ordinal) ? source.IndexOf('\n') + 1 : 0;
+        foreach (var statement in root.ChildNodes)
+        {
+            if (statement is not ExpressionStatement { Expression: StringLiteral }) break;
+            insertion = statement.End;
+        }
+        var result = new StringBuilder(source.Length + prologue.Length);
+        result.Append(source, 0, insertion).Append(prologue);
+        var offset = insertion;
+        foreach (var read in reads.OrderBy(member => member.Start))
+        {
+            result.Append(source, offset, read.Start - offset).Append(name).Append('(')
+                .Append(source, read.Start, read.End - read.Start).Append(')');
+            offset = read.End;
+        }
+        return result.Append(source, offset, source.Length - offset).ToString();
+    }
+
+    private static void AddWriteTargets(Node? target, HashSet<Node> writes)
+    {
+        switch (target)
+        {
+            case MemberExpression member: writes.Add(member); break;
+            case AssignmentPattern assignment: AddWriteTargets(assignment.Left, writes); break;
+            case RestElement rest: AddWriteTargets(rest.Argument, writes); break;
+            case AssignmentProperty property: AddWriteTargets(property.Value, writes); break;
+            case ArrayPattern array:
+                foreach (var item in array.Elements) AddWriteTargets(item, writes);
+                break;
+            case ObjectPattern obj:
+                foreach (var item in obj.Properties) AddWriteTargets(item, writes);
+                break;
+        }
+    }
+
     private static Node? Parse(string source)
     {
         var parser = new Parser();
