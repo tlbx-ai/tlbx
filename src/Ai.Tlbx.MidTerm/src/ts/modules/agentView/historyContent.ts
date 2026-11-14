@@ -700,6 +700,7 @@ export function estimateHistoryEntryHeight(
   entry: AppServerControlHistoryEntry,
   viewportWidth = 960,
 ): number {
+  if (entry.toolActivityCount != null) return 24;
   if (entry.busyIndicator) {
     return 52;
   }

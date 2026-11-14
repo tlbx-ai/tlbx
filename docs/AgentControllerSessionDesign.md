@@ -369,6 +369,7 @@ The canonical history contract must satisfy the following:
 - Tool updates should attach to the owning turn and item instead of spawning visually disjoint duplicates.
 - Provider adapters must project tool activity into the canonical `ToolPresentation` shape before history reduction: category, label, tool name, subject, outcome, evidence kind, bounded evidence, counts, exit code, and bounded paths.
 - The browser renders that canonical shape and must not infer tool semantics by parsing provider prose or command-output text.
+- In the normal reading view, consecutive hidden tool calls leave one quiet localized count row between visible messages. Count canonical tool identities once per span; reasoning and output updates do not inflate it. Errors and changed files retain their visible rows. The technical view keeps individual operations without an extra summary. Counts cover the materialized history window and must not claim unseen archive totals.
 
 ### Shared row anatomy
 

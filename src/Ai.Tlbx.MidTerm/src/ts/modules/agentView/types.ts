@@ -166,6 +166,7 @@ export interface AppServerControlActivationIssue {
 }
 
 export interface AppServerControlHistoryEntry {
+  toolActivityCount?: number;
   id: string;
   order: number;
   estimatedHeightPx?: number;

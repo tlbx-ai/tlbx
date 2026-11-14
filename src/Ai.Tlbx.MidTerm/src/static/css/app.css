@@ -14292,6 +14292,15 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   margin-bottom: 4px;
 }
 
+.agent-history-entry.agent-history-tool-activity {
+  margin: 0;
+  padding: 3px 0;
+  border: 0;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
 .agent-history-entry.agent-history-file-changes {
   gap: 0;
   padding: 2px 0;
