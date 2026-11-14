@@ -1819,12 +1819,38 @@ public sealed partial class WebPreviewProxyMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        var started = Stopwatch.GetTimestamp();
+        Exception? failure = null;
         var originalPath = context.Request.Path;
         if (context.Items.ContainsKey(PreviewProxyAuthorization.PathPrefixItemKey)
             && PreviewProxyAuthorization.TryParseAccessPath(originalPath, out _, out _, out _, out _, out var logicalPath))
             context.Request.Path = logicalPath;
         try { await InvokeAuthorizedAsync(context); }
-        finally { context.Request.Path = originalPath; }
+        catch (Exception ex) { failure = ex; throw; }
+        finally
+        {
+            context.Request.Path = originalPath;
+            if (context.Items[typeof(WebPreviewProxyRequestLog)] is WebPreviewProxyRequestLog log)
+            {
+                var elapsed = (long)Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+                foreach (var entry in log.Complete(context.Response.StatusCode, context.Response.HasStarted,
+                    context.RequestAborted.IsCancellationRequested, failure, elapsed))
+                    _service.AddLogEntry(log.RouteKey, entry);
+            }
+        }
+    }
+
+    private static WebPreviewProxyRequestLog BeginHttpLog(HttpContext context, string routeKey, string type, string url)
+    {
+        if (context.Items[typeof(WebPreviewProxyRequestLog)] is WebPreviewProxyRequestLog existing) return existing;
+        var log = new WebPreviewProxyRequestLog(routeKey, new WebPreviewProxyLogEntry
+        {
+            Type = type, Method = context.Request.Method, UpstreamUrl = url,
+            RequestUrl = PreviewProxyAuthorization.RedactAccessPath(context.Request.Path)
+                + StripPreviewBootstrapQuery(context.Request.QueryString.Value)
+        });
+        context.Items[typeof(WebPreviewProxyRequestLog)] = log;
+        return log;
     }
 
     private async Task InvokeAuthorizedAsync(HttpContext context)
@@ -2187,6 +2213,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         var requestQuery = StripPreviewBootstrapQuery(context.Request.QueryString.Value);
         var currentUrl = BuildUpstreamUrlFromPath(targetUri, primaryPath, requestQuery);
+        var requestLog = BeginHttpLog(context, routeKey, "http", currentUrl);
 
         var originalMethod = new HttpMethod(context.Request.Method);
         byte[]? requestBodyBuffer = null;
@@ -2259,6 +2286,7 @@ public sealed partial class WebPreviewProxyMiddleware
             }
         }
 
+        requestLog.Select(upstreamResponse);
         _service.PersistCookies(routeKey);
 
         if (upstreamResponse is not null
@@ -2616,6 +2644,7 @@ public sealed partial class WebPreviewProxyMiddleware
         }
 
         var currentUrl = extUri.ToString();
+        var requestLog = BeginHttpLog(context, routeKey, "ext-http", currentUrl);
         var originalMethod = new HttpMethod(context.Request.Method);
 
         byte[]? requestBodyBuffer = null;
@@ -2640,6 +2669,7 @@ public sealed partial class WebPreviewProxyMiddleware
         var (upstreamResponse, errorCode, finalUrl) = await SendUpstreamAsync(
             context, routeKey, originalMethod, currentUrl, BuildRequest, context.RequestAborted, "ext-http");
 
+        requestLog.Select(upstreamResponse);
         _service.PersistCookies(routeKey);
 
         if (upstreamResponse is null)
@@ -2867,6 +2897,12 @@ public sealed partial class WebPreviewProxyMiddleware
                 requestMessage.Dispose();
                 return (null, 502, null);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                requestMessage.Dispose();
+                upstreamResponse?.Dispose();
+                throw;
+            }
             catch (TaskCanceledException ex)
             {
                 context.Items[typeof(PreviewProxyFailure)] = PreviewProxyFailure.Describe(ex, new Uri(currentUrl));
@@ -2962,7 +2998,7 @@ public sealed partial class WebPreviewProxyMiddleware
             entry.ResponseCookies = setCookies;
         }
 
-        _service.AddLogEntry(routeKey, entry);
+        BeginHttpLog(context, routeKey, type, startUrl).Record(entry, response);
     }
 
     private static string SanitizeRequestHeader(string name, string value)
@@ -3038,6 +3074,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
     private async Task DispatchResponseBodyAsync(HttpContext context, string routeKey, HttpResponseMessage upstreamResponse, string? finalUrl)
     {
+        var requestLog = context.Items[typeof(WebPreviewProxyRequestLog)] as WebPreviewProxyRequestLog;
         SetUpstreamUrlHeader(context.Response, finalUrl);
         var contentType = upstreamResponse.Content.Headers.ContentType?.MediaType;
         if (IsFontResponse(contentType, context.Request.Path.Value))
@@ -3056,6 +3093,7 @@ public sealed partial class WebPreviewProxyMiddleware
 
         if (contentType is "text/html")
         {
+            if (requestLog is not null) requestLog.Stage = "HTML transform/body";
             var targetUri = _service.GetTargetUriByRouteKey(routeKey);
             if (targetUri is null)
             {
@@ -3068,6 +3106,7 @@ public sealed partial class WebPreviewProxyMiddleware
         else if (ShouldRenderTextDocument(context.Request, upstreamResponse)
             || ShouldRenderImageDocument(context.Request, upstreamResponse))
         {
+            if (requestLog is not null) requestLog.Stage = "text document transform/body";
             var targetUri = _service.GetTargetUriByRouteKey(routeKey);
             if (targetUri is null)
             {
@@ -3075,6 +3114,7 @@ public sealed partial class WebPreviewProxyMiddleware
                 return;
             }
 
+            if (requestLog is not null) requestLog.Stage = "document viewer/body";
             var image = ShouldRenderImageDocument(context.Request, upstreamResponse);
             var (body, error) = await ReadDocumentBodyAsync(upstreamResponse, image ? 4 * 1024 * 1024 : 1024 * 1024, context.RequestAborted);
             var originalUrl = finalUrl ?? targetUri.AbsoluteUri;
@@ -3103,14 +3143,17 @@ public sealed partial class WebPreviewProxyMiddleware
         }
         else if (contentType is "text/css")
         {
+            if (requestLog is not null) requestLog.Stage = "CSS transform/body";
             await ProxyCssResponseAsync(context, routeKey, upstreamResponse, finalUrl);
         }
         else if (contentType is "application/javascript" or "text/javascript")
         {
+            if (requestLog is not null) requestLog.Stage = "JavaScript transform/body";
             await ProxyJavaScriptResponseAsync(context, routeKey, upstreamResponse, finalUrl);
         }
         else
         {
+            if (requestLog is not null) requestLog.Stage = "stream body";
             await using var stream = await upstreamResponse.Content.ReadAsStreamAsync(context.RequestAborted);
             await stream.CopyToAsync(context.Response.Body, context.RequestAborted);
         }
