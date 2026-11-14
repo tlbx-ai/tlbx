@@ -4542,6 +4542,12 @@
               "string"
             ]
           },
+          "frame": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "value": {
             "type": [
               "null",
