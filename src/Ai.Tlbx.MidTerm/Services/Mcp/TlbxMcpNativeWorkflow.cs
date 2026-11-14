@@ -11,6 +11,11 @@ internal static class TlbxMcpNativeWorkflow
 {
     internal static async ValueTask<CallToolResult> InvokeAsync(CallToolRequestParams parameters, McpClient upstream, CancellationToken cancellationToken)
     {
+        // Select the execution site before any step runs. Never fall back or
+        // replay if forwarding fails: mutations may already have completed.
+        if (!RequiresCallerLocalExecution(parameters))
+            return await CallUpstreamAsync(upstream, "workflow_run", parameters.Arguments
+                ?? new Dictionary<string, JsonElement>(StringComparer.Ordinal), cancellationToken).ConfigureAwait(false);
         var tools = new Dictionary<string, Tool>(StringComparer.Ordinal);
         var cursors = new HashSet<string>(StringComparer.Ordinal);
         string? cursor = null;
@@ -82,6 +87,36 @@ internal static class TlbxMcpNativeWorkflow
             return result;
         }
         return await executor.ExecuteAsync(parameters, Invoke, WithPreview, cancellationToken).ConfigureAwait(false);
+    }
+
+    internal static bool RequiresCallerLocalExecution(CallToolRequestParams parameters)
+    {
+        if (parameters.Arguments is not { } arguments || !arguments.TryGetValue("steps", out var steps)
+            || steps.ValueKind != JsonValueKind.Array)
+            return true; // Let the local validator reject an unclassified shape before dispatch.
+        foreach (var step in steps.EnumerateArray())
+        {
+            if (step.ValueKind == JsonValueKind.Object && step.TryGetProperty("parallel", out var parallel))
+            {
+                if (parallel.ValueKind != JsonValueKind.Array) return true;
+                foreach (var child in parallel.EnumerateArray()) if (Local(child)) return true;
+            }
+            else if (Local(step)) return true;
+        }
+        return false;
+
+        static bool Local(JsonElement step)
+        {
+            string? name = null;
+            if (step.ValueKind == JsonValueKind.String) name = step.GetString();
+            else if (step.ValueKind == JsonValueKind.Array && step.GetArrayLength() is 1 or 2
+                && step[0].ValueKind == JsonValueKind.String) name = step[0].GetString();
+            else if (step.ValueKind == JsonValueKind.Object && step.TryGetProperty("tool", out var tool)
+                && tool.ValueKind == JsonValueKind.String) name = tool.GetString();
+            return name is null or "process_run_isolated" or TlbxMcpProcessWaitTool.ToolName
+                or TlbxMcpFileCallTool.ToolName or TlbxMcpArtifactSaveTool.ToolName or TlbxMcpOutputFileTool.ToolName
+                or "update_apply" or "workflow_run";
+        }
     }
 
     private static Dictionary<string, JsonElement> Arguments(JsonObject value)

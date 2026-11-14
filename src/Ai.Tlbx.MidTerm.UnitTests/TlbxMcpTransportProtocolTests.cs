@@ -24,6 +24,95 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class TlbxMcpTransportProtocolTests
 {
+    [Fact]
+    public async Task NativeAdapterReportsVersionDriftAndSignalsCatalogChangesWithoutReplayingTools()
+    {
+        var freshness = new McpStdioFreshness("1.0");
+        var liveVersion = "1.0";
+        var calls = 0;
+        await WithStreamProxyAsync(builder => builder
+            .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult
+            {
+                Tools = [new Tool { Name = "context_get", InputSchema = JsonSerializer.SerializeToElement(new JsonObject
+                {
+                    ["type"] = "object", ["properties"] = liveVersion == "1.0" ? new JsonObject() : new JsonObject { ["freshOption"] = new JsonObject { ["type"] = "boolean" } }
+                }, McpJsonContext.Default.JsonObject) }]
+            }))
+            .WithCallToolHandler((_, _) =>
+            {
+                Interlocked.Increment(ref calls);
+                return ValueTask.FromResult(McpApiResult.Structured(new JsonObject { ["sessionId"] = "verified", ["serverVersion"] = liveVersion }));
+            }), async (client, source) =>
+            {
+                var ct = TestContext.Current.CancellationToken;
+                Assert.True(client.ServerCapabilities.Tools!.ListChanged);
+                var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                var notifications = 0;
+                await using var subscription = client.RegisterNotificationHandler(NotificationMethods.ToolListChangedNotification, (_, _) =>
+                {
+                    Interlocked.Increment(ref notifications); changed.TrySetResult(); return ValueTask.CompletedTask;
+                });
+                async Task Observe(string version, string instance)
+                {
+                    using var response = new HttpResponseMessage(HttpStatusCode.OK);
+                    response.Headers.Add(McpStdioFreshness.VersionHeader, version);
+                    response.Headers.Add(McpStdioFreshness.InstanceHeader, instance);
+                    await freshness.ObserveAsync(response, ct);
+                }
+                await Observe("1.0", "first");
+                await changed.Task.WaitAsync(TimeSpan.FromSeconds(3), ct);
+                var initial = await client.CallToolAsync("context_get", cancellationToken: ct);
+                Assert.Equal("1.0", initial.StructuredContent!.Value.GetProperty("adapterVersion").GetString());
+                Assert.False(initial.StructuredContent.Value.GetProperty("adapterRefreshRequired").GetBoolean());
+                liveVersion = "2.0";
+                changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                await Observe("2.0", "second");
+                await changed.Task.WaitAsync(TimeSpan.FromSeconds(3), ct);
+                var catalog = await client.ListToolsAsync(cancellationToken: ct);
+                Assert.True(catalog.Single(tool => tool.Name == "context_get").ProtocolTool.InputSchema.GetProperty("properties").TryGetProperty("freshOption", out _));
+                var context = await client.CallToolAsync("context_get", cancellationToken: ct);
+                Assert.Equal("2.0", context.StructuredContent!.Value.GetProperty("serverVersion").GetString());
+                Assert.True(context.StructuredContent.Value.GetProperty("adapterRefreshRequired").GetBoolean());
+                Assert.Contains("when idle", context.StructuredContent.Value.GetProperty("adapterRefreshHint").GetString(), StringComparison.Ordinal);
+                Assert.Equal(2, calls);
+                var previous = notifications;
+                await Observe("2.0", "second");
+                Assert.Equal(previous, notifications);
+                changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+                await source.SendMessageAsync(new JsonRpcNotification { Method = NotificationMethods.ToolListChangedNotification, Params = new JsonObject() }, ct);
+                await changed.Task.WaitAsync(TimeSpan.FromSeconds(3), ct);
+                Assert.Equal(previous + 1, notifications);
+                Assert.Equal(2, calls);
+            }, freshness: freshness);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task PureNativeWorkflowsUseLiveServerExecutionAndPreserveNewArgumentsWithoutReplay(bool fail)
+    {
+        var calls = 0;
+        await WithStreamProxyAsync(builder => builder
+            .WithListToolsHandler((_, _) => ValueTask.FromResult(new ListToolsResult { Tools = [] }))
+            .WithCallToolHandler((request, _) =>
+            {
+                Assert.Equal("workflow_run", request.Params!.Name);
+                Assert.Equal("new-server-option", request.Params.Arguments!["futureOption"].GetString());
+                Interlocked.Increment(ref calls);
+                if (fail) return ValueTask.FromResult(McpApiResult.Error("fixture", "Operation failed after dispatch; do not replay."));
+                return ValueTask.FromResult(McpApiResult.Structured(new JsonObject { ["executedBy"] = "live-server" }));
+            }), async (client, _) =>
+            {
+                var result = await client.CallToolAsync("workflow_run", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["steps"] = new[] { "context_get" }, ["futureOption"] = "new-server-option"
+                }, cancellationToken: TestContext.Current.CancellationToken);
+                Assert.Equal(fail, result.IsError == true);
+                if (!fail) Assert.Equal("live-server", result.StructuredContent!.Value.GetProperty("executedBy").GetString());
+                Assert.Equal(1, calls);
+            });
+    }
+
     private static readonly DateTime Started = new(2026, 10, 30, 12, 0, 0, DateTimeKind.Utc);
     private static readonly byte[] Key = SHA256.HashData(Encoding.UTF8.GetBytes("mcp-protocol-fixture-purpose"));
 
@@ -511,7 +600,7 @@ public sealed class TlbxMcpTransportProtocolTests
     }
 
     private static async Task WithStreamProxyAsync(Action<IMcpServerBuilder> configure, Func<McpClient, McpServer, Task> verify,
-        McpStdioRuntimeContext? context = null)
+        McpStdioRuntimeContext? context = null, McpStdioFreshness? freshness = null)
     {
         using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(TestContext.Current.CancellationToken);
         var sourceInput = new Pipe(); var sourceOutput = new Pipe();
@@ -539,9 +628,12 @@ public sealed class TlbxMcpTransportProtocolTests
             var proxyServices = new ServiceCollection();
             proxyServices.AddLogging();
             var builder = proxyServices.AddMcpServer().WithStreamServerTransport(proxyRead, proxyWrite);
-            TlbxMcpStdioCommand.ConfigureForwarding(builder, upstream, context);
+            freshness ??= new McpStdioFreshness("fixture-adapter");
+            TlbxMcpStdioCommand.ConfigureForwarding(builder, upstream, context, freshness);
             await using var proxyProvider = proxyServices.BuildServiceProvider();
             var proxy = proxyProvider.GetRequiredService<McpServer>();
+            freshness.Attach(proxy);
+            await using var catalogNotifications = freshness.RelayNotifications(upstream);
             await using var proxyCancellation = proxy.RegisterNotificationHandler(NotificationMethods.CancelledNotification, (notification, _) =>
             { Console.Error.WriteLine("MCP_CANCEL_PROXY " + notification.Params?.ToJsonString()); return ValueTask.CompletedTask; });
             proxyRun = proxy.RunAsync(lifetime.Token);
