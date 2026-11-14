@@ -609,8 +609,8 @@ public sealed class BrowserCommandService
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
         long? requiredTargetRevision = null,
-        CancellationToken cancellationToken = default,
-        bool requirePanelVisibleClient = false)
+        bool requirePanelVisibleClient = false,
+        CancellationToken cancellationToken = default)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(8);
         var effectivePollInterval = pollInterval ?? TimeSpan.FromMilliseconds(200);
