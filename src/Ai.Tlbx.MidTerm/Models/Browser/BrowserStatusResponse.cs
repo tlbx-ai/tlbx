@@ -25,6 +25,7 @@ public sealed class BrowserStatusResponse
 
 public sealed class BrowserClientInfo
 {
+    public string? DocumentId { get; init; }
     public string? SessionId { get; init; }
     public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }

@@ -4584,6 +4584,7 @@
       },
       "BrowserClientInfo": {
         "required": [
+          "documentId",
           "sessionId",
           "previewName",
           "previewId",
@@ -4600,6 +4601,12 @@
         ],
         "type": "object",
         "properties": {
+          "documentId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "sessionId": {
             "type": [
               "null",
