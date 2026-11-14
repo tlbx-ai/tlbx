@@ -4520,6 +4520,7 @@ export interface components {
     BrowserCommandRequest: {
       command: string;
       selector?: null | string;
+      frame?: null | string;
       value?: null | string;
       /** Format: int32 */
       maxDepth?: null | number;
