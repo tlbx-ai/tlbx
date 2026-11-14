@@ -6,10 +6,23 @@ import { describe, expect, it, vi } from 'vitest';
 
 // Execute the actual injected URL protocol functions, rather than duplicating
 // their logic or starting a UI. Both native and Connect documents use this code.
+const cooperativeSource = readFileSync(
+  new URL('../../../../Services/WebPreview/WebPreviewCooperativeFrames.cs', import.meta.url),
+  'utf8',
+).replace(/\r\n/g, '\n');
+function sharedSource(name: string): string {
+  const marker = 'private const string ' + name + ' = """' + '\n';
+  const start = cooperativeSource.indexOf(marker) + marker.length;
+  const end = cooperativeSource.indexOf('        """;', start);
+  if (start < marker.length || end < start) throw new Error('Missing shared protocol: ' + name);
+  return cooperativeSource.slice(start, end);
+}
 const source = readFileSync(
   new URL('../../../../Services/WebPreview/WebPreviewProxyMiddleware.cs', import.meta.url),
   'utf8',
-);
+)
+  .replace('/*__MT_QUERY_HELPERS__*/', sharedSource('SharedQueryHelpers'))
+  .replace('/*__MT_CONTROL_HELPERS__*/', sharedSource('SharedControlHelpers'));
 function section(start: string, end: string): string {
   const first = source.indexOf(start);
   const last = source.indexOf(end, first + start.length);
@@ -29,7 +42,10 @@ const protocol = [
   section('function mtUpstreamSearch(search){', '// Application Location is upstream-facing;'),
   section('function mtMetadataUrl(value){', 'function mtResponseUrl(nativeUrl,readHeader){'),
   section('function mtResponseUrl(nativeUrl,readHeader){', 'var mtHeadersGet='),
-  section('function mtInstallScriptUrl(proto){', '          mtInstallScriptUrl(window.HTMLScriptElement'),
+  section(
+    'function mtInstallScriptUrl(proto){',
+    '          mtInstallScriptUrl(window.HTMLScriptElement',
+  ),
   section('function mtNavigationUrl(value){', 'var mtLocationView={};'),
 ].join('\n');
 const route = '0123456789abcdefabcd';
@@ -129,7 +145,9 @@ describe.each(['', `/p/connection/${route}`])('native preview URL protocol at %s
   it('decodes external upstream URL, query and hash independently of the virtual prefix', () => {
     const external = 'https://other.example/docs?q=a%20b&__mtPreviewToken=hidden#initial';
     const result = exercise(prefix, `/_ext?u=${encodeURIComponent(external)}#changed`);
-    expect(result.curU()).toBe('https://other.example/docs?q=a%20b&__mtPreviewToken=hidden#changed');
+    expect(result.curU()).toBe(
+      'https://other.example/docs?q=a%20b&__mtPreviewToken=hidden#changed',
+    );
   });
 });
 
@@ -147,22 +165,40 @@ describe.each(['', `/p/connection/${route}`, '/webpreview/outer/_access/parent/p
     }
     it('inverts direct and external URLs while removing only outer transport controls', () => {
       const f = fixture();
-      expect(f.mtResponseUrl(transport('/master.m3u8?quality=high&__mtReloadToken=transport'), () => null))
-        .toBe(`${upstream}/master.m3u8?quality=high`);
-      expect(f.mtResponseUrl(transport(`/_ext?u=${encodeURIComponent(final)}&__mtPreviewToken=transport`), () => null))
-        .toBe(final);
-      expect(f.mtResponseUrl(transport('/master.m3u8'), (name) => name === header ? final : null))
-        .toBe(final);
-      expect(f.mtResponseUrl(transport('/master.m3u8'), () => 'https://user:secret@stream.example/master.m3u8'))
-        .toBe('https://stream.example/master.m3u8');
+      expect(
+        f.mtResponseUrl(
+          transport('/master.m3u8?quality=high&__mtReloadToken=transport'),
+          () => null,
+        ),
+      ).toBe(`${upstream}/master.m3u8?quality=high`);
+      expect(
+        f.mtResponseUrl(
+          transport(`/_ext?u=${encodeURIComponent(final)}&__mtPreviewToken=transport`),
+          () => null,
+        ),
+      ).toBe(final);
+      expect(
+        f.mtResponseUrl(transport('/master.m3u8'), (name) => (name === header ? final : null)),
+      ).toBe(final);
+      expect(
+        f.mtResponseUrl(
+          transport('/master.m3u8'),
+          () => 'https://user:secret@stream.example/master.m3u8',
+        ),
+      ).toBe('https://stream.example/master.m3u8');
       if (prefix) {
-        expect(f.mtResponseUrl(transport('/master.m3u8'), () =>
-          `https://inner-proxy.example${ownRoute}/_ext?u=${encodeURIComponent(final)}&__mtReloadToken=outer`))
-          .toBe(final);
+        expect(
+          f.mtResponseUrl(
+            transport('/master.m3u8'),
+            () =>
+              `https://inner-proxy.example${ownRoute}/_ext?u=${encodeURIComponent(final)}&__mtReloadToken=outer`,
+          ),
+        ).toBe(final);
       }
       expect(f.r(final)).toContain(`/_ext?u=${encodeURIComponent(final)}`);
-      expect(new URL(f.r(final), 'https://preview.example').searchParams.get('__mtReloadToken'))
-        .toBe('reload');
+      expect(
+        new URL(f.r(final), 'https://preview.example').searchParams.get('__mtReloadToken'),
+      ).toBe('reload');
     });
     it('ignores reserved metadata on synthetic, failed, other-route and foreign responses', () => {
       const f = fixture();
@@ -176,10 +212,14 @@ describe.each(['', `/p/connection/${route}`, '/webpreview/outer/_access/parent/p
         expect(f.mtResponseUrl(url, read)).toBe(url);
         expect(read).not.toHaveBeenCalled();
       }
-      expect(f.mtResponseUrl(transport('/master.m3u8'), () => 'javascript:alert(1)'))
-        .toBe(`${upstream}/master.m3u8`);
-      expect(f.mtResponseUrl(transport('/master.m3u8'), () => { throw new Error('unavailable'); }))
-        .toBe(`${upstream}/master.m3u8`);
+      expect(f.mtResponseUrl(transport('/master.m3u8'), () => 'javascript:alert(1)')).toBe(
+        `${upstream}/master.m3u8`,
+      );
+      expect(
+        f.mtResponseUrl(transport('/master.m3u8'), () => {
+          throw new Error('unavailable');
+        }),
+      ).toBe(`${upstream}/master.m3u8`);
     });
     it('keeps native XHR receivers, empty/error state and a reused request URL', () => {
       const state = new WeakMap<object, { url: string; final: string | null }>();
@@ -195,7 +235,11 @@ describe.each(['', `/p/connection/${route}`, '/webpreview/outer/_access/parent/p
           return name === header ? value.final : null;
         }
       }
-      fixture().mtInstallResponseUrl(XhrFixture.prototype, 'responseURL', XhrFixture.prototype.getResponseHeader);
+      fixture().mtInstallResponseUrl(
+        XhrFixture.prototype,
+        'responseURL',
+        XhrFixture.prototype.getResponseHeader,
+      );
       const xhr = new XhrFixture();
       state.set(xhr, { url: '', final });
       expect(xhr.responseURL).toBe('');
@@ -212,7 +256,10 @@ describe.each(['', `/p/connection/${route}`, '/webpreview/outer/_access/parent/p
       Object.defineProperty(proto, 'url', { get, configurable: false, enumerable: true });
       fixture().mtInstallResponseUrl(proto, 'url', () => final);
       expect(Object.getOwnPropertyDescriptor(proto, 'url')).toEqual({
-        get, set: undefined, configurable: false, enumerable: true,
+        get,
+        set: undefined,
+        configurable: false,
+        enumerable: true,
       });
     });
   },
@@ -226,7 +273,15 @@ describe('composed script and response URL metadata', () => {
   const physical = `https://preview.example${outerRoute}${innerRoute}/_ext?u=${encodeURIComponent(actual)}`;
   function wrappers() {
     return {
-      outer: exercise('', '/demo/', '/demo/', 'https://preview.example', outerRoute, '', innerOrigin),
+      outer: exercise(
+        '',
+        '/demo/',
+        '/demo/',
+        'https://preview.example',
+        outerRoute,
+        '',
+        innerOrigin,
+      ),
       inner: exercise(outerRoute, '/demo/', '/demo/', 'https://preview.example', innerRoute),
     };
   }
@@ -246,34 +301,39 @@ describe('composed script and response URL metadata', () => {
     }
     const changed = new URL('https://application.example/custom.js');
     expect(inner.moduleUrl(changed, actual)).toBe(changed);
-    expect(inner.moduleUrl('https://application.example/custom.js', actual))
-      .toBe('https://application.example/custom.js');
-    expect(inner.moduleUrl(unwrapped, 'https://user:secret@cdn.example/final/meta.js'))
-      .toBe('https://cdn.example/final/meta.js');
+    expect(inner.moduleUrl('https://application.example/custom.js', actual)).toBe(
+      'https://application.example/custom.js',
+    );
+    expect(inner.moduleUrl(unwrapped, 'https://user:secret@cdn.example/final/meta.js')).toBe(
+      'https://cdn.example/final/meta.js',
+    );
   });
 
-  it.each(['url', 'responseURL'])('composes existing %s getters without replacing native receivers', (key) => {
-    const state = new WeakMap<object, string>();
-    const proto = {};
-    Object.defineProperty(proto, key, {
-      configurable: true,
-      enumerable: true,
-      get(this: object) {
-        if (!state.has(this)) throw new TypeError('Illegal invocation');
-        return state.get(this);
-      },
-    });
-    const object = Object.create(proto) as Record<string, string>;
-    state.set(object, physical);
-    const { outer, inner } = wrappers();
-    outer.mtInstallResponseUrl(proto, key, () => null);
-    inner.mtInstallResponseUrl(proto, key, () => null);
-    expect(object[key]).toBe(actual);
-    state.set(object, '');
-    expect(object[key]).toBe('');
-    const get = Object.getOwnPropertyDescriptor(proto, key)!.get!;
-    expect(() => get.call({})).toThrow(TypeError);
-  });
+  it.each(['url', 'responseURL'])(
+    'composes existing %s getters without replacing native receivers',
+    (key) => {
+      const state = new WeakMap<object, string>();
+      const proto = {};
+      Object.defineProperty(proto, key, {
+        configurable: true,
+        enumerable: true,
+        get(this: object) {
+          if (!state.has(this)) throw new TypeError('Illegal invocation');
+          return state.get(this);
+        },
+      });
+      const object = Object.create(proto) as Record<string, string>;
+      state.set(object, physical);
+      const { outer, inner } = wrappers();
+      outer.mtInstallResponseUrl(proto, key, () => null);
+      inner.mtInstallResponseUrl(proto, key, () => null);
+      expect(object[key]).toBe(actual);
+      state.set(object, '');
+      expect(object[key]).toBe('');
+      const get = Object.getOwnPropertyDescriptor(proto, key)!.get!;
+      expect(() => get.call({})).toThrow(TypeError);
+    },
+  );
 
   it('keeps currentScript identity, setter branding and relative URLs through composed src getters', () => {
     const state = new WeakMap<object, string>();
@@ -297,8 +357,9 @@ describe('composed script and response URL metadata', () => {
     expect(document.currentScript).toBe(script);
     expect(script).toBeInstanceOf(ScriptFixture);
     expect(script.src).toBe(actual);
-    expect(new URL('./theme.js', document.currentScript.src).href)
-      .toBe('http://localhost:2314/cdn/classic/theme.js');
+    expect(new URL('./theme.js', document.currentScript.src).href).toBe(
+      'http://localhost:2314/cdn/classic/theme.js',
+    );
     const descriptor = Object.getOwnPropertyDescriptor(ScriptFixture.prototype, 'src')!;
     expect(descriptor.set).toBe(setter);
     expect(() => descriptor.get!.call({})).toThrow(TypeError);
@@ -330,9 +391,13 @@ it('preserves real native Response branding, redirects, clone and streaming bodi
   const headers = Object.getOwnPropertyDescriptor(Response.prototype, 'headers')!.get!;
   const getHeader = Headers.prototype.get;
   try {
-    exercise('', '/demo/', '/demo/', origin).mtInstallResponseUrl(Response.prototype, 'url', function (name) {
-      return getHeader.call(headers.call(this) as Headers, name);
-    });
+    exercise('', '/demo/', '/demo/', origin).mtInstallResponseUrl(
+      Response.prototype,
+      'url',
+      function (name) {
+        return getHeader.call(headers.call(this) as Headers, name);
+      },
+    );
     for (const path of ['/direct', '/redirect']) {
       const response = await fetch(`${origin}${nativePrefix}${path}`);
       expect(response).toBeInstanceOf(Response);
@@ -352,13 +417,19 @@ it('preserves real native Response branding, redirects, clone and streaming bodi
       expect(await clone.text()).toBe('#EXTM3U\nlevel.m3u8\n');
       await expect(response.text()).rejects.toThrow(TypeError);
     }
-    expect(new Response('synthetic', { headers: { 'X-Tlbx-Preview-Upstream-Url': final } }).url).toBe('');
+    expect(
+      new Response('synthetic', { headers: { 'X-Tlbx-Preview-Upstream-Url': final } }).url,
+    ).toBe('');
     expect(Response.error().url).toBe('');
-    expect(() => Object.getOwnPropertyDescriptor(Response.prototype, 'url')!.get!.call({})).toThrow(TypeError);
+    expect(() => Object.getOwnPropertyDescriptor(Response.prototype, 'url')!.get!.call({})).toThrow(
+      TypeError,
+    );
   } finally {
     Object.defineProperty(Response.prototype, 'url', original);
     server.closeAllConnections();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve())),
+    );
   }
 });
 
@@ -443,15 +514,25 @@ describe('shared preview custom checkable click protocol', () => {
       labels: Element[] = [];
       onIntent: (() => void) | null = null;
       rect = { left: 0, top: 0, width: 40, height: 40 };
-      getClientRects() { return this.hasRect ? [this.rect] : []; }
-      getBoundingClientRect() { return this.rect; }
-      matches(selector: string) { return selector === ':disabled' && this.disabled; }
+      getClientRects() {
+        return this.hasRect ? [this.rect] : [];
+      }
+      getBoundingClientRect() {
+        return this.rect;
+      }
+      matches(selector: string) {
+        return selector === ':disabled' && this.disabled;
+      }
       closest(selector: string): Element | null {
         for (let node: Element | null = this; node; node = node.parentElement) {
           if (selector === 'label' && node.tagName === 'LABEL') return node;
           if (selector.includes('aria-disabled') && node.ariaDisabled) return node;
           if (selector.includes('readonly') && (node.ariaReadOnly || node.readOnly)) return node;
-          if (selector.startsWith('a,button') && ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)) return node;
+          if (
+            selector.startsWith('a,button') &&
+            ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)
+          )
+            return node;
         }
         return null;
       }
@@ -465,10 +546,17 @@ describe('shared preview custom checkable click protocol', () => {
         return true;
       });
       click = vi.fn(() => order.push(`${this.tagName}:click`));
-      set checked(_: boolean) { throw new Error('checked state must be owned by native activation'); }
+      set checked(_: boolean) {
+        throw new Error('checked state must be owned by native activation');
+      }
     }
     class IntentEvent {
-      constructor(public type: string, options: object) { Object.assign(this, options); }
+      constructor(
+        public type: string,
+        options: object,
+      ) {
+        Object.assign(this, options);
+      }
     }
     const input = new Element('INPUT');
     input.opacity = '0';
@@ -487,7 +575,11 @@ describe('shared preview custom checkable click protocol', () => {
        handleBCmd;`,
       {
         document,
-        getComputedStyle: (el: Element) => ({ opacity: el.opacity, visibility: el.visibility, display: el.display }),
+        getComputedStyle: (el: Element) => ({
+          opacity: el.opacity,
+          visibility: el.visibility,
+          display: el.display,
+        }),
         MouseEvent: IntentEvent,
         PointerEvent: IntentEvent,
         mtCtx: { sessionId: 'owned-session', previewId: 'owned-preview' },
@@ -495,10 +587,17 @@ describe('shared preview custom checkable click protocol', () => {
       },
     ) as (message: object) => void;
     return {
-      input, label, order, document,
+      input,
+      label,
+      order,
+      document,
       node: (tag: string) => new Element(tag),
-      select: (...elements: Element[]) => { matches = elements; },
-      hit: (element: Element | null) => { hit = element; },
+      select: (...elements: Element[]) => {
+        matches = elements;
+      },
+      hit: (element: Element | null) => {
+        hit = element;
+      },
       click() {
         dispatch({ id: 'click', command: 'click', selector: '.control' });
         return replies.at(-1)!;
@@ -510,14 +609,23 @@ describe('shared preview custom checkable click protocol', () => {
     };
   }
 
-  it.each(['checkbox', 'radio'])('activates a transparent %s once through its visible associated label', (type) => {
-    const f = fixture();
-    f.input.type = type;
-    expect(f.click()).toMatchObject({ success: true });
-    expect(f.order).toEqual(['LABEL:pointerdown', 'LABEL:mousedown', 'LABEL:pointerup', 'LABEL:mouseup', 'LABEL:click']);
-    expect(f.label.click).toHaveBeenCalledTimes(1);
-    expect(f.input.click).not.toHaveBeenCalled();
-  });
+  it.each(['checkbox', 'radio'])(
+    'activates a transparent %s once through its visible associated label',
+    (type) => {
+      const f = fixture();
+      f.input.type = type;
+      expect(f.click()).toMatchObject({ success: true });
+      expect(f.order).toEqual([
+        'LABEL:pointerdown',
+        'LABEL:mousedown',
+        'LABEL:pointerup',
+        'LABEL:mouseup',
+        'LABEL:click',
+      ]);
+      expect(f.label.click).toHaveBeenCalledTimes(1);
+      expect(f.input.click).not.toHaveBeenCalled();
+    },
+  );
   it('uses the transparent input itself only when it is the actual pointer hit', () => {
     const f = fixture();
     f.input.labels = [];
@@ -525,7 +633,12 @@ describe('shared preview custom checkable click protocol', () => {
     expect(f.click()).toMatchObject({ success: true });
     expect(f.input.click).toHaveBeenCalledTimes(1);
     expect(f.label.click).not.toHaveBeenCalled();
-    expect(f.input.dispatchEvent.mock.calls[0]![0]).toMatchObject({ type: 'pointerdown', clientX: 20, clientY: 20, bubbles: true });
+    expect(f.input.dispatchEvent.mock.calls[0]![0]).toMatchObject({
+      type: 'pointerdown',
+      clientX: 20,
+      clientY: 20,
+      bubbles: true,
+    });
   });
   it('supports explicit label and noninteractive label-child intent without double activation', () => {
     const f = fixture();
@@ -540,45 +653,68 @@ describe('shared preview custom checkable click protocol', () => {
     expect(text.click).toHaveBeenCalledTimes(1);
     expect(f.input.click).not.toHaveBeenCalled();
   });
-  it.each(['hidden', 'display', 'visibility', 'ancestor-opacity', 'inert', 'detached', 'disabled', 'aria-disabled', 'readonly', 'aria-readonly', 'covered', 'unassociated', 'interactive-child', 'zero-size'])(
-    'rejects %s custom controls before pointer intent or activation', (kind) => {
+  it.each([
+    'hidden',
+    'display',
+    'visibility',
+    'ancestor-opacity',
+    'inert',
+    'detached',
+    'disabled',
+    'aria-disabled',
+    'readonly',
+    'aria-readonly',
+    'covered',
+    'unassociated',
+    'interactive-child',
+    'zero-size',
+  ])('rejects %s custom controls before pointer intent or activation', (kind) => {
+    const f = fixture();
+    if (kind === 'hidden') f.input.hidden = true;
+    if (kind === 'display') f.input.display = 'none';
+    if (kind === 'visibility') f.input.visibility = 'hidden';
+    if (kind === 'ancestor-opacity') {
+      const parent = f.node('DIV');
+      parent.opacity = '0';
+      f.input.parentElement = parent;
+    }
+    if (kind === 'inert') f.input.inert = true;
+    if (kind === 'detached') f.input.isConnected = false;
+    if (kind === 'disabled') f.input.disabled = true;
+    if (kind === 'aria-disabled') f.input.ariaDisabled = true;
+    if (kind === 'readonly') f.input.readOnly = true;
+    if (kind === 'aria-readonly') f.input.ariaReadOnly = true;
+    if (kind === 'covered') f.hit(f.node('DIV'));
+    if (kind === 'unassociated') f.label.control = null;
+    if (kind === 'interactive-child') {
+      const link = f.node('A');
+      link.parentElement = f.label;
+      f.hit(link);
+    }
+    if (kind === 'zero-size') f.input.rect.width = 0;
+    expect(f.click()).toMatchObject({ success: false });
+    expect(f.order).toEqual([]);
+  });
+  it('keeps ambiguous actionable selectors ambiguous even when one control is transparent', () => {
+    const f = fixture();
+    f.select(f.input, f.node('INPUT'));
+    expect(f.click()).toMatchObject({
+      success: false,
+      error: expect.stringContaining('ambiguous selector'),
+    });
+    expect(f.order).toEqual([]);
+  });
+  it.each(['disabled', 'readonly'])(
+    'cannot bypass %s by selecting the associated label itself',
+    (kind) => {
       const f = fixture();
-      if (kind === 'hidden') f.input.hidden = true;
-      if (kind === 'display') f.input.display = 'none';
-      if (kind === 'visibility') f.input.visibility = 'hidden';
-      if (kind === 'ancestor-opacity') {
-        const parent = f.node('DIV'); parent.opacity = '0'; f.input.parentElement = parent;
-      }
-      if (kind === 'inert') f.input.inert = true;
-      if (kind === 'detached') f.input.isConnected = false;
+      f.select(f.label);
       if (kind === 'disabled') f.input.disabled = true;
-      if (kind === 'aria-disabled') f.input.ariaDisabled = true;
-      if (kind === 'readonly') f.input.readOnly = true;
-      if (kind === 'aria-readonly') f.input.ariaReadOnly = true;
-      if (kind === 'covered') f.hit(f.node('DIV'));
-      if (kind === 'unassociated') f.label.control = null;
-      if (kind === 'interactive-child') {
-        const link = f.node('A'); link.parentElement = f.label; f.hit(link);
-      }
-      if (kind === 'zero-size') f.input.rect.width = 0;
+      else f.input.readOnly = true;
       expect(f.click()).toMatchObject({ success: false });
       expect(f.order).toEqual([]);
     },
   );
-  it('keeps ambiguous actionable selectors ambiguous even when one control is transparent', () => {
-    const f = fixture();
-    f.select(f.input, f.node('INPUT'));
-    expect(f.click()).toMatchObject({ success: false, error: expect.stringContaining('ambiguous selector') });
-    expect(f.order).toEqual([]);
-  });
-  it.each(['disabled', 'readonly'])('cannot bypass %s by selecting the associated label itself', (kind) => {
-    const f = fixture();
-    f.select(f.label);
-    if (kind === 'disabled') f.input.disabled = true;
-    else f.input.readOnly = true;
-    expect(f.click()).toMatchObject({ success: false });
-    expect(f.order).toEqual([]);
-  });
   it('keeps an interactive link inside a label as its own action', () => {
     const f = fixture();
     const link = f.node('A');
@@ -591,18 +727,21 @@ describe('shared preview custom checkable click protocol', () => {
     expect(f.label.click).not.toHaveBeenCalled();
     expect(f.input.click).not.toHaveBeenCalled();
   });
-  it.each(['disabled', 'association', 'hidden', 'submit-type'])('revalidates %s after pointer intent and before native activation', (kind) => {
-    const f = fixture();
-    f.label.onIntent = () => {
-      if (kind === 'disabled') f.input.disabled = true;
-      if (kind === 'association') f.label.control = f.node('INPUT');
-      if (kind === 'hidden') f.label.hidden = true;
-      if (kind === 'submit-type') f.input.type = 'submit';
-    };
-    expect(f.click()).toMatchObject({ success: false });
-    expect(f.label.click).not.toHaveBeenCalled();
-    expect(f.input.click).not.toHaveBeenCalled();
-  });
+  it.each(['disabled', 'association', 'hidden', 'submit-type'])(
+    'revalidates %s after pointer intent and before native activation',
+    (kind) => {
+      const f = fixture();
+      f.label.onIntent = () => {
+        if (kind === 'disabled') f.input.disabled = true;
+        if (kind === 'association') f.label.control = f.node('INPUT');
+        if (kind === 'hidden') f.label.hidden = true;
+        if (kind === 'submit-type') f.input.type = 'submit';
+      };
+      expect(f.click()).toMatchObject({ success: false });
+      expect(f.label.click).not.toHaveBeenCalled();
+      expect(f.input.click).not.toHaveBeenCalled();
+    },
+  );
   it('does not extend hidden-element access to fill or non-checkable inputs', () => {
     const f = fixture();
     expect(f.fill()).toMatchObject({ success: false });
@@ -1086,7 +1225,10 @@ describe('explicit open-shadow selector and serialization protocol', () => {
   it.each([false, true])(
     'uses the shared selector for element screenshots and rejects selector/fullPage conflicts (%s)',
     async (fullPage) => {
-      const target = {};
+      const target = {
+        getBoundingClientRect: () => ({ left: 12, top: 18, width: 80, height: 30 }),
+      };
+      const documentRoot = { getBoundingClientRect: () => ({ left: 0, top: 0 }) };
       const select = vi.fn((_selector: string) => [target]);
       const capture = vi.fn(async (_target: unknown, _options: unknown) => ({
         toCanvas: async () => ({ toDataURL: () => 'data:image/png;base64,fixture' }),
@@ -1095,8 +1237,8 @@ describe('explicit open-shadow selector and serialization protocol', () => {
         const dispatch = runInNewContext(
           `${section(dispatcherStart, 'var bwsReconnectTimer=')};handleBCmd;`,
           {
-            document: { documentElement: {} },
-            window: {},
+            document: { documentElement: documentRoot },
+            window: { scrollX: 0, scrollY: 0 },
             mtCtx: null,
             previewQueryAll: select,
             isControlVisible: () => true,
@@ -1113,7 +1255,7 @@ describe('explicit open-shadow selector and serialization protocol', () => {
       if (fullPage) expect(capture).not.toHaveBeenCalled();
       else {
         expect(select).toHaveBeenCalledExactlyOnceWith('#left >>> button');
-        expect(capture).toHaveBeenCalledWith(target, expect.objectContaining({ clip: null }));
+        expect(capture).toHaveBeenCalledWith(documentRoot, expect.objectContaining({ clip: null }));
       }
     },
   );
