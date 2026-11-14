@@ -1,6 +1,7 @@
 {
-  "web": "11.1.32-dev",
+  "web": "11.1.33-dev",
   "pty": "11.1.32-dev",
   "protocol": 1,
-  "minCompatiblePty": "11.1.32-dev"
+  "minCompatiblePty": "11.1.32-dev",
+  "webOnly": true
 }
