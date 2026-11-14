@@ -3164,10 +3164,11 @@ public sealed partial class WebPreviewProxyMiddleware
             + WebUtility.HtmlEncode(url ?? "") + "</p></header>";
     }
 
+    // Encode slashes too: nested HTML proxy passes must not rewrite source-code url() tokens.
     internal static string RenderTextDocument(string text, string? url = null, string? contentType = null) =>
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Response</title>"
         + "<style>body{margin:16px}pre{white-space:pre-wrap;overflow-wrap:anywhere}</style>"
-        + "</head><body>" + DocumentHeading(url, contentType) + "<pre>" + WebUtility.HtmlEncode(text) + "</pre></body></html>";
+        + "</head><body>" + DocumentHeading(url, contentType) + "<pre>" + WebUtility.HtmlEncode(text).Replace("/", "&#47;", StringComparison.Ordinal) + "</pre></body></html>";
 
     internal static string RenderImageDocument(byte[] body, string mediaType, string url)
     {

@@ -76,9 +76,11 @@ public sealed class WebPreviewSamePortProtocolTests
     [Fact]
     public void SourceDocumentsEscapeActiveMarkupAndImageDocumentsPreserveRasterBytes()
     {
-        const string source = "</pre><script>alert('source')</script><svg onload='source()'/>&entity;";
+        const string source = "</pre><script>alert('source')</script><svg onload='source()'/>&entity; a{background:url(/source.svg)}";
         var text = WebPreviewProxyMiddleware.RenderTextDocument(source, "https://user:password@example.test/source.js", "application/javascript");
-        Assert.Contains(WebUtility.HtmlEncode(source), text, StringComparison.Ordinal);
+        var start = text.IndexOf("<pre>", StringComparison.Ordinal) + 5;
+        var end = text.IndexOf("</pre>", start, StringComparison.Ordinal);
+        Assert.Equal(source, WebUtility.HtmlDecode(text[start..end]));
         Assert.DoesNotContain(source, text, StringComparison.Ordinal);
         Assert.DoesNotContain("password", text, StringComparison.Ordinal);
         Assert.Contains("application/javascript", text, StringComparison.Ordinal);
