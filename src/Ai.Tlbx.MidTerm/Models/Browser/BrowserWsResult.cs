@@ -12,6 +12,8 @@ public sealed class BrowserWsResult
     public string? Result { get; init; }
     public string? Error { get; init; }
     public int? MatchCount { get; init; }
+    /// <summary>DOM screenshot coverage diagnostics; never proof of compositor pixel fidelity.</summary>
+    public BrowserCaptureInfo? Capture { get; init; }
     public string? SessionId { get; init; }
     public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }

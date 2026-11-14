@@ -4421,6 +4421,7 @@
           "result",
           "error",
           "matchCount",
+          "capture",
           "durationMs"
         ],
         "type": "object",
@@ -4454,9 +4455,130 @@
             ],
             "format": "int32"
           },
+          "capture": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureInfo"
+              }
+            ]
+          },
           "durationMs": {
             "type": "number",
             "format": "double"
+          }
+        }
+      },
+      "BrowserCaptureInfo": {
+        "required": [
+          "renderer",
+          "pixelCoverage",
+          "inventory",
+          "mediaPixels",
+          "nestedMedia",
+          "media",
+          "warningCodes",
+          "warningsMayBeTruncated",
+          "output"
+        ],
+        "type": "object",
+        "properties": {
+          "renderer": {
+            "type": "string"
+          },
+          "pixelCoverage": {
+            "type": "string"
+          },
+          "inventory": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mediaPixels": {
+            "type": "string"
+          },
+          "nestedMedia": {
+            "type": "string"
+          },
+          "media": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureMedia"
+              }
+            ]
+          },
+          "warningCodes": {
+            "type": [
+              "null",
+              "object"
+            ],
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          "warningsMayBeTruncated": {
+            "type": "boolean"
+          },
+          "output": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureOutput"
+              }
+            ]
+          }
+        }
+      },
+      "BrowserCaptureMedia": {
+        "required": [
+          "frames",
+          "unreadableFrames",
+          "canvases",
+          "videos"
+        ],
+        "type": "object",
+        "properties": {
+          "frames": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "unreadableFrames": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "canvases": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "videos": {
+            "type": "integer",
+            "format": "int32"
+          }
+        }
+      },
+      "BrowserCaptureOutput": {
+        "required": [
+          "width",
+          "height"
+        ],
+        "type": "object",
+        "properties": {
+          "width": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "height": {
+            "type": "integer",
+            "format": "int32"
           }
         }
       },
@@ -4623,7 +4745,8 @@
           "success",
           "result",
           "error",
-          "matchCount"
+          "matchCount",
+          "capture"
         ],
         "type": "object",
         "properties": {
@@ -4648,6 +4771,16 @@
               "integer"
             ],
             "format": "int32"
+          },
+          "capture": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/BrowserCaptureInfo"
+              }
+            ]
           }
         }
       },

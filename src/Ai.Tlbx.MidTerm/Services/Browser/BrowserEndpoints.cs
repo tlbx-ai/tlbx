@@ -583,7 +583,8 @@ public static class BrowserEndpoints
                     {
                         Id = result.Id,
                         Success = true,
-                        Result = path
+                        Result = path,
+                        Capture = result.Capture
                     });
                 }
             }
@@ -1119,7 +1120,8 @@ public static class BrowserEndpoints
             Success = result.Success,
             Result = result.Result,
             Error = result.Error,
-            MatchCount = result.MatchCount
+            MatchCount = result.MatchCount,
+            Capture = result.Capture
         };
         return Results.Json(response, AppJsonContext.Default.BrowserCommandResponse);
     }

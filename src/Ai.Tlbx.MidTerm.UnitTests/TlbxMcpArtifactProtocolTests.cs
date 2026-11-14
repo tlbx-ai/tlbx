@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Ai.Tlbx.MidTerm.Services;
 using Ai.Tlbx.MidTerm.Services.Mcp;
@@ -20,6 +21,43 @@ namespace Ai.Tlbx.MidTerm.UnitTests;
 
 public sealed class TlbxMcpArtifactProtocolTests
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ScreenshotCoverageSurvivesInlineAndOriginalResourceDelivery(bool partial)
+    {
+        const string png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=";
+        var context = new DefaultHttpContext();
+        context.Items[TlbxMcpEndpoints.CallerIdentityItem] = "coverage-owner";
+        var services = new ServiceCollection();
+        services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = context });
+        services.AddSingleton<TlbxMcpArtifactStore>();
+        await using var provider = services.BuildServiceProvider();
+        var coverage = partial ? JsonSerializer.SerializeToElement(new
+        {
+            renderer = "dom-svg", pixelCoverage = "partial", inventory = "parent-light-dom",
+            media = new { frames = 1, unreadableFrames = 1, canvases = 1, videos = 1 },
+            warningCodes = new Dictionary<string, int> { ["iframe-cross-origin"] = 1, ["canvas-tainted"] = 1 }
+        }) : (JsonElement?)null;
+        var result = await TlbxMcpBrowserTools.CommandResultAsync(provider,
+            new BrowserCommandRequest { Command = "screenshot", SessionId = "first001" },
+            new BrowserWsResult { Success = true, Result = "data:image/png;base64," + png, Capture = coverage }, save: false);
+        Assert.NotEqual(true, result.IsError);
+        var metadata = result.StructuredContent!.Value.GetProperty("capture");
+        Assert.Equal(partial ? "partial" : "unverified", metadata.GetProperty("pixelCoverage").GetString());
+        if (partial)
+        {
+            Assert.Equal(1, metadata.GetProperty("media").GetProperty("unreadableFrames").GetInt32());
+            Assert.Equal(1, metadata.GetProperty("warningCodes").GetProperty("canvas-tainted").GetInt32());
+            Assert.Contains("partial", Assert.Single(result.Content.OfType<TextContentBlock>()).Text, StringComparison.Ordinal);
+        }
+        var original = Convert.FromBase64String(png);
+        Assert.Equal(original, Assert.Single(result.Content.OfType<ImageContentBlock>()).DecodedData.ToArray());
+        var link = Assert.Single(result.Content.OfType<ResourceLinkBlock>());
+        var stored = provider.GetRequiredService<TlbxMcpArtifactStore>().Read(link.Uri, TestContext.Current.CancellationToken);
+        Assert.Equal(original, Assert.IsType<BlobResourceContents>(Assert.Single(stored.Contents)).DecodedData.ToArray());
+    }
+
     [Theory]
     [InlineData(65536, false)]
     [InlineData(65537, true)]
