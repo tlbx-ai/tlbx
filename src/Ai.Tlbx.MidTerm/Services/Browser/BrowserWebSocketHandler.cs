@@ -79,7 +79,10 @@ public sealed class BrowserWebSocketHandler
                 hasFocus,
                 isTopLevel,
                 long.TryParse(context.Request.Query["targetRevision"].FirstOrDefault(), CultureInfo.InvariantCulture, out var revision) ? revision : null,
-                previewClient?.OwnershipGeneration))
+                previewClient?.OwnershipGeneration,
+                ParseOptionalBooleanQuery(context.Request.Query["panelVisible"].FirstOrDefault()),
+                ParseOptionalBooleanQuery(context.Request.Query["documentVisible"].FirstOrDefault()),
+                context.Request.Query["documentVisibilityState"].FirstOrDefault()))
         {
             BrowserLog.Info($"Rejected duplicate browser client for preview '{previewId}'");
             await ws.CloseAsync(
@@ -202,5 +205,13 @@ public sealed class BrowserWebSocketHandler
         return string.Equals(value, "1", StringComparison.Ordinal)
             || string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
             || string.Equals(value, "yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool? ParseOptionalBooleanQuery(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return null;
+        if (ParseBooleanQuery(value)) return true;
+        return value == "0" || string.Equals(value, "false", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value, "no", StringComparison.OrdinalIgnoreCase) ? false : null;
     }
 }
