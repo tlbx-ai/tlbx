@@ -173,8 +173,8 @@ internal static partial class WebPreviewLocationRewriter
         // cycle may call an exported hoisted function before this body runs.
         // Keep the lazy state on that private function, not a const/let in TDZ.
         var prologue = ";\nfunction " + name + "(value){if(" + name + ".captured!==" + name + "){" + name + ".captured=" + name + ";"
-            + name + ".original=value;}return value===" + name + ".original&&typeof globalThis.__mtPreviewModuleUrl==='function'"
-            + "?globalThis.__mtPreviewModuleUrl(value," + EncodeJavaScriptString(finalUri) + "):value;}\n"
+            + name + ".original=value;}if(value!==" + name + ".original)return value;return typeof globalThis.__mtPreviewModuleUrl==='function'"
+            + "?globalThis.__mtPreviewModuleUrl(value," + EncodeJavaScriptString(finalUri) + "):" + EncodeJavaScriptString(finalUri) + ";}\n"
             + name + "(import.meta.url);\n";
         var insertion = source.StartsWith("#!", StringComparison.Ordinal) ? source.IndexOf("\n", StringComparison.Ordinal) + 1 : 0;
         foreach (var statement in root.ChildNodes)

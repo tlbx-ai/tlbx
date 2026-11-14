@@ -636,7 +636,59 @@ public sealed partial class WebPreviewProxyMiddleware
           var OI=window.Image;
           if(OI){window.Image=function(w,h){return new OI(w,h);};window.Image.prototype=OI.prototype;}
           // Worker/SharedWorker constructors
-          if(window.Worker){var OW=window.Worker;window.Worker=function(u,o){return new OW(r(u),o);};window.Worker.prototype=OW.prototype;}
+          if(window.Worker){
+            var OW=window.Worker;
+            window.Worker=function Worker(u,o){
+              if(!new.target)throw new TypeError("Worker must be constructed with new");
+              if(!arguments.length)return Reflect.construct(OW,[],new.target);
+              if(typeof u==="symbol")throw new TypeError("Cannot convert a Symbol value to a string");
+              var rewritten=r(String(u)),args=[rewritten],address;
+              if(arguments.length>1)args.push(o);
+              try{address=new URL(rewritten,document.baseURI).href;}catch(error){return Reflect.construct(OW,args,new.target);}
+              if(window.origin!=="null"||!/^https?:/.test(address))return Reflect.construct(OW,args,new.target);
+              // A blob created by this opaque document retains its isolation,
+              // while its imports use the existing authorized resource proxy.
+              var nonce=Math.random().toString(36).slice(2),module=o&&o.type==="module";
+              var done=";self.postMessage({__tlbxWorkerLoaded:"+JSON.stringify(nonce)+"});";
+              function loadModule(url,key){
+                var pending=[];
+                function hold(event){pending.push(event);event.stopImmediatePropagation();}
+                self.addEventListener("message",hold);
+                self.importScripts=function(){throw new TypeError("Module workers do not support importScripts");};
+                import(url).then(function(){
+                  self.removeEventListener("message",hold);
+                  pending.forEach(function(event){self.dispatchEvent(new MessageEvent("message",{
+                    data:event.data,origin:event.origin,lastEventId:event.lastEventId,ports:event.ports
+                  }));});
+                  self.postMessage({__tlbxWorkerLoaded:key});
+                }).catch(function(error){setTimeout(function(){throw error;},0);});
+              }
+              // Chromium rejects a module blob entry in an opaque document.
+              // Load its ESM once in an isolated classic entry and retain early messages.
+              var source=module?"("+loadModule.toString()+")("+JSON.stringify(address)+","+JSON.stringify(nonce)+");"
+                :"importScripts("+JSON.stringify(address)+");"+done;
+              if(module)args[1]=new Proxy(o,{get:function(target,key){return key==="type"?"classic":Reflect.get(target,key,target);}});
+              var objectUrl=URL.createObjectURL(new Blob([source],{type:"text/javascript"})),worker;
+              args[0]=objectUrl;
+              try{worker=Reflect.construct(OW,args,new.target);}catch(error){URL.revokeObjectURL(objectUrl);throw error;}
+              function cleanup(event){
+                if(event&&event.type==="message"){
+                  if(!event.data||event.data.__tlbxWorkerLoaded!==nonce)return;
+                  event.stopImmediatePropagation();
+                }
+                URL.revokeObjectURL(objectUrl);
+                worker.removeEventListener("message",cleanup);
+                worker.removeEventListener("error",cleanup);
+              }
+              worker.addEventListener("message",cleanup);
+              worker.addEventListener("error",cleanup);
+              var terminate=worker.terminate;
+              worker.terminate=function(){if(this===worker)cleanup();return terminate.apply(this,arguments);};
+              return worker;
+            };
+            window.Worker.prototype=OW.prototype;
+            Object.setPrototypeOf(window.Worker,OW);
+          }
           if(window.SharedWorker){var OSW=window.SharedWorker;window.SharedWorker=function(u,o){return new OSW(r(u),o);};window.SharedWorker.prototype=OSW.prototype;}
           // Service worker registration
           var mtsw=ensureServiceWorker();
@@ -769,8 +821,18 @@ public sealed partial class WebPreviewProxyMiddleware
             },50);
           }
           var hps=history.pushState.bind(history),hrs=history.replaceState.bind(history);
-          history.pushState=function(s,t,u){var x=hps(s,t,u?r(u):u);ntfy();return x;};
-          history.replaceState=function(s,t,u){var x=hrs(s,t,u?r(u):u);ntfy();return x;};
+          function mtHistoryArgs(values){
+            var args=Array.from(values),url=args[2];
+            // Defer URL conversion to the native binding, preserving title/URL
+            // conversion order, argument validation and exactly-once coercion.
+            if(args.length>2&&url!=null)args[2]={toString:function(){
+              if(typeof url==="symbol")throw new TypeError("Cannot convert a Symbol value to a string");
+              return r(String(url));
+            }};
+            return args;
+          }
+          history.pushState=function(s,t,u){var x=hps.apply(null,mtHistoryArgs(arguments));ntfy();return x;};
+          history.replaceState=function(s,t,u){var x=hrs.apply(null,mtHistoryArgs(arguments));ntfy();return x;};
           var la=mtNativeLocation.assign.bind(mtNativeLocation),lr=mtNativeLocation.replace.bind(mtNativeLocation);
           mtNativeLocation.assign=function(u){return la(r(u));};
           mtNativeLocation.replace=function(u){return lr(r(u));};
