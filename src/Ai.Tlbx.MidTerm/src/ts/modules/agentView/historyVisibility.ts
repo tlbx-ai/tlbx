@@ -52,23 +52,36 @@ export function filterReadingHistory(
       isHistoryError(entry)
     );
   });
+  return summarizeHiddenTools(entries, visible);
+}
+
+function summarizeHiddenTools(
+  entries: readonly AppServerControlHistoryEntry[],
+  visible: readonly AppServerControlHistoryEntry[],
+): AppServerControlHistoryEntry[] {
   const visibleIds = new Set(visible.map((entry) => entry.id));
   const result: AppServerControlHistoryEntry[] = [];
   let summary: AppServerControlHistoryEntry | null = null;
-  const counted = new Set<string>();
+  const calls = new Map<string, AppServerControlHistoryEntry>();
+  const complete = () => {
+    if (!summary) return;
+    summary.toolActivityEntries = [...calls.values()];
+    summary.toolActivityCount = calls.size;
+    summary.body = String(calls.size);
+  };
   for (const entry of entries) {
     if (visibleIds.has(entry.id)) {
       result.push(entry);
       if (!entry.busyIndicator) {
+        complete();
         summary = null;
-        counted.clear();
+        calls.clear();
       }
       continue;
     }
     if (entry.kind !== 'tool') continue;
     const identity = `${entry.sourceTurnId ?? ''}:${entry.sourceItemId || entry.id}`;
-    if (counted.has(identity)) continue;
-    counted.add(identity);
+    calls.set(identity, entry);
     if (!summary) {
       summary = {
         id: `tool-activity:${entry.id}`,
@@ -82,11 +95,11 @@ export function filterReadingHistory(
         sourceTurnId: entry.sourceTurnId ?? null,
         sourceItemType: 'tool_activity_summary',
         toolActivityCount: 0,
+        toolActivityEntries: [],
       };
       result.push(summary);
     }
-    summary.toolActivityCount = (summary.toolActivityCount ?? 0) + 1;
-    summary.body = String(summary.toolActivityCount);
   }
+  complete();
   return result;
 }

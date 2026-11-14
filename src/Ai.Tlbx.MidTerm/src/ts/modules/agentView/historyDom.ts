@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { createToolActivityDisclosure, syncToolActivityDisclosure } from './toolActivityView';
 import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
 import { createFileChangeHistoryBody, createHistoryDiffBody } from './fileChangeView';
@@ -416,13 +417,16 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     applyHistoryEntryChrome(article, entry, artifactCluster);
 
     if (entry.toolActivityCount != null) {
-      article.classList.add('agent-history-tool-activity');
-      article.textContent = appServerControlFormat(
-        entry.toolActivityCount === 1
-          ? 'appServerControl.activity.one'
-          : 'appServerControl.activity.many',
-        entry.toolActivityCount === 1 ? '1 tool call' : '{count} tool calls',
-        { count: entry.toolActivityCount },
+      article.className = 'agent-history-entry agent-history-tool-activity';
+      article.appendChild(
+        createToolActivityDisclosure(
+          entry,
+          (item) => createHistoryEntry(item, sessionId),
+          (element, item) => {
+            syncHistoryEntry(element, item, sessionId);
+          },
+          deps.getState(sessionId)?.historyExpandedEntries,
+        ),
       );
       return article;
     }
@@ -492,7 +496,8 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
 
   function syncElementAttributes(target: HTMLElement, source: HTMLElement): void {
     for (const attribute of Array.from(target.attributes)) {
-      if (!source.hasAttribute(attribute.name)) {
+      // A keyed parent owns this attribute; row updates must retain its identity.
+      if (attribute.name !== 'data-reconcile-key' && !source.hasAttribute(attribute.name)) {
         target.removeAttribute(attribute.name);
       }
     }
@@ -510,6 +515,13 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
       showAssistantBadge?: boolean;
     } = {},
   ): void {
+    const currentActivity = article.querySelector<HTMLDetailsElement>('.agent-tool-activity');
+    if (
+      currentActivity &&
+      entry.toolActivityEntries &&
+      syncToolActivityDisclosure(currentActivity, entry)
+    )
+      return;
     const nextArticle = createHistoryEntry(entry, sessionId, options);
     syncElementAttributes(article, nextArticle);
 

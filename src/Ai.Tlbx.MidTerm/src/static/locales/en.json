@@ -1,4 +1,10 @@
 {
+  "appServerControl.activity.label": "Tool calls:",
+  "appServerControl.activity.command": "Commands",
+  "appServerControl.activity.edit": "File edit",
+  "appServerControl.activity.read": "File read",
+  "appServerControl.activity.search": "Search",
+  "appServerControl.activity.tools": "Tools",
   "appServerControl.activity.one": "1 tool call",
   "appServerControl.activity.many": "{count} tool calls",
   "appServerControl.files.changed": "Changed files",

@@ -1595,6 +1595,9 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       resolveHistoryBadgeLabel(entry.kind, state?.snapshot?.session.agentName),
       entry.title,
       entry.body,
+      entry.toolActivityEntries
+        ?.map((item) => buildHistoryEntrySignature(item, null, state, false))
+        .join('|') ?? '',
       entry.kind === 'user' && entry.imagePreviews?.length
         ? String(showAgentTechnicalDetails())
         : '',
@@ -1614,6 +1617,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
           ].join(':')
         : '',
       entry.commandText ?? '',
+      JSON.stringify(entry.toolPresentation ?? null),
       (entry.commandOutputTail ?? []).join('\n'),
       entry.kind === 'tool' ? String(resolveToolCallOutputLineLimit()) : '',
       buildHistoryAttachmentToken(entry),
