@@ -5630,6 +5630,12 @@ export interface components {
       error: null | string;
       /** Format: int64 */
       durationMs: number;
+      /** Format: int32 */
+      upstreamStatusCode: null | number;
+      /** Format: int64 */
+      upstreamDurationMs: null | number;
+      outcome: null | string;
+      responseStarted: null | boolean;
       requestHeaders: {
         [key: string]: string;
       };

@@ -9069,6 +9069,10 @@
           "statusCode",
           "error",
           "durationMs",
+          "upstreamStatusCode",
+          "upstreamDurationMs",
+          "outcome",
+          "responseStarted",
           "requestHeaders",
           "responseHeaders",
           "requestCookies",
@@ -9113,6 +9117,32 @@
           "durationMs": {
             "type": "integer",
             "format": "int64"
+          },
+          "upstreamStatusCode": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int32"
+          },
+          "upstreamDurationMs": {
+            "type": [
+              "null",
+              "integer"
+            ],
+            "format": "int64"
+          },
+          "outcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "responseStarted": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           },
           "requestHeaders": {
             "type": "object",
