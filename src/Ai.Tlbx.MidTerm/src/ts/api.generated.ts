@@ -4534,6 +4534,7 @@ export interface components {
       height: number;
     };
     BrowserClientInfo: {
+      documentId: null | string;
       sessionId: null | string;
       previewName: null | string;
       previewId: null | string;

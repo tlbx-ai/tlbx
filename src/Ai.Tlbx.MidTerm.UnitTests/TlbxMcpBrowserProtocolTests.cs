@@ -609,9 +609,9 @@ public sealed class TlbxMcpBrowserProtocolTests
                 commands.TryRegisterClient("restored", session, name, "frame", message =>
                 {
                     if (message.Command == "reload") embeddedReloads++;
-                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "restored");
+                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready", DocumentId = "restored-document" }, "restored");
                 }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
-                    ownershipGeneration: owners.GetGeneration(session, name));
+                    ownershipGeneration: owners.GetGeneration(session, name), documentId: "restored-document");
             });
         try
         {
@@ -683,12 +683,13 @@ public sealed class TlbxMcpBrowserProtocolTests
             (session, name, _, activate) =>
             {
                 activated = activate;
+                var documentId = Guid.NewGuid().ToString("N");
                 commands.TryRegisterClient("preview", session, name, "frame", message =>
                 {
                     readyProbed |= message.Command == "ready";
-                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready" }, "preview");
+                    commands.ReceiveResult(new BrowserWsResult { Id = message.Id, Success = true, Result = "ready", DocumentId = documentId }, "preview");
                 }, browserId: "desktop", targetRevision: previews.GetPreviewSession(session, name)?.TargetRevision,
-                    ownershipGeneration: owners.GetGeneration(session, name));
+                    ownershipGeneration: owners.GetGeneration(session, name), documentId: documentId);
             });
         var ct = TestContext.Current.CancellationToken;
         try

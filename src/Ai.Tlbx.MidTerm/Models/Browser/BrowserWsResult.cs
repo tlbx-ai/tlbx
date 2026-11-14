@@ -20,4 +20,8 @@ public sealed class BrowserWsResult
     public string? SessionId { get; init; }
     public string? PreviewName { get; init; }
     public string? PreviewId { get; init; }
+    public string? DocumentId { get; init; }
+    public long? NavigationVersion { get; init; }
+    public long? NavigationVersionBefore { get; init; }
+    public string? NavigationKind { get; init; }
 }
