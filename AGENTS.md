@@ -27,6 +27,8 @@ If it does not exist, do not assume extra MidTerm-specific workflow permissions.
 
 ## Release Authority
 
+Build scripts separate lifetimes: reusable downloads, toolchains, binary caches and the current valid scanner database belong in Git-ignored `.cache/`; current incremental/runtime state belongs in `.dev/` or standard tool working directories; disposable packages and diagnostics belong in `.artifacts/`. Reuse caches and clean owned obsolete output on use. Keep current deliverables until consumed and bounded failure diagnostics; validate paths, reject links and preserve active/locked runs and other checkouts. Use `scripts/build-storage.ps1` for the existing storage boundaries. Explicit native source rebuilds use `scripts/build-connect-native.ps1`, which manages cache storage around the unchanged frozen native recipe; ordinary builds never invoke a native source rebuild.
+
 For feature availability, verify the exact requested runtime by URL/service identity,
 live version and the feature's actual protocol call. A prepared candidate, a higher
 version number or a different running instance is not completion evidence.

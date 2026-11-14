@@ -1,5 +1,19 @@
 # Build and release verification
 
+Build storage has explicit lifetimes. `.cache/` holds reusable native downloads,
+toolchains, binary packages and the current scanner database; `.dev/` holds current
+working/runtime state; `.artifacts/` holds disposable outputs and diagnostics.
+Normal native preparation, dev startup and release checks migrate the known old
+mixed native caches without copying them. Cache conflicts fail rather than
+overwrite data. Native rebuilds use `scripts/build-connect-native.ps1`: it restores
+the frozen recipe's exact working paths only while the rebuild owns the storage
+lock, parks reusable data afterward even on failure, and removes successful scratch
+builds. The pinned recipe, prebuilt hashes and normal offline preparation remain
+unchanged. Audit/rebuild runs keep the latest successful output and two failures
+on subsequent use. Local dev startup/rebuild/shutdown prunes old generations while
+keeping the newest two, recent builds and generations referenced by live processes.
+Cleanup never kills processes, follows directory links or cleans another checkout.
+
 Unit, integration, installer, protocol and build-system behavioral tests run only
 through **Tests (on demand)** (`build-system-verify.yml`, `workflow_dispatch`).
 They are never triggered by pushes, pull requests, builds, tags or publication.
@@ -157,7 +171,7 @@ For an explicit refresh on the RID's native toolchain host, after changing the r
 ```powershell
 $rid = 'win-x64'
 $native = 'src/Ai.Tlbx.MidTerm.ConnectNative'
-& "$native/build.ps1" -RuntimeIdentifier $rid
+& ./scripts/build-connect-native.ps1 -RuntimeIdentifier $rid
 New-Item -ItemType Directory -Force "$native/prebuilt/$rid" | Out-Null
 'bundle.zip','manifest.json','native-dependencies.spdx.json','native-backports.vex.json' |
     ForEach-Object { Copy-Item "$native/bin/$rid/$_" "$native/prebuilt/$rid/$_" -Force }
