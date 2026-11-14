@@ -4114,7 +4114,7 @@ public sealed partial class WebPreviewProxyMiddleware
             var token = match.Groups["token"];
             if (!token.Success) return match.Value;
             var url = DecodeCssResourceToken(token.Value);
-            if (string.IsNullOrEmpty(url) || url.StartsWith('#')
+            if (string.IsNullOrEmpty(url) || url.StartsWith("#", StringComparison.Ordinal)
                 || url == routePrefix || url.StartsWith(routePrefix + "/", StringComparison.Ordinal)
                 || !Uri.TryCreate(stylesheet, url, out var resource)
                 || resource.Scheme is not ("http" or "https")) return match.Value;
