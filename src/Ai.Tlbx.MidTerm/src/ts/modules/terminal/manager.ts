@@ -32,7 +32,7 @@ import {
 import { applyTerminalScalingSync, fitSessionToScreen, fitTerminalToContainer } from './scaling';
 import { disposeTerminalPresentation } from './terminalPresentation';
 import { setupFileDrop, sanitizeCopyContent } from './fileDrop';
-import { createAlternateScreenReplayPrefix } from './replayState';
+import { createTerminalReplayPrefix } from './replayState';
 import {
   isBracketedPasteEnabled,
   forgetMuxSession,
@@ -1616,9 +1616,12 @@ function replayPendingFrames(sessionId: string, state: TerminalState): void {
     pendingOutputFrames.delete(sessionId);
   };
 
-  const replayMode = pendingTerminalReplayModes.get(sessionId) ?? 0;
+  const replayMode = pendingTerminalReplayModes.get(sessionId);
   pendingTerminalReplayModes.delete(sessionId);
-  const replayPrefix = createAlternateScreenReplayPrefix(replayMode);
+  const replayPrefix = createTerminalReplayPrefix(
+    replayMode?.alternateScreenMode ?? 0,
+    replayMode?.inputModes,
+  );
   if (replayPrefix !== null) {
     try {
       state.terminal.write(replayPrefix, replayFrames);

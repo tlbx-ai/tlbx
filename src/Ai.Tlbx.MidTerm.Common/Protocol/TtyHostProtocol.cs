@@ -249,7 +249,8 @@ public static class TtyHostProtocol
             BinaryPrimitives.WriteUInt16LittleEndian(
                 buffer.AsSpan(HeaderSize + 12, 2),
                 terminalState.AlternateScreenMode);
-            buffer.AsSpan(HeaderSize + 14, 2).Clear();
+            BinaryPrimitives.WriteUInt16LittleEndian(
+                buffer.AsSpan(HeaderSize + 14, 2), terminalState.InputModes);
             data.CopyTo(buffer.AsSpan(HeaderSize + 8 + BufferReplayStateHeaderSize));
             callback(buffer.AsSpan(0, frameSize));
         }
@@ -289,7 +290,8 @@ public static class TtyHostProtocol
         {
             SequenceStart = BinaryPrimitives.ReadUInt64LittleEndian(payload[..8]),
             TerminalState = new TerminalReplayState(
-                BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(12, 2))),
+                BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(12, 2)),
+                BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(14, 2))),
             Data = payload[(8 + BufferReplayStateHeaderSize)..].ToArray()
         };
     }
@@ -728,7 +730,11 @@ public sealed class TtyHostBufferSnapshot
     public byte[] Data { get; set; } = [];
 }
 
-public readonly record struct TerminalReplayState(ushort AlternateScreenMode)
+// InputModes occupies the previously reserved replay-header word. Zero means an older
+// host did not checkpoint input modes; bit 15 marks a complete, known checkpoint.
+// Bits 0..2: mouse tracking (X10/VT200/drag/any); 3..5: encoding (2 = SGR, 4 = SGR-pixels);
+// bits 6,7,8: application cursor keys, bracketed paste, focus reporting.
+public readonly record struct TerminalReplayState(ushort AlternateScreenMode, ushort InputModes = 0)
 {
     public static TerminalReplayState Default => new(0);
     public bool AlternateScreenActive => AlternateScreenMode is 47 or 1047 or 1049;

@@ -335,9 +335,10 @@ public static class MuxProtocol
         TerminalReplayReason reason,
         ulong sequenceStart,
         ulong sourceSequenceEndExclusive,
-        ushort alternateScreenMode = 0)
+        ushort alternateScreenMode = 0,
+        ushort inputModes = 0)
     {
-        var frame = new byte[HeaderSize + 24];
+        var frame = new byte[HeaderSize + 26];
         frame[0] = TypeRecoveryBegin;
         WriteSessionId(frame.AsSpan(1, 8), sessionId);
         var payload = frame.AsSpan(HeaderSize);
@@ -347,6 +348,7 @@ public static class MuxProtocol
         BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(6, 8), sequenceStart);
         BinaryPrimitives.WriteUInt64LittleEndian(payload.Slice(14, 8), sourceSequenceEndExclusive);
         BinaryPrimitives.WriteUInt16LittleEndian(payload.Slice(22, 2), alternateScreenMode);
+        BinaryPrimitives.WriteUInt16LittleEndian(payload.Slice(24, 2), inputModes);
         return frame;
     }
 
@@ -365,6 +367,9 @@ public static class MuxProtocol
             BinaryPrimitives.ReadUInt64LittleEndian(payload.Slice(14, 8)),
             payload.Length >= 24
                 ? BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(22, 2))
+                : (ushort)0,
+            payload.Length >= 26
+                ? BinaryPrimitives.ReadUInt16LittleEndian(payload.Slice(24, 2))
                 : (ushort)0);
     }
 
@@ -609,7 +614,8 @@ public readonly record struct MuxRecoveryBegin(
     TerminalReplayReason Reason,
     ulong SequenceStart,
     ulong SourceSequenceEndExclusive,
-    ushort AlternateScreenMode);
+    ushort AlternateScreenMode,
+    ushort InputModes = 0);
 
 public readonly record struct MuxRecoveryEnd(
     uint Generation,

@@ -542,7 +542,8 @@ public sealed class MuxWebSocketHandler
                     reason,
                     snapshot.SequenceStart,
                     sourceSequenceEndExclusive,
-                    snapshot.TerminalState.AlternateScreenMode);
+                    snapshot.TerminalState.AlternateScreenMode,
+                    snapshot.TerminalState.InputModes);
                 if (!await client.TrySendAsync(beginFrame, MuxWritePriority.Control).ConfigureAwait(false))
                 {
                     return new MuxClient.RecoveryResult(false, 0, 0, resetTerminal);

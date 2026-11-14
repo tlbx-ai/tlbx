@@ -102,7 +102,7 @@ import {
 import { handleStateUpdate } from './stateChannel';
 import { getSessions } from '../../api/client';
 import { applyTerminalScaling } from '../terminal/scaling';
-import { createAlternateScreenReplayPrefix } from '../terminal/replayState';
+import { createTerminalReplayPrefix } from '../terminal/replayState';
 import { isSharedSessionRoute } from '../share';
 import { isHubSessionId } from '../hub/runtime';
 import { requestHubBufferRefresh, sendHubInput } from '../hub/channel';
@@ -1321,6 +1321,7 @@ function handleMuxRecoveryBeginFrame(
   const sequenceStart = view.getBigUint64(6, true);
   const sourceSequenceEndExclusive = view.getBigUint64(14, true);
   const alternateScreenMode = payload.length >= 24 ? view.getUint16(22, true) : 0;
+  const inputModes = payload.length >= 26 ? view.getUint16(24, true) : 0;
 
   // Invalidate only this session. Async decompression and xterm callbacks from
   // other terminals must remain live while this transaction re-establishes one cursor.
@@ -1331,6 +1332,10 @@ function handleMuxRecoveryBeginFrame(
   sessionsNeedingResync.delete(sessionId);
   clearBracketedPasteScanState(sessionId);
   bracketedPasteState.delete(sessionId);
+
+  if ((inputModes & 0x8000) !== 0) {
+    bracketedPasteState.set(sessionId, (inputModes & (1 << 7)) !== 0);
+  }
 
   const snapshot = getOrCreateBrowserTransportSnapshot(sessionId);
   snapshot.lastReplayReason = resolveMuxDataLossReason(reasonCode);
@@ -1377,7 +1382,7 @@ function handleMuxRecoveryBeginFrame(
         // Missing terminal bytes may end inside UTF-8 or ANSI state. reset() is the
         // only operation that repairs parser state; clear() only erases the viewport.
         terminalState.terminal.reset();
-        const replayPrefix = createAlternateScreenReplayPrefix(alternateScreenMode);
+        const replayPrefix = createTerminalReplayPrefix(alternateScreenMode, inputModes);
         if (replayPrefix !== null) {
           try {
             terminalState.terminal.write(replayPrefix, finishPreparation);
@@ -1386,8 +1391,8 @@ function handleMuxRecoveryBeginFrame(
             // Fall through and release the barrier so recovery can continue.
           }
         }
-      } else if (createAlternateScreenReplayPrefix(alternateScreenMode) !== null) {
-        pendingTerminalReplayModes.set(sessionId, alternateScreenMode);
+      } else if (createTerminalReplayPrefix(alternateScreenMode, inputModes) !== null) {
+        pendingTerminalReplayModes.set(sessionId, { alternateScreenMode, inputModes });
       }
     }
 
