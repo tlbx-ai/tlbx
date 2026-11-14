@@ -4592,6 +4592,9 @@
           "connectedAtUtc",
           "isMainBrowser",
           "isVisible",
+          "isPanelVisible",
+          "isDocumentVisible",
+          "documentVisibilityState",
           "hasFocus",
           "isTopLevel"
         ],
@@ -4637,6 +4640,24 @@
           },
           "isVisible": {
             "type": "boolean"
+          },
+          "isPanelVisible": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "isDocumentVisible": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "documentVisibilityState": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "hasFocus": {
             "type": "boolean"

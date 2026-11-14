@@ -71,7 +71,10 @@ public sealed class BrowserCommandService
         bool hasFocus = false,
         bool isTopLevel = false,
         long? targetRevision = null,
-        long? ownershipGeneration = null)
+        long? ownershipGeneration = null,
+        bool? panelVisible = null,
+        bool? documentVisible = null,
+        string? documentVisibilityState = null)
     {
         var replacedConnectionIds = Array.Empty<string>();
         lock (_clientGate)
@@ -96,7 +99,10 @@ public sealed class BrowserCommandService
                 PreviewName = string.IsNullOrWhiteSpace(previewName) ? null : previewName,
                 PreviewId = string.IsNullOrWhiteSpace(previewId) ? null : previewId,
                 BrowserId = string.IsNullOrWhiteSpace(browserId) ? null : browserId,
-                IsVisible = isVisible,
+                IsVisible = EffectiveVisibility(isVisible, panelVisible, ResolveDocumentVisible(documentVisible, documentVisibilityState)),
+                IsPanelVisible = panelVisible,
+                IsDocumentVisible = ResolveDocumentVisible(documentVisible, documentVisibilityState),
+                DocumentVisibilityState = documentVisibilityState,
                 HasFocus = hasFocus,
                 IsTopLevel = isTopLevel,
                 TargetRevision = targetRevision,
@@ -339,11 +345,29 @@ public sealed class BrowserCommandService
     {
         if (_clients.TryGetValue(connectionId, out var client))
         {
-            client.IsVisible = state.Visible;
-            client.HasFocus = state.Focus;
-            client.IsTopLevel = state.TopLevel;
+            lock (client)
+            {
+                client.IsPanelVisible = state.PanelVisible;
+                client.IsDocumentVisible = ResolveDocumentVisible(state.DocumentVisible, state.DocumentVisibilityState);
+                client.DocumentVisibilityState = state.DocumentVisibilityState;
+                client.IsVisible = EffectiveVisibility(state.Visible, client.IsPanelVisible, client.IsDocumentVisible);
+                client.HasFocus = state.Focus;
+                client.IsTopLevel = state.TopLevel;
+            }
             SignalClientChanged();
         }
+    }
+
+    private static bool? ResolveDocumentVisible(bool? visible, string? state) =>
+        string.IsNullOrEmpty(state) ? visible : state == "visible" ? visible ?? true : false;
+
+    private static bool EffectiveVisibility(bool reported, bool? panel, bool? document)
+    {
+        if (panel == false || document == false) return false;
+        if (panel == true && document == true) return true;
+        // Existing live bridges may not have reloaded after the web update.
+        // Keep their reported value, with the missing dimensions explicitly unknown.
+        return reported;
     }
 
     public void ReceiveResult(BrowserWsResult result, string? connectionId = null)
@@ -431,7 +455,9 @@ public sealed class BrowserCommandService
             lines.Add($"{clientLabel} preview name: {client.PreviewName ?? "(default)"}");
             lines.Add($"{clientLabel} session: {client.SessionId ?? "(none)"}");
             lines.Add($"{clientLabel} browser: {client.BrowserId ?? "(none)"}");
-            lines.Add($"{clientLabel} visible: {(client.IsVisible ? "yes" : "no")}");
+            lines.Add($"{clientLabel} visible: {(client.IsVisible ? "yes" : "no")}{(client.IsPanelVisible is null || client.IsDocumentVisible is null ? " (legacy report; effective visibility unverified)" : " (effective)")}");
+            lines.Add($"{clientLabel} panel visible: {VisibilityText(client.IsPanelVisible)}");
+            lines.Add($"{clientLabel} document visible: {VisibilityText(client.IsDocumentVisible)} ({client.DocumentVisibilityState ?? "unknown"})");
             lines.Add($"{clientLabel} focused: {(client.HasFocus ? "yes" : "no")}");
             lines.Add($"{clientLabel} top level: {(client.IsTopLevel ? "yes" : "no")}");
         }
@@ -462,7 +488,7 @@ public sealed class BrowserCommandService
 
         if (status.Controllable && status.DefaultClient?.IsVisible == false)
         {
-            lines.Add("hint: The selected preview bridge is controllable, but it is attached from a hidden frame. It remains available across session switches; a suspended or closed owning browser cannot execute commands.");
+            lines.Add("hint: The selected preview bridge is controllable but not effectively visible. Check panel and document visibility separately. DOM commands remain available; hidden documents may throttle media and scheduling. A suspended or closed browser cannot execute commands.");
         }
 
         if (status.State == "waiting" && !string.IsNullOrWhiteSpace(status.OwnerBrowserId) && !status.OwnerConnected)
@@ -583,6 +609,7 @@ public sealed class BrowserCommandService
         TimeSpan? timeout = null,
         TimeSpan? pollInterval = null,
         long? requiredTargetRevision = null,
+        bool requirePanelVisibleClient = false,
         CancellationToken cancellationToken = default)
     {
         var effectiveTimeout = timeout ?? TimeSpan.FromSeconds(8);
@@ -607,9 +634,11 @@ public sealed class BrowserCommandService
                     && connectedAt >= requireClientConnectedAfterUtc.Value);
             var hasVisibleClient = !requireVisibleClient
                 || latest.DefaultClient?.IsVisible == true;
+            var hasPanelVisibleClient = !requirePanelVisibleClient
+                || (latest.DefaultClient?.IsPanelVisible ?? latest.DefaultClient?.IsVisible) == true;
 
             var hasRevision = requiredTargetRevision is null || latest.DefaultClient?.TargetRevision == requiredTargetRevision;
-            if (latest.Controllable && hasFreshClient && hasVisibleClient && hasRevision)
+            if (latest.Controllable && hasFreshClient && hasVisibleClient && hasPanelVisibleClient && hasRevision)
             {
                 return latest;
             }
@@ -1070,41 +1099,52 @@ public sealed class BrowserCommandService
 
     private static BrowserClientInfo CreateClientInfo(BrowserClient client, string? mainBrowserId)
     {
-        return new BrowserClientInfo
+        lock (client)
         {
-            SessionId = client.SessionId,
-            PreviewName = client.PreviewName,
-            PreviewId = client.PreviewId,
-            BrowserId = client.BrowserId,
-            ConnectedAtUtc = client.ConnectedAtUtc,
-            IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
-                && BrowserIdentity.AreSameBrowser(client.BrowserId, mainBrowserId),
-            IsVisible = client.IsVisible,
-            HasFocus = client.HasFocus,
-            IsTopLevel = client.IsTopLevel,
-            TargetRevision = client.TargetRevision
-        };
+            return new BrowserClientInfo
+            {
+                SessionId = client.SessionId,
+                PreviewName = client.PreviewName,
+                PreviewId = client.PreviewId,
+                BrowserId = client.BrowserId,
+                ConnectedAtUtc = client.ConnectedAtUtc,
+                IsMainBrowser = !string.IsNullOrWhiteSpace(mainBrowserId)
+                    && BrowserIdentity.AreSameBrowser(client.BrowserId, mainBrowserId),
+                IsVisible = client.IsVisible,
+                IsPanelVisible = client.IsPanelVisible,
+                IsDocumentVisible = client.IsDocumentVisible,
+                DocumentVisibilityState = client.DocumentVisibilityState,
+                HasFocus = client.HasFocus,
+                IsTopLevel = client.IsTopLevel,
+                TargetRevision = client.TargetRevision
+            };
+        }
     }
+
+    private static string VisibilityText(bool? visible) => visible is null ? "unknown" : visible.Value ? "yes" : "no";
 
     private static int GetInteractiveScore(BrowserClient client)
     {
-        var score = 0;
-        if (client.HasFocus)
+        lock (client)
         {
-            score += 4;
-        }
+            var score = 0;
+            if (client.HasFocus)
+            {
+                score += 4;
+            }
 
-        if (client.IsVisible)
-        {
-            score += 2;
-        }
+            if (client.IsVisible)
+            {
+                score += 2;
+            }
 
-        if (client.IsTopLevel)
-        {
-            score += 1;
-        }
+            if (client.IsTopLevel)
+            {
+                score += 1;
+            }
 
-        return score;
+            return score;
+        }
     }
 
     private sealed class BrowserClient
@@ -1115,6 +1155,9 @@ public sealed class BrowserCommandService
         public string? PreviewId { get; init; }
         public string? BrowserId { get; init; }
         public bool IsVisible { get; set; }
+        public bool? IsPanelVisible { get; set; }
+        public bool? IsDocumentVisible { get; set; }
+        public string? DocumentVisibilityState { get; set; }
         public bool HasFocus { get; set; }
         public bool IsTopLevel { get; set; }
         public long? TargetRevision { get; init; }
