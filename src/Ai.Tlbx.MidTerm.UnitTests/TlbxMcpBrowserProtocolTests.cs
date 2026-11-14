@@ -163,7 +163,11 @@ public sealed class TlbxMcpBrowserProtocolTests
                 commands.ReceiveResult(new BrowserWsResult
                 {
                     Id = message.Id, Success = true,
-                    Result = message.Command == "screenshot" ? Png : "{\"session\":\"" + session + "\"}"
+                    Result = message.Command == "screenshot" ? Png : "{\"session\":\"" + session + "\"}",
+                    Capture = message.Command == "screenshot" ? new BrowserCaptureInfo
+                    {
+                        Renderer = "dom-svg", PixelCoverage = "unverified", MediaPixels = "unverified"
+                    } : null
                 }, id);
             });
         }
@@ -264,6 +268,7 @@ public sealed class TlbxMcpBrowserProtocolTests
                 Assert.NotEqual(true, image.IsError);
                 Assert.IsType<ImageContentBlock>(Assert.Single(image.Content));
                 Assert.True(sent[session].FullPage);
+                Assert.Equal("unverified", image.StructuredContent!.Value.GetProperty("capture").GetProperty("pixelCoverage").GetString());
                 var detail = await client.CallToolAsync("browser_screenshot", new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["previewName"] = preview, ["selector"] = "canvas[data-chart='Grüße 東京']"
@@ -273,6 +278,15 @@ public sealed class TlbxMcpBrowserProtocolTests
                 Assert.Equal("canvas[data-chart='Grüße 東京']", sent[session].Selector);
                 Assert.Equal(preview, sent[session].PreviewName);
                 Assert.False(sent[session].FullPage);
+                var batch = await client.CallToolAsync("browser_batch", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = preview,
+                    ["commands"] = new[] { new { command = "screenshot", selector = "canvas" } }
+                }, cancellationToken: ct);
+                Assert.NotEqual(true, batch.IsError);
+                Assert.Single(batch.Content.OfType<ImageContentBlock>());
+                var captures = batch.StructuredContent!.Value.GetProperty("captures");
+                Assert.Equal("unverified", captures[0].GetProperty("capture").GetProperty("capture").GetProperty("pixelCoverage").GetString());
             }
             await Task.WhenAll(Check(first, "first001", "alpha"), Check(second, "second02", "beta"));
         }
