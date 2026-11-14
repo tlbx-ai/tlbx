@@ -210,8 +210,13 @@ Write-Host "  Generating TypeScript types..." -ForegroundColor DarkGray
 & node (Join-Path $NodeModulesRoot "openapi-typescript/bin/cli.js") $OpenApiSpec -o $GeneratedTypes
 if ($LASTEXITCODE -ne 0) { Write-Error "openapi-typescript failed"; exit $LASTEXITCODE }
 
-& node (Join-Path $NodeModulesRoot "prettier/bin/prettier.cjs") --write $GeneratedTypes 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { Write-Error "prettier formatting failed"; exit $LASTEXITCODE }
+$prettierOutput = @(& node (Join-Path $NodeModulesRoot "prettier/bin/prettier.cjs") --write $GeneratedTypes 2>&1)
+$prettierExitCode = $LASTEXITCODE
+if ($prettierExitCode -ne 0) {
+    $prettierOutput | ForEach-Object { Write-Host $_ }
+    Write-Error "prettier formatting failed"
+    exit $prettierExitCode
+}
 
 Write-Host "  api.generated.ts updated" -ForegroundColor DarkGray
 }
