@@ -91,7 +91,7 @@ internal static partial class WebPreviewLocationRewriter
             {
                 var value = rewrite(specifier.Value);
                 if (value != specifier.Value)
-                    edits.Add((specifier.Start, specifier.End, JsonSerializer.Serialize(value)));
+                    edits.Add((specifier.Start, specifier.End, EncodeJavaScriptString(value)));
             }
             foreach (var child in node.ChildNodes) pending.Push(child);
         }
@@ -153,9 +153,9 @@ internal static partial class WebPreviewLocationRewriter
         // Keep the lazy state on that private function, not a const/let in TDZ.
         var prologue = ";\nfunction " + name + "(value){if(" + name + ".captured!==" + name + "){" + name + ".captured=" + name + ";"
             + name + ".original=value;}return value===" + name + ".original&&typeof globalThis.__mtPreviewModuleUrl==='function'"
-            + "?globalThis.__mtPreviewModuleUrl(value," + JsonSerializer.Serialize(finalUri) + "):value;}\n"
+            + "?globalThis.__mtPreviewModuleUrl(value," + EncodeJavaScriptString(finalUri) + "):value;}\n"
             + name + "(import.meta.url);\n";
-        var insertion = source.StartsWith("#!", StringComparison.Ordinal) ? source.IndexOf('\n') + 1 : 0;
+        var insertion = source.StartsWith("#!", StringComparison.Ordinal) ? source.IndexOf("\n", StringComparison.Ordinal) + 1 : 0;
         foreach (var statement in root.ChildNodes)
         {
             if (statement is not ExpressionStatement { Expression: StringLiteral }) break;
@@ -189,6 +189,9 @@ internal static partial class WebPreviewLocationRewriter
                 break;
         }
     }
+
+    private static string EncodeJavaScriptString(string value) =>
+        "\"" + JsonEncodedText.Encode(value).ToString() + "\"";
 
     private static Node? Parse(string source)
     {
