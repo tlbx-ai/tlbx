@@ -147,6 +147,21 @@ and browser automation. Fixed API tools invoke the existing registered C# route
 handlers with the authenticated caller context. JSON arguments preserve literal
 Unicode, newlines and binary/base64 payloads without shell quoting.
 
+### Native adapter freshness
+
+Native `context_get` reports both `serverVersion` and `adapterVersion`, plus
+`adapterRefreshRequired`. Authenticated MCP response headers identify live server
+version/instance changes; the adapter signals `notifications/tools/list_changed`
+and relays upstream tool-list notifications. Clients must honor that notification
+or explicitly refresh tool discovery to see new schemas. Detection is request-driven,
+with no background polling or replay of an interrupted operation.
+
+Workflows containing only server tools execute on the live server. Workflows with
+caller-local file/process/artifact helpers or native update recovery keep the local
+executor and OS identity. Updating those helpers requires restarting the native MCP
+connection when idle; discovery refresh alone cannot replace a running adapter.
+Already running older adapters do not acquire this fix retroactively.
+
 ### Short calls and parallel workflows
 
 Omit unused optional arguments, including explicit null/default values. MCP
