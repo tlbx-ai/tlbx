@@ -1328,7 +1328,7 @@ public sealed partial class WebPreviewProxyMiddleware
                   })();return;}
                 case"screenshot":{
                   var fullPage=msg.fullPage===true;
-                  var releaseCapture=null;
+                  var releaseCapture=null,captureCrop=null;
                   Promise.resolve().then(function(){
                     settleHiddenCaptureTransitions();
                     return typeof window.__tlbxBeforeCapture==="function"?window.__tlbxBeforeCapture():null;
@@ -1336,7 +1336,7 @@ public sealed partial class WebPreviewProxyMiddleware
                     releaseCapture=release;
                     return ensureCapture();
                   }).then(function(capture){
-                    var clip=fullPage?null:"viewport";
+                    var clip=fullPage?null:"viewport",captureRoot=document.documentElement;
                     if(msg.selector!=null){
                       if(fullPage)throw new Error("screenshot selector cannot be combined with fullPage");
                       if(typeof msg.selector!=="string"||!msg.selector.trim())throw new Error("screenshot selector must not be empty");
@@ -1345,11 +1345,14 @@ public sealed partial class WebPreviewProxyMiddleware
                       if(targets.length!==1)throw new Error("screenshot selector must match exactly one element; matched "+targets.length);
                       var target=targets[0],bounds=target.getBoundingClientRect();
                       if(!isControlVisible(target)||bounds.width<=0||bounds.height<=0)throw new Error("screenshot target is hidden or has no visible area");
-                      // Clip the existing document instead of relocating/cloning the target as a new root.
-                      // This preserves ancestor layout, canvas pixels, overlaps and scroll without resizing the page.
-                      clip={x:bounds.left+window.scrollX,y:bounds.top+window.scrollY,width:bounds.width,height:bounds.height};
+                      // Capturing the HTML root drops collapsed body margins in the renderer.
+                      // Keep the body layout and overlaps, then crop in its capture viewBox.
+                      if(document.body&&target!==document.documentElement)captureRoot=document.body;
+                      var rootBounds=captureRoot.getBoundingClientRect();
+                      captureCrop={x:bounds.left-rootBounds.left,y:bounds.top-rootBounds.top,width:bounds.width,height:bounds.height};
+                      clip=null;
                     }
-                    return capture(document.documentElement,{
+                    return capture(captureRoot,{
                       clip:clip,
                       dpr:1,
                       scale:1,
@@ -1360,6 +1363,11 @@ public sealed partial class WebPreviewProxyMiddleware
                       compress:false
                     });
                   }).then(function(capture){
+                    if(captureCrop){
+                      var meta=capture.meta||{};
+                      captureCrop.x+=Number(meta.contentX)||0;captureCrop.y+=Number(meta.contentY)||0;
+                      return capture.toCanvas({crop:captureCrop});
+                    }
                     return capture.toCanvas();
                   }).then(function(canvas){
                     res.result=canvas.toDataURL("image/png");if(bws.readyState===WebSocket.OPEN)bws.send(JSON.stringify(res));

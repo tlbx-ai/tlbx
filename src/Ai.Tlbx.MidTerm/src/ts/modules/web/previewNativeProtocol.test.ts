@@ -1228,7 +1228,7 @@ describe('explicit open-shadow selector and serialization protocol', () => {
       const target = {
         getBoundingClientRect: () => ({ left: 12, top: 18, width: 80, height: 30 }),
       };
-      const documentRoot = {};
+      const documentRoot = { getBoundingClientRect: () => ({ left: 0, top: 0 }) };
       const select = vi.fn((_selector: string) => [target]);
       const capture = vi.fn(async (_target: unknown, _options: unknown) => ({
         toCanvas: async () => ({ toDataURL: () => 'data:image/png;base64,fixture' }),
@@ -1255,10 +1255,7 @@ describe('explicit open-shadow selector and serialization protocol', () => {
       if (fullPage) expect(capture).not.toHaveBeenCalled();
       else {
         expect(select).toHaveBeenCalledExactlyOnceWith('#left >>> button');
-        expect(capture).toHaveBeenCalledWith(
-          documentRoot,
-          expect.objectContaining({ clip: { x: 12, y: 18, width: 80, height: 30 } }),
-        );
+        expect(capture).toHaveBeenCalledWith(documentRoot, expect.objectContaining({ clip: null }));
       }
     },
   );
