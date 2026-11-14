@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Ai.Tlbx.MidTerm.Models.Browser;
 
 public sealed class BrowserBatchRequest
@@ -27,6 +25,6 @@ public sealed class BrowserBatchStepResult
     public string? Result { get; set; }
     public string? Error { get; init; }
     public int? MatchCount { get; init; }
-    public JsonElement? Capture { get; init; }
+    public BrowserCaptureInfo? Capture { get; init; }
     public double DurationMs { get; init; }
 }

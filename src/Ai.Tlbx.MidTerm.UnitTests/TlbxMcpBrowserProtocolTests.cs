@@ -164,10 +164,10 @@ public sealed class TlbxMcpBrowserProtocolTests
                 {
                     Id = message.Id, Success = true,
                     Result = message.Command == "screenshot" ? Png : "{\"session\":\"" + session + "\"}",
-                    Capture = message.Command == "screenshot" ? JsonSerializer.SerializeToElement(new
+                    Capture = message.Command == "screenshot" ? new BrowserCaptureInfo
                     {
-                        renderer = "dom-svg", pixelCoverage = "unverified", mediaPixels = "unverified"
-                    }) : null
+                        Renderer = "dom-svg", PixelCoverage = "unverified", MediaPixels = "unverified"
+                    } : null
                 }, id);
             });
         }

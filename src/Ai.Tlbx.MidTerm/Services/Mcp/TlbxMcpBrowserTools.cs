@@ -469,11 +469,9 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             ["matchCount"] = result.MatchCount, ["artifactPath"] = artifact
         };
         if (request.Command == "screenshot")
-            data["capture"] = result.Capture is { } coverage ? JsonNode.Parse(coverage.GetRawText())
+            data["capture"] = result.Capture is { } coverage ? JsonSerializer.SerializeToNode(coverage, AppJsonContext.Default.BrowserCaptureInfo)
                 : new JsonObject { ["renderer"] = "dom-svg", ["pixelCoverage"] = "unverified" };
-        var partialCapture = result.Capture is { ValueKind: JsonValueKind.Object } capture
-            && capture.TryGetProperty("pixelCoverage", out var pixelCoverage)
-            && pixelCoverage.ValueKind == JsonValueKind.String && pixelCoverage.GetString() == "partial";
+        var partialCapture = result.Capture is { PixelCoverage: "partial" };
         const string partialCaptureWarning = "Screenshot coverage is partial. Nested-frame or media pixels may be missing or degraded; see capture metadata. This is DOM reconstruction, not a browser framebuffer.";
         ResourceLinkBlock? resource = null;
         if (store is not null && result.Result is { } original)
