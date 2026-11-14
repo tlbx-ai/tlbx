@@ -717,17 +717,22 @@ public sealed partial class WebPreviewProxyMiddleware
               ||mtProxyUrl(text,mtNativeLocation.origin+P)||mtProxyUrl(text,mtNativeLocation.origin+PP))return r(text);
             return r(new URL(text,curU()).href);
           }
+          function mtNavigateAfterStorage(url,replace){
+            function navigate(){if(replace)mtNativeLocation.replace(url);else mtNativeLocation.assign(url);}
+            if(!mtStorageBatch&&!mtStorageFlight&&!mtStoragePending.size){navigate();return;}
+            mtFlushStorage().then(navigate).catch(function(error){console.error(error.message);});
+          }
           var mtLocationView={};
           ["href","origin","protocol","host","hostname","port","pathname","search","hash"].forEach(function(key){
             Object.defineProperty(mtLocationView,key,{enumerable:true,get:function(){
               return new URL(curU())[key];
             },set:key==="origin"?undefined:function(value){
-              if(key==="href"){mtNativeLocation.assign(mtNavigationUrl(value));return;}
-              var next=new URL(curU());next[key]=value;mtNativeLocation.assign(r(next.href));
+              if(key==="href"){mtNavigateAfterStorage(mtNavigationUrl(value),false);return;}
+              var next=new URL(curU());next[key]=value;mtNavigateAfterStorage(r(next.href),false);
             }});
           });
-          mtLocationView.assign=function(url){mtNativeLocation.assign(mtNavigationUrl(url));};
-          mtLocationView.replace=function(url){mtNativeLocation.replace(mtNavigationUrl(url));};
+          mtLocationView.assign=function(url){mtNavigateAfterStorage(mtNavigationUrl(url),false);};
+          mtLocationView.replace=function(url){mtNavigateAfterStorage(mtNavigationUrl(url),true);};
           mtLocationView.reload=function(){mtFlushStorage().then(function(){mtNativeLocation.reload();}).catch(function(e){console.error(e.message);});};
           mtLocationView.toString=function(){return curU();};
           mtLocationView[Symbol.toPrimitive]=function(){return curU();};

@@ -30,6 +30,26 @@ public sealed class BrowserCommandService
 
     public int ConnectedClientCount => _clients.Count;
 
+    internal async Task<BrowserWsResult> FlushStorageBeforeTargetChangeAsync(
+        string sessionId, string? previewName, CancellationToken cancellationToken)
+    {
+        var status = GetStatus(_webPreviewService?.GetPreviewSession(sessionId, previewName)?.Url,
+            sessionId, previewName);
+        if (!status.Connected) return new BrowserWsResult { Success = true };
+        // A claim can invalidate an old attachment's ownership generation before
+        // the replacement document attaches. Only a currently authorized bridge
+        // may be asked to flush; explicit claims flush before that invalidation.
+        if (status.DefaultClient is null)
+            return status.StatusMessage?.StartsWith("Multiple", StringComparison.Ordinal) == true
+                ? new BrowserWsResult { Error = status.StatusMessage }
+                : new BrowserWsResult { Success = true };
+        return await ExecuteCommandAsync(new BrowserCommandRequest
+        {
+            Command = "flushstorage", SessionId = sessionId, PreviewName = previewName,
+            PreviewId = status.DefaultClient.PreviewId, Timeout = 7
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     internal void AttachStorageForCurrentClient(string connectionId, WebPreview.WebPreviewStorageService? storage, string? token)
     {
         if (storage is null || token is null) return;

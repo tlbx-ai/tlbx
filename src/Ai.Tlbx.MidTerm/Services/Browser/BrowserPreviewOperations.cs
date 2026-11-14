@@ -135,6 +135,9 @@ public sealed class BrowserPreviewOperations(
 
         return ui.SerializeTargetOperationAsync(sessionId, previewName, async () =>
         {
+            var flushed = await commands.FlushStorageBeforeTargetChangeAsync(sessionId, previewName, cancellationToken).ConfigureAwait(false);
+            if (!flushed.Success)
+                return new BrowserPreviewOperationResult(false, 409, flushed.Error ?? "Storage flush failed; target unchanged.");
             var started = DateTimeOffset.UtcNow;
             if (!previews.SetTarget(sessionId, previewName, url))
                 return new BrowserPreviewOperationResult(false, 400,

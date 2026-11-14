@@ -153,8 +153,14 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 var claimBrowser = OptionalString(args, "browserId");
                 if (!shouldClaim && claimBrowser is not null)
                     throw new ArgumentException("browserId on browser_open requires claim=true.");
-                if (shouldClaim && !ui.RequestClaim(target, preview, out var claimError, claimBrowser))
-                    return Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", claimError);
+                if (shouldClaim)
+                {
+                    var preclaimFlush = await commands.FlushStorageBeforeTargetChangeAsync(target, preview, ct).ConfigureAwait(false);
+                    if (!preclaimFlush.Success)
+                        return Error("TLBX_MCP_BROWSER_STORAGE_FLUSH_FAILED", preclaimFlush.Error ?? "Storage flush failed; owner unchanged.");
+                    if (!ui.RequestClaim(target, preview, out var claimError, claimBrowser))
+                        return Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", claimError);
+                }
                 var opened = await operations.OpenAsync(target, preview, openUrl,
                     _tool.Name == "browser_open" && shouldActivate, ct).ConfigureAwait(false);
                 return OperationResult(opened, target, preview);
@@ -201,6 +207,9 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
                 return Reply(new JsonObject { ["sessionId"] = target, ["previewName"] = WebPreviewService.NormalizePreviewName(preview),
                     ["summary"] = WebPreviewEndpoints.BuildProxyLogSummaryText(previews.GetLogEntries(target, preview, Integer(args, "limit", 100))) });
             case "browser_claim":
+                var claimFlush = await commands.FlushStorageBeforeTargetChangeAsync(target, preview, ct).ConfigureAwait(false);
+                if (!claimFlush.Success)
+                    return Error("TLBX_MCP_BROWSER_STORAGE_FLUSH_FAILED", claimFlush.Error ?? "Storage flush failed; owner unchanged.");
                 return ui.RequestClaim(target, preview, out var error, OptionalString(args, "browserId"))
                     ? Success(target, preview) : Error("TLBX_MCP_BROWSER_OWNER_UNAVAILABLE", error);
             case "browser_claim_main":
