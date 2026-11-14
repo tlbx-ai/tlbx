@@ -79,7 +79,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         new TlbxMcpBrowserTools("browser_claim", "Explicitly hand this preview to a selected connected tlbx browser. browserId is recommended when there are several UIs.", Fields(("browserId", Property("string")))),
         new TlbxMcpBrowserTools("browser_claim_main", "Explicitly make a selected browser the leading browser; this is separate from preview ownership.", Fields(("browserId", Property("string")))),
         new TlbxMcpBrowserTools("browser_ui_clients", "List connected browser identities available for an explicit ownership handoff.", new(), readOnly: true),
-        new TlbxMcpBrowserTools("browser_capabilities", "Read live browser capabilities and recovery hints from the shared CLI capability projection.", new(), readOnly: true),
+        new TlbxMcpBrowserTools("browser_capabilities", "Read compact owner diagnosis, native recovery tools and passive sandbox/storage/media observations. No active usability probes; page timeout preserves owner status.", new(), readOnly: true),
         new TlbxMcpBrowserTools("browser_inspect", "Gather the same compact page/status/proxy diagnostic bundle as the CLI, with optional inline screenshot or workspace artifact.", Fields(("screenshot", Property("boolean")), ("saveToWorkspace", Property("boolean")))),
         new TlbxMcpBrowserTools("browser_detach", "Detach this preview into its owning browser's popup and wait for acknowledgment.", new()),
         new TlbxMcpBrowserTools("browser_dock", "Dock this preview back in its owning browser and wait for acknowledgment.", new()),
@@ -218,8 +218,15 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
             case "browser_ui_clients":
                 return Reply(new JsonObject { ["browserIds"] = Strings(ui.GetConnectedBrowserIds()) });
             case "browser_capabilities":
-                return Reply(BrowserEndpoints.BuildCapabilitiesResponse(commands, previews, ui, target, preview,
-                    previews.GetTargetUrl(target, preview)), AppJsonContext.Default.BrowserCapabilitiesResponse);
+                var capabilityStatus = commands.GetStatus(previews.GetTargetUrl(target, preview), target, preview, previewId, ui.ConnectedBrowserCount);
+                var capabilities = await BrowserCapabilityDiagnostics.ReadAsync(commands, capabilityStatus, target, preview, previewId, ct).ConfigureAwait(false);
+                // Structured content carries the diagnosis once, rather than repeating
+                // the complete status/client tree in both MCP output representations.
+                return new CallToolResult
+                {
+                    StructuredContent = JsonSerializer.SerializeToElement(capabilities, McpJsonContext.Default.JsonObject),
+                    Content = [new TextContentBlock { Text = $"Browser {capabilityStatus.State}; page {capabilities["page"]?["state"]}. Details in structuredContent." }]
+                };
             case "browser_inspect":
                 var diagnostics = await BrowserEndpoints.BuildInspectTextAsync(commands, services.GetRequiredService<TtyHostSessionManager>(),
                     previews, ui, target, preview, false, ct, previewId).ConfigureAwait(false);

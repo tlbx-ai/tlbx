@@ -21,6 +21,19 @@ error/outcome even when that status is 200. Streaming stays unbuffered; ongoing
 streams appear only when processing ends. Completion does not prove client receipt.
 WebSocket log semantics are unchanged.
 
+## Browser capability diagnosis
+
+Native `browser_capabilities` returns one compact owner/status snapshot in
+`structuredContent`, native tool/recovery names and a best-effort passive `page`
+observation (two-second deadline). Text content is only a summary. `previewId`
+retains exact scope; probe failure leaves owner diagnosis intact. Storage/IDB
+values describe getter access only; they do not verify transactions or durability.
+Media states sample at most eight existing elements; unpaused/ready does not
+prove decoded playback. WebGL reports constructor presence only, without creating
+a context. No database, permission, playback or network probe runs. Page globals
+may be replaced by site code, so these observations are not browser attestation.
+The separate CLI capability projection retains its CLI command names and format.
+
 ## Transports and identity
 
 `POST /api/mcp` exposes stateless Streamable HTTP using the pinned official C#
