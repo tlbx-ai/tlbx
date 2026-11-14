@@ -413,6 +413,201 @@ describe('preview navigation attachment metadata', () => {
   });
 });
 
+describe('shared preview custom checkable click protocol', () => {
+  // Native .click is a boundary spy. Browser activation owns checked/radio-group
+  // state, label forwarding, cancellation and input/change; do not model those here.
+  function fixture() {
+    const replies: { success: boolean; error: string | null }[] = [];
+    const order: string[] = [];
+    class Element {
+      constructor(public tagName: string) {}
+      type = 'checkbox';
+      isConnected = true;
+      nodeType = 1;
+      hidden = false;
+      inert = false;
+      disabled = false;
+      readOnly = false;
+      ariaDisabled = false;
+      ariaReadOnly = false;
+      opacity = '1';
+      visibility = 'visible';
+      display = 'block';
+      hasRect = true;
+      parentElement: Element | null = null;
+      control: Element | null = null;
+      labels: Element[] = [];
+      onIntent: (() => void) | null = null;
+      rect = { left: 0, top: 0, width: 40, height: 40 };
+      getClientRects() { return this.hasRect ? [this.rect] : []; }
+      getBoundingClientRect() { return this.rect; }
+      matches(selector: string) { return selector === ':disabled' && this.disabled; }
+      closest(selector: string): Element | null {
+        for (let node: Element | null = this; node; node = node.parentElement) {
+          if (selector === 'label' && node.tagName === 'LABEL') return node;
+          if (selector.includes('aria-disabled') && node.ariaDisabled) return node;
+          if (selector.includes('readonly') && (node.ariaReadOnly || node.readOnly)) return node;
+          if (selector.startsWith('a,button') && ['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(node.tagName)) return node;
+        }
+        return null;
+      }
+      contains(other: Element | null): boolean {
+        for (let node = other; node; node = node.parentElement) if (node === this) return true;
+        return false;
+      }
+      dispatchEvent = vi.fn((event: { type: string }) => {
+        order.push(`${this.tagName}:${event.type}`);
+        if (event.type === 'mousedown') this.onIntent?.();
+        return true;
+      });
+      click = vi.fn(() => order.push(`${this.tagName}:click`));
+      set checked(_: boolean) { throw new Error('checked state must be owned by native activation'); }
+    }
+    class IntentEvent {
+      constructor(public type: string, options: object) { Object.assign(this, options); }
+    }
+    const input = new Element('INPUT');
+    input.opacity = '0';
+    const label = new Element('LABEL');
+    label.control = input;
+    input.labels = [label];
+    let matches = [input];
+    let hit: Element | null = label;
+    const document = {
+      querySelectorAll: () => matches,
+      elementFromPoint: vi.fn(() => hit),
+    };
+    const dispatch = runInNewContext(
+      `${section('function isControlVisible(el){', 'function handleBCmd(msg){')}
+       ${section('function handleBCmd(msg){', 'var bwsReconnectTimer=')}
+       handleBCmd;`,
+      {
+        document,
+        getComputedStyle: (el: Element) => ({ opacity: el.opacity, visibility: el.visibility, display: el.display }),
+        MouseEvent: IntentEvent,
+        PointerEvent: IntentEvent,
+        mtCtx: { sessionId: 'owned-session', previewId: 'owned-preview' },
+        bws: { send: (value: string) => replies.push(JSON.parse(value)) },
+      },
+    ) as (message: object) => void;
+    return {
+      input, label, order, document,
+      node: (tag: string) => new Element(tag),
+      select: (...elements: Element[]) => { matches = elements; },
+      hit: (element: Element | null) => { hit = element; },
+      click() {
+        dispatch({ id: 'click', command: 'click', selector: '.control' });
+        return replies.at(-1)!;
+      },
+      fill() {
+        dispatch({ id: 'fill', command: 'fill', selector: '.control', value: 'ignored' });
+        return replies.at(-1)!;
+      },
+    };
+  }
+
+  it.each(['checkbox', 'radio'])('activates a transparent %s once through its visible associated label', (type) => {
+    const f = fixture();
+    f.input.type = type;
+    expect(f.click()).toMatchObject({ success: true });
+    expect(f.order).toEqual(['LABEL:pointerdown', 'LABEL:mousedown', 'LABEL:pointerup', 'LABEL:mouseup', 'LABEL:click']);
+    expect(f.label.click).toHaveBeenCalledTimes(1);
+    expect(f.input.click).not.toHaveBeenCalled();
+  });
+  it('uses the transparent input itself only when it is the actual pointer hit', () => {
+    const f = fixture();
+    f.input.labels = [];
+    f.hit(f.input);
+    expect(f.click()).toMatchObject({ success: true });
+    expect(f.input.click).toHaveBeenCalledTimes(1);
+    expect(f.label.click).not.toHaveBeenCalled();
+    expect(f.input.dispatchEvent.mock.calls[0]![0]).toMatchObject({ type: 'pointerdown', clientX: 20, clientY: 20, bubbles: true });
+  });
+  it('supports explicit label and noninteractive label-child intent without double activation', () => {
+    const f = fixture();
+    f.select(f.label);
+    expect(f.click()).toMatchObject({ success: true });
+    expect(f.label.click).toHaveBeenCalledTimes(1);
+    const text = f.node('SPAN');
+    text.parentElement = f.label;
+    f.select(text);
+    f.hit(text);
+    expect(f.click()).toMatchObject({ success: true });
+    expect(text.click).toHaveBeenCalledTimes(1);
+    expect(f.input.click).not.toHaveBeenCalled();
+  });
+  it.each(['hidden', 'display', 'visibility', 'ancestor-opacity', 'inert', 'detached', 'disabled', 'aria-disabled', 'readonly', 'aria-readonly', 'covered', 'unassociated', 'interactive-child', 'zero-size'])(
+    'rejects %s custom controls before pointer intent or activation', (kind) => {
+      const f = fixture();
+      if (kind === 'hidden') f.input.hidden = true;
+      if (kind === 'display') f.input.display = 'none';
+      if (kind === 'visibility') f.input.visibility = 'hidden';
+      if (kind === 'ancestor-opacity') {
+        const parent = f.node('DIV'); parent.opacity = '0'; f.input.parentElement = parent;
+      }
+      if (kind === 'inert') f.input.inert = true;
+      if (kind === 'detached') f.input.isConnected = false;
+      if (kind === 'disabled') f.input.disabled = true;
+      if (kind === 'aria-disabled') f.input.ariaDisabled = true;
+      if (kind === 'readonly') f.input.readOnly = true;
+      if (kind === 'aria-readonly') f.input.ariaReadOnly = true;
+      if (kind === 'covered') f.hit(f.node('DIV'));
+      if (kind === 'unassociated') f.label.control = null;
+      if (kind === 'interactive-child') {
+        const link = f.node('A'); link.parentElement = f.label; f.hit(link);
+      }
+      if (kind === 'zero-size') f.input.rect.width = 0;
+      expect(f.click()).toMatchObject({ success: false });
+      expect(f.order).toEqual([]);
+    },
+  );
+  it('keeps ambiguous actionable selectors ambiguous even when one control is transparent', () => {
+    const f = fixture();
+    f.select(f.input, f.node('INPUT'));
+    expect(f.click()).toMatchObject({ success: false, error: expect.stringContaining('ambiguous selector') });
+    expect(f.order).toEqual([]);
+  });
+  it.each(['disabled', 'readonly'])('cannot bypass %s by selecting the associated label itself', (kind) => {
+    const f = fixture();
+    f.select(f.label);
+    if (kind === 'disabled') f.input.disabled = true;
+    else f.input.readOnly = true;
+    expect(f.click()).toMatchObject({ success: false });
+    expect(f.order).toEqual([]);
+  });
+  it('keeps an interactive link inside a label as its own action', () => {
+    const f = fixture();
+    const link = f.node('A');
+    link.parentElement = f.label;
+    f.input.readOnly = true;
+    f.select(link);
+    f.hit(link);
+    expect(f.click()).toMatchObject({ success: true });
+    expect(link.click).toHaveBeenCalledTimes(1);
+    expect(f.label.click).not.toHaveBeenCalled();
+    expect(f.input.click).not.toHaveBeenCalled();
+  });
+  it.each(['disabled', 'association', 'hidden', 'submit-type'])('revalidates %s after pointer intent and before native activation', (kind) => {
+    const f = fixture();
+    f.label.onIntent = () => {
+      if (kind === 'disabled') f.input.disabled = true;
+      if (kind === 'association') f.label.control = f.node('INPUT');
+      if (kind === 'hidden') f.label.hidden = true;
+      if (kind === 'submit-type') f.input.type = 'submit';
+    };
+    expect(f.click()).toMatchObject({ success: false });
+    expect(f.label.click).not.toHaveBeenCalled();
+    expect(f.input.click).not.toHaveBeenCalled();
+  });
+  it('does not extend hidden-element access to fill or non-checkable inputs', () => {
+    const f = fixture();
+    expect(f.fill()).toMatchObject({ success: false });
+    f.input.type = 'text';
+    expect(f.click()).toMatchObject({ success: false });
+    expect(f.order).toEqual([]);
+  });
+});
+
 describe('shared preview fill editing protocol', () => {
   // Exercise the injected dispatcher and guards. The native edit is a boundary spy,
   // not a browser/ProseMirror undo simulation; that acceptance belongs in the browser.
