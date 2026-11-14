@@ -25,6 +25,20 @@ public sealed class TlbxMcpBrowserProtocolTests
     private const string Png = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l9sAAAAASUVORK5CYII=";
 
     [Fact]
+    public void CooperativeFrameScopeIsLiteralAndRejectsUnsupportedNavigationOrCapture()
+    {
+        var command = TlbxMcpBrowserTools.BuildCommand("evaluate", Args(new { frame = "iframe[data-name='東京']", code = "document.title" }), "first001", "alpha", "parent-preview");
+        Assert.Equal("iframe[data-name='東京']", command.Frame);
+        Assert.Equal("parent-preview", command.PreviewId);
+        Assert.Equal("exec", command.Command);
+        var batch = TlbxMcpBrowserTools.ParseBatch(Args(new { commands = new[] { new { command = "query", frame = "#child", selector = "body" } } }), "first001", "alpha");
+        Assert.Equal("#child", Assert.Single(batch.Commands).Frame);
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("screenshot", Args(new { frame = "#child" }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("exec", Args(new { frame = "#child", code = "42", timeout = 16 }), "first001", "alpha", null));
+        Assert.Throws<ArgumentException>(() => TlbxMcpBrowserTools.BuildCommand("click", Args(new { frame = "#child", selector = "button", waitForNavigation = true }), "first001", "alpha", null));
+    }
+
+    [Fact]
     public void TypedCommandsPreserveUnicodeAndFractionalNumbersWithoutShellParsing()
     {
         var text = "quotes '\" $()`n\0 Grüße 東京\n" + new string('x', 70_000);
@@ -217,6 +231,14 @@ public sealed class TlbxMcpBrowserProtocolTests
                 }, cancellationToken: ct);
                 Assert.NotEqual(true, longWait.IsError);
                 Assert.Equal(300, sent[session].Timeout);
+                var child = await client.CallToolAsync("browser_evaluate", new Dictionary<string, object?>(StringComparer.Ordinal)
+                {
+                    ["previewName"] = preview, ["frame"] = "iframe[data-child='東京']", ["code"] = "document.title"
+                }, cancellationToken: ct);
+                Assert.NotEqual(true, child.IsError);
+                Assert.Equal("iframe[data-child='東京']", sent[session].Frame);
+                Assert.Equal(preview, sent[session].PreviewName);
+                Assert.Equal("exec", sent[session].Command);
                 var image = await client.CallToolAsync("browser_screenshot", new Dictionary<string, object?>(StringComparer.Ordinal)
                 {
                     ["previewName"] = preview, ["fullPage"] = true

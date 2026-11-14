@@ -376,9 +376,15 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     {
         command = command == "evaluate" ? "exec" : command;
         var selector = OptionalString(args, "selector");
+        var frame = OptionalString(args, "frame");
+        if (frame is not null && command is not ("query" or "exec" or "attrs" or "css" or "click" or "fill"))
+            throw new ArgumentException("frame supports query, evaluate, attributes, css, click and fill only.");
+        if (frame is not null && Bool(args, "waitForNavigation"))
+            throw new ArgumentException("Child navigation waits are unsupported; inspect the child state after navigation without replaying writes.");
         var value = OptionalString(args, "value", allowEmpty: command is "fill" or "exec");
         int? timeout = args.ContainsKey("timeout") ? Integer(args, "timeout", 0) : command == "wait" ? 15 : null;
         if (timeout is < 1 or > MaximumTimeoutSeconds) throw new ArgumentException("timeout exceeds the shared browser timer range.");
+        if (frame is not null && timeout > 15) throw new ArgumentException("Cooperative child commands have a maximum 15-second deadline.");
         if (command is "query" or "click" or "fill" or "wait" or "attrs" or "css")
             selector = RequiredString(args, "selector");
         if (command == "wait")
@@ -429,7 +435,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
         return new BrowserCommandRequest
         {
             Command = command, SessionId = target, PreviewName = preview, PreviewId = previewId,
-            Selector = selector, Value = value, Timeout = timeout,
+            Selector = selector, Frame = frame, Value = value, Timeout = timeout,
             MaxDepth = args.ContainsKey("maxDepth") ? Integer(args, "maxDepth", 4) : command == "outline" ? 4 : null,
             TextOnly = Bool(args, "textOnly"), FullPage = Bool(args, "fullPage"),
             DeltaX = args.ContainsKey("deltaX") ? Number(args, "deltaX", 0) : null,
@@ -598,7 +604,11 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     private static CallToolResult Error(string code, string message) => new() { IsError = true, Content = [new TextContentBlock { Text = code + ": " + message }] };
     private static TlbxMcpBrowserTools Command(string name, string description, JsonObject properties,
         string[]? required = null, bool readOnly = false, string? command = null)
-        => new("browser_" + name, description, properties, required, readOnly, command ?? name);
+    {
+        if (name is "query" or "evaluate" or "attributes" or "css" or "click" or "fill")
+            properties["frame"] = Property("string", "Optional CSS selector matching exactly one immediate iframe with an injected cooperative bridge. Executes only inside that child; 15-second maximum, no automatic replay. Arbitrary uninstrumented frames are unsupported.");
+        return new("browser_" + name, description, properties, required, readOnly, command ?? name);
+    }
     private static JsonObject Fields(params (string Name, JsonObject Schema)[] fields)
     {
         var result = new JsonObject();
@@ -618,14 +628,14 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     private static JsonArray Strings(IEnumerable<string> values) => new(values.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray());
     private static JsonObject Enum(params string[] values) => new() { ["type"] = "string", ["enum"] = Strings(values) };
     private static readonly string[] BatchCommands = ["query", "click", "fill", "exec", "evaluate", "wait", "screenshot", "scroll", "wheel", "navigate", "reload", "outline", "attrs", "css", "log", "links", "submit", "forms", "url"];
-    private static readonly string[] BatchPropertyNames = ["command", "selector", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "state", "waitForNavigation"];
+    private static readonly string[] BatchPropertyNames = ["command", "selector", "frame", "value", "code", "timeout", "maxDepth", "textOnly", "fullPage", "deltaX", "deltaY", "steps", "direction", "to", "properties", "props", "filter", "state", "waitForNavigation"];
     private static JsonObject BatchFields() => Fields(("commands", new JsonObject
     {
         ["type"] = "array", ["minItems"] = 1, ["maxItems"] = 32,
         ["items"] = new JsonObject
         {
             ["type"] = "object", ["additionalProperties"] = false, ["required"] = Strings(["command"]),
-            ["properties"] = Fields(("command", Enum(BatchCommands)), ("selector", Property("string")), ("value", Property("string")),
+            ["properties"] = Fields(("command", Enum(BatchCommands)), ("selector", Property("string")), ("frame", Property("string")), ("value", Property("string")),
                 ("code", Property("string")), ("timeout", Timeout()), ("maxDepth", Property("integer")), ("textOnly", Property("boolean")),
                 ("fullPage", Property("boolean")), ("deltaX", Property("number")), ("deltaY", Property("number")), ("steps", PositiveInteger()),
                 ("direction", Enum("up", "down")), ("to", Enum("top", "bottom", "left", "right")),
