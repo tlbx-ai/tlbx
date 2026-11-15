@@ -7,10 +7,9 @@ function Get-TlbxBuildPath {
     if ($relative -notmatch '^\.(cache|dev|artifacts)(/|$)') { throw "Not an owned build path: $path" }
     $cursor = $path
     while ($cursor) {
-        if (Test-Path -LiteralPath $cursor) {
-            if ((Get-Item -LiteralPath $cursor -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {
-                throw "Build storage must not traverse a link: $cursor"
-            }
+        $item = Get-Item -LiteralPath $cursor -Force -ErrorAction SilentlyContinue
+        if ($item -and ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "Build storage must not traverse a link: $cursor"
         }
         $cursor = Split-Path -Parent $cursor
     }
