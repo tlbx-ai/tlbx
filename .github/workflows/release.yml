@@ -23,6 +23,7 @@ env:
   NPM_VERSION: '12.2.0'
   DOTNET_NOLOGO: true
   DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NuGetAudit: 'false'
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   NUGET_PACKAGES: ${{ github.workspace }}/.nuget/packages
   GIT_CONFIG_COUNT: '2'
