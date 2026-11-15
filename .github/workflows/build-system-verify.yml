@@ -99,7 +99,9 @@ jobs:
           $sbomPath = ".artifacts/sbom-snapshot/mt-$env:SNAPSHOT_RID.spdx.json"
           $document = Get-Content $sbomPath -Raw | ConvertFrom-Json -Depth 100
           $annotation = @{ annotationDate=[DateTimeOffset]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ'); annotationType='OTHER'; annotator='Tool: tlbx Tests (on demand)'; comment="Snapshot of $($source.sourceTag), commit $($source.sourceCommit), archive SHA256 $($source.archiveSha256). Later releases may reuse this document without rescanning." }
-          $document | Add-Member -NotePropertyName annotations -NotePropertyValue (@($document.annotations) + @($annotation) | Where-Object { $null -ne $_ }) -Force
+          [object[]]$annotations = @($document.annotations | Where-Object { $null -ne $_ })
+          $annotations += $annotation
+          $document | Add-Member -NotePropertyName annotations -NotePropertyValue $annotations -Force
           $document | ConvertTo-Json -Depth 100 | Set-Content $sbomPath
           $source.sbomSha256 = (Get-FileHash ".artifacts/sbom-snapshot/mt-$env:SNAPSHOT_RID.spdx.json" -Algorithm SHA256).Hash.ToLowerInvariant()
           $source | Add-Member -NotePropertyName generatedAt -NotePropertyValue ([DateTimeOffset]::UtcNow.ToString('o'))

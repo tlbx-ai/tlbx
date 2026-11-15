@@ -35,8 +35,13 @@ published packages. Inspect `creationInfo.created` and snapshot annotations for
 the scanned package and date; do not treat reuse as a fresh inventory.
 
 Current releases attest the archive and copied SPDX file as build outputs. Verify
-the snapshot digest independently with `gh attestation verify mt-win-x64.spdx.json
---repo tlbx-ai/tlbx`. Historical releases instead carry exact archive/SBOM
+the snapshot digest independently:
+
+```shell
+gh attestation verify mt-win-x64.spdx.json --repo tlbx-ai/tlbx
+```
+
+Historical releases instead carry exact archive/SBOM
 predicates. No fresh archive/SBOM predicate is issued for a reused snapshot.
 
 The public SBOM is transparency material. The installer does not trust package
