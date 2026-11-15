@@ -1346,7 +1346,7 @@ async function requestHistoryNavigatorWindow(
       state.historyNavigatorMode = 'browse';
       state.historyNavigatorDragTargetIndex = null;
     }
-    renderCurrentAgentView(sessionId, { immediate: true });
+    renderHistoryViewportNow(sessionId, state);
     return;
   }
 
@@ -1836,7 +1836,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     historyRender.renderScrollToBottomControl(current.panel, current);
     if (current.historyNavigatorMode === 'drag-preview') {
       if (historyRender.shouldRenderForViewportScroll(current)) {
-        scheduleHistoryRender(sessionId);
+        renderHistoryViewportNow(sessionId, current);
       }
       return;
     }
@@ -1869,7 +1869,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     }
 
     if (historyRender.shouldRenderForViewportScroll(current)) {
-      scheduleHistoryRender(sessionId);
+      renderHistoryViewportNow(sessionId, current);
     }
   };
   /* eslint-enable complexity */
@@ -1889,6 +1889,13 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
   const progressNav = state.historyProgressNav;
   if (progressNav && progressNav.dataset.appServerControlProgressBound !== 'true') {
     progressNav.dataset.appServerControlProgressBound = 'true';
+    let navigatorFrame: number | null = null;
+    let navigatorClientY: number | null = null;
+    const clearNavigatorFrame = () => {
+      if (navigatorFrame !== null) window.cancelAnimationFrame(navigatorFrame);
+      navigatorFrame = null;
+      navigatorClientY = null;
+    };
     const updateNavigatorTarget = (clientY: number, finalize = false) => {
       const current = viewStates.get(sessionId);
       if (!current) {
@@ -1921,6 +1928,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
     };
 
     progressNav.addEventListener('pointerdown', (event) => {
+      clearNavigatorFrame();
       activeHistoryNavigatorPointerId = event.pointerId;
       const current = viewStates.get(sessionId);
       if (current) {
@@ -1944,7 +1952,20 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
       }
 
       event.preventDefault();
-      updateNavigatorTarget(event.clientY);
+      navigatorClientY = event.clientY;
+      if (navigatorFrame !== null) return;
+      const pointerId = event.pointerId;
+      navigatorFrame = window.requestAnimationFrame(() => {
+        navigatorFrame = null;
+        const clientY = navigatorClientY;
+        navigatorClientY = null;
+        if (
+          clientY !== null &&
+          activeHistoryNavigatorPointerId === pointerId &&
+          viewStates.get(sessionId) === state
+        )
+          updateNavigatorTarget(clientY);
+      });
     });
 
     const finishNavigatorDrag = (event: PointerEvent) => {
@@ -1952,6 +1973,7 @@ function bindHistoryViewport(sessionId: string, state: SessionAppServerControlVi
         return;
       }
 
+      clearNavigatorFrame();
       Reflect.deleteProperty(progressNav.dataset, 'dragging');
       progressNav.releasePointerCapture(event.pointerId);
       updateNavigatorTarget(event.clientY, true);
@@ -2082,21 +2104,29 @@ function scheduleHistoryRender(sessionId: string): void {
   state.historyViewportRenderScheduled = window.requestAnimationFrame(() => {
     state.historyViewportRenderScheduled = null;
     if (viewStates.get(sessionId) !== state || state.historyRenderScheduled !== null) return;
-    if (
-      !isAppServerControlViewVisible(sessionId) ||
-      hasActiveAppServerControlSelectionInPanel(state.panel)
-    ) {
-      state.renderDirty = true;
-      return;
-    }
-    if (state.renderDirty) {
-      renderCurrentAgentView(sessionId, { immediate: true });
-      return;
-    }
-    // Native scrolling changes only the materialized rows. Provider projection,
-    // request/composer controls and session tools change on data updates instead.
-    historyRender.renderHistory(state.panel, state.historyEntries, sessionId, true);
+    renderHistoryViewportNow(sessionId, state);
   });
+}
+
+/** Called inside the scroll/input frame, without adding another frame of blank content. */
+function renderHistoryViewportNow(
+  sessionId: string,
+  state: SessionAppServerControlViewState,
+): void {
+  clearPendingHistoryViewportRender(state);
+  if (
+    !isAppServerControlViewVisible(sessionId) ||
+    hasActiveAppServerControlSelectionInPanel(state.panel)
+  ) {
+    state.renderDirty = true;
+    return;
+  }
+  if (state.renderDirty || state.historyRenderScheduled !== null) {
+    renderCurrentAgentView(sessionId, { immediate: true });
+    return;
+  }
+  // A changed scroll position does not change provider projection or composer controls.
+  historyRender.renderHistory(state.panel, state.historyEntries, sessionId, true);
 }
 
 function clearPendingHistoryViewportRender(
