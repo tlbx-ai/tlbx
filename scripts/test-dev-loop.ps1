@@ -1,5 +1,6 @@
 param()
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/build-storage.ps1"
 $devScript = Join-Path $PSScriptRoot 'dev.ps1'
 $parseErrors = $null
 $tokens = $null
@@ -11,6 +12,7 @@ foreach ($name in @('New-StaticWatcher', 'Wait-ForStaticChange', 'New-CodeWatche
     Invoke-Expression $function.Extent.Text
 }
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) ('tlbx-dev-loop-' + [guid]::NewGuid().ToString('N'))
+$RepoRoot = $testRoot
 $WebProjectDir = $testRoot
 $staticDir = Join-Path $testRoot 'src/static'
 New-Item -ItemType Directory $staticDir -Force | Out-Null

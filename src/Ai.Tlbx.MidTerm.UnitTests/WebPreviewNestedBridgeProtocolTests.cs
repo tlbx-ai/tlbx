@@ -29,7 +29,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
     public async Task StaticSrcdocUsesCredentialFreeCooperationWithSourceNonceReplayAndTeardownChecks(string html)
     {
         var rewritten = WebPreviewProxyMiddleware.MarkSubframeSources(html);
-        var attribute = System.Text.RegularExpressions.Regex.Match(rewritten, "srcdoc=([\"'])(.*?)\\1", System.Text.RegularExpressions.RegexOptions.Singleline);
+        var attribute = System.Text.RegularExpressions.Regex.Match(rewritten, "srcdoc=([\"'])(.*?)\\1", System.Text.RegularExpressions.RegexOptions.Singleline, TimeSpan.FromSeconds(1));
         var childHtml = System.Net.WebUtility.HtmlDecode(attribute.Groups[2].Value);
         var script = "const html=" + JsonSerializer.Serialize(childHtml) + ";" + """
             (async function(){

@@ -85,7 +85,7 @@ public sealed class BrowserDocumentReadinessProtocolTests
         }, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
-        Assert.Contains("outcome is unknown", result.Error);
+        Assert.Contains("outcome is unknown", result.Error, StringComparison.Ordinal);
         Assert.Equal(1, mutations);
         Assert.Equal(0, readyReads);
     }
@@ -146,7 +146,7 @@ public sealed class BrowserDocumentReadinessProtocolTests
         }, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
-        Assert.Contains("mutation was not repeated", result.Error);
+        Assert.Contains("mutation was not repeated", result.Error, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -172,7 +172,7 @@ public sealed class BrowserDocumentReadinessProtocolTests
         }, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
-        Assert.Contains("target changed", result.Error);
+        Assert.Contains("target changed", result.Error, StringComparison.Ordinal);
         Assert.Equal(1, mutations);
     }
 

@@ -26,12 +26,12 @@ public sealed class WebPreviewProxyLogProtocolTests
         Assert.Equal(123L, result.DurationMs);
         Assert.Equal("failed", result.Outcome);
         Assert.Equal(false, result.ResponseStarted);
-        Assert.Contains("JavaScript transform/body", result.Error);
-        Assert.Contains("InvalidOperationException", result.Error);
-        Assert.DoesNotContain("private-token-and-source", result.Error);
+        Assert.Contains("JavaScript transform/body", result.Error, StringComparison.Ordinal);
+        Assert.Contains("InvalidOperationException", result.Error, StringComparison.Ordinal);
+        Assert.DoesNotContain("private-token-and-source", result.Error, StringComparison.Ordinal);
         var summary = WebPreviewEndpoints.BuildProxyLogSummaryText([result]);
-        Assert.Contains("errors: 1", summary);
-        Assert.Contains("500 http upstream=200 outcome=failed", summary);
+        Assert.Contains("errors: 1", summary, StringComparison.Ordinal);
+        Assert.Contains("500 http upstream=200 outcome=failed", summary, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -55,7 +55,7 @@ public sealed class WebPreviewProxyLogProtocolTests
         Assert.Equal(started, result.ResponseStarted);
         Assert.Equal(999L, result.DurationMs);
         Assert.NotNull(result.Error);
-        Assert.Contains(started ? "headers already sent" : "response not started", result.Error);
+        Assert.Contains(started ? "headers already sent" : "response not started", result.Error, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -75,8 +75,8 @@ public sealed class WebPreviewProxyLogProtocolTests
         Assert.Equal("completed", result.Outcome);
         Assert.Null(result.Error);
         Assert.Equal(12L, result.DurationMs);
-        Assert.Contains("errors: 0", WebPreviewEndpoints.BuildProxyLogSummaryText([result]));
-        Assert.Contains("redirects: 0", WebPreviewEndpoints.BuildProxyLogSummaryText([result]));
+        Assert.Contains("errors: 0", WebPreviewEndpoints.BuildProxyLogSummaryText([result]), StringComparison.Ordinal);
+        Assert.Contains("redirects: 0", WebPreviewEndpoints.BuildProxyLogSummaryText([result]), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -99,8 +99,8 @@ public sealed class WebPreviewProxyLogProtocolTests
         Assert.Equal("upstream-attempt", discarded.Outcome);
         Assert.Equal(4L, discarded.DurationMs);
         var summary = WebPreviewEndpoints.BuildProxyLogSummaryText(results);
-        Assert.Contains("errors: 1", summary);
-        Assert.Contains("upstream-only attempts: 1", summary);
+        Assert.Contains("errors: 1", summary, StringComparison.Ordinal);
+        Assert.Contains("upstream-only attempts: 1", summary, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class WebPreviewProxyLogProtocolTests
         Assert.Equal("upstream-attempt", results[0].Outcome);
         Assert.Equal("completed", results[1].Outcome);
         Assert.Equal(15L, results[1].DurationMs);
-        Assert.Contains("errors: 0", WebPreviewEndpoints.BuildProxyLogSummaryText(results));
+        Assert.Contains("errors: 0", WebPreviewEndpoints.BuildProxyLogSummaryText(results), StringComparison.Ordinal);
     }
 
     [Fact]
@@ -158,7 +158,7 @@ public sealed class WebPreviewProxyLogProtocolTests
 
         var summary = WebPreviewEndpoints.BuildProxyLogSummaryText(entries);
 
-        Assert.Contains("errors: 10", summary);
+        Assert.Contains("errors: 10", summary, StringComparison.Ordinal);
         Assert.Equal(8, summary.Split('\n').Count(line => line.StartsWith("  500 ", StringComparison.Ordinal)));
     }
 }
