@@ -70,9 +70,10 @@ function Assert-ReleaseRuntimeSelection {
 }
 
 function Show-OnDemandTestReminder {
-    param([string]$CandidateRef = 'HEAD', [switch]$AfterDevBuild)
+    param([string]$CandidateRef = '<candidate-ref>', [switch]$AfterDevBuild)
     $when = if ($AfterDevBuild) { 'After this successful dev build' } else { 'Before promoting this candidate to main' }
     Write-Warning "$when, ask Johannes: Run Tests (on demand), including security audits and fresh SBOM snapshots, for $CandidateRef now?"
     Write-Host 'Wait for his run/skip decision before a main promotion. Do not dispatch automatically or ask again for the same unchanged candidate after an explicit decision.'
-    Write-Host "gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref $CandidateRef -f suite=all"
+    $dispatchRef = if ($CandidateRef -match '^[0-9a-f]{40}$') { '<branch-or-tag-at-that-commit>' } else { $CandidateRef }
+    Write-Host "gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref $dispatchRef -f suite=all"
 }
