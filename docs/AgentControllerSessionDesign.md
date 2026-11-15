@@ -36,7 +36,7 @@ Native compaction uses Codex's dedicated API or an advertised `/compact` command
 
 ## Startup presentation
 
-Implemented: optimistic pending session IDs are browser-only placeholders and must never attach to a provider. Fresh sessions skip the read-only history recovery probe. A healthy startup leaves the conversation empty before the first user prompt; internal activation traces and a connected/ready notice do not become conversation rows. Startup failures and actionable recovery requests remain visible.
+Implemented: optimistic pending session IDs are browser-only placeholders and must never attach to a provider. Fresh sessions skip the read-only history recovery probe. A healthy startup leaves the conversation empty before the first user prompt; internal activation traces and a connected/ready notice do not become conversation rows. Startup failures and actionable recovery requests remain visible. Failed attach replies preserve the recorded provider/startup reason across HTTP and WebSocket. Known unavailable-runtime and missing saved-conversation failures use the inline recovery state rather than a developer stacktrace dialog; unknown failures retain diagnostic reporting. Recovery notices use the existing readable notice typography and omit routine opening/attaching traces.
 
 Optional voice availability and device discovery run outside the critical frontend initialization path. A delayed or failed OS device query must not postpone dock setup, bootstrap settings, or history interaction.
 
