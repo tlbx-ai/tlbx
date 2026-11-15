@@ -248,7 +248,10 @@ async function startRuntime(command) {
       pathToClaudeCodeExecutable: configuration.executablePath,
       systemPrompt: { type: "preset", preset: "claude_code" },
       settingSources: ["user", "project", "local"],
-      settings: { fastMode: command.fastMode === "on", fastModePerSessionOptIn: true },
+      settings: {
+        fastMode: command.fastMode === "on", fastModePerSessionOptIn: true,
+        permissions: { ask: ["AskUserQuestion"] },
+      },
       includePartialMessages: true,
       env: process.env,
       ...(configuration.mcpServers ? { mcpServers: configuration.mcpServers } : {}),

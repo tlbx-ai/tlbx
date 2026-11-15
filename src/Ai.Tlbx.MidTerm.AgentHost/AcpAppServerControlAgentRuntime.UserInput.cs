@@ -172,7 +172,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime
             }
             var canonical = new AppServerControlQuestion
             {
-                Id = id, Question = text,
+                Id = id, Question = text, AllowCustomAnswer = true,
                 MultiSelect = Traverse(rawQuestion, "multiSelect") is { ValueKind: JsonValueKind.True }
             };
             var options = new Dictionary<string, string?>(StringComparer.Ordinal);
