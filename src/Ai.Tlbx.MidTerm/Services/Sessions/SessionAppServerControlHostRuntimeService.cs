@@ -919,6 +919,12 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                AppServerControlHostEndpointDiscovery.FindEndpointPid(_instanceIdentity.InstanceId, sessionId).HasValue;
     }
 
+    public DateTimeOffset? GetLastActivityAt(string sessionId)
+    {
+        if (!_states.TryGetValue(sessionId, out var state) || !state.ProviderReady) return null;
+        lock (state.HistoryCacheSync) return state.CachedHistoryWindow?.Session.LastActivityAt;
+    }
+
     public bool TryGetCachedHistoryWindow(string sessionId, out AppServerControlHistoryWindowResponse historyWindow)
     {
         historyWindow = default!;

@@ -144,15 +144,11 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
 
     public SessionAppServerControlHeatSnapshot GetHeatSnapshot(string sessionId)
     {
-        if (!_hostRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
-
+        var activityAt = _hostRuntime.GetLastActivityAt(sessionId);
         return new SessionAppServerControlHeatSnapshot
         {
-            CurrentHeat = TerminalHeat.FromTextOutput(historyWindow.Session.LastActivityAt, DateTimeOffset.UtcNow),
-            LastActivityAt = historyWindow.Session.LastActivityAt
+            CurrentHeat = TerminalHeat.FromTextOutput(activityAt, DateTimeOffset.UtcNow),
+            LastActivityAt = activityAt
         };
     }
 
