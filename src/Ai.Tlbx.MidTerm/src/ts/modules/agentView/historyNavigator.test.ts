@@ -227,6 +227,47 @@ describe('confirmed reader anchors across post-reflow viewport notifications', (
     expect(state.pendingHistoryLayoutAnchor).toBeNull();
   });
 
+  it('keeps unchanged rows observed without emitting fresh initial measurements', () => {
+    const { state } = readerFixture();
+    const first = state.historyRenderedNodes.values().next().value!.node;
+    const second = {} as HTMLElement;
+    const observe = vi.fn();
+    const unobserve = vi.fn();
+    const disconnect = vi.fn();
+    class Observer {
+      observe = observe;
+      unobserve = unobserve;
+      disconnect = disconnect;
+    }
+    vi.stubGlobal('ResizeObserver', Observer);
+    const key = state.historyRenderedNodes.keys().next().value!;
+    const sync = (keys: string[]) =>
+      syncHistoryMeasurementObserver({
+        sessionId: 'session',
+        state,
+        visibleEntries: keys.map((key) => ({ key })) as Parameters<
+          typeof syncHistoryMeasurementObserver
+        >[0]['visibleEntries'],
+        getState: () => state,
+        scheduleHistoryRender: vi.fn(),
+      });
+    sync([key]);
+    sync([key]);
+    expect(observe).toHaveBeenCalledTimes(1);
+    expect(disconnect).not.toHaveBeenCalled();
+    state.historyRenderedNodes.set('next', {
+      node: second,
+    } as SessionAppServerControlViewState['historyRenderedNodes'] extends Map<string, infer V>
+      ? V
+      : never);
+    sync(['next']);
+    expect(observe).toHaveBeenLastCalledWith(second, { box: 'border-box' });
+    expect(unobserve).toHaveBeenCalledExactlyOnceWith(first);
+    sync([]);
+    expect(unobserve).toHaveBeenLastCalledWith(second);
+    expect(state.historyObservedNodes?.size).toBe(0);
+  });
+
   it.each(['viewport-first', 'row-first'])(
     'restores before paint and never compensates old measurements twice: %s',
     (order) => {
@@ -344,7 +385,7 @@ describe('canonical scrollbar geometry', () => {
     ).toBe(128); // The center lies in a gap; 125 is not a rendered row.
     expect(measureHistoryNavigatorAnchor(0, 100, [])).toBeNull();
   });
-  it('sizes the thumb proportionally, with a small minimum bounded by the actual track', () => {
+  it('keeps the seek grip stable across row density and bounded by the actual track', () => {
     const geometry = (visibleCount: number, trackHeightPx = 400) =>
       resolveHistoryNavigatorGeometry({
         trackHeightPx,
@@ -352,9 +393,9 @@ describe('canonical scrollbar geometry', () => {
         visibleCount,
         anchorIndex: 0,
       });
-    expect(geometry(25).thumbHeightPx).toBe(100);
-    expect(geometry(50).thumbHeightPx).toBe(200);
-    expect(geometry(0.1).thumbHeightPx).toBe(18);
+    expect(geometry(25).thumbHeightPx).toBe(32);
+    expect(geometry(50).thumbHeightPx).toBe(32);
+    expect(geometry(0.1).thumbHeightPx).toBe(32);
     expect(geometry(100).thumbHeightPx).toBe(400);
     expect(geometry(0.1, 10).thumbHeightPx).toBe(10);
     expect(geometry(0.1, 0).travelPx).toBe(0);
@@ -457,7 +498,7 @@ describe('navigator rendering across passive layout and hydration', () => {
       getBoundingClientRect: () => ({ top: 0, height: 412 }),
     };
     const thumb = {
-      style: { top: '', height: '' },
+      style: { top: '', height: '', translate: '' },
       getBoundingClientRect: (): { height: number } => ({
         height: Number.parseFloat(thumb.style.height) || 0,
       }),
@@ -544,8 +585,10 @@ describe('navigator rendering across passive layout and hydration', () => {
     render.syncViewportOffset('session', { refreshAnchorFromViewport: true });
     expect(state.historyNavigatorAnchorIndex).toBe(100);
     expect(state.historyNavigatorVisibleCount).toBe(0.5);
-    expect(thumb.style.height).toBe('18px');
-    const top = Number.parseFloat(thumb.style.top);
+    expect(thumb.style.height).toBe('32px');
+    const top =
+      Number.parseFloat(thumb.style.top) +
+      Number.parseFloat(thumb.style.translate.split(' ')[1] ?? '0');
     expect(
       resolveHistoryNavigatorTarget({ state, clientY: top + 7, thumbDragOffsetPx: 7 })?.targetIndex,
     ).toBe(100);
@@ -643,7 +686,7 @@ describe('navigator rendering across passive layout and hydration', () => {
     render.syncViewportOffset('session', { refreshAnchorFromViewport: true });
     expect(state.historyNavigatorAnchorIndex).toBe(750);
     expect(state.historyNavigatorVisibleCount).toBe(100);
-    expect(thumb.style.height).toBe('40px');
+    expect(thumb.style.height).toBe('32px');
     state.historyNavigatorMode = 'browse';
     state.historyNavigatorDragTargetIndex = null;
     render.syncViewportOffset('session');

@@ -207,6 +207,10 @@ The canonical history contract must satisfy the following:
   - a dedicated progress navigator for global history seeking in canonical index space
   - the history pane itself as the native local pixel scroller for the currently materialized kernel
 - The progress navigator must not derive its range or thumb position from rendered DOM height. Its behavior should feel the same whether the session has 100 items or 10,000,000 items.
+- The global seek grip stays 32px high, bounded by the rail, and moves through compositor translation. Changing local row density must not resize it.
+- The retained kernel has one local pixel canvas. Chronologically ordered absolute rows keep their measured geometry independent of sibling insertion; no unseen archive pixel space is added. All vertical row spacing belongs inside the measured border box.
+- Scroll/measurement rendering runs independently of provider projection, composer and session-tool updates. Geometry work coalesces once per frame; overlapping reads begin while several concrete screens remain. ResizeObserver supplies normal browse measurements before paint.
+- Keep at most 64 detached recent rows for nearby reversals and release them when the surface is hidden or removed. Observe newly mounted rows without restarting unchanged subscriptions.
 - On desktop, the progress navigator should stay visually recessive: a thin low-chrome rail with a darker thumb as the primary affordance instead of a bright or bulky scrollbar treatment.
 - The progress navigator should remain a persistent Agent Controller Session-owned rail in layout. Its ready/not-ready state should come from explicit navigator state, not from toggling the element out of layout with stale `hidden` attributes on reused panel DOM.
 - Direct progress-nav drags should map to canonical history progress, land on a tiny centered preview window around the latest target, and only then hydrate into a normal browse window after drag idle. Agent Controller Session must not try to materialize the entire traversed span during a large scrub.

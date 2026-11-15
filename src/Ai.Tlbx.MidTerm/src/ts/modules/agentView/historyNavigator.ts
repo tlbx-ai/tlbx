@@ -22,7 +22,9 @@ export function resolveHistoryNavigatorGeometry(args: {
   const visibleFraction = Math.max(0, Math.min(1, args.visibleCount / historyCount));
   const thumbHeightPx = Math.min(
     trackHeightPx,
-    args.renderedThumbHeightPx ?? Math.max(18, trackHeightPx * visibleFraction),
+    // This rail seeks canonical indexes; local row density is not a global
+    // pixel extent. Keep its grip stable as prose, tables and tools pass by.
+    args.renderedThumbHeightPx ?? (visibleFraction >= 1 ? trackHeightPx : 32),
   );
   const travelPx = trackHeightPx - thumbHeightPx;
   const maximumIndex = historyCount - 1;
