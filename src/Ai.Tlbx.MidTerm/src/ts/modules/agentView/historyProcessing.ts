@@ -1217,7 +1217,7 @@ export function withActivationIssueNotice(
     {
       id: `appServerControl-issue:${issue.kind}`,
       order: Number.MIN_SAFE_INTEGER,
-      kind: issue.tone === 'attention' ? 'notice' : 'system',
+      kind: 'notice',
       tone: issue.tone,
       label: appServerControlText('appServerControl.label.tlbx', 'tlbx'),
       title: issue.title,
@@ -1252,12 +1252,17 @@ export function buildActivationHistoryEntries(
     ];
   }
 
+  const issueKind = state.activationIssue?.kind;
   const traceEntries =
-    state.activationIssue?.kind === 'busy-terminal-turn' ||
-    state.activationIssue?.kind === 'missing-resume-id' ||
-    state.activationIssue?.kind === 'shell-recovery-failed' ||
-    state.activationIssue?.kind === 'native-runtime-unavailable'
-      ? state.activationTrace.filter((entry) => entry.tone !== 'attention').slice(-2)
+    issueKind &&
+    [
+      'busy-terminal-turn',
+      'missing-resume-id',
+      'missing-resume-history',
+      'shell-recovery-failed',
+      'native-runtime-unavailable',
+    ].includes(issueKind)
+      ? []
       : state.activationTrace;
 
   return traceEntries.map((entry, index) => ({

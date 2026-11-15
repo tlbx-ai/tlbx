@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppServerControlHttpError } from '../../api/errors';
+import { withActivationIssueNotice } from './historyProcessing';
+import type { AppServerControlHistoryEntry } from './types';
 import {
   resumeAppServerControlActivationAfterTransport,
   classifyAppServerControlActivationIssue,
@@ -111,6 +113,21 @@ describe('Agent Controller attach failures', () => {
       expect(shouldShowAppServerControlDevErrorDialog(issue)).toBe(false);
     },
   );
+  it('shows a readable recovery notice while retaining existing conversation rows', () => {
+    const issue = classifyAppServerControlActivationIssue(
+      new Error('no rollout found for thread id missing'),
+      true,
+    );
+    const retained = {
+      id: 'retained',
+      body: 'Existing assistant response',
+    } as AppServerControlHistoryEntry;
+    const history = [retained];
+    const result = withActivationIssueNotice(history, issue);
+    expect(result[0]).toMatchObject({ kind: 'notice', tone: 'warning', body: issue.body });
+    expect(result[1]).toBe(retained);
+    expect(history).toEqual([retained]);
+  });
   it('retains diagnostic reporting for an unknown startup failure', () => {
     const issue = classifyAppServerControlActivationIssue(
       new Error('Unexpected protocol invariant'),
