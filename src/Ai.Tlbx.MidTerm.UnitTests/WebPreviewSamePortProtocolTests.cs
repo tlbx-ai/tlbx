@@ -251,7 +251,7 @@ public sealed class WebPreviewSamePortProtocolTests
         app.Run(async context =>
         {
             PreviewProxyAuthorization.ApplyResponsePolicy(context);
-            context.Response.Headers.AccessControlExposeHeaders = "X-Upstream-Spoofed";
+            context.Response.Headers.AccessControlExposeHeaders = "X-Upstream-Custom";
             if (!PreviewProxyAuthorization.TryAuthorize(context, registry))
             {
                 context.Response.StatusCode = 401;
@@ -273,8 +273,9 @@ public sealed class WebPreviewSamePortProtocolTests
         Assert.DoesNotContain("allow-same-origin", policy, StringComparison.Ordinal);
         Assert.Contains("sandbox", policy, StringComparison.Ordinal);
         Assert.Equal("null", Assert.Single(response.Headers.GetValues("Access-Control-Allow-Origin")));
-        Assert.Equal(WebPreviewProxyMiddleware.UpstreamUrlHeaderName,
-            Assert.Single(response.Headers.GetValues("Access-Control-Expose-Headers")));
+        Assert.Equal(new[] { "X-Upstream-Custom", WebPreviewProxyMiddleware.UpstreamUrlHeaderName },
+            Assert.Single(response.Headers.GetValues("Access-Control-Expose-Headers"))
+                .Split(',', StringSplitOptions.TrimEntries), StringComparer.OrdinalIgnoreCase);
         Assert.Equal("no-referrer", Assert.Single(response.Headers.GetValues("Referrer-Policy")));
         using var denied = new HttpRequestMessage(HttpMethod.Get, address + "/webpreview/route/document");
         denied.Headers.Add("Origin", "null");

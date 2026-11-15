@@ -36,7 +36,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
               const assert=require('node:assert/strict'),vm=require('node:vm');
               const listeners=new Map(),messages=[],timers=new Map();let nextTimer=0;
               const parent={postMessage:d=>messages.push(JSON.parse(JSON.stringify(d)))};
-              const body={textContent:'child text'};
+              const body={textContent:'child text',get childNodes(){return [{nodeType:3,data:this.textContent}];}};
               const document={body,title:'child title',querySelectorAll:selector=>selector==='body'?[body]:[],createTreeWalker:()=>{
                 let done=false;return {nextNode:()=>done?null:(done=true,{nodeType:3,data:body.textContent})};
               }};
@@ -219,7 +219,7 @@ public sealed class WebPreviewNestedBridgeProtocolTests
               MutationObserver:class{constructor(callback){this.callback=callback;observers.push(this);}observe(){}disconnect(){this.disconnected=true;}},
               HTMLIFrameElement:Frame,HTMLLinkElement:class extends Element{},HTMLAnchorElement:class extends Element{},HTMLFormElement:class extends Element{},
               HTMLObjectElement:class extends Element{},HTMLVideoElement:class extends Element{},
-              MutationObserver:class{observe(){}},navigator:{},fetch:()=>{},open:()=>{},
+              navigator:{},fetch:()=>{},open:()=>{},
               requestAnimationFrame:()=>1,cancelAnimationFrame:()=>{},setTimeout:()=>1,clearTimeout:()=>{},queueMicrotask:()=>{},
               addEventListener:(type,fn)=>listeners.set(type,[...(listeners.get(type)||[]),fn]),
               removeEventListener:(type,fn)=>listeners.set(type,(listeners.get(type)||[]).filter(f=>f!==fn)),console:{log(){},info(){},warn(){},error(){},debug(){}},

@@ -70,6 +70,11 @@ public sealed partial class TlbxCliScriptWriterTests
                     values.TryAdd("workLimit", "100");
                     values.TryAdd("checkpointLimit", "30");
                 }
+                if (item.Tool == "repos_list")
+                {
+                    // GitEndpoints defaults to a summary; MCP sends that default explicitly.
+                    values.TryAdd("details", "false");
+                }
                 return values.Select(pair => pair.Key + "=" + (pair.Key is "agentOnly" or "stripAnsi"
                     ? pair.Value.ToString().ToLowerInvariant() : pair.Value.ToString())).Order(StringComparer.Ordinal).ToArray();
             }
