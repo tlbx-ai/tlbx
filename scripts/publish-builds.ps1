@@ -162,6 +162,11 @@ function Assert-BuildArchive([string]$Path, [string]$ReleaseTag, [string]$Rid, [
 function Assert-BuildProvenance([string]$ArchivePath, [string]$SbomPath, [string]$ReleaseTag, [string]$SourceCommit) {
     $common=@('--repo',$script:BuildRepository,'--signer-workflow',"$script:BuildRepository/.github/workflows/release.yml",'--source-ref',"refs/tags/$ReleaseTag",'--source-digest',$SourceCommit,'--format','json')
     $null=Invoke-BuildGhJson (@('attestation','verify',$ArchivePath)+$common)
+    # New releases attest the copied SPDX asset as a build output. Its contents
+    # remain an older scan snapshot, so do not claim a fresh archive/SBOM binding.
+    $snapshotProof = try { Invoke-BuildGhJson (@('attestation','verify',$SbomPath)+$common+@('--predicate-type','https://slsa.dev/provenance/v1')) } catch { $null }
+    if (@($snapshotProof | Where-Object { $_.verificationResult.statement.predicateType -ceq 'https://slsa.dev/provenance/v1' }).Count) { return }
+    # Historical public releases carry an exact archive/SBOM predicate instead.
     $attestations=@(Invoke-BuildGhJson (@('attestation','verify',$ArchivePath)+$common+@('--predicate-type','https://spdx.dev/Document/v2.3')))
     $sbomJson=Get-Content -LiteralPath $SbomPath -Raw
     $matches=@($attestations | Where-Object {

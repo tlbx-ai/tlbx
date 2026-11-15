@@ -1,0 +1,42 @@
+name: Generate release SBOM snapshot
+description: Scan a verified published package and include its exact native dependency graph.
+inputs:
+  scan-path:
+    required: true
+    description: Verified extracted package
+  sbom-path:
+    required: true
+    description: SPDX JSON output
+  native-source-root:
+    required: true
+    description: Native source directory from the scanned package's exact tag
+runs:
+  using: composite
+  steps:
+    - name: Generate SPDX SBOM
+      id: sbom
+      continue-on-error: true
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      with:
+        path: ${{ inputs.scan-path }}
+        format: spdx-json
+        output-file: ${{ inputs.sbom-path }}
+        upload-artifact: false
+    - name: Retry SPDX SBOM generation
+      if: steps.sbom.outcome == 'failure'
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+      with:
+        path: ${{ inputs.scan-path }}
+        format: spdx-json
+        output-file: ${{ inputs.sbom-path }}
+        upload-artifact: false
+    - name: Include exact embedded native dependencies
+      shell: pwsh
+      env:
+        NATIVE_SOURCE: ${{ inputs.native-source-root }}
+        SBOM_PATH: ${{ inputs.sbom-path }}
+      run: |
+        $name = [IO.Path]::GetFileName($env:SBOM_PATH)
+        if ($name -notmatch '^mt-(win-x64|win-x86|linux-x64|linux-arm64|osx-x64|osx-arm64)\.spdx\.json$') { throw 'Invalid platform SBOM name.' }
+        & (Join-Path $env:NATIVE_SOURCE 'prepare.ps1') -RuntimeIdentifier $Matches[1]
+        & (Join-Path $env:NATIVE_SOURCE 'complete-sbom.ps1') -SbomPath $env:SBOM_PATH

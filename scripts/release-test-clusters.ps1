@@ -70,6 +70,9 @@ function Assert-ReleaseRuntimeSelection {
 }
 
 function Show-OnDemandTestReminder {
-    Write-Warning 'Before a major or main release, remind Johannes to run Tests (on demand) for the exact candidate ref and review its result. Tests are not started automatically.'
-    Write-Host 'gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref <candidate-ref> -f suite=all'
+    param([string]$CandidateRef = 'HEAD', [switch]$AfterDevBuild)
+    $when = if ($AfterDevBuild) { 'After this successful dev build' } else { 'Before promoting this candidate to main' }
+    Write-Warning "$when, ask Johannes: Run Tests (on demand), including security audits and fresh SBOM snapshots, for $CandidateRef now?"
+    Write-Host 'Wait for his run/skip decision before a main promotion. Do not dispatch automatically or ask again for the same unchanged candidate after an explicit decision.'
+    Write-Host "gh workflow run build-system-verify.yml --repo tlbx-ai/tlbx --ref $CandidateRef -f suite=all"
 }

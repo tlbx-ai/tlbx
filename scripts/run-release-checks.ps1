@@ -37,7 +37,7 @@ try {
         if ($LASTEXITCODE) { throw 'Server build failed.' }
     }
     if ($categories -contains 'dependencies') {
-        & "$PSScriptRoot/audit-supply-chain.ps1" -Scope server -FrontendInstalled:$FrontendInstalled
+        Write-Host 'Dependency vulnerability scans and fresh SBOMs run in Tests (on demand). Locked restore and package integrity remain part of builds.'
     }
     # Installer behavior is exercised on demand. Actual release packages retain
     # their mandatory signed manifests, hashes, SBOMs and Native AOT publication.

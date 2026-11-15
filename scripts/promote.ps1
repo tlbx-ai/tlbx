@@ -64,7 +64,7 @@ Set-Location (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/advisory-regression.ps1"
 $selectedCategories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories -Stable)
 Show-ReleaseTestPlan -Categories $selectedCategories
-Show-OnDemandTestReminder
+Show-OnDemandTestReminder -CandidateRef (Invoke-ReleaseGit rev-parse HEAD)
 $currentBranch = Invoke-ReleaseGit branch --show-current
 $pending = Get-ReleaseState $currentBranch
 if ($pending) {

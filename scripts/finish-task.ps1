@@ -4,6 +4,7 @@ param()
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/release-pr.ps1"
+. "$PSScriptRoot/release-test-clusters.ps1"
 $branch = Assert-ReleaseTaskBranch
 Assert-ReleaseClean
 $prs = @(Invoke-ReleaseGh pr list --repo $script:TlbxReleaseRepo --head $branch --state merged --json 'number,headRefOid' | ConvertFrom-Json)
@@ -22,3 +23,4 @@ Invoke-ReleaseGit switch dev | Out-Host
 Invoke-ReleaseGit merge --ff-only origin/dev | Out-Host
 Invoke-ReleaseGit branch -d $branch | Out-Host
 Write-Host "Retired $branch; checkout is back on updated dev."
+if ($state -and $state.Base -eq 'dev') { Show-OnDemandTestReminder -CandidateRef "v$($state.Version)" -AfterDevBuild }

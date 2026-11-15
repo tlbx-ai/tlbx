@@ -44,8 +44,9 @@ See [SUPPORT.md](SUPPORT.md) for the lifecycle policy.
 
 ## Release integrity
 
-Native release archives are accompanied by a platform-specific SPDX SBOM and
-GitHub build-provenance and SBOM attestations. Installers and the built-in
+Native release archives include the latest available platform-specific SPDX scan
+snapshot, which may predate the build. Fresh audits and SBOM generation are on
+demand. GitHub build provenance covers the archive and copied snapshot digests. Installers and the built-in
 updater additionally require a signed manifest that binds the release version,
 platform, channel, and packaged-file hashes.
 

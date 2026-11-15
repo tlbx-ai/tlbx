@@ -118,8 +118,12 @@ try {
     & {
         [IO.File]::WriteAllText($sbomPath,'{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","packages":[{"name":"fixture"}]}')
         $script:provenanceMismatch=$false
+        $script:snapshotSubject=$false
         function Invoke-BuildGhJson {
             param($Arguments)
+            if($Arguments -contains $sbomPath -and $Arguments -contains 'https://slsa.dev/provenance/v1' -and $script:snapshotSubject){
+                return @{verificationResult=@{statement=@{predicateType='https://slsa.dev/provenance/v1'}}}
+            }
             if($Arguments -contains '--predicate-type'){
                 $predicate=Get-Content $sbomPath -Raw|ConvertFrom-Json
                 if($script:provenanceMismatch){$predicate.packages[0].name='other'}
@@ -130,6 +134,8 @@ try {
         Assert-BuildProvenance $assetPath $sbomPath 'v1.2.3-dev' ('c'*40);$script:checks++
         $script:provenanceMismatch=$true
         Test-BuildReject {Assert-BuildProvenance $assetPath $sbomPath 'v1.2.3-dev' ('c'*40)} 'Downloaded SPDX did not match its signed attestation.'
+        $script:snapshotSubject=$true
+        Assert-BuildProvenance $assetPath $sbomPath 'v1.2.3-dev' ('c'*40);$script:checks++
     }
     & {
         $savedUrl=$env:ACTIONS_ID_TOKEN_REQUEST_URL;$savedRuntime=$env:ACTIONS_ID_TOKEN_REQUEST_TOKEN
