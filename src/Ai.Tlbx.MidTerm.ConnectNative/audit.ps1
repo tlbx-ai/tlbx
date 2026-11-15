@@ -4,13 +4,22 @@ param([Parameter(Mandatory)][string]$RuntimeIdentifier)
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+. (Join-Path $repoRoot 'scripts/build-storage.ps1')
+$storageLock = Enter-TlbxBuildLock $repoRoot 'connect-native'
+$run = $null
+$succeeded = $false
+try {
+Assert-TlbxNativeStorageIdle $repoRoot
+Move-TlbxNativeCache $repoRoot
+$run = Start-TlbxBuildRun $repoRoot "native-audit-$RuntimeIdentifier"
 $pin = Get-Content (Join-Path $PSScriptRoot 'native-stack.json') -Raw | ConvertFrom-Json
-$security = Join-Path $repoRoot '.artifacts/connect-dotnet-transport/security'
+$security = $run.Path
+$toolCache = Get-TlbxBuildPath $repoRoot '.cache/connect-native/security-tools'
 $arm = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture -eq 'Arm64'
 $platform = if ($IsWindows) { 'windows_amd64.zip' } elseif ($IsMacOS) { if ($arm) { 'darwin_arm64.tar.gz' } else { 'darwin_amd64.tar.gz' } } else { if ($arm) { 'linux_arm64.tar.gz' } else { 'linux_amd64.tar.gz' } }
-$toolRoot = Join-Path $security "grype-$($pin.grype.version)-$($platform -replace '\.(zip|tar.gz)$','')"
+$toolRoot = Join-Path $toolCache "grype-$($pin.grype.version)-$($platform -replace '\.(zip|tar.gz)$','')"
 $tool = Join-Path $toolRoot $(if ($IsWindows) { 'grype.exe' } else { 'grype' })
-$archive = Join-Path $security "grype_$($pin.grype.version)_$platform"
+$archive = Join-Path $toolCache "grype_$($pin.grype.version)_$platform"
 New-Item -ItemType Directory -Force -Path $security, $toolRoot | Out-Null
 if (-not (Test-Path $archive)) {
     Invoke-WebRequest "https://github.com/anchore/grype/releases/download/v$($pin.grype.version)/grype_$($pin.grype.version)_$($platform)?download=1" -OutFile $archive -MaximumRetryCount 3 -RetryIntervalSec 5 -TimeoutSec 120
@@ -29,7 +38,7 @@ foreach ($name in @('GRYPE_DB_CACHE_DIR','GRYPE_CHECK_FOR_APP_UPDATE','GRYPE_DB_
     $previous[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 try {
-    $env:GRYPE_DB_CACHE_DIR = Join-Path $security 'grype/db'
+    $env:GRYPE_DB_CACHE_DIR = Get-TlbxBuildPath $repoRoot '.cache/connect-native/grype/db'
     $env:GRYPE_CHECK_FOR_APP_UPDATE = 'false'
     $env:GRYPE_DB_VALIDATE_AGE = 'true'
     $env:GRYPE_DB_MAX_ALLOWED_BUILT_AGE = '72h'
@@ -107,4 +116,9 @@ try {
 }
 finally {
     foreach ($name in $previous.Keys) { [Environment]::SetEnvironmentVariable($name, $previous[$name]) }
+}
+$succeeded = $true
+} finally {
+    try { if ($run) { Complete-TlbxBuildRun $run $succeeded } }
+    finally { $storageLock.Dispose() }
 }

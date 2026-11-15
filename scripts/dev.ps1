@@ -38,6 +38,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+. "$PSScriptRoot/build-storage.ps1"
 $WebProjectDir = Join-Path $RepoRoot "src/Ai.Tlbx.MidTerm"
 $WebProjectFile = Join-Path $WebProjectDir "Ai.Tlbx.MidTerm.csproj"
 $WebRootDir = Join-Path $WebProjectDir "wwwroot"
@@ -211,6 +212,7 @@ function Invoke-StaticAssetSync {
 }
 
 function Build-AgentHost {
+    Clear-TlbxDevGenerations $RepoRoot -KeepPaths @($script:currentAgentHostPath, (Join-Path ($script:currentWebOutputDir ?? $DevWebRoot) 'mt.dll'))
     Write-Host "  Building local mtagenthost..." -ForegroundColor DarkGray
     $generation = [DateTimeOffset]::UtcNow.ToString("yyyyMMddHHmmssfff")
     $outputDir = Join-Path $DevAgentHostRoot $generation
@@ -237,6 +239,7 @@ function Build-TmuxShim {
 }
 
 function Build-WebServer {
+    Clear-TlbxDevGenerations $RepoRoot -KeepPaths @($script:currentAgentHostPath, (Join-Path ($script:currentWebOutputDir ?? $DevWebRoot) 'mt.dll'))
     Write-Host "  Building local mt..." -ForegroundColor DarkGray
     # Native MCP adapters outlive mt and load its assemblies. Each build gets an
     # immutable runtime output so surviving adapters never lock the next build.
@@ -573,6 +576,7 @@ function Invoke-DevLoopCleanup {
         Write-Host "Stopping esbuild watch..." -ForegroundColor Yellow
         Stop-ProcessTree -ProcessId $script:esbuildProcess.Id -Reason "script shutdown"
     }
+    Clear-TlbxDevGenerations $RepoRoot
 }
 
 if ($ReservedPorts -contains $Port) {
@@ -591,6 +595,7 @@ if ($Tailnet) {
 }
 
 $stableVersion = Test-StableSupervisor
+Initialize-TlbxBuildStorage $RepoRoot
 $resolvedTtyHostPath = Resolve-TtyHostPath
 $codeWatcher = New-CodeWatcher
 $staticWatcher = New-StaticWatcher
