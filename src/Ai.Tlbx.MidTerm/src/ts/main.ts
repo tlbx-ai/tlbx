@@ -1059,7 +1059,9 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
       candidate.workingDirectory.trim() || args.workingDirectory,
     );
   } catch (error) {
-    showSessionLaunchFailure(error);
+    void showAlert(error instanceof Error ? error.message : String(error), {
+      title: t('providerResume.title'),
+    });
   }
 }
 

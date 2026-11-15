@@ -775,6 +775,7 @@ function findCommittedOptimisticUser(
     ? entries.find(
         (entry) =>
           entry.kind === 'user' &&
+          Date.parse(entry.sourceUpdatedAt ?? '') > (turn.lastObservedEventAt ?? 0) &&
           !knownUserIds.has(entry.id) &&
           !claimedUsers.has(entry.id) &&
           (entry.body.trim() === turn.text.trim() ||

@@ -176,8 +176,10 @@ public static partial class SessionApiEndpoints
                     {
                         if (sessionManager.IsAppServerControlOnly(request.SessionId))
                         {
-                            var response = await appServerControlRuntime.SendComposerTurnAsync(request.SessionId, request.Turn, ct).ConfigureAwait(false);
-                            RecordPromptHistory(request.SessionId, request.Turn, InputHistorySources.CommandBay);
+                            var normalizedTurn = ManagerBarQueueService.NormalizeTurn(request.Turn);
+                            if (normalizedTurn is null) return Results.BadRequest("Prompt was not accepted.");
+                            var response = await appServerControlRuntime.SendComposerTurnAsync(request.SessionId, normalizedTurn, ct).ConfigureAwait(false);
+                            RecordPromptHistory(request.SessionId, normalizedTurn, InputHistorySources.CommandBay);
                             return Results.Json(response, AppJsonContext.Default.AppServerControlTurnStartResponse);
                         }
                         accepted = await managerBarQueueService.SubmitPromptAsync(request.SessionId, request.Turn, ct)

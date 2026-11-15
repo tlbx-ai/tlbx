@@ -619,6 +619,7 @@ export async function resumeAgentConversation(
     const panel = getTabPanel(sessionId, 'agent');
     if (panel) {
       panel.replaceChildren();
+      delete panel.dataset.agentViewReady;
       ensureAgentViewSkeleton(sessionId, panel, (id) => {
         void handleAppServerControlEscape(id);
       });
@@ -3086,6 +3087,7 @@ function handleAppServerControlTurnSubmitted(event: Event): void {
       knownUserIds: (state.snapshot ? buildAppServerControlHistoryEntries(state.snapshot) : [])
         .filter((entry) => entry.kind === 'user')
         .map((entry) => entry.id),
+      lastObservedEventAt: Date.parse(state.snapshot?.session.lastEventAt ?? '') || 0,
       turnId: null,
       text: (detail.request.text ?? '').trim(),
       attachments: cloneHistoryAttachments(detail.request.attachments),

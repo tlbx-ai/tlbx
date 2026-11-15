@@ -650,7 +650,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             state.Status = HostRuntimeStatus.Running;
             return sent.TurnStarted ?? new AppServerControlTurnStartResponse
             {
-                SessionId = sessionId, Provider = state.Profile,
+                SessionId = sessionId, Provider = state.Profile ?? string.Empty,
                 ThreadId = current.HistoryWindow!.Thread.ThreadId ?? string.Empty,
                 TurnId = sent.Accepted?.TurnId ?? turn.TurnId,
                 QuickSettings = current.HistoryWindow.QuickSettings

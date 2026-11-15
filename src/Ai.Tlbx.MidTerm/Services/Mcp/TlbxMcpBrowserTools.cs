@@ -662,7 +662,7 @@ internal sealed class TlbxMcpBrowserTools : McpServerTool
     private static JsonObject PositiveInteger() => new() { ["type"] = "integer", ["minimum"] = 1 };
     // CancellationTokenSource's timer accepts at most uint.MaxValue - 1 ms.
     private const int MaximumTimeoutSeconds = (int)((uint.MaxValue - 1L) / 1000L);
-    private static JsonObject Timeout(int maximum = MaximumTimeoutSeconds) => new() { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = maximum };
+    private static JsonObject Timeout(int maximum = MaximumTimeoutSeconds) => new() { ["type"] = "integer", ["minimum"] = 1, ["maximum"] = maximum, ["description"] = "Timeout in seconds (for example, 5 means five seconds)." };
     private static JsonArray Strings(IEnumerable<string> values) => new(values.Select(v => (JsonNode?)JsonValue.Create(v)).ToArray());
     private static JsonObject Enum(params string[] values) => new() { ["type"] = "string", ["enum"] = Strings(values) };
     private static readonly string[] BatchCommands = ["query", "click", "fill", "exec", "evaluate", "wait", "screenshot", "scroll", "wheel", "navigate", "reload", "outline", "attrs", "css", "log", "links", "submit", "forms", "url"];

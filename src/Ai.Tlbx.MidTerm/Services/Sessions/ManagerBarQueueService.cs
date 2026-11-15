@@ -1093,7 +1093,7 @@ public sealed class ManagerBarQueueService : IAsyncDisposable
             : new PendingQueueDispatch(entry.QueueId, entry.SessionId, AutomationQueueKind, prompt, null);
     }
 
-    private static AppServerControlTurnRequest? NormalizeTurn(AppServerControlTurnRequest? turn)
+    internal static AppServerControlTurnRequest? NormalizeTurn(AppServerControlTurnRequest? turn)
     {
         if (turn is null)
         {

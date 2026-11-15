@@ -122,6 +122,7 @@ export type HistoryJumpAlign = 'top' | 'center' | 'bottom';
 
 export interface PendingAppServerControlTurn {
   knownUserIds?: string[];
+  lastObservedEventAt?: number;
   optimisticId: string;
   turnId: string | null;
   text: string;
