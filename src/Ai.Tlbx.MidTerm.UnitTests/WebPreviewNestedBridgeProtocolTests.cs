@@ -259,7 +259,12 @@ public sealed class WebPreviewNestedBridgeProtocolTests
               const frame=new Frame(),calls=[];frame.contentWindow={postMessage:message=>calls.push(message)};
               document.querySelectorAll=selector=>selector==='#child'?[frame]:selector==='.ambiguous'?[frame,new Frame()]:[];
               const socket=connections[0];socket.readyState=1;Socket.OPEN=1;
-              const dispatch=(id,selector='#child')=>socket.onmessage({data:JSON.stringify({id,command:'query',selector:'body',frame:selector})});
+              const commandObservers=new Map();
+              const dispatch=(id,selector='#child')=>{
+                const before=observers.length;
+                socket.onmessage({data:JSON.stringify({id,command:'query',selector:'body',frame:selector})});
+                if(observers.length>before)commandObservers.set(id,observers.at(-1));
+              };
               const deliver=(source,data)=>{for(const listener of [...(listeners.get('message')||[])])listener({source,data});};
               dispatch('one');assert.equal(calls.length,1);const probe=calls[0];
               assert.match(probe.nonce,/^[a-f0-9]{32}$/);assert.equal(probe.phase,'probe');
@@ -273,13 +278,13 @@ public sealed class WebPreviewNestedBridgeProtocolTests
               assert.equal(commandReplies.length,0);
               deliver(frame.contentWindow,{...ready,phase:'result',result:{success:true,result:'child text',matchCount:1}});
               assert.equal(commandReplies.length,1);assert.equal(commandReplies[0].id,'one');assert.equal(commandReplies[0].result,'child text');
-              assert.equal(commandReplies[0].previewId,'parent-id');assert(observers[0].disconnected);
+              assert.equal(commandReplies[0].previewId,'parent-id');assert(commandObservers.get('one').disconnected);
               deliver(frame.contentWindow,{...ready,phase:'result',result:{success:true,result:'duplicate'}});assert.equal(commandReplies.length,1);
-              dispatch('two');frame.events.get('load')();assert.equal(commandReplies.length,2);assert.equal(commandReplies[1].success,false);assert(observers[1].disconnected);
-              dispatch('three');frame.isConnected=false;observers[2].callback([]);assert.equal(commandReplies.length,3);assert.equal(commandReplies[2].success,false);
-              frame.isConnected=true;dispatch('four');observers[3].callback([{type:'attributes',target:frame}]);assert.equal(commandReplies.length,4);assert.equal(commandReplies[3].success,false);
+              dispatch('two');frame.events.get('load')();assert.equal(commandReplies.length,2);assert.equal(commandReplies[1].success,false);assert(commandObservers.get('two').disconnected);
+              dispatch('three');frame.isConnected=false;commandObservers.get('three').callback([]);assert.equal(commandReplies.length,3);assert.equal(commandReplies[2].success,false);
+              frame.isConnected=true;dispatch('four');commandObservers.get('four').callback([{type:'attributes',target:frame}]);assert.equal(commandReplies.length,4);assert.equal(commandReplies[3].success,false);
               dispatch('ambiguous','.ambiguous');assert.equal(commandReplies.length,5);assert.equal(commandReplies[4].success,false);
-              dispatch('close');socket.readyState=3;socket.onclose();assert(observers[4].disconnected);
+              dispatch('close');socket.readyState=3;socket.onclose();assert(commandObservers.get('close').disconnected);
               const dynamic=new Frame();dynamic.srcdoc='<html><head></head><body>child</body></html>';
               assert(dynamic.srcdoc.includes('data-tlbx-child-dom="1"'));assert(!dynamic.srcdoc.includes('parent-token'));
               dynamic.setAttribute('srcdoc','<p>runtime attribute</p>');assert(dynamic.srcdoc.includes('data-tlbx-child-dom="1"'));
