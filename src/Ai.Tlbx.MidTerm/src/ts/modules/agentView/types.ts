@@ -16,6 +16,7 @@ export interface SessionAppServerControlViewState {
   debugScenarioActive: boolean;
   activationRunId: number;
   historyViewport: HTMLDivElement | null;
+  historyCanvas?: HTMLDivElement | null;
   historyProgressNav: HTMLDivElement | null;
   historyProgressThumb: HTMLDivElement | null;
   historyEntries: AppServerControlHistoryEntry[];
@@ -55,6 +56,12 @@ export interface SessionAppServerControlViewState {
   historyPendingJumpAlign: HistoryJumpAlign | null;
   historyJumpTargetEntryId: string | null;
   historyRenderScheduled: number | null;
+  historyViewportRenderScheduled?: number | null;
+  historyViewportCommitPending?: boolean;
+  historyPendingViewportSnapshot?: AppServerControlHistorySnapshot | null;
+  historyWindowOnlyRenderPending?: boolean;
+  historyLastRenderedSequence?: number;
+  historyLastRenderedStreamConnected?: boolean;
   historyRenderBatchHandle: number | null;
   activationState:
     | 'idle'
@@ -73,6 +80,7 @@ export interface SessionAppServerControlViewState {
   renderDirty: boolean;
   historyMarkdownCache: Map<string, HistoryMarkdownCacheEntry>;
   historyRenderedNodes: Map<string, HistoryRenderedNode>;
+  historyRetainedNodes?: Map<string, HistoryRenderedNode>;
   historyMeasuredHeights: Map<string, number>;
   historyObservedHeights: Map<string, number>;
   historyMeasuredHeightsByBucket: Map<number, Map<string, number>>;
@@ -80,6 +88,7 @@ export interface SessionAppServerControlViewState {
   historyObservedHeightSamplesByBucket: Map<number, Map<string, number[]>>;
   historyMeasuredWidthBucket: number;
   historyMeasurementObserver: ResizeObserver | null;
+  historyObservedNodes?: Set<HTMLElement>;
   historyViewportResizeObserver: ResizeObserver | null;
   historyViewportSize: HistoryViewportSize | null;
   historyReaderAnchor: (HistoryViewportAnchor & HistoryViewportSize & { scrollTop: number }) | null;
@@ -229,6 +238,7 @@ export interface HistoryScrollMetrics {
 }
 
 export interface HistoryVisibleEntry {
+  offsetTopPx: number;
   key: string;
   entry: AppServerControlHistoryEntry;
   cluster: ArtifactClusterInfo | null;
@@ -246,6 +256,9 @@ export interface HistoryPlaceholderBlock {
 }
 
 export interface HistoryRenderPlan {
+  wheelScrollTopPx?: number;
+  remainingWheelDeltaPx?: number;
+  contentHeightPx: number;
   virtualWindowKey: string | null;
   leadingPlaceholders: HistoryPlaceholderBlock[];
   trailingPlaceholders: HistoryPlaceholderBlock[];

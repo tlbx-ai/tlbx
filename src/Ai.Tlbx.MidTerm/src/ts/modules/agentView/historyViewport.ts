@@ -113,7 +113,14 @@ export function computeHistoryVirtualWindow(
   clientWidth = typeof window === 'undefined' ? 960 : window.innerWidth,
   resolveEntryHeight?: HistoryHeightResolver,
 ): HistoryVirtualWindow {
-  if (entries.length <= HISTORY_VIRTUALIZE_AFTER) {
+  const resolveHeight =
+    resolveEntryHeight ??
+    ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
+  const smallWindowFits =
+    entries.length <= HISTORY_VIRTUALIZE_AFTER &&
+    entries.reduce((height, entry, index) => height + resolveHeight(entry, index), 0) <=
+      clientHeight * 4;
+  if (smallWindowFits) {
     return {
       start: 0,
       end: entries.length,
@@ -122,14 +129,12 @@ export function computeHistoryVirtualWindow(
     };
   }
 
-  const resolveHeight =
-    resolveEntryHeight ??
-    ((entry: AppServerControlHistoryEntry) => estimateHistoryEntryHeight(entry, clientWidth));
   return computeVirtualizerWindow({
     items: entries,
     scrollTop,
     clientHeight,
     overscanItems: APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
+    overscanPx: Math.max(0, clientHeight * 2),
     resolveItemSize: (entry, index) => resolveHeight(entry, index),
   });
 }
@@ -151,6 +156,25 @@ export function computeHistoryVisibleRange(
     overscanItems: 0,
     resolveItemSize: (entry, index) => resolveHeight(entry, index),
   });
+}
+
+/** A replaced kernel has a new pixel origin; its old scrollTop is not a row address. */
+export function resolveHistoryRenderScrollTop(
+  entries: readonly AppServerControlHistoryEntry[],
+  scrollTop: number,
+  anchor: { entryId: string; topOffsetPx: number } | null | undefined,
+  resolveHeight: HistoryHeightResolver,
+  paddingTop = 0,
+): number {
+  if (!anchor) return scrollTop;
+  const index = entries.findIndex((entry) => entry.id === anchor.entryId);
+  if (index < 0) return scrollTop;
+  let prefix = paddingTop;
+  for (let i = 0; i < index; i++) {
+    const entry = entries[i];
+    if (entry) prefix += resolveHeight(entry, i);
+  }
+  return Math.max(0, prefix - anchor.topOffsetPx);
 }
 
 export function buildHistoryVirtualWindowKey(window: HistoryVirtualWindow): string {

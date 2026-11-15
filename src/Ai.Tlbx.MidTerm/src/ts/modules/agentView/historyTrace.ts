@@ -94,8 +94,9 @@ export function shouldTraceAppServerControlHistory(): boolean {
     return true;
   }
 
-  const hostname = window.location.hostname;
-  return hostname === '127.0.0.1' || hostname === 'localhost';
+  // Installed local hosts are production use too. Per-frame formatting and
+  // console delivery remain available only when explicitly requested.
+  return false;
 }
 
 function trace(sessionId: string, message: string): void {

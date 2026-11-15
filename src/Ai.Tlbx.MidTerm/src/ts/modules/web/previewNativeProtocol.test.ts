@@ -673,8 +673,9 @@ describe('shared preview custom checkable click protocol', () => {
       elementFromPoint: vi.fn(() => hit),
     };
     const dispatch = runInNewContext(
-      `${section('function isControlVisible(el){', 'function handleBCmd(msg){')}
-       ${section('function handleBCmd(msg){', 'var bwsReconnectTimer=')}
+      `${section('function previewSelectorParts(selector){', 'function queryBudget(){')}
+       ${section('function isControlVisible(el){', dispatcherStart)}
+       ${section(dispatcherStart, 'var bwsReconnectTimer=')}
        handleBCmd;`,
       {
         document,

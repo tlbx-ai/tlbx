@@ -911,7 +911,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
-        var result = await ReadHostStateAsync(sessionId, "history.window.get", new()
+        var result = await ReadHostStateAsync(sessionId, "history.window.binary.get", new()
         {
             StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
         }, ct).ConfigureAwait(false);
@@ -943,7 +943,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             AppServerControlHostJsonContext.Default.AppServerControlHostHello)
             ?? throw new InvalidOperationException("Agent Controller host hello was empty.");
         ValidateHello(hello);
-        if (!hello.Capabilities.Contains(type == "usage.read" ? "usage.read" : "history.window.read", StringComparer.Ordinal))
+        if (!hello.Capabilities.Contains(type == "usage.read" ? "usage.read" : "history.window.binary.read", StringComparer.Ordinal))
             throw new InvalidOperationException("Update mtagenthost to enable this independent session read.");
         var command = new AppServerControlHostCommandEnvelope
         {
@@ -960,7 +960,24 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         var payload = JsonSerializer.Serialize(command, AppServerControlHostJsonContext.Default.AppServerControlHostCommandEnvelope);
         await connection.Writer.WriteLineAsync(payload.AsMemory(), ct).ConfigureAwait(false);
         await connection.Writer.FlushAsync(ct).ConfigureAwait(false);
-        var result = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
+        AppServerControlHostCommandResultEnvelope result;
+        if (type == "history.window.binary.get")
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeout.CancelAfter(TimeSpan.FromSeconds(15));
+            var header = new byte[4];
+            await connection.Writer.BaseStream.ReadExactlyAsync(header, timeout.Token).ConfigureAwait(false);
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(header);
+            if (length is < 4 or > 64 * 1024 * 1024) throw new InvalidDataException("Invalid native history frame length.");
+            var bytes = System.Buffers.ArrayPool<byte>.Shared.Rent(length);
+            try
+            {
+                await connection.Writer.BaseStream.ReadExactlyAsync(bytes.AsMemory(0, length), timeout.Token).ConfigureAwait(false);
+                result = NativeHistoryCodec.Decode(bytes.AsSpan(0, length), AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope);
+            }
+            finally { System.Buffers.ArrayPool<byte>.Shared.Return(bytes, clearArray: true); }
+        }
+        else result = JsonSerializer.Deserialize(await ReadLineWithTimeoutAsync(connection.Reader, ct).ConfigureAwait(false),
             AppServerControlHostJsonContext.Default.AppServerControlHostCommandResultEnvelope)
             ?? throw new InvalidOperationException("Agent Controller read response was empty.");
         if (result.CommandId != command.CommandId || result.SessionId != sessionId || result.Status != "accepted")

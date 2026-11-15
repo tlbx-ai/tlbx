@@ -117,6 +117,8 @@ vi.mock('../web/webDock', () => ({
   openWebPreviewDock: mocks.openWebPreviewDock,
 }));
 
+vi.mock('../web/webViewport', () => ({ readPreviewViewportMetrics: vi.fn(() => null) }));
+
 vi.mock('../web/webApi', () => ({
   getWebPreviewTarget: mocks.getWebPreviewTarget,
 }));

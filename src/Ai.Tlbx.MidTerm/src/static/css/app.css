@@ -13918,10 +13918,26 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   position: relative;
   overflow: hidden auto;
   overflow-anchor: none;
+  overscroll-behavior: none;
   padding: 18px 18px 64px;
   scroll-padding-bottom: 60px;
   scrollbar-width: none;
   -ms-overflow-style: none;
+}
+
+/* A local pixel extent separates native scrolling from mounted row layout. */
+.agent-history-canvas {
+  position: relative;
+  flex: 0 0 auto;
+  width: 100%;
+  contain: layout style;
+}
+
+.agent-history-canvas > :is(.agent-history-entry, .agent-history-placeholder) {
+  position: absolute;
+  left: 0;
+  right: 0;
+  contain: layout style;
 }
 
 .agent-history::-webkit-scrollbar {
@@ -13980,7 +13996,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--agent-history-progress-accent) 9%, transparent),
     0 3px 8px color-mix(in srgb, var(--agent-history-progress-surface) 16%, transparent);
-  will-change: top;
+  will-change: translate;
   transition:
     opacity 120ms ease,
     box-shadow 120ms ease,
@@ -14270,7 +14286,12 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 }
 
 .agent-history-artifact[data-artifact-position='start'] {
-  margin-top: 6px;
+  margin-top: 0;
+  padding-top: 14px;
+}
+
+.agent-history-command-entry[data-artifact-position='start'] {
+  padding-top: 10px;
 }
 
 .agent-history-artifact[data-artifact-position='middle'] {

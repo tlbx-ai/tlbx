@@ -1,3 +1,5 @@
+import { computeHistoryVirtualWindow, resolveHistoryRenderScrollTop } from './historyViewport';
+import type { AppServerControlHistoryEntry } from './types';
 import { describe, expect, it } from 'vitest';
 import {
   MAX_HISTORY_FILL_ITEMS,
@@ -95,5 +97,62 @@ describe('bounded filling of sparse canonical windows', () => {
         historyCount: 438,
       }),
     ).toBeNull();
+  });
+});
+
+describe('pixel-bounded rich history rendering', () => {
+  it('virtualizes a short canonical window when its rich rows span many screens', () => {
+    const rows = Array.from({ length: 38 }, (_, index) => ({
+      id: String(index),
+      order: index + 1,
+    })) as AppServerControlHistoryEntry[];
+    const window = computeHistoryVirtualWindow(rows, 10000, 800, 1200, () => 1000);
+    expect(window.start).toBeLessThanOrEqual(10);
+    expect(window.end).toBeGreaterThan(10);
+    expect(window.end - window.start).toBeLessThanOrEqual(6);
+    expect(window.topSpacerPx + (window.end - window.start) * 1000 + window.bottomSpacerPx).toBe(
+      38000,
+    );
+  });
+  it('keeps small fitting histories intact and covers short rows on narrow screens', () => {
+    const rows = Array.from({ length: 5 }, (_, index) => ({
+      id: String(index),
+    })) as AppServerControlHistoryEntry[];
+    expect(computeHistoryVirtualWindow(rows, 0, 800, 390, () => 40)).toEqual({
+      start: 0,
+      end: 5,
+      topSpacerPx: 0,
+      bottomSpacerPx: 0,
+    });
+    const many = Array.from({ length: 200 }, (_, index) => ({
+      id: String(index),
+    })) as AppServerControlHistoryEntry[];
+    const window = computeHistoryVirtualWindow(many, 400, 800, 390, () => 20);
+    expect(window.start * 20).toBeLessThanOrEqual(400);
+    expect(window.end * 20).toBeGreaterThanOrEqual(1200);
+  });
+});
+
+describe('kernel pixel origins', () => {
+  it('selects the new virtual window around the stable reader before mounting rows', () => {
+    const rows = Array.from({ length: 160 }, (_, i) => ({
+      id: String(i),
+    })) as AppServerControlHistoryEntry[];
+    const top = resolveHistoryRenderScrollTop(
+      rows,
+      1200,
+      { entryId: '120', topOffsetPx: -80 },
+      () => 500,
+      18,
+    );
+    expect(top).toBe(60098);
+    const window = computeHistoryVirtualWindow(rows, top, 800, 1200, () => 500);
+    expect(window.start).toBeLessThanOrEqual(120);
+    expect(window.end).toBeGreaterThan(120);
+    expect(window.end - window.start).toBeLessThanOrEqual(10);
+    expect(resolveHistoryRenderScrollTop(rows, 1200, null, () => 500)).toBe(1200);
+    expect(
+      resolveHistoryRenderScrollTop(rows, 1200, { entryId: 'absent', topOffsetPx: 0 }, () => 500),
+    ).toBe(1200);
   });
 });
