@@ -576,7 +576,11 @@ public sealed class AppServerControlWebSocketHandler
         var attached = await _appServerControlRuntime.EnsureAttachedAsync(sessionId, session, resumeThreadId, ct).ConfigureAwait(false);
         if (!attached && !_appServerControlRuntime.HasHistory(sessionId))
         {
-            throw new InvalidOperationException("App Server Controller native runtime is not available for this session.");
+            var detail = _appServerControlRuntime.TryGetRuntimeSummary(sessionId, out var runtime)
+                ? runtime.LastError : null;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail)
+                ? "App Server Controller native runtime is not available for this session."
+                : detail);
         }
 
         return session;

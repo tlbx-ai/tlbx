@@ -163,6 +163,7 @@ export interface AppServerControlActivationIssue {
   kind:
     | 'busy-terminal-turn'
     | 'missing-resume-id'
+    | 'missing-resume-history'
     | 'shell-recovery-failed'
     | 'native-runtime-unavailable'
     | 'readonly-history'

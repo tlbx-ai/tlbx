@@ -1,5 +1,5 @@
 import type { AppServerControlAttachmentReference } from '../../api/types';
-import { AppServerControlHttpError } from '../../api/client';
+import { AppServerControlHttpError } from '../../api/errors';
 import type {
   HistoryKind,
   HistoryTone,
@@ -149,6 +149,26 @@ export function classifyAppServerControlActivationIssue(
     };
   }
 
+  if (normalizedDetail.includes('no rollout found for thread id')) {
+    return {
+      kind: 'missing-resume-history',
+      tone: 'warning',
+      meta: appServerControlText(
+        'appServerControl.issue.resumeHistoryUnavailable',
+        'History unavailable',
+      ),
+      title: appServerControlText(
+        'appServerControl.issue.resumeHistoryUnavailable.title',
+        'The saved Codex conversation is unavailable',
+      ),
+      body: appServerControlText(
+        'appServerControl.issue.resumeHistoryUnavailable.body',
+        'Codex could not find the saved conversation. Choose another conversation from History or start a new one. Any history already loaded remains available.',
+      ),
+      actions,
+    };
+  }
+
   if (normalizedDetail.includes('could not determine the codex resume id for this session')) {
     return {
       kind: 'missing-resume-id',
@@ -197,7 +217,12 @@ export function classifyAppServerControlActivationIssue(
   }
 
   if (
-    normalizedDetail.includes('appservercontrol native runtime is not available for this session')
+    normalizedDetail.includes(
+      'appservercontrol native runtime is not available for this session',
+    ) ||
+    normalizedDetail.includes(
+      'app server controller native runtime is not available for this session',
+    )
   ) {
     return {
       kind: 'native-runtime-unavailable',
