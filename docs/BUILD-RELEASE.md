@@ -341,9 +341,11 @@ reuse the newest snapshot from a successful manual Tests run; published SPDX
 assets seed reuse and preserve snapshots after artifact expiry. A reused snapshot
 may predate changed code or dependencies. It is not a fresh inventory or security
 scan of the new archive. The release summary exposes its source and creation date.
-The ordinary workflow attests archive and copied-SPDX file digests as build outputs,
+The ordinary workflow verifies both expected files exist, then attests archive and copied-SPDX file digests together as build outputs,
 without issuing a false fresh archive/SBOM inventory predicate. Older releases'
-exact archive/SBOM attestations remain verifiable for historical downloads.
+exact archive/SBOM attestations remain verifiable for historical downloads. The mirror
+checks a copied SPDX digest in the unique archive proof, avoiding the CLI limit on
+attestations returned for a shared snapshot digest.
 
 ## Mobile and tooling
 

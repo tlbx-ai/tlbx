@@ -161,11 +161,14 @@ function Assert-BuildArchive([string]$Path, [string]$ReleaseTag, [string]$Rid, [
 
 function Assert-BuildProvenance([string]$ArchivePath, [string]$SbomPath, [string]$ReleaseTag, [string]$SourceCommit) {
     $common=@('--repo',$script:BuildRepository,'--signer-workflow',"$script:BuildRepository/.github/workflows/release.yml",'--source-ref',"refs/tags/$ReleaseTag",'--source-digest',$SourceCommit,'--format','json')
-    $null=Invoke-BuildGhJson (@('attestation','verify',$ArchivePath)+$common)
+    $archiveProof = @(Invoke-BuildGhJson (@('attestation','verify',$ArchivePath)+$common))
     # New releases attest the copied SPDX asset as a build output. Its contents
     # remain an older scan snapshot, so do not claim a fresh archive/SBOM binding.
-    $snapshotProof = try { Invoke-BuildGhJson (@('attestation','verify',$SbomPath)+$common+@('--predicate-type','https://slsa.dev/provenance/v1')) } catch { $null }
-    if (@($snapshotProof | Where-Object { $_.verificationResult.statement.predicateType -ceq 'https://slsa.dev/provenance/v1' }).Count) { return }
+    # Inspect the unique archive's verified subjects. Querying a shared SPDX digest
+    # separately would lose old copies behind gh's default 30-attestation limit.
+    $snapshotDigest = (Get-FileHash -LiteralPath $SbomPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $subjects = @($archiveProof | Where-Object { $_.verificationResult.statement.predicateType -ceq 'https://slsa.dev/provenance/v1' } | ForEach-Object { $_.verificationResult.statement.subject })
+    if (@($subjects | Where-Object { [IO.Path]::GetFileName($_.name) -ceq [IO.Path]::GetFileName($SbomPath) -and $_.digest.sha256 -ceq $snapshotDigest }).Count) { return }
     # Historical public releases carry an exact archive/SBOM predicate instead.
     $attestations=@(Invoke-BuildGhJson (@('attestation','verify',$ArchivePath)+$common+@('--predicate-type','https://spdx.dev/Document/v2.3')))
     $sbomJson=Get-Content -LiteralPath $SbomPath -Raw

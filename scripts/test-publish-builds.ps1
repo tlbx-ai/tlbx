@@ -119,10 +119,13 @@ try {
         [IO.File]::WriteAllText($sbomPath,'{"spdxVersion":"SPDX-2.3","SPDXID":"SPDXRef-DOCUMENT","packages":[{"name":"fixture"}]}')
         $script:provenanceMismatch=$false
         $script:snapshotSubject=$false
+        $script:snapshotDigestMismatch=$false
         function Invoke-BuildGhJson {
             param($Arguments)
-            if($Arguments -contains $sbomPath -and $Arguments -contains 'https://slsa.dev/provenance/v1' -and $script:snapshotSubject){
-                return @{verificationResult=@{statement=@{predicateType='https://slsa.dev/provenance/v1'}}}
+            if($Arguments -contains $assetPath -and $script:snapshotSubject){
+                $digest=(Get-FileHash $sbomPath -Algorithm SHA256).Hash.ToLowerInvariant()
+                if($script:snapshotDigestMismatch){$digest='0'*64}
+                return @{verificationResult=@{statement=@{predicateType='https://slsa.dev/provenance/v1';subject=@(@{name=[IO.Path]::GetFileName($sbomPath);digest=@{sha256=$digest}})}}}
             }
             if($Arguments -contains '--predicate-type'){
                 $predicate=Get-Content $sbomPath -Raw|ConvertFrom-Json
@@ -136,6 +139,8 @@ try {
         Test-BuildReject {Assert-BuildProvenance $assetPath $sbomPath 'v1.2.3-dev' ('c'*40)} 'Downloaded SPDX did not match its signed attestation.'
         $script:snapshotSubject=$true
         Assert-BuildProvenance $assetPath $sbomPath 'v1.2.3-dev' ('c'*40);$script:checks++
+        $script:snapshotDigestMismatch=$true
+        Test-BuildReject {Assert-BuildProvenance $assetPath $sbomPath 'v1.2.3-dev' ('c'*40)} 'Reused snapshot was not bound to the verified archive proof.'
     }
     & {
         $savedUrl=$env:ACTIONS_ID_TOKEN_REQUEST_URL;$savedRuntime=$env:ACTIONS_ID_TOKEN_REQUEST_TOKEN
