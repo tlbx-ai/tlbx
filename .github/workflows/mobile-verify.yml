@@ -65,12 +65,6 @@ jobs:
           android --sdk "$ANDROID_HOME" sdk install 'platforms/android-36'
           android --sdk "$ANDROID_HOME" sdk install 'build-tools/37.0.0'
 
-      - name: Audit Android dependencies
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: ./scripts/audit-supply-chain.ps1 -Scope android
-
       - name: Verify Android debug build and lint
         working-directory: src/connectors/android
         run: |

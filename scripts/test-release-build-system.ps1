@@ -145,7 +145,7 @@ function global:npm {
     $global:LASTEXITCODE = 0
 }
 try {
-    Copy-Item "$PSScriptRoot/run-release-tests.ps1", "$PSScriptRoot/release-test-clusters.ps1" "$fixture/scripts/"
+    Copy-Item "$PSScriptRoot/run-release-tests.ps1", "$PSScriptRoot/release-test-clusters.ps1", "$PSScriptRoot/build-storage.ps1" "$fixture/scripts/"
     foreach ($name in @('run-dotnet-test-suite','verify-installers','audit-supply-chain','test-release-build-system','test-publish-builds','test-release-pr','run-runtime-build-verification','run-aot-smoke-probe')) {
         ('$global:TlbxBuildTestCalls.Add("' + $name + ' $args")') | Set-Content "$fixture/scripts/$name.ps1"
     }
@@ -159,7 +159,7 @@ try {
     Assert-Check ($global:TlbxBuildTestCalls.Count -eq 1 -and $global:TlbxBuildTestCalls[0] -notmatch '-Suite server') 'Runtime cluster duplicated or omitted .NET coverage.'
     $global:TlbxBuildTestCalls.Clear()
     & "$fixture/scripts/run-release-tests.ps1" -TestCategories dependencies -FrontendInstalled
-    Assert-Check ($global:TlbxBuildTestCalls.Count -eq 1 -and $global:TlbxBuildTestCalls[0] -match '-Scope server -FrontendInstalled') 'Server dependency cluster is coupled to mobile or loses install ownership.'
+    Assert-Check ($global:TlbxBuildTestCalls.Count -eq 0) 'Cluster dispatch duplicated the separate on-demand security job.'
     $global:TlbxBuildTestCalls.Clear()
     function global:python { $global:TlbxBuildTestCalls.Add("python $args"); $global:LASTEXITCODE=0 }
     function global:dotnet { $global:TlbxBuildTestCalls.Add("dotnet $args"); $global:LASTEXITCODE=0 }
@@ -172,6 +172,7 @@ try {
         Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -match 'npm run (verify|test)|dotnet test|run-dotnet-test-suite|test-release-|test-publish|run-aot-smoke|verify-installers' }).Count -eq 0) 'Automatic release validation dispatched a test suite.'
         Assert-Check ($global:TlbxBuildTestCalls.Contains('npm run typecheck') -and $global:TlbxBuildTestCalls.Contains('npm run lint')) 'Release validation lost frontend compiler/lint checks.'
         Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'run-runtime-build-verification*' }).Count -eq 1) 'Release validation lost or duplicated runtime compilation.'
+        Assert-Check (@($global:TlbxBuildTestCalls | Where-Object { $_ -like 'audit-supply-chain*' }).Count -eq 0) 'Automatic release validation dispatched the manual security audit.'
     }
     finally { Remove-Item Function:\python,Function:\dotnet -ErrorAction SilentlyContinue }
     function global:npm { $global:LASTEXITCODE = 1 }
