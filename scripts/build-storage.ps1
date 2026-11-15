@@ -101,14 +101,19 @@ function Move-TlbxNativeCache {
 function Assert-TlbxNativeStorageIdle {
     param([string]$RepoRoot)
     $legacy = Get-TlbxBuildPath $RepoRoot '.artifacts/connect-dotnet-transport'
+    $cache = Get-TlbxBuildPath $RepoRoot '.cache/connect-native'
     if ($IsWindows) {
         $commands = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object ProcessId -NE $PID | ForEach-Object { "$($_.ExecutablePath) $($_.CommandLine)" })
     } else {
         $commands = @(& ps -axo args=)
         if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect active native builds.' }
     }
-    if (@($commands | Where-Object { $_.IndexOf($legacy, [StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count) {
-        throw 'Legacy native build storage is in use; retry after that build finishes.'
+    if (@($commands | Where-Object {
+        $normalized = $_.Replace('\', '/')
+        $normalized.IndexOf($legacy.Replace('\', '/'), [StringComparison]::OrdinalIgnoreCase) -ge 0 -or
+            $normalized.IndexOf($cache.Replace('\', '/'), [StringComparison]::OrdinalIgnoreCase) -ge 0
+    }).Count) {
+        throw 'Native build/cache storage is in use; retry after that build finishes.'
     }
 }
 
