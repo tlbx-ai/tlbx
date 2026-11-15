@@ -110,6 +110,7 @@ public sealed class AppServerControlSessionSummary
     public string? Reason { get; set; }
     public string? LastError { get; set; }
     public DateTimeOffset? LastEventAt { get; set; }
+    public DateTimeOffset? LastActivityAt { get; set; }
 }
 
 public sealed class AppServerControlUsageSummary

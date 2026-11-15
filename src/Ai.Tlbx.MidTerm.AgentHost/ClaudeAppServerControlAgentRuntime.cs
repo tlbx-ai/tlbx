@@ -1208,6 +1208,7 @@ internal sealed partial class ClaudeAppServerControlAgentRuntime : IAppServerCon
     {
         var appServerControlEvent = new AppServerControlProviderEvent
         {
+            IsReplay = _replayingHistory,
             Sequence = Interlocked.Increment(ref _sequence),
             EventId = $"evt-{Provider}-{_sequence.ToString(CultureInfo.InvariantCulture)}",
             SessionId = _sessionId ?? string.Empty,

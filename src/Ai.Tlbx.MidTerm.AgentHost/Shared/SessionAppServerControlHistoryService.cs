@@ -78,6 +78,9 @@ public sealed partial class SessionAppServerControlHistoryService
             retainedEvent.Sequence = ++log.NextSequence;
             log.EventBacklog.Add(retainedEvent);
             TrimEventBacklog(log.EventBacklog);
+            if (!retainedEvent.IsReplay && HasOutput(retainedEvent) &&
+                (log.State.Session.LastActivityAt is not { } previous || retainedEvent.CreatedAt > previous))
+                log.State.Session.LastActivityAt = retainedEvent.CreatedAt;
             ApplyEvent(log.State, retainedEvent);
             var delta = BuildDelta(log.SessionId, log.NextSequence, log.State, retainedEvent);
             PersistScreenLogDelta(log, delta);
@@ -509,6 +512,9 @@ public sealed partial class SessionAppServerControlHistoryService
             log.EventBacklog.Add(retainedEvent);
             TrimEventBacklog(log.EventBacklog);
             log.NextSequence = Math.Max(log.NextSequence, retainedEvent.Sequence);
+            if (!retainedEvent.IsReplay && HasOutput(retainedEvent) &&
+                (log.State.Session.LastActivityAt is not { } previous || retainedEvent.CreatedAt > previous))
+                log.State.Session.LastActivityAt = retainedEvent.CreatedAt;
             ApplyEvent(log.State, retainedEvent);
         }
 
@@ -875,19 +881,18 @@ public sealed partial class SessionAppServerControlHistoryService
         };
     }
 
-    private static SessionAppServerControlHeatSnapshot BuildHeatSnapshot(AppServerControlConversationState state)
-    {
-        if (!ShouldSurfaceWorkingHeat(state))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
+    private static bool HasOutput(AppServerControlProviderEvent e) =>
+        !string.IsNullOrWhiteSpace(e.ContentDelta?.Delta) ||
+        !string.IsNullOrWhiteSpace(e.PlanDelta?.Delta) ||
+        !string.IsNullOrWhiteSpace(e.PlanCompleted?.PlanMarkdown) ||
+        !string.IsNullOrWhiteSpace(e.DiffUpdated?.UnifiedDiff) ||
+        e.Item is not null || e.RequestOpened is not null || e.UserInputRequested is not null;
 
-        return new SessionAppServerControlHeatSnapshot
-        {
-            CurrentHeat = 1,
-            LastActivityAt = state.Session.LastEventAt ?? state.CurrentTurn.StartedAt
-        };
-    }
+    private static SessionAppServerControlHeatSnapshot BuildHeatSnapshot(AppServerControlConversationState state) => new()
+    {
+        LastActivityAt = state.Session.LastActivityAt,
+        CurrentHeat = TerminalHeat.FromTextOutput(state.Session.LastActivityAt, DateTimeOffset.UtcNow)
+    };
 
     private static void TrimEventBacklog(List<AppServerControlProviderEvent> eventBacklog)
     {
@@ -1101,43 +1106,6 @@ public sealed partial class SessionAppServerControlHistoryService
 
         target.Notices.Clear();
         target.Notices.AddRange(noticesById.Values.OrderByDescending(static notice => notice.CreatedAt));
-    }
-
-    private static bool ShouldSurfaceWorkingHeat(AppServerControlConversationState state)
-    {
-        if (state.OpenRequestIds.Count > 0)
-        {
-            return false;
-        }
-
-        if (IsWorkingTurnState(state.CurrentTurn.State))
-        {
-            return true;
-        }
-
-        return string.IsNullOrWhiteSpace(state.CurrentTurn.State) &&
-               IsWorkingSessionState(state.Session.State);
-    }
-
-    private static bool IsWorkingTurnState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "running" => true,
-            "in_progress" => true,
-            "started" => true,
-            _ => false
-        };
-    }
-
-    private static bool IsWorkingSessionState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "starting" => true,
-            "running" => true,
-            _ => false
-        };
     }
 
     private AppServerControlHistoryPatch BuildDelta(
@@ -1877,6 +1845,7 @@ public sealed partial class SessionAppServerControlHistoryService
     {
         return new AppServerControlProviderEvent
         {
+            IsReplay = source.IsReplay,
             Sequence = source.Sequence,
             EventId = source.EventId,
             SessionId = source.SessionId,
@@ -2071,6 +2040,7 @@ public sealed partial class SessionAppServerControlHistoryService
             StateLabel = source.StateLabel,
             Reason = source.Reason,
             LastError = source.LastError,
+            LastActivityAt = source.LastActivityAt,
             LastEventAt = source.LastEventAt
         };
     }
@@ -2084,6 +2054,7 @@ public sealed partial class SessionAppServerControlHistoryService
         target.StateLabel = source.StateLabel;
         target.Reason = source.Reason;
         target.LastError = source.LastError;
+        target.LastActivityAt = source.LastActivityAt;
         target.LastEventAt = source.LastEventAt;
     }
 

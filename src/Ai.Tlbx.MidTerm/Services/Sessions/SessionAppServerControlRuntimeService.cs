@@ -8,6 +8,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, ISessionAppServerControlHeatSource
 {
+    private readonly TtyHostSessionManager _sessionManager;
     private readonly AiCliProfileService _profileService;
     private readonly SessionAppServerControlHostRuntimeService _hostRuntime;
 
@@ -17,6 +18,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         SessionAppServerControlHostRuntimeService hostRuntime,
         SettingsService? settingsService = null)
     {
+        _sessionManager = sessionManager;
         _profileService = profileService;
         _hostRuntime = hostRuntime;
         sessionManager.OnSessionClosed += Forget;
@@ -136,22 +138,20 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.TryGetCachedHistoryWindow(sessionId, out historyWindow);
     }
 
+    public event Action<string>? TextActivity
+    {
+        add => _hostRuntime.TextActivity += value;
+        remove => _hostRuntime.TextActivity -= value;
+    }
+
     public SessionAppServerControlHeatSnapshot GetHeatSnapshot(string sessionId)
     {
-        if (!_hostRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
-
-        if (!ShouldSurfaceWorkingHeat(historyWindow))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
-
+        var activityAt = _hostRuntime.GetLastActivityAt(sessionId);
         return new SessionAppServerControlHeatSnapshot
         {
-            CurrentHeat = 1,
-            LastActivityAt = historyWindow.Session.LastEventAt ?? historyWindow.CurrentTurn.StartedAt
+            IsDedicatedSession = _sessionManager.IsAppServerControlOnly(sessionId),
+            CurrentHeat = TerminalHeat.FromTextOutput(activityAt, DateTimeOffset.UtcNow),
+            LastActivityAt = activityAt
         };
     }
 
@@ -326,22 +326,6 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return ValueTask.CompletedTask;
     }
 
-    private static bool ShouldSurfaceWorkingHeat(AppServerControlHistoryWindowResponse historyWindow)
-    {
-        if (historyWindow.Requests.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        if (IsWorkingTurnState(historyWindow.CurrentTurn.State))
-        {
-            return true;
-        }
-
-        return string.IsNullOrWhiteSpace(historyWindow.CurrentTurn.State) &&
-               IsWorkingSessionState(historyWindow.Session.State);
-    }
-
     private string ResolveAttachProfile(SessionInfoDto session)
     {
         var detectedProfile = _profileService.NormalizeProfile(null, session);
@@ -366,27 +350,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.IsEnabledFor(profile);
     }
 
-    private static bool IsWorkingTurnState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "running" => true,
-            "in_progress" => true,
-            "started" => true,
-            "submitted" => true,
-            _ => false
-        };
-    }
 
-    private static bool IsWorkingSessionState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "starting" => true,
-            "running" => true,
-            _ => false
-        };
-    }
 }
 
 public sealed class AppServerControlRuntimeSummary

@@ -378,10 +378,13 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime : IAppServerC
     private void PublishSession(string state, string label) => Publish(state == "ready" ? "session.ready" : "session.state.changed", e => e.SessionState = new() { State = state, StateLabel = label });
     private void PublishSettings() => Publish("quick-settings.updated", e => e.QuickSettingsUpdated = AppServerControlQuickSettings.ToPayload(_settings));
 
+    private bool _replayingHistory;
+
     private void Publish(string type, Action<AppServerControlProviderEvent> configure, string? item = null, string? request = null, string? turn = null, DateTimeOffset? at = null)
     {
         var evt = new AppServerControlProviderEvent
         {
+            IsReplay = _replayingHistory,
             Sequence = Interlocked.Increment(ref _sequence),
             EventId = "evt-opencode-" + Guid.NewGuid().ToString("N", CultureInfo.InvariantCulture),
             SessionId = _sessionId,

@@ -1,6 +1,7 @@
 /** Text activity comes only from the server. CSS owns the finite cooldown;
  * transport bytes, replay and application busy state never rearm it. */
 import { $sessionList } from '../../stores';
+import { getCurrentLocale, t } from '../i18n';
 
 const COOL_MS = 30_000;
 interface HeatState {
@@ -55,6 +56,14 @@ export function recordTextActivity(id: string, stamp: string | null, ageMs: numb
 function syncSnapshots(): void {
   const list = $sessionList.get();
   for (const session of list) {
+    if (session.appServerControlOnly && !session.supervisor?.lastTextOutputAt) {
+      const state = sessions.get(session.id);
+      if (state?.stamp) {
+        state.stamp = null;
+        state.activityAt = null;
+        render(state);
+      }
+    }
     recordTextActivity(
       session.id,
       session.supervisor?.lastTextOutputAt ?? null,
@@ -83,6 +92,19 @@ export function getDisplayedSessionHeat(id: string): number {
   const age = ageOf(state);
   if (age >= COOL_MS) return 0;
   return 1 - age / COOL_MS;
+}
+export function getSessionActivityTitle(id: string): string {
+  const state = sessions.get(id);
+  if (state?.activityAt === null || !state) return '';
+  const seconds = Math.floor(ageOf(state) / 1000);
+  const unit =
+    seconds < 60 ? 'second' : seconds < 3600 ? 'minute' : seconds < 86400 ? 'hour' : 'day';
+  const divisor = unit === 'second' ? 1 : unit === 'minute' ? 60 : unit === 'hour' ? 3600 : 86400;
+  const age = new Intl.RelativeTimeFormat(getCurrentLocale(), { numeric: 'always' }).format(
+    -Math.floor(seconds / divisor),
+    unit,
+  );
+  return `${t('agentView.lastOutput')}: ${age}`;
 }
 export function getSessionHeat(id: string): number {
   return getDisplayedSessionHeat(id);

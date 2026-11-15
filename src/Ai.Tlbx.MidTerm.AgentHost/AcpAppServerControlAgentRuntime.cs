@@ -1958,6 +1958,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     {
         var appServerControlEvent = new AppServerControlProviderEvent
         {
+            IsReplay = _applyingHistoryReplay,
             Sequence = Interlocked.Increment(ref _sequence),
             EventId = $"evt-{Provider}-{Guid.NewGuid():N}",
             SessionId = _sessionId ?? string.Empty,
