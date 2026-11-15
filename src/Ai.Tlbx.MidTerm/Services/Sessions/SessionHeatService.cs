@@ -20,8 +20,8 @@ public sealed class SessionHeatService
     {
         var telemetry = _telemetryService.GetSnapshot(sessionId);
         var appServerControlHeat = _appServerControlHeatSource.GetHeatSnapshot(sessionId);
-        var lastOutputAt = telemetry.LastOutputAt;
-        var lastTextOutputAt = telemetry.LastTextOutputAt;
+        var lastOutputAt = appServerControlHeat.IsDedicatedSession ? null : telemetry.LastOutputAt;
+        var lastTextOutputAt = appServerControlHeat.IsDedicatedSession ? null : telemetry.LastTextOutputAt;
         if (appServerControlHeat.LastActivityAt is { } activityAt)
         {
             if (lastOutputAt is null || activityAt > lastOutputAt) lastOutputAt = activityAt;

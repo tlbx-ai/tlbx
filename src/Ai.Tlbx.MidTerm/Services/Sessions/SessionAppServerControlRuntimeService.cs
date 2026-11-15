@@ -8,6 +8,7 @@ namespace Ai.Tlbx.MidTerm.Services.Sessions;
 
 public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, ISessionAppServerControlHeatSource
 {
+    private readonly TtyHostSessionManager _sessionManager;
     private readonly AiCliProfileService _profileService;
     private readonly SessionAppServerControlHostRuntimeService _hostRuntime;
 
@@ -17,6 +18,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         SessionAppServerControlHostRuntimeService hostRuntime,
         SettingsService? settingsService = null)
     {
+        _sessionManager = sessionManager;
         _profileService = profileService;
         _hostRuntime = hostRuntime;
         sessionManager.OnSessionClosed += Forget;
@@ -147,6 +149,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         var activityAt = _hostRuntime.GetLastActivityAt(sessionId);
         return new SessionAppServerControlHeatSnapshot
         {
+            IsDedicatedSession = _sessionManager.IsAppServerControlOnly(sessionId),
             CurrentHeat = TerminalHeat.FromTextOutput(activityAt, DateTimeOffset.UtcNow),
             LastActivityAt = activityAt
         };

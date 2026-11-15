@@ -395,7 +395,9 @@ public sealed class StateWebSocketHandler
                     if (Volatile.Read(ref stateDeliveryActive) == 0) continue;
                     var snapshot = _telemetry.GetSnapshot(sessionId);
                     var lastTextOutputAt = snapshot.LastTextOutputAt;
-                    var activityAt = _appServerControlRuntime.GetHeatSnapshot(sessionId).LastActivityAt;
+                    var agentHeat = _appServerControlRuntime.GetHeatSnapshot(sessionId);
+                    if (agentHeat.IsDedicatedSession) lastTextOutputAt = null;
+                    var activityAt = agentHeat.LastActivityAt;
                     if (activityAt is not null && (lastTextOutputAt is null || activityAt > lastTextOutputAt))
                         lastTextOutputAt = activityAt;
                     await SendJsonAsync(new TerminalTextActivityMessage

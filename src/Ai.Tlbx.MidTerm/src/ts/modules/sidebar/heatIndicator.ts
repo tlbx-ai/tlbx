@@ -56,6 +56,14 @@ export function recordTextActivity(id: string, stamp: string | null, ageMs: numb
 function syncSnapshots(): void {
   const list = $sessionList.get();
   for (const session of list) {
+    if (session.appServerControlOnly && !session.supervisor?.lastTextOutputAt) {
+      const state = sessions.get(session.id);
+      if (state?.stamp) {
+        state.stamp = null;
+        state.activityAt = null;
+        render(state);
+      }
+    }
     recordTextActivity(
       session.id,
       session.supervisor?.lastTextOutputAt ?? null,

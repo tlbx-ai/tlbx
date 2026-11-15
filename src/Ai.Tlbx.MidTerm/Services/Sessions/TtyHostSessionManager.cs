@@ -1246,6 +1246,8 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetAgentControlled(sessionId, agentControlled);
     }
 
+    public bool IsAppServerControlOnly(string sessionId) => _registry.IsAppServerControlOnly(sessionId);
+
     public bool SetAppServerControlOnly(string sessionId, bool appServerControlOnly)
     {
         return _registry.SetAppServerControlOnly(sessionId, appServerControlOnly);
