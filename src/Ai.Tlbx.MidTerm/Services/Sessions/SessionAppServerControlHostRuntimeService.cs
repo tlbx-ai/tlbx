@@ -147,7 +147,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     public bool OwnsSession(string sessionId)
     {
-        return _states.TryGetValue(sessionId, out var state) &&
+        return _states.TryGetValue(sessionId, out var state) && state.ProviderReady &&
+               state.ReaderTask is { IsCompleted: false } &&
                state.Input is not null &&
                state.Output is not null &&
                state.Status is not HostRuntimeStatus.None and not HostRuntimeStatus.Stopped;
@@ -295,7 +296,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             state.WorkingDirectory = workingDirectory;
             var attachPoint = SelectAttachPoint(profile, session);
 
-            if (state.Input is not null && state.Output is not null)
+            // An IPC hello is not a completed native provider attach. In particular,
+            // another waiter must not accept a transport whose attach just failed.
+            if (state.ProviderReady && state.ReaderTask is { IsCompleted: false } &&
+                state.Input is not null && state.Output is not null)
             {
                 return true;
             }
@@ -449,7 +453,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     throw new InvalidOperationException("TLBX_MCP_SCOPE_CHANGED: The canonical runtime changed again during MCP registration.");
             }
 
-            state.Status = attachResult.Status == "accepted" ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
+            if (attachResult.Status == "accepted") state.LastAttachError = null;
+            state.ProviderReady = attachResult.Status == "accepted";
+            state.Status = state.ProviderReady ? HostRuntimeStatus.Ready : HostRuntimeStatus.Error;
             state.LastError = attachResult.Status == "accepted" ? null : attachResult.Message;
             if (attachResult.Status == "accepted")
             {
@@ -458,7 +464,17 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 await RefreshCachedHistoryWindowAsync(state, ct).ConfigureAwait(false);
                 _ownershipRegistry.Upsert(sessionId, state.HostPid, profile, workingDirectory);
             }
-            return attachResult.Status == "accepted";
+            return state.ProviderReady;
+        }
+        catch (Exception ex)
+        {
+            // Keep cleanup and the failure visible under the same gate as attach.
+            // Removing the state after releasing the gate lets a concurrent caller
+            // mistake the failed pipe for a ready provider, or retain an orphan state.
+            await RecordAttachFailureUnderGateAsync(state, profile, ex.Message).ConfigureAwait(false);
+            Log.Warn(() => $"App Server Controller host attach failed for {sessionId}. {ex.Message}");
+            if (ex is OperationCanceledException && ct.IsCancellationRequested) throw;
+            return false;
         }
         finally
         {
@@ -839,22 +855,34 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     public async Task RecordAttachFailureAsync(string sessionId, string profile, string error, CancellationToken ct)
     {
-        await DetachAsync(sessionId, ct).ConfigureAwait(false);
-        _states.TryAdd(sessionId, new HostRuntimeState(sessionId)
+        var state = _states.GetOrAdd(sessionId, static id => new HostRuntimeState(id));
+        await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        try
         {
-            Profile = profile,
-            Status = HostRuntimeStatus.Error,
-            LastError = AppServerControlHistoryTextSanitizer.Sanitize(error)
-        });
+            await RecordAttachFailureUnderGateAsync(state, profile, error).ConfigureAwait(false);
+        }
+        finally
+        {
+            state.Gate.Release();
+        }
+    }
+
+    private async Task RecordAttachFailureUnderGateAsync(HostRuntimeState state, string profile, string error)
+    {
+        await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
+        state.Profile = profile;
+        state.Status = HostRuntimeStatus.Error;
+        state.LastAttachError = AppServerControlHistoryTextSanitizer.Sanitize(error);
+        state.LastError = state.LastAttachError;
     }
 
     public bool TryGetRuntimeSummary(string sessionId, out AppServerControlRuntimeSummary summary)
     {
         summary = default!;
         if (!_states.TryGetValue(sessionId, out var state) ||
-            state.Status == HostRuntimeStatus.None ||
-            state.Status == HostRuntimeStatus.Stopped ||
-            (state.Status != HostRuntimeStatus.Error && (state.Input is null || state.Output is null)))
+            (state.LastAttachError is null &&
+             (state.Status is HostRuntimeStatus.None or HostRuntimeStatus.Stopped ||
+              (state.Status != HostRuntimeStatus.Error && (state.Input is null || state.Output is null)))))
         {
             return false;
         }
@@ -868,7 +896,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             TransportLabel = state.TransportLabel,
             Status = ToStatusValue(state.Status),
             StatusLabel = ToStatusLabel(state.Status),
-            LastError = state.LastError ?? cachedHistory?.Session.LastError,
+            LastError = state.LastAttachError ?? state.LastError ?? cachedHistory?.Session.LastError,
             LastEventAt = cachedHistory?.Session.LastEventAt,
             AssistantText = cachedHistory?.Streams.AssistantText,
             UnifiedDiff = cachedHistory?.Streams.UnifiedDiff,
@@ -882,7 +910,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     {
         if (_states.TryGetValue(sessionId, out var state))
         {
-            return state.CachedHistoryWindow?.HistoryCount > 0 || OwnsSession(sessionId);
+            return (state.ProviderReady && state.CachedHistoryWindow?.HistoryCount > 0) || OwnsSession(sessionId);
         }
 
         return _ownershipRegistry.GetSessions().Any(record => string.Equals(record.SessionId, sessionId, StringComparison.Ordinal)) ||
@@ -892,7 +920,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     public bool TryGetCachedHistoryWindow(string sessionId, out AppServerControlHistoryWindowResponse historyWindow)
     {
         historyWindow = default!;
-        if (!_states.TryGetValue(sessionId, out var state))
+        if (!_states.TryGetValue(sessionId, out var state) || !state.ProviderReady)
         {
             return false;
         }
@@ -2263,6 +2291,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             throw new InvalidOperationException($"App Server Controller host runtime is not attached: missing state for {sessionId}.");
         }
 
+        if (!state.ProviderReady)
+        {
+            throw new InvalidOperationException(state.LastAttachError ?? state.LastError ?? "Agent Controller native provider is still initializing.");
+        }
+
         if (state.Input is null)
         {
             throw new InvalidOperationException(
@@ -2340,6 +2373,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
     private static async Task DisposeStateAsync(HostRuntimeState state, bool terminateHost)
     {
+        state.ProviderReady = false;
         foreach (var pending in state.PendingCommands.Values)
         {
             pending.TrySetException(new InvalidOperationException("App Server Controller host runtime is shutting down."));
@@ -2432,6 +2466,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             SessionId = sessionId;
         }
 
+        private volatile bool _providerReady;
+        public bool ProviderReady { get => _providerReady; set => _providerReady = value; }
         public string SessionId { get; }
         public SemaphoreSlim Gate { get; } = new(1, 1);
         public ConcurrentDictionary<string, TaskCompletionSource<AppServerControlHostCommandResultEnvelope>> PendingCommands { get; } = new(StringComparer.Ordinal);
@@ -2440,6 +2476,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public string TransportKey { get; set; } = string.Empty;
         public string TransportLabel { get; set; } = string.Empty;
         public string? LastError { get; set; }
+        // Keep the last rejected attach reason while a queued retry is initializing.
+        public string? LastAttachError { get; set; }
         public HostRuntimeStatus Status { get; set; }
         public int HostPid { get; set; }
         public string? McpScopeIdentity { get; set; }
@@ -2473,6 +2511,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         public void DisposeConnection()
         {
+            ProviderReady = false;
             var connection = Connection;
             Connection = null;
             Input = null;
