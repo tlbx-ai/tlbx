@@ -136,6 +136,12 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.TryGetCachedHistoryWindow(sessionId, out historyWindow);
     }
 
+    public event Action<string>? TextActivity
+    {
+        add => _hostRuntime.TextActivity += value;
+        remove => _hostRuntime.TextActivity -= value;
+    }
+
     public SessionAppServerControlHeatSnapshot GetHeatSnapshot(string sessionId)
     {
         if (!_hostRuntime.TryGetCachedHistoryWindow(sessionId, out var historyWindow))
@@ -143,15 +149,10 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
             return SessionAppServerControlHeatSnapshot.Cold;
         }
 
-        if (!ShouldSurfaceWorkingHeat(historyWindow))
-        {
-            return SessionAppServerControlHeatSnapshot.Cold;
-        }
-
         return new SessionAppServerControlHeatSnapshot
         {
-            CurrentHeat = 1,
-            LastActivityAt = historyWindow.Session.LastEventAt ?? historyWindow.CurrentTurn.StartedAt
+            CurrentHeat = TerminalHeat.FromTextOutput(historyWindow.Session.LastActivityAt, DateTimeOffset.UtcNow),
+            LastActivityAt = historyWindow.Session.LastActivityAt
         };
     }
 
@@ -326,22 +327,6 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return ValueTask.CompletedTask;
     }
 
-    private static bool ShouldSurfaceWorkingHeat(AppServerControlHistoryWindowResponse historyWindow)
-    {
-        if (historyWindow.Requests.Any(static request => string.Equals(request.State, "open", StringComparison.OrdinalIgnoreCase)))
-        {
-            return false;
-        }
-
-        if (IsWorkingTurnState(historyWindow.CurrentTurn.State))
-        {
-            return true;
-        }
-
-        return string.IsNullOrWhiteSpace(historyWindow.CurrentTurn.State) &&
-               IsWorkingSessionState(historyWindow.Session.State);
-    }
-
     private string ResolveAttachProfile(SessionInfoDto session)
     {
         var detectedProfile = _profileService.NormalizeProfile(null, session);
@@ -366,27 +351,7 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.IsEnabledFor(profile);
     }
 
-    private static bool IsWorkingTurnState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "running" => true,
-            "in_progress" => true,
-            "started" => true,
-            "submitted" => true,
-            _ => false
-        };
-    }
 
-    private static bool IsWorkingSessionState(string? state)
-    {
-        return state?.Trim().ToLowerInvariant() switch
-        {
-            "starting" => true,
-            "running" => true,
-            _ => false
-        };
-    }
 }
 
 public sealed class AppServerControlRuntimeSummary

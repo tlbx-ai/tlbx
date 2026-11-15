@@ -66,6 +66,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Include="..\Ai.Tlbx.MidTerm\Services\Sessions\TerminalHeat.cs" Link="Shared\TerminalHeat.cs" />
     <ProjectReference Include="..\Ai.Tlbx.MidTerm.Common\Ai.Tlbx.MidTerm.Common.csproj" />
     <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.AgentHost.UnitTests" />
     <InternalsVisibleTo Include="Ai.Tlbx.MidTerm.UnitTests" />

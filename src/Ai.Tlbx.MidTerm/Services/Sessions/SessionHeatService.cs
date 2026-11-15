@@ -20,11 +20,12 @@ public sealed class SessionHeatService
     {
         var telemetry = _telemetryService.GetSnapshot(sessionId);
         var appServerControlHeat = _appServerControlHeatSource.GetHeatSnapshot(sessionId);
-        var currentHeat = Math.Max(telemetry.CurrentHeat, appServerControlHeat.CurrentHeat);
         var lastOutputAt = telemetry.LastOutputAt;
-        if (appServerControlHeat.CurrentHeat > 0)
+        var lastTextOutputAt = telemetry.LastTextOutputAt;
+        if (appServerControlHeat.LastActivityAt is { } activityAt)
         {
-            lastOutputAt = _timeProvider.GetUtcNow();
+            if (lastOutputAt is null || activityAt > lastOutputAt) lastOutputAt = activityAt;
+            if (lastTextOutputAt is null || activityAt > lastTextOutputAt) lastTextOutputAt = activityAt;
         }
 
         return new SessionHeatSnapshot
@@ -34,10 +35,10 @@ public sealed class SessionHeatService
             TotalBellCount = telemetry.TotalBellCount,
             LastInputAt = telemetry.LastInputAt,
             LastOutputAt = lastOutputAt,
-            LastTextOutputAt = appServerControlHeat.CurrentHeat > 0 ? lastOutputAt : telemetry.LastTextOutputAt,
+            LastTextOutputAt = lastTextOutputAt,
             LastBellAt = telemetry.LastBellAt,
             CurrentBytesPerSecond = telemetry.CurrentBytesPerSecond,
-            CurrentHeat = currentHeat
+            CurrentHeat = TerminalHeat.FromTextOutput(lastTextOutputAt, _timeProvider.GetUtcNow())
         };
     }
 }

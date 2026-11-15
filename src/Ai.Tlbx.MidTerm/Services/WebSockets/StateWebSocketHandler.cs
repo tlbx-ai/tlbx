@@ -394,11 +394,15 @@ public sealed class StateWebSocketHandler
                     }
                     if (Volatile.Read(ref stateDeliveryActive) == 0) continue;
                     var snapshot = _telemetry.GetSnapshot(sessionId);
+                    var lastTextOutputAt = snapshot.LastTextOutputAt;
+                    var activityAt = _appServerControlRuntime.GetHeatSnapshot(sessionId).LastActivityAt;
+                    if (activityAt is not null && (lastTextOutputAt is null || activityAt > lastTextOutputAt))
+                        lastTextOutputAt = activityAt;
                     await SendJsonAsync(new TerminalTextActivityMessage
                     {
                         SessionId = sessionId,
-                        LastTextOutputAt = snapshot.LastTextOutputAt,
-                        TextActivityAgeMs = snapshot.LastTextOutputAt is { } at ? Math.Max(0, (DateTimeOffset.UtcNow - at).TotalMilliseconds) : null
+                        LastTextOutputAt = lastTextOutputAt,
+                        TextActivityAgeMs = lastTextOutputAt is { } at ? Math.Max(0, (DateTimeOffset.UtcNow - at).TotalMilliseconds) : null
                     }, AppJsonContext.Default.TerminalTextActivityMessage);
                 }
             }
@@ -419,6 +423,7 @@ public sealed class StateWebSocketHandler
         }
 
         _telemetry.TextActivity += OnTextActivity;
+        _appServerControlRuntime.TextActivity += OnTextActivity;
         var sessionListenerId = _sessionManager.AddStateListener(OnStateChange);
         var updateListenerId = _updateService.AddUpdateListener(OnUpdateAvailable);
         _sessionLayoutStateService.OnChanged += OnLayoutChanged;
@@ -668,6 +673,7 @@ public sealed class StateWebSocketHandler
         finally
         {
             _telemetry.TextActivity -= OnTextActivity;
+            _appServerControlRuntime.TextActivity -= OnTextActivity;
             stateSendCts.Cancel();
             Task? pendingTextTask;
             lock (textSendGate) { pendingTextTask = textSendTask; pendingTextSessions.Clear(); }

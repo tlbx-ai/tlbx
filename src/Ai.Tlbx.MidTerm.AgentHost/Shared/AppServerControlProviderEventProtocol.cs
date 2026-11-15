@@ -4,6 +4,8 @@ namespace Ai.Tlbx.MidTerm.Common.Protocol;
 
 public sealed class AppServerControlProviderEvent
 {
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool IsReplay { get; set; }
     public long Sequence { get; set; }
     public string EventId { get; set; } = string.Empty;
     public string SessionId { get; set; } = string.Empty;

@@ -218,20 +218,25 @@ internal sealed partial class OpenCodeAppServerControlAgentRuntime
         var records = Array(messages);
         lock (_state)
         {
-            var replayTurns = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var record in records)
+            _replayingHistory = replay;
+            try
             {
-                var info = Value(record, "info");
-                // OpenCode keeps reverted records in storage. They must not
-                // reappear when tlbx resumes a conversation after a native undo.
-                if (Text(info, "id") == revertedMessage && revertedMessage is not null) break;
-                ProjectMessage(info, replay);
-                var turn = TurnFor(Text(info, "id"));
-                if (replay && replayTurns.Add(turn)) Publish("turn.started", e => e.TurnStarted = new() { IsReplay = true }, turn: turn, at: Timestamp(Value(info, "time", "created")));
-                foreach (var part in Array(Value(record, "parts"))) ProjectPart(part);
+                var replayTurns = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var record in records)
+                {
+                    var info = Value(record, "info");
+                    // OpenCode keeps reverted records in storage. They must not
+                    // reappear when tlbx resumes a conversation after a native undo.
+                    if (Text(info, "id") == revertedMessage && revertedMessage is not null) break;
+                    ProjectMessage(info, replay);
+                    var turn = TurnFor(Text(info, "id"));
+                    if (replay && replayTurns.Add(turn)) Publish("turn.started", e => e.TurnStarted = new() { IsReplay = true }, turn: turn, at: Timestamp(Value(info, "time", "created")));
+                    foreach (var part in Array(Value(record, "parts"))) ProjectPart(part);
+                }
+                foreach (var turn in replayTurns) Publish("turn.completed", e => e.TurnCompleted = new() { State = "completed", StateLabel = "Restored", StopReason = "history_import" }, turn: turn);
+                PublishUsage();
             }
-            foreach (var turn in replayTurns) Publish("turn.completed", e => e.TurnCompleted = new() { State = "completed", StateLabel = "Restored", StopReason = "history_import" }, turn: turn);
-            PublishUsage();
+            finally { _replayingHistory = false; }
         }
     }
 

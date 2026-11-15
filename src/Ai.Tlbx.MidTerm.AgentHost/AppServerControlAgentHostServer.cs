@@ -694,6 +694,7 @@ internal sealed class AppServerControlAgentHostServer : IAsyncDisposable
     {
         return new AppServerControlProviderEvent
         {
+            IsReplay = appServerControlEvent.IsReplay,
             Sequence = appServerControlEvent.Sequence,
             EventId = appServerControlEvent.EventId,
             SessionId = appServerControlEvent.SessionId,

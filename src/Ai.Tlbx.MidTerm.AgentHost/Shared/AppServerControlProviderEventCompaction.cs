@@ -22,6 +22,7 @@ public static class AppServerControlProviderEventCompaction
 
         return new AppServerControlProviderEvent
         {
+            IsReplay = source.IsReplay,
             Sequence = source.Sequence,
             EventId = source.EventId,
             SessionId = source.SessionId,

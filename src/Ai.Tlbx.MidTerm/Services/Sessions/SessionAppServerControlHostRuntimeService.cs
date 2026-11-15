@@ -38,6 +38,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
     private const string HostModeEnvironmentVariable = "MIDTERM_APP_SERVER_CONTROL_HOST_MODE";
     private static readonly TimeSpan CommandTimeout = TimeSpan.FromSeconds(10);
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+    public event Action<string>? TextActivity;
+
     private readonly ConcurrentDictionary<string, HostRuntimeState> _states = new(StringComparer.Ordinal);
     private readonly SettingsService _settingsService;
     private readonly AcpAgentCatalogService _acpAgentCatalog;
@@ -1459,8 +1461,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         RefreshRuntimeStatusFromHistory(state);
     }
 
-    private static void ApplyHistoryPatchToState(HostRuntimeState state, AppServerControlHistoryPatch patch)
+    private void ApplyHistoryPatchToState(HostRuntimeState state, AppServerControlHistoryPatch patch)
     {
+        var notifyActivity = false;
         lock (state.HistoryCacheSync)
         {
             if (state.CachedHistoryWindow is not null &&
@@ -1469,9 +1472,18 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 return;
             }
 
+            var previousActivity = state.CachedHistoryWindow?.Session.LastActivityAt;
             state.CachedHistoryWindow = ApplyCachedHistoryPatch(state.CachedHistoryWindow, patch);
+            if (patch.Session.LastActivityAt is { } activityAt &&
+                (previousActivity is null || activityAt > previousActivity) &&
+                (state.LastActivityNotificationAt is not { } last || activityAt - last >= TimeSpan.FromMilliseconds(250)))
+            {
+                state.LastActivityNotificationAt = activityAt;
+                notifyActivity = true;
+            }
             RefreshRuntimeStatusFromHistory(state);
         }
+        if (notifyActivity) TextActivity?.Invoke(state.SessionId);
         FanOutHistoryPatch(state, patch);
     }
 
@@ -1781,6 +1793,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             StateLabel = source.StateLabel,
             Reason = source.Reason,
             LastError = source.LastError,
+            LastActivityAt = source.LastActivityAt,
             LastEventAt = source.LastEventAt
         };
     }
@@ -2492,6 +2505,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public Lock HistoryCacheSync { get; } = new();
         public AppServerControlHistoryWindowResponse? CachedHistoryWindow { get; set; }
         public Lock HistorySubscribersSync { get; } = new();
+        public DateTimeOffset? LastActivityNotificationAt { get; set; }
         public List<AppServerControlHistoryPatchSubscriber> HistoryPatchSubscribers { get; } = [];
 
         public void AttachOwnedConnection(HostTransportConnection connection)

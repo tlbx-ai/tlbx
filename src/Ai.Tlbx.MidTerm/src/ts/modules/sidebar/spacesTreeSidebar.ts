@@ -41,7 +41,12 @@ import {
   createSessionFilterController,
   type SessionFilterControllerElements,
 } from './sessionFilterController';
-import { pruneHeatSessions, registerHeatCanvas, unregisterHeatCanvas } from './heatIndicator';
+import {
+  getSessionActivityTitle,
+  pruneHeatSessions,
+  registerHeatCanvas,
+  unregisterHeatCanvas,
+} from './heatIndicator';
 import {
   getChildWorkspaces,
   getRootWorkspace,
@@ -904,6 +909,9 @@ function createSidebarSessionNode(
 
   const heatIndicator = document.createElement('div');
   heatIndicator.className = 'heat-canvas';
+  item.addEventListener('pointerenter', () => {
+    item.title = getSessionActivityTitle(entry.id);
+  });
   registerHeatCanvas(entry.id, heatIndicator);
   item.appendChild(heatIndicator);
 
