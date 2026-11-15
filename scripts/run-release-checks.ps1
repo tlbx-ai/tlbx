@@ -9,6 +9,8 @@ param(
     [string]$Configuration = 'Release'
 )
 $ErrorActionPreference = 'Stop'
+. "$PSScriptRoot/build-storage.ps1"
+Initialize-TlbxBuildStorage (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/release-test-clusters.ps1"
 $categories = @(Resolve-ReleaseTestClusters -TestCategories $TestCategories)
 Push-Location (Split-Path $PSScriptRoot -Parent)

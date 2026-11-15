@@ -14,15 +14,33 @@ export function commandPreview(source: string): string {
 
 export interface CommandToken {
   text: string;
-  kind?: 'string' | 'comment' | 'variable' | 'keyword' | 'number' | 'operator';
+  kind?: 'string' | 'comment' | 'variable' | 'keyword' | 'number' | 'operator' | 'flag';
 }
 
 /** Lightweight shell accents, never HTML. Bound work even for very large scripts. */
 export function tokenizeCommand(source: string): CommandToken[] {
+  const invocation =
+    /^(?:"[^"\r\n]*(?:pwsh|powershell|bash|sh)(?:\.exe)?"|(?:pwsh|powershell|bash|sh)(?:\.exe)?)\s+(?:-NoProfile\s+)?(?:-Command|-c|-lc)\s+(["'])/i.exec(
+      source.slice(0, 4096),
+    );
+  const end = source.trimEnd().length;
+  if (invocation && source[end - 1] === invocation[1]) {
+    const prefixLength = invocation[0].length;
+    return [
+      ...tokenizeCommandText(source.slice(0, prefixLength - 1)),
+      { text: source[prefixLength - 1] ?? '', kind: 'string' },
+      ...tokenizeCommandText(source.slice(prefixLength, end - 1)),
+      { text: source.slice(end - 1), kind: 'string' },
+    ];
+  }
+  return tokenizeCommandText(source);
+}
+
+function tokenizeCommandText(source: string): CommandToken[] {
   const limit = 32_768;
   const head = source.slice(0, limit);
   const pattern =
-    /#[^\r\n]*|'(?:''|[^'])*'|"(?:`.|\\.|[^"\\`])*"|\$(?:\{[^}\r\n]*\}|[\w?:]+)|\b(?:if|then|else|elif|fi|for|foreach|while|do|done|function|return|try|catch|finally|throw|param|in|exit|const|let|await|async)\b|\b\d+(?:\.\d+)?\b|(?:\|\||&&|[|;=<>])/g;
+    /#[^\r\n]*|'(?:''|[^'])*'|"(?:`.|\\.|[^"\\`])*"|\$(?:\{[^}\r\n]*\}|[\w?:]+)|\b(?:if|then|else|elif|fi|for|foreach|while|do|done|function|return|try|catch|finally|throw|param|in|exit|const|let|await|async|true|false|null)\b|\b\d+(?:\.\d+)?\b|(?<![\w.-])--?[A-Za-z][\w-]*|(?:\|\||&&|[|;=<>])/g;
   const tokens: CommandToken[] = [];
   let offset = 0;
   for (const match of head.matchAll(pattern)) {
@@ -36,9 +54,11 @@ export function tokenizeCommand(source: string): CommandToken[] {
           ? 'variable'
           : /^\d/.test(text)
             ? 'number'
-            : /^[|;=&<>]/.test(text)
-              ? 'operator'
-              : 'keyword';
+            : text.startsWith('-')
+              ? 'flag'
+              : /^[|;=&<>]/.test(text)
+                ? 'operator'
+                : 'keyword';
     tokens.push({ text, kind });
     offset = match.index + text.length;
   }
