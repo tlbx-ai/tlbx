@@ -134,7 +134,7 @@ export function computeHistoryVirtualWindow(
     scrollTop,
     clientHeight,
     overscanItems: APP_SERVER_CONTROL_HISTORY_OVERSCAN_ITEMS,
-    overscanPx: Math.max(0, clientHeight * 2),
+    overscanPx: Math.max(0, clientHeight),
     resolveItemSize: (entry, index) => resolveHeight(entry, index),
   });
 }

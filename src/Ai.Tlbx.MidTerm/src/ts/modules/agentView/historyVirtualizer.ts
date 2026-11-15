@@ -11,7 +11,7 @@ export const APP_SERVER_CONTROL_HISTORY_MIN_FETCH_AHEAD_ITEMS = 20;
 
 export const DEFAULT_APP_SERVER_CONTROL_HISTORY_VIRTUALIZER_CONFIG: AppServerControlHistoryVirtualizerConfig =
   {
-    overscanItems: 8,
+    overscanItems: 2,
     fetchAheadItems: 30,
   };
 
