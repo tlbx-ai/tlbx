@@ -1,3 +1,4 @@
+import { resolveHistoryWheelMotion } from './historyWheel';
 import { syncQuestionAnswer } from '../smartInput/questionAnswer';
 import { t } from '../i18n';
 import { getHistoryImagePreviewToken } from './userHistoryReading';
@@ -353,15 +354,28 @@ export function restorePendingHistoryAnchor(
   if (key === 'pendingHistoryPrependAnchor') state.pendingHistoryLayoutAnchor = null;
   setHistoryScrollMode(state, 'browse');
   suppressViewportWindowSync(state);
-  const adjusted = restoreViewportAnchor({
-    viewport,
-    anchor: {
-      key: anchor.entryId,
-      topOffsetPx: anchor.topOffsetPx,
-      absoluteIndex: anchor.absoluteIndex,
-    },
-    resolveNode: (entryId) => state.historyRenderedNodes.get(entryId)?.node,
-  });
+  // Positioned rows already carry their canonical prefix coordinate. Restore
+  // from that coordinate instead of forcing a fresh row layout after hydration.
+  const positionedTop =
+    state.historyCanvas && node.parentElement === state.historyCanvas
+      ? Number.parseFloat(node.style.top)
+      : Number.NaN;
+  const adjusted = Number.isFinite(positionedTop)
+    ? syncViewportScrollPosition(
+        viewport,
+        (Number.parseFloat(getComputedStyle(viewport).paddingTop) || 0) +
+          positionedTop -
+          anchor.topOffsetPx,
+      )
+    : restoreViewportAnchor({
+        viewport,
+        anchor: {
+          key: anchor.entryId,
+          topOffsetPx: anchor.topOffsetPx,
+          absoluteIndex: anchor.absoluteIndex,
+        },
+        resolveNode: (entryId) => state.historyRenderedNodes.get(entryId)?.node,
+      });
   state.historyLastScrollMetrics = readHistoryScrollMetrics(viewport, state);
   confirmHistoryReaderAnchor(state);
   return adjusted;
@@ -1396,9 +1410,23 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     const metrics = readHistoryViewportMetrics(viewport, state);
     const renderPlan = buildHistoryRenderPlan(entries, metrics, state, viewportOnly);
+    const observerMeasurements =
+      viewportOnly ||
+      (typeof ResizeObserver === 'function' &&
+        state?.historyCanvas?.isConnected === true &&
+        !state.historyReaderResizeMeasurementPending);
     reconcileHistoryRenderPlan(sessionId, viewport, renderPlan);
+    if (state && renderPlan.wheelScrollTopPx !== undefined) {
+      viewport.scrollTop = renderPlan.wheelScrollTopPx;
+      state.historyPendingWheelDeltaPx =
+        (renderPlan.remainingWheelDeltaPx ?? 0) + renderPlan.wheelScrollTopPx - viewport.scrollTop;
+      if (Math.abs(state.historyPendingWheelDeltaPx) < 1) state.historyPendingWheelDeltaPx = 0;
+      state.historyViewportSyncPending ||= state.historyPendingWheelDeltaPx !== 0;
+      state.historyViewportSyncSuppressUntil = 0;
+      state.historyReaderAnchor = null;
+    }
     const measurementChanged =
-      state && !viewportOnly
+      state && !observerMeasurements
         ? measureRenderedHistoryHeights(
             sessionId,
             state,
@@ -1406,7 +1434,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
             metrics.clientWidth,
           )
         : false;
-    if (state && viewportOnly) {
+    if (state && observerMeasurements) {
       // ResizeObserver supplies post-layout sizes before paint. Scrolling must
       // not force a synchronous measure followed by a second anchor layout.
       syncHistoryMeasurementObserver({
@@ -1445,7 +1473,12 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state.historyPendingJumpTargetIndex != null;
     if (needsPositionRestore) {
       finalizeRenderedHistoryState(sessionId, panel, viewport, entries, state);
-      syncHistoryProgressNavigatorUi(state);
+      syncHistoryProgressNavigatorUi(
+        state,
+        renderPlan.wheelScrollTopPx !== undefined
+          ? { refreshAnchorFromViewport: true, refreshVisibleRange: true }
+          : {},
+      );
     }
   }
 
@@ -1472,13 +1505,41 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       state?.historyViewport && typeof getComputedStyle === 'function'
         ? Number.parseFloat(getComputedStyle(state.historyViewport).paddingTop) || 0
         : 0;
-    const renderScrollTop = resolveHistoryRenderScrollTop(
+    let renderScrollTop = resolveHistoryRenderScrollTop(
       entries,
       metrics.scrollTop,
       anchor,
       resolveEntryHeight,
       paddingTop,
     );
+    const contentHeightPx = sumHistoryEntryHeights(entries, 0, entries.length, resolveEntryHeight);
+    let wheelMotion: ReturnType<typeof resolveHistoryWheelMotion> | undefined;
+    if (
+      state?.historyViewportCommitPending &&
+      !state.historyAutoScrollPinned &&
+      state.historyPendingJumpTargetIndex === null &&
+      state.historyPendingWheelDeltaPx !== 0
+    ) {
+      const paddingBottom =
+        state.historyViewport && typeof getComputedStyle === 'function'
+          ? Number.parseFloat(getComputedStyle(state.historyViewport).paddingBottom) || 0
+          : 0;
+      wheelMotion = resolveHistoryWheelMotion({
+        scrollTop: renderScrollTop,
+        scrollHeight: contentHeightPx + paddingTop + paddingBottom,
+        clientHeight: metrics.clientHeight,
+        deltaY: state.historyPendingWheelDeltaPx,
+        hasMore:
+          state.historyPendingWheelDeltaPx < 0
+            ? state.snapshot?.hasOlderHistory === true
+            : state.snapshot?.hasNewerHistory === true,
+      });
+      renderScrollTop = wheelMotion.scrollTop;
+      // The carried gesture selects a new reader. Do not mount the entire
+      // corridor back to the old anchor and then scroll away from those rows.
+      state.pendingHistoryPrependAnchor = null;
+      state.pendingHistoryLayoutAnchor = null;
+    }
     const virtualWindow = computeHistoryVirtualWindow(
       entries,
       renderScrollTop,
@@ -1523,7 +1584,13 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
 
     return {
       virtualWindowKey: buildHistoryVirtualWindowKey(renderedWindow),
-      contentHeightPx: sumHistoryEntryHeights(entries, 0, entries.length, resolveEntryHeight),
+      contentHeightPx,
+      ...(wheelMotion
+        ? {
+            wheelScrollTopPx: wheelMotion.scrollTop,
+            remainingWheelDeltaPx: wheelMotion.remainingDeltaPx,
+          }
+        : {}),
       leadingPlaceholders,
       trailingPlaceholders,
       visibleEntries: buildVisibleHistoryEntries({

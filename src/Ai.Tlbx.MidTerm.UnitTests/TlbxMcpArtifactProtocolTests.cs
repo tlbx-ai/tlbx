@@ -33,12 +33,12 @@ public sealed class TlbxMcpArtifactProtocolTests
         services.AddSingleton<IHttpContextAccessor>(new HttpContextAccessor { HttpContext = context });
         services.AddSingleton<TlbxMcpArtifactStore>();
         await using var provider = services.BuildServiceProvider();
-        var coverage = partial ? JsonSerializer.SerializeToElement(new
+        BrowserCaptureInfo? coverage = partial ? new()
         {
-            renderer = "dom-svg", pixelCoverage = "partial", inventory = "parent-light-dom",
-            media = new { frames = 1, unreadableFrames = 1, canvases = 1, videos = 1 },
-            warningCodes = new Dictionary<string, int> { ["iframe-cross-origin"] = 1, ["canvas-tainted"] = 1 }
-        }) : (JsonElement?)null;
+            Renderer = "dom-svg", PixelCoverage = "partial", Inventory = "parent-light-dom",
+            Media = new() { Frames = 1, UnreadableFrames = 1, Canvases = 1, Videos = 1 },
+            WarningCodes = new(StringComparer.Ordinal) { ["iframe-cross-origin"] = 1, ["canvas-tainted"] = 1 }
+        } : null;
         var result = await TlbxMcpBrowserTools.CommandResultAsync(provider,
             new BrowserCommandRequest { Command = "screenshot", SessionId = "first001" },
             new BrowserWsResult { Success = true, Result = "data:image/png;base64," + png, Capture = coverage }, save: false);

@@ -13918,6 +13918,7 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   position: relative;
   overflow: hidden auto;
   overflow-anchor: none;
+  overscroll-behavior: none;
   padding: 18px 18px 64px;
   scroll-padding-bottom: 60px;
   scrollbar-width: none;

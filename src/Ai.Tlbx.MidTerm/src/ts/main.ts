@@ -460,7 +460,9 @@ async function init(): Promise<void> {
   initNetworkSection();
   initVoiceSection();
   bindVoiceEvents();
-  await initVoiceControls();
+  // Optional device discovery must not hold dock/bootstrap initialization behind
+  // an OS microphone enumeration or an unavailable voice settings endpoint.
+  void initVoiceControls();
   initChatPanel();
   syncAppModeClasses();
   setupResizeObserver();

@@ -1,5 +1,25 @@
 import type { SessionAppServerControlViewState } from './types';
 
+/** Resolve a carried gesture in the new kernel's pixel coordinates before mounting rows. */
+export function resolveHistoryWheelMotion(args: {
+  scrollTop: number;
+  scrollHeight: number;
+  clientHeight: number;
+  deltaY: number;
+  hasMore: boolean;
+}): { scrollTop: number; remainingDeltaPx: number } {
+  const origin = Math.max(
+    0,
+    Math.min(Math.max(0, args.scrollHeight - args.clientHeight), args.scrollTop),
+  );
+  const target = Math.max(
+    0,
+    Math.min(Math.max(0, args.scrollHeight - args.clientHeight), origin + args.deltaY),
+  );
+  const remaining = args.hasMore ? args.deltaY - (target - origin) : 0;
+  return { scrollTop: target, remainingDeltaPx: Math.abs(remaining) < 1 ? 0 : remaining };
+}
+
 /** Remember only the part the native scroller cannot consume at a retained-window edge. */
 export function retainHistoryWheelOverflow(
   state: SessionAppServerControlViewState,

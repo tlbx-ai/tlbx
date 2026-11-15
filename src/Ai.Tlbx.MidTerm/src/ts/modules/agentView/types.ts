@@ -57,6 +57,11 @@ export interface SessionAppServerControlViewState {
   historyJumpTargetEntryId: string | null;
   historyRenderScheduled: number | null;
   historyViewportRenderScheduled?: number | null;
+  historyViewportCommitPending?: boolean;
+  historyPendingViewportSnapshot?: AppServerControlHistorySnapshot | null;
+  historyWindowOnlyRenderPending?: boolean;
+  historyLastRenderedSequence?: number;
+  historyLastRenderedStreamConnected?: boolean;
   historyRenderBatchHandle: number | null;
   activationState:
     | 'idle'
@@ -251,6 +256,8 @@ export interface HistoryPlaceholderBlock {
 }
 
 export interface HistoryRenderPlan {
+  wheelScrollTopPx?: number;
+  remainingWheelDeltaPx?: number;
   contentHeightPx: number;
   virtualWindowKey: string | null;
   leadingPlaceholders: HistoryPlaceholderBlock[];

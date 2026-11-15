@@ -46,7 +46,9 @@ public sealed class AppServerControlWebSocketHandler
             return;
         }
 
-        using var ws = await context.WebSockets.AcceptWebSocketAsync();
+        const string binaryProtocol = "tlbx-history-ach1";
+        var nativeHistory = context.WebSockets.WebSocketRequestedProtocols.Contains(binaryProtocol, StringComparer.Ordinal);
+        using var ws = await context.WebSockets.AcceptWebSocketAsync(nativeHistory ? binaryProtocol : null);
         using var authLease = _authService.TrackWebSocketAuthentication(authentication, ws);
         var sendLock = new SemaphoreSlim(1, 1);
         var subscriptions = new Dictionary<string, AppServerControlSocketSubscription>(StringComparer.Ordinal);
@@ -68,8 +70,9 @@ public sealed class AppServerControlWebSocketHandler
                     return;
                 }
 
-                var bytes = JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
-                await ws.SendAsync(bytes, WebSocketMessageType.Text, true, shutdownToken).ConfigureAwait(false);
+                var binary = nativeHistory && payload is AppServerControlWsHistoryWindowMessage or AppServerControlWsHistoryPatchMessage;
+                var bytes = binary ? NativeHistoryCodec.Encode(payload, typeInfo) : JsonSerializer.SerializeToUtf8Bytes(payload, typeInfo);
+                await ws.SendAsync(bytes, binary ? WebSocketMessageType.Binary : WebSocketMessageType.Text, true, shutdownToken).ConfigureAwait(false);
             }
             catch (WebSocketException) { }
             catch (ObjectDisposedException) { }

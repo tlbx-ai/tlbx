@@ -2220,6 +2220,10 @@ function releaseHiddenAppServerControlRenderState(state: SessionAppServerControl
   clearHistoryNavigatorPreviewTimer(state);
   clearHistoryNavigatorHydrateTimer(state);
   clearQueuedHistoryNavigatorRequest(state);
+  state.historyPendingViewportSnapshot = null;
+  state.historyViewportCommitPending = false;
+  state.historyWindowOnlyRenderPending = false;
+  delete state.historyLastRenderedSequence;
   state.historyEntries = [];
   state.historyMeasurementObserver?.disconnect();
   state.historyObservedNodes?.clear();
@@ -2545,7 +2549,7 @@ async function syncHistoryWindowToViewport(
   state: SessionAppServerControlViewState,
   forceRequest = false,
 ): Promise<void> {
-  if (state.refreshInFlight || !state.snapshot) {
+  if (state.refreshInFlight || state.historyViewportCommitPending || !state.snapshot) {
     state.historyViewportSyncPending = true;
     state.historyViewportSyncForcePending ||= forceRequest;
     return;
@@ -2637,18 +2641,16 @@ async function syncHistoryWindowToViewport(
       state.historyViewportSyncPending = true;
       return;
     }
-    if (applyFetchedAppServerControlHistoryWindow(sessionId, state, nextSnapshot)) {
-      renderCurrentAgentView(sessionId, { immediate: true });
-      if (resumeHistoryWheelMotion(state)) {
-        // The restored rows already cover this gesture; coalesce its final
-        // virtual-window update with the next paint instead of laying out twice.
-        renderCurrentAgentView(sessionId);
-        syncHistoryProgressNavigator(sessionId, {
-          refreshAnchorFromViewport: true,
-          refreshVisibleRange: true,
-        });
-      }
+    if (!isAppServerControlViewVisible(sessionId)) {
+      state.pendingHistoryPrependAnchor = null;
+      state.historyViewportSyncPending = false;
+      return;
     }
+    // Keep the scrolling kernel intact until its next visual commit. Native
+    // input can continue between this transport response and requestAnimationFrame.
+    state.historyPendingViewportSnapshot = nextSnapshot;
+    state.historyViewportCommitPending = true;
+    renderCurrentAgentView(sessionId, { historyWindowOnly: true });
   } catch (error) {
     log.warn(
       () =>
@@ -2656,7 +2658,10 @@ async function syncHistoryWindowToViewport(
     );
   } finally {
     state.refreshInFlight = false;
-    if (!flushQueuedHistoryNavigatorRequest(sessionId, state)) {
+    if (
+      !state.historyViewportCommitPending &&
+      !flushQueuedHistoryNavigatorRequest(sessionId, state)
+    ) {
       if (!flushQueuedRefreshViewportSync(sessionId, state)) {
         flushPendingHistoryWindowViewportSync(sessionId, state);
       }
@@ -2714,13 +2719,17 @@ async function fillHistoryViewportIfNeeded(
 
 function renderCurrentAgentView(
   sessionId: string,
-  options: { immediate?: boolean; force?: boolean } = {},
+  options: { immediate?: boolean; force?: boolean; historyWindowOnly?: boolean } = {},
 ): void {
   const state = viewStates.get(sessionId);
   if (!state) {
     return;
   }
 
+  state.historyWindowOnlyRenderPending =
+    state.historyRenderScheduled !== null
+      ? state.historyWindowOnlyRenderPending === true && options.historyWindowOnly === true
+      : options.historyWindowOnly === true;
   clearPendingHistoryRenderBatch(state);
   clearPendingHistoryViewportRender(state);
   state.renderDirty = true;
@@ -2781,7 +2790,59 @@ function commitAgentViewRender(sessionId: string, force = false): void {
     return;
   }
 
-  renderAgentView(state.panel, state.snapshot, state.streamConnected, state);
+  acceptPendingHistoryViewportSnapshot(sessionId, state);
+  const historyOnly =
+    state.historyWindowOnlyRenderPending === true &&
+    state.historyLastRenderedSequence === state.snapshot.latestSequence &&
+    state.historyLastRenderedStreamConnected === state.streamConnected;
+  state.historyWindowOnlyRenderPending = false;
+  renderAgentView(state.panel, state.snapshot, state.streamConnected, state, historyOnly);
+  state.historyLastRenderedSequence = state.snapshot.latestSequence;
+  state.historyLastRenderedStreamConnected = state.streamConnected;
+  completePendingHistoryViewportCommit(sessionId, state);
+}
+
+function acceptPendingHistoryViewportSnapshot(
+  sessionId: string,
+  state: SessionAppServerControlViewState,
+): void {
+  const pendingWindow = state.historyPendingViewportSnapshot;
+  if (pendingWindow) {
+    state.historyPendingViewportSnapshot = null;
+    historyRender.captureHistoryViewportAnchor(state);
+    const anchorIndex = state.pendingHistoryPrependAnchor?.absoluteIndex;
+    if (
+      anchorIndex != null &&
+      (anchorIndex < pendingWindow.historyWindowStart ||
+        anchorIndex >= pendingWindow.historyWindowEnd)
+    ) {
+      state.pendingHistoryPrependAnchor = null;
+      state.historyViewportSyncPending = true;
+    } else {
+      applyFetchedAppServerControlHistoryWindow(sessionId, state, pendingWindow);
+    }
+  }
+}
+
+function completePendingHistoryViewportCommit(
+  sessionId: string,
+  state: SessionAppServerControlViewState,
+): void {
+  if (state.historyViewportCommitPending) {
+    state.historyViewportCommitPending = false;
+    if (resumeHistoryWheelMotion(state)) {
+      scheduleHistoryRender(sessionId);
+      syncHistoryProgressNavigator(sessionId, {
+        refreshAnchorFromViewport: true,
+        refreshVisibleRange: true,
+      });
+    }
+    if (
+      !flushQueuedHistoryNavigatorRequest(sessionId, state) &&
+      !flushQueuedRefreshViewportSync(sessionId, state)
+    )
+      flushPendingHistoryWindowViewportSync(sessionId, state);
+  }
 }
 
 function clearHistoryWheelWhenHidden(): void {
@@ -2879,18 +2940,21 @@ function renderAgentView(
   snapshot: AppServerControlHistorySnapshot,
   streamConnected: boolean,
   state: SessionAppServerControlViewState,
+  historyOnly = false,
 ): void {
-  syncAppServerControlQuickSettingsFromSnapshot(
-    snapshot.sessionId,
-    snapshot.provider,
-    snapshot.quickSettings,
-  );
-  syncAppServerControlGoal(snapshot, streamConnected);
-  syncAgentViewPresentation(panel, snapshot.provider);
-  syncAgentSessionTools(snapshot, streamConnected);
-  panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
-  syncAppServerControlTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
-  historyRender.syncRequestInteractionState(state, snapshot.requests);
+  if (!historyOnly) {
+    syncAppServerControlQuickSettingsFromSnapshot(
+      snapshot.sessionId,
+      snapshot.provider,
+      snapshot.quickSettings,
+    );
+    syncAppServerControlGoal(snapshot, streamConnected);
+    syncAgentViewPresentation(panel, snapshot.provider);
+    syncAgentSessionTools(snapshot, streamConnected);
+    panel.dataset.agentTurnId = snapshot.currentTurn.turnId || '';
+    syncAppServerControlTurnExecutionState(snapshot.sessionId, snapshot.currentTurn);
+    historyRender.syncRequestInteractionState(state, snapshot.requests);
+  }
   const historyEntries = preservePersistentCommandEntries(
     buildAppServerControlHistoryEntries(snapshot),
     state.historyEntries,
@@ -2935,7 +2999,8 @@ function renderAgentView(
   });
   historyDom.renderRuntimeStats(panel, runtimeStats);
   historyRender.renderHistory(panel, renderedEntries, snapshot.sessionId);
-  historyRender.renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
+  if (!historyOnly)
+    historyRender.renderComposerInterruption(panel, snapshot.sessionId, snapshot.requests, state);
   // Run after the caller's refresh finally block; each successful bounded page is measured before another request.
   queueMicrotask(() => {
     void fillHistoryViewportIfNeeded(snapshot.sessionId, state);
