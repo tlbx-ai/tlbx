@@ -1,4 +1,5 @@
 import { t } from '../i18n';
+import { createAttachmentControl } from './attachmentView';
 import { createToolActivityDisclosure, syncToolActivityDisclosure } from './toolActivityView';
 import { appendHighlightedCommand, commandPreview } from './commandHighlight';
 import { createPdfView } from '../fileViewer/pdfView';
@@ -1167,15 +1168,11 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
     ).catch(() => undefined);
 
     for (const attachment of attachments) {
-      const link = document.createElement('a');
+      const imageAttachment = isImageAttachment(attachment);
       const previewUrl = buildAppServerControlAttachmentUrl(sessionId, attachment);
-      void accessReady.then(() => {
-        link.href = previewUrl;
-      });
-      link.target = '_blank';
-      link.rel = 'noreferrer';
+      const link = createAttachmentControl(sessionId, attachment, previewUrl, accessReady);
 
-      if (isImageAttachment(attachment)) {
+      if (imageAttachment) {
         link.className = 'agent-history-attachment agent-history-attachment-image';
         const frame = document.createElement('span');
         frame.className = 'agent-history-attachment-image-frame';
@@ -1203,7 +1200,14 @@ export function createAgentHistoryDom(deps: AgentHistoryDomDeps) {
         (attachment.mimeType?.toLowerCase() === 'application/pdf' ||
           /\.pdf$/i.test(attachment.path));
       container.appendChild(
-        isPdf ? createPdfAttachmentPreview(link, attachment, previewUrl, accessReady) : link,
+        isPdf
+          ? createPdfAttachmentPreview(
+              link as HTMLAnchorElement,
+              attachment,
+              previewUrl,
+              accessReady,
+            )
+          : link,
       );
     }
 

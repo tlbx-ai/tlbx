@@ -107,6 +107,7 @@ namespace Ai.Tlbx.MidTerm.Services;
 [JsonSerializable(typeof(SessionPasteRequest))]
 [JsonSerializable(typeof(SessionKeyInputRequest))]
 [JsonSerializable(typeof(SessionPromptRequest))]
+[JsonSerializable(typeof(SessionResumeRequest))]
 [JsonSerializable(typeof(SessionSupervisorInfoDto))]
 [JsonSerializable(typeof(SessionAttentionResponse))]
 [JsonSerializable(typeof(SessionAttentionItem))]

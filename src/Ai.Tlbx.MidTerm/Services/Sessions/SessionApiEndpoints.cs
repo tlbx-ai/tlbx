@@ -174,6 +174,14 @@ public static partial class SessionApiEndpoints
                     bool accepted;
                     try
                     {
+                        if (sessionManager.IsAppServerControlOnly(request.SessionId))
+                        {
+                            var normalizedTurn = ManagerBarQueueService.NormalizeTurn(request.Turn);
+                            if (normalizedTurn is null) return Results.BadRequest("Prompt was not accepted.");
+                            var response = await appServerControlRuntime.SendComposerTurnAsync(request.SessionId, normalizedTurn, ct).ConfigureAwait(false);
+                            RecordPromptHistory(request.SessionId, normalizedTurn, InputHistorySources.CommandBay);
+                            return Results.Json(response, AppJsonContext.Default.AppServerControlTurnStartResponse);
+                        }
                         accepted = await managerBarQueueService.SubmitPromptAsync(request.SessionId, request.Turn, ct)
                             .ConfigureAwait(false);
                     }
@@ -784,6 +792,25 @@ public static partial class SessionApiEndpoints
         }
         app.MapPost("/api/sessions/{id}/input/prompt", (string id, SessionPromptRequest request, HttpContext context, CancellationToken ct) =>
             SubmitPrompt(id, request, context, ct, true));
+
+        app.MapPost("/api/sessions/{id}/agent-control/resume", async (
+            string id, SessionResumeRequest request, CancellationToken ct) =>
+        {
+            var session = GetSessionListDto(sessionManager, sessionSupervisor, appServerControlRuntime)
+                .Sessions.FirstOrDefault(item => item.Id == id);
+            if (session is null) return Results.NotFound();
+            var directory = request.WorkingDirectory?.Trim() ?? session.CurrentDirectory;
+            if (string.IsNullOrWhiteSpace(request.ResumeThreadId) || string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
+                return Results.BadRequest("A saved conversation and an available working directory are required.");
+            try
+            {
+                if (!await appServerControlRuntime.ResumeAsync(session, request.ResumeThreadId.Trim(), directory, ct).ConfigureAwait(false))
+                    return Results.Conflict(appServerControlRuntime.TryGetRuntimeSummary(id, out var runtime)
+                        ? runtime.LastError ?? "Unable to resume the selected conversation." : "Unable to resume the selected conversation.");
+                return Results.Json(GetSessionDto(sessionManager, sessionSupervisor, appServerControlRuntime, id), AppJsonContext.Default.SessionInfoDto);
+            }
+            catch (InvalidOperationException ex) { return Results.Conflict(ex.Message); }
+        });
 
         app.MapGet("/api/sessions/{id}/agent-control/history", async (
             string id,

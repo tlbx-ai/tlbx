@@ -118,6 +118,20 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return _hostRuntime.SetGitMetadataAsync(sessionId, repos, ct);
     }
 
+    public Task<bool> ResumeAsync(SessionInfoDto session, string threadId, string workingDirectory, CancellationToken ct)
+    {
+        var profile = ResolveAttachProfile(session);
+        if (!session.AppServerControlOnly || !IsAttachableProfile(profile))
+            throw new InvalidOperationException("Resume requires a dedicated Agent Controller session.");
+        session.CurrentDirectory = workingDirectory;
+        session.AgentAttachPoint = null;
+        return _hostRuntime.ResumeAsync(session.Id, profile, session, threadId, () =>
+        {
+            _sessionManager.SetAppServerControlResumeThreadId(session.Id, threadId);
+            _sessionManager.SetAgentWorkingDirectory(session.Id, workingDirectory);
+        }, ct);
+    }
+
     public Task DetachAsync(string sessionId, CancellationToken ct = default)
     {
         return _hostRuntime.DetachAsync(sessionId, ct);
@@ -205,13 +219,13 @@ public sealed class SessionAppServerControlRuntimeService : IAsyncDisposable, IS
         return await _hostRuntime.StartTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
-    public async Task SendComposerTurnAsync(
+    public async Task<AppServerControlTurnStartResponse> SendComposerTurnAsync(
         string sessionId,
         AppServerControlTurnRequest request,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        await _hostRuntime.SendComposerTurnAsync(sessionId, request, ct).ConfigureAwait(false);
+        return await _hostRuntime.SendComposerTurnAsync(sessionId, request, ct).ConfigureAwait(false);
     }
 
     public async Task<AppServerControlCommandAcceptedResponse> InterruptTurnAsync(

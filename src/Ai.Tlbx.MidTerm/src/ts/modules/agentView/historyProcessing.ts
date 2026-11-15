@@ -765,8 +765,31 @@ function parseCodexRateLimitNotice(
   }
 }
 
+function findCommittedOptimisticUser(
+  entries: readonly AppServerControlHistoryEntry[],
+  turn: PendingAppServerControlTurn,
+  knownUserIds: Set<string>,
+  claimedUsers: Set<string>,
+): AppServerControlHistoryEntry | undefined {
+  return turn.knownUserIds
+    ? entries.find(
+        (entry) =>
+          entry.kind === 'user' &&
+          Date.parse(entry.sourceUpdatedAt ?? '') > (turn.lastObservedEventAt ?? 0) &&
+          !knownUserIds.has(entry.id) &&
+          !claimedUsers.has(entry.id) &&
+          (entry.body.trim() === turn.text.trim() ||
+            (turn.turnId !== null && entry.sourceTurnId === turn.turnId)) &&
+          (entry.attachments?.length ?? 0) === turn.attachments.length &&
+          turn.attachments.every(
+            (attachment, index) => entry.attachments?.[index]?.path === attachment.path,
+          ),
+      )
+    : entries.find((entry) => turn.turnId !== null && entry.id === `user:${turn.turnId}`);
+}
+
 export function applyOptimisticAppServerControlTurns(
-  snapshot: AppServerControlHistorySnapshot,
+  snapshot: AppServerControlHistorySnapshot | null,
   entries: readonly AppServerControlHistoryEntry[],
   optimisticTurns: readonly PendingAppServerControlTurn[],
 ): { entries: AppServerControlHistoryEntry[]; optimisticTurns: PendingAppServerControlTurn[] } {
@@ -779,34 +802,39 @@ export function applyOptimisticAppServerControlTurns(
   let nextOrder =
     optimisticEntries.reduce((maxOrder, entry) => Math.max(maxOrder, entry.order), 0) + 1;
 
+  const claimedUsers = new Set<string>();
   for (const turn of optimisticTurns) {
-    const userCommitted =
-      turn.turnId !== null && optimisticEntries.some((entry) => entry.id === `user:${turn.turnId}`);
+    const knownUserIds = new Set(turn.knownUserIds ?? []);
+    const committedUser = findCommittedOptimisticUser(entries, turn, knownUserIds, claimedUsers);
+    if (committedUser) {
+      claimedUsers.add(committedUser.id);
+      // Canonical user output owns the row even when it beats the HTTP acknowledgement.
+      // Its matching native turn also supplies the normal busy/assistant presentation.
+      continue;
+    }
     const assistantCommitted =
       (turn.turnId !== null &&
         optimisticEntries.some((entry) => entry.id === `assistant:${turn.turnId}`)) ||
       (turn.turnId !== null &&
-        snapshot.currentTurn.turnId === turn.turnId &&
+        snapshot?.currentTurn.turnId === turn.turnId &&
         Boolean(snapshot.streams.assistantText.trim()));
 
-    if (!userCommitted) {
-      optimisticEntries.push({
-        id: `optimistic-user:${turn.optimisticId}`,
-        order: nextOrder++,
-        kind: 'user',
-        tone: 'info',
-        label: historyLabel('user'),
-        title: '',
-        body: turn.text,
-        meta: formatHistoryMeta(
-          'user',
-          turn.status === 'submitted' ? 'Sending' : 'Sent',
-          turn.submittedAt,
-        ),
-        attachments: cloneHistoryAttachments(turn.attachments),
-        pending: turn.status === 'submitted',
-      });
-    }
+    optimisticEntries.push({
+      id: `optimistic-user:${turn.optimisticId}`,
+      order: nextOrder++,
+      kind: 'user',
+      tone: 'info',
+      label: historyLabel('user'),
+      title: '',
+      body: turn.text,
+      meta: formatHistoryMeta(
+        'user',
+        turn.status === 'submitted' ? 'Sending' : 'Sent',
+        turn.submittedAt,
+      ),
+      attachments: cloneHistoryAttachments(turn.attachments),
+      pending: turn.status === 'submitted',
+    });
 
     if (!assistantCommitted) {
       optimisticEntries.push({
@@ -827,9 +855,7 @@ export function applyOptimisticAppServerControlTurns(
       });
     }
 
-    if (!userCommitted || !assistantCommitted) {
-      remainingTurns.push(turn);
-    }
+    remainingTurns.push(turn);
   }
 
   return {

@@ -1278,6 +1278,17 @@ public sealed class TtyHostSessionManager : IAsyncDisposable
         return _registry.SetSpaceId(sessionId, spaceId);
     }
 
+    public void SetAgentWorkingDirectory(string sessionId, string path)
+    {
+        if (!_registry.IsAppServerControlOnly(sessionId) || !_sessionCache.TryGetValue(sessionId, out var info)) return;
+        if (!string.Equals(info.CurrentDirectory, path, StringComparison.OrdinalIgnoreCase))
+            _registry.SetSpaceId(sessionId, null);
+        info.CurrentDirectory = path;
+        _registry.SetWorkspacePath(sessionId, path);
+        OnCwdChanged?.Invoke(sessionId, path);
+        _registry.NotifyStateChange();
+    }
+
     public bool SetWorkspacePath(string sessionId, string? workspacePath)
     {
         return _registry.SetWorkspacePath(sessionId, workspacePath);

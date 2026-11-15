@@ -1,4 +1,3 @@
-import { selectOpenAgentSession } from './modules/agentView/sessionTools';
 import { recoverSettingsAfterBrowserResume } from './modules/comms/settingsChannel';
 import { initBoards, initDetachedBoard } from './modules/boards';
 import { initMobileFullscreen } from './modules/fullscreen';
@@ -137,6 +136,7 @@ import {
 } from './modules/sessionTabs';
 import {
   initAgentView,
+  resumeAgentConversation,
   getAppServerControlDebugScenarioNames,
   inspectAppServerControlHistory,
   recoverAppServerControlAfterBrowserResume,
@@ -1052,48 +1052,17 @@ async function resumeAppServerControlConversationFromCommandBay(args: {
     initialScope: 'current',
   });
   if (!candidate) return;
-  if (selectOpenAgentSession(args.provider, candidate.sessionId, selectSession)) return;
-
-  const workingDirectory = candidate.workingDirectory.trim() || args.workingDirectory;
-  const keepsSourceFolder =
-    normalizeResumeFolder(workingDirectory) === normalizeResumeFolder(args.workingDirectory);
-  const { cols, rows } = await resolveLaunchDimensions($currentSettings.get(), 'history');
-  const tempId = createPendingSession(cols, rows);
-
-  bootstrapWorker({
-    cols,
-    rows,
-    shell: resolveLauncherShell(),
-    workingDirectory,
-    agentControlled: false,
-    injectGuidance: true,
-    profile: args.provider,
-    resumeThreadId: candidate.sessionId,
-    spaceId: keepsSourceFolder ? (sourceSession.spaceId ?? null) : null,
-    workspacePath: keepsSourceFolder
-      ? (sourceSession.workspacePath ?? workingDirectory)
-      : workingDirectory,
-    surface: args.provider,
-    appServerControlOnly: true,
-    launchDelayMs: 0,
-    slashCommands: [],
-    slashCommandDelayMs: 350,
-  })
-    .then(({ data }) => {
-      clearPendingSession(tempId);
-      const session = data?.session;
-      if (!session) {
-        return;
-      }
-
-      activateNewAppServerControlSession(session);
-      attachBookmarkToSession(session.id, sourceSession.bookmarkId ?? null, null);
-    })
-    .catch((e: unknown) => {
-      clearPendingSession(tempId);
-      log.error(() => `Failed to resume provider conversation from Command Bay: ${String(e)}`);
-      showSessionLaunchFailure(e);
+  try {
+    await resumeAgentConversation(
+      args.sessionId,
+      candidate.sessionId,
+      candidate.workingDirectory.trim() || args.workingDirectory,
+    );
+  } catch (error) {
+    void showAlert(error instanceof Error ? error.message : String(error), {
+      title: t('providerResume.title'),
     });
+  }
 }
 
 function normalizeResumeFolder(path: string): string {
