@@ -4,9 +4,6 @@ inputs:
   subject-path:
     description: Archive to attest
     required: true
-  scan-path:
-    description: Staging directory for the reused snapshot
-    required: true
   sbom-path:
     description: SPDX JSON output path
     required: true
@@ -18,11 +15,15 @@ runs:
       env:
         GH_TOKEN: ${{ github.token }}
         SBOM_PATH: ${{ inputs.sbom-path }}
-        STAGING_PATH: ${{ inputs.scan-path }}
+        ARCHIVE_PATH: ${{ inputs.subject-path }}
       run: |
         $name = [IO.Path]::GetFileName($env:SBOM_PATH)
         if ($name -notmatch '^mt-(win-x64|win-x86|linux-x64|linux-arm64|osx-x64|osx-arm64)\.spdx\.json$') { throw 'Invalid SBOM output name.' }
-        ./scripts/release-sbom.ps1 -Mode Reuse -Rid $Matches[1] -OutputDirectory $env:STAGING_PATH
+        $outputDirectory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($env:SBOM_PATH))
+        ./scripts/release-sbom.ps1 -Mode Reuse -Rid $Matches[1] -OutputDirectory $outputDirectory
+        foreach ($path in @($env:ARCHIVE_PATH, $env:SBOM_PATH)) {
+          if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-Item -LiteralPath $path).Length -eq 0) { throw "Missing attestation subject: $path" }
+        }
 
     - name: Attest archive and snapshot provenance
       uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2

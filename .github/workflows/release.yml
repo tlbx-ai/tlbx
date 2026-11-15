@@ -354,7 +354,6 @@ jobs:
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.tar.gz
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
@@ -565,7 +564,6 @@ jobs:
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.tar.gz
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
@@ -696,7 +694,6 @@ jobs:
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.zip
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
@@ -878,7 +875,6 @@ jobs:
         uses: ./.github/actions/attest-release
         with:
           subject-path: staging/mt-${{ matrix.rid }}.zip
-          scan-path: staging/${{ matrix.rid }}
           sbom-path: staging/mt-${{ matrix.rid }}.spdx.json
 
       - name: Upload release archive and SBOM
