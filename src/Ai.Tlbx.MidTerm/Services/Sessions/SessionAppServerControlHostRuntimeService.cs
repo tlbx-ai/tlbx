@@ -384,7 +384,9 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                     if (!_launcher(
                             launch.FileName,
                             BuildIpcLaunchArguments(launch.Arguments, sessionId, _instanceIdentity.InstanceId, _instanceIdentity.OwnerToken),
-                            workingDirectory,
+                            // Bootstrap the trusted host independently of the selected workspace.
+                            // The provider receives its workspace through runtime.attach below.
+                            AppContext.BaseDirectory,
                             environmentOverrides,
                             pathPrependEntries,
                             settings.RunAsUser,
