@@ -23,7 +23,7 @@ export interface AppServerControlTurnSubmittedEventDetail {
 }
 
 export interface AppServerControlTurnAcceptedEventDetail extends AppServerControlTurnSubmittedEventDetail {
-  response: AppServerControlTurnStartResponse;
+  response: AppServerControlTurnStartResponse | null;
 }
 
 export interface AppServerControlTurnFailedEventDetail extends AppServerControlTurnSubmittedEventDetail {
@@ -99,6 +99,47 @@ export async function submitAppServerControlTurn(
     return response;
   } catch (error) {
     state.pendingInterruptAfterSubmit = false;
+    throw error;
+  } finally {
+    state.submittingTurn = false;
+  }
+}
+
+/** The shared composer API retains native steering, with the same immediate local echo. */
+export async function submitAppServerControlComposerPrompt(
+  sessionId: string,
+  request: AppServerControlTurnRequest,
+  send: (
+    sessionId: string,
+    request: AppServerControlTurnRequest,
+  ) => Promise<AppServerControlTurnStartResponse | null>,
+): Promise<void> {
+  const normalizedRequest = normalizeAppServerControlTurnRequest(request);
+  const optimisticId = dispatchSubmittedAppServerControlTurn(sessionId, normalizedRequest);
+  const state = getOrCreateAppServerControlTurnState(sessionId);
+  state.submittingTurn = true;
+  try {
+    const response = await send(sessionId, normalizedRequest);
+    if (response) {
+      acceptAppServerControlQuickSettings(sessionId, response.provider, response.quickSettings);
+      state.currentTurnId = response.turnId ?? state.currentTurnId;
+      state.currentTurnRunning = true;
+    }
+    dispatchAppServerControlTurnEvent(APP_SERVER_CONTROL_TURN_ACCEPTED_EVENT, {
+      optimisticId,
+      sessionId,
+      request: normalizedRequest,
+      response,
+    });
+    await maybeInterruptAppServerControlTurnAfterSubmit(sessionId, state);
+  } catch (error) {
+    state.pendingInterruptAfterSubmit = false;
+    dispatchAppServerControlTurnEvent(APP_SERVER_CONTROL_TURN_FAILED_EVENT, {
+      optimisticId,
+      sessionId,
+      request: normalizedRequest,
+      errorMessage: String(error),
+    });
     throw error;
   } finally {
     state.submittingTurn = false;

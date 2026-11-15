@@ -167,7 +167,7 @@ internal sealed class SessionRegistry
                         Topic = SessionTopics.TryGetValue(s.Id, out var topic) ? topic : null,
                         Notes = SessionNotes.TryGetValue(s.Id, out var notes) ? notes : null,
                         ManuallyNamed = s.ManuallyNamed,
-                        CurrentDirectory = s.CurrentDirectory,
+                        CurrentDirectory = IsAppServerControlOnly(s.Id) ? GetWorkspacePath(s.Id) ?? s.CurrentDirectory : s.CurrentDirectory,
                         ForegroundPid = s.ForegroundPid,
                         ForegroundName = s.ForegroundName,
                         ForegroundCommandLine = s.ForegroundCommandLine,

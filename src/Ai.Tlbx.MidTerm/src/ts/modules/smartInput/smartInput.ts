@@ -53,6 +53,7 @@ import { sendCommandBayPrompt } from '../commandBay/queue';
 import { submitSessionText } from '../input/submit';
 import { isBracketedPasteEnabled, sendInput } from '../comms';
 import {
+  submitAppServerControlComposerPrompt,
   createAppServerControlTurnRequest,
   handleAppServerControlEscape,
   hasInterruptibleAppServerControlTurnWork,
@@ -3004,7 +3005,7 @@ async function sendRichComposerTurn(sessionId: string, ta: HTMLTextAreaElement):
       createTurnRequest: createAppServerControlTurnRequest,
       submitTurn: (targetSessionId, request) => {
         if (!isCurrentDocument()) throw new Error(t('smartInput.richTargetChanged'));
-        return sendCommandBayPrompt(targetSessionId, request);
+        return submitAppServerControlComposerPrompt(targetSessionId, request, sendCommandBayPrompt);
       },
     });
     await submittedTurn;

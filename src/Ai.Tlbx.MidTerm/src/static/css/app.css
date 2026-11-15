@@ -15625,6 +15625,13 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   text-decoration: none;
 }
 
+button.agent-history-attachment-image {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
 .agent-history-attachment-image {
   display: flex;
   flex-direction: column;

@@ -131,7 +131,8 @@ import {
   type AppServerControlHistorySnapshot,
 } from '../../api/client';
 import { t } from '../i18n';
-import { $activeSessionId, getSession } from '../../stores';
+import type { Session } from '../../types';
+import { setSession, $activeSessionId, getSession } from '../../stores';
 
 const log = createLogger('agentView');
 const viewStates = new Map<string, SessionAppServerControlViewState>();
@@ -546,12 +547,17 @@ export function initAgentView(): void {
  * surface so stale streams, timers, and attach state do not leak across turns.
  */
 /* eslint-disable complexity -- teardown has to coordinate stream/timer/render cleanup in one place. */
-export function destroyAgentView(sessionId: string): void {
+export function destroyAgentView(sessionId: string, detachRuntime = true): void {
   closeAppServerControlStream(sessionId);
-  void detachSessionAppServerControl(sessionId).catch((error: unknown) => {
-    log.warn(() => `Failed to detach AppServerControl for ${sessionId}: ${String(error)}`);
-  });
+  if (detachRuntime)
+    void detachSessionAppServerControl(sessionId).catch((error: unknown) => {
+      log.warn(() => `Failed to detach AppServerControl for ${sessionId}: ${String(error)}`);
+    });
   const state = viewStates.get(sessionId);
+  if (state) {
+    state.activationRunId += 1;
+    state.historyWindowRevision = null;
+  }
   clearPendingHistoryRenderBatch(state);
   clearPendingHistoryViewportRender(state);
   if (state && state.historyRenderScheduled !== null) {
@@ -588,6 +594,41 @@ export function destroyAgentView(sessionId: string): void {
   removeAppServerControlQuickSettingsSessionState(sessionId);
 }
 /* eslint-enable complexity */
+
+export async function resumeAgentConversation(
+  sessionId: string,
+  threadId: string,
+  workingDirectory: string,
+): Promise<void> {
+  closeAppServerControlStream(sessionId);
+  try {
+    const response = await fetch(
+      `/api/sessions/${encodeURIComponent(sessionId)}/agent-control/resume`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resumeThreadId: threadId, workingDirectory }),
+      },
+    );
+    if (!response.ok) throw new Error(await response.text());
+    setSession((await response.json()) as Session);
+  } finally {
+    // Both rejection and a lost acknowledgement reload the server's actual conversation.
+    // Never replay the resume mutation or detach a replacement host during cleanup.
+    destroyAgentView(sessionId, false);
+    const panel = getTabPanel(sessionId, 'agent');
+    if (panel) {
+      panel.replaceChildren();
+      ensureAgentViewSkeleton(sessionId, panel, (id) => {
+        void handleAppServerControlEscape(id);
+      });
+      const state = getOrCreateViewState(sessionId, panel);
+      bindHistoryViewport(sessionId, state);
+      prepareAppServerControlForForeground(state);
+      await activateAgentView(sessionId);
+    }
+  }
+}
 
 export function resetAgentViewRuntimeForTests(): void {
   for (const [sessionId, state] of viewStates) {
@@ -2785,7 +2826,14 @@ function commitAgentViewRender(sessionId: string, force = false): void {
       sessionId,
       state.panel,
       state,
-      withActivationIssueNotice(buildActivationHistoryEntries(state), state.activationIssue),
+      withActivationIssueNotice(
+        applyOptimisticAppServerControlTurns(
+          null,
+          buildActivationHistoryEntries(state),
+          state.optimisticTurns,
+        ).entries,
+        state.activationIssue,
+      ),
     );
     return;
   }
@@ -3035,6 +3083,9 @@ function handleAppServerControlTurnSubmitted(event: Event): void {
     ...state.optimisticTurns.filter((turn) => turn.optimisticId !== detail.optimisticId),
     {
       optimisticId: detail.optimisticId,
+      knownUserIds: (state.snapshot ? buildAppServerControlHistoryEntries(state.snapshot) : [])
+        .filter((entry) => entry.kind === 'user')
+        .map((entry) => entry.id),
       turnId: null,
       text: (detail.request.text ?? '').trim(),
       attachments: cloneHistoryAttachments(detail.request.attachments),
@@ -3042,7 +3093,8 @@ function handleAppServerControlTurnSubmitted(event: Event): void {
       status: 'submitted',
     },
   ];
-  renderCurrentAgentView(detail.sessionId);
+  enterHistoryFollowLive(detail.sessionId, state);
+  renderCurrentAgentView(detail.sessionId, { immediate: true });
 }
 
 function handleAppServerControlTurnAccepted(event: Event): void {
@@ -3056,7 +3108,7 @@ function handleAppServerControlTurnAccepted(event: Event): void {
     turn.optimisticId === detail.optimisticId
       ? {
           ...turn,
-          turnId: detail.response.turnId || turn.turnId,
+          turnId: detail.response?.turnId || turn.turnId,
           status: 'accepted',
         }
       : turn,

@@ -242,6 +242,10 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
             ct).ConfigureAwait(false);
     }
 
+    public Task<bool> ResumeAsync(string sessionId, string profile, SessionInfoDto session,
+        string threadId, Action prepareReplacement, CancellationToken ct) =>
+        EnsureAttachedAsync(sessionId, profile, session, threadId, allowSpawn: true, ct, prepareReplacement);
+
     public bool MayHaveRecoverableHost(string sessionId)
     {
         if (OwnsSession(sessionId))
@@ -279,7 +283,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         SessionInfoDto session,
         string? resumeThreadIdOverride,
         bool allowSpawn,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action? prepareReplacement = null)
     {
         var workingDirectory = session.CurrentDirectory;
         if (!IsEnabledFor(profile) ||
@@ -292,6 +297,31 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         var state = _states.GetOrAdd(sessionId, static id => new HostRuntimeState(id));
         await state.Gate.WaitAsync(ct).ConfigureAwait(false);
+        if (prepareReplacement is not null)
+        {
+            try
+            {
+                if (state.ProviderReady)
+                {
+                    var current = await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+                    {
+                        CommandId = id, SessionId = sessionId, Type = "history.window.get",
+                        HistoryWindow = new() { Count = 1 }
+                    }, ct).ConfigureAwait(false);
+                    if (current.HistoryWindow?.CurrentTurn.State?.ToLowerInvariant() is
+                        "running" or "in_progress" or "started" or "submitted")
+                        throw new InvalidOperationException("Interrupt the active turn before resuming another conversation.");
+                }
+                prepareReplacement();
+                await DisposeOwnedStateAsync(state, terminateHost: true).ConfigureAwait(false);
+                state.LastActivityNotificationAt = null;
+            }
+            catch
+            {
+                state.Gate.Release();
+                throw;
+            }
+        }
         try
         {
             state.Profile = profile;
@@ -577,7 +607,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         }
     }
 
-    public async Task SendComposerTurnAsync(
+    public async Task<AppServerControlTurnStartResponse> SendComposerTurnAsync(
         string sessionId,
         AppServerControlTurnRequest request,
         CancellationToken ct = default)
@@ -604,7 +634,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 throw new InvalidOperationException("Active Agent Controller turn has no steering identity.");
             }
 
-            await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
+            var sent = await SendCommandAsync(state, id => new AppServerControlHostCommandEnvelope
             {
                 CommandId = id,
                 SessionId = sessionId,
@@ -618,6 +648,13 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
                 } : null
             }, ct).ConfigureAwait(false);
             state.Status = HostRuntimeStatus.Running;
+            return sent.TurnStarted ?? new AppServerControlTurnStartResponse
+            {
+                SessionId = sessionId, Provider = state.Profile,
+                ThreadId = current.HistoryWindow!.Thread.ThreadId ?? string.Empty,
+                TurnId = sent.Accepted?.TurnId ?? turn.TurnId,
+                QuickSettings = current.HistoryWindow.QuickSettings
+            };
         }
         finally
         {
@@ -947,6 +984,8 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         CancellationToken ct = default)
     {
         var state = GetRequiredState(sessionId);
+        long generation;
+        lock (state.HistoryCacheSync) generation = state.ConversationGeneration;
         var result = await ReadHostStateAsync(sessionId, "history.window.binary.get", new()
         {
             StartIndex = startIndex, Count = count, ViewportWidth = viewportWidth
@@ -954,7 +993,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         if (result.HistoryWindow is { } window)
         {
             RegisterHistoryPaths(_pathAllowlist, sessionId, window.History);
-            UpdateCachedHistoryWindow(state, window);
+            UpdateCachedHistoryWindow(state, window, generation);
         }
         // The response is owned by this read; only the runtime cache needs a copy.
         return result.HistoryWindow;
@@ -1493,10 +1532,12 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         FanOutHistoryPatch(state, patch);
     }
 
-    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow)
+    private static void UpdateCachedHistoryWindow(HostRuntimeState state, AppServerControlHistoryWindowResponse historyWindow, long? expectedGeneration = null)
     {
         lock (state.HistoryCacheSync)
         {
+            if (expectedGeneration is { } generation && state.ConversationGeneration != generation)
+                throw new InvalidOperationException("The conversation changed while loading history.");
             state.CachedHistoryWindow = AcceptCachedHistoryWindow(state.CachedHistoryWindow, historyWindow);
             RefreshRuntimeStatusFromHistory(state);
         }
@@ -2400,7 +2441,11 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
 
         state.PendingCommands.Clear();
         CompleteHistorySubscribers(state);
-        state.CachedHistoryWindow = null;
+        lock (state.HistoryCacheSync)
+        {
+            state.ConversationGeneration++;
+            state.CachedHistoryWindow = null;
+        }
 
         try
         {
@@ -2509,6 +2554,7 @@ public sealed class SessionAppServerControlHostRuntimeService : IAsyncDisposable
         public Task? ReaderTask { get; set; }
         public Task? ErrorTask { get; set; }
         public Lock HistoryCacheSync { get; } = new();
+        public long ConversationGeneration { get; set; }
         public AppServerControlHistoryWindowResponse? CachedHistoryWindow { get; set; }
         public Lock HistorySubscribersSync { get; } = new();
         public DateTimeOffset? LastActivityNotificationAt { get; set; }
