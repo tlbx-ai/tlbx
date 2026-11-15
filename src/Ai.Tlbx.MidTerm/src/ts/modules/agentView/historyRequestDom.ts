@@ -1,3 +1,4 @@
+import { beginQuestionAnswer, getQuestionAnswer } from '../smartInput/questionAnswer';
 import { showDevErrorDialog } from '../../utils/devErrorDialog';
 import {
   approveAppServerControlRequest,
@@ -136,6 +137,10 @@ function createUserInputRequestForm(args: {
   const activeQuestion = request.questions[activeQuestionIndex];
   const form = document.createElement('form');
   form.className = 'agent-request-form';
+  form.dataset.questionRequestId = request.requestId;
+  form.dataset.questionAnswerActive = String(
+    getQuestionAnswer(sessionId)?.requestId === request.requestId,
+  );
   if (!activeQuestion) {
     return form;
   }
@@ -592,12 +597,14 @@ function createQuestionField(args: {
     return wrapper;
   }
 
-  const input = document.createElement('input');
-  input.type = question.isSecret ? 'password' : 'text';
-  if (question.isSecret) {
-    input.autocomplete = 'off';
-    input.spellcheck = false;
+  if (!question.isSecret) {
+    appendPromptAnswer(wrapper, args, draftValue);
+    return wrapper;
   }
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
   input.name = question.id;
   input.className = 'agent-request-input';
   input.placeholder = appServerControlText('appServerControl.request.typeAnswer', 'Type answer');
@@ -608,7 +615,7 @@ function createQuestionField(args: {
       sessionId,
       request.requestId,
       question.id,
-      [question.isSecret ? input.value : input.value.trim()],
+      [input.value],
       false,
     );
   });
@@ -680,6 +687,15 @@ function createQuestionChoiceList(args: {
       const custom = options.querySelector<HTMLInputElement>('.agent-request-custom-input');
       if (custom?.value.trim())
         nextAnswers.push(question.isSecret ? custom.value : custom.value.trim());
+      if (!custom)
+        nextAnswers.push(
+          ...(
+            deps.getState(sessionId)?.requestDraftAnswersById[request.requestId]?.[question.id] ??
+            []
+          ).filter(
+            (value) => !question.options.some((option) => (option.value ?? option.label) === value),
+          ),
+        );
       updateRequestDraftAnswers(deps, sessionId, request.requestId, question.id, nextAnswers);
     });
     optionLabel.appendChild(input);
@@ -708,9 +724,11 @@ function createQuestionChoiceList(args: {
     options.appendChild(optionLabel);
   }
 
-  if (question.allowCustomAnswer) {
+  if (question.allowCustomAnswer && !question.isSecret) {
+    appendPromptAnswer(options, args, selectedAnswers);
+  } else if (question.allowCustomAnswer) {
     const custom = document.createElement('input');
-    custom.type = question.isSecret ? 'password' : 'text';
+    custom.type = 'password';
     custom.name = question.id + ':custom';
     if (question.isSecret) {
       custom.autocomplete = 'off';
@@ -737,6 +755,97 @@ function createQuestionChoiceList(args: {
     options.appendChild(custom);
   }
   return options;
+}
+
+function appendPromptAnswer(
+  host: HTMLElement,
+  args: Parameters<typeof createPromptAnswerButton>[0],
+  answers: readonly string[],
+): void {
+  const custom = answers.filter(
+    (value) => !args.question.options.some((option) => (option.value ?? option.label) === value),
+  );
+  if (custom.length) {
+    const summary = document.createElement('p');
+    summary.className = 'agent-request-custom-answer';
+    summary.textContent = custom.join('\n');
+    host.appendChild(summary);
+  }
+  host.appendChild(createPromptAnswerButton(args));
+}
+
+function createPromptAnswerButton(args: {
+  deps: AgentHistoryRequestDomDeps;
+  appServerControlText: AppServerControlText;
+  question: AppServerControlHistoryRequestSummary['questions'][number];
+  request: AppServerControlHistoryRequestSummary;
+  sessionId: string;
+}): HTMLButtonElement {
+  const { deps, appServerControlText, question, request, sessionId } = args;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'agent-view-btn agent-request-prompt-answer';
+  button.textContent = appServerControlText(
+    'appServerControl.request.answerInPrompt',
+    'Answer in prompt box',
+  );
+  button.addEventListener('click', () => {
+    const isCurrent = (): boolean => {
+      const current = deps
+        .getState(sessionId)
+        ?.snapshot?.requests.find((item) => item.requestId === request.requestId);
+      return current?.state === 'open' && current.questions.some((item) => item.id === question.id);
+    };
+    beginQuestionAnswer(sessionId, {
+      requestId: request.requestId,
+      questionId: question.id,
+      question: question.question,
+      isCurrent,
+      answer: async (text) => {
+        const state = deps.getState(sessionId);
+        if (!state || !isCurrent() || state.requestBusyIds.has(request.requestId))
+          throw new Error(
+            appServerControlText(
+              'appServerControl.request.noLongerOpen',
+              'This question is no longer open.',
+            ),
+          );
+        const draft = ensureRequestDraftAnswers(state, request);
+        const choices = question.multiSelect
+          ? (draft[question.id] ?? []).filter((value) =>
+              question.options.some((option) => (option.value ?? option.label) === value),
+            )
+          : [];
+        updateRequestDraftAnswers(
+          deps,
+          sessionId,
+          request.requestId,
+          question.id,
+          [...choices, text],
+          false,
+        );
+        const unanswered = request.questions.findIndex(
+          (item) => !hasDraftAnswerForQuestion(draft, item),
+        );
+        if (unanswered >= 0) {
+          setActiveRequestQuestionIndex(deps, sessionId, request.requestId, unanswered);
+          return;
+        }
+        state.requestBusyIds.add(request.requestId);
+        deps.renderCurrentAgentView(sessionId);
+        try {
+          await resolveAppServerControlUserInput(sessionId, request.requestId, {
+            answers: collectQuestionAnswers(state, request),
+          });
+          await deps.refreshAppServerControlSnapshot(sessionId);
+        } finally {
+          state.requestBusyIds.delete(request.requestId);
+          deps.renderCurrentAgentView(sessionId);
+        }
+      },
+    });
+  });
+  return button;
 }
 
 function collectQuestionAnswers(

@@ -1,3 +1,4 @@
+import { syncQuestionAnswer } from '../smartInput/questionAnswer';
 import { t } from '../i18n';
 import { getHistoryImagePreviewToken } from './userHistoryReading';
 import { showAgentTechnicalDetails } from './historyVisibility';
@@ -1925,6 +1926,7 @@ export function createAgentHistoryRender(deps: HistoryRenderDeps) {
       return;
     }
 
+    syncQuestionAnswer(sessionId);
     const activeRequest = findActiveComposerRequest(requests);
     if (!activeRequest) {
       shell.hidden = true;

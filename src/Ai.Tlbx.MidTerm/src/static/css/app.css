@@ -22336,3 +22336,35 @@ button.tree-expand { height: 22px; padding: 0; border: 0; background: transparen
   .agent-session-content { padding: 10px 14px; }
   .agent-session-info-trigger { padding-inline: 8px; font-size: 11px; }
 }
+
+.smart-input-question-answer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 10px;
+}
+.smart-input-question-answer[hidden] {
+  display: none;
+}
+.smart-input-question-answer > span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agent-request-prompt-answer {
+  align-self: flex-start;
+}
+
+.agent-request-form[data-question-answer-active="true"] .agent-request-button-row {
+  display: none;
+}
+.agent-request-custom-answer {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.smart-input-question-answer > button {
+  flex: 0 0 auto;
+  width: auto;
+}

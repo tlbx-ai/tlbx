@@ -3309,8 +3309,8 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
 
     private static string BuildCodexAppServerArguments() =>
         IsEnvironmentFlagEnabled(CodexRemoteCompactionDisabledEnvironmentVariable)
-            ? "app-server"
-            : "--enable remote_compaction_v2 app-server";
+            ? "--enable default_mode_request_user_input app-server"
+            : "--enable remote_compaction_v2 --enable default_mode_request_user_input app-server";
 
     private static bool IsEnvironmentFlagEnabled(string name)
     {
@@ -4057,7 +4057,7 @@ internal sealed partial class CodexAppServerControlAgentRuntime : IAppServerCont
                 Header = GetString(question, "header") ?? string.Empty,
                 Question = GetString(question, "question") ?? string.Empty,
                 MultiSelect = GetBoolean(question, "multiSelect"),
-                AllowCustomAnswer = GetBoolean(question, "isOther"),
+                AllowCustomAnswer = true,
                 IsSecret = GetBoolean(question, "isSecret")
             };
 

@@ -1,4 +1,6 @@
 {
+  "appServerControl.request.answerInPrompt": "Answer in prompt box",
+  "appServerControl.request.noLongerOpen": "This question is no longer open.",
   "appServerControl.activity.label": "Tool calls:",
   "appServerControl.activity.command": "Commands",
   "appServerControl.activity.edit": "File edit",

@@ -1,4 +1,6 @@
 {
+  "appServerControl.request.answerInPrompt": "Im Eingabefeld antworten",
+  "appServerControl.request.noLongerOpen": "Diese Frage ist nicht mehr offen.",
   "appServerControl.activity.label": "Tool-Aufrufe:",
   "appServerControl.activity.command": "Befehle",
   "appServerControl.activity.edit": "Datei bearbeiten",
