@@ -1,4 +1,10 @@
 {
+  "appServerControl.mcp.parameters": "Parameter",
+  "appServerControl.mcp.output": "Ausgabe",
+  "appServerControl.mcp.parametersUnavailable": "Keine Parameter übermittelt",
+  "appServerControl.mcp.serverUnavailable": "Kein Server übermittelt",
+  "appServerControl.mcp.addressUnavailable": "Keine Adresse übermittelt",
+  "appServerControl.mcp.parametersTruncated": "Parameter an der Aufzeichnungsgrenze gekürzt.",
   "appServerControl.request.answerInPrompt": "Im Eingabefeld antworten",
   "appServerControl.request.noLongerOpen": "Diese Frage ist nicht mehr offen.",
   "appServerControl.activity.label": "Tool-Aufrufe:",

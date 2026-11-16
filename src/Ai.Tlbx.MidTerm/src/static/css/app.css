@@ -14833,6 +14833,91 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   color: var(--text-secondary);
 }
 .agent-command-string { color: var(--accent-gold); }
+.agent-mcp-tool {
+  min-width: 0;
+  border-left: 2px solid color-mix(in srgb, var(--accent-violet) 38%, transparent);
+  padding-left: 10px;
+  font: 400 0.76rem/1.5 var(--agent-history-mono-font-family, var(--font-mono));
+  color: var(--workspace-reading-text-primary, var(--text-primary));
+}
+.agent-mcp-tool > summary {
+  display: block;
+  min-height: 38px;
+  cursor: pointer;
+  list-style: none;
+}
+.agent-mcp-tool > summary::-webkit-details-marker { display: none; }
+.agent-mcp-tool > summary:focus-visible {
+  outline: 1px solid var(--accent-violet);
+  outline-offset: 3px;
+}
+.agent-mcp-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.agent-mcp-heading::before {
+  content: '▸';
+  color: var(--text-muted);
+  flex: 0 0 auto;
+}
+.agent-mcp-tool[open] .agent-mcp-heading::before { content: '▾'; }
+.agent-mcp-protocol {
+  color: color-mix(in srgb, var(--accent-violet) 72%, var(--text-secondary));
+  font-size: 0.65rem;
+  flex: 0 0 auto;
+}
+.agent-mcp-name,
+.agent-mcp-server,
+.agent-mcp-address,
+.agent-mcp-status {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.agent-mcp-name { font-weight: 500; flex: 0 1 auto; }
+.agent-mcp-server { color: var(--text-secondary); flex: 0 1 auto; }
+.agent-mcp-address { color: var(--text-muted); flex: 1 1 auto; }
+.agent-mcp-status { color: var(--text-muted); margin-left: auto; flex: 0 1 auto; font-size: 0.68rem; }
+.agent-mcp-preview {
+  display: block;
+  margin-left: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+}
+.agent-mcp-body { margin: 6px 0 6px 17px; }
+.agent-mcp-body pre {
+  margin: 0;
+  padding: 4px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-height: none;
+}
+.agent-mcp-body .agent-mcp-output {
+  margin-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--text-muted) 20%, transparent);
+  color: var(--text-secondary);
+}
+.agent-mcp-truncated { color: var(--text-muted); font-size: 0.7rem; }
+.agent-history-mcp.agent-history-attention .agent-mcp-status { color: var(--accent-gold); }
+@media (pointer: coarse) {
+  .agent-mcp-tool > summary { min-height: 44px; }
+}
+@media (width <= 520px) {
+  .agent-mcp-heading { flex-wrap: wrap; gap: 2px 7px; }
+  .agent-mcp-address { flex-basis: 60%; margin-left: 17px; }
+  .agent-mcp-status { max-width: 32%; }
+}
 .agent-command-variable { color: var(--accent-cyan); }
 .agent-command-keyword { color: var(--accent-violet); }
 .agent-command-number { color: var(--accent-green); }

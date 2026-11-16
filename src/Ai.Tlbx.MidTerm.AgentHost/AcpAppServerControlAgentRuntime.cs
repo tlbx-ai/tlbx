@@ -35,6 +35,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
     private string? _sessionId;
     private string? _workingDirectory;
     private AppServerControlMcpServer? _mcpServer;
+    private readonly AppServerControlMcpToolRegistry _mcpTools = new();
     private AppServerControlMcpCredentials? _mcpCredentials;
     private bool _disposingProcess;
     private string? _binaryPath;
@@ -177,6 +178,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             _mcpServer = _mcpCredentials.Server;
         }
         else _mcpServer = null;
+        _mcpTools.Configure(attach.McpServer);
         _binaryPath = binaryPath;
         _userProfileDirectory = attach.UserProfileDirectory;
         _environmentVariables = new Dictionary<string, string?>(attach.EnvironmentVariables, StringComparer.Ordinal);
@@ -997,7 +999,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             status,
             title,
             kind,
-            Traverse(update, "rawInput"));
+            Traverse(update, "rawInput"), _mcpTools.Resolve);
         var state = new AcpToolState
         {
             ItemId = toolCallId,
@@ -1041,7 +1043,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
                     "in_progress",
                     GetString(update, "title") ?? toolCallId,
                     GetString(update, "kind"),
-                    Traverse(update, "rawInput"))
+                    Traverse(update, "rawInput"), _mcpTools.Resolve)
             };
             _tools[toolCallId] = state;
         }
@@ -1061,7 +1063,7 @@ internal sealed partial class AcpAppServerControlAgentRuntime : IAppServerContro
             status,
             GetString(update, "title") ?? state.Title,
             GetString(update, "kind"),
-            Traverse(update, "rawInput"));
+            Traverse(update, "rawInput"), _mcpTools.Resolve);
         AppServerControlToolPresentationProjector.Merge(state.Presentation, updatePresentation);
         AppServerControlToolPresentationProjector.AppendAcpContent(Traverse(update, "content"), state.Output);
         AppServerControlToolPresentationProjector.ApplyOutput(state.Presentation, state.Output, status);

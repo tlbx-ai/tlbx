@@ -189,6 +189,7 @@ export function resolveHistoryBodyPresentation(
     return {
       mode: 'tool',
       collapsedByDefault:
+        !!entry.toolPresentation.mcp ||
         entry.toolPresentation.category === 'command' ||
         (isFileChangeHistoryEntry(entry) && !isHistoryError(entry)),
       lineCount: Math.max(1, evidenceLines + 1),
@@ -701,6 +702,7 @@ export function estimateHistoryEntryHeight(
   viewportWidth = 960,
 ): number {
   if (entry.toolActivityCount != null) return 18;
+  if (entry.toolPresentation?.mcp) return 56;
   if (entry.busyIndicator) {
     return 52;
   }

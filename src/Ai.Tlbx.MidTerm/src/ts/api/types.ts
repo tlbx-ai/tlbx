@@ -346,6 +346,12 @@ export interface AppServerControlStreamsSummary {
 }
 
 export interface AppServerControlToolPresentation {
+  mcp?: {
+    serverName?: string | null;
+    serverAddress?: string | null;
+    parameters?: string | null;
+    parametersTruncated: boolean;
+  } | null;
   category: string;
   label: string;
   toolName?: string | null;

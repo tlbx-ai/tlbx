@@ -1,4 +1,10 @@
 {
+  "appServerControl.mcp.parameters": "Paramètres",
+  "appServerControl.mcp.output": "Sortie",
+  "appServerControl.mcp.parametersUnavailable": "Paramètres non fournis",
+  "appServerControl.mcp.serverUnavailable": "Serveur non fourni",
+  "appServerControl.mcp.addressUnavailable": "Adresse non fournie",
+  "appServerControl.mcp.parametersTruncated": "Paramètres tronqués à la limite de capture.",
   "workspace.title": "Save sessions for a restart",
   "workspace.description": "Save resume hints and close every session on this host before shutting down. Restore them here later. In-progress work is interrupted; shell memory and terminal scrollback are not restored.",
   "workspace.save": "Save and close all sessions",

@@ -17,14 +17,18 @@ public static class AppServerControlToolPresentationProjector
         string itemType,
         string status,
         string? title,
-        JsonElement payload)
+        JsonElement payload,
+        Func<string, string?>? resolveMcpAddress = null)
     {
         var nestedItem = GetObject(payload, "item");
         var item = nestedItem ?? payload;
-        var toolName = FirstString(item, "toolName", "name", "title") ??
-                       FirstString(payload, "toolName", "name");
+        var toolName = FirstString(item, "toolName", "tool", "name", "title") ??
+                       FirstString(payload, "toolName", "tool", "name");
         var category = ResolveCategory(itemType, toolName, null);
         var presentation = Create(category, toolName, status);
+        ApplyMcp(presentation, itemType, toolName, FirstString(item, "server"),
+            item.ValueKind == JsonValueKind.Object && item.TryGetProperty("arguments", out var arguments) ? arguments : null,
+            resolveMcpAddress);
         var terminal = status is "completed" or "failed" or "cancelled";
         presentation.Subject = ResolveSubject(category, item, payload, allowSummaryFallback: !terminal);
         presentation.ExitCode = FirstInt32(item, "exitCode") ?? FirstInt32(payload, "exitCode");
@@ -50,10 +54,12 @@ public static class AppServerControlToolPresentationProjector
     public static AppServerControlToolPresentation FromClaude(
         string toolName,
         string status,
-        JsonElement? input)
+        JsonElement? input,
+        Func<string, string?>? resolveMcpAddress = null)
     {
         var category = ResolveCategory("dynamic_tool_call", toolName, null);
         var presentation = Create(category, toolName, status);
+        ApplyMcp(presentation, "dynamic_tool_call", toolName, null, input, resolveMcpAddress);
         if (input is { ValueKind: JsonValueKind.Object } inputObject)
         {
             presentation.Subject = ResolveSubject(category, inputObject, inputObject);
@@ -67,11 +73,13 @@ public static class AppServerControlToolPresentationProjector
         string status,
         string? title,
         string? kind,
-        JsonElement? rawInput)
+        JsonElement? rawInput,
+        Func<string, string?>? resolveMcpAddress = null)
     {
         var toolName = NormalizeToolName(title);
         var category = ResolveCategory(itemType, toolName, kind);
         var presentation = Create(category, toolName, status);
+        ApplyMcp(presentation, itemType, toolName, null, rawInput, resolveMcpAddress);
         if (rawInput is { ValueKind: JsonValueKind.Object } input)
         {
             presentation.Subject = ResolveSubject(category, input, input);
@@ -110,6 +118,7 @@ public static class AppServerControlToolPresentationProjector
             Category = source.Category,
             Label = source.Label,
             ToolName = source.ToolName,
+            Mcp = AppServerControlToolPresentationProtocol.CloneMcp(source.Mcp),
             Subject = source.Subject,
             Outcome = source.Outcome,
             Evidence = source.Evidence,
@@ -131,6 +140,17 @@ public static class AppServerControlToolPresentationProjector
         target.Category = Prefer(source.Category, target.Category, "other");
         target.Label = Prefer(source.Label, target.Label, "Used tool");
         target.ToolName = Prefer(source.ToolName, target.ToolName);
+        if (source.Mcp is { } mcp)
+        {
+            target.Mcp ??= new();
+            target.Mcp.ServerName = Prefer(mcp.ServerName, target.Mcp.ServerName);
+            target.Mcp.ServerAddress = Prefer(mcp.ServerAddress, target.Mcp.ServerAddress);
+            if (mcp.Parameters is not null)
+            {
+                target.Mcp.Parameters = mcp.Parameters;
+                target.Mcp.ParametersTruncated = mcp.ParametersTruncated;
+            }
+        }
         target.Subject = Prefer(source.Subject, target.Subject);
         target.Outcome = Prefer(source.Outcome, target.Outcome);
         target.Evidence = Prefer(source.Evidence, target.Evidence);
@@ -205,6 +225,30 @@ public static class AppServerControlToolPresentationProjector
             "subagent" => "Delegated task",
             _ => "Used tool"
         };
+    }
+
+    private static void ApplyMcp(AppServerControlToolPresentation presentation, string itemType,
+        string? toolName, string? serverName, JsonElement? input, Func<string, string?>? resolveAddress)
+    {
+        if (toolName?.StartsWith("mcp__", StringComparison.Ordinal) == true)
+        {
+            var separator = toolName.IndexOf("__", 5, StringComparison.Ordinal);
+            if (separator > 5)
+            {
+                serverName ??= toolName[5..separator];
+                presentation.ToolName = BoundSingleLine(toolName[(separator + 2)..], MaxToolNameChars);
+            }
+        }
+        if (string.IsNullOrWhiteSpace(serverName) && NormalizeKey(itemType) != "mcptoolcall") return;
+        var parameters = input is { ValueKind: not JsonValueKind.Undefined and not JsonValueKind.Null }
+            ? input.Value.GetRawText() : null;
+        presentation.Mcp = AppServerControlToolPresentationProtocol.CloneMcp(new()
+        {
+            ServerName = serverName,
+            ServerAddress = serverName is null ? null : resolveAddress?.Invoke(serverName),
+            Parameters = parameters
+        });
+        presentation.Label = presentation.ToolName ?? "MCP tool";
     }
 
     private static AppServerControlToolPresentation Create(string category, string? toolName, string status)

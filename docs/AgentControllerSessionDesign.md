@@ -351,6 +351,10 @@ The canonical history contract must satisfy the following:
 
 ### Canonical History Shape
 
+- MCP tools retain a bounded canonical `ToolPresentation.Mcp` descriptor: server name, display address, recorded JSON parameters and an explicit truncation marker. Provider-native server/tool/arguments fields determine this identity; prose and tool output never do.
+- Reading mode shows MCP tools as quiet violet-accented disclosures with tool name, server, address and one ellipsized parameter line. Built-in operations keep the existing compact tool-call summaries. Expanding reveals the recorded parameters and bounded output; streaming updates retain the disclosure node, focus and expansion state. Parameters are plain text, never inferred file links.
+- Display addresses contain the HTTP origin or stdio executable only, excluding credentials, headers, environment, command arguments and URL paths/query/fragment. The native tlbx server displays its known local endpoint. Missing provider metadata is shown honestly as unavailable. Optional address discovery never gates prompt submission.
+
 - Canonical Agent Controller Session history is one linear sequence of canonical history items.
 - That sequence must be addressable by absolute index and current total count.
 - History fetches must operate on index windows rather than provider event streams.
