@@ -351,6 +351,8 @@ The canonical history contract must satisfy the following:
 
 ### Canonical History Shape
 
+- File-diff dialogs offer an explicit handoff to the session Files tab: close the popup, reveal/select the current file and open its existing editor on the right. Preserve unsaved-edit confirmation and same-file drafts. Diff renderers preserve real blank source lines but add no preformatted whitespace between block rows.
+
 - MCP tools retain a bounded canonical `ToolPresentation.Mcp` descriptor: server name, display address, recorded JSON parameters and an explicit truncation marker. Provider-native server/tool/arguments fields determine this identity; prose and tool output never do.
 - Reading mode shows MCP tools as quiet violet-accented disclosures with tool name, server, address and one ellipsized parameter line. Built-in operations keep the existing compact tool-call summaries. Expanding reveals the recorded parameters and bounded output; streaming updates retain the disclosure node, focus and expansion state. Parameters are plain text, never inferred file links.
 - Display addresses contain the HTTP origin or stdio executable only, excluding credentials, headers, environment, command arguments and URL paths/query/fragment. The native tlbx server displays its known local endpoint. Missing provider metadata is shown honestly as unavailable. Optional address discovery never gates prompt submission.
