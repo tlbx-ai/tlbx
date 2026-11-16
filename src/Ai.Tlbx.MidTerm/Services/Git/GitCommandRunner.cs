@@ -509,7 +509,7 @@ internal static class GitCommandRunner
 
     private static string LiteralFilePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path) || path.Contains('\0') ||
+        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path) || path.Contains('\0', StringComparison.Ordinal) ||
             path.Split('/', '\\').Any(part => part is "." or ".."))
             throw new UnauthorizedAccessException("Select a file inside the repository.");
         return ":(literal)" + path;
