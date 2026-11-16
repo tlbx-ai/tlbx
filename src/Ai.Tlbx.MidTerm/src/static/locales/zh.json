@@ -1,4 +1,5 @@
 {
+  "appServerControl.files.openEditor": "在文件编辑器中打开",
   "appServerControl.mcp.parameters": "参数",
   "appServerControl.mcp.output": "输出",
   "appServerControl.mcp.parametersUnavailable": "未提供参数",
