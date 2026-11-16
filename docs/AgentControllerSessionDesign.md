@@ -504,6 +504,7 @@ The canonical history contract must satisfy the following:
 
 ### Diffs and file changes
 
+- Changed files are derived only from recorded patch file headers and structured provider change paths. Inline path mentions, tool-output tokens and paths mentioned inside added/removed source are not evidence of a changed file. Directory-shaped paths ending in a separator are excluded; deleted and extensionless files remain valid without a current filesystem existence check.
 - Diffs should be surfaced as first-class work artifacts, not buried in generic tool logs.
 - Unified diffs should render as actual diffs with added and removed lines visually separated by green/red treatments, not as undifferentiated plain monospace blocks.
 - Specified and implemented: file changes remain visible in the quiet view as one small `Changed files` label followed immediately by the filename list. Do not wrap that list in a disclosure or add a second review/line-count label. File rows use 2px vertical padding and no artifact-cluster top margin; they sit close to the preceding message. Clicking a filename opens a read-only diff viewer: prefer the recorded patch for that file and turn, otherwise clearly label the current Git diff. Preserve added/deleted colors, line gutters, keyboard dismissal and focus return. No hunks are mounted in the timeline.

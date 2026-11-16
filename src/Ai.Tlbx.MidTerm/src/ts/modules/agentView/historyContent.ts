@@ -359,6 +359,7 @@ export function getHistoryChangedFiles(
 ): HistoryChangedFile[] {
   const files = new Map<string, HistoryChangedFile>();
   const add = (path: string, diff = '') => {
+    if (/[\\/]$/.test(path.trim())) return;
     const absolute = resolveDisplayDiffPath(path, sessionCwd);
     if (!absolute || absolute === '/dev/null') return;
     const key = /^[a-z]:/i.test(absolute) ? absolute.replace(/\\/g, '/').toLowerCase() : absolute;
@@ -377,9 +378,8 @@ export function getHistoryChangedFiles(
       );
   }
   for (const path of entry.toolPresentation?.paths ?? []) add(path);
-  for (const mention of entry.fileMentions ?? []) {
-    if (!mention.isDirectory) add(mention.resolvedPath || mention.path);
-  }
+  // Inline mentions describe text, including paths inside added/removed source.
+  // Only patch headers and structured change paths establish a changed file.
   return [...files.values()];
 }
 
