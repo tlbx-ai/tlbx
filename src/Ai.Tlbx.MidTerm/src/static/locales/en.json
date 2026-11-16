@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "Current file",
+  "appServerControl.files.fileHistory": "Commits for this path",
+  "appServerControl.files.noFileHistory": "No commits for this path. The file may be untracked or ignored.",
+  "appServerControl.files.fileUnavailable": "The file cannot be read. Select a commit to inspect earlier changes.",
+  "appServerControl.files.noRepository": "This file is outside the session’s watched repositories.",
   "appServerControl.files.openEditor": "Open in file editor",
   "appServerControl.mcp.parameters": "Request parameters",
   "appServerControl.mcp.output": "Result",
@@ -19,7 +24,6 @@
   "appServerControl.activity.many": "{count} tool calls",
   "appServerControl.files.changed": "Changed files",
   "appServerControl.files.recordedDiff": "Recorded changes",
-  "appServerControl.files.noDiff": "No recorded patch or Git diff is available for this file.",
   "appServerControl.files.currentDiff": "Current Git changes",
   "workspace.title": "Save sessions for a restart",
   "workspace.description": "Save resume hints and close every session on this host before shutting down. Restore them here later. In-progress work is interrupted; shell memory and terminal scrollback are not restored.",

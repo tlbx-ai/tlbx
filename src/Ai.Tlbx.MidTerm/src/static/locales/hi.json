@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "वर्तमान फ़ाइल",
+  "appServerControl.files.fileHistory": "इस पथ के कमिट",
+  "appServerControl.files.noFileHistory": "इस पथ के लिए कोई कमिट नहीं है। फ़ाइल अनट्रैक या अनदेखी की गई हो सकती है।",
+  "appServerControl.files.fileUnavailable": "फ़ाइल पढ़ी नहीं जा सकती। पिछले बदलाव देखने के लिए कमिट चुनें।",
+  "appServerControl.files.noRepository": "यह फ़ाइल सत्र की निगरानी वाली रिपॉज़िटरी के बाहर है।",
   "appServerControl.files.openEditor": "फ़ाइल संपादक में खोलें",
   "appServerControl.mcp.parameters": "अनुरोध पैरामीटर",
   "appServerControl.mcp.output": "परिणाम",

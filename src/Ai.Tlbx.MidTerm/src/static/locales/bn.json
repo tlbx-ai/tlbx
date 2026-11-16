@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "বর্তমান ফাইল",
+  "appServerControl.files.fileHistory": "এই পাথের কমিট",
+  "appServerControl.files.noFileHistory": "এই পাথের কোনো কমিট নেই। ফাইলটি ট্র্যাক করা হয়নি বা উপেক্ষিত হতে পারে।",
+  "appServerControl.files.fileUnavailable": "ফাইলটি পড়া যাচ্ছে না। আগের পরিবর্তন দেখতে একটি কমিট নির্বাচন করুন।",
+  "appServerControl.files.noRepository": "এই ফাইলটি সেশনের পর্যবেক্ষিত রিপোজিটরির বাইরে।",
   "appServerControl.files.openEditor": "ফাইল সম্পাদকে খুলুন",
   "appServerControl.mcp.parameters": "অনুরোধের প্যারামিটার",
   "appServerControl.mcp.output": "ফলাফল",

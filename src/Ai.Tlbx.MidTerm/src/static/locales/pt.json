@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "Arquivo atual",
+  "appServerControl.files.fileHistory": "Commits deste caminho",
+  "appServerControl.files.noFileHistory": "Nenhum commit para este caminho. O arquivo pode não ser rastreado ou estar ignorado.",
+  "appServerControl.files.fileUnavailable": "Não foi possível ler o arquivo. Selecione um commit para ver alterações anteriores.",
+  "appServerControl.files.noRepository": "Este arquivo está fora dos repositórios monitorados da sessão.",
   "appServerControl.files.openEditor": "Abrir no editor de arquivos",
   "appServerControl.mcp.parameters": "Parâmetros da solicitação",
   "appServerControl.mcp.output": "Resultado",

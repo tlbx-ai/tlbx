@@ -29,6 +29,22 @@ export async function fetchGitRepos(sessionId: string): Promise<GitRepoListRespo
   }
 }
 
+/** Repository identities only; avoid transferring full status/file inventories. */
+export async function fetchGitRepoRoots(
+  sessionId: string,
+  signal: AbortSignal,
+): Promise<Array<{ repoRoot: string; status?: { headHash?: string } | null | undefined }> | null> {
+  try {
+    const response = await fetch(
+      `/api/git/repos?sessionId=${encodeURIComponent(sessionId)}&details=false`,
+      { signal },
+    );
+    return response.ok ? ((await response.json()) as GitRepoListResponse).repos : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function addGitRepo(
   sessionId: string,
   path: string,
@@ -126,6 +142,7 @@ export async function fetchGitHistoryPage(
   head: string,
   skip: number,
   count: number,
+  file?: { path: string; signal: AbortSignal },
 ): Promise<GitLogEntry[] | null> {
   try {
     const params = new URLSearchParams({
@@ -135,7 +152,9 @@ export async function fetchGitHistoryPage(
       skip: String(skip),
       count: String(count),
     });
-    const response = await fetch(`/api/git/log?${params}`);
+    if (file) params.set('path', file.path);
+    if (!head) params.delete('head');
+    const response = await fetch(`/api/git/log?${params}`, { signal: file?.signal ?? null });
     return response.ok ? ((await response.json()) as GitLogEntry[]) : null;
   } catch {
     return null;
@@ -147,6 +166,7 @@ export async function fetchDiffView(
   repoRootOrPath: string | undefined,
   pathOrScope: string,
   scopeOrUndefined?: 'worktree' | 'staged',
+  signal?: AbortSignal,
 ): Promise<GitDiffViewResponse | null> {
   try {
     const repoRoot = scopeOrUndefined ? repoRootOrPath : undefined;
@@ -154,7 +174,7 @@ export async function fetchDiffView(
     const scope = scopeOrUndefined ?? (pathOrScope as 'worktree' | 'staged');
     const params = new URLSearchParams({ sessionId, path, scope });
     appendRepoRoot(params, repoRoot);
-    const res = await fetch(`/api/git/diff-view?${params}`);
+    const res = await fetch(`/api/git/diff-view?${params}`, { signal: signal ?? null });
     if (!res.ok) return null;
     return (await res.json()) as GitDiffViewResponse;
   } catch {
@@ -167,14 +187,16 @@ export async function fetchCommitDetails(
   repoRootOrHash: string | undefined,
   hashOrUndefined?: string,
   parentIndex = 0,
+  file?: { path: string; signal: AbortSignal },
 ): Promise<GitCommitDetailsResponse | null> {
   try {
     const repoRoot = hashOrUndefined ? repoRootOrHash : undefined;
     const hash = hashOrUndefined ?? repoRootOrHash ?? '';
     const params = new URLSearchParams({ sessionId, hash });
     if (parentIndex !== 0) params.set('parentIndex', String(parentIndex));
+    if (file) params.set('path', file.path);
     appendRepoRoot(params, repoRoot);
-    const res = await fetch(`/api/git/commit?${params}`);
+    const res = await fetch(`/api/git/commit?${params}`, { signal: file?.signal ?? null });
     if (!res.ok) return null;
     return (await res.json()) as GitCommitDetailsResponse;
   } catch {

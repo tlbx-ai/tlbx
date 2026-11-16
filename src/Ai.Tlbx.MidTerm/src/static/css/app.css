@@ -14391,6 +14391,23 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
 .agent-file-diff-scope { margin: 0; color: var(--text-secondary); font-size: 12px; }
 .agent-file-diff-content { min-height: 0; overflow: auto; }
 .agent-file-diff-actions { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.agent-file-review-dialog .agent-file-diff-content { display: flex; height: min(70dvh, 760px); }
+.agent-file-review { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 30%); gap: 16px; width: 100%; min-height: 0; }
+.agent-file-review-main { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+.agent-file-review-toolbar { display: flex; flex-wrap: wrap; gap: 8px; flex-shrink: 0; }
+.agent-file-review-content { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
+.agent-file-review-content > .file-viewer-readonly-shell { flex: 1; min-height: 0; }
+.agent-file-review-history { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; border-left: 1px solid var(--border-color); padding-left: 12px; }
+.agent-file-review-history h4 { font-size: 12px; color: var(--text-secondary); }
+.agent-file-review-commits { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+.agent-file-review-commit { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; padding: 8px; border: 0; border-bottom: 1px solid var(--border-color); background: transparent; color: var(--text-primary); text-align: left; overflow-wrap: anywhere; }
+.agent-file-review-commit small { color: var(--text-secondary); }
+.agent-file-review-commit[aria-pressed='true'] { background: var(--bg-hover); }
+.agent-file-review-toolbar button[aria-pressed='true'] { border-color: var(--text-secondary); }
+@media (max-width: 680px) {
+  .agent-file-review { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(180px, 1fr) minmax(120px, 0.5fr); gap: 10px; }
+  .agent-file-review-history { border-left: 0; border-top: 1px solid var(--border-color); padding: 8px 0 0; }
+}
 @media (width <= 600px) {
   .agent-file-diff-dialog > header { flex-direction: column; align-items: stretch; }
   .agent-file-diff-actions { justify-content: flex-end; }
