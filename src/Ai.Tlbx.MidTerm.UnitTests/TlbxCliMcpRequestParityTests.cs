@@ -72,8 +72,8 @@ public sealed partial class TlbxCliScriptWriterTests
                 }
                 if (item.Tool == "repos_list")
                 {
-                    // GitEndpoints defaults to a summary; MCP sends that default explicitly.
-                    values.TryAdd("details", "false");
+                    // GitEndpoints returns full status unless details=false; CLI status omits it.
+                    values.TryAdd("details", "true");
                 }
                 return values.Select(pair => pair.Key + "=" + (pair.Key is "agentOnly" or "stripAnsi"
                     ? pair.Value.ToString().ToLowerInvariant() : pair.Value.ToString())).Order(StringComparer.Ordinal).ToArray();
@@ -127,7 +127,7 @@ public sealed partial class TlbxCliScriptWriterTests
         ("repo_bind", """{"targetSessionId":"1234abcd","path":"/repo mit 空","role":"target","label":"Grüße 東京"}""", "Mt-Repo -SessionId 1234abcd add '/repo mit 空' target 'Grüße 東京'", "mt_repo --session 1234abcd add '/repo mit 空' target 'Grüße 東京'"),
         ("repo_refresh", """{"targetSessionId":"1234abcd","repoRoot":"/repo mit 空"}""", "Mt-Repo -SessionId 1234abcd refresh '/repo mit 空'", "mt_repo --session 1234abcd refresh '/repo mit 空'"),
         ("repo_remove", """{"targetSessionId":"1234abcd","repoRoot":"/repo mit 空"}""", "Mt-Repo -SessionId 1234abcd rm '/repo mit 空'", "mt_repo --session 1234abcd rm '/repo mit 空'"),
-        ("repos_list", """{"targetSessionId":"1234abcd"}""", "Mt-Repo -SessionId 1234abcd status", "mt_repo --session 1234abcd status"),
+        ("repos_list", """{"targetSessionId":"1234abcd","details":true}""", "Mt-Repo -SessionId 1234abcd status", "mt_repo --session 1234abcd status"),
         ("terminal_buffer", """{"targetSessionId":"1234abcd"}""", "Mt-Buffer 1234abcd", "mt_buffer 1234abcd"),
         ("terminal_redraw", """{"targetSessionId":"1234abcd"}""", "Mt-Redraw 1234abcd", "mt_redraw 1234abcd"),
         ("terminal_send_keys", """{"targetSessionId":"1234abcd","keys":["C-a","Escape","Enter"]}""", "Mt-SendKeys 1234abcd C-a Escape Enter", "mt_sendkeys 1234abcd C-a Escape Enter"),

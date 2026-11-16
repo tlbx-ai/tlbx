@@ -153,7 +153,10 @@ public sealed class MtAgentHostClaudeIntegrationTests
         runtime.ReplayClaudeHistory(replay);
         Assert.Single(events.Where(e => e.TurnStarted is not null));
         var item = Assert.Single(events.Where(e => e.Item?.ItemType == "user_message"));
-        Assert.Contains("<command-name>/goal</command-name>", item.Item!.Detail, StringComparison.Ordinal);
+        if (scenario is "set" or "clear")
+            Assert.Equal(scenario == "set" ? "/goal Finish the user's task" : "/goal clear", item.Item!.Detail);
+        else
+            Assert.Contains("<command-name>/goal</command-name>", item.Item!.Detail, StringComparison.Ordinal);
         Assert.Contains(events, e => e.ItemId == "actual-work" && e.TurnId == "claude-history:kept");
         Assert.Single(events.Where(e => e.TurnCompleted is not null));
     }
@@ -481,6 +484,21 @@ public sealed class MtAgentHostClaudeIntegrationTests
         using var process = StartAgentHost(ResolveAgentHostPath());
         var sessionId = "session-claude-sdk-" + Guid.NewGuid().ToString("N");
         var resumeThreadId = Guid.NewGuid().ToString();
+        var projectKey = new string(fakeClaude.Root.Select(c => char.IsAsciiLetterOrDigit(c) ? c : '-').ToArray());
+        var historyDirectory = Path.Combine(fakeClaude.ConfigDirectory, "projects", projectKey);
+        Directory.CreateDirectory(historyDirectory);
+        var historyUserId = Guid.NewGuid().ToString();
+        var history = new object[]
+        {
+            new { type = "user", uuid = historyUserId, sessionId = resumeThreadId, parentUuid = (string?)null,
+                cwd = fakeClaude.Root, timestamp = DateTimeOffset.UtcNow.ToString("o"), isSidechain = false,
+                message = new { role = "user", content = "Earlier fixture prompt" } },
+            new { type = "assistant", uuid = Guid.NewGuid().ToString(), sessionId = resumeThreadId, parentUuid = historyUserId,
+                cwd = fakeClaude.Root, timestamp = DateTimeOffset.UtcNow.ToString("o"), isSidechain = false,
+                message = new { id = "earlier-fixture-answer", role = "assistant", content = new[] { new { type = "text", text = "Earlier fixture reply" } } } }
+        };
+        await File.WriteAllLinesAsync(Path.Combine(historyDirectory, resumeThreadId + ".jsonl"),
+            history.Select(entry => JsonSerializer.Serialize(entry)), TestContext.Current.CancellationToken);
         var pendingPatches = new Queue<AppServerControlHostHistoryPatchEnvelope>();
         var imagePath = Path.Combine(fakeClaude.Root, "pasted-image.png");
         var imageBytes = Convert.FromBase64String(
@@ -509,7 +527,7 @@ public sealed class MtAgentHostClaudeIntegrationTests
                 }
             });
             var attach = await AppServerControlHostTestClient.ReadResultAsync(process.StandardOutput, pendingPatches, "attach");
-            Assert.Equal("accepted", attach.Status);
+            Assert.True(attach.Status == "accepted", attach.Message);
 
             var providerThreadId = string.Empty;
             for (var turnNumber = 1; turnNumber <= 2; turnNumber++)
