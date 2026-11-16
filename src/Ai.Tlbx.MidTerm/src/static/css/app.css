@@ -14381,8 +14381,8 @@ body.opaque-terminal-surfaces .session-wrapper[data-active-tab='agent'] .session
   user-select: text;
   cursor: pointer;
 }
-.agent-file-path-start { flex: 0 1 auto; min-width: 2ch; overflow: hidden; text-overflow: ellipsis; }
-.agent-file-path-end { display: flex; justify-content: flex-end; flex: 0 0 auto; max-width: calc(100% - 2ch); overflow: hidden; }
+.agent-file-path-start { flex: 0 1 auto; min-width: 4ch; overflow: hidden; text-overflow: ellipsis; }
+.agent-file-path-end { display: flex; justify-content: flex-end; flex: 0 0 auto; max-width: calc(100% - 4ch); overflow: hidden; }
 .agent-file-path-end > span { flex: 0 0 auto; }
 .agent-history-file-change-link:hover { color: var(--text-primary); background: transparent; }
 .git-workspace-dialog.agent-file-diff-dialog { width: min(1100px, calc(100vw - 24px)); flex-direction: column; gap: 10px; overflow: hidden; }
