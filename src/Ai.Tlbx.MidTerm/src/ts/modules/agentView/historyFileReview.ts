@@ -39,9 +39,10 @@ class HistoryFileReview {
     'appServerControl.files.currentDiff',
     () => void this.showCurrent(),
   );
-  private readonly repository: Promise<FileRepository | null>;
+  private repository: Promise<FileRepository | null>;
   private readonly filePages = new Map<number, FileDocument>();
   private readonly offsets = [0];
+  private readonly lineNumbers = [1];
   private selection = new AbortController();
   private skip = 0;
   private page = 0;
@@ -107,7 +108,12 @@ class HistoryFileReview {
         const oldest = this.filePages.keys().next().value;
         if (oldest !== undefined) this.filePages.delete(oldest);
       }
-      const view = createLineNumberedViewer(document.content);
+      const view = createLineNumberedViewer(
+        document.content,
+        [],
+        undefined,
+        this.lineNumbers[this.page] ?? 1,
+      );
       this.content.replaceChildren(view.root);
       this.renderFilePages(document);
     } catch {
@@ -127,6 +133,8 @@ class HistoryFileReview {
     previous.disabled = this.page === 0;
     const next = button('fileViewer.nextPage', () => {
       this.offsets[++this.page] = document.nextOffset;
+      this.lineNumbers[this.page] =
+        (this.lineNumbers[this.page - 1] ?? 1) + (document.content.match(/\n/g)?.length ?? 0);
       void this.showFile();
     });
     next.disabled = document.nextOffset >= document.size;
@@ -156,6 +164,7 @@ class HistoryFileReview {
 
   private async loadHistory(): Promise<void> {
     this.more.disabled = true;
+    if (this.repositoryReadFailed) this.repository = this.resolveRepository();
     const repo = await this.repository;
     if (!this.isActive(this.signal)) return;
     this.currentButton.disabled = !repo;
@@ -163,6 +172,9 @@ class HistoryFileReview {
       this.commits.textContent = t(
         this.repositoryReadFailed ? 'git.historyReadFailed' : 'appServerControl.files.noRepository',
       );
+      this.more.hidden = !this.repositoryReadFailed;
+      this.more.disabled = false;
+      this.more.textContent = t('fileViewer.refresh');
       return;
     }
     const entries = await fetchGitHistoryPage(this.sessionId, repo.root, repo.head, this.skip, 20, {
@@ -174,6 +186,7 @@ class HistoryFileReview {
       if (!this.skip) this.commits.textContent = t('git.historyReadFailed');
       this.more.hidden = false;
       this.more.disabled = false;
+      this.more.textContent = t('fileViewer.refresh');
       return;
     }
     if (!this.skip) this.commits.replaceChildren();
@@ -182,6 +195,7 @@ class HistoryFileReview {
     if (!this.skip) this.commits.textContent = t('appServerControl.files.noFileHistory');
     this.more.hidden = entries.length < 20;
     this.more.disabled = false;
+    this.more.textContent = t('git.loadMoreHistory');
   }
 
   private commitButton(entry: GitLogEntry): HTMLButtonElement {
@@ -212,6 +226,7 @@ class HistoryFileReview {
       this.content.textContent = t('git.commitUnavailable');
       return;
     }
+    this.scope.textContent = `${result.comparedParentHash?.slice(0, 8) ?? '∅'} → ${entry.shortHash} · ${entry.message}`;
     this.showPatch(result.files, result.isTruncated);
   }
 
