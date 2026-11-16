@@ -1,8 +1,7 @@
 import { t } from '../i18n';
 import { registerBackButtonLayer } from '../navigation/backButtonGuard';
-import { fetchDiffView, fetchGitRepos } from '../git/gitApi';
-import { renderPatchFile } from '../git/gitDiffView';
 import { openFileInEditor } from '../fileBrowser';
+import { createHistoryFileReview } from './historyFileReview';
 import {
   getHistoryChangedFiles,
   buildRenderedDiffLines,
@@ -56,10 +55,12 @@ export function openHistoryFileDiff(
   dialog.append(header, scope, body);
   document.body.append(dialog);
   let disposed = false;
+  const load = new AbortController();
   const releaseBack = registerBackButtonLayer(closeDialog);
   function cleanup(): void {
     if (disposed) return;
     disposed = true;
+    load.abort();
     releaseBack();
     dialog.remove();
     if (trigger.isConnected) trigger.focus({ preventScroll: true });
@@ -82,47 +83,8 @@ export function openHistoryFileDiff(
     body.append(renderRecorded(file.diff));
     return;
   }
-  body.textContent = t('git.loadingDiff');
-  void loadCurrentDiff(sessionId, file.path, body).catch(() => {
-    if (body.isConnected) body.textContent = t('git.diffUnavailable');
-  });
-}
-
-async function loadCurrentDiff(sessionId: string, path: string, body: HTMLElement): Promise<void> {
-  const normalize = (value: string) => value.replace(/\\/g, '/').replace(/\/$/, '');
-  const matchCase = (value: string) => (/^[a-z]:/i.test(value) ? value.toLowerCase() : value);
-  const absolute = normalize(path);
-  const repos = await fetchGitRepos(sessionId);
-  if (!body.isConnected) return;
-  const repo = repos?.repos
-    .filter((candidate) =>
-      matchCase(absolute).startsWith(matchCase(normalize(candidate.repoRoot)) + '/'),
-    )
-    .sort((a, b) => b.repoRoot.length - a.repoRoot.length)[0];
-  if (!repo) {
-    body.textContent = t('appServerControl.files.noDiff');
-    return;
-  }
-  const relative = absolute.slice(normalize(repo.repoRoot).length + 1);
-  const staged =
-    repo.status?.staged.some((entry) => entry.path === relative) &&
-    !repo.status.modified.some((entry) => entry.path === relative);
-  const diff = await fetchDiffView(
-    sessionId,
-    repo.repoRoot,
-    relative,
-    staged ? 'staged' : 'worktree',
-  );
-  if (!document.contains(body)) return;
-  if (!diff?.files.length) {
-    body.textContent = t('appServerControl.files.noDiff');
-    return;
-  }
-  body.innerHTML = diff.files.map((file) => renderPatchFile(file, { historical: true })).join('');
-  // This dialog is read-only; Git's optional preview action belongs to its full inspector.
-  body.querySelectorAll('[data-action="open-file-viewer"]').forEach((button) => {
-    button.remove();
-  });
+  dialog.classList.add('agent-file-review-dialog');
+  body.append(createHistoryFileReview(sessionId, file.path, scope, load.signal));
 }
 
 export function createFileChangeHistoryBody(

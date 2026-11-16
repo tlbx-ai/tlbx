@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "当前文件",
+  "appServerControl.files.fileHistory": "此路径的提交",
+  "appServerControl.files.noFileHistory": "此路径没有提交。文件可能未被跟踪或已被忽略。",
+  "appServerControl.files.fileUnavailable": "无法读取文件。请选择提交以查看之前的更改。",
+  "appServerControl.files.noRepository": "此文件不在当前会话监视的仓库中。",
   "appServerControl.files.openEditor": "在文件编辑器中打开",
   "appServerControl.mcp.parameters": "请求参数",
   "appServerControl.mcp.output": "结果",

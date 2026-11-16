@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "Aktuelle Datei",
+  "appServerControl.files.fileHistory": "Commits für diesen Pfad",
+  "appServerControl.files.noFileHistory": "Keine Commits für diesen Pfad. Die Datei ist möglicherweise unversioniert oder ignoriert.",
+  "appServerControl.files.fileUnavailable": "Die Datei kann nicht gelesen werden. Wähle einen Commit für frühere Änderungen.",
+  "appServerControl.files.noRepository": "Diese Datei liegt außerhalb der überwachten Repositories dieser Session.",
   "appServerControl.files.openEditor": "Im Datei-Editor öffnen",
   "appServerControl.mcp.parameters": "Anfrageparameter",
   "appServerControl.mcp.output": "Ergebnis",
@@ -19,7 +24,6 @@
   "appServerControl.activity.many": "{count} Tool-Aufrufe",
   "appServerControl.files.changed": "Geänderte Dateien",
   "appServerControl.files.recordedDiff": "Aufgezeichnete Änderungen",
-  "appServerControl.files.noDiff": "Für diese Datei ist kein aufgezeichneter Patch oder Git-Diff verfügbar.",
   "appServerControl.files.currentDiff": "Aktuelle Git-Änderungen",
   "workspace.title": "Sessions vor einem Neustart sichern",
   "workspace.description": "Resume-Hinweise speichern und alle Sessions auf diesem Rechner vor dem Herunterfahren beenden. Hier später wiederherstellen. Laufende Arbeit wird unterbrochen; Shell-Speicher und Terminalverlauf werden nicht wiederhergestellt.",

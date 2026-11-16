@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "現在のファイル",
+  "appServerControl.files.fileHistory": "このパスのコミット",
+  "appServerControl.files.noFileHistory": "このパスのコミットはありません。未追跡または無視されたファイルの可能性があります。",
+  "appServerControl.files.fileUnavailable": "ファイルを読み取れません。過去の変更を見るにはコミットを選択してください。",
+  "appServerControl.files.noRepository": "このファイルはセッションで監視しているリポジトリの外にあります。",
   "appServerControl.files.openEditor": "ファイルエディターで開く",
   "appServerControl.mcp.parameters": "リクエストパラメーター",
   "appServerControl.mcp.output": "結果",

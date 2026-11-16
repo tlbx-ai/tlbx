@@ -1,4 +1,9 @@
 {
+  "appServerControl.files.currentFile": "Текущий файл",
+  "appServerControl.files.fileHistory": "Коммиты для этого пути",
+  "appServerControl.files.noFileHistory": "Для этого пути нет коммитов. Возможно, файл не отслеживается или игнорируется.",
+  "appServerControl.files.fileUnavailable": "Не удалось прочитать файл. Выберите коммит для просмотра прошлых изменений.",
+  "appServerControl.files.noRepository": "Этот файл находится вне репозиториев, отслеживаемых сеансом.",
   "appServerControl.files.openEditor": "Открыть в редакторе файлов",
   "appServerControl.mcp.parameters": "Параметры запроса",
   "appServerControl.mcp.output": "Результат",

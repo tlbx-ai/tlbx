@@ -305,14 +305,15 @@ internal static class GitCommandRunner
         return response;
     }
 
-    internal static async Task<GitLogEntry[]> GetLogAsync(string repoRoot, int count = 20, int skip = 0, string? head = null)
+    internal static async Task<GitLogEntry[]> GetLogAsync(string repoRoot, int count = 20, int skip = 0, string? head = null, string? path = null)
     {
         if (count < 1 || count > 200 || skip < 0) throw new IOException("Invalid Git history page.");
         if (head is not null && (head.Length is not (40 or 64) || !head.All(Uri.IsHexDigit))) throw new IOException("Invalid Git history snapshot.");
         var revision = head ?? await GetCommittedHeadAsync(repoRoot).ConfigureAwait(false);
         if (revision is null) return [];
-        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, "log", "--format=%H%x00%h%x00%s%x00%an%x00%ai%x00",
-            "-n", count.ToString(CultureInfo.InvariantCulture), "--skip=" + skip.ToString(CultureInfo.InvariantCulture), revision, "--").ConfigureAwait(false);
+        var args = new[] { "log", "--format=%H%x00%h%x00%s%x00%an%x00%ai%x00", "-n", count.ToString(CultureInfo.InvariantCulture), "--skip=" + skip.ToString(CultureInfo.InvariantCulture), revision, "--" };
+        if (path is not null) args = [.. args, LiteralFilePath(path)];
+        var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, args).ConfigureAwait(false);
         if (exitCode != 0) throw new IOException("Git history could not be read. " + stderr);
         var lines = stdout.Split('\0');
         List<GitLogEntry> entries = [with(capacity: Math.Min(count, lines.Length / 5))];
@@ -491,11 +492,12 @@ internal static class GitCommandRunner
         };
     }
 
-    internal static async Task<(string Patch, bool IsTruncated)> GetCommitPatchAsync(string repoRoot, string hash, string? parentHash)
+    internal static async Task<(string Patch, bool IsTruncated)> GetCommitPatchAsync(string repoRoot, string hash, string? parentHash, string? path = null)
     {
         var args = parentHash is null
             ? new[] { "diff-tree", "--root", "-r", "--no-commit-id", "-p", "--find-renames", "--unified=3", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-relative", hash, "--" }
             : ["diff", "--find-renames", "--unified=3", "--no-ext-diff", "--no-textconv", "--no-color", "--src-prefix=a/", "--dst-prefix=b/", "--no-relative", parentHash, hash, "--"];
+        if (path is not null) args = [.. args, LiteralFilePath(path)];
         var (exitCode, stdout, stderr) = await RunGitAsync(repoRoot, args).ConfigureAwait(false);
         if (exitCode != 0)
         {
@@ -503,6 +505,14 @@ internal static class GitCommandRunner
         }
 
         return TrimOutput(stdout, MaxPatchOutputChars);
+    }
+
+    private static string LiteralFilePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || Path.IsPathRooted(path) || path.Contains('\0') ||
+            path.Split('/', '\\').Any(part => part is "." or ".."))
+            throw new UnauthorizedAccessException("Select a file inside the repository.");
+        return ":(literal)" + path;
     }
 
     internal static Task<(int ExitCode, string Stdout, string Stderr)> RunGitInDirectoryAsync(string workingDir, params string[] args)
